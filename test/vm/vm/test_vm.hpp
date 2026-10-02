@@ -17,6 +17,7 @@
 
 #include <category/core/assert.h>
 #include <category/vm/compiler/ir/x86.hpp>
+#include <category/vm/evm/result.hpp>
 #include <category/vm/evm/revision.h>
 #include <category/vm/runtime/types.hpp>
 #include <category/vm/utils/debug.hpp>
@@ -24,7 +25,7 @@
 
 #include <test/vm/utils/test_memory.hpp>
 
-#include <evmc/evmc.hpp>
+#include <evmc/evmc.h>
 
 #include <unordered_map>
 
@@ -45,7 +46,7 @@ public:
         monad::vm::compiler::native::EmitterHook post_instruction_emit_hook =
             nullptr);
 
-    evmc::Result execute(
+    monad::vm::Result execute(
         evmc_host_interface const *host, evmc_host_context *context,
         evmc_revision rev, evmc_message const *msg, uint8_t const *code,
         size_t code_size);
@@ -87,12 +88,12 @@ private:
     CodeMap<monad::vm::SharedIntercode> intercodes_;
     monad::vm::runtime::Context *rt_ctx_;
 
-    evmc::Result execute_compiler(
+    monad::vm::Result execute_compiler(
         evmc_host_interface const *host, evmc_host_context *context,
         monad_eth_revision rev, evmc_message const *msg, uint8_t const *code,
         size_t code_size);
 
-    evmc::Result execute_interpreter(
+    monad::vm::Result execute_interpreter(
         evmc_host_interface const *host, evmc_host_context *context,
         monad_eth_revision rev, evmc_message const *msg, uint8_t const *code,
         size_t code_size);

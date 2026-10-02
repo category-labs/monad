@@ -170,15 +170,17 @@ namespace
                    auto const rev,
                    auto const *const msg,
                    auto const *const code,
-                   auto const code_size) -> evmc::Result {
+                   auto const code_size) -> vm::Result {
             vm::test::EvmcHostAdapter adapter{host};
-            return vm.execute(
-                adapter.get_interface(),
-                adapter.to_context(),
-                to_evmc_revision(rev),
-                std::bit_cast<evmc_message>(*msg),
-                code,
-                code_size);
+            auto const evmc_msg = std::bit_cast<evmc_message>(*msg);
+            return reinterpret_cast<BlockchainTestVM *>(vm.get_raw_pointer())
+                ->execute(
+                    &adapter.get_interface(),
+                    adapter.to_context(),
+                    to_evmc_revision(rev),
+                    &evmc_msg,
+                    code,
+                    code_size);
         };
     }
 
@@ -234,15 +236,15 @@ namespace
         precompile_contract(vm_ptr, rev, code_hash, code.data(), code.size());
 
         for (auto _ : bench_state) {
-            auto const result = evmc::Result{vm_ptr->execute(
+            auto const result = vm_ptr->execute(
                 interface,
                 ctx,
                 to_evmc_revision(rev),
                 &msg,
                 code.data(),
-                code.size())};
+                code.size());
 
-            MONAD_ASSERT(result.status_code == EVMC_SUCCESS);
+            MONAD_ASSERT(result.status_code == MONAD_STATUS_SUCCESS);
         }
     }
 
@@ -306,19 +308,19 @@ namespace
             auto *ctx = host.to_context();
             bench_state.ResumeTiming();
 
-            auto const result = evmc::Result{vm_ptr->execute(
+            auto const result = vm_ptr->execute(
                 interface,
                 ctx,
                 to_evmc_revision(rev),
                 &msg,
                 code->code(),
-                code->size())};
+                code->size());
 
             if (assert_success) {
-                MONAD_ASSERT(result.status_code == EVMC_SUCCESS);
+                MONAD_ASSERT(result.status_code == MONAD_STATUS_SUCCESS);
             }
             else {
-                MONAD_ASSERT(result.status_code != EVMC_SUCCESS);
+                MONAD_ASSERT(result.status_code != MONAD_STATUS_SUCCESS);
             }
         }
     }

@@ -38,13 +38,11 @@
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/vm/code.hpp>
 #include <category/vm/evm/message.hpp>
+#include <category/vm/evm/result.hpp>
 #include <category/vm/evm/status_code.h>
 #include <category/vm/utils/evm-as.hpp>
 #include <category/vm/vm.hpp>
 #include <monad/test/traits_test.hpp>
-
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 
 #include <nlohmann/json.hpp>
 
@@ -66,7 +64,6 @@ using namespace monad::test;
 namespace
 {
     uint8_t const input[] = {'i', 'n', 'p', 'u', 't'};
-    uint8_t const output[] = {'o', 'u', 't', 'p', 'u', 't'};
     static Transaction const tx{.gas_limit = 10'000u};
 
     constexpr auto a = 0x5353535353535353535353535353535353535353_address;
@@ -106,8 +103,7 @@ TEST(CallFrame, to_json)
 TEST(CallTrace, enter_and_exit)
 {
     vm::Message msg{.input_data = input};
-    evmc::Result res{};
-    res.output_data = output;
+    vm::Result const res{};
 
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
@@ -193,7 +189,7 @@ TYPED_TEST(TraitsTest, execute_success)
             sender,
             authorities_empty,
             BlockHeader{.beneficiary = beneficiary})(s, host);
-    EXPECT_TRUE(result.status_code == EVMC_SUCCESS);
+    EXPECT_TRUE(result.status_code == MONAD_STATUS_SUCCESS);
     ASSERT_TRUE(call_frames.size() == 1);
 
     CallFrame expected{
@@ -278,7 +274,7 @@ TYPED_TEST(TraitsTest, execute_reverted_insufficient_balance)
             sender,
             authorities_empty,
             BlockHeader{.beneficiary = beneficiary})(s, host);
-    EXPECT_TRUE(result.status_code == EVMC_INSUFFICIENT_BALANCE);
+    EXPECT_TRUE(result.status_code == MONAD_STATUS_INSUFFICIENT_BALANCE);
     ASSERT_TRUE(call_frames.size() == 1);
 
     CallFrame expected{
@@ -368,7 +364,7 @@ TYPED_TEST(TraitsTest, create_call_trace)
             sender,
             authorities_empty,
             BlockHeader{.beneficiary = beneficiary})(s, host);
-    EXPECT_TRUE(result.status_code == EVMC_SUCCESS);
+    EXPECT_TRUE(result.status_code == MONAD_STATUS_SUCCESS);
     ASSERT_TRUE(call_frames.size() == 2);
 
     // We don't care about the specific revision-dependent gas used in each call
@@ -492,7 +488,7 @@ TYPED_TEST(TraitsTest, selfdestruct_logs)
             sender,
             authorities_empty,
             BlockHeader{.beneficiary = beneficiary})(s, host);
-    EXPECT_TRUE(result.status_code == EVMC_SUCCESS);
+    EXPECT_TRUE(result.status_code == MONAD_STATUS_SUCCESS);
 
     EXPECT_EQ(call_frames.size(), 4);
     EXPECT_EQ(call_frames[0].type, CallType::CALL);
@@ -581,7 +577,7 @@ TYPED_TEST(TraitsTest, selfdestruct_logs_value)
             authorities_empty,
             BlockHeader{.beneficiary = beneficiary})(s, host);
 
-    EXPECT_TRUE(result.status_code == EVMC_SUCCESS);
+    EXPECT_TRUE(result.status_code == MONAD_STATUS_SUCCESS);
 
     EXPECT_EQ(call_frames.size(), 2);
     EXPECT_EQ(call_frames[0].type, CallType::CALL);
@@ -678,7 +674,7 @@ TYPED_TEST(TraitsTest, selfdestruct_depth)
             sender,
             authorities_empty,
             BlockHeader{.beneficiary = beneficiary})(s, host);
-    EXPECT_TRUE(result.status_code == EVMC_SUCCESS);
+    EXPECT_TRUE(result.status_code == MONAD_STATUS_SUCCESS);
 
     EXPECT_EQ(call_frames.size(), 4);
 
@@ -764,7 +760,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace)
             authorities_empty,
             BlockHeader{.beneficiary = beneficiary})(s, host);
 
-    EXPECT_TRUE(result.status_code == EVMC_SUCCESS);
+    EXPECT_TRUE(result.status_code == MONAD_STATUS_SUCCESS);
     EXPECT_EQ(call_frames.size(), 1);
 
     CallFrame const expected{
@@ -874,7 +870,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct)
             authorities_empty,
             BlockHeader{.beneficiary = beneficiary})(s, host);
 
-    EXPECT_TRUE(result.status_code == EVMC_SUCCESS);
+    EXPECT_TRUE(result.status_code == MONAD_STATUS_SUCCESS);
     ASSERT_EQ(call_frames.size(), 2);
     EXPECT_EQ(call_frames[0].type, CallType::CALL);
     EXPECT_EQ(call_frames[1].type, CallType::SELFDESTRUCT);
@@ -979,7 +975,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct_zero_balance)
             authorities_empty,
             BlockHeader{.beneficiary = beneficiary})(s, host);
 
-    EXPECT_TRUE(result.status_code == EVMC_SUCCESS);
+    EXPECT_TRUE(result.status_code == MONAD_STATUS_SUCCESS);
     ASSERT_EQ(call_frames.size(), 2);
     EXPECT_EQ(call_frames[0].type, CallType::CALL);
     EXPECT_EQ(call_frames[1].type, CallType::SELFDESTRUCT);
@@ -1123,7 +1119,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs)
             authorities_empty,
             BlockHeader{})(s, host);
 
-    EXPECT_EQ(result.status_code, EVMC_SUCCESS);
+    EXPECT_EQ(result.status_code, MONAD_STATUS_SUCCESS);
 
     ASSERT_EQ(call_frames.size(), 5);
     ASSERT_TRUE(call_frames[0].logs.has_value());
@@ -1339,7 +1335,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs_recursive)
             authorities_empty,
             BlockHeader{})(s, host);
 
-    EXPECT_EQ(result.status_code, EVMC_SUCCESS);
+    EXPECT_EQ(result.status_code, MONAD_STATUS_SUCCESS);
 
     // As in `simulate_v1_trace_multiple_selfdestructs`, there are 5 call
     // frames, but in this case no logs should be emitted because the sender and
@@ -1501,7 +1497,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_transfers)
                 authorities_empty,
                 BlockHeader{})(s, host);
 
-        EXPECT_EQ(result.status_code, EVMC_SUCCESS);
+        EXPECT_EQ(result.status_code, MONAD_STATUS_SUCCESS);
 
         if (i == 0) { // CALL
             ASSERT_EQ(call_frames.size(), 2);

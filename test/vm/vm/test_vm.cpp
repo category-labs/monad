@@ -30,6 +30,7 @@
 #include <category/vm/vm.hpp>
 
 #include <test/vm/utils/evmc_host_adapter.hpp>
+#include <test/vm/utils/evmc_result.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
@@ -63,8 +64,9 @@ namespace
         evmc_host_context *context, evmc_revision rev, evmc_message const *msg,
         uint8_t const *code, size_t code_size)
     {
-        return reinterpret_cast<BlockchainTestVM *>(vm)
-            ->execute(host, context, rev, msg, code, code_size)
+        return monad::vm::test::to_evmc_result(
+                   reinterpret_cast<BlockchainTestVM *>(vm)->execute(
+                       host, context, rev, msg, code, code_size))
             .release_raw();
     }
 
@@ -83,7 +85,7 @@ BlockchainTestVM::BlockchainTestVM(
 {
 }
 
-evmc::Result BlockchainTestVM::execute(
+vm::Result BlockchainTestVM::execute(
     evmc_host_interface const *host, evmc_host_context *context,
     evmc_revision evmc_rev, evmc_message const *msg, uint8_t const *code,
     size_t code_size)
@@ -155,7 +157,7 @@ BlockchainTestVM::get_intercode_nativecode(
     return {icode, ncode};
 }
 
-evmc::Result BlockchainTestVM::execute_compiler(
+vm::Result BlockchainTestVM::execute_compiler(
     evmc_host_interface const *host, evmc_host_context *context,
     monad_eth_revision rev, evmc_message const *msg, uint8_t const *code,
     size_t code_size)
@@ -175,7 +177,7 @@ evmc::Result BlockchainTestVM::execute_compiler(
     MONAD_ABORT();
 }
 
-evmc::Result BlockchainTestVM::execute_interpreter(
+vm::Result BlockchainTestVM::execute_interpreter(
     evmc_host_interface const *host, evmc_host_context *context,
     monad_eth_revision rev, evmc_message const *msg, uint8_t const *code,
     size_t code_size)

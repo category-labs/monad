@@ -71,6 +71,7 @@
 #include <category/rpc/eth_simulate_block_hash_buffer.hpp>
 #include <category/rpc/lazy_block_hash.hpp>
 #include <category/rpc/utils/response_size.hpp>
+#include <category/vm/evm/result.hpp>
 #include <category/vm/evm/revision.h>
 #include <category/vm/evm/status_code.h>
 #include <category/vm/evm/switch_traits.hpp>
@@ -103,11 +104,9 @@
 
 #include <ankerl/unordered_dense.h>
 #include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 #include <nlohmann/json.hpp>
 
 using namespace monad;
-using namespace monad::vm;
 
 namespace
 {
@@ -201,7 +200,7 @@ namespace
     }
 
     template <Traits traits>
-    Result<evmc::Result> eth_call_impl(
+    Result<vm::Result> eth_call_impl(
         Chain const &chain, Transaction const &txn, BlockHeader const &header,
         uint64_t const block_number, bytes32_t const &block_id,
         Address const &sender,
@@ -1498,7 +1497,7 @@ struct monad_executor
                         MONAD_ASSERT(false);
                     }();
 
-                    auto const res = [&]() -> Result<evmc::Result> {
+                    auto const res = [&]() -> Result<vm::Result> {
                         if (chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET ||
                             chain_config == CHAIN_CONFIG_HIVE_NET) {
                             monad_eth_revision const rev = chain->get_revision(
@@ -1546,8 +1545,8 @@ struct monad_executor
 
                     if (override_with_low_gas_retry_if_oog &&
                         ((res.has_value() &&
-                          (res.value().status_code == EVMC_OUT_OF_GAS ||
-                           res.value().status_code == EVMC_REVERT)) ||
+                          (res.value().status_code == MONAD_STATUS_OUT_OF_GAS ||
+                           res.value().status_code == MONAD_STATUS_REVERT)) ||
                          (res.has_error() &&
                           res.error() == TransactionError::
                                              IntrinsicGasGreaterThanLimit))) {
@@ -1599,23 +1598,23 @@ struct monad_executor
     }
 
     void call_complete(
-        Transaction const &transaction, evmc::Result const &evmc_result,
+        Transaction const &transaction, vm::Result const &res,
         monad_executor_result *const result,
         void (*complete)(monad_executor_result *, void *user), void *const user,
         std::vector<CallFrame> const &call_frames,
         nlohmann::json const &state_trace)
     {
-        result->status_code = evmc_result.status_code;
+        result->status_code = res.status_code;
         result->gas_used =
-            static_cast<int64_t>(transaction.gas_limit) - evmc_result.gas_left;
-        result->gas_refund = evmc_result.gas_refund;
-        if (evmc_result.output_size > 0) {
-            result->output_data = new uint8_t[evmc_result.output_size];
-            result->output_data_len = evmc_result.output_size;
+            static_cast<int64_t>(transaction.gas_limit) - res.gas_left;
+        result->gas_refund = res.gas_refund;
+        if (res.output_size > 0) {
+            result->output_data = new uint8_t[res.output_size];
+            result->output_data_len = res.output_size;
             memcpy(
                 (uint8_t *)result->output_data,
-                evmc_result.output_data,
-                evmc_result.output_size);
+                res.output_data,
+                res.output_size);
         }
         else {
             result->output_data = nullptr;

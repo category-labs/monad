@@ -295,7 +295,7 @@ namespace
         ASSERT_TRUE(call_frames.value().size() == 1);
         EXPECT_EQ(call_frames.value()[0], expected);
 
-        // The discrepancy between `evmc_result.gas_used` and the `gas_used` in
+        // The discrepancy between `ctx.result->gas_used` and the `gas_used` in
         // the final CallFrame is expected. This is because Monad currently does
         // not support gas refund — refunds are always zero. As a result, the
         // `gas_used` in the final CallFrame always equals the gas limit.

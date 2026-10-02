@@ -43,11 +43,11 @@
 #include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/message.hpp>
+#include <category/vm/evm/result.hpp>
+#include <category/vm/evm/status_code.h>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/memory_pool.hpp>
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 
 #include <boost/fiber/future/promise.hpp>
 #include <boost/outcome/try.hpp>
@@ -230,7 +230,7 @@ vm::Message ExecuteTransactionNoValidation<traits>::to_message(
 }
 
 template <Traits traits>
-evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
+vm::Result ExecuteTransactionNoValidation<traits>::operator()(
     State &state, EvmcHost<traits> &host)
 {
     if constexpr (::monad::is_monad_trait_v<traits>) {
@@ -328,7 +328,7 @@ ExecuteTransaction<traits>::ExecuteTransaction(
 }
 
 template <Traits traits>
-Result<evmc::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
+Result<vm::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
 {
     auto const validate_lambda = [this, &state] {
         auto result = validate_transaction<traits>(
@@ -371,7 +371,7 @@ Result<evmc::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
 
 template <Traits traits>
 Receipt ExecuteTransaction<traits>::execute_final(
-    State &state, evmc::Result const &result)
+    State &state, vm::Result const &result)
 {
     static_assert(traits::evm_rev() >= MONAD_ETH_SPURIOUS_DRAGON);
 
@@ -416,7 +416,7 @@ Receipt ExecuteTransaction<traits>::execute_final(
     state.destruct_touched_dead();
 
     Receipt receipt{
-        .status = result.status_code == EVMC_SUCCESS ? 1u : 0u,
+        .status = result.status_code == MONAD_STATUS_SUCCESS ? 1u : 0u,
         .gas_used = gas_used,
         .type = tx_.type};
     for (auto const &log : state.logs()) {

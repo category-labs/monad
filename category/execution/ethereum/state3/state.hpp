@@ -90,6 +90,10 @@ class State
     using Set = ankerl::unordered_dense::segmented_set<K>;
 
     BlockState &block_state_;
+#if defined(MONAD_ZKVM_ZISK)
+    // Borrow the block's VM so vm() can return it directly from this header.
+    vm::VM &vm_;
+#endif
 
     Incarnation const incarnation_;
 
@@ -382,7 +386,14 @@ public:
 
     ////////////////////////////////////////
 
+#if defined(MONAD_ZKVM_ZISK)
+    vm::VM &vm()
+    {
+        return vm_;
+    }
+#else
     vm::VM &vm();
+#endif
 
 public:
     void set_original_nonce(evmc_address const &, uint64_t nonce);

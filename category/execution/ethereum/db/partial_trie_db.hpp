@@ -53,6 +53,13 @@ class PartialTrieDb final : public Db
     // sroot_valid_ separates "nothing cached" from "cached the zero address",
     // which is a real address.
     mutable bool sroot_valid_{false};
+#ifdef MONAD_ZKVM_ZISK
+    // Every account read_account found, with its storage root (NULL_ID when
+    // absent): read_storage takes a root from here when the entry above holds
+    // another account's, rather than hashing the address and descending the
+    // account trie again. Sound for the same reason as the entry.
+    mutable ankerl::unordered_dense::map<Address, mpt::NodeId> sroots_{};
+#endif
     CodeIndex codes_;
     uint64_t block_number_{0};
     BlockHeader last_committed_header_{};
@@ -62,6 +69,12 @@ public:
         : trie_(std::move(trie))
         , codes_(std::move(codes))
     {
+#ifdef MONAD_ZKVM_ZISK
+        // One account per 4 KiB of node blob (25815159 reads 638 from
+        // 3.5 MB): a block reads more accounts the larger its witness, so the
+        // table is not rehashed in a large block.
+        sroots_.reserve(trie_.blob_size() >> 12);
+#endif
     }
 
 public:

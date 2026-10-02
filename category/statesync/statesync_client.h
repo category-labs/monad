@@ -15,7 +15,6 @@
 
 #pragma once
 
-#include <category/execution/ethereum/chain/chain_config.h>
 #include <category/statesync/statesync_messages.h>
 
 #ifdef __cplusplus
@@ -28,10 +27,11 @@ extern unsigned const MONAD_SQPOLL_DISABLED;
 struct monad_statesync_client;
 struct monad_statesync_client_context;
 
-// chain_config must be a Monad chain
+// The primary timeline of the db at dbname_path must be page-encoded; a
+// secondary timeline, if active, is ignored.
 struct monad_statesync_client_context *monad_statesync_client_context_create(
-    enum monad_chain_config chain_config, char const *dbname_path,
-    unsigned sq_thread_cpu, struct monad_statesync_client *,
+    char const *dbname_path, unsigned sq_thread_cpu,
+    struct monad_statesync_client *,
     void (*statesync_send_request)(
         struct monad_statesync_client *, struct monad_sync_request));
 

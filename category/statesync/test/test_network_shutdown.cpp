@@ -73,7 +73,7 @@ namespace
             // Initialize the on-disk DB format; the Db object is not needed
             // after this point.
             (void)monad::mpt::Db{
-                std::make_unique<monad::OnDiskMachine>(),
+                std::make_unique<monad::MonadOnDiskMachine>(),
                 monad::mpt::OnDiskDbConfig{
                     .append = false, .dbname_path = path}};
         }

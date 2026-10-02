@@ -27,6 +27,7 @@
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/core/block.hpp>
+#include <category/execution/ethereum/core/chain_hash.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/offset_trie.hpp>
 #include <category/execution/ethereum/db/partial_trie_db.hpp>
@@ -355,9 +356,18 @@ extern "C" void monad_zkvm_execute_witness(void)
         std::span<unsigned char const, 32>{
             witness.value().salt_secret.data(), 32},
         l2_header.number);
+    #ifdef MONAD_L2_HASH_POSEIDON2
+    MONAD_ASSERT(
+        monad::l2_salt_commitment(std::span<unsigned char const, 32>{
+            witness.value().salt_secret.data(), 32}) ==
+        monad::L2_SALT_COMMITMENT);
+    #else
+    // keccak's commitment is l2_salt_commitment's too, spelled out so the
+    // keccak chain's guest keeps the bytes it compiles to without the switch.
     MONAD_ASSERT(
         monad::to_bytes(monad::keccak256(witness.value().salt_secret)) ==
         monad::L2_SALT_COMMITMENT);
+    #endif
     MONAD_ASSERT(
         l2_header.extra_data.size() == sizeof(salt.bytes) &&
         std::memcmp(
@@ -395,7 +405,7 @@ extern "C" void monad_zkvm_execute_witness(void)
             MONAD_ASSERT(header_view.empty());
             MONAD_KECCAK_SITE(HEADER_HASH, payload.value().size());
             monad::bytes32_t const hash =
-                monad::to_bytes(monad::keccak256(payload.value()));
+                monad::to_bytes(monad::header_hash(payload.value()));
             // Each header must name the one before it, and the run must be
             // contiguous.
             if (have_prev) {
@@ -492,7 +502,7 @@ extern "C" void monad_zkvm_execute_witness(void)
     monad::byte_string const header_rlp =
         monad::rlp::encode_block_header(sealed_header);
     MONAD_KECCAK_SITE(HEADER_HASH, header_rlp.size());
-    monad_hash256 const block_hash = monad::keccak256(header_rlp);
+    monad_hash256 const block_hash = monad::header_hash(header_rlp);
 
 #ifdef MONAD_ZKVM_L2
     // The L2 publishes NEITHER state root, and that is the point rather than

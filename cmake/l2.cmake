@@ -45,24 +45,36 @@
 # difference is the encryption alone. Never a deployment.
 set(MONAD_ZKVM_L2_CIPHERS ecdh-poseidon2 plaintext)
 
-# MONAD_ZKVM_L2_TRIE_HASH is the other implementation choice with a default: the
-# hash every Merkle-Patricia trie of the chain is built with
-# (category/core/trie_hash.hpp). `keccak` is Ethereum's; `poseidon2` is ZisK's
-# Poseidon2 precompile, whose permutation takes about a fifth of keccak-f's
-# proving area for 88 bytes absorbed against 136. It is a property of the
-# chain, so the host tree that generates a corpus and the guest that proves it
-# must be configured alike -- and getting that wrong cannot produce a proof of
-# the wrong thing either: the guest recomputes a pre-state root the parent
-# header does not hold, and halts.
+# MONAD_ZKVM_L2_HASH is the hash the chain is built on, and the other
+# implementation choice with a default: `poseidon2`, ZisK's Poseidon2
+# precompile. It is a property of the chain, so the host tree that generates a
+# corpus and the guest that proves it are configured alike. It decides a block's
+# hash, the state blinder and its commitment, and the logs bloom
+# (category/execution/ethereum/core/chain_hash.hpp, zkvm/guest/l2_config.cpp),
+# and it is the default of the two below, which keep their own switch so that
+# an arm can move one domain at a time. `keccak` is Ethereum's throughout.
+# Nothing here reaches what the EVM, a contract or the L1 hub computes: the
+# KECCAK256 opcode, code hashes, CREATE and CREATE2 addresses and the namespace
+# anchor stay keccak256 whatever it says. A guest configured otherwise than its
+# corpus halts on the first header, pre-state root or salt commitment it
+# recomputes, so getting it wrong proves nothing false.
+set(MONAD_ZKVM_L2_HASHES keccak poseidon2)
+
+# MONAD_ZKVM_L2_TRIE_HASH, MONAD_ZKVM_L2_HASH by default: the hash every
+# Merkle-Patricia trie of the chain is built with
+# (category/core/trie_hash.hpp). A Poseidon2 permutation takes about a fifth of
+# keccak-f's proving area for 88 bytes absorbed against 136. A guest configured
+# otherwise than its corpus recomputes a pre-state root the parent header does
+# not hold, and halts.
 set(MONAD_ZKVM_L2_TRIE_HASHES keccak poseidon2)
 
-# MONAD_ZKVM_L2_SIGNATURE_HASH, the third: the hashes the chain's signatures are
-# bound with (category/execution/ethereum/core/signature_hash.hpp) -- the digest
-# an ECDSA signature signs and the hash that turns the key it recovers into an
-# address. `keccak` is Ethereum's, and what a stock wallet signs; `poseidon2`
-# takes both off Keccak-f, for a signer built for this chain. Getting it wrong
-# proves nothing false: a transaction signed the other way recovers to an
-# account that holds nothing, and fails as one.
+# MONAD_ZKVM_L2_SIGNATURE_HASH, MONAD_ZKVM_L2_HASH by default: the hashes the
+# chain's signatures are bound with
+# (category/execution/ethereum/core/signature_hash.hpp) -- the digest an ECDSA
+# signature signs and the hash that turns the key it recovers into an address.
+# `keccak` is what a stock wallet signs; `poseidon2` needs a signer built for
+# this chain. Getting it wrong proves nothing false: a transaction signed the
+# other way recovers to an account that holds nothing, and fails as one.
 set(MONAD_ZKVM_L2_SIGNATURE_HASHES keccak poseidon2)
 
 set(MONAD_ZKVM_L2_REQUIRED
@@ -161,8 +173,17 @@ function(monad_l2_compile_definitions)
   if(NOT DEFINED MONAD_ZKVM_L2_CIPHER)
     set(MONAD_ZKVM_L2_CIPHER "ecdh-poseidon2")
   endif()
+  if(NOT DEFINED MONAD_ZKVM_L2_HASH)
+    set(MONAD_ZKVM_L2_HASH "poseidon2")
+  endif()
+  if(NOT MONAD_ZKVM_L2_HASH IN_LIST MONAD_ZKVM_L2_HASHES)
+    string(REPLACE ";" ", " _known "${MONAD_ZKVM_L2_HASHES}")
+    message(FATAL_ERROR
+            "MONAD_ZKVM_L2_HASH='${MONAD_ZKVM_L2_HASH}' is not a hash this "
+            "tree implements; known: ${_known}.")
+  endif()
   if(NOT DEFINED MONAD_ZKVM_L2_TRIE_HASH)
-    set(MONAD_ZKVM_L2_TRIE_HASH "keccak")
+    set(MONAD_ZKVM_L2_TRIE_HASH "${MONAD_ZKVM_L2_HASH}")
   endif()
   if(NOT MONAD_ZKVM_L2_TRIE_HASH IN_LIST MONAD_ZKVM_L2_TRIE_HASHES)
     string(REPLACE ";" ", " _known "${MONAD_ZKVM_L2_TRIE_HASHES}")
@@ -171,7 +192,7 @@ function(monad_l2_compile_definitions)
             "hash this tree implements; known: ${_known}.")
   endif()
   if(NOT DEFINED MONAD_ZKVM_L2_SIGNATURE_HASH)
-    set(MONAD_ZKVM_L2_SIGNATURE_HASH "keccak")
+    set(MONAD_ZKVM_L2_SIGNATURE_HASH "${MONAD_ZKVM_L2_HASH}")
   endif()
   if(NOT MONAD_ZKVM_L2_SIGNATURE_HASH IN_LIST MONAD_ZKVM_L2_SIGNATURE_HASHES)
     string(REPLACE ";" ", " _known "${MONAD_ZKVM_L2_SIGNATURE_HASHES}")
@@ -217,6 +238,7 @@ function(monad_l2_compile_definitions)
   # so the selection is a #if and an unselected suite is not compiled at all.
   string(TOUPPER "${MONAD_ZKVM_L2_CIPHER}" _cipher_upper)
   string(REPLACE "-" "_" _cipher_macro "${_cipher_upper}")
+  string(TOUPPER "${MONAD_ZKVM_L2_HASH}" _hash_macro)
   string(TOUPPER "${MONAD_ZKVM_L2_TRIE_HASH}" _trie_hash_macro)
   string(TOUPPER "${MONAD_ZKVM_L2_SIGNATURE_HASH}" _signature_hash_macro)
 
@@ -225,6 +247,7 @@ function(monad_l2_compile_definitions)
   add_compile_definitions(
     MONAD_ZKVM_L2
     MONAD_L2_CIPHER_${_cipher_macro}
+    MONAD_L2_HASH_${_hash_macro}
     MONAD_L2_TRIE_HASH_${_trie_hash_macro}
     MONAD_L2_SIGNATURE_HASH_${_signature_hash_macro}
     MONAD_L2_CHAIN_ID=${MONAD_ZKVM_L2_CHAIN_ID}

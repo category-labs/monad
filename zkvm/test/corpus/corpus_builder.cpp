@@ -22,6 +22,7 @@
 #include <category/core/keccak.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
+#include <category/execution/ethereum/core/chain_hash.hpp>
 #include <category/execution/ethereum/core/rlp/address_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/int_rlp.hpp>
@@ -324,7 +325,7 @@ namespace corpus
         sealed_.push_back(sealed);
         block_hashes_.set(
             GENESIS_NUMBER,
-            to_bytes(keccak256(rlp::encode_block_header(sealed))));
+            to_bytes(header_hash(rlp::encode_block_header(sealed))));
     }
 
     bytes32_t
@@ -361,7 +362,7 @@ namespace corpus
         // --- the chosen fields; the computed ones stay zero until the commit
         BlockHeader header{
             .parent_hash =
-                to_bytes(keccak256(rlp::encode_block_header(parent))),
+                to_bytes(header_hash(rlp::encode_block_header(parent))),
             .difficulty = 0,
             .number = number,
             .gas_limit = gas_limit_,
@@ -585,7 +586,7 @@ namespace corpus
         // header -- the one whose transactions_root covers the ciphertexts.
         sealed_.push_back(published);
         block_hashes_.set(
-            number, to_bytes(keccak256(rlp::encode_block_header(published))));
+            number, to_bytes(header_hash(rlp::encode_block_header(published))));
         if (sealed_.size() > BlockHashBuffer::N + 1) {
             sealed_.erase(sealed_.begin());
         }
@@ -596,7 +597,7 @@ namespace corpus
             .pre_root = pre_root,
             .post_root = post_root,
             .block_hash =
-                to_bytes(keccak256(rlp::encode_block_header(published))),
+                to_bytes(header_hash(rlp::encode_block_header(published))),
             .header = published,
             .receipts = std::move(receipts),
             .namespace_anchor = anchor,

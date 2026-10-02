@@ -230,9 +230,6 @@ class State
     // Cache the last account lookup. Inserts preserve the pointer;
     // pop_reject clears it before erasing entries.
     //
-    // An increasing epoch tracks dirty-set registration: version_ alone
-    // cannot distinguish successive frames at the same depth.
-    //
     // alignas(8) because the key is READ as two 8-byte words and an Address
     // is 20 bytes: the pair of loads must not straddle a word boundary, which
     // ZisK charges 191 cells for against 16 for an aligned read. Holds the
@@ -240,8 +237,12 @@ class State
     // above, which has already moved twice.
     alignas(8) Address memo_addr_{};
     AccountState *memo_val_{nullptr};
+#if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
+    // An increasing epoch tracks dirty-set registration: version_ alone
+    // cannot distinguish successive frames at the same depth.
     std::uint64_t memo_epoch_{0};
     std::uint64_t frame_epoch_{1};
+#endif
 
 #ifdef MONAD_ZKVM_ZISK
     // The same for original_account_state: original_ never erases, so its

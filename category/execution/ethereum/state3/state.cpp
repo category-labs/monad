@@ -110,17 +110,17 @@ AccountState &State::current_account_state(Address const &address)
     // epoch changed.
     if (memo_val_ != nullptr && address == memo_addr_) {
         MONAD_GUEST_SITE(ACCT_MEMO_HIT);
-        if (memo_epoch_ != frame_epoch_) {
 #if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
+        if (memo_epoch_ != frame_epoch_) {
             if (!dirty_.empty()) {
                 MONAD_GUEST_SITE(DIRTY_EMPLACE);
                 // Track the account only; each mutation records its own undo
                 // state.
                 dirty_.back().emplace(address);
             }
-#endif
             memo_epoch_ = frame_epoch_;
         }
+#endif
         return *memo_val_;
     }
 
@@ -146,7 +146,9 @@ AccountState &State::current_account_state(Address const &address)
     (void)created;
     memo_addr_ = address;
     memo_val_ = &it->second;
+#if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
     memo_epoch_ = frame_epoch_;
+#endif
     return it->second;
 }
 
@@ -315,7 +317,9 @@ void State::push()
         !rb_.tracking_enabled(), "reserve tracking requires dirty accounts");
 #endif
 
+#if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
     ++frame_epoch_;
+#endif
 
     ++version_;
 #if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
@@ -344,9 +348,9 @@ void State::pop_accept()
         !rb_.tracking_enabled(), "reserve tracking requires dirty accounts");
 #endif
 
+#if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
     ++frame_epoch_;
 
-#if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
     auto accounts = std::move(dirty_.back());
     dirty_.pop_back();
     // Keep changes and merge dirty accounts into the parent. Retain undo
@@ -385,9 +389,9 @@ void State::pop_reject()
         !rb_.tracking_enabled(), "reserve tracking requires dirty accounts");
 #endif
 
+#if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
     ++frame_epoch_;
 
-#if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
     auto accounts = std::move(dirty_.back());
     dirty_.pop_back();
 #endif

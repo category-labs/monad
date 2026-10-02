@@ -241,6 +241,10 @@ Result<bytes32_t> execute_block_zkvm(
         Receipt::Bloom bloom{};
         for (auto const &r : receipts) {
             enc.push_back(rlp::encode_receipt(r));
+            // Receipts without logs have a zero bloom.
+            if (r.logs.empty()) {
+                continue;
+            }
             for (size_t i = 0; i < bloom.size(); ++i) {
                 bloom[i] |= r.bloom[i];
             }

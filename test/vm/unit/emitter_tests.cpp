@@ -3151,6 +3151,110 @@ TEST(Emitter, clz)
     }
 }
 
+TEST(Emitter, clz_without_free_regs)
+{
+    asmjit::JitRuntime rt;
+
+    auto const test = [&](Emitter::LocationType loc, uint256_t const &value) {
+        std::vector<uint8_t> bytecode(
+            1 + GENERAL_REG_COUNT + AVX_REG_COUNT, PUSH0);
+        for (auto const op : {CLZ, PUSH0, RETURN}) {
+            bytecode.push_back(op);
+        }
+        auto ir = basic_blocks::BasicBlocksIR::unsafe_from<
+            EvmTraits<MONAD_ETH_OSAKA>>(std::move(bytecode));
+        TestEmitter emit{rt, ir.codesize};
+        (void)emit.begin_new_block(ir.blocks()[0]);
+
+        // The input takes the first register of its kind, which is the first
+        // candidate for spilling.
+        emit.push(value);
+        mov_literal_to_location_type(emit, 0, loc);
+        int32_t const general_reg_count =
+            GENERAL_REG_COUNT - (loc == Emitter::LocationType::GeneralReg);
+        int32_t const avx_reg_count =
+            AVX_REG_COUNT - (loc == Emitter::LocationType::AvxReg);
+        int32_t i = 1;
+        for (; i <= general_reg_count; ++i) {
+            emit.push(i);
+            mov_literal_to_location_type(
+                emit, i, Emitter::LocationType::GeneralReg);
+        }
+        for (; i <= general_reg_count + avx_reg_count; ++i) {
+            emit.push(i);
+            mov_literal_to_location_type(
+                emit, i, Emitter::LocationType::AvxReg);
+        }
+        ASSERT_FALSE(emit.get_stack().has_free_general_reg());
+        ASSERT_FALSE(emit.get_stack().has_free_avx_reg());
+        emit.swap(static_cast<uint8_t>(i - 1));
+
+        auto const input = emit.get_stack().get(i - 1);
+        emit.clz();
+        if (loc == Emitter::LocationType::AvxReg) {
+            ASSERT_TRUE(input->avx_reg().has_value());
+        }
+        emit.push(0);
+        emit.return_();
+
+        entrypoint_t entry = emit.finish_contract(rt);
+        evmc_tx_context tx_context{};
+        auto ctx = test_context(&tx_context);
+        auto const &ret = ctx->result;
+        auto stack_memory = test_stack_memory();
+        entry(&*ctx, stack_memory.get());
+
+        ASSERT_EQ(ret.status, runtime::StatusCode::Success);
+        ASSERT_EQ(load_le<uint256_t>(ret.size), countl_zero(value));
+    };
+
+    for (auto const loc :
+         {Emitter::LocationType::StackOffset,
+          Emitter::LocationType::GeneralReg,
+          Emitter::LocationType::AvxReg}) {
+        for (auto const n : {0u, 100u, 256u}) {
+            test(loc, std::numeric_limits<uint256_t>::max() >> n);
+        }
+    }
+}
+
+TEST(Emitter, clz_with_deferred_comparison)
+{
+    auto ir =
+        basic_blocks::BasicBlocksIR::unsafe_from<EvmTraits<MONAD_ETH_OSAKA>>(
+            {PUSH0, PUSH0, PUSH0, LT, SWAP1, CLZ, RETURN});
+    asmjit::JitRuntime rt;
+
+    for (auto const loc : all_locations) {
+        for (auto const &[a, b] : {std::pair{1, 2}, std::pair{2, 1}}) {
+            TestEmitter emit{rt, ir.codesize};
+            (void)emit.begin_new_block(ir.blocks()[0]);
+            emit.push(std::numeric_limits<uint256_t>::max());
+            mov_literal_to_location_type(emit, 0, loc);
+            emit.push(b);
+            mov_literal_to_location_type(
+                emit, 1, Emitter::LocationType::StackOffset);
+            emit.push(a);
+            emit.lt();
+            emit.swap(1);
+            ASSERT_TRUE(emit.get_stack().has_deferred_comparison_at(0));
+            emit.clz();
+            emit.return_();
+
+            entrypoint_t entry = emit.finish_contract(rt);
+            evmc_tx_context tx_context{};
+            auto ctx = test_context(&tx_context);
+            auto const &ret = ctx->result;
+            auto stack_memory = test_stack_memory();
+            entry(&*ctx, stack_memory.get());
+
+            ASSERT_EQ(ret.status, runtime::StatusCode::Success);
+            ASSERT_EQ(load_le<uint256_t>(ret.offset), 0);
+            ASSERT_EQ(load_le<uint256_t>(ret.size), a < b);
+        }
+    }
+}
+
 TEST(Emitter, call_runtime_pure)
 {
     asmjit::JitRuntime rt;

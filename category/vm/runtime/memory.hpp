@@ -102,6 +102,11 @@ namespace monad::vm::runtime
     }
 
     template <Traits traits>
+#if defined(MONAD_ZKVM_ZISK)
+    // Called on ZisK: inlined, its memory growth, which keeps
+    // memory_access32_end too, would not fit MCOPY's handler slot.
+    [[gnu::noinline]]
+#endif
     inline void mcopy(
         Context *ctx, uint256_t const *dst_ptr, uint256_t const *src_ptr,
         uint256_t const *size_ptr)

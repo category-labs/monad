@@ -61,8 +61,36 @@ BlockState::BlockState(Db &db, vm::VM &monad_vm, Db *const secondary_db)
 #endif
 }
 
+#ifdef MONAD_ZKVM_ZISK
+static_assert(
+    std::is_same_v<StateDeltas::value_type, std::pair<Address, StateDelta>>);
+
+StateDeltas::value_type &BlockState::read_account_delta(Address const &address)
+{
+    // One probe, as read_storage's: the entry is placed where the search for
+    // it ended, and the database is read only to build it.
+    struct Read
+    {
+        Db &db;
+        Address const &address;
+
+        operator StateDelta() const
+        {
+            auto const result = db.read_account(address);
+            return StateDelta{.account = {result, result}, .storage = {}};
+        }
+    };
+
+    MONAD_ASSERT(state_);
+    return *state_->try_emplace(address, Read{db_, address}).first;
+}
+#endif
+
 std::optional<Account> BlockState::read_account(Address const &address)
 {
+#ifdef MONAD_ZKVM_ZISK
+    return read_account_delta(address).second.account.second;
+#else
     // block state
     {
         StateDeltas::const_accessor it{};
@@ -81,31 +109,28 @@ std::optional<Account> BlockState::read_account(Address const &address)
             StateDelta{.account = {result, result}, .storage = {}});
         return it->second.account.second;
     }
+#endif
 }
 
-bytes32_t BlockState::read_storage(
-    Address const &address, Incarnation const incarnation, bytes32_t const &key)
-{
 #ifdef MONAD_ZKVM_ZISK
-    // Reuse the entry across the database read: the guest is single-threaded,
-    // map insertions preserve elements, and the read does not modify state_.
-    // The host releases its TBB lock before reading the database.
-    if (storage_memo_ == nullptr || !(storage_memo_address_ == address)) {
-        StateDeltas::accessor found{};
-        MONAD_ASSERT(state_);
-        MONAD_ASSERT(state_->find(found, address));
-        storage_memo_address_ = address;
-        storage_memo_ = &*found;
-    }
-    StateDeltas::value_type *const it = storage_memo_;
+bytes32_t BlockState::read_storage(
+    StateDeltas::value_type &entry, Address const &address,
+    Incarnation const incarnation, bytes32_t const &key)
+{
+    // The entry is used across the database read: the guest is
+    // single-threaded, map insertions preserve elements, and the read does
+    // not modify state_. The host releases its TBB lock before reading the
+    // database.
+    StateDeltas::value_type *const it = &entry;
     auto const &account = it->second.account.second;
     if (!account || incarnation != account->incarnation) {
         return {};
     }
-    // One probe for the slot: it is placed where the search for it ended,
-    // and the database is read only to build it. A find and then an emplace
-    // hash and probe the key twice. Nothing changes the account across the
-    // read here, so the host's post-read check holds by construction.
+    // One probe for the slot: try_emplace places it where the search for it
+    // ended, and the database is read only to build it, where a find and then
+    // an emplace would hash and probe the key twice. Nothing changes the
+    // account across the read here, so the host's post-read check holds by
+    // construction.
     auto const &orig_account = it->second.account.first;
 
     struct Read
@@ -140,6 +165,17 @@ bytes32_t BlockState::read_storage(
                 key,
                 orig_account && incarnation == orig_account->incarnation})
         .first->second.second;
+}
+#endif
+
+bytes32_t BlockState::read_storage(
+    Address const &address, Incarnation const incarnation, bytes32_t const &key)
+{
+#ifdef MONAD_ZKVM_ZISK
+    StateDeltas::accessor it{};
+    MONAD_ASSERT(state_);
+    MONAD_ASSERT(state_->find(it, address));
+    return read_storage(*it, address, incarnation, key);
 #else
     bool read_storage = false;
     // block state
@@ -278,8 +314,15 @@ void BlockState::merge(State const &state)
     for (auto const &[address, account_state] : current) {
         auto const &account = account_state.account_;
         auto const &storage = account_state.storage_;
+#ifdef MONAD_ZKVM_ZISK
+        // The entry the account's original row was read from.
+        MONAD_ASSERT(account_state.orig_ != nullptr);
+        StateDeltas::value_type *const it = account_state.orig_->delta_;
+        MONAD_ASSERT(it != nullptr);
+#else
         StateDeltas::accessor it{};
         MONAD_ASSERT(state_->find(it, address));
+#endif
         it->second.account.second = account;
         if (account.has_value()) {
             for (auto const &[key, value] : storage) {

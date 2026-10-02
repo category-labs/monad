@@ -30,7 +30,15 @@
 #include <utility>
 #include <vector>
 
+#ifdef MONAD_ZKVM_ZISK
+    #include <category/core/address.hpp>
+#endif
+
 MONAD_NAMESPACE_BEGIN
+
+#ifdef MONAD_ZKVM_ZISK
+struct StateDelta;
+#endif
 
 class State;
 class BlockState;
@@ -330,6 +338,13 @@ class OriginalAccountState final : public AccountState
 public:
     // Original slot values; replaces the inherited storage_, left unused here.
     PrestateStorage prestate_storage_{};
+
+#ifdef MONAD_ZKVM_ZISK
+    // The block's entry for the account, which the row was read from: the
+    // slot reads and the merge reach it without looking the address up.
+    // The block state never erases an entry or moves one.
+    std::pair<Address, StateDelta> *delta_{nullptr};
+#endif
 
     explicit OriginalAccountState(std::optional<Account> &&account)
         : AccountState(std::move(account))

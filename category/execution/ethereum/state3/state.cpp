@@ -78,8 +78,14 @@ OriginalAccountState &State::original_account_state(Address const &address)
     auto it = original_.find(address);
     if (it == original_.end()) {
         // block state
+#ifdef MONAD_ZKVM_ZISK
+        auto &entry = block_state_.read_account_delta(address);
+        it = original_.try_emplace(address, entry.second.account.second).first;
+        it->second.delta_ = &entry;
+#else
         auto const account = block_state_.read_account(address);
         it = original_.try_emplace(address, account).first;
+#endif
     }
 #ifdef MONAD_ZKVM_ZISK
     orig_memo_addr_ = address;
@@ -643,8 +649,16 @@ inline void State::current_storage_into(
         out = *it3;
     }
     else {
+#ifdef MONAD_ZKVM_ZISK
+        bytes32_t const value = block_state_.read_storage(
+            *original_account_state.delta_,
+            address,
+            account.value().incarnation,
+            key);
+#else
         bytes32_t const value = block_state_.read_storage(
             address, account.value().incarnation, key);
+#endif
         original_storage.insert(key, value);
         out = value;
     }
@@ -672,8 +686,16 @@ void State::get_storage_into(
             out = *it3;
         }
         else {
+#ifdef MONAD_ZKVM_ZISK
+            bytes32_t const value = block_state_.read_storage(
+                *account_state.delta_,
+                address,
+                account.value().incarnation,
+                key);
+#else
             bytes32_t const value = block_state_.read_storage(
                 address, account.value().incarnation, key);
+#endif
             storage.insert(key, value);
             out = value;
         }
@@ -778,8 +800,13 @@ monad_storage_status State::set_storage(
         }
         else {
             Incarnation const incarnation = account_state.account_->incarnation;
+#ifdef MONAD_ZKVM_ZISK
+            bytes32_t const value = block_state_.read_storage(
+                *orig_account_state.delta_, address, incarnation, key);
+#else
             bytes32_t const value =
                 block_state_.read_storage(address, incarnation, key);
+#endif
             storage.insert(key, value);
             original_value = value;
         }

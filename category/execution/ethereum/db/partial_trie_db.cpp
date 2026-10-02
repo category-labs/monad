@@ -77,12 +77,18 @@ std::optional<Account> PartialTrieDb::read_account(Address const &addr)
                 sroot_addr_ = addr;
                 sroot_id_ = mpt::NULL_ID;
                 sroot_valid_ = true;
+#ifdef MONAD_ZKVM_ZISK
+                sroots_.try_emplace(addr, mpt::NULL_ID);
+#endif
                 return std::nullopt;
             },
             [&](mpt::AccountLeafView l) -> std::optional<Account> {
                 sroot_addr_ = addr;
                 sroot_id_ = l.storage();
                 sroot_valid_ = true;
+#ifdef MONAD_ZKVM_ZISK
+                sroots_.try_emplace(addr, sroot_id_);
+#endif
                 return l.account();
             },
             [](auto) -> std::optional<Account> {
@@ -97,6 +103,14 @@ bytes32_t PartialTrieDb::read_storage(
     if (sroot_valid_ && sroot_addr_ == addr) {
         sroot = sroot_id_;
     }
+#ifdef MONAD_ZKVM_ZISK
+    else if (auto const it = sroots_.find(addr); it != sroots_.end()) {
+        sroot = it->second;
+        sroot_addr_ = addr;
+        sroot_id_ = sroot;
+        sroot_valid_ = true;
+    }
+#endif
     else {
         auto const akey = keccak256(addr.bytes);
         sroot = match(
@@ -110,6 +124,9 @@ bytes32_t PartialTrieDb::read_storage(
         sroot_addr_ = addr;
         sroot_id_ = sroot;
         sroot_valid_ = true;
+#ifdef MONAD_ZKVM_ZISK
+        sroots_.try_emplace(addr, sroot);
+#endif
     }
 
     if (sroot == mpt::NULL_ID) {

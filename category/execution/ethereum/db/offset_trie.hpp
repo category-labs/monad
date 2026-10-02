@@ -642,6 +642,14 @@ public:
     // hash cache (see prime()). Aborts if the blob is malformed.
     explicit OffsetTrie(byte_string_view blob);
 
+#ifdef MONAD_ZKVM_ZISK
+    // Used to estimate capacity for per-account caches.
+    [[nodiscard]] size_t blob_size() const noexcept
+    {
+        return blob_.size();
+    }
+#endif
+
     // Account-trie root, NULL_ID while the trie is empty. upsert_node and
     // erase_node keep a materialised root's id stable, so a caller only
     // reassigns it across the empty/non-empty transitions — exactly as

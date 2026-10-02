@@ -34,6 +34,8 @@ add_library(
   "overrides.cpp" 
   "overrides.h" 
   "overrides.hpp"
+  "simulation_error.cpp"
+  "simulation_error.hpp"
   # rpc/utils
   "utils/response_size.hpp"
   "utils/response_size.cpp"

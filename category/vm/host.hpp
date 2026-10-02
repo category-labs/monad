@@ -24,6 +24,7 @@
 #include <category/vm/evm/page_storage_status.hpp>
 #include <category/vm/evm/result.hpp>
 #include <category/vm/evm/storage_status.hpp>
+#include <category/vm/evm/traits.hpp>
 #include <category/vm/evm/tx_context.hpp>
 #include <category/vm/runtime/types.hpp>
 
@@ -202,5 +203,38 @@ namespace monad::vm::runtime
     {
         return *ctx.host;
     }
+
+    // The witness uses StateHost<traits>. Defining these calls alongside the
+    // concrete host lets the compiler inline its methods.
+    template <Traits traits>
+    AccessStatus guest_sload_into(
+        Host &, Address const &, bytes32_t const &, bool, bytes32_t &) noexcept;
+
+    template <Traits traits>
+    SstoreStatus guest_sstore_into(
+        Host &, Address const &, bytes32_t const &, bytes32_t const &,
+        bool can_pay_cold_access) noexcept;
+
+    template <Traits traits>
+    AccessStatus guest_access_account(Host &, Address const &) noexcept;
+
+    template <Traits traits>
+    vm::Result guest_call(Host &, Message const &) noexcept;
+
+    bytes32_t guest_get_transient_storage(
+        Host const &, Address const &, bytes32_t const &) noexcept;
+
+    void guest_set_transient_storage(
+        Host &, Address const &, bytes32_t const &, bytes32_t const &) noexcept;
+
+    TxContext const *guest_get_tx_context(Host const &) noexcept;
+
+    size_t guest_get_code_size(Host const &, Address const &) noexcept;
+
+    uint256_t guest_get_balance(Host const &, Address const &) noexcept;
+
+    void guest_emit_log(
+        Host &, Address const &, uint8_t const *, size_t, bytes32_t const[],
+        size_t) noexcept;
 }
 #endif

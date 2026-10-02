@@ -111,7 +111,11 @@ namespace monad::vm::runtime
                     .input_data_size = static_cast<env_size_t>(msg->input_size),
                     .code_size = static_cast<env_size_t>(code.size()),
                     .return_data_size = 0,
+#if defined(MONAD_ZKVM_ZISK)
+                    .tx_context = guest_get_tx_context(host),
+#else
                     .tx_context = host.get_tx_context(),
+#endif
                 },
             .result = {},
             .memory =

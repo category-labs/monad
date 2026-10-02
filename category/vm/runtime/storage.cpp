@@ -46,7 +46,8 @@ namespace monad::vm::runtime
         // Skip the read if cold-access gas is insufficient; deduct_gas then
         // exits before the uninitialized value can be used.
         bytes32_t value;
-        if (host_of(*ctx).sload_into(
+        if (guest_sload_into<traits>(
+                host_of(*ctx),
                 ctx->env.recipient,
                 key,
                 ctx->gas_remaining >= traits::cold_storage_cost(),
@@ -119,7 +120,8 @@ namespace monad::vm::runtime
             // An unaffordable cold write was skipped; deduct_gas exits before
             // storage_status is used.
             auto const [access_status, storage_status] =
-                host_of(*ctx).sstore_into(
+                guest_sstore_into<traits>(
+                    host_of(*ctx),
                     ctx->env.recipient,
                     key,
                     value,

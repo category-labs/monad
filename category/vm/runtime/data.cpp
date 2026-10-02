@@ -39,12 +39,21 @@ namespace monad::vm::runtime
 
         auto const address = address_from_uint256(*address_ptr);
 
+#if defined(MONAD_ZKVM_ZISK)
+        auto const access_status =
+            guest_access_account<traits>(host_of(*ctx), address);
+#else
         auto const access_status = ctx->host->access_account(address);
+#endif
         if (access_status == AccessStatus::Cold) {
             ctx->deduct_gas(traits::cold_account_cost());
         }
 
+#if defined(MONAD_ZKVM_ZISK)
+        *result_ptr = guest_get_balance(host_of(*ctx), address);
+#else
         *result_ptr = ctx->host->get_balance(address);
+#endif
     }
 
     EXPLICIT_TRAITS(balance);
@@ -216,12 +225,21 @@ namespace monad::vm::runtime
 
         auto const address = address_from_uint256(*address_ptr);
 
+#if defined(MONAD_ZKVM_ZISK)
+        auto const access_status =
+            guest_access_account<traits>(host_of(*ctx), address);
+#else
         auto const access_status = ctx->host->access_account(address);
+#endif
         if (access_status == AccessStatus::Cold) {
             ctx->deduct_gas(traits::cold_account_cost());
         }
 
+#if defined(MONAD_ZKVM_ZISK)
+        *result_ptr = guest_get_code_size(host_of(*ctx), address);
+#else
         *result_ptr = ctx->host->get_code_size(address);
+#endif
     }
 
     EXPLICIT_TRAITS(extcodesize);

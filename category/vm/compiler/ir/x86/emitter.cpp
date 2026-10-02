@@ -2643,7 +2643,7 @@ namespace monad::vm::compiler::native
     // Discharge
     void Emitter::clz()
     {
-        auto const elem = stack_.pop();
+        auto elem = stack_.pop();
 
         if (elem->literal()) {
             auto const &x = elem->literal()->value;
@@ -2654,31 +2654,36 @@ namespace monad::vm::compiler::native
         discharge_deferred_comparison();
 
         if (elem->general_reg()) {
-            auto const &gpq = general_reg_to_gpq256(*elem->general_reg());
-            std::array<asmjit::x86::Gpq, 4> const &gpq_r64 = {
-                gpq[0].r64(), gpq[1].r64(), gpq[2].r64(), gpq[3].r64()};
-            array_leading_zeros(gpq_r64);
+            Gpq256 const &src = general_reg_to_gpq256(*elem->general_reg());
+            auto [dst, _] = alloc_or_release_general_reg(std::move(elem), {});
+            array_leading_zeros(
+                src, general_reg_to_gpq256(*dst->general_reg()));
+            stack_.push(std::move(dst));
         }
         else if (elem->stack_offset()) {
-            array_leading_zeros(stack_offset_to_mem256(*elem->stack_offset()));
+            auto [dst, _] = alloc_general_reg();
+            array_leading_zeros(
+                stack_offset_to_mem256(*elem->stack_offset()),
+                general_reg_to_gpq256(*dst->general_reg()));
+            stack_.push(std::move(dst));
         }
-        else if (elem->avx_reg()) {
-            // There are no methods to compute CLZ directly from YMM registers
-            // without writing the data to memory. So we spill to the stack and
-            // use array_leading_zeros.
-            mov_stack_elem_to_stack_offset(elem);
-            array_leading_zeros(stack_offset_to_mem256(*elem->stack_offset()));
+        else {
+            MONAD_ASSERT(elem->avx_reg().has_value());
+            AvxRegReserv const elem_reserv{elem};
+            auto [dst, dst_reserv] = alloc_general_reg();
+            auto [tmp, tmp_reserv] = alloc_avx_reg();
+            Gpq256 const &gpq = general_reg_to_gpq256(*dst->general_reg());
+            auto const x = avx_reg_to_xmm(*elem->avx_reg());
+            auto const t = avx_reg_to_xmm(*tmp->avx_reg());
+            // Faster than spilling and reloading the words
+            as_.vmovq(gpq[0], x);
+            as_.vpextrq(gpq[1], x, 1);
+            as_.vextracti128(t, avx_reg_to_ymm(*elem->avx_reg()), 1);
+            as_.vmovq(gpq[2], t);
+            as_.vpextrq(gpq[3], t, 1);
+            array_leading_zeros(gpq, gpq);
+            stack_.push(std::move(dst));
         }
-
-        auto [dst, _] = alloc_general_reg();
-        Gpq256 const &gpq = general_reg_to_gpq256(*dst->general_reg());
-        // mov eax into dst[0]
-        as_.mov(gpq[0].r32(), x86::eax);
-        // zero other parts
-        as_.xor_(gpq[1].r32(), gpq[1].r32());
-        as_.xor_(gpq[2].r32(), gpq[2].r32());
-        as_.xor_(gpq[3].r32(), gpq[3].r32());
-        stack_.push(dst);
     }
 
     // Discharge through `and_` overload
@@ -8188,39 +8193,34 @@ namespace monad::vm::compiler::native
         }
     }
 
-    // Count the number of leading zeros of the value.
-    // The operands in `arr` must be ordered from least to most significant.
-    //
-    // The implementation optimizes for uniformly distributed values, using a
-    // branched approach to return early when the first non-zero word is found.
-    // For uniformly distributed values, this is more efficient than a cascade
-    // of cmov instructions since the probability of the most significant word
-    // being zero is 1 / 2^64.
-    template <typename T, size_t N>
-    void Emitter::array_leading_zeros(std::array<T, N> const &arr)
+    // Count the number of leading zeros of `src` into `dst`.
+    // The operands in `src` must be ordered from least to most significant.
+    // The registers of `src` may coincide with the registers of `dst`.
+    template <typename T>
+    void
+    Emitter::array_leading_zeros(std::array<T, 4> const &src, Gpq256 const &dst)
     {
-        auto const end_lbl = as_.newLabel();
-        for (size_t i = N; i >= 1; --i) {
-            auto const word_offset = static_cast<int32_t>(64 * (N - i));
-            // Compute number of leading zeros. CF == 1 iff arr[i] == 0
-            as_.lzcnt(x86::rax, arr[i - 1]);
+        // The operands are traversed from least significant to most significant
+        // so that the last non-zero operand determines the result.
+        for (size_t i = 0; i < 4; ++i) {
+            auto const word_offset = static_cast<int32_t>(64 * (3 - i));
+            // Compute number of leading zeros. CF == 1 iff src[i] == 0
+            as_.lzcnt(dst[i], src[i]);
             if (word_offset != 0) {
                 // Leave flags unchanged
-                as_.lea(x86::eax, x86::ptr(x86::eax, word_offset));
+                as_.lea(dst[i].r32(), x86::ptr(dst[i], word_offset));
             }
-            // If arr[i - 1] != 0, jump to end_lbl
-            as_.jnc(end_lbl);
+            if (i != 0) {
+                as_.cmovnc(dst[0].r32(), dst[i].r32()); // if src[i] != 0
+            }
         }
-        as_.bind(end_lbl);
+        for (size_t i = 1; i < 4; ++i) {
+            as_.xor_(dst[i].r32(), dst[i].r32());
+        }
     }
 
     // Count the byte width (number of significant bytes) of the value.
     // The operands in `arr` must be ordered from least to most significant.
-    //
-    // Unlike `array_leading_zeros`, this implementation does not optimize the
-    // case where the input value is uniformly distributed, since
-    // array_byte_width is only used on EXP exponents, which are biased towards
-    // smaller values.
     template <typename T, size_t N>
     void Emitter::array_byte_width(std::array<T, N> const &arr)
     {

@@ -348,12 +348,18 @@ vm::Result execute_call_message(
             }
         }
         monad_address const &code_address = msg.code_address;
+#if defined(MONAD_ZKVM_ZISK) && defined(MONAD_ZKVM_VARCODE_CACHE)
+        auto const [hash, cached_code] = state.account_code(code_address);
+        auto const &code =
+            cached_code ? *cached_code : state.read_code_ref(hash);
+#else
         auto const hash = state.get_code_hash(code_address);
-#if defined(MONAD_ZKVM_VARCODE_CACHE)
+    #if defined(MONAD_ZKVM_VARCODE_CACHE)
         // The VM cache keeps this entry alive throughout execution.
         auto const &code = state.read_code_ref(hash);
-#else
+    #else
         auto const code = state.read_code(hash);
+    #endif
 #endif
         trace::on_read_code(host->state_tracer_, hash, code->intercode());
         return state.vm().execute<traits>(*host, &msg, hash, code);

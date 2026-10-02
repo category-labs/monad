@@ -1311,13 +1311,48 @@ vm::SharedVarcode State::get_code(monad_address const &address)
     return read_code(account.value().code_hash);
 }
 
+#if defined(MONAD_ZKVM_ZISK) && defined(MONAD_ZKVM_VARCODE_CACHE)
+State::AccountCode State::account_code(monad_address const &address)
+{
+    auto *const cached = cached_current_account(address);
+    auto const [visible, original] =
+        cached ? AccountReadRows{cached, cached->original_state_}
+               : rows_for_read(address);
+    if (MONAD_UNLIKELY(!visible->account_)) {
+        return {NULL_HASH, nullptr};
+    }
+    auto const &hash = visible->account_->code_hash;
+    // Keep the cache in the block entry, but match the currently visible hash.
+    // Rollback needs no cache undo: a different hash forces a fresh lookup.
+    StateDelta &entry = *original->block_delta_;
+    if (entry.cached_code && entry.cached_code_hash == hash) {
+        return {hash, entry.cached_code};
+    }
+    // Transaction-local entries cannot be borrowed by the block.
+    if (auto const it = code_.find(hash); it != code_.end()) {
+        return {hash, &it->second};
+    }
+    entry.cached_code = &block_state_.read_code_ref(hash);
+    entry.cached_code_hash = hash;
+    return {hash, entry.cached_code};
+}
+#endif
+
 size_t State::get_code_size(monad_address const &address)
 {
+#if defined(MONAD_ZKVM_ZISK) && defined(MONAD_ZKVM_VARCODE_CACHE)
+    auto const lookup = account_code(address);
+    if (MONAD_UNLIKELY(lookup.code == nullptr)) {
+        return 0;
+    }
+    auto const &vcode = *lookup.code;
+#else
     auto const &account = recent_account(address);
     if (MONAD_UNLIKELY(!account.has_value())) {
         return 0;
     }
     vm::SharedVarcode const &vcode = read_code_ref(account.value().code_hash);
+#endif
     MONAD_ASSERT(vcode);
     return vcode->intercode()->size();
 }
@@ -1326,11 +1361,19 @@ size_t State::copy_code(
     monad_address const &address, size_t const offset, uint8_t *const buffer,
     size_t const buffer_size)
 {
+#if defined(MONAD_ZKVM_ZISK) && defined(MONAD_ZKVM_VARCODE_CACHE)
+    auto const lookup = account_code(address);
+    if (MONAD_UNLIKELY(lookup.code == nullptr)) {
+        return 0;
+    }
+    auto const &vcode = *lookup.code;
+#else
     auto const &account = recent_account(address);
     if (MONAD_UNLIKELY(!account.has_value())) {
         return 0;
     }
     vm::SharedVarcode const &vcode = read_code_ref(account.value().code_hash);
+#endif
     MONAD_ASSERT(vcode);
     return vcode->intercode()->copy_code(offset, buffer, buffer_size);
 }
@@ -1338,11 +1381,19 @@ size_t State::copy_code(
 #if defined(MONAD_ZKVM_ZISK)
 std::optional<Address> State::delegate_of(monad_address const &address)
 {
+    #if defined(MONAD_ZKVM_ZISK) && defined(MONAD_ZKVM_VARCODE_CACHE)
+    auto const lookup = account_code(address);
+    if (MONAD_UNLIKELY(lookup.code == nullptr)) {
+        return std::nullopt;
+    }
+    auto const &vcode = *lookup.code;
+    #else
     auto const &account = recent_account(address);
     if (MONAD_UNLIKELY(!account.has_value())) {
         return std::nullopt;
     }
     vm::SharedVarcode const &vcode = read_code_ref(account.value().code_hash);
+    #endif
     MONAD_ASSERT(vcode);
     return vm::evm::designation_of(vcode->intercode()->code_span());
 }

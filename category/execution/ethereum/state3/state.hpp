@@ -552,6 +552,17 @@ public:
         monad_address const &, size_t offset, uint8_t *buffer,
         size_t buffer_size);
 
+#if defined(MONAD_ZKVM_ZISK) && defined(MONAD_ZKVM_VARCODE_CACHE)
+    struct AccountCode
+    {
+        bytes32_t const &hash;
+        // Null when the account does not exist.
+        vm::SharedVarcode const *code;
+    };
+
+    AccountCode account_code(monad_address const &);
+#endif
+
 #if defined(MONAD_ZKVM_ZISK)
     // Read the EIP-7702 delegation target directly from cached code.
     std::optional<Address> delegate_of(monad_address const &);

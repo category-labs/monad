@@ -103,6 +103,11 @@ struct StateDelta
 {
     AccountDelta account;
     StorageDeltas storage{};
+#if defined(MONAD_ZKVM_ZISK) && defined(MONAD_ZKVM_VARCODE_CACHE)
+    // VM cache entries stay at a stable address for the lifetime of the block.
+    vm::SharedVarcode const *cached_code{nullptr};
+    bytes32_t cached_code_hash{};
+#endif
 };
 
 using StateDeltas = detail::HashMapWithAccessor<Address, StateDelta>;

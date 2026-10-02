@@ -87,8 +87,9 @@ class CallTracer final : public CallTracerBase
     Transaction const &tx_;
     size_t const max_size_;
     size_t size_{0};
+    bool size_limit_exceeded_{false};
 
-    void assert_fits(size_t additional_size) const;
+    bool fits(size_t additional_size);
     size_t log_size(Receipt::Log const &) const;
 
 public:

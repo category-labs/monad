@@ -1062,7 +1062,7 @@ namespace
             };
 
             BOOST_OUTCOME_TRY(
-                auto receipts,
+                auto const receipts,
                 execute_block<traits>(
                     chain,
                     block,

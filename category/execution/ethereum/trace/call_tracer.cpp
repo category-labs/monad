@@ -181,11 +181,14 @@ CallTracer::CallTracer(
     frames_.reserve(initial_capacity);
 }
 
-void CallTracer::assert_fits(size_t const additional_size) const
+bool CallTracer::fits(size_t const additional_size)
 {
-    MONAD_ASSERT_THROW(
-        size_ <= max_size_ && additional_size <= max_size_ - size_,
-        CALL_TRACE_SIZE_LIMIT_ERR_MSG);
+    if (size_limit_exceeded_ || size_ > max_size_ ||
+        additional_size > max_size_ - size_) {
+        size_limit_exceeded_ = true;
+        return false;
+    }
+    return true;
 }
 
 size_t CallTracer::log_size(Receipt::Log const &log) const
@@ -200,7 +203,9 @@ size_t CallTracer::log_size(Receipt::Log const &log) const
 void CallTracer::on_enter(evmc_message const &msg)
 {
     auto const frame_size = sizeof(CallFrame) + msg.input_size;
-    assert_fits(frame_size);
+    if (!fits(frame_size)) {
+        return;
+    }
 
     auto const depth = static_cast<uint64_t>(msg.depth);
 
@@ -257,6 +262,14 @@ void CallTracer::on_enter(evmc_message const &msg)
 
 void CallTracer::on_exit(evmc::Result const &res)
 {
+    size_t const output_size =
+        res.status_code == EVMC_SUCCESS || res.status_code == EVMC_REVERT
+            ? res.output_size
+            : 0;
+    if (!fits(output_size)) {
+        return;
+    }
+
     CallFrame &frame = frames_stack_.pop_frame();
 
     MONAD_ASSERT(frame.gas >= static_cast<uint64_t>(res.gas_left));
@@ -267,7 +280,6 @@ void CallTracer::on_exit(evmc::Result const &res)
             frame.output = byte_string{};
         }
         else {
-            assert_fits(res.output_size);
             frame.output = byte_string{res.output_data, res.output_size};
             size_ += res.output_size;
         }
@@ -283,8 +295,13 @@ void CallTracer::on_exit(evmc::Result const &res)
 
 void CallTracer::on_log(Receipt::Log log)
 {
+    if (size_limit_exceeded_) {
+        return;
+    }
     auto const entry_size = log_size(log);
-    assert_fits(entry_size);
+    if (!fits(entry_size)) {
+        return;
+    }
 
     auto &frame = frames_stack_.top_frame();
     MONAD_ASSERT(frame.logs.has_value());
@@ -297,7 +314,9 @@ void CallTracer::on_self_destruct(
     Address const &from, Address const &to,
     uint256_t const &transferred_balance)
 {
-    assert_fits(sizeof(CallFrame));
+    if (!fits(sizeof(CallFrame))) {
+        return;
+    }
 
     auto &parent = frames_stack_.top_frame();
 
@@ -321,6 +340,8 @@ void CallTracer::on_self_destruct(
 
 void CallTracer::on_finish(uint64_t const gas_used)
 {
+    MONAD_ASSERT_THROW(!size_limit_exceeded_, CALL_TRACE_SIZE_LIMIT_ERR_MSG);
+
     MONAD_ASSERT(!frames_.empty());
     MONAD_ASSERT(!frames_stack_.has_active_frame());
     frames_.front().gas_used = gas_used;
@@ -331,6 +352,7 @@ void CallTracer::reset()
     frames_.clear();
     frames_stack_.reset();
     size_ = 0;
+    size_limit_exceeded_ = false;
 }
 
 std::span<CallFrame const> CallTracer::get_call_frames() const

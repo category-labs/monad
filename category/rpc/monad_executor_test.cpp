@@ -8554,18 +8554,23 @@ TEST_F(EthCallFixture, eth_simulate_v1_output_size_enforcement)
         0x00000000000000000000000000000000feedface_address;
     static constexpr size_t parallel_calls = 10;
 
-    commit_sequential(
-        tdb,
-        StateDeltas{
-            {{sender,
-              StateDelta{
-                  .account =
-                      {std::nullopt,
-                       Account{
-                           .balance = std::numeric_limits<uint256_t>::max(),
-                           .nonce = 0}}}}}},
-        {},
-        BlockHeader{.number = 0});
+    std::vector<Address> senders;
+    senders.reserve(parallel_calls);
+    StateDeltas funded_senders;
+    for (size_t index = 0; index < parallel_calls; ++index) {
+        auto call_sender = sender;
+        call_sender.bytes[19] = static_cast<uint8_t>(index);
+        senders.push_back(call_sender);
+        funded_senders.emplace(
+            call_sender,
+            StateDelta{
+                .account = {
+                    std::nullopt,
+                    Account{
+                        .balance = std::numeric_limits<uint256_t>::max(),
+                        .nonce = 0}}});
+    }
+    commit_sequential(tdb, funded_senders, {}, BlockHeader{.number = 0});
 
     for (uint64_t i = 1; i < 256; ++i) {
         commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
@@ -8594,8 +8599,10 @@ TEST_F(EthCallFixture, eth_simulate_v1_output_size_enforcement)
         sizeof(contract.bytes),
         code.data(),
         code.size());
-    add_override_address_at(
-        state_override, 0, sender.bytes, sizeof(sender.bytes));
+    for (auto const &call_sender : senders) {
+        add_override_address_at(
+            state_override, 0, call_sender.bytes, sizeof(call_sender.bytes));
+    }
 
     auto const encode_rlp_list =
         [](std::vector<byte_string> const &items) -> byte_string {
@@ -8606,11 +8613,11 @@ TEST_F(EthCallFixture, eth_simulate_v1_output_size_enforcement)
         return rlp::encode_list2(payload);
     };
 
-    auto const encoded_sender = rlp::encode_address(std::make_optional(sender));
     std::vector<byte_string> encoded_senders{};
     encoded_senders.reserve(parallel_calls);
-    for (size_t i = 0; i < parallel_calls; ++i) {
-        encoded_senders.push_back(encoded_sender);
+    for (auto const &call_sender : senders) {
+        encoded_senders.push_back(
+            rlp::encode_address(std::make_optional(call_sender)));
     }
     auto const rlp_senders = to_vec(encode_rlp_list(
         std::vector<byte_string>{encode_rlp_list(encoded_senders)}));

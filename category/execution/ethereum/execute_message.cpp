@@ -393,7 +393,10 @@ evmc::Result execute_call_message(
             }
         }
 #if defined(MONAD_ZKVM_ZISK)
-        auto const hash = state.get_code_hash(msg_address(msg.code_address));
+        // The account's own hash, by reference: the code is read with it
+        // at once, and the guest's VM does not keep it.
+        bytes32_t const &hash =
+            state.code_hash_ref(msg_address(msg.code_address));
 #else
         auto const hash = state.get_code_hash(msg.code_address);
 #endif

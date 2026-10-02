@@ -329,5 +329,14 @@ namespace monad::vm::runtime
         evmc::bytes32 const &) noexcept;
 
     evmc_tx_context const *guest_get_tx_context(Host const &) noexcept;
+
+    size_t guest_get_code_size(Host const &, evmc::address const &) noexcept;
+
+    evmc::uint256be
+    guest_get_balance(Host const &, evmc::address const &) noexcept;
+
+    void guest_emit_log(
+        Host &, evmc::address const &, uint8_t const *, size_t,
+        evmc::bytes32 const[], size_t) noexcept;
 }
 #endif

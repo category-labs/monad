@@ -19,6 +19,9 @@
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
+#if defined(MONAD_ZKVM_ZISK)
+    #include <category/vm/host.hpp>
+#endif
 #include <category/vm/runtime/bin.hpp>
 #include <category/vm/runtime/log.hpp>
 #include <category/vm/runtime/types.hpp>
@@ -48,6 +51,17 @@ namespace monad::vm::runtime
             ctx->deduct_gas(size * bin<8>);
         }
 
+#if defined(MONAD_ZKVM_ZISK)
+        // The guest's host by name, as SLOAD's (vm/host.hpp): through the C
+        // interface, the table's adapter and then the vtable.
+        guest_emit_log(
+            host_of(*ctx),
+            host_shim::addr(&ctx->env.recipient),
+            ctx->memory.data + *offset,
+            *size,
+            topics.data(),
+            topics.size());
+#else
         ctx->host->emit_log(
             ctx->context,
             &ctx->env.recipient,
@@ -55,6 +69,7 @@ namespace monad::vm::runtime
             *size,
             topics.data(),
             topics.size());
+#endif
     }
 
     EXPLICIT_TRAITS(log_impl);

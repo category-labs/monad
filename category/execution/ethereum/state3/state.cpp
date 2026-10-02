@@ -904,9 +904,10 @@ inline StorageStatus State::set_storage_of(
     AccountState &account_state, monad_address const &address,
     bytes32_t const &key, bytes32_t const &value)
 {
-#endif
+    // Borrow the original value until the slot is updated below.
+    bytes32_t const *original_value;
+#else
     bytes32_t original_value;
-#ifndef MONAD_ZKVM_ZISK
     auto &account_state = current_account_state(address);
 #endif
     MONAD_ASSERT(account_state.account_);
@@ -920,26 +921,37 @@ inline StorageStatus State::set_storage_of(
         auto &orig_account_state = *account_state.original_state_;
         auto &storage = orig_account_state.prestate_storage_;
         if (auto const *const it = storage.find(key); it) {
+#ifdef MONAD_ZKVM_ZISK
+            original_value = it;
+#else
             original_value = *it;
+#endif
         }
         else {
             Incarnation const incarnation = account_state.account_->incarnation;
 #ifdef MONAD_ZKVM_ZISK
             bytes32_t const &value = block_state_.read_storage(
                 *orig_account_state.block_delta_, address, incarnation, key);
+            storage.insert(key, value);
+            original_value = &value;
 #else
             bytes32_t const value =
                 block_state_.read_storage(address, incarnation, key);
-#endif
             storage.insert(key, value);
             original_value = value;
+#endif
         }
     }
     // state
     {
         journal_slot(address, key, stored_value);
+#ifdef MONAD_ZKVM_ZISK
+        auto const result = account_state.set_storage(
+            key, value, *original_value, stored_value);
+#else
         auto const result =
             account_state.set_storage(key, value, original_value, stored_value);
+#endif
         return result;
     }
 }

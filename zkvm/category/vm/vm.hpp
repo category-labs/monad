@@ -67,8 +67,12 @@ namespace monad::vm
         MemoryPool memory_pool_;
 #if defined(MONAD_ZKVM_VARCODE_CACHE)
         // One entry per distinct contract the block touches -- the bound
-        // BlockState::code_ already lives with for intercodes.
-        ankerl::unordered_dense::map<bytes32_t, SharedVarcode> varcode_{};
+        // BlockState::code_ already lives with for intercodes. Segmented, so
+        // a varcode stays where the cache put it and callers keep a pointer
+        // to it rather than a copy, whose count a 4-byte load and store would
+        // raise and lower.
+        ankerl::unordered_dense::segmented_map<bytes32_t, SharedVarcode>
+            varcode_{};
 #endif
 
     public:
@@ -79,17 +83,16 @@ namespace monad::vm
         }
 
 #if defined(MONAD_ZKVM_VARCODE_CACHE)
-        // The varcode where the cache keeps it, or null; valid until the next
-        // insertion. Its one caller copies it out: an optional of a copy
-        // would count the reference up twice and down once, each a 4-byte
-        // load and store.
+        // The varcode where the cache keeps it, or null; it stays there for
+        // the VM's life. An optional of a copy would count the reference up
+        // twice and down once, each a 4-byte load and store.
         SharedVarcode const *find_varcode(bytes32_t const &code_hash)
         {
             auto const it = varcode_.find(code_hash);
             return it == varcode_.end() ? nullptr : &it->second;
         }
 
-        SharedVarcode try_insert_varcode(
+        SharedVarcode const &try_insert_varcode(
             bytes32_t const &code_hash, SharedIntercode const &icode)
         {
             auto const [it, inserted] =
@@ -100,7 +103,7 @@ namespace monad::vm
             return it->second;
         }
 
-        SharedVarcode try_insert_varcode_raw(
+        SharedVarcode const &try_insert_varcode_raw(
             bytes32_t const &code_hash, std::span<uint8_t const> const code)
         {
             auto const [it, inserted] =

@@ -225,7 +225,8 @@ bytes32_t BlockState::read_storage(
 #endif
 }
 
-vm::SharedVarcode BlockState::read_code(bytes32_t const &code_hash)
+#if defined(MONAD_ZKVM_VARCODE_CACHE)
+vm::SharedVarcode const &BlockState::read_code_ref(bytes32_t const &code_hash)
 {
     // vm
     if (auto vcode = vm_.find_varcode(code_hash)) {
@@ -250,6 +251,38 @@ vm::SharedVarcode BlockState::read_code(bytes32_t const &code_hash)
             db_.get_block_number());
         return vm_.try_insert_varcode(code_hash, result);
     }
+}
+#endif
+
+vm::SharedVarcode BlockState::read_code(bytes32_t const &code_hash)
+{
+#if defined(MONAD_ZKVM_VARCODE_CACHE)
+    return read_code_ref(code_hash);
+#else
+    // vm
+    if (auto vcode = vm_.find_varcode(code_hash)) {
+        return *vcode;
+    }
+    // block state
+    {
+        Code::const_accessor it{};
+        if (code_.find(it, code_hash)) {
+            return vm_.try_insert_varcode(code_hash, it->second);
+        }
+    }
+    // database
+    {
+        auto const result = db_.read_code(code_hash);
+        MONAD_ASSERT(result);
+        MONAD_ASSERT_PRINTF(
+            code_hash == NULL_HASH || result->size() != 0,
+            "code_hash %s, code size %zu, block_number %lu",
+            fmt::format("{}", code_hash).c_str(),
+            result->size(),
+            db_.get_block_number());
+        return vm_.try_insert_varcode(code_hash, result);
+    }
+#endif
 }
 
 bool BlockState::can_merge(State &state) const

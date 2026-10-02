@@ -1008,12 +1008,21 @@ vm::SharedVarcode const &State::read_code_ref(bytes32_t const &code_hash)
             return it->second;
         }
     }
+#if defined(MONAD_ZKVM_VARCODE_CACHE)
+    if (last_code_ != nullptr && code_hash == last_code_hash_) {
+        return *last_code_;
+    }
+    last_code_ = &block_state_.read_code_ref(code_hash);
+    last_code_hash_ = code_hash;
+    return *last_code_;
+#else
     if (last_code_ && code_hash == last_code_hash_) {
         return last_code_;
     }
     last_code_ = block_state_.read_code(code_hash);
     last_code_hash_ = code_hash;
     return last_code_;
+#endif
 }
 
 vm::SharedVarcode State::read_code(bytes32_t const &code_hash)

@@ -150,10 +150,10 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
     hashes_.reserve(blob_.size() / 256);
 #endif
 #if defined(MONAD_ZKVM_ZISK)
-    blob_overlay_slots_ = static_cast<byte_string **>(
-        ::operator new((blob_.size() / 4 + 1) * sizeof(byte_string *)));
-    fresh_overlay_slots_ = static_cast<byte_string **>(
-        ::operator new(FRESH_HASH_SLOTS * sizeof(byte_string *)));
+    blob_overlay_slots_ = static_cast<unsigned char **>(
+        ::operator new((blob_.size() / 4 + 1) * sizeof(unsigned char *)));
+    fresh_overlay_slots_ = static_cast<unsigned char **>(
+        ::operator new(FRESH_HASH_SLOTS * sizeof(unsigned char *)));
 #else
     // Reserve initial overlay capacity to avoid early rehashes.
     // The number of nodes created during commit is not known yet.
@@ -1248,6 +1248,7 @@ namespace
         b.append(reinterpret_cast<unsigned char const *>(&wire), sizeof(wire));
     }
 
+#if !defined(MONAD_ZKVM_ZISK)
     // Children already narrowed to the wire field: the array is exactly the
     // payload, so it copies in one go rather than word by word. Only
     // put_branch builds children in this form, so it stays local to this TU.
@@ -1261,6 +1262,7 @@ namespace
             reinterpret_cast<unsigned char const *>(children.data()),
             children.size() * sizeof(node_id_wire_t));
     }
+#endif
 
     // Append a path as nodes store it: a 1-byte nibble count then
     // ceil(nlen/2) packed nibbles, left-aligned (nibble 0 in the high
@@ -1380,6 +1382,75 @@ namespace
 
 }
 
+#if defined(MONAD_ZKVM_ZISK)
+namespace
+{
+    // The append_* bytes, written at `p` and advancing it, for the nodes put_*
+    // writes in place.
+    void write_node_id(unsigned char *&p, NodeId const v)
+    {
+        static_assert(std::endian::native == std::endian::little);
+        auto const wire = to_node_id_wire_t(v);
+        std::memcpy(p, &wire, sizeof(wire));
+        p += sizeof(wire);
+    }
+
+    // append_path's. Its last byte, when the count is odd, is written whole:
+    // the nibble in its high half, zero in the low one.
+    void write_path(unsigned char *&p, NibblesView const path)
+    {
+        unsigned const nlen = path.nibble_size();
+        MONAD_ASSERT(nlen <= MAX_PATH_NIBBLES);
+        *p++ = static_cast<unsigned char>(nlen);
+        unsigned char *const dst = p;
+        p += (nlen + 1) / 2;
+        if (nlen == 0) {
+            return;
+        }
+        unsigned char const *const src = path.data();
+        unsigned const whole = nlen / 2;
+        if (!path.begin_nibble()) {
+            std::memcpy(dst, src, whole);
+        }
+        else {
+            mpt::shift_nibbles_left(dst, src, whole);
+        }
+        if (nlen % 2) {
+            dst[whole] = static_cast<unsigned char>(path.get(nlen - 1) << 4);
+        }
+    }
+
+    // append_unsigned_rlp's.
+    void write_unsigned_rlp(unsigned char *&p, uint256_t const &n)
+    {
+        size_t w = uint256_t::num_words;
+        while (w != 0 && n[w - 1] == 0) {
+            --w;
+        }
+        if (w == 0) {
+            *p++ = zx(0x80);
+            return;
+        }
+        unsigned const top =
+            8u - static_cast<unsigned>(std::countl_zero(n[w - 1]) >> 3);
+        size_t const len = (w - 1) * 8 + top;
+        alignas(8) unsigned char be[uint256_t::num_bytes];
+        for (size_t i = 0; i < w; ++i) {
+            uint64_t const b = bswap(n[i]);
+            std::memcpy(be + (w - 1 - i) * 8, &b, sizeof(b));
+        }
+        unsigned char const *const src = be + (w * 8 - len);
+        if (len == 1 && src[0] <= 0x7f) {
+            *p++ = src[0];
+            return;
+        }
+        *p++ = zx(0x80 + len);
+        std::memcpy(p, src, len);
+        p += len;
+    }
+}
+
+#endif
 void append_acct(
     byte_string &out, NodeId const storage, Account const &acct,
     NibblesView const path)
@@ -1422,28 +1493,44 @@ NodeId OffsetTrie::fresh_id()
     return fresh;
 }
 
-NodeId OffsetTrie::put_node(NodeId const id, byte_string node)
-{
 #if defined(MONAD_ZKVM_ZISK)
+unsigned char *OffsetTrie::node_space(size_t const max)
+{
+    if (MONAD_UNLIKELY(
+            static_cast<size_t>(node_arena_end_ - node_arena_) < max)) {
+        node_arena_ =
+            static_cast<unsigned char *>(::operator new(NODE_ARENA_CHUNK));
+        node_arena_end_ = node_arena_ + NODE_ARENA_CHUNK;
+    }
+    return node_arena_;
+}
+
+void OffsetTrie::node_done(unsigned char const *const end)
+{
+    // The next node starts 8-aligned, as an allocation of its own did.
+    node_arena_ += (static_cast<size_t>(end - node_arena_) + 7) & ~size_t{7};
+}
+
+NodeId OffsetTrie::put_node(NodeId const id, unsigned char *const node)
+{
     if (id == NULL_ID) {
         NodeId const fresh = fresh_id();
         fresh_overlay_slots_[static_cast<uint64_t>(fresh) - OVERLAY_BASE] =
-            new byte_string(std::move(node));
+            node;
         return fresh;
     }
     drop_hash(id); // bytes changed; the cached hash is stale
     uint64_t const v = static_cast<uint64_t>(id);
-    byte_string *&slot = v < OVERLAY_BASE
-                             ? blob_overlay_slots_[v >> 2]
-                             : fresh_overlay_slots_[v - OVERLAY_BASE];
-    if (slot == nullptr) {
-        slot = new byte_string(std::move(node));
-    }
-    else {
-        *slot = std::move(node);
-    }
+    unsigned char *&slot = v < OVERLAY_BASE
+                               ? blob_overlay_slots_[v >> 2]
+                               : fresh_overlay_slots_[v - OVERLAY_BASE];
+    // A node's earlier bytes stay where they were: nothing frees the arena.
+    slot = node;
     return id;
+}
 #else
+NodeId OffsetTrie::put_node(NodeId const id, byte_string node)
+{
     if (id == NULL_ID) {
         NodeId const fresh = fresh_id();
         overlay_filter_mark(fresh); // must precede/accompany every insert
@@ -1454,33 +1541,64 @@ NodeId OffsetTrie::put_node(NodeId const id, byte_string node)
     overlay_filter_mark(id);
     overlay_[id] = std::move(node);
     return id;
-#endif
 }
+#endif
 
 NodeId OffsetTrie::put_branch(
     NodeId const id, std::array<node_id_wire_t, 16> const &children)
 {
+#if defined(MONAD_ZKVM_ZISK)
+    static_assert(std::endian::native == std::endian::little);
+    unsigned char *const node = node_space(1 + sizeof(children));
+    node[0] = BRANCH;
+    std::memcpy(node + 1, children.data(), sizeof(children));
+    node_done(node + 1 + sizeof(children));
+    return put_node(id, node);
+#else
     byte_string node;
     append_branch(node, children);
     return put_node(id, std::move(node));
+#endif
 }
 
 NodeId
 OffsetTrie::put_ext(NodeId const id, NibblesView const path, NodeId const child)
 {
+#if defined(MONAD_ZKVM_ZISK)
+    unsigned char *const node =
+        node_space(1 + sizeof(node_id_wire_t) + MAX_STORED_PATH_LEN);
+    unsigned char *p = node;
+    *p++ = EXT;
+    write_node_id(p, child);
+    write_path(p, path);
+    node_done(p);
+    return put_node(id, node);
+#else
     byte_string node;
     node.reserve(1 + sizeof(node_id_wire_t) + MAX_STORED_PATH_LEN);
     append_ext(node, path, child);
     return put_node(id, std::move(node));
+#endif
 }
 
 NodeId OffsetTrie::put_storage(
     NodeId const id, NibblesView const path, bytes32_t const &value)
 {
+#if defined(MONAD_ZKVM_ZISK)
+    unsigned char *const node = node_space(1 + 32 + MAX_STORED_PATH_LEN);
+    unsigned char *p = node;
+    *p++ = LEAF_STORAGE;
+    std::memcpy(p, value.bytes, 32);
+    p += 32;
+    write_path(p, path);
+    node_done(p);
+    return put_node(id, node);
+#else
     byte_string node;
     node.reserve(1 + 32 + MAX_STORED_PATH_LEN);
     append_storage(node, path, value);
     return put_node(id, std::move(node));
+#endif
 }
 
 NodeId OffsetTrie::clone_acct(
@@ -1488,10 +1606,21 @@ NodeId OffsetTrie::clone_acct(
 {
     // Everything up to the path — tag, storage edge and both field runs — is
     // copied verbatim, so re-pathing neither decodes nor re-encodes it.
+#if defined(MONAD_ZKVM_ZISK)
+    size_t const head = static_cast<size_t>(
+        rlp_end(code_hash_end(child_end(acc.payload()))) - acc.bytes());
+    unsigned char *const node = node_space(head + MAX_STORED_PATH_LEN);
+    std::memcpy(node, acc.bytes(), head);
+    unsigned char *p = node + head;
+    write_path(p, new_path);
+    node_done(p);
+    return put_node(id, node);
+#else
     byte_string node{
         acc.bytes(), rlp_end(code_hash_end(child_end(acc.payload())))};
     append_path(node, new_path);
     return put_node(id, std::move(node));
+#endif
 }
 
 NodeId OffsetTrie::put_acct(
@@ -1499,12 +1628,35 @@ NodeId OffsetTrie::put_acct(
     NodeId const storage)
 {
     // No storage root to pass: the leaf's hash takes it from `storage` itself.
+#if defined(MONAD_ZKVM_ZISK)
+    // append_acct's bytes, written in place.
+    unsigned char *const node = node_space(
+        1 + sizeof(node_id_wire_t) + 33 + 1 + MAX_NONCE_BALANCE_RLP_LEN +
+        MAX_STORED_PATH_LEN);
+    unsigned char *p = node;
+    *p++ = LEAF_ACCT;
+    write_node_id(p, storage);
+    static_assert(sizeof(acct.code_hash) == 32);
+    *p++ = zx(0x80 + 32);
+    std::memcpy(p, acct.code_hash.bytes, sizeof(acct.code_hash.bytes));
+    p += sizeof(acct.code_hash.bytes);
+    unsigned char *const len_p = p++;
+    write_unsigned_rlp(p, uint256_t{acct.nonce});
+    write_unsigned_rlp(p, acct.balance);
+    size_t const len = static_cast<size_t>(p - len_p - 1);
+    MONAD_DEBUG_ASSERT(len >= 2 && len <= MAX_NONCE_BALANCE_RLP_LEN);
+    *len_p = static_cast<unsigned char>(len);
+    write_path(p, path);
+    node_done(p);
+    return put_node(id, node);
+#else
     byte_string node;
     node.reserve(
         1 + sizeof(node_id_wire_t) + 33 + 1 + MAX_NONCE_BALANCE_RLP_LEN +
         MAX_STORED_PATH_LEN);
     append_acct(node, storage, acct, path);
     return put_node(id, std::move(node));
+#endif
 }
 
 void OffsetTrie::fold_ext_node_path_maybe(

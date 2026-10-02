@@ -651,9 +651,13 @@ class OffsetTrie
     // The overlay by id, laid out as the hashes are below: a blob id's node at
     // blob_overlay_slots_[id / 4], a fresh id's at
     // fresh_overlay_slots_[id - OVERLAY_BASE]. A slot holds the node's bytes or
-    // null; each is its own allocation, so an address outlives every insert.
-    byte_string **blob_overlay_slots_{nullptr};
-    byte_string **fresh_overlay_slots_{nullptr};
+    // null. The bytes are written where node_arena_ points, in chunks that
+    // never move or get reused, so an address outlives every insert.
+    unsigned char **blob_overlay_slots_{nullptr};
+    unsigned char **fresh_overlay_slots_{nullptr};
+    unsigned char *node_arena_{nullptr};
+    unsigned char *node_arena_end_{nullptr};
+    static constexpr size_t NODE_ARENA_CHUNK = size_t{64} << 10;
 #else
     ankerl::unordered_dense::map<NodeId, byte_string, NodeIdHash> overlay_{};
 #endif
@@ -922,12 +926,12 @@ public:
             // get_original asserts the id first: only a bounded id's slot is
             // read.
             NodeViewBase const original = get_original(id);
-            byte_string const *const n = blob_overlay_slots_[v >> 2];
-            return n != nullptr ? NodeViewBase{n->data()} : original;
+            unsigned char const *const n = blob_overlay_slots_[v >> 2];
+            return n != nullptr ? NodeViewBase{n} : original;
         }
         MONAD_ASSERT(v - OVERLAY_BASE < FRESH_HASH_SLOTS);
-        byte_string const *const n = fresh_overlay_slots_[v - OVERLAY_BASE];
-        return n != nullptr ? NodeViewBase{n->data()} : empty();
+        unsigned char const *const n = fresh_overlay_slots_[v - OVERLAY_BASE];
+        return n != nullptr ? NodeViewBase{n} : empty();
 #else
         // 97.7 % of these lookups find nothing; the filter answers those in
         // ten instructions instead of forty-two. A negative is certain, so
@@ -1066,11 +1070,22 @@ private:
 
     NodeId fresh_id();
 
+#if defined(MONAD_ZKVM_ZISK)
+    // Where the next node's bytes go, room for `max` of them, and the end of
+    // the bytes it took: put_* writes a node in place, without a byte_string
+    // of its own and the object put_node allocated for it.
+    unsigned char *node_space(size_t max);
+    void node_done(unsigned char const *end);
+
+    // put_node of the bytes node_space gave and node_done ended.
+    NodeId put_node(NodeId id, unsigned char *node);
+#else
     // Commit `node` bytes to the overlay under `id`, returning `id`. If
     // `id == NULL_ID` a fresh overlay id is allocated; otherwise the node's
     // bytes are replaced (shadowing the blob) and its stale hash dropped.
     // This is the single allocation/rewrite point behind every put_*.
     NodeId put_node(NodeId id, byte_string node);
+#endif
 
     // Fold `prefix` onto `child`'s path when `child` is a leaf/ext, committing
     // the merged node under `parent`'s id so nothing above is repointed. The

@@ -830,6 +830,31 @@ int main(int argc, char **argv)
         .run_throughput_benchmark()
         .run_latency_benchmark();
 
+    // The prefix puts the input in a stack offset, general reg or avx reg
+    for (auto const &[title, prefix] :
+         {std::pair{"", EvmBuilder<traits>{}},
+          std::pair{"PUSH 1; ADD; ", EvmBuilder<traits>{}.push(1).add()},
+          std::pair{"PUSH 1; XOR; ", EvmBuilder<traits>{}.push(1).xor_()}}) {
+        BenchmarkBuilder(
+            args,
+            results,
+            {.title = std::string{title} + "CLZ, random bit width input",
+             .num_inputs = 1,
+             .has_output = true,
+             .iteration_count = 10,
+             .subject_seqs = {EvmBuilder<traits>{}.append(prefix).clz()}})
+            .make_calldata([](size_t num_inputs) {
+                std::vector<uint8_t> cd(100'000 * num_inputs * 32, 0);
+                for (size_t i = 0; i < cd.size(); i += 32) {
+                    store_be(
+                        &cd[i], rand_uint256() >> (rand_uint256()[0] % 257));
+                }
+                return cd;
+            })
+            .run_throughput_benchmark()
+            .run_latency_benchmark();
+    }
+
     BenchmarkBuilder(
         args,
         results,

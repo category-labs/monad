@@ -707,7 +707,7 @@ inline void State::current_storage_into(
     }
     else {
 #ifdef MONAD_ZKVM_ZISK
-        bytes32_t const value = block_state_.read_storage(
+        bytes32_t const &value = block_state_.read_storage(
             *original_account_state.delta_,
             address,
             account.value().incarnation,
@@ -744,7 +744,7 @@ void State::get_storage_into(
         }
         else {
 #ifdef MONAD_ZKVM_ZISK
-            bytes32_t const value = block_state_.read_storage(
+            bytes32_t const &value = block_state_.read_storage(
                 *account_state.delta_,
                 address,
                 account.value().incarnation,
@@ -858,7 +858,7 @@ monad_storage_status State::set_storage(
         else {
             Incarnation const incarnation = account_state.account_->incarnation;
 #ifdef MONAD_ZKVM_ZISK
-            bytes32_t const value = block_state_.read_storage(
+            bytes32_t const &value = block_state_.read_storage(
                 *orig_account_state.delta_, address, incarnation, key);
 #else
             bytes32_t const value =

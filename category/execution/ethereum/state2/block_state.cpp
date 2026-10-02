@@ -113,7 +113,7 @@ std::optional<Account> BlockState::read_account(Address const &address)
 }
 
 #ifdef MONAD_ZKVM_ZISK
-bytes32_t BlockState::read_storage(
+bytes32_t const &BlockState::read_storage(
     StateDeltas::value_type &entry, Address const &address,
     Incarnation const incarnation, bytes32_t const &key)
 {
@@ -124,7 +124,8 @@ bytes32_t BlockState::read_storage(
     StateDeltas::value_type *const it = &entry;
     auto const &account = it->second.account.second;
     if (!account || incarnation != account->incarnation) {
-        return {};
+        static constexpr bytes32_t zero{};
+        return zero;
     }
     // One probe for the slot: try_emplace places it where the search for it
     // ended, and the database is read only to build it, where a find and then
@@ -147,16 +148,19 @@ bytes32_t BlockState::read_storage(
         bytes32_t const &key;
         bool in_db;
 
+        // The value built from the database's own result: zeroed first and
+        // assigned, it was a DMA memset and a copy more.
         operator StorageDelta() const
         {
-            bytes32_t result{};
-            if (in_db) {
-                result = self.db_.read_storage(address, incarnation, key);
-                MONAD_ASSERT(
-                    !self.secondary_db_ ||
-                    self.secondary_db_->read_storage(
-                        address, incarnation, key) == result);
+            if (!in_db) {
+                return {};
             }
+            bytes32_t const result =
+                self.db_.read_storage(address, incarnation, key);
+            MONAD_ASSERT(
+                !self.secondary_db_ ||
+                self.secondary_db_->read_storage(address, incarnation, key) ==
+                    result);
             return {result, result};
         }
     };

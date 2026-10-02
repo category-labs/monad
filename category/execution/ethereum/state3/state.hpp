@@ -215,7 +215,12 @@ class State
     // code twice in a row, to test it for an EIP-7702 delegation and then to
     // run it, and the block's code for a hash does not change.
     bytes32_t last_code_hash_{};
+#if defined(MONAD_ZKVM_VARCODE_CACHE)
+    // Where the VM's cache keeps it: a copy would raise and lower its count.
+    vm::SharedVarcode const *last_code_{nullptr};
+#else
     vm::SharedVarcode last_code_{};
+#endif
 
     // The number of open frames. A size_t, as the vector sizes every push and
     // pop compares it with: an unsigned is loaded sign-extended, widened with

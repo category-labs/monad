@@ -87,6 +87,11 @@ public:
 
     vm::SharedVarcode read_code(bytes32_t const &);
 
+#if defined(MONAD_ZKVM_VARCODE_CACHE)
+    // read_code's varcode where the VM's cache keeps it, for the VM's life.
+    vm::SharedVarcode const &read_code_ref(bytes32_t const &);
+#endif
+
     bool can_merge(State &) const;
 
     void merge(State const &);

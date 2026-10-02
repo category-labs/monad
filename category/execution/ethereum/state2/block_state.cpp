@@ -86,7 +86,6 @@ std::optional<Account> BlockState::read_account(Address const &address)
 bytes32_t BlockState::read_storage(
     Address const &address, Incarnation const incarnation, bytes32_t const &key)
 {
-    bool read_storage = false;
 #ifdef MONAD_ZKVM_ZISK
     // Reuse the entry across the database read: the guest is single-threaded,
     // map insertions preserve elements, and the read does not modify state_.
@@ -99,14 +98,55 @@ bytes32_t BlockState::read_storage(
         storage_memo_ = &*found;
     }
     StateDeltas::value_type *const it = storage_memo_;
-#endif
+    auto const &account = it->second.account.second;
+    if (!account || incarnation != account->incarnation) {
+        return {};
+    }
+    // One probe for the slot: it is placed where the search for it ended,
+    // and the database is read only to build it. A find and then an emplace
+    // hash and probe the key twice. Nothing changes the account across the
+    // read here, so the host's post-read check holds by construction.
+    auto const &orig_account = it->second.account.first;
+
+    struct Read
+    {
+        BlockState &self;
+        Address const &address;
+        Incarnation incarnation;
+        bytes32_t const &key;
+        bool in_db;
+
+        operator StorageDelta() const
+        {
+            bytes32_t result{};
+            if (in_db) {
+                result = self.db_.read_storage(address, incarnation, key);
+                MONAD_ASSERT(
+                    !self.secondary_db_ ||
+                    self.secondary_db_->read_storage(
+                        address, incarnation, key) == result);
+            }
+            return {result, result};
+        }
+    };
+
+    return it->second.storage
+        .try_emplace(
+            key,
+            Read{
+                *this,
+                address,
+                incarnation,
+                key,
+                orig_account && incarnation == orig_account->incarnation})
+        .first->second.second;
+#else
+    bool read_storage = false;
     // block state
     {
-#ifndef MONAD_ZKVM_ZISK
         StateDeltas::const_accessor it{};
         MONAD_ASSERT(state_);
         MONAD_ASSERT(state_->find(it, address));
-#endif
         auto const &account = it->second.account.second;
         if (!account || incarnation != account->incarnation) {
             return {};
@@ -132,10 +172,8 @@ bytes32_t BlockState::read_storage(
                 !secondary_db_ || secondary_db_->read_storage(
                                       address, incarnation, key) == result);
         }
-#ifndef MONAD_ZKVM_ZISK
         StateDeltas::accessor it{};
         MONAD_ASSERT(state_->find(it, address));
-#endif
         // Keep the post-read account check on both host and guest.
         auto const &account = it->second.account.second;
         if (!account || incarnation != account->incarnation) {
@@ -148,6 +186,7 @@ bytes32_t BlockState::read_storage(
             return it2->second.second;
         }
     }
+#endif
 }
 
 vm::SharedVarcode BlockState::read_code(bytes32_t const &code_hash)

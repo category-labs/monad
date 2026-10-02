@@ -61,27 +61,38 @@ public:
         return page_encoded_;
     }
 
-    virtual void set_block_and_prefix(
-        uint64_t const block_number,
-        bytes32_t const &block_id = bytes32_t{}) override
+    // Selects the prefix like set_block_and_prefix, but a prefix that does
+    // not exist at a still-valid version (for example the finalized prefix of
+    // a block that is not finalized yet) is reported by returning false
+    // instead of aborting. A version that no longer exists still throws.
+    bool try_set_block_and_prefix(
+        uint64_t const block_number, bytes32_t const &block_id = bytes32_t{})
     {
         auto const prefix = block_id == bytes32_t{} ? finalized_nibbles
                                                     : proposal_prefix(block_id);
         auto res = db_.find(prefix, block_number);
         if (res.has_error()) {
-            MONAD_ASSERT_PRINTF(
-                res.assume_error() ==
-                    ::monad::mpt::DbError::version_no_longer_exist,
-                "Cannot find block_id %s prefix at block %lu where block is "
-                "still valid in db",
-                to_hex(to_byte_string_view(block_id.bytes)).c_str(),
-                block_number);
             MONAD_ASSERT_THROW(
-                res.has_value(),
+                res.assume_error() !=
+                    ::monad::mpt::DbError::version_no_longer_exist,
                 "Block was invalidated in db while execution was in progress");
+            return false;
         }
         prefix_cursor_ = res.value();
         block_number_ = block_number;
+        return true;
+    }
+
+    virtual void set_block_and_prefix(
+        uint64_t const block_number,
+        bytes32_t const &block_id = bytes32_t{}) override
+    {
+        MONAD_ASSERT_PRINTF(
+            try_set_block_and_prefix(block_number, block_id),
+            "Cannot find block_id %s prefix at block %lu where block is "
+            "still valid in db",
+            to_hex(to_byte_string_view(block_id.bytes)).c_str(),
+            block_number);
     }
 
     virtual std::optional<Account> read_account(

@@ -321,20 +321,6 @@ Result<BlockExecOutput> propose_block(
     // not (see EXE-60).
     block.header.slot_number = consensus_header.block_round;
 
-    BOOST_OUTCOME_TRY(
-        auto const private_domain_outputs,
-        execute_private_domain_blocks<traits>(
-            chain,
-            db,
-            secondary_db,
-            vm,
-            priority_pool,
-            block_hash_buffer,
-            block.header,
-            block.transactions,
-            private_domain_keyring,
-            private_domain_sequencer));
-
     BlockExecOutput exec_output;
     BlockMetrics block_metrics;
     record_block_marker_event(exec_recorder, MONAD_EXEC_BLOCK_PERF_EVM_ENTER);
@@ -355,6 +341,23 @@ Result<BlockExecOutput> propose_block(
             chain_context,
             exec_recorder));
     record_block_marker_event(exec_recorder, MONAD_EXEC_BLOCK_PERF_EVM_EXIT);
+
+    // Private domain blocks are derived from both the L1 transactions and
+    // the L1 receipts (hub message events), against the same parent state.
+    BOOST_OUTCOME_TRY(
+        auto const private_domain_outputs,
+        execute_private_domain_blocks<traits>(
+            chain,
+            db,
+            secondary_db,
+            vm,
+            priority_pool,
+            block_hash_buffer,
+            block.header,
+            block.transactions,
+            results,
+            private_domain_keyring,
+            private_domain_sequencer));
 
     auto domain_state_updates = scan_domain_state_updates(
         results, private_domain_sequencer, private_domain_keyring.domain_ids());

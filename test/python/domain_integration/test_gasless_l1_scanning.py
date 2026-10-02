@@ -9,7 +9,7 @@ from eth_utils import keccak
 from .abi import sequence_to_domain_calldata
 from .block_builder import BlockSpec, build_ledger
 from .conftest import FreshEnv
-from .constants import DEV_ACCOUNTS
+from .constants import DEV_ACCOUNTS, DEVNET_CHAIN_ID
 from .hpke import encrypt_inner_transaction, write_private_key_files
 from .domain_spoke_bytecode import DOMAIN_SPOKE_CREATION_CODE
 from .monad_runner import (
@@ -116,8 +116,11 @@ ACCESS_SPOKE = _contract_address(ACCESS_DEPLOYER, 0)
 ACCESS_TARGET = _contract_address(ACCESS_SPOKE, 1)
 ACCESS_TARGET_SELECTOR = keccak(text="writeFor(address)")[:4]
 ACCESS_TARGET_RUNTIME = b"\x33\x60\x00\x55\x00"  # sstore(0, caller)
+# keccak of the pinned DomainSpoke runtime as deployed on DOMAIN_A by the committed
+# parent of test_domain_state_update_validates_exact_historical_root, i.e. with the
+# immutables (DOMAIN_A, ACCESS_DEPLOYER, DEVNET_CHAIN_ID, hub = CREATE(DEV_ACCOUNTS[2], 0)).
 ACCESS_SPOKE_CODE_HASH_DOMAIN_A = bytes.fromhex(
-    "33d497447557cff879c42e4725a2322c16efa6fbf438d368c83698faedb231f1"
+    "1ad829ca7fe7687468acc30e0c2d75a72d22fc2f5c03dea05ce6b855d4212467"
 )
 
 
@@ -125,12 +128,14 @@ def _abi_word(value: int) -> bytes:
     return value.to_bytes(32, "big")
 
 
-def _domain_spoke_init_code(domain_id: int) -> bytes:
-    """Pinned DomainSpoke bytecode plus (domainChainId, operator)."""
+def _domain_spoke_init_code(domain_id: int, hub: bytes) -> bytes:
+    """Pinned DomainSpoke bytecode plus (domainChainId, operator, l1ChainId, hub)."""
     return (
         DOMAIN_SPOKE_CREATION_CODE
         + _abi_word(domain_id)
         + ACCESS_DEPLOYER.rjust(32, b"\x00")
+        + _abi_word(DEVNET_CHAIN_ID)
+        + hub.rjust(32, b"\x00")
     )
 
 
@@ -170,12 +175,12 @@ def _domain_spoke_parent_transactions(
         deploy = sign_tx(
             Tx(
                 nonce=0,
-                gas_limit=3_000_000,
+                gas_limit=4_000_000,
                 max_priority_fee_per_gas=0,
                 max_fee_per_gas=0,
                 to=None,
                 value=0,
-                data=_domain_spoke_init_code(domain_id),
+                data=_domain_spoke_init_code(domain_id, sequencer),
                 chain_id=domain_id,
             ),
             ACCESS_DEPLOYER_KEY,
@@ -185,7 +190,7 @@ def _domain_spoke_parent_transactions(
             (
                 Tx(
                     nonce=outer_nonce,
-                    gas_limit=3_500_000,
+                    gas_limit=4_500_000,
                     max_priority_fee_per_gas=0,
                     max_fee_per_gas=0,
                     to=sequencer,
@@ -659,7 +664,9 @@ def test_domain_state_update_validates_exact_historical_root(
         fresh_env.ledger,
         [*blocks, valid_event_block, invalid_event_block],
     )
-    rejected = run_monad(
+    # A root that disagrees with local history is reported as an error; the
+    # block carrying the attestation still executes and commits.
+    mismatched = run_monad(
         fresh_env.ledger,
         fresh_env.triedb,
         nblocks=1,
@@ -667,11 +674,11 @@ def test_domain_state_update_validates_exact_historical_root(
         private_domain_spokes={DOMAIN_A: ACCESS_SPOKE},
         private_domain_sequencer=emitter,
     )
-    rejected_output = rejected.stdout + "\n" + rejected.stderr
-    assert rejected.returncode != 0, rejected_output[-4000:]
-    assert "state root mismatch at finalized block 2" in rejected_output
-    assert expected_root.hex() in rejected_output
-    assert bad_root.hex() in rejected_output
+    mismatched_output = mismatched.stdout + "\n" + mismatched.stderr
+    assert mismatched.returncode == 0, mismatched_output[-4000:]
+    assert "state root mismatch at finalized block 2" in mismatched_output
+    assert expected_root.hex() in mismatched_output
+    assert bad_root.hex() in mismatched_output
 
 
 def test_gasless_runtime_revert_is_retained(fresh_env: FreshEnv):

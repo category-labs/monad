@@ -44,6 +44,11 @@ bridge or commit private domain roots into root EVM storage.
   calldata. Matching `sequenceToDomain(uint64,bytes)` payloads for locally
   assigned domains are HPKE-decrypted and decoded into gasless inner
   transactions.
+- The runloop also scans the L1 receipts of the hub for `L1MessageRecorded`
+  and `EncryptedL1MessageRecorded` events and delivers each message to the
+  domain as a protocol-derived system transaction, whether it was sent from
+  the L1 or forwarded by the hub from another domain (see
+  [System delivery transactions](#system-delivery-transactions)).
 - Private domain state, transactions, receipts, sender metadata, and
   transaction-hash locations remain persisted in domain-specific database
   branches.
@@ -53,7 +58,10 @@ bridge or commit private domain roots into root EVM storage.
   domain state.
 - Finalized `DomainStateUpdated` events emitted by the configured external
   contract are still checked against the corresponding historical private
-  domain root when that root is locally available.
+  domain root when that root is locally available. A root or block number
+  that disagrees with local history is logged as an error; an attestation of
+  a block this node has not finalized yet, or whose version has already
+  expired, is skipped with a warning instead of validated.
 
 ## Configuration
 
@@ -76,12 +84,15 @@ monad \
   ...
 ```
 
-The sequencer address is the L1 DomainHub-compatible contract. The address
-inside each `--private-domain` mapping is the DomainSpoke deployed in
-that domain. The client invokes `canCall(address,address,bytes)` on the
-spoke before every EVM call and fails closed if the spoke is absent or returns
-anything other than canonical ABI `true`. During `canCall`, the spoke may make
-direct static subcalls, but those callees may not make further calls. Any such
+The sequencer address is the L1 DomainHub-compatible contract: the
+destination of `sequenceToDomain` calls and the emitter of the message and
+state-update events the client consumes. The address inside each
+`--private-domain` mapping is the DomainSpoke deployed in that domain,
+which also receives the system delivery transactions. The client invokes
+`canCall(address,address,bytes)` on the spoke before every EVM call and fails
+closed if the spoke is absent or returns anything other than canonical ABI
+`true`. During `canCall`, the spoke may make direct static subcalls, but those
+callees may not make further calls. Any such
 second-hop call attempt denies domain access, even if its failure is caught.
 
 Generate the unencrypted P-256 PKCS#8 PEM private key and matching public key
@@ -115,6 +126,10 @@ uncompressed SEC1 P-256 point. The authenticated plaintext is
 prefix and are not placed in an additional RLP wrapper. A fresh Base-mode HPKE
 context and sequence number zero are used for every transaction.
 
+Encrypted L1 -> domain messages (`sendEncryptedL1Message`) use the same
+profile and key. Their authenticated plaintext is `0x01 || to || data`, where
+`to` is the 20-byte domain target of the message.
+
 ## Execution Flow
 
 For each L1 block, the client:
@@ -127,14 +142,69 @@ For each L1 block, the client:
    the empty-AAD ciphertext, and checks the `0x01` frame version.
 4. RLP-decodes each recovered signed transaction and verifies that its signed
    chain ID is the selected private domain ID.
-5. Executes eligible inner transactions as gasless transactions against the
+5. Executes the ordinary L1 block exclusively against root state.
+6. Scans the resulting L1 receipts for `L1MessageRecorded` and
+   `EncryptedL1MessageRecorded` events emitted by the hub for locally assigned
+   domains, decrypting the encrypted ones, and derives one system delivery
+   transaction per message.
+7. Executes, per domain, the eligible inner transactions followed by that
+   domain's system delivery transactions as one gasless block against the
    domain state at the L1 parent version.
-6. Executes the ordinary L1 block exclusively against root state.
-7. If both paths succeed, commits the private domain deltas and aligned
+8. If both paths succeed, commits the private domain deltas and aligned
    domain transaction/receipt metadata alongside the L1 block.
 
 The private path is staged: if ordinary L1 execution fails, its domain
-changes and domain block-table entries are discarded.
+changes and domain block-table entries are discarded. Domain execution
+reads only the committed parent state, so running it after root execution
+does not change what it observes.
+
+### System delivery transactions
+
+Every message the hub records for a served domain is delivered in the same
+L1 block, without a relayer:
+
+- The event stream is read from the L1 receipts, so only messages recorded by
+  successful hub calls exist. Messages are delivered in receipt and log order,
+  which is the hub's per-domain nonce order.
+- An `EncryptedL1MessageRecorded` ciphertext is opened with the domain
+  receiver key; the plaintext is `to || data`. A ciphertext that does not
+  authenticate, or whose plaintext is shorter than an address, is dropped with
+  a warning. The hub nonce it consumed is never delivered; the spoke accepts
+  the gap.
+- Each delivery is a legacy transaction with the domain chain ID, from the
+  reserved relayer `0xffffFFFfFFffffffffffffffFfFFFfffFFFfFFfE`
+  (`DomainSpoke.SYSTEM_RELAYER`) to the configured spoke, calling
+  `relayL1Message(uint64 sourceChainId, address from, address to, bytes data,
+  uint256 nonce)` (selector `0x70c0a876`) with a fixed gas limit of 2,500,000,
+  zero value, zero priority fee and a gas price equal to the L1 block's base
+  fee (the floor the shared validation enforces; the gasless path never
+  charges it). `sourceChainId` and `from` are copied from the event: the L1
+  chain ID and the hub's caller for an ordinary `sendL1Message`, or the
+  source domain and sender of a domain message the hub forwarded natively via
+  `relayDomainMessage`. The spoke calls
+  `onDomainMessage(uint64 sourceChainId, address from, bytes data)` on the
+  target. The limit covers the spoke's 2,000,000 delivery stipend plus the
+  relay's own overhead, so a target that exhausts its stipend still gets
+  recorded as a failed, retryable delivery. The relayer's domain account nonce
+  is read from the parent state and incremented per delivery.
+- A derived transaction is checked against the shared static validation
+  before it takes a relayer nonce; one that cannot pass (for example a
+  payload whose intrinsic gas exceeds the fixed limit) is dropped with a
+  warning and leaves a hub nonce gap, so it cannot desynchronise the nonces
+  of the deliveries behind it.
+- The transaction carries no real signature: the client pins the relayer as
+  its sender, and the signature fields hold the constant placeholder
+  `r = 1, s = 1, yParity = 0` so it passes the shared validation and is
+  stored, hashed and served over RPC like every other domain transaction.
+  A sequenced transaction whose recovered sender is the relayer is dropped
+  before execution.
+- Deliveries are appended after the block's sequenced transactions, so a
+  contract created earlier in the same L1 block can already receive them.
+  They run through the normal gasless path, including the spoke `canCall`
+  check before every call frame; a target call that fails is recorded by the
+  spoke (`failedL1Messages`) without failing the delivery, while a delivery
+  that cannot run at all (for example before the spoke has code) is stored as
+  a reverted receipt.
 
 Private domain roots are not written into root EVM state by the client. The
 external contract system may publish commitments and emit
@@ -156,6 +226,10 @@ An embedded private transaction:
 
 The inner sender pays no gas. Gas use is still metered and recorded in its
 private receipt.
+
+System delivery transactions bypass the envelope rules above because they
+have no L1 envelope and no signer; their shape is fixed by the client as
+described in [System delivery transactions](#system-delivery-transactions).
 
 ### Direct `eth_call` simulation
 
@@ -233,12 +307,17 @@ a bridge account or a root-state commitment slot.
 
 ## Tests
 
-Focused C++ coverage includes chain-ID validation, private scanning, private
-execution, block-body decoding, storage migration, RPC behavior, and state
-sync. The Python end-to-end suite covers gasless deployment and calls, invalid
-payload filtering, cross-library HPKE production, authentication and framing
-failures, replay behavior, runtime failure receipts, domain isolation,
-persistence across restarts, staging rollback, and finalized-root validation:
+Focused C++ coverage includes chain-ID validation, private scanning (calldata
+payloads and hub message events), system delivery transaction encoding,
+private execution, block-body decoding, storage migration, RPC behavior, and
+state sync. The Python end-to-end suite covers gasless deployment and calls,
+invalid payload filtering, cross-library HPKE production, authentication and
+framing failures, replay behavior, runtime failure receipts, domain
+isolation, persistence across restarts, staging rollback, finalized-root
+validation, and protocol delivery of plaintext and encrypted L1 -> domain
+messages (ordering after sequenced transactions, nonce gaps for undeliverable
+ciphertexts, failed target calls, relayer nonce persistence) against the
+pinned DomainHub and DomainSpoke bytecode:
 
 ```text
 uv venv /tmp/monad-domain-tests

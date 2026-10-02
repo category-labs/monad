@@ -16,18 +16,22 @@
 #include <category/execution/ethereum/execute_block.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
+#include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
+#include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/db/commit_block_migration.hpp>
 #include <category/execution/monad/private_domain_hpke.hpp>
 #include <category/execution/monad/private_domain_scanner.hpp>
+#include <category/execution/monad/private_domain_system_transaction.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 
 #include <boost/outcome/try.hpp>
 
 #include <openssl/crypto.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <iterator>
 #include <memory>
@@ -41,12 +45,47 @@ MONAD_NAMESPACE_BEGIN
 
 namespace
 {
+    // One L1 -> domain message ready for delivery, i.e. decrypted when
+    // it was recorded encrypted. `source_chain_id`/`from` are the origin
+    // the hub authenticated and are passed through to the spoke untouched.
+    struct L1MessageDelivery
+    {
+        uint64_t source_chain_id{};
+        Address from{};
+        Address to{};
+        byte_string data{};
+        uint256_t nonce{};
+    };
+
     struct PrivateDomainTransactions
     {
         uint64_t domain_chain_id{};
         std::vector<Transaction> transactions;
         std::vector<uint8_t> within_l1_gas_limit;
+        std::vector<L1MessageDelivery> deliveries;
     };
+
+    // An encrypted message plaintext is `to[20] || data`.
+    constexpr size_t MESSAGE_TARGET_SIZE = sizeof(Address);
+
+    PrivateDomainTransactions &find_or_create_domain_block(
+        std::vector<PrivateDomainTransactions> &domain_blocks,
+        uint64_t const domain_chain_id)
+    {
+        auto block = std::ranges::find_if(
+            domain_blocks, [&](PrivateDomainTransactions const &candidate) {
+                return candidate.domain_chain_id == domain_chain_id;
+            });
+        if (block == domain_blocks.end()) {
+            domain_blocks.push_back(PrivateDomainTransactions{
+                .domain_chain_id = domain_chain_id,
+                .transactions = {},
+                .within_l1_gas_limit = {},
+                .deliveries = {}});
+            block = std::prev(domain_blocks.end());
+        }
+        return *block;
+    }
 
     Result<Transaction>
     decode_private_domain_payload(byte_string_view const raw_payload)
@@ -67,6 +106,7 @@ Result<std::vector<PrivateDomainBlockOutput>> execute_private_domain_blocks(
     fiber::PriorityPool &priority_pool,
     BlockHashBuffer const &block_hash_buffer, BlockHeader const &header,
     std::span<Transaction const> const l1_transactions,
+    std::span<Receipt const> const l1_receipts,
     PrivateDomainKeyring const &private_domain_keyring,
     Address const &private_domain_sequencer)
 {
@@ -76,6 +116,17 @@ Result<std::vector<PrivateDomainBlockOutput>> execute_private_domain_blocks(
         chain.get_chain_id(),
         private_domain_sequencer,
         private_domain_keyring.domain_ids());
+
+    // Only the hub emits these events from its address, so a malformed one
+    // means the configured hub contract is incompatible with this client.
+    auto scanned_messages = scan_l1_domain_messages(
+        l1_receipts,
+        private_domain_sequencer,
+        private_domain_keyring.domain_ids());
+    MONAD_ASSERT_PRINTF(
+        scanned_messages.has_value(),
+        "malformed L1 message event from domain hub: %s",
+        scanned_messages.assume_error().message().c_str());
 
     // One L1 block may sequence transactions for several private domains.
     // Preserve payload order within each domain while forming the synthetic
@@ -111,20 +162,69 @@ Result<std::vector<PrivateDomainBlockOutput>> execute_private_domain_blocks(
             continue;
         }
 
-        auto block = std::ranges::find_if(
-            domain_blocks, [&](PrivateDomainTransactions const &candidate) {
-                return candidate.domain_chain_id == payload.domain_chain_id;
-            });
-        if (block == domain_blocks.end()) {
-            domain_blocks.push_back(PrivateDomainTransactions{
-                .domain_chain_id = payload.domain_chain_id,
-                .transactions = {},
-                .within_l1_gas_limit = {}});
-            block = std::prev(domain_blocks.end());
-        }
-        block->within_l1_gas_limit.push_back(
+        auto &block =
+            find_or_create_domain_block(domain_blocks, payload.domain_chain_id);
+        block.within_l1_gas_limit.push_back(
             decoded.value().gas_limit <= payload.l1_gas_limit);
-        block->transactions.push_back(std::move(decoded).value());
+        block.transactions.push_back(std::move(decoded).value());
+    }
+
+    // Every recorded L1 -> domain message becomes a system delivery
+    // transaction, appended after the sequenced transactions of its
+    // domain block in hub nonce order. An encrypted message that does not
+    // decrypt, or whose plaintext cannot carry a target, is never delivered;
+    // the spoke accepts the nonce gap this leaves.
+    for (auto &message : scanned_messages.value()) {
+        L1MessageDelivery delivery{
+            .source_chain_id = message.source_chain_id,
+            .from = message.from,
+            .to = {},
+            .data = {},
+            .nonce = message.nonce};
+        if (message.encrypted) {
+            auto decrypted = private_domain_keyring.decrypt(
+                message.domain_chain_id, message.payload);
+            if (MONAD_UNLIKELY(decrypted.has_error())) {
+                if (decrypted.assume_error() !=
+                    PrivateDomainHpkeError::DecryptionFailed) {
+                    return std::move(decrypted).as_failure();
+                }
+                LOG_WARNING(
+                    "Dropped encrypted L1 message {} for domain {} in "
+                    "block {} at transaction {}: decryption failed",
+                    to_string(message.nonce),
+                    message.domain_chain_id,
+                    header.number,
+                    message.l1_transaction_index);
+                continue;
+            }
+            auto &plaintext = decrypted.value();
+            if (MONAD_UNLIKELY(plaintext.size() < MESSAGE_TARGET_SIZE)) {
+                OPENSSL_cleanse(plaintext.data(), plaintext.size());
+                LOG_WARNING(
+                    "Dropped encrypted L1 message {} for domain {} in "
+                    "block {} at transaction {}: plaintext too short for a "
+                    "target address",
+                    to_string(message.nonce),
+                    message.domain_chain_id,
+                    header.number,
+                    message.l1_transaction_index);
+                continue;
+            }
+            std::copy_n(
+                plaintext.data(), MESSAGE_TARGET_SIZE, delivery.to.bytes);
+            delivery.data.assign(
+                plaintext.data() + MESSAGE_TARGET_SIZE,
+                plaintext.size() - MESSAGE_TARGET_SIZE);
+            OPENSSL_cleanse(plaintext.data(), plaintext.size());
+        }
+        else {
+            MONAD_ASSERT(message.to.has_value());
+            delivery.to = *message.to;
+            delivery.data = std::move(message.payload);
+        }
+        find_or_create_domain_block(domain_blocks, message.domain_chain_id)
+            .deliveries.push_back(std::move(delivery));
     }
 
     std::vector<PrivateDomainBlockOutput> outputs;
@@ -133,6 +233,7 @@ Result<std::vector<PrivateDomainBlockOutput>> execute_private_domain_blocks(
     for (auto &domain_block : domain_blocks) {
         auto &transactions = domain_block.transactions;
         auto const &within_l1_gas_limit = domain_block.within_l1_gas_limit;
+        auto const &deliveries = domain_block.deliveries;
 
         auto recovered_senders = recover_senders(transactions, priority_pool);
         auto recovered_authorities =
@@ -140,10 +241,12 @@ Result<std::vector<PrivateDomainBlockOutput>> execute_private_domain_blocks(
 
         // Remove failures known from the L1 envelope before constructing the
         // block. Ordinary static and state-dependent transaction validation is
-        // deliberately left to execute_block's shared gasless path.
+        // deliberately left to execute_block's shared gasless path. The
+        // system relayer is reserved for protocol-derived transactions.
         size_t eligible_count = 0;
         for (size_t i = 0; i < transactions.size(); ++i) {
             if (!within_l1_gas_limit[i] || !recovered_senders[i].has_value() ||
+                *recovered_senders[i] == DOMAIN_SYSTEM_RELAYER ||
                 !transactions[i].sc.chain_id.has_value() ||
                 *transactions[i].sc.chain_id != domain_block.domain_chain_id) {
                 LOG_WARNING(
@@ -169,10 +272,70 @@ Result<std::vector<PrivateDomainBlockOutput>> execute_private_domain_blocks(
         std::vector<Receipt> receipts;
         DomainStateDeltas domain_deltas;
         Code code;
-        if (!transactions.empty()) {
+        if (!transactions.empty() || !deliveries.empty()) {
             auto const domain_spoke = private_domain_keyring.spoke_address(
                 domain_block.domain_chain_id);
             MONAD_ASSERT(domain_spoke.has_value());
+
+            // Stage into an independent BlockState based on the L1 parent.
+            // Nothing reaches the database unless both this execution and the
+            // ordinary L1 execution succeed.
+            BlockState gasless_state{db, vm, secondary_db};
+
+            if (!deliveries.empty()) {
+                // Nobody can sign for the relayer, so its nonce only advances
+                // through the deliveries derived here: continue from the
+                // parent domain state and number this block's deliveries
+                // consecutively.
+                uint64_t relayer_nonce = [&] {
+                    State probe{
+                        gasless_state,
+                        Incarnation{header.number, 0},
+                        false,
+                        domain_block.domain_chain_id};
+                    return probe.get_nonce(DOMAIN_SYSTEM_RELAYER);
+                }();
+                for (auto const &delivery : deliveries) {
+                    auto transaction = make_domain_system_transaction(
+                        domain_block.domain_chain_id,
+                        *domain_spoke,
+                        relayer_nonce,
+                        header.base_fee_per_gas.value_or(0),
+                        delivery.source_chain_id,
+                        delivery.from,
+                        delivery.to,
+                        delivery.data,
+                        delivery.nonce);
+                    // A delivery the shared static validation would skip
+                    // (e.g. a payload whose intrinsic gas exceeds the fixed
+                    // limit) must not take a relayer nonce, or every later
+                    // delivery in this block would fail its nonce check and
+                    // be lost with it. Drop it here instead: its hub nonce
+                    // becomes a gap the spoke accepts.
+                    auto const validation =
+                        static_validate_transaction<traits, true>(
+                            transaction,
+                            header.base_fee_per_gas,
+                            header.excess_blob_gas,
+                            chain.get_chain_id(),
+                            chain.get_blob_schedule(header.timestamp));
+                    if (MONAD_UNLIKELY(validation.has_error())) {
+                        LOG_WARNING(
+                            "Dropped undeliverable L1 message {} for "
+                            "domain {} in block {}: {}",
+                            to_string(delivery.nonce),
+                            domain_block.domain_chain_id,
+                            header.number,
+                            validation.assume_error().message().c_str());
+                        continue;
+                    }
+                    ++relayer_nonce;
+                    transactions.push_back(std::move(transaction));
+                    recovered_senders.push_back(DOMAIN_SYSTEM_RELAYER);
+                    recovered_authorities.emplace_back();
+                }
+            }
+
             std::vector<Address> senders;
             senders.reserve(transactions.size());
             std::vector<std::optional<uint64_t>> domains(
@@ -203,10 +366,6 @@ Result<std::vector<PrivateDomainBlockOutput>> execute_private_domain_blocks(
                     std::make_unique<trace::StateTracer>(std::monostate{}));
             }
 
-            // Stage into an independent BlockState based on the L1 parent.
-            // Nothing reaches the database unless both this execution and the
-            // ordinary L1 execution succeed.
-            BlockState gasless_state{db, vm, secondary_db};
             BlockMetrics metrics;
             std::vector<uint8_t> skipped_transactions(transactions.size());
             BOOST_OUTCOME_TRY(
@@ -262,8 +421,9 @@ Result<std::vector<PrivateDomainBlockOutput>> execute_private_domain_blocks(
             MONAD_ASSERT(it->second);
         }
         if (transactions.empty()) {
-            // Every transaction produced a synthetic zero-gas skip receipt.
-            // Discard the isolated BlockState, including speculative deltas.
+            // Every transaction produced a synthetic zero-gas skip receipt, or
+            // nothing survived the envelope checks. Discard the isolated
+            // BlockState, including speculative deltas.
             continue;
         }
         outputs.push_back(PrivateDomainBlockOutput{
@@ -310,8 +470,19 @@ void validate_domain_state_updates(
         if (current_block_number != update.domain_block_number) {
             current_block_number = update.domain_block_number;
             try {
-                domain_state_db.set_block_and_prefix(*current_block_number);
-                current_block_available = true;
+                // The hub accepts any block newer than its commitment, so an
+                // attestation can reach this node before it has finalized
+                // that block; the finalized root is not known yet then.
+                current_block_available =
+                    domain_state_db.try_set_block_and_prefix(
+                        *current_block_number);
+                if (!current_block_available) {
+                    LOG_WARNING(
+                        "Skipping DomainStateUpdated validation for domain "
+                        "{} at block {}: block is not finalized locally",
+                        update.domain_chain_id,
+                        update.domain_block_number);
+                }
             }
             catch (MonadException const &) {
                 current_block_available = false;
@@ -353,22 +524,30 @@ void validate_domain_state_updates(
                 update.domain_block_number);
             continue;
         }
-        MONAD_ASSERT_PRINTF(
-            header->number == update.domain_block_number,
-            "domain header number mismatch for domain %lu: expected "
-            "%lu, got %lu",
-            update.domain_chain_id,
-            update.domain_block_number,
-            header->number);
+        // An attestation that disagrees with local history is reported, not
+        // treated as fatal: the hub has already accepted it, and this check
+        // only tells the operator that the validators and this node diverge.
+        if (header->number != update.domain_block_number) {
+            LOG_ERROR(
+                "domain {} header number mismatch at finalized block {}: "
+                "local={} attested={}",
+                update.domain_chain_id,
+                update.domain_block_number,
+                header->number,
+                update.domain_block_number);
+            continue;
+        }
         auto const local = header->state_root;
-        MONAD_ASSERT_PRINTF(
-            local == update.new_state_root,
-            "domain %lu state root mismatch at finalized block %lu: "
-            "local=%s attested=%s",
-            update.domain_chain_id,
-            update.domain_block_number,
-            to_hex(to_byte_string_view(local.bytes)).c_str(),
-            to_hex(to_byte_string_view(update.new_state_root.bytes)).c_str());
+        if (local != update.new_state_root) {
+            LOG_ERROR(
+                "domain {} state root mismatch at finalized block {}: "
+                "local={} attested={}",
+                update.domain_chain_id,
+                update.domain_block_number,
+                to_hex(to_byte_string_view(local.bytes)),
+                to_hex(to_byte_string_view(update.new_state_root.bytes)));
+            continue;
+        }
         LOG_INFO(
             "Validated DomainStateUpdated for domain {} at block {}: "
             "state_root={}",

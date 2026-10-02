@@ -118,7 +118,13 @@ public:
         // allocating for unused storage. The indexed path already has
         // sufficient capacity.
         if (MONAD_UNLIKELY(accessed_storage_.capacity() == 0)) {
+#ifdef MONAD_ZKVM_ZISK
+            // Thirty-two on the guest, whose bump allocator charges the same
+            // for any size: a row past eight would copy itself as it doubled.
+            accessed_storage_.reserve(32);
+#else
             accessed_storage_.reserve(8);
+#endif
         }
         accessed_storage_.push_back(key);
 #ifdef MONAD_ZKVM_ZISK

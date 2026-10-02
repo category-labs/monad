@@ -24,6 +24,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <utility>
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
@@ -42,10 +43,31 @@ static_assert(
 
 static_assert(FunctionSelector::SEQUENCE_TO_DOMAIN == 0xc791e98a);
 
+constexpr monad::bytes32_t L1_MESSAGE_RECORDED_SIGNATURE =
+    monad::abi_encode_event_signature("L1MessageRecorded(uint64,uint64,address,"
+                                      "address,bytes,uint256,bytes32)");
+static_assert(
+    L1_MESSAGE_RECORDED_SIGNATURE ==
+    0x41e4011d4fcb4fb73b7c8049017cf26a95628f8498c7a46a765b2260e6c5ddab_bytes32);
+
+constexpr monad::bytes32_t ENCRYPTED_L1_MESSAGE_RECORDED_SIGNATURE =
+    monad::abi_encode_event_signature(
+        "EncryptedL1MessageRecorded(uint64,uint64,address,bytes,uint256)");
+static_assert(
+    ENCRYPTED_L1_MESSAGE_RECORDED_SIGNATURE ==
+    0x00deb2c73e40cb1b2a9085715d5b9985c143b45d90f1f56e9fda108d271551fe_bytes32);
+
 constexpr size_t ABI_WORD_SIZE = 32;
 constexpr size_t UINT64_PADDING_SIZE = ABI_WORD_SIZE - sizeof(uint64_t);
 constexpr uint64_t PAYLOAD_OFFSET = 2 * ABI_WORD_SIZE;
 constexpr size_t DOMAIN_STATE_UPDATED_DATA_SIZE = 4 * ABI_WORD_SIZE;
+// Indexed parameters including the signature topic.
+constexpr size_t L1_MESSAGE_RECORDED_TOPIC_COUNT = 4;
+constexpr size_t ENCRYPTED_L1_MESSAGE_RECORDED_TOPIC_COUNT = 3;
+// Non-indexed head words: (sourceChainId, offset, nonce, messageHash) and
+// (sourceChainId, offset, nonce).
+constexpr size_t L1_MESSAGE_RECORDED_HEAD_WORDS = 4;
+constexpr size_t ENCRYPTED_L1_MESSAGE_RECORDED_HEAD_WORDS = 3;
 
 struct BloomProbe
 {
@@ -67,6 +89,67 @@ struct BloomProbe
         });
     }
 };
+
+struct MessageEventData
+{
+    uint64_t source_chain_id;
+    monad::byte_string payload;
+    monad::uint256_t nonce;
+};
+
+// Decodes the non-indexed `(uint64 sourceChainId, bytes payload,
+// uint256 nonce[, bytes32 hash])` data of a hub message event. Solidity
+// places the single dynamic value right after the head, so the offset is
+// fixed; the trailing message hash is not needed to derive the delivery and
+// is skipped.
+monad::Result<MessageEventData> decode_message_event_data(
+    monad::byte_string_view input, size_t const head_word_count)
+{
+    using namespace monad;
+
+    size_t const head_size = head_word_count * ABI_WORD_SIZE;
+    BOOST_OUTCOME_TRY(
+        auto const source_chain_id_be, abi_decode_fixed<u64_be>(input));
+    BOOST_OUTCOME_TRY(
+        auto const payload_offset, abi_decode_fixed<u256_be>(input));
+    if (MONAD_UNLIKELY(payload_offset.native() != uint256_t{head_size})) {
+        return AbiDecodeError::InvalidEncoding;
+    }
+    BOOST_OUTCOME_TRY(auto const nonce_be, abi_decode_fixed<u256_be>(input));
+    size_t const remaining_head = head_size - 3 * ABI_WORD_SIZE;
+    if (MONAD_UNLIKELY(input.size() < remaining_head)) {
+        return AbiDecodeError::InputTooShort;
+    }
+    input.remove_prefix(remaining_head);
+
+    BOOST_OUTCOME_TRY(
+        auto const payload_size_be, abi_decode_fixed<u256_be>(input));
+    if (MONAD_UNLIKELY(payload_size_be.native() > uint256_t{input.size()})) {
+        return AbiDecodeError::InputTooShort;
+    }
+    size_t const payload_size = static_cast<size_t>(payload_size_be.native());
+    byte_string payload{input.substr(0, payload_size)};
+    input.remove_prefix(payload_size);
+
+    size_t const padding_size =
+        (ABI_WORD_SIZE - (payload_size % ABI_WORD_SIZE)) % ABI_WORD_SIZE;
+    if (MONAD_UNLIKELY(input.size() < padding_size)) {
+        return AbiDecodeError::InputTooShort;
+    }
+    if (MONAD_UNLIKELY(!std::ranges::all_of(
+            input.substr(0, padding_size),
+            [](uint8_t const byte) { return byte == 0; }))) {
+        return AbiDecodeError::InvalidEncoding;
+    }
+    input.remove_prefix(padding_size);
+    if (MONAD_UNLIKELY(!input.empty())) {
+        return AbiDecodeError::InputTooLong;
+    }
+    return MessageEventData{
+        .source_chain_id = source_chain_id_be.native(),
+        .payload = std::move(payload),
+        .nonce = nonce_be.native()};
+}
 
 MONAD_ANONYMOUS_NAMESPACE_END
 
@@ -269,6 +352,92 @@ Result<std::vector<DomainStateUpdate>> scan_domain_state_updates(
         }
     }
     return updates;
+}
+
+Result<std::vector<L1DomainMessage>> scan_l1_domain_messages(
+    std::span<Receipt const> const receipts, Address const &domain_hub,
+    std::span<uint64_t const> const private_domain_ids) noexcept
+{
+    std::vector<L1DomainMessage> messages;
+    if (private_domain_ids.empty()) {
+        return messages;
+    }
+
+    BloomProbe const hub_probe{to_byte_string_view(domain_hub.bytes)};
+    BloomProbe const plaintext_probe{
+        to_byte_string_view(L1_MESSAGE_RECORDED_SIGNATURE.bytes)};
+    BloomProbe const encrypted_probe{
+        to_byte_string_view(ENCRYPTED_L1_MESSAGE_RECORDED_SIGNATURE.bytes)};
+    for (size_t i = 0; i < receipts.size(); ++i) {
+        auto const &receipt = receipts[i];
+        if (!hub_probe.matches(receipt.bloom) ||
+            (!plaintext_probe.matches(receipt.bloom) &&
+             !encrypted_probe.matches(receipt.bloom))) {
+            continue;
+        }
+        for (auto const &log : receipt.logs) {
+            if (log.address != domain_hub || log.topics.empty()) {
+                continue;
+            }
+            bool encrypted;
+            if (log.topics[0] == L1_MESSAGE_RECORDED_SIGNATURE) {
+                encrypted = false;
+            }
+            else if (log.topics[0] == ENCRYPTED_L1_MESSAGE_RECORDED_SIGNATURE) {
+                encrypted = true;
+            }
+            else {
+                continue;
+            }
+            // Only events of served domains are decoded further, so a
+            // malformed event for another domain never affects this node.
+            if (MONAD_UNLIKELY(log.topics.size() < 2)) {
+                return AbiDecodeError::InvalidEncoding;
+            }
+            auto domain_chain_id_word =
+                to_byte_string_view(log.topics[1].bytes);
+            BOOST_OUTCOME_TRY(
+                auto const domain_chain_id_be,
+                abi_decode_fixed<u64_be>(domain_chain_id_word));
+            uint64_t const domain_chain_id = domain_chain_id_be.native();
+            if (!std::ranges::contains(private_domain_ids, domain_chain_id)) {
+                continue;
+            }
+            size_t const topic_count =
+                encrypted ? ENCRYPTED_L1_MESSAGE_RECORDED_TOPIC_COUNT
+                          : L1_MESSAGE_RECORDED_TOPIC_COUNT;
+            if (MONAD_UNLIKELY(log.topics.size() != topic_count)) {
+                return AbiDecodeError::InvalidEncoding;
+            }
+
+            auto from_word = to_byte_string_view(log.topics[2].bytes);
+            BOOST_OUTCOME_TRY(
+                auto const from, abi_decode_fixed<Address>(from_word));
+            std::optional<Address> to;
+            if (!encrypted) {
+                auto to_word = to_byte_string_view(log.topics[3].bytes);
+                BOOST_OUTCOME_TRY(
+                    auto const decoded_to, abi_decode_fixed<Address>(to_word));
+                to = decoded_to;
+            }
+            BOOST_OUTCOME_TRY(
+                auto event_data,
+                decode_message_event_data(
+                    byte_string_view{log.data},
+                    encrypted ? ENCRYPTED_L1_MESSAGE_RECORDED_HEAD_WORDS
+                              : L1_MESSAGE_RECORDED_HEAD_WORDS));
+            messages.push_back(L1DomainMessage{
+                .domain_chain_id = domain_chain_id,
+                .source_chain_id = event_data.source_chain_id,
+                .from = from,
+                .to = to,
+                .payload = std::move(event_data.payload),
+                .nonce = event_data.nonce,
+                .encrypted = encrypted,
+                .l1_transaction_index = i});
+        }
+    }
+    return messages;
 }
 
 MONAD_NAMESPACE_END

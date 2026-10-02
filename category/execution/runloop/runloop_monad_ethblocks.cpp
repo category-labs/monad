@@ -218,20 +218,6 @@ Result<void> process_monad_block(
     block.header.parent_hash =
         to_bytes(keccak256(rlp::encode_block_header(db.read_eth_header())));
 
-    BOOST_OUTCOME_TRY(
-        auto const private_domain_outputs,
-        execute_private_domain_blocks<traits>(
-            chain,
-            db,
-            secondary_db,
-            vm,
-            priority_pool,
-            block_hash_buffer,
-            block.header,
-            block.transactions,
-            private_domain_keyring,
-            private_domain_sequencer));
-
     BlockMetrics block_metrics;
     BlockState block_state(db, vm, secondary_db);
     record_block_marker_event(MONAD_EXEC_BLOCK_PERF_EVM_ENTER);
@@ -251,6 +237,23 @@ Result<void> process_monad_block(
             system_call_state_tracer,
             chain_context));
     record_block_marker_event(MONAD_EXEC_BLOCK_PERF_EVM_EXIT);
+
+    // Private domain blocks are derived from both the L1 transactions and
+    // the L1 receipts (hub message events), against the same parent state.
+    BOOST_OUTCOME_TRY(
+        auto const private_domain_outputs,
+        execute_private_domain_blocks<traits>(
+            chain,
+            db,
+            secondary_db,
+            vm,
+            priority_pool,
+            block_hash_buffer,
+            block.header,
+            block.transactions,
+            receipts,
+            private_domain_keyring,
+            private_domain_sequencer));
 
     auto domain_state_updates = scan_domain_state_updates(
         receipts,

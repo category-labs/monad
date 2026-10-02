@@ -962,7 +962,7 @@ EXPLICIT_TRAITS_MEMBER(State::access_storage);
 // access_storage leaves the account in current_, where get_storage_into
 // would find it again: the value is read from the row just looked up.
 template <Traits traits>
-monad_access_status State::sload_into(
+monad_access_status State::sload_full(
     Address const &address, bytes32_t const &key, bool const read_cold,
     evmc_bytes32 &out)
 {
@@ -973,6 +973,76 @@ monad_access_status State::sload_into(
         current_storage_into(account_state, address, key, out);
     }
     return status;
+}
+
+monad_access_status State::sload_cold(
+    Address const &address, bytes32_t const &key, bool const read_cold,
+    evmc_bytes32 &out, AccountState &account_state)
+{
+    account_state.add_accessed_storage(key);
+    journal_warm_slot(address, key);
+    if (read_cold) {
+        current_storage_into(account_state, address, key, out);
+    }
+    return MONAD_ACCESS_COLD;
+}
+
+// current_storage_into's read of the block's state, for an original row whose
+// incarnation sload_into found to be the account's.
+monad_access_status State::sload_read(
+    Address const &address, bytes32_t const &key, evmc_bytes32 &out,
+    OriginalAccountState &orig)
+{
+    bytes32_t const &value = block_state_.read_storage(
+        *orig.delta_, address, orig.account_.value().incarnation, key);
+    orig.prestate_storage_.insert(key, value);
+    out = value;
+    return MONAD_ACCESS_WARM;
+}
+
+// A warm slot of the memoised account whose value the state holds, about
+// half of all SLOADs, is answered with no call, so with no frame to save and
+// restore registers in. Every other case goes on by a tail call: into
+// sload_cold with the account found, into sload_read with its original row,
+// or into sload_full.
+template <Traits traits>
+monad_access_status State::sload_into(
+    Address const &address, bytes32_t const &key, bool const read_cold,
+    evmc_bytes32 &out)
+{
+    if constexpr (!traits::mip_8_active()) {
+        AccountState *const cur = memoised_current(address);
+        if (MONAD_LIKELY(cur != nullptr)) {
+            if (!cur->is_accessed_storage(key)) {
+                return sload_cold(address, key, read_cold, out, *cur);
+            }
+            // current_storage_into, up to a read of the block's state.
+            auto const &account = cur->account_;
+            OriginalAccountState *const orig = cur->orig_;
+            if (MONAD_LIKELY(account.has_value())) {
+                if (auto const *const v = cur->storage_.find(key); v) {
+                    out = *v;
+                    return MONAD_ACCESS_WARM;
+                }
+                if (MONAD_LIKELY(orig != nullptr)) {
+                    auto const &original_account = orig->account_;
+                    if (!original_account.has_value() ||
+                        account.value().incarnation !=
+                            original_account.value().incarnation) {
+                        out = {};
+                        return MONAD_ACCESS_WARM;
+                    }
+                    if (auto const *const v = orig->prestate_storage_.find(key);
+                        v) {
+                        out = *v;
+                        return MONAD_ACCESS_WARM;
+                    }
+                    return sload_read(address, key, out, *orig);
+                }
+            }
+        }
+    }
+    return sload_full<traits>(address, key, read_cold, out);
 }
 
 EXPLICIT_TRAITS_MEMBER(State::sload_into);

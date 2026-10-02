@@ -79,8 +79,10 @@ public:
     // never move (a segmented map's).
     StateDeltas::value_type &read_account_delta(Address const &);
 
-    // read_storage on the entry read_account_delta returned for the address.
-    bytes32_t read_storage(
+    // read_storage on the entry read_account_delta returned for the address,
+    // returned where the block keeps the slot: a copy is 32 bytes through the
+    // caller's stack.
+    bytes32_t const &read_storage(
         StateDeltas::value_type &, Address const &, Incarnation,
         bytes32_t const &key);
 #endif

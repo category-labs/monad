@@ -273,8 +273,14 @@ public:
         bytes32_t const &key, bytes32_t const &value,
         bytes32_t const &original_value, bytes32_t const *const stored_value)
     {
+#ifdef MONAD_ZKVM_ZISK
+        // Borrow the current value instead of copying its 32 bytes.
+        bytes32_t const &current_value =
+            stored_value ? *stored_value : original_value;
+#else
         bytes32_t const current_value =
             stored_value ? *stored_value : original_value;
+#endif
         if (value == bytes32_t{}) {
             return zero_out_key(key, original_value, current_value);
         }

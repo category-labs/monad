@@ -867,7 +867,13 @@ void State::subtract_from_balance(
 monad_storage_status State::set_storage(
     evmc_address const &address, bytes32_t const &key, bytes32_t const &value)
 {
+#ifdef MONAD_ZKVM_ZISK
+    // Borrow the original slot value; both sources stay alive until
+    // set_storage consumes it below.
+    bytes32_t const *original_value;
+#else
     bytes32_t original_value;
+#endif
     auto &account_state = current_account_state(address);
     MONAD_ASSERT(account_state.account_);
     // Reuse this value for journalling and storage-status computation.
@@ -880,26 +886,37 @@ monad_storage_status State::set_storage(
         auto &orig_account_state = *account_state.original_state_;
         auto &storage = orig_account_state.prestate_storage_;
         if (auto const *const it = storage.find(key); it) {
+#ifdef MONAD_ZKVM_ZISK
+            original_value = it;
+#else
             original_value = *it;
+#endif
         }
         else {
             Incarnation const incarnation = account_state.account_->incarnation;
 #ifdef MONAD_ZKVM_ZISK
             bytes32_t const &value = block_state_.read_storage(
                 *orig_account_state.block_delta_, address, incarnation, key);
+            storage.insert(key, value);
+            original_value = &value;
 #else
             bytes32_t const value =
                 block_state_.read_storage(address, incarnation, key);
-#endif
             storage.insert(key, value);
             original_value = value;
+#endif
         }
     }
     // state
     {
         journal_slot(address, key, stored_value);
+#ifdef MONAD_ZKVM_ZISK
+        auto const result = account_state.set_storage(
+            key, value, *original_value, stored_value);
+#else
         auto const result =
             account_state.set_storage(key, value, original_value, stored_value);
+#endif
         return result;
     }
 }

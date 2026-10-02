@@ -30,11 +30,33 @@
 #include <algorithm>
 #include <cstdint>
 #include <iterator>
+#include <optional>
 
 MONAD_NAMESPACE_BEGIN
 
 namespace
 {
+    template <unsigned_integral UInt>
+    constexpr UInt compute_priority_fee(
+        TransactionType const type, UInt const &max_fee,
+        UInt const &max_priority_fee, UInt const &base_fee) noexcept
+    {
+        MONAD_ASSERT(max_fee >= base_fee);
+        UInt const margin = max_fee - base_fee;
+        if (type == TransactionType::eip1559 ||
+            type == TransactionType::eip4844 ||
+            type == TransactionType::eip7702) {
+            return std::min(max_priority_fee, margin);
+        }
+        // EIP-1559: "Legacy Ethereum transactions will still work and
+        // be included in blocks, but they will not benefit directly from
+        // the new pricing system. This is due to the fact that upgrading
+        // from legacy transactions to new transactions results in the
+        // legacy transaction’s gas_price entirely being consumed either
+        // by the base_fee_per_gas and the priority_fee_per_gas."
+        return margin;
+    }
+
     // Approximates `factor * e ** (n/d) using Taylor expansion
     uint256_t fake_exponential(
         uint256_t const factor, uint256_t const n, uint256_t const d)
@@ -189,22 +211,45 @@ EXPLICIT_TRAITS(floor_data_gas_counted);
 constexpr uint256_t priority_fee_per_gas(
     Transaction const &tx, uint256_t const &base_fee_per_gas) noexcept
 {
-    MONAD_ASSERT(tx.max_fee_per_gas >= base_fee_per_gas);
-    auto const max_priority_fee_per_gas = tx.max_fee_per_gas - base_fee_per_gas;
-
-    if (tx.type == TransactionType::eip1559 ||
-        tx.type == TransactionType::eip4844 ||
-        tx.type == TransactionType::eip7702) {
-        return std::min(tx.max_priority_fee_per_gas, max_priority_fee_per_gas);
-    }
-    // EIP-1559: "Legacy Ethereum transactions will still work and
-    // be included in blocks, but they will not benefit directly from
-    // the new pricing system. This is due to the fact that upgrading
-    // from legacy transactions to new transactions results in the
-    // legacy transaction’s gas_price entirely being consumed either
-    // by the base_fee_per_gas and the priority_fee_per_gas."
-    return max_priority_fee_per_gas;
+    return compute_priority_fee(
+        tx.type,
+        tx.max_fee_per_gas,
+        tx.max_priority_fee_per_gas,
+        base_fee_per_gas);
 }
+
+#if defined(MONAD_ZKVM_ZISK)
+namespace
+{
+    // Use 64-bit arithmetic only when all three fees fit.
+    struct Fees64
+    {
+        uint64_t base_fee;
+        uint64_t priority_fee;
+    };
+
+    [[gnu::always_inline]] inline std::optional<Fees64> try_compute_fees64(
+        Transaction const &tx, uint256_t const &base_fee_per_gas) noexcept
+    {
+        auto const fits_word = [](uint256_t const &x) {
+            return (x[1] | x[2] | x[3]) == 0;
+        };
+        if (MONAD_UNLIKELY(
+                !fits_word(tx.max_fee_per_gas) ||
+                !fits_word(tx.max_priority_fee_per_gas) ||
+                !fits_word(base_fee_per_gas))) {
+            return std::nullopt;
+        }
+        uint64_t const base_fee = base_fee_per_gas[0];
+        uint64_t const priority_fee = compute_priority_fee(
+            tx.type,
+            tx.max_fee_per_gas[0],
+            tx.max_priority_fee_per_gas[0],
+            base_fee);
+        return Fees64{base_fee, priority_fee};
+    }
+}
+#endif
 
 template <Traits traits>
 uint256_t
@@ -213,6 +258,14 @@ gas_price(Transaction const &tx, uint256_t const &base_fee_per_gas) noexcept
     if constexpr (!traits::eip_1559_header_active()) {
         return tx.max_fee_per_gas;
     }
+#if defined(MONAD_ZKVM_ZISK)
+    // The sum does not overflow: it is at most max_fee_per_gas.
+    if (auto const f = try_compute_fees64(tx, base_fee_per_gas);
+        MONAD_LIKELY(f.has_value())) {
+        return uint256_t{f->priority_fee + f->base_fee};
+    }
+#endif
+    // EIP-1559
     return priority_fee_per_gas(tx, base_fee_per_gas) + base_fee_per_gas;
 }
 
@@ -248,6 +301,17 @@ uint256_t calculate_txn_award(
     if constexpr (!traits::eip_1559_header_active()) {
         return gas_used * gas_price<traits>(tx, base_fee_per_gas);
     }
+#if defined(MONAD_ZKVM_ZISK)
+    // The tip on a word, as in gas_price, and its product with the gas used
+    // at most 128 bits.
+    if (auto const f = try_compute_fees64(tx, base_fee_per_gas);
+        MONAD_LIKELY(f.has_value())) {
+        unsigned __int128 const award =
+            static_cast<unsigned __int128>(gas_used) * f->priority_fee;
+        return uint256_t{
+            static_cast<uint64_t>(award), static_cast<uint64_t>(award >> 64)};
+    }
+#endif
     return gas_used * priority_fee_per_gas(tx, base_fee_per_gas);
 }
 

@@ -51,3 +51,24 @@ $ uv run --directory scripts/vm/benchmark-analysis \
 ```
 to generate a table showing the speedup of the `compiler` implementation over
 `interpreter`.
+
+## Instruction Counts
+
+`vm-perf` counts the instructions the VM spends compiling each contract in
+`test/vm/data/compile_benchmarks` with `mce`, and executing each sequence of
+`vm-micro-benchmarks` with the compiler and the interpreter. Callgrind collects
+only while a thread is inside the VM's compile or execute entry points, so the
+counts repeat exactly and come with per-function attribution. Both programs
+need a build configured with `-DMONAD_COMPILER_BENCHMARKS=ON`:
+```console
+$ uv run --project scripts/vm/benchmark-analysis \
+    vm-perf measure build -o before.json --cases cases.json
+$ uv run --project scripts/vm/benchmark-analysis \
+    vm-perf compare before.json after.json
+```
+`--micro` selects micro benchmarks by regex. The default is the single-opcode
+set, about two and a half minutes on 32 cores; `--micro ''` measures all of
+them in about twenty. `compare` prints, as JSON, each benchmark that changed by
+more than `--threshold` percent (default 0.1) and the functions behind the
+change, and exits with 1 if any benchmark got slower.
+

@@ -15,6 +15,7 @@
 
 #include <category/core/bytes.hpp>
 #include <category/core/keccak.hpp>
+#include <category/execution/ethereum/chain/chain_config.h>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/chain/genesis_state.hpp>
 #include <category/execution/ethereum/chain/hive_net.hpp>
@@ -44,6 +45,9 @@
 #include <monad/test/traits_test.hpp>
 
 #include <bitset>
+#include <cstdint>
+#include <limits>
+#include <optional>
 
 #include <gtest/gtest.h>
 
@@ -841,5 +845,223 @@ TYPED_TEST(MonadTraitsTest, system_transaction_sender_is_authority)
         EXPECT_EQ(
             res.error(),
             MonadTransactionError::SystemTransactionSenderIsAuthority);
+    }
+}
+
+TEST(EthHeaderLayout, MonadMainnet)
+{
+    static constexpr uint64_t six = 1762266600;
+    static constexpr uint64_t nine = 1773930600;
+    static constexpr uint64_t ten = 1788359400;
+
+    EXPECT_EQ(
+        monad_chain_eth_header_layout(CHAIN_CONFIG_MONAD_MAINNET, 1, 0),
+        MONAD_ETH_HEADER_LAYOUT_CANCUN);
+    EXPECT_EQ(
+        monad_chain_eth_header_layout(CHAIN_CONFIG_MONAD_MAINNET, 1, six - 1),
+        MONAD_ETH_HEADER_LAYOUT_CANCUN);
+    EXPECT_EQ(
+        monad_chain_eth_header_layout(CHAIN_CONFIG_MONAD_MAINNET, 1, six),
+        MONAD_ETH_HEADER_LAYOUT_PRAGUE);
+    EXPECT_EQ(
+        monad_chain_eth_header_layout(CHAIN_CONFIG_MONAD_MAINNET, 1, nine),
+        MONAD_ETH_HEADER_LAYOUT_PRAGUE);
+    EXPECT_EQ(
+        monad_chain_eth_header_layout(CHAIN_CONFIG_MONAD_MAINNET, 1, ten),
+        MONAD_ETH_HEADER_LAYOUT_PRAGUE);
+}
+
+TEST(EthHeaderLayout, MonadTestnet)
+{
+    static constexpr uint64_t four = 1760448600;
+    static constexpr uint64_t ten = 1786545000;
+
+    EXPECT_EQ(
+        monad_chain_eth_header_layout(CHAIN_CONFIG_MONAD_TESTNET, 1, four - 1),
+        MONAD_ETH_HEADER_LAYOUT_CANCUN);
+    EXPECT_EQ(
+        monad_chain_eth_header_layout(CHAIN_CONFIG_MONAD_TESTNET, 1, four),
+        MONAD_ETH_HEADER_LAYOUT_PRAGUE);
+    EXPECT_EQ(
+        monad_chain_eth_header_layout(CHAIN_CONFIG_MONAD_TESTNET, 1, ten),
+        MONAD_ETH_HEADER_LAYOUT_PRAGUE);
+}
+
+TEST(EthHeaderLayout, MonadDevnet)
+{
+    // Past any MONAD_DEVNET_FORK_TS override.
+    EXPECT_EQ(
+        monad_chain_eth_header_layout(
+            CHAIN_CONFIG_MONAD_DEVNET, 1, std::numeric_limits<uint64_t>::max()),
+        MONAD_ETH_HEADER_LAYOUT_PRAGUE);
+}
+
+TEST(EthHeaderLayout, EthereumMainnet)
+{
+    using namespace eth_forks;
+    static constexpr uint64_t pre_shanghai = SHANGHAI_ACTIVATION_TIMESTAMP - 1;
+
+    EXPECT_EQ(
+        monad_chain_eth_header_layout(
+            CHAIN_CONFIG_ETHEREUM_MAINNET,
+            BERLIN_ACTIVATION_BLOCK_NUMBER,
+            pre_shanghai),
+        MONAD_ETH_HEADER_LAYOUT_LEGACY);
+    EXPECT_EQ(
+        monad_chain_eth_header_layout(
+            CHAIN_CONFIG_ETHEREUM_MAINNET,
+            LONDON_ACTIVATION_BLOCK_NUMBER - 1,
+            pre_shanghai),
+        MONAD_ETH_HEADER_LAYOUT_LEGACY);
+    EXPECT_EQ(
+        monad_chain_eth_header_layout(
+            CHAIN_CONFIG_ETHEREUM_MAINNET,
+            LONDON_ACTIVATION_BLOCK_NUMBER,
+            pre_shanghai),
+        MONAD_ETH_HEADER_LAYOUT_LONDON);
+    // The exec-events replay fixture block.
+    EXPECT_EQ(
+        monad_chain_eth_header_layout(
+            CHAIN_CONFIG_ETHEREUM_MAINNET, 15'000'001, 1655778552),
+        MONAD_ETH_HEADER_LAYOUT_LONDON);
+    // Paris adds no header field.
+    EXPECT_EQ(
+        monad_chain_eth_header_layout(
+            CHAIN_CONFIG_ETHEREUM_MAINNET,
+            PARIS_ACTIVATION_BLOCK_NUMBER,
+            pre_shanghai),
+        MONAD_ETH_HEADER_LAYOUT_LONDON);
+
+    EXPECT_EQ(
+        monad_chain_eth_header_layout(
+            CHAIN_CONFIG_ETHEREUM_MAINNET,
+            PARIS_ACTIVATION_BLOCK_NUMBER,
+            SHANGHAI_ACTIVATION_TIMESTAMP),
+        MONAD_ETH_HEADER_LAYOUT_SHANGHAI);
+    EXPECT_EQ(
+        monad_chain_eth_header_layout(
+            CHAIN_CONFIG_ETHEREUM_MAINNET,
+            PARIS_ACTIVATION_BLOCK_NUMBER,
+            CANCUN_ACTIVATION_TIMESTAMP),
+        MONAD_ETH_HEADER_LAYOUT_CANCUN);
+    EXPECT_EQ(
+        monad_chain_eth_header_layout(
+            CHAIN_CONFIG_ETHEREUM_MAINNET,
+            PARIS_ACTIVATION_BLOCK_NUMBER,
+            PRAGUE_ACTIVATION_TIMESTAMP),
+        MONAD_ETH_HEADER_LAYOUT_PRAGUE);
+    // Osaka adds no header field.
+    EXPECT_EQ(
+        monad_chain_eth_header_layout(
+            CHAIN_CONFIG_ETHEREUM_MAINNET,
+            PARIS_ACTIVATION_BLOCK_NUMBER,
+            OSAKA_ACTIVATION_TIMESTAMP),
+        MONAD_ETH_HEADER_LAYOUT_PRAGUE);
+
+    EXPECT_EQ(
+        monad_chain_eth_header_layout(
+            CHAIN_CONFIG_ETHEREUM_MAINNET,
+            BERLIN_ACTIVATION_BLOCK_NUMBER - 1,
+            pre_shanghai),
+        MONAD_ETH_HEADER_LAYOUT_UNKNOWN);
+}
+
+TEST(EthHeaderLayout, HiveNet)
+{
+    EXPECT_EQ(
+        monad_chain_eth_header_layout(CHAIN_CONFIG_HIVE_NET, 1, 0),
+        MONAD_ETH_HEADER_LAYOUT_SHANGHAI);
+    EXPECT_EQ(
+        monad_chain_eth_header_layout(CHAIN_CONFIG_HIVE_NET, 3, 30),
+        MONAD_ETH_HEADER_LAYOUT_CANCUN);
+    EXPECT_EQ(
+        monad_chain_eth_header_layout(CHAIN_CONFIG_HIVE_NET, 6, 60),
+        MONAD_ETH_HEADER_LAYOUT_PRAGUE);
+}
+
+TEST(EthHeaderLayout, UnknownChain)
+{
+    // Unnamed but within the enum's value range.
+    EXPECT_EQ(
+        monad_chain_eth_header_layout(static_cast<monad_chain_config>(5), 0, 0),
+        MONAD_ETH_HEADER_LAYOUT_UNKNOWN);
+}
+
+TYPED_TEST(TraitsTest, eth_header_layout_matches_static_validate_header)
+{
+    using Trait = typename TestFixture::Trait;
+    auto const layout = eth_header_layout<Trait>();
+
+    EXPECT_NE(layout, MONAD_ETH_HEADER_LAYOUT_UNKNOWN);
+
+    BlockHeader header{.gas_limit = 5000};
+    if (layout >= MONAD_ETH_HEADER_LAYOUT_LONDON) {
+        header.base_fee_per_gas = uint256_t{};
+    }
+    if (layout >= MONAD_ETH_HEADER_LAYOUT_SHANGHAI) {
+        header.withdrawals_root = NULL_ROOT;
+    }
+    if (layout >= MONAD_ETH_HEADER_LAYOUT_CANCUN) {
+        header.blob_gas_used = 0;
+        header.excess_blob_gas = 0;
+        header.parent_beacon_block_root = bytes32_t{};
+    }
+    if (layout >= MONAD_ETH_HEADER_LAYOUT_PRAGUE) {
+        header.requests_hash = bytes32_t{};
+    }
+    EXPECT_TRUE(static_validate_header<Trait>(header).has_value());
+
+    {
+        BlockHeader beyond = header;
+        bool added = true;
+        if (layout == MONAD_ETH_HEADER_LAYOUT_LEGACY) {
+            beyond.base_fee_per_gas = uint256_t{};
+        }
+        else if (layout == MONAD_ETH_HEADER_LAYOUT_LONDON) {
+            beyond.withdrawals_root = NULL_ROOT;
+        }
+        else if (layout == MONAD_ETH_HEADER_LAYOUT_SHANGHAI) {
+            beyond.blob_gas_used = 0;
+            beyond.excess_blob_gas = 0;
+            beyond.parent_beacon_block_root = bytes32_t{};
+        }
+        else if (layout == MONAD_ETH_HEADER_LAYOUT_CANCUN) {
+            beyond.requests_hash = bytes32_t{};
+        }
+        else {
+            added = false;
+        }
+        if (added) {
+            auto const result = static_validate_header<Trait>(beyond);
+            ASSERT_TRUE(result.has_error());
+            EXPECT_EQ(result.error(), BlockError::FieldBeforeFork);
+        }
+    }
+
+    {
+        BlockHeader missing = header;
+        bool removed = true;
+        if (layout == MONAD_ETH_HEADER_LAYOUT_LONDON) {
+            missing.base_fee_per_gas = std::nullopt;
+        }
+        else if (layout == MONAD_ETH_HEADER_LAYOUT_SHANGHAI) {
+            missing.withdrawals_root = std::nullopt;
+        }
+        else if (layout == MONAD_ETH_HEADER_LAYOUT_CANCUN) {
+            missing.blob_gas_used = std::nullopt;
+            missing.excess_blob_gas = std::nullopt;
+            missing.parent_beacon_block_root = std::nullopt;
+        }
+        else if (layout == MONAD_ETH_HEADER_LAYOUT_PRAGUE) {
+            missing.requests_hash = std::nullopt;
+        }
+        else {
+            removed = false;
+        }
+        if (removed) {
+            auto const result = static_validate_header<Trait>(missing);
+            ASSERT_TRUE(result.has_error());
+            EXPECT_EQ(result.error(), BlockError::MissingField);
+        }
     }
 }

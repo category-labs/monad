@@ -239,7 +239,7 @@ namespace monad::vm::utils
 
         if (config.verbose) {
             std::cerr << "// done\n";
-            show_opcodes(opcodes);
+            std::cerr << show_opcodes(opcodes);
         }
 
         return opcodes;

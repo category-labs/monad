@@ -15,14 +15,17 @@
 
 #pragma once
 
+#include <category/core/assert.h>
+#include <category/core/runtime/uint256.hpp>
 #include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/runtime/bin.hpp>
-#include <category/vm/runtime/runtime.hpp>
+#include <category/vm/runtime/types.hpp>
 
-#include <asmjit/x86.h>
+#include <asmjit/core/jitruntime.h>
 
+#include <cstddef>
+#include <cstdint>
 #include <functional>
-#include <optional>
 #include <variant>
 
 namespace monad::vm::compiler::native
@@ -30,7 +33,7 @@ namespace monad::vm::compiler::native
     /// Native code size should be smaller than 2GB to avoid overflowing
     /// relative offsets of type `int32_t`.
     using native_code_size_t = runtime::Bin<26>;
-    using entrypoint_t = void (*)(runtime::Context *, uint8_t *);
+    using entrypoint_t = void (*)(runtime::Context *, uint256_t *);
 
     class Nativecode
     {

@@ -1994,8 +1994,8 @@ TEST_F(EthCallFixture, trace_block_with_prestate)
     // Now commit block 256.
     BlockHeader const header{.number = 256};
     std::vector<Receipt> const receipts = {
-        Receipt{.status = EVMC_SUCCESS, .gas_used = 20000u},
-        Receipt{.status = EVMC_SUCCESS, .gas_used = 20000u}};
+        Receipt{.status = 1, .gas_used = 20000u},
+        Receipt{.status = 1, .gas_used = 20000u}};
 
     std::vector<std::vector<CallFrame>> const call_frames = {{}, {}};
 
@@ -2235,8 +2235,8 @@ TEST_F(EthCallFixture, trace_transaction_with_prestate)
     // Now commit block 256.
     BlockHeader const header{.number = 256};
     std::vector<Receipt> const receipts = {
-        Receipt{.status = EVMC_SUCCESS, .gas_used = 20000u},
-        Receipt{.status = EVMC_SUCCESS, .gas_used = 20000u}};
+        Receipt{.status = 1, .gas_used = 20000u},
+        Receipt{.status = 1, .gas_used = 20000u}};
 
     std::vector<std::vector<CallFrame>> const call_frames = {{}, {}};
 
@@ -4368,8 +4368,8 @@ TEST_F(EthCallFixture, trace_transaction_with_rewards_prestate)
     BlockHeader const header{
         .number = 256, .beneficiary = BENEFICIARY, .base_fee_per_gas = 1};
     std::vector<Receipt> const receipts = {
-        Receipt{.status = EVMC_SUCCESS, .gas_used = 20000u},
-        Receipt{.status = EVMC_SUCCESS, .gas_used = 20000u}};
+        Receipt{.status = 1, .gas_used = 20000u},
+        Receipt{.status = 1, .gas_used = 20000u}};
 
     std::vector<std::vector<CallFrame>> const call_frames = {{}, {}};
 

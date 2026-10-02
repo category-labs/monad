@@ -41,7 +41,6 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
-#include <cstdlib>
 #include <cstring>
 #include <functional>
 #include <limits>
@@ -152,19 +151,9 @@ namespace
         }};
     }
 
-    struct TestStackMemoryDeleter
+    auto test_stack_memory()
     {
-        void operator()(uint8_t *const p) const
-        {
-            std::free(p);
-        }
-    } test_stack_memory_deleter;
-
-    std::unique_ptr<uint8_t, TestStackMemoryDeleter> test_stack_memory()
-    {
-        return {
-            reinterpret_cast<uint8_t *>(std::aligned_alloc(32, 32 * 1024)),
-            test_stack_memory_deleter};
+        return EvmStackAllocator{0}.allocate();
     }
 
     std::vector<Emitter::LocationType> const all_locations = {

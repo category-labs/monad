@@ -18,6 +18,7 @@
 
 #include <category/core/assert.h>
 #include <category/core/log.hpp>
+#include <category/core/runtime/uint256.hpp>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
@@ -173,7 +174,7 @@ public:
     }
 
     void dispatch_execute(
-        Binary &entry, monad::vm::runtime::Context *ctx, uint8_t *stck)
+        Binary &entry, monad::vm::runtime::Context *ctx, uint256_t *const stck)
     {
         entrypoint_t ep = entry.ncode->entrypoint();
         ep(ctx, stck);

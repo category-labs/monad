@@ -1150,7 +1150,7 @@ namespace monad::vm::interpreter
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(ADD);
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) && !defined(MONAD_ZKVM_ADD256_SOFTWARE)
         // Name a, then step to the sum's slot, which is the new top: the old
         // top dies at that store, so add256's output register cannot take a3
         // from under the new one and cost a move.
@@ -1187,7 +1187,7 @@ namespace monad::vm::interpreter
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_CHECK(SUB);
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) && !defined(MONAD_ZKVM_ADD256_SOFTWARE)
         // Name a, then step to the new top, as ADD does. The barrier keeps the
         // store ahead of b's loads, which gcc would otherwise schedule first.
         ctx.sub256_params.a = reinterpret_cast<uint64_t const *>(stack_top);
@@ -4278,11 +4278,18 @@ namespace monad::vm::interpreter
             gas_remaining -=
                 static_gas<traits, static_cast<compiler::EvmOpCode>(OP)>();
             if constexpr (OP == ADD) {
+#if defined(MONAD_ZKVM_ADD256_SOFTWARE)
+                *stack_top = *src + *stack_top;
+#else
                 ctx.add256_params.a = reinterpret_cast<uint64_t const *>(src);
                 zisk_add256(ctx.add256_params, *stack_top, *stack_top);
+#endif
             }
             else if constexpr (OP == SUB) {
                 // As SUB: the copied word less the top, into the top.
+#if defined(MONAD_ZKVM_ADD256_SOFTWARE)
+                *stack_top = *src - *stack_top;
+#else
                 ctx.sub256_params.a = reinterpret_cast<uint64_t const *>(src);
                 asm volatile("" ::: "memory");
                 auto &b = *stack_top;
@@ -4290,6 +4297,7 @@ namespace monad::vm::interpreter
                     b[i] = ~b[i];
                 }
                 zisk_add256(ctx.sub256_params, b, b);
+#endif
             }
             else if constexpr (OP == LT || OP == GT) {
                 // The result goes on to the follower's head in a7.

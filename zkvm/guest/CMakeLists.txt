@@ -272,6 +272,10 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # execute_witness.cpp checks at compile time.
     # Layout: little-endian u32 call counts, then permutation counts,
     # in the site order defined by zkvm/category/core/keccak_sites.hpp.
+    option(MONAD_ZKVM_ADD256_SOFTWARE "EXPERIMENT: EVM ADD/SUB in software" OFF)
+    if(MONAD_ZKVM_ADD256_SOFTWARE)
+        add_compile_definitions(MONAD_ZKVM_ADD256_SOFTWARE)
+    endif()
     option(MONAD_ZKVM_KECCAK_SITES "count keccak calls per call site" OFF)
     if(MONAD_ZKVM_KECCAK_SITES)
         add_compile_definitions(MONAD_ZKVM_KECCAK_SITES)
@@ -1080,6 +1084,15 @@ add_library(monad-zkvm-guest OBJECT
 )
 monad_compile_options(monad-zkvm-guest)
 target_link_libraries(monad-zkvm-guest PRIVATE zkevm-standards)
+# EXPERIMENT, measurement only: mem* in software (soft_mem.c, reached through
+# the linker's --wrap, which the build passes), and EVM ADD/SUB without the
+# add256 precompile.
+option(MONAD_ZKVM_DMA_SOFTWARE "EXPERIMENT: memcpy & co. in software" OFF)
+if(MONAD_ZKVM_DMA_SOFTWARE AND DEFINED MONAD_ZKVM_GUEST_TARGET)
+    target_sources(monad-zkvm-guest PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/soft_mem.c")
+    set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/soft_mem.c"
+        PROPERTIES COMPILE_OPTIONS "-fno-builtin;-fno-tree-loop-distribute-patterns")
+endif()
 if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     monad_riscv_compile_options(monad-zkvm-guest)
     target_link_libraries(monad-zkvm-guest

@@ -493,7 +493,13 @@ namespace monad::vm::interpreter
     #define MONAD_VM_DUP_OF_10 ~, THEN
     #define MONAD_VM_DUP_OF_11 ~, THEN
     #define MONAD_VM_DUP_OF_16 ~, THEN
+    #if defined(MONAD_ZKVM_ZISK_DMA_LOWERING)
+    // Without the DMA lowering DUPn MLOAD's pair runs short of registers: gcc
+    // keeps one in s0 and opens a frame for get_memory_offset's exit, and the
+    // pair's hand-made dispatch leaves both behind (audit-official-build.py's
+    // frame check). There DUPn and MLOAD each run their own handler.
     #define MONAD_VM_DUP_OF_51 ~, THEN
+    #endif
     #define MONAD_VM_DUP_OF_52 ~, THEN
     #define MONAD_VM_DUP_OF_90 ~, THEN
     #define MONAD_VM_DUP_PICK(KIND) MONAD_VM_LEAD_CAT(MONAD_VM_DUP_, KIND)
@@ -1031,6 +1037,11 @@ namespace monad::vm::interpreter
     #define MONAD_VM_RELAY_OF_08 ~, RELAY
     #define MONAD_VM_RELAY_OF_20 ~, RELAY
     #define MONAD_VM_RELAY_OF_55 ~, RELAY
+    #if !defined(MONAD_ZKVM_ZISK_DMA_LOWERING)
+    // Without the DMA lowering MCOPY's copy is no longer one instruction, and
+    // its handler outgrows a copy's region (by 28 to 48 bytes).
+    #define MONAD_VM_RELAY_OF_5e ~, RELAY
+    #endif
     #define MONAD_VM_SLOT_PICK(KIND) MONAD_VM_LEAD_CAT(MONAD_VM_SLOT_, KIND)
 
     #define MONAD_VM_SLOT(REV, NAME, OP)                                       \
@@ -1091,6 +1102,7 @@ namespace monad::vm::interpreter
     #undef MONAD_VM_SLOTS_16
     #undef MONAD_VM_SLOT
     #undef MONAD_VM_SLOT_PICK
+    #undef MONAD_VM_RELAY_OF_5e
     #undef MONAD_VM_RELAY_OF_55
     #undef MONAD_VM_RELAY_OF_20
     #undef MONAD_VM_RELAY_OF_08

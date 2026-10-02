@@ -25,7 +25,8 @@ extern "C"
 #endif
 
 // In-tree mirror of the fork-only `evmc_page_storage_status` (MIP-8 SSTORE page
-// accounting). Converted to the evmc struct only in the EvmcHost override.
+// accounting). Converted to the evmc struct only in the test-only
+// EvmcHostAdapter.
 struct monad_page_storage_status
 {
     bool first_page_write;

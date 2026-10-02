@@ -29,7 +29,6 @@
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 
 #include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -50,8 +49,8 @@ EvmcHostBase::EvmcHostBase(
 {
 }
 
-evmc::bytes32 EvmcHostBase::get_storage(
-    evmc::address const &address, evmc::bytes32 const &key) const noexcept
+bytes32_t EvmcHostBase::get_storage(
+    Address const &address, bytes32_t const &key) const noexcept
 {
     MONAD_TRY
     {
@@ -64,13 +63,13 @@ evmc::bytes32 EvmcHostBase::get_storage(
     stack_unwind();
 }
 
-evmc_storage_status EvmcHostBase::set_storage(
-    evmc::address const &address, evmc::bytes32 const &key,
-    evmc::bytes32 const &value) noexcept
+monad_storage_status EvmcHostBase::set_storage(
+    Address const &address, bytes32_t const &key,
+    bytes32_t const &value) noexcept
 {
     MONAD_TRY
     {
-        return to_evmc_storage_status(state_.set_storage(address, key, value));
+        return state_.set_storage(address, key, value);
     }
     MONAD_CATCH(...)
     {
@@ -79,12 +78,11 @@ evmc_storage_status EvmcHostBase::set_storage(
     stack_unwind();
 }
 
-evmc::uint256be
-EvmcHostBase::get_balance(evmc::address const &address) const noexcept
+bytes32_t EvmcHostBase::get_balance(Address const &address) const noexcept
 {
     MONAD_TRY
     {
-        return store_be_as<evmc::uint256be>(state_.get_balance(address));
+        return store_be_as<bytes32_t>(state_.get_balance(address));
     }
     MONAD_CATCH(...)
     {
@@ -93,7 +91,7 @@ EvmcHostBase::get_balance(evmc::address const &address) const noexcept
     stack_unwind();
 }
 
-size_t EvmcHostBase::get_code_size(evmc::address const &address) const noexcept
+size_t EvmcHostBase::get_code_size(Address const &address) const noexcept
 {
     MONAD_TRY
     {
@@ -116,8 +114,7 @@ size_t EvmcHostBase::get_code_size(evmc::address const &address) const noexcept
     stack_unwind();
 }
 
-evmc::bytes32
-EvmcHostBase::get_code_hash(evmc::address const &address) const noexcept
+bytes32_t EvmcHostBase::get_code_hash(Address const &address) const noexcept
 {
     MONAD_TRY
     {
@@ -134,7 +131,7 @@ EvmcHostBase::get_code_hash(evmc::address const &address) const noexcept
 }
 
 size_t EvmcHostBase::copy_code(
-    evmc::address const &address, size_t const offset, uint8_t *const data,
+    Address const &address, size_t const offset, uint8_t *const data,
     size_t const size) const noexcept
 {
     MONAD_TRY
@@ -166,7 +163,7 @@ evmc_tx_context const *EvmcHostBase::get_tx_context() const noexcept
 // This attempts to read from the contract first before falling back to the
 // block hash buffer. This is currently only called by the BLOCKHASH
 // implementation which guarantees that the block_number is in range.
-evmc::bytes32
+bytes32_t
 EvmcHostBase::get_block_hash(int64_t const block_number) const noexcept
 {
     MONAD_TRY
@@ -190,9 +187,8 @@ EvmcHostBase::get_block_hash(int64_t const block_number) const noexcept
 }
 
 void EvmcHostBase::emit_log(
-    evmc::address const &address, uint8_t const *const data,
-    size_t const data_size, evmc::bytes32 const topics[],
-    size_t const num_topics) noexcept
+    Address const &address, uint8_t const *const data, size_t const data_size,
+    bytes32_t const topics[], size_t const num_topics) noexcept
 {
     MONAD_TRY
     {
@@ -211,8 +207,8 @@ void EvmcHostBase::emit_log(
     stack_unwind();
 }
 
-evmc::bytes32 EvmcHostBase::get_transient_storage(
-    evmc::address const &address, evmc::bytes32 const &key) const noexcept
+bytes32_t EvmcHostBase::get_transient_storage(
+    Address const &address, bytes32_t const &key) const noexcept
 {
     MONAD_TRY
     {
@@ -226,8 +222,8 @@ evmc::bytes32 EvmcHostBase::get_transient_storage(
 }
 
 void EvmcHostBase::set_transient_storage(
-    evmc::address const &address, evmc::bytes32 const &key,
-    evmc::bytes32 const &value) noexcept
+    Address const &address, bytes32_t const &key,
+    bytes32_t const &value) noexcept
 {
     MONAD_TRY
     {

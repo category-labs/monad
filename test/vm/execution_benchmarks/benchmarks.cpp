@@ -21,6 +21,7 @@
 
 #include <test_resource_data.h>
 
+#include <test/vm/utils/evmc_host_adapter.hpp>
 #include <test/vm/utils/test_block_hash_buffer.hpp>
 #include <test/vm/utils/test_host.hpp>
 #include <test/vm/vm/test_vm.hpp>
@@ -164,14 +165,19 @@ namespace
     vm::VM::ExecuteOverride to_execute_override(evmc::VM &vm)
     {
         return [&vm](
-                   auto const *const host,
-                   auto *const context,
+                   auto &host,
                    auto const rev,
                    auto const *const msg,
                    auto const *const code,
                    auto const code_size) -> evmc::Result {
+            vm::test::EvmcHostAdapter adapter{host};
             return vm.execute(
-                *host, context, to_evmc_revision(rev), *msg, code, code_size);
+                adapter.get_interface(),
+                adapter.to_context(),
+                to_evmc_revision(rev),
+                *msg,
+                code,
+                code_size);
         };
     }
 
@@ -215,7 +221,7 @@ namespace
             authorities,
             header,
             chain};
-        auto &host = test_host.get_evmc_host();
+        vm::test::EvmcHostAdapter host{test_host.get_evmc_host()};
 
         auto *vm_ptr =
             reinterpret_cast<BlockchainTestVM *>(vm.get_raw_pointer());
@@ -293,7 +299,7 @@ namespace
                 authorities,
                 header,
                 chain};
-            auto &host = test_host.get_evmc_host();
+            vm::test::EvmcHostAdapter host{test_host.get_evmc_host()};
 
             auto const *interface = &host.get_interface();
             auto *ctx = host.to_context();

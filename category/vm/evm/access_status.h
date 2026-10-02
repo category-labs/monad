@@ -29,18 +29,17 @@ extern "C"
 // access_status.cpp.
 //
 // The enum itself carries no evmc dependency. The only tie to evmc is the
-// conversion function below, which is needed solely at the remaining evmc host
-// interface boundary (the EvmcHost overrides, whose return types are fixed by
-// evmc::HostInterface); it — together with the <evmc/evmc.h> include — is
-// removable in one step once the host interface is ported off evmc.
+// conversion function below, used solely by the test-only EvmcHostAdapter that
+// serves evmc's C host interface to the spec VM; it — together with the
+// <evmc/evmc.h> include — is removable together with that adapter.
 enum monad_access_status
 {
     MONAD_ACCESS_COLD = 0,
     MONAD_ACCESS_WARM = 1
 };
 
-// Convert monad_access_status to evmc's evmc_access_status. Needed only at the
-// remaining evmc host interface boundary (see the note above).
+// Convert monad_access_status to evmc's evmc_access_status. Needed only by the
+// test-only EvmcHostAdapter (see the note above).
 enum evmc_access_status to_evmc_access_status(enum monad_access_status status);
 
 #ifdef __cplusplus

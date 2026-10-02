@@ -197,7 +197,7 @@ size_t EvmcHostBase::copy_code(
 }
 
 #if defined(MONAD_ZKVM_ZISK)
-std::optional<Address>
+Address const *
 EvmcHostBase::delegate_of(evmc::address const &address) const noexcept
 {
     MONAD_TRY
@@ -205,9 +205,9 @@ EvmcHostBase::delegate_of(evmc::address const &address) const noexcept
         if (MONAD_UNLIKELY(trace::is_code_tracer(state_tracer_))) {
             auto const vcode = read_code_for_tracer(state_, state_tracer_, address);
             if (!vcode) {
-                return std::nullopt;
+                return nullptr;
             }
-            return vm::evm::designation_of(vcode->intercode()->code_span());
+            return vm::evm::delegate_in(vcode->intercode()->code_span());
         }
         return state_.delegate_of(as_monad(address));
     }

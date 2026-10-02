@@ -115,7 +115,7 @@ public:
         size_t size) const override;
 
 #if defined(MONAD_ZKVM_ZISK)
-    virtual std::optional<Address>
+    virtual Address const *
     delegate_of(evmc::address const &) const noexcept override;
 #endif
 

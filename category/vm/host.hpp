@@ -59,8 +59,11 @@ namespace monad::vm
             evmc::address const &addr, evmc::bytes32 const &key,
             bool can_pay_cold_access, evmc_bytes32 &value) noexcept = 0;
 
-        /// Read the EIP-7702 delegate directly from the stored code.
-        virtual std::optional<Address>
+        /// EIP-7702's delegate of `addr`, read where its code is kept: through
+        /// copy_code, the code's first bytes were copied out, at a run-time
+        /// length, on every message call. It is returned where it lies in
+        /// the code, or null.
+        virtual Address const *
         delegate_of(evmc::address const &addr) const noexcept = 0;
 #endif
 

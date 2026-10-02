@@ -1355,15 +1355,15 @@ size_t State::copy_code(
 }
 
 #if defined(MONAD_ZKVM_ZISK)
-std::optional<Address> State::delegate_of(evmc_address const &address)
+Address const *State::delegate_of(evmc_address const &address)
 {
     auto const &account = recent_account(address);
     if (MONAD_UNLIKELY(!account.has_value())) {
-        return std::nullopt;
+        return nullptr;
     }
     vm::SharedVarcode const &vcode = read_code_ref(account.value().code_hash);
     MONAD_ASSERT(vcode);
-    return vm::evm::designation_of(vcode->intercode()->code_span());
+    return vm::evm::delegate_in(vcode->intercode()->code_span());
 }
 #endif
 

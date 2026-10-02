@@ -59,9 +59,11 @@ jobs:
                   CC: gcc-15
 
         steps:
-            - name: Tell git to do submodules in parallel
+            - name: Configure git submodules
               run: |
                 git config --global submodule.fetchJobs "$(nproc)"
+                git config --global submodule.LegacyTests.update none
+                git config --global submodule.third_party/tests.update none
 
             - uses: actions/checkout@v4
               with:
@@ -91,9 +93,11 @@ jobs:
       name: VM Fuzz Tests
       runs-on: ubuntu-26.04-32
       steps:
-      - name: Tell git to do submodules in parallel
+      - name: Configure git submodules
         run: |
           git config --global submodule.fetchJobs "$(nproc)"
+          git config --global submodule.LegacyTests.update none
+          git config --global submodule.third_party/tests.update none
 
       - uses: actions/checkout@v4
         with:

@@ -25,9 +25,11 @@ jobs:
     runs-on: ubuntu-26.04-32
 
     steps:
-      - name: Tell git to do submodules in parallel
+      - name: Configure git submodules
         run: |
           git config --global submodule.fetchJobs "$(nproc)"
+          git config --global submodule.LegacyTests.update none
+          git config --global submodule.third_party/tests.update none
 
       - name: Checkout repo and submodules
         uses: actions/checkout@v4
@@ -46,6 +48,7 @@ jobs:
             CC=gcc-15
             CXX=g++-15
             UBUNTU_MIRROR=http://azure.archive.ubuntu.com/ubuntu/
+          ulimit: "memlock=-1:-1"
           target: build_and_test_rust
           cache-from: type=gha,scope=base_rust
 
@@ -56,6 +59,7 @@ jobs:
           file: docker/Dockerfile
           build-args: |-
             UBUNTU_MIRROR=http://azure.archive.ubuntu.com/ubuntu/
+          ulimit: "memlock=-1:-1"
           target: code_quality_rust
           cache-from: type=gha,scope=base_rust
 

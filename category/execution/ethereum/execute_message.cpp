@@ -71,6 +71,28 @@ namespace
 #endif
     }
 
+#if defined(MONAD_ZKVM_ZISK)
+    // The two with the value converted once: across the State call between
+    // them gcc cannot keep the message's value, and converted it twice.
+    bool sender_has_balance(
+        State &state, evmc_message const &msg, uint256_t const &value) noexcept
+    {
+        return state.record_balance_constraint_for_debit(
+            msg_address(msg.sender), value);
+    }
+
+    template <Traits traits>
+    void transfer_balances(
+        State &state, EvmcHost<traits> &host, evmc_message const &msg,
+        Address const &to, uint256_t const &value)
+    {
+        Address const &from = msg_address(msg.sender);
+        state.subtract_from_balance(from, value);
+        state.add_to_balance(to, value);
+        host.emit_native_transfer_event(from, to, value);
+    }
+#endif
+
     template <Traits traits>
     void transfer_balances(
         State &state, EvmcHost<traits> &host, evmc_message const &msg,
@@ -138,7 +160,12 @@ pre_call(EvmcHost<traits> &host, evmc_message const &msg, State &state)
     bool const static_call = msg.flags & EVMC_STATIC;
 
     if (msg.kind != EVMC_DELEGATECALL) {
+#if defined(MONAD_ZKVM_ZISK)
+        uint256_t const value = load_be<uint256_t>(msg.value);
+        if (MONAD_UNLIKELY(!sender_has_balance(state, msg, value))) {
+#else
         if (MONAD_UNLIKELY(!sender_has_balance(state, msg))) {
+#endif
             // The pushed frame exits before bytecode, account access, or
             // storage access, so there is no access-list metadata to capture.
             state.pop_reject();
@@ -147,7 +174,7 @@ pre_call(EvmcHost<traits> &host, evmc_message const &msg, State &state)
         else if (!static_call) {
 #if defined(MONAD_ZKVM_ZISK)
             transfer_balances<traits>(
-                state, host, msg, msg_address(msg.recipient));
+                state, host, msg, msg_address(msg.recipient), value);
 #else
             transfer_balances<traits>(state, host, msg, msg.recipient);
 #endif

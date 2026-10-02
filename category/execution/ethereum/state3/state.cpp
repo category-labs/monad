@@ -994,7 +994,7 @@ EXPLICIT_TRAITS_MEMBER(State::access_storage);
 #if defined(MONAD_ZKVM_ZISK)
 // Warm and read the slot using the same account lookup.
 template <Traits traits>
-monad_access_status State::sload_into(
+monad_access_status State::sload_full(
     evmc_address const &address, bytes32_t const &key,
     bool const can_pay_cold_access, evmc_bytes32 &out)
 {
@@ -1005,6 +1005,83 @@ monad_access_status State::sload_into(
         current_storage_into(account_state, address, key, out);
     }
     return status;
+}
+
+monad_access_status State::sload_cold(
+    evmc_address const &address, bytes32_t const &key,
+    bool const can_pay_cold_access, evmc_bytes32 &out,
+    AccountState &account_state)
+{
+    account_state.add_accessed_storage(key);
+    journal_warm_slot(address, key);
+    if (can_pay_cold_access) {
+        current_storage_into(account_state, address, key, out);
+    }
+    return MONAD_ACCESS_COLD;
+}
+
+// The caller checked that the current and original incarnations match.
+monad_access_status State::sload_read(
+    evmc_address const &address, bytes32_t const &key, evmc_bytes32 &out,
+    OriginalAccountState &original_state)
+{
+    bytes32_t const &value = block_state_.read_storage(
+        *original_state.block_delta_,
+        address,
+        original_state.account_.value().incarnation,
+        key);
+    original_state.prestate_storage_.insert(key, value);
+    out = to_evmc(value);
+    return MONAD_ACCESS_WARM;
+}
+
+// Answer cached warm reads without calls. Keep slower paths out of line so
+// they can be tail-called without adding register saves to the fast path.
+template <Traits traits>
+monad_access_status State::sload_into(
+    evmc_address const &address, bytes32_t const &key,
+    bool const can_pay_cold_access, evmc_bytes32 &out)
+{
+    if constexpr (!traits::mip_8_active()) {
+        AccountState *const current_state =
+            cached_current_account_in_frame(address);
+        if (MONAD_LIKELY(current_state != nullptr)) {
+            if (!current_state->is_accessed_storage(key)) {
+                return sload_cold(
+                    address, key, can_pay_cold_access, out, *current_state);
+            }
+            // Try current storage, then cached original storage, before
+            // reading the block state.
+            auto const &account = current_state->account_;
+            OriginalAccountState *const original_state =
+                current_state->original_state_;
+            if (MONAD_LIKELY(account.has_value())) {
+                if (auto const *const cached_value =
+                        current_state->storage_.find(key);
+                    cached_value) {
+                    out = to_evmc(*cached_value);
+                    return MONAD_ACCESS_WARM;
+                }
+                if (MONAD_LIKELY(original_state != nullptr)) {
+                    auto const &original_account = original_state->account_;
+                    if (!original_account.has_value() ||
+                        account.value().incarnation !=
+                            original_account.value().incarnation) {
+                        out = {};
+                        return MONAD_ACCESS_WARM;
+                    }
+                    if (auto const *const cached_value =
+                            original_state->prestate_storage_.find(key);
+                        cached_value) {
+                        out = to_evmc(*cached_value);
+                        return MONAD_ACCESS_WARM;
+                    }
+                    return sload_read(address, key, out, *original_state);
+                }
+            }
+        }
+    }
+    return sload_full<traits>(address, key, can_pay_cold_access, out);
 }
 
 EXPLICIT_TRAITS_MEMBER(State::sload_into);

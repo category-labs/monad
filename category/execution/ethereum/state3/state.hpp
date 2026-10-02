@@ -366,6 +366,34 @@ private:
         AccountState const &, monad_address const &, bytes32_t const &key,
         bytes32_t &out);
 #if defined(MONAD_ZKVM_ZISK)
+
+    // Reuse the memo only when current_account_state needs no bookkeeping.
+    [[nodiscard]] AccountState *
+    cached_current_account_in_frame(monad_address const &address)
+    {
+    #if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
+        if (current_memo_epoch_ != frame_epoch_) {
+            return nullptr;
+        }
+    #endif
+        return cached_current_account(address);
+    }
+
+    // Keep slow paths out of line. Account arguments come last to preserve
+    // sload_into's argument registers when tail-calling these helpers.
+    [[gnu::noinline]] AccessStatus sload_cold(
+        monad_address const &, bytes32_t const &key, bool can_pay_cold_access,
+        bytes32_t &out, AccountState &);
+
+    [[gnu::noinline]] AccessStatus sload_read(
+        monad_address const &, bytes32_t const &key, bytes32_t &out,
+        OriginalAccountState &);
+
+    template <Traits traits>
+    [[gnu::noinline]] AccessStatus sload_full(
+        monad_address const &, bytes32_t const &key, bool can_pay_cold_access,
+        bytes32_t &out);
+
     [[gnu::always_inline]] inline StorageStatus set_storage_of(
         AccountState &, monad_address const &, bytes32_t const &key,
         bytes32_t const &value);

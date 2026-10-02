@@ -30,6 +30,10 @@
 #include <category/vm/evm/storage_status.hpp>
 #include <category/vm/evm/tx_context.hpp>
 
+#if defined(MONAD_ZKVM_ZISK)
+    #include <category/vm/evm/explicit_traits.hpp>
+#endif
+
 #include <cstddef>
 #include <cstdint>
 #include <type_traits>
@@ -269,3 +273,91 @@ void StateHostBase::set_transient_storage(
 }
 
 MONAD_NAMESPACE_END
+#if defined(MONAD_ZKVM_ZISK)
+
+namespace monad::vm::runtime
+{
+    template <Traits traits>
+    AccessStatus guest_sload_into(
+        Host &host, Address const &address, bytes32_t const &key,
+        bool const can_pay_cold_access, bytes32_t &value) noexcept
+    {
+        return static_cast<StateHost<traits> &>(host).sload_into(
+            address, key, can_pay_cold_access, value);
+    }
+
+    EXPLICIT_TRAITS(guest_sload_into);
+
+    template <Traits traits>
+    SstoreStatus guest_sstore_into(
+        Host &host, Address const &address, bytes32_t const &key,
+        bytes32_t const &value, bool const can_pay_cold_access) noexcept
+    {
+        return static_cast<StateHost<traits> &>(host).sstore_into(
+            address, key, value, can_pay_cold_access);
+    }
+
+    EXPLICIT_TRAITS(guest_sstore_into);
+
+    template <Traits traits>
+    AccessStatus
+    guest_access_account(Host &host, Address const &address) noexcept
+    {
+        return static_cast<StateHost<traits> &>(host).access_account(address);
+    }
+
+    EXPLICIT_TRAITS(guest_access_account);
+
+    template <Traits traits>
+    vm::Result guest_call(Host &host, Message const &message) noexcept
+    {
+        return static_cast<StateHost<traits> &>(host).call(message);
+    }
+
+    EXPLICIT_TRAITS(guest_call);
+
+    bytes32_t guest_get_transient_storage(
+        Host const &host, Address const &address, bytes32_t const &key) noexcept
+    {
+        return static_cast<StateHostBase const &>(host)
+            .StateHostBase::get_transient_storage(address, key);
+    }
+
+    void guest_set_transient_storage(
+        Host &host, Address const &address, bytes32_t const &key,
+        bytes32_t const &value) noexcept
+    {
+        static_cast<StateHostBase &>(host).StateHostBase::set_transient_storage(
+            address, key, value);
+    }
+
+    TxContext const *guest_get_tx_context(Host const &host) noexcept
+    {
+        return static_cast<StateHostBase const &>(host)
+            .StateHostBase::get_tx_context();
+    }
+
+    size_t
+    guest_get_code_size(Host const &host, Address const &address) noexcept
+    {
+        return static_cast<StateHostBase const &>(host)
+            .StateHostBase::get_code_size(address);
+    }
+
+    uint256_t
+    guest_get_balance(Host const &host, Address const &address) noexcept
+    {
+        return static_cast<StateHostBase const &>(host)
+            .StateHostBase::get_balance(address);
+    }
+
+    void guest_emit_log(
+        Host &host, Address const &address, uint8_t const *const data,
+        size_t const data_size, bytes32_t const topics[],
+        size_t const num_topics) noexcept
+    {
+        static_cast<StateHostBase &>(host).StateHostBase::emit_log(
+            address, data, data_size, topics, num_topics);
+    }
+}
+#endif

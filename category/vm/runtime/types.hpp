@@ -320,6 +320,13 @@ namespace monad::vm::runtime
         uint8_t const *landing_base = nullptr;
         size_t code_bound = 0;
         uint64_t const *jumpdest_words = nullptr;
+
+        // The offsets a 32-byte access starts at without growing the memory
+        // are those below memory.size - 31, none while it is empty. Kept with
+        // memory.size by everything that writes it, so that MLOAD and MSTORE
+        // test an offset's low word once, where get_memory_offset's 28-bit
+        // bound and the size test took four instructions.
+        uint64_t memory_access32_end = 0;
 #endif
 
         [[gnu::always_inline]]
@@ -411,6 +418,9 @@ namespace monad::vm::runtime
                 deduct_gas(expansion_cost);
                 uint32_t const old_size = memory.size;
                 memory.size = *new_size;
+#if defined(MONAD_ZKVM_ZISK)
+                memory_access32_end = *new_size - 31;
+#endif
                 memory.cost = new_cost;
 
                 if (MONAD_UNLIKELY(memory.capacity < *new_size)) {

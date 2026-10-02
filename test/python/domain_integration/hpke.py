@@ -39,6 +39,25 @@ def encrypt_inner_transaction(
     return enc + ciphertext
 
 
+def encrypt_l1_message(
+    receiver_scalar: bytes,
+    to: bytes,
+    data: bytes,
+    *,
+    frame_version: int = 1,
+) -> bytes:
+    """Seal one L1 -> domain message for `sendEncryptedL1Message`.
+
+    The plaintext the client expects is `to[20] || data`, framed with the
+    version byte like a sequenced transaction.
+    """
+    if len(to) != 20:
+        raise ValueError("message target must be a 20-byte address")
+    return encrypt_inner_transaction(
+        receiver_scalar, to + data, frame_version=frame_version
+    )
+
+
 def write_private_key_files(
     directory: Path,
     keys: Mapping[int, bytes],

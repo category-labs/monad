@@ -620,6 +620,14 @@ static std::vector<EvmBuilder<traits>> const any_shift_math_builders = {
     EvmBuilder<traits>{}.shr(),
     EvmBuilder<traits>{}.sar()};
 
+static std::vector<EvmBuilder<traits>> const literal_value_shift_builders = {
+    EvmBuilder<traits>{}.push(1).swap1().shl(),
+    EvmBuilder<traits>{}
+        .push(std::numeric_limits<uint256_t>::max())
+        .swap1()
+        .shr(),
+    EvmBuilder<traits>{}.push(uint256_t{1} << 255).swap1().sar()};
+
 static std::vector<EvmBuilder<traits>> const any_load_math_builders = {
     EvmBuilder<traits>{}.mload(),
     EvmBuilder<traits>{}.tload(),
@@ -1054,6 +1062,30 @@ int main(int argc, char **argv)
         })
         .run_throughput_benchmark()
         .run_latency_benchmark();
+
+    // The prefix puts the shift in a stack offset, general reg or avx reg
+    for (auto const &[title, prefix] :
+         {std::pair{"", EvmBuilder<traits>{}},
+          std::pair{"PUSH 1; ADD; ", EvmBuilder<traits>{}.push(1).add()},
+          std::pair{"PUSH 1; XOR; ", EvmBuilder<traits>{}.push(1).xor_()}}) {
+        BenchmarkBuilder(
+            args,
+            results,
+            {.title = std::string{title} + "PUSH; SWAP1; SHIFT, random input",
+             .num_inputs = 1,
+             .has_output = true,
+             .iteration_count = 100,
+             .subject_seqs = literal_value_shift_builders * prefix})
+            .make_calldata([](size_t num_inputs) {
+                std::vector<uint8_t> cd(10'000 * num_inputs * 32, 0);
+                for (size_t i = 0; i < cd.size(); i += 32) {
+                    store_be(&cd[i], rand_uint256() & 255);
+                }
+                return cd;
+            })
+            .run_throughput_benchmark()
+            .run_latency_benchmark();
+    }
 
     BenchmarkBuilder(
         args,

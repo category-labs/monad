@@ -264,7 +264,14 @@ void State::journal_slot(
         return;
     }
     undo_.emplace_back(address, Undo::Kind::Slot, undo_slots_.size());
+#ifdef MONAD_ZKVM_ZISK
+    // The prior value where it lies, or a zero that does: the conditional
+    // built a 32-byte temporary.
+    static constexpr bytes32_t zero{};
+    undo_slots_.emplace_back(key, prev ? *prev : zero, prev != nullptr);
+#else
     undo_slots_.emplace_back(key, prev ? *prev : bytes32_t{}, prev != nullptr);
+#endif
 }
 
 void State::journal_transient(
@@ -275,7 +282,13 @@ void State::journal_transient(
     }
     bytes32_t const *const prev = row.transient_storage_.find(key);
     undo_.emplace_back(address, Undo::Kind::Transient, undo_slots_.size());
+#ifdef MONAD_ZKVM_ZISK
+    // As journal_slot.
+    static constexpr bytes32_t zero{};
+    undo_slots_.emplace_back(key, prev ? *prev : zero, prev != nullptr);
+#else
     undo_slots_.emplace_back(key, prev ? *prev : bytes32_t{}, prev != nullptr);
+#endif
 }
 
 void State::journal_pages(Address const &address, AccountState const &row)
@@ -841,7 +854,13 @@ void State::subtract_from_balance(
 monad_storage_status State::set_storage(
     Address const &address, bytes32_t const &key, bytes32_t const &value)
 {
+#ifdef MONAD_ZKVM_ZISK
+    // Where the original value lies, in the original row or the block: a
+    // local was zeroed, then assigned from one of them.
+    bytes32_t const *original_value;
+#else
     bytes32_t original_value;
+#endif
     auto &account_state = current_account_state(address);
     MONAD_ASSERT(account_state.account_);
     // Reuse one lookup for journaling, status computation and the write.
@@ -853,26 +872,37 @@ monad_storage_status State::set_storage(
         auto &orig_account_state = *account_state.orig_;
         auto &storage = orig_account_state.prestate_storage_;
         if (auto const *const it = storage.find(key); it) {
+#ifdef MONAD_ZKVM_ZISK
+            original_value = it;
+#else
             original_value = *it;
+#endif
         }
         else {
             Incarnation const incarnation = account_state.account_->incarnation;
 #ifdef MONAD_ZKVM_ZISK
             bytes32_t const &value = block_state_.read_storage(
                 *orig_account_state.delta_, address, incarnation, key);
+            storage.insert(key, value);
+            original_value = &value;
 #else
             bytes32_t const value =
                 block_state_.read_storage(address, incarnation, key);
-#endif
             storage.insert(key, value);
             original_value = value;
+#endif
         }
     }
     // state
     {
         journal_slot(address, key, prev);
+#ifdef MONAD_ZKVM_ZISK
+        auto const result =
+            account_state.set_storage(key, value, *original_value, prev);
+#else
         auto const result =
             account_state.set_storage(key, value, original_value, prev);
+#endif
         return result;
     }
 }

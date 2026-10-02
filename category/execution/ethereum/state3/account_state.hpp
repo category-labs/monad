@@ -256,11 +256,29 @@ public:
         bytes32_t const &key, bytes32_t const &value,
         bytes32_t const &original_value, bytes32_t const *const prev)
     {
+#ifdef MONAD_ZKVM_ZISK
+        // The current value bound where it lies and the zero test on the
+        // words: a copy, and a zero to compare with, were 32 bytes each.
+        bytes32_t const &current_value = prev ? *prev : original_value;
+        std::uint64_t w0;
+        std::uint64_t w1;
+        std::uint64_t w2;
+        std::uint64_t w3;
+        __builtin_memcpy(&w0, value.bytes, sizeof(w0));
+        __builtin_memcpy(&w1, value.bytes + 8, sizeof(w1));
+        __builtin_memcpy(&w2, value.bytes + 16, sizeof(w2));
+        __builtin_memcpy(&w3, value.bytes + 24, sizeof(w3));
+        if ((w0 | w1 | w2 | w3) == 0) {
+            return zero_out_key(key, original_value, current_value);
+        }
+        return set_current_value(key, value, original_value, current_value);
+#else
         bytes32_t const current_value = prev ? *prev : original_value;
         if (value == bytes32_t{}) {
             return zero_out_key(key, original_value, current_value);
         }
         return set_current_value(key, value, original_value, current_value);
+#endif
     }
 
     void set_transient_storage(bytes32_t const &key, bytes32_t const &value)

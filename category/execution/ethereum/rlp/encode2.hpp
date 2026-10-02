@@ -46,6 +46,20 @@ inline byte_string to_big_compact(unsigned_integral auto n)
         zeroless_view({reinterpret_cast<unsigned char *>(&n), sizeof(n)}));
 }
 
+#ifdef MONAD_ZKVM_ZISK
+// The same for a 64-bit value, from its leading zero bits: the form above walks
+// the zero bytes off one at a time, three steps each, and a receipt's status
+// and gas, or a nonce or a gas limit, carries five to seven.
+inline byte_string to_big_compact(uint64_t const n)
+{
+    uint64_t const big_endian = bswap(n);
+    unsigned const zero_bytes = static_cast<unsigned>(std::countl_zero(n)) >> 3;
+    return byte_string{byte_string_view{
+        reinterpret_cast<unsigned char const *>(&big_endian) + zero_bytes,
+        8u - zero_bytes}};
+}
+#endif
+
 // Same result, reached by looking at words before bytes.
 //
 // The generic form above byte-swaps the whole value and then walks the leading

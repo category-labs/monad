@@ -643,6 +643,17 @@ bytes32_t State::get_code_hash(Address const &address)
     return NULL_HASH;
 }
 
+#if defined(MONAD_ZKVM_ZISK)
+bytes32_t const &State::code_hash_ref(Address const &address)
+{
+    auto const &account = recent_account(address);
+    if (MONAD_LIKELY(account.has_value())) {
+        return account.value().code_hash;
+    }
+    return NULL_HASH;
+}
+#endif
+
 bool State::is_destructed(Address const &address)
 {
     auto const &account_state = recent_account_state(address);

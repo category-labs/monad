@@ -362,6 +362,12 @@ public:
 
     bytes32_t get_code_hash(Address const &);
 
+#if defined(MONAD_ZKVM_ZISK)
+    // get_code_hash's hash where the account keeps it: a returned copy is
+    // 32 bytes written through the caller's stack.
+    bytes32_t const &code_hash_ref(Address const &);
+#endif
+
     bool is_destructed(Address const &);
 
     bool is_current_incarnation(Address const &);

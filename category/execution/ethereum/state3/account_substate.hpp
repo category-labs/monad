@@ -132,6 +132,34 @@ public:
 #endif
         return MONAD_ACCESS_COLD;
     }
+#ifdef MONAD_ZKVM_ZISK
+
+    // access_storage in two parts, for State::sload_into: the test, which
+    // changes nothing, then the insertion of a key the test found cold.
+    [[nodiscard]] bool is_accessed_storage(bytes32_t const &key) const
+    {
+        std::uint64_t const tail = key_tail(key);
+        if (aidx_) {
+            return aidx_.lookup(key, tail, accessed_storage_) != 0;
+        }
+        MONAD_SLOT_SCAN
+        for (auto const &k : accessed_storage_) {
+            if (key_equals(key, tail, k)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    void add_accessed_storage(bytes32_t const &key)
+    {
+        if (MONAD_UNLIKELY(accessed_storage_.capacity() == 0)) {
+            accessed_storage_.reserve(32);
+        }
+        accessed_storage_.push_back(key);
+        aidx_.on_insert(accessed_storage_);
+    }
+#endif
 
     // Undo operations, for the journal only. Each reverses exactly one
     // journalled transition.

@@ -108,10 +108,23 @@ template <Traits traits>
     bool sender_is_eoa = code_hash == NULL_HASH;
     if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
         // EIP-7702
+#if defined(MONAD_ZKVM_ZISK)
+        // An externally owned sender's code is the empty one, which the
+        // guest's tracer does not record: only a sender with code is read,
+        // where the State keeps it, without copying the varcode and its
+        // intercode, whose counts would be raised and lowered.
+        if (!sender_is_eoa) {
+            auto const &icode = state.read_code_ref(code_hash)->intercode();
+            trace::on_read_code(state_tracer, code_hash, icode);
+            sender_is_eoa =
+                vm::evm::is_delegated({icode->code(), icode->size()});
+        }
+#else
         auto const icode = state.read_code(code_hash)->intercode();
         trace::on_read_code(state_tracer, code_hash, icode);
         sender_is_eoa = sender_is_eoa ||
                         vm::evm::is_delegated({icode->code(), icode->size()});
+#endif
     }
 
     if (MONAD_UNLIKELY(!sender_is_eoa)) {

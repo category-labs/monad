@@ -42,6 +42,10 @@
 #include <functional>
 #include <type_traits>
 #include <utility>
+#if defined(MONAD_ZKVM_ZISK)
+    #include <cstdint>
+    #include <cstring>
+#endif
 
 MONAD_NAMESPACE_BEGIN
 
@@ -246,22 +250,26 @@ struct EvmcHost final : public EvmcHostBase
         MONAD_TRY
         {
 #if defined(MONAD_ZKVM_ZISK)
-            if (is_precompile<traits>(as_monad(address)))
-#else
-            if (is_precompile<traits>(address))
-#endif
-            {
+            // All precompiles start with eight zero bytes. Reject other
+            // addresses here to avoid calling the out-of-line resolver.
+            std::uint64_t address_prefix;
+            std::memcpy(&address_prefix, address.bytes, sizeof(address_prefix));
+            if (MONAD_UNLIKELY(address_prefix == 0) &&
+                is_precompile<traits>(as_monad(address))) {
                 return EVMC_ACCESS_WARM;
             }
+#else
+            if (is_precompile<traits>(address)) {
+                return EVMC_ACCESS_WARM;
+            }
+#endif
             return to_evmc_access_status(
                 state_.access_account(as_monad(address)));
         }
-
         MONAD_CATCH(...)
         {
             capture_current_exception();
         }
-
         stack_unwind();
     }
 

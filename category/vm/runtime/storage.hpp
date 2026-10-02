@@ -99,18 +99,22 @@ namespace monad::vm::runtime
             ctx->deduct_gas(gas_used);
         }
         else {
-            Host &host = host_of(*ctx);
-            auto const &recipient = host_shim::addr(&ctx->env.recipient);
-            auto const &slot = host_shim::word(&key);
-            if (guest_access_storage<traits>(host, recipient, slot) ==
-                EVMC_ACCESS_COLD) {
+            // Both host calls in one. A cold access that the gas left cannot
+            // pay for exits below, before the write, as it did between them.
+            auto const [access_status, storage_status] =
+                guest_sstore_into<traits>(
+                    host_of(*ctx),
+                    host_shim::addr(&ctx->env.recipient),
+                    host_shim::word(&key),
+                    host_shim::word(&value),
+                    ctx->gas_remaining >=
+                        traits::cold_storage_cost() + min_gas);
+            if (access_status == MONAD_ACCESS_COLD) {
                 ctx->deduct_gas(traits::cold_storage_cost() + min_gas);
             }
 
-            auto const storage_status = guest_set_storage(
-                host, recipient, slot, host_shim::word(&value));
-
-            auto [gas_used, gas_refund] = store_cost<traits>(storage_status);
+            auto [gas_used, gas_refund] =
+                store_cost<traits>(to_evmc_storage_status(storage_status));
 
             gas_used -= min_gas;
 

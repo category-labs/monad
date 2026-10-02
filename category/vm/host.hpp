@@ -17,6 +17,8 @@
 
 #include <category/core/address.hpp>
 #if defined(MONAD_ZKVM_ZISK)
+    #include <category/vm/evm/access_status.h>
+    #include <category/vm/evm/storage_status.h>
     #include <category/vm/evm/traits.hpp>
 #endif
 #include <category/vm/runtime/types.hpp>
@@ -306,9 +308,23 @@ namespace monad::vm::runtime
         Host &, evmc::address const &, evmc::bytes32 const &, bool,
         evmc_bytes32 &) noexcept;
 
+    // SSTORE's two statuses from its one host call, as the State gives them:
+    // a conversion between the two calls would keep the host's from being a
+    // tail call.
+    struct SstoreStatus
+    {
+        monad_access_status access;
+        monad_storage_status storage;
+    };
+
+    // SSTORE's access_storage and set_storage, with one lookup of the
+    // account. The slot is written when it was warm, or when `write_cold`
+    // says the caller can pay for a cold access: one that cannot exits before
+    // the write, as it did between the two calls.
     template <Traits traits>
-    evmc_access_status guest_access_storage(
-        Host &, evmc::address const &, evmc::bytes32 const &) noexcept;
+    SstoreStatus guest_sstore_into(
+        Host &, evmc::address const &, evmc::bytes32 const &,
+        evmc::bytes32 const &, bool write_cold) noexcept;
 
     template <Traits traits>
     evmc_access_status
@@ -316,10 +332,6 @@ namespace monad::vm::runtime
 
     template <Traits traits>
     evmc::Result guest_call(Host &, evmc_message const &) noexcept;
-
-    evmc_storage_status guest_set_storage(
-        Host &, evmc::address const &, evmc::bytes32 const &,
-        evmc::bytes32 const &) noexcept;
 
     evmc::bytes32 guest_get_transient_storage(
         Host const &, evmc::address const &, evmc::bytes32 const &) noexcept;

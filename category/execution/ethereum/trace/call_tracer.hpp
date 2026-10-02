@@ -61,16 +61,44 @@ struct NoopCallTracer final : public CallTracerBase
 
 class CallTracer final : public CallTracerBase
 {
+    struct CallFramesStack
+    {
+        std::vector<CallFrame> &frames_;
+        std::stack<size_t> last_{};
+        std::stack<size_t> positions_{};
+
+        explicit CallFramesStack(std::vector<CallFrame> &);
+
+        void advance_position();
+
+        CallFrame &top_frame();
+        CallFrame &pop_frame();
+        CallFrame &push_frame(CallFrame &&);
+        CallFrame &push_selfdestruct_frame(CallFrame &&);
+
+        bool has_active_frame() const;
+        size_t position() const;
+
+        void reset();
+    };
+
     std::vector<CallFrame> &frames_;
-    std::stack<size_t> last_{};
-    std::stack<size_t> positions_{};
+    CallFramesStack frames_stack_;
     Transaction const &tx_;
+    size_t const max_size_;
+    size_t size_{0};
+    bool size_limit_exceeded_{false};
+
+    bool fits(size_t additional_size);
+    size_t log_size(Receipt::Log const &) const;
 
 public:
     CallTracer() = delete;
     CallTracer(CallTracer const &) = delete;
     CallTracer(CallTracer &&) = delete;
     CallTracer(Transaction const &, std::vector<CallFrame> &);
+    CallTracer(
+        Transaction const &, std::vector<CallFrame> &, size_t const max_size);
 
     virtual void on_enter(evmc_message const &) override;
     virtual void on_exit(evmc::Result const &) override;

@@ -19,6 +19,7 @@
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
+#include <category/core/monad_exception.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
@@ -34,8 +35,10 @@
 
 #include <quill/bundled/fmt/ranges.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <optional>
 #include <span>
 #include <stack>
@@ -46,6 +49,9 @@ MONAD_NAMESPACE_BEGIN
 
 namespace
 {
+    char const *const CALL_TRACE_SIZE_LIMIT_ERR_MSG =
+        "call trace size exceeds maximum allowed size";
+
     void to_json_helper(
         std::span<CallFrame const> const frames, nlohmann::json &json,
         size_t &pos)
@@ -91,19 +97,115 @@ std::span<CallFrame const> NoopCallTracer::get_call_frames() const
 }
 
 CallTracer::CallTracer(Transaction const &tx, std::vector<CallFrame> &frames)
-    : frames_(frames)
-    , tx_(tx)
+    : CallTracer(tx, frames, std::numeric_limits<size_t>::max())
 {
-    frames_.reserve(128);
+}
+
+CallTracer::CallFramesStack::CallFramesStack(std::vector<CallFrame> &frames)
+    : frames_(frames)
+{
     positions_.push(0);
+}
+
+void CallTracer::CallFramesStack::advance_position()
+{
+    MONAD_ASSERT(!positions_.empty());
+    positions_.top()++;
+}
+
+CallFrame &CallTracer::CallFramesStack::top_frame()
+{
+    MONAD_ASSERT(!last_.empty());
+    return frames_.at(last_.top());
+}
+
+CallFrame &CallTracer::CallFramesStack::pop_frame()
+{
+    MONAD_ASSERT(!frames_.empty());
+    MONAD_ASSERT(!last_.empty());
+    MONAD_ASSERT(!positions_.empty());
+
+    auto &frame = frames_.at(last_.top());
+    last_.pop();
+    positions_.pop();
+    return frame;
+}
+
+CallFrame &CallTracer::CallFramesStack::push_frame(CallFrame &&frame)
+{
+    advance_position();
+    positions_.push(0);
+    frames_.emplace_back(std::move(frame));
+    last_.push(frames_.size() - 1);
+    return frames_.back();
+}
+
+CallFrame &
+CallTracer::CallFramesStack::push_selfdestruct_frame(CallFrame &&frame)
+{
+    MONAD_ASSERT(!last_.empty());
+    advance_position();
+    frames_.emplace_back(std::move(frame));
+    return frames_.back();
+}
+
+bool CallTracer::CallFramesStack::has_active_frame() const
+{
+    return !last_.empty();
+}
+
+size_t CallTracer::CallFramesStack::position() const
+{
+    MONAD_ASSERT(!positions_.empty());
+    return positions_.top();
+}
+
+void CallTracer::CallFramesStack::reset()
+{
+    last_ = std::stack<size_t>{};
+    positions_ = std::stack<size_t>{};
+    positions_.push(0);
+}
+
+CallTracer::CallTracer(
+    Transaction const &tx, std::vector<CallFrame> &frames,
+    size_t const max_size)
+    : frames_(frames)
+    , frames_stack_(frames_)
+    , tx_(tx)
+    , max_size_(max_size)
+    , size_(0)
+{
+    size_t const initial_capacity =
+        std::min<size_t>(128, max_size_ / sizeof(CallFrame));
+    frames_.reserve(initial_capacity);
+}
+
+bool CallTracer::fits(size_t const additional_size)
+{
+    if (size_limit_exceeded_ || size_ > max_size_ ||
+        additional_size > max_size_ - size_) {
+        size_limit_exceeded_ = true;
+        return false;
+    }
+    return true;
+}
+
+size_t CallTracer::log_size(Receipt::Log const &log) const
+{
+    size_t entry_size = sizeof(CallFrame::Log) + log.data.size();
+    for (auto const &topic : log.topics) {
+        entry_size += sizeof(topic);
+    }
+    return entry_size;
 }
 
 void CallTracer::on_enter(evmc_message const &msg)
 {
-    MONAD_ASSERT(!positions_.empty());
-
-    positions_.top()++;
-    positions_.push(0);
+    auto const frame_size = sizeof(CallFrame) + msg.input_size;
+    if (!fits(frame_size)) {
+        return;
+    }
 
     auto const depth = static_cast<uint64_t>(msg.depth);
 
@@ -121,7 +223,7 @@ void CallTracer::on_enter(evmc_message const &msg)
         to = msg.code_address;
     }
 
-    frames_.emplace_back(CallFrame{
+    frames_stack_.push_frame(CallFrame{
         .type =
             [kind = msg.kind] {
                 switch (kind) {
@@ -155,24 +257,32 @@ void CallTracer::on_enter(evmc_message const &msg)
         .logs = std::vector<CallFrame::Log>{},
     });
 
-    last_.push(frames_.size() - 1);
+    size_ += frame_size;
 }
 
 void CallTracer::on_exit(evmc::Result const &res)
 {
-    MONAD_ASSERT(!frames_.empty());
-    MONAD_ASSERT(!last_.empty());
-    MONAD_ASSERT(!positions_.empty());
+    size_t const output_size =
+        res.status_code == EVMC_SUCCESS || res.status_code == EVMC_REVERT
+            ? res.output_size
+            : 0;
+    if (!fits(output_size)) {
+        return;
+    }
 
-    auto &frame = frames_.at(last_.top());
+    CallFrame &frame = frames_stack_.pop_frame();
 
     MONAD_ASSERT(frame.gas >= static_cast<uint64_t>(res.gas_left));
     frame.gas_used = frame.gas - static_cast<uint64_t>(res.gas_left);
 
     if (res.status_code == EVMC_SUCCESS || res.status_code == EVMC_REVERT) {
-        frame.output = res.output_size == 0
-                           ? byte_string{}
-                           : byte_string{res.output_data, res.output_size};
+        if (res.output_size == 0) {
+            frame.output = byte_string{};
+        }
+        else {
+            frame.output = byte_string{res.output_data, res.output_size};
+            size_ += res.output_size;
+        }
     }
     frame.status = from_evmc_status_code(res.status_code);
 
@@ -181,34 +291,36 @@ void CallTracer::on_exit(evmc::Result const &res)
                        ? std::nullopt
                        : std::optional{res.create_address};
     }
-
-    last_.pop();
-    positions_.pop();
 }
 
 void CallTracer::on_log(Receipt::Log log)
 {
-    MONAD_ASSERT(!frames_.empty());
-    MONAD_ASSERT(!last_.empty());
-    MONAD_ASSERT(!positions_.empty());
+    if (size_limit_exceeded_) {
+        return;
+    }
+    auto const entry_size = log_size(log);
+    if (!fits(entry_size)) {
+        return;
+    }
 
-    auto &frame = frames_.at(last_.top());
+    auto &frame = frames_stack_.top_frame();
     MONAD_ASSERT(frame.logs.has_value());
 
-    frame.logs->emplace_back(std::move(log), positions_.top());
+    frame.logs->emplace_back(std::move(log), frames_stack_.position());
+    size_ += entry_size;
 }
 
 void CallTracer::on_self_destruct(
     Address const &from, Address const &to,
     uint256_t const &transferred_balance)
 {
-    MONAD_ASSERT(!last_.empty());
-    MONAD_ASSERT(!positions_.empty());
-    positions_.top()++;
+    if (!fits(sizeof(CallFrame))) {
+        return;
+    }
 
-    auto const &parent = frames_.at(last_.top());
+    auto &parent = frames_stack_.top_frame();
 
-    frames_.emplace_back(CallFrame{
+    frames_stack_.push_selfdestruct_frame(CallFrame{
         .type = CallType::SELFDESTRUCT,
         .flags = 0,
         .from = from,
@@ -222,22 +334,25 @@ void CallTracer::on_self_destruct(
         .depth = parent.depth + 1,
         .logs = std::vector<CallFrame::Log>{},
     });
+
+    size_ += sizeof(CallFrame);
 }
 
 void CallTracer::on_finish(uint64_t const gas_used)
 {
+    MONAD_ASSERT_THROW(!size_limit_exceeded_, CALL_TRACE_SIZE_LIMIT_ERR_MSG);
+
     MONAD_ASSERT(!frames_.empty());
-    MONAD_ASSERT(last_.empty());
+    MONAD_ASSERT(!frames_stack_.has_active_frame());
     frames_.front().gas_used = gas_used;
 }
 
 void CallTracer::reset()
 {
     frames_.clear();
-    last_ = std::stack<size_t>{};
-
-    positions_ = std::stack<size_t>{};
-    positions_.push(0);
+    frames_stack_.reset();
+    size_ = 0;
+    size_limit_exceeded_ = false;
 }
 
 std::span<CallFrame const> CallTracer::get_call_frames() const
@@ -247,17 +362,17 @@ std::span<CallFrame const> CallTracer::get_call_frames() const
 
 nlohmann::json CallTracer::to_json() const
 {
-    MONAD_ASSERT(!frames_.empty());
-    MONAD_ASSERT(frames_[0].depth == 0);
-
-    size_t pos = 0;
-
     nlohmann::json res{};
     auto const hash = keccak256(rlp::encode_transaction(tx_));
     auto const key = fmt::format(
         "0x{:02x}", fmt::join(std::as_bytes(std::span(hash.bytes)), ""));
     nlohmann::json value{};
+
+    MONAD_ASSERT(!frames_.empty());
+    MONAD_ASSERT(frames_[0].depth == 0);
+    size_t pos = 0;
     to_json_helper(frames_, value, pos);
+
     res[key] = value;
 
     return res;

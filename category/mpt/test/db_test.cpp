@@ -61,6 +61,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <ctime>
 #include <deque>
 #include <filesystem>
@@ -3273,4 +3274,50 @@ TEST(OnDiskDb, opens_when_the_stats_sidecar_cannot_be_created)
     EXPECT_NE(root, nullptr);
     EXPECT_FALSE(DbStatsReader::open("/nonexistent-directory/monad_db_stats")
                      .has_value());
+}
+
+TEST(OnDiskDb, thread_idle_is_published_without_any_upserts)
+{
+    auto const path = MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
+                      ("monad_db_stats_idle_" + std::to_string(::getpid()));
+    std::filesystem::remove(path);
+    auto const remove_sidecar = monad::make_scope_exit(
+        [&]() noexcept { std::filesystem::remove(path); });
+
+    Db const db{
+        std::make_unique<StateMachineAlwaysMerkle>(),
+        OnDiskDbConfig{
+            .fixed_history_length = MPT_TEST_HISTORY_LENGTH,
+            .stats_file_path = path}};
+    auto const reader = DbStatsReader::open(path);
+    ASSERT_TRUE(reader.has_value());
+
+    auto const triedb_idle = [&]() -> std::optional<uint64_t> {
+        auto const section = reader->read_thread_idle();
+        if (!section.has_value()) {
+            return std::nullopt;
+        }
+        for (uint32_t i = 0; i < section->count; ++i) {
+            if (std::strcmp(section->slots[i].name, "triedb rw") == 0) {
+                return section->slots[i].idle_ns;
+            }
+        }
+        return std::nullopt;
+    };
+
+    auto const deadline =
+        std::chrono::steady_clock::now() + std::chrono::seconds(3);
+    std::optional<uint64_t> first = triedb_idle();
+    while (!first.has_value() && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        first = triedb_idle();
+    }
+    ASSERT_TRUE(first.has_value()) << "no thread idle publish within 3 s";
+
+    // Blocks stop arriving exactly when the node is idlest; a value frozen
+    // until the next upsert would read as fully busy.
+    std::this_thread::sleep_for(std::chrono::milliseconds(2200));
+    auto const second = triedb_idle();
+    ASSERT_TRUE(second.has_value());
+    EXPECT_GE(*second - *first, 1'000'000'000u);
 }

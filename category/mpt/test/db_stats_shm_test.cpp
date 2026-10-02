@@ -15,27 +15,33 @@
 
 #include <category/async/config.hpp>
 #include <category/async/util.hpp>
+#include <category/core/config.hpp>
 #include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
+#include <category/core/thread_idle.hpp>
 #include <category/mpt/config.hpp>
 #include <category/mpt/db_stats_shm.hpp>
 #include <category/mpt/detail/collected_stats.hpp>
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <atomic>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <ios>
+#include <span>
 #include <string>
 #include <thread>
 #include <vector>
 
 #include <fcntl.h>
+#include <string.h>
 #include <sys/mman.h>
 #include <unistd.h>
 
+using namespace MONAD_NAMESPACE;
 using namespace MONAD_MPT_NAMESPACE;
 
 namespace
@@ -59,6 +65,16 @@ namespace
             .bytes_copied_slow_to_fast_for_slow = n,
             .nodes_updated_expire = n,
             .nreads_expire = n};
+    }
+
+    ThreadIdleSample
+    sample(char const *const name, uint64_t const idle, uint64_t const since)
+    {
+        ThreadIdleSample s{};
+        std::strncpy(s.name.data(), name, s.name.size() - 1);
+        s.idle_ns = idle;
+        s.registered_at_ns = since;
+        return s;
     }
 
     bool is_uniform(detail::TrieUpdateCollectedStats const &s)
@@ -425,4 +441,122 @@ TEST_F(DbStatsShmTest, concurrent_reads_never_observe_a_torn_publish)
 
     EXPECT_FALSE(torn) << "torn publish observed after " << reads << " reads";
     EXPECT_GT(reads, 0u);
+}
+
+TEST_F(DbStatsShmTest, published_thread_idle_round_trips)
+{
+    auto publisher = DbStatsPublisher::create(path);
+    ASSERT_TRUE(publisher.has_value());
+    std::array const samples{
+        sample("ftpool 0", 11, 1), sample("triedb rw", 22, 2)};
+    publisher->publish_thread_idle(samples);
+
+    auto const reader = DbStatsReader::open(path);
+    ASSERT_TRUE(reader.has_value());
+    auto const read = reader->read_thread_idle();
+    ASSERT_TRUE(read.has_value());
+    ASSERT_EQ(read->count, 2u);
+    EXPECT_STREQ(read->slots[0].name, "ftpool 0");
+    EXPECT_EQ(read->slots[0].idle_ns, 11u);
+    EXPECT_EQ(read->slots[0].registered_at_ns, 1u);
+    EXPECT_STREQ(read->slots[1].name, "triedb rw");
+    EXPECT_EQ(read->slots[1].idle_ns, 22u);
+}
+
+TEST_F(DbStatsShmTest, each_section_publish_leaves_the_other_alone)
+{
+    auto publisher = DbStatsPublisher::create(path);
+    ASSERT_TRUE(publisher.has_value());
+    publisher->publish_update_stats(uniform_stats(42));
+    std::array const samples{sample("ftpool 0", 7, 1)};
+    publisher->publish_thread_idle(samples);
+    publisher->publish_update_stats(uniform_stats(43));
+
+    auto const reader = DbStatsReader::open(path);
+    ASSERT_TRUE(reader.has_value());
+    auto const update_stats = reader->read_update_stats();
+    ASSERT_TRUE(update_stats.has_value());
+    EXPECT_EQ(update_stats->nodes_created_or_updated, 43u);
+    auto const thread_idle = reader->read_thread_idle();
+    ASSERT_TRUE(thread_idle.has_value());
+    EXPECT_EQ(thread_idle->slots[0].idle_ns, 7u);
+}
+
+TEST_F(DbStatsShmTest, thread_idle_publish_caps_at_the_slot_count)
+{
+    auto publisher = DbStatsPublisher::create(path);
+    ASSERT_TRUE(publisher.has_value());
+    std::vector<ThreadIdleSample> samples(40, sample("t", 1, 1));
+    publisher->publish_thread_idle(samples);
+
+    auto const reader = DbStatsReader::open(path);
+    ASSERT_TRUE(reader.has_value());
+    auto const thread_idle = reader->read_thread_idle();
+    ASSERT_TRUE(thread_idle.has_value());
+    EXPECT_EQ(thread_idle->count, ThreadIdleRegistry::MAX_THREADS);
+}
+
+TEST_F(DbStatsShmTest, a_writer_predating_thread_idle_still_serves_update_stats)
+{
+    auto publisher = DbStatsPublisher::create(path);
+    ASSERT_TRUE(publisher.has_value());
+    publisher->publish_update_stats(uniform_stats(3));
+    RawMapping const raw{path};
+    raw->payload_size = sizeof(detail::TrieUpdateCollectedStats);
+
+    auto const reader = DbStatsReader::open(path);
+    ASSERT_TRUE(reader.has_value());
+    auto const update_stats = reader->read_update_stats();
+    ASSERT_TRUE(update_stats.has_value());
+    EXPECT_EQ(update_stats->nodes_created_or_updated, 3u);
+    EXPECT_FALSE(reader->read_thread_idle().has_value());
+}
+
+TEST_F(DbStatsShmTest, read_thread_idle_rejects_an_impossible_count)
+{
+    auto const publisher = DbStatsPublisher::create(path);
+    ASSERT_TRUE(publisher.has_value());
+    RawMapping const raw{path};
+    raw->thread_idle.count = ThreadIdleRegistry::MAX_THREADS + 1;
+
+    auto const reader = DbStatsReader::open(path);
+    ASSERT_TRUE(reader.has_value());
+    EXPECT_FALSE(reader->read_thread_idle().has_value());
+}
+
+TEST_F(DbStatsShmTest, create_clears_thread_idle_left_by_a_previous_writer)
+{
+    {
+        auto publisher = DbStatsPublisher::create(path);
+        ASSERT_TRUE(publisher.has_value());
+        std::array const samples{sample("old", 5, 1)};
+        publisher->publish_thread_idle(samples);
+    }
+    auto const successor = DbStatsPublisher::create(path);
+    ASSERT_TRUE(successor.has_value());
+    auto const reader = DbStatsReader::open(path);
+    ASSERT_TRUE(reader.has_value());
+    auto const thread_idle = reader->read_thread_idle();
+    ASSERT_TRUE(thread_idle.has_value());
+    EXPECT_EQ(thread_idle->count, 0u);
+}
+
+TEST_F(DbStatsShmTest, read_thread_idle_nul_terminates_a_name_without_one)
+{
+    auto const publisher = DbStatsPublisher::create(path);
+    ASSERT_TRUE(publisher.has_value());
+    RawMapping const raw{path};
+    std::memset(
+        raw->thread_idle.slots[0].name,
+        'x',
+        sizeof(raw->thread_idle.slots[0].name));
+    raw->thread_idle.count = 1;
+
+    auto const reader = DbStatsReader::open(path);
+    ASSERT_TRUE(reader.has_value());
+    auto const thread_idle = reader->read_thread_idle();
+    ASSERT_TRUE(thread_idle.has_value());
+    EXPECT_EQ(
+        strnlen(thread_idle->slots[0].name, sizeof(thread_idle->slots[0].name)),
+        15u);
 }

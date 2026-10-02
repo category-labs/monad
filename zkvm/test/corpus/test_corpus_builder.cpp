@@ -27,6 +27,7 @@
 #include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
 #include <category/core/poseidon2.hpp>
+#include <category/execution/ethereum/core/chain_hash.hpp>
 #include <category/execution/ethereum/core/contract/abi_signatures.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/core/signature_hash.hpp>
@@ -38,6 +39,9 @@
 #include <category/execution/ethereum/state3/state.hpp>
 
 #include <category/vm/code.hpp>
+#ifdef MONAD_ZKVM_L2
+    #include <zkvm/guest/l2_config.hpp>
+#endif
 
 #include <algorithm>
 #include <cmath>
@@ -131,6 +135,54 @@ TEST(CorpusSigner, TheChainsHashesBindTheSignature)
 #endif
     EXPECT_EQ(0, std::memcmp(address.bytes, want_address + 12, 20));
     EXPECT_EQ(0, std::memcmp(digest.bytes, want_digest, 32));
+}
+
+// The chain's own hashes -- a block's, a bloom's and, in an L2 build, the
+// salt commitment -- are keccak256 in a default build and, configured with
+// MONAD_ZKVM_L2_HASH=poseidon2, the Poseidon2 sponge over the labels below,
+// restated here for the reason the signature test gives.
+TEST(CorpusChain, TheChainsHashesAreItsOwn)
+{
+    byte_string const header{0xf9, 0x02, 0x10, 0xa0, 0x01, 0x02, 0x03};
+    byte_string const topic(32, 0xab);
+
+    unsigned char want_header[32];
+    unsigned char want_bloom[32];
+#ifdef MONAD_L2_HASH_POSEIDON2
+    auto const sponge =
+        [](std::string_view label, byte_string_view body, unsigned char *out) {
+            byte_string in{
+                reinterpret_cast<unsigned char const *>(label.data()),
+                label.size()};
+            in.append(body);
+            monad_poseidon2_256(in.data(), in.size(), out);
+        };
+    sponge("monad-l2/header/v1", header, want_header);
+    sponge("monad-l2/bloom/v1", topic, want_bloom);
+    EXPECT_NE(0, std::memcmp(want_header, keccak256(header).bytes, 32));
+#else
+    monad_keccak256(header.data(), header.size(), want_header);
+    monad_keccak256(topic.data(), topic.size(), want_bloom);
+#endif
+    EXPECT_EQ(0, std::memcmp(header_hash(header).bytes, want_header, 32));
+    EXPECT_EQ(0, std::memcmp(bloom_hash(topic).bytes, want_bloom, 32));
+
+#ifdef MONAD_ZKVM_L2
+    bytes32_t secret{};
+    secret.bytes[31] = 0x2a;
+    unsigned char want_commitment[32];
+    #ifdef MONAD_L2_HASH_POSEIDON2
+    sponge(
+        "monad-l2/salt-commitment/v1",
+        {secret.bytes, sizeof(secret.bytes)},
+        want_commitment);
+    #else
+    monad_keccak256(secret.bytes, sizeof(secret.bytes), want_commitment);
+    #endif
+    auto const commitment = l2_salt_commitment(
+        std::span<unsigned char const, 32>{secret.bytes, 32});
+    EXPECT_EQ(0, std::memcmp(commitment.bytes, want_commitment, 32));
+#endif
 }
 
 TEST(CorpusBuilder, OneTransferBlockRoundTrips)
@@ -250,7 +302,7 @@ TEST(CorpusBuilder, TheBlockInTheWitnessIsTheBlockThatWasSealed)
     auto header = rlp::decode_block_header(body);
     ASSERT_TRUE(header.has_value());
     EXPECT_EQ(
-        to_bytes(keccak256(rlp::encode_block_header(header.value()))),
+        to_bytes(header_hash(rlp::encode_block_header(header.value()))),
         e.block_hash);
     EXPECT_EQ(header.value().state_root, e.post_root);
 #else
@@ -260,7 +312,7 @@ TEST(CorpusBuilder, TheBlockInTheWitnessIsTheBlockThatWasSealed)
     auto decoded = rlp::decode_block(block_view);
     ASSERT_TRUE(decoded.has_value());
     EXPECT_EQ(
-        to_bytes(keccak256(rlp::encode_block_header(decoded.value().header))),
+        to_bytes(header_hash(rlp::encode_block_header(decoded.value().header))),
         e.block_hash);
     EXPECT_EQ(decoded.value().header.state_root, e.post_root);
 #endif
@@ -320,10 +372,10 @@ TEST(CorpusBuilder, AncestorHeadersChainToTheParentAndThePreState)
         EXPECT_EQ(ancestors[i].number, ancestors[i - 1].number + 1);
         EXPECT_EQ(
             ancestors[i].parent_hash,
-            to_bytes(keccak256(rlp::encode_block_header(ancestors[i - 1]))));
+            to_bytes(header_hash(rlp::encode_block_header(ancestors[i - 1]))));
     }
     EXPECT_EQ(
-        to_bytes(keccak256(rlp::encode_block_header(ancestors.back()))),
+        to_bytes(header_hash(rlp::encode_block_header(ancestors.back()))),
         last.header.parent_hash);
     EXPECT_EQ(ancestors.back().state_root, last.pre_root);
 }

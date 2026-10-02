@@ -276,6 +276,23 @@ deployer key and therefore the `--seed`. And `--salt-commitment <secret>`
 prints `MONAD_ZKVM_L2_SALT_COMMITMENT` for a blinder secret, which the
 generator then wants back as `--salt`.
 
+**The chain's hash is Poseidon2 unless configured otherwise**
+(`MONAD_ZKVM_L2_HASH`, `poseidon2` by default, `keccak` for Ethereum's). It is a
+property of the chain like the values above, and it decides the hashes the
+chain defines for itself: a block's hash -- what a parent hash names, what
+BLOCKHASH returns and what the guest publishes --, the state blinder and its
+commitment, and the logs bloom
+([`chain_hash.hpp`](../category/execution/ethereum/core/chain_hash.hpp),
+[`l2_config.cpp`](guest/l2_config.cpp)). It is also the default of the trie and
+signature hashes below, so a build that names none of the three is the chain
+with everything it defines on ZisK's Poseidon2 precompile. Two of the values
+above follow it, which is why the tool prints them in a tree configured like
+the chain: `--salt-commitment` hashes the secret with the chain's hash, and
+`--spoke-address` derives the deployer's address with the signature hash. What
+the EVM, a contract or the L1 hub computes stays keccak256 whatever it says: the
+KECCAK256 opcode, code hashes, CREATE and CREATE2 addresses, transaction hashes
+and the namespace anchor.
+
 That builds a guest to check, not one to measure. A dev build leaves five of
 the six levers the official profile forces switched off, and the official
 profile refuses L2, so a guest to benchmark sets them itself --
@@ -314,10 +331,11 @@ preset, 1.20x at 100, 1.62x at 250 and 2.41x on the 130-transaction
 worker-payouts preset. Whether the proof follows the area is what
 `l2-latency` times as a fourth arm, on the blocks of up to 250 transactions.
 
-**The tries can be built on Poseidon2** (`MONAD_ZKVM_L2_TRIE_HASH=poseidon2`,
-default `keccak`). The hash is a property of the chain, so the host tree that
-generates its corpora and the guest that proves them are configured alike; a
-guest of the other kind recomputes a pre-state root no header holds, and halts.
+**The tries are built on Poseidon2** (`MONAD_ZKVM_L2_TRIE_HASH`, the chain's
+hash unless set; `keccak` builds them as Ethereum does). The hash is a property
+of the chain, so the host tree that generates its corpora and the guest that
+proves them are configured alike; a guest of the other kind recomputes a
+pre-state root no header holds, and halts.
 Every trie the chain commits to -- the state and storage tries, and the ordered
 tries behind the transactions, receipts and withdrawals roots -- then hashes its
 nodes and keys with `monad_poseidon2_256`, through
@@ -353,8 +371,8 @@ Main and Binary. A contract-heavy block keeps more keccak -- the EVM's, the
 bloom's -- and is better off on the precompile. `l2-latency` times both as two
 more arms.
 
-**The signatures can be bound with Poseidon2 too**
-(`MONAD_ZKVM_L2_SIGNATURE_HASH=poseidon2`, default `keccak`). The curve stays
+**The signatures are bound with Poseidon2 too**
+(`MONAD_ZKVM_L2_SIGNATURE_HASH`, the chain's hash unless set). The curve stays
 secp256k1 and the signature ECDSA -- its recovery already runs on ZisK's curve
 precompiles, beside the encryption's ECDH. What changes is the two hashes keccak
 supplies: the digest a transaction's or an authorization's signature signs, and
@@ -394,6 +412,17 @@ were most of what was left, and without them the remainder fits in software at
 every size, so one configuration is the cheapest across the whole sweep. A
 contract-heavy block keeps the EVM's keccak and is still better off on the
 precompile. `l2-latency` times it as one more arm.
+
+The chain's own hashes (`MONAD_ZKVM_L2_HASH`, above) take the bloom's, the
+block hash's and the salt's off Keccak-f as well: about fourteen permutations a
+block, and one for the address and each topic of every log it emits. Measured
+on corpora generated from the same seeds by a tree that names no hash, every
+witness of which passes on the x86 and ZisK guests, with the remainder in
+software: 4 to 25 % fewer steps than with the tries and signatures alone across
+the sweep, 22 % on wholesale-cbdc and 33 % on worker-payouts, whose token
+transfers fill blooms. Not enough to drop an instance: the plan is the same at
+every size of the sweep, and worker-payouts' area falls to 0.98x the keccak
+chain's. What keccak keeps is the EVM's, the anchor's and the code hashes'.
 
 ### Swapping the encryption
 

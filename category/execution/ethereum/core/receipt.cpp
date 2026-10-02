@@ -16,7 +16,7 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
-#include <category/core/keccak.hpp>
+#include <category/execution/ethereum/core/chain_hash.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 
 #include <cstdint>
@@ -25,8 +25,8 @@ MONAD_NAMESPACE_BEGIN
 
 void set_3_bits(Receipt::Bloom &bloom, byte_string_view const bytes)
 {
-    // YP Eqn 29
-    auto const hash = keccak256(bytes);
+    // YP Eqn 29, under the chain's bloom hash (chain_hash.hpp).
+    auto const hash = bloom_hash(bytes);
     // The three 16-bit big-endian chunks are the hash's first six bytes, so
     // one 64-bit big-endian load holds them all, chunk i at bit 48 - 16i.
     uint64_t const chunks = load_be_unsafe<uint64_t>(hash.bytes);

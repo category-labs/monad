@@ -28,6 +28,9 @@
 #if defined(MONAD_L2_CIPHER_ECDH_POSEIDON2)
     #include <zkvm/guest/l2_ecdh.hpp>
 #endif
+#ifdef MONAD_ZKVM_L2
+    #include <zkvm/guest/l2_config.hpp>
+#endif
 
 #include <cstdio>
 #include <cstdlib>
@@ -65,11 +68,11 @@ namespace
             "can be decrypted. --spoke-address prints where the spoke\n"
             "scenario will deploy, which is what MONAD_ZKVM_L2_SPOKE has to\n"
             "be -- the address is CREATE-derived, so it follows the seed.\n"
-            "--salt-commitment prints the keccak256 of a blinder secret as\n"
-            "MONAD_ZKVM_L2_SALT_COMMITMENT; --salt hands the generator that\n"
-            "same secret. Required in an L2 build: without it the block hash\n"
-            "is unblinded and the state is testable by anyone who can guess\n"
-            "it.\n"
+            "--salt-commitment prints the commitment to a blinder secret,\n"
+            "hashed with the chain's hash, as MONAD_ZKVM_L2_SALT_COMMITMENT;\n"
+            "--salt hands the generator that same secret. Required in an L2\n"
+            "build: without it the block hash is unblinded and the state is\n"
+            "testable by anyone who can guess it.\n"
             "\n"
             "--preset generates a benchmark corpus instead of the small\n"
             "scenarios: a genesis of --accounts holders, then --blocks blocks\n"
@@ -281,11 +284,18 @@ int main(int const argc, char **const argv)
         }
     }
     if (want_commitment) {
+        // The chain's commitment (l2_salt_commitment), which depends on
+        // MONAD_ZKVM_L2_HASH; outside an L2 build there is no chain to
+        // commit for, and keccak256 is printed.
+#ifdef MONAD_ZKVM_L2
+        auto const commitment = monad::l2_salt_commitment(
+            std::span<unsigned char const, 32>{commit_of.bytes, 32});
+#else
+        auto const commitment = monad::to_bytes(monad::keccak256(
+            monad::byte_string_view{commit_of.bytes, sizeof(commit_of.bytes)}));
+#endif
         std::printf(
-            "MONAD_ZKVM_L2_SALT_COMMITMENT=%s\n",
-            hex_of(monad::to_bytes(monad::keccak256(monad::byte_string_view{
-                       commit_of.bytes, sizeof(commit_of.bytes)})))
-                .c_str());
+            "MONAD_ZKVM_L2_SALT_COMMITMENT=%s\n", hex_of(commitment).c_str());
         return 0;
     }
 

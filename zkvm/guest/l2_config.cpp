@@ -23,6 +23,9 @@
 
 #include <category/core/byte_string.hpp>
 #include <category/core/keccak.hpp>
+#ifdef MONAD_L2_HASH_POSEIDON2
+    #include <category/core/poseidon2.hpp>
+#endif
 
 #include <cstring>
 #include <span>
@@ -49,7 +52,34 @@ bytes32_t l2_state_salt(
     for (unsigned i = 0; i < 8; ++i) {
         buf.push_back(static_cast<unsigned char>(block_number >> (56 - 8 * i)));
     }
+#ifdef MONAD_L2_HASH_POSEIDON2
+    bytes32_t salt;
+    monad_poseidon2_256(buf.data(), buf.size(), salt.bytes);
+    return salt;
+#else
     return to_bytes(keccak256(buf));
+#endif
+}
+
+bytes32_t
+l2_salt_commitment(std::span<unsigned char const, 32> const salt_secret)
+{
+#ifdef MONAD_L2_HASH_POSEIDON2
+    // A label of its own, so the commitment is no other use's hash of the
+    // secret -- the state salt's least of all.
+    static constexpr std::string_view LABEL = "monad-l2/salt-commitment/v1";
+    byte_string buf;
+    buf.reserve(LABEL.size() + salt_secret.size());
+    buf.append(
+        reinterpret_cast<unsigned char const *>(LABEL.data()), LABEL.size());
+    buf.append(salt_secret.data(), salt_secret.size());
+    bytes32_t commitment;
+    monad_poseidon2_256(buf.data(), buf.size(), commitment.bytes);
+    return commitment;
+#else
+    return to_bytes(
+        keccak256(byte_string_view{salt_secret.data(), salt_secret.size()}));
+#endif
 }
 
 #if defined(MONAD_L2_CIPHER_PLAINTEXT)

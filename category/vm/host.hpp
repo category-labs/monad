@@ -338,5 +338,8 @@ namespace monad::vm::runtime
     void guest_emit_log(
         Host &, evmc::address const &, uint8_t const *, size_t,
         evmc::bytes32 const[], size_t) noexcept;
+
+    Address const *
+    guest_delegate_of(Host const &, evmc::address const &) noexcept;
 }
 #endif

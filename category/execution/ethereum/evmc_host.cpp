@@ -410,5 +410,12 @@ namespace monad::vm::runtime
         static_cast<EvmcHostBase &>(host).EvmcHostBase::emit_log(
             addr, data, data_size, topics, num_topics);
     }
+
+    Address const *
+    guest_delegate_of(Host const &host, evmc::address const &addr) noexcept
+    {
+        return static_cast<EvmcHostBase const &>(host)
+            .EvmcHostBase::delegate_of(addr);
+    }
 }
 #endif

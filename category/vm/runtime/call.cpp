@@ -114,8 +114,10 @@ namespace monad::vm::runtime
         // the code, which the host returns.
         Address const *const delegate_address = [&]() -> Address const * {
             if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
-                return evm::resolve_delegation(
-                    ctx->host, ctx->context, dest_address);
+                // resolve_delegation's call of the host, by name: through
+                // it, a call and the vtable.
+                return guest_delegate_of(
+                    host_of(*ctx), host_shim::addr(&dest_address));
             }
             else {
                 return nullptr;

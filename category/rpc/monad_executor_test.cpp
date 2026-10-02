@@ -57,6 +57,7 @@
 #include <category/rpc/monad_executor.h>
 #include <category/rpc/overrides.h>
 #include <category/rpc/overrides.hpp>
+#include <category/rpc/utils/response_size.hpp>
 #include <category/vm/code.hpp>
 #include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/monad/revision.h>
@@ -8553,6 +8554,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_output_size_enforcement)
     static constexpr Address contract =
         0x00000000000000000000000000000000feedface_address;
     static constexpr size_t parallel_calls = 10;
+    static constexpr size_t return_data_size = 8'000'000;
 
     std::vector<Address> senders;
     senders.reserve(parallel_calls);
@@ -8578,9 +8580,9 @@ TEST_F(EthCallFixture, eth_simulate_v1_output_size_enforcement)
 
     using namespace monad::vm::utils;
     auto const return_bytecode =
-        // Returns 8MiB worth of zeroes, which becomes part of the trace
+        // Returns 8 MB worth of zeroes, which becomes part of the trace
         // output.
-        evm_as::latest().push(8000000).push0().return_();
+        evm_as::latest().push(return_data_size).push0().return_();
     ASSERT_TRUE(evm_as::validate(return_bytecode));
     std::vector<uint8_t> code{};
     evm_as::compile(return_bytecode, code);
@@ -8714,7 +8716,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_output_size_enforcement)
     EXPECT_EQ(actual_ctx.result->encoded_trace_len, actual_cbor_output_size);
 
     // Now submit the same request with a max output size smaller than the
-    // actual cbor output size. It should now fail.
+    // actual cbor output size. It should now fail. In particular it should
+    // attempt to materialize more call frames than allowed.
     struct callback_context limited_ctx;
     {
         size_t const max_output_size = 1024; // 1 KiB
@@ -8752,6 +8755,51 @@ TEST_F(EthCallFixture, eth_simulate_v1_output_size_enforcement)
         limited_ctx.result->message,
         "call trace size exceeds maximum allowed size");
     ASSERT_EQ(limited_ctx.result->encoded_trace_len, 0);
+
+    // Now submit the same request with an output size limit that is smaller
+    // than the expected output size. It should not fail during call tracing,
+    // but rather fail when attempting to materialize the output.
+    size_t const output_max_size =
+        sizeof(nlohmann::json::array_t) +
+        parallel_calls * (sizeof(CallFrame) + return_data_size);
+    ASSERT_LT(
+        padded_max_size(output_max_size),
+        2 * parallel_calls * return_data_size);
+
+    struct callback_context output_limited_ctx;
+    {
+        boost::fibers::future<void> f = output_limited_ctx.promise.get_future();
+
+        monad_executor_eth_simulate_submit(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_senders.data(),
+            rlp_senders.size(),
+            rlp_calls.data(),
+            rlp_calls.size(),
+            255,
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            rlp_finalized_id.data(),
+            rlp_finalized_id.size(),
+            simulate_gas_limit,
+            simulate_max_calls,
+            output_max_size,
+            state_override,
+            block_override,
+            false,
+            complete_callback,
+            (void *)&output_limited_ctx);
+        f.get();
+    }
+
+    ASSERT_EQ(output_limited_ctx.result->status_code, EVMC_INTERNAL_ERROR);
+    ASSERT_STREQ(
+        output_limited_ctx.result->message,
+        "output size exceeds maximum allowed size");
+    ASSERT_EQ(output_limited_ctx.result->encoded_trace_len, 0);
 
     monad_block_override_vec_destroy(block_override);
     monad_state_override_vec_destroy(state_override);

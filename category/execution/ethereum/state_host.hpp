@@ -40,6 +40,10 @@
 
 #include <functional>
 #include <utility>
+#if defined(MONAD_ZKVM_ZISK)
+    #include <cstdint>
+    #include <cstring>
+#endif
 
 MONAD_NAMESPACE_BEGIN
 
@@ -216,21 +220,25 @@ struct StateHost final : public StateHostBase
         MONAD_TRY
         {
 #if defined(MONAD_ZKVM_ZISK)
-            if (is_precompile<traits>(address))
-#else
-            if (is_precompile<traits>(address))
-#endif
-            {
+            // All precompiles start with eight zero bytes. Reject other
+            // addresses here to avoid calling the out-of-line resolver.
+            std::uint64_t address_prefix;
+            std::memcpy(&address_prefix, address.bytes, sizeof(address_prefix));
+            if (MONAD_UNLIKELY(address_prefix == 0) &&
+                is_precompile<traits>(address)) {
                 return AccessStatus::Warm;
             }
+#else
+            if (is_precompile<traits>(address)) {
+                return AccessStatus::Warm;
+            }
+#endif
             return state_.access_account(address);
         }
-
         MONAD_CATCH(...)
         {
             capture_current_exception();
         }
-
         stack_unwind();
     }
 

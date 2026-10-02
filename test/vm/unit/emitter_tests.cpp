@@ -2846,7 +2846,7 @@ TEST(Emitter, shl)
         0x100f0e0d0c0b0a09,
         0x8887868584838281,
         0x908f8e8d8c8b8a89};
-    for (uint64_t i = 0; i <= 260; i += 4) {
+    for (uint64_t i = 0; i <= 260; ++i) {
         uint256_t shifts[5] = {
             i,
             i | (uint256_t{1} << 65),
@@ -2915,7 +2915,7 @@ TEST(Emitter, shr)
         0x100f0e0d0c0b0a09,
         0x8887868584838281,
         0x908f8e8d8c8b8a89};
-    for (uint64_t i = 0; i <= 260; i += 4) {
+    for (uint64_t i = 0; i <= 260; ++i) {
         uint256_t shifts[5] = {
             i,
             i | (uint256_t{1} << 65),
@@ -3018,7 +3018,7 @@ TEST(Emitter, sar)
         0x100f0e0d0c0b0a09,
         0x8887868584838281,
         0x908f8e8d8c8b8a89};
-    for (uint64_t i = 0; i <= 260; i += 4) {
+    for (uint64_t i = 0; i <= 260; ++i) {
         uint256_t shifts[5] = {
             i,
             i | (uint256_t{1} << 65),
@@ -3074,6 +3074,54 @@ TEST(Emitter, sar_max)
     auto e = emit.get_stack().get(0);
     emit.sar();
     ASSERT_EQ(emit.get_stack().get(0), e);
+}
+
+TEST(Emitter, shift_literal_by_non_literal_without_free_general_reg)
+{
+    asmjit::JitRuntime rt;
+    uint256_t const value{
+        0x0807060504030201,
+        0x100f0e0d0c0b0a09,
+        0x8887868584838281,
+        0x908f8e8d8c8b8a89};
+
+    auto const test = [&](EvmOpCode const opcode,
+                          PureEmitterInstrPtr const instr,
+                          uint256_t const &shift,
+                          uint256_t const &expected) {
+        auto ir = basic_blocks::BasicBlocksIR::unsafe_from(
+            {PUSH0, PUSH0, PUSH0, PUSH0, PUSH0, opcode, PUSH0, RETURN});
+        TestEmitter emit{rt, ir.codesize};
+        (void)emit.begin_new_block(ir.blocks()[0]);
+        for (int32_t i = 0; i < 3; ++i) {
+            emit.push(i);
+            mov_literal_to_location_type(
+                emit, i, Emitter::LocationType::GeneralReg);
+        }
+        ASSERT_FALSE(emit.get_stack().has_free_general_reg());
+        emit.push(value);
+        emit.push(shift);
+        mov_literal_to_location_type(emit, 4, Emitter::LocationType::AvxReg);
+        (emit.*instr)();
+        emit.push(0);
+        emit.return_();
+
+        entrypoint_t entry = emit.finish_contract(rt);
+        evmc_tx_context tx_context{};
+        auto ctx = test_context(&tx_context);
+        auto const &ret = ctx->result;
+        auto stack_memory = test_stack_memory();
+        entry(&*ctx, stack_memory.get());
+
+        ASSERT_EQ(ret.status, runtime::StatusCode::Success);
+        ASSERT_EQ(load_le<uint256_t>(ret.size), expected);
+    };
+
+    for (uint64_t const s : {0u, 1u, 63u, 129u, 255u, 256u}) {
+        test(SHL, &Emitter::shl, s, value << s);
+        test(SHR, &Emitter::shr, s, value >> s);
+        test(SAR, &Emitter::sar, s, sar(s, value));
+    }
 }
 
 TEST(Emitter, clz)

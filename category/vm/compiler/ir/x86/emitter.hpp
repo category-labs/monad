@@ -70,8 +70,7 @@ namespace monad::vm::compiler::native
         template <size_t N>
         struct RoSubdata
         {
-            static_assert(std::popcount(N) == 1);
-            static_assert(N <= 32);
+            static_assert(N == 2 || N == 4 || N % 8 == 0);
 
             using Data = std::array<uint8_t, N>;
 
@@ -98,6 +97,9 @@ namespace monad::vm::compiler::native
             asmjit::x86::Mem add_external_function(F);
 
             asmjit::x86::Mem add32(uint256_t const &);
+            asmjit::x86::Mem add96(
+                uint256_t const &, uint256_t const &, uint256_t const &,
+                int32_t line_offset);
             asmjit::x86::Mem add16(uint64_t, uint64_t);
             asmjit::x86::Mem add8(uint64_t);
             asmjit::x86::Mem add4(uint32_t);
@@ -116,6 +118,7 @@ namespace monad::vm::compiler::native
             RoSubdata<16> sub16_;
             RoSubdata<8> sub8_;
             RoSubdata<4> sub4_;
+            RoSubdata<96> sub96_;
         };
 
         using Gpq256 = std::array<asmjit::x86::Gpq, 4>;
@@ -938,6 +941,11 @@ namespace monad::vm::compiler::native
         template <ShiftType shift_type, typename... LiveSet>
         StackElemRef shift_by_non_literal(
             StackElemRef shift, StackElemRef, std::tuple<LiveSet...> const &);
+
+        template <ShiftType shift_type, typename... LiveSet>
+        StackElemRef shift_literal_by_non_literal(
+            StackElemRef shift, uint256_t const &,
+            std::tuple<LiveSet...> const &);
 
         template <ShiftType shift_type, typename... LiveSet>
         StackElemRef shift_general_reg_by_non_literal(

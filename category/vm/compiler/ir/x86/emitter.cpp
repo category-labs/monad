@@ -286,7 +286,7 @@ namespace monad::vm::compiler::native
     template <size_t N>
     size_t Emitter::RoSubdata<N>::DataHash::operator()(Data const &x) const
     {
-        static_assert((N != 1) && (std::popcount(N) == 1));
+        static_assert(N == 2 || N == 4 || N % 8 == 0);
         if constexpr (N == 2) {
             uint16_t d;
             std::memcpy(&d, x.data(), N);
@@ -353,6 +353,35 @@ namespace monad::vm::compiler::native
         }
         int32_t const offset = it->second;
         return x86::qword_ptr(label_, offset);
+    }
+
+    // The three values are stored contiguously, so that a load may span
+    // two of them, starting `line_offset` bytes into a 64 byte cache line.
+    asmjit::x86::Mem Emitter::RoData::add96(
+        uint256_t const &x0, uint256_t const &x1, uint256_t const &x2,
+        int32_t const line_offset)
+    {
+        // The bound in `add32`, with room for a padding chunk and all three
+        if (MONAD_UNLIKELY(data_.size() >= (1 << 26) - 3)) {
+            throw Nativecode::SizeEstimateOutOfBounds{estimate_size()};
+        }
+
+        std::array<uint8_t, 96> a;
+        store_le(a.data(), x0);
+        store_le(a.data() + 32, x1);
+        store_le(a.data() + 64, x2);
+        auto const [it, is_new] = sub96_.offmap.try_emplace(a);
+        if (is_new) {
+            if (((static_cast<int32_t>(data_.size()) << 5) & 63) !=
+                line_offset) {
+                data_.emplace_back();
+            }
+            it->second = static_cast<int32_t>(data_.size()) << 5;
+            data_.push_back(x0);
+            data_.push_back(x1);
+            data_.push_back(x2);
+        }
+        return x86::qword_ptr(label_, it->second);
     }
 
     asmjit::x86::Mem
@@ -699,7 +728,7 @@ namespace monad::vm::compiler::native
                 ro_section_name,
                 ro_section_name_len,
                 asmjit::SectionFlags::kReadOnly,
-                32,
+                64,
                 ro_section_index);
             as_.section(ro_section);
 
@@ -5137,12 +5166,13 @@ namespace monad::vm::compiler::native
             discharge_deferred_comparison();
         }
 
-        if (value->avx_reg()) {
-            return shift_avx_reg_by_non_literal<shift_type>(
-                std::move(shift), std::move(value), live);
+        if (value->literal()) {
+            auto const value_literal = value->literal()->value;
+            value.reset(); // Potentially clear locations
+            return shift_literal_by_non_literal<shift_type>(
+                std::move(shift), value_literal, live);
         }
-        else if (value->literal()) {
-            mov_literal_to_avx_reg(value);
+        else if (value->avx_reg()) {
             return shift_avx_reg_by_non_literal<shift_type>(
                 std::move(shift), std::move(value), live);
         }
@@ -5156,6 +5186,81 @@ namespace monad::vm::compiler::native
             return shift_general_reg_by_non_literal<shift_type>(
                 std::move(shift), std::move(value), live);
         }
+    }
+
+    template <Emitter::ShiftType shift_type, typename... LiveSet>
+    StackElemRef Emitter::shift_literal_by_non_literal(
+        StackElemRef shift, uint256_t const &value,
+        std::tuple<LiveSet...> const &live)
+    {
+        destructive_mov_stack_elem_to_bounded_rax(std::move(shift), 256, live);
+
+        // With `value` stored next to 64 bytes of fill, shifting by 8 * k + b
+        // bits is a load at byte offset k shifted by b bits, combined with
+        // the bits carried in from a load one byte further into the fill.
+        // Neither load crosses a cache line for shifts below 256, and the
+        // mask for b sits in 16 bytes of the table neither load reaches.
+        x86::Mem window;
+        x86::Mem bit_mask;
+        if constexpr (shift_type == ShiftType::SHL) {
+            window = rodata_.add96({7, 0, 0, 0}, 0, value, 32);
+            bit_mask = window;
+            window.addOffset(64);
+        }
+        else {
+            bool const negative =
+                shift_type == ShiftType::SAR && (value[3] >> 63);
+            uint256_t const fill =
+                negative ? std::numeric_limits<uint256_t>::max() : 0;
+            window = rodata_.add96(value, fill, {fill[0], fill[1], 7, 0}, 0);
+            bit_mask = window;
+            bit_mask.addOffset(80);
+        }
+
+        auto [dst, dst_reserv] = alloc_avx_reg();
+        auto [tmp1_elem, tmp1_reserv] = alloc_avx_reg();
+        auto [tmp2_elem, tmp2_reserv] = alloc_avx_reg();
+        auto const out = avx_reg_to_ymm(*dst->avx_reg());
+        auto const tmp1 = avx_reg_to_ymm(*tmp1_elem->avx_reg());
+        auto const tmp2 = avx_reg_to_ymm(*tmp2_elem->avx_reg());
+
+        x86::Gpq base = reg_context;
+        if (stack_.has_free_general_reg()) {
+            auto [e, reserv] = alloc_general_reg();
+            // Safe because we are done allocating registers:
+            base = general_reg_to_gpq256(*e->general_reg())[0];
+        }
+        else {
+            as_.push(reg_context);
+        }
+
+        as_.lea(base, window);
+        as_.vmovd(tmp1.xmm(), x86::eax);
+        as_.vpand(tmp1.xmm(), tmp1.xmm(), bit_mask);
+        as_.shr(x86::eax, 3);
+        if constexpr (shift_type == ShiftType::SHL) {
+            as_.neg(x86::rax);
+        }
+        int32_t const carry_offset = shift_type == ShiftType::SHL ? -1 : 1;
+        as_.vmovups(out, x86::ptr(base, x86::rax));
+        as_.vmovups(tmp2, x86::ptr(base, x86::rax, 0, carry_offset));
+        if constexpr (shift_type == ShiftType::SHL) {
+            as_.vpsllq(out, out, tmp1.xmm());
+            as_.vpsllq(tmp2, tmp2, tmp1.xmm());
+            as_.vpsrlq(tmp2, tmp2, 8);
+        }
+        else {
+            as_.vpsrlq(out, out, tmp1.xmm());
+            as_.vpsrlq(tmp2, tmp2, tmp1.xmm());
+            as_.vpsllq(tmp2, tmp2, 8);
+        }
+        as_.vpor(out, out, tmp2);
+
+        if (base == reg_context) {
+            as_.pop(reg_context);
+        }
+
+        return dst;
     }
 
     template <Emitter::ShiftType shift_type, typename... LiveSet>

@@ -97,6 +97,14 @@ struct StateDelta
 {
     AccountDelta account;
     StorageDeltas storage{};
+#if defined(MONAD_ZKVM_ZISK)
+    // The account's code where the block's VM keeps it, with the hash it was
+    // read under: a call takes its callee's code from here instead of
+    // searching the VM's cache. The VM keeps every varcode for the block, and
+    // an entry never moves.
+    vm::SharedVarcode const *code{nullptr};
+    bytes32_t code_hash{};
+#endif
 };
 
 using StateDeltas = detail::HashMapWithAccessor<Address, StateDelta>;

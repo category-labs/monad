@@ -497,6 +497,17 @@ public:
         Address const &, size_t offset, uint8_t *buffer, size_t buffer_size);
 
 #if defined(MONAD_ZKVM_ZISK)
+    // The account's code hash and code, as code_hash_ref and read_code_ref
+    // give them. The block's entry for the account keeps the code it was
+    // last read with, and the hash it was read under.
+    struct CodeRef
+    {
+        bytes32_t const &hash;
+        vm::SharedVarcode const &code;
+    };
+
+    CodeRef code_ref_of(Address const &);
+
     // EIP-7702's delegate of the address, read where its code is kept, and
     // returned where it lies in the code, or null.
     Address const *delegate_of(Address const &);

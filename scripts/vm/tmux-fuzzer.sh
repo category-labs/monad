@@ -39,8 +39,8 @@ if [ "$sub_command" = start ]; then
     fi
 fi
 
-compiler_sessions=11
-interpreter_sessions=2
+compiler_sessions=${FUZZER_COMPILER_SESSIONS:-11}
+interpreter_sessions=${FUZZER_INTERPRETER_SESSIONS:-2}
 
 start_command() {
     if [ -z "$base_seed" ]; then

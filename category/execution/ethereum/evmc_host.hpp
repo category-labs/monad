@@ -301,6 +301,23 @@ struct EvmcHost final : public EvmcHostBase
         }
         stack_unwind();
     }
+
+    // See vm::runtime::guest_sstore_into, its only caller.
+    vm::runtime::SstoreStatus sstore_into(
+        evmc::address const &address, evmc::bytes32 const &key,
+        evmc::bytes32 const &value, bool const write_cold) noexcept
+    {
+        MONAD_TRY
+        {
+            return state_.sstore_into<traits>(
+                as_monad(address), as_monad(key), as_monad(value), write_cold);
+        }
+        MONAD_CATCH(...)
+        {
+            capture_current_exception();
+        }
+        stack_unwind();
+    }
 #endif
 
     virtual evmc_page_storage_status update_page(

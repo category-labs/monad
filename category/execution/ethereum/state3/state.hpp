@@ -375,6 +375,11 @@ private:
     [[gnu::noinline]] monad_access_status sload_full(
         Address const &, bytes32_t const &key, bool read_cold,
         evmc_bytes32 &out);
+
+    // set_storage's work on the account it looked up.
+    [[gnu::always_inline]] inline monad_storage_status set_storage_of(
+        AccountState &, Address const &, bytes32_t const &key,
+        bytes32_t const &value);
 #endif
 
     std::optional<Account> const &recent_account(Address const &);
@@ -493,6 +498,13 @@ public:
     monad_access_status sload_into(
         Address const &, bytes32_t const &key, bool read_cold,
         evmc_bytes32 &out);
+
+    // SSTORE's access_storage and set_storage, with one lookup of the
+    // account: see vm::runtime::guest_sstore_into.
+    template <Traits traits>
+    vm::runtime::SstoreStatus sstore_into(
+        Address const &, bytes32_t const &key, bytes32_t const &value,
+        bool write_cold);
 #endif
 
     monad_page_storage_status update_page(

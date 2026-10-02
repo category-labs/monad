@@ -855,13 +855,20 @@ monad_storage_status State::set_storage(
     Address const &address, bytes32_t const &key, bytes32_t const &value)
 {
 #ifdef MONAD_ZKVM_ZISK
+    return set_storage_of(current_account_state(address), address, key, value);
+}
+
+inline monad_storage_status State::set_storage_of(
+    AccountState &account_state, Address const &address, bytes32_t const &key,
+    bytes32_t const &value)
+{
     // Where the original value lies, in the original row or the block: a
     // local was zeroed, then assigned from one of them.
     bytes32_t const *original_value;
 #else
     bytes32_t original_value;
-#endif
     auto &account_state = current_account_state(address);
+#endif
     MONAD_ASSERT(account_state.account_);
     // Reuse one lookup for journaling, status computation and the write.
     // The pre-state lookup below uses a separate container, preserving prev.
@@ -1046,6 +1053,24 @@ monad_access_status State::sload_into(
 }
 
 EXPLICIT_TRAITS_MEMBER(State::sload_into);
+
+// A cold slot that the caller cannot pay for is warmed and left unwritten:
+// the caller then exits, out of gas.
+template <Traits traits>
+vm::runtime::SstoreStatus State::sstore_into(
+    Address const &address, bytes32_t const &key, bytes32_t const &value,
+    bool const write_cold)
+{
+    auto &account_state = current_account_state(address);
+    monad_access_status const access =
+        access_storage_of<traits>(account_state, address, key);
+    if (access == MONAD_ACCESS_COLD && !write_cold) {
+        return {access, MONAD_STORAGE_ASSIGNED};
+    }
+    return {access, set_storage_of(account_state, address, key, value)};
+}
+
+EXPLICIT_TRAITS_MEMBER(State::sstore_into);
 #endif
 
 monad_page_storage_status State::update_page(

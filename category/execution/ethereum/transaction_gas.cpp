@@ -206,24 +206,31 @@ constexpr uint256_t priority_fee_per_gas(
     return max_priority_fee_per_gas;
 }
 
-template <Traits traits>
-uint256_t
-gas_price(Transaction const &tx, uint256_t const &base_fee_per_gas) noexcept
-{
-    if constexpr (traits::evm_rev() < MONAD_ETH_LONDON) {
-        return tx.max_fee_per_gas;
-    }
 #if defined(MONAD_ZKVM_ZISK)
-    // The fees fit in a word on every transaction seen, and then the 256-bit
-    // compare, subtraction, minimum and sum are a word's. The sum does not
-    // overflow: it is at most max_fee_per_gas.
-    auto const fits_word = [](uint256_t const &x) {
-        return (x[1] | x[2] | x[3]) == 0;
+namespace
+{
+    // The fees on their low words when all three fit in a word, as on every
+    // transaction seen: priority_fee_per_gas's compare, subtraction and
+    // minimum are then a word's, where they were 256-bit.
+    struct WordFees
+    {
+        bool fit;
+        uint64_t base_fee;
+        uint64_t priority_fee;
     };
-    if (MONAD_LIKELY(
-            fits_word(tx.max_fee_per_gas) &&
-            fits_word(tx.max_priority_fee_per_gas) &&
-            fits_word(base_fee_per_gas))) {
+
+    [[gnu::always_inline]] inline WordFees
+    word_fees(Transaction const &tx, uint256_t const &base_fee_per_gas) noexcept
+    {
+        auto const fits_word = [](uint256_t const &x) {
+            return (x[1] | x[2] | x[3]) == 0;
+        };
+        if (MONAD_UNLIKELY(
+                !fits_word(tx.max_fee_per_gas) ||
+                !fits_word(tx.max_priority_fee_per_gas) ||
+                !fits_word(base_fee_per_gas))) {
+            return {false, 0, 0};
+        }
         uint64_t const max_fee = tx.max_fee_per_gas[0];
         uint64_t const base_fee = base_fee_per_gas[0];
         MONAD_ASSERT(max_fee >= base_fee);
@@ -234,7 +241,22 @@ gas_price(Transaction const &tx, uint256_t const &base_fee_per_gas) noexcept
             priority_fee =
                 std::min(tx.max_priority_fee_per_gas[0], priority_fee);
         }
-        return uint256_t{priority_fee + base_fee};
+        return {true, base_fee, priority_fee};
+    }
+}
+#endif
+
+template <Traits traits>
+uint256_t
+gas_price(Transaction const &tx, uint256_t const &base_fee_per_gas) noexcept
+{
+    if constexpr (traits::evm_rev() < MONAD_ETH_LONDON) {
+        return tx.max_fee_per_gas;
+    }
+#if defined(MONAD_ZKVM_ZISK)
+    // The sum does not overflow: it is at most max_fee_per_gas.
+    if (auto const f = word_fees(tx, base_fee_per_gas); MONAD_LIKELY(f.fit)) {
+        return uint256_t{f.priority_fee + f.base_fee};
     }
 #endif
     // EIP-1559
@@ -275,6 +297,16 @@ uint256_t calculate_txn_award(
     if constexpr (traits::evm_rev() < MONAD_ETH_LONDON) {
         return gas_used * gas_price<traits>(tx, base_fee_per_gas);
     }
+#if defined(MONAD_ZKVM_ZISK)
+    // The tip on a word, as in gas_price, and its product with the gas used
+    // at most 128 bits.
+    if (auto const f = word_fees(tx, base_fee_per_gas); MONAD_LIKELY(f.fit)) {
+        unsigned __int128 const award =
+            static_cast<unsigned __int128>(gas_used) * f.priority_fee;
+        return uint256_t{
+            static_cast<uint64_t>(award), static_cast<uint64_t>(award >> 64)};
+    }
+#endif
     return gas_used * priority_fee_per_gas(tx, base_fee_per_gas);
 }
 

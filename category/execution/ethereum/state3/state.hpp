@@ -216,7 +216,25 @@ class State
         size_t slots;
         size_t pages;
         // Power-of-two size for cheaper vector::size(), as in Undo.
+#ifdef MONAD_ZKVM_ZISK
+        // Left as it is, as SlotUndo's: built as an aggregate, the mark was
+        // zeroed whole, a 64-byte memset on every frame.
+        size_t pad_[2];
+
+        UndoMark(
+            size_t const log_at, size_t const accts_at, size_t const words_at,
+            size_t const u64_at, size_t const slots_at, size_t const pages_at)
+            : log{log_at}
+            , accts{accts_at}
+            , words{words_at}
+            , u64{u64_at}
+            , slots{slots_at}
+            , pages{pages_at}
+        {
+        }
+#else
         size_t pad_[2]{};
+#endif
     };
 
     static_assert(sizeof(UndoMark) == 64);

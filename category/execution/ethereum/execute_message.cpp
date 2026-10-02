@@ -126,7 +126,7 @@ namespace
 
 template <Traits traits>
 evmc::Result deploy_contract_code(
-    State &state, Address const &address, evmc::Result result) noexcept
+    State &state, evmc_address const &address, evmc::Result result) noexcept
 {
     static_assert(traits::evm_rev() >= MONAD_ETH_SPURIOUS_DRAGON);
 
@@ -425,11 +425,22 @@ evmc::Result execute_call_message(
                 return std::move(maybe_result.value());
             }
         }
-        evmc_address const &code_address = msg.code_address;
-        auto const hash = state.get_code_hash(code_address);
-#if defined(MONAD_ZKVM_VARCODE_CACHE)
-        // The VM cache keeps the code alive. execute reads its intercode
-        // before nested calls can replace State's cached pointer.
+#if defined(MONAD_ZKVM_ZISK)
+        // The account's own hash and code, by reference, from one search
+        // for its row: the block's entry for the account keeps the code,
+        // the guest's VM does not keep the hash, and the VM takes the
+        // intercode from the code before it runs anything.
+        auto const [hash, code] =
+            state.code_ref_of(msg.code_address);
+#else
+        auto const hash = state.get_code_hash(msg.code_address);
+#endif
+#if defined(MONAD_ZKVM_ZISK)
+        // The code came with the hash.
+#elif defined(MONAD_ZKVM_VARCODE_CACHE)
+        // The guest's VM keeps every varcode for the block and takes the
+        // intercode from this one before it runs anything, so the State's
+        // own copy is enough, though a nested read_code replaces it.
         auto const &code = state.read_code_ref(hash);
 #else
         auto const code = state.read_code(hash);

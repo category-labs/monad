@@ -111,7 +111,7 @@ namespace monad::vm::runtime
 #if defined(MONAD_ZKVM_ZISK)
             // Guest callers always provide a vm::Host.
             (void)host;
-            return host_shim::of(context)->get_tx_context();
+            return guest_get_tx_context(*host_shim::of(context));
 #else
             return host->get_tx_context(context);
 #endif

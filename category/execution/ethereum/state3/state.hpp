@@ -343,6 +343,11 @@ private:
     [[gnu::always_inline]] inline void current_storage_into(
         AccountState const &, Address const &, bytes32_t const &key,
         bytes32_t &out);
+#if defined(MONAD_ZKVM_ZISK)
+    [[gnu::always_inline]] inline StorageStatus set_storage_of(
+        AccountState &, Address const &, bytes32_t const &key,
+        bytes32_t const &value);
+#endif
 
     std::optional<Account> const &recent_account(Address const &);
 
@@ -449,6 +454,11 @@ public:
     AccessStatus sload_into(
         Address const &, bytes32_t const &key, bool can_pay_cold_access,
         bytes32_t &out);
+
+    template <Traits traits>
+    vm::runtime::SstoreStatus sstore_into(
+        Address const &, bytes32_t const &key, bytes32_t const &value,
+        bool can_pay_cold_access);
 #endif
 
     PageStorageStatus

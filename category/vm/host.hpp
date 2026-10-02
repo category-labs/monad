@@ -36,6 +36,17 @@
 
 namespace monad::vm
 {
+#if defined(MONAD_ZKVM_ZISK)
+    namespace runtime
+    {
+        struct SstoreStatus
+        {
+            AccessStatus access;
+            StorageStatus storage;
+        };
+    }
+#endif
+
     class VM;
 
     class Host
@@ -97,6 +108,12 @@ namespace monad::vm
         virtual AccessStatus sload_into(
             Address const &address, bytes32_t const &key,
             bool can_pay_cold_access, bytes32_t &value) noexcept = 0;
+
+        // Warm the slot, then write if it was warm or the cold access is
+        // affordable.
+        virtual runtime::SstoreStatus sstore_into(
+            Address const &address, bytes32_t const &key,
+            bytes32_t const &value, bool can_pay_cold_access) noexcept = 0;
 #endif
 
         /// Capture `std::current_exception()`.

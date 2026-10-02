@@ -880,8 +880,19 @@ void State::subtract_from_balance(
 StorageStatus State::set_storage(
     Address const &address, bytes32_t const &key, bytes32_t const &value)
 {
+#ifdef MONAD_ZKVM_ZISK
+    return set_storage_of(current_account_state(address), address, key, value);
+}
+
+inline StorageStatus State::set_storage_of(
+    AccountState &account_state, Address const &address, bytes32_t const &key,
+    bytes32_t const &value)
+{
+#endif
     bytes32_t original_value;
+#ifndef MONAD_ZKVM_ZISK
     auto &account_state = current_account_state(address);
+#endif
     MONAD_ASSERT(account_state.account_);
     // Reuse this value for journalling and storage-status computation.
     // The separate pre-state cache cannot invalidate this pointer; the
@@ -1002,6 +1013,22 @@ AccessStatus State::sload_into(
 }
 
 EXPLICIT_TRAITS_MEMBER(State::sload_into);
+
+template <Traits traits>
+vm::runtime::SstoreStatus State::sstore_into(
+    Address const &address, bytes32_t const &key, bytes32_t const &value,
+    bool const can_pay_cold_access)
+{
+    auto &account_state = current_account_state(address);
+    AccessStatus const access =
+        access_storage_of<traits>(account_state, address, key);
+    if (access == AccessStatus::Cold && !can_pay_cold_access) {
+        return {access, StorageStatus::Assigned};
+    }
+    return {access, set_storage_of(account_state, address, key, value)};
+}
+
+EXPLICIT_TRAITS_MEMBER(State::sstore_into);
 #endif
 
 PageStorageStatus State::update_page(

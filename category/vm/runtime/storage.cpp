@@ -115,6 +115,21 @@ namespace monad::vm::runtime
             ctx->deduct_gas(gas_used);
         }
         else {
+#if defined(MONAD_ZKVM_ZISK)
+            // An unaffordable cold write was skipped; deduct_gas exits before
+            // storage_status is used.
+            auto const [access_status, storage_status] =
+                host_of(*ctx).sstore_into(
+                    ctx->env.recipient,
+                    key,
+                    value,
+                    ctx->gas_remaining >=
+                        traits::cold_storage_cost() + min_gas);
+            if (access_status == AccessStatus::Cold) {
+                ctx->deduct_gas(traits::cold_storage_cost() + min_gas);
+            }
+            auto const evmc_status = storage_status;
+#else
             auto const access_status =
                 ctx->host->access_storage(ctx->env.recipient, key);
             if (access_status == AccessStatus::Cold) {
@@ -123,8 +138,10 @@ namespace monad::vm::runtime
 
             auto const storage_status =
                 ctx->host->set_storage(ctx->env.recipient, key, value);
+            auto const evmc_status = storage_status;
+#endif
 
-            auto [gas_used, gas_refund] = store_cost<traits>(storage_status);
+            auto [gas_used, gas_refund] = store_cost<traits>(evmc_status);
 
             gas_used -= min_gas;
 

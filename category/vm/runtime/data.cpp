@@ -20,6 +20,9 @@
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/revision.h>
 #include <category/vm/evm/traits.hpp>
+#if defined(MONAD_ZKVM_ZISK)
+    #include <category/vm/host.hpp>
+#endif
 #include <category/vm/runtime/bin.hpp>
 #include <category/vm/runtime/data.hpp>
 #include <category/vm/runtime/transmute.hpp>
@@ -40,14 +43,26 @@ namespace monad::vm::runtime
 
         auto address = address_from_uint256(*address_ptr);
 
+#if defined(MONAD_ZKVM_ZISK)
+        // The guest's host by name, as SLOAD's (vm/host.hpp): each of these
+        // went through the C interface's table and then the vtable.
+        auto const access_status = guest_access_account<traits>(
+            host_of(*ctx), host_shim::addr(&address));
+#else
         auto const access_status =
             ctx->host->access_account(ctx->context, &address);
+#endif
         if (access_status == EVMC_ACCESS_COLD) {
             ctx->deduct_gas(traits::cold_account_cost());
         }
 
+#if defined(MONAD_ZKVM_ZISK)
+        auto const balance = static_cast<bytes32_t>(
+            guest_get_balance(host_of(*ctx), host_shim::addr(&address)));
+#else
         auto const balance = static_cast<bytes32_t>(
             ctx->host->get_balance(ctx->context, &address));
+#endif
         *result_ptr = load_be<uint256_t>(balance);
     }
 
@@ -224,13 +239,24 @@ namespace monad::vm::runtime
 
         auto address = address_from_uint256(*address_ptr);
 
+#if defined(MONAD_ZKVM_ZISK)
+        // As BALANCE's.
+        auto const access_status = guest_access_account<traits>(
+            host_of(*ctx), host_shim::addr(&address));
+#else
         auto const access_status =
             ctx->host->access_account(ctx->context, &address);
+#endif
         if (access_status == EVMC_ACCESS_COLD) {
             ctx->deduct_gas(traits::cold_account_cost());
         }
 
+#if defined(MONAD_ZKVM_ZISK)
+        *result_ptr =
+            guest_get_code_size(host_of(*ctx), host_shim::addr(&address));
+#else
         *result_ptr = ctx->host->get_code_size(ctx->context, &address);
+#endif
     }
 
     EXPLICIT_TRAITS(extcodesize);

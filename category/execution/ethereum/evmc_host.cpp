@@ -387,5 +387,28 @@ namespace monad::vm::runtime
         return static_cast<EvmcHostBase const &>(host)
             .EvmcHostBase::get_tx_context();
     }
+
+    size_t
+    guest_get_code_size(Host const &host, evmc::address const &addr) noexcept
+    {
+        return static_cast<EvmcHostBase const &>(host)
+            .EvmcHostBase::get_code_size(addr);
+    }
+
+    evmc::uint256be
+    guest_get_balance(Host const &host, evmc::address const &addr) noexcept
+    {
+        return static_cast<EvmcHostBase const &>(host)
+            .EvmcHostBase::get_balance(addr);
+    }
+
+    void guest_emit_log(
+        Host &host, evmc::address const &addr, uint8_t const *const data,
+        size_t const data_size, evmc::bytes32 const topics[],
+        size_t const num_topics) noexcept
+    {
+        static_cast<EvmcHostBase &>(host).EvmcHostBase::emit_log(
+            addr, data, data_size, topics, num_topics);
+    }
 }
 #endif

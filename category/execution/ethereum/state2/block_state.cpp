@@ -26,6 +26,9 @@
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/execution/ethereum/db/db.hpp>
+#if defined(MONAD_ZKVM_ZISK)
+    #include <category/execution/ethereum/db/partial_trie_db.hpp>
+#endif
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state2/fmt/state_deltas_fmt.hpp> // NOLINT
 #include <category/execution/ethereum/state2/state_deltas.hpp>
@@ -46,6 +49,19 @@
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN
+#if defined(MONAD_ZKVM_ZISK)
+
+namespace
+{
+    // The guest's one Db is PartialTrieDb, final: read through it, each call
+    // is direct, where through Db it loaded the vtable and its slot and ended
+    // in a jalr, whose low-bit clear is a priced and.
+    [[gnu::always_inline]] inline PartialTrieDb &guest_db(Db &db) noexcept
+    {
+        return static_cast<PartialTrieDb &>(db);
+    }
+}
+#endif
 
 BlockState::BlockState(Db &db, vm::VM &monad_vm, Db *const secondary_db)
     : db_{db}
@@ -76,7 +92,7 @@ StateDeltas::value_type &BlockState::read_account_delta(Address const &address)
 
         operator StateDelta() const
         {
-            auto const result = db.read_account(address);
+            auto const result = guest_db(db).read_account(address);
             return StateDelta{.account = {result, result}, .storage = {}};
         }
     };
@@ -101,7 +117,11 @@ std::optional<Account> BlockState::read_account(Address const &address)
     }
     // database
     {
+    #if defined(MONAD_ZKVM_ZISK)
+        auto const result = guest_db(db_).read_account(address);
+    #else
         auto const result = db_.read_account(address);
+    #endif
         StateDeltas::const_accessor it{};
         state_->emplace(
             it,
@@ -155,8 +175,13 @@ bytes32_t const &BlockState::read_storage(
             if (!in_db) {
                 return {};
             }
+    #if defined(MONAD_ZKVM_ZISK)
+            bytes32_t const result =
+                guest_db(self.db_).read_storage(address, incarnation, key);
+    #else
             bytes32_t const result =
                 self.db_.read_storage(address, incarnation, key);
+    #endif
             MONAD_ASSERT(
                 !self.secondary_db_ ||
                 self.secondary_db_->read_storage(address, incarnation, key) ==
@@ -213,7 +238,11 @@ bytes32_t BlockState::read_storage(
     {
         bytes32_t result{};
         if (read_storage) {
+    #if defined(MONAD_ZKVM_ZISK)
+            result = guest_db(db_).read_storage(address, incarnation, key);
+    #else
             result = db_.read_storage(address, incarnation, key);
+    #endif
             MONAD_ASSERT(
                 !secondary_db_ || secondary_db_->read_storage(
                                       address, incarnation, key) == result);
@@ -251,7 +280,11 @@ vm::SharedVarcode const &BlockState::read_code_ref(bytes32_t const &code_hash)
     }
     // database
     {
+    #if defined(MONAD_ZKVM_ZISK)
+        auto const result = guest_db(db_).read_code(code_hash);
+    #else
         auto const result = db_.read_code(code_hash);
+    #endif
         MONAD_ASSERT(result);
         MONAD_ASSERT_PRINTF(
             code_hash == NULL_HASH || result->size() != 0,
@@ -282,7 +315,11 @@ vm::SharedVarcode BlockState::read_code(bytes32_t const &code_hash)
     }
     // database
     {
+    #if defined(MONAD_ZKVM_ZISK)
+        auto const result = guest_db(db_).read_code(code_hash);
+    #else
         auto const result = db_.read_code(code_hash);
+    #endif
         MONAD_ASSERT(result);
         MONAD_ASSERT_PRINTF(
             code_hash == NULL_HASH || result->size() != 0,

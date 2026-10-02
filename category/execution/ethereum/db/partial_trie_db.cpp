@@ -74,12 +74,19 @@ std::optional<Account> PartialTrieDb::read_account(Address const &address)
                 storage_memo_address_ = address;
                 storage_memo_root_ = mpt::NULL_ID;
                 storage_memo_valid_ = true;
+#ifdef MONAD_ZKVM_ZISK
+                storage_roots_by_address_.try_emplace(address, mpt::NULL_ID);
+#endif
                 return std::nullopt;
             },
             [&](mpt::AccountLeafView leaf) -> std::optional<Account> {
                 storage_memo_address_ = address;
                 storage_memo_root_ = leaf.storage();
                 storage_memo_valid_ = true;
+#ifdef MONAD_ZKVM_ZISK
+                storage_roots_by_address_.try_emplace(
+                    address, storage_memo_root_);
+#endif
                 return leaf.account();
             },
             [](auto) -> std::optional<Account> {
@@ -94,6 +101,15 @@ bytes32_t PartialTrieDb::read_storage(
     if (storage_memo_valid_ && storage_memo_address_ == address) {
         storage_root = storage_memo_root_;
     }
+#ifdef MONAD_ZKVM_ZISK
+    else if (auto const cached_root = storage_roots_by_address_.find(address);
+             cached_root != storage_roots_by_address_.end()) {
+        storage_root = cached_root->second;
+        storage_memo_address_ = address;
+        storage_memo_root_ = storage_root;
+        storage_memo_valid_ = true;
+    }
+#endif
     else {
         auto const account_key = keccak256(address.bytes);
         storage_root = match(
@@ -107,6 +123,9 @@ bytes32_t PartialTrieDb::read_storage(
         storage_memo_address_ = address;
         storage_memo_root_ = storage_root;
         storage_memo_valid_ = true;
+#ifdef MONAD_ZKVM_ZISK
+        storage_roots_by_address_.try_emplace(address, storage_root);
+#endif
     }
 
     if (storage_root == mpt::NULL_ID) {

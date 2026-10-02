@@ -107,10 +107,22 @@ template <Traits traits>
     auto const code_hash = state.get_code_hash(sender);
     bool sender_is_eoa = code_hash == NULL_HASH;
     if constexpr (traits::eip_7702_active()) {
+        // EIP-7702
+#if defined(MONAD_ZKVM_ZISK)
+        // Empty code already passes; the guest tracer records nothing.
+        // Otherwise, borrow the code to check for an EIP-7702 delegation.
+        if (!sender_is_eoa) {
+            auto const &icode = state.read_code_ref(code_hash)->intercode();
+            trace::on_read_code(state_tracer, code_hash, icode);
+            sender_is_eoa =
+                vm::evm::is_delegated({icode->code(), icode->size()});
+        }
+#else
         auto const icode = state.read_code(code_hash)->intercode();
         trace::on_read_code(state_tracer, code_hash, icode);
         sender_is_eoa = sender_is_eoa ||
                         vm::evm::is_delegated({icode->code(), icode->size()});
+#endif
     }
 
     if (MONAD_UNLIKELY(!sender_is_eoa)) {

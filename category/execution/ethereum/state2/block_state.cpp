@@ -132,6 +132,12 @@ bytes32_t BlockState::read_storage(
     // account across the read here, so the host's post-read check holds by
     // construction.
     auto const &orig_account = it->second.account.first;
+    // An account's first slot sizes its table for sixty-four: growing from
+    // empty, the table re-placed every slot it held at each doubling, and
+    // clearing more buckets costs little on the guest.
+    if (MONAD_UNLIKELY(it->second.storage.bucket_count() == 0)) {
+        it->second.storage.reserve(64);
+    }
 
     struct Read
     {
@@ -373,10 +379,11 @@ void BlockState::merge(State const &state)
                 }
                 else {
 #ifdef MONAD_ZKVM_ZISK
-                    // Reserve on first insertion to avoid early rehashes.
-                    // Host TBB maps have no reserve().
+                    // Reserve on first insertion to avoid early rehashes,
+                    // for as many slots as read_storage reserves. Host TBB
+                    // maps have no reserve().
                     if (MONAD_UNLIKELY(it->second.storage.empty())) {
-                        it->second.storage.reserve(8);
+                        it->second.storage.reserve(64);
                     }
 #endif
                     it->second.storage.emplace(

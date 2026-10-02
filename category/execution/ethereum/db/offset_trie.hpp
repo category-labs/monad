@@ -448,6 +448,72 @@ public:
         return path_view(rlp_end(code_hash_end(child_end(payload()))));
     }
 
+#if defined(MONAD_ZKVM_ZISK)
+    // Decode directly from the leaf to avoid temporary Results and copies.
+    // Require the 0xa0 code-hash prefix and canonical RLP integers.
+    Account account() const
+    {
+        unsigned char const *const code_hash = code_hash_rlp().data();
+        MONAD_ASSERT(code_hash[0] == 0x80 + sizeof(bytes32_t));
+        byte_string_view nonce_balance = nonce_balance_rlp();
+        uint64_t const nonce = unsigned_field<uint64_t>(nonce_balance);
+        uint256_t const balance = unsigned_field<uint256_t>(nonce_balance);
+        MONAD_ASSERT(nonce_balance.empty());
+        Account acct{.balance = balance, .code_hash = {}, .nonce = nonce};
+        std::memcpy(acct.code_hash.bytes, code_hash + 1, sizeof(bytes32_t));
+        return acct;
+    }
+
+private:
+    // Decode a canonical RLP integer and advance enc past it.
+    // Word loads may start up to seven bytes before the integer's payload.
+    // Those bytes remain inside the leaf, whose code hash precedes both fields.
+    template <class T>
+    [[gnu::always_inline]] static T unsigned_field(byte_string_view &enc)
+    {
+        static_assert(sizeof(T) == 8 || sizeof(T) == 32);
+        MONAD_ASSERT(!enc.empty());
+        unsigned const head = enc[0];
+        if (head < 0x80) {
+            MONAD_ASSERT(head != 0);
+            enc.remove_prefix(1);
+            return T{head};
+        }
+        size_t const n = head - 0x80;
+        MONAD_ASSERT(n <= sizeof(T) && n < enc.size());
+        unsigned char const *const p = enc.data() + 1;
+        enc.remove_prefix(1 + n);
+        if (n == 0) {
+            return T{0};
+        }
+        MONAD_ASSERT(p[0] != 0 && (n != 1 || p[0] >= 0x80));
+        // Read 64-bit words from the end; mask bytes preceding the payload.
+        auto const word = [p, n](size_t const k) {
+            size_t const left = n - 8 * k;
+            uint64_t const w = load_be_unsafe<uint64_t>(p + left - 8);
+            return left >= 8 ? w : w & ((uint64_t{1} << (8 * left)) - 1);
+        };
+        if constexpr (sizeof(T) == 8) {
+            return word(0);
+        }
+        else {
+            T value{word(0)};
+            // Read additional words only when the encoded value needs them.
+            if (n > 8) {
+                value[1] = word(1);
+                if (n > 16) {
+                    value[2] = word(2);
+                    if (n > 24) {
+                        value[3] = word(3);
+                    }
+                }
+            }
+            return value;
+        }
+    }
+
+public:
+#else
     // lazily RLP-decode the account (fields for read_account)
     Account account() const
     {
@@ -470,6 +536,7 @@ public:
         MONAD_ASSERT(nonce_balance.empty());
         return acct;
     }
+#endif
 };
 
 class StorageLeafView : public NodeViewBase

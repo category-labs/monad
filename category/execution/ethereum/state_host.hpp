@@ -250,6 +250,22 @@ struct StateHost final : public StateHostBase
         }
         stack_unwind();
     }
+
+    vm::runtime::SstoreStatus sstore_into(
+        Address const &address, bytes32_t const &key, bytes32_t const &value,
+        bool const can_pay_cold_access) noexcept override
+    {
+        MONAD_TRY
+        {
+            return state_.sstore_into<traits>(
+                address, key, value, can_pay_cold_access);
+        }
+        MONAD_CATCH(...)
+        {
+            capture_current_exception();
+        }
+        stack_unwind();
+    }
 #endif
 
     virtual PageStorageStatus update_page(

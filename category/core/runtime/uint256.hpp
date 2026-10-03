@@ -1062,11 +1062,12 @@ inline uint256_t from_bytes(size_t const n, uint8_t const *src)
 
 constexpr size_t countl_zero(uint256_t const &x)
 {
-    size_t cnt = 0;
-    for (size_t i = 0; i < uint256_t::num_words; i++) {
-        cnt += static_cast<size_t>(std::countl_zero(x[3 - i]));
-        if (cnt != ((i + 1U) * 64U)) {
-            return cnt;
+    // No early exit in the hope that GCC and Clang will emit a branchless
+    // algorithm
+    size_t cnt = 256;
+    for (size_t i = 0; i < uint256_t::num_words; ++i) {
+        if (x[i] != 0) {
+            cnt = 192 - 64 * i + static_cast<size_t>(std::countl_zero(x[i]));
         }
     }
     return cnt;

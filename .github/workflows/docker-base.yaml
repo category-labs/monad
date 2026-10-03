@@ -6,6 +6,8 @@ on:
     paths:
       - 'docker/Dockerfile'
       - 'scripts/ubuntu-build/**'
+  schedule:
+    - cron: '0 6 * * 1'
   workflow_dispatch:
 
 permissions:

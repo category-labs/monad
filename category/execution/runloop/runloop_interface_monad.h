@@ -39,6 +39,22 @@ typedef void MonadRunloop;
 MonadRunloop *monad_runloop_new(
     uint64_t chain_id, char const *ledger_path, char const *db_path);
 
+// Make a new runloop client on the EEST chain (EestNet). The genesis
+// allocation (the EEST fixture's `pre` state) is supplied as a JSON
+// document: {"<hex address>": {"wei_balance": "<dec|hex>",
+// "nonce": "<hex>", "code": "0x..", "storage": {"0x..": "0x.."}}, ...}.
+// The genesis block (the fixture's `genesisRLP`) is supplied as a hex
+// encoded RLP block, so block 1's parent hash matches the fixture.
+// Both are loaded only when the database is freshly created.
+// The revision schedule (derived from the fixture's `network`) is a
+// comma separated list of "<monad_revision number>:<from timestamp>"
+// entries in ascending timestamp order, e.g. "9:0" for a plain
+// MONAD_NINE fixture or "8:0,9:15000" for a transition fixture.
+MonadRunloop *monad_runloop_new_eest(
+    char const *ledger_path, char const *db_path,
+    char const *genesis_alloc_json, char const *genesis_block_rlp_hex,
+    char const *revision_schedule);
+
 // Deallocate a runloop client
 void monad_runloop_delete(MonadRunloop *);
 
@@ -65,6 +81,13 @@ void monad_runloop_get_secondary_state_root(
 
 // Dump the current state of the database to stdout
 void monad_runloop_dump(MonadRunloop *);
+
+// Dump the current state of the database as a JSON string. The result
+// must be released with monad_runloop_free_string.
+char *monad_runloop_dump_json(MonadRunloop *);
+
+// Free a string returned by this interface.
+void monad_runloop_free_string(char *);
 
 #ifdef __cplusplus
 }

@@ -258,6 +258,21 @@ add_library(
   "monad/validate_monad_transaction.hpp"
   "monad/validate_system_transaction.cpp"
   "monad/validate_system_transaction.hpp"
+  # monad/graph_eval
+  "monad/graph_eval/graph_eval.cpp"
+  "monad/graph_eval/graph_eval.hpp"
+  "monad/graph_eval/tensor.cpp"
+  "monad/graph_eval/tensor.hpp"
+  "monad/graph_eval/graph.hpp"
+  "monad/graph_eval/kernel.cpp"
+  "monad/graph_eval/kernel.hpp"
+  "monad/graph_eval/interpreter.cpp"
+  "monad/graph_eval/interpreter.hpp"
+  "monad/graph_eval/types.hpp"
+  "monad/graph_eval/constants.hpp"
+  "monad/graph_eval/graph_eval_error.cpp"
+  "monad/graph_eval/graph_eval_error.hpp"
+  "monad/graph_eval/config.hpp"
   # monad/reserve_balance
   "monad/reserve_balance/reserve_balance_contract.cpp"
   "monad/reserve_balance/reserve_balance_contract.hpp"
@@ -404,8 +419,41 @@ target_link_libraries(
   PUBLIC evmc
   PUBLIC magic_enum::magic_enum
   PUBLIC secp256k1
-  PUBLIC quill::quill)
+  PUBLIC quill::quill
+  PRIVATE iree::runtime::unified)
 monad_compile_options(monad_execution_native)
+
+# graph_eval kernels, compiled ahead of time and embedded in graph_eval.cpp
+set(GRAPH_EVAL_KERNELS_MLIR
+    "${CMAKE_CURRENT_SOURCE_DIR}/monad/graph_eval/kernels.mlir")
+set(GRAPH_EVAL_KERNELS_VMFB "${CMAKE_CURRENT_BINARY_DIR}/graph_eval_kernels.vmfb")
+add_custom_command(
+  OUTPUT "${GRAPH_EVAL_KERNELS_VMFB}"
+  COMMAND "${MONAD_IREE_COMPILE}"
+          --iree-hal-dump-executable-benchmarks-to=/home/malvarez/tensorflow/monad/executable-benchmarks
+          --iree-hal-dump-executable-intermediates-to=/home/malvarez/tensorflow/monad/executable-intermediates
+          --iree-hal-target-device=local
+          --iree-hal-local-target-device-backends=llvm-cpu
+          --iree-llvmcpu-target-cpu=${MONAD_IREE_TARGET_CPU}
+          --iree-opt-data-tiling
+          --iree-opt-level=O2
+          "${GRAPH_EVAL_KERNELS_MLIR}" -o "${GRAPH_EVAL_KERNELS_VMFB}"
+  # libIREECompiler.so is the actual compiler behind iree-compile
+  DEPENDS "${GRAPH_EVAL_KERNELS_MLIR}" "${MONAD_IREE_COMPILE}"
+          "${MONAD_IREE_BUILD_DIR}/lib/libIREECompiler.so"
+  COMMENT "Compiling graph_eval kernels with IREE"
+  VERBATIM)
+# Listing the .vmfb as a source attaches the command to the target;
+# OBJECT_DEPENDS rebuilds graph_eval.cpp when it changes
+target_sources(monad_execution_native PRIVATE "${GRAPH_EVAL_KERNELS_VMFB}")
+set_property(
+  SOURCE "monad/graph_eval/kernel.cpp"
+  APPEND PROPERTY OBJECT_DEPENDS "${GRAPH_EVAL_KERNELS_VMFB}")
+set_property(
+  SOURCE "monad/graph_eval/kernel.cpp"
+  APPEND
+  PROPERTY COMPILE_DEFINITIONS
+           "MONAD_GRAPH_EVAL_KERNELS_VMFB=\"${GRAPH_EVAL_KERNELS_VMFB}\"")
 
 target_link_libraries(
     monad_execution_runloop

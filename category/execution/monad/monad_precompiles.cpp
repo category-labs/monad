@@ -20,7 +20,10 @@
 #include <category/execution/monad/reserve_balance/reserve_balance_contract.hpp>
 #include <category/execution/monad/staking/staking_contract.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
+#include <category/execution/monad/graph_eval/graph_eval.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <chrono>
+#include <iostream>
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
@@ -28,6 +31,7 @@ template <Traits traits, typename Contract, Address contract_address>
 std::optional<evmc::Result> check_call_monad_precompile(
     State &state, CallTracerBase &call_tracer, evmc_message const &msg)
 {
+    auto const start = std::chrono::high_resolution_clock::now();
 
     if (msg.code_address != contract_address) {
         return std::nullopt;
@@ -49,12 +53,22 @@ std::optional<evmc::Result> check_call_monad_precompile(
     if (MONAD_LIKELY(res.has_value())) {
         int64_t const gas_left = msg.gas - static_cast<int64_t>(cost);
         int64_t const gas_refund = 0;
-        return evmc::Result(
+        auto const end = std::chrono::high_resolution_clock::now();
+            std::cerr << "Precompile took " << std::chrono::duration_cast<std::chrono::microseconds>(end - start) << std::endl;
+        // evmc::Result copies the output into memory of its own
+        auto const copy_start = std::chrono::high_resolution_clock::now();
+        evmc::Result result(
             EVMC_SUCCESS,
             gas_left,
             gas_refund,
             res.value().data(),
             res.value().size());
+        auto const copy_end = std::chrono::high_resolution_clock::now();
+        std::cerr << "  copy output to evmc::Result: "
+                  << std::chrono::duration_cast<std::chrono::microseconds>(
+                         copy_end - copy_start)
+                  << std::endl;
+        return result;
     }
     return evmc::Result(
         EVMC_REVERT,
@@ -76,7 +90,8 @@ bool is_precompile(Address const &address)
     // in.
     return is_eth_precompile<traits>(address) ||
            (address == staking::STAKING_CA) ||
-           (traits::monad_rev() >= MONAD_NINE && address == RESERVE_BALANCE_CA);
+           (traits::monad_rev() >= MONAD_NINE && address == RESERVE_BALANCE_CA)
+        || (address == graph_eval::GRAPH_EVAL_CA);
 }
 
 EXPLICIT_MONAD_TRAITS(is_precompile);
@@ -110,6 +125,14 @@ std::optional<evmc::Result> check_call_precompile(
         traits::monad_rev() >= MONAD_NINE,
         ReserveBalanceContract,
         RESERVE_BALANCE_CA);
+
+    // TODO: PoC hack. Enabled from MONAD_NINE so blockchain test fixtures can
+    // use the plain Ethereum state root (MIP-8 page-encoded storage starts at
+    // MONAD_TEN). Must be MONAD_NEXT before merging.
+    CASE(
+        traits::monad_rev() >= MONAD_NINE,
+        graph_eval::GraphEvalContract,
+        graph_eval::GRAPH_EVAL_CA);
 
     return std::nullopt;
 

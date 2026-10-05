@@ -406,8 +406,13 @@ TEST_F(DbStatsShmTest, concurrent_reads_never_observe_a_torn_publish)
     ASSERT_TRUE(reader.has_value());
 
     std::atomic<bool> done{false};
+    std::atomic<bool> read_once{false};
     std::thread writer{[&] {
-        for (uint64_t n = 1; n <= PUBLISHES; ++n) {
+        // Keep publishing until the reader gets a read in, however the
+        // threads are scheduled.
+        for (uint64_t n = 1;
+             n <= PUBLISHES || !read_once.load(std::memory_order_acquire);
+             ++n) {
             publisher->publish_update_stats(uniform_stats(n));
         }
         done.store(true, std::memory_order_release);
@@ -419,6 +424,7 @@ TEST_F(DbStatsShmTest, concurrent_reads_never_observe_a_torn_publish)
         if (auto const read = reader->read_update_stats(); read.has_value()) {
             torn = !is_uniform(*read);
             ++reads;
+            read_once.store(true, std::memory_order_release);
         }
     }
     writer.join();

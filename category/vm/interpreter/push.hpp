@@ -22,6 +22,7 @@
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/interpreter/stack.hpp>
+#include <category/vm/interpreter/stack_top.hpp>
 #include <category/vm/interpreter/types.hpp>
 #include <category/vm/runtime/types.hpp>
 
@@ -64,7 +65,7 @@ namespace monad::vm::interpreter
             requires(!detail::use_avx2_push(N))
         [[gnu::always_inline]] inline void generic_push(
             runtime::Context &ctx, Intercode const &analysis,
-            uint256_t const *const stack_bottom, uint256_t *const stack_top,
+            uint256_t const *const stack_bottom, StackTop const stack_top,
             int64_t &gas_remaining, uint8_t const *const instr_ptr)
         {
             static constexpr auto whole_words = N / 8;
@@ -138,7 +139,7 @@ namespace monad::vm::interpreter
             requires(detail::use_avx2_push(N))
         [[gnu::always_inline]] inline void avx2_push(
             runtime::Context &ctx, Intercode const &analysis,
-            uint256_t const *const stack_bottom, uint256_t *const stack_top,
+            uint256_t const *const stack_bottom, StackTop const stack_top,
             int64_t &gas_remaining, uint8_t const *const instr_ptr)
         {
             static constexpr auto whole_words = N / 8;
@@ -179,7 +180,8 @@ namespace monad::vm::interpreter
             y = _mm256_shuffle_epi8(y, _mm256_setr_epi64x(s0, s1, s2, s3));
             // For N = 32:
             // y = {[y37...y30], [y27...y20], [y17...y10], [y07...y00]}
-            std::memcpy(reinterpret_cast<uint8_t *>(stack_top + 1), &y, 32);
+            std::memcpy(
+                reinterpret_cast<uint8_t *>(stack_top.next_slot()), &y, 32);
         }
     }
 
@@ -188,7 +190,7 @@ namespace monad::vm::interpreter
     {
         [[gnu::always_inline]] static inline void push(
             runtime::Context &ctx, Intercode const &analysis,
-            uint256_t const *const stack_bottom, uint256_t *const stack_top,
+            uint256_t const *const stack_bottom, StackTop const stack_top,
             int64_t &gas_remaining, uint8_t const *const instr_ptr)
         {
             detail::generic_push<N, traits>(
@@ -206,7 +208,7 @@ namespace monad::vm::interpreter
     {
         [[gnu::always_inline]] static inline void push(
             runtime::Context &ctx, Intercode const &analysis,
-            uint256_t const *const stack_bottom, uint256_t *const stack_top,
+            uint256_t const *const stack_bottom, StackTop const stack_top,
             int64_t &gas_remaining, uint8_t const *)
         {
             check_requirements<PUSH0, traits>(
@@ -221,7 +223,7 @@ namespace monad::vm::interpreter
     {
         [[gnu::always_inline]] static inline void push(
             runtime::Context &ctx, Intercode const &analysis,
-            uint256_t const *const stack_bottom, uint256_t *const stack_top,
+            uint256_t const *const stack_bottom, StackTop const stack_top,
             int64_t &gas_remaining, uint8_t const *const instr_ptr)
         {
             detail::avx2_push<N, traits>(

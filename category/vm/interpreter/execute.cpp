@@ -19,6 +19,7 @@
 #include <category/vm/interpreter/debug.hpp>
 #include <category/vm/interpreter/instruction_table.hpp>
 #include <category/vm/interpreter/intercode.hpp>
+#include <category/vm/interpreter/stack_top.hpp>
 #include <category/vm/interpreter/trampoline.hpp>
 #include <category/vm/runtime/types.hpp>
 
@@ -31,8 +32,8 @@ namespace monad::vm::interpreter
             void *, runtime::Context *ctx, Intercode const *analysis,
             uint256_t *stack_ptr, void *)
         {
-            auto *const stack_top = stack_ptr - 1;
-            auto const *const stack_bottom = stack_top;
+            StackTop const stack_top{stack_ptr - 1};
+            auto const *const stack_bottom = stack_ptr;
             auto const *const instr_ptr = analysis->code();
             auto const gas_remaining = ctx->gas_remaining;
 

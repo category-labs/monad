@@ -15,16 +15,19 @@
 
 #pragma once
 
-#include <category/vm/interpreter/types.hpp>
+#include <category/vm/interpreter/stack_top.hpp>
 #include <category/vm/runtime/detail.hpp>
 #include <category/vm/runtime/types.hpp>
+
+#include <cstddef>
+#include <utility>
 
 namespace monad::vm::interpreter
 {
     template <typename... FnArgs>
     [[gnu::always_inline]]
     inline void call_runtime(
-        void (*f)(FnArgs...), runtime::Context &ctx, uint256_t *const stack_top,
+        void (*f)(FnArgs...), runtime::Context &ctx, StackTop const stack_top,
         int64_t &gas_remaining)
     {
         constexpr auto use_context = runtime::detail::uses_context_v<FnArgs...>;
@@ -37,14 +40,16 @@ namespace monad::vm::interpreter
             std::ranges::count(
                 std::array{use_context, use_result, use_base_gas}, true);
 
-        auto const stack_args = [&]<size_t... Is>(std::index_sequence<Is...>) {
-            return std::tuple{(stack_top - Is)...};
-        }(std::make_index_sequence<stack_arg_count>());
+        auto const stack_args =
+            [&]<std::ptrdiff_t... Is>(
+                std::integer_sequence<std::ptrdiff_t, Is...>) {
+                return std::tuple{(&stack_top[-Is])...};
+            }(std::make_integer_sequence<std::ptrdiff_t, stack_arg_count>());
 
         auto const with_result_args = [&] {
             if constexpr (use_result) {
                 if constexpr (stack_arg_count == 0) {
-                    return std::tuple(stack_top + 1);
+                    return std::tuple(stack_top.next_slot());
                 }
                 else {
                     return std::tuple_cat(

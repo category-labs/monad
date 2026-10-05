@@ -17,6 +17,7 @@
 
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/interpreter/intercode.hpp>
+#include <category/vm/interpreter/stack_top.hpp>
 #include <category/vm/runtime/types.hpp>
 
 #include <array>
@@ -69,7 +70,7 @@
 namespace monad::vm::interpreter
 {
     using InstrEval = void MONAD_VM_INSTRUCTION_CALL (*)(
-        runtime::Context &, Intercode const &, uint256_t const *, uint256_t *,
+        runtime::Context &, Intercode const &, uint256_t const *, StackTop,
         int64_t, uint8_t const *);
 
     using InstrTable = std::array<InstrEval, 256>;

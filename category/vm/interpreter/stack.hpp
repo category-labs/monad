@@ -18,6 +18,7 @@
 #include <category/core/assert.h>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/interpreter/stack_top.hpp>
 #include <category/vm/interpreter/types.hpp>
 
 #include <evmc/evmc.h>
@@ -31,7 +32,7 @@ namespace monad::vm::interpreter
     template <uint8_t Instr, Traits traits>
     [[gnu::always_inline]] inline void check_requirements(
         runtime::Context &ctx, Intercode const &,
-        uint256_t const *const stack_bottom, uint256_t *const stack_top,
+        uint256_t const *const stack_bottom, StackTop const stack_top,
         int64_t &gas_remaining)
     {
         static constexpr auto info = compiler::opcode_table<traits>[Instr];
@@ -48,7 +49,7 @@ namespace monad::vm::interpreter
             return;
         }
 
-        auto const stack_size = stack_top - stack_bottom;
+        auto const stack_size = stack_top.next_slot() - stack_bottom;
         MONAD_DEBUG_ASSERT(stack_size <= 1024);
 
         if constexpr (info.min_stack > 0) {
@@ -74,25 +75,25 @@ namespace monad::vm::interpreter
     }
 
     [[gnu::always_inline]] inline void
-    push(uint256_t *const stack_top, uint256_t const &x)
+    push(StackTop const stack_top, uint256_t const &x)
     {
-        *(stack_top + 1) = x;
+        *stack_top.next_slot() = x;
     }
 
-    [[gnu::always_inline]] inline uint256_t &pop(uint256_t *&stack_top)
+    [[gnu::always_inline]] inline uint256_t &pop(StackTop &stack_top)
     {
         return *stack_top--;
     }
 
-    [[gnu::always_inline]] inline auto pop_for_overwrite(uint256_t *&stack_top)
+    [[gnu::always_inline]] inline auto pop_for_overwrite(StackTop &stack_top)
     {
         auto const &a = pop(stack_top);
         return std::tie(a, *stack_top);
     }
 
-    [[gnu::always_inline]] inline auto top_two(uint256_t *const stack_top)
+    [[gnu::always_inline]] inline auto top_two(StackTop const stack_top)
     {
         auto const &a = *stack_top;
-        return std::tie(a, *(stack_top - 1));
+        return std::tie(a, stack_top[-1]);
     }
 }

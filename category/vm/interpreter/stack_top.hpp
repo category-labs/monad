@@ -22,8 +22,9 @@
 
 namespace monad::vm::interpreter
 {
-    // A typed wrapper around the interpreter's top-element pointer.
-    // Callers must check stack requirements before accessing values.
+    // A top-relative view backed by a one-past pointer. The empty stack stores
+    // the array's beginning, so advancing/popping never needs a before-array
+    // pointer. Callers must check stack requirements before accessing values.
     class StackTop
     {
         uint256_t *ptr_;
@@ -47,13 +48,13 @@ namespace monad::vm::interpreter
         // Index 0 is the top value, -1 is the value below it, and so on.
         constexpr uint256_t &operator[](std::ptrdiff_t const index) const
         {
-            return *(ptr_ + index);
+            return *(ptr_ + (index - 1));
         }
 
         // Only writable when the stack is not full. Does not advance the top.
         constexpr uint256_t *next_slot() const
         {
-            return ptr_ + 1;
+            return ptr_;
         }
 
         constexpr StackTop &operator+=(std::ptrdiff_t const delta)

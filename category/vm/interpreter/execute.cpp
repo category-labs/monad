@@ -32,7 +32,7 @@ namespace monad::vm::interpreter
             void *, runtime::Context *ctx, Intercode const *analysis,
             uint256_t *stack_ptr, void *)
         {
-            StackTop const stack_top{stack_ptr - 1};
+            StackTop const stack_top{stack_ptr};
             auto const *const stack_bottom = stack_ptr;
             auto const *const instr_ptr = analysis->code();
             auto const gas_remaining = ctx->gas_remaining;

@@ -171,3 +171,62 @@ TEST(DbCacheTest, finalization_write_overwrites_readthrough_entry)
         cache.try_read_storage(ADDR, INC, KEY, 0, slot), CacheReadStatus::Hit);
     EXPECT_EQ(slot, VALUE2);
 }
+
+TEST(DbCacheTest, proposal_slot_read_matches_page_read)
+{
+    DbCache cache;
+
+    // every other slot nonzero, so the page is past storage_page_t's
+    // inline capacity.
+    storage_page_t dense;
+    for (size_t i = 0; i < storage_page_t::SLOTS; i += 2) {
+        dense.set(static_cast<uint8_t>(i), bytes32_t{i + 1});
+    }
+    ProposalPostState post;
+    post.accounts[ADDR] = Account{.nonce = 1};
+    post.storage[StorageKey{ADDR, INC, KEY}] = dense;
+    cache.update_proposal_state(std::move(post), 1, bytes32_t{1});
+    cache.set_block_and_prefix(1, bytes32_t{1});
+
+    storage_page_t page;
+    EXPECT_EQ(
+        cache.try_read_storage_page(ADDR, INC, KEY, page),
+        CacheReadStatus::Hit);
+    EXPECT_EQ(page, dense);
+
+    // every slot read matches the page, zero slots included.
+    for (size_t i = 0; i < storage_page_t::SLOTS; ++i) {
+        auto const offset = static_cast<uint8_t>(i);
+        bytes32_t slot;
+        EXPECT_EQ(
+            cache.try_read_storage(ADDR, INC, KEY, offset, slot),
+            CacheReadStatus::Hit);
+        EXPECT_EQ(slot, dense[offset]) << i;
+    }
+}
+
+TEST(DbCacheTest, proposal_deleting_account_reads_as_empty)
+{
+    DbCache cache;
+    cache.update_proposal_state(
+        make_post_state(ADDR, KEY, VALUE1), 1, bytes32_t{1});
+
+    // proposal 2 deletes the account, so its storage reads as zero even
+    // though proposal 1 wrote it.
+    ProposalPostState post;
+    post.accounts[ADDR] = std::nullopt;
+    cache.update_proposal_state(std::move(post), 2, bytes32_t{2});
+    cache.set_block_and_prefix(2, bytes32_t{2});
+
+    // start from nonzero values to check the reads overwrite them.
+    bytes32_t slot{VALUE2};
+    EXPECT_EQ(
+        cache.try_read_storage(ADDR, INC, KEY, 0, slot), CacheReadStatus::Hit);
+    EXPECT_EQ(slot, bytes32_t{});
+
+    storage_page_t page{VALUE2};
+    EXPECT_EQ(
+        cache.try_read_storage_page(ADDR, INC, KEY, page),
+        CacheReadStatus::Hit);
+    EXPECT_TRUE(page.is_empty());
+}

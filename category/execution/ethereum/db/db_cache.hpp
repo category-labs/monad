@@ -104,7 +104,7 @@ public:
         bytes32_t const &key, storage_page_t &result)
     {
         auto const res =
-            proposals_.try_read_storage(address, incarnation, key, result);
+            proposals_.try_read_storage_page(address, incarnation, key, result);
         if (res.found) {
             return CacheReadStatus::Hit;
         }
@@ -124,12 +124,11 @@ public:
         Address const &address, Incarnation const incarnation,
         bytes32_t const &key, uint8_t const slot_offset, bytes32_t &result)
     {
-        storage_page_t page;
-        auto const res =
-            proposals_.try_read_storage(address, incarnation, key, page);
+        // slot_offset is the slot's offset in the cached entry, which is 0
+        // on a slot-encoded db where each entry holds one slot.
+        auto const res = proposals_.try_read_storage(
+            address, incarnation, key, slot_offset, result);
         if (res.found) {
-            // slot_offset is 0 for slot encoding, the in-page offset for page.
-            result = page[slot_offset];
             return CacheReadStatus::Hit;
         }
         if (res.truncated) {

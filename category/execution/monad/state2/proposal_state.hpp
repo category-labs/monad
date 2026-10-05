@@ -68,19 +68,13 @@ public:
         return false;
     }
 
-    bool try_read_storage(
+    bool try_read_storage_page(
         Address const &address, Incarnation const incarnation,
         bytes32_t const &key, storage_page_t &result) const
     {
-        auto const acct_it = post_state_.accounts.find(address);
-        if (acct_it != post_state_.accounts.end()) {
-            auto const &acct = acct_it->second;
-            if (!acct.has_value() || acct->incarnation != incarnation) {
-                // Account deleted or incarnation cleared in this proposal:
-                // all storage at the requested incarnation is gone.
-                result = {};
-                return true;
-            }
+        if (storage_is_cleared(address, incarnation)) {
+            result = {};
+            return true;
         }
         StorageKey const sk{address, incarnation, key};
         auto const it = post_state_.storage.find(sk);
@@ -89,6 +83,36 @@ public:
             return true;
         }
         return false;
+    }
+
+    bool try_read_storage(
+        Address const &address, Incarnation const incarnation,
+        bytes32_t const &key, uint8_t const slot_offset,
+        bytes32_t &result) const
+    {
+        if (storage_is_cleared(address, incarnation)) {
+            result = {};
+            return true;
+        }
+        StorageKey const sk{address, incarnation, key};
+        auto const it = post_state_.storage.find(sk);
+        if (it != post_state_.storage.end()) {
+            result = it->second[slot_offset];
+            return true;
+        }
+        return false;
+    }
+
+private:
+    bool storage_is_cleared(
+        Address const &address, Incarnation const incarnation) const
+    {
+        auto const it = post_state_.accounts.find(address);
+        if (it == post_state_.accounts.end()) {
+            return false;
+        }
+        auto const &acct = it->second;
+        return !acct.has_value() || acct->incarnation != incarnation;
     }
 };
 
@@ -135,14 +159,27 @@ public:
         return try_read(fn);
     }
 
-    TryReadResult try_read_storage(
+    TryReadResult try_read_storage_page(
         Address const &address, Incarnation const incarnation,
         bytes32_t const &key, storage_page_t &result) const
     {
-        auto const fn =
-            [&address, incarnation, &key, &result](ProposalState const &ps) {
-                return ps.try_read_storage(address, incarnation, key, result);
-            };
+        auto const fn = [&address, incarnation, &key, &result](
+                            ProposalState const &ps) {
+            return ps.try_read_storage_page(address, incarnation, key, result);
+        };
+        return try_read(fn);
+    }
+
+    TryReadResult try_read_storage(
+        Address const &address, Incarnation const incarnation,
+        bytes32_t const &key, uint8_t const slot_offset,
+        bytes32_t &result) const
+    {
+        auto const fn = [&address, incarnation, &key, slot_offset, &result](
+                            ProposalState const &ps) {
+            return ps.try_read_storage(
+                address, incarnation, key, slot_offset, result);
+        };
         return try_read(fn);
     }
 

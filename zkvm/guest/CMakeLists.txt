@@ -1084,9 +1084,9 @@ add_library(monad-zkvm-guest OBJECT
 )
 monad_compile_options(monad-zkvm-guest)
 target_link_libraries(monad-zkvm-guest PRIVATE zkevm-standards)
-# EXPERIMENT, measurement only: mem* in software (soft_mem.c, reached through
-# the linker's --wrap, which the build passes), and EVM ADD/SUB without the
-# add256 precompile.
+# EXPERIMENT, measurement only: mem* in software (soft_mem.c, the guest's only
+# definitions once ziskos is built with its no-dma-mem feature), and EVM
+# ADD/SUB without the add256 precompile.
 option(MONAD_ZKVM_DMA_SOFTWARE "EXPERIMENT: memcpy & co. in software" OFF)
 if(MONAD_ZKVM_DMA_SOFTWARE AND DEFINED MONAD_ZKVM_GUEST_TARGET)
     target_sources(monad-zkvm-guest PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/soft_mem.c")

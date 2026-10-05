@@ -29,7 +29,7 @@ codegen-units = 1
 panic = "abort"
 
 [dependencies]
-ziskos = { git = "https://github.com/0xPolygonHermez/zisk.git", tag = "v1.3.1-alpha", default-features = false }
+ziskos = { git = "https://github.com/0xPolygonHermez/zisk.git", tag = "v1.3.1-alpha", default-features = false, features = ["no-dma-mem"] }
 tiny-keccak = { version = "2.0.2", features = ["keccak"] }
 sha2 = { version = "0.10", default-features = false }
 ripemd = { version = "0.1", default-features = false }
@@ -46,3 +46,7 @@ kzg-rs = { git = "https://github.com/succinctlabs/kzg-rs.git" }
 
 [build-dependencies]
 monad-zkvm-build-support = { path = "../build-support" }
+
+# EXPERIMENT: ziskos with the no-dma-mem feature (ZisK branch al/ziskos-no-dma-mem, on v1.3.1-alpha).
+[patch."https://github.com/0xPolygonHermez/zisk.git"]
+ziskos = { path = "/Users/anne-laure/Documents/zkvms/l2-bench/poc/zisk-nodma/ziskos/entrypoint" }

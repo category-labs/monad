@@ -20,6 +20,7 @@
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/compiler/ir/basic_blocks.hpp>
 #include <category/vm/compiler/ir/x86/emitter.hpp>
+#include <category/vm/compiler/ir/x86/runtime_reference.hpp>
 #include <category/vm/compiler/ir/x86/types.hpp>
 #include <category/vm/compiler/ir/x86/virtual_stack.hpp>
 #include <category/vm/compiler/types.hpp>
@@ -33,7 +34,9 @@
 
 #include <asmjit/core/api-config.h>
 #include <asmjit/core/codeholder.h>
+#include <asmjit/core/cpuinfo.h>
 #include <asmjit/core/emitter.h>
+#include <asmjit/core/environment.h>
 #include <asmjit/core/globals.h>
 #include <asmjit/core/jitruntime.h>
 #include <asmjit/core/operand.h>
@@ -68,7 +71,11 @@ namespace x86 = asmjit::x86;
 
 using monad::Cases;
 
+#ifndef ASMJIT_NO_JIT
 static_assert(ASMJIT_ARCH_X86 == 64);
+#endif
+static_assert(
+    sizeof(void *) == 8, "The emitter requires the x86-64 data layout");
 
 namespace
 {
@@ -529,6 +536,10 @@ namespace monad::vm::compiler::native
         if (spill_avx_) {
             em_->as_.vzeroupper();
         }
+#ifdef MONAD_VM_COMPILER_OFFLINE
+        em_->checked_debug_comment(
+            "runtime: {}", runtime_reference_name(runtime_fun_));
+#endif
         auto const fn_mem = em_->rodata_.add_external_function(runtime_fun_);
         em_->as_.call(fn_mem);
     }
@@ -626,11 +637,23 @@ namespace monad::vm::compiler::native
             arg);
     }
 
+#ifndef ASMJIT_NO_JIT
     Emitter::Emitter(
         asmjit::JitRuntime const &rt, interpreter::code_size_t const codesize,
         CompilerConfig const &config)
+        : Emitter(rt.environment(), rt.cpuFeatures(), codesize, config)
+    {
+    }
+#endif
+
+    Emitter::Emitter(
+        asmjit::Environment const &environment,
+        asmjit::CpuFeatures const &features,
+        interpreter::code_size_t const codesize, CompilerConfig const &config,
+        asmjit::Logger *const logger)
         : runtime_debug_trace_{config.runtime_debug_trace}
-        , as_{init_code_holder(rt, config.asm_log_path)}
+        , as_{init_code_holder(
+              environment, features, config.asm_log_path, logger)}
         , epilogue_label_{as_.newNamedLabel("ContractEpilogue")}
         , error_label_{as_.newNamedLabel("Error")}
         , jump_table_label_{std::nullopt}
@@ -663,7 +686,7 @@ namespace monad::vm::compiler::native
         }
     }
 
-    entrypoint_t Emitter::finish_contract(asmjit::JitRuntime &rt)
+    void Emitter::finish_contract()
     {
         contract_epilogue();
 
@@ -741,7 +764,12 @@ namespace monad::vm::compiler::native
                 as_.embed(msg.c_str(), msg.size() + 1);
             }
         }
+    }
 
+#ifndef ASMJIT_NO_JIT
+    entrypoint_t Emitter::finish_contract(asmjit::JitRuntime &rt)
+    {
+        finish_contract();
         entrypoint_t contract_main;
         auto const err = rt.add(&contract_main, &code_holder_);
         if (err != asmjit::kErrorOk) {
@@ -751,17 +779,24 @@ namespace monad::vm::compiler::native
         return contract_main;
     }
 
+#endif
+
     asmjit::CodeHolder *Emitter::init_code_holder(
-        asmjit::JitRuntime const &rt, char const *const log_path)
+        asmjit::Environment const &environment,
+        asmjit::CpuFeatures const &features, char const *const log_path,
+        asmjit::Logger *const logger)
     {
         code_holder_.setErrorHandler(&error_handler_);
-        if (log_path) {
+        if (logger) {
+            code_holder_.setLogger(logger);
+        }
+        else if (log_path) {
             FILE *log_file = fopen(log_path, "w");
             MONAD_ASSERT(log_file);
             debug_logger_.setFile(log_file);
             code_holder_.setLogger(&debug_logger_);
         }
-        code_holder_.init(rt.environment(), rt.cpuFeatures());
+        code_holder_.init(environment, features);
         return &code_holder_;
     }
 
@@ -809,8 +844,8 @@ namespace monad::vm::compiler::native
     {
         auto const msg_lbl = as_.newLabel();
         debug_messages_.emplace_back(msg_lbl, msg);
-        auto const fn_mem =
-            rodata_.add_external_function(runtime_print_gas_remaining_impl);
+        auto const fn_mem = rodata_.add_external_function(
+            MONAD_VM_RUNTIME_REFERENCE(runtime_print_gas_remaining_impl));
 
         discharge_deferred_comparison();
         spill_caller_save_regs(true);
@@ -824,8 +859,8 @@ namespace monad::vm::compiler::native
     {
         auto const msg_lbl = as_.newLabel();
         debug_messages_.emplace_back(msg_lbl, msg);
-        auto const fn_mem =
-            rodata_.add_external_function(runtime_print_input_stack_impl);
+        auto const fn_mem = rodata_.add_external_function(
+            MONAD_VM_RUNTIME_REFERENCE(runtime_print_input_stack_impl));
 
         discharge_deferred_comparison();
         spill_caller_save_regs(true);
@@ -855,8 +890,8 @@ namespace monad::vm::compiler::native
 
         checked_debug_comment("Store stack in transient storage");
 
-        auto const fn_mem =
-            rodata_.add_external_function(runtime_store_input_stack_impl);
+        auto const fn_mem = rodata_.add_external_function(
+            MONAD_VM_RUNTIME_REFERENCE(runtime_store_input_stack_impl));
 
         discharge_deferred_comparison();
         spill_caller_save_regs(true);
@@ -905,8 +940,8 @@ namespace monad::vm::compiler::native
     {
         auto const msg_lbl = as_.newLabel();
         debug_messages_.emplace_back(msg_lbl, msg);
-        auto const fn_mem =
-            rodata_.add_external_function(runtime_print_top2_impl);
+        auto const fn_mem = rodata_.add_external_function(
+            MONAD_VM_RUNTIME_REFERENCE(runtime_print_top2_impl));
 
         discharge_deferred_comparison();
         spill_caller_save_regs(true);
@@ -943,8 +978,8 @@ namespace monad::vm::compiler::native
     {
         auto const msg_lbl = as_.newLabel();
         debug_messages_.emplace_back(msg_lbl, msg);
-        auto const fn_mem =
-            rodata_.add_external_function(runtime_print_top1_impl);
+        auto const fn_mem = rodata_.add_external_function(
+            MONAD_VM_RUNTIME_REFERENCE(runtime_print_top1_impl));
 
         discharge_deferred_comparison();
         spill_caller_save_regs(true);
@@ -1665,13 +1700,13 @@ namespace monad::vm::compiler::native
 
     void Emitter::unchecked_debug_comment(std::string const &msg)
     {
-        MONAD_ASSERT(debug_logger_.file());
+        MONAD_ASSERT(code_holder_.logger());
         std::stringstream ss{msg};
         std::string line;
         while (std::getline(ss, line, '\n')) {
-            debug_logger_.log("// ");
-            debug_logger_.log(line.c_str());
-            debug_logger_.log("\n");
+            code_holder_.logger()->log("// ");
+            code_holder_.logger()->log(line.c_str());
+            code_holder_.logger()->log("\n");
         }
     }
 
@@ -3273,8 +3308,8 @@ namespace monad::vm::compiler::native
         }
 
         auto const load_bounded_label = as_.newLabel();
-        auto const load_bounded_fn =
-            rodata_.add_external_function(monad_vm_runtime_load_bounded_le_raw);
+        auto const load_bounded_fn = rodata_.add_external_function(
+            MONAD_VM_RUNTIME_REFERENCE(monad_vm_runtime_load_bounded_le_raw));
         auto const bswap_label = as_.newLabel();
         load_bounded_le_handlers_.emplace_back(
             load_bounded_label, load_bounded_fn, bswap_label);
@@ -3362,7 +3397,10 @@ namespace monad::vm::compiler::native
         if (mul_optimized()) {
             return;
         }
-        call_runtime(remaining_base_gas, false, runtime::mul);
+        call_runtime(
+            remaining_base_gas,
+            false,
+            MONAD_VM_RUNTIME_REFERENCE(runtime::mul));
     }
 
     void Emitter::udiv(int64_t const remaining_base_gas)
@@ -3370,7 +3408,10 @@ namespace monad::vm::compiler::native
         if (div_optimized<false>()) {
             return;
         }
-        call_runtime(remaining_base_gas, true, runtime::udiv);
+        call_runtime(
+            remaining_base_gas,
+            true,
+            MONAD_VM_RUNTIME_REFERENCE(runtime::udiv));
     }
 
     void Emitter::sdiv(int64_t const remaining_base_gas)
@@ -3378,7 +3419,10 @@ namespace monad::vm::compiler::native
         if (div_optimized<true>()) {
             return;
         }
-        call_runtime(remaining_base_gas, true, runtime::sdiv);
+        call_runtime(
+            remaining_base_gas,
+            true,
+            MONAD_VM_RUNTIME_REFERENCE(runtime::sdiv));
     }
 
     void Emitter::umod(int64_t const remaining_base_gas)
@@ -3386,7 +3430,10 @@ namespace monad::vm::compiler::native
         if (mod_optimized<false>()) {
             return;
         }
-        call_runtime(remaining_base_gas, true, runtime::umod);
+        call_runtime(
+            remaining_base_gas,
+            true,
+            MONAD_VM_RUNTIME_REFERENCE(runtime::umod));
     }
 
     void Emitter::smod(int64_t const remaining_base_gas)
@@ -3394,7 +3441,10 @@ namespace monad::vm::compiler::native
         if (mod_optimized<true>()) {
             return;
         }
-        call_runtime(remaining_base_gas, true, runtime::smod);
+        call_runtime(
+            remaining_base_gas,
+            true,
+            MONAD_VM_RUNTIME_REFERENCE(runtime::smod));
     }
 
     void Emitter::addmod(int64_t const remaining_base_gas)
@@ -3402,7 +3452,10 @@ namespace monad::vm::compiler::native
         if (addmod_opt()) {
             return;
         }
-        call_runtime(remaining_base_gas, true, runtime::addmod);
+        call_runtime(
+            remaining_base_gas,
+            true,
+            MONAD_VM_RUNTIME_REFERENCE(runtime::addmod));
     }
 
     void Emitter::mulmod(int64_t const remaining_base_gas)
@@ -3410,7 +3463,10 @@ namespace monad::vm::compiler::native
         if (mulmod_opt()) {
             return;
         }
-        call_runtime(remaining_base_gas, true, runtime::mulmod);
+        call_runtime(
+            remaining_base_gas,
+            true,
+            MONAD_VM_RUNTIME_REFERENCE(runtime::mulmod));
     }
 
     // Discharge
@@ -6282,10 +6338,10 @@ namespace monad::vm::compiler::native
 
         auto const increase_memory_fn =
             memory_version == runtime::Memory::Version::V1
-                ? rodata_.add_external_function(
-                      monad_vm_runtime_increase_memory_raw_v1)
-                : rodata_.add_external_function(
-                      monad_vm_runtime_increase_memory_raw_mip3);
+                ? rodata_.add_external_function(MONAD_VM_RUNTIME_REFERENCE(
+                      monad_vm_runtime_increase_memory_raw_v1))
+                : rodata_.add_external_function(MONAD_VM_RUNTIME_REFERENCE(
+                      monad_vm_runtime_increase_memory_raw_mip3));
 
         as_.call(increase_memory_fn);
 
@@ -8163,12 +8219,14 @@ namespace monad::vm::compiler::native
         if (exp <= 192) {
             call_runtime_mul(
                 Runtime<uint256_t *, uint256_t const *, uint256_t const *>(
-                    this, false, monad_vm_runtime_mul_192));
+                    this,
+                    false,
+                    MONAD_VM_RUNTIME_REFERENCE(monad_vm_runtime_mul_192)));
         }
         else {
             call_runtime_mul(
                 Runtime<uint256_t *, uint256_t const *, uint256_t const *>(
-                    this, false, runtime::mul));
+                    this, false, MONAD_VM_RUNTIME_REFERENCE(runtime::mul)));
         }
 
         MONAD_DEBUG_ASSERT(stack_.top()->stack_offset().has_value());

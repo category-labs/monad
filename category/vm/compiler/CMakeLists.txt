@@ -28,6 +28,7 @@ target_sources(monad-vm-compiler PRIVATE
     "ir/x86/emitter.cpp"
     "ir/x86/emitter.hpp"
     "ir/x86/types.hpp"
+    "ir/x86/runtime_reference.hpp"
     "ir/x86/virtual_stack.cpp"
     "ir/x86/virtual_stack.hpp"
 )

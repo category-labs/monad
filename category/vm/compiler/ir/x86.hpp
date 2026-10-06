@@ -27,9 +27,11 @@
 
 #include <memory>
 #include <span>
+#include <string>
 
 namespace monad::vm::compiler::native
 {
+#ifndef ASMJIT_NO_JIT
     /**
      * Compile the given contract and add it to JitRuntime.
      */
@@ -46,6 +48,13 @@ namespace monad::vm::compiler::native
     std::shared_ptr<Nativecode> compile_basic_blocks(
         asmjit::JitRuntime &rt, basic_blocks::BasicBlocksIR const &ir,
         CompilerConfig const & = {});
+
+#endif
+
+    /// Generate x86-64 assembly without allocating executable memory.
+    template <Traits traits>
+    std::string compile_assembly(
+        basic_blocks::BasicBlocksIR const &, CompilerConfig const & = {});
 
     /**
      * Upper bound on (estimated) native contract size in bytes.

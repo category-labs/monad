@@ -16,6 +16,7 @@
 #pragma once
 
 #include <category/vm/compiler/ir/basic_blocks.hpp>
+#include <category/vm/compiler/ir/x86/runtime_reference.hpp>
 #include <category/vm/compiler/ir/x86/types.hpp>
 #include <category/vm/compiler/ir/x86/virtual_stack.hpp>
 #include <category/vm/evm/opcodes.hpp>
@@ -218,16 +219,26 @@ namespace monad::vm::compiler::native
 
         ////////// Initialization and de-initialization //////////
 
+#ifndef ASMJIT_NO_JIT
         Emitter(
             asmjit::JitRuntime const &, interpreter::code_size_t bytecode_size,
             CompilerConfig const & = {});
+
+#endif
+        Emitter(
+            asmjit::Environment const &, asmjit::CpuFeatures const &,
+            interpreter::code_size_t, CompilerConfig const &,
+            asmjit::Logger * = nullptr);
 
         ~Emitter();
 
         // Flush the debug logger to ensure buffered lines are written.
         void flush_debug_logger();
 
+        void finish_contract();
+#ifndef ASMJIT_NO_JIT
         entrypoint_t finish_contract(asmjit::JitRuntime &);
+#endif
 
         ////////// Debug functionality //////////
 
@@ -242,7 +253,7 @@ namespace monad::vm::compiler::native
         void checked_debug_comment(
             std::format_string<Args...> const fmt, Args const &...args)
         {
-            if (debug_logger_.file()) [[unlikely]] {
+            if (code_holder_.logger()) [[unlikely]] {
                 unchecked_debug_comment(
                     fmt.get(), std::make_format_args(args...));
             }
@@ -398,175 +409,253 @@ namespace monad::vm::compiler::native
                     runtime::exp_dynamic_gas_cost_multiplier<traits>())) {
                 return;
             }
-            call_runtime(remaining_base_gas, true, runtime::exp<traits>);
+            call_runtime(
+                remaining_base_gas,
+                true,
+                MONAD_VM_RUNTIME_REFERENCE(runtime::exp<traits>));
         }
 
         template <Traits traits>
         void sha3(int64_t remaining_base_gas)
         {
-            call_runtime(remaining_base_gas, true, runtime::sha3<traits>);
+            call_runtime(
+                remaining_base_gas,
+                true,
+                MONAD_VM_RUNTIME_REFERENCE(runtime::sha3<traits>));
         }
 
         template <Traits traits>
         void balance(int64_t remaining_base_gas)
         {
-            call_runtime(remaining_base_gas, true, runtime::balance<traits>);
+            call_runtime(
+                remaining_base_gas,
+                true,
+                MONAD_VM_RUNTIME_REFERENCE(runtime::balance<traits>));
         }
 
         template <Traits traits>
         void calldatacopy(int64_t remaining_base_gas)
         {
             call_runtime(
-                remaining_base_gas, true, runtime::calldatacopy<traits>);
+                remaining_base_gas,
+                true,
+                MONAD_VM_RUNTIME_REFERENCE(runtime::calldatacopy<traits>));
         }
 
         template <Traits traits>
         void codecopy(int64_t remaining_base_gas)
         {
-            call_runtime(remaining_base_gas, true, runtime::codecopy<traits>);
+            call_runtime(
+                remaining_base_gas,
+                true,
+                MONAD_VM_RUNTIME_REFERENCE(runtime::codecopy<traits>));
         }
 
         template <Traits traits>
         void extcodesize(int64_t remaining_base_gas)
         {
             call_runtime(
-                remaining_base_gas, true, runtime::extcodesize<traits>);
+                remaining_base_gas,
+                true,
+                MONAD_VM_RUNTIME_REFERENCE(runtime::extcodesize<traits>));
         }
 
         template <Traits traits>
         void extcodecopy(int64_t remaining_base_gas)
         {
             call_runtime(
-                remaining_base_gas, true, runtime::extcodecopy<traits>);
+                remaining_base_gas,
+                true,
+                MONAD_VM_RUNTIME_REFERENCE(runtime::extcodecopy<traits>));
         }
 
         template <Traits traits>
         void returndatacopy(int64_t remaining_base_gas)
         {
             call_runtime(
-                remaining_base_gas, true, runtime::returndatacopy<traits>);
+                remaining_base_gas,
+                true,
+                MONAD_VM_RUNTIME_REFERENCE(runtime::returndatacopy<traits>));
         }
 
         template <Traits traits>
         void extcodehash(int64_t remaining_base_gas)
         {
             call_runtime(
-                remaining_base_gas, true, runtime::extcodehash<traits>);
+                remaining_base_gas,
+                true,
+                MONAD_VM_RUNTIME_REFERENCE(runtime::extcodehash<traits>));
         }
 
         template <Traits traits>
         void blockhash(int64_t remaining_base_gas)
         {
-            call_runtime(remaining_base_gas, true, runtime::blockhash);
+            call_runtime(
+                remaining_base_gas,
+                true,
+                MONAD_VM_RUNTIME_REFERENCE(runtime::blockhash));
         }
 
         template <Traits traits>
         void selfbalance(int64_t remaining_base_gas)
         {
-            call_runtime(remaining_base_gas, true, runtime::selfbalance);
+            call_runtime(
+                remaining_base_gas,
+                true,
+                MONAD_VM_RUNTIME_REFERENCE(runtime::selfbalance));
         }
 
         template <Traits traits>
         void blobhash(int64_t remaining_base_gas)
         {
-            call_runtime(remaining_base_gas, true, runtime::blobhash);
+            call_runtime(
+                remaining_base_gas,
+                true,
+                MONAD_VM_RUNTIME_REFERENCE(runtime::blobhash));
         }
 
         template <Traits traits>
         void sload(int64_t remaining_base_gas)
         {
-            call_runtime(remaining_base_gas, true, runtime::sload<traits>);
+            call_runtime(
+                remaining_base_gas,
+                true,
+                MONAD_VM_RUNTIME_REFERENCE(runtime::sload<traits>));
         }
 
         template <Traits traits>
         void sstore(int64_t remaining_base_gas)
         {
-            call_runtime(remaining_base_gas, true, runtime::sstore<traits>);
+            call_runtime(
+                remaining_base_gas,
+                true,
+                MONAD_VM_RUNTIME_REFERENCE(runtime::sstore<traits>));
         }
 
         template <Traits traits>
         void tload(int64_t remaining_base_gas)
         {
-            call_runtime(remaining_base_gas, true, runtime::tload);
+            call_runtime(
+                remaining_base_gas,
+                true,
+                MONAD_VM_RUNTIME_REFERENCE(runtime::tload));
         }
 
         template <Traits traits>
         void tstore(int64_t remaining_base_gas)
         {
-            call_runtime(remaining_base_gas, true, runtime::tstore);
+            call_runtime(
+                remaining_base_gas,
+                true,
+                MONAD_VM_RUNTIME_REFERENCE(runtime::tstore));
         }
 
         template <Traits traits>
         void mcopy(int64_t remaining_base_gas)
         {
-            call_runtime(remaining_base_gas, true, runtime::mcopy<traits>);
+            call_runtime(
+                remaining_base_gas,
+                true,
+                MONAD_VM_RUNTIME_REFERENCE(runtime::mcopy<traits>));
         }
 
         template <Traits traits>
         void log0(int64_t remaining_base_gas)
         {
-            call_runtime(remaining_base_gas, true, runtime::log0<traits>);
+            call_runtime(
+                remaining_base_gas,
+                true,
+                MONAD_VM_RUNTIME_REFERENCE(runtime::log0<traits>));
         }
 
         template <Traits traits>
         void log1(int64_t remaining_base_gas)
         {
-            call_runtime(remaining_base_gas, true, runtime::log1<traits>);
+            call_runtime(
+                remaining_base_gas,
+                true,
+                MONAD_VM_RUNTIME_REFERENCE(runtime::log1<traits>));
         }
 
         template <Traits traits>
         void log2(int64_t remaining_base_gas)
         {
-            call_runtime(remaining_base_gas, true, runtime::log2<traits>);
+            call_runtime(
+                remaining_base_gas,
+                true,
+                MONAD_VM_RUNTIME_REFERENCE(runtime::log2<traits>));
         }
 
         template <Traits traits>
         void log3(int64_t remaining_base_gas)
         {
-            call_runtime(remaining_base_gas, true, runtime::log3<traits>);
+            call_runtime(
+                remaining_base_gas,
+                true,
+                MONAD_VM_RUNTIME_REFERENCE(runtime::log3<traits>));
         }
 
         template <Traits traits>
         void log4(int64_t remaining_base_gas)
         {
-            call_runtime(remaining_base_gas, true, runtime::log4<traits>);
+            call_runtime(
+                remaining_base_gas,
+                true,
+                MONAD_VM_RUNTIME_REFERENCE(runtime::log4<traits>));
         }
 
         template <Traits traits>
         void create(int64_t remaining_base_gas)
         {
-            call_runtime(remaining_base_gas, true, runtime::create<traits>);
+            call_runtime(
+                remaining_base_gas,
+                true,
+                MONAD_VM_RUNTIME_REFERENCE(runtime::create<traits>));
         }
 
         template <Traits traits>
         void call(int64_t remaining_base_gas)
         {
-            call_runtime(remaining_base_gas, true, runtime::call<traits>);
+            call_runtime(
+                remaining_base_gas,
+                true,
+                MONAD_VM_RUNTIME_REFERENCE(runtime::call<traits>));
         }
 
         template <Traits traits>
         void callcode(int64_t remaining_base_gas)
         {
-            call_runtime(remaining_base_gas, true, runtime::callcode<traits>);
+            call_runtime(
+                remaining_base_gas,
+                true,
+                MONAD_VM_RUNTIME_REFERENCE(runtime::callcode<traits>));
         }
 
         template <Traits traits>
         void delegatecall(int64_t remaining_base_gas)
         {
             call_runtime(
-                remaining_base_gas, true, runtime::delegatecall<traits>);
+                remaining_base_gas,
+                true,
+                MONAD_VM_RUNTIME_REFERENCE(runtime::delegatecall<traits>));
         }
 
         template <Traits traits>
         void create2(int64_t remaining_base_gas)
         {
-            call_runtime(remaining_base_gas, true, runtime::create2<traits>);
+            call_runtime(
+                remaining_base_gas,
+                true,
+                MONAD_VM_RUNTIME_REFERENCE(runtime::create2<traits>));
         }
 
         template <Traits traits>
         void staticcall(int64_t remaining_base_gas)
         {
-            call_runtime(remaining_base_gas, true, runtime::staticcall<traits>);
+            call_runtime(
+                remaining_base_gas,
+                true,
+                MONAD_VM_RUNTIME_REFERENCE(runtime::staticcall<traits>));
         }
 
         template <Traits traits>
@@ -574,7 +663,9 @@ namespace monad::vm::compiler::native
         {
             runtime_store_input_stack(*bytecode_size_);
             call_runtime(
-                remaining_base_gas, true, runtime::selfdestruct<traits>);
+                remaining_base_gas,
+                true,
+                MONAD_VM_RUNTIME_REFERENCE(runtime::selfdestruct<traits>));
         }
 
         template <typename... Args>
@@ -596,8 +687,9 @@ namespace monad::vm::compiler::native
     private:
         ////////// Private initialization and de-initialization //////////
 
-        asmjit::CodeHolder *
-        init_code_holder(asmjit::JitRuntime const &, char const *);
+        asmjit::CodeHolder *init_code_holder(
+            asmjit::Environment const &, asmjit::CpuFeatures const &,
+            char const *, asmjit::Logger *);
         void contract_prologue();
         void contract_epilogue();
 

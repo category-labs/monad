@@ -53,6 +53,7 @@ namespace monad::vm::compiler::native
         using CodeSizeEstimate =
             std::variant<std::monostate, size_t, native_code_size_t>;
 
+#ifndef ASMJIT_NO_JIT
         /// If compilation failed, then `entrypoint` is `nullptr`.
         Nativecode(
             asmjit::JitRuntime &asmjit_rt, uint64_t const chain_id,
@@ -128,6 +129,7 @@ namespace monad::vm::compiler::native
         uint64_t chain_id_;
         entrypoint_t entrypoint_;
         CodeSizeEstimate code_size_estimate_;
+#endif
     };
 
     class Emitter;

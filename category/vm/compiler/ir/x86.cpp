@@ -15,7 +15,9 @@
 
 #include <category/core/assert.h>
 #include <category/core/likely.h>
-#include <category/core/log.hpp>
+#ifndef ASMJIT_NO_JIT
+    #include <category/core/log.hpp>
+#endif
 #include <category/vm/compiler/ir/basic_blocks.hpp>
 #include <category/vm/compiler/ir/instruction.hpp>
 #include <category/vm/compiler/ir/x86.hpp>
@@ -27,12 +29,22 @@
 #include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/runtime/types.hpp>
 
+#include <asmjit/core/archtraits.h>
+#include <asmjit/core/cpuinfo.h>
+#include <asmjit/core/environment.h>
 #include <asmjit/core/jitruntime.h>
+#include <asmjit/core/logger.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <variant>
+
+#ifdef MONAD_VM_COMPILER_OFFLINE
+    #include <category/vm/compiler/ir/x86/runtime_reference.hpp>
+    #include <format>
+#endif
 
 using namespace monad::vm;
 using namespace monad::vm::compiler;
@@ -400,6 +412,31 @@ namespace
     }
 
     template <Traits traits>
+    size_t emit_basic_blocks(
+        Emitter &emit, basic_blocks::BasicBlocksIR const &ir,
+        CompilerConfig const &config)
+    {
+        for (auto const &[d, _] : ir.jump_dests()) {
+            emit.add_jump_dest(d);
+        }
+        native_code_size_t const max_native_size =
+            max_code_size(config.max_code_size_offset, ir.codesize);
+        for (Block const &block : ir.blocks()) {
+            bool const can_enter_block = emit.begin_new_block(block);
+            if (can_enter_block) {
+                int64_t const base_gas = block_base_gas(block);
+                emit_gas_decrement(emit, ir, block, base_gas);
+                emit_instrs<traits>(
+                    emit, block, base_gas, max_native_size, config);
+                emit_terminator<traits>(emit, ir, block);
+            }
+            require_code_size_in_bound(emit, max_native_size);
+        }
+        return emit.estimate_size();
+    }
+
+#ifndef ASMJIT_NO_JIT
+    template <Traits traits>
     std::shared_ptr<Nativecode> compile_contract(
         asmjit::JitRuntime &rt, uint8_t const *contract_code,
         code_size_t const contract_code_size, CompilerConfig const &config)
@@ -408,10 +445,12 @@ namespace
             basic_blocks::make_ir<traits>(contract_code, contract_code_size);
         return compile_basic_blocks<traits>(rt, ir, config);
     }
+#endif
 }
 
 namespace monad::vm::compiler::native
 {
+#ifndef ASMJIT_NO_JIT
     template <Traits traits>
     std::shared_ptr<Nativecode> compile(
         asmjit::JitRuntime &rt, uint8_t const *contract_code,
@@ -443,25 +482,12 @@ namespace monad::vm::compiler::native
         CompilerConfig const &config)
     {
         Emitter emit{rt, ir.codesize, config};
-        for (auto const &[d, _] : ir.jump_dests()) {
-            emit.add_jump_dest(d);
-        }
-        native_code_size_t const max_native_size =
-            max_code_size(config.max_code_size_offset, ir.codesize);
-        for (Block const &block : ir.blocks()) {
-            bool const can_enter_block = emit.begin_new_block(block);
-            if (can_enter_block) {
-                int64_t const base_gas = block_base_gas(block);
-                emit_gas_decrement(emit, ir, block, base_gas);
-                emit_instrs<traits>(
-                    emit, block, base_gas, max_native_size, config);
-                emit_terminator<traits>(emit, ir, block);
-            }
-            require_code_size_in_bound(emit, max_native_size);
-        }
-        size_t const size_estimate = emit.estimate_size();
+        size_t const size_estimate =
+            emit_basic_blocks<traits>(emit, ir, config);
         auto entry = emit.finish_contract(rt);
-        MONAD_DEBUG_ASSERT(size_estimate <= *max_native_size);
+        MONAD_DEBUG_ASSERT(
+            size_estimate <=
+            *max_code_size(config.max_code_size_offset, ir.codesize));
         return std::make_shared<Nativecode>(
             rt,
             traits::id(),
@@ -471,4 +497,35 @@ namespace monad::vm::compiler::native
     }
 
     EXPLICIT_TRAITS(compile_basic_blocks);
+#endif
+
+    template <Traits traits>
+    std::string compile_assembly(
+        basic_blocks::BasicBlocksIR const &ir, CompilerConfig const &config)
+    {
+#ifdef MONAD_VM_COMPILER_OFFLINE
+        runtime_references.clear();
+#endif
+        asmjit::StringLogger logger;
+        asmjit::Environment const environment{
+            asmjit::Arch::kX64,
+            asmjit::SubArch::kUnknown,
+            asmjit::Vendor::kUnknown,
+            asmjit::Platform::kLinux,
+            asmjit::PlatformABI::kGNU};
+        Emitter emit{
+            environment, asmjit::CpuFeatures{}, ir.codesize, config, &logger};
+        emit_basic_blocks<traits>(emit, ir, config);
+        emit.finish_contract();
+#ifdef MONAD_VM_COMPILER_OFFLINE
+        for (auto const &[address, name] : runtime_references) {
+            auto const symbol = std::format(
+                "// Runtime placeholder 0x{:016x}: {}\n", address, name);
+            logger.log(symbol.data(), symbol.size());
+        }
+#endif
+        return {logger.data(), logger.dataSize()};
+    }
+
+    EXPLICIT_TRAITS(compile_assembly);
 }

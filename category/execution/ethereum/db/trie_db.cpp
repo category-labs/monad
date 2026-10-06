@@ -319,7 +319,7 @@ DomainStateRoots TrieDb::commit_domain_state_deltas(
         std::move(curr_root_),
         builder.build(prefix_),
         block_number_,
-        /*enable_compaction=*/true,
+        /*enable_compaction=*/false,
         /*can_write_to_fast=*/true,
         /*write_root=*/false);
 
@@ -340,15 +340,13 @@ DomainStateRoots TrieDb::commit_domain_state_deltas(
 
     if (populate_headers) {
         populate_headers(builder, roots);
-        // As in commit(), the header stage completes and publishes the
-        // proposal root; finalize() will later publish the finalized copy.
         curr_root_ = db_.upsert(
             std::move(curr_root_),
             builder.build(prefix_),
             block_number_,
             /*enable_compaction=*/false,
             /*can_write_to_fast=*/true,
-            /*write_root=*/true);
+            /*write_root=*/false);
     }
 
     if (cache_) {

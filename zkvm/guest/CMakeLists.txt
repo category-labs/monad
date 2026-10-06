@@ -452,7 +452,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     monad_zkvm_drop_sources(monad_execution_native
         "db/storage_page.cpp"
         "db/page_commit_builder.cpp"
-        "db/commit_block_migration.cpp"
+        "db/commit_block.cpp"
         "staking/fuzzer/staking_contract_machine.cpp"
         "staking/fuzzer/staking_contract_model.cpp"
         "staking/test/input_generation.cpp"

@@ -39,9 +39,6 @@ load64(unsigned char const *const bytes)
 extern "C" void test_keccak_f(uint64_t (*state)[25]);
     #endif
 
-extern "C"
-{
-
 // Inline ZisK's Keccak-f marker (CSR 0x800) to avoid call/return overhead.
 // The precompile updates state in place; the memory clobber tells the
 // compiler that this instruction reads and writes memory.
@@ -80,7 +77,8 @@ extern "C"
 // Executor hints avoid guest-side searches over 200-byte states.
 // Accept only index < used and an exact match against an owned input copy.
 // Cached outputs come from real permutations in this execution.
-// Publish each entry only after both states are written.
+// Advance the local used count after both states are written;
+// save it globally when the digest completes.
 constexpr size_t KECCAKF_LANES = 25;
 constexpr size_t KECCAKF_STATE_BYTES = KECCAKF_LANES * sizeof(uint64_t);
 
@@ -209,43 +207,123 @@ static void keccak256_one_block(
     std::memcpy(output, entry.out, 32);
 }
 
-    #endif // MONAD_ZKVM_KECCAKF_MEMO
-
-// Reuse a validated result when available; otherwise run Keccak-f.
-static inline void keccak_permute(uint64_t (*state)[25])
+// Permute input_state = keccakf_memo[entry_count].in without changing it.
+// A hit requires a valid index and an exact full-state match.
+// First allows a rate-only copy into a fresh output (both capacities zero).
+// Later blocks and the reused spare require all 200 bytes.
+// A miss returns input_state + KECCAKF_LANES; a hit returns an earlier entry's
+// output. The caller writes the local count back after the digest.
+template <bool First>
+static inline uint64_t const *
+keccakf_memo_permute(uint64_t *const input_state, uint64_t &entry_count)
 {
-    #if MONAD_ZKVM_KECCAKF_MEMO
-    uint64_t *const s = &(*state)[0];
-    uint64_t const index = fcall_get_keccakf_index(s);
-
-    // Reject out-of-range hints, including NOT_FOUND, before reading the table.
-    if (index < keccakf_memo_used &&
-        keccakf_state_eq(keccakf_memo[index].in, s)) {
-        keccakf_state_copy(s, keccakf_memo[index].out);
-        return;
+    uint64_t const index = fcall_get_keccakf_index(input_state);
+    // Reject out-of-range hints before reading the table.
+    if (index < entry_count &&
+        keccakf_state_eq(keccakf_memo[index].in, input_state)) {
+        return keccakf_memo[index].out;
     }
-
-    if (keccakf_memo_used == KECCAKF_MEMO_ENTRIES) {
-        // Full table: compute without caching another entry.
-        zisk_keccakf(state);
-        return;
+    uint64_t *const output_lanes = input_state + KECCAKF_LANES;
+    auto *const output_state =
+        reinterpret_cast<uint64_t(*)[KECCAKF_LANES]>(output_lanes);
+    if (entry_count == KECCAKF_MEMO_ENTRIES) {
+        // The reused spare may hold an earlier output; overwrite all lanes.
+        keccakf_state_copy(output_lanes, input_state);
+        zisk_keccakf(output_state);
+        return output_lanes;
     }
-
-    // Register this slot for the next Keccak-f call; no other permutation
-    // may intervene between fcall_set_keccakf_index and zisk_keccakf.
-    KeccakfEntry &e = keccakf_memo[keccakf_memo_used];
-    keccakf_state_copy(e.in, s);
-    fcall_set_keccakf_index(keccakf_memo_used);
-    zisk_keccakf(state);
-    keccakf_state_copy(e.out, s);
+    if constexpr (First) {
+        std::memcpy(output_lanes, input_state, 17 * sizeof(uint64_t));
+    }
+    else {
+        keccakf_state_copy(output_lanes, input_state);
+    }
+    // Associate this slot with the next permutation; keep these calls adjacent.
+    fcall_set_keccakf_index(entry_count);
+    zisk_keccakf(output_state);
     // Publish only after both input and output are stored.
-    ++keccakf_memo_used;
-    #else
-    zisk_keccakf(state);
-    #endif
+    ++entry_count;
+    return output_lanes;
 }
 
-void monad_zkvm_keccak256_fast(
+// Inputs >= 136 bytes: build states directly in the memo, carrying the
+// previous output's 64-byte capacity. The scratch is zero on entry;
+// later blocks overwrite all 25 lanes.
+static void keccak256_memo_sponge(
+    void const *const input, size_t remaining_bytes, uint8_t output[32])
+{
+    constexpr size_t RATE_WORDS = KECCAK_RATE / 8; // 17
+    static_assert(
+        KECCAK_RATE - 1 == 16 * 8 + 7, "the pad bit is byte 7 of lane 16");
+    auto const *input_cursor = static_cast<unsigned char const *>(input);
+    // Keep the count local across permutations; write it back once on return.
+    uint64_t entry_count = keccakf_memo_used;
+
+    uint64_t *input_state = keccakf_memo[entry_count].in;
+    std::memcpy(input_state, input_cursor, KECCAK_RATE);
+    input_cursor += KECCAK_RATE;
+    remaining_bytes -= KECCAK_RATE;
+    uint64_t const *output_state =
+        keccakf_memo_permute<true>(input_state, entry_count);
+
+    while (remaining_bytes >= KECCAK_RATE) {
+        input_state = keccakf_memo[entry_count].in;
+        // Keep one opaque base pointer for the lanes to avoid extra saved
+        // registers for their addresses.
+        asm("" : "+r"(input_state));
+        for (size_t i = 0; i < RATE_WORDS; ++i) {
+            input_state[i] = output_state[i] ^ load64(input_cursor + 8 * i);
+        }
+        std::memcpy(
+            input_state + RATE_WORDS,
+            output_state + RATE_WORDS,
+            (KECCAKF_LANES - RATE_WORDS) * 8);
+        output_state = keccakf_memo_permute<false>(input_state, entry_count);
+        input_cursor += KECCAK_RATE;
+        remaining_bytes -= KECCAK_RATE;
+    }
+
+    // Absorb the remaining bytes and Keccak padding (0x01 ... 0x80).
+    // The partial lane is read backwards from the input end; the preceding
+    // full block keeps the eight-byte load within the input.
+    input_state = keccakf_memo[entry_count].in;
+    size_t const full_tail_lanes = remaining_bytes / 8;
+    unsigned const partial_lane_bytes =
+        static_cast<unsigned>(remaining_bytes % 8);
+    for (size_t i = 0; i < full_tail_lanes; ++i) {
+        input_state[i] = output_state[i] ^ load64(input_cursor + 8 * i);
+    }
+    uint64_t padded_tail_lane = uint64_t{0x01} << (8 * partial_lane_bytes);
+    if (partial_lane_bytes != 0) {
+        padded_tail_lane |= load64(input_cursor + remaining_bytes - 8) >>
+                            (8 * (8 - partial_lane_bytes));
+    }
+    input_state[full_tail_lanes] =
+        output_state[full_tail_lanes] ^ padded_tail_lane;
+    std::memcpy(
+        input_state + full_tail_lanes + 1,
+        output_state + full_tail_lanes + 1,
+        (KECCAKF_LANES - 1 - full_tail_lanes) * 8);
+    input_state[16] ^= uint64_t{0x80} << 56;
+    output_state = keccakf_memo_permute<false>(input_state, entry_count);
+    std::memcpy(output, output_state, 32);
+
+    // A hit or full table reuses this scratch; a miss advanced to a zero slot.
+    if (input_state == keccakf_memo[entry_count].in) {
+        std::memset(input_state, 0, KECCAKF_STATE_BYTES);
+    }
+    keccakf_memo_used = entry_count;
+}
+
+    #endif // MONAD_ZKVM_KECCAKF_MEMO
+
+// Raw permutation for the sponge's non-memo path.
+static inline void keccak_permute(uint64_t (*state)[25])
+{
+    zisk_keccakf(state);
+}
+
+extern "C" void monad_zkvm_keccak256_fast(
     void const *const input, size_t remaining_bytes, uint8_t output[32])
 {
     constexpr size_t RATE_WORDS = KECCAK_RATE / 8; // 17
@@ -254,8 +332,11 @@ void monad_zkvm_keccak256_fast(
     // Short inputs build their padded state directly in the memo.
     if (remaining_bytes < KECCAK_RATE) {
         keccak256_one_block(input, remaining_bytes, output);
-        return;
     }
+    else {
+        keccak256_memo_sponge(input, remaining_bytes, output);
+    }
+    return;
     #endif
 
     // Keccak-f[1600] uses 25 lanes of 64 bits (200 bytes).
@@ -344,7 +425,5 @@ void monad_zkvm_keccak256_fast(
 
     std::memcpy(output, state, 32);
 }
-
-} // extern "C"
 
 #endif // MONAD_ZKVM_ZISK || MONAD_ZKVM_KECCAK_TEST

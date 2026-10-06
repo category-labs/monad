@@ -20,8 +20,10 @@
         #error "Symbolic runtime references must never be used by the JIT"
     #endif
     #include <category/core/assert.h>
+    #include <cctype>
     #include <cstdint>
     #include <map>
+    #include <string>
     #include <string_view>
 
 namespace monad::vm::compiler::native
@@ -47,6 +49,25 @@ namespace monad::vm::compiler::native
     {
         return runtime_references.at(reinterpret_cast<uint64_t>(pointer));
     }
+
+    inline std::string runtime_reference_label(void *pointer)
+    {
+        auto name = runtime_reference_name(pointer);
+        if (name.ends_with("<traits>")) {
+            name.remove_suffix(std::string_view{"<traits>"}.size());
+        }
+        std::string label;
+        for (unsigned char const c : name) {
+            if (std::isalnum(c) || c == '_') {
+                label.push_back(static_cast<char>(c));
+            }
+            else if (!label.empty() && label.back() != '_') {
+                label.push_back('_');
+            }
+        }
+        return label + "_ptr";
+    }
+
 }
 
     #define MONAD_VM_RUNTIME_REFERENCE(f)                                      \

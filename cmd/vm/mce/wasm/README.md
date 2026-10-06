@@ -98,8 +98,9 @@ then lowers the module to wasm32. This matters because the emitter embeds
 needs WebAssembly and JavaScript BigInt, but not native memory64 support.
 
 Runtime helpers are represented by deterministic placeholder addresses. The
-listing annotates them with symbol names; those data bytes are not executable
-native addresses. This mode is compile-only and is rejected at build time if
+listing gives each function-pointer slot a symbolic label, for example
+`call qword ptr [runtime_balance_ptr]`. These names remain visible when comments
+are hidden. The pointer bytes are placeholders, not executable native addresses. This mode is compile-only and is rejected at build time if
 AsmJit's JIT support is enabled.
 
 ## Native parity check

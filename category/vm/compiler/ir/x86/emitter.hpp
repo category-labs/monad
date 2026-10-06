@@ -30,6 +30,7 @@
 #include <asmjit/x86/x86assembler.h>
 
 #include <format>
+#include <map>
 #include <string_view>
 
 namespace monad::vm::compiler::native
@@ -89,7 +90,9 @@ namespace monad::vm::compiler::native
         class RoData
         {
         public:
-            explicit RoData(asmjit::Label);
+            explicit RoData(asmjit::x86::Assembler &);
+
+            void emit(asmjit::x86::Assembler &) const;
 
             asmjit::Label const &label() const;
 
@@ -115,6 +118,10 @@ namespace monad::vm::compiler::native
             asmjit::x86::Mem add(std::array<uint8_t, N> const &);
 
             asmjit::Label label_;
+#ifdef MONAD_VM_COMPILER_OFFLINE
+            asmjit::x86::Assembler &as_;
+            std::map<int64_t, asmjit::Label> function_labels_;
+#endif
             int32_t partial_index_{};
             int32_t partial_sub_index_{32};
             std::vector<uint256_t> data_;

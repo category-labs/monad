@@ -32,15 +32,19 @@
 #include <category/vm/runtime/types.hpp>
 #include <category/vm/utils/debug.hpp>
 
-#include <asmjit/core/api-config.h>
 #include <asmjit/core/codeholder.h>
 #include <asmjit/core/cpuinfo.h>
 #include <asmjit/core/emitter.h>
 #include <asmjit/core/environment.h>
 #include <asmjit/core/globals.h>
-#include <asmjit/core/jitruntime.h>
 #include <asmjit/core/operand.h>
+#include <asmjit/x86/x86assembler.h>
 #include <asmjit/x86/x86operand.h>
+
+#ifndef ASMJIT_NO_JIT
+    #include <asmjit/core/api-config.h>
+    #include <asmjit/core/jitruntime.h>
+#endif
 
 #include <evmc/evmc.h>
 
@@ -316,9 +320,36 @@ namespace monad::vm::compiler::native
         }
     }
 
-    Emitter::RoData::RoData(asmjit::Label const lbl)
-        : label_{lbl}
+    Emitter::RoData::RoData(asmjit::x86::Assembler &as)
+        : label_{as.newNamedLabel("ROD")}
+#ifdef MONAD_VM_COMPILER_OFFLINE
+        , as_{as}
+#endif
     {
+    }
+
+    void Emitter::RoData::emit(asmjit::x86::Assembler &as) const
+    {
+        as.bind(label_);
+        auto const *bytes = reinterpret_cast<uint8_t const *>(data_.data());
+#ifdef MONAD_VM_COMPILER_OFFLINE
+        size_t offset = 0;
+        // Bind aliases at the existing slots without changing the pool layout.
+        for (auto const &[position, label] : function_labels_) {
+            auto const end = static_cast<size_t>(position);
+            if (end > offset) {
+                as.embed(bytes + offset, end - offset);
+            }
+            as.bind(label);
+            offset = end;
+        }
+#else
+        constexpr size_t offset = 0;
+#endif
+        auto const size = data_.size() * sizeof(uint256_t);
+        if (size > offset) {
+            as.embed(bytes + offset, size - offset);
+        }
     }
 
     asmjit::Label const &Emitter::RoData::label() const
@@ -341,7 +372,20 @@ namespace monad::vm::compiler::native
     {
         static_assert(sizeof(F) == sizeof(uint64_t));
         static_assert(alignof(F) == alignof(uint64_t));
-        return add8(reinterpret_cast<uint64_t>(f));
+        auto const slot = add8(reinterpret_cast<uint64_t>(f));
+#ifdef MONAD_VM_COMPILER_OFFLINE
+        auto const [it, inserted] = function_labels_.try_emplace(slot.offset());
+        if (inserted) {
+            auto name = runtime_reference_label(reinterpret_cast<void *>(f));
+            if (as_.labelByName(name.c_str()).isValid()) {
+                name += std::format("_{:016x}", reinterpret_cast<uint64_t>(f));
+            }
+            it->second = as_.newNamedLabel(name.c_str());
+        }
+        return x86::qword_ptr(it->second);
+#else
+        return slot;
+#endif
     }
 
     asmjit::x86::Mem Emitter::RoData::add32(uint256_t const &x)
@@ -660,7 +704,7 @@ namespace monad::vm::compiler::native
         , keep_stack_in_next_block_{}
         , gpq256_regs_{Gpq256{x86::r12, x86::r13, x86::r14, x86::r15}, Gpq256{x86::r8, x86::r9, x86::r10, x86::r11}, Gpq256{x86::rcx, x86::rsi, x86::rdx, x86::rdi}}
         , bytecode_size_{codesize}
-        , rodata_{as_.newNamedLabel("ROD")}
+        , rodata_{as_}
         , exponential_constant_fold_counter_{0}
         , accumulated_static_work_{0}
     {
@@ -756,8 +800,7 @@ namespace monad::vm::compiler::native
                 ro_section_index);
             as_.section(ro_section);
 
-            as_.bind(rodata_.label());
-            as_.embed(&rodata_.data()[0], rodata_.data().size() << 5);
+            rodata_.emit(as_);
 
             for (auto const &[lbl, msg] : debug_messages_) {
                 as_.bind(lbl);

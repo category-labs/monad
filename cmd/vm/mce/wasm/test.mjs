@@ -36,6 +36,11 @@ function check(hex, revision = 'latest') {
     assert.equal(result.error, '', `${revision}: ${hex}: ${result.error}`);
     assert.match(result.assembly, /ContractEpilogue:/);
     assert.match(result.assembly, /vzeroupper/);
+    for (const call of result.assembly.matchAll(/^call qword ptr \[([^\]]+)\]/gm)) {
+        assert.doesNotMatch(call[1], /^ROD(?:\+|$)/);
+        assert.equal(result.assembly.split('\n').filter(line => line === `${call[1]}:`).length, 1,
+            `Missing or duplicate function-pointer slot: ${call[1]}`);
+    }
     if (nativePath) {
         const native = spawnSync(resolve(nativePath), [revision, hex], {
             encoding: 'utf8', timeout: 10000, maxBuffer: 16 * 1024 * 1024,
@@ -85,6 +90,33 @@ check('60003100');
 assert.equal(check('60003560013504'), baseline, 'Compilation history changed assembly');
 assert.match(check('60003100'), /runtime::balance/);
 assert.match(check('600160005200'), /monad_vm_runtime_increase_memory_raw_v1/);
+const symbolic = check('6000316000356001350460005200');
+const pool = [];
+const slots = new Map();
+let inPool = false;
+for (const line of symbolic.split('\n')) {
+    if (line === 'ROD:') inPool = true;
+    if (!inPool) continue;
+    if (line.endsWith(':')) slots.set(line.slice(0, -1), pool.length);
+    if (line.startsWith('.db ')) {
+        pool.push(...line.match(/0x[0-9A-Fa-f]{2}/g).map(byte => Number.parseInt(byte, 16)));
+    }
+}
+for (const [label, name] of [
+    ['runtime_balance_ptr', 'runtime::balance<traits>'],
+    ['runtime_udiv_ptr', 'runtime::udiv'],
+    ['monad_vm_runtime_load_bounded_le_raw_ptr', 'monad_vm_runtime_load_bounded_le_raw'],
+    ['monad_vm_runtime_increase_memory_raw_v1_ptr', 'monad_vm_runtime_increase_memory_raw_v1'],
+]) {
+    assert.ok(symbolic.includes(`call qword ptr [${label}]`), label);
+    const offset = slots.get(label);
+    assert.notEqual(offset, undefined, label);
+    const address = pool.slice(offset, offset + 8).reduce((n, byte, index) => n | (BigInt(byte) << BigInt(index * 8)), 0n);
+    assert.ok(symbolic.includes(`// Runtime placeholder 0x${address.toString(16).padStart(16, '0')}: ${name}`), label);
+}
+const repeated = check('60003160003100');
+assert.equal(repeated.split('\n').filter(line => line === 'runtime_balance_ptr:').length, 1);
+assert.equal(repeated.split('\n').filter(line => line === 'call qword ptr [runtime_balance_ptr]').length, 2);
 assert.equal(check(' 0X60 01\n60 02 01 00 '), check('600160020100'));
 for (const [source, revision, error] of [
     ['0', 'latest', /byte pairs/],

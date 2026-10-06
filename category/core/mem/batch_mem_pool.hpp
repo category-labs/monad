@@ -20,6 +20,7 @@
 #include <boost/pool/pool.hpp>
 
 #include <concepts>
+#include <memory>
 #include <mutex>
 #include <new>
 #include <string>
@@ -75,7 +76,7 @@ public:
         if (MONAD_LIKELY(p)) {
             T *result = static_cast<T *>(p);
             try {
-                new (result) T(std::forward<Args>(args)...);
+                std::construct_at(result, std::forward<Args>(args)...);
             }
             catch (...) {
                 std::lock_guard const l{mutex_};
@@ -89,7 +90,7 @@ public:
 
     void delete_obj(T *const obj)
     {
-        obj->~T();
+        std::destroy_at(obj);
         std::lock_guard const l{mutex_};
         STATS_EVENT_DELETE();
         pool_.free(obj);

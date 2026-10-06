@@ -43,6 +43,7 @@ endforeach()
 add_executable(mce-wasm
     bindings.cpp
     support.cpp
+    "${MONAD_ROOT}/category/vm/utils/parser.cpp"
     "${MONAD_ROOT}/category/vm/compiler/ir/basic_blocks.cpp"
     "${MONAD_ROOT}/category/vm/compiler/ir/x86.cpp"
     "${MONAD_ROOT}/category/vm/compiler/ir/x86/emitter.cpp"

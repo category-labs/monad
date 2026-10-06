@@ -1,8 +1,8 @@
 # MCE assembly-only WebAssembly target
 
 Builds the existing Monad x86-64 compiler as a browser module. It accepts hex
-EVM bytecode and returns AsmJit's Intel-syntax assembly listing, including EVM
-instruction comments. It does not execute contracts or install generated code.
+EVM bytecode or assembles `.mevm` mnemonics, and returns AsmJit's Intel-syntax
+assembly listing, including EVM instruction comments. It does not execute contracts or install generated code.
 
 ## Build
 
@@ -43,7 +43,27 @@ The source may contain whitespace and an optional `0x` prefix. Empty bytecode
 is valid. Invalid hex, unknown revisions, and size-limit errors return an
 empty `assembly` and a nonempty `error`; successful calls return an empty
 `error`. Source is limited to 4 MiB and decoded bytecode to less than 1 MiB.
-This target currently accepts bytecode, not `.mevm` mnemonic source or Solidity.
+Solidity source is not supported.
+
+`assembleMnemonic(source)` assembles native MCE `.mevm` syntax and returns
+`{bytecode, sourceLines, error}`. `bytecode` is lowercase hex without a prefix;
+`sourceLines` is a JavaScript array containing the one-based source line of each
+emitted byte. Errors return empty output and leave the module reusable.
+
+```js
+const parsed = mce.assembleMnemonic('push1 1\npush 42\nadd\nstop');
+if (parsed.error) throw new Error(parsed.error);
+console.log(parsed.bytecode); // 6001602a0100
+console.log(mce.compileHex(parsed.bytecode, 'latest').assembly);
+```
+
+Opcodes are case-insensitive. Constants may be decimal or `0x` hex; `PUSH`
+chooses the smallest width, while `PUSH1` through `PUSH32` fix the width.
+`//` comments and labels (`push .end jump jumpdest .end`) are supported.
+The assembler uses the same latest-stable instruction set as native MCE;
+the selected revision controls the subsequent x86 compilation. Strict parsing
+rejects unknown tokens, overflowing immediates, duplicate labels, and undefined
+labels, without imposing stack validation on snippets.
 
 Revision names are case-insensitive: `berlin`, `london`, `paris`, `shanghai`,
 `cancun`, `prague`, `osaka`, `amsterdam`, `latest`, and `monad_zero` through

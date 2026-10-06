@@ -20,6 +20,7 @@
 #include <iterator>
 #include <span>
 #include <stdexcept>
+#include <string>
 #include <system_error>
 #include <vector>
 
@@ -32,6 +33,9 @@ namespace monad::vm::utils
         bool const verbose;
         // Whether to validate the parsed program.
         bool const validate;
+        // Reject ignored tokens and malformed labels; report errors by
+        // exception.
+        bool const strict = false;
     };
 
     /**
@@ -46,10 +50,13 @@ namespace monad::vm::utils
      * jumpdests can use named labels,
      * e.g. push .mylabel jumpdest .mylabel
      * end of line comments (// .. \n) and whitespace are ignored
+     * source_lines, if provided, receives a source line number for each byte
+     * strict mode throws std::invalid_argument on errors instead of exiting
      *
      */
-    std::vector<uint8_t>
-    parse_opcodes(parser_config const &config, std::string const &str);
+    std::vector<uint8_t> parse_opcodes(
+        parser_config const &config, std::string const &str,
+        std::vector<uint32_t> *source_lines = nullptr);
 
     /**
      *  convert from binary evm bytecode to text opcodes and data

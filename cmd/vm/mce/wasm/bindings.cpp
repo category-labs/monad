@@ -20,6 +20,7 @@
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/utils/load_program.hpp>
+#include <category/vm/utils/parser.hpp>
 
 #include <algorithm>
 #include <cctype>
@@ -33,6 +34,7 @@
 
 #ifdef __EMSCRIPTEN__
     #include <emscripten/bind.h>
+    #include <emscripten/val.h>
 #endif
 
 namespace
@@ -42,6 +44,39 @@ namespace
         std::string assembly;
         std::string error;
     };
+
+    struct AssembleResult
+    {
+        std::string bytecode;
+        std::vector<uint32_t> source_lines;
+        std::string error;
+    };
+
+    AssembleResult assemble_mnemonic(std::string const &source)
+    {
+        try {
+            if (source.size() > 4 * 1024 * 1024) {
+                throw std::invalid_argument("Source exceeds 4 MiB");
+            }
+            AssembleResult result;
+            auto const code = monad::vm::utils::parse_opcodes(
+                {false, false, true}, source, &result.source_lines);
+            if (code.size() >= (1U << 20)) {
+                throw std::invalid_argument(
+                    "Bytecode must be smaller than 1 MiB");
+            }
+            constexpr char hex[] = "0123456789abcdef";
+            result.bytecode.reserve(code.size() * 2);
+            for (auto const byte : code) {
+                result.bytecode.push_back(hex[byte >> 4]);
+                result.bytecode.push_back(hex[byte & 0xf]);
+            }
+            return result;
+        }
+        catch (std::exception const &error) {
+            return {{}, {}, error.what()};
+        }
+    }
 
     template <monad::Traits traits>
     std::string compile(std::vector<uint8_t> const &code)
@@ -133,16 +168,38 @@ EMSCRIPTEN_BINDINGS(mce)
         .field("assembly", &CompileResult::assembly)
         .field("error", &CompileResult::error);
     emscripten::function("compileHex", &compile_hex);
+    emscripten::function(
+        "assembleMnemonic", +[](std::string const &source) {
+            auto const result = assemble_mnemonic(source);
+            auto value = emscripten::val::object();
+            value.set("bytecode", result.bytecode);
+            value.set(
+                "sourceLines", emscripten::val::array(result.source_lines));
+            value.set("error", result.error);
+            return value;
+        });
 }
 #else
 // Native reference executable for checking assembly parity with WASM.
 int main(int argc, char **argv)
 {
-    std::string const source =
-        argc > 2 ? argv[2]
-                 : std::string{
-                       std::istreambuf_iterator<char>{std::cin},
-                       std::istreambuf_iterator<char>{}};
+    std::string source = argc > 2
+                             ? argv[2]
+                             : std::string{
+                                   std::istreambuf_iterator<char>{std::cin},
+                                   std::istreambuf_iterator<char>{}};
+    if (argc > 3) {
+        auto const result = assemble_mnemonic(source);
+        if (!result.error.empty()) {
+            std::cerr << result.error << '\n';
+            return 1;
+        }
+        source = result.bytecode;
+        if (std::string{argv[3]} == "--bytecode") {
+            std::cout << source << '\n';
+            return 0;
+        }
+    }
     auto const result = compile_hex(source, argc > 1 ? argv[1] : "latest");
     if (!result.error.empty()) {
         std::cerr << result.error << '\n';

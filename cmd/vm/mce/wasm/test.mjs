@@ -99,5 +99,33 @@ for (const [source, revision, error] of [
     assert.match(result.error, error);
 }
 check('600160020100'); // Errors must leave the module reusable.
+for (const [source, hex] of [
+    ['push1 1 push2 0x0002 add stop', '60016100020100'],
+    ['// comment\npush 0 push 255 push 256', '5f60ff610100'],
+    ['push .end jump jumpdest .end stop', '6003565b00'],
+    ['jumpdest .start push .start jump', '5b5f56'],
+    ['push32 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff stop', `7f${'ff'.repeat(32)}00`],
+    ['', ''],
+]) {
+    const assembled = mce.assembleMnemonic(source);
+    assert.equal(assembled.error, '', source);
+    assert.equal(assembled.bytecode, hex, source);
+    assert.equal(assembled.sourceLines.length, hex.length / 2);
+    check(assembled.bytecode);
+    if (nativePath) {
+        const native = spawnSync(resolve(nativePath), ['latest', source, '--bytecode'], {encoding: 'utf8'});
+        assert.equal(native.status, 0, native.stderr);
+        assert.equal(native.stdout.trim(), hex);
+    }
+}
+assert.deepEqual(mce.assembleMnemonic('// comment\npush2 0xabcd\nstop').sourceLines, [2, 2, 2, 3]);
+for (const source of ['push1', 'push1 256', 'push .missing', 'jumpdest .x jumpdest .x',
+    'wat', 'push -1', 'push 0xgg', '0xff', 'stop;', 'stop\0add']) {
+    const result = mce.assembleMnemonic(source);
+    assert.notEqual(result.error, '', source);
+    assert.equal(result.bytecode, '');
+    assert.deepEqual(result.sourceLines, []);
+}
+assert.equal(mce.assembleMnemonic('push 42 stop').bytecode, '602a00');
 console.log(`Passed ${checked} assembly cases, all revisions and input-error checks` +
     (nativePath ? ' (native parity, allowing independent spill reordering).' : '.'));

@@ -22,6 +22,7 @@
 #include <category/vm/utils/evm-as.hpp>
 #include <category/vm/utils/evm-as/builder.hpp>
 #include <category/vm/utils/evm-as/compiler.hpp>
+#include <category/vm/utils/evm-as/utils.hpp>
 #include <category/vm/utils/evm-as/validator.hpp>
 #include <category/vm/utils/parser.hpp>
 
@@ -32,13 +33,16 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <exception>
 #include <format>
 #include <iostream>
 #include <iterator>
 #include <optional>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <string_view>
+#include <unordered_set>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -75,11 +79,11 @@ namespace monad::vm::utils
             input++;
             if (*input == 'x' || *input == 'X') {
                 input++;
-                if (isxdigit(*input)) {
+                if (isxdigit(static_cast<unsigned char>(*input))) {
                     do {
                         input++;
                     }
-                    while (isxdigit(*input));
+                    while (isxdigit(static_cast<unsigned char>(*input)));
                     return input;
                 }
             }
@@ -89,7 +93,7 @@ namespace monad::vm::utils
 
     char const *try_parse_decimal_constant(char const *input)
     {
-        while (isdigit(*input)) {
+        while (isdigit(static_cast<unsigned char>(*input))) {
             input++;
         }
         return input;
@@ -101,23 +105,24 @@ namespace monad::vm::utils
             do {
                 input++;
             }
-            while (isalnum(*input));
+            while (isalnum(static_cast<unsigned char>(*input)) ||
+                   *input == '_');
         }
         return input;
     }
 
     char const *drop_spaces(char const *input)
     {
-        while (*input == ' ') {
+        while (*input == ' ' || *input == '\t' || *input == '\r') {
             input++;
         }
         return input;
     }
 
-    void err(std::string_view const msg, std::string_view const value)
+    [[noreturn]] void
+    err(std::string_view const msg, std::string_view const value)
     {
-        std::cerr << "error: " << msg << ": " << value << '\n';
-        exit(1);
+        throw std::invalid_argument(std::format("{}: {}", msg, value));
     }
 
     void err(evm_as::ValidationError const &err)
@@ -151,11 +156,11 @@ namespace monad::vm::utils
 
     char const *try_parse_opname(char const *input)
     {
-        if (isalpha(*input)) {
+        if (isalpha(static_cast<unsigned char>(*input))) {
             do {
                 input++;
             }
-            while (isalnum(*input));
+            while (isalnum(static_cast<unsigned char>(*input)));
         }
         return input;
     }
@@ -167,8 +172,13 @@ namespace monad::vm::utils
             push_ops_with_arg.end());
     }
 
-    void warn(std::string_view const msg, std::string_view const value)
+    void warn(
+        parser_config const &config, std::string_view const msg,
+        std::string_view const value)
     {
+        if (config.strict) {
+            err(msg, value);
+        }
         std::cerr << "warning: " << msg << ": " << value << '\n';
     }
 
@@ -232,7 +242,7 @@ namespace monad::vm::utils
             for (size_t i = 0; i < std::min(errors.size(), size_t{5}); i++) {
                 err(errors[i]);
             }
-            exit(1);
+            throw std::invalid_argument("Program validation failed");
         }
 
         evm_as::compile(eb, opcodes);
@@ -245,107 +255,199 @@ namespace monad::vm::utils
         return opcodes;
     }
 
-    std::vector<uint8_t>
-    parse_opcodes_helper(parser_config const &config, std::string const &str)
+    std::vector<uint8_t> parse_opcodes_helper(
+        parser_config const &config, std::string const &str,
+        std::vector<uint32_t> *source_lines)
     {
         auto eb = evm_as::latest();
         char const *input = str.c_str();
-
-        while (*input) {
-            auto const *p = try_parse_hex_constant(input);
-            if (p != input) {
-                warn("unexpected hex constant", std::string_view(input, p));
-                input = p;
-                continue;
-            }
-
-            p = try_parse_decimal_constant(input);
-            if (p != input) {
-                warn("unexpected decimal constant", std::string_view(input, p));
-                input = p;
-                continue;
-            }
-
-            p = try_parse_label(input);
-            if (p != input) {
-                warn("unexpected label", std::string_view(input, p));
-                input = p;
-                continue;
-            }
-
-            p = try_parse_line_comment(input);
-            if (p != input) {
-                input = p;
-                continue;
-            }
-
-            p = try_parse_opname(input);
-            if (p != input) {
-                auto op = std::string(input, p);
-                std::transform(op.begin(), op.end(), op.begin(), ::toupper);
-                input = p;
-                if (op == "PUSH0") {
-                    eb.push0();
-                }
-                else if (is_push_with_arg(op)) {
-                    auto r = parse_constant_or_label(input);
-                    input = r.first;
-
-                    std::visit(
-                        Cases{
-                            [&](uint256_t const &imm) -> void {
-                                auto const *const pushops =
-                                    push_ops_with_arg.data();
-                                auto const d = std::distance(
-                                    pushops,
-                                    std::find(pushops, pushops + 33, op));
-                                MONAD_ASSERT(d >= 0);
-                                size_t const n = static_cast<size_t>(d);
-                                if (n == 0) {
-                                    eb.push0();
-                                }
-                                else {
-                                    eb.push(n, imm);
-                                }
-                            },
-                            [&](std::string const &label) -> void {
-                                eb.push(label);
-                            }},
-                        r.second);
-                }
-                else if (op == "JUMPDEST") {
-                    input = drop_spaces(input);
-                    p = try_parse_label(input);
-                    if (p == input) {
-                        eb.jumpdest();
-                    }
-                    else {
-                        eb.jumpdest(std::string(input, p));
-                        input = p;
-                    }
-                }
-                else {
-                    std::optional<uint8_t> opcode = find_opcode(op);
-                    if (!opcode.has_value()) {
-                        err("unknown opcode", op);
-                    }
-                    else {
-                        eb.ins(static_cast<monad::vm::compiler::EvmOpCode>(
-                            opcode.value()));
-                    }
-                }
-
-                continue;
-            }
-
-            input++; // otherwise ignore
+        uint32_t line = 1;
+        std::vector<uint32_t> instruction_lines;
+        std::unordered_set<std::string> labels;
+        std::vector<std::pair<std::string, uint32_t>> references;
+        if (config.strict && str.find('\0') != std::string::npos) {
+            err("Unexpected NUL character", "");
         }
-        return compile_tokens(config, eb);
+
+        try {
+            while (*input) {
+                if (std::isspace(static_cast<unsigned char>(*input))) {
+                    if (*input == '\n') {
+                        ++line;
+                    }
+                    ++input;
+                    continue;
+                }
+                if (config.strict && *input == '/' && input[1] != '/') {
+                    err("Expected // comment", "/");
+                }
+                auto const *p = try_parse_hex_constant(input);
+                if (p != input) {
+                    warn(
+                        config,
+                        "unexpected hex constant",
+                        std::string_view(input, p));
+                    input = p;
+                    continue;
+                }
+
+                p = try_parse_decimal_constant(input);
+                if (p != input) {
+                    warn(
+                        config,
+                        "unexpected decimal constant",
+                        std::string_view(input, p));
+                    input = p;
+                    continue;
+                }
+
+                p = try_parse_label(input);
+                if (p != input) {
+                    warn(
+                        config, "unexpected label", std::string_view(input, p));
+                    input = p;
+                    continue;
+                }
+
+                p = try_parse_line_comment(input);
+                if (p != input) {
+                    input = p;
+                    continue;
+                }
+
+                p = try_parse_opname(input);
+                if (p != input) {
+                    auto op = std::string(input, p);
+                    std::ranges::transform(op, op.begin(), [](unsigned char c) {
+                        return static_cast<char>(std::toupper(c));
+                    });
+                    if (source_lines) {
+                        instruction_lines.push_back(line);
+                    }
+                    input = p;
+                    if (op == "PUSH0") {
+                        eb.push0();
+                    }
+                    else if (is_push_with_arg(op)) {
+                        auto r = parse_constant_or_label(input);
+                        input = r.first;
+
+                        std::visit(
+                            Cases{
+                                [&](uint256_t const &imm) -> void {
+                                    auto const *const pushops =
+                                        push_ops_with_arg.data();
+                                    auto const d = std::distance(
+                                        pushops,
+                                        std::find(pushops, pushops + 33, op));
+                                    MONAD_ASSERT(d >= 0);
+                                    size_t const n = static_cast<size_t>(d);
+                                    if (n == 0) {
+                                        eb.push(imm);
+                                    }
+                                    else {
+                                        if (config.strict &&
+                                            evm_as::byte_width(imm) > n) {
+                                            err("Immediate does not fit " + op,
+                                                imm.to_string(16));
+                                        }
+                                        eb.push(n, imm);
+                                    }
+                                },
+                                [&](std::string const &label) -> void {
+                                    if (config.strict && label.size() == 1) {
+                                        err("Expected a label name after .",
+                                            label);
+                                    }
+                                    if (config.strict) {
+                                        references.emplace_back(label, line);
+                                    }
+                                    eb.push(label);
+                                }},
+                            r.second);
+                    }
+                    else if (op == "JUMPDEST") {
+                        input = drop_spaces(input);
+                        p = try_parse_label(input);
+                        if (p == input) {
+                            eb.jumpdest();
+                        }
+                        else {
+                            auto const label = std::string(input, p);
+                            if (config.strict &&
+                                (label.size() == 1 ||
+                                 !labels.insert(label).second)) {
+                                err("Invalid or duplicate label", label);
+                            }
+                            eb.jumpdest(label);
+                            input = p;
+                        }
+                    }
+                    else {
+                        std::optional<uint8_t> opcode = find_opcode(op);
+                        if (!opcode.has_value()) {
+                            err("unknown opcode", op);
+                        }
+                        else {
+                            eb.ins(static_cast<monad::vm::compiler::EvmOpCode>(
+                                opcode.value()));
+                        }
+                    }
+
+                    continue;
+                }
+
+                if (config.strict) {
+                    err("Unexpected character", std::string_view(input, 1));
+                }
+                input++; // otherwise ignore
+            }
+            if (config.strict) {
+                for (auto const &[label, reference_line] : references) {
+                    if (!labels.contains(label)) {
+                        line = reference_line;
+                        err("Undefined label", label);
+                    }
+                }
+            }
+            auto code = compile_tokens(config, eb);
+            if (source_lines) {
+                source_lines->assign(code.size(), 0);
+                size_t offset = 0;
+                for (auto const source_line : instruction_lines) {
+                    auto const opcode = code.at(offset);
+                    auto const size = 1 + (is_push_opcode(opcode)
+                                               ? get_push_opcode_index(opcode)
+                                               : 0);
+                    std::fill_n(
+                        source_lines->begin() +
+                            static_cast<std::ptrdiff_t>(offset),
+                        size,
+                        source_line);
+                    offset += size;
+                }
+            }
+            return code;
+        }
+        catch (std::exception const &error) {
+            throw std::invalid_argument(
+                std::format("Line {}: {}", line, error.what()));
+        }
     }
 
-    std::vector<uint8_t>
-    parse_opcodes(parser_config const &config, std::string const &str)
+    std::vector<uint8_t> parse_opcodes(
+        parser_config const &config, std::string const &str,
+        std::vector<uint32_t> *source_lines)
     {
-        return parse_opcodes_helper(config, str);
+        try {
+            return parse_opcodes_helper(config, str, source_lines);
+        }
+        catch (std::exception const &error) {
+            if (config.strict) {
+                throw;
+            }
+            std::cerr << "error: " << error.what() << '\n';
+            std::exit(1);
+        }
     }
 }

@@ -356,25 +356,8 @@ try {
         raw_db,
         /*enable_multiblock_cache=*/true};
 
-    // Dual-timeline: open the secondary alongside the primary. The primary
-    // always owns the latest state; a secondary is optional and only
-    // runloop_monad_ethblocks consumes it:
-    //             before mip8 fork: writes every block to every open db
-    //             after mip8 fork: asserts primary db must be page-encoded,
-    //             writes to primary db only, freeze secondary slot db if
-    //             secondary db is active.
-    // runloop_monad requires a page-encoded primary and ignores the secondary.
-    std::optional<mpt::Db> secondary_raw_db;
-    std::optional<TrieDb> secondary_db;
-    if (!db_in_memory &&
-        raw_db.timeline_active(monad::mpt::timeline_id::secondary)) {
-        secondary_raw_db = raw_db.open_secondary_timeline();
-        MONAD_ASSERT(secondary_raw_db.has_value());
-        secondary_db.emplace(*secondary_raw_db);
-        MONAD_ASSERT(
-            secondary_db->is_page_encoded() != triedb.is_page_encoded(),
-            "dual-timeline dbs must pair one slot and one page encoding");
-    }
+    // Only the primary timeline is opened. A secondary timeline left over
+    // from the dual-db migration is ignored by every runloop.
 
     // Note: in memory db block number is always zero
     uint64_t const init_block_num = [&] {
@@ -517,7 +500,6 @@ try {
                     dynamic_cast<MonadChain const &>(*chain),
                     block_db_path,
                     db,
-                    secondary_db.has_value() ? &*secondary_db : nullptr,
                     vm,
                     block_hash_buffer,
                     priority_pool,

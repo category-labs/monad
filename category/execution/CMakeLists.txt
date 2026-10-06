@@ -208,8 +208,8 @@ add_library(
 add_library(
   monad_execution_native OBJECT
   # monad/db
-  "monad/db/commit_block_migration.cpp"
-  "monad/db/commit_block_migration.hpp"
+  "monad/db/commit_block.cpp"
+  "monad/db/commit_block.hpp"
   "monad/db/page_commit_builder.hpp"
   "monad/db/page_commit_builder.cpp"
   "monad/db/state_machine_init.cpp"

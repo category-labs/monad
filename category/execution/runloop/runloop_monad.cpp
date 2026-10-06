@@ -46,7 +46,7 @@
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/core/monad_block.hpp>
 #include <category/execution/monad/core/rlp/monad_block_rlp.hpp>
-#include <category/execution/monad/db/commit_block_migration.hpp>
+#include <category/execution/monad/db/commit_block.hpp>
 #include <category/execution/monad/event/record_consensus_events.hpp>
 #include <category/execution/monad/reserve_balance.hpp>
 #include <category/execution/monad/validate_monad_block.hpp>
@@ -335,8 +335,7 @@ Result<BlockExecOutput> propose_block(
         .call_frames = call_frames,
         .ommers = block.ommers,
         .withdrawals = block.withdrawals};
-    commit_block<traits>(
-        db, /*secondary_db=*/nullptr, block_id, block.header, *state, anc);
+    commit_block<traits>(db, block_id, block.header, *state, anc);
     [[maybe_unused]] auto const commit_time =
         std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - commit_begin);

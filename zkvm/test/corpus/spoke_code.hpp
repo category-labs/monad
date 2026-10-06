@@ -27,8 +27,12 @@
 
 MONAD_NAMESPACE_BEGIN
 
+class State;
+
 namespace corpus
 {
+    class GenesisSink;
+
     /// Where this corpus puts the spoke. A FIXED address and not a
     /// CREATE-derived one: the access check asks the spoke before every call,
     /// so the spoke has to exist from genesis, before anything could have
@@ -63,6 +67,16 @@ namespace corpus
     /// protocol has. It goes when DomainSpoke can be vendored, which needs
     /// solc; CONFORMANCE.md tracks that.
     byte_string spoke_access_proxy(Address const &impl);
+
+    /// The spoke a domain genesis gets when it brings none of its own: the
+    /// access proxy alone at the domain's spoke address, answering canCall and
+    /// delegating the rest to SPOKE_IMPLEMENTATION, which nothing seeds. That
+    /// is all a chain whose blocks send no message needs; the presets and the
+    /// spoke scenario, which send them, seed their own. Nonce 0 on both
+    /// routes, as create_contract leaves an account, so the two put the same
+    /// leaf in the root. Nothing on the Ethereum arm, which has no check.
+    void seed_spoke_access(State &);
+    void seed_spoke_access(GenesisSink &);
 }
 
 MONAD_NAMESPACE_END

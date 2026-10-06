@@ -89,6 +89,21 @@ than adding one. It could not stay CREATE-derived: the check asks it before ever
 call, so it has to exist from genesis, before anything could have deployed it.
 `--spoke-address` prints a constant now instead of deriving one from the seed.
 
+**And a transfer carries the stipend.** The check runs on the transaction's own
+call too, and a call that cannot hold the stipend once its intrinsic cost is paid
+is denied without the spoke being asked. So the corpus's transfers carry 21,000
+plus `DOMAIN_ACCESS_GAS_STIPEND` on this arm (`TRANSFER_GAS`,
+`corpus_builder.hpp`) and consume 21,050: what `canCall` leaves of the stipend is
+handed back. The Ethereum arm keeps 21,000, and its corpora are byte for byte what
+they were.
+
+`CorpusBuilder` fills the spoke in on every genesis that brings none, and refuses
+a bulk-seeded one without it rather than leave a chain that denies every call —
+GenesisBulk compared a slow route that had the spoke with a fast one that did not,
+and WrappedToken and PvpSettlement, seeded in bulk, saw every receipt revert.
+`CorpusScenarios.EveryTransactionSucceedsButTheDeliberateRevert` holds that the
+scenarios still do what they say; it fails on transfers at 21,000.
+
 ## Five pre-execution drop rules decide the transaction set
 
 Silent in the client — a log warning, nothing more:

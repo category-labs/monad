@@ -14,10 +14,14 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <zkvm/test/corpus/contracts/namespace_spoke_runtime.hpp>
+#include <zkvm/test/corpus/genesis_bulk.hpp>
 #include <zkvm/test/corpus/spoke_code.hpp>
 
 #include <category/core/assert.h>
 #include <category/core/hex.hpp>
+#include <category/execution/ethereum/core/account.hpp>
+#include <category/execution/ethereum/domain_anchor.hpp>
+#include <category/execution/ethereum/state3/state.hpp>
 
 #include <cstring>
 #include <utility>
@@ -110,6 +114,29 @@ namespace corpus
         MONAD_ASSERT(out.size() == 0x50);
         MONAD_ASSERT(out[0x40] == 0x5b && out[0x45] == 0x5b);
         return out;
+    }
+
+    void seed_spoke_access(State &state)
+    {
+#ifdef MONAD_ZKVM_L2
+        state.create_contract(L2_DOMAIN_SPOKE);
+        state.set_code(
+            L2_DOMAIN_SPOKE, spoke_access_proxy(SPOKE_IMPLEMENTATION));
+#else
+        (void)state;
+#endif
+    }
+
+    void seed_spoke_access(GenesisSink &sink)
+    {
+#ifdef MONAD_ZKVM_L2
+        sink.contract(
+            L2_DOMAIN_SPOKE,
+            Account{},
+            spoke_access_proxy(SPOKE_IMPLEMENTATION));
+#else
+        (void)sink;
+#endif
     }
 }
 

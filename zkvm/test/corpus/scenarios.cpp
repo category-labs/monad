@@ -389,25 +389,9 @@ namespace corpus
             out.push_back(std::move(s));
         }
 
-#ifdef MONAD_ZKVM_L2
-        // Every genesis gets a spoke, because the access check asks it before
-        // every call and one that is not there answers nothing -- which
-        // denies. A scenario that brings its own keeps it: the spoke one
-        // points its proxy at what its first block creates.
-        for (auto &sc : out) {
-            auto const inner = sc.genesis;
-            sc.genesis = [inner](State &st) {
-                inner(st);
-                if (!st.account_exists(L2_DOMAIN_SPOKE)) {
-                    st.create_contract(L2_DOMAIN_SPOKE);
-                    st.set_code(
-                        L2_DOMAIN_SPOKE,
-                        spoke_access_proxy(SPOKE_IMPLEMENTATION));
-                }
-            };
-        }
-#endif
-
+        // The spoke every domain genesis needs is the builder's to add
+        // (CorpusBuilder), so a scenario brings one only to mean it: the spoke
+        // one points its proxy at what its first block creates.
         return out;
     }
 }

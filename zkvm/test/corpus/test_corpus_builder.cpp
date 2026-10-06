@@ -34,7 +34,6 @@
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/db/offset_trie.hpp>
 #include <category/execution/ethereum/db/partial_trie_db.hpp>
-#include <category/execution/ethereum/domain_anchor.hpp>
 #include <category/execution/ethereum/rlp/decode.hpp>
 #include <category/execution/ethereum/rlp/execution_witness.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
@@ -75,27 +74,11 @@ namespace
     constexpr auto SALT_SECRET =
         0x000000000000000000000000000000000000000000000000000000005a1700d5_bytes32;
 
+    /// The spoke a domain genesis needs is the builder's to add, so a test's
+    /// lambda seeds only what the test is about.
     corpus::CorpusBuilder make_builder(std::function<void(State &)> const &g)
     {
-        // Every L2 genesis needs the spoke, because the access check asks it
-        // before every call and a spoke that is not there answers nothing --
-        // which is a denial. That is a property of the chain, not of a
-        // scenario, so it is applied here rather than in each test's lambda.
-        auto const seeded = [g](State &st) {
-            g(st);
-#ifdef MONAD_ZKVM_L2
-            // Only if the scenario did not put its own there: the spoke one
-            // points its proxy at what its first block creates, and this
-            // default would overwrite that.
-            if (!st.account_exists(L2_DOMAIN_SPOKE)) {
-                st.create_contract(L2_DOMAIN_SPOKE);
-                st.set_code(
-                    L2_DOMAIN_SPOKE,
-                    corpus::spoke_access_proxy(corpus::SPOKE_IMPLEMENTATION));
-            }
-#endif
-        };
-        return corpus::CorpusBuilder{seeded, OPERATOR_SK, SALT_SECRET};
+        return corpus::CorpusBuilder{g, OPERATOR_SK, SALT_SECRET};
     }
 }
 
@@ -564,6 +547,38 @@ TEST(CorpusScenarios, EveryBlockRoundTripsThroughTheGuestTrie)
 }
 
 // ---------------------------------------------------------------------------
+// A scenario's transactions do what it says they do. A denied call still makes
+// a valid block -- the access check reverts it at depth 0 and every root still
+// round-trips -- so a genesis without the spoke, or a transfer that cannot hold
+// the check's stipend, empties a scenario without failing the test above. So
+// every receipt succeeds, except the one revert the evm scenario sends on
+// purpose: its first block's third transaction.
+// ---------------------------------------------------------------------------
+
+TEST(CorpusScenarios, EveryTransactionSucceedsButTheDeliberateRevert)
+{
+    bytes32_t seed{};
+    seed.bytes[31] = 1;
+
+    for (auto const &sc : corpus::all_scenarios(seed)) {
+        auto b = make_builder(sc.genesis);
+        size_t block = 0;
+        for (auto &spec : sc.blocks(b)) {
+            auto const e = b.add_block(std::move(spec));
+            for (size_t i = 0; i < e.receipts.size(); ++i) {
+                SCOPED_TRACE(
+                    sc.name + " block " + std::to_string(block) + " tx " +
+                    std::to_string(i));
+                bool const deliberate =
+                    sc.name == "evm" && block == 0 && i == 2;
+                EXPECT_EQ(e.receipts[i].status, deliberate ? 0u : 1u);
+            }
+            ++block;
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // The spoke is in the corpus for one reason: the L2 anchor harvests
 // NamespaceMessageRecorded out of receipts. If the deployment silently failed
 // -- wrong constructor encoding, out of gas -- the block would still execute
@@ -828,6 +843,8 @@ TEST(GenesisBulk, TheFastRouteGivesTheSameRootAsTheSlowOne)
         sink.contract(CONTRACT_ADDR, Account{.balance = 7}, SOME_CODE);
         sink.storage(CONTRACT_ADDR, SLOT_ONE, VALUE_ONE);
         sink.storage(CONTRACT_ADDR, SLOT_TWO, VALUE_TWO);
+        // What the builder adds to the slow route's genesis on its own.
+        corpus::seed_spoke_access(sink);
     };
     corpus::CorpusBuilder fast{
         fast_seeder, 100'000, corpus::GAS_LIMIT, OPERATOR_SK, SALT_SECRET};
@@ -849,6 +866,7 @@ TEST(GenesisBulk, ChunkingDoesNotChangeTheRoot)
             sink.account(a, Account{.balance = uint256_t{1000 + i}});
             sink.storage(a, SLOT_ONE, VALUE_ONE);
         }
+        corpus::seed_spoke_access(sink);
     };
     corpus::CorpusBuilder one{
         seeder, 100'000, corpus::GAS_LIMIT, OPERATOR_SK, SALT_SECRET};
@@ -1155,6 +1173,7 @@ TEST(WrappedToken, OnlyAdmittedHoldersMoveBalances)
                 token,
                 word(uint256_t{TOTAL_SUPPLY_SLOT}),
                 word(uint256_t{2000}));
+            corpus::seed_spoke_access(sink);
         },
         1000,
         corpus::GAS_LIMIT,
@@ -1219,6 +1238,7 @@ TEST(PvpSettlement, BothLegsOrNeither)
             sink.storage(
                 t1, word(uint256_t{TOTAL_SUPPLY_SLOT}), word(uint256_t{50}));
             sink.contract(pvp, Account{.nonce = 1}, pvp_settlement_code());
+            corpus::seed_spoke_access(sink);
         },
         1000,
         corpus::GAS_LIMIT,

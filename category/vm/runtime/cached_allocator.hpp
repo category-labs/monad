@@ -21,7 +21,6 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdlib>
-#include <functional>
 #include <memory>
 #include <new>
 #include <type_traits>
@@ -108,6 +107,22 @@ namespace monad::vm::runtime
         static constexpr size_t alloc_size = sizeof(base_type) * T::size;
         static constexpr size_t DEFAULT_MAX_CACHE_BYTE_SIZE = 4096 * alloc_size;
 
+        struct Deleter
+        {
+            size_t const max_slots_in_cache;
+
+            void operator()(void *const storage) const
+            {
+                if (T::cache_list.size() >= max_slots_in_cache) {
+                    std::free(storage);
+                }
+                else {
+                    T::cache_list.push(storage);
+                    MONAD_ASAN_POISON(storage, alloc_size);
+                }
+            }
+        };
+
 #if defined(__cpp_lib_is_implicit_lifetime) &&                                 \
     __cpp_lib_is_implicit_lifetime >= 202302L
         static_assert(std::is_implicit_lifetime_v<base_type>);
@@ -162,18 +177,11 @@ namespace monad::vm::runtime
         /// Free memory allocated with `aligned_alloc_cached`.
         void free_cached(void *const storage) const
         {
-            if (T::cache_list.size() >= max_slots_in_cache) {
-                std::free(storage);
-            }
-            else {
-                T::cache_list.push(storage);
-                MONAD_ASAN_POISON(storage, alloc_size);
-            }
+            Deleter{max_slots_in_cache}(storage);
         };
 
         /// Return live base_type objects whose values are uninitialized.
-        std::unique_ptr<base_type, std::function<void(base_type *)>>
-        allocate() const
+        std::unique_ptr<base_type, Deleter> allocate() const
         {
             // aligned_alloc_cached's placement new of a std::byte array
             // implicitly creates the base_type objects. reinterpret_cast alone
@@ -182,7 +190,7 @@ namespace monad::vm::runtime
             // already started before the call to launder.
             auto *const ptr = std::launder(
                 reinterpret_cast<base_type *>(aligned_alloc_cached()));
-            return {ptr, [*this](base_type *const p) { free_cached(p); }};
+            return {ptr, Deleter{max_slots_in_cache}};
         }
 
     private:

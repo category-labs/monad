@@ -1,0 +1,199 @@
+# What the protocol fixes, and where this tree differs
+
+Behaviour the execution client or the contracts already determine. None of it is
+a choice; all of it is work. Choices live in [DECISIONS.md](DECISIONS.md).
+
+The client is
+[`monad-private@domains`](https://github.com/category-labs/monad-private/tree/domains)
+and the contracts are
+[`monad-domains`](https://github.com/category-labs/monad-domains). Where the two
+disagree the disagreement is recorded here and the client is followed, per
+decision 6.
+
+---
+
+## A domain block is not a block
+
+The client never builds one. Domain transactions execute against the **L1
+header** — `number`, `timestamp`, `beneficiary`, `prev_randao`, `gas_limit`,
+`base_fee_per_gas` are the L1 block's — and the only domain header that exists is
+a two-field record written at commit time:
+
+```cpp
+BlockHeader{.state_root = state_root, .number = header.number}
+```
+
+Everything else is zero. It exists so finalized-root validation has something to
+compare against, nothing more.
+
+What follows, all of which this tree currently assumes otherwise:
+
+- no transactions root over ciphertexts — the ciphertexts are in L1 calldata, not
+  in a block body;
+- no receipts root committed anywhere, so `gas_used` is not committed either, and
+  gas accounting matters only where it moves balances or changes control flow;
+- no parent-hash continuity: the hub orders transitions with `stateNonces` and a
+  strictly increasing block number;
+- `BLOCKHASH` is served from **L1** hashes, so the witness carries 32-byte hashes,
+  not 544-byte ancestor headers.
+
+## The trait family is Monad, not EVM
+
+`execute_private_domain_blocks` is `requires is_monad_trait_v<traits>` and
+`EXPLICIT_MONAD_TRAITS`. The client's gasless path carries
+
+```cpp
+static_assert(!gasless || is_monad_trait_v<traits>);
+```
+
+so `EvmTraits<PARIS>` with unpriced gas is a combination its own source refuses to
+compile. Monad pricing, reserve balance, cold-access costs and code-size limits
+all follow, and all move the state root.
+
+## `canCall` runs on every EVM call
+
+In `pre_call`, so on every message and not only the top-level one: a STATIC call
+to the spoke's `canCall(address,address,bytes)` with a 30,000 gas stipend charged
+to the caller (`msg.gas -= stipend - gas_left`), failing closed on anything but
+canonical ABI `true`. The denial flag is sticky for the whole transaction so a
+caller cannot swallow the revert by catching it, and a depth rule makes the
+check's callees leaves — a second hop arms the denial.
+
+It changes the gas available to every call, so it moves out-of-gas boundaries and
+therefore the state root. It is in the hottest path of the guest.
+
+## Five pre-execution drop rules decide the transaction set
+
+Silent in the client — a log warning, nothing more:
+
+1. HPKE decryption failed;
+2. payload malformed after decryption;
+3. inner `gas_limit` above the outer L1 envelope's;
+4. sender not recoverable;
+5. signed chain id is not the domain's.
+
+The witness therefore has to carry the outer L1 gas limit per payload. Whether a
+reverted outer call is in the set at all is unresolved — see DECISIONS.md,
+"Do reverted sequencing calls count?".
+
+## Gas is metered and not priced, but `GASPRICE` is not pricing
+
+The client gates exactly five things behind `if constexpr (!gasless)`: the up-front
+purchase and blob fee in `irrevocable_change`, the refund credit, the EIP-7623
+balance adjustment, and the beneficiary award in `execute_final`. This tree's
+`gas_is_priced()` covers the same five. That part is right.
+
+Two divergences:
+
+**`GASPRICE`.** This tree returns `tx.max_fee_per_gas` raw. The client applies no
+gasless branch to `tx_context` at all — it changes only the `chain_id`, so
+`CHAINID` reports the domain — and so returns the ordinary effective price
+computed against the L1 header's base fee. They differ for essentially every
+EIP-1559 transaction, and the sender-side helper sets `maxFeePerGas` to twice the
+base fee, so the gap is the normal case rather than an edge one. A contract
+reading `GASPRICE` branches differently and moves the state root. What a contract
+can observe is an execution input, not economics.
+
+**The EIP-7623 floor.** The client still applies it to `gas_used` when gasless;
+only the balance side is gated. This tree drops it entirely. Invisible to the
+published commitment, visible in receipts.
+
+And an audit still owed: the client's gasless validation skips `v0`, the balance
+check and the zero-balance check for a non-existent sender, and **keeps** the
+nonce checks and the EOA / EIP-7702 delegation check. This tree gates by a
+build-wide predicate where the client gates by a template parameter, so the two
+sets do not compare mechanically.
+
+## The cipher profile is fixed
+
+RFC 9180 Base mode, exactly:
+
+| | |
+|---|---|
+| KEM | DHKEM(P-256, HKDF-SHA256), `0x0010` |
+| KDF | HKDF-SHA256, `0x0001` |
+| AEAD | AES-128-GCM, `0x0001` |
+| `info` | ASCII `private-domain-hpke-rfc9180-v1` |
+| AAD | empty |
+| wire | `enc ‖ ciphertext_and_tag`, `enc` a 65-byte uncompressed SEC1 P-256 point |
+| plaintext | `0x01 ‖ signed_transaction_bytes` |
+
+A fresh context and sequence number zero for every transaction. The
+`l2_cipher_suite.hpp` seam exists for this swap and the `plaintext` suite stays as
+the measurement control; the secp256k1 ECDH with Poseidon2 masks and tag goes.
+
+**No epoch exists.** Keys are per-message from the encapsulated ephemeral, and
+neither repo defines an epoch anywhere. `MONAD_ZKVM_L2_EPOCH_BLOCKS` and
+`ctx.epoch = number / EPOCH_BLOCKS` correspond to nothing.
+
+**Nor does `NAMESPACE_ID`.** The protocol knows only `domainChainId`.
+
+## Poseidon2 tries and signatures are not deployable
+
+The client requires ordinary signed Ethereum transactions — signed, recoverable,
+RLP-decoded with EIP-2718 prefixes, so keccak signatures from stock wallets — and
+its database is keyed `keccak(address)` / `keccak(storage_key)`, which is what
+finalized-root validation compares. `MONAD_ZKVM_L2_TRIE_HASH=poseidon2` and
+`SIGNATURE_HASH=poseidon2` are therefore measurement arms, not configurations that
+can ship, and a material share of the savings measured in this tree is unavailable
+without changing the client too. Worth saying here so it is not discovered from a
+benchmark table.
+
+## Stale constants, which fail quietly
+
+The spoke this tree pins was vendored from `eerkaijun/monad-namespaces` at
+`e6012d8cebf4`, before the namespace/domain rename.
+
+**The event topic changed.**
+`NamespaceMessageRecorded(address,address,bytes,uint256,bytes32)` is
+`0x2013a1d0b9a3c17ead41b5433daeef9f5b301d7abece37308528e70113a678df`, which is
+what `namespace_anchor.hpp` `static_assert`s. `DomainMessageRecorded(...)` with
+identical parameter types is
+`0x8f2b779508ea0cb38e5b78dbe9c7a04c3ce671ba697fdce1a46dc794e2dd650e`. Against a
+real spoke the harvest finds no logs at all.
+
+The pending-length assertion turns that into a loud block failure rather than a
+well-formed anchor over an empty leaf set — the case it was written for. It does
+not cover a block that sent no messages, where an empty anchor is correct anyway.
+
+**The rest:**
+
+- the pending array is still slot 1 by reading (`_nonce` at 0,
+  `_pendingDomainMessages` at 1, no base contract carrying storage), to be
+  reconfirmed with `forge inspect`;
+- the spoke is now intended as a protocol predeploy at a fixed address rather than
+  a `CREATE` deployment, so deriving it from a deployer key no longer makes sense;
+- `DomainSpoke` gained an access-control layer (`policyOwners`, `accessControl`,
+  `approvedReaders`, `canCall`) and a `deployContract` entry point through which
+  contract creation passes.
+
+## Where the client and the contracts disagree
+
+**The derivation source.** The hub documents its event as it —
+"Domain validators derive their blocks from these events" — while the client scans
+the calldata of outer transactions by destination and selector, including reverted
+ones, and says so twice. A reverted call emits no log.
+
+**The block number.** The client writes the L1 block number; the reference
+end-to-end submits `committedBn + 1`.
+
+**The state commitment.** The client hard-asserts the raw state root with
+`MONAD_ASSERT_PRINTF`, so a mismatch stops the node; the reference end-to-end
+signs `zeroHash` for it.
+
+## Not implemented anywhere: L1 to domain system transactions
+
+`DomainSpoke.relayL1Message` is `onlySystem`, delivered from
+`SYSTEM_RELAYER = 0xffffFFFfFFffffffffffffffFfFFFfffFFFfFFfE` with a fixed
+`DELIVERY_GAS_STIPEND` of 2,000,000 so delivery success is deterministic across
+replicas, derived by the client from the hub's `L1MessageRecorded` and
+`EncryptedL1MessageRecorded` events, nonces strictly increasing, a gap meaning an
+undecryptable message consumed for good, failures retryable via `retryL1Message`.
+
+None of it exists in the client: `L1MessageRecorded`, `SYSTEM_RELAYER` and
+`relayL1Message` appear nowhere in `monad-private/category/`. The matches for
+"system transaction" there are Monad's pre-existing consensus mechanism.
+
+Guest and client agree today by both omitting it. When it lands it is an in-block
+state change ahead of user transactions, so it moves the state root, the receipts
+and the anchor's leaf ordering.

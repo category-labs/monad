@@ -603,13 +603,13 @@ TEST(CorpusScenarios, TheGenesisSpokeIsTheDeployedSpoke)
 // same hash, which on a low-volume chain says which blocks did nothing.
 // ---------------------------------------------------------------------------
 
-TEST(CorpusBlinder, TheHeaderCarriesThePerBlockBlinder)
+TEST(CorpusBlinder, TheCommitmentIsPerBlockAndHidesTheRoot)
 {
     auto b = make_builder([](State &s) {
         s.add_to_balance(corpus::address_of(KEY_A), 1000000000000000000_u256);
     });
 
-    std::vector<bytes32_t> salts;
+    std::vector<bytes32_t> commitments;
     for (int i = 0; i < 3; ++i) {
         corpus::BlockSpec spec;
         Transaction tx{
@@ -624,36 +624,88 @@ TEST(CorpusBlinder, TheHeaderCarriesThePerBlockBlinder)
         spec.keys.push_back(KEY_A);
         auto const e = b.add_block(std::move(spec));
 
-        // extra_data is exactly the blinder, which is what makes the block
-        // hash blinded -- and what the guest asserts before it will proceed.
-        ASSERT_EQ(e.header.extra_data.size(), 32u);
-        bytes32_t carried{};
-        std::memcpy(carried.bytes, e.header.extra_data.data(), 32);
-        EXPECT_EQ(carried, b.block_salt(e.header.number));
-        salts.push_back(carried);
+        // What the chain publishes is the root under the blinder, never the
+        // root. The blinder no longer rides in extra_data: there is no block
+        // hash published for it to protect.
+        EXPECT_EQ(e.header.extra_data.size(), 0u);
+        EXPECT_NE(e.state_commitment, e.post_root);
+        EXPECT_NE(e.state_commitment, bytes32_t{});
+        commitments.push_back(e.state_commitment);
     }
 
-    // Per block, not per chain.
-    EXPECT_NE(salts[0], salts[1]);
-    EXPECT_NE(salts[1], salts[2]);
-    EXPECT_NE(salts[0], salts[2]);
+    // Per block, not per chain -- otherwise two blocks of identical state
+    // publish the same value, which on a low-volume chain says which blocks
+    // did nothing.
+    EXPECT_NE(commitments[0], commitments[1]);
+    EXPECT_NE(commitments[1], commitments[2]);
+    EXPECT_NE(commitments[0], commitments[2]);
 }
 
-// A different secret gives a different blinder at the same height, which is
-// what makes the commitment to the secret worth checking.
-TEST(CorpusBlinder, TheBlinderFollowsTheSecret)
+// The property the hub chains on, and the reason the pre-state commitment is
+// blinded with the PARENT's number rather than its own: block N's first
+// published value has to be block N-1's last, byte for byte, or the hub's
+// check stops being one equality and starts needing a derivation of its own.
+TEST(CorpusBlinder, ConsecutiveBlocksChainThroughTheirCommitments)
+{
+    auto b = make_builder([](State &s) {
+        s.add_to_balance(corpus::address_of(KEY_A), 1000000000000000000_u256);
+    });
+
+    bytes32_t previous_post{};
+    for (int i = 0; i < 3; ++i) {
+        corpus::BlockSpec spec;
+        Transaction tx{
+            .max_fee_per_gas = 100,
+            .gas_limit = 21000,
+            .value = 1,
+            .to = corpus::address_of(KEY_B),
+            .type = TransactionType::eip1559,
+            .max_priority_fee_per_gas = 1};
+        tx.sc.chain_id = 1;
+        spec.txs.push_back(tx);
+        spec.keys.push_back(KEY_A);
+        auto const e = b.add_block(std::move(spec));
+
+        if (i > 0) {
+            EXPECT_EQ(e.pre_state_commitment, previous_post);
+        }
+        EXPECT_NE(e.pre_state_commitment, e.state_commitment);
+        previous_post = e.state_commitment;
+    }
+}
+
+TEST(CorpusBlinder, TheCommitmentFollowsTheSecret)
 {
     auto seeder = [](State &s) {
         s.add_to_balance(corpus::address_of(KEY_A), 1000000000000000000_u256);
     };
+    auto block = [](corpus::CorpusBuilder &b) {
+        corpus::BlockSpec spec;
+        Transaction tx{
+            .max_fee_per_gas = 100,
+            .gas_limit = 21000,
+            .value = 1,
+            .to = corpus::address_of(KEY_B),
+            .type = TransactionType::eip1559,
+            .max_priority_fee_per_gas = 1};
+        tx.sc.chain_id = 1;
+        spec.txs.push_back(tx);
+        spec.keys.push_back(KEY_A);
+        return b.add_block(std::move(spec));
+    };
+
     corpus::CorpusBuilder a{seeder, OPERATOR_SK, SALT_SECRET};
     bytes32_t other = SALT_SECRET;
     other.bytes[31] ^= 1u;
     corpus::CorpusBuilder c{seeder, OPERATOR_SK, other};
 
-    EXPECT_NE(
-        a.block_salt(corpus::GENESIS_NUMBER + 1),
-        c.block_salt(corpus::GENESIS_NUMBER + 1));
+    auto const ea = block(a);
+    auto const ec = block(c);
+
+    // Same chain, same block, same state -- so the roots agree and only the
+    // secret separates what is published.
+    ASSERT_EQ(ea.post_root, ec.post_root);
+    EXPECT_NE(ea.state_commitment, ec.state_commitment);
 }
 #endif
 

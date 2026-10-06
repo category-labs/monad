@@ -123,6 +123,13 @@ namespace corpus
         bytes32_t parent_hash{};
         /// L2 only: how many leaves were encrypted.
         size_t encrypted_leaves{0};
+        /// L2 only: the two values the guest publishes that are not the
+        /// anchor -- the blinded state root, and the digest of the leaves the
+        /// block carried. Recomputed here so the corpus check compares the
+        /// guest against a second derivation rather than against itself.
+        bytes32_t pre_state_commitment{};
+        bytes32_t state_commitment{};
+        bytes32_t sequencing_anchor{};
     };
 
     class CorpusBuilder
@@ -168,7 +175,6 @@ namespace corpus
 
         /// The per-block state blinder this builder will put in a header's
         /// extra_data. Exposed so a test can check the guest agrees.
-        bytes32_t block_salt(uint64_t number) const;
 
         uint64_t next_number() const
         {

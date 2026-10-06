@@ -9,8 +9,13 @@ Every `manifest.csv` under each DIR is read -- or, for a zkvm-bench generation
 things happen per witness, the first gating the second:
 
   verify   the public output equals what the generator recorded: the block
-           hash on the plaintext arm; parent hash | block hash | anchor |
-           number (u64 BE) on the L2 arm. A guest that aborts leaves ziskemu at
+           hash on the plaintext arm; on the L2 arm the five values the
+           manifest carries -- number (u64 BE) | pre-state commitment |
+           state commitment | message anchor | sequencing anchor -- which
+           start at offset 8, after the
+           chain id. What follows them is this build's compiled keys, constant
+           across a corpus and not the generator's to record, so they are not
+           compared. A guest that aborts leaves ziskemu at
            rc=0 with a zero output, so a run is judged on its bytes, never its
            exit status -- and a cost measured on an aborted run is the cost of
            an abort, so a row that fails verification carries no figures.
@@ -46,22 +51,26 @@ def hx(s):
 
 
 def expected(row, arm):
+    """(offset, bytes) the published output must carry."""
     if arm == 'plain':
-        return hx(row['block_hash'])
-    return (hx(row['parent_hash']) + hx(row['block_hash'])
-            + hx(row['anchor']) + struct.pack('>Q', int(row['number'])))
+        return 0, hx(row['block_hash'])
+    # Offset 8: the chain id leads the L2 output and is a build constant.
+    return 8, (struct.pack('>Q', int(row['number']))
+               + hx(row['pre_commitment']) + hx(row['commitment'])
+               + hx(row['anchor']) + hx(row['seq_anchor']))
 
 
-def verify(emu, elf, wit, want):
+def verify(emu, elf, wit, off_want):
+    off, want = off_want
     with tempfile.TemporaryDirectory() as t:
         inp, out = pathlib.Path(t) / 'in.bin', pathlib.Path(t) / 'out.bin'
         compare.frame_ziskos(str(wit), str(inp))
         r = subprocess.run([emu, '-e', elf, '-i', str(inp), '-o', str(out)],
                            capture_output=True, text=True)
         got = out.read_bytes() if out.exists() else b''
-    if got[:len(want)] == want:
+    if got[off:off + len(want)] == want:
         return 'PASS'
-    if got[:len(want)] == bytes(len(want)):
+    if got[off:off + len(want)] == bytes(len(want)):
         return 'ABORT'
     return f'MISMATCH(rc={r.returncode})'
 

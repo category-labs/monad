@@ -129,6 +129,14 @@ otherwise derive the same salt at the same height.
 blinded — the L1 opens it to release withdrawals. The blinder protects the
 **state**, not the **messages**.
 
+Implemented as `l2_state_commitment` in [`l2_config.hpp`](guest/l2_config.hpp)
+and published in place of any root; the blinder no longer rides in the header's
+`extra_data`, because with no block hash published there is nothing there for it
+to protect. The output's seven values and their offsets are in the README's
+[public output](README.md#the-public-output) section — 177 bytes of ZisK's 256 —
+and dropping the block hash also dropped the sealing, so the L2 arm no longer
+encodes and hashes a header it would not publish.
+
 **Rules out.** Publishing the raw root, which is what both other repos assume.
 
 **Costs elsewhere.** No contract change: `newStateRoot` is written to
@@ -198,6 +206,9 @@ secret matches the domain's published key, a prover supplies any secret, decrypt
 to a different set of transactions, and proves a valid post-state for a block
 nobody wrote.
 
+The guest publishes both at the end of its output. What does not exist is the
+other half: the hub comparing them against a registration.
+
 **Rules out.** Compiling either value in, and dropping the binding.
 
 **Costs elsewhere.** `registerDomain` has no field for either. That is the same
@@ -221,6 +232,37 @@ the only definition a disagreement can be detected against.
 
 **Rules out.** Implementing from the contracts' documentation where the two differ.
 Each instance is listed in CONFORMANCE.md.
+
+---
+
+## 7. The public inputs are the transition, both ends of it
+
+**What is undetermined.** `stateTransitionDigest` names one root, the new one.
+A validator signing it is trusted to have started from the right state; nothing
+in the digest says which. A proof replacing that validator inherits the gap: it
+can attest a perfectly valid transition out of a state the hub never accepted,
+and the hub cannot tell.
+
+**Chosen.** Publish both ends, around the inputs that join them:
+
+```
+pre-state commitment │ sequencing anchor │ post-state commitment
+```
+
+The pre-state commitment is blinded with the **parent's** number, so it is byte
+for byte what that block's own run published as its final state. The hub's
+check is then one equality against what it already holds, with no derivation of
+its own and no second secret.
+
+This is also what makes the continuity safe to drop from the circuit. Today the
+guest ties its pre-state root to an ancestor header the prover also supplied,
+which is internal consistency and not a link to anything the hub accepted; once
+the hub compares the published commitment, that walk is no longer carrying the
+argument -- which matters, because reshaping the witness removes the ancestor
+headers it walks.
+
+**Rules out.** Publishing only the final state, and with it any reading where
+the hub trusts the prover's choice of starting point.
 
 ---
 

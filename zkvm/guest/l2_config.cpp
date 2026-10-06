@@ -37,18 +37,26 @@ bytes32_t l2_state_salt(
     std::span<unsigned char const, 32> const salt_secret,
     std::uint64_t const block_number)
 {
-    // A label, the secret, then the number. The label keeps this hash from
-    // colliding with any other use of the same secret, and the number is what
-    // makes the blinder per-block.
-    static constexpr std::string_view LABEL = "monad-l2/state-salt/v1";
+    // A label, the secret, the domain, then the number. The label keeps this
+    // hash from colliding with any other use of the same secret; the domain
+    // because nothing enforces that two domains hold distinct secrets, so
+    // without it they would derive the same blinder at the same height; and the
+    // number is what makes the blinder per-block.
+    //
+    // v2 is v1 plus the domain. The version is in the label precisely so that
+    // adding a field cannot be mistaken for the same derivation.
+    static constexpr std::string_view LABEL = "monad-l2/state-salt/v2";
 
     byte_string buf;
-    buf.reserve(LABEL.size() + 32 + 8);
+    buf.reserve(LABEL.size() + 32 + 8 + 8);
     buf.append(
         reinterpret_cast<unsigned char const *>(LABEL.data()), LABEL.size());
     buf.append(salt_secret.data(), salt_secret.size());
     // Big-endian, like every other multi-byte quantity that reaches the wire
     // here.
+    for (unsigned i = 0; i < 8; ++i) {
+        buf.push_back(static_cast<unsigned char>(L2_CHAIN_ID >> (56 - 8 * i)));
+    }
     for (unsigned i = 0; i < 8; ++i) {
         buf.push_back(static_cast<unsigned char>(block_number >> (56 - 8 * i)));
     }
@@ -56,6 +64,32 @@ bytes32_t l2_state_salt(
     bytes32_t salt;
     monad_poseidon2_256(buf.data(), buf.size(), salt.bytes);
     return salt;
+#else
+    return to_bytes(keccak256(buf));
+#endif
+}
+
+bytes32_t l2_state_commitment(
+    std::span<unsigned char const, 32> const salt_secret,
+    std::uint64_t const block_number, bytes32_t const &state_root)
+{
+    // The chain's hash and not keccak256, by the rule in zkvm/DECISIONS.md:
+    // keccak is for what the L1 recomputes, and the hub never opens this -- it
+    // stores the commitment and reads it back. What does recompute it is the
+    // execution client, which is this chain.
+    static constexpr std::string_view LABEL = "monad-l2/state-commitment/v1";
+
+    bytes32_t const salt = l2_state_salt(salt_secret, block_number);
+    byte_string buf;
+    buf.reserve(LABEL.size() + 32 + 32);
+    buf.append(
+        reinterpret_cast<unsigned char const *>(LABEL.data()), LABEL.size());
+    buf.append(salt.bytes, sizeof(salt.bytes));
+    buf.append(state_root.bytes, sizeof(state_root.bytes));
+#ifdef MONAD_L2_HASH_POSEIDON2
+    bytes32_t commitment;
+    monad_poseidon2_256(buf.data(), buf.size(), commitment.bytes);
+    return commitment;
 #else
     return to_bytes(keccak256(buf));
 #endif

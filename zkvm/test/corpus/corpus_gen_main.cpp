@@ -382,7 +382,8 @@ int main(int const argc, char **const argv)
     // to matter.
     auto const manifest_header =
         "scenario,number,pre_root,post_root,block_hash,parent_hash,"
-        "txs,gas_used,witness_bytes,anchor,leaves,"
+        "txs,gas_used,witness_bytes,anchor,pre_commitment,commitment,"
+        "seq_anchor,leaves,"
         "intended_distinct,acct_leaves,storage_leaves,branches,exts,digests,"
         "blob_bytes,code_bytes\n";
 
@@ -413,7 +414,10 @@ int main(int const argc, char **const argv)
                  << ',' << hex_of(e.post_root) << ',' << hex_of(e.block_hash)
                  << ',' << hex_of(e.parent_hash) << ',' << n_txs << ','
                  << e.header.gas_used << ',' << e.witness.size() << ','
-                 << hex_of(e.namespace_anchor) << ',' << e.encrypted_leaves
+                 << hex_of(e.namespace_anchor) << ','
+                 << hex_of(e.pre_state_commitment) << ','
+                 << hex_of(e.state_commitment) << ','
+                 << hex_of(e.sequencing_anchor) << ',' << e.encrypted_leaves
                  << ',' << intended << ',' << st.acct_leaves << ','
                  << st.storage_leaves << ',' << st.branches << ',' << st.exts
                  << ',' << st.digests << ',' << st.blob_bytes << ','

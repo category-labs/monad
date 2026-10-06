@@ -128,48 +128,80 @@ that height pins the state root, the parent, and every other header field in
 one comparison. Publishing the roots beside it would add nothing a verifier
 could not already derive.
 
-**L2** — four values, and **no state root**:
+**L2** — eight values, and **no state root**:
 
 | Offset | Size | Value |
 |--------|------|-------|
-| 0 | 32 | parent block hash |
-| 32 | 32 | block hash |
-| 64 | 32 | message anchor |
-| 96 | 8 | block number, big-endian u64 |
+| 0 | 8 | domain chain id, big-endian u64 |
+| 8 | 8 | domain block number, big-endian u64 |
+| 16 | 32 | pre-state commitment |
+| 48 | 32 | post-state commitment |
+| 80 | 32 | message anchor |
+| 112 | 32 | sequencing anchor |
+| 144 | 33 | viewing public key, SEC1 compressed |
+| 177 | 32 | salt commitment |
 
-A root is a commitment, and a commitment to a guessable value confirms guesses.
-On this chain the state IS guessable from public data: the participants are
-registered on the L1, deposits are public L1 transfers, and the ciphertexts
-were sequenced through the L1 in the clear. So an observer who can enumerate
-the plausible sets of transfers computes each candidate root and compares.
-Hashing is no defence — nothing is being inverted — which is why publishing
-`keccak256(header)` instead would not have helped either: almost every other
-header field is public or derivable, and the rest (`state_root`,
-`receipts_root`, `logs_bloom`, `gas_used`) are all functions of one hypothesis
-about what the block did.
+The middle three are the statement: **from this state, over these inputs, to
+that state.** The pre-state commitment is blinded with the PARENT's number, so
+it is byte for byte what that block's own run published as its final state --
+the hub chains by one equality against the commitment it already holds, and
+needs no derivation of its own. Nothing inside the circuit establishes that
+link: the pre-state root is checked against an ancestor header the prover also
+supplied, which is internal consistency and not a tie to what the hub accepted.
 
-What makes the two hashes safe to publish is a **per-block blinder** in the
-header's `extra_data`, derived as
-`keccak256("monad-l2/state-salt/v1" ‖ salt_secret ‖ number)`. The number is in
-there because a constant blinder would leave two blocks of identical state
-publishing the same hash, which on a low-volume chain says which blocks did
-nothing.
+Around them is what a validator would sign and nothing else. The proof stands in for a
+quorum of them, so what it publishes is that signature's arguments —
+`stateTransitionDigest(domainChainId, domainBlockNumber, newStateRoot,
+domainAnchor)` — plus the two things the digest does not reach: the input set,
+and the keys this run was bound to.
 
-`salt_secret` is witness field [7] and is checked against a compiled
+**No block hash and no parent hash.** They were published to chain a block to
+its parent, and this chain does not chain that way. A domain block has no header
+of its own — the execution client runs its transactions against the **L1**
+header and stores a two-field record, `{state_root, number}` — and the hub
+orders transitions with its own `stateNonce` and a strictly increasing block
+number. The number here is the L1 block's, and the sequence is sparse: an L1
+block that sequences nothing for a domain produces no domain block at all.
+
+**The state root is published blinded.** A root is a commitment, and a
+commitment to a guessable value confirms guesses. On this chain the state IS
+guessable from public data: the participants are registered on the L1, deposits
+are public L1 transfers, and the ciphertexts were sequenced through the L1 in
+the clear. Hashing is no defence — nothing is being inverted. So what goes out
+is `H(salt ‖ state_root)`, the salt derived as
+`H("monad-l2/state-salt/v2" ‖ salt_secret ‖ chainId ‖ number)` with the chain's
+own hash. The number is there because a constant blinder would leave two blocks
+of identical state publishing the same value, which on a low-volume chain says
+which blocks did nothing; the chain id because nothing enforces that two domains
+hold distinct secrets.
+
+It costs the L1 nothing, and that is why it is possible at all: `DomainHub`
+writes `newStateRoot` into `_commitments`, reads it back through
+`readCommitment`, and never opens it — not by a merkle proof, not by the bridge,
+which works off the recorded anchors. What does reopen it is the execution
+client, which compares a finalized update against the root it committed, so that
+comparison has to move to the commitment. **That change is not in this
+repository**, and until it lands a real deployment would halt on the first
+finalized update.
+
+`salt_secret` is witness field [7] and is checked against the compiled
 `MONAD_ZKVM_L2_SALT_COMMITMENT`, which needs saying because the reason is not
-soundness. An unbound blinder costs nothing there: the commitment chain forces
-a prover to reuse whatever it chose and `keccak256` binds it, so every proof
-still verifies and every block still chains. What an unbound blinder costs is
-the confidentiality it exists for — a producer supplying zeros publishes an
-unblinded hash and nothing anywhere says so.
+soundness. An unbound blinder costs nothing there — every proof still verifies.
+What it costs is the confidentiality it exists for: a producer supplying zeros
+publishes a predictable commitment and nothing anywhere says so.
 
-Dropping the roots costs nothing, because the continuity they were published
-for is established inside the circuit: the pre-state root is asserted equal to
-the newest ancestor header's `state_root` and that header to hash to
-`parent_hash`, and the post-state root is sealed into the header the block hash
-covers. The hub therefore chains a block to its parent with one comparison —
-this block's parent hash against the previous block's hash — and reads no root
-to do it.
+**The sequencing anchor binds the inputs.** Without it the tuple pins the result
+of a computation and not what it ran on; a validator quorum covers that socially
+and a single proof does not. It is `keccak256` — the one hash here that is not
+the chain's, because the verifier is the EVM — over the leaves the block
+carried, rejected ones included. See
+[`sequencing_anchor.hpp`](../category/execution/ethereum/sequencing_anchor.hpp)
+and [DECISIONS.md](DECISIONS.md).
+
+**The two keys are published, not left implicit in the ELF**, so that rotating
+either does not change the verification key. The hub is meant to check them
+against what it has registered for the domain; `registerDomain` has no field for
+either today, which is the same contract change a proof mode needs.
 
 The **anchor is not blinded and cannot be**: the L1 verifies merkle proofs
 against it to release withdrawals. It is guessable the same way a root is, so
@@ -187,30 +219,20 @@ emit a perfectly consistent proof of a transition nobody asked for.
 
 So a hub verifying one of these proofs has to check all of:
 
-1. **Chain and height** — `chainId`, which is compiled into the guest, and the
-   published block number is the next height it expects for that namespace.
-2. **The pre-state it accepted** — the published parent block hash at offset 0
-   equals the block hash the hub last accepted for this namespace. Without this
-   a proof is a transition from *some* state, not from *the* state, and a
-   prover picks the starting point. The hub compares hashes rather than roots,
-   and that is a stronger check, not a weaker one: a block hash covers the
-   state root and every other header field at once.
-3. **The inputs it authorised** — the ciphertext list the guest executed is the
-   one published to the data availability the hub trusts. The published block
-   hash is `keccak256` of the header with this run's computed state root sealed
-   in, so it already commits to `transactions_root` along with every other
-   header field. The hub opens that commitment by being handed the header
-   preimage, checking its hash against the published value, and reading the
-   transactions root out of it — one comparison binds the lot. A header is a
-   few hundred bytes, and the operator has it.
-4. **The operator** — a signature over
-   `stateTransitionDigest(chainId, blockNumber, newStateRoot, namespaceAnchor)`.
-
-What the output has to publish, then, is whatever the header does NOT carry:
-the anchor, because it is a function of the block's logs and the hub has no
-receipts to recompute it from. It is there. The parent hash and the block
-number are header fields, published so the hub can chain and index without
-holding the header.
+1. **Chain and height** — the published chain id is this domain's, and the
+   published block number is above the last it committed.
+2. **The pre-state it accepted** — the published pre-state commitment equals
+   the commitment the hub last committed for this domain. One equality, because
+   the guest blinds it with the parent's number and so republishes exactly what
+   that block's proof published as its final state.
+3. **The inputs it authorised** — the sequencing anchor, compared against a
+   digest of the ciphertexts the hub actually sequenced for this domain at this
+   height. The guest publishes its half; where the hub's half comes from is an
+   open protocol question, recorded in [DECISIONS.md](DECISIONS.md).
+4. **The operator** — the signature this proof replaces, over
+   `stateTransitionDigest(chainId, blockNumber, newStateRoot, domainAnchor)`,
+   with the state commitment standing in for `newStateRoot`. And the two keys
+   at the end of the output against the ones registered for this domain.
 
 So the gap is not in the output format; it is that none of the four checks
 above exists. The L2's soundness is conditional on an L1 side this branch does
@@ -222,16 +244,17 @@ only the tuple.
 xxd -s 0  -l 32 /tmp/zkvm-output.bin   # block hash
 
 # L2
-xxd -s 0  -l 64 /tmp/zkvm-output.bin   # parent block hash || block hash
-xxd -s 64 -l 40 /tmp/zkvm-output.bin   # anchor || block number
+xxd -s 0   -l 16 /tmp/zkvm-output.bin  # chain id || block number
+xxd -s 16  -l 64 /tmp/zkvm-output.bin  # pre-state || post-state commitment
+xxd -s 80  -l 64 /tmp/zkvm-output.bin  # message anchor || sequencing anchor
+xxd -s 144 -l 65 /tmp/zkvm-output.bin  # viewing public key || salt commitment
 ```
 
 A diagnostic build appends the `MONAD_ZKVM_KECCAK_SITES` tail after these, so
 their offsets never move. That tail is 152 bytes, which with the Ethereum
 arm's 32 comes to 184 of ZisK's 256-byte committed output. `MONAD_ZKVM_L2` and `MONAD_ZKVM_KECCAK_SITES` remain a
-configure-time error together: the L2's four values are 104 bytes, so the two
-would come to exactly 256, and a budget with no margin at all is not a
-configuration to leave reachable.
+configure-time error together: the L2's eight values are 209 bytes, so the two
+would overrun the buffer outright.
 
 ## The L2 arm
 
@@ -516,7 +539,7 @@ cmake --build build --target monad-zkvm-corpus-gen monad-zkvm-x86-test-runner
     --sk <64 hex> --salt <64 hex>
 
 # Each witness makes the guest republish what the manifest records: the
-# parent block hash, the block hash, the anchor and the number.
+# number, both state commitments, the message anchor and the sequencing anchor.
 ./build/zkvm/guest/monad-zkvm-x86-test-runner \
     --input /tmp/corpus/spoke-00000002.witness --output /tmp/out.bin
 ```
@@ -788,7 +811,7 @@ over the other is the encryption and nothing else.
 
 ```sh
 # Verify every witness against its manifest, then take steps and COST. Both
-# ELFs publish the L2's four values, so both are the l2 arm.
+# ELFs publish the L2's eight values, so both are the l2 arm.
 export ZKVM_BENCH=<zkvm-bench checkout>
 zkvm/test/corpus/bench.py --arm l2 --elf <L2 ELF> --emu <ziskemu> \
     --corpus /tmp/l2/wholesale /tmp/l2/payouts /tmp/l2/sweep \
@@ -987,7 +1010,8 @@ model of prover work, not a wall-clock. `zkvm-bench` proves on its GPU boxes,
 and two things stand between these blocks and that path. Its root gate
 (`profiling/series/root-ref.sh`) compares the first 32 bytes of the output
 against a block hash or a state root, and on the L2 arm those bytes are the
-parent hash, so the four values need a reference kind of their own. And
+chain id and the block number, so this output needs a reference kind of its
+own. And
 `cli/build-monad` builds the official profile only, which refuses L2.
 
 ### Witnesses the guest must refuse
@@ -1036,8 +1060,11 @@ That step has been taken on the ELFs [the cost section](#what-a-block-costs)
 measures, under `ziskemu` 1.2.0-alpha: the L2 ELF and the control, dev builds
 carrying the same six levers and the nine deployment values the tests use.
 Every witness the scenarios and the five corpora generate passes, on both arms:
-the guest publishes exactly the four values the manifest recorded, including
-the 1,021 blocks of each arm whose anchor is non-zero.
+the guest republishes exactly what the manifest recorded -- the block number,
+both state commitments, the message anchor and the sequencing anchor, each
+derived twice, once by the generator and once by the guest --
+including the 1,021 blocks of each arm whose anchor is non-zero. The figures in
+this table predate the output change; what they measured is unaffected by it.
 
 | | L2 | without encryption |
 |---|---:|---:|

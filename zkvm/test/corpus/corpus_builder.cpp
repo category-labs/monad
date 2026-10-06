@@ -34,6 +34,7 @@
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
 #include <category/execution/ethereum/rlp/execution_witness.hpp>
+#include <category/execution/ethereum/sequencing_anchor.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
@@ -123,15 +124,6 @@ namespace corpus
                 return o;
             }
         };
-
-#ifdef MONAD_ZKVM_L2
-        /// The blinder goes in extra_data, whose 32-byte cap is exactly its
-        /// width (block_rlp.cpp enforces EXTRA_DATA_MAX_LENGTH).
-        void set_salt(BlockHeader &h, bytes32_t const &salt)
-        {
-            h.extra_data.assign(salt.bytes, sizeof(salt.bytes));
-        }
-#endif
 
         /// The accounts subtrie as generate_witness wants it.
         mpt::NodeCursor
@@ -252,7 +244,6 @@ namespace corpus
             .timestamp = GENESIS_TIMESTAMP,
             .base_fee_per_gas = uint256_t{0}};
 #ifdef MONAD_ZKVM_L2
-        set_salt(genesis, block_salt(genesis.number));
 #endif
 
         test::commit_simple(
@@ -287,7 +278,6 @@ namespace corpus
             .timestamp = GENESIS_TIMESTAMP,
             .base_fee_per_gas = uint256_t{0}};
 #ifdef MONAD_ZKVM_L2
-        set_salt(genesis, block_salt(genesis.number));
 #endif
         // The sink commits as it fills, so the header is handed over only at
         // the end -- and it is handed over already stamped, because the
@@ -328,17 +318,6 @@ namespace corpus
             to_bytes(header_hash(rlp::encode_block_header(sealed))));
     }
 
-    bytes32_t
-    CorpusBuilder::block_salt([[maybe_unused]] uint64_t const number) const
-    {
-#ifdef MONAD_ZKVM_L2
-        return l2_state_salt(
-            std::span<unsigned char const, 32>{salt_secret_.bytes, 32}, number);
-#else
-        return bytes32_t{};
-#endif
-    }
-
     Address CorpusBuilder::next_contract_address(Address const &deployer) const
     {
         auto const acct = const_cast<TrieDb &>(tdb_).read_account(deployer);
@@ -373,7 +352,6 @@ namespace corpus
         // Before anything hashes the header: the blinder is a header field, so
         // it has to be in place for the block hash to be blinded, and the
         // guest refuses a header carrying any other value.
-        set_salt(header, block_salt(number));
 #endif
 
         // --- nonces then signatures, in that order: the nonce is inside the
@@ -602,7 +580,30 @@ namespace corpus
             .receipts = std::move(receipts),
             .namespace_anchor = anchor,
             .parent_hash = published.parent_hash,
-            .encrypted_leaves = encrypted};
+            .encrypted_leaves = encrypted,
+#ifdef MONAD_ZKVM_L2
+            // Blinded with the parent's number, which is what the previous
+            // block published as its own final state: the two have to be the
+            // same bytes for the hub's chaining to be one equality.
+            .pre_state_commitment = l2_state_commitment(
+                std::span<unsigned char const, 32>{salt_secret_.bytes, 32},
+                number - 1,
+                pre_root),
+            .state_commitment = l2_state_commitment(
+                std::span<unsigned char const, 32>{salt_secret_.bytes, 32},
+                number,
+                post_root),
+            .sequencing_anchor =
+                [&] {
+                    std::vector<byte_string_view> views;
+                    views.reserve(leaves.size());
+                    for (auto const &leaf : leaves) {
+                        views.emplace_back(leaf);
+                    }
+                    return monad::sequencing_anchor(L2_CHAIN_ID, number, views);
+                }(),
+#endif
+        };
     }
 }
 

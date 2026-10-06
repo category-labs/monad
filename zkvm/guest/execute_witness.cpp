@@ -40,6 +40,7 @@
 #include <category/vm/vm.hpp>
 #ifdef MONAD_ZKVM_L2
     #include <category/execution/ethereum/core/contract/big_endian.hpp>
+    #include <category/execution/ethereum/sequencing_anchor.hpp>
     #include <zkvm/guest/decode_block_l2.hpp>
     #include <zkvm/guest/l2_config.hpp>
     #include <zkvm/guest/monad_l2_chain.hpp>
@@ -550,6 +551,21 @@ extern "C" void monad_zkvm_execute_witness(void)
     // left-pads in one line.
     monad::u64_be const number{block.header.number};
     write_output(number.bytes, sizeof(number.bytes));
+
+    // The inputs this run was handed, so a verifier can tell WHICH ciphertexts
+    // produced the state above. Nothing else published here does: a root
+    // commits to a result, and the block hash beside it commits to a header
+    // this prover wrote.
+    //
+    // Over root_transactions and not over the executed set, which is the whole
+    // point -- it holds every leaf the list carried, including the ones the
+    // cipher refused, so a prover cannot narrow the input set and then attest a
+    // digest of its own choosing. See sequencing_anchor.hpp.
+    //
+    // Last, so the four values above keep their offsets.
+    monad::bytes32_t const sequencing = monad::sequencing_anchor(
+        monad::L2_CHAIN_ID, block.header.number, root_transactions);
+    write_output(sequencing.bytes, sizeof(sequencing.bytes));
 #else
     // Public value: the block hash alone is sufficient as the computed root is
     // sealed into the header it hashes.

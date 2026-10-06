@@ -1045,10 +1045,13 @@ else()
         ${_l2_suite_sources})
     target_link_libraries(l2_cipher_test ${_l2_host_libs})
 
+    # tx_sign because the drop rules include one on sender recovery, so the
+    # fixtures have to carry signatures that actually recover.
     monad_add_test(domain_body_test
         "${CMAKE_CURRENT_SOURCE_DIR}/../test/l2/domain_body_test.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/domain_body.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/l2_sponge.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../test/corpus/tx_sign.cpp"
         ${_l2_suite_sources})
     target_link_libraries(domain_body_test ${_l2_host_libs})
 

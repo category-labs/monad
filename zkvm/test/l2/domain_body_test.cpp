@@ -38,6 +38,7 @@
 #include <zkvm/guest/l2_cipher.hpp>
 #include <zkvm/guest/l2_cipher_suite.hpp>
 #include <zkvm/guest/l2_ecdh.hpp>
+#include <zkvm/test/corpus/tx_sign.hpp>
 
 #include <gtest/gtest.h>
 
@@ -51,6 +52,8 @@ using namespace monad;
 
 namespace
 {
+    constexpr uint64_t DOMAIN_CHAIN_ID = 1;
+
     L2Scalar operator_sk()
     {
         return L2Scalar{{0x0123456789abcdefULL, 2, 3, 4}};
@@ -104,12 +107,16 @@ namespace
         return *secret;
     }
 
+    /// The key every fixture signs with. Two of the five drop rules are about
+    /// the signature and the chain id, so a fixture carrying neither would be
+    /// dropped before it tested anything.
+    constexpr bytes32_t SENDER_KEY =
+        0x00000000000000000000000000000000000000000000000000000000c0ffee01_bytes32;
+
     Transaction legacy_tx(uint64_t const nonce, byte_string data)
     {
         Transaction tx{};
-        tx.sc.signature.r = 1;
-        tx.sc.signature.s = 2;
-        tx.sc.signature.y_parity = 0;
+        tx.sc.chain_id = DOMAIN_CHAIN_ID;
         tx.nonce = nonce;
         tx.max_fee_per_gas = 7;
         tx.gas_limit = 21'000;
@@ -117,6 +124,7 @@ namespace
         tx.to = 0x000000000000000000000000000000000baddcaf_address;
         tx.type = TransactionType::legacy;
         tx.data = std::move(data);
+        corpus::sign_transaction(tx, SENDER_KEY);
         return tx;
     }
 
@@ -195,7 +203,13 @@ namespace
         byte_string plaintexts;
         std::vector<byte_string_view> encodings;
         auto r = decode_domain_body(
-            enc, ctx, secret, ciphertexts, plaintexts, encodings);
+            enc,
+            ctx,
+            secret,
+            DOMAIN_CHAIN_ID,
+            ciphertexts,
+            plaintexts,
+            encodings);
         if (r.has_error()) {
             return std::move(r).as_failure();
         }
@@ -392,7 +406,7 @@ TEST(DomainBody, EncodingsAreWhatEachTransactionWasDecodedFrom)
     byte_string plaintexts;
     std::vector<byte_string_view> encodings;
     auto const got = decode_domain_body(
-        view, ctx, secret, ciphertexts, plaintexts, encodings);
+        view, ctx, secret, DOMAIN_CHAIN_ID, ciphertexts, plaintexts, encodings);
     ASSERT_FALSE(got.has_error());
 
     auto const &txs = got.value().block.transactions;
@@ -450,6 +464,60 @@ TEST(DomainBody, APayloadOverItsEnvelopesGasLimitIsDropped)
     EXPECT_EQ(got.value().transactions[1], original.transactions[2]);
 }
 
+// A payload signed for another chain is not this domain's to run: the
+// domain-qualified id is what selects the domain's state in the first place.
+// Dropped, not fatal -- the client logs it and moves on.
+TEST(DomainBody, APayloadSignedForAnotherChainIsDropped)
+{
+    auto const ctx = context();
+    auto const secret = bound_secret(ctx);
+    auto original = sample_block();
+    original.transactions[1].sc.chain_id = DOMAIN_CHAIN_ID + 1;
+    corpus::sign_transaction(original.transactions[1], SENDER_KEY);
+    auto const cts = encrypt_transactions(ctx, original.transactions);
+    auto const encoded = encode_l2_block(original.header, cts);
+
+    byte_string_view view{encoded};
+    std::vector<byte_string_view> ciphertexts;
+    auto const got = decode_l2(view, ctx, secret, ciphertexts);
+    ASSERT_FALSE(got.has_error());
+
+    EXPECT_EQ(ciphertexts.size(), 3u);
+    ASSERT_EQ(got.value().transactions.size(), 2u);
+    EXPECT_EQ(got.value().transactions[0], original.transactions[0]);
+    EXPECT_EQ(got.value().transactions[1], original.transactions[2]);
+}
+
+// And one whose signature recovers to nothing. The senders come back with the
+// body precisely so this can be decided before the block is formed.
+TEST(DomainBody, APayloadWhoseSenderDoesNotRecoverIsDropped)
+{
+    auto const ctx = context();
+    auto const secret = bound_secret(ctx);
+    auto original = sample_block();
+    // s above the curve order recovers to nothing, and is reachable only by
+    // tampering -- a signer cannot produce it.
+    original.transactions[1].sc.signature.s =
+        std::numeric_limits<uint256_t>::max();
+    auto const cts = encrypt_transactions(ctx, original.transactions);
+    auto const encoded = encode_l2_block(original.header, cts);
+
+    byte_string_view view{encoded};
+    std::vector<byte_string_view> ciphertexts;
+    byte_string plaintexts;
+    std::vector<byte_string_view> encodings;
+    auto const got = decode_domain_body(
+        view, ctx, secret, DOMAIN_CHAIN_ID, ciphertexts, plaintexts, encodings);
+    ASSERT_FALSE(got.has_error());
+
+    EXPECT_EQ(ciphertexts.size(), 3u);
+    ASSERT_EQ(got.value().block.transactions.size(), 2u);
+    // One sender per accepted transaction, and they are the real ones.
+    ASSERT_EQ(got.value().senders.size(), 2u);
+    EXPECT_EQ(got.value().senders[0], corpus::address_of(SENDER_KEY));
+    EXPECT_EQ(got.value().senders[1], corpus::address_of(SENDER_KEY));
+}
+
 // The previous domain block's number, which is not number - 1 in general: the
 // sequence is sparse, so it has to be carried rather than derived. It is what
 // the pre-state commitment is blinded with.
@@ -466,7 +534,7 @@ TEST(DomainBody, TheParentNumberIsCarried)
     byte_string plaintexts;
     std::vector<byte_string_view> encodings;
     auto const got = decode_domain_body(
-        view, ctx, secret, ciphertexts, plaintexts, encodings);
+        view, ctx, secret, DOMAIN_CHAIN_ID, ciphertexts, plaintexts, encodings);
     ASSERT_FALSE(got.has_error());
     EXPECT_EQ(got.value().parent_number, original.header.number - 1);
     EXPECT_TRUE(view.empty());

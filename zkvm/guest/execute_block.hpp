@@ -65,6 +65,11 @@ Result<ZkvmBlockOutput> execute_block_zkvm(
     Chain const &chain, Block const &block,
     std::span<byte_string_view const> root_transactions,
     std::span<byte_string_view const> transaction_encodings, Db &pdb,
-    vm::VM &vm, BlockHashBuffer const &block_hash_buffer);
+    vm::VM &vm, BlockHashBuffer const &block_hash_buffer,
+    /// Already recovered, one per transaction, or empty to recover here. The
+    /// domain path hands them over because it drops on recovery before the
+    /// block is formed, and an ECDSA recovery per transaction is not worth
+    /// doing twice.
+    std::span<Address const> recovered_senders = {});
 
 MONAD_NAMESPACE_END

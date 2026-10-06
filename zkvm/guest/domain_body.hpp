@@ -48,15 +48,20 @@
 //                     published as its final state.
 //
 // The decision rule is the protocol's and not the cipher's: a payload the suite
-// refuses is CONSUMED and skipped, never a halt. Three of the client's five
-// drop rules live here -- decryption, a plaintext that is not exactly one
-// transaction, and the envelope's gas limit. The other two, an unrecoverable
-// sender and a chain id that is not this domain's, sit downstream in execution
-// and are not yet the silent skips the client makes them; CONFORMANCE.md tracks
-// that.
+// refuses is CONSUMED and skipped, never a halt. All five of the client's drop
+// rules live here -- decryption, a plaintext that is not exactly one
+// transaction, the envelope's gas limit, a chain id that is not this domain's,
+// and a sender that does not recover. Each is a log line and nothing more over
+// there, so each is a skip here; the alternative, failing the block, would
+// reject one every replica executes happily.
+//
+// The sender is recovered here rather than in execution because dropping on it
+// means having it before the block is formed. It is handed back so execution
+// does not repeat an ECDSA recovery per transaction.
 
 #pragma once
 
+#include <category/core/address.hpp>
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
 #include <category/core/result.hpp>
@@ -74,6 +79,9 @@ struct DomainBody
     /// decrypted, in order. `ommers` and `withdrawals` stay empty: there is no
     /// body for them to come from.
     Block block;
+    /// One per accepted transaction, in order. Recovered while dropping, so
+    /// execution takes them rather than recovering again.
+    std::vector<Address> senders;
     /// The previous domain block's number, for the pre-state blinder.
     uint64_t parent_number{};
 };
@@ -97,7 +105,8 @@ struct DomainBody
 /// the type rather than by a line in this function.
 Result<DomainBody> decode_domain_body(
     byte_string_view &enc, L2Cipher::Context const &ctx,
-    L2Cipher::Secret const &secret, std::vector<byte_string_view> &ciphertexts,
-    byte_string &plaintexts, std::vector<byte_string_view> &encodings);
+    L2Cipher::Secret const &secret, uint64_t domain_chain_id,
+    std::vector<byte_string_view> &ciphertexts, byte_string &plaintexts,
+    std::vector<byte_string_view> &encodings);
 
 MONAD_NAMESPACE_END

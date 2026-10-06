@@ -18,6 +18,7 @@
 #include <category/core/likely.h>
 #include <category/core/rlp/decode_error.hpp>
 #include <category/execution/ethereum/core/block.hpp>
+#include <category/execution/ethereum/core/ecrecover.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/int_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
@@ -33,8 +34,9 @@ MONAD_NAMESPACE_BEGIN
 
 Result<DomainBody> decode_domain_body(
     byte_string_view &enc, L2Cipher::Context const &ctx,
-    L2Cipher::Secret const &secret, std::vector<byte_string_view> &ciphertexts,
-    byte_string &plaintexts, std::vector<byte_string_view> &encodings)
+    L2Cipher::Secret const &secret, uint64_t const domain_chain_id,
+    std::vector<byte_string_view> &ciphertexts, byte_string &plaintexts,
+    std::vector<byte_string_view> &encodings)
 {
     DomainBody body;
     BOOST_OUTCOME_TRY(auto payload, rlp::parse_list_metadata(enc));
@@ -97,6 +99,28 @@ Result<DomainBody> decode_domain_body(
         if (MONAD_UNLIKELY(tx.value().gas_limit > outer_gas_limits[i])) {
             continue; // dropped
         }
+        // A domain-qualified chain id is what selects this domain's state, so
+        // a payload signed for another chain -- or for none -- is not this
+        // domain's to run. Dropped and not failed: the client logs it and
+        // moves on.
+        if (MONAD_UNLIKELY(
+                !tx.value().sc.chain_id.has_value() ||
+                tx.value().sc.chain_id.value() != domain_chain_id)) {
+            continue; // dropped
+        }
+        // Recovered here because dropping on it means having it before the
+        // block is formed, and handed back so execution does not repeat it.
+        // The signing payload comes from the bytes the transaction was decoded
+        // from rather than a re-encoding; rlp::signing_payload says why the two
+        // are the same bytes.
+        byte_string_view const encoding{plain.data(), plain.size()};
+        auto const sender = recover_address(
+            tx.value().sc.signature,
+            rlp::signing_payload(tx.value(), encoding));
+        if (MONAD_UNLIKELY(!sender.has_value())) {
+            continue; // dropped
+        }
+        body.senders.push_back(*sender);
         body.block.transactions.emplace_back(std::move(tx).value());
         plaintexts.append(plain.data(), plain.size());
         ends.push_back(plaintexts.size());

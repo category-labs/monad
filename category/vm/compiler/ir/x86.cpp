@@ -336,6 +336,7 @@ namespace
         for (auto const &instr : block.instrs) {
             MONAD_DEBUG_ASSERT(remaining_base_gas >= instr.static_gas_cost());
             remaining_base_gas -= instr.static_gas_cost();
+            emit.checked_debug_comment("      0x{:02x}: {}", instr.pc(), instr);
             emit_instr<traits>(emit, instr, remaining_base_gas);
             require_code_size_in_bound(emit, max_native_size);
             post_instruction_emit(emit, config);
@@ -349,6 +350,13 @@ namespace
         // Remaining block base gas is zero for terminator instruction,
         // because there are no more instructions left in the block.
         constexpr int64_t remaining_base_gas = 0;
+        if (block.fallthrough_dest == INVALID_BLOCK_ID) {
+            emit.checked_debug_comment("    {}", block.terminator);
+        }
+        else {
+            emit.checked_debug_comment(
+                "    {} {}", block.terminator, block.fallthrough_dest);
+        }
         using enum basic_blocks::Terminator;
         switch (block.terminator) {
         case FallThrough:

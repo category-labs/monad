@@ -56,6 +56,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <unordered_map>
 #include <utility>
@@ -970,13 +971,6 @@ namespace monad::vm::compiler::native
         as_.int3();
     }
 
-    void Emitter::checked_debug_comment(std::string const &msg)
-    {
-        if (debug_logger_.file()) {
-            unchecked_debug_comment(msg);
-        }
-    }
-
     void Emitter::swap_general_regs(StackElem &x, StackElem &y)
     {
         MONAD_ASSERT(x.general_reg().has_value());
@@ -1044,9 +1038,7 @@ namespace monad::vm::compiler::native
 
     bool Emitter::begin_new_block(basic_blocks::Block const &b)
     {
-        if (debug_logger_.file()) {
-            unchecked_debug_comment(std::format("{}", b));
-        }
+        checked_debug_comment("  0x{:02x}:", b.offset);
         if (keep_stack_in_next_block_) {
             stack_.continue_block(b);
         }
@@ -1681,6 +1673,12 @@ namespace monad::vm::compiler::native
             debug_logger_.log(line.c_str());
             debug_logger_.log("\n");
         }
+    }
+
+    void Emitter::unchecked_debug_comment(
+        std::string_view const fmt, std::format_args const args)
+    {
+        unchecked_debug_comment(std::vformat(fmt, args));
     }
 
     // Does not update eflags

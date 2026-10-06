@@ -17,6 +17,7 @@
 #include <category/core/int.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/compiler/ir/basic_blocks.hpp>
+#include <category/vm/compiler/ir/x86.hpp>
 #include <category/vm/compiler/ir/x86/emitter.hpp>
 #include <category/vm/compiler/ir/x86/types.hpp>
 #include <category/vm/compiler/ir/x86/virtual_stack.hpp>
@@ -42,9 +43,12 @@
 
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <functional>
 #include <limits>
 #include <memory>
+#include <string>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -4551,4 +4555,40 @@ TEST(Emitter, ReleaseSrcAndDestRegression)
     entry(&*ctx, stack_memory.get());
 
     ASSERT_EQ(ret.status, runtime::StatusCode::Success);
+}
+
+TEST(Emitter, AsmLogLabelsEachInstruction)
+{
+    auto const path = std::filesystem::temp_directory_path() /
+                      "monad_vm_asm_log_labels_each_instruction.s";
+    std::vector<uint8_t> const bytecode{
+        CALLVALUE, PUSH1, 0x06, JUMPI, CALLVALUE, STOP, JUMPDEST, STOP};
+    auto const ir = basic_blocks::BasicBlocksIR::unsafe_from(bytecode);
+
+    asmjit::JitRuntime rt;
+    CompilerConfig config{};
+    config.asm_log_path = path.c_str();
+    (void)compile_basic_blocks<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>(
+        rt, ir, config);
+
+    std::ifstream log{path};
+    std::vector<std::string> labels;
+    for (std::string line; std::getline(log, line);) {
+        if (line.starts_with("//")) {
+            labels.push_back(line);
+        }
+    }
+    std::filesystem::remove(path);
+
+    std::vector<std::string> const expected{
+        "//   0x00:",
+        "//       0x00: CALLVALUE",
+        "//       0x01: PUSH1 0x6",
+        "//     JumpI 1",
+        "//   0x04:",
+        "//       0x04: CALLVALUE",
+        "//     Stop",
+        "//   0x06:",
+        "//     Stop"};
+    EXPECT_EQ(labels, expected);
 }

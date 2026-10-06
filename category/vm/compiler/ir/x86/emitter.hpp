@@ -28,6 +28,9 @@
 #include <asmjit/x86.h>
 #include <asmjit/x86/x86assembler.h>
 
+#include <format>
+#include <string_view>
+
 namespace monad::vm::compiler::native
 {
     class Emitter
@@ -234,7 +237,17 @@ namespace monad::vm::compiler::native
         void runtime_print_top2(std::string const &msg);
         void runtime_print_top1(std::string const &msg);
         void breakpoint();
-        void checked_debug_comment(std::string const &msg);
+
+        template <typename... Args>
+        void checked_debug_comment(
+            std::format_string<Args...> const fmt, Args const &...args)
+        {
+            if (debug_logger_.file()) [[unlikely]] {
+                unchecked_debug_comment(
+                    fmt.get(), std::make_format_args(args...));
+            }
+        }
+
         void swap_general_regs(StackElem &, StackElem &);
         void swap_general_reg_indices(GeneralReg, uint8_t, uint8_t);
 
@@ -591,6 +604,7 @@ namespace monad::vm::compiler::native
         ////////// Private debug functionality //////////
 
         void unchecked_debug_comment(std::string const &msg);
+        void unchecked_debug_comment(std::string_view, std::format_args);
 
         ////////// Private core emit functionality //////////
 

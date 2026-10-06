@@ -31,6 +31,7 @@
 
 #include <zkvm/test/corpus/corpus_builder.hpp>
 #include <zkvm/test/corpus/scenarios.hpp>
+#include <zkvm/test/corpus/spoke_code.hpp>
 #include <zkvm/test/corpus/tx_sign.hpp>
 
 #include <category/core/assert.h>
@@ -296,7 +297,7 @@ namespace
             corpus::BlockSpec spec;
             Transaction tx{
                 .max_fee_per_gas = 100,
-                .gas_limit = 21000,
+                .gas_limit = corpus::TRANSFER_GAS,
                 .value = 1,
                 .to = corpus::address_of(KEY_B),
                 .type = TransactionType::eip1559,
@@ -451,7 +452,8 @@ namespace
             SALT_SECRET};
         b.set_ancestors(corpus::Ancestors::Reached);
         for (unsigned i = 0; i < 4; ++i) {
-            b.add_block(one_call(corpus::address_of(KEY_B), 21000));
+            b.add_block(
+                one_call(corpus::address_of(KEY_B), corpus::TRANSFER_GAS));
         }
         auto e = b.add_block(one_call(HASH_READER, 100000));
         MONAD_ASSERT(e.receipts.at(0).status == 1);

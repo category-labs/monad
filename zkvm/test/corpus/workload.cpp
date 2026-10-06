@@ -100,7 +100,10 @@ namespace corpus
     {
         constexpr uint64_t MAX_FEE = 100;
         constexpr uint64_t PRIORITY_FEE = 1;
-        constexpr uint64_t TRANSFER_GAS = 21'000;
+        // TRANSFER_GAS is corpus_builder.hpp's: the intrinsic cost plus the
+        // access check's stipend where there is a check to pay for. At 21,000
+        // a transfer is denied for want of it and reverts having moved
+        // nothing, which is a corpus that looks well and tests nothing.
         constexpr uint64_t SPOKE_GAS = 300'000;
         constexpr uint64_t DEPLOY_GAS = 2'000'000;
 
@@ -110,10 +113,10 @@ namespace corpus
 
         /// Key indices. Kept apart from scenarios.cpp's 0..19 / 100..109 /
         /// 200..204 so a workload and a scenario can share a seed without
-        /// sharing an account. 200 is the exception and it is deliberate: it
-        /// is the spoke deployer, and `--spoke-address` prints the address
-        /// derived from exactly that key at nonce 0, so a compiled
-        /// MONAD_ZKVM_L2_SPOKE has to keep naming it.
+        /// sharing an account. 200 is the exception and it is deliberate: on
+        /// the Ethereum arm it is the spoke deployer, and the spoke is the
+        /// CREATE from exactly that key at nonce 0 (Workload::spoke). The
+        /// domain arm's spoke is the fixed predeploy instead.
         constexpr uint64_t SPOKE_DEPLOYER_INDEX = 200;
 
         /// The constructor's first argument, wherever the spoke comes from.
@@ -169,12 +172,21 @@ namespace corpus
         void seed_spoke(GenesisSink &sink, WorkloadSpec const &spec)
         {
 #ifdef MONAD_ZKVM_L2
+            // Two halves. The spoke's own address holds the access proxy,
+            // because the domain arm asks it canCall before every call and the
+            // vendored contract predates that function; the vendored runtime
+            // sits behind it, reached by DELEGATECALL, so storage and logs
+            // still belong to the spoke. See spoke_access_proxy.
             sink.contract(
-                L2_DOMAIN_SPOKE,
+                SPOKE_IMPLEMENTATION,
                 Account{.nonce = 1},
                 namespace_spoke_code(
                     SPOKE_NAMESPACE_CHAIN_ID,
                     address_of(derive_key(spec.seed, PAYER_INDEX_BASE))));
+            sink.contract(
+                L2_DOMAIN_SPOKE,
+                Account{.nonce = 1},
+                spoke_access_proxy(SPOKE_IMPLEMENTATION));
 #else
             sink.account(
                 address_of(derive_key(spec.seed, SPOKE_DEPLOYER_INDEX)),
@@ -763,9 +775,12 @@ namespace corpus
     uint64_t WorkloadSpec::gas_limit() const
     {
         auto const r = resolved();
-        // A transfer is 21k and a spoke call a few hundred k; 40k per
+        // A transfer consumes 21k and a spoke call a few hundred k; 40k per
         // intended distinct account carries both with room, and the header's
         // limit is constant for the chain so it has to carry the worst block.
+        // Consumes, because that is what a block's limit is spent on: on the
+        // domain arm a transfer carries TRANSFER_GAS, 51k, and the access
+        // check hands back what canCall leaves of its stipend.
         return std::max<uint64_t>(GAS_LIMIT, 40'000 * r.distinct + DEPLOY_GAS);
     }
 
@@ -972,10 +987,10 @@ namespace corpus
 #else
         // keccak256(rlp([deployer, 0]))[12:] -- a CREATE from the deployer at
         // nonce 0, which is what the deploy block spends that account's first
-        // transaction on. Derived here rather than read from the builder so a
-        // caller can configure MONAD_ZKVM_L2_SPOKE before any block runs; the
-        // deploy block asserts the builder agrees, which turns the duplicated
-        // derivation into a check instead of a second source of truth.
+        // transaction on. Derived here rather than read from the builder so the
+        // address is known before any block runs; the deploy block asserts the
+        // builder agrees, which turns the duplicated derivation into a check
+        // instead of a second source of truth.
         auto const deployer =
             address_of(derive_key(spec_.seed, SPOKE_DEPLOYER_INDEX));
         byte_string enc;

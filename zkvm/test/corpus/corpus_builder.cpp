@@ -15,9 +15,11 @@
 
 #include <zkvm/test/corpus/corpus_builder.hpp>
 #include <zkvm/test/corpus/genesis_bulk.hpp>
+#include <zkvm/test/corpus/spoke_code.hpp>
 #include <zkvm/test/corpus/tx_sign.hpp>
 
 #include <category/core/assert.h>
+#include <category/core/bytes.hpp>
 #include <category/core/fiber/priority_pool.hpp>
 #include <category/core/keccak.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
@@ -233,6 +235,17 @@ namespace corpus
         BlockState bs{tdb_, impl_->vm};
         State state{bs, Incarnation{0, 0}};
         seed(state);
+#ifdef MONAD_ZKVM_L2
+        // Every domain genesis needs the spoke: the access check asks it
+        // before every call, and a spoke that is not there answers nothing,
+        // which denies. That is a property of the chain and not of a caller,
+        // so the gap is filled here -- only the gap, since a seed that puts a
+        // spoke of its own there (the spoke scenario's points at what its first
+        // block creates) means it.
+        if (!state.account_exists(L2_DOMAIN_SPOKE)) {
+            seed_spoke_access(state);
+        }
+#endif
         MONAD_ASSERT(bs.can_merge(state));
         bs.merge(state);
         auto released = std::move(bs).release();
@@ -285,6 +298,19 @@ namespace corpus
         GenesisSink sink{tdb_, chunk_accounts};
         seed(sink);
         seal_genesis(sink.finish(genesis));
+#ifdef MONAD_ZKVM_L2
+        // This route cannot fill the gap the way the State route does: the
+        // sink has committed most of the state by the time the seed returns,
+        // and a spoke added after the genesis commit is not in its root. So a
+        // bulk seed brings its own -- seed_spoke_access, or both halves as the
+        // presets do -- and one that does not is stopped here, rather than
+        // left to a chain that denies every call of every block.
+        auto const spoke = tdb_.read_account(L2_DOMAIN_SPOKE);
+        MONAD_ASSERT_PRINTF(
+            spoke.has_value() && spoke->code_hash != NULL_HASH,
+            "a domain genesis needs the spoke at MONAD_ZKVM_L2_SPOKE; a bulk "
+            "seed brings it (corpus::seed_spoke_access)");
+#endif
     }
 
     CorpusBuilder::~CorpusBuilder() = default;
@@ -492,8 +518,7 @@ namespace corpus
         bytes32_t anchor{};
 #ifdef MONAD_ZKVM_L2
         {
-            auto messages =
-                collect_domain_messages(receipts, L2_DOMAIN_SPOKE);
+            auto messages = collect_domain_messages(receipts, L2_DOMAIN_SPOKE);
             MONAD_ASSERT(messages.has_value());
             anchor = sorted_pair_merkle_root(messages.value());
         }

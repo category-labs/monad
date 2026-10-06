@@ -74,6 +74,8 @@ namespace
     constexpr auto SALT_SECRET =
         0x000000000000000000000000000000000000000000000000000000005a1700d5_bytes32;
 
+    /// The spoke a domain genesis needs is the builder's to add, so a test's
+    /// lambda seeds only what the test is about.
     corpus::CorpusBuilder make_builder(std::function<void(State &)> const &g)
     {
         return corpus::CorpusBuilder{g, OPERATOR_SK, SALT_SECRET};
@@ -85,7 +87,7 @@ TEST(CorpusSigner, SenderRecovers)
     Transaction tx{
         .nonce = 7,
         .max_fee_per_gas = 1,
-        .gas_limit = 21000,
+        .gas_limit = corpus::TRANSFER_GAS,
         .value = 5,
         .to = corpus::address_of(KEY_B),
         .type = TransactionType::eip1559};
@@ -194,7 +196,7 @@ TEST(CorpusBuilder, OneTransferBlockRoundTrips)
     corpus::BlockSpec spec;
     Transaction tx{
         .max_fee_per_gas = 0,
-        .gas_limit = 21000,
+        .gas_limit = corpus::TRANSFER_GAS,
         .value = 1000,
         .to = corpus::address_of(KEY_B),
         .type = TransactionType::eip1559};
@@ -205,7 +207,15 @@ TEST(CorpusBuilder, OneTransferBlockRoundTrips)
     auto const e = b.add_block(std::move(spec));
     EXPECT_FALSE(e.witness.empty());
     EXPECT_NE(e.pre_root, e.post_root);
+#ifdef MONAD_ZKVM_L2
+    // Intrinsic cost plus whatever the access check spent of its stipend --
+    // not a round number, and never the whole stipend, since the check does
+    // not spend it all.
+    EXPECT_GT(e.header.gas_used, 21000u);
+    EXPECT_LT(e.header.gas_used, corpus::TRANSFER_GAS);
+#else
     EXPECT_EQ(e.header.gas_used, 21000u);
+#endif
 }
 
 namespace
@@ -257,7 +267,7 @@ TEST(CorpusBuilder, WitnessCarriesThePreState)
     corpus::BlockSpec spec;
     Transaction tx{
         .max_fee_per_gas = 0,
-        .gas_limit = 21000,
+        .gas_limit = corpus::TRANSFER_GAS,
         .value = 1000,
         .to = corpus::address_of(KEY_B),
         .type = TransactionType::eip1559};
@@ -280,7 +290,7 @@ TEST(CorpusBuilder, TheBlockInTheWitnessIsTheBlockThatWasSealed)
     corpus::BlockSpec spec;
     Transaction tx{
         .max_fee_per_gas = 0,
-        .gas_limit = 21000,
+        .gas_limit = corpus::TRANSFER_GAS,
         .value = 7,
         .to = corpus::address_of(KEY_B),
         .type = TransactionType::eip1559};
@@ -337,7 +347,7 @@ TEST(CorpusBuilder, TheAncestorRunNamesTheParent)
         corpus::BlockSpec spec;
         Transaction tx{
             .max_fee_per_gas = 0,
-            .gas_limit = 21000,
+            .gas_limit = corpus::TRANSFER_GAS,
             .value = 1,
             .to = corpus::address_of(KEY_B),
             .type = TransactionType::eip1559};
@@ -486,7 +496,8 @@ TEST(CorpusBuilder, AncestorsReachBackToTheOldestHashTheBlockReads)
     b.set_ancestors(corpus::Ancestors::Reached);
 
     for (int i = 0; i < 4; ++i) {
-        auto const e = b.add_block(one_call(corpus::address_of(KEY_B), 21000));
+        auto const e = b.add_block(
+            one_call(corpus::address_of(KEY_B), corpus::TRANSFER_GAS));
         EXPECT_EQ(
             ancestor_numbers(e.witness),
             std::vector<uint64_t>{e.header.number - 1});
@@ -500,7 +511,8 @@ TEST(CorpusBuilder, AncestorsReachBackToTheOldestHashTheBlockReads)
         (std::vector<uint64_t>{n - 3, n - 2, n - 1}));
 
     b.set_ancestors(corpus::Ancestors::All);
-    auto const all = b.add_block(one_call(corpus::address_of(KEY_B), 21000));
+    auto const all =
+        b.add_block(one_call(corpus::address_of(KEY_B), corpus::TRANSFER_GAS));
     std::vector<uint64_t> every;
     for (uint64_t k = corpus::GENESIS_NUMBER; k < all.header.number; ++k) {
         every.push_back(k);
@@ -530,6 +542,38 @@ TEST(CorpusScenarios, EveryBlockRoundTripsThroughTheGuestTrie)
             auto gv = guest_view(e.witness);
             EXPECT_EQ(gv.state_root(), e.pre_root);
             EXPECT_FALSE(e.receipts.empty());
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// A scenario's transactions do what it says they do. A denied call still makes
+// a valid block -- the access check reverts it at depth 0 and every root still
+// round-trips -- so a genesis without the spoke, or a transfer that cannot hold
+// the check's stipend, empties a scenario without failing the test above. So
+// every receipt succeeds, except the one revert the evm scenario sends on
+// purpose: its first block's third transaction.
+// ---------------------------------------------------------------------------
+
+TEST(CorpusScenarios, EveryTransactionSucceedsButTheDeliberateRevert)
+{
+    bytes32_t seed{};
+    seed.bytes[31] = 1;
+
+    for (auto const &sc : corpus::all_scenarios(seed)) {
+        auto b = make_builder(sc.genesis);
+        size_t block = 0;
+        for (auto &spec : sc.blocks(b)) {
+            auto const e = b.add_block(std::move(spec));
+            for (size_t i = 0; i < e.receipts.size(); ++i) {
+                SCOPED_TRACE(
+                    sc.name + " block " + std::to_string(block) + " tx " +
+                    std::to_string(i));
+                bool const deliberate =
+                    sc.name == "evm" && block == 0 && i == 2;
+                EXPECT_EQ(e.receipts[i].status, deliberate ? 0u : 1u);
+            }
+            ++block;
         }
     }
 }
@@ -653,7 +697,7 @@ TEST(CorpusBlinder, TheCommitmentIsPerBlockAndHidesTheRoot)
         corpus::BlockSpec spec;
         Transaction tx{
             .max_fee_per_gas = 100,
-            .gas_limit = 21000,
+            .gas_limit = corpus::TRANSFER_GAS,
             .value = 1,
             .to = corpus::address_of(KEY_B),
             .type = TransactionType::eip1559,
@@ -695,7 +739,7 @@ TEST(CorpusBlinder, ConsecutiveBlocksChainThroughTheirCommitments)
         corpus::BlockSpec spec;
         Transaction tx{
             .max_fee_per_gas = 100,
-            .gas_limit = 21000,
+            .gas_limit = corpus::TRANSFER_GAS,
             .value = 1,
             .to = corpus::address_of(KEY_B),
             .type = TransactionType::eip1559,
@@ -722,7 +766,7 @@ TEST(CorpusBlinder, TheCommitmentFollowsTheSecret)
         corpus::BlockSpec spec;
         Transaction tx{
             .max_fee_per_gas = 100,
-            .gas_limit = 21000,
+            .gas_limit = corpus::TRANSFER_GAS,
             .value = 1,
             .to = corpus::address_of(KEY_B),
             .type = TransactionType::eip1559,
@@ -799,6 +843,8 @@ TEST(GenesisBulk, TheFastRouteGivesTheSameRootAsTheSlowOne)
         sink.contract(CONTRACT_ADDR, Account{.balance = 7}, SOME_CODE);
         sink.storage(CONTRACT_ADDR, SLOT_ONE, VALUE_ONE);
         sink.storage(CONTRACT_ADDR, SLOT_TWO, VALUE_TWO);
+        // What the builder adds to the slow route's genesis on its own.
+        corpus::seed_spoke_access(sink);
     };
     corpus::CorpusBuilder fast{
         fast_seeder, 100'000, corpus::GAS_LIMIT, OPERATOR_SK, SALT_SECRET};
@@ -820,6 +866,7 @@ TEST(GenesisBulk, ChunkingDoesNotChangeTheRoot)
             sink.account(a, Account{.balance = uint256_t{1000 + i}});
             sink.storage(a, SLOT_ONE, VALUE_ONE);
         }
+        corpus::seed_spoke_access(sink);
     };
     corpus::CorpusBuilder one{
         seeder, 100'000, corpus::GAS_LIMIT, OPERATOR_SK, SALT_SECRET};
@@ -1126,6 +1173,7 @@ TEST(WrappedToken, OnlyAdmittedHoldersMoveBalances)
                 token,
                 word(uint256_t{TOTAL_SUPPLY_SLOT}),
                 word(uint256_t{2000}));
+            corpus::seed_spoke_access(sink);
         },
         1000,
         corpus::GAS_LIMIT,
@@ -1190,6 +1238,7 @@ TEST(PvpSettlement, BothLegsOrNeither)
             sink.storage(
                 t1, word(uint256_t{TOTAL_SUPPLY_SLOT}), word(uint256_t{50}));
             sink.contract(pvp, Account{.nonce = 1}, pvp_settlement_code());
+            corpus::seed_spoke_access(sink);
         },
         1000,
         corpus::GAS_LIMIT,

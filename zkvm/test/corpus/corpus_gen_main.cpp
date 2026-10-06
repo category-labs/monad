@@ -18,6 +18,7 @@
 
 #include <zkvm/test/corpus/corpus_builder.hpp>
 #include <zkvm/test/corpus/scenarios.hpp>
+#include <zkvm/test/corpus/spoke_code.hpp>
 #include <zkvm/test/corpus/tx_sign.hpp>
 #include <zkvm/test/corpus/witness_stats.hpp>
 #include <zkvm/test/corpus/workload.hpp>
@@ -65,9 +66,11 @@ namespace
             "ignored otherwise. --pubkey prints the compressed public half of\n"
             "a secret as MONAD_ZKVM_L2_OPERATOR_PK_X and _ODD, which is what\n"
             "the guest has to be configured with before a corpus it produces\n"
-            "can be decrypted. --spoke-address prints where the spoke\n"
-            "scenario will deploy, which is what MONAD_ZKVM_L2_SPOKE has to\n"
-            "be -- the address is CREATE-derived, so it follows the seed.\n"
+            "can be decrypted. --spoke-address prints the fixed predeploy\n"
+            "address this corpus seeds the spoke at, which is what\n"
+            "MONAD_ZKVM_L2_SPOKE has to be. Fixed and not CREATE-derived: the\n"
+            "access check asks the spoke before every call, so it has to be\n"
+            "there from genesis.\n"
             "--salt-commitment prints the commitment to a blinder secret,\n"
             "hashed with the chain's hash, as MONAD_ZKVM_L2_SALT_COMMITMENT;\n"
             "--salt hands the generator that same secret. Required in an L2\n"
@@ -300,19 +303,15 @@ int main(int const argc, char **const argv)
     }
 
     if (want_spoke) {
-        // Ask the builder rather than recomputing the CREATE derivation here:
-        // one derivation, and it is the one the corpus will actually use.
-        for (auto const &s : monad::corpus::all_scenarios(seed)) {
-            if (s.name != "spoke") {
-                continue;
-            }
-            monad::corpus::CorpusBuilder b{s.genesis, sk, salt};
+        // A constant now, not a derivation. The spoke is a predeploy: the
+        // access check asks it before every call, so it has to be there from
+        // genesis, which no CREATE-derived address can be. Printed rather than
+        // simply documented so that the one place it is written down is the
+        // one the corpus seeds from.
+        {
             std::printf(
                 "MONAD_ZKVM_L2_SPOKE=%s\n",
-                hex_of_address(
-                    b.next_contract_address(monad::corpus::address_of(
-                        monad::corpus::derive_key(seed, 200))))
-                    .c_str());
+                hex_of_address(monad::corpus::SPOKE_PREDEPLOY).c_str());
             return 0;
         }
         std::fprintf(stderr, "corpus-gen: no spoke scenario\n");

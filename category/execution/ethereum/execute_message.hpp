@@ -26,6 +26,15 @@
 
 MONAD_NAMESPACE_BEGIN
 
+#ifdef MONAD_ZKVM_L2
+/// What the access check forwards to the spoke, charged to the caller. Public
+/// because it is a cost of the chain and not an implementation detail: a call
+/// that cannot spare it is denied without being asked about, so the floor for
+/// ANY call -- a transfer to an account with no code included -- is the
+/// intrinsic cost plus this.
+inline constexpr int64_t DOMAIN_ACCESS_GAS_STIPEND = 30'000;
+#endif
+
 template <Traits traits>
 struct EvmcHost;
 

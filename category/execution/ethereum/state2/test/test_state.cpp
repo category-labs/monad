@@ -2180,7 +2180,7 @@ namespace
                 else if (wide_) {
                     LOG_INFO("_wide_ {}", wide_, wide_parent_);
                     parent = wide_parent_;
-                    MONAD_ASSERT(proposals_.find(*parent) != proposals_.end());
+                    MONAD_ASSERT(proposals_.contains(*parent));
                     proposal_seed = highest_proposal_seed_ + 1;
                     block = proposals_[*parent].first + 1;
                     --wide_;
@@ -2419,7 +2419,7 @@ namespace
             }
             MONAD_ASSERT(it2 != s1.end());
             uint64_t const proposal_seed = *it2;
-            MONAD_ASSERT(proposals_.find(proposal_seed) != proposals_.end());
+            MONAD_ASSERT(proposals_.contains(proposal_seed));
             MONAD_ASSERT(proposals_[proposal_seed].first == block);
             LOG_INFO("Finalize_ {} {}", block, proposal_seed);
             // db finalize
@@ -2441,8 +2441,7 @@ namespace
                     break;
                 }
                 if (it3->second.first > block) {
-                    MONAD_ASSERT(
-                        blocks_.find(it3->second.first) != blocks_.end());
+                    MONAD_ASSERT(blocks_.contains(it3->second.first));
                     auto &s2 = blocks_[it3->second.first];
                     auto it4 = s2.find(it3->first);
                     MONAD_ASSERT(it4 != s2.end());

@@ -52,7 +52,7 @@ void add_override_address(
     Address address;
     std::memcpy(address.bytes, addr, sizeof(Address));
 
-    MONAD_ASSERT(m->override_sets.find(address) == m->override_sets.end());
+    MONAD_ASSERT(!m->override_sets.contains(address));
     m->override_sets.emplace(
         address, monad_state_override::monad_state_override_object{});
 }
@@ -68,7 +68,7 @@ void set_override_balance(
     MONAD_ASSERT(addr_len == sizeof(Address));
     Address address;
     std::memcpy(address.bytes, addr, sizeof(Address));
-    MONAD_ASSERT(m->override_sets.find(address) != m->override_sets.end());
+    MONAD_ASSERT(m->override_sets.contains(address));
 
     MONAD_ASSERT(balance);
     MONAD_ASSERT(balance_len == sizeof(uint256_t));
@@ -85,7 +85,7 @@ void set_override_nonce(
     MONAD_ASSERT(addr_len == sizeof(Address));
     Address address;
     std::memcpy(address.bytes, addr, sizeof(Address));
-    MONAD_ASSERT(m->override_sets.find(address) != m->override_sets.end());
+    MONAD_ASSERT(m->override_sets.contains(address));
 
     m->override_sets[address].nonce = nonce;
 }
@@ -100,7 +100,7 @@ void set_override_code(
     MONAD_ASSERT(addr_len == sizeof(Address));
     Address address;
     std::memcpy(address.bytes, addr, sizeof(Address));
-    MONAD_ASSERT(m->override_sets.find(address) != m->override_sets.end());
+    MONAD_ASSERT(m->override_sets.contains(address));
 
     MONAD_ASSERT(code);
     m->override_sets[address].code = {code, code + code_len};
@@ -117,7 +117,7 @@ void set_override_state_diff(
     MONAD_ASSERT(addr_len == sizeof(Address));
     Address address;
     std::memcpy(address.bytes, addr, sizeof(Address));
-    MONAD_ASSERT(m->override_sets.find(address) != m->override_sets.end());
+    MONAD_ASSERT(m->override_sets.contains(address));
 
     MONAD_ASSERT(key);
     MONAD_ASSERT(key_len == sizeof(bytes32_t));
@@ -130,7 +130,7 @@ void set_override_state_diff(
     std::memcpy(v.bytes, value, sizeof(bytes32_t));
 
     auto &state_object = m->override_sets[address].state_diff;
-    MONAD_ASSERT(state_object.find(k) == state_object.end());
+    MONAD_ASSERT(!state_object.contains(k));
     state_object.emplace(k, v);
 }
 
@@ -145,7 +145,7 @@ void set_override_state(
     MONAD_ASSERT(addr_len == sizeof(Address));
     Address address;
     std::memcpy(address.bytes, addr, sizeof(Address));
-    MONAD_ASSERT(m->override_sets.find(address) != m->override_sets.end());
+    MONAD_ASSERT(m->override_sets.contains(address));
 
     MONAD_ASSERT(key);
     MONAD_ASSERT(key_len == sizeof(bytes32_t));
@@ -163,7 +163,7 @@ void set_override_state(
     }
 
     auto &state_object = *state_object_opt;
-    MONAD_ASSERT(state_object.find(k) == state_object.end());
+    MONAD_ASSERT(!state_object.contains(k));
     state_object.emplace(k, v);
 }
 
@@ -177,7 +177,7 @@ void set_override_empty_state(
     MONAD_ASSERT(addr_len == sizeof(Address));
     Address address;
     std::memcpy(address.bytes, addr, sizeof(Address));
-    MONAD_ASSERT(m->override_sets.find(address) != m->override_sets.end());
+    MONAD_ASSERT(m->override_sets.contains(address));
 
     m->override_sets[address].state =
         ankerl::unordered_dense::segmented_map<bytes32_t, bytes32_t>{};

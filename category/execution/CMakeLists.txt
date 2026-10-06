@@ -160,6 +160,8 @@ add_library(
   "ethereum/process_requests.hpp"
   "ethereum/reserve_balance.cpp"
   "ethereum/reserve_balance.hpp"
+  "ethereum/sequencing_anchor.cpp"
+  "ethereum/sequencing_anchor.hpp"
   "ethereum/trace/call_frame.cpp"
   "ethereum/trace/call_frame.hpp"
   "ethereum/trace/call_tracer.cpp"

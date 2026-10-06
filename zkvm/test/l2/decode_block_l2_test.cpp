@@ -31,6 +31,7 @@
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
+#include <category/execution/ethereum/sequencing_anchor.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <zkvm/guest/decode_block_l2.hpp>
 #include <zkvm/guest/l2_cipher.hpp>
@@ -477,4 +478,44 @@ TEST(DecodeBlockL2, EncodingsAreWhatEachTransactionWasDecodedFrom)
             rlp::encode_transaction_for_signing(txs[i]))
             << "tx " << i;
     }
+}
+
+// The seam between this decoder and what the guest publishes. execute_witness
+// hands sequencing_anchor the `ciphertexts` vector filled here, and the whole
+// reason that vector holds the leaves the block CARRIED rather than the ones
+// that ran is this case: a prover that quietly narrowed the input set and then
+// anchored its own choice would be indistinguishable from an honest one. The
+// property belongs here and not only on sequencing_anchor's own inputs, because
+// what it is really about is which vector the two are wired together by.
+TEST(DecodeBlockL2, TheSequencingAnchorCoversARejectedLeaf)
+{
+    auto const ctx = context();
+    auto const secret = bound_secret(ctx);
+    auto const original = sample_block();
+    auto cts = encrypt_transactions(ctx, original.transactions);
+    cts[1].back() ^= 1u; // break the middle leaf's tag
+    auto const encoded = encode_l2_block(original.header, cts);
+
+    byte_string_view view{encoded};
+    std::vector<byte_string_view> ciphertexts;
+    auto const got = decode_l2(view, ctx, secret, ciphertexts);
+    ASSERT_FALSE(got.has_error());
+    ASSERT_EQ(ciphertexts.size(), 3u);
+    ASSERT_EQ(got.value().transactions.size(), 2u);
+
+    uint64_t const number = original.header.number;
+
+    // The expected sets are built from the test's own vector rather than from
+    // the decoder's, so the two derivations stay independent.
+    std::vector<byte_string_view> const carried{cts[0], cts[1], cts[2]};
+    EXPECT_EQ(
+        sequencing_anchor(ctx.chain_id, number, ciphertexts),
+        sequencing_anchor(ctx.chain_id, number, carried));
+
+    // And it is NOT the anchor over what survived -- the value a prover that
+    // dropped the middle leaf would otherwise be free to publish.
+    std::vector<byte_string_view> const survivors{cts[0], cts[2]};
+    EXPECT_NE(
+        sequencing_anchor(ctx.chain_id, number, ciphertexts),
+        sequencing_anchor(ctx.chain_id, number, survivors));
 }

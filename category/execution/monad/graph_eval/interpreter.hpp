@@ -18,35 +18,52 @@
 #include "category/core/result.hpp"
 #include "category/execution/ethereum/state3/state.hpp"
 #include "category/execution/monad/graph_eval/config.hpp"
+#include "category/execution/monad/graph_eval/graphcode.hpp"
 #include "category/execution/monad/graph_eval/tensor.hpp"
+#include <cstdint>
 #include <span>
+#include <utility>
 #include <vector>
 
 MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
 
+// Evaluates graphcode on inputs as read from the calldata
 class Interpreter
 {
+    Graphcode const &graphcode_;
     State &state_;
+    std::vector<EncodedTensor> inputs_;
+
+    std::span<uint8_t const> code_span_;
     std::vector<Tensor> node_values_;
-    std::span<uint8_t const> graphcode_;
+
+    uint8_t *const arena_;
 
     Result<void> check_magic_number();
     Result<void> check_inputs();
+    Result<void> load_inputs();
+    Result<void> prepare_node_placement();
 
 public:
     Interpreter(
-        State &state, std::vector<Tensor> &&inputs, uint8_t const *graphcode,
-        size_t graphcode_size)
-        : state_(state)
-        , node_values_(inputs)
-        , graphcode_(graphcode, graphcode_size)
+        State &state, std::vector<EncodedTensor> &&inputs,
+        Graphcode const &graphcode, uint8_t *const arena)
+        : graphcode_(graphcode)
+        , state_(state)
+        , inputs_(std::move(inputs))
+        , code_span_(graphcode.code(), graphcode.code_size())
+        , arena_(arena)
     {
     }
 
-    Result<std::vector<Tensor>> run();
+    ~Interpreter() = default;
 
-    // Allocates a tensor with uninitialized data, aligned for import into IREE
-    Result<Tensor> allocate_tensor(Dtype dtype, Shape const &shape);
+    Interpreter(Interpreter const &other) = delete;
+    Interpreter &operator=(Interpreter const &other) = delete;
+    Interpreter(Interpreter &&other) = delete;
+    Interpreter &operator=(Interpreter &&other) = delete;
+
+    Result<std::vector<Tensor>> run();
 };
 
 MONAD_GRAPH_EVAL_NAMESPACE_END

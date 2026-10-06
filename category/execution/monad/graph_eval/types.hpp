@@ -21,6 +21,7 @@
 
 #include <concepts>
 #include <cstdint>
+#include <type_traits>
 
 MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
 
@@ -117,6 +118,24 @@ consteval Dtype dtype_of()
     }
 }
 
+// The C++ type twice as wide as T, with the same signedness, which holds the
+// product of any two Ts exactly; 64-bit types stay as they are
+template <typename T>
+using widened_t = std::conditional_t<
+    sizeof(T) == 8, T,
+    std::conditional_t<
+        std::is_signed_v<T>,
+        std::conditional_t<
+            sizeof(T) == 1, int16_t,
+            std::conditional_t<sizeof(T) == 2, int32_t, int64_t>>,
+        std::conditional_t<
+            sizeof(T) == 1, uint16_t,
+            std::conditional_t<sizeof(T) == 2, uint32_t, uint64_t>>>>;
 
+inline Dtype widened_dtype(Dtype const dtype)
+{
+    return visit_dtype(
+        dtype, []<typename T>() { return dtype_of<widened_t<T>>(); });
+}
 
 MONAD_GRAPH_EVAL_NAMESPACE_END

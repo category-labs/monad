@@ -167,7 +167,7 @@ import_tensor(iree_runtime_session_t *const session, Tensor &tensor)
     bufdesc.flags = IREE_HAL_EXTERNAL_BUFFER_FLAG_NONE;
     // Beware: here we assume that iree_hal_element_dense_byte_count(dtype) =
     // dtype_size(dtype)
-    bufdesc.size = tensor.size_bytes();
+    bufdesc.size = tensor.type().size_bytes();
     bufdesc.type = IREE_HAL_EXTERNAL_BUFFER_TYPE_HOST_ALLOCATION;
     // TODO: remove this const_cast
     bufdesc.handle.host_allocation.ptr = (tensor.data());
@@ -182,16 +182,16 @@ import_tensor(iree_runtime_session_t *const session, Tensor &tensor)
 
     iree_hal_buffer_view_t *view = nullptr;
     std::array<iree_hal_dim_t, 8> shape;
-    for (auto i = 0; i < tensor.rank(); i++) {
+    for (auto i = 0; i < tensor.type().shape.rank; i++) {
         // TODO: this would not be necessary if Tensor stored dimensions as
         // unsigned long
         shape[static_cast<size_t>(i)] =
-            tensor.dimensions()[static_cast<size_t>(i)];
+            tensor.type().shape.dimensions[static_cast<size_t>(i)];
     }
-    iree_hal_element_type_t dtype = dtype_to_iree(tensor.dtype());
+    iree_hal_element_type_t dtype = dtype_to_iree(tensor.type().dtype);
     iree_status_t status = iree_hal_buffer_view_create(
         buffer,
-        tensor.rank(),
+        tensor.type().shape.rank,
         shape.data(),
         dtype,
         IREE_HAL_ENCODING_TYPE_DENSE_ROW_MAJOR,

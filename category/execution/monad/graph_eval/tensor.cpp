@@ -39,61 +39,59 @@ copy_big_endian(uint8_t *const dst, std::span<uint8_t const> const src)
     }
 }
 
-Result<uint8_t *> abi_load_tensor_data(
-    byte_string_view &enc, Dtype const dtype, uint64_t const size)
-{
-    // Checking `size` first bounds it by the input's length, so the rounding
-    // below can't overflow
-    if (MONAD_UNLIKELY(enc.size() < size)) {
-        return AbiDecodeError::InputTooShort;
-    }
-    auto const padded_size = round_up<uint64_t>(size, 32);
-    if (MONAD_UNLIKELY(enc.size() < padded_size)) {
-        return AbiDecodeError::InputTooShort;
-    }
-
-    // aligned_alloc needs a nonzero multiple of the alignment
-    auto const capacity =
-        std::max(IREE_ALIGNMENT, round_up<uint64_t>(size, IREE_ALIGNMENT));
-    auto *const data =
-        static_cast<uint8_t *>(std::aligned_alloc(IREE_ALIGNMENT, capacity));
-    MONAD_ASSERT(data != nullptr);
-    // Input tensors are in the EVM's native big-endian format. Convert to
-    // little-endian if necessary.
-    // TODO: ensure all these loops get compiled to vectorized code.
-    std::span<uint8_t const> const src = std::span<uint8_t const>{enc}.first(
-        static_cast<size_t>(size));
-    switch (dtype_size(dtype)) {
-    case 1:
-        // An empty input's data may be null, and memcpy from null is UB even
-        // for zero bytes
-        if (size != 0) {
-            std::memcpy(data, src.data(), src.size());
-        }
-        break;
-    case 2:
-        copy_big_endian<uint16_t>(data, src);
-        break;
-    case 4:
-        copy_big_endian<uint32_t>(data, src);
-        break;
-    case 8:
-        copy_big_endian<uint64_t>(data, src);
-        break;
-    default:
-        // Unreachable
-        MONAD_ABORT();
-    }
-    enc.remove_prefix(padded_size);
-    return data;
-}
-
-
 MONAD_GRAPH_EVAL_ANONYMOUS_NAMESPACE_END
 
 MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
 
-Result<Tensor> abi_decode_tensor(byte_string_view &enc)
+Result<uint64_t> tensor_size_bytes(Dtype const dtype, Shape const &shape)
+{
+    uint64_t size = dtype_size(dtype);
+    for (size_t i = 0; i < shape.rank; i++) {
+        if (MONAD_UNLIKELY(
+                __builtin_mul_overflow(size, shape.dimensions[i], &size))) {
+            return GraphEvalError::ShapeError;
+        }
+    }
+    return size;
+}
+
+// A loop rather than std::equal, which GCC makes a call to memcmp
+bool same_shape(Shape const &a, Shape const &b)
+{
+    if (a.rank != b.rank) {
+        return false;
+    }
+    for (size_t d = 0; d < a.rank; d++) {
+        if (a.dimensions[d] != b.dimensions[d]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+Result<Shape> broadcast_shape(std::span<Shape const> const shapes)
+{
+    Shape result{};
+    for (Shape const &shape : shapes) {
+        result.rank = std::max(result.rank, shape.rank);
+    }
+    std::fill_n(result.dimensions.begin(), result.rank, uint16_t{1});
+    for (Shape const &shape : shapes) {
+        for (size_t i = 0; i < shape.rank; i++) {
+            size_t const d = result.rank - shape.rank + i;
+            uint16_t const size = shape.dimensions[i];
+            if (size != 1) {
+                if (result.dimensions[d] != 1 && result.dimensions[d] != size) {
+                    return GraphEvalError::ShapeError;
+                }
+                result.dimensions[d] = size;
+            }
+        }
+    }
+    return result;
+}
+
+Result<EncodedTensor> abi_decode_tensor(byte_string_view &enc)
 {
     // Static: uint8 dtype
     BOOST_OUTCOME_TRY(auto const dtype_be, abi_decode_fixed<u8_be>(enc));
@@ -150,21 +148,56 @@ Result<Tensor> abi_decode_tensor(byte_string_view &enc)
         return GraphEvalError::ShapeError;
     }
 
-    BOOST_OUTCOME_TRY(
-        auto const data, abi_load_tensor_data(enc, dtype, data_size));
+    // Checking the size first bounds it by the input's length, so the rounding
+    // below can't overflow
+    if (MONAD_UNLIKELY(enc.size() < data_size)) {
+        return AbiDecodeError::InputTooShort;
+    }
+    auto const padded_size = round_up<uint64_t>(data_size, 32);
+    if (MONAD_UNLIKELY(enc.size() < padded_size)) {
+        return AbiDecodeError::InputTooShort;
+    }
+    byte_string_view const data = enc.substr(0, static_cast<size_t>(data_size));
+    enc.remove_prefix(static_cast<size_t>(padded_size));
 
-    return Tensor(dtype, {rank, dimensions}, data);
+    return EncodedTensor{dtype, Shape{rank, dimensions}, data};
+}
+
+void abi_load_tensor_data(EncodedTensor const &tensor, uint8_t *const data)
+{
+    // TODO: ensure all these loops get compiled to vectorized code.
+    std::span<uint8_t const> const src{tensor.data};
+    switch (dtype_size(tensor.dtype)) {
+    case 1:
+        // An empty input's data may be null, and memcpy from null is UB even
+        // for zero bytes
+        if (!src.empty()) {
+            std::memcpy(data, src.data(), src.size());
+        }
+        break;
+    case 2:
+        copy_big_endian<uint16_t>(data, src);
+        break;
+    case 4:
+        copy_big_endian<uint32_t>(data, src);
+        break;
+    case 8:
+        copy_big_endian<uint64_t>(data, src);
+        break;
+    default:
+        // Unreachable
+        MONAD_ABORT();
+    }
 }
 
 // Append an ABI-encoded tensor to a returndata buffer
 void abi_append_tensor(Tensor const &tensor, byte_string &out)
 {
-    uint64_t const encoded_tensor_head_size = 32 /* dtype (uint8) */ +
-                                              32 /* head(uint16[]) */ +
-                                              32 /* head(bytes) */;
+    uint64_t const encoded_tensor_head_size =
+        32 /* dtype (uint8) */ + 32 /* head(uint16[]) */ + 32 /* head(bytes) */;
     uint64_t const encoded_dimensions_tail_size =
-        32 /* size */ + 32 * tensor.rank() /* dimensions */;
-    uint64_t const size_bytes = tensor.size_bytes();
+        32 /* size */ + 32 * tensor.type().shape.rank /* dimensions */;
+    uint64_t const size_bytes = tensor.type().size_bytes();
     uint64_t const padded_size_bytes = 32 * ((size_bytes + 31) / 32);
     uint64_t const encoded_data_tail_size =
         32 /* size */ + padded_size_bytes /* data */;
@@ -180,15 +213,16 @@ void abi_append_tensor(Tensor const &tensor, byte_string &out)
         encoded_tensor_head_size + encoded_dimensions_tail_size;
 
     // Encode head
-    out += abi_encode_uint(u64_be{static_cast<uint8_t>(tensor.dtype())});
+    out += abi_encode_uint(u64_be{static_cast<uint8_t>(tensor.type().dtype)});
     out += abi_encode_uint(u64_be{dimensions_start});
     out += abi_encode_uint(u64_be{data_start});
 
+    auto const &shape = tensor.type().shape;
     // Encode dimensions
-    out += abi_encode_uint(u64_be{tensor.rank()});
-    for (auto i = 0; i < tensor.rank(); i++) {
-        out += abi_encode_uint(
-            u64_be{tensor.dimensions()[static_cast<size_t>(i)]});
+    out += abi_encode_uint(u64_be{shape.rank});
+    for (auto i = 0; i < shape.rank; i++) {
+        out +=
+            abi_encode_uint(u64_be{shape.dimensions[static_cast<size_t>(i)]});
     }
 
     // Encode data, converting it from host to big-endian order and padding it
@@ -201,7 +235,7 @@ void abi_append_tensor(Tensor const &tensor, byte_string &out)
             uint8_t *const dst = buffer + data_offset;
             std::span<uint8_t const> const src{
                 tensor.data(), static_cast<size_t>(size_bytes)};
-            switch (dtype_size(tensor.dtype())) {
+            switch (dtype_size(tensor.type().dtype)) {
             case 1:
                 // An empty tensor's data may be null, and memcpy from null is
                 // UB even for zero bytes

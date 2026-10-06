@@ -25,7 +25,9 @@
 #include <category/execution/monad/graph_eval/types.hpp>
 
 #include <array>
+#include <cstdint>
 #include <cstring>
+#include <span>
 
 MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
 
@@ -52,6 +54,17 @@ struct Shape
     }
 };
 
+struct TensorType
+{
+    Dtype dtype;
+    Shape shape;
+
+    constexpr size_t size_bytes() const noexcept
+    {
+        return shape.size() * dtype_size(dtype);
+    }
+};
+
 // Solidity:
 // struct Tensor {
 //     uint8 dtype;
@@ -60,60 +73,58 @@ struct Shape
 // }
 class Tensor
 {
-    Dtype dtype_;
-    Shape shape_;
+    TensorType type_;
     uint8_t *data_; // Row-major, elements in host byte order
 
 public:
     Tensor() = default;
 
-    Tensor(Dtype dtype, Shape shape, uint8_t *data)
-        : dtype_(dtype)
-        , shape_(shape)
+    Tensor(TensorType type, uint8_t *data)
+        : type_(type)
         , data_(data)
     {
     }
 
-    constexpr uint64_t size_bytes() const noexcept
-    {
-        return dtype_size(dtype_) * shape_.size();
-    }
-
-    constexpr Shape const &shape() const noexcept
-    {
-        return shape_;
-    }
-
-    constexpr uint8_t rank() const noexcept
-    {
-        return shape_.rank;
-    }
-
-    constexpr std::array<uint16_t, 8> const &dimensions() const noexcept
-    {
-        return shape_.dimensions;
-    }
+    constexpr TensorType const & type() const noexcept { return type_; }
 
     constexpr uint8_t *data() const noexcept
     {
         return data_;
     }
 
-    constexpr Dtype dtype() const noexcept
-    {
-        return dtype_;
-    }
-
     // Return a view of this tensor's elements, as the C++ type matching its dtype
     template <typename T>
     constexpr std::span<T> elements() const
     {
-        MONAD_DEBUG_ASSERT(dtype() == dtype_of<std::remove_const_t<T>>());
-        return {reinterpret_cast<T *>(data()), shape().size()};
+        MONAD_DEBUG_ASSERT(type().dtype == dtype_of<std::remove_const_t<T>>());
+        return {reinterpret_cast<T *>(data()), type().shape.size()};
     }
 };
 
-Result<Tensor> abi_decode_tensor(byte_string_view &enc);
+// A Tensor as abi_decode_tensor reads it from the calldata: its dtype and
+// shape, and its data, still in place and big-endian
+struct EncodedTensor
+{
+    Dtype dtype;
+    Shape shape;
+    byte_string_view data;
+};
+
+// The size in bytes of a tensor's data, or ShapeError if that overflows
+Result<uint64_t> tensor_size_bytes(Dtype dtype, Shape const &shape);
+
+bool same_shape(Shape const &a, Shape const &b);
+
+// The shape numpy broadcasts `shapes` to: they're matched from their last
+// dimensions, and each of the result's dimensions is their common size along
+// it, a shape being repeated along any dimension where its size is 1 or it has
+// none. ShapeError if they don't broadcast together.
+Result<Shape> broadcast_shape(std::span<Shape const> shapes);
+
+Result<EncodedTensor> abi_decode_tensor(byte_string_view &enc);
+
+// Copies an encoded tensor's elements to `data`, converting them to host order
+void abi_load_tensor_data(EncodedTensor const &tensor, uint8_t *data);
 
 // Append an ABI-encoded tensor to a returndata buffer
 void abi_append_tensor(Tensor const &tensor, byte_string &out);

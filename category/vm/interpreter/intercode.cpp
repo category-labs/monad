@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include "category/execution/monad/graph_eval/graphcode.hpp"
 #include <category/core/monad_exception.hpp>
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/interpreter/intercode.hpp>
@@ -31,10 +32,14 @@ namespace monad::vm::interpreter
         , code_size_(
               code_size_t::unsafe_from(static_cast<uint32_t>(code.size())))
         , jumpdest_map_(find_jumpdests(code))
+        , graphcode_(std::nullopt)
     {
+        if (code[0] == 0xfe && code[1] == 0x7f) {
+            graphcode_ = graph_eval::Graphcode(code);
+        }
     }
 
-    Intercode::~Intercode()
+   Intercode::~Intercode()
     {
         delete[] (padded_code_ - start_padding_size);
     }
@@ -59,6 +64,8 @@ namespace monad::vm::interpreter
     auto Intercode::find_jumpdests(std::span<uint8_t const> const code)
         -> JumpdestMap
     {
+        // TODO: this is a hack to avoid computing the jumpdest map for graphcode
+        if (code[0] == 0xfe) { return JumpdestMap(); }
         auto jumpdests = JumpdestMap(code.size(), false);
 
         for (size_t i = 0; i < code.size(); ++i) {

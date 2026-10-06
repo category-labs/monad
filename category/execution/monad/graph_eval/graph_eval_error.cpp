@@ -47,6 +47,7 @@ quick_status_code_from_enum<monad::graph_eval::GraphEvalError>::value_mappings()
         {GraphEvalError::InvalidOp, "op is invalid", {}},
         {GraphEvalError::GraphValidationError, "graph is invalid", {}},
         {GraphEvalError::OutOfMemory, "graph needs too much memory", {}},
+        {GraphEvalError::InternalError, "internal error", {}},
     };
 
     return v;

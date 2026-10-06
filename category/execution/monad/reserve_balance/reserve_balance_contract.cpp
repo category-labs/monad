@@ -134,3 +134,4 @@ Result<byte_string> ReserveBalanceContract::precompile_fallback(
 }
 
 MONAD_NAMESPACE_END
+

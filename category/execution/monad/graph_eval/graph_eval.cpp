@@ -17,10 +17,12 @@
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/likely.h>
+#include <category/core/math.hpp>
 #include <category/execution/ethereum/core/contract/abi_decode.hpp>
 #include <category/execution/ethereum/core/contract/abi_decode_error.hpp>
 #include <category/execution/ethereum/core/contract/big_endian.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
+#include <category/execution/monad/graph_eval/aot_alloc.hpp>
 #include <category/execution/monad/graph_eval/config.hpp>
 #include <category/execution/monad/graph_eval/constants.hpp>
 #include <category/execution/monad/graph_eval/graph.hpp>
@@ -42,6 +44,7 @@
 
 #include <boost/outcome/try.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <cstdlib>
@@ -78,19 +81,20 @@ constexpr uint64_t FALLBACK_COST = 100;
 
 constexpr uint64_t MAX_INPUTS = 16;
 
-// Tensor is a dynamic type, so a Tensor[] tail is its length, then the offset
-// of each element from the end of the length word, then the elements. The
-// elements are read in place, so only the canonical layout is accepted, as for
-// the tuples inside them: each element right after the one before, the first
-// right after the offsets.
-Result<std::vector<Tensor>>
+// The allocator for evalGraph's interpreter: AotAlloc plans the evaluation's
+// memory from the graphcode, while ArenaAlloc bumps a pointer through it
+using GraphAllocator = AotAlloc;
+
+// ABI-decode tail(Tensor[]), which consists of a 256-bit length followed by a
+// sequence of ABI-encoded tensors.
+Result<std::vector<EncodedTensor>>
 abi_decode_dynamic_tensor_array_tail(byte_string_view &input)
 {
     BOOST_OUTCOME_TRY(auto const n_inputs_be, abi_decode_fixed<u256_be>(input));
     auto const n_inputs_256 = n_inputs_be.native();
     if (n_inputs_256.as_words()[1] || n_inputs_256.as_words()[2] ||
         n_inputs_256.as_words()[3]) {
-        return GraphEvalError::InvalidInput;
+        return GraphEvalError::ArityError;
     }
     auto const n_inputs = n_inputs_256.as_words()[0];
     if (n_inputs > MAX_INPUTS) {
@@ -103,16 +107,43 @@ abi_decode_dynamic_tensor_array_tail(byte_string_view &input)
         BOOST_OUTCOME_TRY(offsets[i], abi_decode_fixed<u256_be>(input));
     }
 
-    std::vector<Tensor> inputs;
+    std::vector<EncodedTensor> inputs;
     inputs.reserve(n_inputs);
     for (size_t i = 0; i < n_inputs; i++) {
         if (offsets[i].native() != elements.size() - input.size()) {
             return GraphEvalError::InvalidInput;
         }
-        BOOST_OUTCOME_TRY(auto tensor, abi_decode_tensor(input));
-        inputs.emplace_back(std::move(tensor));
+        BOOST_OUTCOME_TRY(auto const tensor, abi_decode_tensor(input));
+        inputs.push_back(tensor);
     }
     return inputs;
+}
+
+// Thread-local memory arena
+struct ThreadArena
+{
+    uint8_t *const data;
+
+    ThreadArena()
+        : data(static_cast<uint8_t *>(
+              std::aligned_alloc(IREE_ALIGNMENT, ARENA_SIZE)))
+    {
+        MONAD_ASSERT(data != nullptr);
+    }
+
+    ~ThreadArena()
+    {
+        std::free(data);
+    }
+
+    ThreadArena(ThreadArena const &) = delete;
+    ThreadArena &operator=(ThreadArena const &) = delete;
+};
+
+uint8_t *thread_arena()
+{
+    thread_local ThreadArena arena;
+    return arena.data;
 }
 
 MONAD_GRAPH_EVAL_ANONYMOUS_NAMESPACE_END
@@ -162,86 +193,14 @@ Result<void> function_not_payable(uint256_be_t const &value)
     return outcome::success();
 }
 
-Result<Tensor> op_matmul(std::vector<Tensor> const &inputs)
-{
-    if (MONAD_UNLIKELY(inputs.size() != 2)) {
-        return GraphEvalError::ArityError;
-    }
-
-    auto const &x = inputs[0];
-    auto const &y = inputs[1];
-
-    if (x.dtype() != Dtype::int8 || y.dtype() != Dtype::int8) {
-        return GraphEvalError::TypeError;
-    }
-
-    // TODO: support batched matmul
-    if (x.rank() != 2 || y.rank() != 2) {
-        return GraphEvalError::RankError;
-    }
-
-    uint16_t const m = x.dimensions()[0];
-    uint16_t const k = x.dimensions()[1];
-    uint16_t const n = y.dimensions()[1];
-    if (y.dimensions()[0] != k) {
-        return GraphEvalError::ShapeError;
-    }
-
-    // TODO: charge gas for m * k * n and the output size; m and n up to 65535
-    // make this a ~17GB allocation
-    // Empty shapes are handled here rather than passing zero-sized buffers to
-    // IREE.
-    size_t const size = size_t{m} * size_t{n} * dtype_size(Dtype::int32);
-    uint8_t *data =
-        static_cast<uint8_t *>(std::aligned_alloc(IREE_ALIGNMENT, size));
-    Tensor result{Dtype::int32, {2, {m, n}}, data};
-    if (m != 0 && n != 0) {
-        std::vector<Tensor> inputs{x, y};
-        Kernel("module.matmul_i8")(inputs, result);
-    }
-
-    return result;
-}
-
 template <Traits traits>
 Result<byte_string> GraphEvalContract::precompile_eval_op(
     byte_string_view input, Address const &, uint256_be_t const &msg_value)
 {
-    BOOST_OUTCOME_TRY(function_not_payable(msg_value));
-
-    // Static: read uint16_t
-    BOOST_OUTCOME_TRY(auto const opcode_id_be, abi_decode_fixed<u16_be>(input));
-    uint16_t const opcode_id_16 = opcode_id_be.native();
-    if (opcode_id_16 != static_cast<uint16_t>(Op::MatMul)) {
-        return GraphEvalError::InvalidOp;
-    }
-    auto const opcode_id = static_cast<Op>(opcode_id_16);
-
-    // Dynamic: read head(Tensor[]), the offset of its tail, which the
-    // canonical encoding puts right after the two head words
-    BOOST_OUTCOME_TRY(auto const inputs_head, abi_decode_fixed<u256_be>(input));
-    if (inputs_head.native() != 2 * 32) {
-        return GraphEvalError::InvalidInput;
-    }
-
-    // Dynamic: read tail(Tensor[])
-    BOOST_OUTCOME_TRY(
-        auto const inputs, abi_decode_dynamic_tensor_array_tail(input));
-    switch (opcode_id) {
-    case Op::MatMul: {
-        BOOST_OUTCOME_TRY(auto const result, op_matmul(inputs));
-        // abi.encode(result): Tensor is a dynamic tuple, so its offset comes
-        // first, then the tuple itself
-        byte_string output;
-        output += abi_encode_uint(u256_be{sizeof(bytes32_t)});
-        abi_append_tensor(result, output);
-        return output;
-    }
-    default:
-        return GraphEvalError::InvalidOp;
-    }
-
-    return GraphEvalError::TypeError;
+    // TODO: Use the interpreter's kernels for this.
+    (void)input;
+    (void)msg_value;
+    return GraphEvalError::InternalError;
 }
 
 EXPLICIT_MONAD_TRAITS_MEMBER(GraphEvalContract::precompile_eval_op);
@@ -267,11 +226,12 @@ Result<byte_string> GraphEvalContract::precompile_eval_graph(
 
     // Get a hold of the graphcode
     auto const code = state_.read_code(state_.get_code_hash(graph_address));
-    // For now this reads the intercode and interprets it as raw graphcode.
-    auto const *graphcode = code->intercode()->code();
-    auto const graphcode_size = code->intercode()->size();
-
-    Interpreter interpreter{state_, std::move(inputs), graphcode, graphcode_size};
+    auto const graphcode{code->intercode()->graphcode()};
+    if (!graphcode) {
+        return GraphEvalError::InternalError;
+    }
+    Interpreter interpreter{
+        state_, std::move(inputs), *graphcode, thread_arena()};
 
     BOOST_OUTCOME_TRY(auto const outputs, interpreter.run());
 

@@ -22,10 +22,84 @@
 #include <category/execution/monad/staking/util/constants.hpp>
 #include <category/execution/monad/graph_eval/graph_eval.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <array>
 #include <chrono>
+#include <cstdint>
+#include <format>
 #include <iostream>
 
+#include <linux/perf_event.h>
+#include <sys/resource.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
+
+// Benchmarking: the calling thread's hardware counters, kernel time included,
+// read as one group around each precompile call
+class PerfCounters
+{
+    static constexpr size_t N = 5;
+    int leader_ = -1;
+
+public:
+    static constexpr char const *names[N] = {
+        "cycles", "instructions", "LLC misses", "L1d misses", "L1i misses"};
+
+    PerfCounters()
+    {
+        constexpr uint64_t read_miss = (PERF_COUNT_HW_CACHE_OP_READ << 8) |
+                                       (PERF_COUNT_HW_CACHE_RESULT_MISS << 16);
+        std::array<std::pair<uint32_t, uint64_t>, N> const events{{
+            {PERF_TYPE_HARDWARE, PERF_COUNT_HW_CPU_CYCLES},
+            {PERF_TYPE_HARDWARE, PERF_COUNT_HW_INSTRUCTIONS},
+            {PERF_TYPE_HARDWARE, PERF_COUNT_HW_CACHE_MISSES},
+            {PERF_TYPE_HW_CACHE, PERF_COUNT_HW_CACHE_L1D | read_miss},
+            {PERF_TYPE_HW_CACHE, PERF_COUNT_HW_CACHE_L1I | read_miss},
+        }};
+        for (auto const &[type, config] : events) {
+            perf_event_attr attr{};
+            attr.size = sizeof(attr);
+            attr.type = type;
+            attr.config = config;
+            attr.read_format = PERF_FORMAT_GROUP;
+            int const fd = static_cast<int>(
+                syscall(SYS_perf_event_open, &attr, 0, -1, leader_, 0));
+            if (leader_ == -1) {
+                leader_ = fd;
+            }
+        }
+    }
+
+    // Zeros for any counter that couldn't be opened
+    std::array<uint64_t, N> read() const
+    {
+        struct
+        {
+            uint64_t n;
+            std::array<uint64_t, N> values;
+        } data{};
+        if (leader_ < 0 || ::read(leader_, &data, sizeof(data)) < 0) {
+            return {};
+        }
+        return data.values;
+    }
+};
+
+// Benchmarking: set to count the page faults during each precompile call
+constexpr bool COLLECT_PAGE_FAULTS = false;
+
+// Benchmarking: the calling thread's minor and major page faults so far
+/*
+std::array<uint64_t, 2> page_faults()
+{
+    rusage usage{};
+    getrusage(RUSAGE_THREAD, &usage);
+    return {
+        static_cast<uint64_t>(usage.ru_minflt),
+        static_cast<uint64_t>(usage.ru_majflt)};
+}
+*/
 
 template <Traits traits, typename Contract, Address contract_address>
 std::optional<evmc::Result> check_call_monad_precompile(
@@ -54,9 +128,7 @@ std::optional<evmc::Result> check_call_monad_precompile(
         int64_t const gas_left = msg.gas - static_cast<int64_t>(cost);
         int64_t const gas_refund = 0;
         auto const end = std::chrono::high_resolution_clock::now();
-            std::cerr << "Precompile took " << std::chrono::duration_cast<std::chrono::microseconds>(end - start) << std::endl;
         // evmc::Result copies the output into memory of its own
-        auto const copy_start = std::chrono::high_resolution_clock::now();
         evmc::Result result(
             EVMC_SUCCESS,
             gas_left,
@@ -64,10 +136,11 @@ std::optional<evmc::Result> check_call_monad_precompile(
             res.value().data(),
             res.value().size());
         auto const copy_end = std::chrono::high_resolution_clock::now();
-        std::cerr << "  copy output to evmc::Result: "
+        std::cout << "Precompile took " << std::chrono::duration_cast<std::chrono::microseconds>(end - start) << "\n";
+        std::cout << "  copy output to evmc::Result: "
                   << std::chrono::duration_cast<std::chrono::microseconds>(
-                         copy_end - copy_start)
-                  << std::endl;
+                         copy_end - end)
+                  << "\n";
         return result;
     }
     return evmc::Result(

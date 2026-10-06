@@ -49,12 +49,14 @@ set(MONAD_ZKVM_L2_CIPHERS ecdh-poseidon2 plaintext)
 # implementation choice with a default: `poseidon2`, ZisK's Poseidon2
 # precompile. It is a property of the chain, so the host tree that generates a
 # corpus and the guest that proves it are configured alike. It decides a block's
-# hash, the state blinder and its commitment, and the logs bloom
-# (category/execution/ethereum/core/chain_hash.hpp, zkvm/guest/l2_config.cpp),
+# hash, the state blinder and its commitment, the logs bloom and the sequencing
+# anchor (category/execution/ethereum/core/chain_hash.hpp,
+# zkvm/guest/l2_config.cpp, category/execution/ethereum/sequencing_anchor.cpp),
 # and it is the default of the two below, which keep their own switch so that
 # an arm can move one domain at a time. `keccak` is Ethereum's throughout.
-# Nothing here reaches what the EVM, a contract or the L1 hub computes: the
-# KECCAK256 opcode, code hashes, CREATE and CREATE2 addresses and the namespace
+# Of what the EVM, a contract or the L1 hub computes it reaches the sequencing
+# anchor alone (zkvm/DECISIONS.md, 1 and 4): the KECCAK256 opcode, code hashes,
+# CREATE and CREATE2 addresses and the message
 # anchor stay keccak256 whatever it says. A guest configured otherwise than its
 # corpus halts on the first header, pre-state root or salt commitment it
 # recomputes, so getting it wrong proves nothing false.

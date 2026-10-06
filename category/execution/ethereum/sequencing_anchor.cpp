@@ -16,6 +16,9 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/keccak.hpp>
+#ifdef MONAD_L2_HASH_POSEIDON2
+    #include <category/core/poseidon2.hpp>
+#endif
 #include <category/execution/ethereum/sequencing_anchor.hpp>
 
 #include <cstddef>
@@ -23,6 +26,21 @@
 #include <span>
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
+
+/// The chain's hash (MONAD_ZKVM_L2_HASH), for the leaves and for the anchor
+/// alike: the Poseidon2 sponge in a chain built on Poseidon2 -- ZisK's
+/// precompile in the guest, the same permutation in software on the host --
+/// and keccak256 otherwise.
+bytes32_t chain_hash(byte_string_view const bytes)
+{
+#ifdef MONAD_L2_HASH_POSEIDON2
+    bytes32_t out;
+    monad_poseidon2_256(bytes.data(), bytes.size(), out.bytes);
+    return out;
+#else
+    return to_bytes(keccak256(bytes));
+#endif
+}
 
 /// Big-endian, like every other multi-byte quantity this protocol puts on the
 /// wire, and written out rather than taken from a helper so that the byte order
@@ -60,11 +78,11 @@ bytes32_t sequencing_anchor(
     append_be64(buf, block_number);
 
     for (auto const &ciphertext : ciphertexts) {
-        bytes32_t const leaf = to_bytes(keccak256(ciphertext));
+        bytes32_t const leaf = chain_hash(ciphertext);
         buf.append(leaf.bytes, sizeof(leaf.bytes));
     }
 
-    return to_bytes(keccak256(byte_string_view{buf}));
+    return chain_hash(byte_string_view{buf});
 }
 
 MONAD_NAMESPACE_END

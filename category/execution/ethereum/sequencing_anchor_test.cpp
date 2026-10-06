@@ -15,13 +15,17 @@
 
 // Nothing here pins a digest this code produced -- that would be a test which
 // agrees with whatever the code does. The expected value is rebuilt from the
-// construction's definition with its own keccak calls, so the two derivations
-// have to agree; and the properties below are the ones the design is FOR, which
-// a vector cannot express.
+// construction's definition with its own calls to the chain's hash (keccak256,
+// or the Poseidon2 sponge in a chain built with MONAD_ZKVM_L2_HASH=poseidon2),
+// so the two derivations have to agree; and the properties below are the ones
+// the design is FOR, which a vector cannot express.
 
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/keccak.hpp>
+#ifdef MONAD_L2_HASH_POSEIDON2
+    #include <category/core/poseidon2.hpp>
+#endif
 #include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 #include <category/execution/ethereum/sequencing_anchor.hpp>
 
@@ -53,8 +57,20 @@ namespace
         return out;
     }
 
+    /// The chain's hash, called here rather than through the function.
+    bytes32_t chain_hash(byte_string_view const bytes)
+    {
+#ifdef MONAD_L2_HASH_POSEIDON2
+        bytes32_t out;
+        monad_poseidon2_256(bytes.data(), bytes.size(), out.bytes);
+        return out;
+#else
+        return to_bytes(keccak256(bytes));
+#endif
+    }
+
     /// The anchor, rebuilt from the definition rather than from the function:
-    /// keccak256(LABEL || chain_be64 || number_be64 || keccak256(ct_i)...).
+    /// H(LABEL || chain_be64 || number_be64 || H(ct_i)...), H the chain's hash.
     bytes32_t expected_anchor(
         uint64_t const chain, uint64_t const number,
         std::span<byte_string_view const> const ciphertexts)
@@ -70,14 +86,14 @@ namespace
             buf.push_back(static_cast<unsigned char>(number >> (8 * i)));
         }
         for (auto const &ciphertext : ciphertexts) {
-            bytes32_t const leaf = to_bytes(keccak256(ciphertext));
+            bytes32_t const leaf = chain_hash(ciphertext);
             buf.append(leaf.bytes, sizeof(leaf.bytes));
         }
-        return to_bytes(keccak256(byte_string_view{buf}));
+        return chain_hash(byte_string_view{buf});
     }
 }
 
-TEST(SequencingAnchor, IsTheLabelledKeccakOverLeafHashes)
+TEST(SequencingAnchor, IsTheLabelledChainHashOverLeafHashes)
 {
     std::vector<byte_string> const leaves{
         bytes_of({0x01}), bytes_of({0x02, 0x03}), bytes_of({0x04, 0x05, 0x06})};
@@ -151,7 +167,10 @@ TEST(SequencingAnchor, ARejectedLeafStillCounts)
 // tree's keccak256, so a wrong PERMUTATION -- SHA-3's padding rather than
 // Keccak's, say -- would cancel out and pass. These two were computed from the
 // construction by an implementation outside this tree, so they pin the hash
-// itself and not only the layout.
+// itself and not only the layout. A keccak chain's: a Poseidon2 chain's anchor
+// is the Poseidon2 sponge's, whose permutation poseidon2_test pins against
+// proofman-fields and the ZisK precompile.
+#ifndef MONAD_L2_HASH_POSEIDON2
 TEST(SequencingAnchor, MatchesVectorsFromAnOutsideImplementation)
 {
     std::vector<byte_string_view> const none;
@@ -165,3 +184,4 @@ TEST(SequencingAnchor, MatchesVectorsFromAnOutsideImplementation)
         sequencing_anchor(CHAIN, NUMBER, views_of(leaves)),
         0xae88f7d7465128834f86fe6362b94bce69389d75c2369759ef66ec0d8c3b6e00_bytes32);
 }
+#endif

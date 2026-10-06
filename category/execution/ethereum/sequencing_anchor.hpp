@@ -31,8 +31,10 @@
 // and eventually the node all need it. A rule duplicated across translation
 // units that no build step keeps in step is the likeliest way this breaks.
 //
-//   anchor = keccak256(LABEL ‖ chainId_be64 ‖ number_be64
-//                            ‖ keccak256(ct_1) ‖ … ‖ keccak256(ct_n))
+//   anchor = H(LABEL ‖ chainId_be64 ‖ number_be64 ‖ H(ct_1) ‖ … ‖ H(ct_n))
+//
+// with H the chain's hash, MONAD_ZKVM_L2_HASH: keccak256 in a keccak chain, the
+// Poseidon2 sponge (monad_poseidon2_256) in a Poseidon2 one.
 //
 // Four properties, each of which could have been chosen otherwise -- see
 // zkvm/DECISIONS.md, which records why:
@@ -48,19 +50,25 @@
 //   them lets the prover certify its own choices. Every leaf goes in, in L1
 //   order, and the rules are applied deterministically afterwards.
 //
-//   KECCAK256 and not Poseidon2, against the grain of every other hash this
-//   chain chooses, because the verifier is the EVM. Poseidon2 has no precompile
-//   there: a permutation costs thousands of gas in Solidity against 30 gas per
-//   word for the opcode, paid on the L1 at every transition.
+//   THE CHAIN'S HASH, like the other hashes this chain defines. In a keccak
+//   chain that is the hash the verifier has: the EVM's opcode, 30 gas a word,
+//   so a hub recomputes its half at L1 prices. A Poseidon2 chain takes
+//   Poseidon2 here too: cheap where the chain is proved, on ZisK's precompile
+//   and with no Keccak-f at all, which matters most where the chain's other
+//   keccak runs in software (MONAD_ZKVM_KECCAKF_SOFTWARE); and dear where it is
+//   checked, since the EVM has no Poseidon2 -- a permutation costs thousands of
+//   gas in Solidity, and a hub recomputing this pays that at every transition.
+//   zkvm/DECISIONS.md records the trade.
 //
 //   ONE sponge over the whole preamble and leaf-hash vector, rather than a
 //   hash chained one leaf at a time. The chained form is what an L1-side
 //   accumulator could maintain incrementally, and this one forecloses that: the
 //   EVM's keccak256 is all-or-nothing over a memory range, so a hub computing
 //   this must hold every leaf hash at once. In exchange it costs 0.765 fewer
-//   permutations per sequenced transaction -- the chained form pays a whole
-//   64-byte permutation per leaf where this one absorbs 32 bytes into a sponge
-//   that is running anyway. Free under the Keccakf precompile, where a block
+//   keccak permutations per sequenced transaction (136-byte rate), or 0.636
+//   fewer Poseidon2 ones (88-byte rate) -- the chained form pays a whole
+//   permutation per leaf where this one absorbs 32 bytes into a sponge that is
+//   running anyway. Free under the Keccakf precompile, where a block
 //   stays well inside one 14,462-permutation instance either way; not free
 //   under MONAD_ZKVM_KECCAKF_SOFTWARE, which is what decided it.
 //
@@ -81,8 +89,9 @@
 MONAD_NAMESPACE_BEGIN
 
 /// Absorbed first so this digest cannot be mistaken for, or replayed as, any
-/// other keccak256 this protocol computes. Bumped if the construction changes
-/// at all.
+/// other digest this protocol computes under the same hash. Bumped if the
+/// construction changes at all; the hash is the chain's, a property of the
+/// chain rather than of this construction, so the two chains share it.
 inline constexpr char SEQUENCING_ANCHOR_LABEL[] =
     "monad-domain/sequencing-anchor/v1";
 

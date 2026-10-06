@@ -39,9 +39,12 @@ L1 sequenced for this domain at this block, in L1 order, before any drop rule is
 applied:
 
 ```
-anchor = keccak256("monad-domain/sequencing-anchor/v1" ‖ chainId_be64 ‖ number_be64
-                   ‖ keccak256(ct_1) ‖ … ‖ keccak256(ct_n))
+anchor = H("monad-domain/sequencing-anchor/v1" ‖ chainId_be64 ‖ number_be64
+           ‖ H(ct_1) ‖ … ‖ H(ct_n))
 ```
+
+with `H` the chain's hash, `MONAD_ZKVM_L2_HASH`: keccak256 in a keccak chain, the
+Poseidon2 sponge in a Poseidon2 one.
 
 Implemented in [`sequencing_anchor.hpp`](../category/execution/ethereum/sequencing_anchor.hpp),
 beside the message anchor and for its reason: the rule has to match what the L1
@@ -61,15 +64,30 @@ applied deterministically inside the proof. The statement becomes "here is the
 input I was given, here is the root after applying the protocol's rules" rather
 than "here is what I decided to run".
 
-**keccak256, not Poseidon2**, against the grain of every other hash in this tree,
-because the verifier is the EVM — see 4. The cost moves the other way in the
-circuit and is small: a block's ciphertexts are a few kilobytes, so a few dozen
-keccak-f permutations, negligible beside execution.
+**The chain's hash.** In a keccak chain that is the hash the verifier has: the
+hub recomputes its half with the EVM's opcode, 30 gas a word — see 4. A Poseidon2
+chain (`MONAD_ZKVM_L2_HASH=poseidon2`, the default) takes Poseidon2 here too, like
+everything else it defines, and that is the one exception to 4. It moves the
+cost from the circuit to the L1. Measured on payouts blocks of the chain with
+everything on Poseidon2, the anchor takes 3.5 calls to ZisK's Poseidon2
+precompile per sequenced transaction where keccak256 takes 2.3 Keccak-f
+permutations. On the Keccakf precompile the two cost the same steps, and the
+precompile brings a Keccakf instance into every proof; in software
+(`MONAD_ZKVM_KECCAKF_SOFTWARE`) keccak256 costs about 9,700 steps more per
+transaction, 30 % of a 50-transaction block's steps. Under ZisK 1.3.1's key that
+changes no instance plan up to 250 transactions — one Main instance holds them
+either way — and 2.4 % of the proving area at 1,000; only smaller instances show
+it earlier. On the L1 a hub recomputing a Poseidon2 chain's anchor runs those 3.5
+permutations per transaction in Solidity, at every transition: a bit-exact
+Solidity port of Poseidon2 over Goldilocks, width 16, measured 52,271 gas a
+permutation, which puts the anchor near 180,000 gas per sequenced transaction
+where keccak256 costs on the order of a hundred.
 
 **One sponge, not a hash chained one leaf at a time.** Measured rather than
 asserted: the two differ by `1 - 32/136` = **0.765 keccak permutations per
 sequenced transaction**, the chained form paying a whole 64-byte permutation per
-leaf where this one absorbs 32 bytes into a sponge already running. Everything
+leaf where this one absorbs 32 bytes into a sponge already running — and by
+`1 - 32/88` = 0.636 Poseidon2 permutations in a Poseidon2 chain. Everything
 else cancels, since both hash each leaf once. For a 250-transaction block that is
 about 191 permutations.
 
@@ -96,8 +114,10 @@ the preamble alone rather than to zero, which keeps "nothing at this height" a
 statement the proof makes rather than a value indistinguishable from an unset
 field.
 
-**Rules out.** Poseidon2 here; a digest over the executed set; a chained digest,
-and with it the incremental L1 accumulator below.
+**Rules out.** A hash other than the chain's: Poseidon2 in a keccak chain, and in
+a Poseidon2 chain keccak256, with the anchor a hub checks at opcode prices; a
+digest over the executed set; a chained digest, and with it the incremental L1
+accumulator below.
 
 **Narrows** [How the hub obtains the input set](#how-the-hub-obtains-the-input-set),
 which is otherwise open.
@@ -175,7 +195,9 @@ therefore ours, and nothing external says where the boundary falls.
 **Chosen.** A hash may be Poseidon2 only if this chain is the only thing that
 computes it. Anything the EVM, a contract or the L1 hub recomputes stays
 keccak256: the `KECCAK256` opcode, code hashes, `CREATE`/`CREATE2` addresses,
-transaction hashes, the message anchor, and the sequencing anchor of 1.
+transaction hashes, the message anchor, and a keccak chain's sequencing anchor.
+The one exception is a Poseidon2 chain's sequencing anchor, which follows the
+chain's hash (1): a hub checking it pays the price this rule exists to avoid.
 
 The rule exists because the alternative is deciding it case by case, and the case
 that gets decided wrong is the one where a cheap in-circuit hash turns into

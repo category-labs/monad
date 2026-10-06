@@ -192,9 +192,10 @@ publishes a predictable commitment and nothing anywhere says so.
 
 **The sequencing anchor binds the inputs.** Without it the tuple pins the result
 of a computation and not what it ran on; a validator quorum covers that socially
-and a single proof does not. It is `keccak256` — the one hash here that is not
-the chain's, because the verifier is the EVM — over the leaves the block
-carried, rejected ones included. See
+and a single proof does not. It is taken with the chain's hash — `keccak256` in
+a keccak chain, which the EVM computes for 30 gas a word; Poseidon2 in a
+Poseidon2 chain, which a hub checking it pays for in Solidity — over the leaves
+the block carried, rejected ones included. See
 [`sequencing_anchor.hpp`](../category/execution/ethereum/sequencing_anchor.hpp)
 and [DECISIONS.md](DECISIONS.md).
 

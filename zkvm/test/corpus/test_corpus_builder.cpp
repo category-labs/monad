@@ -324,7 +324,7 @@ TEST(CorpusBuilder, TheBlockInTheWitnessIsTheBlockThatWasSealed)
 // it wrong and the guest aborts with nothing in the failure naming the cause.
 // ---------------------------------------------------------------------------
 
-TEST(CorpusBuilder, AncestorHeadersChainToTheParentAndThePreState)
+TEST(CorpusBuilder, TheAncestorRunNamesTheParent)
 {
     auto b = make_builder([](State &s) {
         s.add_to_balance(corpus::address_of(KEY_A), 1000000000000000000_u256);
@@ -357,6 +357,22 @@ TEST(CorpusBuilder, AncestorHeadersChainToTheParentAndThePreState)
     byte_string_view rest = parsed.value().encoded_headers;
 #endif
 
+#ifdef MONAD_ZKVM_L2
+    // Hashes. There is no chain to walk and no state root to read: what the
+    // run still has to get right is that every entry is a hash and that its
+    // newest is the parent's, since the guest numbers them from the end.
+    std::vector<bytes32_t> hashes;
+    while (!rest.empty()) {
+        auto item = rlp::parse_string_metadata(rest);
+        ASSERT_TRUE(item.has_value());
+        ASSERT_EQ(item.value().size(), sizeof(bytes32_t));
+        bytes32_t h;
+        std::memcpy(h.bytes, item.value().data(), sizeof(h.bytes));
+        hashes.push_back(h);
+    }
+    ASSERT_FALSE(hashes.empty());
+    EXPECT_EQ(hashes.back(), last.header.parent_hash);
+#else
     std::vector<BlockHeader> ancestors;
     while (!rest.empty()) {
         auto item = rlp::parse_string_metadata(rest);
@@ -378,6 +394,7 @@ TEST(CorpusBuilder, AncestorHeadersChainToTheParentAndThePreState)
         to_bytes(header_hash(rlp::encode_block_header(ancestors.back()))),
         last.header.parent_hash);
     EXPECT_EQ(ancestors.back().state_root, last.pre_root);
+#endif
 }
 
 // ---------------------------------------------------------------------------
@@ -404,6 +421,27 @@ namespace
         byte_string_view rest = parsed.value().encoded_headers;
 #endif
         std::vector<uint64_t> numbers;
+#ifdef MONAD_ZKVM_L2
+        // Hashes, read positionally: the newest is for number - 1, so the run
+        // names its own heights by its length and the block's.
+        byte_string_view body = parsed.value().base.block_rlp;
+        auto payload = rlp::parse_list_metadata(body);
+        MONAD_ASSERT(payload.has_value());
+        auto const header = rlp::decode_block_header(payload.value());
+        MONAD_ASSERT(header.has_value());
+        size_t count = 0;
+        while (!rest.empty()) {
+            auto item = rlp::parse_string_metadata(rest);
+            MONAD_ASSERT(item.has_value());
+            MONAD_ASSERT(item.value().size() == sizeof(bytes32_t));
+            ++count;
+        }
+        for (uint64_t k = header.value().number - count;
+             k < header.value().number;
+             ++k) {
+            numbers.push_back(k);
+        }
+#else
         while (!rest.empty()) {
             auto item = rlp::parse_string_metadata(rest);
             MONAD_ASSERT(item.has_value());
@@ -412,6 +450,7 @@ namespace
             MONAD_ASSERT(h.has_value());
             numbers.push_back(h.value().number);
         }
+#endif
         return numbers;
     }
 
@@ -603,13 +642,13 @@ TEST(CorpusScenarios, TheGenesisSpokeIsTheDeployedSpoke)
 // same hash, which on a low-volume chain says which blocks did nothing.
 // ---------------------------------------------------------------------------
 
-TEST(CorpusBlinder, TheHeaderCarriesThePerBlockBlinder)
+TEST(CorpusBlinder, TheCommitmentIsPerBlockAndHidesTheRoot)
 {
     auto b = make_builder([](State &s) {
         s.add_to_balance(corpus::address_of(KEY_A), 1000000000000000000_u256);
     });
 
-    std::vector<bytes32_t> salts;
+    std::vector<bytes32_t> commitments;
     for (int i = 0; i < 3; ++i) {
         corpus::BlockSpec spec;
         Transaction tx{
@@ -624,36 +663,88 @@ TEST(CorpusBlinder, TheHeaderCarriesThePerBlockBlinder)
         spec.keys.push_back(KEY_A);
         auto const e = b.add_block(std::move(spec));
 
-        // extra_data is exactly the blinder, which is what makes the block
-        // hash blinded -- and what the guest asserts before it will proceed.
-        ASSERT_EQ(e.header.extra_data.size(), 32u);
-        bytes32_t carried{};
-        std::memcpy(carried.bytes, e.header.extra_data.data(), 32);
-        EXPECT_EQ(carried, b.block_salt(e.header.number));
-        salts.push_back(carried);
+        // What the chain publishes is the root under the blinder, never the
+        // root. The blinder no longer rides in extra_data: there is no block
+        // hash published for it to protect.
+        EXPECT_EQ(e.header.extra_data.size(), 0u);
+        EXPECT_NE(e.state_commitment, e.post_root);
+        EXPECT_NE(e.state_commitment, bytes32_t{});
+        commitments.push_back(e.state_commitment);
     }
 
-    // Per block, not per chain.
-    EXPECT_NE(salts[0], salts[1]);
-    EXPECT_NE(salts[1], salts[2]);
-    EXPECT_NE(salts[0], salts[2]);
+    // Per block, not per chain -- otherwise two blocks of identical state
+    // publish the same value, which on a low-volume chain says which blocks
+    // did nothing.
+    EXPECT_NE(commitments[0], commitments[1]);
+    EXPECT_NE(commitments[1], commitments[2]);
+    EXPECT_NE(commitments[0], commitments[2]);
 }
 
-// A different secret gives a different blinder at the same height, which is
-// what makes the commitment to the secret worth checking.
-TEST(CorpusBlinder, TheBlinderFollowsTheSecret)
+// The property the hub chains on, and the reason the pre-state commitment is
+// blinded with the PARENT's number rather than its own: block N's first
+// published value has to be block N-1's last, byte for byte, or the hub's
+// check stops being one equality and starts needing a derivation of its own.
+TEST(CorpusBlinder, ConsecutiveBlocksChainThroughTheirCommitments)
+{
+    auto b = make_builder([](State &s) {
+        s.add_to_balance(corpus::address_of(KEY_A), 1000000000000000000_u256);
+    });
+
+    bytes32_t previous_post{};
+    for (int i = 0; i < 3; ++i) {
+        corpus::BlockSpec spec;
+        Transaction tx{
+            .max_fee_per_gas = 100,
+            .gas_limit = 21000,
+            .value = 1,
+            .to = corpus::address_of(KEY_B),
+            .type = TransactionType::eip1559,
+            .max_priority_fee_per_gas = 1};
+        tx.sc.chain_id = 1;
+        spec.txs.push_back(tx);
+        spec.keys.push_back(KEY_A);
+        auto const e = b.add_block(std::move(spec));
+
+        if (i > 0) {
+            EXPECT_EQ(e.pre_state_commitment, previous_post);
+        }
+        EXPECT_NE(e.pre_state_commitment, e.state_commitment);
+        previous_post = e.state_commitment;
+    }
+}
+
+TEST(CorpusBlinder, TheCommitmentFollowsTheSecret)
 {
     auto seeder = [](State &s) {
         s.add_to_balance(corpus::address_of(KEY_A), 1000000000000000000_u256);
     };
+    auto block = [](corpus::CorpusBuilder &b) {
+        corpus::BlockSpec spec;
+        Transaction tx{
+            .max_fee_per_gas = 100,
+            .gas_limit = 21000,
+            .value = 1,
+            .to = corpus::address_of(KEY_B),
+            .type = TransactionType::eip1559,
+            .max_priority_fee_per_gas = 1};
+        tx.sc.chain_id = 1;
+        spec.txs.push_back(tx);
+        spec.keys.push_back(KEY_A);
+        return b.add_block(std::move(spec));
+    };
+
     corpus::CorpusBuilder a{seeder, OPERATOR_SK, SALT_SECRET};
     bytes32_t other = SALT_SECRET;
     other.bytes[31] ^= 1u;
     corpus::CorpusBuilder c{seeder, OPERATOR_SK, other};
 
-    EXPECT_NE(
-        a.block_salt(corpus::GENESIS_NUMBER + 1),
-        c.block_salt(corpus::GENESIS_NUMBER + 1));
+    auto const ea = block(a);
+    auto const ec = block(c);
+
+    // Same chain, same block, same state -- so the roots agree and only the
+    // secret separates what is published.
+    ASSERT_EQ(ea.post_root, ec.post_root);
+    EXPECT_NE(ea.state_commitment, ec.state_commitment);
 }
 #endif
 

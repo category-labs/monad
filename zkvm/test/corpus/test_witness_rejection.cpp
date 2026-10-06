@@ -317,43 +317,6 @@ TEST(WitnessRejection, TheUntamperedWitnessIsAccepted)
     EXPECT_EQ(r.status, 0) << r.output;
 }
 
-// checked_pre_state_root. Without it a witness that simply omits the parent
-// leaves NOTHING tying the trie the guest executes against to any header --
-// the prover would supply a trie of its choosing and the run would be
-// internally consistent. Omission, not corruption, is the bypass: every
-// remaining ancestor is genuine.
-TEST(WitnessRejection, AWitnessWithNoParentIsRefused)
-{
-    auto const e = build_chain(4);
-    auto const n = ancestor_count(e.witness);
-    ASSERT_GE(n, 2u);
-    auto const tampered = drop_ancestors(e.witness, {n - 1});
-    ASSERT_EQ(ancestor_count(tampered), n - 1);
-
-    auto const r = run_guest(tampered, "no-parent");
-    EXPECT_NE(r.status, 0) << "the bypass is open";
-    EXPECT_NE(r.output.find("checked_pre_state_root"), std::string::npos)
-        << r.output;
-}
-
-// The contiguity check. A gap leaves the BLOCKHASH buffer keyed on numbers the
-// headers declare about themselves, so every hash BLOCKHASH returns for an
-// ancestor would be the prover's to choose. The parent stays in place, so
-// checked_pre_state_root passes and contiguity is what has to catch this --
-// which is why dropping the OLDEST entry instead would prove nothing: that
-// just makes a shorter, valid run.
-TEST(WitnessRejection, AGapInTheAncestorRunIsRefused)
-{
-    auto const e = build_chain(4);
-    auto const n = ancestor_count(e.witness);
-    ASSERT_GE(n, 3u);
-    auto const tampered = drop_ancestors(e.witness, {n - 2});
-
-    auto const r = run_guest(tampered, "gap");
-    EXPECT_NE(r.status, 0) << "a gap in the ancestor run was accepted";
-    EXPECT_NE(r.output.find("prev_number + 1"), std::string::npos) << r.output;
-}
-
 #ifdef MONAD_ZKVM_L2
 // The blinder's binding, and the one rejection here that is not about
 // soundness. An unbound blinder is perfectly sound -- the commitment chain
@@ -384,16 +347,24 @@ TEST(WitnessRejection, AWitnessWhoseSaltSecretDoesNotMatchIsRefused)
 // above the block's height after the parent -- so this test is what would
 // notice it going. Not a soundness hole even then: the interpreter bounds
 // BLOCKHASH below the current height before the buffer is read.
-TEST(WitnessRejection, AnAncestorAtTheBlockHeightIsRefused)
+// The ancestor run is a list of 32-byte hashes, read positionally -- the newest
+// is for number - 1. So what it can still refuse is an entry that is not a
+// hash. What it can no longer refuse is a SHORT or GAPPED run: dropping an
+// entry shifts every remaining one to a number that is not its own, silently,
+// and no chaining is left to catch it. CONFORMANCE.md carries that as a gap.
+TEST(WitnessRejection, AnAncestorEntryThatIsNotAHashIsRefused)
 {
     auto const e = build_chain(4);
     auto const n = ancestor_count(e.witness);
+    // A whole header, which is not 32 bytes.
     auto const tampered = append_ancestor(e.witness, own_header(e.witness));
     ASSERT_EQ(ancestor_count(tampered), n + 1);
 
-    auto const r = run_guest(tampered, "own-height");
-    EXPECT_NE(r.status, 0) << "an ancestor at the current height was accepted";
-    EXPECT_NE(r.output.find("headers.empty()"), std::string::npos) << r.output;
+    auto const r = run_guest(tampered, "not-a-hash");
+    EXPECT_NE(r.status, 0)
+        << "an ancestor entry that is not a hash was accepted";
+    EXPECT_NE(r.output.find("sizeof(monad::bytes32_t)"), std::string::npos)
+        << r.output;
 }
 
 namespace

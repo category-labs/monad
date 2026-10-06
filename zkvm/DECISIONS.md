@@ -129,6 +129,14 @@ otherwise derive the same salt at the same height.
 blinded — the L1 opens it to release withdrawals. The blinder protects the
 **state**, not the **messages**.
 
+Implemented as `l2_state_commitment` in [`l2_config.hpp`](guest/l2_config.hpp)
+and published in place of any root; the blinder no longer rides in the header's
+`extra_data`, because with no block hash published there is nothing there for it
+to protect. The output's seven values and their offsets are in the README's
+[public output](README.md#the-public-output) section — 177 bytes of ZisK's 256 —
+and dropping the block hash also dropped the sealing, so the L2 arm no longer
+encodes and hashes a header it would not publish.
+
 **Rules out.** Publishing the raw root, which is what both other repos assume.
 
 **Costs elsewhere.** No contract change: `newStateRoot` is written to
@@ -198,6 +206,9 @@ secret matches the domain's published key, a prover supplies any secret, decrypt
 to a different set of transactions, and proves a valid post-state for a block
 nobody wrote.
 
+The guest publishes both at the end of its output. What does not exist is the
+other half: the hub comparing them against a registration.
+
 **Rules out.** Compiling either value in, and dropping the binding.
 
 **Costs elsewhere.** `registerDomain` has no field for either. That is the same
@@ -224,10 +235,65 @@ Each instance is listed in CONFORMANCE.md.
 
 ---
 
+## 7. The public inputs are the transition, both ends of it
+
+**What is undetermined.** `stateTransitionDigest` names one root, the new one.
+A validator signing it is trusted to have started from the right state; nothing
+in the digest says which. A proof replacing that validator inherits the gap: it
+can attest a perfectly valid transition out of a state the hub never accepted,
+and the hub cannot tell.
+
+**Chosen.** Publish both ends, around the inputs that join them:
+
+```
+pre-state commitment │ sequencing anchor │ post-state commitment
+```
+
+The pre-state commitment is blinded with the **parent's** number, so it is byte
+for byte what that block's own run published as its final state. The hub's
+check is then one equality against what it already holds, with no derivation of
+its own and no second secret.
+
+This is also what makes the continuity safe to drop from the circuit. Today the
+guest ties its pre-state root to an ancestor header the prover also supplied,
+which is internal consistency and not a link to anything the hub accepted; once
+the hub compares the published commitment, that walk is no longer carrying the
+argument -- which matters, because reshaping the witness removes the ancestor
+headers it walks.
+
+**Rules out.** Publishing only the final state, and with it any reading where
+the hub trusts the prover's choice of starting point.
+
+---
+
 # Left open
 
 Not oversights. Questions we do not own, recorded so the decisions above can be
 read against them.
+
+## What authorises the L1 inputs the prover supplies
+
+Reshaping the witness made this one sharper, and it should not be discovered
+later. The guest is handed the L1 header it executes against -- number,
+timestamp, beneficiary, prev_randao, gas_limit, base_fee_per_gas -- and a run of
+ancestor hashes that `BLOCKHASH` is served from. **Nothing published commits to
+any of them.** The sequencing anchor binds the ciphertexts and only those.
+
+Before the reshape the ancestor run was self-chaining: each header named the one
+before it and the newest hashed to the block's own parent hash, so a prover had
+to supply a consistent run even if nothing tied it to the real L1. The run is
+now a positional list of hashes, so even that is gone -- a short or gapped run
+shifts every entry to a height that is not its own, silently, and any hash at
+all can be returned from `BLOCKHASH`.
+
+The fix is cheap whenever it is wanted, and it is worth writing down now: absorb
+`keccak256(header_rlp)` and the ancestor hashes into the sequencing anchor's
+preamble. The hub holds all of them already -- it *is* the L1 -- so it costs one
+more comparison there and a few permutations here, and it closes the header and
+the ancestors in the same value that already closes the inputs.
+
+Not done, because it widens what decision 1 settled and that is worth doing
+deliberately rather than in passing.
 
 ## How the hub obtains the input set
 
@@ -253,6 +319,12 @@ list is complete, and nothing in the hub does.
 So this is the decision that is genuinely still open, and decision 1 has made it
 narrower rather than easier. If the time window proves unworkable, the way back
 is to revisit decision 1's last sub-choice, not to patch around it here.
+
+**Settled for the guest's purposes: the list is supplied raw.** The guest does
+not verify an L1 block -- it is handed the payloads and executes them -- so the
+witness carries only this domain's. That is what made the witness reshape
+possible. It is not an answer to how the hub comes to hold its own half, which
+is still open.
 
 ## Do reverted sequencing calls count?
 

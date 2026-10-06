@@ -41,7 +41,7 @@
 #ifdef MONAD_ZKVM_L2
     #include <category/execution/ethereum/core/contract/big_endian.hpp>
     #include <category/execution/ethereum/sequencing_anchor.hpp>
-    #include <zkvm/guest/decode_block_l2.hpp>
+    #include <zkvm/guest/domain_body.hpp>
     #include <zkvm/guest/l2_config.hpp>
     #include <zkvm/guest/monad_l2_chain.hpp>
 #endif
@@ -349,14 +349,10 @@ extern "C" void monad_zkvm_execute_witness(void)
     // who can guess it, and nothing anywhere says so. Hence a compiled
     // commitment rather than trust.
     //
-    // Asserted against extra_data, not written into it: the header arrives in
-    // the witness and is hashed as given (see the sealing comment below), so
-    // the only way to make the block hash blinded is to require that the
-    // header already carries the right blinder.
-    monad::bytes32_t const salt = monad::l2_state_salt(
-        std::span<unsigned char const, 32>{
-            witness.value().salt_secret.data(), 32},
-        l2_header.number);
+    // The secret is checked here and the blinder applied at the end, to the
+    // state root rather than to the header's extra_data: what this chain
+    // publishes is a commitment to the root, so that is what has to be blinded.
+    // A blinder in the header would protect a block hash nobody publishes.
     #ifdef MONAD_L2_HASH_POSEIDON2
     MONAD_ASSERT(
         monad::l2_salt_commitment(std::span<unsigned char const, 32>{
@@ -369,27 +365,61 @@ extern "C" void monad_zkvm_execute_witness(void)
         monad::to_bytes(monad::keccak256(witness.value().salt_secret)) ==
         monad::L2_SALT_COMMITMENT);
     #endif
-    MONAD_ASSERT(
-        l2_header.extra_data.size() == sizeof(salt.bytes) &&
-        std::memcmp(
-            l2_header.extra_data.data(), salt.bytes, sizeof(salt.bytes)) == 0);
     MONAD_ASSERT(secret.has_value());
-    auto block_result = monad::decode_block_l2(
+    auto body_result = monad::decode_domain_body(
         block_view,
         cipher_ctx,
         *secret,
         root_transactions,
         plaintexts,
         l2_encodings);
+    MONAD_ASSERT(body_result.has_value());
+    MONAD_ASSERT(block_view.empty());
+    auto const &block = body_result.value().block;
+    // The previous DOMAIN block, which is not number - 1: an L1 block that
+    // sequenced nothing for this domain produced no domain block at all.
+    uint64_t const parent_number = body_result.value().parent_number;
+    MONAD_ASSERT(parent_number < block.header.number);
 #else
     auto block_result = monad::rlp::decode_block(block_view, root_transactions);
-#endif
     MONAD_ASSERT(block_result.has_value());
     MONAD_ASSERT(block_view.empty());
     auto const &block = block_result.value();
+#endif
 
     monad::WitnessBlockHashBuffer block_hash_buffer;
     monad::bytes32_t pre_state_root{};
+#ifdef MONAD_ZKVM_L2
+    // Ancestor HASHES, not headers. All BLOCKHASH needs is the hash, and the
+    // continuity the headers used to carry -- the pre-state root against the
+    // parent's state_root, that header against this block's parent_hash -- is
+    // the hub's now: it compares the pre-state commitment this run publishes
+    // against the one it already holds. 32 bytes an ancestor instead of 544.
+    //
+    // The run is contiguous and its newest entry is for number - 1, because a
+    // domain block executes against an L1 header and the L1 leaves no gaps even
+    // where this domain's own numbering does.
+    {
+        std::vector<monad::bytes32_t> hashes;
+        monad::byte_string_view run = w.encoded_headers;
+        while (!run.empty()) {
+            auto const h = monad::rlp::parse_string_metadata(run);
+            MONAD_ASSERT(h.has_value());
+            MONAD_ASSERT(h.value().size() == sizeof(monad::bytes32_t));
+            monad::bytes32_t hash;
+            std::memcpy(hash.bytes, h.value().data(), sizeof(hash.bytes));
+            hashes.push_back(hash);
+        }
+        MONAD_ASSERT(hashes.size() <= block.header.number);
+        uint64_t n = block.header.number - hashes.size();
+        for (auto const &hash : hashes) {
+            block_hash_buffer.set(n++, hash);
+        }
+        // Taken as given. Nothing in here ties it to a state anyone accepted;
+        // that tie is the published pre-state commitment's.
+        pre_state_root = pdb.state_root();
+    }
+#else
     monad::BlockHeader parent_header{};
     {
         bool checked_pre_state_root = false;
@@ -429,6 +459,7 @@ extern "C" void monad_zkvm_execute_witness(void)
         }
         MONAD_ASSERT(checked_pre_state_root);
     }
+#endif
 
 #ifdef MONAD_ZKVM_L2
     // A chain id of its own and a revision that is a constant, not a lookup:
@@ -446,19 +477,21 @@ extern "C" void monad_zkvm_execute_witness(void)
     monad_eth_revision const rev =
         chain.get_revision(block.header.number, block.header.timestamp);
 #endif
+#ifndef MONAD_ZKVM_L2
     // The parent is the one the loop above authenticated: its hash is this
     // block's parent_hash and its state root is the pre-state trie's.
+    //
+    // Nothing of the sort on the domain path: the header is the L1's, which the
+    // L1 validated against its own parent, and there is no parent domain header
+    // to compare it to -- the domain's previous block may be many L1 blocks
+    // back, and carries no header at all.
     auto const valid = [&]() -> monad::Result<void> {
-#ifdef MONAD_ZKVM_L2
-        return monad::static_validate_block_with_parent<L2Traits>(
-            chain, block, parent_header);
-#else
         SWITCH_EVM_TRAITS(
             static_validate_block_with_parent, chain, block, parent_header);
         MONAD_ABORT("unsupported revision");
-#endif
     }();
     MONAD_ASSERT(valid.has_value());
+#endif
 
     // The bytes each executed transaction was decoded from. On a plaintext
     // block they are the committed ones; on an L2 block the committed ones are
@@ -497,43 +530,63 @@ extern "C" void monad_zkvm_execute_witness(void)
 
     monad::bytes32_t const &state_root = root_result.value().state_root;
 
+#ifndef MONAD_ZKVM_L2
+    // Sealing the computed root into the header is what makes the block hash
+    // sufficient on its own. The L2 arm publishes no block hash -- it has no
+    // header of its own to hash -- so it does not seal, and does not pay the
+    // encode and the permutation.
     auto sealed_header = block.header;
-    // commit to the computed state root
     sealed_header.state_root = state_root;
     monad::byte_string const header_rlp =
         monad::rlp::encode_block_header(sealed_header);
     MONAD_KECCAK_SITE(HEADER_HASH, header_rlp.size());
     monad_hash256 const block_hash = monad::header_hash(header_rlp);
+#endif
 
 #ifdef MONAD_ZKVM_L2
-    // The L2 publishes NEITHER state root, and that is the point rather than
-    // an omission.
+    // What a validator would sign, and nothing else. The proof stands in for a
+    // quorum of them, so what it makes public is the digest's arguments:
+    // stateTransitionDigest(domainChainId, domainBlockNumber, newStateRoot,
+    // domainAnchor), plus the two values that digest does not reach -- the
+    // input set, and the keys this run was bound to.
     //
-    // A root is a commitment, and a commitment to a guessable value confirms
-    // guesses -- see l2_state_salt for why this chain's state is guessable
-    // from public data. So what goes out is the hash chain instead: this
-    // block's hash, and the parent hash it names. Both are blinded, because
-    // both headers carry the per-block blinder in extra_data.
+    // No block hash, and no parent hash. They were published to chain a block
+    // to its parent, and this chain does not chain that way: the hub orders
+    // transitions with its own stateNonce and a strictly increasing block
+    // number, and a domain block has no header of its own to hash.
+    monad::u64_be const chain_id{monad::L2_CHAIN_ID};
+    write_output(chain_id.bytes, sizeof(chain_id.bytes));
+    monad::u64_be const number{block.header.number};
+    write_output(number.bytes, sizeof(number.bytes));
+
+    // The transition's two ends, so the hub chains by comparing the first
+    // against the commitment it already holds for this domain. Nothing in here
+    // establishes that link -- the pre-state root is checked against an
+    // ancestor header the prover also supplied, which is internal consistency
+    // and not a tie to what the hub accepted.
     //
-    // Nothing is lost, because the continuity the roots would carry is
-    // established IN HERE and not by the verifier comparing them:
-    //
-    //   - the pre-state root is asserted equal to the newest ancestor
-    //     header's state_root, and that header to hash to
-    //     block.header.parent_hash (the ancestor walk above);
-    //   - the post-state root is sealed into the header just above, so the
-    //     block hash commits to it.
-    //
-    // The L1 therefore needs one comparison to chain a block to its parent --
-    // this block's parent hash against the previous block's hash -- and it
-    // reads no root to do it. Which also means the L1 never sees a root: the
-    // hub's newStateRoot argument carries this block hash, a strictly stronger
-    // commitment since it covers the root and every other header field, and
-    // anything that ever wants the root itself would need the header revealed.
-    // Withdrawals do not; they go through the anchor.
-    write_output(
-        block.header.parent_hash.bytes, sizeof(block.header.parent_hash.bytes));
-    write_output(block_hash.bytes, sizeof(block_hash.bytes));
+    // Blinded with the PARENT's number, so this value is byte for byte what
+    // that block's own run published as its final state. The hub's check is
+    // then one equality and needs no derivation of its own.
+    monad::bytes32_t const pre_commitment = monad::l2_state_commitment(
+        std::span<unsigned char const, 32>{
+            witness.value().salt_secret.data(), 32},
+        parent_number,
+        pre_state_root);
+    write_output(pre_commitment.bytes, sizeof(pre_commitment.bytes));
+
+    // The state root under this block's blinder, never the root itself. A
+    // commitment to a guessable value confirms guesses, and on this chain the
+    // state is guessable: the participants are registered on the L1, deposits
+    // are public L1 transfers, and the ciphertexts were sequenced in the clear.
+    // The hub stores this and reads it back without ever opening it, so an
+    // opaque commitment serves it exactly as a bare root would.
+    monad::bytes32_t const commitment = monad::l2_state_commitment(
+        std::span<unsigned char const, 32>{
+            witness.value().salt_secret.data(), 32},
+        block.header.number,
+        state_root);
+    write_output(commitment.bytes, sizeof(commitment.bytes));
 
     // The anchor is NOT blinded, and cannot be: the L1 verifies merkle proofs
     // against it to release withdrawals. It is guessable the same way a root
@@ -544,28 +597,33 @@ extern "C" void monad_zkvm_execute_witness(void)
     monad::bytes32_t const &anchor = root_result.value().namespace_anchor;
     write_output(anchor.bytes, sizeof(anchor.bytes));
 
-    // Big-endian, like every other multi-byte quantity the header and the ABI
-    // use; the keccak-site tail below is little-endian but explicitly
-    // diagnostic, so it is not a precedent. Eight bytes rather than a padded
-    // ABI word because this buffer is a packed struct -- the verifier
-    // left-pads in one line.
-    monad::u64_be const number{block.header.number};
-    write_output(number.bytes, sizeof(number.bytes));
-
     // The inputs this run was handed, so a verifier can tell WHICH ciphertexts
-    // produced the state above. Nothing else published here does: a root
-    // commits to a result, and the block hash beside it commits to a header
-    // this prover wrote.
+    // produced the commitment above. Nothing else published here does.
     //
     // Over root_transactions and not over the executed set, which is the whole
     // point -- it holds every leaf the list carried, including the ones the
     // cipher refused, so a prover cannot narrow the input set and then attest a
     // digest of its own choosing. See sequencing_anchor.hpp.
-    //
-    // Last, so the four values above keep their offsets.
     monad::bytes32_t const sequencing = monad::sequencing_anchor(
         monad::L2_CHAIN_ID, block.header.number, root_transactions);
     write_output(sequencing.bytes, sizeof(sequencing.bytes));
+
+    // The two keys this run was bound to, published rather than left implicit
+    // in the ELF so that rotating either does not change the verification key.
+    // The hub checks them against what it has registered for this domain;
+    // without that check the rotation argument would cost the binding, and a
+    // prover supplying any secret could decrypt to a different set of
+    // transactions and prove a valid post-state for a block nobody wrote.
+    unsigned char viewing_pk[33];
+    viewing_pk[0] = monad::L2_OPERATOR_PK_ODD ? 0x03 : 0x02;
+    std::memcpy(
+        viewing_pk + 1,
+        monad::L2_OPERATOR_PK_X.bytes,
+        sizeof(monad::L2_OPERATOR_PK_X.bytes));
+    write_output(viewing_pk, sizeof(viewing_pk));
+    write_output(
+        monad::L2_SALT_COMMITMENT.bytes,
+        sizeof(monad::L2_SALT_COMMITMENT.bytes));
 #else
     // Public value: the block hash alone is sufficient as the computed root is
     // sealed into the header it hashes.
@@ -576,9 +634,11 @@ extern "C" void monad_zkvm_execute_witness(void)
     // commits 64 words of public output and ziskos asserts past them, so the
     // tail must fit behind what this build publishes.
     #ifdef MONAD_ZKVM_L2
-    constexpr std::size_t publics = sizeof(block.header.parent_hash.bytes) +
-                                    sizeof(block_hash.bytes) +
-                                    sizeof(anchor.bytes) + sizeof(number.bytes);
+    constexpr std::size_t publics =
+        sizeof(chain_id.bytes) + sizeof(number.bytes) +
+        sizeof(pre_commitment.bytes) + sizeof(commitment.bytes) +
+        sizeof(anchor.bytes) + sizeof(sequencing.bytes) + sizeof(viewing_pk) +
+        sizeof(monad::L2_SALT_COMMITMENT.bytes);
     #else
     constexpr std::size_t publics = sizeof(block_hash.bytes);
     #endif

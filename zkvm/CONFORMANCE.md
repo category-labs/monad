@@ -26,16 +26,27 @@ BlockHeader{.state_root = state_root, .number = header.number}
 Everything else is zero. It exists so finalized-root validation has something to
 compare against, nothing more.
 
-What follows, all of which this tree currently assumes otherwise:
+What follows, **now done** — the witness carries a domain body rather than a
+block ([`domain_body.hpp`](guest/domain_body.hpp)):
 
-- no transactions root over ciphertexts — the ciphertexts are in L1 calldata, not
-  in a block body;
+- no transactions root over ciphertexts — they arrive as a list, not a block
+  body — and no ommers or withdrawals to reject, because nothing can carry them;
 - no receipts root committed anywhere, so `gas_used` is not committed either, and
-  gas accounting matters only where it moves balances or changes control flow;
-- no parent-hash continuity: the hub orders transitions with `stateNonces` and a
-  strictly increasing block number;
-- `BLOCKHASH` is served from **L1** hashes, so the witness carries 32-byte hashes,
-  not 544-byte ancestor headers.
+  gas accounting matters only where it moves balances or changes control flow.
+  The block-shaped epilogue checks are gated off this path: taken from an L1
+  header they would describe the L1 block;
+- no parent-hash continuity, and no `static_validate_block_with_parent`: the hub
+  orders transitions with `stateNonces` and a strictly increasing block number,
+  and the pre-state commitment is what it chains on;
+- `BLOCKHASH` is served from **L1** hashes, so the witness carries 32-byte
+  hashes, not 544-byte ancestor headers — about 470 bytes a block smaller on the
+  scenarios, and more wherever a block ships a longer run;
+- the body carries the previous **domain** block's number, which is not
+  `number - 1`: the sequence is sparse.
+
+What it costs is recorded in [DECISIONS.md](DECISIONS.md) under what authorises
+the L1 inputs: the header and the ancestor run are the prover's, and nothing
+published commits to either.
 
 ## The trait family is Monad, not EVM
 
@@ -72,7 +83,9 @@ Silent in the client — a log warning, nothing more:
 4. sender not recoverable;
 5. signed chain id is not the domain's.
 
-The witness therefore has to carry the outer L1 gas limit per payload. Whether a
+The first three are **done**, in `decode_domain_body`, and the witness carries
+the outer L1 gas limit per payload for the third. The last two sit downstream in
+execution and are not yet the silent skips the client makes them. Whether a
 reverted outer call is in the set at all is unresolved — see DECISIONS.md,
 "Do reverted sequencing calls count?".
 

@@ -121,20 +121,19 @@ inline constexpr bytes32_t L2_SALT_COMMITMENT = MONAD_L2_SALT_COMMITMENT;
 /// checks the witness's secret against the compiled one.
 bytes32_t l2_salt_commitment(std::span<unsigned char const, 32> salt_secret);
 
-/// The per-block state blinder, which goes in the header's extra_data and so
-/// into the block hash.
+/// The per-block state blinder, which blinds the state root this chain
+/// publishes a commitment to.
 ///
-/// Why a blinder at all: the block hash is the value this chain publishes, and
-/// hashing is not hiding. Almost every header field is public or derivable --
-/// the number, the parent hash, the protocol constants, and the transactions
-/// root, whose leaves are ciphertexts that were sequenced through the L1 in
-/// the clear. The rest (state_root, receipts_root, logs_bloom, gas_used) are
-/// all functions of ONE hypothesis about what the block did. So an observer
-/// who can enumerate the plausible sets of transfers -- and on a permissioned
-/// chain whose participants are registered on the L1 and whose deposits are
-/// public L1 transfers, that set can be small -- computes each candidate
-/// header and compares. Preimage resistance is no defence: nothing is being
-/// inverted.
+/// Why a blinder at all: a root is a commitment, and hashing is not hiding. On
+/// this chain the state is guessable from public data -- the participants are
+/// registered on the L1, deposits are public L1 transfers, and the ciphertexts
+/// were sequenced through the L1 in the clear -- so an observer who can
+/// enumerate the plausible sets of transfers computes each candidate root and
+/// compares. Preimage resistance is no defence: nothing is being inverted.
+///
+/// Why it binds the domain: nothing enforces that two domains hold distinct
+/// secrets -- the client does not check key uniqueness -- so without it two of
+/// them would derive the same blinder at the same height.
 ///
 /// Why it takes the block number: without it the blinder is constant, and two
 /// blocks with the same state publish the same hash. On a low-volume chain
@@ -151,6 +150,20 @@ bytes32_t l2_salt_commitment(std::span<unsigned char const, 32> salt_secret);
 /// learning THAT one reads every transaction in the clear.
 bytes32_t l2_state_salt(
     std::span<unsigned char const, 32> salt_secret, std::uint64_t block_number);
+
+/// The value this chain publishes in place of its state root: that root under
+/// the block's blinder.
+///
+/// It is what the L1 hub stores as a domain's commitment and reads back, and
+/// the hub never opens it -- not by a merkle proof, not by the bridge, which
+/// works off the message anchor. So an opaque commitment serves it exactly as a
+/// bare root would, and the chain keeps the confidentiality the rest of its
+/// design buys. What does have to reopen it is the execution client, which
+/// recomputes this from the root it committed, so it needs the same secret the
+/// witness carries.
+bytes32_t l2_state_commitment(
+    std::span<unsigned char const, 32> salt_secret, std::uint64_t block_number,
+    bytes32_t const &state_root);
 
 /// The block-constant cipher context. Every field is a compiled constant or a
 /// header field, so nothing in it is the prover's.

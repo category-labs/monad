@@ -153,7 +153,7 @@ function(monad_l2_sources GUEST_DIR OUT_VAR)
       ${_suite}
       "${GUEST_DIR}/l2_sponge.cpp"
       "${GUEST_DIR}/l2_config.cpp"
-      "${GUEST_DIR}/decode_block_l2.cpp"
+      "${GUEST_DIR}/domain_body.cpp"
       "${GUEST_DIR}/monad_l2_chain.cpp"
       PARENT_SCOPE)
 endfunction()

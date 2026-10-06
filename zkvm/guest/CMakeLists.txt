@@ -1045,12 +1045,12 @@ else()
         ${_l2_suite_sources})
     target_link_libraries(l2_cipher_test ${_l2_host_libs})
 
-    monad_add_test(decode_block_l2_test
-        "${CMAKE_CURRENT_SOURCE_DIR}/../test/l2/decode_block_l2_test.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/decode_block_l2.cpp"
+    monad_add_test(domain_body_test
+        "${CMAKE_CURRENT_SOURCE_DIR}/../test/l2/domain_body_test.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/domain_body.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/l2_sponge.cpp"
         ${_l2_suite_sources})
-    target_link_libraries(decode_block_l2_test ${_l2_host_libs})
+    target_link_libraries(domain_body_test ${_l2_host_libs})
 
 endif()
 

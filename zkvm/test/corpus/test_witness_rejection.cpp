@@ -183,9 +183,10 @@ namespace
         return replace_field(witness, 3, rlp_list(kept));
     }
 
-    /// The block's own header, as it sits in field [0]. Appending it to the
-    /// ancestor list makes a run that is contiguous and correctly named and
-    /// still wrong -- an ancestor is strictly older than the block.
+#ifdef MONAD_ZKVM_L2
+    /// The block's own header, as it sits in field [0]. On the domain arm the
+    /// ancestor run is 32-byte hashes, so appending a whole header to it makes
+    /// an entry that is not one -- which is what that arm can still refuse.
     byte_string own_header(byte_string const &witness)
     {
         byte_string_view const b{witness};
@@ -228,6 +229,7 @@ namespace
         kept += extra;
         return replace_field(witness, 3, rlp_list(kept));
     }
+#endif
 
     size_t ancestor_count(byte_string const &witness)
     {
@@ -347,11 +349,52 @@ TEST(WitnessRejection, AWitnessWhoseSaltSecretDoesNotMatchIsRefused)
 // above the block's height after the parent -- so this test is what would
 // notice it going. Not a soundness hole even then: the interpreter bounds
 // BLOCKHASH below the current height before the buffer is read.
-// The ancestor run is a list of 32-byte hashes, read positionally -- the newest
-// is for number - 1. So what it can still refuse is an entry that is not a
-// hash. What it can no longer refuse is a SHORT or GAPPED run: dropping an
-// entry shifts every remaining one to a number that is not its own, silently,
-// and no chaining is left to catch it. CONFORMANCE.md carries that as a gap.
+// The ancestor run differs by arm, and so does what it can refuse.
+//
+// On the Ethereum arm it is still headers, each naming the one before it and
+// the newest hashing to this block's parent hash, so a missing or gapped run is
+// caught. On the domain arm it is a positional list of 32-byte hashes: what it
+// can still refuse is an entry that is not a hash, and what it can no longer
+// refuse is a short or gapped run, which silently shifts every remaining entry
+// to a number that is not its own. DECISIONS.md carries that as a gap.
+#ifndef MONAD_ZKVM_L2
+// checked_pre_state_root. Without it a witness that simply omits the parent
+// leaves NOTHING tying the trie the guest executes against to any header --
+// the prover would supply a trie of its choosing and the run would be
+// internally consistent. Omission, not corruption, is the bypass: every
+// remaining ancestor is genuine.
+TEST(WitnessRejection, AWitnessWithNoParentIsRefused)
+{
+    auto const e = build_chain(4);
+    auto const n = ancestor_count(e.witness);
+    ASSERT_GE(n, 2u);
+    auto const tampered = drop_ancestors(e.witness, {n - 1});
+    ASSERT_EQ(ancestor_count(tampered), n - 1);
+
+    auto const r = run_guest(tampered, "no-parent");
+    EXPECT_NE(r.status, 0) << "the bypass is open";
+    EXPECT_NE(r.output.find("checked_pre_state_root"), std::string::npos)
+        << r.output;
+}
+
+// The contiguity check. A gap leaves the BLOCKHASH buffer keyed on numbers the
+// headers declare about themselves, so every hash BLOCKHASH returns for an
+// ancestor would be the prover's to choose. The parent stays in place, so
+// checked_pre_state_root passes and contiguity is what has to catch this --
+// which is why dropping the OLDEST entry instead would prove nothing: that
+// just makes a shorter, valid run.
+TEST(WitnessRejection, AGapInTheAncestorRunIsRefused)
+{
+    auto const e = build_chain(4);
+    auto const n = ancestor_count(e.witness);
+    ASSERT_GE(n, 3u);
+    auto const tampered = drop_ancestors(e.witness, {n - 2});
+
+    auto const r = run_guest(tampered, "gap");
+    EXPECT_NE(r.status, 0) << "a gap in the ancestor run was accepted";
+    EXPECT_NE(r.output.find("prev_number + 1"), std::string::npos) << r.output;
+}
+#else
 TEST(WitnessRejection, AnAncestorEntryThatIsNotAHashIsRefused)
 {
     auto const e = build_chain(4);
@@ -366,6 +409,7 @@ TEST(WitnessRejection, AnAncestorEntryThatIsNotAHashIsRefused)
     EXPECT_NE(r.output.find("sizeof(monad::bytes32_t)"), std::string::npos)
         << r.output;
 }
+#endif
 
 namespace
 {

@@ -107,15 +107,38 @@ base fee, so the gap is the normal case rather than an edge one. A contract
 reading `GASPRICE` branches differently and moves the state root. What a contract
 can observe is an execution input, not economics.
 
-**The EIP-7623 floor.** The client still applies it to `gas_used` when gasless;
-only the balance side is gated. This tree drops it entirely. Invisible to the
-published commitment, visible in receipts.
+**The EIP-7623 floor** — **fixed.** The client applies it to `gas_used` whether
+or not gas is priced and gates only the balance side; this tree dropped it
+entirely. Only the debit is economics, so the raise is ungated now and `gas_used`
+reports the floor either way. It reads oddly — an unpriced transaction can report
+more gas than it consumed — but a receipt that disagrees with the one every
+replica stores is a difference nothing here would catch.
 
-And an audit still owed: the client's gasless validation skips `v0`, the balance
-check and the zero-balance check for a non-existent sender, and **keeps** the
-nonce checks and the EOA / EIP-7702 delegation check. This tree gates by a
-build-wide predicate where the client gates by a template parameter, so the two
-sets do not compare mechanically.
+Under `EvmTraits<PARIS>` the floor is compiled out entirely, so this is inert
+today; it stops being inert the moment the trait family moves.
+
+**The validation gates** — **audited, four divergences fixed.** The client gates
+by a template parameter where this tree gates by a build-wide predicate, so the
+two sets had to be compared site by site rather than mechanically. Three checks
+this tree skipped and the client makes regardless are now ungated: `max_fee <
+base_fee`, `max_priority_fee > max_fee`, and the `gas_limit * max_fee` overflow.
+A domain transaction is an ordinary EIP-1559 transaction and passes the ordinary
+validity rules even though its execution is sponsored — skipping them accepted
+transactions the client drops, which is a different transaction set and so a
+different state root. The EIP-7623 gate against `gas_limit` is ungated with the
+floor it guards.
+
+A fifth: the client's gasless path rejects a transaction with no signed chain id
+at all, because a domain-qualified id is what selects the domain's state. This
+tree only compared the id when one was present, so an unprotected pre-EIP-155
+transaction passed. It is now required.
+
+In the other direction, `v0` is zero when gas is unpriced rather than `tx.value`,
+and both balance checks it feeds are skipped, which is what the client's gasless
+path does. What the sponsored path cannot pay for, execution fails on.
+
+What the client keeps on both paths and so does this tree: the nonce checks and
+the EOA / EIP-7702 delegation check.
 
 ## The cipher profile is fixed
 

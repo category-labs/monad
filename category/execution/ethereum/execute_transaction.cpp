@@ -403,26 +403,30 @@ Receipt ExecuteTransaction<traits>::execute_final(
     // this is the gas genuinely consumed.
     auto gas_used = tx_.gas_limit - gas_refund;
 
-    // EIP-7623. The whole rule goes when gas is not priced, floor and all --
-    // it is a calldata TARIFF, and keeping the raise while dropping the debit
-    // would report a gas_used ABOVE what the transaction consumed, which is
-    // the opposite of what "the gas actually used" is for. Its validation gate
-    // in validate_transaction goes with it: that gate exists only to keep
-    // gas_used <= gas_limit true across this raise.
-    if constexpr (gas_is_priced()) {
-        if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
-            auto const gas_cost =
-                gas_price<traits>(tx_, header_.base_fee_per_gas.value_or(0));
-            auto const floor_gas =
-                floor_data_gas_counted<traits>(tx_, tokens_);
-            if (gas_used < floor_gas) {
+    // EIP-7623. Only the DEBIT is economics; the raise is not. The client
+    // gates the one and not the other, so gas_used reports the floor whether or
+    // not gas is priced, and the gate in validate_transaction that keeps
+    // gas_used <= gas_limit true across this raise is ungated with it.
+    //
+    // It does read oddly: an unpriced transaction can report a gas_used above
+    // what it consumed. That is the calldata tariff showing through a chain
+    // that does not charge it, and matching the client is worth more than
+    // reading well -- a receipt that disagrees with the one every replica
+    // stores is a difference nothing would catch here.
+    if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
+        auto const floor_gas = floor_data_gas_counted<traits>(tx_, tokens_);
+        if (gas_used < floor_gas) {
+            if constexpr (gas_is_priced()) {
+                auto const gas_cost = gas_price<traits>(
+                    tx_, header_.base_fee_per_gas.value_or(0));
                 auto const delta = floor_gas - gas_used;
                 state.subtract_from_balance(sender_, gas_cost * delta);
-
-                gas_used = floor_gas;
             }
+            gas_used = floor_gas;
         }
+    }
 
+    if constexpr (gas_is_priced()) {
         uint256_t const reward = calculate_txn_award<traits>(
             tx_, header_.base_fee_per_gas.value_or(0), gas_used);
         if constexpr (traits::mip_11_active()) {
@@ -559,10 +563,11 @@ Result<Receipt> ExecuteTransaction<traits>::execute(SequentialExecutionToken)
     auto result = execute_impl2(state);
 
 #ifdef MONAD_ZKVM_CHECK_SEQUENTIAL_MERGE
-    // What the token asserts, computed. An arm built with this on and run over the corpus is
-    // what turns "no mechanism could make this fail" into a statement that had the chance to be
-    // wrong. The order matters: can_merge is checked before the error return, exactly where
-    // operator() checks it, so a failing transaction is not a hole in the coverage.
+    // What the token asserts, computed. An arm built with this on and run over
+    // the corpus is what turns "no mechanism could make this fail" into a
+    // statement that had the chance to be wrong. The order matters: can_merge
+    // is checked before the error return, exactly where operator() checks it,
+    // so a failing transaction is not a hole in the coverage.
     MONAD_ASSERT(block_state_.can_merge(state));
 #endif
 

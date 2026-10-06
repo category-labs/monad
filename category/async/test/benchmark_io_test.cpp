@@ -27,7 +27,6 @@
 
 #include <CLI/CLI.hpp>
 
-#include <algorithm>
 #include <cerrno>
 #include <chrono>
 #include <cstddef>
@@ -155,12 +154,7 @@ struct shared_state_t
                     ret[n].second--;
                 }
             }
-            ret.erase(
-                std::remove_if(
-                    ret.begin(),
-                    ret.end(),
-                    [](auto const &x) { return x.second == 0; }),
-                ret.end());
+            std::erase_if(ret, [](auto const &x) { return x.second == 0; });
             return ret;
         }())
     {

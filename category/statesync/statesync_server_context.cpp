@@ -33,6 +33,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <functional>
 #include <mutex>
 #include <optional>
@@ -103,14 +104,9 @@ void on_finalize(
     ctx.deletions.write(block_number, it->deletions);
 
     // gc proposals of older blocks than finalized block
-    proposals.erase(
-        std::remove_if(
-            proposals.begin(),
-            proposals.end(),
-            [block_number](ProposedDeletions const &p) {
-                return p.block_number <= block_number;
-            }),
-        proposals.end());
+    std::erase_if(proposals, [block_number](ProposedDeletions const &p) {
+        return p.block_number <= block_number;
+    });
 }
 
 MONAD_ANONYMOUS_NAMESPACE_END

@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -127,14 +128,9 @@ void BlockHashChain::finalize(bytes32_t const &block_id)
     uint64_t const block_number = winner_it->block_number;
 
     // cleanup chains
-    proposals_.erase(
-        std::remove_if(
-            proposals_.begin(),
-            proposals_.end(),
-            [block_number](Proposal const &p) {
-                return p.block_number <= block_number;
-            }),
-        proposals_.end());
+    std::erase_if(proposals_, [block_number](Proposal const &p) {
+        return p.block_number <= block_number;
+    });
 }
 
 BlockHashBuffer const &

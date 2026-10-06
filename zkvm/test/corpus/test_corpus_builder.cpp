@@ -324,7 +324,7 @@ TEST(CorpusBuilder, TheBlockInTheWitnessIsTheBlockThatWasSealed)
 // it wrong and the guest aborts with nothing in the failure naming the cause.
 // ---------------------------------------------------------------------------
 
-TEST(CorpusBuilder, AncestorHeadersChainToTheParentAndThePreState)
+TEST(CorpusBuilder, TheAncestorRunNamesTheParent)
 {
     auto b = make_builder([](State &s) {
         s.add_to_balance(corpus::address_of(KEY_A), 1000000000000000000_u256);
@@ -357,6 +357,22 @@ TEST(CorpusBuilder, AncestorHeadersChainToTheParentAndThePreState)
     byte_string_view rest = parsed.value().encoded_headers;
 #endif
 
+#ifdef MONAD_ZKVM_L2
+    // Hashes. There is no chain to walk and no state root to read: what the
+    // run still has to get right is that every entry is a hash and that its
+    // newest is the parent's, since the guest numbers them from the end.
+    std::vector<bytes32_t> hashes;
+    while (!rest.empty()) {
+        auto item = rlp::parse_string_metadata(rest);
+        ASSERT_TRUE(item.has_value());
+        ASSERT_EQ(item.value().size(), sizeof(bytes32_t));
+        bytes32_t h;
+        std::memcpy(h.bytes, item.value().data(), sizeof(h.bytes));
+        hashes.push_back(h);
+    }
+    ASSERT_FALSE(hashes.empty());
+    EXPECT_EQ(hashes.back(), last.header.parent_hash);
+#else
     std::vector<BlockHeader> ancestors;
     while (!rest.empty()) {
         auto item = rlp::parse_string_metadata(rest);
@@ -378,6 +394,7 @@ TEST(CorpusBuilder, AncestorHeadersChainToTheParentAndThePreState)
         to_bytes(header_hash(rlp::encode_block_header(ancestors.back()))),
         last.header.parent_hash);
     EXPECT_EQ(ancestors.back().state_root, last.pre_root);
+#endif
 }
 
 // ---------------------------------------------------------------------------
@@ -404,6 +421,27 @@ namespace
         byte_string_view rest = parsed.value().encoded_headers;
 #endif
         std::vector<uint64_t> numbers;
+#ifdef MONAD_ZKVM_L2
+        // Hashes, read positionally: the newest is for number - 1, so the run
+        // names its own heights by its length and the block's.
+        byte_string_view body = parsed.value().base.block_rlp;
+        auto payload = rlp::parse_list_metadata(body);
+        MONAD_ASSERT(payload.has_value());
+        auto const header = rlp::decode_block_header(payload.value());
+        MONAD_ASSERT(header.has_value());
+        size_t count = 0;
+        while (!rest.empty()) {
+            auto item = rlp::parse_string_metadata(rest);
+            MONAD_ASSERT(item.has_value());
+            MONAD_ASSERT(item.value().size() == sizeof(bytes32_t));
+            ++count;
+        }
+        for (uint64_t k = header.value().number - count;
+             k < header.value().number;
+             ++k) {
+            numbers.push_back(k);
+        }
+#else
         while (!rest.empty()) {
             auto item = rlp::parse_string_metadata(rest);
             MONAD_ASSERT(item.has_value());
@@ -412,6 +450,7 @@ namespace
             MONAD_ASSERT(h.has_value());
             numbers.push_back(h.value().number);
         }
+#endif
         return numbers;
     }
 

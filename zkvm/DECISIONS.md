@@ -271,6 +271,30 @@ the hub trusts the prover's choice of starting point.
 Not oversights. Questions we do not own, recorded so the decisions above can be
 read against them.
 
+## What authorises the L1 inputs the prover supplies
+
+Reshaping the witness made this one sharper, and it should not be discovered
+later. The guest is handed the L1 header it executes against -- number,
+timestamp, beneficiary, prev_randao, gas_limit, base_fee_per_gas -- and a run of
+ancestor hashes that `BLOCKHASH` is served from. **Nothing published commits to
+any of them.** The sequencing anchor binds the ciphertexts and only those.
+
+Before the reshape the ancestor run was self-chaining: each header named the one
+before it and the newest hashed to the block's own parent hash, so a prover had
+to supply a consistent run even if nothing tied it to the real L1. The run is
+now a positional list of hashes, so even that is gone -- a short or gapped run
+shifts every entry to a height that is not its own, silently, and any hash at
+all can be returned from `BLOCKHASH`.
+
+The fix is cheap whenever it is wanted, and it is worth writing down now: absorb
+`keccak256(header_rlp)` and the ancestor hashes into the sequencing anchor's
+preamble. The hub holds all of them already -- it *is* the L1 -- so it costs one
+more comparison there and a few permutations here, and it closes the header and
+the ancestors in the same value that already closes the inputs.
+
+Not done, because it widens what decision 1 settled and that is worth doing
+deliberately rather than in passing.
+
 ## How the hub obtains the input set
 
 Decision 1 fixes what the guest publishes, not what the hub compares it to — and
@@ -295,6 +319,12 @@ list is complete, and nothing in the hub does.
 So this is the decision that is genuinely still open, and decision 1 has made it
 narrower rather than easier. If the time window proves unworkable, the way back
 is to revisit decision 1's last sub-choice, not to patch around it here.
+
+**Settled for the guest's purposes: the list is supplied raw.** The guest does
+not verify an L1 block -- it is handed the payloads and executes them -- so the
+witness carries only this domain's. That is what made the witness reshape
+possible. It is not an answer to how the hub comes to hold its own half, which
+is still open.
 
 ## Do reverted sequencing calls count?
 

@@ -30,12 +30,12 @@
 #include <category/execution/ethereum/block_reward.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/block.hpp>
+#include <category/execution/ethereum/core/ecrecover.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/receipt_rlp.hpp>
-#include <category/execution/ethereum/core/rlp/withdrawal_rlp.hpp>
-#include <category/execution/ethereum/core/ecrecover.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
+#include <category/execution/ethereum/core/rlp/withdrawal_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/execution/ethereum/db/commit_builder.hpp>
@@ -103,7 +103,9 @@ template <Traits traits>
     requires(is_evm_trait_v<traits>)
 Result<ZkvmBlockOutput> execute_block_zkvm(
     Chain const &chain, Block const &block,
-    std::span<byte_string_view const> const root_transactions,
+    // The committed bytes the transactions root is taken over -- unread on the
+    // domain path, which has no such root to check.
+    [[maybe_unused]] std::span<byte_string_view const> const root_transactions,
     std::span<byte_string_view const> const transaction_encodings, Db &pdb,
     vm::VM &vm, BlockHashBuffer const &block_hash_buffer)
 {
@@ -204,7 +206,17 @@ Result<ZkvmBlockOutput> execute_block_zkvm(
     }
 
     // The transactions and withdrawals executed above, and the receipts
-    // produced, must be the ones the header commits to
+    // produced, must be the ones the header commits to.
+    //
+    // Not on the domain path, where there is no such header. The header a
+    // domain block executes against is the L1's, so its transactions root, its
+    // gas_used, its receipts root and its bloom describe the L1 block and have
+    // nothing to say about this domain -- comparing against them would fail
+    // every block, and a header of the domain's own would only be the prover's
+    // word anyway. What binds the domain's work instead is published: the state
+    // commitment, and the message anchor the epilogue harvests from these very
+    // receipts.
+#ifndef MONAD_ZKVM_L2
     {
         // Against the committed bytes, not against a re-encoding of what was
         // decoded. That is the stronger of the two: re-encoding proves "what I
@@ -221,9 +233,7 @@ Result<ZkvmBlockOutput> execute_block_zkvm(
         // plaintext with nothing left over. The count is NOT compared there: a
         // rejected leaf is committed to and executes nothing, so the two
         // differ by however many were rejected.
-#ifndef MONAD_ZKVM_L2
         MONAD_ASSERT(root_transactions.size() == block.transactions.size());
-#endif
         if (MONAD_UNLIKELY(
                 ordered_trie_root(root_transactions) !=
                 block.header.transactions_root)) {
@@ -277,6 +287,15 @@ Result<ZkvmBlockOutput> execute_block_zkvm(
             return BlockError::WrongLogsBloom;
         }
     }
+#else
+    // The cumulative fixup is not a check and still has to happen: a receipt's
+    // gas_used is cumulative on the wire, and the anchor is harvested from
+    // these receipts.
+    for (uint64_t cumulative = 0; auto &r : receipts) {
+        cumulative += r.gas_used;
+        r.gas_used = cumulative;
+    }
+#endif
 
     State state{
         block_state, Incarnation{block.header.number, Incarnation::LAST_TX}};

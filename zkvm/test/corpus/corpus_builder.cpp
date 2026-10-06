@@ -467,7 +467,15 @@ namespace corpus
         MONAD_ASSERT(sealed_[sealed_.size() - keep].number + keep == number);
         std::vector<byte_string> ancestors;
         for (size_t i = sealed_.size() - keep; i < sealed_.size(); ++i) {
+#ifdef MONAD_ZKVM_L2
+            // Hashes, not headers: BLOCKHASH wants the hash, and nothing on
+            // this arm walks the headers for continuity any more.
+            auto const h =
+                to_bytes(header_hash(rlp::encode_block_header(sealed_[i])));
+            ancestors.emplace_back(h.bytes, sizeof(h.bytes));
+#else
             ancestors.push_back(rlp::encode_block_header(sealed_[i]));
+#endif
         }
         MONAD_ASSERT(!ancestors.empty());
         MONAD_ASSERT(sealed_.back().state_root == pre_root);
@@ -536,13 +544,24 @@ namespace corpus
         published.transactions_root = ordered_trie_root(leaves);
 
         {
-            byte_string txs;
+            // [ L1 header, [ciphertext...], [outer gas limit...], parent ].
+            // Not a block: a domain has none. See domain_body.hpp.
+            byte_string cts;
             for (auto const &leaf : leaves) {
-                txs += rlp::encode_string2(leaf);
+                cts += rlp::encode_string2(leaf);
+            }
+            // The corpus has no L1 envelopes, so each payload is sponsored for
+            // exactly what its transaction asks. That puts every block on the
+            // boundary the drop rule tests -- `>` drops, `==` passes -- rather
+            // than hiding it behind a margin.
+            byte_string limits;
+            for (auto const &tx : block.transactions) {
+                limits += rlp::encode_unsigned(tx.gas_limit);
             }
             byte_string body = rlp::encode_block_header(published);
-            body += rlp::encode_list2(txs);
-            body += rlp::encode_list2(byte_string{}); // no ommers, ever
+            body += rlp::encode_list2(cts);
+            body += rlp::encode_list2(limits);
+            body += rlp::encode_unsigned(number - 1);
             block_rlp = rlp::encode_list2(body);
         }
 

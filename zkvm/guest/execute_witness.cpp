@@ -41,7 +41,7 @@
 #ifdef MONAD_ZKVM_L2
     #include <category/execution/ethereum/core/contract/big_endian.hpp>
     #include <category/execution/ethereum/sequencing_anchor.hpp>
-    #include <zkvm/guest/decode_block_l2.hpp>
+    #include <zkvm/guest/domain_body.hpp>
     #include <zkvm/guest/l2_config.hpp>
     #include <zkvm/guest/monad_l2_chain.hpp>
 #endif
@@ -366,22 +366,60 @@ extern "C" void monad_zkvm_execute_witness(void)
         monad::L2_SALT_COMMITMENT);
     #endif
     MONAD_ASSERT(secret.has_value());
-    auto block_result = monad::decode_block_l2(
+    auto body_result = monad::decode_domain_body(
         block_view,
         cipher_ctx,
         *secret,
         root_transactions,
         plaintexts,
         l2_encodings);
+    MONAD_ASSERT(body_result.has_value());
+    MONAD_ASSERT(block_view.empty());
+    auto const &block = body_result.value().block;
+    // The previous DOMAIN block, which is not number - 1: an L1 block that
+    // sequenced nothing for this domain produced no domain block at all.
+    uint64_t const parent_number = body_result.value().parent_number;
+    MONAD_ASSERT(parent_number < block.header.number);
 #else
     auto block_result = monad::rlp::decode_block(block_view, root_transactions);
-#endif
     MONAD_ASSERT(block_result.has_value());
     MONAD_ASSERT(block_view.empty());
     auto const &block = block_result.value();
+#endif
 
     monad::WitnessBlockHashBuffer block_hash_buffer;
     monad::bytes32_t pre_state_root{};
+#ifdef MONAD_ZKVM_L2
+    // Ancestor HASHES, not headers. All BLOCKHASH needs is the hash, and the
+    // continuity the headers used to carry -- the pre-state root against the
+    // parent's state_root, that header against this block's parent_hash -- is
+    // the hub's now: it compares the pre-state commitment this run publishes
+    // against the one it already holds. 32 bytes an ancestor instead of 544.
+    //
+    // The run is contiguous and its newest entry is for number - 1, because a
+    // domain block executes against an L1 header and the L1 leaves no gaps even
+    // where this domain's own numbering does.
+    {
+        std::vector<monad::bytes32_t> hashes;
+        monad::byte_string_view run = w.encoded_headers;
+        while (!run.empty()) {
+            auto const h = monad::rlp::parse_string_metadata(run);
+            MONAD_ASSERT(h.has_value());
+            MONAD_ASSERT(h.value().size() == sizeof(monad::bytes32_t));
+            monad::bytes32_t hash;
+            std::memcpy(hash.bytes, h.value().data(), sizeof(hash.bytes));
+            hashes.push_back(hash);
+        }
+        MONAD_ASSERT(hashes.size() <= block.header.number);
+        uint64_t n = block.header.number - hashes.size();
+        for (auto const &hash : hashes) {
+            block_hash_buffer.set(n++, hash);
+        }
+        // Taken as given. Nothing in here ties it to a state anyone accepted;
+        // that tie is the published pre-state commitment's.
+        pre_state_root = pdb.state_root();
+    }
+#else
     monad::BlockHeader parent_header{};
     {
         bool checked_pre_state_root = false;
@@ -421,6 +459,7 @@ extern "C" void monad_zkvm_execute_witness(void)
         }
         MONAD_ASSERT(checked_pre_state_root);
     }
+#endif
 
 #ifdef MONAD_ZKVM_L2
     // A chain id of its own and a revision that is a constant, not a lookup:
@@ -438,19 +477,21 @@ extern "C" void monad_zkvm_execute_witness(void)
     monad_eth_revision const rev =
         chain.get_revision(block.header.number, block.header.timestamp);
 #endif
+#ifndef MONAD_ZKVM_L2
     // The parent is the one the loop above authenticated: its hash is this
     // block's parent_hash and its state root is the pre-state trie's.
+    //
+    // Nothing of the sort on the domain path: the header is the L1's, which the
+    // L1 validated against its own parent, and there is no parent domain header
+    // to compare it to -- the domain's previous block may be many L1 blocks
+    // back, and carries no header at all.
     auto const valid = [&]() -> monad::Result<void> {
-#ifdef MONAD_ZKVM_L2
-        return monad::static_validate_block_with_parent<L2Traits>(
-            chain, block, parent_header);
-#else
         SWITCH_EVM_TRAITS(
             static_validate_block_with_parent, chain, block, parent_header);
         MONAD_ABORT("unsupported revision");
-#endif
     }();
     MONAD_ASSERT(valid.has_value());
+#endif
 
     // The bytes each executed transaction was decoded from. On a plaintext
     // block they are the committed ones; on an L2 block the committed ones are
@@ -530,7 +571,7 @@ extern "C" void monad_zkvm_execute_witness(void)
     monad::bytes32_t const pre_commitment = monad::l2_state_commitment(
         std::span<unsigned char const, 32>{
             witness.value().salt_secret.data(), 32},
-        parent_header.number,
+        parent_number,
         pre_state_root);
     write_output(pre_commitment.bytes, sizeof(pre_commitment.bytes));
 

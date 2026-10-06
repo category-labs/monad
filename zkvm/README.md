@@ -462,7 +462,7 @@ associated types and two static functions — and a concept that a candidate
 suite is `static_assert`ed against, so an incomplete one names itself once
 instead of failing at whichever call site the compiler reaches first. Behind it
 sit the wire format, the curve or the absence of one, the field, the sponge and
-the tag; in front of it `decode_block_l2` and `execute_witness.cpp` name no
+the tag; in front of it `decode_domain_body` and `execute_witness.cpp` name no
 cipher at all.
 What the interface does NOT let a suite change is the decision rule — a leaf it
 refuses is a deterministic rejection of one queue entry, never a halt — nor the
@@ -975,7 +975,7 @@ holds the cached and uncached sponges equal, and every leaf of the corpora
 above decrypts under it.
 
 Each transaction's signing payload is built from the plaintext it was decoded
-from, which `decode_block_l2` keeps for the block, rather than re-encoded field
+from, which `decode_domain_body` keeps for the block, rather than re-encoded field
 by field -- the same bytes, as `DecodeBlockL2.EncodingsAreWhatEachTransactionWasDecodedFrom`
 checks for legacy, EIP-155 and typed transactions.
 

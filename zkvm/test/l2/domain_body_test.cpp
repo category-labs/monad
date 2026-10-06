@@ -13,10 +13,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// decode_block_l2 against rlp::decode_block on the same block.
+// decode_domain_body against rlp::decode_block on the same block.
 //
-// The equality test is the point: decode_block_l2 duplicates one list walk and
-// delegates the rest, and nothing in the build keeps the two in step. If a
+// The equality test is the point: decode_domain_body duplicates one list walk
+// and delegates the rest, and nothing in the build keeps the two in step. If a
 // field is ever added to rlp::decode_block and not here, this fails rather than
 // producing a quietly different block.
 
@@ -26,6 +26,7 @@
 #include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
+#include <category/execution/ethereum/core/rlp/int_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/withdrawal_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
@@ -33,7 +34,7 @@
 #include <category/execution/ethereum/rlp/encode2.hpp>
 #include <category/execution/ethereum/sequencing_anchor.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
-#include <zkvm/guest/decode_block_l2.hpp>
+#include <zkvm/guest/domain_body.hpp>
 #include <zkvm/guest/l2_cipher.hpp>
 #include <zkvm/guest/l2_cipher_suite.hpp>
 #include <zkvm/guest/l2_ecdh.hpp>
@@ -136,17 +137,30 @@ namespace
 
     /// The L2 body: the same header and ommers, but a transactions list whose
     /// every item is an RLP string holding one ciphertext.
+    /// [ L1 header, [ciphertext...], [outer gas limit...], parent number ].
+    /// The limits default to a sponsor generous enough that no payload is
+    /// dropped for its envelope; the cases that are about that rule pass their
+    /// own.
     byte_string encode_l2_block(
-        BlockHeader const &header, std::vector<byte_string> const &ciphertexts)
+        BlockHeader const &header, std::vector<byte_string> const &ciphertexts,
+        std::vector<uint64_t> limits = {})
     {
-        byte_string txs;
+        byte_string cts;
         for (auto const &ct : ciphertexts) {
-            txs += rlp::encode_string2(ct);
+            cts += rlp::encode_string2(ct);
+        }
+        if (limits.empty()) {
+            limits.assign(ciphertexts.size(), ~uint64_t{0});
+        }
+        byte_string lims;
+        for (uint64_t const l : limits) {
+            lims += rlp::encode_unsigned(l);
         }
         byte_string body;
         body += rlp::encode_block_header(header);
-        body += rlp::encode_list2(txs);
-        body += rlp::encode_list2(); // ommers
+        body += rlp::encode_list2(cts);
+        body += rlp::encode_list2(lims);
+        body += rlp::encode_unsigned(header.number - 1);
         return rlp::encode_list2(body);
     }
 
@@ -172,7 +186,7 @@ namespace
         return out;
     }
 
-    /// decode_block_l2 for the cases that are about the block and its
+    /// decode_domain_body for the cases that are about the block and its
     /// ciphertexts. The plaintext views it also fills are checked on their
     /// own, in EncodingsAreWhatEachTransactionWasDecodedFrom.
     Result<Block> decode_l2(
@@ -182,15 +196,19 @@ namespace
     {
         byte_string plaintexts;
         std::vector<byte_string_view> encodings;
-        return decode_block_l2(
+        auto r = decode_domain_body(
             enc, ctx, secret, ciphertexts, plaintexts, encodings);
+        if (r.has_error()) {
+            return std::move(r).as_failure();
+        }
+        return std::move(r).value().block;
     }
 }
 
-// bind_secret is the whole reason decode_block_l2 can take a Secret and ask no
-// questions. Two ways it must refuse: a scalar that is not the operator's, and
-// one that is not a scalar at all.
-TEST(DecodeBlockL2, BindSecretRefusesAnythingButTheOperatorKey)
+// bind_secret is the whole reason decode_domain_body can take a Secret and ask
+// no questions. Two ways it must refuse: a scalar that is not the operator's,
+// and one that is not a scalar at all.
+TEST(DomainBody, BindSecretRefusesAnythingButTheOperatorKey)
 {
     auto const ctx = context();
     auto const be = operator_sk_be();
@@ -221,7 +239,7 @@ TEST(DecodeBlockL2, BindSecretRefusesAnythingButTheOperatorKey)
         << "at or above the group order is not a valid scalar";
 }
 
-TEST(DecodeBlockL2, RoundTripsEveryTransaction)
+TEST(DomainBody, RoundTripsEveryTransaction)
 {
     auto const ctx = context();
     auto const secret = bound_secret(ctx);
@@ -243,35 +261,9 @@ TEST(DecodeBlockL2, RoundTripsEveryTransaction)
     }
 }
 
-// The divergence guard. Header, ommers and withdrawals must come out the same
-// as rlp::decode_block gives on the plaintext block.
-TEST(DecodeBlockL2, AgreesWithDecodeBlockOnEverythingElse)
-{
-    auto const ctx = context();
-    auto const secret = bound_secret(ctx);
-    auto const original = sample_block();
-
-    auto const plain_rlp = rlp::encode_block(original);
-    byte_string_view plain_view{plain_rlp};
-    auto const plain = rlp::decode_block(plain_view);
-    ASSERT_FALSE(plain.has_error());
-
-    auto const cts = encrypt_transactions(ctx, original.transactions);
-    auto const l2_rlp = encode_l2_block(original.header, cts);
-    byte_string_view l2_view{l2_rlp};
-    std::vector<byte_string_view> ciphertexts;
-    auto const l2 = decode_l2(l2_view, ctx, secret, ciphertexts);
-    ASSERT_FALSE(l2.has_error());
-
-    EXPECT_EQ(l2.value().header, plain.value().header);
-    EXPECT_EQ(l2.value().ommers, plain.value().ommers);
-    EXPECT_EQ(l2.value().withdrawals, plain.value().withdrawals);
-    EXPECT_EQ(l2.value().transactions, plain.value().transactions);
-}
-
 // The transactions root is taken over these, so they must be views into the
 // input covering every leaf -- including the ones that get rejected.
-TEST(DecodeBlockL2, CiphertextsAreViewsCoveringEveryLeaf)
+TEST(DomainBody, CiphertextsAreViewsCoveringEveryLeaf)
 {
     auto const ctx = context();
     auto const secret = bound_secret(ctx);
@@ -297,7 +289,7 @@ TEST(DecodeBlockL2, CiphertextsAreViewsCoveringEveryLeaf)
 // A tampered leaf is CONSUMED, not fatal: it stays in the root's operand and
 // simply produces no transaction. This is the protocol's rejection rule, and
 // it is the reason the two vectors can differ in length.
-TEST(DecodeBlockL2, TamperedLeafIsRejectedNotFatal)
+TEST(DomainBody, TamperedLeafIsRejectedNotFatal)
 {
     auto const ctx = context();
     auto const secret = bound_secret(ctx);
@@ -322,7 +314,7 @@ TEST(DecodeBlockL2, TamperedLeafIsRejectedNotFatal)
 // A leaf that decrypts to bytes that are not exactly one transaction is
 // rejected the same way. Per-leaf framing is what makes this detectable at
 // all: in the plaintext walk a short declared length desynchronises the walk.
-TEST(DecodeBlockL2, TrailingBytesInAPlaintextAreRejected)
+TEST(DomainBody, TrailingBytesInAPlaintextAreRejected)
 {
     auto const ctx = context();
     auto const secret = bound_secret(ctx);
@@ -351,66 +343,7 @@ TEST(DecodeBlockL2, TrailingBytesInAPlaintextAreRejected)
     EXPECT_TRUE(got.value().transactions.empty());
 }
 
-// A withdrawal credits its recipient directly and nothing on this chain
-// authenticates the list, so an entry is provable balance creation. The block
-// must be rejected outright -- not skipped like a bad leaf, because this is not
-// one entry going wrong, it is the block claiming a power the chain does not
-// have.
-TEST(DecodeBlockL2, RejectsAWithdrawal)
-{
-    auto const ctx = context();
-    auto const secret = bound_secret(ctx);
-    auto const original = sample_block();
-    auto const cts = encrypt_transactions(ctx, original.transactions);
-
-    Withdrawal w{};
-    w.index = 0;
-    w.validator_index = 1;
-    w.recipient = 0x000000000000000000000000000000000baddcaf_address;
-    w.amount = 1;
-
-    byte_string txs;
-    for (auto const &ct : cts) {
-        txs += rlp::encode_string2(ct);
-    }
-    byte_string body;
-    body += rlp::encode_block_header(original.header);
-    body += rlp::encode_list2(txs);
-    body += rlp::encode_list2(); // ommers
-    body += rlp::encode_list2(rlp::encode_withdrawal(w)); // one withdrawal
-    auto const encoded = rlp::encode_list2(body);
-
-    byte_string_view view{encoded};
-    std::vector<byte_string_view> ciphertexts;
-    auto const got = decode_l2(view, ctx, secret, ciphertexts);
-    ASSERT_TRUE(got.has_error());
-    EXPECT_EQ(got.error(), BlockError::WithdrawalsNotSupported);
-}
-
-// An empty list is fine: a Shanghai-or-later header still needs a well-formed
-// withdrawals root.
-TEST(DecodeBlockL2, AcceptsAnEmptyWithdrawalList)
-{
-    auto const ctx = context();
-    auto const secret = bound_secret(ctx);
-    BlockHeader header{};
-    header.number = 11;
-    byte_string body;
-    body += rlp::encode_block_header(header);
-    body += rlp::encode_list2(); // transactions
-    body += rlp::encode_list2(); // ommers
-    body += rlp::encode_list2(); // withdrawals, empty
-    auto const encoded = rlp::encode_list2(body);
-
-    byte_string_view view{encoded};
-    std::vector<byte_string_view> ciphertexts;
-    auto const got = decode_l2(view, ctx, secret, ciphertexts);
-    ASSERT_FALSE(got.has_error());
-    EXPECT_TRUE(got.value().withdrawals.has_value());
-    EXPECT_TRUE(got.value().withdrawals->empty());
-}
-
-TEST(DecodeBlockL2, EmptyTransactionListIsFine)
+TEST(DomainBody, EmptyTransactionListIsFine)
 {
     auto const ctx = context();
     auto const secret = bound_secret(ctx);
@@ -433,7 +366,7 @@ TEST(DecodeBlockL2, EmptyTransactionListIsFine)
 // signing_payload treats differently: legacy without a chain id, EIP-155
 // legacy, which gains the chain id and two zeros, and typed, which keeps its
 // type byte.
-TEST(DecodeBlockL2, EncodingsAreWhatEachTransactionWasDecodedFrom)
+TEST(DomainBody, EncodingsAreWhatEachTransactionWasDecodedFrom)
 {
     auto const ctx = context();
     auto const secret = bound_secret(ctx);
@@ -460,11 +393,11 @@ TEST(DecodeBlockL2, EncodingsAreWhatEachTransactionWasDecodedFrom)
     std::vector<byte_string_view> ciphertexts;
     byte_string plaintexts;
     std::vector<byte_string_view> encodings;
-    auto const got =
-        decode_block_l2(view, ctx, secret, ciphertexts, plaintexts, encodings);
+    auto const got = decode_domain_body(
+        view, ctx, secret, ciphertexts, plaintexts, encodings);
     ASSERT_FALSE(got.has_error());
 
-    auto const &txs = got.value().transactions;
+    auto const &txs = got.value().block.transactions;
     ASSERT_EQ(txs.size(), original.transactions.size() - 1);
     ASSERT_EQ(encodings.size(), txs.size());
     for (size_t i = 0; i < txs.size(); ++i) {
@@ -487,7 +420,61 @@ TEST(DecodeBlockL2, EncodingsAreWhatEachTransactionWasDecodedFrom)
 // anchored its own choice would be indistinguishable from an honest one. The
 // property belongs here and not only on sequencing_anchor's own inputs, because
 // what it is really about is which vector the two are wired together by.
-TEST(DecodeBlockL2, TheSequencingAnchorCoversARejectedLeaf)
+// The drop rule the body exists to make checkable. An inner transaction asking
+// for more gas than its L1 envelope sponsored is dropped before execution, and
+// nothing downstream of here can see that fact -- it lives on the outer
+// transaction, not on the inner one.
+TEST(DomainBody, APayloadOverItsEnvelopesGasLimitIsDropped)
+{
+    auto const ctx = context();
+    auto const secret = bound_secret(ctx);
+    auto const original = sample_block();
+    auto const cts = encrypt_transactions(ctx, original.transactions);
+
+    std::vector<uint64_t> limits;
+    for (auto const &tx : original.transactions) {
+        limits.push_back(tx.gas_limit);
+    }
+    // The middle envelope sponsors one gas short of what its payload asks.
+    limits[1] = original.transactions[1].gas_limit - 1;
+    auto const encoded = encode_l2_block(original.header, cts, limits);
+
+    byte_string_view view{encoded};
+    std::vector<byte_string_view> ciphertexts;
+    auto const got = decode_l2(view, ctx, secret, ciphertexts);
+    ASSERT_FALSE(got.has_error());
+
+    // Dropped, not fatal, and still committed to: the anchor is taken over
+    // what the L1 sequenced, which includes what the rules then threw away.
+    EXPECT_EQ(ciphertexts.size(), 3u);
+    ASSERT_EQ(got.value().transactions.size(), 2u);
+    EXPECT_EQ(got.value().transactions[0], original.transactions[0]);
+    EXPECT_EQ(got.value().transactions[1], original.transactions[2]);
+}
+
+// The previous domain block's number, which is not number - 1 in general: the
+// sequence is sparse, so it has to be carried rather than derived. It is what
+// the pre-state commitment is blinded with.
+TEST(DomainBody, TheParentNumberIsCarried)
+{
+    auto const ctx = context();
+    auto const secret = bound_secret(ctx);
+    auto const original = sample_block();
+    auto const cts = encrypt_transactions(ctx, original.transactions);
+    auto const encoded = encode_l2_block(original.header, cts);
+
+    byte_string_view view{encoded};
+    std::vector<byte_string_view> ciphertexts;
+    byte_string plaintexts;
+    std::vector<byte_string_view> encodings;
+    auto const got = decode_domain_body(
+        view, ctx, secret, ciphertexts, plaintexts, encodings);
+    ASSERT_FALSE(got.has_error());
+    EXPECT_EQ(got.value().parent_number, original.header.number - 1);
+    EXPECT_TRUE(view.empty());
+}
+
+TEST(DomainBody, TheSequencingAnchorCoversARejectedLeaf)
 {
     auto const ctx = context();
     auto const secret = bound_secret(ctx);

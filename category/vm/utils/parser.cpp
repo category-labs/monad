@@ -302,7 +302,7 @@ namespace monad::vm::utils
                                 MONAD_ASSERT(d >= 0);
                                 size_t const n = static_cast<size_t>(d);
                                 if (n == 0) {
-                                    eb.push0();
+                                    eb.push(imm);
                                 }
                                 else {
                                     eb.push(n, imm);

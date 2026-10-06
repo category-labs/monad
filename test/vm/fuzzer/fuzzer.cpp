@@ -28,6 +28,7 @@
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/create_contract_address.hpp>
 #include <category/execution/ethereum/db/test/commit_simple.hpp>
+#include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/vm/compiler/ir/x86/types.hpp>
@@ -430,7 +431,7 @@ template <Traits traits>
 static evmc_status_code fuzz_iteration(
     evmc_message const &msg, BlockHashBuffer const &block_hash_buffer,
     FuzzerTestStateRef spec_state, FuzzerTestStateRef monad_state,
-    BlockHeader const &block_header)
+    BlockHeader const &block_header, FuzzerVmTag const implementation)
 {
     MONAD_ASSERT(
         spec_state->test_state.trie_db.state_root() ==
@@ -448,6 +449,14 @@ static evmc_status_code fuzz_iteration(
     // interpreter. However the monad-ml evm does not agree on specific error
     // codes at present.
     assert_equal(spec_result, monad_result, false);
+
+    // The compiler charges a block's gas and checks its stack bounds on
+    // entry, so a frame can fail before a call the spec makes. The RIPEMD-160
+    // touch from that call survives the frame's failure (YP K.1).
+    if (implementation == FuzzerVmTag::Compiler &&
+        spec_tstate.state.is_touched(ripemd_address)) {
+        monad_tstate.state.touch(ripemd_address);
+    }
 
     assert_equal(spec_tstate.state, monad_tstate.state);
 
@@ -700,7 +709,12 @@ static void do_run(
                 generate_block_header(engine, block_counter.next());
             block_hash_buffer.set_block_number(block_header.number);
             auto const ec = fuzz_iteration<traits>(
-                *msg, block_hash_buffer, spec_state, monad_state, block_header);
+                *msg,
+                block_hash_buffer,
+                spec_state,
+                monad_state,
+                block_header,
+                args.implementation);
             ++exit_code_stats[ec];
         }
     }

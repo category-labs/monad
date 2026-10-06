@@ -98,14 +98,22 @@ balance adjustment, and the beneficiary award in `execute_final`. This tree's
 
 Two divergences:
 
-**`GASPRICE`.** This tree returns `tx.max_fee_per_gas` raw. The client applies no
-gasless branch to `tx_context` at all — it changes only the `chain_id`, so
-`CHAINID` reports the domain — and so returns the ordinary effective price
-computed against the L1 header's base fee. They differ for essentially every
+**`GASPRICE`** — **fixed.** This tree returned `tx.max_fee_per_gas` raw; the
+client applies no gasless branch to `tx_context` at all — it changes only the
+`chain_id`, so `CHAINID` reports the domain — and returns the ordinary effective
+price against the L1 header's base fee. They differ for essentially every
 EIP-1559 transaction, and the sender-side helper sets `maxFeePerGas` to twice the
-base fee, so the gap is the normal case rather than an edge one. A contract
-reading `GASPRICE` branches differently and moves the state root. What a contract
+base fee, so the gap was the normal case rather than an edge one. What a contract
 can observe is an execution input, not economics.
+
+It is safe only because `MaxFeeLessThanBase` is applied on every path now: the
+effective price is a `uint256` subtraction and that check is what stops it
+underflowing. The two had to move together, and did.
+
+No corpus block changed, because nothing the corpus deploys reads `GASPRICE` —
+which is why `tx_context_test` exists: it asserts the effective price and not the
+cap, identically on both arms, and pins that the two are different numbers so the
+assertion cannot quietly become a tautology.
 
 **The EIP-7623 floor** — **fixed.** The client applies it to `gas_used` whether
 or not gas is priced and gates only the balance side; this tree dropped it

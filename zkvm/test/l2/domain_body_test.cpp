@@ -83,8 +83,6 @@ namespace
         ctx.version = 1;
         ctx.chain_id = 1;
         ctx.contract = 0x00000000000000000000000000000000cafef00d_address;
-        ctx.namespace_id = 42;
-        ctx.epoch = 7;
         auto const pk = l2_ecdh(operator_sk(), SECP256K1_G);
         MONAD_ASSERT(pk.has_value());
         l2_point_compress(*pk, std::span<unsigned char, 33>{ctx.operator_pk});

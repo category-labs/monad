@@ -26,7 +26,7 @@
 // prover that executes a subset, or a permutation, produces a root that is
 // perfectly valid for THAT computation and that the hub cannot distinguish.
 //
-// It lives beside namespace_anchor.hpp and for the same reason: the rule has to
+// It lives beside domain_anchor.hpp and for the same reason: the rule has to
 // match what the L1 computes bit for bit, and the guest, the corpus generator
 // and eventually the node all need it. A rule duplicated across translation
 // units that no build step keeps in step is the likeliest way this breaks.

@@ -56,7 +56,7 @@
 
 #ifdef MONAD_ZKVM_L2
     #include <category/execution/ethereum/db/ordered_trie.hpp>
-    #include <category/execution/ethereum/namespace_anchor.hpp>
+    #include <category/execution/ethereum/domain_anchor.hpp>
     #include <zkvm/guest/l2_cipher.hpp>
     #include <zkvm/guest/l2_config.hpp>
     #include <zkvm/guest/l2_ecdh.hpp>
@@ -493,7 +493,7 @@ namespace corpus
 #ifdef MONAD_ZKVM_L2
         {
             auto messages =
-                collect_namespace_messages(receipts, L2_NAMESPACE_SPOKE);
+                collect_domain_messages(receipts, L2_DOMAIN_SPOKE);
             MONAD_ASSERT(messages.has_value());
             anchor = sorted_pair_merkle_root(messages.value());
         }
@@ -597,7 +597,7 @@ namespace corpus
                 to_bytes(header_hash(rlp::encode_block_header(published))),
             .header = published,
             .receipts = std::move(receipts),
-            .namespace_anchor = anchor,
+            .domain_anchor = anchor,
             .parent_hash = published.parent_hash,
             .encrypted_leaves = encrypted,
 #ifdef MONAD_ZKVM_L2

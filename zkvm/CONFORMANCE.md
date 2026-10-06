@@ -154,13 +154,17 @@ benchmark table.
 
 ## Stale constants, which fail quietly
 
-The spoke this tree pins was vendored from `eerkaijun/monad-namespaces` at
-`e6012d8cebf4`, before the namespace/domain rename.
+This tree's own vocabulary is the protocol's now — the anchor module, its API,
+the spoke constant and the published field all say *domain*. What still says
+*namespace* is what names the vendored contract, because that contract has not
+moved: the spoke is vendored from `eerkaijun/monad-namespaces` at
+`e6012d8cebf4`, from before the rename, and re-vendoring needs solc and brings
+`DomainSpoke`'s access-control layer with it.
 
 **The event topic changed.**
 `NamespaceMessageRecorded(address,address,bytes,uint256,bytes32)` is
 `0x2013a1d0b9a3c17ead41b5433daeef9f5b301d7abece37308528e70113a678df`, which is
-what `namespace_anchor.hpp` `static_assert`s. `DomainMessageRecorded(...)` with
+what `domain_anchor.hpp` `static_assert`s. `DomainMessageRecorded(...)` with
 identical parameter types is
 `0x8f2b779508ea0cb38e5b78dbe9c7a04c3ce671ba697fdce1a46dc794e2dd650e`. Against a
 real spoke the harvest finds no logs at all.
@@ -173,7 +177,8 @@ not cover a block that sent no messages, where an empty anchor is correct anyway
 
 - the pending array is still slot 1 by reading (`_nonce` at 0,
   `_pendingDomainMessages` at 1, no base contract carrying storage), to be
-  reconfirmed with `forge inspect`;
+  reconfirmed with `forge inspect`. It is the one pinned constant the rename did
+  not have to move;
 - the spoke is now intended as a protocol predeploy at a fixed address rather than
   a `CREATE` deployment, so deriving it from a deployer key no longer makes sense;
 - `DomainSpoke` gained an access-control layer (`policyOwners`, `accessControl`,

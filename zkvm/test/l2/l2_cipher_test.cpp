@@ -64,8 +64,6 @@ namespace
         ctx.version = 1;
         ctx.chain_id = 1;
         ctx.contract = 0x00000000000000000000000000000000cafef00d_address;
-        ctx.namespace_id = 42;
-        ctx.epoch = 7;
         auto const pk = l2_ecdh(operator_sk(), SECP256K1_G);
         MONAD_ASSERT(pk.has_value());
         l2_point_compress(*pk, std::span<unsigned char, 33>{ctx.operator_pk});
@@ -174,16 +172,6 @@ TEST(L2Cipher, ContextIsBound)
     {
         auto c = ctx;
         c.chain_id ^= 1u;
-        expect_reject(c);
-    }
-    {
-        auto c = ctx;
-        c.namespace_id ^= 1u;
-        expect_reject(c);
-    }
-    {
-        auto c = ctx;
-        c.epoch ^= 1u;
         expect_reject(c);
     }
     {
@@ -367,15 +355,15 @@ TEST(L2Cipher, KnownAnswerLeaves)
     };
 
     Case const cases[] = {
-        {0, "a8df6c4fb9ac2a5cffe18804d3f89ec60f719cf9226c71901ded88bd94203d28"},
-        {1, "09f055724c32cd71fc6a4d0774c91d82a0f7bd084ebcc7ae6e4bacb329ca115b"},
-        {7, "6f77169767d27fa0d4ee655563027c6504d5e3f76d82c63700c99918d7f5d10b"},
+        {0, "67c9f0de19d651af271b1c610c51cecb535e4f6166b31d34dbcce4b3d81bcdae"},
+        {1, "e8850c0abc2327e574f2f829f64c96cdac06589230df5b2740a3f823887695f0"},
+        {7, "858dce359caef32c272f92a43ca05c343ec674e5cb1064e6ad31ffab11e093d7"},
         {84,
-         "733a604b0ea487cb303478b745675bc4ffb76c1de58c4073bb8b464e4624eb1f"},
+         "84d19185e32899b35d7c7758aa58b57adbdc6bf9b839c0500e1dab8f14b84bf8"},
         {85,
-         "2ce4cce2a9d7b9eed3cbc34e70ff9d08ac0cb6f4a8c95bdd72c93d0f2ca43914"},
+         "c2932ee2be87efecd7f488194904fd35f49b279cd5f37093290a14fd0fb415a8"},
         {1000,
-         "e912aa0977b6377915828514b53265aa7b0525015e6c79e007257ad284ac4d52"},
+         "7e2c4b6bebd69a65d0e8e6299104054e65a003ad49411f2cfbec8e2e59eab195"},
     };
     for (Case const &c : cases) {
         std::vector<unsigned char> leaf;

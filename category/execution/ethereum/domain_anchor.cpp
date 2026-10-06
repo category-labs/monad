@@ -13,10 +13,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// See namespace_anchor.hpp for why the rule lives here and why it is not the
+// See domain_anchor.hpp for why the rule lives here and why it is not the
 // ordered trie.
 
-#include <category/execution/ethereum/namespace_anchor.hpp>
+#include <category/execution/ethereum/domain_anchor.hpp>
 
 #include <category/core/assert.h>
 #include <category/core/int.hpp>
@@ -73,7 +73,7 @@ MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
 
-Result<std::vector<bytes32_t>> collect_namespace_messages(
+Result<std::vector<bytes32_t>> collect_domain_messages(
     std::span<Receipt const> const receipts, Address const &spoke)
 {
     std::vector<bytes32_t> leaves;
@@ -146,7 +146,7 @@ bytes32_t sorted_pair_merkle_root(std::vector<bytes32_t> &leaves)
     return leaves[0];
 }
 
-bytes32_t namespace_pending_element_key(
+bytes32_t domain_pending_element_key(
     std::uint64_t const slot, std::uint64_t const index)
 {
     // store_be_as and NOT to_bytes: to_bytes(uint256_t) is a bare bit_cast, so
@@ -159,7 +159,7 @@ bytes32_t namespace_pending_element_key(
     return store_be_as<bytes32_t>(base + index);
 }
 
-void clear_pending_namespace_messages(
+void clear_pending_domain_messages(
     State &state, Address const &spoke, std::uint64_t const slot,
     std::uint64_t const expected_length)
 {
@@ -191,7 +191,7 @@ void clear_pending_namespace_messages(
     // Solidity puts a dynamic array's elements at keccak256(slot) + i.
     for (std::uint64_t i = 0; i < expected_length; ++i) {
         state.set_storage(
-            spoke, namespace_pending_element_key(slot, i), bytes32_t{});
+            spoke, domain_pending_element_key(slot, i), bytes32_t{});
     }
     state.set_storage(spoke, length_key, bytes32_t{});
 }

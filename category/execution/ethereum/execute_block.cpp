@@ -40,7 +40,7 @@
 #include <category/execution/ethereum/execute_block_header.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
-#include <category/execution/ethereum/namespace_anchor.hpp>
+#include <category/execution/ethereum/domain_anchor.hpp>
 #include <category/execution/ethereum/process_requests.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
@@ -367,10 +367,10 @@ Result<std::vector<Receipt>> execute_block(
     {
         BOOST_OUTCOME_TRY(
             auto const leaves,
-            collect_namespace_messages(retvals, L2_NAMESPACE_SPOKE));
-        clear_pending_namespace_messages(
+            collect_domain_messages(retvals, L2_DOMAIN_SPOKE));
+        clear_pending_domain_messages(
             state,
-            L2_NAMESPACE_SPOKE,
+            L2_DOMAIN_SPOKE,
             L2_PENDING_SLOT,
             static_cast<uint64_t>(leaves.size()));
     }

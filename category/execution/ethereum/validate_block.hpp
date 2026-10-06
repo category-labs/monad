@@ -61,7 +61,7 @@ enum class BlockError
     InvalidRequestsHash,
     InvalidDepositLog,
     /// A log at the namespace spoke carrying the message topic that does not
-    /// decode: the deployed contract no longer matches namespace_anchor.cpp.
+    /// decode: the deployed contract no longer matches domain_anchor.cpp.
     InvalidNamespaceLog,
     /// An L2 block carrying a withdrawal. There is no authenticated path by
     /// which value enters this chain, so a withdrawal list is unauthorised

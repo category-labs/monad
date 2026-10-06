@@ -36,7 +36,7 @@ namespace vm
 
 /// What the proof publishes about a block.
 ///
-/// `namespace_anchor` is bytes32_t{} on a build without MONAD_ZKVM_L2, where
+/// `domain_anchor` is bytes32_t{} on a build without MONAD_ZKVM_L2, where
 /// there is no spoke to harvest. The struct is unconditional, and the 32 zero
 /// bytes are the price: making it conditional would leak the macro into this
 /// header and into the return type of the SWITCH_EVM_TRAITS lambda in
@@ -44,7 +44,7 @@ namespace vm
 struct ZkvmBlockOutput
 {
     bytes32_t state_root;
-    bytes32_t namespace_anchor;
+    bytes32_t domain_anchor;
 };
 
 // Sequential mirror of execute_block<traits> for the zkVM guest. Drops the

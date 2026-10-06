@@ -276,13 +276,11 @@ cd zkvm/zisk
 MONAD_ZKVM_CMAKE_DEFINES="\
 MONAD_ZKVM_L2=ON;\
 MONAD_ZKVM_L2_CHAIN_ID=1;\
-MONAD_ZKVM_L2_NAMESPACE_ID=<n>;\
 MONAD_ZKVM_L2_REVISION=MONAD_ETH_PARIS;\
 MONAD_ZKVM_L2_SPOKE=0x<40 hex>;\
 MONAD_ZKVM_L2_PENDING_SLOT=<n>;\
 MONAD_ZKVM_L2_OPERATOR_PK_X=0x<64 hex>;\
 MONAD_ZKVM_L2_OPERATOR_PK_ODD=<0|1>;\
-MONAD_ZKVM_L2_EPOCH_BLOCKS=<n>;\
 MONAD_ZKVM_L2_SALT_COMMITMENT=0x<64 hex>" \
     cargo-zisk build --release
 ```
@@ -320,7 +318,7 @@ That builds a guest to check, not one to measure. A dev build leaves five of
 the six levers the official profile forces switched off, and the official
 profile refuses L2, so a guest to benchmark sets them itself --
 `MONAD_ZKVM_OFFICIAL_PROFILE=OFF;MONAD_ZKVM_ZISK_DMA=ON;MONAD_ZKVM_KECCAKF_MEMO=ON;MONAD_ZKVM_WIDE_MEMORY_SIZE=ON;MONAD_ZKVM_VARCODE_CACHE=ON;MONAD_ZKVM_NO_DIRTY_ACCOUNTS=ON;MONAD_ZKVM_NO_MERGE_CONSTRAINTS=ON`
-ahead of the nine values -- with `RISCV_TOOLCHAIN_DIR` and
+ahead of the seven values -- with `RISCV_TOOLCHAIN_DIR` and
 `CC_/CXX_riscv64ima_zisk_zkvm_elf` pointing at the DMA-patched GCC 15.2.0
 that `ZISK_DMA` needs. Build each configuration in its own worktree:
 `cargo-zisk` writes to `target/elf` whatever `CARGO_TARGET_DIR` says, and the
@@ -489,7 +487,7 @@ generated corpus the sponge is 1.5x the ECDH in steps; see
 deployment.** [`l2_plaintext_suite.hpp`](guest/l2_plaintext_suite.hpp) takes a
 leaf to be the transaction it carries and binds no secret; in every other rule
 the guest is the L2 -- the chain id, the constant revision, unpriced gas, the
-blinded header and the anchor. An ELF built with it and the same nine values
+blinded commitments and the anchor. An ELF built with it and the same seven values
 therefore runs the same chain as an encrypting one, and the difference between
 the two runs is what the encryption costs, which a comparison with the mainnet
 guest cannot isolate: its chain prices gas, publishes another output and
@@ -533,7 +531,7 @@ namespace messages so the anchor has logs to harvest and a pending array to
 clear.
 
 ```sh
-# Configure an L2 host tree with the nine deployment values, then:
+# Configure an L2 host tree with the seven deployment values, then:
 cmake --build build --target monad-zkvm-corpus-gen monad-zkvm-x86-test-runner
 ./build/zkvm/guest/monad-zkvm-corpus-gen --out /tmp/corpus \
     --sk <64 hex> --salt <64 hex>
@@ -802,7 +800,7 @@ through `zkvm-bench`'s `compare.run_zisk` so that a figure here and one in a
 `compare` report come from one parser.
 
 **The control is the same chain without the encryption.** Both ELFs are L2
-builds of the same nine values; the control is configured with
+builds of the same seven values; the control is configured with
 `MONAD_ZKVM_L2_CIPHER=plaintext`, and so is the host tree that generates its
 corpora from the same seeds. Block for block the two arms execute the same
 transactions on the same state -- the pre- and post-state roots, the anchors
@@ -1058,7 +1056,7 @@ zisklib, so it is a different program.
 
 That step has been taken on the ELFs [the cost section](#what-a-block-costs)
 measures, under `ziskemu` 1.2.0-alpha: the L2 ELF and the control, dev builds
-carrying the same six levers and the nine deployment values the tests use.
+carrying the same six levers and the deployment values the tests use.
 Every witness the scenarios and the five corpora generate passes, on both arms:
 the guest republishes exactly what the manifest recorded -- the block number,
 both state commitments, the message anchor and the sequencing anchor, each

@@ -1024,7 +1024,7 @@ TEST(WorkloadTokens, EveryWholesaleCbdcTransactionSucceeds)
 #ifdef MONAD_ZKVM_L2
             // The genesis holds the spoke and every block redeems reserves
             // through it, so every block carries an anchor.
-            EXPECT_NE(e.namespace_anchor, bytes32_t{});
+            EXPECT_NE(e.domain_anchor, bytes32_t{});
 #endif
         }
         EXPECT_EQ(settlements, 10u);

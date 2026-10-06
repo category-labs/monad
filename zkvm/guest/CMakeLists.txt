@@ -915,7 +915,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     monad_compile_options(${_guest_target})
     monad_riscv_compile_options(${_guest_target})
     # cthash is here and not only on monad_execution_ethereum because the
-    # guest's OWN sources reach it: namespace_anchor.hpp derives its topic0
+    # guest's OWN sources reach it: domain_anchor.hpp derives its topic0
     # through abi_encode_event_signature, which is consteval over cthash's
     # Keccak, and l2_config.hpp includes that header. Before this branch
     # nothing in the guest included core/contract/abi_signatures.hpp, so the

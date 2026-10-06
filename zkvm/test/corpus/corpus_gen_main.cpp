@@ -414,7 +414,7 @@ int main(int const argc, char **const argv)
                  << ',' << hex_of(e.post_root) << ',' << hex_of(e.block_hash)
                  << ',' << hex_of(e.parent_hash) << ',' << n_txs << ','
                  << e.header.gas_used << ',' << e.witness.size() << ','
-                 << hex_of(e.namespace_anchor) << ','
+                 << hex_of(e.domain_anchor) << ','
                  << hex_of(e.pre_state_commitment) << ','
                  << hex_of(e.state_commitment) << ','
                  << hex_of(e.sequencing_anchor) << ',' << e.encrypted_leaves

@@ -33,9 +33,6 @@
 #ifndef MONAD_L2_CHAIN_ID
     #error "MONAD_ZKVM_L2 requires -DMONAD_ZKVM_L2_CHAIN_ID=<n>"
 #endif
-#ifndef MONAD_L2_NAMESPACE_ID
-    #error "MONAD_ZKVM_L2 requires -DMONAD_ZKVM_L2_NAMESPACE_ID=<n>"
-#endif
 #ifndef MONAD_L2_REVISION
     #error "MONAD_ZKVM_L2 requires -DMONAD_ZKVM_L2_REVISION=<MONAD_ETH_*>"
 #endif
@@ -45,14 +42,11 @@
 #ifndef MONAD_L2_OPERATOR_PK_ODD
     #error "MONAD_ZKVM_L2 requires -DMONAD_ZKVM_L2_OPERATOR_PK_ODD=<0|1>"
 #endif
-#ifndef MONAD_L2_EPOCH_BLOCKS
-    #error "MONAD_ZKVM_L2 requires -DMONAD_ZKVM_L2_EPOCH_BLOCKS=<n>"
-#endif
 
 #include <category/core/address.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
-#include <category/execution/ethereum/namespace_anchor.hpp>
+#include <category/execution/ethereum/domain_anchor.hpp>
 #include <category/vm/evm/revision.h>
 #include <zkvm/guest/l2_cipher_suite.hpp>
 
@@ -73,8 +67,6 @@ struct BlockHeader;
 inline constexpr std::uint64_t L2_CIPHER_VERSION = 1;
 
 inline constexpr std::uint64_t L2_CHAIN_ID = MONAD_L2_CHAIN_ID;
-inline constexpr std::uint64_t L2_NAMESPACE_ID = MONAD_L2_NAMESPACE_ID;
-
 /// A constant, not a fork schedule: an L2 that starts at one revision has no
 /// schedule to consult, and carrying one would be a second place for the
 /// revision to be decided.
@@ -100,13 +92,6 @@ static_assert(
 /// a uint256_t would have given the other order, silently.
 inline constexpr bytes32_t L2_OPERATOR_PK_X = MONAD_L2_OPERATOR_PK_X;
 inline constexpr bool L2_OPERATOR_PK_ODD = MONAD_L2_OPERATOR_PK_ODD != 0;
-
-/// Blocks per epoch, which is how the epoch in A is derived. A GUESS at the
-/// protocol's intent: the epoch is a field of the context the scheme specifies
-/// but does not define, and this is the cheapest definition that is a function
-/// of the header alone -- so it cannot be the prover's to choose. Confirm it
-/// before this is anything but a prototype.
-inline constexpr std::uint64_t L2_EPOCH_BLOCKS = MONAD_L2_EPOCH_BLOCKS;
 
 /// l2_salt_commitment of the blinder secret the witness must supply.
 ///

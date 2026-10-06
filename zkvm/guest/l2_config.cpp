@@ -123,14 +123,15 @@ L2Cipher::Context l2_cipher_context(BlockHeader const &)
     return L2Cipher::Context{};
 }
 #else
-L2Cipher::Context l2_cipher_context(BlockHeader const &header)
+// Nothing of the block reaches the context any more: with the epoch gone, every
+// field is a compiled constant. The parameter stays so that a suite which does
+// want the header can have it without moving every call site.
+L2Cipher::Context l2_cipher_context(BlockHeader const &)
 {
     L2Cipher::Context ctx{};
     ctx.version = L2_CIPHER_VERSION;
     ctx.chain_id = L2_CHAIN_ID;
-    ctx.contract = L2_NAMESPACE_SPOKE;
-    ctx.namespace_id = L2_NAMESPACE_ID;
-    ctx.epoch = header.number / L2_EPOCH_BLOCKS;
+    ctx.contract = L2_DOMAIN_SPOKE;
     ctx.operator_pk[0] = L2_OPERATOR_PK_ODD ? 0x03 : 0x02;
     std::memcpy(
         ctx.operator_pk + 1,

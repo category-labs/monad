@@ -31,7 +31,7 @@
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
 #ifdef MONAD_ZKVM_L2
-    #include <category/execution/ethereum/namespace_anchor.hpp>
+    #include <category/execution/ethereum/domain_anchor.hpp>
 #endif
 
 #include <ankerl/unordered_dense.h>
@@ -170,7 +170,7 @@ namespace corpus
         {
 #ifdef MONAD_ZKVM_L2
             sink.contract(
-                L2_NAMESPACE_SPOKE,
+                L2_DOMAIN_SPOKE,
                 Account{.nonce = 1},
                 namespace_spoke_code(
                     SPOKE_NAMESPACE_CHAIN_ID,
@@ -968,7 +968,7 @@ namespace corpus
     Address Workload::spoke() const
     {
 #ifdef MONAD_ZKVM_L2
-        return L2_NAMESPACE_SPOKE;
+        return L2_DOMAIN_SPOKE;
 #else
         // keccak256(rlp([deployer, 0]))[12:] -- a CREATE from the deployer at
         // nonce 0, which is what the deploy block spends that account's first

@@ -45,7 +45,7 @@ MONAD_NAMESPACE_BEGIN
 class State;
 
 #ifdef MONAD_ZKVM_L2
-    #ifndef MONAD_L2_NAMESPACE_SPOKE
+    #ifndef MONAD_L2_DOMAIN_SPOKE
         #error "MONAD_ZKVM_L2 requires -DMONAD_ZKVM_L2_SPOKE=0x<40 hex>"
     #endif
     #ifndef MONAD_L2_PENDING_SLOT
@@ -65,12 +65,22 @@ class State;
 /// against the deployed contract. Reading the source gives 1 -- the two
 /// immutables occupy no slot and INamespaceSpoke is an interface, so `_nonce`
 /// is slot 0 -- but a guess here clears somebody else's storage.
-inline constexpr Address L2_NAMESPACE_SPOKE = MONAD_L2_NAMESPACE_SPOKE;
+inline constexpr Address L2_DOMAIN_SPOKE = MONAD_L2_DOMAIN_SPOKE;
 inline constexpr std::uint64_t L2_PENDING_SLOT = MONAD_L2_PENDING_SLOT;
 #endif
 
-/// NamespaceSpoke's outbound-message event. `from` and `to` are indexed, so a
-/// log carries three topics and the rest sits in its data section.
+/// The spoke's outbound-message event. `from` and `to` are indexed, so a log
+/// carries three topics and the rest sits in its data section.
+///
+/// Still NamespaceSpoke's, because that is the contract this tree vendors and
+/// the corpus deploys (eerkaijun/monad-namespaces at e6012d8cebf4). The
+/// protocol has since renamed it: category-labs/monad-domains emits
+/// `DomainMessageRecorded` with identical parameter types, which is topic
+/// 0x8f2b779508ea0cb38e5b78dbe9c7a04c3ce671ba697fdce1a46dc794e2dd650e. Against
+/// a real spoke this harvest therefore finds nothing -- caught loudly by the
+/// pending-length assertion below rather than silently, which is what that
+/// assertion is for. Re-vendoring needs solc and brings the spoke's new
+/// access-control layer with it; CONFORMANCE.md tracks it.
 inline constexpr bytes32_t NAMESPACE_MESSAGE_RECORDED_TOPIC =
     abi_encode_event_signature(
         "NamespaceMessageRecorded(address,address,bytes,uint256,bytes32)");
@@ -101,7 +111,7 @@ inline constexpr std::size_t NAMESPACE_LOG_MIN_SIZE = 128;
 /// hub would accept. It fails the block, the way extract_deposit_requests does
 /// for the same reason. Logs that match neither the address nor the topic are
 /// ignored silently.
-Result<std::vector<bytes32_t>> collect_namespace_messages(
+Result<std::vector<bytes32_t>> collect_domain_messages(
     std::span<Receipt const> receipts, Address const &spoke);
 
 /// The root of the sorted-pair merkle tree OpenZeppelin's MerkleProof verifies
@@ -137,10 +147,9 @@ bytes32_t sorted_pair_merkle_root(std::vector<bytes32_t> &leaves);
 /// keccak256(u256_be(slot)) + i. Exposed on its own so the derivation -- the
 /// only part of the clear with anything to get wrong -- is testable without
 /// standing up a State.
-bytes32_t
-namespace_pending_element_key(std::uint64_t slot, std::uint64_t index);
+bytes32_t domain_pending_element_key(std::uint64_t slot, std::uint64_t index);
 
-void clear_pending_namespace_messages(
+void clear_pending_domain_messages(
     State &state, Address const &spoke, std::uint64_t slot,
     std::uint64_t expected_length);
 

@@ -118,7 +118,7 @@ namespace corpus
         BlockHeader header;
         std::vector<Receipt> receipts;
         /// L2 only, and zero when the block recorded no namespace message.
-        bytes32_t namespace_anchor{};
+        bytes32_t domain_anchor{};
         /// L2 only: the parent hash the guest publishes for chaining.
         bytes32_t parent_hash{};
         /// L2 only: how many leaves were encrypted.

@@ -28,7 +28,7 @@
 #include <category/core/keccak.hpp>
 #include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 #include <category/execution/ethereum/core/receipt.hpp>
-#include <category/execution/ethereum/namespace_anchor.hpp>
+#include <category/execution/ethereum/domain_anchor.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 
 #include <gtest/gtest.h>
@@ -61,7 +61,7 @@ namespace
     }
 
     // A restatement of MerkleTreeLib._hashPair, independent of the one in
-    // namespace_anchor.cpp: keccak of the pair in ascending order.
+    // domain_anchor.cpp: keccak of the pair in ascending order.
     bytes32_t hash_pair(bytes32_t const &a, bytes32_t const &b)
     {
         unsigned char buf[64];
@@ -232,16 +232,16 @@ TEST(CollectNamespaceMessages, GathersInLogOrderAcrossReceipts)
             2,
             byte_string(40, 7))}),
     };
-    auto const got = collect_namespace_messages(receipts, SPOKE);
+    auto const got = collect_domain_messages(receipts, SPOKE);
     ASSERT_FALSE(got.has_error());
     EXPECT_EQ(got.value(), (std::vector<bytes32_t>{h1, h2, h3}));
 }
 
 TEST(CollectNamespaceMessages, EmptyBlockGivesNoLeaves)
 {
-    EXPECT_TRUE(collect_namespace_messages({}, SPOKE).value().empty());
+    EXPECT_TRUE(collect_domain_messages({}, SPOKE).value().empty());
     std::vector<Receipt> const quiet{make_receipt({})};
-    EXPECT_TRUE(collect_namespace_messages(quiet, SPOKE).value().empty());
+    EXPECT_TRUE(collect_domain_messages(quiet, SPOKE).value().empty());
 }
 
 // Anything that is not this contract's event is not our business.
@@ -256,7 +256,7 @@ TEST(CollectNamespaceMessages, IgnoresOtherLogs)
             SPOKE, store_be_as<bytes32_t>(uint256_t{0xdead}), h, 0, {}),
         no_topics,
     })};
-    auto const got = collect_namespace_messages(receipts, SPOKE);
+    auto const got = collect_domain_messages(receipts, SPOKE);
     ASSERT_FALSE(got.has_error());
     EXPECT_TRUE(got.value().empty());
 }
@@ -272,7 +272,7 @@ TEST(CollectNamespaceMessages, RejectsMalformedOwnLogs)
 
     auto reject = [](Receipt::Log log, char const *what) {
         std::vector<Receipt> const receipts{make_receipt({log})};
-        auto const got = collect_namespace_messages(receipts, SPOKE);
+        auto const got = collect_domain_messages(receipts, SPOKE);
         EXPECT_TRUE(got.has_error()) << what;
         if (got.has_error()) {
             EXPECT_EQ(got.error(), BlockError::InvalidNamespaceLog) << what;
@@ -316,15 +316,15 @@ TEST(CollectNamespaceMessages, RejectsMalformedOwnLogs)
 TEST(NamespacePendingElementKey, MatchesSolidityLayout)
 {
     EXPECT_EQ(
-        namespace_pending_element_key(1, 0),
+        domain_pending_element_key(1, 0),
         0xb10e2d527612073b26eecdfd717e6a320cf44b4afac2b0732d9fcbe2b7fa0cf6_bytes32);
     EXPECT_EQ(
-        namespace_pending_element_key(1, 1),
+        domain_pending_element_key(1, 1),
         0xb10e2d527612073b26eecdfd717e6a320cf44b4afac2b0732d9fcbe2b7fa0cf7_bytes32);
     EXPECT_EQ(
-        namespace_pending_element_key(1, 3),
+        domain_pending_element_key(1, 3),
         0xb10e2d527612073b26eecdfd717e6a320cf44b4afac2b0732d9fcbe2b7fa0cf9_bytes32);
     EXPECT_EQ(
-        namespace_pending_element_key(2, 0),
+        domain_pending_element_key(2, 0),
         0x405787fa12a823e0f2b7631cc41b3ba8828b3321ca811111fa75cd3aa3bb5ace_bytes32);
 }

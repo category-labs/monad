@@ -187,8 +187,8 @@ MONAD_NAMESPACE_BEGIN
 
 bytes32_t l2_constants_digest(L2CipherContext const &ctx)
 {
-    // Fixed widths, so injective without carrying lengths. 85 bytes.
-    unsigned char buf[85];
+    // Fixed widths, so injective without carrying lengths. 69 bytes.
+    unsigned char buf[69];
     unsigned char *p = buf;
     put_be64(p, ctx.version);
     p += 8;
@@ -196,10 +196,6 @@ bytes32_t l2_constants_digest(L2CipherContext const &ctx)
     p += 8;
     std::memcpy(p, ctx.contract.bytes, sizeof(ctx.contract.bytes));
     p += sizeof(ctx.contract.bytes);
-    put_be64(p, ctx.namespace_id);
-    p += 8;
-    put_be64(p, ctx.epoch);
-    p += 8;
     std::memcpy(p, ctx.operator_pk, sizeof(ctx.operator_pk));
     p += sizeof(ctx.operator_pk);
     MONAD_ASSERT(p == buf + sizeof(buf));

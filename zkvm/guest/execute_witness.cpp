@@ -594,7 +594,7 @@ extern "C" void monad_zkvm_execute_witness(void)
     // statement of what that costs is that a message not yet relayed can be
     // confirmed early. Inherent to a root the L1 must open, not something the
     // blinder could fix.
-    monad::bytes32_t const &anchor = root_result.value().namespace_anchor;
+    monad::bytes32_t const &anchor = root_result.value().domain_anchor;
     write_output(anchor.bytes, sizeof(anchor.bytes));
 
     // The inputs this run was handed, so a verifier can tell WHICH ciphertexts

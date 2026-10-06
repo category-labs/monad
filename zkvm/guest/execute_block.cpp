@@ -25,7 +25,7 @@
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #ifdef MONAD_ZKVM_L2
-    #include <category/execution/ethereum/namespace_anchor.hpp>
+    #include <category/execution/ethereum/domain_anchor.hpp>
 #endif
 #include <category/execution/ethereum/block_reward.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
@@ -354,17 +354,17 @@ Result<ZkvmBlockOutput> execute_block_zkvm(
     //     State even existed. The anchor's only exits are storage and the
     //     public output, which is consistent with the contract:
     //     finalizeNamespaceMessages logs nothing either, it RETURNS the anchor.
-    bytes32_t namespace_anchor{};
+    bytes32_t domain_anchor{};
 #ifdef MONAD_ZKVM_L2
     {
         BOOST_OUTCOME_TRY(
             auto leaves,
-            collect_namespace_messages(receipts, L2_NAMESPACE_SPOKE));
+            collect_domain_messages(receipts, L2_DOMAIN_SPOKE));
         // Before the root consumes the vector in place.
         auto const count = static_cast<uint64_t>(leaves.size());
-        namespace_anchor = sorted_pair_merkle_root(leaves);
-        clear_pending_namespace_messages(
-            state, L2_NAMESPACE_SPOKE, L2_PENDING_SLOT, count);
+        domain_anchor = sorted_pair_merkle_root(leaves);
+        clear_pending_domain_messages(
+            state, L2_DOMAIN_SPOKE, L2_PENDING_SLOT, count);
     }
 #endif
 
@@ -394,7 +394,7 @@ Result<ZkvmBlockOutput> execute_block_zkvm(
         bytes32_t{}, builder, block.header, *released.state, [](BlockHeader &) {
         });
 
-    return ZkvmBlockOutput{pdb.state_root(), namespace_anchor};
+    return ZkvmBlockOutput{pdb.state_root(), domain_anchor};
 }
 
 EXPLICIT_EVM_TRAITS(execute_block_zkvm);

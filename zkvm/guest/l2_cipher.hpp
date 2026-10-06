@@ -17,7 +17,7 @@
 // Goldilocks, and a Poseidon2 tag over the ciphertext -- Encrypt-then-MAC.
 //
 //   R = rG,  P = r*pk        (sender)          P = sk*R      (guest)
-//   A = (version, chain, contract, namespace, epoch, pk | R, N, len)
+//   A = (version, chain, contract, pk | R, N, len)
 //   K = H_KDF(P, A; 4)
 //   Z = H_STREAM(K, A; l)    C_i = M_i + Z_i (mod p)
 //   T = H_AUTH(K, A, C; 4)
@@ -73,7 +73,7 @@ MONAD_NAMESPACE_BEGIN
 
 /// The context the scheme calls A, split by how often it changes.
 ///
-/// Its block-constant half -- version, chain id, contract, namespace, epoch and
+/// Its block-constant half -- version, chain id, contract and
 /// the operator key -- does NOT go into the sponge's rate. It is hashed once a
 /// block into `constants_digest` and handed to the sponge as its domain
 /// context, which is where SAFE puts application binding. That binds it just as
@@ -93,14 +93,12 @@ struct L2CipherContext
     std::uint64_t version;
     std::uint64_t chain_id;
     Address contract;
-    std::uint64_t namespace_id;
-    std::uint64_t epoch;
     /// The operator's public key, compressed. The guest checks sk*G against
     /// this once per block; without that check the key is the prover's to pick
     /// and the proof says nothing.
     unsigned char operator_pk[33];
 
-    /// The hash of the six fields above, from l2_constants_digest. Populated
+    /// The hash of the four fields above, from l2_constants_digest. Populated
     /// once a block; the sponges read only this.
     bytes32_t constants_digest;
 

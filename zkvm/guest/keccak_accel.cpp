@@ -259,6 +259,14 @@ static void keccak256_memo_sponge(
     // Keep the count local across permutations; write it back once on return.
     uint64_t entry_count = keccakf_memo_used;
 
+    // Copy misaligned inputs that fit here once, making word loads aligned.
+    alignas(8) unsigned char aligned_input[8 * KECCAK_RATE];
+    if ((reinterpret_cast<uintptr_t>(input_cursor) & 7) != 0 &&
+        remaining_bytes <= sizeof(aligned_input)) {
+        std::memcpy(aligned_input, input_cursor, remaining_bytes);
+        input_cursor = aligned_input;
+    }
+
     uint64_t *input_state = keccakf_memo[entry_count].in;
     std::memcpy(input_state, input_cursor, KECCAK_RATE);
     input_cursor += KECCAK_RATE;
@@ -290,9 +298,63 @@ static void keccak256_memo_sponge(
     size_t const full_tail_lanes = remaining_bytes / 8;
     unsigned const partial_lane_bytes =
         static_cast<unsigned>(remaining_bytes % 8);
-    for (size_t i = 0; i < full_tail_lanes; ++i) {
-        input_state[i] = output_state[i] ^ load64(input_cursor + 8 * i);
-    }
+    // Enter the unrolled tail at its number of complete lanes.
+    // Each label falls through to absorb the preceding lane.
+    // remaining_bytes < KECCAK_RATE guarantees full_tail_lanes is in [0, 16].
+    static void *const tail_lane_labels[] = {
+        &&lanes0,
+        &&lanes1,
+        &&lanes2,
+        &&lanes3,
+        &&lanes4,
+        &&lanes5,
+        &&lanes6,
+        &&lanes7,
+        &&lanes8,
+        &&lanes9,
+        &&lanes10,
+        &&lanes11,
+        &&lanes12,
+        &&lanes13,
+        &&lanes14,
+        &&lanes15,
+        &&lanes16};
+    static_assert(
+        sizeof(tail_lane_labels) / sizeof(tail_lane_labels[0]) == RATE_WORDS);
+    goto *tail_lane_labels[full_tail_lanes];
+lanes16:
+    input_state[15] = output_state[15] ^ load64(input_cursor + 120);
+lanes15:
+    input_state[14] = output_state[14] ^ load64(input_cursor + 112);
+lanes14:
+    input_state[13] = output_state[13] ^ load64(input_cursor + 104);
+lanes13:
+    input_state[12] = output_state[12] ^ load64(input_cursor + 96);
+lanes12:
+    input_state[11] = output_state[11] ^ load64(input_cursor + 88);
+lanes11:
+    input_state[10] = output_state[10] ^ load64(input_cursor + 80);
+lanes10:
+    input_state[9] = output_state[9] ^ load64(input_cursor + 72);
+lanes9:
+    input_state[8] = output_state[8] ^ load64(input_cursor + 64);
+lanes8:
+    input_state[7] = output_state[7] ^ load64(input_cursor + 56);
+lanes7:
+    input_state[6] = output_state[6] ^ load64(input_cursor + 48);
+lanes6:
+    input_state[5] = output_state[5] ^ load64(input_cursor + 40);
+lanes5:
+    input_state[4] = output_state[4] ^ load64(input_cursor + 32);
+lanes4:
+    input_state[3] = output_state[3] ^ load64(input_cursor + 24);
+lanes3:
+    input_state[2] = output_state[2] ^ load64(input_cursor + 16);
+lanes2:
+    input_state[1] = output_state[1] ^ load64(input_cursor + 8);
+lanes1:
+    input_state[0] = output_state[0] ^ load64(input_cursor);
+lanes0:
     uint64_t padded_tail_lane = uint64_t{0x01} << (8 * partial_lane_bytes);
     if (partial_lane_bytes != 0) {
         padded_tail_lane |= load64(input_cursor + remaining_bytes - 8) >>

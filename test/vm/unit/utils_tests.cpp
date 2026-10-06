@@ -137,3 +137,14 @@ TEST(ShowOpcodesTest, EveryPushTruncationLength)
         }
     }
 }
+
+TEST(ParseOpcodesTest, GenericPushUsesMinimalWidth)
+{
+    parser_config const config{.verbose = false, .validate = false};
+    EXPECT_EQ(parse_opcodes(config, "PUSH 0"), (std::vector<uint8_t>{PUSH0}));
+    EXPECT_EQ(
+        parse_opcodes(config, "PUSH 5"), (std::vector<uint8_t>{PUSH1, 0x05}));
+    EXPECT_EQ(
+        parse_opcodes(config, "PUSH 0x100"),
+        (std::vector<uint8_t>{PUSH2, 0x01, 0x00}));
+}

@@ -787,18 +787,30 @@ witness.
 
 #### What a block costs
 
-Measured under `ziskemu` 1.2.0-alpha on every workload block of the corpora
-above and the sweep, 1,020 of them, on the L2 ELF and on the control, each run
-first checked against the manifest. The figures were taken with this series on
-71dcc0957, a base that pinned ZisK 1.2.0-alpha, and have not been re-taken on
-this tree, which pins 1.3.1-alpha and carries the base's later interpreter
-work: its absolute steps and COST may differ from these. They were taken with
-the JUMPDEST precompile, which an L2 build now leaves out, and with every
-ancestor header in the witness, `--ancestors all`, which regenerates those
-corpora byte for byte; a block of the default corpora costs the table's
-ancestor row less. COST is ZisK's own cost model (`ziskemu -X --stats`), taken
-through `zkvm-bench`'s `compare.run_zisk` so that a figure here and one in a
-`compare` report come from one parser.
+Measured under `ziskemu` 1.3.1-alpha, which is what this tree pins, on every
+workload block of the corpora above and the sweep -- 820 of them, which is what
+the commands above produce -- on the L2 ELF and on the control, each run first
+checked against the manifest. COST is ZisK's own cost model (`ziskemu -X
+--stats`), taken through `zkvm-bench`'s `compare.run_zisk` so that a figure here
+and one in a `compare` report come from one parser.
+
+**Only the last row survives a change of anything.** The absolutes are a
+snapshot of one commit on one emulator. The figures before these were taken on
+ZisK 1.2.0-alpha at 71dcc0957, with the JUMPDEST precompile an L2 build now
+leaves out, and with every ancestor header in the witness -- which the witness no
+longer carries at all, it carries hashes. Five things moved between that table
+and this one, so no pair of lines across them compares one thing.
+
+The ratio does survive: both arms are the same commit, the same emulator and the
+same seeds, so what one costs over the other is the encryption and nothing else.
+It was 1.030x, 1.158x, 1.030x and 1.051x on the old base and is 1.036x, 1.164x,
+1.035x and 1.053x here. That it barely moved across a change of emulator, of
+base, of the JUMPDEST lever, of the ancestor format and of an access check on
+every EVM call is the one thing these numbers say with confidence.
+
+The share-of-a-mainnet-block row is gone rather than carried over: it is a ratio
+against a mainnet arm that has not been re-taken on this emulator, and keeping a
+number whose denominator moved would be worse than having none.
 
 **The control is the same chain without the encryption.** Both ELFs are L2
 builds of the same seven values; the control is configured with
@@ -844,12 +856,11 @@ string shows it: installing a release relinks the `zisk` rustup toolchain, and
 
 | | `wholesale` | `payouts` | `wholesale-cbdc` | `worker-payouts` |
 |---|---:|---:|---:|---:|
-| steps, L2 | 0.84 M | 9.57 M | 1.54 M | 9.43 M |
-| COST, L2 | 0.450 G | 2.130 G | 0.553 G | 1.986 G |
-| of which fixed | 0.287 G | 0.287 G | 0.287 G | 0.287 G |
-| of which ancestors older than the parent | 0.088 G | 0.088 G | 0.088 G | 0.088 G |
-| COST, without encryption | 0.437 G | 1.839 G | 0.537 G | 1.889 G |
-| share of a median mainnet block | 6 % | 26 % | 7 % | 24 % |
+| steps, L2 | 0.45 M | 9.82 M | 1.13 M | 9.07 M |
+| COST, L2 | 0.363 G | 2.053 G | 0.462 G | 1.867 G |
+| of which fixed | 0.288 G | 0.288 G | 0.287 G | 0.287 G |
+| COST, without encryption | 0.350 G | 1.764 G | 0.447 G | 1.774 G |
+| what the encryption costs | 1.036x | 1.164x | 1.035x | 1.053x |
 
 **A fixed 287,309,824 of it is the same on every block**: `Base`, ZisK's ROM
 and lookup tables (137 x 2^21), which the cost model charges once per run
@@ -883,10 +894,11 @@ per transaction, +26 %. A payouts block spends 1.21 G on its 500 transactions
 and 0.62 G on its 944 KB of witness.
 
 **So prover cost is proportional to gas only above the floor.** On the payouts
-sweep `COST - base = 140 x gas`, R2 0.9988: for one transaction mix, the part
-of the cost that depends on the block is linear in gas even though the witness
-is not. What makes COST per gas fall from 488 at 50 transfers to 142 at 5,000
-is the fixed part, and the slope belongs to the mix -- outside the floor,
+sweep `COST - base = 138 x gas`, R2 0.9993 -- re-taken on 1.3.1-alpha at this
+commit, against 140 and R2 0.9988 before, which is the law holding across every
+change listed above. For one transaction mix, the part of the cost that depends
+on the block is linear in gas even though the witness is not. What makes COST
+per gas fall from 413 at 50 transfers to 139 at 5,000 is the fixed part, and the slope belongs to the mix -- outside the floor,
 wholesale spends 328 per gas, over half of it on its ancestors, and payouts
 161.
 

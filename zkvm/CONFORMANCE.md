@@ -83,11 +83,18 @@ Silent in the client — a log warning, nothing more:
 4. sender not recoverable;
 5. signed chain id is not the domain's.
 
-The first three are **done**, in `decode_domain_body`, and the witness carries
-the outer L1 gas limit per payload for the third. The last two sit downstream in
-execution and are not yet the silent skips the client makes them. Whether a
-reverted outer call is in the set at all is unresolved — see DECISIONS.md,
-"Do reverted sequencing calls count?".
+All five are **done**, in `decode_domain_body`, and the witness carries the outer
+L1 gas limit per payload for the third. The sender is recovered there rather than
+in execution, because dropping on it means having it before the block is formed;
+the body hands the recovered senders back so an ECDSA recovery per transaction is
+not done twice.
+
+Each is a log line in the client and nothing more, so each is a skip here. The
+alternative — failing the block, which is what an unrecoverable sender and a
+wrong chain id used to do — would reject a block every replica executes happily.
+
+Whether a reverted outer call is in the set at all is unresolved — see
+DECISIONS.md, "Do reverted sequencing calls count?".
 
 ## Gas is metered and not priced, but `GASPRICE` is not pricing
 

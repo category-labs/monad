@@ -107,7 +107,8 @@ Result<ZkvmBlockOutput> execute_block_zkvm(
     // domain path, which has no such root to check.
     [[maybe_unused]] std::span<byte_string_view const> const root_transactions,
     std::span<byte_string_view const> const transaction_encodings, Db &pdb,
-    vm::VM &vm, BlockHashBuffer const &block_hash_buffer)
+    vm::VM &vm, BlockHashBuffer const &block_hash_buffer,
+    std::span<Address const> const recovered_senders)
 {
     static_assert(traits::evm_rev() > MONAD_ETH_TANGERINE_WHISTLE);
 
@@ -121,15 +122,27 @@ Result<ZkvmBlockOutput> execute_block_zkvm(
     // was decoded from instead of re-encoded from its fields;
     // rlp::signing_payload says why the two are the same bytes.
     MONAD_ASSERT(transaction_encodings.size() == block.transactions.size());
+    // Handed over, or recovered here. On the domain path a transaction whose
+    // sender does not recover was already dropped before the block was formed,
+    // so every one left has one and there is nothing to fail on.
+    bool const senders_given = !recovered_senders.empty();
+    MONAD_ASSERT(
+        !senders_given ||
+        recovered_senders.size() == block.transactions.size());
     for (size_t i = 0; i < block.transactions.size(); ++i) {
         auto const &tx = block.transactions[i];
-        auto const s = recover_address(
-            tx.sc.signature,
-            rlp::signing_payload(tx, transaction_encodings[i]));
-        if (MONAD_UNLIKELY(!s.has_value())) {
-            return TransactionError::MissingSender;
+        if (senders_given) {
+            senders.push_back(recovered_senders[i]);
         }
-        senders.push_back(*s);
+        else {
+            auto const s = recover_address(
+                tx.sc.signature,
+                rlp::signing_payload(tx, transaction_encodings[i]));
+            if (MONAD_UNLIKELY(!s.has_value())) {
+                return TransactionError::MissingSender;
+            }
+            senders.push_back(*s);
+        }
 
         std::vector<std::optional<Address>> al;
         al.reserve(tx.authorization_list.size());
@@ -358,8 +371,7 @@ Result<ZkvmBlockOutput> execute_block_zkvm(
 #ifdef MONAD_ZKVM_L2
     {
         BOOST_OUTCOME_TRY(
-            auto leaves,
-            collect_domain_messages(receipts, L2_DOMAIN_SPOKE));
+            auto leaves, collect_domain_messages(receipts, L2_DOMAIN_SPOKE));
         // Before the root consumes the vector in place.
         auto const count = static_cast<uint64_t>(leaves.size());
         domain_anchor = sorted_pair_merkle_root(leaves);

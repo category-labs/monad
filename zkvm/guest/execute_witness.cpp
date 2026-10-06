@@ -370,6 +370,7 @@ extern "C" void monad_zkvm_execute_witness(void)
         block_view,
         cipher_ctx,
         *secret,
+        monad::L2_CHAIN_ID,
         root_transactions,
         plaintexts,
         l2_encodings);
@@ -512,7 +513,8 @@ extern "C" void monad_zkvm_execute_witness(void)
             transaction_encodings,
             pdb,
             vm,
-            block_hash_buffer);
+            block_hash_buffer,
+            body_result.value().senders);
 #else
         SWITCH_EVM_TRAITS(
             execute_block_zkvm,

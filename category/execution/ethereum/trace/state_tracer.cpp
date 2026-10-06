@@ -524,7 +524,7 @@ namespace trace
                     }
 
                     if (state_delta.storage.empty() &&
-                        post.find(address_key) == post.end()) {
+                        !post.contains(address_key)) {
                         continue;
                     }
                     pre[address_key] = account_to_json(original_account, state);

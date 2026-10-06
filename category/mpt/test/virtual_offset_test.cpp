@@ -45,9 +45,9 @@ TEST(VirtualOffsetTest, use_virtual_offset_as_map_key)
 
     map[virtual_chunk_offset_t(2, 0, 1)] = 1;
     map[virtual_chunk_offset_t(2, 0, 0)] = 2;
-    ASSERT_TRUE(map.find(virtual_chunk_offset_t(2, 0, 1)) != map.end());
+    ASSERT_TRUE(map.contains(virtual_chunk_offset_t(2, 0, 1)));
     EXPECT_EQ(map[virtual_chunk_offset_t(2, 0, 1)], 1);
-    ASSERT_TRUE(map.find(virtual_chunk_offset_t(2, 0, 0)) != map.end());
+    ASSERT_TRUE(map.contains(virtual_chunk_offset_t(2, 0, 0)));
     EXPECT_EQ(map[virtual_chunk_offset_t(2, 0, 0)], 2);
 }
 

@@ -34,6 +34,7 @@
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/db/offset_trie.hpp>
 #include <category/execution/ethereum/db/partial_trie_db.hpp>
+#include <category/execution/ethereum/domain_anchor.hpp>
 #include <category/execution/ethereum/rlp/decode.hpp>
 #include <category/execution/ethereum/rlp/execution_witness.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
@@ -76,7 +77,25 @@ namespace
 
     corpus::CorpusBuilder make_builder(std::function<void(State &)> const &g)
     {
-        return corpus::CorpusBuilder{g, OPERATOR_SK, SALT_SECRET};
+        // Every L2 genesis needs the spoke, because the access check asks it
+        // before every call and a spoke that is not there answers nothing --
+        // which is a denial. That is a property of the chain, not of a
+        // scenario, so it is applied here rather than in each test's lambda.
+        auto const seeded = [g](State &st) {
+            g(st);
+#ifdef MONAD_ZKVM_L2
+            // Only if the scenario did not put its own there: the spoke one
+            // points its proxy at what its first block creates, and this
+            // default would overwrite that.
+            if (!st.account_exists(L2_DOMAIN_SPOKE)) {
+                st.create_contract(L2_DOMAIN_SPOKE);
+                st.set_code(
+                    L2_DOMAIN_SPOKE,
+                    corpus::spoke_access_proxy(corpus::SPOKE_IMPLEMENTATION));
+            }
+#endif
+        };
+        return corpus::CorpusBuilder{seeded, OPERATOR_SK, SALT_SECRET};
     }
 }
 
@@ -85,7 +104,7 @@ TEST(CorpusSigner, SenderRecovers)
     Transaction tx{
         .nonce = 7,
         .max_fee_per_gas = 1,
-        .gas_limit = 21000,
+        .gas_limit = corpus::TRANSFER_GAS,
         .value = 5,
         .to = corpus::address_of(KEY_B),
         .type = TransactionType::eip1559};
@@ -194,7 +213,7 @@ TEST(CorpusBuilder, OneTransferBlockRoundTrips)
     corpus::BlockSpec spec;
     Transaction tx{
         .max_fee_per_gas = 0,
-        .gas_limit = 21000,
+        .gas_limit = corpus::TRANSFER_GAS,
         .value = 1000,
         .to = corpus::address_of(KEY_B),
         .type = TransactionType::eip1559};
@@ -205,7 +224,15 @@ TEST(CorpusBuilder, OneTransferBlockRoundTrips)
     auto const e = b.add_block(std::move(spec));
     EXPECT_FALSE(e.witness.empty());
     EXPECT_NE(e.pre_root, e.post_root);
+#ifdef MONAD_ZKVM_L2
+    // Intrinsic cost plus whatever the access check spent of its stipend --
+    // not a round number, and never the whole stipend, since the check does
+    // not spend it all.
+    EXPECT_GT(e.header.gas_used, 21000u);
+    EXPECT_LT(e.header.gas_used, corpus::TRANSFER_GAS);
+#else
     EXPECT_EQ(e.header.gas_used, 21000u);
+#endif
 }
 
 namespace
@@ -257,7 +284,7 @@ TEST(CorpusBuilder, WitnessCarriesThePreState)
     corpus::BlockSpec spec;
     Transaction tx{
         .max_fee_per_gas = 0,
-        .gas_limit = 21000,
+        .gas_limit = corpus::TRANSFER_GAS,
         .value = 1000,
         .to = corpus::address_of(KEY_B),
         .type = TransactionType::eip1559};
@@ -280,7 +307,7 @@ TEST(CorpusBuilder, TheBlockInTheWitnessIsTheBlockThatWasSealed)
     corpus::BlockSpec spec;
     Transaction tx{
         .max_fee_per_gas = 0,
-        .gas_limit = 21000,
+        .gas_limit = corpus::TRANSFER_GAS,
         .value = 7,
         .to = corpus::address_of(KEY_B),
         .type = TransactionType::eip1559};
@@ -337,7 +364,7 @@ TEST(CorpusBuilder, TheAncestorRunNamesTheParent)
         corpus::BlockSpec spec;
         Transaction tx{
             .max_fee_per_gas = 0,
-            .gas_limit = 21000,
+            .gas_limit = corpus::TRANSFER_GAS,
             .value = 1,
             .to = corpus::address_of(KEY_B),
             .type = TransactionType::eip1559};
@@ -486,7 +513,8 @@ TEST(CorpusBuilder, AncestorsReachBackToTheOldestHashTheBlockReads)
     b.set_ancestors(corpus::Ancestors::Reached);
 
     for (int i = 0; i < 4; ++i) {
-        auto const e = b.add_block(one_call(corpus::address_of(KEY_B), 21000));
+        auto const e = b.add_block(
+            one_call(corpus::address_of(KEY_B), corpus::TRANSFER_GAS));
         EXPECT_EQ(
             ancestor_numbers(e.witness),
             std::vector<uint64_t>{e.header.number - 1});
@@ -500,7 +528,8 @@ TEST(CorpusBuilder, AncestorsReachBackToTheOldestHashTheBlockReads)
         (std::vector<uint64_t>{n - 3, n - 2, n - 1}));
 
     b.set_ancestors(corpus::Ancestors::All);
-    auto const all = b.add_block(one_call(corpus::address_of(KEY_B), 21000));
+    auto const all =
+        b.add_block(one_call(corpus::address_of(KEY_B), corpus::TRANSFER_GAS));
     std::vector<uint64_t> every;
     for (uint64_t k = corpus::GENESIS_NUMBER; k < all.header.number; ++k) {
         every.push_back(k);
@@ -653,7 +682,7 @@ TEST(CorpusBlinder, TheCommitmentIsPerBlockAndHidesTheRoot)
         corpus::BlockSpec spec;
         Transaction tx{
             .max_fee_per_gas = 100,
-            .gas_limit = 21000,
+            .gas_limit = corpus::TRANSFER_GAS,
             .value = 1,
             .to = corpus::address_of(KEY_B),
             .type = TransactionType::eip1559,
@@ -695,7 +724,7 @@ TEST(CorpusBlinder, ConsecutiveBlocksChainThroughTheirCommitments)
         corpus::BlockSpec spec;
         Transaction tx{
             .max_fee_per_gas = 100,
-            .gas_limit = 21000,
+            .gas_limit = corpus::TRANSFER_GAS,
             .value = 1,
             .to = corpus::address_of(KEY_B),
             .type = TransactionType::eip1559,
@@ -722,7 +751,7 @@ TEST(CorpusBlinder, TheCommitmentFollowsTheSecret)
         corpus::BlockSpec spec;
         Transaction tx{
             .max_fee_per_gas = 100,
-            .gas_limit = 21000,
+            .gas_limit = corpus::TRANSFER_GAS,
             .value = 1,
             .to = corpus::address_of(KEY_B),
             .type = TransactionType::eip1559,

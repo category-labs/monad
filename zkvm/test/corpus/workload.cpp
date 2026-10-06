@@ -100,7 +100,10 @@ namespace corpus
     {
         constexpr uint64_t MAX_FEE = 100;
         constexpr uint64_t PRIORITY_FEE = 1;
-        constexpr uint64_t TRANSFER_GAS = 21'000;
+        // TRANSFER_GAS is corpus_builder.hpp's: the intrinsic cost plus the
+        // access check's stipend where there is a check to pay for. At 21,000
+        // a transfer is denied for want of it and reverts having moved
+        // nothing, which is a corpus that looks well and tests nothing.
         constexpr uint64_t SPOKE_GAS = 300'000;
         constexpr uint64_t DEPLOY_GAS = 2'000'000;
 
@@ -169,12 +172,21 @@ namespace corpus
         void seed_spoke(GenesisSink &sink, WorkloadSpec const &spec)
         {
 #ifdef MONAD_ZKVM_L2
+            // Two halves. The spoke's own address holds the access proxy,
+            // because the domain arm asks it canCall before every call and the
+            // vendored contract predates that function; the vendored runtime
+            // sits behind it, reached by DELEGATECALL, so storage and logs
+            // still belong to the spoke. See spoke_access_proxy.
             sink.contract(
-                L2_DOMAIN_SPOKE,
+                SPOKE_IMPLEMENTATION,
                 Account{.nonce = 1},
                 namespace_spoke_code(
                     SPOKE_NAMESPACE_CHAIN_ID,
                     address_of(derive_key(spec.seed, PAYER_INDEX_BASE))));
+            sink.contract(
+                L2_DOMAIN_SPOKE,
+                Account{.nonce = 1},
+                spoke_access_proxy(SPOKE_IMPLEMENTATION));
 #else
             sink.account(
                 address_of(derive_key(spec.seed, SPOKE_DEPLOYER_INDEX)),

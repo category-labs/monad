@@ -291,9 +291,10 @@ configure with those, and hand the generator the same secret with `--sk`. The
 generator checks the pair at startup and refuses to produce a corpus nothing
 can decrypt.
 
-`MONAD_ZKVM_L2_SPOKE` comes from the same tool: `--spoke-address` prints where
-the spoke scenario deploys. The address is CREATE-derived, so it follows the
-deployer key and therefore the `--seed`. And `--salt-commitment <secret>`
+`MONAD_ZKVM_L2_SPOKE` comes from the same tool: `--spoke-address` prints the
+fixed predeploy address the corpus seeds the spoke at. Fixed and not
+CREATE-derived, because the access check asks the spoke before every call and so
+it has to exist from genesis, before anything could have deployed it. And `--salt-commitment <secret>`
 prints `MONAD_ZKVM_L2_SALT_COMMITMENT` for a blinder secret, which the
 generator then wants back as `--salt`.
 

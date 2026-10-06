@@ -31,6 +31,7 @@
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
+#include <category/execution/ethereum/execute_message.hpp>
 #include <category/mpt/db.hpp>
 
 #include <cstdint>
@@ -102,6 +103,23 @@ namespace corpus
     /// One block's worth of input. `keys[i]` signs `txs[i]`; the builder fills
     /// each nonce from the sender's account and signs last, because the nonce
     /// is inside the signing preimage.
+
+    /// What a plain transfer costs here.
+    ///
+    /// On the domain arm the access check asks the spoke before EVERY call --
+    /// a transfer to an account with no code included -- and charges the
+    /// caller its stipend before the callee runs. So 21,000 does not reach the
+    /// callee at all: the check denies for want of the stipend, and the
+    /// transfer reverts having moved nothing. The floor is the intrinsic cost
+    /// plus the stipend, and a corpus funded below it tests nothing while
+    /// looking entirely well.
+#ifdef MONAD_ZKVM_L2
+    inline constexpr uint64_t TRANSFER_GAS =
+        21'000 + static_cast<uint64_t>(DOMAIN_ACCESS_GAS_STIPEND);
+#else
+    inline constexpr uint64_t TRANSFER_GAS = 21'000;
+#endif
+
     struct BlockSpec
     {
         std::vector<Transaction> txs;

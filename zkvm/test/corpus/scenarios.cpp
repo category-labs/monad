@@ -15,6 +15,7 @@
 
 #include <zkvm/test/corpus/contracts/namespace_spoke_bytecode.hpp>
 #include <zkvm/test/corpus/scenarios.hpp>
+#include <zkvm/test/corpus/spoke_code.hpp>
 #include <zkvm/test/corpus/tx_sign.hpp>
 
 #include <category/core/assert.h>
@@ -22,6 +23,10 @@
 #include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
 #include <category/execution/ethereum/core/account.hpp>
+#include <category/execution/ethereum/core/rlp/address_rlp.hpp>
+#include <category/execution/ethereum/core/rlp/int_rlp.hpp>
+#include <category/execution/ethereum/domain_anchor.hpp>
+#include <category/execution/ethereum/rlp/encode2.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 
 #include <cstddef>
@@ -122,6 +127,19 @@ MONAD_NAMESPACE_BEGIN
 
 namespace corpus
 {
+    /// YP (86): the CREATE address is keccak(rlp([sender, nonce]))[12:]. At
+    /// nonce 0, which is where a freshly funded deployer starts, so a genesis
+    /// can name what its first block will create.
+    Address create_address_at_nonce_0(Address const &deployer)
+    {
+        byte_string const enc = rlp::encode_list2(
+            rlp::encode_address(deployer), rlp::encode_unsigned(uint64_t{0}));
+        auto const hash = keccak256(enc);
+        Address out;
+        std::memcpy(out.bytes, hash.bytes + 12, sizeof(out.bytes));
+        return out;
+    }
+
     namespace
     {
         constexpr uint256_t FUND = 100'000'000'000'000'000; // 0.1 ether
@@ -198,7 +216,7 @@ namespace corpus
                 for (size_t i = 0; i < keys.size(); ++i) {
                     b1.txs.push_back(call(
                         addr_of(keys[(i + 1) % keys.size()]),
-                        21'000,
+                        TRANSFER_GAS,
                         1'000 + i,
                         {}));
                     b1.keys.push_back(keys[i]);
@@ -250,38 +268,46 @@ namespace corpus
                 // no-op for the accounts trie.
                 st.add_to_balance(suicide_addr, 12'345);
             };
-            s.blocks = [keys, log_addr, revert_addr, suicide_addr](
-                           CorpusBuilder &) {
-                std::vector<BlockSpec> blocks;
+            s.blocks =
+                [keys, log_addr, revert_addr, suicide_addr](CorpusBuilder &) {
+                    std::vector<BlockSpec> blocks;
 
-                BlockSpec b1;
-                // CREATE
-                b1.txs.push_back(
-                    call(std::nullopt, 200'000, 0, hex(DEPLOY_INIT)));
-                b1.keys.push_back(keys[0]);
-                // a log
-                b1.txs.push_back(call(log_addr, 100'000, 0, {}));
-                b1.keys.push_back(keys[1]);
-                // a revert: status 0, gas spent, no state change
-                b1.txs.push_back(call(revert_addr, 100'000, 0, {}));
-                b1.keys.push_back(keys[2]);
-                // legacy and 2930 alongside 1559
-                b1.txs.push_back(call(
-                    addr_of(keys[4]), 21'000, 5, {}, TransactionType::legacy));
-                b1.keys.push_back(keys[3]);
-                b1.txs.push_back(call(
-                    addr_of(keys[5]), 21'000, 5, {}, TransactionType::eip2930));
-                b1.keys.push_back(keys[4]);
-                blocks.push_back(std::move(b1));
+                    BlockSpec b1;
+                    // CREATE
+                    b1.txs.push_back(
+                        call(std::nullopt, 200'000, 0, hex(DEPLOY_INIT)));
+                    b1.keys.push_back(keys[0]);
+                    // a log
+                    b1.txs.push_back(call(log_addr, 100'000, 0, {}));
+                    b1.keys.push_back(keys[1]);
+                    // a revert: status 0, gas spent, no state change
+                    b1.txs.push_back(call(revert_addr, 100'000, 0, {}));
+                    b1.keys.push_back(keys[2]);
+                    // legacy and 2930 alongside 1559
+                    b1.txs.push_back(call(
+                        addr_of(keys[4]),
+                        TRANSFER_GAS,
+                        5,
+                        {},
+                        TransactionType::legacy));
+                    b1.keys.push_back(keys[3]);
+                    b1.txs.push_back(call(
+                        addr_of(keys[5]),
+                        TRANSFER_GAS,
+                        5,
+                        {},
+                        TransactionType::eip2930));
+                    b1.keys.push_back(keys[4]);
+                    blocks.push_back(std::move(b1));
 
-                // 2: destroy an account with a balance.
-                BlockSpec b2;
-                b2.txs.push_back(call(suicide_addr, 100'000, 0, {}));
-                b2.keys.push_back(keys[6]);
-                blocks.push_back(std::move(b2));
+                    // 2: destroy an account with a balance.
+                    BlockSpec b2;
+                    b2.txs.push_back(call(suicide_addr, 100'000, 0, {}));
+                    b2.keys.push_back(keys[6]);
+                    blocks.push_back(std::move(b2));
 
-                return blocks;
-            };
+                    return blocks;
+                };
             out.push_back(std::move(s));
         }
 
@@ -296,12 +322,32 @@ namespace corpus
 
             Scenario s;
             s.name = "spoke";
-            s.genesis = [keys](State &st) {
+            // Block 1's CREATE lands here, and the proxy at the spoke's own
+            // address delegates to it. The spoke is a fixed predeploy now, not
+            // a CREATE-derived address, which is also what the protocol
+            // describes it as.
+            Address const impl = create_address_at_nonce_0(addr_of(keys[0]));
+            // Where the messages are sent, and so where the harvest reads
+            // them: the predeploy on the domain arm, which delegates to the
+            // contract block 1 creates; the created contract itself where
+            // there is no access check to answer.
+#ifdef MONAD_ZKVM_L2
+            Address const target = L2_DOMAIN_SPOKE;
+#else
+            Address const target = impl;
+#endif
+            s.genesis = [keys, impl](State &st) {
                 for (auto const &k : keys) {
                     st.add_to_balance(addr_of(k), FUND);
                 }
+#ifdef MONAD_ZKVM_L2
+                st.create_contract(L2_DOMAIN_SPOKE);
+                st.set_code(L2_DOMAIN_SPOKE, spoke_access_proxy(impl));
+#else
+                (void)impl;
+#endif
             };
-            s.blocks = [keys](CorpusBuilder &b) {
+            s.blocks = [keys, impl, target](CorpusBuilder &b) {
                 std::vector<BlockSpec> blocks;
 
                 // 1: deploy it. The constructor takes (uint64 chainId,
@@ -312,7 +358,9 @@ namespace corpus
                 push_word(init, uint256_t{1});
                 push_word(init, addr_of(keys[0]));
 
-                Address const spoke = b.next_contract_address(addr_of(keys[0]));
+                // What block 1 will create, which the genesis proxy already
+                // points at.
+                MONAD_ASSERT(b.next_contract_address(addr_of(keys[0])) == impl);
 
                 BlockSpec b1;
                 b1.txs.push_back(call(std::nullopt, 2'000'000, 0, init));
@@ -327,7 +375,7 @@ namespace corpus
                     byte_string payload;
                     payload.append(i * 5, static_cast<unsigned char>(0xa0 + i));
                     b2.txs.push_back(call(
-                        spoke,
+                        target,
                         300'000,
                         0,
                         abi_call_address_bytes(
@@ -340,6 +388,25 @@ namespace corpus
             };
             out.push_back(std::move(s));
         }
+
+#ifdef MONAD_ZKVM_L2
+        // Every genesis gets a spoke, because the access check asks it before
+        // every call and one that is not there answers nothing -- which
+        // denies. A scenario that brings its own keeps it: the spoke one
+        // points its proxy at what its first block creates.
+        for (auto &sc : out) {
+            auto const inner = sc.genesis;
+            sc.genesis = [inner](State &st) {
+                inner(st);
+                if (!st.account_exists(L2_DOMAIN_SPOKE)) {
+                    st.create_contract(L2_DOMAIN_SPOKE);
+                    st.set_code(
+                        L2_DOMAIN_SPOKE,
+                        spoke_access_proxy(SPOKE_IMPLEMENTATION));
+                }
+            };
+        }
+#endif
 
         return out;
     }

@@ -31,11 +31,13 @@
 
 #include <zkvm/test/corpus/corpus_builder.hpp>
 #include <zkvm/test/corpus/scenarios.hpp>
+#include <zkvm/test/corpus/spoke_code.hpp>
 #include <zkvm/test/corpus/tx_sign.hpp>
 
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
+#include <category/execution/ethereum/domain_anchor.hpp>
 #include <category/execution/ethereum/rlp/decode.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 
@@ -285,6 +287,15 @@ namespace
             [](State &s) {
                 s.add_to_balance(
                     corpus::address_of(KEY_A), 1000000000000000000_u256);
+#ifdef MONAD_ZKVM_L2
+                // The access check asks the spoke before every call, and a
+                // spoke that is not there answers nothing -- which denies. A
+                // genesis without one is not a chain this guest can run.
+                s.create_contract(L2_DOMAIN_SPOKE);
+                s.set_code(
+                    L2_DOMAIN_SPOKE,
+                    corpus::spoke_access_proxy(corpus::SPOKE_IMPLEMENTATION));
+#endif
             },
             OPERATOR_SK,
             SALT_SECRET};
@@ -296,7 +307,7 @@ namespace
             corpus::BlockSpec spec;
             Transaction tx{
                 .max_fee_per_gas = 100,
-                .gas_limit = 21000,
+                .gas_limit = corpus::TRANSFER_GAS,
                 .value = 1,
                 .to = corpus::address_of(KEY_B),
                 .type = TransactionType::eip1559,
@@ -446,12 +457,19 @@ namespace
                     corpus::address_of(KEY_A), 1000000000000000000_u256);
                 s.create_contract(HASH_READER);
                 s.set_code(HASH_READER, READS_A_HASH);
+#ifdef MONAD_ZKVM_L2
+                s.create_contract(L2_DOMAIN_SPOKE);
+                s.set_code(
+                    L2_DOMAIN_SPOKE,
+                    corpus::spoke_access_proxy(corpus::SPOKE_IMPLEMENTATION));
+#endif
             },
             OPERATOR_SK,
             SALT_SECRET};
         b.set_ancestors(corpus::Ancestors::Reached);
         for (unsigned i = 0; i < 4; ++i) {
-            b.add_block(one_call(corpus::address_of(KEY_B), 21000));
+            b.add_block(
+                one_call(corpus::address_of(KEY_B), corpus::TRANSFER_GAS));
         }
         auto e = b.add_block(one_call(HASH_READER, 100000));
         MONAD_ASSERT(e.receipts.at(0).status == 1);

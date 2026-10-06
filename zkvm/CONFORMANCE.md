@@ -61,17 +61,33 @@ so `EvmTraits<PARIS>` with unpriced gas is a combination its own source refuses 
 compile. Monad pricing, reserve balance, cold-access costs and code-size limits
 all follow, and all move the state root.
 
-## `canCall` runs on every EVM call
+## `canCall` runs on every EVM call — **done**
 
 In `pre_call`, so on every message and not only the top-level one: a STATIC call
 to the spoke's `canCall(address,address,bytes)` with a 30,000 gas stipend charged
 to the caller (`msg.gas -= stipend - gas_left`), failing closed on anything but
-canonical ABI `true`. The denial flag is sticky for the whole transaction so a
-caller cannot swallow the revert by catching it, and a depth rule makes the
-check's callees leaves — a second hop arms the denial.
+canonical ABI `true`. The denial flag is sticky for the whole transaction and
+`finalize_domain_access` turns it into a revert at depth 0, so a caller cannot
+swallow it by catching the revert; a depth rule makes the check's callees leaves.
 
 It changes the gas available to every call, so it moves out-of-gas boundaries and
-therefore the state root. It is in the hottest path of the guest.
+therefore the state root. `domain_access_test` holds the rule directly, because
+the corpus cannot on its own.
+
+**The corpus needed a stand-in.** The spoke this tree vendors predates `canCall`,
+so against it the check denies every call and the corpus exercises nothing. An L2
+genesis now seeds `spoke_access_proxy` at the spoke's address — eighty bytes of
+hand-written EVM that answer `canCall` with ABI true and `DELEGATECALL`
+everything else to the vendored runtime behind it. Delegatecall keeps
+`address()`, so storage and logs still belong to the spoke and the harvest is
+unchanged: the spoke scenario publishes the same anchor it did before the check
+existed. It is a fixture, not a contract the protocol has, and it goes when
+`DomainSpoke` can be vendored.
+
+**And the spoke became a predeploy**, which closes a gap recorded below rather
+than adding one. It could not stay CREATE-derived: the check asks it before every
+call, so it has to exist from genesis, before anything could have deployed it.
+`--spoke-address` prints a constant now instead of deriving one from the seed.
 
 ## Five pre-execution drop rules decide the transaction set
 
@@ -217,8 +233,8 @@ not cover a block that sent no messages, where an empty anchor is correct anyway
   `_pendingDomainMessages` at 1, no base contract carrying storage), to be
   reconfirmed with `forge inspect`. It is the one pinned constant the rename did
   not have to move;
-- the spoke is now intended as a protocol predeploy at a fixed address rather than
-  a `CREATE` deployment, so deriving it from a deployer key no longer makes sense;
+- the spoke is a protocol predeploy at a fixed address rather than a `CREATE`
+  deployment — **done**, forced by the access check above;
 - `DomainSpoke` gained an access-control layer (`policyOwners`, `accessControl`,
   `approvedReaders`, `canCall`) and a `deployContract` entry point through which
   contract creation passes.

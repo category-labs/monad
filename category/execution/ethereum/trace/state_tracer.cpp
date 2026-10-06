@@ -327,6 +327,9 @@ namespace trace
         if (auto *access_list = std::get_if<AccessListTracer>(&tracer)) {
             access_list->reset();
         }
+        else if (auto *code = std::get_if<WitnessTracer>(&tracer)) {
+            *code = WitnessTracer{};
+        }
     }
 
     template <Traits traits>
@@ -344,7 +347,7 @@ namespace trace
                 [&state](AccessListTracer &access_list) {
                     access_list.encode<traits>(state);
                 },
-                [](CodeTracer &) {}},
+                [](WitnessTracer &) {}},
             tracer);
     }
 

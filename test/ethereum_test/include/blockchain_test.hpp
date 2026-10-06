@@ -56,6 +56,7 @@ class BlockchainTest : public testing::Test
     std::optional<vm::VM::Mode> fixed_vm_mode_;
     bool enable_tracing_;
     monad_event_ring const *exec_event_ring_;
+    bool witness_roundtrip_;
 
 public:
     static void SetUpTestSuite();
@@ -67,12 +68,14 @@ public:
             &revision,
         std::optional<vm::VM::Mode> const fixed_vm_mode,
         bool const enable_tracing,
-        monad_event_ring const *const exec_event_ring) noexcept
+        monad_event_ring const *const exec_event_ring,
+        bool const witness_roundtrip) noexcept
         : file_{file}
         , revision_{revision}
         , fixed_vm_mode_{fixed_vm_mode}
         , enable_tracing_{enable_tracing}
         , exec_event_ring_{exec_event_ring}
+        , witness_roundtrip_{witness_roundtrip}
     {
     }
 
@@ -82,10 +85,12 @@ public:
 void register_blockchain_tests_path(
     std::filesystem::path const &,
     std::optional<std::variant<monad_eth_revision, monad_revision>> const &,
-    std::optional<vm::VM::Mode>, bool, monad_event_ring const *);
+    std::optional<vm::VM::Mode>, bool, monad_event_ring const *,
+    bool witness_roundtrip = false);
 
 void register_blockchain_tests(
     std::optional<std::variant<monad_eth_revision, monad_revision>> const &,
-    std::optional<vm::VM::Mode>, bool, monad_event_ring const *);
+    std::optional<vm::VM::Mode>, bool, monad_event_ring const *,
+    bool witness_roundtrip = false);
 
 MONAD_TEST_NAMESPACE_END

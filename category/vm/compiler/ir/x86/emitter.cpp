@@ -3450,7 +3450,7 @@ namespace monad::vm::compiler::native
         // `JUMPI` instruction potentially spilling the same stack elements as
         // the predecessor block.
         bool const spill_stack =
-            jump_dests_.count(static_cast<byte_offset>(ft.offset)) ||
+            jump_dests_.contains(static_cast<byte_offset>(ft.offset)) ||
             (ft.terminator == basic_blocks::Terminator::JumpI &&
              stack_.missing_spill_count() > 3 + ft.instrs.size());
         if (spill_stack) {

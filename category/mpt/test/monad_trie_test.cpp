@@ -268,7 +268,7 @@ void prepare_keccak(
             do {
                 key = (size_t)distrib(gen);
             }
-            while (keys_per_slice.find(key) != keys_per_slice.end());
+            while (keys_per_slice.contains(key));
             keys_per_slice.insert(key);
             keccak_keys[i].resize(32);
             monad_keccak256(

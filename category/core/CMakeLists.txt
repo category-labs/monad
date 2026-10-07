@@ -157,6 +157,7 @@ add_library(
   "throw.hpp"
   "tl_tid.c"
   "tl_tid.h"
+  "trie_hash.hpp"
   "detail/start_lifetime_as_polyfill.hpp"
   "lru/lru_cache.hpp"
   "lru/static_lru_cache.hpp"

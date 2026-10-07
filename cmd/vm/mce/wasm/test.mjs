@@ -86,6 +86,15 @@ for (let opcode = 0; opcode < 256; ++opcode) {
     check('600035'.repeat(7) + opcode.toString(16).padStart(2, '0') + '00'.repeat(33));
 }
 const baseline = check('60003560013504');
+for (const [hex, offset] of [
+    ['600035600757005b00', '05'], // PUSH1 target.
+    ['60003561000857005b00', '06'], // PUSH2 target.
+    ['6000356007575b00', '05'], // Fall through directly to JUMPDEST.
+    ['600035600157', '05'], // Fall through past the end of the bytecode.
+    ['6000356001575700', '06'], // Empty block containing a second JUMPI.
+]) {
+    assert.match(check(hex), new RegExp(`//\\s+0x${offset}: JumpI \\d+`));
+}
 check('60003100');
 assert.equal(check('60003560013504'), baseline, 'Compilation history changed assembly');
 assert.match(check('60003100'), /runtime::balance/);

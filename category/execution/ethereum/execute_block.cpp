@@ -40,6 +40,7 @@
 #include <category/execution/ethereum/execute_block_header.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
+#include <category/execution/ethereum/domain_anchor.hpp>
 #include <category/execution/ethereum/process_requests.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
@@ -312,6 +313,9 @@ Result<std::vector<Receipt>> execute_block(
         process_withdrawal(state, block.withdrawals);
     }
 
+    // L2 has no beacon-chain requests or EIP-7002/7251 predeploys. Skip this
+    // path; missing predeploy code would otherwise invalidate Prague blocks.
+#ifndef MONAD_ZKVM_L2
     if constexpr (traits::eip_7685_active()) {
         MONAD_ASSERT_THROW(
             block.header.requests_hash.has_value(),
@@ -331,8 +335,34 @@ Result<std::vector<Receipt>> execute_block(
             return BlockError::InvalidRequestsHash;
         }
     }
+#else
+    // Only process_requests uses this parameter. Keep the node API unchanged
+    // and suppress the unused-argument warning in L2 builds.
+    (void)system_call_state_tracer;
+#endif
 
+    // Mirror the guest's pending-array clear: it changes the state root and
+    // must run on both paths. The node returns receipts; only the guest
+    // publishes the anchor. The clear checks pending length against log
+    // count.
+#ifdef MONAD_ZKVM_L2
+    {
+        BOOST_OUTCOME_TRY(
+            auto const leaves,
+            collect_domain_messages(retvals, L2_DOMAIN_SPOKE));
+        clear_pending_domain_messages(
+            state,
+            L2_DOMAIN_SPOKE,
+            L2_PENDING_SLOT,
+            static_cast<uint64_t>(leaves.size()));
+    }
+#endif
+
+    // L2 has no block issuance. Disable rewards explicitly, independently of
+    // the revision guard that also excludes pre-Merge revisions.
+#ifndef MONAD_ZKVM_L2
     apply_block_reward<traits>(state, block);
+#endif
 
     // TODO: move to execute_monad_block
     if constexpr (traits::mip_11_active()) {

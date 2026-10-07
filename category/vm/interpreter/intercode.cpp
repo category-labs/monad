@@ -35,7 +35,9 @@ namespace monad::vm::interpreter
         , graphcode_(std::nullopt)
     {
         if (code.size() > 2 && code[0] == 0xfe && code[1] == 0x7f) {
-            graphcode_ = graph_eval::Graphcode(code);
+            // From this Intercode's own copy of the code, which the Graphcode
+            // keeps pointing into: the caller's may not outlive the call
+            graphcode_.emplace(code_span());
         }
     }
 

@@ -40,6 +40,7 @@
 #include <category/execution/ethereum/execute_block_header.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
+#include <category/execution/ethereum/domain_anchor.hpp>
 #include <category/execution/ethereum/process_requests.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
@@ -312,6 +313,15 @@ Result<std::vector<Receipt>> execute_block(
         process_withdrawal(state, block.withdrawals);
     }
 
+    // No requests on this chain, and gated for two reasons. The mechanism is
+    // for a beacon chain this one does not have. And under Prague it would
+    // make EVERY block invalid: system_call returns SystemCallMissingCode
+    // unless the EIP-7002 and EIP-7251 predeploys have code, which an L2 with
+    // no validators has no reason to deploy. It also builds a commitment to
+    // deposit requests read out of prover-chosen logs, checked only against
+    // the prover's own header -- inert today because nothing consumes it, and
+    // one more prover-driven surface for a mechanism that does not apply.
+#ifndef MONAD_ZKVM_L2
     if constexpr (traits::eip_7685_active()) {
         MONAD_ASSERT_THROW(
             block.header.requests_hash.has_value(),
@@ -331,8 +341,53 @@ Result<std::vector<Receipt>> execute_block(
             return BlockError::InvalidRequestsHash;
         }
     }
+#else
+    // process_requests was this parameter's only reader, and the signature
+    // keeps it rather than dropping it under the option: execute_block is
+    // what the node calls, and a function whose arity depends on a build flag
+    // is a worse thing to own than one unused argument. -Werror makes the
+    // cast necessary rather than decorative.
+    (void)system_call_state_tracer;
+#endif
 
+    // The message anchor's state effect, mirroring execute_block_zkvm. Only
+    // the CLEAR is here: the anchor value itself is the prover's to publish,
+    // and execute_block returns receipts, so the node drops it. The asymmetry
+    // is deliberate -- the node wants the state root, the prover wants the
+    // tuple the L1 hub verifies.
+    //
+    // Emptying the pending array is a CONSENSUS rule, not bookkeeping: if the
+    // guest's epilogue clears it and the node's does not, the two state roots
+    // diverge on the first block that carries a message. Nothing in the build
+    // keeps these two epilogues in step -- this file is dropped from the guest
+    // and zkvm/guest/execute_block.cpp is absent from the node -- so the length
+    // assertion inside the clear is what turns a divergence into an abort on
+    // the first such block rather than a wrong root.
+#ifdef MONAD_ZKVM_L2
+    {
+        BOOST_OUTCOME_TRY(
+            auto const leaves,
+            collect_domain_messages(retvals, L2_DOMAIN_SPOKE));
+        clear_pending_domain_messages(
+            state,
+            L2_DOMAIN_SPOKE,
+            L2_PENDING_SLOT,
+            static_cast<uint64_t>(leaves.size()));
+    }
+#endif
+
+    // No block reward on this chain, and gated rather than left to be zero.
+    // apply_block_reward credits block.header.beneficiary and every ommer's
+    // beneficiary -- fields the prover writes -- whenever block_reward is
+    // non-zero, which is any pre-Merge revision. A static_assert in l2_config
+    // forbids those, so the call would be inert; but then its safety rests on
+    // a property of the revision constant rather than on a rule of the chain,
+    // and an L2 has no miner, no beneficiary that means anything, and no
+    // issuance. Removing the call is the rule; the static_assert is the second
+    // line, not the first.
+#ifndef MONAD_ZKVM_L2
     apply_block_reward<traits>(state, block);
+#endif
 
     // TODO: move to execute_monad_block
     if constexpr (traits::mip_11_active()) {

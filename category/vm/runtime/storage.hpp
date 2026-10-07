@@ -38,8 +38,8 @@ namespace monad::vm::runtime
     {
         auto key = store_be_as<bytes32_t>(*key_ptr);
 
-        auto const value = ctx->host->get_transient_storage(
-            ctx->context, &ctx->env.recipient, &key);
+        auto const value =
+            ctx->get_transient_storage(&ctx->env.recipient, &key);
 
         *result_ptr = load_be<uint256_t>(value);
     }
@@ -55,8 +55,7 @@ namespace monad::vm::runtime
         auto key = store_be_as<bytes32_t>(*key_ptr);
         auto val = store_be_as<bytes32_t>(*val_ptr);
 
-        ctx->host->set_transient_storage(
-            ctx->context, &ctx->env.recipient, &key, &val);
+        ctx->set_transient_storage(&ctx->env.recipient, &key, &val);
     }
 
     bool debug_tstore_stack(

@@ -31,6 +31,7 @@ target_sources(monad-vm-runtime PRIVATE
     "data.hpp"
     "data.cpp"
     "detail.hpp"
+    "engine_timer.hpp"
     "environment.hpp"
     "environment.cpp"
     "exit.S"

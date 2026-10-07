@@ -48,8 +48,7 @@ namespace monad::vm::runtime
             ctx->deduct_gas(size * bin<8>);
         }
 
-        ctx->host->emit_log(
-            ctx->context,
+        ctx->emit_log(
             &ctx->env.recipient,
             ctx->memory.data + *offset,
             *size,

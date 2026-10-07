@@ -43,6 +43,7 @@ target_sources(vm-unit-tests PRIVATE
     runtime/transmute_tests.cpp
     runtime/math_tests.cpp
     runtime/memory_tests.cpp
+    runtime/engine_timer_tests.cpp
     runtime/keccak_tests.cpp
     runtime/environment_tests.cpp
     runtime/storage_tests.cpp

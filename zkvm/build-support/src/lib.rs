@@ -521,6 +521,9 @@ fn emit_rerun_directives(zkvm_dir: &Path, repo_root: &Path) {
     println!("cargo:rerun-if-env-changed=RISCV_TOOLCHAIN_DIR");
     println!("cargo:rerun-if-env-changed=MONAD_ZKVM_OFFICIAL_PROFILE");
     println!("cargo:rerun-if-env-changed=MONAD_ZKVM_GIT_COMMIT");
+    // The levers reach CMake through this variable: without the directive, switching one
+    // rebuilds nothing, and the ELF is the previous configuration's under the new name.
+    println!("cargo:rerun-if-env-changed=MONAD_ZKVM_CMAKE_DEFINES");
     // Watch Git metadata to refresh the build stamp when only the commit changes.
     for git_path in ["HEAD", "refs"] {
         let p = repo_root.join(".git").join(git_path);

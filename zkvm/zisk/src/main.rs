@@ -19,14 +19,15 @@ ziskos::entrypoint!(main);
 mod ecrecover;
 mod ecrecover_tables;
 
-// The C++ guest (zkvm/guest/execute_witness.cpp) owns input and output via the eth-act
-// standard interface (io-interface/zkvm_io.h): it calls read_input to fetch the
-// RLP-encoded witness and write_output to emit the 32-byte block hash.
-// ziskos supplies both symbols at link time, so Rust just dispatches.
-//
-// zkvm_halt (declared in zkvm/core/zkvm_halt.h) has no ziskos equivalent;
-// we issue the same RISC-V Linux exit syscall (a7 = 93) that ziskos's own
-// _start ends on, so the prover terminates with the requested status.
+// C++ execute_witness.cpp owns witness I/O through read_input/write_output;
+// ziskos provides these symbols and Rust dispatches. zkvm_halt uses the
+// RISC-V Linux exit syscall (a7 = 93), as ziskos _start does, to terminate
+// with the requested status.
+
+// The L2 guest's ECDH reaches ziskos' secp256k1 library through this module's
+// C entries; it is compiled in unconditionally because a symbol the C++ side
+// does not reference is dead-stripped anyway.
+mod secp256k1_bridge;
 
 extern "C" {
     fn monad_zkvm_execute_witness();

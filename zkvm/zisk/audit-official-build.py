@@ -410,6 +410,10 @@ def main() -> int:
         fail("matching CMake cache did not enable the official profile")
     if values.get("MONAD_ZKVM_GUEST_TARGET") != "zisk":
         fail("matching CMake cache is not a ZisK guest build")
+    # Reject L2 artifacts from the L1 official profile, including when the
+    # configure-time guard was bypassed by a stale cache.
+    if values.get("MONAD_ZKVM_L2", "OFF") != "OFF":
+        fail("matching CMake cache enabled MONAD_ZKVM_L2")
 
     compiler = pathlib.Path(str(profile["compiler"]))
     compiler_id = str(profile.get("compiler_id", ""))

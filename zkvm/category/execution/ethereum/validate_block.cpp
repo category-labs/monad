@@ -13,9 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// zkVM guest references the BlockError status-code domain: execute_block_zkvm
-// returns BlockError::InvalidRequestsHash and ffi.cpp returns BlockError::
-// FieldBeforeFork.
+// BlockError status-code mappings needed by the guest execution path.
 
 #include <category/execution/ethereum/validate_block.hpp>
 
@@ -52,7 +50,17 @@ quick_status_code_from_enum<monad::BlockError>::value_mappings()
          {}},
         {BlockError::SystemCallFailed, "system call failed", {}},
         {BlockError::InvalidRequestsHash, "invalid requests hash", {}},
-        {BlockError::InvalidDepositLog, "invalid deposit log", {}}};
+        {BlockError::InvalidDepositLog, "invalid deposit log", {}},
+        {BlockError::InvalidNamespaceLog, "invalid namespace log", {}},
+        {BlockError::WithdrawalsNotSupported,
+         "withdrawals are not supported on this chain",
+         {}},
+        {BlockError::OmmersNotSupported,
+         "ommers are not supported on this chain",
+         {}},
+        {BlockError::RequestsNotSupported,
+         "requests are not supported on this chain",
+         {}}};
 
     return v;
 }

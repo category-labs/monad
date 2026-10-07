@@ -191,8 +191,7 @@ namespace
         vm::VM monad_vm;
         monad_vm.debug_set_execute_override(to_execute_override(vm));
         BlockState block_state{test_state->trie_db, monad_vm};
-        monad::State state{
-            block_state, Incarnation{json_state.header.number + 1, 1}};
+        monad::State state{block_state};
 
         state.create_contract(msg.code_address);
         state.set_code(msg.code_address, {code.data(), code.size()});
@@ -279,8 +278,7 @@ namespace
             vm::VM monad_vm;
             monad_vm.debug_set_execute_override(to_execute_override(vm));
             BlockState block_state{test_state->trie_db, monad_vm};
-            monad::State state{
-                block_state, Incarnation{json_state.header.number + 1, 1}};
+            monad::State state{block_state};
 
             touch_init_state(json_state, state);
 

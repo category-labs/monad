@@ -104,12 +104,10 @@ struct monad_statesync_server_context final : public monad::Db
     read_account(monad::Address const &addr) override;
 
     virtual monad::bytes32_t read_storage(
-        monad::Address const &addr, monad::Incarnation,
-        monad::bytes32_t const &key) override;
+        monad::Address const &addr, monad::bytes32_t const &key) override;
 
     virtual monad::storage_page_t read_storage_page(
-        monad::Address const &addr, monad::Incarnation,
-        monad::bytes32_t const &page_key) override;
+        monad::Address const &addr, monad::bytes32_t const &page_key) override;
 
     virtual monad::vm::SharedIntercode
     read_code(monad::bytes32_t const &hash) override;

@@ -88,7 +88,7 @@ struct ReserveBalanceTest : public ::testing::Test
     mpt::Db db{std::make_unique<OnDiskMachine>()};
     TrieDb tdb{db};
     BlockState bs{tdb, vm};
-    State state{bs, Incarnation{0, 0}};
+    State state{bs};
     NoopCallTracer call_tracer;
     ReserveBalanceContract contract{state, call_tracer};
 };
@@ -273,7 +273,7 @@ void run_dipped_into_reserve_test(
 
     // Set up initial state
     {
-        State state{bs, Incarnation{0, 0}};
+        State state{bs};
         uint256_t const initial_balance =
             uint256_t{initial_balance_mon} * ETHER;
         state.add_to_balance(EOA, initial_balance);
@@ -323,7 +323,7 @@ void run_dipped_into_reserve_test(
         .authorities = authorities};
 
     {
-        State state{bs, Incarnation{1, 1}};
+        State state{bs};
         trace::StateTracer noop_state_tracer = std::monostate{};
 
         EvmcHost<traits> host{
@@ -595,7 +595,7 @@ struct MonadPrecompileTest : public ::MonadTraitsTest<MonadRevisionT>
     mpt::Db db{std::make_unique<OnDiskMachine>()};
     TrieDb tdb{db};
     BlockState bs{tdb, vm};
-    State state{bs, Incarnation{0, 0}};
+    State state{bs};
     NoopCallTracer call_tracer;
 
     BlockHashBufferFinalized const block_hash_buffer;

@@ -18,34 +18,26 @@
 #include <category/core/address.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
-#include <category/execution/ethereum/types/incarnation.hpp>
 
 #include <cstring>
 
 MONAD_NAMESPACE_BEGIN
 
-// Composite cache key combining account address, account incarnation, and
+// Composite cache key combining account address and
 // the storage trie key. The trie key is slot_key for slot-encoded storage
 // or page_key for page-encoded storage; the cache layer is encoding-agnostic.
 struct StorageKey
 {
-    static constexpr size_t k_bytes =
-        sizeof(Address) + sizeof(Incarnation) + sizeof(bytes32_t);
+    static constexpr size_t k_bytes = sizeof(Address) + sizeof(bytes32_t);
 
     uint8_t bytes[k_bytes];
 
     StorageKey() = default;
 
-    StorageKey(
-        Address const &addr, Incarnation const incarnation,
-        bytes32_t const &key)
+    StorageKey(Address const &addr, bytes32_t const &key)
     {
         memcpy(bytes, addr.bytes, sizeof(Address));
-        memcpy(&bytes[sizeof(Address)], &incarnation, sizeof(Incarnation));
-        memcpy(
-            &bytes[sizeof(Address) + sizeof(Incarnation)],
-            key.bytes,
-            sizeof(bytes32_t));
+        memcpy(&bytes[sizeof(Address)], key.bytes, sizeof(bytes32_t));
     }
 
     bool operator==(StorageKey const &other) const

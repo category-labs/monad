@@ -99,8 +99,8 @@ public:
         return acct.value();
     }
 
-    virtual bytes32_t read_storage(
-        Address const &addr, Incarnation, bytes32_t const &key) override
+    virtual bytes32_t
+    read_storage(Address const &addr, bytes32_t const &key) override
     {
         // On a page-encoded db the storage leaf is the page that contains the
         // slot, keyed by page_key; the slot value lives at its offset within.
@@ -126,7 +126,7 @@ public:
     }
 
     virtual storage_page_t
-    read_storage_page(Address const &, Incarnation, bytes32_t const &) override
+    read_storage_page(Address const &, bytes32_t const &) override
     {
         MONAD_ABORT("TrieRODb read_storage_page is currently not supported");
     }

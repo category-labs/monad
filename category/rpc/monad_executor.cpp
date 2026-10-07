@@ -58,7 +58,6 @@
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/trace/tracer_config.h>
 #include <category/execution/ethereum/tx_context.hpp>
-#include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/ethereum/validate_transaction_error.hpp>
@@ -138,17 +137,16 @@ namespace
         empty_senders_and_authorities{};
 
     void apply_state_overrides(
-        BlockState &block_state, Incarnation const incarnation,
-        monad_state_override const &state_overrides)
+        BlockState &block_state, monad_state_override const &state_overrides)
     {
-        State state{block_state, incarnation};
+        State state{block_state};
 
         for (auto const &[address, state_delta] :
              state_overrides.override_sets) {
             // This would avoid seg-fault on storage override for
             // non-existing accounts
             if (MONAD_UNLIKELY(!state.account_exists(address))) {
-                state.create_contract(address);
+                state.create_account(address);
             }
 
             if (state_delta.balance.has_value()) {
@@ -188,17 +186,25 @@ namespace
                 (void)state.get_nonce(address);
                 update_state(state_delta.state_diff);
             }
-
-            // Remove all override
-            if (auto const &state_object = state_delta.state;
-                state_object.has_value()) {
-                state.set_to_state_incarnation(address);
-                update_state(*state_object);
-            }
         }
         MONAD_ASSERT_THROW(
             block_state.can_merge(state), "failed to apply state override");
         block_state.merge(state);
+
+        // Full replacements are a quiescent operation on the simulation state.
+        // Apply them after account fields/stateDiff, so no cached slot
+        // survives.
+        for (auto const &[address, delta] : state_overrides.override_sets) {
+            if (delta.state.has_value()) {
+                block_state.clear_storage(address);
+                State replacement{block_state};
+                (void)replacement.get_nonce(address);
+                for (auto const &[key, value] : *delta.state) {
+                    replacement.set_storage(address, key, value);
+                }
+                block_state.merge(replacement);
+            }
+        }
     }
 
     template <Traits traits>
@@ -230,11 +236,9 @@ namespace
 
         tdb.set_block_and_prefix(block_number, block_id);
         BlockState block_state{tdb, vm};
-        // avoid conflict with block reward txn
-        Incarnation const incarnation{block_number, Incarnation::LAST_TX - 1u};
-        apply_state_overrides(block_state, incarnation, state_overrides);
+        apply_state_overrides(block_state, state_overrides);
 
-        State state{block_state, incarnation};
+        State state{block_state};
 
         // validate_transaction expects nonce to match.
         // However, eth_call doesn't take a nonce parameter.
@@ -245,7 +249,7 @@ namespace
         // Safe to pass empty code to validation here because the above override
         // will always mark this transaction as coming from an EOA.
         {
-            State state{block_state, incarnation};
+            State state{block_state};
             // validate_transaction expects the sender of a transaction is EOA,
             // not CA. However, eth_call allows the sender to be CA to simulate
             // a subroutine. Solving this issue by manually setting account to
@@ -316,6 +320,8 @@ namespace
         call_tracer.on_finish(gas_used);
 
         execution_result.gas_refund = static_cast<int64_t>(gas_refund);
+
+        state.finalize_account_deletions<traits>();
 
         trace::run_tracer<traits>(state_tracer, state);
 
@@ -997,19 +1003,13 @@ namespace
             };
 
             // Construct state
-            // State overrides are applied with an incarnation in the *previous*
-            // block, rather than with the current header's block number.
-            auto const override_incarnation = Incarnation{
-                base_block_number + block_idx, Incarnation::LAST_TX - 1u};
             apply_state_overrides(
-                block_state,
-                override_incarnation,
-                state_overrides.overrides[block_idx]);
+                block_state, state_overrides.overrides[block_idx]);
 
             // Patch up transactions with valid chain_id, signature, and nonce
             // so that they can pass validation in execute_block.
             {
-                State state{block_state, override_incarnation};
+                State state{block_state};
 
                 for (size_t tx_idx = 0; tx_idx < calls[block_idx].size();
                      ++tx_idx) {

@@ -431,8 +431,8 @@ namespace
     {
         Account acct;
         BOOST_OUTCOME_TRY(
-            auto const incarnation, rlp::decode_unsigned<uint64_t>(payload));
-        acct.incarnation = Incarnation::from_int(incarnation);
+            auto const reserved, rlp::decode_unsigned<uint64_t>(payload));
+        (void)reserved; // Legacy account incarnation; retain the disk layout.
         BOOST_OUTCOME_TRY(acct.nonce, rlp::decode_unsigned<uint64_t>(payload));
         BOOST_OUTCOME_TRY(
             acct.balance, rlp::decode_unsigned<uint256_t>(payload));
@@ -683,7 +683,7 @@ byte_string encode_account_db(Address const &address, Account const &account)
 {
     byte_string encoded_account;
     encoded_account += rlp::encode_address(address);
-    encoded_account += rlp::encode_unsigned(account.incarnation.to_int());
+    encoded_account += rlp::encode_unsigned(uint64_t{0});
     encoded_account += rlp::encode_unsigned(account.nonce);
     encoded_account += rlp::encode_unsigned(account.balance);
     if (account.code_hash != NULL_HASH) {

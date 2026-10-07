@@ -30,7 +30,7 @@ namespace monad::staking::test
         mpt::Db mpt_db_{std::make_unique<OnDiskMachine>()};
         TrieDb trie_db_{mpt_db_};
         BlockState block_state_{trie_db_, vm_};
-        State state_{block_state_, Incarnation{0, 0}};
+        State state_{block_state_};
         NoopCallTracer call_tracer_{};
         StakingContract contract_{state_, call_tracer_};
 

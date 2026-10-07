@@ -32,7 +32,7 @@ struct InMemoryStateTestBase
     TrieDb tdb{db};
     vm::VM vm;
     BlockState block_state{tdb, vm};
-    State state{block_state, Incarnation{0, 0}};
+    State state{block_state};
 };
 
 template <typename T>

@@ -76,7 +76,6 @@ CommitBuilder &CommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
         auto const &account = delta.account.second;
         proposal_post_state_.accounts[addr] = account;
         if (account.has_value()) {
-            auto const inc = account->incarnation;
             for (auto const &[key, delta] : delta.storage) {
                 if (delta.first != delta.second) {
                     storage_updates.push_front(
@@ -92,7 +91,7 @@ CommitBuilder &CommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
                             .incarnation = false,
                             .next = UpdateList{},
                             .version = static_cast<int64_t>(block_number_)}));
-                    proposal_post_state_.storage[StorageKey{addr, inc, key}] =
+                    proposal_post_state_.storage[StorageKey{addr, key}] =
                         storage_page_t{delta.second};
                 }
             }
@@ -100,15 +99,13 @@ CommitBuilder &CommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
                 encode_account_db(addr, account.value()));
         }
 
-        if (!storage_updates.empty() || delta.account.first != account) {
-            bool const incarnation =
-                account.has_value() && delta.account.first.has_value() &&
-                delta.account.first->incarnation != account->incarnation;
+        if ((account.has_value() && delta.storage_cleared) ||
+            !storage_updates.empty() || delta.account.first != account) {
             account_updates.push_front(update_alloc_.emplace_back(Update{
                 .key = hash_alloc_.emplace_back(
                     keccak256({addr.bytes, sizeof(addr.bytes)})),
                 .value = value,
-                .incarnation = incarnation,
+                .incarnation = delta.storage_cleared,
                 .next = std::move(storage_updates),
                 .version = static_cast<int64_t>(block_number_)}));
         }

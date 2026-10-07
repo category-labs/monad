@@ -352,9 +352,12 @@ try {
         }
     }();
 
+    // Ethereum replay includes legacy account deletion/recreation. Keep its
+    // storage reads on the trie; live Monad retains the multiblock cache.
     TrieDb triedb{
         raw_db,
-        /*enable_multiblock_cache=*/true};
+        /*enable_multiblock_cache=*/
+        dynamic_cast<MonadChain const *>(chain.get()) != nullptr};
 
     // Dual-timeline: open the secondary alongside the primary. The primary
     // always owns the latest state; a secondary is optional.

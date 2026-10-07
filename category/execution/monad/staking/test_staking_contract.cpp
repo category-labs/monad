@@ -90,7 +90,7 @@ struct StakeTraits : public MonadTraitsTest<MonadRevisionT>
     mpt::Db db{std::make_unique<OnDiskMachine>()};
     TrieDb tdb{db};
     BlockState bs{tdb, vm};
-    State state{bs, Incarnation{0, 0}};
+    State state{bs};
     NoopCallTracer call_tracer{};
     StakingContract contract{state, call_tracer};
 

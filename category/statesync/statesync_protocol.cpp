@@ -44,7 +44,7 @@ bytes32_t read_storage(
     monad_statesync_client_context &ctx, Address const &addr,
     bytes32_t const &key)
 {
-    return ctx.tdb.read_storage(addr, Incarnation{0, 0}, key);
+    return ctx.tdb.read_storage(addr, key);
 }
 
 void account_update(
@@ -88,7 +88,7 @@ void account_update(
             MONAD_ASSERT(ctx.deltas.emplace(addr, std::nullopt).second);
         }
     }
-    // incarnation
+    // Flush the deletion before recreating the account.
     else if (acct.has_value() && !it->second.has_value()) {
         ctx.commit();
         account_update(ctx, addr, acct);
@@ -137,7 +137,7 @@ void storage_update(
             if (it->second.has_value()) {
                 std::get<StorageDeltas>(it->second.value())[key] = val;
             }
-            // incarnation
+            // Flush the deletion before recreating the account.
             else if (val != bytes32_t{}) {
                 ctx.commit();
                 storage_update(ctx, addr, key, val);
@@ -206,7 +206,6 @@ bool StatesyncProtocolV1_2::handle_upsert(
             return false;
         }
         auto [addr, acct] = res.value();
-        acct.incarnation = Incarnation{0, 0};
         account_update(*ctx, addr, acct);
     }
     else if (type == SYNC_TYPE_UPSERT_STORAGE) {

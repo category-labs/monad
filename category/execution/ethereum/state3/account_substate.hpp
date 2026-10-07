@@ -36,6 +36,7 @@ class AccountSubstate
     bool destructed_{false}; // A_s
     bool touched_{false}; // A_t
     bool accessed_{false}; // A_a
+    bool created_in_tx_{false};
     Set accessed_storage_{}; // A_K
 
 public:
@@ -44,6 +45,16 @@ public:
     AccountSubstate(AccountSubstate const &) = default;
     AccountSubstate &operator=(AccountSubstate &&) noexcept = default;
     AccountSubstate &operator=(AccountSubstate const &) = default;
+
+    bool is_created_in_tx() const
+    {
+        return created_in_tx_;
+    }
+
+    void mark_created_in_tx()
+    {
+        created_in_tx_ = true;
+    }
 
     // A_s
     bool is_destructed() const

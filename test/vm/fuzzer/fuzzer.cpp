@@ -168,7 +168,7 @@ struct TransitionState
     TransitionState(FuzzerTestStateRef ts)
         : test_state{ts}
         , block_state{ts->test_state.trie_db, ts->vm}
-        , state{block_state, Incarnation{0, 0}}
+        , state{block_state}
     {
         state.push();
     }
@@ -262,7 +262,7 @@ static Address deploy_contract(
     auto const create_address = create_contract_address(genesis_address, nonce);
     MONAD_ASSERT(!tstate.state.account_exists(create_address));
 
-    tstate.state.create_account_no_rollback(create_address);
+    tstate.state.create_account(create_address);
     tstate.state.set_code(create_address, {code.data(), code.size()});
 
     MONAD_ASSERT(tstate.state.account_exists(create_address));

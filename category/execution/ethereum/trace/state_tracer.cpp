@@ -139,14 +139,15 @@ namespace trace
 
     StorageDeltas StateDiffTracer::generate_storage_deltas(
         AccountState::StorageMap const &original,
-        AccountState::StorageMap const &current)
+        AccountState::StorageMap const &current, bool const created_in_tx)
     {
         StorageDeltas deltas{};
         for (auto const &[key, value] : current) {
             auto const *it = original.find(key);
-            MONAD_ASSERT(it != nullptr);
-            if (value != *it) {
-                deltas.emplace(key, std::make_pair(*it, value));
+            MONAD_ASSERT(it != nullptr || created_in_tx);
+            bytes32_t const before = it ? *it : bytes32_t{};
+            if (value != before) {
+                deltas.emplace(key, std::make_pair(before, value));
             }
         }
         return deltas;
@@ -181,8 +182,10 @@ namespace trace
 
             StateDelta state_delta{
                 .account = {original_account, current_account},
-                .storage =
-                    generate_storage_deltas(original_storage, current_storage)};
+                .storage = generate_storage_deltas(
+                    original_storage,
+                    current_storage,
+                    current_account_state.is_created_in_tx())};
             state_deltas.emplace(address, std::move(state_delta));
         }
         return state_deltas;
@@ -542,7 +545,8 @@ namespace trace
                         pre_storage[key_json] =
                             bytes_to_hex(original_storage.bytes);
                     }
-                    if (MONAD_LIKELY(current_storage != bytes32_t{})) {
+                    if (state_delta.account.second.has_value() &&
+                        MONAD_LIKELY(current_storage != bytes32_t{})) {
                         post_storage[key_json] =
                             bytes_to_hex(current_storage.bytes);
                     }

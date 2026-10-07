@@ -36,7 +36,7 @@ MONAD_NAMESPACE_BEGIN
 using AccountPostState =
     ankerl::unordered_dense::segmented_map<Address, std::optional<Account>>;
 
-// Storage leaf map keyed by StorageKey{addr, incarnation, key}. The key
+// Storage leaf map keyed by StorageKey{addr, key}. The key
 // granularity matches the trie's storage subtree: slot_key (single slot at
 // index 0) for slot mode, page_key (full page) for page mode. The
 // key being present marks "touched by this proposal"; an empty

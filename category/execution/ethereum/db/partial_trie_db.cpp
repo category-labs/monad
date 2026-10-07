@@ -27,7 +27,6 @@
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/offset_trie.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
-#include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/mpt/nibbles_view.hpp>
 
 #include <functional>
@@ -47,7 +46,7 @@ bool is_changed(StorageDelta const &d)
 
 bool is_changed(StateDelta const &d)
 {
-    if (d.account.first != d.account.second) {
+    if (d.storage_cleared || d.account.first != d.account.second) {
         return true;
     }
     for (auto const &kv : d.storage) {
@@ -79,8 +78,8 @@ std::optional<Account> PartialTrieDb::read_account(Address const &addr)
             }});
 }
 
-bytes32_t PartialTrieDb::read_storage(
-    Address const &addr, Incarnation, bytes32_t const &slot)
+bytes32_t
+PartialTrieDb::read_storage(Address const &addr, bytes32_t const &slot)
 {
     auto const akey = keccak256(addr.bytes);
     auto const sroot = match(
@@ -142,9 +141,7 @@ void PartialTrieDb::commit(
                     MONAD_ABORT("incorrect node type returned in commit");
                 }});
 
-        // Incarnation bump (destroy + recreate in-block): wipe old storage.
-        if (delta.account.first.has_value() &&
-            delta.account.first->incarnation != new_account->incarnation) {
+        if (delta.storage_cleared) {
             storage = NULL_ID;
         }
 

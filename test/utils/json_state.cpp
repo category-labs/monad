@@ -41,7 +41,7 @@ TestStateRef<page_encoded> JsonState::make_test_state() const
 
     vm::VM vm;
     BlockState bs{test_state->trie_db, vm};
-    State state{bs, Incarnation{0, 0}};
+    State state{bs};
     init_state.value().at("pre").get_to(state);
     bs.merge(state);
     auto [released_state, released_code, _] = std::move(bs).release();

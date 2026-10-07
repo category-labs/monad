@@ -111,18 +111,16 @@ public:
         return ret;
     }
 
-    virtual bytes32_t read_storage(
-        Address const &address, Incarnation const incarnation,
-        bytes32_t const &key) override
+    virtual bytes32_t
+    read_storage(Address const &address, bytes32_t const &key) override
     {
-        return triedb_.read_storage(address, incarnation, key);
+        return triedb_.read_storage(address, key);
     }
 
     virtual storage_page_t read_storage_page(
-        Address const &address, Incarnation const incarnation,
-        bytes32_t const &page_key) override
+        Address const &address, bytes32_t const &page_key) override
     {
-        return triedb_.read_storage_page(address, incarnation, page_key);
+        return triedb_.read_storage_page(address, page_key);
     }
 
     virtual vm::SharedIntercode read_code(bytes32_t const &code_hash) override

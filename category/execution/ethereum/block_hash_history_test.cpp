@@ -61,7 +61,7 @@ namespace
             : db{std::make_unique<InMemoryMachine>()}
             , tdb{db}
             , block_state{tdb, vm}
-            , state{block_state, Incarnation{0, 0}}
+            , state{block_state}
             , block_hash_buffer{}
         {
         }

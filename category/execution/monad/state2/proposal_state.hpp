@@ -69,20 +69,19 @@ public:
     }
 
     bool try_read_storage(
-        Address const &address, Incarnation const incarnation,
-        bytes32_t const &key, storage_page_t &result) const
+        Address const &address, bytes32_t const &key,
+        storage_page_t &result) const
     {
         auto const acct_it = post_state_.accounts.find(address);
         if (acct_it != post_state_.accounts.end()) {
             auto const &acct = acct_it->second;
-            if (!acct.has_value() || acct->incarnation != incarnation) {
-                // Account deleted or incarnation cleared in this proposal:
-                // all storage at the requested incarnation is gone.
+            if (!acct.has_value()) {
+                // Account deletion also removes its storage.
                 result = {};
                 return true;
             }
         }
-        StorageKey const sk{address, incarnation, key};
+        StorageKey const sk{address, key};
         auto const it = post_state_.storage.find(sk);
         if (it != post_state_.storage.end()) {
             result = it->second;
@@ -136,13 +135,12 @@ public:
     }
 
     TryReadResult try_read_storage(
-        Address const &address, Incarnation const incarnation,
-        bytes32_t const &key, storage_page_t &result) const
+        Address const &address, bytes32_t const &key,
+        storage_page_t &result) const
     {
-        auto const fn =
-            [&address, incarnation, &key, &result](ProposalState const &ps) {
-                return ps.try_read_storage(address, incarnation, key, result);
-            };
+        auto const fn = [&address, &key, &result](ProposalState const &ps) {
+            return ps.try_read_storage(address, key, result);
+        };
         return try_read(fn);
     }
 

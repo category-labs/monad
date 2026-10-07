@@ -18,7 +18,10 @@
 #include <category/core/int.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/rlp/account_rlp.hpp>
+#include <category/execution/ethereum/core/rlp/address_rlp.hpp>
+#include <category/execution/ethereum/core/rlp/int_rlp.hpp>
 #include <category/execution/ethereum/db/util.hpp>
+#include <category/execution/ethereum/rlp/encode2.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/node.hpp>
 
@@ -27,6 +30,7 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <cstdint>
 #include <span>
 
 using namespace monad;
@@ -42,7 +46,7 @@ TEST(AccountLeafProcessor, RoundtripNoChildren)
         .code_hash =
             0x6b8cebdc2590b486457bbb286e96011bdd50ccc1d8580c1ffb3c89e828462283_bytes32,
         .nonce = 7,
-        .incarnation = Incarnation{0, 0}};
+    };
     Address const address = 0x00000000000000000000000000000000deadbeef_address;
 
     byte_string const db_encoded = encode_account_db(address, original);
@@ -80,7 +84,7 @@ TEST(AccountLeafProcessor, RoundtripWithChildren)
         .code_hash =
             0x6b8cebdc2590b486457bbb286e96011bdd50ccc1d8580c1ffb3c89e828462283_bytes32,
         .nonce = 1,
-        .incarnation = Incarnation{0, 0}};
+    };
     Address const address = 0x00000000000000000000000000000000deadbeef_address;
     bytes32_t const storage_root =
         0xbea34dd04b09ad3b6014251ee24578074087ee60fda8c391cf466dfe5d687d7b_bytes32;
@@ -132,4 +136,21 @@ TEST(AccountLeafProcessor, EmptyValueReturnsEmpty)
         /*version=*/0);
 
     EXPECT_EQ(AccountLeafProcessor::process(*node), byte_string{});
+}
+
+TEST(AccountLeafProcessor, reads_legacy_account_incarnation)
+{
+    Address const address{1};
+    Account const account{.balance = 42, .nonce = 7};
+    byte_string const encoded = rlp::encode_list2(
+        rlp::encode_address(address),
+        rlp::encode_unsigned(uint64_t{0x123456789}),
+        rlp::encode_unsigned(account.nonce),
+        rlp::encode_unsigned(account.balance));
+    byte_string_view view{encoded};
+    auto const decoded = decode_account_db(view);
+    ASSERT_FALSE(decoded.has_error());
+    EXPECT_EQ(decoded.value().first, address);
+    EXPECT_EQ(decoded.value().second, account);
+    EXPECT_TRUE(view.empty());
 }

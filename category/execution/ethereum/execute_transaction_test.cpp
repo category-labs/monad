@@ -75,7 +75,7 @@ TYPED_TEST(TraitsTest, irrevocable_gas_and_refund_new_contract)
     BlockMetrics metrics;
 
     {
-        State state{bs, Incarnation{0, 0}};
+        State state{bs};
         state.add_to_balance(from, initial_balance);
         state.set_nonce(from, 25);
         bs.merge(state);
@@ -130,7 +130,7 @@ TYPED_TEST(TraitsTest, irrevocable_gas_and_refund_new_contract)
 
     EXPECT_EQ(receipt.value().status, 1u);
     {
-        State state{bs, Incarnation{0, 0}};
+        State state{bs};
         uint256_t const final_balance_uint256 = state.get_balance(from);
         ASSERT_TRUE(
             final_balance_uint256 < std::numeric_limits<uint64_t>::max());
@@ -185,7 +185,7 @@ TYPED_TEST(TraitsTest, TopLevelCreate)
     BlockMetrics metrics;
 
     {
-        State state{bs, Incarnation{0, 0}};
+        State state{bs};
         state.add_to_balance(from, 20_ether);
         state.set_nonce(from, 25);
         bs.merge(state);
@@ -333,7 +333,7 @@ TYPED_TEST(TraitsTest, refunds_delete)
         from_hex("0x3615600b576001600055005b6000600055").value();
 
     {
-        State state{bs, Incarnation{0, 0}};
+        State state{bs};
 
         state.add_to_balance(from, initial_balance);
         state.set_nonce(from, 25);
@@ -396,7 +396,7 @@ TYPED_TEST(TraitsTest, refunds_delete)
         EXPECT_EQ(receipt.value().status, 1u);
 
         {
-            State state{bs, Incarnation{0, 0}};
+            State state{bs};
             auto const final_balance_uint256 = state.get_balance(from);
             ASSERT_TRUE(
                 final_balance_uint256 < std::numeric_limits<uint64_t>::max());
@@ -460,7 +460,7 @@ TYPED_TEST(TraitsTest, refunds_delete)
         EXPECT_EQ(receipt.value().status, 1u);
 
         {
-            State state{bs, Incarnation{0, 0}};
+            State state{bs};
             auto const final_balance_uint256 = state.get_balance(from);
             ASSERT_TRUE(
                 final_balance_uint256 < std::numeric_limits<uint64_t>::max());
@@ -503,7 +503,7 @@ TYPED_TEST(TraitsTest, refunds_delete_then_set)
     auto const contract_code = from_hex("0x60006000556001600055").value();
 
     {
-        State state{bs, Incarnation{0, 0}};
+        State state{bs};
 
         state.add_to_balance(from, initial_balance);
         state.set_nonce(from, 25);
@@ -570,7 +570,7 @@ TYPED_TEST(TraitsTest, refunds_delete_then_set)
         EXPECT_EQ(receipt.value().status, 1u);
 
         {
-            State state{bs, Incarnation{0, 0}};
+            State state{bs};
             auto const final_balance_uint256 = state.get_balance(from);
             ASSERT_TRUE(
                 final_balance_uint256 < std::numeric_limits<uint64_t>::max());

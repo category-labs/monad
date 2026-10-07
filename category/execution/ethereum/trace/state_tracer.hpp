@@ -87,7 +87,8 @@ namespace trace
 
     private:
         StorageDeltas generate_storage_deltas(
-            AccountState::StorageMap const &, AccountState::StorageMap const &);
+            AccountState::StorageMap const &, AccountState::StorageMap const &,
+            bool created_in_tx);
         nlohmann::json &storage_;
     };
 

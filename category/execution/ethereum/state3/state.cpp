@@ -29,7 +29,6 @@
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/version_stack.hpp>
-#include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/vm/code.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
@@ -90,11 +89,8 @@ std::optional<Account> &State::current_account(Address const &address)
     return current_account_state(address).account_;
 }
 
-State::State(
-    BlockState &block_state, Incarnation const incarnation,
-    bool const relaxed_validation)
+State::State(BlockState &block_state, bool const relaxed_validation)
     : block_state_{block_state}
-    , incarnation_{incarnation}
     , relaxed_validation_{relaxed_validation}
     , rb_{this}
 {
@@ -260,13 +256,9 @@ bool State::is_destructed(Address const &address)
     return account_state.is_destructed();
 }
 
-bool State::is_current_incarnation(Address const &address)
+bool State::is_created_in_tx(Address const &address)
 {
-    auto const &account = recent_account(address);
-    if (MONAD_LIKELY(account.has_value())) {
-        return account.value().incarnation == incarnation_;
-    }
-    return false;
+    return recent_account_state(address).is_created_in_tx();
 }
 
 bytes32_t State::get_storage(Address const &address, bytes32_t const &key)
@@ -283,8 +275,7 @@ bytes32_t State::get_storage(Address const &address, bytes32_t const &key)
             return *it3;
         }
         else {
-            bytes32_t const value = block_state_.read_storage(
-                address, account.value().incarnation, key);
+            bytes32_t const value = block_state_.read_storage(address, key);
             storage = storage.insert({key, value});
             return value;
         }
@@ -301,9 +292,7 @@ bytes32_t State::get_storage(Address const &address, bytes32_t const &key)
         MONAD_ASSERT(it2 != original_.end());
         auto &original_account_state = it2->second;
         auto const &original_account = original_account_state.account_;
-        if (!original_account.has_value() ||
-            account.value().incarnation !=
-                original_account.value().incarnation) {
+        if (!original_account.has_value() || account_state.is_created_in_tx()) {
             return {};
         }
         auto &original_storage = original_account_state.storage_;
@@ -311,8 +300,7 @@ bytes32_t State::get_storage(Address const &address, bytes32_t const &key)
             return *it3;
         }
         else {
-            bytes32_t const value = block_state_.read_storage(
-                address, account.value().incarnation, key);
+            bytes32_t const value = block_state_.read_storage(address, key);
             original_storage = original_storage.insert({key, value});
             return value;
         }
@@ -335,7 +323,7 @@ void State::set_nonce(Address const &address, uint64_t const nonce)
 {
     auto &account = current_account(address);
     if (MONAD_UNLIKELY(!account.has_value())) {
-        account = Account{.incarnation = incarnation_};
+        account = Account{};
     }
     account.value().nonce = nonce;
 }
@@ -345,7 +333,7 @@ void State::add_to_balance(Address const &address, uint256_t const &delta)
     auto &account_state = current_account_state(address);
     auto &account = account_state.account_;
     if (MONAD_UNLIKELY(!account.has_value())) {
-        account = Account{.incarnation = incarnation_};
+        account = Account{};
     }
 
     MONAD_ASSERT_THROW(
@@ -364,7 +352,7 @@ void State::subtract_from_balance(
     auto &account_state = current_account_state(address);
     auto &account = account_state.account_;
     if (MONAD_UNLIKELY(!account.has_value())) {
-        account = Account{.incarnation = incarnation_};
+        account = Account{};
     }
 
     MONAD_ASSERT_THROW(delta <= account.value().balance, "balance underflow");
@@ -380,17 +368,18 @@ monad_storage_status State::set_storage(
     bytes32_t original_value;
     auto &account_state = current_account_state(address);
     MONAD_ASSERT(account_state.account_);
-    // original
-    {
+    // Creation starts with empty storage, independently of pre-creation reads.
+    if (account_state.is_created_in_tx()) {
+        original_value = {};
+    }
+    else {
         auto &orig_account_state = original_account_state(address);
         auto &storage = orig_account_state.storage_;
         if (auto const *const it = storage.find(key); it) {
             original_value = *it;
         }
         else {
-            Incarnation const incarnation = account_state.account_->incarnation;
-            bytes32_t const value =
-                block_state_.read_storage(address, incarnation, key);
+            bytes32_t const value = block_state_.read_storage(address, key);
             storage = storage.insert({key, value});
             original_value = value;
         }
@@ -457,7 +446,7 @@ State::selfdestruct(Address const &address, Address const &beneficiary)
         subtract_from_balance(address, balance);
     }
     else {
-        if (address != beneficiary || is_current_incarnation(address)) {
+        if (address != beneficiary || is_created_in_tx(address)) {
             if (address != beneficiary) {
                 add_to_balance(beneficiary, balance);
             }
@@ -490,7 +479,7 @@ void State::destruct_suicides()
                 account.reset();
             }
             else {
-                if (account->incarnation == incarnation_) {
+                if (account_state.is_created_in_tx()) {
                     account.reset();
                 }
             }
@@ -586,42 +575,36 @@ void State::set_code(Address const &address, byte_string_view const code)
     rb_.on_set_code(address, code);
 }
 
-void State::create_contract(Address const &address)
+template <Traits traits>
+void State::finalize_account_deletions()
 {
-    auto &account = current_account(address);
-    if (MONAD_UNLIKELY(account.has_value())) {
-        // EIP-684
-        MONAD_ASSERT(account->nonce == 0);
-        MONAD_ASSERT(account->code_hash == NULL_HASH);
-        // keep the balance, per chapter 7 of the YP
-        account->incarnation = incarnation_;
-    }
-    else {
-        account = Account{.incarnation = incarnation_};
-    }
+    destruct_suicides<traits>();
+    destruct_touched_dead();
 }
 
-/**
- * Creates an account that cannot be selfdestructed after Cancun.
- *
- * From Cancun onwards, only accounts created in the same transaction can be
- * selfdestructed. This method creates an account with a .tx incarnation
- * component that is guaranteed to be different from that of any actual
- * transaction; it will therefore never be selfdestructed.
- *
- * This is currently used to create authority accounts during EIP-7702
- * authority processing; changes to the state during that step are specified
- * to take place before any of the actual transactions in a block.
- */
-void State::create_account_no_rollback(Address const &address)
+EXPLICIT_TRAITS_MEMBER(State::finalize_account_deletions);
+
+void State::create_contract(Address const &address)
+{
+    auto &account_state = current_account_state(address);
+    auto &account = account_state.account_;
+    if (account.has_value()) {
+        // EIP-684. Preserve the balance of a prefunded address.
+        MONAD_ASSERT(account->nonce == 0);
+        MONAD_ASSERT(account->code_hash == NULL_HASH);
+    }
+    else {
+        account = Account{};
+    }
+    account_state.storage_ = {};
+    account_state.mark_created_in_tx();
+}
+
+void State::create_account(Address const &address)
 {
     auto &account = current_account(address);
     MONAD_ASSERT(!account.has_value());
-    account = Account{
-        .incarnation = Incarnation{
-            incarnation_.get_block(),
-            Incarnation::LAST_TX,
-        }};
+    account = Account{};
 }
 
 immer::vector<Receipt::Log> const &State::logs()
@@ -633,15 +616,6 @@ void State::store_log(Receipt::Log const &log)
 {
     auto &logs = logs_.current(version_);
     logs = logs.push_back(log);
-}
-
-void State::set_to_state_incarnation(Address const &address)
-{
-    auto &account = current_account(address);
-    if (MONAD_UNLIKELY(!account.has_value())) {
-        account = Account{.incarnation = incarnation_};
-    }
-    account.value().incarnation = incarnation_;
 }
 
 // RELAXED MERGE
@@ -662,9 +636,6 @@ bool State::try_fix_account_mismatch(
         return false;
     }
     if (original->code_hash != actual->code_hash) {
-        return false;
-    }
-    if (original->incarnation != actual->incarnation) {
         return false;
     }
     if (original->nonce != actual->nonce) {

@@ -403,11 +403,14 @@ namespace monad::vm::runtime
             addr, data, data_size, topics, num_topics);
     }
 
-    Address const *
-    guest_delegate_of(Host const &host, evmc::address const &addr) noexcept
+    template <Traits traits>
+    CallTarget guest_call_target(
+        Host &host, evmc::address const &addr, bool const read_cold) noexcept
     {
-        return static_cast<EvmcHostBase const &>(host)
-            .EvmcHostBase::delegate_of(addr);
+        return static_cast<EvmcHost<traits> &>(host)
+            .EvmcHost<traits>::call_target(addr, read_cold);
     }
+
+    EXPLICIT_EVM_TRAITS(guest_call_target);
 }
 #endif

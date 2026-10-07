@@ -95,34 +95,42 @@ namespace monad::vm::runtime
         auto const dest_address = address_from_uint256(address);
 
 #if defined(MONAD_ZKVM_ZISK)
-        auto const access_status = guest_access_account<traits>(
-            host_of(*ctx), host_shim::addr(&dest_address));
-#else
-        auto const access_status =
-            ctx->host->access_account(ctx->context, &dest_address);
-#endif
-        if (access_status == EVMC_ACCESS_COLD) {
-            ctx->deduct_gas(traits::cold_account_cost());
-        }
-
-#if defined(MONAD_ZKVM_ZISK)
         // The message's addresses bound where they lie, not copied into
         // locals of their own before being copied into the message: a
         // 20-byte copy each. EIP-7702: if the code address starts with
         // 0xEF0100, then treat it as a delegated call in the context of the
         // current authority; the delegate is the address where it lies in
-        // the code, which the host returns.
-        Address const *const delegate_address = [&]() -> Address const * {
-            if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
-                // resolve_delegation's call of the host, by name: through
-                // it, a call and the vtable.
-                return guest_delegate_of(
-                    host_of(*ctx), host_shim::addr(&dest_address));
+        // the code, which the host returns. From Prague the access and the
+        // delegate come from one host call, with one lookup of the account.
+        // A cold access that the gas left cannot pay for exits below, before
+        // the target's code is read, as it did between them.
+        Address const *delegate_address = nullptr;
+        if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
+            auto const target = guest_call_target<traits>(
+                host_of(*ctx),
+                host_shim::addr(&dest_address),
+                ctx->gas_remaining >= traits::cold_account_cost());
+            if (target.access == MONAD_ACCESS_COLD) {
+                ctx->deduct_gas(traits::cold_account_cost());
             }
-            else {
-                return nullptr;
+            delegate_address = target.delegate;
+        }
+        else {
+            auto const access_status = guest_access_account<traits>(
+                host_of(*ctx), host_shim::addr(&dest_address));
+            if (access_status == EVMC_ACCESS_COLD) {
+                ctx->deduct_gas(traits::cold_account_cost());
             }
-        }();
+        }
+#else
+        auto const access_status =
+            ctx->host->access_account(ctx->context, &dest_address);
+        if (access_status == EVMC_ACCESS_COLD) {
+            ctx->deduct_gas(traits::cold_account_cost());
+        }
+#endif
+
+#if defined(MONAD_ZKVM_ZISK)
         Address const *code_address_p = &dest_address;
         if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
             if (delegate_address) {

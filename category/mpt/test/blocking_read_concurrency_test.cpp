@@ -114,6 +114,7 @@ TEST_F(DbConcurrencyTest1, version_outdated_during_blocking_find)
     std::future<int> completion_future = completion_promise.get_future();
     std::mutex lock;
     std::condition_variable cond;
+    bool first_find_done = false;
 
     auto find_loop = [&](std::stop_token const stop_token) {
         // Read only aux
@@ -146,6 +147,7 @@ TEST_F(DbConcurrencyTest1, version_outdated_during_blocking_find)
             ++count;
             if (count == 1) {
                 std::unique_lock const g(lock);
+                first_find_done = true;
                 cond.notify_one();
             }
         }
@@ -156,7 +158,7 @@ TEST_F(DbConcurrencyTest1, version_outdated_during_blocking_find)
     // Erase the version when the first read finishes
     {
         std::unique_lock g(lock);
-        cond.wait(g);
+        cond.wait(g, [&] { return first_find_done; });
     }
     // Erase the version being read should trigger a find failure and ends the
     // reader thread
@@ -200,6 +202,7 @@ TEST_F(DbConcurrencyTest2, version_outdated_during_blocking_traverse)
     std::future<int> completion_future = completion_promise.get_future();
     std::mutex lock;
     std::condition_variable cond;
+    bool first_traverse_done = false;
 
     auto traverse_loop = [&](std::stop_token const stop_token) {
         // Read only aux
@@ -224,6 +227,7 @@ TEST_F(DbConcurrencyTest2, version_outdated_during_blocking_traverse)
             ++count;
             if (count == 1) {
                 std::unique_lock const g(lock);
+                first_traverse_done = true;
                 cond.notify_one();
             }
         }
@@ -233,7 +237,7 @@ TEST_F(DbConcurrencyTest2, version_outdated_during_blocking_traverse)
     // Erase the version when the first traverse finishes
     {
         std::unique_lock g(lock);
-        cond.wait(g);
+        cond.wait(g, [&] { return first_traverse_done; });
     }
     // Erase the version being read should stop traverse in the reader thread
     state()->aux.metadata_ctx().update_root_offset(

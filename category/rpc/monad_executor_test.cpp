@@ -8987,6 +8987,78 @@ TEST_F(EthCallFixture, selfdestruct_same_tx_with_state_trace)
     monad_executor_destroy(executor);
 }
 
+TEST_F(EthCallFixture, prefunded_selfdestruct_omits_post_storage)
+{
+    static constexpr auto from =
+        0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address;
+    Address const target = create_contract_address(from, 0);
+
+    // A prefunded CREATE address exists in prestate, but the contract created
+    // there can still be deleted by SELFDESTRUCT during its constructor.
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {from,
+             StateDelta{
+                 .account = {std::nullopt, Account{.balance = 10_ether}}}},
+            {target,
+             StateDelta{.account = {std::nullopt, Account{.balance = 1000}}}}},
+        {},
+        BlockHeader{.number = 0});
+    for (uint64_t i = 1; i < 256; ++i) {
+        commit_sequential(tdb, StateDeltas{}, {}, BlockHeader{.number = i});
+    }
+
+    // PUSH1 1; PUSH1 0; SSTORE; ADDRESS; SELFDESTRUCT.
+    Transaction const tx{
+        .gas_limit = 200'000u,
+        .value = 1_ether,
+        .data = 0x600160005530ff_bytes};
+    BlockHeader const header{.number = 256};
+    commit_sequential(tdb, StateDeltas{}, {}, header);
+
+    auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_sender =
+        to_vec(rlp::encode_address(std::make_optional(from)));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+    auto *const executor = create_executor(dbname.string());
+    auto *const state_override = monad_state_override_create();
+
+    callback_context ctx;
+    auto future = ctx.promise.get_future();
+    monad_executor_eth_call_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_tx.data(),
+        rlp_tx.size(),
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_sender.data(),
+        rlp_sender.size(),
+        header.number,
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        state_override,
+        complete_callback,
+        &ctx,
+        STATEDIFF_TRACER,
+        true);
+    future.get();
+    monad_state_override_destroy(state_override);
+    monad_executor_destroy(executor);
+
+    ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    ASSERT_GT(ctx.result->encoded_trace_len, 0);
+    auto const trace = nlohmann::json::from_cbor(
+        ctx.result->encoded_trace,
+        ctx.result->encoded_trace + ctx.result->encoded_trace_len);
+    auto const address = std::format("0x{}", to_hex(target));
+    ASSERT_TRUE(trace["pre"].contains(address)) << trace.dump(2);
+    EXPECT_EQ(trace["pre"][address]["balance"], "0x3e8");
+    EXPECT_FALSE(trace["post"].contains(address)) << trace.dump(2);
+}
+
 TEST_F(EthCallFixture, touched_empty_account_with_state_trace)
 {
     static constexpr Address sender =

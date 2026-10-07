@@ -1,0 +1,161 @@
+// Copyright (C) 2026 Category Labs, Inc.
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+// The L2's deployment constants, every one a required CMake input with NO
+// default.
+//
+// Deliberately no defaults: a guest that anchors the wrong contract, or
+// decrypts under the wrong operator key, would produce a proof the L1 hub
+// accepts. A placeholder would make that a silent misconfiguration; an
+// #error makes it a build failure that names the missing value.
+//
+// zkvm/guest/CMakeLists.txt checks them and fails configuration with the same
+// list, so the usual case is a CMake message rather than a compiler one.
+
+#pragma once
+
+#ifndef MONAD_ZKVM_L2
+    #error "l2_config.hpp is for MONAD_ZKVM_L2 builds only"
+#endif
+
+#ifndef MONAD_L2_CHAIN_ID
+    #error "MONAD_ZKVM_L2 requires -DMONAD_ZKVM_L2_CHAIN_ID=<n>"
+#endif
+#ifndef MONAD_L2_REVISION
+    #error "MONAD_ZKVM_L2 requires -DMONAD_ZKVM_L2_REVISION=<MONAD_ETH_*>"
+#endif
+#ifndef MONAD_L2_OPERATOR_PK_X
+    #error "MONAD_ZKVM_L2 requires -DMONAD_ZKVM_L2_OPERATOR_PK_X=0x<64 hex>"
+#endif
+#ifndef MONAD_L2_OPERATOR_PK_ODD
+    #error "MONAD_ZKVM_L2 requires -DMONAD_ZKVM_L2_OPERATOR_PK_ODD=<0|1>"
+#endif
+
+#include <category/core/address.hpp>
+#include <category/core/bytes.hpp>
+#include <category/core/config.hpp>
+#include <category/execution/ethereum/domain_anchor.hpp>
+#include <category/vm/evm/revision.h>
+#include <zkvm/guest/l2_cipher_suite.hpp>
+
+#include <cstdint>
+#include <span>
+
+MONAD_NAMESPACE_BEGIN
+
+struct BlockHeader;
+
+/// Bumped whenever anything about the encryption changes -- the permutation
+/// instance, the sponge mode, the context layout, the leaf format. It is
+/// absorbed into A, so two versions never derive the same key.
+///
+/// It does not select a suite. Which suite is compiled is MONAD_ZKVM_L2_CIPHER
+/// (cmake/l2.cmake); this is the version WITHIN one, and a suite carries both
+/// in its LABEL so neither can be bumped without the other taking effect.
+inline constexpr std::uint64_t L2_CIPHER_VERSION = 1;
+
+inline constexpr std::uint64_t L2_CHAIN_ID = MONAD_L2_CHAIN_ID;
+/// A constant, not a fork schedule: an L2 that starts at one revision has no
+/// schedule to consult, and carrying one would be a second place for the
+/// revision to be decided.
+inline constexpr monad_eth_revision L2_REVISION = MONAD_L2_REVISION;
+
+/// Paris or later, and this is a soundness rule rather than a preference.
+/// Before the Merge block_reward is non-zero, and apply_block_reward credits
+/// header.beneficiary and every ommer's beneficiary -- all of them fields the
+/// prover writes, checked against nothing but the prover's own header. On
+/// Paris and later the reward is zero and the call is inert.
+static_assert(
+    L2_REVISION >= MONAD_ETH_PARIS,
+    "a pre-Merge revision makes apply_block_reward mint to prover-chosen "
+    "addresses");
+
+/// The operator's public key, as a compressed point split into its
+/// x-coordinate and the parity of y. Split rather than given as 33 hex bytes
+/// so the existing _bytes32 literal can carry it with no parser.
+///
+/// The x-coordinate is 32 BIG-ENDIAN bytes, which is what SEC1 means by an
+/// x-coordinate and what a _bytes32 literal spells. Said explicitly because a
+/// byte order that lives only in the reader is how these go wrong: to_bytes on
+/// a uint256_t would have given the other order, silently.
+inline constexpr bytes32_t L2_OPERATOR_PK_X = MONAD_L2_OPERATOR_PK_X;
+inline constexpr bool L2_OPERATOR_PK_ODD = MONAD_L2_OPERATOR_PK_ODD != 0;
+
+/// l2_salt_commitment of the blinder secret the witness must supply.
+///
+/// A commitment and not the secret, because the secret is what the guest must
+/// not contain -- the ELF is public, and a blinder anyone can read blinds
+/// nothing.
+inline constexpr bytes32_t L2_SALT_COMMITMENT = MONAD_L2_SALT_COMMITMENT;
+
+/// The commitment to a blinder secret: keccak256 of it, or under
+/// MONAD_ZKVM_L2_HASH=poseidon2 the Poseidon2 sponge over a label and it. The
+/// generator prints it for a deployment (--salt-commitment) and the guest
+/// checks the witness's secret against the compiled one.
+bytes32_t l2_salt_commitment(std::span<unsigned char const, 32> salt_secret);
+
+/// The per-block state blinder, which blinds the state root this chain
+/// publishes a commitment to.
+///
+/// Why a blinder at all: a root is a commitment, and hashing is not hiding. On
+/// this chain the state is guessable from public data -- the participants are
+/// registered on the L1, deposits are public L1 transfers, and the ciphertexts
+/// were sequenced through the L1 in the clear -- so an observer who can
+/// enumerate the plausible sets of transfers computes each candidate root and
+/// compares. Preimage resistance is no defence: nothing is being inverted.
+///
+/// Why it binds the domain: nothing enforces that two domains hold distinct
+/// secrets -- the client does not check key uniqueness -- so without it two of
+/// them would derive the same blinder at the same height.
+///
+/// Why it takes the block number: without it the blinder is constant, and two
+/// blocks with the same state publish the same hash. On a low-volume chain
+/// that reveals which blocks changed nothing, and a return to an earlier hash
+/// reveals a cycle.
+///
+/// Hashed with the chain's hash (MONAD_ZKVM_L2_HASH): keccak256, or the
+/// Poseidon2 sponge, over the same label, secret and number.
+///
+/// Derived rather than stored, so nothing has to persist between blocks and
+/// the chain of commitments needs no extra bookkeeping to line up. The
+/// accepted cost: whoever learns the secret unblinds the whole history. That
+/// is strictly better than the position the decryption key is already in --
+/// learning THAT one reads every transaction in the clear.
+bytes32_t l2_state_salt(
+    std::span<unsigned char const, 32> salt_secret, std::uint64_t block_number);
+
+/// The value this chain publishes in place of its state root: that root under
+/// the block's blinder.
+///
+/// It is what the L1 hub stores as a domain's commitment and reads back, and
+/// the hub never opens it -- not by a merkle proof, not by the bridge, which
+/// works off the message anchor. So an opaque commitment serves it exactly as a
+/// bare root would, and the chain keeps the confidentiality the rest of its
+/// design buys. What does have to reopen it is the execution client, which
+/// recomputes this from the root it committed, so it needs the same secret the
+/// witness carries.
+bytes32_t l2_state_commitment(
+    std::span<unsigned char const, 32> salt_secret, std::uint64_t block_number,
+    bytes32_t const &state_root);
+
+/// The block-constant cipher context. Every field is a compiled constant or a
+/// header field, so nothing in it is the prover's.
+///
+/// Declared in terms of the selected suite, so this declaration survives a
+/// change of suite even though its body does not: what a context holds is the
+/// suite's business, and turning deployment constants into one is this file's.
+L2Cipher::Context l2_cipher_context(BlockHeader const &header);
+
+MONAD_NAMESPACE_END

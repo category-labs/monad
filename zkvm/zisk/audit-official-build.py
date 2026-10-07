@@ -410,6 +410,13 @@ def main() -> int:
         fail("matching CMake cache did not enable the official profile")
     if values.get("MONAD_ZKVM_GUEST_TARGET") != "zisk":
         fail("matching CMake cache is not a ZisK guest build")
+    # The official artifact is the L1 mainnet prover. L2 is a different rule
+    # set, not a different feature set, and the feature list above encodes the
+    # latter -- so one signature must not be able to cover both. Belt and
+    # braces with the CMake FATAL_ERROR: that one guards the configure, this
+    # one guards an ELF matched against a stale-but-passing cache.
+    if values.get("MONAD_ZKVM_L2", "OFF") != "OFF":
+        fail("matching CMake cache enabled MONAD_ZKVM_L2")
 
     compiler = pathlib.Path(str(profile["compiler"]))
     compiler_id = str(profile.get("compiler_id", ""))

@@ -877,17 +877,10 @@ public:
     };
     EraseResult erase_node(NodeId, NibblesView);
 
-    // keccak of the (current) trie rooted at `id`; NULL_ID -> NULL_ROOT.
-    // Serves the account root and the storage sub-root an account leaf spans.
-    // Consults hashes_; recomputes + caches a missing id.
-    //
-    // `id` must be a trie root. Unlike the priming pass this caches whatever
-    // it is given, and child_ref consults hashes_ before deciding whether to
-    // inline, so a cached id whose canonical RLP is under 32 B would be
-    // hash-referenced by its parent where the trie inlines it. Roots are
-    // exempt because they are never inlined — and both call sites hand over a
-    // node that spells a whole 64-nibble key, or a branch, so is over 32 B
-    // anyway.
+    // Cached root hash; NULL_ID maps to NULL_ROOT. Used for account and
+    // storage roots. Only pass trie roots: caching a non-root whose RLP is
+    // <32 bytes would make child_ref hash-reference it instead of inlining
+    // it.
     bytes32_t hash(NodeId id);
     bytes32_t state_root();
 

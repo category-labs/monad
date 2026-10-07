@@ -20,9 +20,10 @@
 #include <category/core/bytes.hpp>
 #include <category/core/cases.hpp>
 #include <category/core/int.hpp>
-#include <category/core/keccak.hpp>
 #include <category/core/nibble.h>
 #include <category/core/rlp/encode.hpp>
+#include <category/core/trie_hash.hpp>
+#include <category/crypto/keccak.h>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/rlp/bytes_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/int_rlp.hpp>
@@ -297,9 +298,9 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
             e->rlp_len = rem.rlp_size();
             blob_hash_slots_[node_offset >> 2] = e;
             rlp_window_ += RLP_WINDOW_STRIDE;
-            monad_keccak256(rem.rlp_data(), rem.rlp_size(), e->h.bytes);
+            monad_trie_hash256(rem.rlp_data(), rem.rlp_size(), e->h.bytes);
 #else
-            monad_keccak256(rem.rlp_data(), rem.rlp_size(), ch.h.bytes);
+            monad_trie_hash256(rem.rlp_data(), rem.rlp_size(), ch.h.bytes);
             hashes_.insert_or_assign(NodeId{node_offset}, ch);
 #endif
         }
@@ -392,7 +393,7 @@ bytes32_t OffsetTrie::hash(NodeId const id)
                 bytes32_t h;
                 // RLP occupies the tail: [rem.end(), buf_end).
                 MONAD_KECCAK_SITE(TRIE_PRIME, rem.rlp_size());
-                monad_keccak256(rem.rlp_data(), rem.rlp_size(), h.bytes);
+                monad_trie_hash256(rem.rlp_data(), rem.rlp_size(), h.bytes);
 
                 store_hash(id, h);
                 return h;
@@ -517,7 +518,7 @@ bool OffsetTrie::patch_ref(
                         return false;
                     }
                     MONAD_KECCAK_SITE(TRIE_ENCODE, len);
-                    monad_keccak256(e->rlp, len, e->h.bytes);
+                    monad_trie_hash256(e->rlp, len, e->h.bytes);
                     e->valid = true;
                     return true;
                 };
@@ -545,7 +546,7 @@ bool OffsetTrie::patch_ref(
                 slot = new_hash_entry();
             }
             MONAD_KECCAK_SITE(TRIE_ENCODE, rem.rlp_size());
-            monad_keccak256(rem.rlp_data(), rem.rlp_size(), slot->h.bytes);
+            monad_trie_hash256(rem.rlp_data(), rem.rlp_size(), slot->h.bytes);
             slot->valid = true;
             std::memcpy(ref + 1, slot->h.bytes, KECCAK256_SIZE);
             return true;
@@ -616,7 +617,7 @@ OffsetTrie::node_rlp_span OffsetTrie::child_ref_compute(
     }
     bytes32_t h;
     MONAD_KECCAK_SITE(TRIE_ENCODE, child_rlp_len);
-    monad_keccak256(child_rlp, child_rlp_len, h.bytes);
+    monad_trie_hash256(child_rlp, child_rlp_len, h.bytes);
     store_hash(id, h);
     return encode_rlp(h, dest);
 }
@@ -1269,12 +1270,9 @@ void OffsetTrie::fold_ext_node_path_maybe(
         });
 }
 
-// The path comes back as a VIEW, not an owning Nibbles. Every path returned
-// below is a suffix of `key`, which is the caller's -- in commit() a keccak256
-// local that outlives the put_* it hands the path to -- so the copy the owning
-// type forced was an allocation and a path copy per upsert for nothing. The
-// owning `p` in the ExtView arm stays: that one views the overlay, which the
-// put_*s below it move.
+// Returned paths view suffixes of the caller-owned key, which must outlive
+// put_*. Keep the ExtView arm's owning copy: it views overlay storage that
+// put_* can move.
 std::pair<NodeId, NibblesView>
 OffsetTrie::upsert_node(NodeId id, NibblesView key)
 {

@@ -18,8 +18,8 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
-#include <category/core/keccak.hpp>
 #include <category/core/rlp/encode.hpp>
+#include <category/core/trie_hash.hpp>
 #include <category/crypto/keccak.h>
 #include <category/execution/ethereum/db/offset_trie.hpp>
 #include <category/mpt/merkle/compact_encode.hpp>
@@ -50,7 +50,7 @@ namespace detail
 #ifdef MONAD_ZKVM_KECCAK_SITES
                 MONAD_KECCAK_SITE(BODY_ROOTS, node.size());
 #endif
-                monad_keccak256(node.data(), node.size(), ref_dest.data());
+                monad_trie_hash256(node.data(), node.size(), ref_dest.data());
             }
             return size;
         };

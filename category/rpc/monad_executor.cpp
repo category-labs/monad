@@ -37,6 +37,7 @@
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/chain/chain_config.h>
 #include <category/execution/ethereum/core/block.hpp>
+#include <category/execution/ethereum/core/chain_hash.hpp>
 #include <category/execution/ethereum/core/rlp/address_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/bytes_rlp.hpp>
@@ -746,7 +747,7 @@ namespace
             entry[eth_simulate_json::uncles] = nlohmann::json::array();
             for (auto const &uncle : block.ommers) {
                 entry[eth_simulate_json::uncles].emplace_back(format_hex(
-                    to_bytes(keccak256(rlp::encode_block_header(uncle)))));
+                    to_bytes(header_hash(rlp::encode_block_header(uncle)))));
             }
         }
         {
@@ -952,7 +953,7 @@ namespace
                 // NOTE(dhil): Synthetic blocks are free, so we don't update
                 // `gas_consumed_so_far`.
 
-                bytes32_t const synthetic_block_hash = to_bytes(keccak256(
+                bytes32_t const synthetic_block_hash = to_bytes(header_hash(
                     rlp::encode_block_header(synthetic_block.header)));
                 block_hash_buffer.advance(synthetic_block_hash);
 
@@ -1106,7 +1107,7 @@ namespace
             }
 
             bytes32_t const block_hash =
-                to_bytes(keccak256(rlp::encode_block_header(block.header)));
+                to_bytes(header_hash(rlp::encode_block_header(block.header)));
             block_hash_buffer.advance(block_hash);
 
             std::vector<bytes32_t> txn_hashes{};

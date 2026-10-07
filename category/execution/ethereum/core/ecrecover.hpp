@@ -18,17 +18,18 @@
 #include <category/core/address.hpp>
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
-#include <category/core/keccak.hpp>
 #include <category/execution/ethereum/core/ecrecover/impl.hpp>
 #include <category/execution/ethereum/core/signature.hpp>
+#include <category/execution/ethereum/core/signature_hash.hpp>
 
 #include <optional>
 
 MONAD_NAMESPACE_BEGIN
 
-/// Recovers the Ethereum address that signed `encoding` with the given ECDSA
-/// signature. Rejects malformed signatures up-front (y_parity > 1, malleable
-/// s); returns nullopt if ECDSA recovery fails.
+/// Recovers the address that signed `encoding` with the given ECDSA signature,
+/// under this chain's signature hashes (signature_hash.hpp). Rejects malformed
+/// signatures up-front (y_parity > 1, malleable s); returns nullopt if ECDSA
+/// recovery fails.
 inline std::optional<Address>
 recover_address(Secp256k1Signature const &sig, byte_string_view const encoding)
 {
@@ -36,7 +37,7 @@ recover_address(Secp256k1Signature const &sig, byte_string_view const encoding)
         return std::nullopt;
     }
 
-    auto const encoding_hash = keccak256(encoding);
+    auto const encoding_hash = signing_digest(encoding);
 
     uint8_t signature[sizeof(sig.r) * 2];
     store_be(signature, sig.r);

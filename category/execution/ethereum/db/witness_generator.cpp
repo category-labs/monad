@@ -18,7 +18,8 @@
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
-#include <category/core/keccak.hpp>
+#include <category/core/trie_hash.hpp>
+#include <category/crypto/keccak.h>
 #include <category/execution/ethereum/db/offset_trie.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/mpt/db.hpp>
@@ -102,7 +103,7 @@ AccessNode build_access_trie(
     AccessNode root;
     for (auto const &[addr, state_delta] : deltas) {
         bytes32_t const addr_hash =
-            to_bytes(keccak256({addr.bytes, sizeof(addr.bytes)}));
+            to_bytes(trie_hash({addr.bytes, sizeof(addr.bytes)}));
         auto const &account = state_delta.account;
         bool const selfdestruct =
             account.first.has_value() && !account.second.has_value();
@@ -112,7 +113,7 @@ AccessNode build_access_trie(
         if (!selfdestruct) {
             for (auto const &[slot, sdelta] : state_delta.storage) {
                 bytes32_t const slot_hash =
-                    to_bytes(keccak256({slot.bytes, sizeof(slot.bytes)}));
+                    to_bytes(trie_hash({slot.bytes, sizeof(slot.bytes)}));
                 bool const zero_out =
                     sdelta.first != bytes32_t{} && sdelta.second == bytes32_t{};
                 if (zero_out) {
@@ -127,11 +128,11 @@ AccessNode build_access_trie(
     // Slots read before a SELFDESTRUCT need to be added to the witness.
     for (auto const &[addr, slots] : self_destruct_storage_reads) {
         bytes32_t const addr_hash =
-            to_bytes(keccak256({addr.bytes, sizeof(addr.bytes)}));
+            to_bytes(trie_hash({addr.bytes, sizeof(addr.bytes)}));
         AccessNode &acct_node = root.mark(nibbles_of(addr_hash));
         for (auto const &slot : slots) {
             bytes32_t const slot_hash =
-                to_bytes(keccak256({slot.bytes, sizeof(slot.bytes)}));
+                to_bytes(trie_hash({slot.bytes, sizeof(slot.bytes)}));
             acct_node.mark(nibbles_of(slot_hash));
         }
     }

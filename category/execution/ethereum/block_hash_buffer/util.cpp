@@ -15,11 +15,11 @@
 
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
-#include <category/core/keccak.hpp>
 #include <category/core/log.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/block_hash_buffer/util.hpp>
 #include <category/execution/ethereum/core/block.hpp>
+#include <category/execution/ethereum/core/chain_hash.hpp>
 #include <category/execution/ethereum/db/block_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/mpt/db.hpp>
@@ -47,7 +47,7 @@ bool init_block_hash_buffer_from_triedb(
                 header.error().message().c_str());
             return false;
         }
-        auto const h = to_bytes(keccak256(header.value().node->value()));
+        auto const h = to_bytes(header_hash(header.value().node->value()));
         block_hash_buffer.set(b, h);
     }
 

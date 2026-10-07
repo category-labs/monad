@@ -41,7 +41,7 @@ class PartialTrieDb final : public Db
 {
     mpt::OffsetTrie trie_;
     // The EVM reads an account's slots in bursts, and read_storage resolves the
-    // storage root from scratch each time: a keccak of the address, then a
+    // storage root from scratch each time: a trie hash of the address, then a
     // descent of the account trie. sroot_addr_/sroot_id_ remember the last one,
     // so a burst pays for one.
     // read_storage descends twice, into the account trie and then into that

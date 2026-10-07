@@ -14,7 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/bytes_hash_compare.hpp>
-#include <category/core/keccak.hpp>
+#include <category/core/trie_hash.hpp>
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/storage_key.hpp>
 #include <category/execution/ethereum/db/util.hpp>
@@ -98,7 +98,7 @@ PageCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
                 proposal_post_state_.storage[sk] = page;
                 storage_updates.push_front(update_alloc_.emplace_back(Update{
                     .key = hash_alloc_.emplace_back(
-                        keccak256({page_key.bytes, sizeof(page_key.bytes)})),
+                        trie_hash({page_key.bytes, sizeof(page_key.bytes)})),
                     .value = is_empty ? std::nullopt
                                       : std::make_optional<byte_string_view>(
                                             bytes_alloc_.emplace_back(
@@ -115,7 +115,7 @@ PageCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
         if (!storage_updates.empty() || delta.account.first != account) {
             account_updates.push_front(update_alloc_.emplace_back(Update{
                 .key = hash_alloc_.emplace_back(
-                    keccak256({addr.bytes, sizeof(addr.bytes)})),
+                    trie_hash({addr.bytes, sizeof(addr.bytes)})),
                 .value = value,
                 .incarnation = reincarnated,
                 .next = std::move(storage_updates),

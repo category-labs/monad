@@ -21,6 +21,8 @@
 #![no_main]
 ziskos::entrypoint!(main);
 
+#[path = "../../zisk/src/bn254.rs"]
+mod bn254;
 #[path = "../../zisk/src/ecrecover.rs"]
 mod ecrecover;
 #[path = "../../zisk/src/ecrecover_tables.rs"]

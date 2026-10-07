@@ -22,7 +22,10 @@
 #include <category/core/keccak.hpp>
 #include <category/core/likely.h>
 #include <category/core/runtime/uint256.hpp>
+#include <category/execution/ethereum/core/contract/abi_encode.hpp>
+#include <category/execution/ethereum/core/contract/abi_signatures.hpp>
 #include <category/execution/ethereum/create_contract_address.hpp>
+#include <category/execution/ethereum/domain_anchor.hpp>
 #include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/execute_message.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
@@ -36,6 +39,7 @@
 #include <evmc/evmc.hpp>
 
 #include <cstdint>
+#include <cstring>
 #include <limits>
 #include <optional>
 #include <utility>
@@ -64,6 +68,52 @@ namespace
         state.add_to_balance(to, value);
         host.emit_native_transfer_event(msg.sender, to, value);
     }
+
+#ifdef MONAD_ZKVM_L2
+    constexpr uint32_t CAN_CALL_SELECTOR =
+        abi_encode_selector("canCall(address,address,bytes)");
+
+    byte_string domain_access_calldata(evmc_message const &msg)
+    {
+        byte_string calldata{
+            static_cast<uint8_t>(CAN_CALL_SELECTOR >> 24),
+            static_cast<uint8_t>(CAN_CALL_SELECTOR >> 16),
+            static_cast<uint8_t>(CAN_CALL_SELECTOR >> 8),
+            static_cast<uint8_t>(CAN_CALL_SELECTOR)};
+        AbiEncoder encoder;
+        encoder.add_address(Address{msg.sender});
+        encoder.add_address(Address{msg.recipient});
+        encoder.add_bytes({msg.input_data, msg.input_size});
+        calldata += encoder.encode_final();
+        return calldata;
+    }
+
+    /// Canonical ABI true and nothing else. A spoke that is absent, reverts,
+    /// returns nothing, or returns something merely truthy denies access: this
+    /// fails CLOSED, so anything other than the one encoding is a refusal.
+    bool is_canonical_true(evmc::Result const &result) noexcept
+    {
+        if (result.status_code != EVMC_SUCCESS || result.output_size != 32) {
+            return false;
+        }
+        auto const expected = abi_encode_bool(true);
+        return std::memcmp(result.output_data, expected.bytes, 32) == 0;
+    }
+
+    /// Where the stickiness is cashed in. A denial deeper down produced a
+    /// revert, and a frame between here and there may have caught it; at depth
+    /// 0 the transaction reverts anyway.
+    void finalize_domain_access(
+        evmc_message const &msg, bool const domain_access_denied,
+        evmc::Result &result)
+    {
+        if (msg.depth == 0 && domain_access_denied &&
+            result.status_code == EVMC_SUCCESS) {
+            auto const gas_left = result.gas_left;
+            result = evmc::Result{EVMC_REVERT, gas_left};
+        }
+    }
+#endif
 
 } // anonymous namespace
 
@@ -106,10 +156,83 @@ evmc::Result deploy_contract_code(
 EXPLICIT_TRAITS(deploy_contract_code);
 
 template <Traits traits>
-std::optional<evmc::Result>
-pre_call(EvmcHost<traits> &host, evmc_message const &msg, State &state)
+std::optional<evmc::Result> pre_call(
+    EvmcHost<traits> &host,
+#ifdef MONAD_ZKVM_L2
+    // The access check charges its stipend to the message the callee runs
+    // with, so this arm needs it mutable. The Ethereum arm has no hook and
+    // keeps the caller's own.
+    evmc_message &msg,
+#else
+    evmc_message const &msg,
+#endif
+    State &state)
 {
     state.push();
+
+#ifdef MONAD_ZKVM_L2
+    // canCall and its direct callees may run; those callees must be leaves. A
+    // deeper attempt is made transaction-sticky so catching this revert cannot
+    // hide it.
+    if (host.domain_access_check_depth_ >= 0 &&
+        msg.depth > host.domain_access_check_depth_ + 1) {
+        host.domain_access_denied_ = true;
+        state.pop_reject();
+        return evmc::Result{EVMC_REVERT, msg.gas};
+    }
+
+    // Every call asks the spoke first, except the check's own frames.
+    if (host.domain_access_check_depth_ == -1) {
+        if (msg.gas < DOMAIN_ACCESS_GAS_STIPEND) {
+            host.domain_access_denied_ = true;
+            evmc::Result result{EVMC_REVERT, msg.gas};
+            state.pop_reject();
+            return result;
+        }
+
+        auto const calldata = domain_access_calldata(msg);
+        constexpr int64_t stipend = DOMAIN_ACCESS_GAS_STIPEND;
+        evmc_message const access_msg{
+            .kind = EVMC_CALL,
+            .flags = EVMC_STATIC,
+            .depth = msg.depth + 1,
+            .gas = stipend,
+            .recipient = L2_DOMAIN_SPOKE,
+            .sender = msg.sender,
+            .input_data = calldata.data(),
+            .input_size = calldata.size(),
+            .value = {},
+            .create2_salt = {},
+            .code_address = L2_DOMAIN_SPOKE,
+            .memory_handle = msg.memory_handle,
+            .memory = msg.memory,
+            .memory_capacity = msg.memory_capacity,
+        };
+
+        MONAD_ASSERT(host.domain_access_check_depth_ == -1);
+        MONAD_ASSERT(
+            access_msg.depth >= 0 &&
+            access_msg.depth <= std::numeric_limits<int16_t>::max());
+        host.domain_access_check_depth_ =
+            static_cast<int16_t>(access_msg.depth);
+        auto const access_result =
+            execute_call_message<traits>(&host, state, access_msg);
+        host.domain_access_check_depth_ = -1;
+
+        bool const valid_gas =
+            access_result.gas_left >= 0 && access_result.gas_left <= stipend;
+        int64_t const gas_left = valid_gas ? access_result.gas_left : 0;
+        msg.gas -= stipend - gas_left;
+
+        if (host.domain_access_denied_ || !valid_gas ||
+            !is_canonical_true(access_result)) {
+            host.domain_access_denied_ = true;
+            evmc::Result result{EVMC_REVERT, msg.gas};
+            state.pop_reject();
+            return result;
+        }
+    }
+#endif
 
     bool const static_call = msg.flags & EVMC_STATIC;
 
@@ -283,6 +406,13 @@ evmc::Result execute_create_message(
         }
     }
 
+#ifdef MONAD_ZKVM_L2
+    // A denial anywhere below reverts the transaction, creation included --
+    // this path never asks the spoke itself, but it can contain frames that
+    // did.
+    finalize_domain_access(msg, host->domain_access_denied_, result);
+#endif
+
     if (result.status_code == EVMC_SUCCESS) {
         state.pop_accept();
     }
@@ -312,27 +442,37 @@ evmc::Result execute_call_message(
     auto &call_tracer = host->get_call_tracer();
     call_tracer.on_enter(msg);
 
+#ifdef MONAD_ZKVM_L2
+    // One copy per call, and only on this arm: the access check charges its
+    // stipend to the message the callee runs with, and the caller's is not
+    // ours to touch.
+    evmc_message adjusted_msg = msg;
+    auto &call_msg = adjusted_msg;
+#else
+    auto const &call_msg = msg;
+#endif
+
     // Initialised from what produces it: default-constructed and then
     // assigned, the result would be cleared and then copied over. The
     // pre_call exit goes through it too, so that every return is of this
     // one variable and it is built in the caller's slot.
     bool pre_called = false;
     evmc::Result result = [&] {
-        if (auto pre_result = pre_call<traits>(*host, msg, state);
+        if (auto pre_result = pre_call<traits>(*host, call_msg, state);
             pre_result.has_value()) {
             pre_called = true;
             return std::move(pre_result.value());
         }
         // Tested here first: most calls are to no precompile, and finding
         // that out through check_call_precompile costs two calls.
-        if (may_be_precompile(msg.code_address)) {
+        if (may_be_precompile(call_msg.code_address)) {
             if (auto maybe_result =
-                    check_call_precompile<traits>(state, call_tracer, msg);
+                    check_call_precompile<traits>(state, call_tracer, call_msg);
                 maybe_result.has_value()) {
                 return std::move(maybe_result.value());
             }
         }
-        auto const hash = state.get_code_hash(msg.code_address);
+        auto const hash = state.get_code_hash(call_msg.code_address);
 #if defined(MONAD_ZKVM_VARCODE_CACHE)
         // The guest's VM keeps every varcode for the block and takes the
         // intercode from this one before it runs anything, so the State's
@@ -342,16 +482,16 @@ evmc::Result execute_call_message(
         auto const code = state.read_code(hash);
 #endif
         trace::on_read_code(host->state_tracer_, hash, code->intercode());
-        return state.vm().execute<traits>(*host, &msg, hash, code);
+        return state.vm().execute<traits>(*host, &call_msg, hash, code);
     }();
     if (pre_called) {
         call_tracer.on_exit(result);
         return result;
     }
 
-    if (msg.depth == 0) {
+    if (call_msg.depth == 0) {
         if (revert_transaction<traits>(
-                msg.sender,
+                call_msg.sender,
                 host->tx_,
                 host->base_fee_per_gas_.value_or(0),
                 host->i_,
@@ -362,6 +502,10 @@ evmc::Result execute_call_message(
             result.gas_refund = 0;
         }
     }
+
+#ifdef MONAD_ZKVM_L2
+    finalize_domain_access(call_msg, host->domain_access_denied_, result);
+#endif
 
     post_call(*host, state, result);
     call_tracer.on_exit(result);

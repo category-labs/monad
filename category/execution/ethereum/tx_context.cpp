@@ -35,6 +35,10 @@ evmc_tx_context get_tx_context(
     Transaction const &tx, Address const &sender, BlockHeader const &hdr,
     uint256_t const &chain_id, BlobSchedule const &blob_schedule)
 {
+    // GASPRICE reports the ordinary effective price even when gas is
+    // unpriced: contracts can branch on it. Balance charges are gated
+    // elsewhere. MaxFeeLessThanBase validation must remain enabled to prevent
+    // uint256 underflow in gas_price. Missing base/blob fees use value_or(0).
     return {
         .tx_gas_price = store_be_as<bytes32_t>(
             gas_price<traits>(tx, hdr.base_fee_per_gas.value_or(0))),

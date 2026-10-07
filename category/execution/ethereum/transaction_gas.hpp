@@ -51,6 +51,20 @@ uint64_t intrinsic_gas(Transaction const &) noexcept;
 template <Traits traits>
 uint64_t intrinsic_gas_counted(Transaction const &, CalldataTokens) noexcept;
 
+/// Whether execution charges balances for gas. L2 disables gas payments,
+/// refund credits and beneficiary rewards while retaining metering and
+/// receipt gas accounting, including the calldata floor. Use if constexpr so
+/// both build paths remain syntactically checked and the inactive branch is
+/// eliminated.
+inline constexpr bool gas_is_priced() noexcept
+{
+#ifdef MONAD_ZKVM_L2
+    return false;
+#else
+    return true;
+#endif
+}
+
 template <Traits traits>
 uint64_t floor_data_gas(Transaction const &) noexcept;
 

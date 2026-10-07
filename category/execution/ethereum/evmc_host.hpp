@@ -149,6 +149,16 @@ struct EvmcHost final : public EvmcHostBase
     std::optional<uint256_t> base_fee_per_gas_;
     uint64_t i_;
     ChainContext<traits> const &chain_ctx_;
+#ifdef MONAD_ZKVM_L2
+    /// Sticky for the whole transaction once set, which is the point: a frame
+    /// that catches the revert a denial produces must not be able to bury it.
+    /// finalize_domain_access turns it into a revert at depth 0 regardless.
+    bool domain_access_denied_{false};
+    /// The synthetic canCall frame's depth, or -1 outside an access check.
+    /// What it is for is the depth rule: the check's own callees may run, but
+    /// only as leaves.
+    int16_t domain_access_check_depth_{-1};
+#endif
 
     EvmcHost(
         CallTracerBase &call_tracer, trace::StateTracer &state_tracer,
@@ -342,11 +352,19 @@ struct EvmcHost final : public EvmcHostBase
     }
 };
 
+// Pinned so that growth is deliberate. The domain arm's two access-check
+// fields are that growth: a bool and an int16_t, one word once padded.
+#ifdef MONAD_ZKVM_L2
+inline constexpr std::size_t EVMC_HOST_SIZE = 144;
+#else
+inline constexpr std::size_t EVMC_HOST_SIZE = 136;
+#endif
 static_assert(
-    sizeof(EvmcHost<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>) == 136);
+    sizeof(EvmcHost<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>) ==
+    EVMC_HOST_SIZE);
 static_assert(
     alignof(EvmcHost<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>) == 8);
-static_assert(sizeof(EvmcHost<MonadTraits<MONAD_NEXT>>) == 136);
+static_assert(sizeof(EvmcHost<MonadTraits<MONAD_NEXT>>) == EVMC_HOST_SIZE);
 static_assert(alignof(EvmcHost<MonadTraits<MONAD_NEXT>>) == 8);
 
 MONAD_NAMESPACE_END

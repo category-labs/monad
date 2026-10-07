@@ -74,15 +74,20 @@ constexpr void irrevocable_change(
         state.set_nonce(sender, nonce + 1);
     }
 
-    uint256_t blob_gas = 0;
-    if constexpr (traits::evm_rev() >= MONAD_ETH_CANCUN) {
-        blob_gas = (tx.type == TransactionType::eip4844)
-                       ? calc_blob_fee(tx, excess_blob_gas, blob_schedule)
-                       : 0;
+    // The only place gas_limit * gas_price leaves the sender's balance, and
+    // the whole of it goes when gas is metered but not priced. What is left of
+    // this function is the nonce bump above -- which is not about gas.
+    if constexpr (gas_is_priced()) {
+        uint256_t blob_gas = 0;
+        if constexpr (traits::evm_rev() >= MONAD_ETH_CANCUN) {
+            blob_gas = (tx.type == TransactionType::eip4844)
+                           ? calc_blob_fee(tx, excess_blob_gas, blob_schedule)
+                           : 0;
+        }
+        auto const upfront_cost =
+            tx.gas_limit * gas_price<traits>(tx, base_fee_per_gas);
+        state.subtract_from_balance(sender, upfront_cost + blob_gas);
     }
-    auto const upfront_cost =
-        tx.gas_limit * gas_price<traits>(tx, base_fee_per_gas);
-    state.subtract_from_balance(sender, upfront_cost + blob_gas);
 }
 
 MONAD_ANONYMOUS_NAMESPACE_END
@@ -387,30 +392,42 @@ Receipt ExecuteTransaction<traits>::execute_final(
         tx_,
         static_cast<uint64_t>(result.gas_left),
         static_cast<uint64_t>(result.gas_refund));
-    auto const gas_cost =
-        gas_price<traits>(tx_, header_.base_fee_per_gas.value_or(0));
-    state.add_to_balance(sender_, gas_cost * gas_refund);
+    if constexpr (gas_is_priced()) {
+        auto const gas_cost =
+            gas_price<traits>(tx_, header_.base_fee_per_gas.value_or(0));
+        state.add_to_balance(sender_, gas_cost * gas_refund);
+    }
 
+    // The number the receipt and the header commit to, and the one thing in
+    // this function that must not move: with the interpreter still metering,
+    // this is the gas genuinely consumed.
     auto gas_used = tx_.gas_limit - gas_refund;
 
-    // EIP-7623
+    // EIP-7623 raises gas_used to the calldata floor even on an unpriced
+    // chain, matching the client. Only the balance debit is conditional.
+    // Validation must retain the corresponding gas_limit check.
     if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
         auto const floor_gas = floor_data_gas_counted<traits>(tx_, tokens_);
         if (gas_used < floor_gas) {
-            auto const delta = floor_gas - gas_used;
-            state.subtract_from_balance(sender_, gas_cost * delta);
-
+            if constexpr (gas_is_priced()) {
+                auto const gas_cost = gas_price<traits>(
+                    tx_, header_.base_fee_per_gas.value_or(0));
+                auto const delta = floor_gas - gas_used;
+                state.subtract_from_balance(sender_, gas_cost * delta);
+            }
             gas_used = floor_gas;
         }
     }
 
-    uint256_t const reward = calculate_txn_award<traits>(
-        tx_, header_.base_fee_per_gas.value_or(0), gas_used);
-    if constexpr (traits::mip_11_active()) {
-        staking::collect_priority_fee(state, reward);
-    }
-    else {
-        state.add_to_balance(header_.beneficiary, reward);
+    if constexpr (gas_is_priced()) {
+        uint256_t const reward = calculate_txn_award<traits>(
+            tx_, header_.base_fee_per_gas.value_or(0), gas_used);
+        if constexpr (traits::mip_11_active()) {
+            staking::collect_priority_fee(state, reward);
+        }
+        else {
+            state.add_to_balance(header_.beneficiary, reward);
+        }
     }
 
     // finalize state, Eqn. 77-79
@@ -539,10 +556,8 @@ Result<Receipt> ExecuteTransaction<traits>::execute(SequentialExecutionToken)
     auto result = execute_impl2(state);
 
 #ifdef MONAD_ZKVM_CHECK_SEQUENTIAL_MERGE
-    // What the token asserts, computed. An arm built with this on and run over the corpus is
-    // what turns "no mechanism could make this fail" into a statement that had the chance to be
-    // wrong. The order matters: can_merge is checked before the error return, exactly where
-    // operator() checks it, so a failing transaction is not a hole in the coverage.
+    // Diagnostic check of the sequential-merge invariant. Run before the
+    // error return so failed transactions are covered, as in operator().
     MONAD_ASSERT(block_state_.can_merge(state));
 #endif
 

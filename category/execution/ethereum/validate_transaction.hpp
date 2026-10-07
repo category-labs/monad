@@ -69,8 +69,14 @@ template <Traits traits>
 {
     using BOOST_OUTCOME_V2_NAMESPACE::success;
 
-    // YP (70): total cost = value + gas_cost (+ blob_fee).
+    // YP (70): value + gas and blob fees, or zero on the client's gasless
+    // path. Keep this and the balance checks consistent with
+    // irrevocable_change: an unpriced transaction must not be rejected for an
+    // upfront cost it never pays.
     Result<uint256_t> const v0_r = [&]() -> Result<uint256_t> {
+        if constexpr (!gas_is_priced()) {
+            return uint256_t{0};
+        }
         BOOST_OUTCOME_TRY(
             uint256_t const gas_fee,
             max_gas_cost(tx.gas_limit, tx.max_fee_per_gas));
@@ -97,8 +103,10 @@ template <Traits traits>
             return TransactionError::BadNonce;
         }
         // YP (71)
-        if (v0) {
-            return TransactionError::InsufficientBalance;
+        if constexpr (gas_is_priced()) {
+            if (v0) {
+                return TransactionError::InsufficientBalance;
+            }
         }
         return success();
     }
@@ -123,13 +131,13 @@ template <Traits traits>
         return TransactionError::BadNonce;
     }
 
-    // YP (71)
-    // RELAXED MERGE
-    // note this passes because `v0` includes gas which is later deducted in
-    // `irrevocable_change` before relaxed merge logic in `sender_has_balance`
-    // this is fragile as it depends on values in two locations matching
-    if (MONAD_UNLIKELY(state.get_balance(sender) < v0)) {
-        return TransactionError::InsufficientBalance;
+    // YP (71), relaxed merge: this balance check and irrevocable_change's
+    // upfront debit must agree. Both are disabled on the client's gasless
+    // path; execution handles any transfer the sponsored path cannot fund.
+    if constexpr (gas_is_priced()) {
+        if (MONAD_UNLIKELY(state.get_balance(sender) < v0)) {
+            return TransactionError::InsufficientBalance;
+        }
     }
 
     // Note: Tg <= B_Hl - l(B_R)u can only be checked before retirement

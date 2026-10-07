@@ -50,15 +50,22 @@ Result<void> static_validate_transaction(
 {
     static_assert(traits::evm_rev() >= MONAD_ETH_BERLIN);
 
-    // EIP-155
+    // Gasless domain transactions require a signed chain id, matching the
+    // client; unprotected pre-EIP-155 transactions cannot select a domain.
+    if constexpr (!gas_is_priced()) {
+        if (MONAD_UNLIKELY(!tx.sc.chain_id.has_value())) {
+            return TransactionError::WrongChainId;
+        }
+    }
     if (MONAD_LIKELY(tx.sc.chain_id.has_value())) {
         if (MONAD_UNLIKELY(tx.sc.chain_id.value() != chain_id)) {
             return TransactionError::WrongChainId;
         }
     }
 
-    // EIP-4844
-    if constexpr (!traits::eip_4844_active()) {
+    // Reject blob transactions on unpriced chains so blob-gas paths remain
+    // unreachable, without changing mainnet blob handling.
+    if constexpr (!traits::eip_4844_active() || !gas_is_priced()) {
         if (MONAD_UNLIKELY(tx.type == TransactionType::eip4844)) {
             return TransactionError::TypeNotSupported;
         }
@@ -99,12 +106,13 @@ Result<void> static_validate_transaction(
         return TransactionError::TypeNotSupported;
     }
 
-    // EIP-1559
+    // Retain EIP-1559 validity checks on unpriced chains to match the client.
+    // MaxFeeLessThanBase also prevents uint256 underflow in gas_price,
+    // including the GASPRICE context.
     if (MONAD_UNLIKELY(tx.max_fee_per_gas < base_fee_per_gas.value_or(0))) {
         return TransactionError::MaxFeeLessThanBase;
     }
 
-    // EIP-1559
     if (MONAD_UNLIKELY(tx.max_priority_fee_per_gas > tx.max_fee_per_gas)) {
         return TransactionError::PriorityFeeGreaterThanMax;
     }
@@ -135,7 +143,8 @@ Result<void> static_validate_transaction(
     }
 
     if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
-        // EIP-7623
+        // Retain the EIP-7623 limit check: execute_final applies the floor
+        // even when gas is unpriced, so gas_used must still fit gas_limit.
         if (MONAD_UNLIKELY(
                 floor_data_gas_counted<traits>(tx, tokens) > tx.gas_limit)) {
             return TransactionError::IntrinsicGasGreaterThanLimit;
@@ -154,7 +163,8 @@ Result<void> static_validate_transaction(
         return TransactionError::NonceExceedsMax;
     }
 
-    // EIP-1559: check gas_limit * max_fee_per_gas doesn't overflow uint256
+    // Keep the gas_limit * max_fee_per_gas overflow check on unpriced chains
+    // to match client validity rules, even though no upfront cost is charged.
     if (MONAD_UNLIKELY(!max_gas_cost(tx.gas_limit, tx.max_fee_per_gas))) {
         return TransactionError::GasLimitOverflow;
     }

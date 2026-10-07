@@ -50,15 +50,28 @@ Result<void> static_validate_transaction(
 {
     static_assert(traits::evm_rev() >= MONAD_ETH_BERLIN);
 
-    // EIP-155
+    // EIP-155. A chain that does not price gas requires one: the client's
+    // gasless path rejects a transaction with no signed chain id outright,
+    // because a domain-qualified id is what selects the domain's state in the
+    // first place. An unprotected pre-EIP-155 transaction has no business
+    // reaching it, and accepting one here would execute something the client
+    // never would.
+    if constexpr (!gas_is_priced()) {
+        if (MONAD_UNLIKELY(!tx.sc.chain_id.has_value())) {
+            return TransactionError::WrongChainId;
+        }
+    }
     if (MONAD_LIKELY(tx.sc.chain_id.has_value())) {
         if (MONAD_UNLIKELY(tx.sc.chain_id.value() != chain_id)) {
             return TransactionError::WrongChainId;
         }
     }
 
-    // EIP-4844
-    if constexpr (!traits::eip_4844_active()) {
+    // EIP-4844. Widened when gas is not priced: rejecting the type is one
+    // line and makes every blob-gas path unreachable, where unpicking
+    // calc_blob_fee, get_total_blob_gas and the rest would touch code the
+    // mainnet corpus exercises for a feature this chain does not have.
+    if constexpr (!traits::eip_4844_active() || !gas_is_priced()) {
         if (MONAD_UNLIKELY(tx.type == TransactionType::eip4844)) {
             return TransactionError::TypeNotSupported;
         }
@@ -99,12 +112,25 @@ Result<void> static_validate_transaction(
         return TransactionError::TypeNotSupported;
     }
 
-    // EIP-1559
+    // EIP-1559. Without a base fee or a priority fee these compare nothing.
+    //
+    // MaxFeeLessThanBase is also what stops priority_fee_per_gas underflowing
+    // its uint256 subtraction, and gas_price is not only called from the sites
+    // above -- tx_context feeds it to the GASPRICE opcode. Dropping this
+    // without the arm in tx_context.cpp would have GASPRICE report about 2^256
+    // and the proof attest to it.
+    // Checked whether or not gas is priced, because the client checks them:
+    // a domain transaction is an ordinary EIP-1559 transaction and passes the
+    // ordinary validity rules even though its execution is sponsored. Skipping
+    // them here would accept transactions the client drops, which is a
+    // different transaction set and so a different state root.
+    //
+    // It is also what keeps gas_price's uint256 subtraction safe wherever it is
+    // reached, tx_context included.
     if (MONAD_UNLIKELY(tx.max_fee_per_gas < base_fee_per_gas.value_or(0))) {
         return TransactionError::MaxFeeLessThanBase;
     }
 
-    // EIP-1559
     if (MONAD_UNLIKELY(tx.max_priority_fee_per_gas > tx.max_fee_per_gas)) {
         return TransactionError::PriorityFeeGreaterThanMax;
     }
@@ -135,7 +161,10 @@ Result<void> static_validate_transaction(
     }
 
     if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
-        // EIP-7623
+        // EIP-7623, and ungated with the floor itself: execute_final raises
+        // gas_used to the floor whether or not gas is priced -- only the debit
+        // is economics -- so this gate still has to keep gas_used <= gas_limit
+        // true across that raise.
         if (MONAD_UNLIKELY(
                 floor_data_gas_counted<traits>(tx, tokens) > tx.gas_limit)) {
             return TransactionError::IntrinsicGasGreaterThanLimit;
@@ -154,7 +183,10 @@ Result<void> static_validate_transaction(
         return TransactionError::NonceExceedsMax;
     }
 
-    // EIP-1559: check gas_limit * max_fee_per_gas doesn't overflow uint256
+    // EIP-1559: check gas_limit * max_fee_per_gas doesn't overflow uint256.
+    // The product it guards exists only inside v0, which is not computed when
+    // gas is unpriced -- but the client makes this check regardless, so a
+    // transaction it rejects here is one this must reject too.
     if (MONAD_UNLIKELY(!max_gas_cost(tx.gas_limit, tx.max_fee_per_gas))) {
         return TransactionError::GasLimitOverflow;
     }

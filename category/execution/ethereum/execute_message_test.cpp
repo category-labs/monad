@@ -91,7 +91,7 @@ TYPED_TEST(TraitsTest, create_with_insufficient)
     db_t tdb{db};
     vm::VM vm;
     BlockState bs{tdb, vm};
-    State s{bs, Incarnation{0, 0}};
+    State s{bs};
 
     static constexpr auto from{
         0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
@@ -150,7 +150,7 @@ TYPED_TEST(TraitsTest, create_insufficient_balance_nonce_bump)
     db_t tdb{db};
     vm::VM vm;
     BlockState bs{tdb, vm};
-    State s{bs, Incarnation{0, 0}};
+    State s{bs};
 
     static constexpr auto from{
         0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
@@ -231,7 +231,7 @@ TYPED_TEST(TraitsTest, create_revert_preserves_access_list_trace)
     db_t tdb{db};
     vm::VM vm;
     BlockState bs{tdb, vm};
-    State s{bs, Incarnation{0, 0}};
+    State s{bs};
 
     static constexpr auto from =
         0x5353535353535353535353535353535353535353_address;
@@ -315,7 +315,7 @@ TYPED_TEST(TraitsTest, eip684_existing_code)
     db_t tdb{db};
     vm::VM vm;
     BlockState bs{tdb, vm};
-    State s{bs, Incarnation{0, 0}};
+    State s{bs};
 
     static constexpr auto from{
         0x36928500bc1dcd7af6a2b4008875cc336b927d57_address};
@@ -380,7 +380,7 @@ TYPED_TEST(TraitsTest, create_nonce_out_of_range)
     db_t tdb{db};
     vm::VM vm;
     BlockState bs{tdb, vm};
-    State s{bs, Incarnation{0, 0}};
+    State s{bs};
 
     static constexpr auto from{
         0x5353535353535353535353535353535353535353_address};
@@ -444,7 +444,7 @@ TYPED_TEST(TraitsTest, static_precompile_execution)
     db_t tdb{db};
     vm::VM vm;
     BlockState bs{tdb, vm};
-    State s{bs, Incarnation{0, 0}};
+    State s{bs};
 
     static constexpr auto from{
         0x5353535353535353535353535353535353535353_address};
@@ -514,7 +514,7 @@ TYPED_TEST(TraitsTest, out_of_gas_static_precompile_execution)
     db_t tdb{db};
     vm::VM vm;
     BlockState bs{tdb, vm};
-    State s{bs, Incarnation{0, 0}};
+    State s{bs};
 
     static constexpr auto from{
         0x5353535353535353535353535353535353535353_address};
@@ -633,7 +633,7 @@ TYPED_TEST(TraitsTest, create_op_max_initcode_size)
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
 
-    auto s = State{bs, Incarnation{0, 0}};
+    auto s = State{bs};
 
     Transaction tx{};
     auto const chain_ctx =
@@ -757,7 +757,7 @@ TYPED_TEST(TraitsTest, create2_op_max_initcode_size)
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
 
-    auto s = State{bs, Incarnation{0, 0}};
+    auto s = State{bs};
 
     Transaction tx{};
     auto const chain_ctx =
@@ -837,7 +837,7 @@ TYPED_TEST(TraitsTest, deploy_contract_code_not_enough_of_gas)
     uint8_t const code[] = {0xde, 0xad, 0xbe, 0xef};
     // Successfully deploy code
     {
-        State s{bs, Incarnation{0, 0}};
+        State s{bs};
         static constexpr int64_t gas = 10'000;
         evmc::Result r{EVMC_SUCCESS, gas, 0, code, sizeof(code)};
         auto const r2 = deploy_contract_code<typename TestFixture::Trait>(
@@ -852,7 +852,7 @@ TYPED_TEST(TraitsTest, deploy_contract_code_not_enough_of_gas)
     }
 
     {
-        State s{bs, Incarnation{0, 1}};
+        State s{bs};
         evmc::Result r{EVMC_SUCCESS, 700, 0, code, sizeof(code)};
         auto const r2 = deploy_contract_code<typename TestFixture::Trait>(
             s, a, std::move(r));
@@ -883,7 +883,7 @@ TYPED_TEST(TraitsTest, deploy_contract_code_max_code_size)
     byte_string code{ptr, 250000};
     static_assert(TestFixture::Trait::max_code_size() < 250000);
 
-    State s{bs, Incarnation{0, 0}};
+    State s{bs};
 
     evmc::Result r{
         EVMC_SUCCESS,
@@ -915,7 +915,7 @@ TYPED_TEST(TraitsTest, deploy_contract_code_validation)
     // EIP-3541 validation
     byte_string const illegal_code{0xef, 0x60};
 
-    State s{bs, Incarnation{0, 0}};
+    State s{bs};
 
     evmc::Result r{
         EVMC_SUCCESS, 1'000, 0, illegal_code.data(), illegal_code.size()};
@@ -939,7 +939,7 @@ TYPED_TEST(TraitsTest, create_inside_delegated_call)
     db_t tdb{db};
     vm::VM vm;
     BlockState bs{tdb, vm};
-    State s{bs, Incarnation{0, 0}};
+    State s{bs};
 
     static constexpr auto eoa{
         0x00000000000000000000000000000000aaaaaaaa_address};
@@ -1044,7 +1044,7 @@ TYPED_TEST(TraitsTest, create2_inside_delegated_call_via_delegatecall)
     db_t tdb{db};
     vm::VM vm;
     BlockState bs{tdb, vm};
-    State s{bs, Incarnation{0, 0}};
+    State s{bs};
 
     // `eoa` 7702-delegates its code to `delegated`, which makes a DELEGATECALL
     // to `creator`, which eventually tries to CREATE a contract
@@ -1175,7 +1175,7 @@ TYPED_TEST(TraitsTest, nested_call_to_delegated_precompile)
     db_t tdb{db};
     vm::VM vm;
     BlockState bs{tdb, vm};
-    State s{bs, Incarnation{0, 0}};
+    State s{bs};
 
     // `from` calls `contract`, which delegatecalls `eoa`, which has delegated
     // its code to a precompile.
@@ -1285,7 +1285,7 @@ TYPED_TEST(TraitsTest, cold_account_access)
     db_t tdb{db};
     vm::VM vm;
     BlockState bs{tdb, vm};
-    State s{bs, Incarnation{0, 0}};
+    State s{bs};
 
     static constexpr auto from{
         0x00000000000000000000000000000000bbbbbbbb_address};
@@ -1380,7 +1380,7 @@ TYPED_TEST(TraitsTest, defensive_delegation_check)
     db_t tdb{db};
     vm::VM vm;
     BlockState bs{tdb, vm};
-    State s{bs, Incarnation{0, 0}};
+    State s{bs};
 
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;

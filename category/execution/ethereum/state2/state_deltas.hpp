@@ -40,7 +40,7 @@ using Delta = std::pair<T const, T>;
 
 using AccountDelta = Delta<std::optional<Account>>;
 
-static_assert(sizeof(AccountDelta) == 176);
+static_assert(sizeof(AccountDelta) == 160);
 static_assert(alignof(AccountDelta) == 8);
 
 using StorageDelta = Delta<bytes32_t>;
@@ -58,9 +58,11 @@ struct StateDelta
 {
     AccountDelta account;
     StorageDeltas storage{};
+    // Missing slots resolve to zero, and commit replaces the storage subtree.
+    bool storage_cleared{false};
 };
 
-static_assert(sizeof(StateDelta) == 752);
+static_assert(sizeof(StateDelta) == 744);
 static_assert(alignof(StateDelta) == 8);
 
 using StateDeltas = oneapi::tbb::concurrent_hash_map<

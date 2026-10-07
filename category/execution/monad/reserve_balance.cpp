@@ -96,7 +96,7 @@ bool dipped_into_reserve(
         }
         else if (
             allow_init_selfdestruct_exemption && state.is_destructed(addr) &&
-            state.is_current_incarnation(addr)) {
+            state.is_created_in_tx(addr)) {
             continue;
         }
 
@@ -221,7 +221,7 @@ void ReserveBalance::update_violation_status(Address const &address)
 
     auto &violation_threshold = violation_thresholds_[address];
     if (allow_init_selfdestruct_exemption_ && state_->is_destructed(address) &&
-        state_->is_current_incarnation(address)) {
+        state_->is_created_in_tx(address)) {
         // Contracts that selfdestruct during init never get a code hash.
         violation_threshold = uint256_t{0};
         failed_.erase(address);

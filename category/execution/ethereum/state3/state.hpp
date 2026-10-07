@@ -24,7 +24,6 @@
 #include <category/execution/ethereum/reserve_balance.hpp>
 #include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/version_stack.hpp>
-#include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/monad/reserve_balance.hpp>
 #include <category/vm/evm/access_status.h>
 #include <category/vm/evm/page_storage_status.h>
@@ -54,8 +53,6 @@ class State
     using Set = ankerl::unordered_dense::segmented_set<K>;
 
     BlockState &block_state_;
-
-    Incarnation const incarnation_;
 
     Map<Address, OriginalAccountState> original_{};
 
@@ -94,7 +91,7 @@ private:
     std::optional<Account> &current_account(Address const &);
 
 public:
-    State(BlockState &, Incarnation, bool relaxed_validation = false);
+    explicit State(BlockState &, bool relaxed_validation = false);
 
     State(State &&) = delete;
     State(State const &) = delete;
@@ -144,7 +141,7 @@ public:
 
     bool is_destructed(Address const &);
 
-    bool is_current_incarnation(Address const &);
+    bool is_created_in_tx(Address const &);
 
     bytes32_t get_storage(Address const &, bytes32_t const &key);
 
@@ -204,21 +201,13 @@ public:
 
     ////////////////////////////////////////
 
+    template <Traits traits>
+    void finalize_account_deletions();
+
     void create_contract(Address const &);
 
-    /**
-     * Creates an account that cannot be selfdestructed after Cancun.
-     *
-     * From Cancun onwards, only accounts created in the same transaction can be
-     * selfdestructed. This method creates an account with a .tx incarnation
-     * component that is guaranteed to be different from that of any actual
-     * transaction; it will therefore never be selfdestructed.
-     *
-     * This is currently used to create authority accounts during EIP-7702
-     * authority processing; changes to the state during that step are specified
-     * to take place before any of the actual transactions in a block.
-     */
-    void create_account_no_rollback(Address const &);
+    // Provision an account without marking it as an EVM contract creation.
+    void create_account(Address const &);
 
     ////////////////////////////////////////
 
@@ -227,8 +216,6 @@ public:
     void store_log(Receipt::Log const &);
 
     ////////////////////////////////////////
-
-    void set_to_state_incarnation(Address const &);
 
     // RELAXED MERGE
     // if original and current can be adjusted to satisfy min balance, adjust

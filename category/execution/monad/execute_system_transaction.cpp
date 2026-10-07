@@ -102,7 +102,7 @@ Result<Receipt> ExecuteSystemTransaction<traits>::operator()()
     {
         TRACE_TXN_EVENT(StartExecution);
 
-        State state{block_state_, Incarnation{header_.number, i_ + 1}};
+        State state{block_state_};
         state.set_original_nonce(sender_, tx_.nonce);
 
         call_tracer_.reset();
@@ -128,7 +128,7 @@ Result<Receipt> ExecuteSystemTransaction<traits>::operator()()
     {
         TRACE_TXN_EVENT(StartRetry);
 
-        State state{block_state_, Incarnation{header_.number, i_ + 1}};
+        State state{block_state_};
 
         call_tracer_.reset();
         trace::reset(state_tracer_);

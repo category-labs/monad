@@ -95,7 +95,7 @@ protected:
                     .dbname_path = db_file.path, .chunk_capacity = 24}};
             TrieDb tdb{db};
             BlockState bs{tdb, vm};
-            State state{bs, Incarnation{0, 0}};
+            State state{bs};
             NoopCallTracer call_tracer{};
             StakingContract contract{state, call_tracer};
 

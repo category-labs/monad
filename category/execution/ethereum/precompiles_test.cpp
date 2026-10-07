@@ -324,7 +324,7 @@ namespace
         TrieDb tdb{db};
         vm::VM vm;
         BlockState bs{tdb, vm};
-        State s{bs, Incarnation{0, 0}};
+        State s{bs};
 
         for (auto const &test_case : test_cases) {
             auto test_with_gas_offset = [&](int64_t gas_offset) {

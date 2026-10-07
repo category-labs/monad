@@ -32,7 +32,6 @@
 #include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
-#include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/vm/code.hpp>
 #include <category/vm/vm.hpp>
 
@@ -77,8 +76,7 @@ std::optional<Account> BlockState::read_account(Address const &address)
     }
 }
 
-bytes32_t BlockState::read_storage(
-    Address const &address, Incarnation const incarnation, bytes32_t const &key)
+bytes32_t BlockState::read_storage(Address const &address, bytes32_t const &key)
 {
     bool read_storage = false;
     // block state
@@ -87,7 +85,7 @@ bytes32_t BlockState::read_storage(
         MONAD_ASSERT(state_);
         MONAD_ASSERT(state_->find(it, address));
         auto const &account = it->second.account.second;
-        if (!account || incarnation != account->incarnation) {
+        if (!account) {
             return {};
         }
         auto const &storage = it->second.storage;
@@ -98,7 +96,7 @@ bytes32_t BlockState::read_storage(
             }
         }
         auto const &orig_account = it->second.account.first;
-        if (orig_account && incarnation == orig_account->incarnation) {
+        if (orig_account && !it->second.storage_cleared) {
             read_storage = true;
         }
     }
@@ -106,15 +104,15 @@ bytes32_t BlockState::read_storage(
     {
         bytes32_t result{};
         if (read_storage) {
-            result = db_.read_storage(address, incarnation, key);
+            result = db_.read_storage(address, key);
             MONAD_ASSERT(
-                !secondary_db_ || secondary_db_->read_storage(
-                                      address, incarnation, key) == result);
+                !secondary_db_ ||
+                secondary_db_->read_storage(address, key) == result);
         }
         StateDeltas::accessor it{};
         MONAD_ASSERT(state_->find(it, address));
         auto const &account = it->second.account.second;
-        if (!account || incarnation != account->incarnation) {
+        if (!account || (read_storage && it->second.storage_cleared)) {
             return result;
         }
         auto &storage = it->second.storage;
@@ -124,6 +122,16 @@ bytes32_t BlockState::read_storage(
             return it2->second.second;
         }
     }
+}
+
+void BlockState::clear_storage(Address const &address)
+{
+    // RPC overrides run between executions, with no transactions in flight.
+    (void)read_account(address);
+    StateDeltas::accessor it{};
+    MONAD_ASSERT(state_->find(it, address));
+    it->second.storage.clear();
+    it->second.storage_cleared = true;
 }
 
 vm::SharedVarcode BlockState::read_code(bytes32_t const &code_hash)
@@ -222,6 +230,17 @@ void BlockState::merge(State const &state)
         auto const &storage = account_state.storage_;
         StateDeltas::accessor it{};
         MONAD_ASSERT(state_->find(it, address));
+        if (account_state.is_created_in_tx() || !account.has_value()) {
+            if (it->second.account.first.has_value() &&
+                !it->second.storage_cleared) {
+                auto &reads = self_destruct_storage_reads_[address];
+                for (auto const &kv : it->second.storage) {
+                    reads.insert(kv.first);
+                }
+            }
+            it->second.storage.clear();
+            it->second.storage_cleared = true;
+        }
         it->second.account.second = account;
         if (account.has_value()) {
             for (auto const &[key, value] : storage) {
@@ -234,18 +253,6 @@ void BlockState::merge(State const &state)
                         key, std::make_pair(bytes32_t{}, value));
                 }
             }
-        }
-        else {
-            if (it->second.account.first.has_value()) {
-                auto const [iter, inserted] =
-                    self_destruct_storage_reads_.try_emplace(address);
-                if (inserted) {
-                    for (auto const &kv : it->second.storage) {
-                        iter->second.insert(kv.first);
-                    }
-                }
-            }
-            it->second.storage.clear();
         }
     }
 }

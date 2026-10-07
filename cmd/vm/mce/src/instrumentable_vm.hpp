@@ -116,7 +116,7 @@ public:
         };
 
         BlockState block_state{test_state_.trie_db, vm_};
-        State state{block_state, Incarnation{0, 0}};
+        State state{block_state};
         state.push();
         for (auto const &addr : {msg->sender, msg->recipient}) {
             state.add_to_balance(addr, 0);

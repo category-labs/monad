@@ -53,7 +53,7 @@ TYPED_TEST(MonadTraitsTest, mip11_fork)
     BlockMetrics metrics;
 
     {
-        State state{bs, Incarnation{0, 0}};
+        State state{bs};
         state.add_to_balance(from, 1_ether);
         bs.merge(state);
     }
@@ -100,7 +100,7 @@ TYPED_TEST(MonadTraitsTest, mip11_fork)
     ASSERT_FALSE(receipt.has_error());
     EXPECT_EQ(receipt.value().status, 1u);
 
-    State state{bs, Incarnation{0, 0}};
+    State state{bs};
     if constexpr (Trait::mip_11_active()) {
         EXPECT_EQ(state.get_balance(beneficiary), 0);
         EXPECT_EQ(

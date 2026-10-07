@@ -129,7 +129,7 @@ TEST(PartialTrieDb, Read_EmptyTrie)
 {
     TestDb db{empty_blob()};
     EXPECT_EQ(db->read_account(ADDR_X), std::nullopt);
-    EXPECT_EQ(db->read_storage(ADDR_X, Incarnation{0, 0}, SLOT_1), bytes32_t{});
+    EXPECT_EQ(db->read_storage(ADDR_X, SLOT_1), bytes32_t{});
 }
 
 TEST(PartialTrieDb, Read_LeafWitness_FoundAndAbsent)
@@ -145,7 +145,7 @@ TEST(PartialTrieDb, Read_LeafWitness_FoundAndAbsent)
     // A different address misses the single leaf — the trie is fully resolved,
     // so the lookup terminates as absent rather than hitting a Digest.
     EXPECT_EQ(db->read_account(ADDR_Y), std::nullopt);
-    EXPECT_EQ(db->read_storage(ADDR_X, Incarnation{0, 0}, SLOT_1), bytes32_t{});
+    EXPECT_EQ(db->read_storage(ADDR_X, SLOT_1), bytes32_t{});
 }
 
 TEST(PartialTrieDb, ReadCode_PresentAndMissing)

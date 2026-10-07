@@ -152,7 +152,7 @@ TYPED_TEST(TraitsTest, emit_log)
     db_t tdb{db};
     vm::VM vm;
     BlockState bs{tdb, vm};
-    State state{bs, Incarnation{0, 0}};
+    State state{bs};
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
     Transaction tx{};
@@ -188,7 +188,7 @@ TYPED_TEST(TraitsTest, access_precompile)
     db_t tdb{db};
     vm::VM vm;
     BlockState bs{tdb, vm};
-    State state{bs, Incarnation{0, 0}};
+    State state{bs};
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
     Transaction tx{};

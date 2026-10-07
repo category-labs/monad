@@ -23,7 +23,6 @@
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
-#include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/vm/vm.hpp>
 
 #include <ankerl/unordered_dense.h>
@@ -49,16 +48,9 @@ class BlockState final
     vm::VM &vm_;
     std::unique_ptr<StateDeltas> state_;
     Code code_;
-    /// Storage slot reads done against a pre-state account before it got
-    /// SELFDESTRUCTed in the same block. `merge()` clears
-    /// `state_deltas[addr].storage` for destroyed accounts, which would
-    /// erase these entries from the witness access set.
-    ///
-    /// Populated at most once per address — on the *first* SELFDESTRUCT
-    /// — and only when the address had an account in pre-state. Later
-    /// destructs in the same block can only target a within-block
-    /// incarnation (which, by definition, has no pre-state storage), so
-    /// the slots they wipe are not pre-state reads and must not be added.
+    /// Preserve pre-state storage reads for the witness when creation or
+    /// deletion clears an account's storage delta. Capture them only on the
+    /// first reset: later reads refer to storage created within this block.
     SelfDestructStorageReads self_destruct_storage_reads_;
 
 public:
@@ -71,7 +63,10 @@ public:
 
     std::optional<Account> read_account(Address const &);
 
-    bytes32_t read_storage(Address const &, Incarnation, bytes32_t const &key);
+    bytes32_t read_storage(Address const &, bytes32_t const &key);
+
+    // Full RPC storage replacement; call only between executions.
+    void clear_storage(Address const &);
 
     vm::SharedVarcode read_code(bytes32_t const &);
 

@@ -27,7 +27,6 @@
 #include <category/execution/ethereum/execute_block_header.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
-#include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/monad/staking/execute_block_prelude.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
@@ -66,7 +65,7 @@ void execute_block_header(
 {
     static_assert(traits::evm_rev() >= MONAD_ETH_TANGERINE_WHISTLE);
 
-    State state{block_state, Incarnation{header.number, 0}};
+    State state{block_state};
 
     deploy_block_hash_history_contract<traits>(state);
     set_block_hash_history<traits>(state, header);

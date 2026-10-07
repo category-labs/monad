@@ -23,7 +23,6 @@
 #include <category/execution/ethereum/db/db_snapshot_filesystem.h>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
-#include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/monad/core/monad_block.hpp>
 #include <category/execution/monad/db/page_commit_builder.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
@@ -670,19 +669,17 @@ TEST(DbBinarySnapshot, LoadPageModeOnSecondaryDb)
         TrieDb tdb{db};
         ASSERT_TRUE(tdb.is_page_encoded());
         tdb.set_block_and_prefix(BLOCK);
-        Incarnation const inc{0, 0};
 
         for (auto const &addr : ADDRS) {
             ASSERT_TRUE(tdb.read_account(addr).has_value());
             for (auto const b : SLOT_BYTES) {
                 EXPECT_EQ(
-                    tdb.read_storage(addr, inc, make_slot(b)),
-                    make_val(addr, b))
+                    tdb.read_storage(addr, make_slot(b)), make_val(addr, b))
                     << "addr=" << static_cast<int>(addr.bytes[19]) << " slot=0x"
                     << std::hex << static_cast<int>(b);
             }
 
-            auto const page0 = tdb.read_storage_page(addr, inc, bytes32_t{});
+            auto const page0 = tdb.read_storage_page(addr, bytes32_t{});
             EXPECT_EQ(page0[0], make_val(addr, 0x00));
             EXPECT_EQ(page0[1], make_val(addr, 0x01));
             EXPECT_EQ(page0[0x7f], make_val(addr, 0x7f));
@@ -691,7 +688,7 @@ TEST(DbBinarySnapshot, LoadPageModeOnSecondaryDb)
             }
 
             bytes32_t const pk1 = compute_page_key(make_slot(0x80));
-            auto const page1 = tdb.read_storage_page(addr, inc, pk1);
+            auto const page1 = tdb.read_storage_page(addr, pk1);
             EXPECT_EQ(page1[0], make_val(addr, 0x80));
             EXPECT_EQ(page1[1], make_val(addr, 0x81));
             for (size_t i = 2; i < storage_page_t::SLOTS; ++i) {
@@ -717,8 +714,7 @@ TEST(DbBinarySnapshot, LoadPageModeOnSecondaryDb)
                 auto const decoded = decode_storage_page(inner.value());
                 ASSERT_TRUE(decoded.has_value());
                 EXPECT_EQ(
-                    decoded.value(),
-                    tdb.read_storage_page(addr, inc, page_key));
+                    decoded.value(), tdb.read_storage_page(addr, page_key));
             }
         }
 
@@ -886,12 +882,11 @@ namespace
         tdb.set_block_and_prefix(PAGE_BLOCK);
         EXPECT_EQ(tdb.state_root(), expected_root);
 
-        Incarnation const inc{0, 0};
         for (auto const &addr : PAGE_ADDRS) {
             ASSERT_TRUE(tdb.read_account(addr).has_value());
             for (auto const raw : PAGE_SLOTS) {
                 EXPECT_EQ(
-                    tdb.read_storage(addr, inc, page_slot_key(raw)),
+                    tdb.read_storage(addr, page_slot_key(raw)),
                     page_slot_value(addr, raw))
                     << "addr=" << static_cast<int>(addr.bytes[19]) << " slot=0x"
                     << std::hex << raw;
@@ -1052,12 +1047,12 @@ TEST(DbBinarySnapshot, HeaderlessSnapshotRestores)
         TrieDb tdb{db};
         ASSERT_FALSE(tdb.is_page_encoded());
         tdb.set_block_and_prefix(PAGE_BLOCK);
-        Incarnation const inc{0, 0};
+
         for (auto const &addr : PAGE_ADDRS) {
             ASSERT_TRUE(tdb.read_account(addr).has_value());
             for (auto const raw : PAGE_SLOTS) {
                 EXPECT_EQ(
-                    tdb.read_storage(addr, inc, page_slot_key(raw)),
+                    tdb.read_storage(addr, page_slot_key(raw)),
                     page_slot_value(addr, raw))
                     << "addr=" << static_cast<int>(addr.bytes[19]) << " slot=0x"
                     << std::hex << raw;
@@ -1188,13 +1183,12 @@ TEST(DbBinarySnapshot, DumpFromSecondaryPageDb)
         TrieDb tdb{db};
         ASSERT_FALSE(tdb.is_page_encoded());
         tdb.set_block_and_prefix(BLOCK);
-        Incarnation const inc{0, 0};
+
         for (auto const &addr : ADDRS) {
             ASSERT_TRUE(tdb.read_account(addr).has_value());
             for (auto const b : SLOT_BYTES) {
                 EXPECT_EQ(
-                    tdb.read_storage(addr, inc, make_slot(b)),
-                    make_val(addr, b))
+                    tdb.read_storage(addr, make_slot(b)), make_val(addr, b))
                     << "addr=" << static_cast<int>(addr.bytes[19]) << " slot=0x"
                     << std::hex << static_cast<int>(b);
             }

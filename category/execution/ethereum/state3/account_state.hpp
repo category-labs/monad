@@ -115,14 +115,6 @@ public:
         return 0;
     }
 
-    [[nodiscard]] std::optional<Incarnation> get_incarnation() const
-    {
-        if (MONAD_LIKELY(account_.has_value())) {
-            return account_->incarnation;
-        }
-        return std::nullopt;
-    }
-
     bytes32_t get_transient_storage(bytes32_t const &key) const
     {
         if (auto const *const it = transient_storage_.find(key);
@@ -154,7 +146,7 @@ public:
     }
 };
 
-static_assert(sizeof(AccountState) == 160);
+static_assert(sizeof(AccountState) == 152);
 
 // RELAXED MERGE
 // track the min original balance needed at start of transaction and if the

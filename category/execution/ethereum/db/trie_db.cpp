@@ -41,7 +41,6 @@
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
-#include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/monad/db/page_commit_builder.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
@@ -131,44 +130,40 @@ std::optional<Account> TrieDb::read_account(Address const &addr)
     return result;
 }
 
-bytes32_t TrieDb::read_storage(
-    Address const &addr, Incarnation const incarnation, bytes32_t const &key)
+bytes32_t TrieDb::read_storage(Address const &addr, bytes32_t const &key)
 {
     bytes32_t const lookup_key = storage_lookup_key(key);
     uint8_t const lookup_offset = page_encoded_ ? compute_slot_offset(key) : 0;
     bytes32_t result{};
     auto const status =
-        cache_ ? cache_->try_read_storage(
-                     addr, incarnation, lookup_key, lookup_offset, result)
-               : CacheReadStatus::MissTruncated;
+        cache_
+            ? cache_->try_read_storage(addr, lookup_key, lookup_offset, result)
+            : CacheReadStatus::MissTruncated;
     if (status == CacheReadStatus::Hit) {
         return result;
     }
-    return load_storage_page(
-        addr, incarnation, lookup_key, status)[lookup_offset];
+    return load_storage_page(addr, lookup_key, status)[lookup_offset];
 }
 
-storage_page_t TrieDb::read_storage_page(
-    Address const &addr, Incarnation const incarnation,
-    bytes32_t const &page_key)
+storage_page_t
+TrieDb::read_storage_page(Address const &addr, bytes32_t const &page_key)
 {
     if (!page_encoded_) {
         MONAD_ABORT("read_storage_page is only valid on a page-encoded TrieDb");
     }
     storage_page_t result;
     auto const status =
-        cache_
-            ? cache_->try_read_storage_page(addr, incarnation, page_key, result)
-            : CacheReadStatus::MissTruncated;
+        cache_ ? cache_->try_read_storage_page(addr, page_key, result)
+               : CacheReadStatus::MissTruncated;
     if (status == CacheReadStatus::Hit) {
         return result;
     }
-    return load_storage_page(addr, incarnation, page_key, status);
+    return load_storage_page(addr, page_key, status);
 }
 
 storage_page_t TrieDb::load_storage_page(
-    Address const &addr, Incarnation const incarnation,
-    bytes32_t const &lookup_key, CacheReadStatus const status)
+    Address const &addr, bytes32_t const &lookup_key,
+    CacheReadStatus const status)
 {
     auto const res = db_.find(
         curr_root_,
@@ -189,7 +184,7 @@ storage_page_t TrieDb::load_storage_page(
             res.value().node->value(), page_encoded_);
     }
     if (cache_ && status == CacheReadStatus::MissResolved) {
-        cache_->insert_storage_page(addr, incarnation, lookup_key, page);
+        cache_->insert_storage_page(addr, lookup_key, page);
     }
     return page;
 }

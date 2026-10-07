@@ -37,7 +37,6 @@
 #include <category/execution/ethereum/rlp/encode2.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
-#include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/monad/chain/chain_factory.hpp>
 #include <category/execution/monad/db/commit_block_migration.hpp>
 #include <category/execution/monad/db/state_machine_init.hpp>
@@ -655,7 +654,7 @@ TYPED_TEST(StateSyncTestBothForks, sync_from_some)
                         .balance = 1337,
                         .code_hash = code_hash,
                         .nonce = 1,
-                        .incarnation = Incarnation{3, 0}}},
+                    }},
                .storage =
                    {{0x00000000000000000000000000000000000000000000000000000000cafebabe_bytes32,
                      {{},
@@ -676,10 +675,9 @@ TYPED_TEST(StateSyncTestBothForks, sync_from_some)
         Code{},
         4);
 
-    // account incarnation for ADDR2
+    // Replace all storage for ADDR2 without changing the account fields.
     auto const old = this->stdb.read_account(ADDR2);
     acct2 = old;
-    acct2->incarnation = Incarnation{5, 0};
     auto const hdr5 = commit_server_block_update_parent_hash(
         StateDeltas(
             {{ADDR2,
@@ -687,7 +685,8 @@ TYPED_TEST(StateSyncTestBothForks, sync_from_some)
                .storage =
                    {{0x00000000000000000000000000000000000000000000000000000000cafebabe_bytes32,
                      {{},
-                      0x0000000000000013370000000000000000000000000000000000000000000003_bytes32}}}}}}),
+                      0x0000000000000013370000000000000000000000000000000000000000000003_bytes32}}},
+               .storage_cleared = true}}}),
         Code{},
         5);
 
@@ -1269,7 +1268,9 @@ TEST_F(StateSyncFixture, delete_updated_account)
     BlockHeader hdr{.parent_hash = NULL_HASH};
     commit_sequential(sctx, StateDeltas({}), Code{}, hdr);
 
-    Account const a{.balance = 100, .incarnation = Incarnation{1, 0}};
+    Account const a{
+        .balance = 100,
+    };
 
     hdr.parent_hash =
         to_bytes(keccak256(rlp::encode_block_header(stdb.read_eth_header())));
@@ -1326,7 +1327,9 @@ TEST_F(StateSyncFixture, delete_storage_after_account_deletion)
 {
     init();
 
-    Account const a{.balance = 100, .incarnation = Incarnation{1, 0}};
+    Account const a{
+        .balance = 100,
+    };
 
     bytes32_t parent_hash{NULL_HASH};
     uint64_t const block_number = 1'000'000 - 257;
@@ -1430,7 +1433,7 @@ TEST_F(StateSyncFixture, update_contract_twice)
         .balance = 1337,
         .code_hash = code_hash,
         .nonce = 1,
-        .incarnation = Incarnation{1, 0}};
+    };
 
     hdr.state_root =
         0x3dda8f21af5ec3d4caea2b3b2bddd988e3f1ff1fbfdbaa87a6477bbfce356d26_bytes32;

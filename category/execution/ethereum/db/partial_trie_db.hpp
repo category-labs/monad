@@ -62,11 +62,10 @@ public:
 
     std::optional<Account> read_account(Address const &) override;
 
-    bytes32_t
-    read_storage(Address const &, Incarnation, bytes32_t const &) override;
+    bytes32_t read_storage(Address const &, bytes32_t const &) override;
 
     storage_page_t
-    read_storage_page(Address const &, Incarnation, bytes32_t const &) override
+    read_storage_page(Address const &, bytes32_t const &) override
     {
         MONAD_ABORT("PartialTrieDb: read_storage_page unsupported");
     }

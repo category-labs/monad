@@ -72,6 +72,10 @@ namespace
         case BlockError::SystemCallFailed:
         case BlockError::InvalidRequestsHash:
         case BlockError::InvalidDepositLog:
+        case BlockError::InvalidNamespaceLog:
+        case BlockError::WithdrawalsNotSupported:
+        case BlockError::OmmersNotSupported:
+        case BlockError::RequestsNotSupported:
             return EVMC_REJECTED;
         }
         return EVMC_INTERNAL_ERROR;

@@ -550,7 +550,9 @@ namespace trace
                 if (!pre_storage.empty()) {
                     pre[address_key]["storage"] = std::move(pre_storage);
                 }
-                if (!post_storage.empty()) {
+                // Deleted accounts must not reappear through their storage.
+                if (state_delta.account.second.has_value() &&
+                    !post_storage.empty()) {
                     post[address_key]["storage"] = std::move(post_storage);
                 }
             }

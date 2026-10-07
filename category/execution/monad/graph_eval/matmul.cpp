@@ -27,7 +27,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <vector>
+#include <memory>
 
 // Each element of the product is the dot product of a row of x with a column
 // of y. The columns are copied out of y 4 at a time into contiguous buffers,
@@ -45,15 +45,18 @@ constexpr size_t padded_length(size_t const k)
 }
 
 // Scratch for the copies of 4 columns, as long as columns can be, allocated
-// the first time a thread uses it. Its first `size` bytes are zeroed
+// the first time a thread uses it. Its first `size` bytes are zeroed. The rest
+// is left uninitialized, so that only the pages calls use are ever touched:
+// zeroing all 256 KiB up front would fault in every page on a thread's first
+// call
 int8_t *column_scratch(size_t const size)
 {
     constexpr size_t max_size =
         4 * padded_length(std::numeric_limits<uint16_t>::max());
-    thread_local std::vector<int8_t> scratch(max_size);
+    thread_local std::unique_ptr<int8_t[]> const scratch{new int8_t[max_size]};
     MONAD_DEBUG_ASSERT(size <= max_size);
-    std::fill_n(scratch.begin(), size, int8_t{0});
-    return scratch.data();
+    std::fill_n(scratch.get(), size, int8_t{0});
+    return scratch.get();
 }
 
 // 128 times the sum of a column copy: what dot_block's sums with it are off by

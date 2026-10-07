@@ -28,6 +28,8 @@
 #include <asmjit/x86.h>
 #include <asmjit/x86/x86assembler.h>
 
+#include <memory>
+
 namespace monad::vm::compiler::native
 {
     class Emitter
@@ -1066,5 +1068,6 @@ namespace monad::vm::compiler::native
         std::vector<std::pair<asmjit::Label, std::string>> debug_messages_;
         uint32_t exponential_constant_fold_counter_;
         int64_t accumulated_static_work_;
+        std::unique_ptr<int32_t[]> final_stack_dep_counts_;
     };
 }

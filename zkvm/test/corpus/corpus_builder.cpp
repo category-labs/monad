@@ -14,16 +14,21 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <zkvm/test/corpus/corpus_builder.hpp>
+#include <zkvm/test/corpus/genesis_bulk.hpp>
+#include <zkvm/test/corpus/spoke_code.hpp>
 #include <zkvm/test/corpus/tx_sign.hpp>
 
 #include <category/core/assert.h>
+#include <category/core/bytes.hpp>
 #include <category/core/fiber/priority_pool.hpp>
 #include <category/core/keccak.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
+#include <category/execution/ethereum/core/chain_hash.hpp>
 #include <category/execution/ethereum/core/rlp/address_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/int_rlp.hpp>
+#include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/db/test/commit_simple.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/db/witness_generator.hpp>
@@ -31,6 +36,7 @@
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
 #include <category/execution/ethereum/rlp/execution_witness.hpp>
+#include <category/execution/ethereum/sequencing_anchor.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
@@ -42,8 +48,21 @@
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
 
+#include <ankerl/unordered_dense.h>
+
+#include <atomic>
 #include <cstring>
+#include <limits>
+#include <optional>
 #include <utility>
+
+#ifdef MONAD_ZKVM_L2
+    #include <category/execution/ethereum/db/ordered_trie.hpp>
+    #include <category/execution/ethereum/domain_anchor.hpp>
+    #include <zkvm/guest/l2_cipher.hpp>
+    #include <zkvm/guest/l2_config.hpp>
+    #include <zkvm/guest/l2_ecdh.hpp>
+#endif
 
 MONAD_NAMESPACE_BEGIN
 
@@ -64,6 +83,50 @@ namespace corpus
 
     namespace
     {
+        /// What execution reads the block hash buffer through: the builder's
+        /// own, recording the oldest block whose hash was asked for. The guest
+        /// executes the same block and makes the same reads, so the run from
+        /// that block to the parent is every hash it will need -- which is how
+        /// far back an Ancestors::Reached witness reaches.
+        class RecordingBlockHashBuffer final : public BlockHashBuffer
+        {
+            BlockHashBuffer const &inner_;
+            /// Atomic though the pool is one fiber: get() is const, and a
+            /// plain member would be a data race the day the pool is not.
+            mutable std::atomic<uint64_t> oldest_{
+                std::numeric_limits<uint64_t>::max()};
+
+        public:
+            explicit RecordingBlockHashBuffer(BlockHashBuffer const &inner)
+                : inner_{inner}
+            {
+            }
+
+            uint64_t n() const override
+            {
+                return inner_.n();
+            }
+
+            bytes32_t const &get(uint64_t const n) const override
+            {
+                uint64_t seen = oldest_.load(std::memory_order_relaxed);
+                while (n < seen && !oldest_.compare_exchange_weak(
+                                       seen, n, std::memory_order_relaxed)) {
+                }
+                return inner_.get(n);
+            }
+
+            /// The oldest block whose hash was read, if any was.
+            std::optional<uint64_t> oldest() const
+            {
+                uint64_t const o = oldest_.load(std::memory_order_relaxed);
+                if (o == std::numeric_limits<uint64_t>::max()) {
+                    return std::nullopt;
+                }
+                return o;
+            }
+        };
+
         /// The accounts subtrie as generate_witness wants it.
         mpt::NodeCursor
         accounts_cursor(mpt::Db &mdb, TrieDb &tdb, uint64_t const number)
@@ -121,17 +184,68 @@ namespace corpus
         }
     }
 
-    CorpusBuilder::CorpusBuilder(std::function<void(State &)> const &seed)
+#if defined(MONAD_L2_CIPHER_ECDH_POSEIDON2)
+    namespace
+    {
+        /// A fresh ephemeral scalar per leaf, derived so a regenerated corpus
+        /// is byte-identical.
+        ///
+        /// Fresh, and not the operator secret. The rewriter this replaces
+        /// passed sk as r, which makes R = pk on every leaf and P = sk^2 G a
+        /// constant -- so two blocks in one epoch share a keystream for the
+        /// same leaf index and plaintext length. That is a break, not an
+        /// inefficiency: XORing two such leaves cancels the mask.
+        L2Scalar ephemeral(bytes32_t const &sk, uint64_t number, size_t index)
+        {
+            for (uint64_t salt = 0;; ++salt) {
+                byte_string buf{sk.bytes, sizeof(sk.bytes)};
+                for (uint64_t const v : {number, uint64_t{index}, salt}) {
+                    for (unsigned i = 0; i < 8; ++i) {
+                        buf.push_back(
+                            static_cast<unsigned char>(v >> (56 - 8 * i)));
+                    }
+                }
+                auto const h = to_bytes(keccak256(buf));
+                auto const r = l2_scalar_from_be(
+                    std::span<unsigned char const, 32>{h.bytes, 32});
+                // Astronomically unlikely, but a scalar outside [1, n-1] is
+                // not a key and l2_ecdh would return nullopt rather than say
+                // why. Salting again costs nothing and keeps it total.
+                if (l2_scalar_is_valid(r)) {
+                    return r;
+                }
+            }
+        }
+    }
+#endif
+
+    CorpusBuilder::CorpusBuilder(
+        std::function<void(State &)> const &seed, bytes32_t const &sk,
+        bytes32_t const &salt_secret)
         : impl_{std::make_unique<Impl>()}
         , mdb_{std::make_unique<InMemoryMachine>()}
         , tdb_{mdb_}
+        , sk_{sk}
+        , salt_secret_{salt_secret}
     {
+        check_operator_key();
         // Genesis goes in through a State so callers write
         // create_contract/set_code/add_to_balance/set_storage rather than
         // assembling StateDeltas by hand.
         BlockState bs{tdb_, impl_->vm};
         State state{bs, Incarnation{0, 0}};
         seed(state);
+#ifdef MONAD_ZKVM_L2
+        // Every domain genesis needs the spoke: the access check asks it
+        // before every call, and a spoke that is not there answers nothing,
+        // which denies. That is a property of the chain and not of a caller,
+        // so the gap is filled here -- only the gap, since a seed that puts a
+        // spoke of its own there (the spoke scenario's points at what its first
+        // block creates) means it.
+        if (!state.account_exists(L2_DOMAIN_SPOKE)) {
+            seed_spoke_access(state);
+        }
+#endif
         MONAD_ASSERT(bs.can_merge(state));
         bs.merge(state);
         auto released = std::move(bs).release();
@@ -139,27 +253,96 @@ namespace corpus
         BlockHeader genesis{
             .difficulty = 0,
             .number = GENESIS_NUMBER,
-            .gas_limit = GAS_LIMIT,
+            .gas_limit = gas_limit_,
             .timestamp = GENESIS_TIMESTAMP,
             .base_fee_per_gas = uint256_t{0}};
+#ifdef MONAD_ZKVM_L2
+#endif
 
         test::commit_simple(
             tdb_,
             *released.state,
             released.code,
-            bytes32_t{GENESIS_NUMBER},
+            commit_id(GENESIS_NUMBER),
             genesis);
-        tdb_.finalize(GENESIS_NUMBER, bytes32_t{GENESIS_NUMBER});
+        tdb_.finalize(GENESIS_NUMBER, commit_id(GENESIS_NUMBER));
         tdb_.set_block_and_prefix(GENESIS_NUMBER);
 
-        auto const sealed = tdb_.read_eth_header();
-        sealed_.push_back(sealed);
-        block_hashes_.set(
-            GENESIS_NUMBER,
-            to_bytes(keccak256(rlp::encode_block_header(sealed))));
+        seal_genesis(tdb_.read_eth_header());
+    }
+
+    CorpusBuilder::CorpusBuilder(
+        std::function<void(GenesisSink &)> const &seed,
+        size_t const chunk_accounts, uint64_t const gas_limit,
+        bytes32_t const &sk, bytes32_t const &salt_secret)
+        : impl_{std::make_unique<Impl>()}
+        , mdb_{std::make_unique<InMemoryMachine>()}
+        , tdb_{mdb_}
+        , gas_limit_{gas_limit}
+        , sk_{sk}
+        , salt_secret_{salt_secret}
+    {
+        check_operator_key();
+
+        BlockHeader genesis{
+            .difficulty = 0,
+            .number = GENESIS_NUMBER,
+            .gas_limit = gas_limit_,
+            .timestamp = GENESIS_TIMESTAMP,
+            .base_fee_per_gas = uint256_t{0}};
+#ifdef MONAD_ZKVM_L2
+#endif
+        // The sink commits as it fills, so the header is handed over only at
+        // the end -- and it is handed over already stamped, because the
+        // blinder has to be in extra_data before the commit hashes it.
+        GenesisSink sink{tdb_, chunk_accounts};
+        seed(sink);
+        seal_genesis(sink.finish(genesis));
+#ifdef MONAD_ZKVM_L2
+        // This route cannot fill the gap the way the State route does: the
+        // sink has committed most of the state by the time the seed returns,
+        // and a spoke added after the genesis commit is not in its root. So a
+        // bulk seed brings its own -- seed_spoke_access, or both halves as the
+        // presets do -- and one that does not is stopped here, rather than
+        // left to a chain that denies every call of every block.
+        auto const spoke = tdb_.read_account(L2_DOMAIN_SPOKE);
+        MONAD_ASSERT_PRINTF(
+            spoke.has_value() && spoke->code_hash != NULL_HASH,
+            "a domain genesis needs the spoke at MONAD_ZKVM_L2_SPOKE; a bulk "
+            "seed brings it (corpus::seed_spoke_access)");
+#endif
     }
 
     CorpusBuilder::~CorpusBuilder() = default;
+
+    void CorpusBuilder::check_operator_key() const
+    {
+        // Only a suite with a key has one to check: the plaintext suite binds
+        // no secret, so any corpus secret makes the same leaves.
+#if defined(MONAD_L2_CIPHER_ECDH_POSEIDON2)
+        // Checked once, against a throwaway header: the context's key
+        // material does not depend on the block, only its epoch does, and a
+        // secret that does not match the compiled operator key can never
+        // produce a leaf this guest will decrypt.
+        BlockHeader probe{.number = GENESIS_NUMBER};
+        auto const probe_ctx = l2_cipher_context(probe);
+        MONAD_ASSERT_PRINTF(
+            l2_check_operator_key(
+                probe_ctx,
+                l2_scalar_from_be(
+                    std::span<unsigned char const, 32>{sk_.bytes, 32})),
+            "the corpus secret does not match the compiled "
+            "MONAD_ZKVM_L2_OPERATOR_PK_X");
+#endif
+    }
+
+    void CorpusBuilder::seal_genesis(BlockHeader const &sealed)
+    {
+        sealed_.push_back(sealed);
+        block_hashes_.set(
+            GENESIS_NUMBER,
+            to_bytes(header_hash(rlp::encode_block_header(sealed))));
+    }
 
     Address CorpusBuilder::next_contract_address(Address const &deployer) const
     {
@@ -184,27 +367,36 @@ namespace corpus
         // --- the chosen fields; the computed ones stay zero until the commit
         BlockHeader header{
             .parent_hash =
-                to_bytes(keccak256(rlp::encode_block_header(parent))),
+                to_bytes(header_hash(rlp::encode_block_header(parent))),
             .difficulty = 0,
             .number = number,
-            .gas_limit = GAS_LIMIT,
+            .gas_limit = gas_limit_,
             .timestamp = parent.timestamp + BLOCK_TIME,
             .beneficiary = spec.beneficiary,
             .base_fee_per_gas = uint256_t{0}};
+#ifdef MONAD_ZKVM_L2
+        // Before anything hashes the header: the blinder is a header field, so
+        // it has to be in place for the block hash to be blinded, and the
+        // guest refuses a header carrying any other value.
+#endif
 
         // --- nonces then signatures, in that order: the nonce is inside the
         // --- signing preimage, so signing before setting it signs a lie.
+        //
+        // address_of is an EC multiplication, so each key becomes an address
+        // exactly once and the same-sender count comes from a map. Scanning
+        // the earlier transactions instead, re-deriving each of their
+        // addresses, is quadratic in a multiplication: 12.5M of them on a
+        // 5000-transaction block, which a payouts corpus reaches on every
+        // block.
+        ankerl::unordered_dense::map<Address, uint64_t> sent;
         for (size_t i = 0; i < spec.txs.size(); ++i) {
             auto const sender = corpus::address_of(spec.keys[i]);
             auto const acct = tdb_.read_account(sender);
-            spec.txs[i].nonce = acct.has_value() ? acct->nonce : 0;
+            uint64_t const base = acct.has_value() ? acct->nonce : 0;
             // A block may carry two transactions from one sender; the second
             // must see the first's nonce, which the db does not yet know.
-            for (size_t j = 0; j < i; ++j) {
-                if (corpus::address_of(spec.keys[j]) == sender) {
-                    ++spec.txs[i].nonce;
-                }
-            }
+            spec.txs[i].nonce = base + sent[sender]++;
             corpus::sign_transaction(spec.txs[i], spec.keys[i]);
         }
 
@@ -214,7 +406,8 @@ namespace corpus
         bytes32_t const pre_root = tdb_.state_root();
         auto const pre_cursor = accounts_cursor(mdb_, tdb_, number - 1);
 
-        // --- execute
+        // --- execute, through a recorder of the block hashes it reads
+        RecordingBlockHashBuffer const recorder{block_hashes_};
         BlockState block_state{tdb_, impl_->vm};
         BlockMetrics metrics;
         auto const recovered = recover_senders(block.transactions, impl_->pool);
@@ -244,7 +437,7 @@ namespace corpus
             senders,
             authorities,
             block_state,
-            block_hashes_,
+            recorder,
             impl_->pool.fiber_group(),
             metrics,
             call_tracers,
@@ -271,13 +464,13 @@ namespace corpus
             tdb_,
             *released.state,
             released.code,
-            bytes32_t{number},
+            commit_id(number),
             header,
             receipts,
             {},
             senders,
             block.transactions);
-        tdb_.finalize(number, bytes32_t{number});
+        tdb_.finalize(number, commit_id(number));
         tdb_.set_block_and_prefix(number);
 
         BlockHeader const sealed = tdb_.read_eth_header();
@@ -286,24 +479,136 @@ namespace corpus
 
         // --- field [3]: ascending, contiguous, ending at the parent, and the
         // --- newest carrying the pre-state root the blob was built against.
-        // --- Taken from what the commit sealed, never rebuilt.
+        // --- Taken from what the commit sealed, never rebuilt. ancestors_ sets
+        // --- how far back it reaches: every header the buffer holds, or the
+        // --- run back to the oldest one execution read -- the parent alone
+        // --- when it read none.
+        size_t const all = std::min<size_t>(sealed_.size(), BlockHashBuffer::N);
+        size_t keep = all;
+        if (ancestors_ == Ancestors::Reached) {
+            auto const oldest = recorder.oldest();
+            keep = oldest.has_value() ? number - *oldest : 1;
+            MONAD_ASSERT(keep >= 1 && keep <= all);
+        }
+        MONAD_ASSERT(sealed_[sealed_.size() - keep].number + keep == number);
         std::vector<byte_string> ancestors;
-        size_t const keep =
-            std::min<size_t>(sealed_.size(), BlockHashBuffer::N);
         for (size_t i = sealed_.size() - keep; i < sealed_.size(); ++i) {
+#ifdef MONAD_ZKVM_L2
+            // Hashes, not headers: BLOCKHASH wants the hash, and nothing on
+            // this arm walks the headers for continuity any more.
+            auto const h =
+                to_bytes(header_hash(rlp::encode_block_header(sealed_[i])));
+            ancestors.emplace_back(h.bytes, sizeof(h.bytes));
+#else
             ancestors.push_back(rlp::encode_block_header(sealed_[i]));
+#endif
         }
         MONAD_ASSERT(!ancestors.empty());
         MONAD_ASSERT(sealed_.back().state_root == pre_root);
 
         std::vector<byte_string> codes{wd.codes.begin(), wd.codes.end()};
-        byte_string const block_rlp = rlp::encode_block(block);
-        byte_string const witness =
-            encode_execution_witness(block_rlp, wd.nodes, codes, ancestors);
 
-        sealed_.push_back(sealed);
+        // The anchor the L2 guest will publish. Recomputed here from the same
+        // receipts rather than read back from execution: execute_block has
+        // nowhere to return it (it yields receipts), so the host clears the
+        // pending array and drops the value. Deliberate asymmetry -- the node
+        // wants the root, the prover publishes the anchor -- and it means the
+        // two are derived independently, which is what makes comparing them
+        // worth anything.
+        bytes32_t anchor{};
+#ifdef MONAD_ZKVM_L2
+        {
+            auto messages = collect_domain_messages(receipts, L2_DOMAIN_SPOKE);
+            MONAD_ASSERT(messages.has_value());
+            anchor = sorted_pair_merkle_root(messages.value());
+        }
+#endif
+
+        BlockHeader published = sealed;
+        byte_string block_rlp;
+        byte_string witness;
+        size_t encrypted = 0;
+
+#ifdef MONAD_ZKVM_L2
+        // Encrypt the leaves and re-root the transactions trie over the
+        // ciphertexts, which is what the header commits to on this chain.
+        // commit_simple has already filled transactions_root from the
+        // plaintext trie, so it is overwritten here and nowhere else -- every
+        // other computed field (state_root, receipts_root, gas_used,
+        // logs_bloom) is the same either way, because the cipher does not
+        // change what executing the block does.
+        std::vector<byte_string> leaves;
+        leaves.reserve(block.transactions.size());
+        for (size_t i = 0; i < block.transactions.size(); ++i) {
+            // The trie form, which is what the guest decrypts back to: a
+            // legacy transaction is its own RLP list, a typed one is the bare
+            // type byte and payload with no string wrapper.
+            byte_string const plain =
+                rlp::encode_transaction(block.transactions[i]);
+    #if defined(MONAD_L2_CIPHER_PLAINTEXT)
+            // The control: the leaf is the transaction.
+            leaves.emplace_back(plain);
+    #else
+            auto const ctx = l2_cipher_context(sealed);
+            auto const r = ephemeral(sk_, number, i);
+            unsigned char nonce[16] = {};
+            for (unsigned b = 0; b < 8; ++b) {
+                nonce[b] = static_cast<unsigned char>(i >> (8 * b));
+            }
+            std::vector<unsigned char> leaf;
+            MONAD_ASSERT(l2_encrypt_leaf(
+                ctx,
+                r,
+                std::span<unsigned char const, 16>{nonce},
+                std::span<unsigned char const>{plain.data(), plain.size()},
+                leaf));
+            leaves.emplace_back(leaf.begin(), leaf.end());
+    #endif
+            ++encrypted;
+        }
+        published.transactions_root = ordered_trie_root(leaves);
+
+        {
+            // [ L1 header, [ciphertext...], [outer gas limit...], parent ].
+            // Not a block: a domain has none. See domain_body.hpp.
+            byte_string cts;
+            for (auto const &leaf : leaves) {
+                cts += rlp::encode_string2(leaf);
+            }
+            // The corpus has no L1 envelopes, so each payload is sponsored for
+            // exactly what its transaction asks. That puts every block on the
+            // boundary the drop rule tests -- `>` drops, `==` passes -- rather
+            // than hiding it behind a margin.
+            byte_string limits;
+            for (auto const &tx : block.transactions) {
+                limits += rlp::encode_unsigned(tx.gas_limit);
+            }
+            byte_string body = rlp::encode_block_header(published);
+            body += rlp::encode_list2(cts);
+            body += rlp::encode_list2(limits);
+            body += rlp::encode_unsigned(number - 1);
+            block_rlp = rlp::encode_list2(body);
+        }
+
+        witness = encode_execution_witness_l2(
+            block_rlp,
+            wd.nodes,
+            codes,
+            ancestors,
+            byte_string_view{sk_.bytes, sizeof(sk_.bytes)},
+            byte_string_view{salt_secret_.bytes, sizeof(salt_secret_.bytes)});
+#else
+        block_rlp = rlp::encode_block(block);
+        witness =
+            encode_execution_witness(block_rlp, wd.nodes, codes, ancestors);
+#endif
+
+        // The sealed header is what the NEXT block's parent_hash and the
+        // ancestor list must name, and on an L2 block that is the published
+        // header -- the one whose transactions_root covers the ciphertexts.
+        sealed_.push_back(published);
         block_hashes_.set(
-            number, to_bytes(keccak256(rlp::encode_block_header(sealed))));
+            number, to_bytes(header_hash(rlp::encode_block_header(published))));
         if (sealed_.size() > BlockHashBuffer::N + 1) {
             sealed_.erase(sealed_.begin());
         }
@@ -313,9 +618,36 @@ namespace corpus
             .witness = witness,
             .pre_root = pre_root,
             .post_root = post_root,
-            .block_hash = to_bytes(keccak256(rlp::encode_block_header(sealed))),
-            .header = sealed,
-            .receipts = std::move(receipts)};
+            .block_hash =
+                to_bytes(header_hash(rlp::encode_block_header(published))),
+            .header = published,
+            .receipts = std::move(receipts),
+            .domain_anchor = anchor,
+            .parent_hash = published.parent_hash,
+            .encrypted_leaves = encrypted,
+#ifdef MONAD_ZKVM_L2
+            // Blinded with the parent's number, which is what the previous
+            // block published as its own final state: the two have to be the
+            // same bytes for the hub's chaining to be one equality.
+            .pre_state_commitment = l2_state_commitment(
+                std::span<unsigned char const, 32>{salt_secret_.bytes, 32},
+                number - 1,
+                pre_root),
+            .state_commitment = l2_state_commitment(
+                std::span<unsigned char const, 32>{salt_secret_.bytes, 32},
+                number,
+                post_root),
+            .sequencing_anchor =
+                [&] {
+                    std::vector<byte_string_view> views;
+                    views.reserve(leaves.size());
+                    for (auto const &leaf : leaves) {
+                        views.emplace_back(leaf);
+                    }
+                    return monad::sequencing_anchor(L2_CHAIN_ID, number, views);
+                }(),
+#endif
+        };
     }
 }
 

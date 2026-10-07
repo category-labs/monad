@@ -12,3 +12,21 @@ The imports in NamespaceSpoke.sol name ./interfaces/INamespace.sol and
 ./libraries/MerkleTreeLib.sol upstream; here all three sit side by side, so
 the two import lines are rewritten to match. MerkleTreeLib is internal-only,
 so solc inlines it and nothing needs linking.
+
+WrappedToken.sol, PvpSettlement.sol and EarnVault.sol, for the token
+presets, are this repository's own and have no imports. Compiled with the
+same solc and:
+  solc --evm-version paris --optimize --optimize-runs 200 --bin-runtime \
+      --storage-layout <Contract>.sol
+and checked into token_contracts_bytecode.hpp as runtime code: none of them
+has a constructor or an immutable, so the corpus seeds code and storage at
+genesis. The slots token_contracts.hpp writes are the ones --storage-layout
+reports; the corpus tests would catch a mismatch, because a transfer from a
+slot that does not carry the eligibility bit reverts.
+
+namespace_spoke_runtime.hpp is the same NamespaceSpoke compiled the same way,
+taken as runtime code from solc --standard-json, whose
+evm.deployedBytecode.immutableReferences gives where the constructor writes
+its two immutables (AST 441, NAMESPACE_CHAIN_ID: offset 348; AST 444,
+OPERATOR: offsets 285, 439, 774). The creation code it compiles to is
+byte-identical to the one in namespace_spoke_bytecode.hpp.

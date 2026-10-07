@@ -603,6 +603,28 @@ TYPED_TEST(VMTraitsTest, MinDeltaOutOfBound)
     ASSERT_LT(*ncode2->code_size_estimate(), *ncode1->code_size_estimate());
 }
 
+TYPED_TEST(VMTraitsTest, StackRangeOutOfBound)
+{
+    CompilerConfig const config{
+        .max_code_size_offset = runtime::bin<32 * 1024>};
+
+    auto const compile = [&](size_t pushes) {
+        std::vector<uint8_t> bytecode{POP};
+        std::fill_n(std::back_inserter(bytecode), pushes, CODESIZE);
+        bytecode.push_back(JUMPDEST);
+        return this->vm_.compiler()
+            .template compile<typename TestFixture::Trait>(
+                make_shared_intercode(bytecode), config);
+    };
+
+    // With 1025 pushes, max_delta - min_delta exceeds 1024, so no stack size
+    // passes the block's checks and the block should just jump to the error
+    // label.
+    auto const ncode1 = compile(1024);
+    auto const ncode2 = compile(1025);
+    ASSERT_LT(*ncode2->code_size_estimate(), *ncode1->code_size_estimate());
+}
+
 // Asserts that the compiler and interpreter can have differing behaviour when
 // running out of gas: the behaviour of the compiler is such that some out of
 // gas exits can be reported as generic failures, while the interpreter will

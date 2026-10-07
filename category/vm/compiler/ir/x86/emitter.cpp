@@ -52,6 +52,7 @@
 #include <functional>
 #include <iostream>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
@@ -639,6 +640,8 @@ namespace monad::vm::compiler::native
         , rodata_{as_.newNamedLabel("ROD")}
         , exponential_constant_fold_counter_{0}
         , accumulated_static_work_{0}
+        , final_stack_dep_counts_{
+              std::make_unique_for_overwrite<int32_t[]>(1024)}
     {
 #ifdef MONAD_VM_TESTING
         as_.addDiagnosticOptions(kValidateAssembler);
@@ -1344,7 +1347,8 @@ namespace monad::vm::compiler::native
 
         auto const min_delta = stack_.min_delta();
         auto const max_delta = stack_.max_delta();
-        if (min_delta < -1024 || max_delta > 1024) {
+        if (max_delta - min_delta > 1024) {
+            // No stack size passes both of the checks below.
             as_.jmp(error_label_);
             return false;
         }
@@ -1457,9 +1461,20 @@ namespace monad::vm::compiler::native
         //
         // Such a dependency means that `d` is occupying a final stack offset
         // to which stack element `e` needs to be located before leaving the
-        // basic block. The below map `dep_counts` is used to count the number
-        // of dependencies of all the stack elements on the stack.
-        std::unordered_map<StackElem *, int32_t> dep_counts;
+        // basic block. `dep_count(e)` is the number of dependencies of stack
+        // element `e`, stored in `final_stack_dep_counts_` at the lowest stack
+        // index of `e`. The vector `elems` holds the stack elements in stack
+        // index order, which keeps the emitted code independent of heap
+        // addresses.
+        auto const n = static_cast<size_t>(top_index - min_delta) + 1;
+        MONAD_DEBUG_ASSERT(n <= 1024);
+        std::fill_n(final_stack_dep_counts_.get(), n, 0);
+        auto const dep_count = [&](StackElem const *e) -> int32_t & {
+            return final_stack_dep_counts_[static_cast<size_t>(
+                *e->stack_indices().begin() - min_delta)];
+        };
+        std::vector<StackElem *> elems;
+        elems.reserve(n);
         for (int32_t i = min_delta; i <= top_index; ++i) {
             auto const d = stack_.get(i);
 
@@ -1471,7 +1486,7 @@ namespace monad::vm::compiler::native
                 // Already visited
                 continue;
             }
-            dep_counts.insert({d.get(), 0}); // No override
+            elems.push_back(d.get());
             if (!d->stack_offset().has_value()) {
                 continue;
             }
@@ -1486,14 +1501,14 @@ namespace monad::vm::compiler::native
             if (d->avx_reg().has_value()) {
                 continue;
             }
-            ++dep_counts[e];
+            ++dep_count(e);
         }
 
         // The `non_dep` vector contains all the stack elements without
         // dependencies.
         std::vector<StackElem *> non_dep;
-        for (auto const &[e, c] : dep_counts) {
-            if (c == 0) {
+        for (StackElem *const e : elems) {
+            if (dep_count(e) == 0) {
                 non_dep.push_back(e);
             }
         }
@@ -1501,9 +1516,9 @@ namespace monad::vm::compiler::native
         // Write all the stack elements without dependencies. Suppose stack
         // element `e` depends on stack element `d` and `d` does not have
         // any dependencies, i.e. is element of `non_dep`. After writing `d`
-        // to its final stack offsets, we decrease `dep_counts[e]`, because
+        // to its final stack offsets, we decrease `dep_count(e)`, because
         // it is now safe to write `e` to the stack offset which was occupied
-        // by `d`. Insert `e` into `non_dep` if `dep_counts[e]` becomes zero.
+        // by `d`. Insert `e` into `non_dep` if `dep_count(e)` becomes zero.
         while (!non_dep.empty()) {
             StackElem *d = non_dep.back();
             non_dep.pop_back();
@@ -1562,8 +1577,8 @@ namespace monad::vm::compiler::native
                 if (e == d) {
                     continue;
                 }
-                MONAD_DEBUG_ASSERT(dep_counts[e] > 0);
-                if (--dep_counts[e] == 0) {
+                MONAD_DEBUG_ASSERT(dep_count(e) > 0);
+                if (--dep_count(e) == 0) {
                     non_dep.push_back(e);
                 }
             }
@@ -1590,7 +1605,8 @@ namespace monad::vm::compiler::native
 
         // Write the remaining stack elements in cycles to their final stack
         // offsets.
-        for (auto const [e, ec] : dep_counts) {
+        for (StackElem *const e : elems) {
+            auto const ec = dep_count(e);
             MONAD_DEBUG_ASSERT(ec >= 0);
             if (ec == 0) {
                 // Since stack element e as no dependencies, it has
@@ -1602,10 +1618,10 @@ namespace monad::vm::compiler::native
             cycle.reserve(2);
             StackElem *d = e;
             do {
-                MONAD_DEBUG_ASSERT(dep_counts[d] == 1);
+                MONAD_DEBUG_ASSERT(dep_count(d) == 1);
                 MONAD_DEBUG_ASSERT(!d->avx_reg().has_value());
                 MONAD_DEBUG_ASSERT(d->stack_offset().has_value());
-                dep_counts[d] = 0;
+                dep_count(d) = 0;
                 cycle.push_back(d);
                 MONAD_DEBUG_ASSERT(
                     d->stack_offset()->offset <= stack_.top_index());

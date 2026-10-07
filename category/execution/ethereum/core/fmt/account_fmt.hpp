@@ -21,7 +21,6 @@
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
 #include <category/execution/ethereum/core/fmt/int_fmt.hpp>
-#include <category/execution/ethereum/types/fmt/incarnation_fmt.hpp>
 
 MONAD_LOG_LOGGABLE(monad::Account);
 
@@ -36,13 +35,11 @@ struct fmt::formatter<monad::Account> : public monad::BasicFormatter
             "Account{{"
             "balance={}, "
             "code_hash={}, "
-            "nonce={}, "
-            "incarnation={}"
+            "nonce={}"
             "}}",
             a.balance,
             a.code_hash,
-            a.nonce,
-            a.incarnation);
+            a.nonce);
         return ctx.out();
     }
 };

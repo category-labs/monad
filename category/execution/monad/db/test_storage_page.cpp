@@ -270,10 +270,8 @@ TEST(MonadDb, page_write_merges_slots)
 
     // Block 1: update slot 0, leave slot 1 untouched.
     {
-        ASSERT_EQ(
-            tdb.read_storage(ADDR_A, Incarnation{0, 0}, slot_key_0), val_0);
-        ASSERT_EQ(
-            tdb.read_storage(ADDR_A, Incarnation{0, 0}, slot_key_1), val_1);
+        ASSERT_EQ(tdb.read_storage(ADDR_A, slot_key_0), val_0);
+        ASSERT_EQ(tdb.read_storage(ADDR_A, slot_key_1), val_1);
 
         PageCommitBuilder builder(1, tdb);
         builder.add_state_deltas(StateDeltas{
@@ -287,9 +285,8 @@ TEST(MonadDb, page_write_merges_slots)
     }
 
     // Verify: db reads back both values from the committed page.
-    EXPECT_EQ(
-        tdb.read_storage(ADDR_A, Incarnation{0, 0}, slot_key_0), val_0_updated);
-    EXPECT_EQ(tdb.read_storage(ADDR_A, Incarnation{0, 0}, slot_key_1), val_1);
+    EXPECT_EQ(tdb.read_storage(ADDR_A, slot_key_0), val_0_updated);
+    EXPECT_EQ(tdb.read_storage(ADDR_A, slot_key_1), val_1);
 }
 
 TEST(MonadDb, byte_size_inline)

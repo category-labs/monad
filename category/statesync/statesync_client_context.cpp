@@ -213,10 +213,7 @@ void monad_statesync_client_context::commit()
             auto const slot_off = compute_slot_offset(slot_key);
             auto [it, inserted] = pages.try_emplace(pg_key);
             if (inserted) {
-                // Incarnation isn't tracked in statesync deltas; TrieDb
-                // ignores it for storage reads, so a fixed value is fine.
-                it->second =
-                    paged_db.read_storage_page(addr, Incarnation{0, 0}, pg_key);
+                it->second = paged_db.read_storage_page(addr, pg_key);
             }
             it->second.set(slot_off, slot_val);
         }

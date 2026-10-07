@@ -34,7 +34,6 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
-#include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/vm/code.hpp>
 #include <category/vm/evm/status_code.h>
@@ -152,8 +151,8 @@ TYPED_TEST(TraitsTest, execute_success)
         BlockHeader{});
 
     BlockState bs{tdb, vm};
-    Incarnation const incarnation{0, 0};
-    State s{bs, incarnation};
+
+    State s{bs};
 
     Transaction const tx{
         .max_fee_per_gas = 1,
@@ -237,8 +236,8 @@ TYPED_TEST(TraitsTest, execute_reverted_insufficient_balance)
         BlockHeader{});
 
     BlockState bs{tdb, vm};
-    Incarnation const incarnation{0, 0};
-    State s{bs, incarnation};
+
+    State s{bs};
 
     Transaction const tx{
         .max_fee_per_gas = 1,
@@ -327,8 +326,8 @@ TYPED_TEST(TraitsTest, create_call_trace)
         BlockHeader{});
 
     BlockState bs{tdb, vm};
-    Incarnation const incarnation{0, 0};
-    State s{bs, incarnation};
+
+    State s{bs};
 
     Transaction const tx{
         .max_fee_per_gas = 1,
@@ -450,8 +449,8 @@ TYPED_TEST(TraitsTest, selfdestruct_logs)
         BlockHeader{});
 
     BlockState bs{tdb, vm};
-    Incarnation const incarnation{0, 0};
-    State s{bs, incarnation};
+
+    State s{bs};
 
     Transaction const tx{
         .max_fee_per_gas = 1,
@@ -539,8 +538,8 @@ TYPED_TEST(TraitsTest, selfdestruct_logs_value)
         BlockHeader{});
 
     BlockState bs{tdb, vm};
-    Incarnation const incarnation{0, 0};
-    State s{bs, incarnation};
+
+    State s{bs};
 
     Transaction const tx{
         .max_fee_per_gas = 1,
@@ -636,8 +635,8 @@ TYPED_TEST(TraitsTest, selfdestruct_depth)
         BlockHeader{});
 
     BlockState bs{tdb, vm};
-    Incarnation const incarnation{0, 0};
-    State s{bs, incarnation};
+
+    State s{bs};
 
     Transaction const tx{
         .max_fee_per_gas = 1,
@@ -717,8 +716,8 @@ TYPED_TEST(TraitsTest, simulate_v1_trace)
         BlockHeader{});
 
     BlockState bs{tdb, vm};
-    Incarnation const incarnation{0, 0};
-    State s{bs, incarnation};
+
+    State s{bs};
 
     Transaction const tx{
         .max_fee_per_gas = 1,
@@ -827,8 +826,8 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct)
         BlockHeader{});
 
     BlockState bs{tdb, vm};
-    Incarnation const incarnation{0, 0};
-    State s{bs, incarnation};
+
+    State s{bs};
 
     Transaction const tx{
         .max_fee_per_gas = 1,
@@ -932,8 +931,8 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct_zero_balance)
         BlockHeader{});
 
     BlockState bs{tdb, vm};
-    Incarnation const incarnation{0, 0};
-    State s{bs, incarnation};
+
+    State s{bs};
 
     Transaction const tx{
         .max_fee_per_gas = 1,
@@ -1079,8 +1078,8 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs)
         BlockHeader{});
 
     BlockState bs{tdb, vm};
-    Incarnation const incarnation{0, 0};
-    State s{bs, incarnation};
+
+    State s{bs};
 
     Transaction const tx{
         .max_fee_per_gas = 1,
@@ -1296,8 +1295,8 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs_recursive)
         BlockHeader{});
 
     BlockState bs{tdb, vm};
-    Incarnation const incarnation{0, 0};
-    State s{bs, incarnation};
+
+    State s{bs};
 
     Transaction const tx{
         .max_fee_per_gas = 1,
@@ -1453,8 +1452,8 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_transfers)
 
     for (uint8_t i = 0; i <= 3; i++) {
         BlockState bs{tdb, vm};
-        Incarnation const incarnation{0, 0};
-        State s{bs, incarnation};
+
+        State s{bs};
 
         byte_string calldata(32, 0);
         calldata[31] = i; // 0 for CALL, 1 for CALLCODE, 2 for DELEGATECALL, 3

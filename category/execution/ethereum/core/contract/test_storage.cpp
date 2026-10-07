@@ -48,7 +48,7 @@ struct Storage : public ::testing::Test
     mpt::Db db{std::make_unique<OnDiskMachine>()};
     TrieDb tdb{db};
     BlockState bs{tdb, vm};
-    State state{bs, Incarnation{0, 0}};
+    State state{bs};
 
     void SetUp() override
     {

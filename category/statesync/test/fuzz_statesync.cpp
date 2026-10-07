@@ -30,7 +30,6 @@
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
-#include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/db_metadata_context.hpp>
 #include <category/mpt/detail/timeline.hpp>
@@ -150,23 +149,18 @@ namespace
         ankerl::unordered_dense::segmented_map<uint64_t, Range> storage;
     };
 
-    void new_account(
-        StateDeltas &deltas, FuzzState &state, Incarnation const incarnation,
-        uint64_t const n)
+    void new_account(StateDeltas &deltas, FuzzState &state, uint64_t const n)
     {
         bool const success = deltas.emplace(
             Address{state.end},
             StateDelta{
-                .account = AccountDelta{
-                    std::nullopt,
-                    Account{.balance = n, .incarnation = incarnation}}});
+                .account = AccountDelta{std::nullopt, Account{.balance = n}}});
         MONAD_ASSERT(success);
         ++state.end;
     }
 
     void update_account(
-        StateDeltas &deltas, FuzzState &state, TrieDb &db, uint64_t const n,
-        Incarnation const incarnation)
+        StateDeltas &deltas, FuzzState &state, TrieDb &db, uint64_t const n)
     {
         if (state.begin == state.end) {
             return;
@@ -178,13 +172,8 @@ namespace
         bool const success = deltas.emplace(
             Address{addr},
             StateDelta{
-                .account = AccountDelta{
-                    orig,
-                    Account{
-                        .balance = n,
-                        .incarnation = reincarnate
-                                           ? incarnation
-                                           : orig.value().incarnation}}});
+                .account = AccountDelta{orig, Account{.balance = n}},
+                .storage_cleared = reincarnate});
         MONAD_ASSERT(success);
         if (reincarnate) {
             state.storage.erase(addr);
@@ -243,7 +232,7 @@ namespace
         MONAD_ASSERT(begin != end);
         bytes32_t const key{erase ? begin : n % (end - begin) + begin};
         bytes32_t const value{erase ? 0 : n};
-        auto const sorig = db.read_storage(addr, orig->incarnation, key);
+        auto const sorig = db.read_storage(addr, key);
         bool const success = deltas.emplace(
             addr,
             StateDelta{
@@ -359,13 +348,13 @@ namespace
             StateDeltas deltas;
             uint64_t const n = unaligned_load<uint64_t>(raw.data());
             raw = raw.subspan(sizeof(uint64_t));
-            Incarnation const incarnation{stdb.get_block_number(), 0};
+
             switch (n % 6) {
             case 0:
-                new_account(deltas, state, incarnation, n);
+                new_account(deltas, state, n);
                 break;
             case 1:
-                update_account(deltas, state, stdb, n, incarnation);
+                update_account(deltas, state, stdb, n);
                 break;
             case 2:
                 remove_account(deltas, state, stdb);

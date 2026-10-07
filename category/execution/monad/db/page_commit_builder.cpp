@@ -55,12 +55,7 @@ PageCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
         std::optional<byte_string_view> value;
         auto const &account = delta.account.second;
         proposal_post_state_.accounts[addr] = account;
-        // reincarnated account starts with empty storage.
-        bool const reincarnated =
-            account.has_value() && delta.account.first.has_value() &&
-            delta.account.first->incarnation != account->incarnation;
         if (account.has_value()) {
-            Incarnation const inc = account->incarnation;
             // Storage changes in page granularity per account: keyed by
             // page_key, value is the mutable storage_page_t being merged. Each
             // first-touch of a page reads the current page from the db so
@@ -78,12 +73,10 @@ PageCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
                     auto const slot_off = compute_slot_offset(key);
                     auto [it, inserted] = pages.try_emplace(pg_key);
                     if (inserted) {
-                        // On reincarnation, start from an empty page rather
-                        // than read_storage_page
-                        it->second =
-                            reincarnated
-                                ? storage_page_t{}
-                                : db_.read_storage_page(addr, inc, pg_key);
+                        // Storage replacement starts every page empty.
+                        it->second = delta.storage_cleared
+                                         ? storage_page_t{}
+                                         : db_.read_storage_page(addr, pg_key);
                     }
                     it->second.set(slot_off, slot_delta.second);
                 }
@@ -94,7 +87,7 @@ PageCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
                 // Record the post-commit page for the proposal cache. An empty
                 // page is still stored (entry present, all slots zero); the
                 // trie gets a deletion (nullopt) since it holds no empty leaf.
-                StorageKey const sk{addr, inc, page_key};
+                StorageKey const sk{addr, page_key};
                 proposal_post_state_.storage[sk] = page;
                 storage_updates.push_front(update_alloc_.emplace_back(Update{
                     .key = hash_alloc_.emplace_back(
@@ -112,12 +105,13 @@ PageCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
                 encode_account_db(addr, account.value()));
         }
 
-        if (!storage_updates.empty() || delta.account.first != account) {
+        if ((account.has_value() && delta.storage_cleared) ||
+            !storage_updates.empty() || delta.account.first != account) {
             account_updates.push_front(update_alloc_.emplace_back(Update{
                 .key = hash_alloc_.emplace_back(
                     keccak256({addr.bytes, sizeof(addr.bytes)})),
                 .value = value,
-                .incarnation = reincarnated,
+                .incarnation = delta.storage_cleared,
                 .next = std::move(storage_updates),
                 .version = static_cast<int64_t>(block_number_)}));
         }

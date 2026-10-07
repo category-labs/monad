@@ -18,7 +18,6 @@
 #include <category/execution/ethereum/db/db_cache.hpp>
 #include <category/execution/ethereum/db/storage_key.hpp>
 #include <category/execution/ethereum/state2/proposal_post_state.hpp>
-#include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
 
 #include <gtest/gtest.h>
@@ -43,14 +42,12 @@ namespace
     constexpr auto VALUE2 =
         0x0000000000000000000000000000000000000000000000000000000000000002_bytes32;
 
-    Incarnation const INC{0, 0};
-
     ProposalPostState make_post_state(
         Address const &addr, bytes32_t const &key, bytes32_t const &value)
     {
         ProposalPostState post;
         post.accounts[addr] = Account{.nonce = 1};
-        post.storage[StorageKey{addr, INC, key}] = storage_page_t{value};
+        post.storage[StorageKey{addr, key}] = storage_page_t{value};
         return post;
     }
 }
@@ -63,7 +60,7 @@ TEST(DbCacheTest, unknown_proposal_cursor_is_miss_truncated)
     // proposal id has nothing.
     storage_page_t page;
     EXPECT_EQ(
-        cache.try_read_storage_page(ADDR, INC, KEY, page),
+        cache.try_read_storage_page(ADDR, KEY, page),
         CacheReadStatus::MissTruncated);
 }
 
@@ -89,7 +86,7 @@ TEST(DbCacheTest, write_beyond_depth_limit_is_miss_truncated)
     // truncates before reaching proposal 1
     storage_page_t page;
     EXPECT_EQ(
-        cache.try_read_storage_page(ADDR, INC, KEY, page),
+        cache.try_read_storage_page(ADDR, KEY, page),
         CacheReadStatus::MissTruncated);
 
     // same for the account map.
@@ -110,13 +107,12 @@ TEST(DbCacheTest, proposal_write_shadows_readthrough_entry)
     // disk and cache it.
     bytes32_t slot;
     EXPECT_EQ(
-        cache.try_read_storage(ADDR, INC, KEY, 0, slot),
+        cache.try_read_storage(ADDR, KEY, 0, slot),
         CacheReadStatus::MissResolved);
-    cache.insert_storage_page(ADDR, INC, KEY, storage_page_t{VALUE1});
+    cache.insert_storage_page(ADDR, KEY, storage_page_t{VALUE1});
 
     // verify read through entry is populated
-    EXPECT_EQ(
-        cache.try_read_storage(ADDR, INC, KEY, 0, slot), CacheReadStatus::Hit);
+    EXPECT_EQ(cache.try_read_storage(ADDR, KEY, 0, slot), CacheReadStatus::Hit);
     EXPECT_EQ(slot, VALUE1);
 
     // proposal 2 writes KEY = VALUE2: the LRU entry is now stale relative
@@ -126,8 +122,7 @@ TEST(DbCacheTest, proposal_write_shadows_readthrough_entry)
     cache.set_block_and_prefix(2, bytes32_t{2});
 
     // The overlay walk must serve proposal 2's write
-    EXPECT_EQ(
-        cache.try_read_storage(ADDR, INC, KEY, 0, slot), CacheReadStatus::Hit);
+    EXPECT_EQ(cache.try_read_storage(ADDR, KEY, 0, slot), CacheReadStatus::Hit);
     EXPECT_EQ(slot, VALUE2);
 }
 
@@ -143,13 +138,12 @@ TEST(DbCacheTest, finalization_write_overwrites_readthrough_entry)
     // disk and cache it.
     bytes32_t slot;
     EXPECT_EQ(
-        cache.try_read_storage(ADDR, INC, KEY, 0, slot),
+        cache.try_read_storage(ADDR, KEY, 0, slot),
         CacheReadStatus::MissResolved);
-    cache.insert_storage_page(ADDR, INC, KEY, storage_page_t{VALUE1});
+    cache.insert_storage_page(ADDR, KEY, storage_page_t{VALUE1});
 
     // verify readthrough entry is populated
-    EXPECT_EQ(
-        cache.try_read_storage(ADDR, INC, KEY, 0, slot), CacheReadStatus::Hit);
+    EXPECT_EQ(cache.try_read_storage(ADDR, KEY, 0, slot), CacheReadStatus::Hit);
     EXPECT_EQ(slot, VALUE1);
 
     // proposal 2 writes KEY = VALUE2; proposal 3 builds on top of it without
@@ -167,7 +161,6 @@ TEST(DbCacheTest, finalization_write_overwrites_readthrough_entry)
     // the LRU answers — it must serve the finalized VALUE2, not the stale
     // read-through VALUE1.
     cache.set_block_and_prefix(3, bytes32_t{3});
-    EXPECT_EQ(
-        cache.try_read_storage(ADDR, INC, KEY, 0, slot), CacheReadStatus::Hit);
+    EXPECT_EQ(cache.try_read_storage(ADDR, KEY, 0, slot), CacheReadStatus::Hit);
     EXPECT_EQ(slot, VALUE2);
 }

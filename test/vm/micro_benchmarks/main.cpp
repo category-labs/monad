@@ -386,7 +386,7 @@ static double execute_iteration(
     init_execute_state(code_address, sender_address, bytecode, test_state);
 
     BlockState block_state{test_state->trie_db, monad_vm};
-    monad::State state{block_state, Incarnation{2, 1}};
+    monad::State state{block_state};
 
     monad::test::TestBlockHashBuffer block_hash_buffer{};
     Transaction tx{};

@@ -198,7 +198,7 @@ void run_revert_transaction_test(
 
     // Set up initial state
     {
-        State state{bs, Incarnation{0, 0}};
+        State state{bs};
         uint256_t const initial_balance =
             uint256_t{initial_balance_mon} * ETHER;
         state.add_to_balance(SENDER, initial_balance);
@@ -272,7 +272,7 @@ void run_revert_transaction_test(
         .authorities = authorities};
 
     {
-        State state{bs, Incarnation{1, 1}};
+        State state{bs};
         trace::StateTracer noop_state_tracer = std::monostate{};
         init_reserve_balance_context<traits>(
             state,
@@ -403,7 +403,7 @@ TYPED_TEST(
     BlockState bs{tdb, vm};
 
     {
-        State init_state{bs, Incarnation{0, 0}};
+        State init_state{bs};
         init_state.add_to_balance(SENDER, 20_ether);
         MONAD_ASSERT(bs.can_merge(init_state));
         bs.merge(init_state);
@@ -440,7 +440,7 @@ TYPED_TEST(
         .authorities = authorities,
     };
 
-    State state{bs, Incarnation{1, 1}};
+    State state{bs};
     trace::StateTracer noop_state_tracer = std::monostate{};
     init_reserve_balance_context<traits>(
         state, SENDER, tx, BASE_FEE_PER_GAS, 0, noop_state_tracer, context);
@@ -475,7 +475,7 @@ TYPED_TEST(MonadTraitsTest, staking_contract_balance_drop_does_not_revert)
     BlockState bs{tdb, vm};
 
     {
-        State state{bs, Incarnation{0, 0}};
+        State state{bs};
         state.add_to_balance(sender, 20_ether);
         state.add_to_balance(staking::STAKING_CA, 10_ether);
         MONAD_ASSERT(bs.can_merge(state));
@@ -503,7 +503,7 @@ TYPED_TEST(MonadTraitsTest, staking_contract_balance_drop_does_not_revert)
         .authorities = {{}},
     };
 
-    State state{bs, Incarnation{1, 1}};
+    State state{bs};
     trace::StateTracer noop_state_tracer = std::monostate{};
     init_reserve_balance_context<traits>(
         state,
@@ -610,7 +610,7 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_code_hash)
     BlockState bs{tdb, vm};
 
     {
-        State init_state{bs, Incarnation{0, 0}};
+        State init_state{bs};
         init_state.add_to_balance(SENDER, 20_ether);
         init_state.add_to_balance(NEW_CONTRACT, 3_ether);
         MONAD_ASSERT(bs.can_merge(init_state));
@@ -652,7 +652,7 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_code_hash)
         state.set_code(NEW_CONTRACT, contract_code);
     };
 
-    State state{bs, Incarnation{1, 1}};
+    State state{bs};
     prepare_state(state);
 
     bool const should_revert = revert_transaction<traits>(
@@ -686,7 +686,7 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_empty_code_hash)
     BlockState bs{tdb, vm};
 
     {
-        State init_state{bs, Incarnation{0, 0}};
+        State init_state{bs};
         init_state.add_to_balance(SENDER, 20_ether);
         init_state.add_to_balance(NEW_CONTRACT, 3_ether);
         MONAD_ASSERT(bs.can_merge(init_state));
@@ -718,7 +718,7 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_empty_code_hash)
         .senders = senders,
         .authorities = authorities};
 
-    State state{bs, Incarnation{1, 1}};
+    State state{bs};
     trace::StateTracer noop_state_tracer = std::monostate{};
     init_reserve_balance_context<traits>(
         state, SENDER, tx, BASE_FEE_PER_GAS, 0, noop_state_tracer, context);
@@ -754,7 +754,7 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_prefunded_init_selfdestruct)
     BlockState bs{tdb, vm};
 
     {
-        State init_state{bs, Incarnation{0, 0}};
+        State init_state{bs};
         init_state.add_to_balance(SENDER, 20_ether);
         init_state.add_to_balance(NEW_CONTRACT, 3_ether);
         MONAD_ASSERT(bs.can_merge(init_state));
@@ -786,14 +786,14 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_prefunded_init_selfdestruct)
         .senders = senders,
         .authorities = authorities};
 
-    State state{bs, Incarnation{1, 1}};
+    State state{bs};
     trace::StateTracer noop_state_tracer = std::monostate{};
     init_reserve_balance_context<traits>(
         state, SENDER, tx, BASE_FEE_PER_GAS, 0, noop_state_tracer, context);
     state.subtract_from_balance(SENDER, gas_cost);
 
     // Model constructor-time SELFDESTRUCT at a pre-funded address:
-    // create the account in current incarnation, then selfdestruct it before
+    // create the contract in this transaction, then selfdestruct it before
     // any runtime code is set.
     state.create_contract(NEW_CONTRACT);
     auto const [inserted, initial_balance] =
@@ -827,7 +827,7 @@ TYPED_TEST(MonadTraitsTest, system_transaction_sender_is_authority)
     TrieDb tdb{db};
     vm::VM vm;
     BlockState bs{tdb, vm};
-    State state{bs, Incarnation{0, 0}};
+    State state{bs};
     std::vector<std::optional<Address>> const authorities = {SYSTEM_SENDER};
 
     trace::StateTracer noop_state_tracer = std::monostate{};

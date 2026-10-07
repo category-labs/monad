@@ -47,8 +47,7 @@ namespace monad::vm::fuzzing
         MONAD_ASSERT(a.get_original_balance(k) == b.get_original_balance(k));
         MONAD_ASSERT(a.get_code_hash(k) == b.get_code_hash(k));
         MONAD_ASSERT(a.is_destructed(k) == b.is_destructed(k));
-        MONAD_ASSERT(
-            a.is_current_incarnation(k) == b.is_current_incarnation(k));
+        MONAD_ASSERT(a.is_created_in_tx(k) == b.is_created_in_tx(k));
         MONAD_ASSERT(a.is_touched(k) == b.is_touched(k));
 
         assert_equal(as.storage_, bs.storage_);

@@ -19,6 +19,7 @@
 #include <category/core/config.hpp>
 #include <category/core/likely.h>
 #include <category/core/log.hpp>
+#include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/fmt/address_fmt.hpp>
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
@@ -73,13 +74,9 @@ void on_commit(
             }
         }
 
-        if (delta.account.first != account) {
-            bool const incarnation =
-                account.has_value() && delta.account.first.has_value() &&
-                delta.account.first->incarnation != account->incarnation;
-            if (incarnation || !account.has_value()) {
-                deletions.emplace_back(addr, std::nullopt);
-            }
+        if (delta.account.first.has_value() &&
+            (delta.storage_cleared || !account.has_value())) {
+            deletions.emplace_back(addr, std::nullopt);
         }
     }
 }
@@ -237,16 +234,15 @@ monad_statesync_server_context::read_account(Address const &addr)
 }
 
 bytes32_t monad_statesync_server_context::read_storage(
-    Address const &addr, Incarnation const incarnation, bytes32_t const &key)
+    Address const &addr, bytes32_t const &key)
 {
-    return rw.read_storage(addr, incarnation, key);
+    return rw.read_storage(addr, key);
 }
 
 storage_page_t monad_statesync_server_context::read_storage_page(
-    Address const &addr, Incarnation const incarnation,
-    bytes32_t const &page_key)
+    Address const &addr, bytes32_t const &page_key)
 {
-    return rw.read_storage_page(addr, incarnation, page_key);
+    return rw.read_storage_page(addr, page_key);
 }
 
 monad::vm::SharedIntercode

@@ -46,7 +46,10 @@ enum class CacheReadStatus
                    // -> can't prove finalized-consistent -> don't cache miss
 };
 
-// Encoding-agnostic LRU + proposal cache for accounts and storage leaves.
+// LRU + proposal cache for Cancun-and-later execution. Legacy replay disables
+// this cache because it can delete and recreate accounts with existing storage.
+// RPC storage replacement also bypasses this cache.
+// Encoding-agnostic cache for accounts and storage leaves.
 // Storage values are held as storage_page_t, keyed by the trie key the
 // caller passes: slot_key (single slot at index 0) for slot encoding, or
 // page_key (full page) for page encoding. The caller (TrieDb) decides the
@@ -100,18 +103,16 @@ public:
     }
 
     CacheReadStatus try_read_storage_page(
-        Address const &address, Incarnation const incarnation,
-        bytes32_t const &key, storage_page_t &result)
+        Address const &address, bytes32_t const &key, storage_page_t &result)
     {
-        auto const res =
-            proposals_.try_read_storage(address, incarnation, key, result);
+        auto const res = proposals_.try_read_storage(address, key, result);
         if (res.found) {
             return CacheReadStatus::Hit;
         }
         if (res.truncated) {
             return CacheReadStatus::MissTruncated;
         }
-        StorageKey const skey{address, incarnation, key};
+        StorageKey const skey{address, key};
         StorageCache::ConstAccessor acc{};
         if (storage_.find(acc, skey)) {
             result = acc->second.value_;
@@ -121,12 +122,11 @@ public:
     }
 
     CacheReadStatus try_read_storage(
-        Address const &address, Incarnation const incarnation,
-        bytes32_t const &key, uint8_t const slot_offset, bytes32_t &result)
+        Address const &address, bytes32_t const &key, uint8_t const slot_offset,
+        bytes32_t &result)
     {
         storage_page_t page;
-        auto const res =
-            proposals_.try_read_storage(address, incarnation, key, page);
+        auto const res = proposals_.try_read_storage(address, key, page);
         if (res.found) {
             // slot_offset is 0 for slot encoding, the in-page offset for page.
             result = page[slot_offset];
@@ -135,7 +135,7 @@ public:
         if (res.truncated) {
             return CacheReadStatus::MissTruncated;
         }
-        StorageKey const skey{address, incarnation, key};
+        StorageKey const skey{address, key};
         StorageCache::ConstAccessor acc{};
         if (storage_.find(acc, skey)) {
             result = acc->second.value_[slot_offset];
@@ -150,10 +150,10 @@ public:
     // read-throughs resolve against the same finalized baseline, so a colliding
     // entry holds the same page anyway).
     void insert_storage_page(
-        Address const &address, Incarnation const incarnation,
-        bytes32_t const &key, storage_page_t const &page)
+        Address const &address, bytes32_t const &key,
+        storage_page_t const &page)
     {
-        StorageKey const skey{address, incarnation, key};
+        StorageKey const skey{address, key};
         storage_.try_insert_no_overwrite(
             skey, page, static_cast<uint32_t>(page.byte_size()));
     }

@@ -37,7 +37,6 @@
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
-#include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/staking/priority_fee.hpp>
 #include <category/vm/evm/delegation.hpp>
@@ -167,7 +166,7 @@ uint64_t ExecuteTransactionNoValidation<traits>::process_authorizations(
             // consequence of the Cancun selfdestruct rules, and the fact that
             // authority processing (and therefore this account creation) are
             // not part of any transaction.
-            state.create_account_no_rollback(*authority);
+            state.create_account(*authority);
         }
 
         // 7. Add PER_EMPTY_ACCOUNT_COST - PER_AUTH_BASE_COST gas to the global
@@ -411,8 +410,7 @@ Receipt ExecuteTransaction<traits>::execute_final(
     }
 
     // finalize state, Eqn. 77-79
-    state.destruct_suicides<traits>();
-    state.destruct_touched_dead();
+    state.finalize_account_deletions<traits>();
 
     Receipt receipt{
         .status = result.status_code == EVMC_SUCCESS ? 1u : 0u,
@@ -438,6 +436,7 @@ template <Traits traits>
 Result<Receipt> ExecuteTransaction<traits>::operator()()
 {
     TRACE_TXN_EVENT(StartTxn);
+    auto const previous = prev_.get_future();
 
     {
         auto validation_result = static_validate_transaction<traits>(
@@ -447,7 +446,7 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
             chain_.get_chain_id(),
             chain_.get_blob_schedule(header_.timestamp));
         if (validation_result.has_error()) {
-            prev_.get_future().wait();
+            previous.wait();
             return std::move(validation_result).as_failure();
         }
     }
@@ -455,7 +454,7 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
     {
         TRACE_TXN_EVENT(StartExecution);
 
-        State state{block_state_, Incarnation{header_.number, i_ + 1}};
+        State state{block_state_};
         state.set_original_nonce(sender_, tx_.nonce);
 
         call_tracer_.reset();
@@ -465,7 +464,7 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
 
         {
             TRACE_TXN_EVENT(StartStall);
-            prev_.get_future().wait();
+            previous.wait();
         }
 
         if (block_state_.can_merge(state)) {
@@ -481,7 +480,7 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
     {
         TRACE_TXN_EVENT(StartRetry);
 
-        State state{block_state_, Incarnation{header_.number, i_ + 1}};
+        State state{block_state_};
 
         call_tracer_.reset();
         trace::reset(state_tracer_);

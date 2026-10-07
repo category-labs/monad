@@ -198,10 +198,7 @@ add_library(
   "ethereum/state3/state.hpp"
   "ethereum/state3/version_stack.hpp"
   # ethereum/test
-  "ethereum/test/test_traits_state.hpp"
-  # ethereum/types
-  "ethereum/types/incarnation.hpp"
-  "ethereum/types/fmt/incarnation_fmt.hpp")
+  "ethereum/test/test_traits_state.hpp")
 
 add_library(
   monad_execution_native OBJECT

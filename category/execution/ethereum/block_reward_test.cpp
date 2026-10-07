@@ -56,7 +56,7 @@ TYPED_TEST(TraitsTest, apply_block_reward)
         BlockHeader{});
 
     BlockState bs{tdb, vm};
-    State as{bs, Incarnation{0, 0}};
+    State as{bs};
 
     EXPECT_TRUE(as.account_exists(a));
 

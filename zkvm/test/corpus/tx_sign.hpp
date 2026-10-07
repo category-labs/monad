@@ -28,7 +28,8 @@ MONAD_NAMESPACE_BEGIN
 namespace corpus
 {
     /// The address `recover_sender` will report for a transaction signed with
-    /// this secret: keccak of the uncompressed public key, low 20 bytes.
+    /// this secret: the chain's address hash of the uncompressed public key,
+    /// low 20 bytes (signature_hash.hpp).
     Address address_of(bytes32_t const &secret);
 
     /// Sign tx so recover_sender(tx) == address_of(secret), using

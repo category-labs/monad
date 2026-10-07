@@ -18,8 +18,8 @@
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/int.hpp>
-#include <category/core/keccak.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
+#include <category/execution/ethereum/core/signature_hash.hpp>
 
 #include <secp256k1.h>
 #include <secp256k1_recovery.h>
@@ -69,18 +69,17 @@ namespace corpus
                 SECP256K1_EC_UNCOMPRESSED) == 1);
         MONAD_ASSERT(len == sizeof(ser) && ser[0] == 0x04);
 
-        // The tag is not hashed: the address is keccak of the 64 coordinate
-        // bytes alone.
-        auto const hash = keccak256(byte_string_view{ser + 1, 64});
+        // The tag is not hashed: the address is the chain's address hash of
+        // the 64 coordinate bytes alone, the one recovery derives.
         Address addr;
-        std::memcpy(addr.bytes, hash.bytes + 12, sizeof(addr.bytes));
+        pubkey_address(std::span<uint8_t const, 64>{ser + 1, 64}, addr.bytes);
         return addr;
     }
 
     void sign_transaction(Transaction &tx, bytes32_t const &secret)
     {
         auto const preimage = rlp::encode_transaction_for_signing(tx);
-        auto const digest = keccak256(preimage);
+        auto const digest = signing_digest(preimage);
 
         secp256k1_ecdsa_recoverable_signature sig;
         MONAD_ASSERT(

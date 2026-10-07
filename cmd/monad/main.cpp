@@ -113,6 +113,15 @@ void backtrace_terminate_handler()
     cxx_runtime_terminate_handler();
 }
 
+// Return `true` iff the ripemd account exists and is an empty account. This
+// is the only state where YP K.1 can affect observable behavior, via EIP-161
+// later destroying the ripemd account.
+bool ripemd_account_exists_and_is_empty(Db &db)
+{
+    auto acct = db.read_account(ripemd_address);
+    return acct && is_empty(*acct);
+}
+
 MONAD_ANONYMOUS_NAMESPACE_END
 
 using namespace monad;
@@ -480,6 +489,13 @@ try {
 
     Db &db = sync_server ? static_cast<Db &>(*sync_server->ctx)
                          : static_cast<Db &>(triedb);
+    // Due to YP K.1, Deletion of an Account Despite Out-of-gas, Monad does
+    // not generally support the ripemd account existing as an empty account.
+    // This is because compiled native code may revert a basic block before
+    // entry, and so can early revert a basic block without touching the
+    // ripemd account. Therefore assert that the ripemd account is in a valid
+    // state, where YP K.1 cannot affect observable behavior:
+    MONAD_ASSERT(!ripemd_account_exists_and_is_empty(db));
     auto const result = [&] {
         switch (chain_config) {
         case CHAIN_CONFIG_ETHEREUM_MAINNET:

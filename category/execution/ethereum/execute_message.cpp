@@ -147,12 +147,18 @@ void reject_frame(EvmcHost<traits> &host, State &state)
     // tracer lifecycle hook runs before pop_reject().
     trace::on_frame_reject(host.state_tracer_, state);
 
-    bool const ripemd_touched = state.is_touched(ripemd_address);
+    // In contrast to YP K.1, Deletion of an Account Despite Out-of-gas,
+    // we revert a touch of the ripemd address here. This is irrelevant in
+    // all of the supported Ethereum forks, where the ripemd address is not
+    // empty, and hence will not get destroyed later by EIP-161, even if it is
+    // touched. For Monad, reverting touched is irrelevant, because the ripemd
+    // account cannot even exist as an empty account according to EIP-161,
+    // implemented by all Monad revisions. Although keeping a touch of the
+    // ripemd address is harmless at the time of writing, it has been removed
+    // because behavior depending on reverted state is generally non-
+    // deterministic: reverted state depends on whether the bytecode was
+    // executed as compiled native code or interpreted.
     state.pop_reject();
-    if (MONAD_UNLIKELY(ripemd_touched)) {
-        // YP K.1. Deletion of an Account Despite Out-of-gas.
-        state.touch(ripemd_address);
-    }
 }
 
 template <Traits traits>

@@ -37,22 +37,39 @@ namespace vm
     class VM;
 }
 
-// Sequential mirror of execute_block<traits> for the zkVM guest. Drops the
-// fiber pool, dispatch_transaction indirection, tracers, and block-metrics
-// `parent_senders_and_authorities` and `grandparent_senders_and_authorities`
-// are the two ancestor sets can_sender_dip_into_reserve reads. A proof of one
-// block cannot derive them -- they belong to blocks it does not carry -- so
-// they arrive in the witness and their hash is published, which leaves the
-// verifier, who has the chain, to say whether they are the right ones.
+/// Execution result; domain_anchor is zero in non-L2 builds. Keep the return
+/// type unconditional so callers need no macro-dependent signature.
+struct ZkvmBlockOutput
+{
+    bytes32_t state_root;
+    bytes32_t domain_anchor;
+};
+
+// Sequential guest execution without the fiber pool or dispatch indirection.
+// root_transactions holds original Ethereum transaction bytes or all domain
+// ciphertexts (including drops). Only Ethereum checks a transactions root.
+// transaction_encodings holds signing bytes for accepted transactions: the
+// original slices on Ethereum, decrypted plaintexts on L2.
+///
+/// Both trait families reach here, so the last two parameters are the Monad
+/// arm's alone: ChainContext is empty for EvmTraits and carries five members
+/// for MonadTraits, two of which are the sender and authority sets of the
+/// PARENT and GRANDPARENT blocks. can_sender_dip_into_reserve reads them to
+/// refuse a dip, and a proof of one block cannot derive them, so they arrive
+/// in the witness.
 template <Traits traits>
-    requires(is_monad_trait_v<traits>)
-Result<bytes32_t> execute_block_zkvm(
+Result<ZkvmBlockOutput> execute_block_zkvm(
     Chain const &chain, Block const &block,
-    std::span<byte_string_view const> raw_transactions, Db &pdb, vm::VM &vm,
-    BlockHashBuffer const &block_hash_buffer,
+    std::span<byte_string_view const> root_transactions,
+    std::span<byte_string_view const> transaction_encodings, Db &pdb,
+    vm::VM &vm, BlockHashBuffer const &block_hash_buffer,
+    /// Recovered senders, one per transaction, or empty to recover here.
+    /// Domain decoding supplies them after applying its recovery-failure drop
+    /// rule.
+    std::span<Address const> recovered_senders = {},
     ankerl::unordered_dense::segmented_set<Address> const
-        &parent_senders_and_authorities,
+        *parent_senders_and_authorities = nullptr,
     ankerl::unordered_dense::segmented_set<Address> const
-        &grandparent_senders_and_authorities);
+        *grandparent_senders_and_authorities = nullptr);
 
 MONAD_NAMESPACE_END

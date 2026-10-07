@@ -1,16 +1,17 @@
 name: Docker Base Image
 
+# Every push to main, so cache entries evicted from the 10 GB Actions cache
+# come back on the next push instead of waiting for a Dockerfile change.
 on:
   push:
     branches: ["main"]
-    paths:
-      - '.github/actions/docker-stage/**'
-      - 'docker/Dockerfile'
-      - 'scripts/ubuntu-build/**'
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
 
 jobs:
   build-base:
@@ -24,11 +25,59 @@ jobs:
         with:
           target: base
           setup: true
+          cache-from: type=gha,scope=base
           cache-to: type=gha,scope=base
+
+  cache-rust:
+    needs: build-base
+    runs-on: ubuntu-26.04-32
+
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Build and cache `base_rust` stage
         uses: ./.github/actions/docker-stage
         with:
           target: base_rust
-          cache-from: type=gha,scope=base
+          setup: true
+          cache-from: |
+            type=gha,scope=base_rust
+            type=gha,scope=base
           cache-to: type=gha,scope=base_rust
+
+  cache-ocaml:
+    needs: build-base
+    runs-on: ubuntu-26.04-32
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout monad-execution-specs
+        run: git submodule update --init third_party/monad-execution-specs
+
+      - name: Build and cache `base_vm_test` stage
+        uses: ./.github/actions/docker-stage
+        with:
+          target: base_vm_test
+          setup: true
+          cache-from: |
+            type=gha,scope=base_vm_test
+            type=gha,scope=base
+          cache-to: type=gha,scope=base_vm_test
+
+  cache-riscv:
+    needs: build-base
+    runs-on: ubuntu-26.04-32
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and cache `base_riscv_toolchain` stage
+        uses: ./.github/actions/docker-stage
+        with:
+          target: base_riscv_toolchain
+          setup: true
+          cache-from: |
+            type=gha,scope=riscv-toolchain
+            type=gha,scope=base
+          cache-to: type=gha,mode=max,scope=riscv-toolchain

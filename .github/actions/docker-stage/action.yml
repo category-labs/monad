@@ -40,6 +40,8 @@ runs:
     - name: Set up Docker Buildx
       if: inputs.setup == 'true'
       uses: docker/setup-buildx-action@v3
+      with:
+        cleanup: false
 
     - name: Build `${{ inputs.target }}` stage
       uses: docker/build-push-action@v5

@@ -65,6 +65,50 @@ inline Result<T> decode_unsigned(byte_string_view &enc)
     BOOST_OUTCOME_TRY(auto const payload, parse_string_metadata(enc));
     return decode_raw_num<T>(payload);
 }
+#ifdef MONAD_ZKVM_ZISK
+
+// decode_unsigned into `out`, where it lies: a Result<T> stages the value,
+// zeroed then copied out field by field. The forms decode_unsigned accepts
+// are read here -- a single byte from 0x01 to 0x7f, 0x80 for zero, a short
+// string of at most sizeof(T) bytes without a leading zero, of one byte only
+// from 0x80 -- and any other is left untouched to decode_unsigned, which
+// returns its own error.
+template <unsigned_integral T>
+[[gnu::always_inline]] inline Result<void>
+decode_unsigned_into(byte_string_view &enc, T &out)
+{
+    if (MONAD_LIKELY(!enc.empty())) {
+        unsigned char const b = enc[0];
+        if (b < 0x80) {
+            if (MONAD_LIKELY(b != 0)) {
+                out = T{b};
+                enc.remove_prefix(1);
+                return BOOST_OUTCOME_V2_NAMESPACE::success();
+            }
+        }
+        else {
+            size_t const n = size_t{b} - 0x80;
+            if (n == 0) {
+                out = T{};
+                enc.remove_prefix(1);
+                return BOOST_OUTCOME_V2_NAMESPACE::success();
+            }
+            unsigned char const *const p = enc.data() + 1;
+            if (MONAD_LIKELY(
+                    n <= sizeof(T) && n < enc.size() && p[0] != 0 &&
+                    (n != 1 || p[0] >= 0x80))) {
+                T v{};
+                std::memcpy(&as_bytes(v)[sizeof(T) - n], p, n);
+                out = bswap(v);
+                enc.remove_prefix(1 + n);
+                return BOOST_OUTCOME_V2_NAMESPACE::success();
+            }
+        }
+    }
+    BOOST_OUTCOME_TRY(out, decode_unsigned<T>(enc));
+    return BOOST_OUTCOME_V2_NAMESPACE::success();
+}
+#endif
 
 inline Result<bool> decode_bool(byte_string_view &enc)
 {

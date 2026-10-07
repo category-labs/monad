@@ -318,6 +318,28 @@ struct EvmcHost final : public EvmcHostBase
         }
         stack_unwind();
     }
+
+    // See vm::runtime::guest_call_target, its only caller. A precompile is
+    // warm, as access_account has it, and its row is left alone.
+    vm::runtime::CallTarget
+    call_target(evmc::address const &address, bool const read_cold) noexcept
+    {
+        MONAD_TRY
+        {
+            std::uint64_t head;
+            std::memcpy(&head, address.bytes, sizeof(head));
+            if (MONAD_UNLIKELY(head == 0) &&
+                is_precompile<traits>(as_monad(address))) {
+                return state_.warm_call_target(as_monad(address));
+            }
+            return state_.call_target(as_monad(address), read_cold);
+        }
+        MONAD_CATCH(...)
+        {
+            capture_current_exception();
+        }
+        stack_unwind();
+    }
 #endif
 
     virtual evmc_page_storage_status update_page(

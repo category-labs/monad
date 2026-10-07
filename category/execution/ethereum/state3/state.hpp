@@ -554,6 +554,23 @@ public:
     // EIP-7702's delegate of the address, read where its code is kept, and
     // returned where it lies in the code, or null.
     Address const *delegate_of(Address const &);
+
+    // A CALL's access_account and delegate_of, with one lookup of the
+    // account: see vm::runtime::guest_call_target.
+    vm::runtime::CallTarget call_target(Address const &, bool read_cold);
+
+    // The same for a target that is warm without its row, a precompile: its
+    // delegate only. With both in the State, the host jumps to either: a
+    // status it built itself would join the other's in a register, repacked
+    // after the call.
+    vm::runtime::CallTarget warm_call_target(Address const &);
+
+private:
+    // code_ref_of's work on the row it found, and that row's original.
+    [[gnu::always_inline]] inline CodeRef
+    code_ref_in(AccountState const &, OriginalAccountState *);
+
+public:
 #endif
 
     void set_code(Address const &, byte_string_view code);

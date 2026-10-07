@@ -1252,7 +1252,13 @@ State::CodeRef State::code_ref_of(Address const &address)
         row = rows.recent;
         orig = rows.orig;
     }
-    auto const &account = row->account_;
+    return code_ref_in(*row, orig);
+}
+
+inline State::CodeRef
+State::code_ref_in(AccountState const &row, OriginalAccountState *const orig)
+{
+    auto const &account = row.account_;
     if (MONAD_UNLIKELY(!account.has_value())) {
         return {NULL_HASH, read_code_ref(NULL_HASH)};
     }
@@ -1283,6 +1289,29 @@ Address const *State::delegate_of(Address const &address)
     vm::SharedVarcode const &vcode = code_ref_of(address).code;
     MONAD_ASSERT(vcode);
     return vm::evm::delegate_in(vcode->intercode()->code_span());
+}
+
+vm::runtime::CallTarget
+State::call_target(Address const &address, bool const read_cold)
+{
+    auto &account_state = current_account_state(address);
+    auto const status = account_state.access();
+    if (status == MONAD_ACCESS_COLD) {
+        journal_flag(address, Undo::Kind::FlagAccessed);
+        if (!read_cold) {
+            return {status, nullptr};
+        }
+    }
+    // delegate_of's, from the row just looked up.
+    vm::SharedVarcode const &vcode =
+        code_ref_in(account_state, account_state.orig_).code;
+    MONAD_ASSERT(vcode);
+    return {status, vm::evm::delegate_in(vcode->intercode()->code_span())};
+}
+
+vm::runtime::CallTarget State::warm_call_target(Address const &address)
+{
+    return {MONAD_ACCESS_WARM, delegate_of(address)};
 }
 #endif
 

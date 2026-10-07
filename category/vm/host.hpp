@@ -351,7 +351,22 @@ namespace monad::vm::runtime
         Host &, evmc::address const &, uint8_t const *, size_t,
         evmc::bytes32 const[], size_t) noexcept;
 
-    Address const *
-    guest_delegate_of(Host const &, evmc::address const &) noexcept;
+    // A CALL's two statuses for its target, from one host call: the access
+    // status, as the State gives it, and EIP-7702's delegate, where it lies
+    // in the target's code, or null.
+    struct CallTarget
+    {
+        monad_access_status access;
+        Address const *delegate;
+    };
+
+    // access_account and delegate_of, with one lookup of the account. The
+    // delegate is read when the target was warm, or when `read_cold` says the
+    // caller can pay for a cold access: one that cannot exits before the
+    // read, as it did between the two calls, and the witness holds only the
+    // code that execution read.
+    template <Traits traits>
+    CallTarget
+    guest_call_target(Host &, evmc::address const &, bool read_cold) noexcept;
 }
 #endif

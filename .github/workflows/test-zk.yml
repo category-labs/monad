@@ -18,9 +18,10 @@ jobs:
   build:
     name: Compile for RISC-V
     runs-on: ubuntu-26.04-32
+    timeout-minutes: 90
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Build `build_zk` stage
         uses: ./.github/actions/docker-stage

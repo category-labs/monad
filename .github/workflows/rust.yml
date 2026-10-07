@@ -17,9 +17,10 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-26.04-32
+    timeout-minutes: 90
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Build `build_and_test_rust` stage
         uses: ./.github/actions/docker-stage

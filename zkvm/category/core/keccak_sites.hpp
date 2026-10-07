@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// Diagnostic Keccak counters, appended after the public block hash.
+// Diagnostic Keccak counters, appended after the public values.
 // Counting at call sites distinguishes EVM hashing from trie and witness work
 // that the emulator's call-path report groups together.
 // Includers enable this header only with MONAD_ZKVM_KECCAK_SITES.
@@ -42,7 +42,7 @@ namespace monad::keccak_sites
         HEADER_HASH,       // Block and ancestor header hashes
         // State-access sites. Counted only -- a permutation count is meaningless
         // here, so their perms slots stay zero. The 256-byte output budget caps
-        // the list: 96 bytes of roots + 2 * 18 * 4 = 240.
+        // the list: the L2's 104 bytes of public values + 2 * 18 * 4 = 248.
         ACCT_LOOKUP,       // State::current_account_state entered
         ACCT_FIND_MISS,    // ... and current_ missed, so the original_ path ran
         DIRTY_EMPLACE,     // the per-frame dirty-set insert ran

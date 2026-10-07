@@ -80,7 +80,7 @@ namespace monad::vm::interpreter
         static_assert(end_padding_size >= PUSH32 - PUSH0);
         auto jumpdests = JumpdestMap(code.size());
 
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) && !defined(MONAD_ZKVM_JUMPDEST_SOFTWARE)
         // ZisK's JUMPDEST precompile takes src via csrs, then dst and size via
         // the following add. It requires nonempty input, 8-byte-aligned
         // pointers and enough space for whole 64-bit output words.
@@ -102,8 +102,10 @@ namespace monad::vm::interpreter
         }
 #endif
 
-        // Software fallback for non-ZisK builds or unmet preconditions.
-        // Skip PUSH data: its bytes cannot be jump destinations.
+        // Software path: non-ZisK builds, MONAD_ZKVM_JUMPDEST_SOFTWARE (the
+        // L2 guest's default, which spares a proof the JumpDest instance) and
+        // unmet preconditions. Skip PUSH data: its bytes cannot be jump
+        // destinations.
         uint8_t const *p = code.data();
         uint8_t const *const end = p + code.size();
         while (p < end) {

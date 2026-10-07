@@ -36,7 +36,9 @@ class ReserveBalanceContract
     [[maybe_unused]] CallTracerBase &call_tracer_;
 
 public:
-    ReserveBalanceContract(State &state, CallTracerBase &tracer);
+    ReserveBalanceContract(
+        State &state, CallTracerBase &tracer,
+        bool log_native_transfers = false);
 
     using PrecompileFunc = Result<byte_string> (ReserveBalanceContract::*)(
         byte_string_view, Address const &, uint256_be_t const &);

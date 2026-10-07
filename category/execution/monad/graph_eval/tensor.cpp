@@ -109,12 +109,14 @@ Result<EncodedTensor> abi_decode_tensor(byte_string_view &enc)
         auto const dimensions_head, abi_decode_fixed<u256_be>(enc));
     BOOST_OUTCOME_TRY(auto const data_head, abi_decode_fixed<u256_be>(enc));
 
-    // Dynamic: read tail(uint16[])
-    BOOST_OUTCOME_TRY(auto const rank_be, abi_decode_fixed<u8_be>(enc));
-    uint8_t const rank = rank_be.native();
-    if (rank > 8) {
+    // Dynamic: read tail(uint16[]), whose length, a whole uint256, is the rank
+    BOOST_OUTCOME_TRY(auto const rank_be, abi_decode_fixed<u256_be>(enc));
+    uint256_t const rank_256 = rank_be.native();
+    if (rank_256.as_words()[1] || rank_256.as_words()[2] ||
+        rank_256.as_words()[3] || rank_256.as_words()[0] > 8) {
         return GraphEvalError::RankError;
     }
+    auto const rank = static_cast<uint8_t>(rank_256.as_words()[0]);
 
     uint64_t const dimensions_offset = 3 * 32;
     uint64_t const data_offset = dimensions_offset + 32 * (1 + uint64_t{rank});

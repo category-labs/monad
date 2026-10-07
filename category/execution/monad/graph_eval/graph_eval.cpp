@@ -232,9 +232,22 @@ Result<byte_string> GraphEvalContract::precompile_eval_graph(
 
     BOOST_OUTCOME_TRY(auto const outputs, interpreter.run());
 
-    byte_string output{abi_encode_uint(u64_be{outputs.size()})};
-    for (auto const &out_tensor : outputs) {
-        abi_append_tensor(out_tensor, output);
+    // abi.encode(outputs), as Solidity returns a Tensor[]: the offset of the
+    // array, its length, each tensor's offset from the end of the length, then
+    // the tensors. Each offset is filled in once its tensor's place is known
+    byte_string output;
+    output += abi_encode_uint(u64_be{32});
+    output += abi_encode_uint(u64_be{outputs.size()});
+    size_t const elements_start = output.size();
+    output.append(32 * outputs.size(), 0);
+    for (size_t i = 0; i < outputs.size(); i++) {
+        bytes32_t const offset =
+            abi_encode_uint(u64_be{output.size() - elements_start});
+        std::memcpy(
+            output.data() + elements_start + 32 * i,
+            offset.bytes,
+            sizeof(offset.bytes));
+        abi_append_tensor(outputs[i], output);
     }
     return output;
 }

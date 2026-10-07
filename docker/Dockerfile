@@ -203,6 +203,8 @@ RUN cd src && CMAKE_TOOLCHAIN_FILE=category/core/toolchains/gcc-avx2.cmake cmake
   -DCMAKE_CXX_COMPILER=clang++-19
 
 RUN cd src && cmake --build build -t monad-compiler-fuzzer
+ARG FUZZER_BASE_SEED
+ARG FUZZER_SECONDS
 RUN cd src && ./scripts/vm/ci-fuzzer.sh
 
 FROM base AS runner

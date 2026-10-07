@@ -58,6 +58,9 @@ namespace monad::vm
             runtime_context_->stack_unwind();
         }
 
+    protected:
+        runtime::Context *runtime_context_{nullptr};
+
     private:
         [[gnu::always_inline]]
         void rethrow_on_active_exception()
@@ -78,7 +81,6 @@ namespace monad::vm
             return prev;
         }
 
-        runtime::Context *runtime_context_{nullptr};
         mutable std::exception_ptr active_exception_;
     };
 }

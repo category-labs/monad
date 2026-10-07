@@ -256,11 +256,16 @@ namespace monad::vm::compiler::native
         void runtime_print_top1(std::string const &msg);
         void breakpoint();
 
+        bool has_debug_logger() const
+        {
+            return code_holder_.logger() != nullptr;
+        }
+
         template <typename... Args>
         void checked_debug_comment(
             std::format_string<Args...> const fmt, Args const &...args)
         {
-            if (code_holder_.logger()) [[unlikely]] {
+            if (has_debug_logger()) [[unlikely]] {
                 unchecked_debug_comment(
                     fmt.get(), std::make_format_args(args...));
             }

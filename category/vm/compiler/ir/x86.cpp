@@ -355,6 +355,42 @@ namespace
         }
     }
 
+    void emit_terminator_comment(
+        Emitter &emit, BasicBlocksIR const &ir, Block const &block)
+    {
+        if (block.terminator == basic_blocks::Terminator::FallThrough) {
+            emit.checked_debug_comment(
+                "    {} {}", block.terminator, block.fallthrough_dest);
+            return;
+        }
+
+        byte_offset const pc = [&] -> byte_offset {
+            if (block.instrs.empty()) {
+                // JUMPDEST belongs to the block but is not stored in instrs.
+                return block.offset +
+                       (ir.jump_dests().contains(block.offset) ? 1 : 0);
+            }
+            auto const &last = block.instrs.back();
+            return last.pc() + 1 +
+                   (last.opcode() == OpCode::Push ? last.index() : 0);
+        }();
+
+        if (pc >= *ir.codesize) {
+            emit.checked_debug_comment("    {} (implicit)", block.terminator);
+        }
+        else if (block.fallthrough_dest == INVALID_BLOCK_ID) {
+            emit.checked_debug_comment(
+                "    0x{:02x}: {}", pc, block.terminator);
+        }
+        else {
+            emit.checked_debug_comment(
+                "    0x{:02x}: {} {}",
+                pc,
+                block.terminator,
+                block.fallthrough_dest);
+        }
+    }
+
     template <Traits traits>
     void
     emit_terminator(Emitter &emit, BasicBlocksIR const &ir, Block const &block)
@@ -362,20 +398,8 @@ namespace
         // Remaining block base gas is zero for terminator instruction,
         // because there are no more instructions left in the block.
         constexpr int64_t remaining_base_gas = 0;
-        if (block.terminator == basic_blocks::Terminator::JumpI) {
-            auto const pc = ir.block(block.fallthrough_dest).offset - 1;
-            emit.checked_debug_comment(
-                "    0x{:02x}: {} {}",
-                pc,
-                block.terminator,
-                block.fallthrough_dest);
-        }
-        else if (block.fallthrough_dest == INVALID_BLOCK_ID) {
-            emit.checked_debug_comment("    {}", block.terminator);
-        }
-        else {
-            emit.checked_debug_comment(
-                "    {} {}", block.terminator, block.fallthrough_dest);
+        if (emit.has_debug_logger()) [[unlikely]] {
+            emit_terminator_comment(emit, ir, block);
         }
         using enum basic_blocks::Terminator;
         switch (block.terminator) {

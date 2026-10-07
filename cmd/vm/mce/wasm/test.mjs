@@ -95,6 +95,25 @@ for (const [hex, offset] of [
 ]) {
     assert.match(check(hex), new RegExp(`//\\s+0x${offset}: JumpI \\d+`));
 }
+for (const [hex, offset, name] of [
+    ['5b5f56', '02', 'Jump'],
+    [`5b7f${'00'.repeat(32)}56`, '22', 'Jump'],
+    ['60006000f3', '04', 'Return'],
+    ['60006000fd', '04', 'Revert'],
+    ['6000ff', '02', 'SelfDestruct'],
+    ['600000', '02', 'Stop'],
+    ['00', '00', 'Stop'],
+    ['5b00', '01', 'Stop'],
+    ['005b00', '02', 'Stop'],
+    ['6000fe', '02', 'InvalidInstruction'],
+    ['5bee', '01', 'InvalidInstruction'],
+]) {
+    assert.match(check(hex), new RegExp(`//\\s+0x${offset}: ${name}$`, 'm'));
+}
+assert.match(check('5f', 'berlin'), /\/\/\s+0x00: InvalidInstruction$/m);
+for (const hex of ['', '5f', '60', '7f01', '5b', '600035600157']) {
+    assert.match(check(hex), /\/\/\s+Stop \(implicit\)$/m);
+}
 check('60003100');
 assert.equal(check('60003560013504'), baseline, 'Compilation history changed assembly');
 assert.match(check('60003100'), /runtime::balance/);

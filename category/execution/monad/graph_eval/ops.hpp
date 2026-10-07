@@ -468,6 +468,21 @@ struct WhereOp final : GraphOp<std::monostate, 3>
 // outside that dtype's range to the nearest bound
 struct SaturateOp final : GraphOp<Dtype, 1>
 {
+    template <typename To>
+    struct Impl
+    {
+        template <typename From>
+        To operator()(From const x) const
+        {
+            if (std::cmp_less(x, std::numeric_limits<To>::min())) {
+                return std::numeric_limits<To>::min();
+            }
+            if (std::cmp_greater(x, std::numeric_limits<To>::max())) {
+                return std::numeric_limits<To>::max();
+            }
+            return static_cast<To>(x); // NOLINT(bugprone-signed-char-misuse)
+        }
+    };
 
     Result<TensorType>
     check_impl(Dtype const dtype, InputTypes<1> const &input_types) override
@@ -481,21 +496,13 @@ struct SaturateOp final : GraphOp<Dtype, 1>
         Tensor const &x = *inputs[0];
         visit_dtype(x.type().dtype, [&]<typename From>() {
             visit_dtype(dtype, [&]<typename To>() {
+                // The output has the input's shape, so it's all one run.
+                // Going through run_op1's restrict pointers lets GCC
+                // vectorize the conversions whose types may alias, such as
+                // any to or from int8 or uint8, without a runtime alias check
                 auto const xs = x.elements<From const>();
                 auto const outs = out.elements<To>();
-                for (size_t i = 0; i < outs.size(); i++) {
-                    if (std::cmp_less(xs[i], std::numeric_limits<To>::min())) {
-                        outs[i] = std::numeric_limits<To>::min();
-                    }
-                    else if (std::cmp_greater(
-                                 xs[i], std::numeric_limits<To>::max())) {
-                        outs[i] = std::numeric_limits<To>::max();
-                    }
-                    else {
-                        outs[i] = static_cast<To>(
-                            xs[i]); // NOLINT(bugprone-signed-char-misuse)
-                    }
-                }
+                run_op1<Impl<To>>(xs.data(), outs.data(), outs.size(), true);
             });
         });
         return outcome::success();
@@ -666,7 +673,6 @@ struct MatMulOp final : GraphOp<std::monostate, 2>
         // An empty output needs no computing, and keeps zero-size buffers
         // from IREE
         if (m != 0 && n != 0) {
-            std::vector<Tensor> inputs{x, y};
             Kernel("module.matmul_i8")(inputs, out);
         }
         return outcome::success();

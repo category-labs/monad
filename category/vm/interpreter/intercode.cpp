@@ -34,7 +34,7 @@ namespace monad::vm::interpreter
         , jumpdest_map_(find_jumpdests(code))
         , graphcode_(std::nullopt)
     {
-        if (code[0] == 0xfe && code[1] == 0x7f) {
+        if (code.size() > 2 && code[0] == 0xfe && code[1] == 0x7f) {
             graphcode_ = graph_eval::Graphcode(code);
         }
     }
@@ -65,7 +65,7 @@ namespace monad::vm::interpreter
         -> JumpdestMap
     {
         // TODO: this is a hack to avoid computing the jumpdest map for graphcode
-        if (code[0] == 0xfe) { return JumpdestMap(); }
+        if (code.size() > 2 && code[0] == 0xfe && code[1] == 0x7f) { return JumpdestMap(); }
         auto jumpdests = JumpdestMap(code.size(), false);
 
         for (size_t i = 0; i < code.size(); ++i) {

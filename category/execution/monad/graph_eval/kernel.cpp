@@ -23,6 +23,12 @@
 #include <iree/runtime/session.h>
 #include <iree/vm/bytecode/module.h>
 
+#include <span>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
+
 MONAD_GRAPH_EVAL_ANONYMOUS_NAMESPACE_BEGIN
 
 //
@@ -101,34 +107,70 @@ IREERuntime const &iree_runtime()
     return runtime;
 }
 
-struct SessionDeleter
+// A thread's IREE session, with a call for each kernel the thread has run. Each
+// thread gets its own session, created on first use and released when the
+// thread exits. A call keeps its function and argument lists from one run to
+// the next, which only empties the lists, rather than looking the function up
+// by name and allocating new lists every time.
+class ThreadSession
 {
-    void operator()(iree_runtime_session_t *const session) const
+    iree_runtime_session_t *session_ = nullptr;
+    // Each call by its kernel's name. There are few kernels, so a linear
+    // search is fastest
+    std::vector<std::pair<std::string, iree_runtime_call_t>> calls_;
+
+public:
+    ThreadSession()
     {
-        iree_runtime_session_release(session);
+        IREERuntime const &rt = iree_runtime();
+        iree_runtime_session_options_t options;
+        iree_runtime_session_options_initialize(&options);
+        check_ok(iree_runtime_session_create_with_device(
+            rt.instance,
+            &options,
+            rt.device,
+            iree_runtime_instance_host_allocator(rt.instance),
+            &session_));
+        check_ok(iree_runtime_session_append_module(session_, rt.kernels));
+    }
+
+    ~ThreadSession()
+    {
+        for (auto &entry : calls_) {
+            iree_runtime_call_deinitialize(&entry.second);
+        }
+        iree_runtime_session_release(session_);
+    }
+
+    ThreadSession(ThreadSession const &) = delete;
+    ThreadSession &operator=(ThreadSession const &) = delete;
+
+    iree_runtime_session_t *session() const
+    {
+        return session_;
+    }
+
+    // The call for the kernel named `name`, with empty argument lists
+    iree_runtime_call_t &call(std::string_view const name)
+    {
+        for (auto &entry : calls_) {
+            if (entry.first == name) {
+                return entry.second;
+            }
+        }
+        auto &entry = calls_.emplace_back(name, iree_runtime_call_t{});
+        check_ok(iree_runtime_call_initialize_by_name(
+            session_,
+            iree_make_string_view(name.data(), name.size()),
+            &entry.second));
+        return entry.second;
     }
 };
 
-// Each thread gets its own session. These are created lazily on first use and
-// released by the SessionDeleter destructor when the thread exits.
-iree_runtime_session_t *thread_session()
+ThreadSession &thread_session()
 {
-    thread_local std::unique_ptr<iree_runtime_session_t, SessionDeleter> const
-        session{[] {
-            IREERuntime const &rt = iree_runtime();
-            iree_runtime_session_options_t options;
-            iree_runtime_session_options_initialize(&options);
-            iree_runtime_session_t *created = nullptr;
-            check_ok(iree_runtime_session_create_with_device(
-                rt.instance,
-                &options,
-                rt.device,
-                iree_runtime_instance_host_allocator(rt.instance),
-                &created));
-            check_ok(iree_runtime_session_append_module(created, rt.kernels));
-            return created;
-        }()};
-    return session.get();
+    thread_local ThreadSession session;
+    return session;
 }
 
 iree_hal_element_type_t dtype_to_iree(Dtype dtype)
@@ -156,7 +198,7 @@ iree_hal_element_type_t dtype_to_iree(Dtype dtype)
 
 // Import a Tensor as an IREE buffer
 iree_hal_buffer_view_t *
-import_tensor(iree_runtime_session_t *const session, Tensor &tensor)
+import_tensor(iree_runtime_session_t *const session, Tensor const &tensor)
 {
     iree_hal_buffer_params_t params{};
     params.type = IREE_HAL_MEMORY_TYPE_DEVICE_LOCAL;
@@ -210,16 +252,15 @@ MONAD_GRAPH_EVAL_ANONYMOUS_NAMESPACE_END
 
 MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
 
-void Kernel::operator()(std::vector<Tensor> &inputs, Tensor &output) const
+void Kernel::operator()(
+    std::span<Tensor const *const> const inputs, Tensor &output) const
 {
-    iree_runtime_session_t *const session = thread_session();
+    ThreadSession &thread = thread_session();
+    iree_runtime_session_t *const session = thread.session();
+    iree_runtime_call_t &call = thread.call(kernel_name_);
 
-    iree_runtime_call_t call;
-    check_ok(iree_runtime_call_initialize_by_name(
-        session, iree_make_cstring_view(kernel_name_), &call));
-
-    for (auto &input : inputs) {
-        auto *const view = import_tensor(session, input);
+    for (Tensor const *const input : inputs) {
+        auto *const view = import_tensor(session, *input);
         check_ok(iree_runtime_call_inputs_push_back_buffer_view(&call, view));
         iree_hal_buffer_view_release(view);
     }
@@ -242,7 +283,9 @@ void Kernel::operator()(std::vector<Tensor> &inputs, Tensor &output) const
     iree_hal_buffer_view_release(result);
     iree_hal_buffer_view_release(out_view);
 
-    iree_runtime_call_deinitialize(&call);
+    // Drops the call's references to the views, which point into the tensors'
+    // memory, and leaves its lists empty for the kernel's next run
+    iree_runtime_call_reset(&call);
 }
 
 MONAD_GRAPH_EVAL_NAMESPACE_END

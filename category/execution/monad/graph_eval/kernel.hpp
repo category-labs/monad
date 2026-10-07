@@ -19,13 +19,16 @@
 #include <category/core/result.hpp>
 #include <category/execution/monad/graph_eval/config.hpp>
 
+#include <span>
+
 MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
 
 class Kernel
 {
     const char *kernel_name_;
 public:
-    void operator()(std::vector<Tensor> &inputs, Tensor &output) const;
+    void
+    operator()(std::span<Tensor const *const> inputs, Tensor &output) const;
     explicit constexpr Kernel(const char* kernel_name) : kernel_name_(kernel_name) {};
 };
 

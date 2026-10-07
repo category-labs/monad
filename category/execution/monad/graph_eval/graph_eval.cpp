@@ -22,7 +22,6 @@
 #include <category/execution/ethereum/core/contract/abi_decode_error.hpp>
 #include <category/execution/ethereum/core/contract/big_endian.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
-#include <category/execution/monad/graph_eval/aot_alloc.hpp>
 #include <category/execution/monad/graph_eval/config.hpp>
 #include <category/execution/monad/graph_eval/constants.hpp>
 #include <category/execution/monad/graph_eval/graph.hpp>
@@ -80,10 +79,6 @@ constexpr uint64_t FALLBACK_COST = 100;
 //
 
 constexpr uint64_t MAX_INPUTS = 16;
-
-// The allocator for evalGraph's interpreter: AotAlloc plans the evaluation's
-// memory from the graphcode, while ArenaAlloc bumps a pointer through it
-using GraphAllocator = AotAlloc;
 
 // ABI-decode tail(Tensor[]), which consists of a 256-bit length followed by a
 // sequence of ABI-encoded tensors.
@@ -226,9 +221,11 @@ Result<byte_string> GraphEvalContract::precompile_eval_graph(
 
     // Get a hold of the graphcode
     auto const code = state_.read_code(state_.get_code_hash(graph_address));
-    auto const graphcode{code->intercode()->graphcode()};
+    auto const & graphcode{code->intercode()->graphcode()};
     if (!graphcode) {
-        return GraphEvalError::InternalError;
+        // If the graphcode isn't available, this means we're trying to execute code that
+        // wasn't a graph at all.
+        return GraphEvalError::GraphValidationError;
     }
     Interpreter interpreter{
         state_, std::move(inputs), *graphcode, thread_arena()};

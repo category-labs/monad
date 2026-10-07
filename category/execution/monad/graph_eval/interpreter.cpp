@@ -1,10 +1,23 @@
+// Copyright (C) 2026 Category Labs, Inc.
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 #include "category/execution/monad/graph_eval/config.hpp"
 #include "category/execution/monad/graph_eval/constants.hpp"
 #include "category/execution/monad/graph_eval/graph.hpp"
 #include "category/execution/monad/graph_eval/graph_eval_error.hpp"
 #include "category/execution/monad/graph_eval/ops.hpp"
-#include <category/execution/monad/graph_eval/aot_alloc.hpp>
-#include <category/execution/monad/graph_eval/arena_alloc.hpp>
 #include <category/execution/monad/graph_eval/interpreter.hpp>
 #include <category/execution/monad/graph_eval/kernel.hpp>
 #include <category/execution/monad/graph_eval/tensor.hpp>
@@ -15,27 +28,6 @@
 #include <cstring>
 #include <iostream>
 #include <vector>
-
-MONAD_GRAPH_EVAL_ANONYMOUS_NAMESPACE_BEGIN
-
-// Benchmarking: set to print how long each op takes
-constexpr bool PRINT_NODE_TIMES = false;
-
-// Benchmarking: how long the op that computed `node` took
-void print_node_time(
-    size_t const node, Op const op, Tensor const &tensor,
-    std::chrono::steady_clock::duration const elapsed)
-{
-    auto const &shape = tensor.type().shape;
-    std::cerr << "  node " << node << " " << op_name(op) << " [";
-    for (size_t i = 0; i < shape.rank; i++) {
-        std::cerr << (i == 0 ? "" : ", ") << shape.dimensions[i];
-    }
-    std::cerr << "]: " << std::chrono::duration<double, std::micro>(elapsed)
-              << std::endl;
-}
-
-MONAD_GRAPH_EVAL_ANONYMOUS_NAMESPACE_END
 
 MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
 
@@ -138,7 +130,6 @@ Result<std::vector<Tensor>> Interpreter::run()
         auto const opcode = static_cast<Op>(opcode_id);
         // OutputAllocator const output{allocator_, node_values_.size()};
 
-        auto const start = std::chrono::steady_clock::now();
         Tensor &result = node_values_[n_inputs + i];
         switch (opcode) {
         case Op::Literal: {
@@ -225,11 +216,6 @@ Result<std::vector<Tensor>> Interpreter::run()
             BOOST_OUTCOME_TRY(ExpandOp{}.evaluate(code_span_, result, node_values_));
             break;
         }
-        }
-        auto const end = std::chrono::steady_clock::now();
-        if constexpr (PRINT_NODE_TIMES) {
-            print_node_time(
-                node_values_.size() - 1, opcode, result, end - start);
         }
     }
 

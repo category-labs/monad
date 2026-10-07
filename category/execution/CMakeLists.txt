@@ -270,6 +270,8 @@ add_library(
   "monad/graph_eval/graphcode.hpp"
   "monad/graph_eval/kernel.cpp"
   "monad/graph_eval/kernel.hpp"
+  "monad/graph_eval/matmul.cpp"
+  "monad/graph_eval/matmul.hpp"
   "monad/graph_eval/interpreter.cpp"
   "monad/graph_eval/interpreter.hpp"
   "monad/graph_eval/types.hpp"
@@ -458,6 +460,13 @@ set_property(
   APPEND
   PROPERTY COMPILE_DEFINITIONS
            "MONAD_GRAPH_EVAL_KERNELS_VMFB=\"${GRAPH_EVAL_KERNELS_VMFB}\"")
+
+# The matmul kernel uses AVX-512 with VNNI. Every validator's CPU is a Zen 4,
+# which has them, although the rest of the build targets an older CPU. This
+# comes after the toolchain's -march, so it takes precedence
+set_property(
+  SOURCE "monad/graph_eval/matmul.cpp"
+  APPEND PROPERTY COMPILE_OPTIONS "-march=znver4")
 
 target_link_libraries(
     monad_execution_runloop

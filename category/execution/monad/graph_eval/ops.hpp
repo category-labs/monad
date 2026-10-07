@@ -19,7 +19,7 @@
 #include "category/execution/monad/graph_eval/config.hpp"
 #include "category/execution/monad/graph_eval/graph.hpp"
 #include "category/execution/monad/graph_eval/graph_eval_error.hpp"
-#include "category/execution/monad/graph_eval/kernel.hpp"
+#include "category/execution/monad/graph_eval/matmul.hpp"
 #include "category/execution/monad/graph_eval/tensor.hpp"
 #include <type_traits>
 #include <utility>
@@ -663,18 +663,11 @@ struct MatMulOp final : GraphOp<std::monostate, 2>
         if (x.type().shape.rank != 2 || y.type().shape.rank != 2) {
             return GraphEvalError::RankError;
         }
-        uint16_t const m = x.type().shape.dimensions[0];
-        uint16_t const k = x.type().shape.dimensions[1];
-        uint16_t const n = y.type().shape.dimensions[1];
-        if (y.type().shape.dimensions[0] != k) {
+        if (y.type().shape.dimensions[0] != x.type().shape.dimensions[1]) {
             return GraphEvalError::ShapeError;
         }
 
-        // An empty output needs no computing, and keeps zero-size buffers
-        // from IREE
-        if (m != 0 && n != 0) {
-            Kernel("module.matmul_i8")(inputs, out);
-        }
+        matmul_i8(x, y, out);
         return outcome::success();
     }
 };

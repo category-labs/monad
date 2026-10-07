@@ -60,7 +60,14 @@ enum class Op : uint16_t
     Div,
     Cast,
     Expand,
-    Last_valid_op = Expand,
+    QMul,
+    QDiv,
+    QMatMul,
+    ReduceSum,
+    ReduceMax,
+    QExp,
+    QInvSqrt,
+    Last_valid_op = QInvSqrt,
 };
 
 inline char const *op_name(Op const op)
@@ -108,6 +115,20 @@ inline char const *op_name(Op const op)
         return "Cast";
     case Op::Expand:
         return "Expand";
+    case Op::QMul:
+        return "QMul";
+    case Op::QDiv:
+        return "QDiv";
+    case Op::QMatMul:
+        return "QMatMul";
+    case Op::ReduceSum:
+        return "ReduceSum";
+    case Op::ReduceMax:
+        return "ReduceMax";
+    case Op::QExp:
+        return "QExp";
+    case Op::QInvSqrt:
+        return "QInvSqrt";
     }
     MONAD_ABORT();
 }

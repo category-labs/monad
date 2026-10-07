@@ -276,6 +276,7 @@ add_library(
   "monad/graph_eval/interpreter.hpp"
   "monad/graph_eval/types.hpp"
   "monad/graph_eval/constants.hpp"
+  "monad/graph_eval/fixed_point.hpp"
   "monad/graph_eval/graph_eval_error.cpp"
   "monad/graph_eval/graph_eval_error.hpp"
   "monad/graph_eval/config.hpp"

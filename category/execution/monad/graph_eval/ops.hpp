@@ -17,10 +17,15 @@
 
 #include "category/execution/monad/graph_eval/broadcasting.hpp"
 #include "category/execution/monad/graph_eval/config.hpp"
+#include "category/execution/monad/graph_eval/constants.hpp"
+#include "category/execution/monad/graph_eval/fixed_point.hpp"
 #include "category/execution/monad/graph_eval/graph.hpp"
 #include "category/execution/monad/graph_eval/graph_eval_error.hpp"
 #include "category/execution/monad/graph_eval/matmul.hpp"
 #include "category/execution/monad/graph_eval/tensor.hpp"
+#include <algorithm>
+#include <span>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 
@@ -122,20 +127,21 @@ struct LiteralOp final
     }
 };
 
-// TODO: abstract over run_opN with template metaprogramming
+// TODO: abstract over run_opN with template metaprogramming. run_op1 and
+// run_op2 apply `f`, F{} by default, so that an F with parameters can be given
 template <typename F, typename T, typename Out>
 [[gnu::always_inline]]
 inline void run_op1(
     T const *__restrict const xs, Out *__restrict const outs,
-    uint64_t const length, bool const x_stride)
+    uint64_t const length, bool const x_stride, F const f = F{})
 {
     if (x_stride) {
         for (uint64_t i = 0; i < length; i++) {
-            outs[i] = static_cast<Out>(F{}(xs[i]));
+            outs[i] = static_cast<Out>(f(xs[i]));
         }
     }
     else {
-        auto const out = static_cast<Out>(F{}(xs[0]));
+        auto const out = static_cast<Out>(f(xs[0]));
         for (uint64_t i = 0; i < length; i++) {
             outs[i] = out;
         }
@@ -147,27 +153,27 @@ template <typename F, typename XT, typename YT, typename Out>
 inline void run_op2(
     XT const *__restrict const xs, YT const *__restrict const ys,
     Out *__restrict const outs, uint64_t const length, bool const x_stride,
-    bool const y_stride)
+    bool const y_stride, F const f = F{})
 {
     if (x_stride && y_stride) {
         for (uint64_t i = 0; i < length; i++) {
-            outs[i] = static_cast<Out>(F{}(xs[i], ys[i]));
+            outs[i] = static_cast<Out>(f(xs[i], ys[i]));
         }
     }
     else if (x_stride) {
         YT const y = ys[0];
         for (uint64_t i = 0; i < length; i++) {
-            outs[i] = static_cast<Out>(F{}(xs[i], y));
+            outs[i] = static_cast<Out>(f(xs[i], y));
         }
     }
     else if (y_stride) {
         XT const x = xs[0];
         for (uint64_t i = 0; i < length; i++) {
-            outs[i] = static_cast<Out>(F{}(x, ys[i]));
+            outs[i] = static_cast<Out>(f(x, ys[i]));
         }
     }
     else {
-        auto const out = static_cast<Out>(F{}(xs[0], ys[0]));
+        auto const out = static_cast<Out>(f(xs[0], ys[0]));
         for (uint64_t i = 0; i < length; i++) {
             outs[i] = out;
         }
@@ -760,5 +766,322 @@ struct CumSumOp final : GraphOp<uint8_t, 1>
         return outcome::success();
     }
 };
+
+// Applies F element by element to two tensors of the same dtype, read as
+// fixed-point numbers with the number of fractional bits given as the op's
+// parameter, with their shapes broadcast together. The output has their dtype
+// and the broadcast shape. F::check checks the inputs' elements first
+template <typename F>
+struct FixedPointOp2 final : GraphOp<uint8_t, 2>
+{
+    Result<TensorType>
+    check_impl(uint8_t const bits, InputTypes<2> const &input_types) override
+    {
+        TensorType const &x = *input_types[0];
+        TensorType const &y = *input_types[1];
+        if (bits > MAX_FRACTIONAL_BITS) {
+            return GraphEvalError::GraphValidationError;
+        }
+        if (x.dtype != y.dtype) {
+            return GraphEvalError::TypeError;
+        }
+        BOOST_OUTCOME_TRY(
+            auto const shape, broadcast_shape(std::array{x.shape, y.shape}));
+        return TensorType{x.dtype, shape};
+    }
+
+    Result<void> evaluate_impl(
+        uint8_t const bits, Tensor &output, Inputs<2> const &inputs) override
+    {
+        Tensor const &x = *inputs[0];
+        Tensor const &y = *inputs[1];
+        if (bits > MAX_FRACTIONAL_BITS) {
+            return GraphEvalError::GraphValidationError;
+        }
+        if (x.type().dtype != y.type().dtype) {
+            return GraphEvalError::TypeError;
+        }
+        BOOST_OUTCOME_TRY(
+            auto const loops, broadcast<2>({x.type().shape, y.type().shape}));
+
+        return visit_dtype(x.type().dtype, [&]<typename T>() -> Result<void> {
+            BOOST_OUTCOME_TRY(
+                F::check(x.elements<T const>(), y.elements<T const>()));
+            T const *const xs = x.elements<T const>().data();
+            T const *const ys = y.elements<T const>().data();
+            T *const outs = output.elements<T>().data();
+            F const f{bits};
+            for_each_run(
+                loops,
+                [&](auto const &offsets,
+                    uint64_t start,
+                    uint64_t length,
+                    auto const &strides) {
+                    run_op2(
+                        xs + offsets[0],
+                        ys + offsets[1],
+                        outs + start,
+                        length,
+                        strides[0],
+                        strides[1],
+                        f);
+                });
+            return outcome::success();
+        });
+    }
+};
+
+// Fixed-point multiplication: floor(x * y / 2^bits), wrapping on overflow
+struct FixedPointMul
+{
+    unsigned bits;
+
+    template <typename T>
+    static Result<void> check(std::span<T const>, std::span<T const>)
+    {
+        return outcome::success();
+    }
+
+    template <typename T>
+    T operator()(T const x, T const y) const
+    {
+        return q_mul(x, y, bits);
+    }
+};
+
+// Fixed-point division: x * 2^bits / y, truncated toward zero and wrapping on
+// overflow. DivisionByZero if any of y's elements is zero
+struct FixedPointDiv
+{
+    unsigned bits;
+
+    template <typename T>
+    static Result<void> check(std::span<T const>, std::span<T const> const ys)
+    {
+        for (T const y : ys) {
+            if (y == 0) {
+                return GraphEvalError::DivisionByZero;
+            }
+        }
+        return outcome::success();
+    }
+
+    template <typename T>
+    T operator()(T const x, T const y) const
+    {
+        return q_div(x, y, bits);
+    }
+};
+
+using QMulOp = FixedPointOp2<FixedPointMul>;
+using QDivOp = FixedPointOp2<FixedPointDiv>;
+
+// QMatMul: the fixed-point product of two matrices of the same dtype, with the
+// number of fractional bits and the output's dtype as its parameters. Each
+// element's products are summed exactly, wrapping at 128 bits, then shifted
+// right by the number of fractional bits, rounding down, and wrapped to the
+// output's dtype. For int8 matrices, 0 bits and int32 out, it's MatMul
+struct QMatMulOp final : GraphOp<std::tuple<uint8_t, Dtype>, 2>
+{
+    Result<TensorType> check_impl(
+        std::tuple<uint8_t, Dtype> const params,
+        InputTypes<2> const &input_types) override
+    {
+        auto const [bits, out_dtype] = params;
+        TensorType const &x = *input_types[0];
+        TensorType const &y = *input_types[1];
+        if (bits > MAX_FRACTIONAL_BITS) {
+            return GraphEvalError::GraphValidationError;
+        }
+        if (x.dtype != y.dtype) {
+            return GraphEvalError::TypeError;
+        }
+        if (x.shape.rank != 2 || y.shape.rank != 2) {
+            return GraphEvalError::RankError;
+        }
+        if (y.shape.dimensions[0] != x.shape.dimensions[1]) {
+            return GraphEvalError::ShapeError;
+        }
+        return TensorType{
+            out_dtype,
+            Shape{2, {x.shape.dimensions[0], y.shape.dimensions[1]}}};
+    }
+
+    Result<void> evaluate_impl(
+        std::tuple<uint8_t, Dtype> const params, Tensor &out,
+        Inputs<2> const &inputs) override
+    {
+        uint8_t const bits = std::get<0>(params);
+        Tensor const &x = *inputs[0];
+        Tensor const &y = *inputs[1];
+        if (bits > MAX_FRACTIONAL_BITS) {
+            return GraphEvalError::GraphValidationError;
+        }
+        if (x.type().dtype != y.type().dtype) {
+            return GraphEvalError::TypeError;
+        }
+        if (x.type().shape.rank != 2 || y.type().shape.rank != 2) {
+            return GraphEvalError::RankError;
+        }
+        if (y.type().shape.dimensions[0] != x.type().shape.dimensions[1]) {
+            return GraphEvalError::ShapeError;
+        }
+
+        matmul(x, y, bits, out);
+        return outcome::success();
+    }
+};
+
+// Reduce: combines the input's elements along the axis given as its parameter
+// with F. The result keeps the axis, with length 1, so that it broadcasts
+// against the input. An empty axis reduces to 0 if `empty_is_zero`, and is a
+// ShapeError otherwise
+template <typename F, bool empty_is_zero>
+struct ReduceOp final : GraphOp<uint8_t, 1>
+{
+    Result<TensorType>
+    check_impl(uint8_t const axis, InputTypes<1> const &input_types) override
+    {
+        TensorType const &x = *input_types[0];
+        if (axis >= x.shape.rank) {
+            return GraphEvalError::RankError;
+        }
+        if (!empty_is_zero && x.shape.dimensions[axis] == 0) {
+            return GraphEvalError::ShapeError;
+        }
+        Shape shape = x.shape;
+        shape.dimensions[axis] = 1;
+        return TensorType{x.dtype, shape};
+    }
+
+    Result<void> evaluate_impl(
+        uint8_t const axis, Tensor &out, Inputs<1> const &inputs) override
+    {
+        Tensor const &x = *inputs[0];
+        if (axis >= x.type().shape.rank) {
+            return GraphEvalError::RankError;
+        }
+        uint64_t const length = x.type().shape.dimensions[axis];
+        if (!empty_is_zero && length == 0) {
+            return GraphEvalError::ShapeError;
+        }
+
+        // The input as `outer` blocks of `length` rows of `inner` elements,
+        // with the axis running down the rows, as in CumSum. Each block
+        // reduces to one row of the output
+        uint64_t outer = 1;
+        for (size_t i = 0; i < axis; i++) {
+            outer *= x.type().shape.dimensions[i];
+        }
+        uint64_t inner = 1;
+        for (size_t i = axis + 1u; i < x.type().shape.rank; i++) {
+            inner *= x.type().shape.dimensions[i];
+        }
+
+        visit_dtype(x.type().dtype, [&]<typename T>() {
+            T const *const xs = x.elements<T const>().data();
+            T *const outs = out.elements<T>().data();
+            for (uint64_t block = 0; block < outer; block++) {
+                T const *__restrict const rows = xs + block * length * inner;
+                T *__restrict const result = outs + block * inner;
+                if (length == 0) {
+                    std::fill_n(result, inner, T{0});
+                    continue;
+                }
+                std::copy_n(rows, inner, result);
+                for (uint64_t row = 1; row < length; row++) {
+                    for (uint64_t i = 0; i < inner; i++) {
+                        result[i] = F{}(result[i], rows[row * inner + i]);
+                    }
+                }
+            }
+        });
+        return outcome::success();
+    }
+};
+
+using ReduceSumOp = ReduceOp<WrappingAdd, true>;
+using ReduceMaxOp = ReduceOp<Maximum, false>;
+
+// Applies F element by element to a tensor, read as fixed-point numbers with
+// the number of fractional bits given as the op's parameter, into a tensor of
+// its dtype and shape. F::check checks the input's elements first
+template <typename F>
+struct FixedPointOp1 final : GraphOp<uint8_t, 1>
+{
+    Result<TensorType>
+    check_impl(uint8_t const bits, InputTypes<1> const &input_types) override
+    {
+        if (bits > MAX_FRACTIONAL_BITS) {
+            return GraphEvalError::GraphValidationError;
+        }
+        return *input_types[0];
+    }
+
+    Result<void> evaluate_impl(
+        uint8_t const bits, Tensor &output, Inputs<1> const &inputs) override
+    {
+        Tensor const &x = *inputs[0];
+        if (bits > MAX_FRACTIONAL_BITS) {
+            return GraphEvalError::GraphValidationError;
+        }
+        return visit_dtype(x.type().dtype, [&]<typename T>() -> Result<void> {
+            auto const xs = x.elements<T const>();
+            BOOST_OUTCOME_TRY(F::check(xs));
+            auto const outs = output.elements<T>();
+            run_op1(xs.data(), outs.data(), outs.size(), true, F{bits});
+            return outcome::success();
+        });
+    }
+};
+
+// Fixed-point e^x, rounded down and saturating, as q_exp computes it
+struct FixedPointExp
+{
+    unsigned bits;
+
+    template <typename T>
+    static Result<void> check(std::span<T const>)
+    {
+        return outcome::success();
+    }
+
+    template <typename T>
+    T operator()(T const x) const
+    {
+        return q_exp(x, bits);
+    }
+};
+
+// Fixed-point 1 / sqrt(x), rounded down and saturating. Of the elements, in
+// row-major order, the first that isn't positive fails: with DivisionByZero if
+// it's zero, and DomainError if it's negative
+struct FixedPointInvSqrt
+{
+    unsigned bits;
+
+    template <typename T>
+    static Result<void> check(std::span<T const> const xs)
+    {
+        for (T const x : xs) {
+            if (x == 0) {
+                return GraphEvalError::DivisionByZero;
+            }
+            if (std::cmp_less(x, 0)) {
+                return GraphEvalError::DomainError;
+            }
+        }
+        return outcome::success();
+    }
+
+    template <typename T>
+    T operator()(T const x) const
+    {
+        return q_inv_sqrt(x, bits);
+    }
+};
+
+using QExpOp = FixedPointOp1<FixedPointExp>;
+using QInvSqrtOp = FixedPointOp1<FixedPointInvSqrt>;
 
 MONAD_GRAPH_EVAL_NAMESPACE_END

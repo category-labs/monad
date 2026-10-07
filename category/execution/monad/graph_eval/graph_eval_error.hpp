@@ -43,6 +43,8 @@ enum class GraphEvalError
     GraphValidationError,
     OutOfMemory,
     InternalError,
+    DivisionByZero,
+    DomainError,
 };
 
 MONAD_GRAPH_EVAL_NAMESPACE_END

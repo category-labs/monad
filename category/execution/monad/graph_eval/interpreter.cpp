@@ -216,6 +216,34 @@ Result<std::vector<Tensor>> Interpreter::run()
             BOOST_OUTCOME_TRY(ExpandOp{}.evaluate(code_span_, result, node_values_));
             break;
         }
+        case Op::QMul: {
+            BOOST_OUTCOME_TRY(QMulOp{}.evaluate(code_span_, result, node_values_));
+            break;
+        }
+        case Op::QDiv: {
+            BOOST_OUTCOME_TRY(QDivOp{}.evaluate(code_span_, result, node_values_));
+            break;
+        }
+        case Op::QMatMul: {
+            BOOST_OUTCOME_TRY(QMatMulOp{}.evaluate(code_span_, result, node_values_));
+            break;
+        }
+        case Op::ReduceSum: {
+            BOOST_OUTCOME_TRY(ReduceSumOp{}.evaluate(code_span_, result, node_values_));
+            break;
+        }
+        case Op::ReduceMax: {
+            BOOST_OUTCOME_TRY(ReduceMaxOp{}.evaluate(code_span_, result, node_values_));
+            break;
+        }
+        case Op::QExp: {
+            BOOST_OUTCOME_TRY(QExpOp{}.evaluate(code_span_, result, node_values_));
+            break;
+        }
+        case Op::QInvSqrt: {
+            BOOST_OUTCOME_TRY(QInvSqrtOp{}.evaluate(code_span_, result, node_values_));
+            break;
+        }
         }
     }
 

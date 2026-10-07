@@ -33,4 +33,7 @@ constexpr std::size_t MAX_GRAPH_OUTPUTS = 8;
 
 constexpr uint16_t GRAPH_MAGIC = 0x7ffe;
 
+// The most fractional bits a fixed-point op's parameter can give
+constexpr uint8_t MAX_FRACTIONAL_BITS = 63;
+
 MONAD_GRAPH_EVAL_NAMESPACE_END

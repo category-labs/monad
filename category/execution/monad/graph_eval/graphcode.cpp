@@ -112,6 +112,20 @@ Result<TensorType> check_op(
         return ArgMaxOp{}.check(graphcode, types, input_ids);
     case Op::CumSum:
         return CumSumOp{}.check(graphcode, types, input_ids);
+    case Op::QMul:
+        return QMulOp{}.check(graphcode, types, input_ids);
+    case Op::QDiv:
+        return QDivOp{}.check(graphcode, types, input_ids);
+    case Op::QMatMul:
+        return QMatMulOp{}.check(graphcode, types, input_ids);
+    case Op::ReduceSum:
+        return ReduceSumOp{}.check(graphcode, types, input_ids);
+    case Op::ReduceMax:
+        return ReduceMaxOp{}.check(graphcode, types, input_ids);
+    case Op::QExp:
+        return QExpOp{}.check(graphcode, types, input_ids);
+    case Op::QInvSqrt:
+        return QInvSqrtOp{}.check(graphcode, types, input_ids);
     case Op::TensorRef:
     case Op::ArgMin:
     case Op::Clip:

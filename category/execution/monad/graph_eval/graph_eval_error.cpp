@@ -48,6 +48,10 @@ quick_status_code_from_enum<monad::graph_eval::GraphEvalError>::value_mappings()
         {GraphEvalError::GraphValidationError, "graph is invalid", {}},
         {GraphEvalError::OutOfMemory, "graph needs too much memory", {}},
         {GraphEvalError::InternalError, "internal error", {}},
+        {GraphEvalError::DivisionByZero, "division by zero", {}},
+        {GraphEvalError::DomainError,
+         "argument is outside the op's domain",
+         {}},
     };
 
     return v;

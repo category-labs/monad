@@ -28,12 +28,15 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <type_traits>
+#include <vector>
 
-// Each element of the product is the dot product of a row of x with a column
-// of y. The columns are copied out of y 4 at a time into contiguous buffers,
-// and each group of copies is used for every row of x before the next is made.
-// The dot products then load contiguous vectors, and compute 4 rows by 4
-// columns at a time, so that each load of a row or column serves 4 of them.
+// In matmul_i8, each element of the product is the dot product of a row of x
+// with a column of y. The columns are copied out of y 4 at a time into
+// contiguous buffers, and each group of copies is used for every row of x
+// before the next is made. The dot products then load contiguous vectors, and
+// compute 4 rows by 4 columns at a time, so that each load of a row or column
+// serves 4 of them.
 
 MONAD_GRAPH_EVAL_ANONYMOUS_NAMESPACE_BEGIN
 
@@ -194,6 +197,48 @@ void multiply_column_group(
     }
 }
 
+// The type matmul_generic multiplies T's in, in which every product is exact.
+// For types up to 16 bits wide, every sum of up to 65535 products is exact in
+// 64 bits too, so the result is the same as summing in 128 bits
+template <typename T>
+using matmul_wide_t = std::conditional_t<
+    sizeof(T) <= 2, std::conditional_t<std::is_signed_v<T>, int64_t, uint64_t>,
+    std::conditional_t<std::is_signed_v<T>, __int128, unsigned __int128>>;
+
+// The unsigned type of Wide's width, which matmul_generic sums in, so that
+// sums wrap without undefined behavior
+template <typename Wide>
+using matmul_sum_t =
+    std::conditional_t<sizeof(Wide) == 8, uint64_t, unsigned __int128>;
+
+// out = (x * y) >> bits, for an m x k matrix x and a k x n matrix y. Each row
+// of out is summed in a row of n sums, adding a row of y times each element of
+// x's row, so that y is read in order
+template <typename T, typename Out>
+void matmul_generic(
+    T const *const x, T const *const y, size_t const m, size_t const k,
+    size_t const n, unsigned const bits, Out *const out)
+{
+    using Wide = matmul_wide_t<T>;
+    using Sum = matmul_sum_t<Wide>;
+    std::vector<Sum> row_sums(n);
+    Sum *__restrict const sums = row_sums.data();
+    for (size_t i = 0; i < m; i++) {
+        std::fill_n(sums, n, Sum{0});
+        for (size_t p = 0; p < k; p++) {
+            auto const a = static_cast<Wide>(x[i * k + p]);
+            T const *__restrict const row = y + p * n;
+            for (size_t j = 0; j < n; j++) {
+                sums[j] += static_cast<Sum>(a * static_cast<Wide>(row[j]));
+            }
+        }
+        for (size_t j = 0; j < n; j++) {
+            out[i * n + j] =
+                static_cast<Out>(static_cast<Wide>(sums[j]) >> bits);
+        }
+    }
+}
+
 MONAD_GRAPH_EVAL_ANONYMOUS_NAMESPACE_END
 
 MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
@@ -230,6 +275,33 @@ void matmul_i8(Tensor const &x, Tensor const &y, Tensor &out)
             std::min<size_t>(4, n - n0),
             out_data);
     }
+}
+
+void matmul(Tensor const &x, Tensor const &y, unsigned const bits, Tensor &out)
+{
+    size_t const m = x.type().shape.dimensions[0];
+    size_t const k = x.type().shape.dimensions[1];
+    size_t const n = y.type().shape.dimensions[1];
+    MONAD_DEBUG_ASSERT(
+        x.type().shape.rank == 2 && y.type().shape.rank == 2 &&
+        out.type().shape.rank == 2);
+    MONAD_DEBUG_ASSERT(y.type().shape.dimensions[0] == k);
+    MONAD_DEBUG_ASSERT(
+        out.type().shape.dimensions[0] == m &&
+        out.type().shape.dimensions[1] == n);
+
+    visit_dtype(x.type().dtype, [&]<typename T>() {
+        visit_dtype(out.type().dtype, [&]<typename Out>() {
+            matmul_generic(
+                x.elements<T const>().data(),
+                y.elements<T const>().data(),
+                m,
+                k,
+                n,
+                bits,
+                out.elements<Out>().data());
+        });
+    });
 }
 
 MONAD_GRAPH_EVAL_NAMESPACE_END

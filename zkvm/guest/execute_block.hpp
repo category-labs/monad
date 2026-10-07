@@ -34,13 +34,42 @@ namespace vm
     class VM;
 }
 
+/// What the proof publishes about a block.
+///
+/// `domain_anchor` is bytes32_t{} on a build without MONAD_ZKVM_L2, where
+/// there is no spoke to harvest. The struct is unconditional, and the 32 zero
+/// bytes are the price: making it conditional would leak the macro into this
+/// header and into the return type of the SWITCH_EVM_TRAITS lambda in
+/// execute_witness.cpp.
+struct ZkvmBlockOutput
+{
+    bytes32_t state_root;
+    bytes32_t domain_anchor;
+};
+
 // Sequential mirror of execute_block<traits> for the zkVM guest. Drops the
 // fiber pool, dispatch_transaction indirection, tracers, and block-metrics
+// `root_transactions` is what the transactions-root check is taken over, in
+// order. On a plaintext block that is the byte slice each transaction was
+// decoded from, one per transaction. On an L2 block it is every ciphertext
+// LEAF -- including the ones that were rejected, because the header commits to
+// the whole list -- so it may be LONGER than block.transactions.
+//
+// `transaction_encodings` holds, for each of block.transactions in order, the
+// bytes it was decoded from, which its signing payload is built from. On a
+// plaintext block that is `root_transactions` itself; on an L2 block it is the
+// decrypted plaintexts, one per accepted leaf.
 template <Traits traits>
     requires(is_evm_trait_v<traits>)
-Result<bytes32_t> execute_block_zkvm(
+Result<ZkvmBlockOutput> execute_block_zkvm(
     Chain const &chain, Block const &block,
-    std::span<byte_string_view const> raw_transactions, Db &pdb, vm::VM &vm,
-    BlockHashBuffer const &block_hash_buffer);
+    std::span<byte_string_view const> root_transactions,
+    std::span<byte_string_view const> transaction_encodings, Db &pdb,
+    vm::VM &vm, BlockHashBuffer const &block_hash_buffer,
+    /// Already recovered, one per transaction, or empty to recover here. The
+    /// domain path hands them over because it drops on recovery before the
+    /// block is formed, and an ECDSA recovery per transaction is not worth
+    /// doing twice.
+    std::span<Address const> recovered_senders = {});
 
 MONAD_NAMESPACE_END

@@ -24,15 +24,18 @@
 #include <category/core/likely.h>
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
+#ifdef MONAD_ZKVM_L2
+    #include <category/execution/ethereum/domain_anchor.hpp>
+#endif
 #include <category/execution/ethereum/block_reward.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/block.hpp>
+#include <category/execution/ethereum/core/ecrecover.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/receipt_rlp.hpp>
-#include <category/execution/ethereum/core/rlp/withdrawal_rlp.hpp>
-#include <category/execution/ethereum/core/ecrecover.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
+#include <category/execution/ethereum/core/rlp/withdrawal_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/execution/ethereum/db/commit_builder.hpp>
@@ -98,10 +101,14 @@ struct ZkvmSequentialExecutor
 
 template <Traits traits>
     requires(is_evm_trait_v<traits>)
-Result<bytes32_t> execute_block_zkvm(
+Result<ZkvmBlockOutput> execute_block_zkvm(
     Chain const &chain, Block const &block,
-    std::span<byte_string_view const> const raw_transactions, Db &pdb,
-    vm::VM &vm, BlockHashBuffer const &block_hash_buffer)
+    // The committed bytes the transactions root is taken over -- unread on the
+    // domain path, which has no such root to check.
+    [[maybe_unused]] std::span<byte_string_view const> const root_transactions,
+    std::span<byte_string_view const> const transaction_encodings, Db &pdb,
+    vm::VM &vm, BlockHashBuffer const &block_hash_buffer,
+    std::span<Address const> const recovered_senders)
 {
     static_assert(traits::evm_rev() > MONAD_ETH_TANGERINE_WHISTLE);
 
@@ -111,16 +118,31 @@ Result<bytes32_t> execute_block_zkvm(
     senders.reserve(block.transactions.size());
     std::vector<std::vector<std::optional<Address>>> authorities;
     authorities.reserve(block.transactions.size());
-    // Build signing payloads from the original transaction bytes.
-    MONAD_ASSERT(raw_transactions.size() == block.transactions.size());
+    // Each sender's signing payload is taken from the bytes the transaction
+    // was decoded from instead of re-encoded from its fields;
+    // rlp::signing_payload says why the two are the same bytes.
+    MONAD_ASSERT(transaction_encodings.size() == block.transactions.size());
+    // Handed over, or recovered here. On the domain path a transaction whose
+    // sender does not recover was already dropped before the block was formed,
+    // so every one left has one and there is nothing to fail on.
+    bool const senders_given = !recovered_senders.empty();
+    MONAD_ASSERT(
+        !senders_given ||
+        recovered_senders.size() == block.transactions.size());
     for (size_t i = 0; i < block.transactions.size(); ++i) {
         auto const &tx = block.transactions[i];
-        auto const s = recover_address(
-            tx.sc.signature, rlp::signing_payload(tx, raw_transactions[i]));
-        if (MONAD_UNLIKELY(!s.has_value())) {
-            return TransactionError::MissingSender;
+        if (senders_given) {
+            senders.push_back(recovered_senders[i]);
         }
-        senders.push_back(*s);
+        else {
+            auto const s = recover_address(
+                tx.sc.signature,
+                rlp::signing_payload(tx, transaction_encodings[i]));
+            if (MONAD_UNLIKELY(!s.has_value())) {
+                return TransactionError::MissingSender;
+            }
+            senders.push_back(*s);
+        }
 
         std::vector<std::optional<Address>> al;
         al.reserve(tx.authorization_list.size());
@@ -197,11 +219,36 @@ Result<bytes32_t> execute_block_zkvm(
     }
 
     // The transactions and withdrawals executed above, and the receipts
-    // produced, must be the ones the header commits to
+    // produced, must be the ones the header commits to.
+    //
+    // Not on the domain path, where there is no such header. The header a
+    // domain block executes against is the L1's, so its transactions root, its
+    // gas_used, its receipts root and its bloom describe the L1 block and have
+    // nothing to say about this domain -- comparing against them would fail
+    // every block, and a header of the domain's own would only be the prover's
+    // word anyway. What binds the domain's work instead is published: the state
+    // commitment, and the message anchor the epilogue harvests from these very
+    // receipts.
+#ifndef MONAD_ZKVM_L2
     {
-        MONAD_ASSERT(raw_transactions.size() == block.transactions.size());
+        // Against the committed bytes, not against a re-encoding of what was
+        // decoded. That is the stronger of the two: re-encoding proves "what I
+        // executed, canonically re-encoded, hashes to the committed root",
+        // which admits any input whose re-encoding is canonical even where
+        // decode was lossy; this proves "the bytes I read from hash to the
+        // committed root", and what executed came from exactly those slices by
+        // construction.
+        //
+        // On an L2 block the chain has one more link and is still the same
+        // statement: leaf in transactions_root, in the header, in the block
+        // hash this run publishes; plaintext = D_sk(leaf) under a key bound by
+        // sk*G == the operator key the protocol names; and one transaction per
+        // plaintext with nothing left over. The count is NOT compared there: a
+        // rejected leaf is committed to and executes nothing, so the two
+        // differ by however many were rejected.
+        MONAD_ASSERT(root_transactions.size() == block.transactions.size());
         if (MONAD_UNLIKELY(
-                ordered_trie_root(raw_transactions) !=
+                ordered_trie_root(root_transactions) !=
                 block.header.transactions_root)) {
             return BlockError::WrongMerkleRoot;
         }
@@ -253,14 +300,41 @@ Result<bytes32_t> execute_block_zkvm(
             return BlockError::WrongLogsBloom;
         }
     }
+#else
+    // The cumulative fixup is not a check and still has to happen: a receipt's
+    // gas_used is cumulative on the wire, and the anchor is harvested from
+    // these receipts.
+    for (uint64_t cumulative = 0; auto &r : receipts) {
+        cumulative += r.gas_used;
+        r.gas_used = cumulative;
+    }
+#endif
 
     State state{
         block_state, Incarnation{block.header.number, Incarnation::LAST_TX}};
 
     if constexpr (traits::evm_rev() >= MONAD_ETH_SHANGHAI) {
+#ifdef MONAD_ZKVM_L2
+        // process_withdrawal credits its recipients directly, and on this
+        // chain nothing authenticates the list -- decode_domain_body rejects a
+        // non-empty one for that reason. Asserted here as well because this is
+        // where the harm would land, and a guard three files away is a guard
+        // that can be lost.
+        MONAD_ASSERT(
+            !block.withdrawals.has_value() || block.withdrawals->empty());
+#endif
         process_withdrawal(state, block.withdrawals);
     }
 
+    // No requests on this chain, and gated for two reasons. The mechanism is
+    // for a beacon chain this one does not have. And under Prague it would
+    // make EVERY block invalid: system_call returns SystemCallMissingCode
+    // unless the EIP-7002 and EIP-7251 predeploys have code, which an L2 with
+    // no validators has no reason to deploy. It also builds a commitment to
+    // deposit requests read out of prover-chosen logs, checked only against
+    // the prover's own header -- inert today because nothing consumes it, and
+    // one more prover-driven surface for a mechanism that does not apply.
+#ifndef MONAD_ZKVM_L2
     if constexpr (traits::eip_7685_active()) {
         BOOST_OUTCOME_TRY(
             auto const computed_requests_hash,
@@ -278,8 +352,46 @@ Result<bytes32_t> execute_block_zkvm(
             return BlockError::InvalidRequestsHash;
         }
     }
+#endif
 
+    // 4.5 The message anchor. Here and not earlier because the harvest reads
+    //     `receipts`, which are only canonical once checked against the
+    //     header's receipts root above; and here rather than later because the
+    //     clear needs this epilogue State. Next to process_requests, the other
+    //     epilogue step that consumes receipts, so the two log harvests read
+    //     together.
+    //
+    //     Note what this CANNOT do: emit the anchor as an event. Anything
+    //     store_log'd into the LAST_TX state lands in State::logs_ and is then
+    //     dropped -- the receipts vector was fixed and root-checked before this
+    //     State even existed. The anchor's only exits are storage and the
+    //     public output, which is consistent with the contract:
+    //     finalizeNamespaceMessages logs nothing either, it RETURNS the anchor.
+    bytes32_t domain_anchor{};
+#ifdef MONAD_ZKVM_L2
+    {
+        BOOST_OUTCOME_TRY(
+            auto leaves, collect_domain_messages(receipts, L2_DOMAIN_SPOKE));
+        // Before the root consumes the vector in place.
+        auto const count = static_cast<uint64_t>(leaves.size());
+        domain_anchor = sorted_pair_merkle_root(leaves);
+        clear_pending_domain_messages(
+            state, L2_DOMAIN_SPOKE, L2_PENDING_SLOT, count);
+    }
+#endif
+
+    // No block reward on this chain, and gated rather than left to be zero.
+    // apply_block_reward credits block.header.beneficiary and every ommer's
+    // beneficiary -- fields the prover writes -- whenever block_reward is
+    // non-zero, which is any pre-Merge revision. A static_assert in l2_config
+    // forbids those, so the call would be inert; but then its safety rests on
+    // a property of the revision constant rather than on a rule of the chain,
+    // and an L2 has no miner, no beneficiary that means anything, and no
+    // issuance. Removing the call is the rule; the static_assert is the second
+    // line, not the first.
+#ifndef MONAD_ZKVM_L2
     apply_block_reward<traits>(state, block);
+#endif
 
     state.destruct_touched_dead();
 
@@ -294,7 +406,7 @@ Result<bytes32_t> execute_block_zkvm(
         bytes32_t{}, builder, block.header, *released.state, [](BlockHeader &) {
         });
 
-    return pdb.state_root();
+    return ZkvmBlockOutput{pdb.state_root(), domain_anchor};
 }
 
 EXPLICIT_EVM_TRAITS(execute_block_zkvm);

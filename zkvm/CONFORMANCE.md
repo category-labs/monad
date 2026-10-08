@@ -127,6 +127,22 @@ wrong chain id used to do — would reject a block every replica executes happil
 Whether a reverted outer call is in the set at all is unresolved — see
 DECISIONS.md, "Do reverted sequencing calls count?".
 
+**And a sixth the specification asks for that the client does not apply.**
+README_DOMAINS.md requires an embedded private transaction to have zero value,
+in the same list as the signed domain chain id, a recoverable signature and a
+gas limit within the outer envelope. The client enforces the other three and
+not this one: it is absent from the pre-execution filter in
+`private_domain_execution.cpp`, absent from the `gasless` arm of
+`static_validate_transaction`, and the only reading of `tx.value` in
+`validate_transaction` sits inside an `if constexpr (!gasless)`. A payload
+carrying value therefore executes as a transfer against the domain state.
+
+This guest does not apply it either, because a guest that writes a block the
+client would not write is as wrong as one that writes a block it would not
+accept, whichever of the two is right about what the chain should do. Resolving
+it belongs to the client and the specification, not here; if the client gains
+the rule, this guest gains it in the same place as the other five.
+
 ## Gas is metered and not priced, but `GASPRICE` is not pricing
 
 The client gates exactly five things behind `if constexpr (!gasless)`: the up-front

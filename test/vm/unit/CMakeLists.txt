@@ -57,6 +57,7 @@ if(MONAD_COMPILER_TESTING)
         eip8024_tests.cpp
         evm_fixture.hpp
         evm_tests.cpp
+        mip7_tests.cpp
     )
 endif()
 

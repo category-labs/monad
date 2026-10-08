@@ -372,6 +372,45 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     option(immer_BUILD_EXTRAS OFF)
     add_subdirectory("${THIRD_PARTY_DIR}/immer" immer SYSTEM)
 
+    # BLAKE3, for the validator addresses the staking contract derives. Its
+    # own CMake picks sources by processor name, and riscv64 matches none of
+    # the SIMD ones, so this is the portable C path.
+    # No monad_riscv_compile_options here: it carries the guest's include
+    # directories as INTERFACE paths, which CMake refuses on a target from
+    # another source directory. The toolchain file already aims the whole
+    # build at the bare-metal target, and this is plain C.
+    add_subdirectory("${THIRD_PARTY_DIR}/BLAKE3/c" blake3)
+
+    # libsecp256k1, for the validator public keys the staking contract parses
+    # and serialises. Same single translation unit and the same configuration
+    # silkpre builds on the host; __int128 is there on riscv64, so the 5x52
+    # field and 4x64 scalar are the ones to use here too.
+    set(_secp_dir "${THIRD_PARTY_DIR}/silkpre/third_party/secp256k1")
+    add_library(secp256k1 OBJECT "${_secp_dir}/src/secp256k1.c")
+    target_compile_definitions(secp256k1 PUBLIC
+        USE_NUM_NONE USE_FIELD_INV_BUILTIN USE_SCALAR_INV_BUILTIN
+        USE_FIELD_5X52 USE_SCALAR_4X64 HAVE___INT128
+        ECMULT_WINDOW_SIZE=15 ECMULT_GEN_PREC_BITS=4 USE_ENDOMORPHISM
+        USE_EXTERNAL_DEFAULT_CALLBACKS
+        ENABLE_MODULE_ECDH ENABLE_MODULE_RECOVERY)
+    target_include_directories(secp256k1
+        PRIVATE "${_secp_dir}" INTERFACE "${_secp_dir}/include")
+    target_compile_options(secp256k1 PRIVATE -w)
+    monad_riscv_compile_options(secp256k1)
+
+    # blst, for the BLS signatures the staking contract verifies. src/server.c
+    # is blst's single-translation-unit build and __BLST_NO_ASM__ selects the
+    # portable C: blst ships assembly for x86 and aarch64 only.
+    #
+    # The INTERFACE target above carries blst's headers for the type aliases
+    # the precompile shadow needs. This adds the implementation, which the
+    # staking path is the first to actually call.
+    add_library(blst_impl OBJECT "${THIRD_PARTY_DIR}/blst/src/server.c")
+    target_compile_definitions(blst_impl PRIVATE __BLST_NO_ASM__)
+    target_include_directories(blst_impl PRIVATE "${THIRD_PARTY_DIR}/blst/bindings")
+    target_compile_options(blst_impl PRIVATE -w)
+    monad_riscv_compile_options(blst_impl)
+
     # komihash — header-only, used by category/core/bytes_hash_compare.hpp.
     # Mirrors root CMakeLists.txt:138.
     if(NOT TARGET komihash)
@@ -754,11 +793,10 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         "staking/fuzzer/staking_contract_machine.cpp"
         "staking/fuzzer/staking_contract_model.cpp"
         "staking/test/input_generation.cpp"
-        "staking/util/secp256k1.cpp"
-        # staking_contract.cpp pulls TBB and BLAKE3, which a bare-metal guest
-        # does not have. monad_precompiles.cpp refuses the staking precompile
-        # on a guest build rather than dispatching into it.
-        "staking/staking_contract.cpp"
+        # read_valset.cpp stays out: it reads the validator set straight from
+        # the trie through trie_db, which is a node's operation. A guest holds
+        # a witness, not a database. staking_contract.cpp is built, against
+        # the BLAKE3 and libsecp256k1 added above.
         "staking/read_valset.cpp"
         "dispatch_transaction.cpp"
         "execute_system_transaction.cpp"
@@ -773,6 +811,11 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         PkgConfig::secp256k1
         quill::quill)
     monad_riscv_compile_options(monad_execution_native)
+    # blake3.h and secp256k1.h by path: the staking contract includes both, and
+    # neither target's INTERFACE directories reach this adapted object library.
+    target_include_directories(monad_execution_native
+        PUBLIC "${THIRD_PARTY_DIR}/BLAKE3/c"
+        PUBLIC "${THIRD_PARTY_DIR}/silkpre/third_party/secp256k1/include")
 
     # ---- Final guest static archive ----
     # Revert-semantics self-test. In the archive like the precompile golden vectors above, so a
@@ -803,7 +846,9 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         $<TARGET_OBJECTS:monad_precompiles>
         $<TARGET_OBJECTS:monad_execution_ethereum>
         $<TARGET_OBJECTS:monad_execution_native>
-        $<TARGET_OBJECTS:monad_execution_native>
+        $<TARGET_OBJECTS:blake3>
+        $<TARGET_OBJECTS:secp256k1>
+        $<TARGET_OBJECTS:blst_impl>
         $<TARGET_OBJECTS:monad-vm-evm>
         $<TARGET_OBJECTS:monad-vm-runtime>
         $<TARGET_OBJECTS:monad-vm-interpreter>
@@ -850,6 +895,7 @@ endif()
 # the dependency edge is conditional, never the target or its file list.
 add_library(monad-zkvm-guest OBJECT
     "${CMAKE_CURRENT_SOURCE_DIR}/keccak_accel.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/secp256k1_callbacks.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/execute_block.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/execute_witness.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/witness_block_hash_buffer.cpp"

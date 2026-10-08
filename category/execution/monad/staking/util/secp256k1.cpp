@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/thread_local.h>
 #include <category/execution/monad/staking/util/secp256k1.hpp>
 
 #include <algorithm>
@@ -32,7 +33,9 @@ Address address_from_secpkey(byte_string_fixed<65> const &serialized_pubkey)
 
 secp256k1_context const *get_secp_context()
 {
-    thread_local std::
+    // MONAD_THREAD_LOCAL, not thread_local: the zkVM guest is single-threaded
+    // and its link has no TLS, so the shadow of this header expands it away.
+    MONAD_THREAD_LOCAL std::
         unique_ptr<secp256k1_context, void (*)(secp256k1_context *)> const
             secp_context(
                 secp256k1_context_create(SECP256K1_CONTEXT_VERIFY),

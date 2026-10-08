@@ -26,7 +26,7 @@
     #error "MONAD_ZKVM_L2 requires -DMONAD_ZKVM_L2_CHAIN_ID=<n>"
 #endif
 #ifndef MONAD_L2_REVISION
-    #error "MONAD_ZKVM_L2 requires -DMONAD_ZKVM_L2_REVISION=<MONAD_ETH_*>"
+    #error "MONAD_ZKVM_L2 requires -DMONAD_ZKVM_L2_REVISION=<MONAD_FOUR+>"
 #endif
 #ifndef MONAD_L2_OPERATOR_PK_X
     #error "MONAD_ZKVM_L2 requires -DMONAD_ZKVM_L2_OPERATOR_PK_X=0x<64 hex>"

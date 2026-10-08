@@ -299,6 +299,11 @@ namespace monad::vm::compiler::basic_blocks
         static std::variant<Instruction, Terminator, JumpDest>
         scan_from(std::span<uint8_t const> bytes, uint32_t &current_offset);
 
+        template <Traits traits>
+        static std::variant<Instruction, Terminator, JumpDest> scan_extension(
+            std::span<uint8_t const> bytes, uint32_t opcode_offset,
+            uint32_t &current_offset);
+
         std::vector<Block> blocks_;
         std::unordered_map<byte_offset, block_id> jump_dests_;
 
@@ -355,6 +360,35 @@ namespace monad::vm::compiler::basic_blocks
     BasicBlocksIR unsafe_make_ir(Args &&...);
 
     template <Traits traits>
+    std::variant<Instruction, Terminator, JumpDest>
+    BasicBlocksIR::scan_extension(
+        std::span<uint8_t const> const bytes, uint32_t const opcode_offset,
+        uint32_t &current_offset)
+    {
+        if (current_offset >= bytes.size()) {
+            return Terminator::InvalidInstruction;
+        }
+
+        auto const selector = bytes[current_offset];
+        auto const &info = extension_opcode_table<traits>[selector];
+
+        if (is_unknown_opcode_info<traits>(info)) {
+            return Terminator::InvalidInstruction;
+        }
+
+        current_offset++;
+
+        return Instruction(
+            opcode_offset,
+            OpCode::Extension,
+            info.min_gas,
+            info.min_stack,
+            selector,
+            info.stack_increase,
+            info.dynamic_gas);
+    }
+
+    template <Traits traits>
     std::variant<Instruction, Terminator, JumpDest> BasicBlocksIR::scan_from(
         std::span<uint8_t const> bytes, uint32_t &current_offset)
     {
@@ -385,6 +419,8 @@ namespace monad::vm::compiler::basic_blocks
             return Terminator::SelfDestruct;
         case JUMPDEST:
             return JumpDest{opcode_offset};
+        case EXTENSION:
+            return scan_extension<traits>(bytes, opcode_offset, current_offset);
         default:
             break;
         }

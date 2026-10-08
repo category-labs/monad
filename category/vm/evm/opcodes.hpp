@@ -239,6 +239,7 @@ namespace monad::vm::compiler
         LOG2 = 0xA2,
         LOG3 = 0xA3,
         LOG4 = 0xA4,
+        EXTENSION = 0xAE,
         CREATE = 0xF0,
         CALL = 0xF1,
         CALLCODE = 0xF2,
@@ -468,7 +469,7 @@ namespace monad::vm::compiler
             unknown_opcode_info,
             unknown_opcode_info,
             unknown_opcode_info,
-            unknown_opcode_info,
+            when(traits::mip_7_active(), {"EXTENSION", 0, 0, 0, false, 0, 0}), // 0xAE
             unknown_opcode_info,
 
             unknown_opcode_info, // 0xB0
@@ -577,6 +578,27 @@ namespace monad::vm::compiler
     {
         return is_unknown_opcode_info<traits>(opcode_table<traits>[opcode]);
     }
+
+    /**
+     * Lookup table of opcode info for each possible `EXTENSION` selector.
+     */
+    template <Traits traits>
+    consteval std::array<OpCodeInfo, 256> make_extension_opcode_table()
+    {
+        std::array<OpCodeInfo, 256> table{};
+        table.fill(unknown_opcode_info);
+
+        MONAD_ASSERT(table[JUMPDEST] == unknown_opcode_info);
+        for (unsigned i = PUSH1; i <= PUSH32; ++i) {
+            MONAD_ASSERT(table[i] == unknown_opcode_info);
+        }
+
+        return table;
+    }
+
+    template <Traits traits>
+    constexpr std::array<OpCodeInfo, 256> extension_opcode_table =
+        make_extension_opcode_table<traits>();
 
     /**
      * Returns `true` if `opcode` belongs to the `PUSHN` family of EVM opcodes.

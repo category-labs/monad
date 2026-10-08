@@ -68,8 +68,9 @@ bool dipped_into_reserve(
         uint256_t{tx.gas_limit} * gas_price<traits>(tx, base_fee_per_gas);
     auto const &orig = state.original();
     for (auto const &[addr, cur_account] : state.current()) {
-        MONAD_ASSERT(orig.contains(addr));
-        bytes32_t const orig_code_hash = orig.at(addr).get_code_hash();
+        auto const orig_it = orig.find(addr);
+        MONAD_ASSERT(orig_it != orig.end());
+        bytes32_t const orig_code_hash = orig_it->second.get_code_hash();
         bytes32_t const effective_code_hash =
             (traits::monad_rev() >= MONAD_EIGHT) ? cur_account.get_code_hash()
                                                  : orig_code_hash;
@@ -429,11 +430,14 @@ bool can_sender_dip_into_reserve(
 
     // check current block
     if (ctx.senders_and_authorities.contains(sender)) {
+        // i indexes this block's transactions, so both runs reach it.
+        MONAD_ASSERT(i < ctx.senders.size());
+        MONAD_ASSERT(i < ctx.authorities.size());
         for (size_t j = 0; j <= i; ++j) {
-            if (j < i && sender == ctx.senders.at(j)) {
+            if (j < i && sender == ctx.senders[j]) {
                 return false;
             }
-            if (std::ranges::contains(ctx.authorities.at(j), sender)) {
+            if (std::ranges::contains(ctx.authorities[j], sender)) {
                 return false;
             }
         }

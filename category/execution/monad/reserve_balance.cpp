@@ -388,6 +388,7 @@ void init_reserve_balance_context(
 EXPLICIT_MONAD_TRAITS(init_reserve_balance_context);
 
 template <Traits traits>
+    requires is_monad_trait_v<traits>
 bool revert_transaction(
     Address const &sender, Transaction const &tx,
     uint256_t const &base_fee_per_gas, uint64_t const i, State &state,
@@ -405,6 +406,7 @@ bool revert_transaction(
 EXPLICIT_MONAD_TRAITS(revert_transaction);
 
 template <Traits traits>
+    requires is_monad_trait_v<traits>
 bool revert_transaction_cached(State &state)
 {
     if constexpr (traits::monad_rev() >= MONAD_FOUR) {

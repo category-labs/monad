@@ -20,6 +20,7 @@
 MONAD_NAMESPACE_BEGIN
 
 template <Traits traits>
+    requires is_evm_trait_v<traits>
 bool revert_transaction(
     Address const &, Transaction const &, uint256_t const &, uint64_t const,
     State &, trace::StateTracer &, ChainContext<traits> const &)
@@ -28,13 +29,5 @@ bool revert_transaction(
 }
 
 EXPLICIT_EVM_TRAITS(revert_transaction);
-
-template <Traits traits>
-bool revert_transaction_cached(State &)
-{
-    return false;
-}
-
-EXPLICIT_EVM_TRAITS(revert_transaction_cached);
 
 MONAD_NAMESPACE_END

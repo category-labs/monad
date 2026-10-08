@@ -33,12 +33,21 @@ class State;
 struct Transaction;
 
 template <Traits traits>
+    requires is_evm_trait_v<traits>
 bool revert_transaction(
     Address const &sender, Transaction const &,
     uint256_t const &base_fee_per_gas, uint64_t i, State &,
     trace::StateTracer &state_tracer, ChainContext<traits> const &);
 
 template <Traits traits>
+    requires is_monad_trait_v<traits>
+bool revert_transaction(
+    Address const &sender, Transaction const &,
+    uint256_t const &base_fee_per_gas, uint64_t i, State &,
+    trace::StateTracer &state_tracer, ChainContext<traits> const &);
+
+template <Traits traits>
+    requires is_monad_trait_v<traits>
 bool revert_transaction_cached(State &);
 
 template <Traits traits>

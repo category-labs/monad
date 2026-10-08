@@ -73,6 +73,7 @@ class State
     ReserveBalance rb_;
 
     template <Traits traits>
+        requires is_monad_trait_v<traits>
     friend bool revert_transaction_cached(State &);
     template <Traits traits>
         requires is_monad_trait_v<traits>

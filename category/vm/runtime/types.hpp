@@ -411,6 +411,8 @@ namespace monad::vm::runtime
         offsetof(Context, gas_remaining);
     constexpr auto context_offset_exit_stack_ptr =
         offsetof(Context, exit_stack_ptr);
+    constexpr auto context_offset_env_depth =
+        offsetof(Context, env) + offsetof(Environment, depth);
     constexpr auto context_offset_env_recipient =
         offsetof(Context, env) + offsetof(Environment, recipient);
     constexpr auto context_offset_env_sender =

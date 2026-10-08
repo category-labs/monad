@@ -408,6 +408,16 @@ namespace monad::vm::interpreter
         runtime::Context &, Intercode const &, uint256_t const *, StackTop,
         int64_t, uint8_t const *);
 
+    template <Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void callstackdepth(
+        runtime::Context &, Intercode const &, uint256_t const *, StackTop,
+        int64_t, uint8_t const *);
+
+    template <Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void callern(
+        runtime::Context &, Intercode const &, uint256_t const *, StackTop,
+        int64_t, uint8_t const *);
+
     // Call & Create
     template <Traits traits>
     MONAD_VM_INSTRUCTION_CALL void create(

@@ -21,7 +21,10 @@
 #include <category/core/monad_exception.hpp>
 #include <category/core/result.hpp>
 #include <category/core/runtime/uint256.hpp>
+#include <category/execution/ethereum/block_hash_buffer.hpp>
+#include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/account.hpp>
+#include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/contract/abi_decode.hpp>
 #include <category/execution/ethereum/core/contract/abi_decode_error.hpp>
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
@@ -30,12 +33,21 @@
 #include <category/execution/ethereum/core/contract/storage_array.hpp>
 #include <category/execution/ethereum/core/fmt/address_fmt.hpp>
 #include <category/execution/ethereum/core/fmt/int_fmt.hpp>
+#include <category/execution/ethereum/core/receipt.hpp>
+#include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
+#include <category/execution/ethereum/execute_transaction.hpp>
+#include <category/execution/ethereum/metrics/block_metrics.hpp>
+#include <category/execution/ethereum/native_transfer_log.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
+#include <category/execution/ethereum/trace/state_tracer.hpp>
+#include <category/execution/monad/chain/monad_chain.hpp>
+#include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/execution/monad/staking/priority_fee.hpp>
 #include <category/execution/monad/staking/staking_contract.hpp>
 #include <category/execution/monad/staking/test/input_generation.hpp>
@@ -51,6 +63,9 @@
 
 #include <test_resource_data.h>
 
+#include <ankerl/unordered_dense.h>
+
+#include <boost/fiber/future/promise.hpp>
 #include <boost/outcome/success_failure.hpp>
 #include <boost/outcome/try.hpp>
 
@@ -67,6 +82,7 @@
 #include <tuple>
 #include <unordered_set>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -79,6 +95,21 @@ using namespace monad::staking::test;
 namespace
 {
     constexpr uint256_t REWARD{1 * MON};
+
+    constexpr bytes32_t TRANSFER_SIGNATURE =
+        abi_encode_event_signature("Transfer(address,address,uint256)");
+    constexpr bytes32_t DELEGATE_SIGNATURE =
+        abi_encode_event_signature("Delegate(uint64,address,uint256,uint64)");
+
+    constexpr u32_be WITHDRAW_SELECTOR =
+        abi_encode_selector("withdraw(uint64,uint8)");
+    constexpr u32_be DELEGATE_SELECTOR =
+        abi_encode_selector("delegate(uint64)");
+
+    byte_string with_selector(u32_be const &selector, byte_string const &args)
+    {
+        return byte_string{to_byte_string_view(selector.bytes)} + args;
+    }
 }
 
 template <typename MonadRevisionT>
@@ -276,7 +307,7 @@ struct StakeTraits : public MonadTraitsTest<MonadRevisionT>
     {
         auto const input = craft_withdraw_input(val_id, withdrawal_id);
         state.push();
-        auto res = contract.precompile_withdraw(input, address, {});
+        auto res = contract.precompile_withdraw<Trait>(input, address, {});
         post_call(res.has_error());
         BOOST_OUTCOME_TRYV(std::move(res));
         return outcome::success();
@@ -296,7 +327,7 @@ struct StakeTraits : public MonadTraitsTest<MonadRevisionT>
     {
         auto const input = abi_encode_uint<u64_be>(val_id);
         state.push();
-        auto res = contract.precompile_claim_rewards(input, address, {});
+        auto res = contract.precompile_claim_rewards<Trait>(input, address, {});
         post_call(res.has_error());
         BOOST_OUTCOME_TRYV(std::move(res));
         return outcome::success();
@@ -701,10 +732,10 @@ TEST_F(StakeLatest, nonpayable_functions_revert)
         contract.precompile_compound<Trait>({}, {}, value).assume_error(),
         StakingError::ValueNonZero);
     EXPECT_EQ(
-        contract.precompile_withdraw({}, {}, value).assume_error(),
+        contract.precompile_withdraw<Trait>({}, {}, value).assume_error(),
         StakingError::ValueNonZero);
     EXPECT_EQ(
-        contract.precompile_claim_rewards({}, {}, value).assume_error(),
+        contract.precompile_claim_rewards<Trait>({}, {}, value).assume_error(),
         StakingError::ValueNonZero);
     EXPECT_EQ(
         contract.precompile_change_commission({}, {}, value).assume_error(),
@@ -4970,10 +5001,28 @@ TYPED_TEST(StakeAllRevisions, events)
     seen_events += 1;
 
     // Claim with nonzero rewards.
-    //   1. Claim event
+    //   1. Transfer from the contract to the delegator (EIP-7708 only)
+    //   2. Claim event
+    auto const balance_before_claim = this->state.get_balance(auth);
     ASSERT_FALSE(this->claim_rewards(val.id, auth).has_error());
-    EXPECT_EQ(this->state.logs().size(), seen_events + 1);
-    seen_events += 1;
+    if constexpr (TestFixture::Trait::eip_7708_active()) {
+        ASSERT_EQ(this->state.logs().size(), seen_events + 2);
+        auto const &transfer = this->state.logs()[seen_events];
+        EXPECT_EQ(transfer.address, ETH_SYSTEM_ADDRESS);
+        ASSERT_EQ(transfer.topics.size(), 3);
+        EXPECT_EQ(transfer.topics[0], TRANSFER_SIGNATURE);
+        EXPECT_EQ(transfer.topics[1], abi_encode_address(STAKING_CA));
+        EXPECT_EQ(transfer.topics[2], abi_encode_address(auth));
+        EXPECT_EQ(
+            transfer.data,
+            byte_string{abi_encode_uint(u256_be{
+                this->state.get_balance(auth) - balance_before_claim})});
+        seen_events += 2;
+    }
+    else {
+        EXPECT_EQ(this->state.logs().size(), seen_events + 1);
+        seen_events += 1;
+    }
 
     // External reward
     //  1. Reward originating from the sender
@@ -4995,18 +5044,43 @@ TYPED_TEST(StakeAllRevisions, events)
     EXPECT_EQ(this->state.logs().size(), seen_events);
 
     // Withdraw one of the pending delegations
-    //   1. Withdraw event
+    //   1. Transfer from the contract to the delegator (EIP-7708 only)
+    //   2. Withdraw event
     this->skip_to_next_epoch();
     this->skip_to_next_epoch();
     seen_events += 2; // two epoch changed events
+    auto const balance_before_withdraw = this->state.get_balance(auth);
     ASSERT_FALSE(this->withdraw(val.id, auth, 1).has_error());
-    EXPECT_EQ(this->state.logs().size(), seen_events + 1);
-    seen_events += 1;
-
-    // All logs should come from the staking contract
-    for (auto const &log : this->state.logs()) {
-        EXPECT_EQ(log.address, STAKING_CA);
+    if constexpr (TestFixture::Trait::eip_7708_active()) {
+        ASSERT_EQ(this->state.logs().size(), seen_events + 2);
+        auto const &transfer = this->state.logs()[seen_events];
+        EXPECT_EQ(transfer.address, ETH_SYSTEM_ADDRESS);
+        ASSERT_EQ(transfer.topics.size(), 3);
+        EXPECT_EQ(transfer.topics[0], TRANSFER_SIGNATURE);
+        EXPECT_EQ(transfer.topics[1], abi_encode_address(STAKING_CA));
+        EXPECT_EQ(transfer.topics[2], abi_encode_address(auth));
+        EXPECT_EQ(
+            transfer.data,
+            byte_string{abi_encode_uint(u256_be{
+                this->state.get_balance(auth) - balance_before_withdraw})});
+        seen_events += 2;
     }
+    else {
+        EXPECT_EQ(this->state.logs().size(), seen_events + 1);
+        seen_events += 1;
+    }
+
+    // All logs come from the staking contract, except the EIP-7708 transfers
+    size_t transfers = 0;
+    for (auto const &log : this->state.logs()) {
+        if (log.address == ETH_SYSTEM_ADDRESS) {
+            ++transfers;
+        }
+        else {
+            EXPECT_EQ(log.address, STAKING_CA);
+        }
+    }
+    EXPECT_EQ(transfers, TestFixture::Trait::eip_7708_active() ? 2u : 0u);
 
     // compute data hash and topics hash
     byte_string data_blob;
@@ -5024,7 +5098,17 @@ TYPED_TEST(StakeAllRevisions, events)
 
     // If intentionally bumping the hashes, this script tidies the gtest output:
     // awk '{gsub(/[- ]/, ""); print}'
-    if constexpr (TestFixture::REV >= MONAD_FIVE) {
+    if constexpr (TestFixture::Trait::eip_7708_active()) {
+        EXPECT_EQ(
+            data_hash,
+            0xC63A52C505D3111A08C5FA2DE0031F91A9E4E5F76DBCF9563B865CE0FEAAA81C_bytes32)
+            << "Staking event change requires a hardfork!";
+        EXPECT_EQ(
+            topics_hash,
+            0x3D23659F76667997AE60CFB220E622A2771129F41CF8384D721494EE3633339F_bytes32)
+            << "Staking event change requires a hardfork!";
+    }
+    else if constexpr (TestFixture::REV >= MONAD_FIVE) {
         EXPECT_EQ(
             data_hash,
             0x5CB7B14B95EAEBED9F9C5A0D7EB0F0BF28A209CA329950E5F6325447D6DC08B0_bytes32)
@@ -5044,4 +5128,248 @@ TYPED_TEST(StakeAllRevisions, events)
             0x698CB2EE95A576037A3D5EDDA5FFA5ABC8741E6DB69883C899CC93C0EBB55AB6_bytes32)
             << "Staking event change requires a hardfork!";
     }
+}
+
+// Through ExecuteTransaction: the flag reaches the contract from the host, the
+// logs land in the receipt and in the call frame, and a payout without the
+// flag carries only the EIP-7708 log.
+TYPED_TEST(StakeAllRevisions, withdraw_transfer_logs_in_receipt)
+{
+    using Trait = typename TestFixture::Trait;
+    if constexpr (Trait::monad_rev() < MONAD_FOUR) {
+        return; // no staking precompile
+    }
+
+    auto const auth = 0xdeadbeef_address;
+    auto const res = this->add_validator(auth, this->ACTIVE_VALIDATOR_STAKE);
+    ASSERT_FALSE(res.has_error());
+    auto const val = res.value();
+    this->skip_to_next_epoch();
+    ASSERT_FALSE(this->undelegate(val.id, auth, 1, 50 * MON).has_error());
+    ASSERT_FALSE(this->undelegate(val.id, auth, 2, 10 * MON).has_error());
+    this->skip_to_next_epoch();
+    this->skip_to_next_epoch();
+    this->state.add_to_balance(auth, 100 * MON);
+    ASSERT_TRUE(this->bs.can_merge(this->state));
+    this->bs.merge(this->state);
+
+    BlockHeader const header{.number = 1};
+    BlockHashBufferFinalized const block_hash_buffer;
+    BlockMetrics metrics;
+    trace::StateTracer state_tracer = std::monostate{};
+    // Reserve-balance tracking indexes the block's senders by tx position.
+    std::vector<Address> const senders{auth, auth};
+    std::vector<std::vector<std::optional<Address>>> const authorities{{}, {}};
+    ankerl::unordered_dense::segmented_set<Address> const no_addresses;
+    ankerl::unordered_dense::segmented_set<Address> const
+        senders_and_authorities{auth};
+    ChainContext<Trait> const chain_ctx{
+        .grandparent_senders_and_authorities = no_addresses,
+        .parent_senders_and_authorities = no_addresses,
+        .senders_and_authorities = senders_and_authorities,
+        .senders = senders,
+        .authorities = authorities};
+
+    auto const run = [&](uint64_t const nonce,
+                         u8_be const withdrawal_id,
+                         bool const trace_transfers,
+                         std::vector<CallFrame> &frames) {
+        Transaction const tx{
+            .sc =
+                {
+                    .signature =
+                        {
+                            .r =
+                                0x5fd883bb01a10915ebc06621b925bd6d624cb6768976b73c0d468b31f657d15b_u256,
+                            .s =
+                                0x121d855c539a23aadf6f06ac21165db1ad5efd261842e82a719c9863ca4ac04c_u256,
+                        },
+                },
+            .nonce = nonce,
+            .max_fee_per_gas = 1,
+            .gas_limit = 1'000'000,
+            .value = 0,
+            .to = STAKING_CA,
+            .data = with_selector(
+                WITHDRAW_SELECTOR, craft_withdraw_input(val.id, withdrawal_id)),
+        };
+        CallTracer call_tracer{tx, frames};
+        boost::fibers::promise<void> prev{};
+        prev.set_value();
+        return ExecuteTransaction<Trait>(
+            MonadDevnet{},
+            nonce,
+            tx,
+            auth,
+            {},
+            header,
+            block_hash_buffer,
+            this->bs,
+            metrics,
+            prev,
+            call_tracer,
+            state_tracer,
+            chain_ctx,
+            /*exec_recorder=*/nullptr,
+            trace_transfers)();
+    };
+
+    // Simulated (traceTransfers) withdraw of the 50 MON request.
+    {
+        std::vector<CallFrame> frames;
+        auto const receipt = run(0, 1, true, frames);
+        ASSERT_TRUE(receipt.has_value());
+        EXPECT_EQ(receipt.value().status, 1u);
+        auto const &logs = receipt.value().logs;
+        if constexpr (Trait::eip_7708_active()) {
+            ASSERT_EQ(logs.size(), 3);
+            EXPECT_EQ(logs[0].address, SIMULATE_NATIVE_TOKEN_LOG_ADDRESS);
+            EXPECT_EQ(logs[1].address, ETH_SYSTEM_ADDRESS);
+            EXPECT_EQ(logs[2].address, STAKING_CA);
+            EXPECT_EQ(logs[0].topics, logs[1].topics);
+            EXPECT_EQ(logs[0].data, logs[1].data);
+        }
+        else {
+            ASSERT_EQ(logs.size(), 2);
+            EXPECT_EQ(logs[0].address, SIMULATE_NATIVE_TOKEN_LOG_ADDRESS);
+            EXPECT_EQ(logs[1].address, STAKING_CA);
+        }
+        ASSERT_EQ(logs[0].topics.size(), 3);
+        EXPECT_EQ(logs[0].topics[0], TRANSFER_SIGNATURE);
+        EXPECT_EQ(logs[0].topics[1], abi_encode_address(STAKING_CA));
+        EXPECT_EQ(logs[0].topics[2], abi_encode_address(auth));
+        EXPECT_EQ(
+            logs[0].data, byte_string{abi_encode_uint(u256_be{50 * MON})});
+        ASSERT_EQ(frames.size(), 1);
+        ASSERT_TRUE(frames[0].logs.has_value());
+        ASSERT_EQ(frames[0].logs->size(), logs.size());
+        for (size_t i = 0; i < logs.size(); ++i) {
+            EXPECT_EQ(frames[0].logs->at(i).log.address, logs[i].address);
+        }
+    }
+
+    // Consensus withdraw of the 10 MON request: no synthetic log.
+    {
+        std::vector<CallFrame> frames;
+        auto const receipt = run(1, 2, false, frames);
+        ASSERT_TRUE(receipt.has_value());
+        EXPECT_EQ(receipt.value().status, 1u);
+        auto const &logs = receipt.value().logs;
+        if constexpr (Trait::eip_7708_active()) {
+            ASSERT_EQ(logs.size(), 2);
+            EXPECT_EQ(logs[0].address, ETH_SYSTEM_ADDRESS);
+            EXPECT_EQ(logs[1].address, STAKING_CA);
+            ASSERT_EQ(logs[0].topics.size(), 3);
+            EXPECT_EQ(logs[0].topics[1], abi_encode_address(STAKING_CA));
+            EXPECT_EQ(logs[0].topics[2], abi_encode_address(auth));
+            EXPECT_EQ(
+                logs[0].data, byte_string{abi_encode_uint(u256_be{10 * MON})});
+        }
+        else {
+            ASSERT_EQ(logs.size(), 1);
+            EXPECT_EQ(logs[0].address, STAKING_CA);
+        }
+        ASSERT_EQ(frames.size(), 1);
+        ASSERT_TRUE(frames[0].logs.has_value());
+        EXPECT_EQ(frames[0].logs->size(), logs.size());
+    }
+}
+
+// Value sent to the contract is logged once, by the host before dispatch; the
+// contract must not log it again.
+TYPED_TEST(StakeAllRevisions, delegate_value_is_logged_once)
+{
+    using Trait = typename TestFixture::Trait;
+    if constexpr (Trait::monad_rev() < MONAD_FOUR) {
+        return; // no staking precompile
+    }
+
+    auto const auth = 0xdeadbeef_address;
+    auto const res = this->add_validator(auth, this->ACTIVE_VALIDATOR_STAKE);
+    ASSERT_FALSE(res.has_error());
+    auto const val = res.value();
+    this->state.add_to_balance(auth, 100 * MON);
+    ASSERT_TRUE(this->bs.can_merge(this->state));
+    this->bs.merge(this->state);
+
+    Transaction const tx{
+        .sc =
+            {
+                .signature =
+                    {
+                        .r =
+                            0x5fd883bb01a10915ebc06621b925bd6d624cb6768976b73c0d468b31f657d15b_u256,
+                        .s =
+                            0x121d855c539a23aadf6f06ac21165db1ad5efd261842e82a719c9863ca4ac04c_u256,
+                    },
+            },
+        .nonce = 0,
+        .max_fee_per_gas = 1,
+        .gas_limit = 1'000'000,
+        .value = 10 * MON,
+        .to = STAKING_CA,
+        .data = with_selector(
+            DELEGATE_SELECTOR, byte_string{abi_encode_uint<u64_be>(val.id)}),
+    };
+    BlockHeader const header{.number = 1};
+    BlockHashBufferFinalized const block_hash_buffer;
+    BlockMetrics metrics;
+    std::vector<CallFrame> frames;
+    CallTracer call_tracer{tx, frames};
+    trace::StateTracer state_tracer = std::monostate{};
+    boost::fibers::promise<void> prev{};
+    prev.set_value();
+    // Reserve-balance tracking indexes the block's senders by tx position.
+    std::vector<Address> const senders{auth};
+    std::vector<std::vector<std::optional<Address>>> const authorities{{}};
+    ankerl::unordered_dense::segmented_set<Address> const no_addresses;
+    ankerl::unordered_dense::segmented_set<Address> const
+        senders_and_authorities{auth};
+    ChainContext<Trait> const chain_ctx{
+        .grandparent_senders_and_authorities = no_addresses,
+        .parent_senders_and_authorities = no_addresses,
+        .senders_and_authorities = senders_and_authorities,
+        .senders = senders,
+        .authorities = authorities};
+
+    auto const receipt = ExecuteTransaction<Trait>(
+        MonadDevnet{},
+        0,
+        tx,
+        auth,
+        {},
+        header,
+        block_hash_buffer,
+        this->bs,
+        metrics,
+        prev,
+        call_tracer,
+        state_tracer,
+        chain_ctx,
+        /*exec_recorder=*/nullptr)();
+    ASSERT_TRUE(receipt.has_value());
+    EXPECT_EQ(receipt.value().status, 1u);
+
+    // Exactly the host's inbound Transfer (from the fork on) and the
+    // contract's Delegate event; the validator is already active, so no
+    // status change.
+    size_t transfers = 0;
+    for (auto const &log : receipt.value().logs) {
+        if (log.address == ETH_SYSTEM_ADDRESS) {
+            ++transfers;
+            ASSERT_EQ(log.topics.size(), 3);
+            EXPECT_EQ(log.topics[0], TRANSFER_SIGNATURE);
+            EXPECT_EQ(log.topics[1], abi_encode_address(auth));
+            EXPECT_EQ(log.topics[2], abi_encode_address(STAKING_CA));
+            EXPECT_EQ(
+                log.data, byte_string{abi_encode_uint(u256_be{10 * MON})});
+        }
+        else {
+            EXPECT_EQ(log.address, STAKING_CA);
+            ASSERT_FALSE(log.topics.empty());
+            EXPECT_EQ(log.topics[0], DELEGATE_SIGNATURE);
+        }
+    }
+    EXPECT_EQ(transfers, Trait::eip_7708_active() ? 1u : 0u);
+    EXPECT_EQ(receipt.value().logs.size(), transfers + 1);
 }

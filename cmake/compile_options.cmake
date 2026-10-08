@@ -22,6 +22,7 @@ function(monad_compile_options target)
   target_compile_options(${target} PRIVATE -Wall -Wextra -Wconversion -Werror)
   target_compile_definitions(${target} PUBLIC "_GNU_SOURCE")
   target_compile_definitions(${target} PUBLIC "MONAD_MPT_NIBBLE_BITS=${MONAD_MPT_NIBBLE_BITS}")
+  target_compile_definitions(${target} PUBLIC "MONAD_MPT_NODE_HASH_BLAKE3=${MONAD_MPT_NODE_HASH_BLAKE3}")
 
   target_compile_options(
     ${target} PRIVATE $<$<CXX_COMPILER_ID:GNU>:-Wno-missing-field-initializers>)

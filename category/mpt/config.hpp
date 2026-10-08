@@ -47,6 +47,18 @@ static constexpr unsigned NIBBLE_BITS = MONAD_MPT_NIBBLE_BITS;
 static_assert(NIBBLE_BITS == 4 || NIBBLE_BITS == 5);
 // Children per branch node.
 static constexpr unsigned NIBBLE_BRANCHES = 1u << NIBBLE_BITS;
+
+// Hash used for node references and roots: keccak256 (Ethereum) or BLAKE3,
+// a benchmark option to measure how much of commit time is the hash itself.
+// Set from CMake (MONAD_MPT_NODE_HASH).
+#ifndef MONAD_MPT_NODE_HASH_BLAKE3
+    #define MONAD_MPT_NODE_HASH_BLAKE3 0
+#endif
+static constexpr bool NODE_HASH_BLAKE3 = MONAD_MPT_NODE_HASH_BLAKE3 != 0;
+
+// True only when the trie reproduces Ethereum roots: hexary with keccak.
+static constexpr bool ETHEREUM_COMPATIBLE_HASHING =
+    NIBBLE_BITS == 4 && !NODE_HASH_BLAKE3;
 static constexpr unsigned char MAX_NIBBLE = NIBBLE_BRANCHES - 1;
 // Child bitmask type: one bit per branch.
 using mask_t = std::conditional_t<NIBBLE_BITS <= 4, uint16_t, uint32_t>;

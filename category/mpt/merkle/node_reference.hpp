@@ -17,8 +17,8 @@
 
 #include <category/core/byte_string.hpp>
 #include <category/core/rlp/encode.hpp>
-#include <category/crypto/keccak.h>
 #include <category/mpt/config.hpp>
+#include <category/mpt/merkle/node_hash.hpp>
 
 #include <cstdint>
 #include <cstring>
@@ -30,7 +30,7 @@ inline unsigned to_node_reference(
     byte_string_view const rlp, unsigned char *const dest) noexcept
 {
     if (MONAD_LIKELY(rlp.size() >= KECCAK256_SIZE)) {
-        monad_keccak256(rlp.data(), rlp.size(), dest);
+        node_hash(rlp.data(), rlp.size(), dest);
         return KECCAK256_SIZE;
     }
     else {

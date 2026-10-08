@@ -47,6 +47,15 @@ option(MONAD_COMPILER_STATS "Print statistics about the compiler" OFF)
 option(MONAD_COMPILER_HOT_PATH_STATS "Print statistics about the vm" OFF)
 set(MONAD_MPT_NIBBLE_BITS 4 CACHE STRING
   "Bits per trie symbol: 4 = 16-ary Ethereum MPT (default), 5 = 32-ary benchmark trie")
+set(MONAD_MPT_NODE_HASH keccak CACHE STRING
+  "Hash for trie node references: keccak (Ethereum, default) or blake3 (benchmark)")
+if(MONAD_MPT_NODE_HASH STREQUAL "blake3")
+  set(MONAD_MPT_NODE_HASH_BLAKE3 1)
+elseif(MONAD_MPT_NODE_HASH STREQUAL "keccak")
+  set(MONAD_MPT_NODE_HASH_BLAKE3 0)
+else()
+  message(FATAL_ERROR "MONAD_MPT_NODE_HASH must be keccak or blake3")
+endif()
 
 include(cmake/test.cmake)
 

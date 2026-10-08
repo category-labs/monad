@@ -1,5 +1,5 @@
 ### monad ignore
-
+build-*
 build
 build-zkvm
 perf.data*

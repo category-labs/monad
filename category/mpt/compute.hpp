@@ -22,6 +22,7 @@
 #include <category/core/mem/allocators.hpp>
 #include <category/mpt/config.hpp>
 #include <category/mpt/merkle/compact_encode.hpp>
+#include <category/mpt/merkle/node_hash.hpp>
 #include <category/mpt/merkle/node_reference.hpp>
 #include <category/mpt/node.hpp>
 
@@ -42,7 +43,7 @@ namespace detail
         {
             MONAD_ASSERT(len <= KECCAK256_SIZE);
             if (len < KECCAK256_SIZE) {
-                monad_keccak256(buffer, len, buffer);
+                node_hash(buffer, len, buffer);
                 len = KECCAK256_SIZE;
             }
         }

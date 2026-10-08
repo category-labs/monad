@@ -297,8 +297,8 @@ validate_output_header(BlockHeader const &input, BlockHeader const &output)
     if (MONAD_UNLIKELY(input.ommers_hash != output.ommers_hash)) {
         return BlockError::WrongOmmersHash;
     }
-    // A non-hexary benchmark trie cannot reproduce Ethereum roots.
-    if constexpr (mpt::NIBBLE_BITS == 4) {
+    // A non-hexary or BLAKE3 benchmark trie cannot reproduce Ethereum roots.
+    if constexpr (mpt::ETHEREUM_COMPATIBLE_HASHING) {
         if (MONAD_UNLIKELY(
                 input.transactions_root != output.transactions_root)) {
             return BlockError::WrongMerkleRoot;
@@ -330,8 +330,8 @@ validate_output_header(BlockHeader const &input, BlockHeader const &output)
     }
 
     // Lastly, validate execution outputs only known after commit.
-    // A non-hexary benchmark trie cannot reproduce Ethereum roots.
-    if constexpr (mpt::NIBBLE_BITS == 4) {
+    // A non-hexary or BLAKE3 benchmark trie cannot reproduce Ethereum roots.
+    if constexpr (mpt::ETHEREUM_COMPATIBLE_HASHING) {
         if (MONAD_UNLIKELY(input.state_root != output.state_root)) {
             return BlockError::WrongMerkleRoot;
         }

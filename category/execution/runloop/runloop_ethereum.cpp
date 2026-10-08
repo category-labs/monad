@@ -228,7 +228,8 @@ Result<void> process_ethereum_block(
     // The benchmark trie's roots differ from Ethereum's, so hash the input
     // header there to keep the block hash chain (BLOCKHASH) intact.
     exec_output.eth_block_hash = to_bytes(keccak256(rlp::encode_block_header(
-        mpt::NIBBLE_BITS == 4 ? exec_output.eth_header : block.header)));
+        mpt::ETHEREUM_COMPATIBLE_HASHING ? exec_output.eth_header
+                                         : block.header)));
     block_hash_buffer.set(
         exec_output.eth_header.number, exec_output.eth_block_hash);
     (void)record_block_result(exec_recorder, exec_output);

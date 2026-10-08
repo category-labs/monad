@@ -53,8 +53,8 @@ Node::Node(
 {
     MONAD_ASSERT(!value || value->size() == value_len);
     MONAD_ASSERT(path.begin_bit_ % path_start_unit == 0);
-    bitpacked.path_start =
-        static_cast<bitpacked_base_t>(path.begin_bit_ / path_start_unit);
+    bitpacked.path_start = static_cast<bitpacked_base_t>(
+        (path.begin_bit_ / path_start_unit) & ((1u << path_start_bits) - 1));
     bitpacked.has_value = value.has_value();
 
     MONAD_ASSERT(data_size <= Node::max_data_len);

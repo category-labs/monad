@@ -23,7 +23,7 @@ template <Traits traits>
 uint64_t compute_gas_refund(
     Transaction const &tx, uint64_t const gas_remaining, uint64_t const refund)
 {
-    if constexpr (traits::monad_rev() >= MONAD_ONE) {
+    if constexpr (traits::charges_gas_limit()) {
         return 0;
     }
 

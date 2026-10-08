@@ -53,7 +53,7 @@ TYPED_TEST(MonadTraitsTest, compute_gas_refund)
 {
     uint64_t const refund = compute_gas_refund<typename TestFixture::Trait>(
         Transaction{.gas_limit = 21'000}, 20'000, 1'000);
-    if constexpr (TestFixture::REV >= MONAD_ONE) {
+    if constexpr (TestFixture::Trait::charges_gas_limit()) {
         EXPECT_EQ(refund, 0);
     }
     else {

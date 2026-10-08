@@ -37,6 +37,7 @@
 #include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/execution/ethereum/db/commit_builder.hpp>
 #include <category/execution/ethereum/db/db.hpp>
+#include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/ethereum/db/ordered_trie.hpp>
 #include <category/execution/ethereum/execute_block_header.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
@@ -97,11 +98,15 @@ struct ZkvmSequentialExecutor
 };
 
 template <Traits traits>
-    requires(is_evm_trait_v<traits>)
+    requires(is_monad_trait_v<traits>)
 Result<bytes32_t> execute_block_zkvm(
     Chain const &chain, Block const &block,
     std::span<byte_string_view const> const raw_transactions, Db &pdb,
-    vm::VM &vm, BlockHashBuffer const &block_hash_buffer)
+    vm::VM &vm, BlockHashBuffer const &block_hash_buffer,
+    ankerl::unordered_dense::segmented_set<Address> const
+        &parent_senders_and_authorities,
+    ankerl::unordered_dense::segmented_set<Address> const
+        &grandparent_senders_and_authorities)
 {
     static_assert(traits::evm_rev() > MONAD_ETH_TANGERINE_WHISTLE);
 
@@ -133,8 +138,20 @@ Result<bytes32_t> execute_block_zkvm(
     execute_block_header<traits>(
         block_state, block.header, /*exec_recorder=*/nullptr);
 
-    ChainContext<traits> const
-        chain_ctx{}; // chain context is empty for evm traits
+    // The reserve-balance rule refuses a dip to a sender that appears in this
+    // block or in either of the two before it. This block's set is derived
+    // here; the ancestors' are the caller's, for the reason execute_block.hpp
+    // gives.
+    auto const senders_and_authorities =
+        combine_senders_and_authorities(senders, authorities);
+    ChainContext<traits> const chain_ctx{
+        .grandparent_senders_and_authorities =
+            grandparent_senders_and_authorities,
+        .parent_senders_and_authorities = parent_senders_and_authorities,
+        .senders_and_authorities = senders_and_authorities,
+        .senders = senders,
+        .authorities = authorities,
+    };
     // 3. Per-tx loop, and it is serialized: exec() runs to completion, merging
     // into
     //    block_state, before the next iteration constructs its State.
@@ -297,6 +314,6 @@ Result<bytes32_t> execute_block_zkvm(
     return pdb.state_root();
 }
 
-EXPLICIT_EVM_TRAITS(execute_block_zkvm);
+EXPLICIT_MONAD_TRAITS(execute_block_zkvm);
 
 MONAD_NAMESPACE_END

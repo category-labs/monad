@@ -25,7 +25,8 @@
 #include <category/crypto/hash256.h>
 #include <category/crypto/keccak.h>
 #include <category/execution/ethereum/chain/chain.hpp>
-#include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
+#include <category/execution/ethereum/core/rlp/address_rlp.hpp>
+#include <category/execution/monad/chain/monad_mainnet.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/offset_trie.hpp>
@@ -34,10 +35,12 @@
 #include <category/execution/ethereum/rlp/execution_witness.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/vm/code.hpp>
+#include <category/vm/evm/monad/revision.h>
 #include <category/vm/evm/revision.h>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/vm.hpp>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -159,6 +162,71 @@ namespace
     };
 }
 #endif
+
+// Not inside the block above: that one is ZisK-only, and nothing here is.
+namespace
+{
+    // A witness carries each ancestor sender set as an RLP list of 20-byte
+    // addresses. The set is the caller's to trust: it names blocks this proof
+    // does not execute, so nothing here can check it. What the guest does
+    // instead is publish its hash, and the verifier compares.
+    ankerl::unordered_dense::segmented_set<monad::Address>
+    decode_address_set(monad::byte_string_view payload)
+    {
+        ankerl::unordered_dense::segmented_set<monad::Address> out;
+        while (!payload.empty()) {
+            auto const address = monad::rlp::decode_address(payload);
+            MONAD_ASSERT(address.has_value());
+            out.insert(address.value());
+        }
+        return out;
+    }
+
+    // The commitment published for the two ancestor sets. Sorted, because a
+    // segmented_set iterates in insertion order and the verifier builds its
+    // own set from its own chain: hashing the witness bytes as they arrive
+    // would make the two agree only by accident. Lengths are absorbed so that
+    // moving an address from one set to the other changes the digest.
+    monad::bytes32_t ancestor_sets_commitment(
+        ankerl::unordered_dense::segmented_set<monad::Address> const &parent,
+        ankerl::unordered_dense::segmented_set<monad::Address> const
+            &grandparent)
+    {
+        static constexpr char LABEL[] = "monad-zkvm/ancestor-senders/v1";
+        constexpr size_t LABEL_LEN = sizeof(LABEL) - 1;
+
+        auto const sorted = [](auto const &set) {
+            std::vector<monad::Address> v{set.begin(), set.end()};
+            std::sort(v.begin(), v.end(), [](auto const &a, auto const &b) {
+                return std::memcmp(a.bytes, b.bytes, sizeof(a.bytes)) < 0;
+            });
+            return v;
+        };
+        auto const p = sorted(parent);
+        auto const g = sorted(grandparent);
+
+        monad::byte_string buf;
+        buf.reserve(
+            LABEL_LEN + 2 * sizeof(std::uint64_t) +
+            (p.size() + g.size()) * sizeof(monad::Address));
+        buf.append(
+            reinterpret_cast<unsigned char const *>(LABEL), LABEL_LEN);
+        auto const append_be64 = [&buf](std::uint64_t const n) {
+            for (int i = 7; i >= 0; --i) {
+                buf.push_back(static_cast<unsigned char>(n >> (i * 8)));
+            }
+        };
+        append_be64(p.size());
+        for (auto const &a : p) {
+            buf.append(a.bytes, sizeof(a.bytes));
+        }
+        append_be64(g.size());
+        for (auto const &a : g) {
+            buf.append(a.bytes, sizeof(a.bytes));
+        }
+        return monad::to_bytes(monad::keccak256(buf));
+    }
+}
 
 extern "C" void monad_zkvm_execute_witness(void)
 {
@@ -324,30 +392,40 @@ extern "C" void monad_zkvm_execute_witness(void)
         MONAD_ASSERT(checked_pre_state_root);
     }
 
-    monad::EthereumMainnet const chain;
+    monad::MonadMainnet const chain;
     monad::vm::VM vm;
     pdb.set_block_and_prefix(block.header.number, monad::bytes32_t{});
 
-    monad_eth_revision const rev =
-        chain.get_revision(block.header.number, block.header.timestamp);
+    // The two ancestor sets the reserve-balance rule reads. They belong to
+    // blocks this proof does not carry, so they arrive in the witness and
+    // their hash is published; see the note in execute_block.hpp.
+    auto const parent_senders_and_authorities =
+        decode_address_set(witness.value().encoded_parent_senders_and_authorities);
+    auto const grandparent_senders_and_authorities = decode_address_set(
+        witness.value().encoded_grandparent_senders_and_authorities);
+
+    monad_revision const rev =
+        chain.get_monad_revision(block.header.timestamp);
     // The parent is the one the loop above authenticated: its hash is this
     // block's parent_hash and its state root is the pre-state trie's.
     auto const valid = [&]() -> monad::Result<void> {
-        SWITCH_EVM_TRAITS(
+        SWITCH_MONAD_TRAITS(
             static_validate_block_with_parent, chain, block, parent_header);
         MONAD_ABORT("unsupported revision");
     }();
     MONAD_ASSERT(valid.has_value());
 
     auto const root_result = [&]() -> monad::Result<monad::bytes32_t> {
-        SWITCH_EVM_TRAITS(
+        SWITCH_MONAD_TRAITS(
             execute_block_zkvm,
             chain,
             block,
             raw_transactions,
             pdb,
             vm,
-            block_hash_buffer);
+            block_hash_buffer,
+            parent_senders_and_authorities,
+            grandparent_senders_and_authorities);
         MONAD_ABORT("unsupported revision");
     }();
     MONAD_ASSERT(root_result.has_value());
@@ -362,9 +440,15 @@ extern "C" void monad_zkvm_execute_witness(void)
     MONAD_KECCAK_SITE(HEADER_HASH, header_rlp.size());
     monad_hash256 const block_hash = monad::keccak256(header_rlp);
 
-    // Public value: the block hash alone is sufficient as the computed root is
-    // sealed into the header it hashes
+    // Public values. The block hash alone settles the transition, since the
+    // computed root is sealed into the header it hashes. The second is the
+    // commitment to the two ancestor sender sets, which this proof took on
+    // trust: published so the verifier, which has the chain, can say whether
+    // they were the right ones.
     write_output(block_hash.bytes, sizeof(block_hash.bytes));
+    monad::bytes32_t const ancestors = ancestor_sets_commitment(
+        parent_senders_and_authorities, grandparent_senders_and_authorities);
+    write_output(ancestors.bytes, sizeof(ancestors.bytes));
 #ifdef MONAD_ZKVM_KECCAK_SITES
     // Append diagnostic counters after the unchanged 32-byte block hash.
     write_output(monad::keccak_sites::bytes(), monad::keccak_sites::size());

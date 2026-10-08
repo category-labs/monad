@@ -755,6 +755,9 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         "staking/fuzzer/staking_contract_model.cpp"
         "staking/test/input_generation.cpp"
         "staking/util/secp256k1.cpp"
+        # staking_contract.cpp pulls TBB and BLAKE3, which a bare-metal guest
+        # does not have. monad_precompiles.cpp refuses the staking precompile
+        # on a guest build rather than dispatching into it.
         "staking/staking_contract.cpp"
         "staking/read_valset.cpp"
         "dispatch_transaction.cpp"
@@ -800,6 +803,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         $<TARGET_OBJECTS:monad_precompiles>
         $<TARGET_OBJECTS:monad_execution_ethereum>
         $<TARGET_OBJECTS:monad_execution_native>
+        $<TARGET_OBJECTS:monad_execution_native>
         $<TARGET_OBJECTS:monad-vm-evm>
         $<TARGET_OBJECTS:monad-vm-runtime>
         $<TARGET_OBJECTS:monad-vm-interpreter>
@@ -810,7 +814,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     monad_compile_options(${_guest_target})
     monad_riscv_compile_options(${_guest_target})
     target_link_libraries(${_guest_target}
-        PRIVATE monad-core monad_execution_ethereum)
+        PRIVATE monad-core monad_execution_ethereum monad_execution_native)
 
 else()
     # ---- Host x86 mode ----
@@ -855,7 +859,7 @@ target_link_libraries(monad-zkvm-guest PRIVATE zkevm-standards)
 if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     monad_riscv_compile_options(monad-zkvm-guest)
     target_link_libraries(monad-zkvm-guest
-        PRIVATE monad-core monad_execution_ethereum)
+        PRIVATE monad-core monad_execution_ethereum monad_execution_native)
 else()
     target_link_libraries(monad-zkvm-guest PRIVATE monad_execution)
 endif()

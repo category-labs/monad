@@ -23,6 +23,7 @@
 #include <category/execution/ethereum/core/withdrawal.hpp>
 
 #include <cstdint>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -145,6 +146,12 @@ struct MonadConsensusBlockHeaderV2 : MonadConsensusBlockHeaderV1
         MonadConsensusBlockHeaderV2 const &,
         MonadConsensusBlockHeaderV2 const &) = default;
 };
+
+template <uint8_t Version>
+using MonadConsensusBlockHeaderForVersion = std::tuple_element_t<
+    Version, std::tuple<
+                 MonadConsensusBlockHeaderV0, MonadConsensusBlockHeaderV1,
+                 MonadConsensusBlockHeaderV2>>;
 
 static_assert(sizeof(MonadConsensusBlockHeaderV0) == 1232);
 static_assert(alignof(MonadConsensusBlockHeaderV0) == 8);

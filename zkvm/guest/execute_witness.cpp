@@ -20,7 +20,6 @@
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
-#include <category/execution/ethereum/core/rlp/address_rlp.hpp>
 #include <category/core/keccak.hpp>
 #include <category/core/result.hpp>
 #include <category/crypto/hash256.h>
@@ -509,14 +508,16 @@ extern "C" void monad_zkvm_execute_witness(void)
     // revision is a type here and not a value, and no block number reaches it.
     monad::MonadL2 const chain;
     using L2Traits = monad::MonadTraits<monad::L2_REVISION>;
-    // The reserve-balance rule refuses a dip to a sender seen in either of the
-    // two blocks before this one. A proof of one block cannot derive those
-    // sets, so the witness carries them and their commitment is published:
-    // the verifier, which has the chain, decides whether they were right.
-    auto const parent_senders_and_authorities = decode_address_set(
-        witness.value().base.encoded_parent_senders_and_authorities);
-    auto const grandparent_senders_and_authorities = decode_address_set(
-        witness.value().base.encoded_grandparent_senders_and_authorities);
+    // The reserve-balance rule refuses a dip to a sender seen in either of
+    // the two blocks before this one. A domain block has no such ancestry:
+    // the node builds its domain ChainContext with both sets empty, because
+    // a domain has no pending blocks of its own. Matching that is what makes
+    // the two agree on who may dip, so these stay empty and nothing about
+    // them is published -- there is nothing for a verifier to check.
+    ankerl::unordered_dense::segmented_set<monad::Address> const
+        parent_senders_and_authorities;
+    ankerl::unordered_dense::segmented_set<monad::Address> const
+        grandparent_senders_and_authorities;
 #else
     monad::MonadMainnet const chain;
 #endif
@@ -655,13 +656,6 @@ extern "C" void monad_zkvm_execute_witness(void)
     write_output(
         monad::L2_SALT_COMMITMENT.bytes,
         sizeof(monad::L2_SALT_COMMITMENT.bytes));
-    // And the two ancestor sender sets this proof took on trust. From
-    // MONAD_FOUR the reserve balance tracks, so they decide whether a sender
-    // may dip, and nothing inside the guest can check them: the verifier has
-    // the chain and this is what lets it compare.
-    monad::bytes32_t const ancestors = ancestor_sets_commitment(
-        parent_senders_and_authorities, grandparent_senders_and_authorities);
-    write_output(ancestors.bytes, sizeof(ancestors.bytes));
 #else
     // Public values. The block hash alone settles the transition, since the
     // computed root is sealed into the header it hashes. The second is the

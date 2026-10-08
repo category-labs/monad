@@ -341,6 +341,7 @@ namespace monad::vm::compiler::native
         void chainid();
         void basefee();
         void blobbasefee();
+        void slotnum();
 
         void calldataload();
 

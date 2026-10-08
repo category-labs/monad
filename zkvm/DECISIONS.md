@@ -218,9 +218,9 @@ contract change a proof mode needs, so they travel together.
 
 ## 6. Where the client and the written specification disagree, the client wins
 
-**What is undetermined.** They disagree in at least three places — the derivation
-source for domain blocks, the block number, and whether reverted sequencing calls
-count — and nothing arbitrates.
+**What is undetermined.** They disagree in at least four places — the derivation
+source for domain blocks, the block number, whether reverted sequencing calls
+count, and whether a payload may carry value — and nothing arbitrates.
 
 **Chosen.** Match the client's behaviour, and record the disagreement rather than
 resolving it silently.

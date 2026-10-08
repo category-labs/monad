@@ -34,8 +34,41 @@
 #include <cstdlib>
 #include <cstring>
 
+#if defined(MONAD_ZKVM_ZISK)
+// zkvm/zisk/src/bn254.rs: zkvm_bn254_g1_add and zkvm_bn254_g1_mul on
+// little-endian limbs, a point x || y; false where they fail.
+extern "C" bool
+monad_zkvm_bn254_g1_add(uint64_t const *p1, uint64_t const *p2, uint64_t *out);
+extern "C" bool
+monad_zkvm_bn254_g1_mul(uint64_t const *p, uint64_t const *k, uint64_t *out);
+#endif
+
 namespace
 {
+#if defined(MONAD_ZKVM_ZISK)
+    // `n` big-endian words as little-endian limbs, and back: a load or a
+    // store and a byte swap a word, where zisklib's conversions take a load,
+    // a shift and an or a byte.
+    template <size_t n>
+    [[gnu::always_inline]] inline void
+    be_words_to_limbs(uint8_t const *const src, uint64_t *const limbs)
+    {
+        for (size_t i = 0; i < n; ++i) {
+            limbs[n - 1 - i] = monad::load_be_unsafe<uint64_t>(src + 8 * i);
+        }
+    }
+
+    template <size_t n>
+    [[gnu::always_inline]] inline void
+    limbs_to_be_words(uint64_t const *const limbs, uint8_t *const dst)
+    {
+        for (size_t i = 0; i < n; ++i) {
+            uint64_t const w = monad::bswap(limbs[n - 1 - i]);
+            std::memcpy(dst + 8 * i, &w, sizeof(w));
+        }
+    }
+#endif
+
     // Read from input with zero-padding for short inputs.
     void safe_copy(
         uint8_t *dst, size_t dst_size, uint8_t const *src, size_t src_size,
@@ -297,6 +330,20 @@ ecadd_impl(byte_string_view const input, std::span<uint8_t, 64> const out)
 {
     alignas(8) uint8_t d[128];
     safe_copy(d, 128, input.data(), input.size(), 0);
+#if defined(MONAD_ZKVM_ZISK)
+    uint64_t p1[8];
+    uint64_t p2[8];
+    uint64_t r[8];
+    be_words_to_limbs<4>(&d[0], p1);
+    be_words_to_limbs<4>(&d[32], p1 + 4);
+    be_words_to_limbs<4>(&d[64], p2);
+    be_words_to_limbs<4>(&d[96], p2 + 4);
+    if (!monad_zkvm_bn254_g1_add(p1, p2, r)) {
+        return PrecompileImplResult::failure();
+    }
+    limbs_to_be_words<4>(r, out.data());
+    limbs_to_be_words<4>(r + 4, out.data() + 32);
+#else
     auto const *p1 = reinterpret_cast<zkvm_bn254_g1_point const *>(&d[0]);
     auto const *p2 = reinterpret_cast<zkvm_bn254_g1_point const *>(&d[64]);
 
@@ -305,6 +352,7 @@ ecadd_impl(byte_string_view const input, std::span<uint8_t, 64> const out)
         ZKVM_EOK) {
         return PrecompileImplResult::failure();
     }
+#endif
     return {out.data(), 64};
 }
 
@@ -314,6 +362,19 @@ ecmul_impl(byte_string_view const input, std::span<uint8_t, 64> const out)
     alignas(8) uint8_t d[96];
     safe_copy(d, 96, input.data(), input.size(), 0);
 
+#if defined(MONAD_ZKVM_ZISK)
+    uint64_t point[8];
+    uint64_t scalar[4];
+    uint64_t r[8];
+    be_words_to_limbs<4>(&d[0], point);
+    be_words_to_limbs<4>(&d[32], point + 4);
+    be_words_to_limbs<4>(&d[64], scalar);
+    if (!monad_zkvm_bn254_g1_mul(point, scalar, r)) {
+        return PrecompileImplResult::failure();
+    }
+    limbs_to_be_words<4>(r, out.data());
+    limbs_to_be_words<4>(r + 4, out.data() + 32);
+#else
     auto const *point = reinterpret_cast<zkvm_bn254_g1_point const *>(&d[0]);
     auto const *scalar = reinterpret_cast<zkvm_bn254_scalar const *>(&d[64]);
 
@@ -323,6 +384,7 @@ ecmul_impl(byte_string_view const input, std::span<uint8_t, 64> const out)
             reinterpret_cast<zkvm_bn254_g1_point *>(out.data())) != ZKVM_EOK) {
         return PrecompileImplResult::failure();
     }
+#endif
     return {out.data(), 64};
 }
 

@@ -16,6 +16,7 @@
 #![no_main]
 ziskos::entrypoint!(main);
 
+mod bn254;
 mod ecrecover;
 mod ecrecover_tables;
 

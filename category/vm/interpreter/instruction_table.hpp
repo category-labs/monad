@@ -391,8 +391,16 @@ namespace monad::vm::interpreter
     }
 
     template <Traits traits>
-    constexpr InstrTable extension_instruction_table =
-        make_extension_instruction_table<traits>();
+    constexpr InstrTable extension_instruction_table = [] {
+        auto const table = make_extension_instruction_table<traits>();
+        for (size_t i = 0; i < table.size(); ++i) {
+            MONAD_ASSERT(
+                (table[i] == invalid) ==
+                compiler::is_unknown_opcode_info<traits>(
+                    compiler::extension_opcode_table<traits>[i]));
+        }
+        return table;
+    }();
 
     // Instruction implementations
     template <uint8_t Opcode, Traits traits, typename... FnArgs>

@@ -59,18 +59,27 @@
 #ifdef MONAD_ZKVM_L2
     #include <category/execution/ethereum/db/ordered_trie.hpp>
     #include <category/execution/ethereum/domain_anchor.hpp>
+    #include <category/execution/monad/chain/monad_chain.hpp>
     #include <zkvm/guest/l2_cipher.hpp>
     #include <zkvm/guest/l2_config.hpp>
     #include <zkvm/guest/l2_ecdh.hpp>
+    #include <zkvm/guest/monad_l2_chain.hpp>
 #endif
 
 MONAD_NAMESPACE_BEGIN
 
 namespace corpus
 {
+#ifdef MONAD_ZKVM_L2
+    /// What the guest runs. A corpus built under other rules records a state
+    /// no guest computes: its post-state would differ, and its witness would
+    /// be missing whatever nodes the guest's rules touch and its own do not.
+    using CorpusTraits = MonadTraits<L2_REVISION>;
+#else
     /// Paris. Matches what EthereumMainnet's schedule gives the block numbers
     /// and timestamps this builder chooses; if one moves the other must.
     using CorpusTraits = EvmTraits<MONAD_ETH_PARIS>;
+#endif
 
     struct CorpusBuilder::Impl
     {
@@ -78,7 +87,11 @@ namespace corpus
         /// corpus generator has no reason to want more.
         fiber::PriorityPool pool{1, 1};
         vm::VM vm;
+#ifdef MONAD_ZKVM_L2
+        MonadL2 chain;
+#else
         EthereumMainnet chain;
+#endif
     };
 
     namespace
@@ -395,7 +408,23 @@ namespace corpus
                 std::make_unique<trace::StateTracer>(std::monostate{});
         }
 
+#ifdef MONAD_ZKVM_L2
+        // As the node builds it for a domain block: this block's senders and
+        // authorities, and no ancestry. A domain's blocks are not pending
+        // blocks of the L1 chain that carries them, so the two sets that
+        // decide whether a sender may dip into its reserve are empty.
+        auto const senders_and_authorities =
+            combine_senders_and_authorities(senders, authorities);
+        ankerl::unordered_dense::segmented_set<Address> const empty_history;
+        ChainContext<CorpusTraits> const chain_context{
+            .grandparent_senders_and_authorities = empty_history,
+            .parent_senders_and_authorities = empty_history,
+            .senders_and_authorities = senders_and_authorities,
+            .senders = senders,
+            .authorities = authorities};
+#else
         ChainContext<CorpusTraits> const chain_context{};
+#endif
         auto receipts_r = execute_block<CorpusTraits>(
             impl_->chain,
             block,

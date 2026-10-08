@@ -336,10 +336,22 @@ namespace
         for (auto const &instr : block.instrs) {
             MONAD_DEBUG_ASSERT(remaining_base_gas >= instr.static_gas_cost());
             remaining_base_gas -= instr.static_gas_cost();
+            emit.checked_debug_comment("      0x{:02x}: {}", instr.pc(), instr);
             emit_instr<traits>(emit, instr, remaining_base_gas);
             require_code_size_in_bound(emit, max_native_size);
             post_instruction_emit(emit, config);
         }
+    }
+
+    byte_offset terminator_pc(BasicBlocksIR const &ir, Block const &block)
+    {
+        if (block.instrs.empty()) {
+            return block.offset +
+                   (ir.jump_dests().contains(block.offset) ? 1 : 0);
+        }
+        Instruction const &last = block.instrs.back();
+        return last.pc() + 1 +
+               (last.opcode() == OpCode::Push ? last.index() : 0);
     }
 
     template <Traits traits>
@@ -350,6 +362,21 @@ namespace
         // because there are no more instructions left in the block.
         constexpr int64_t remaining_base_gas = 0;
         using enum basic_blocks::Terminator;
+        if (block.terminator == FallThrough) {
+            emit.checked_debug_comment(
+                "    {} {}", block.terminator, block.fallthrough_dest);
+        }
+        else if (block.fallthrough_dest == INVALID_BLOCK_ID) {
+            emit.checked_debug_comment(
+                "    0x{:02x}: {}", terminator_pc(ir, block), block.terminator);
+        }
+        else {
+            emit.checked_debug_comment(
+                "    0x{:02x}: {} {}",
+                terminator_pc(ir, block),
+                block.terminator,
+                block.fallthrough_dest);
+        }
         switch (block.terminator) {
         case FallThrough:
             emit.fallthrough();

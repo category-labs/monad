@@ -604,17 +604,18 @@ namespace monad::vm::compiler
         table[CALLERN] = when(traits::mip_18_active(), {"CALLERN", 0, 1, 1, false, 2, 0});
         // clang-format on
 
-        MONAD_ASSERT(table[JUMPDEST] == unknown_opcode_info);
-        for (unsigned i = PUSH1; i <= PUSH32; ++i) {
-            MONAD_ASSERT(table[i] == unknown_opcode_info);
-        }
-
         return table;
     }
 
     template <Traits traits>
-    constexpr std::array<OpCodeInfo, 256> extension_opcode_table =
-        make_extension_opcode_table<traits>();
+    constexpr std::array<OpCodeInfo, 256> extension_opcode_table = [] {
+        auto const table = make_extension_opcode_table<traits>();
+        MONAD_ASSERT(table[JUMPDEST] == unknown_opcode_info);
+        for (unsigned i = PUSH1; i <= PUSH32; ++i) {
+            MONAD_ASSERT(table[i] == unknown_opcode_info);
+        }
+        return table;
+    }();
 
     /**
      * Returns `true` if `opcode` belongs to the `PUSHN` family of EVM opcodes.

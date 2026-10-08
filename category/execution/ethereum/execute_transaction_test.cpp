@@ -241,7 +241,7 @@ TYPED_TEST(TraitsTest, TopLevelCreate)
         /*exec_recorder=*/nullptr)();
 
     if constexpr (TestFixture::is_monad_trait()) {
-        if constexpr (TestFixture::Trait::monad_rev() >= MONAD_TWO) {
+        if (data.size() <= 2 * TestFixture::Trait::max_code_size()) {
             ASSERT_TRUE(receipt.has_value());
         }
         else {

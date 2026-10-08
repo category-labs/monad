@@ -4552,3 +4552,53 @@ TEST(Emitter, ReleaseSrcAndDestRegression)
 
     ASSERT_EQ(ret.status, runtime::StatusCode::Success);
 }
+
+TEST(Emitter, WriteGeneralRegWordsToFinalStackOffsets)
+{
+    uint256_t const x{1, 2, 3, 4};
+    for (bool const spilled : {false, true}) {
+        for (bool const avx_full : {false, true}) {
+            int32_t const n = avx_full ? AVX_REG_COUNT - 1 : 0;
+            std::vector<uint8_t> bytecode(static_cast<size_t>(n) + 1, PUSH0);
+            bytecode.insert(bytecode.end(), {DUP1, JUMPDEST, RETURN});
+            auto ir = basic_blocks::BasicBlocksIR::unsafe_from(bytecode);
+
+            asmjit::JitRuntime rt;
+            TestEmitter emit{rt, ir.codesize};
+            (void)emit.begin_new_block(ir.blocks().at(0));
+
+            Stack &stack = emit.get_stack();
+
+            for (int32_t i = 0; i < n; ++i) {
+                emit.push(i);
+                mov_literal_to_location_type(
+                    emit, i, Emitter::LocationType::AvxReg);
+            }
+            emit.push(x);
+            mov_literal_to_location_type(
+                emit, n, Emitter::LocationType::GeneralReg);
+            if (spilled) {
+                emit.mov_stack_index_to_stack_offset(n);
+                (void)stack.spill_general_reg(stack.get(n));
+                ASSERT_EQ(
+                    stack.get(n)->stack_offset()->moved_from, PrevLoc::GprReg);
+            }
+            emit.dup(1);
+            emit.fallthrough();
+
+            (void)emit.begin_new_block(ir.blocks().at(1));
+            emit.return_();
+
+            entrypoint_t entry = emit.finish_contract(rt);
+            evmc_tx_context tx_context{};
+            auto ctx = test_context(&tx_context);
+            auto const &ret = ctx->result;
+            auto stack_memory = test_stack_memory();
+            entry(&*ctx, stack_memory.get());
+
+            ASSERT_EQ(ret.status, runtime::StatusCode::Success);
+            ASSERT_EQ(load_le<uint256_t>(ret.offset), x);
+            ASSERT_EQ(load_le<uint256_t>(ret.size), x);
+        }
+    }
+}

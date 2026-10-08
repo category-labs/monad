@@ -1438,6 +1438,48 @@ int main(int argc, char **argv)
         .run_throughput_benchmark()
         .run_latency_benchmark();
 
+    // The block ends with a general reg stack element, or a stack element
+    // spilled from a general reg, at two stack indices
+    std::vector<EvmBuilder<traits>> const block_exit_dup_builders = {
+        EvmBuilder<traits>{}.push(1).add().dup1().jumpdest().swap1().pop(),
+        EvmBuilder<traits>{}
+            .push(1)
+            .add()
+            .dup1()
+            .push(2)
+            .add()
+            .dup1()
+            .push(3)
+            .add()
+            .dup1()
+            .push(4)
+            .add()
+            .dup2()
+            .jumpdest()
+            .swap4()
+            .pop()
+            .pop()
+            .pop()
+            .pop()};
+    std::vector<EvmBuilder<traits>> const block_exit_dup_uses = {
+        EvmBuilder<traits>{},
+        EvmBuilder<traits>{}.push(1).add(),
+        EvmBuilder<traits>{}.push(1).xor_()};
+
+    BenchmarkBuilder(
+        args,
+        results,
+        {.title = "DUP; JUMPDEST, constant input",
+         .num_inputs = 1,
+         .has_output = true,
+         .iteration_count = 100,
+         .subject_seqs = block_exit_dup_uses * block_exit_dup_builders})
+        .make_calldata([](size_t num_inputs) {
+            return std::vector<uint8_t>(10'000 * num_inputs * 32, 1);
+        })
+        .run_throughput_benchmark()
+        .run_latency_benchmark();
+
     print_results(results, args.format);
 
     return 0;

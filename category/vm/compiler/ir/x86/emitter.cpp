@@ -1513,6 +1513,18 @@ namespace monad::vm::compiler::native
             }
         }
 
+        // A 256-bit load of words stored from general registers stalls store
+        // forwarding, so if there is a free AVX register, then we use it to
+        // put such stack elements in `yx1` word by word.
+        auto const temp_x = [&]() -> std::optional<x86::Xmm> {
+            if (!stack_.has_free_avx_reg()) {
+                return std::nullopt;
+            }
+            auto [t, _, spill] = stack_.alloc_avx_reg();
+            MONAD_DEBUG_ASSERT(!spill);
+            return avx_reg_to_xmm(*t->avx_reg());
+        }();
+
         // Write all the stack elements without dependencies. Suppose stack
         // element `e` depends on stack element `d` and `d` does not have
         // any dependencies, i.e. is element of `non_dep`. After writing `d`
@@ -1537,10 +1549,25 @@ namespace monad::vm::compiler::native
             if (!d->avx_reg()) {
                 // Put stack element d in the `yx1` AVX register.
                 if (d->stack_offset()) {
-                    as_.vmovaps(yx1, stack_offset_to_mem(*d->stack_offset()));
+                    if (temp_x &&
+                        d->stack_offset()->moved_from == PrevLoc::GprReg) {
+                        mov_words_to_ymm(
+                            stack_offset_to_mem256(*d->stack_offset()),
+                            yx1,
+                            *temp_x);
+                    }
+                    else {
+                        as_.vmovaps(
+                            yx1, stack_offset_to_mem(*d->stack_offset()));
+                    }
                 }
                 else if (d->literal()) {
                     mov_literal_to_ymm(*d->literal(), yx1);
+                }
+                else if (temp_x && is.size() > 1) {
+                    MONAD_DEBUG_ASSERT(d->general_reg().has_value());
+                    mov_words_to_ymm(
+                        general_reg_to_gpq256(*d->general_reg()), yx1, *temp_x);
                 }
                 else {
                     MONAD_DEBUG_ASSERT(d->general_reg().has_value());
@@ -2032,6 +2059,19 @@ namespace monad::vm::compiler::native
         }
     }
 
+    template <typename Word>
+    void Emitter::mov_words_to_ymm(
+        std::array<Word, 4> const &words, x86::Ymm const &y,
+        x86::Xmm const &temp)
+    {
+        MONAD_DEBUG_ASSERT(y.id() != temp.id());
+        as_.vmovq(y.xmm(), words[0]);
+        as_.vmovq(temp, words[2]);
+        as_.vpinsrq(y.xmm(), y.xmm(), words[1], 1);
+        as_.vpinsrq(temp, temp, words[3], 1);
+        as_.vinserti128(y, y, temp, 1);
+    }
+
     void Emitter::mov_stack_elem_to_avx_reg(StackElemRef elem)
     {
         if (elem->avx_reg()) {
@@ -2124,18 +2164,12 @@ namespace monad::vm::compiler::native
         MONAD_DEBUG_ASSERT(elem->general_reg().has_value());
         Gpq256 const &gpq = general_reg_to_gpq256(*elem->general_reg());
         auto const reserv0 = insert_avx_reg(elem);
-        auto const elem_avx = *elem->avx_reg();
-        auto const xmm0 = avx_reg_to_xmm(elem_avx);
-        auto const ymm0 = avx_reg_to_ymm(elem_avx);
+        auto const ymm0 = avx_reg_to_ymm(*elem->avx_reg());
 
         auto [temp_reg, reserv1] = alloc_avx_reg();
         auto const xmm1 = avx_reg_to_xmm(*temp_reg->avx_reg());
 
-        as_.vmovq(xmm0, gpq[0]);
-        as_.vmovq(xmm1, gpq[2]);
-        as_.vpinsrq(xmm0, xmm0, gpq[1], 1);
-        as_.vpinsrq(xmm1, xmm1, gpq[3], 1);
-        as_.vinserti128(ymm0, ymm0, xmm1, 1);
+        mov_words_to_ymm(gpq, ymm0, xmm1);
     }
 
     void Emitter::mov_literal_to_avx_reg(StackElemRef const elem)

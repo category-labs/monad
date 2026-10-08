@@ -629,6 +629,41 @@ truncating_mul(uint256_t const &x, uint256_t const &y) noexcept
         truncating_mul<uint256_t::num_words>(x.as_words(), y.as_words())};
 }
 
+#ifdef MONAD_ZKVM_ZISK
+// ZisK ABI for d = (a * b + c) mod module. Each operand has four 64-bit
+// limbs, least significant first. Callers must handle module == 0.
+struct ZiskArith256ModParams
+{
+    uint64_t const *a;
+    uint64_t const *b;
+    uint64_t const *c;
+    uint64_t const *module;
+    uint64_t *d;
+};
+
+extern "C" void syscall_arith256_mod(ZiskArith256ModParams *params);
+
+[[gnu::noinline]] inline uint256_t zisk_arith256_mod(
+    uint256_t const &a, uint256_t const &b, uint256_t const &c,
+    uint256_t const &mod) noexcept
+{
+    // uint256_t already matches the syscall's layout and alignment, so
+    // pass operands directly without copying them.
+    static_assert(alignof(uint256_t) >= 8);
+    static_assert(sizeof(uint256_t) == 4 * sizeof(uint64_t));
+    alignas(8) uint64_t D[4];
+    ZiskArith256ModParams p{
+        reinterpret_cast<uint64_t const *>(&a),
+        reinterpret_cast<uint64_t const *>(&b),
+        reinterpret_cast<uint64_t const *>(&c),
+        reinterpret_cast<uint64_t const *>(&mod),
+        D};
+    syscall_arith256_mod(&p);
+    // Keep output separate from inputs, including for x = mulmod(x, y, m).
+    return uint256_t{D[0], D[1], D[2], D[3]};
+}
+#endif
+
 MONAD_NO_VECTORIZE
 [[gnu::noinline]]
 constexpr uint256_t
@@ -915,6 +950,14 @@ MONAD_NO_VECTORIZE
 constexpr uint256_t
 mulmod(uint256_t const &u, uint256_t const &v, uint256_t const &mod) noexcept
 {
+#ifdef MONAD_ZKVM_ZISK
+    if (!std::is_constant_evaluated()) {
+        if (mod == 0) {
+            return 0;
+        }
+        return zisk_arith256_mod(u, v, 0, mod);
+    }
+#endif
     auto const prod =
         truncating_mul<2 * uint256_t::num_words>(u.as_words(), v.as_words());
     return uint256_t{udivrem(prod, mod.as_words()).rem};

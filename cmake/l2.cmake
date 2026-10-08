@@ -143,6 +143,19 @@ function(monad_l2_compile_definitions)
             "MONAD_ZKVM_L2_SIGNATURE_HASH='${MONAD_ZKVM_L2_SIGNATURE_HASH}' is "
             "not a signature hash this tree implements; known: ${_known}.")
   endif()
+  # The L2 guest runs MonadTraits at MONAD_FOUR or later, where the reserve
+  # balance tracks. State::push asserts that tracking is off when the dirty
+  # account sets are gone, because dipped_into_reserve compares each frame's
+  # accounts against their originals and has nothing to walk without them. An
+  # ELF built with both halts at its first call frame -- and a ZisK halt is a
+  # zero-filled output at rc=0, which reads like a run that merely disagreed.
+  if(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
+    message(FATAL_ERROR
+            "MONAD_ZKVM_NO_DIRTY_ACCOUNTS is incompatible with MONAD_ZKVM_L2: "
+            "the reserve balance needs the per-frame dirty account sets that "
+            "lever removes, and the guest would halt on its first call.")
+  endif()
+
   if(NOT MONAD_ZKVM_L2_CIPHER IN_LIST MONAD_ZKVM_L2_CIPHERS)
     string(REPLACE ";" ", " _known "${MONAD_ZKVM_L2_CIPHERS}")
     message(FATAL_ERROR

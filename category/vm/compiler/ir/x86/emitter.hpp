@@ -660,6 +660,10 @@ namespace monad::vm::compiler::native
         void mov_stack_elem_low64_to_gpq(StackElemRef, asmjit::x86::Gpq);
 
         void mov_literal_to_ymm(Literal const &, asmjit::x86::Ymm const &);
+        template <typename Word>
+        void mov_words_to_ymm(
+            std::array<Word, 4> const &, asmjit::x86::Ymm const &,
+            asmjit::x86::Xmm const &);
 
         void mov_stack_elem_to_avx_reg(StackElemRef);
         void mov_stack_elem_to_general_reg(StackElemRef);

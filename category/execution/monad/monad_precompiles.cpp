@@ -101,23 +101,10 @@ std::optional<evmc::Result> check_call_precompile(
     }                                                                          \
     while (false);
 
-#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_SP1)
-    // The staking contract reaches for TBB and BLAKE3, which a bare-metal
-    // guest does not have, so it is not linked here. Refuse the call rather
-    // than fall through: falling through would execute it as a plain call to
-    // an account with no code, and publish a proof of a state the chain never
-    // reached. A block that stakes is out of this guest's scope, loudly.
-    if (MONAD_UNLIKELY(
-            traits::monad_rev() >= MONAD_FOUR &&
-            msg.code_address == staking::STAKING_CA)) {
-        MONAD_ABORT("the zkVM guest does not execute the staking precompile");
-    }
-#else
     CASE(
         traits::monad_rev() >= MONAD_FOUR,
         staking::StakingContract,
         staking::STAKING_CA);
-#endif
 
     CASE(
         traits::monad_rev() >= MONAD_NINE,

@@ -422,6 +422,18 @@ namespace monad
             return 0;
         }
 
+        static consteval uint8_t consensus_header_version() noexcept
+        {
+            if constexpr (Rev >= MONAD_FOUR) {
+                return 2;
+            }
+            if constexpr (Rev >= MONAD_THREE) {
+                return 1;
+            }
+
+            return 0;
+        }
+
         static consteval int64_t base_sstore_cost() noexcept
         {
             return 100;

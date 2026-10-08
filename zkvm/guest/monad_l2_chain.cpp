@@ -28,9 +28,11 @@ uint256_t MonadL2::get_chain_id() const
     return uint256_t{L2_CHAIN_ID};
 }
 
-monad_eth_revision MonadL2::get_revision(uint64_t, uint64_t) const
+monad_revision MonadL2::get_monad_revision(uint64_t) const
 {
-    // Both arguments are ignored, and that is the point: there is no schedule.
+    // The timestamp is ignored, and that is the point: a domain starts at one
+    // revision and has no fork schedule to consult. MonadChain::get_revision
+    // maps this to the underlying EVM revision for the callers that want one.
     return L2_REVISION;
 }
 

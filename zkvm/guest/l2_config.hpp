@@ -39,6 +39,7 @@
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/execution/ethereum/domain_anchor.hpp>
+#include <category/vm/evm/monad/revision.h>
 #include <category/vm/evm/revision.h>
 #include <zkvm/guest/l2_cipher_suite.hpp>
 
@@ -58,13 +59,17 @@ inline constexpr std::uint64_t L2_CHAIN_ID = MONAD_L2_CHAIN_ID;
 /// A constant, not a fork schedule: an L2 that starts at one revision has no
 /// schedule to consult, and carrying one would be a second place for the
 /// revision to be decided.
-inline constexpr monad_eth_revision L2_REVISION = MONAD_L2_REVISION;
+inline constexpr monad_revision L2_REVISION = MONAD_L2_REVISION;
 
-/// Require Paris or later as a second guard against pre-Merge block issuance.
+/// MONAD_FOUR or later. Below it ReserveBalance::init_from_tx turns its own
+/// tracking off, so the reserve rules the client applies would not be applied
+/// here and the two would compute different states from the same block. It is
+/// also well past the Merge, which is what keeps apply_block_reward from
+/// minting to prover-chosen addresses.
 static_assert(
-    L2_REVISION >= MONAD_ETH_PARIS,
-    "a pre-Merge revision makes apply_block_reward mint to prover-chosen "
-    "addresses");
+    L2_REVISION >= MONAD_FOUR,
+    "below MONAD_FOUR the reserve balance stops tracking, and the guest would "
+    "diverge from the client on any transaction that dips into it");
 
 /// Compressed operator key: 32-byte big-endian x and y parity, split to use
 /// the existing _bytes32 literal without a parser.

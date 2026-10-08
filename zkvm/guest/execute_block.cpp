@@ -40,7 +40,6 @@
 #include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/execution/ethereum/db/commit_builder.hpp>
 #include <category/execution/ethereum/db/db.hpp>
-#include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/ethereum/db/ordered_trie.hpp>
 #include <category/execution/ethereum/execute_block_header.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
@@ -52,6 +51,7 @@
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction_error.hpp>
+#include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/revision.h>
 #include <category/vm/evm/traits.hpp>
@@ -101,6 +101,7 @@ struct ZkvmSequentialExecutor
 };
 
 template <Traits traits>
+    requires(is_monad_trait_v<traits>)
 Result<ZkvmBlockOutput> execute_block_zkvm(
     Chain const &chain, Block const &block,
     // The committed bytes the transactions root is taken over -- unread on the
@@ -162,13 +163,19 @@ Result<ZkvmBlockOutput> execute_block_zkvm(
     // The reserve-balance rule refuses a dip to a sender that appears in this
     // block or in either of the two before it. This block's set is derived
     // here; the ancestors' are the caller's, for the reason execute_block.hpp
-    // gives.
+    // gives. A domain passes neither: its blocks are not pending blocks of the
+    // L1 chain that carries them, so it dips under this block's rule alone.
     auto const senders_and_authorities =
         combine_senders_and_authorities(senders, authorities);
+    ankerl::unordered_dense::segmented_set<Address> const empty_ancestors{};
     ChainContext<traits> const chain_ctx{
         .grandparent_senders_and_authorities =
-            grandparent_senders_and_authorities,
-        .parent_senders_and_authorities = parent_senders_and_authorities,
+            grandparent_senders_and_authorities
+                ? *grandparent_senders_and_authorities
+                : empty_ancestors,
+        .parent_senders_and_authorities = parent_senders_and_authorities
+                                              ? *parent_senders_and_authorities
+                                              : empty_ancestors,
         .senders_and_authorities = senders_and_authorities,
         .senders = senders,
         .authorities = authorities,

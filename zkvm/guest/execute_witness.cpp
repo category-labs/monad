@@ -20,21 +20,22 @@
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
+#include <category/execution/ethereum/core/rlp/address_rlp.hpp>
 #include <category/core/keccak.hpp>
 #include <category/core/result.hpp>
 #include <category/crypto/hash256.h>
 #include <category/crypto/keccak.h>
 #include <category/execution/ethereum/chain/chain.hpp>
-#include <category/execution/ethereum/core/rlp/address_rlp.hpp>
-#include <category/execution/monad/chain/monad_mainnet.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/chain_hash.hpp>
+#include <category/execution/ethereum/core/rlp/address_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/offset_trie.hpp>
 #include <category/execution/ethereum/db/partial_trie_db.hpp>
 #include <category/execution/ethereum/rlp/decode.hpp>
 #include <category/execution/ethereum/rlp/execution_witness.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
+#include <category/execution/monad/chain/monad_mainnet.hpp>
 #include <category/vm/code.hpp>
 #include <category/vm/evm/monad/revision.h>
 #include <category/vm/evm/revision.h>
@@ -217,8 +218,7 @@ namespace
         buf.reserve(
             LABEL_LEN + 2 * sizeof(std::uint64_t) +
             (p.size() + g.size()) * sizeof(monad::Address));
-        buf.append(
-            reinterpret_cast<unsigned char const *>(LABEL), LABEL_LEN);
+        buf.append(reinterpret_cast<unsigned char const *>(LABEL), LABEL_LEN);
         auto const append_be64 = [&buf](std::uint64_t const n) {
             for (int i = 7; i >= 0; --i) {
                 buf.push_back(static_cast<unsigned char>(n >> (i * 8)));
@@ -508,7 +508,15 @@ extern "C" void monad_zkvm_execute_witness(void)
     // an L2 that starts at one revision has no fork schedule to consult. So the
     // revision is a type here and not a value, and no block number reaches it.
     monad::MonadL2 const chain;
-    using L2Traits = monad::EvmTraits<monad::L2_REVISION>;
+    using L2Traits = monad::MonadTraits<monad::L2_REVISION>;
+    // The reserve-balance rule refuses a dip to a sender seen in either of the
+    // two blocks before this one. A proof of one block cannot derive those
+    // sets, so the witness carries them and their commitment is published:
+    // the verifier, which has the chain, decides whether they were right.
+    auto const parent_senders_and_authorities = decode_address_set(
+        witness.value().base.encoded_parent_senders_and_authorities);
+    auto const grandparent_senders_and_authorities = decode_address_set(
+        witness.value().base.encoded_grandparent_senders_and_authorities);
 #else
     monad::MonadMainnet const chain;
 #endif
@@ -524,8 +532,7 @@ extern "C" void monad_zkvm_execute_witness(void)
     auto const grandparent_senders_and_authorities = decode_address_set(
         witness.value().encoded_grandparent_senders_and_authorities);
 
-    monad_revision const rev =
-        chain.get_monad_revision(block.header.timestamp);
+    monad_revision const rev = chain.get_monad_revision(block.header.timestamp);
     // The parent is the one the loop above authenticated: its hash is this
     // block's parent_hash and its state root is the pre-state trie's. A domain
     // has no parent domain header; its previous transition may be several L1
@@ -558,7 +565,9 @@ extern "C" void monad_zkvm_execute_witness(void)
             pdb,
             vm,
             block_hash_buffer,
-            body_result.value().senders);
+            body_result.value().senders,
+            &parent_senders_and_authorities,
+            &grandparent_senders_and_authorities);
 #else
         SWITCH_MONAD_TRAITS(
             execute_block_zkvm,
@@ -569,8 +578,11 @@ extern "C" void monad_zkvm_execute_witness(void)
             pdb,
             vm,
             block_hash_buffer,
-            parent_senders_and_authorities,
-            grandparent_senders_and_authorities);
+            // Senders are recovered inside: only the domain path has them
+            // already, from the drop rule it applies before the block exists.
+            std::span<monad::Address const>{},
+            &parent_senders_and_authorities,
+            &grandparent_senders_and_authorities);
         MONAD_ABORT("unsupported revision");
 #endif
     }();
@@ -643,6 +655,13 @@ extern "C" void monad_zkvm_execute_witness(void)
     write_output(
         monad::L2_SALT_COMMITMENT.bytes,
         sizeof(monad::L2_SALT_COMMITMENT.bytes));
+    // And the two ancestor sender sets this proof took on trust. From
+    // MONAD_FOUR the reserve balance tracks, so they decide whether a sender
+    // may dip, and nothing inside the guest can check them: the verifier has
+    // the chain and this is what lets it compare.
+    monad::bytes32_t const ancestors = ancestor_sets_commitment(
+        parent_senders_and_authorities, grandparent_senders_and_authorities);
+    write_output(ancestors.bytes, sizeof(ancestors.bytes));
 #else
     // Public values. The block hash alone settles the transition, since the
     // computed root is sealed into the header it hashes. The second is the

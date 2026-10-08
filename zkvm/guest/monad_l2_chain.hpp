@@ -20,19 +20,25 @@
 
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
-#include <category/execution/ethereum/chain/chain.hpp>
+#include <category/execution/monad/chain/monad_chain.hpp>
+#include <category/vm/evm/monad/revision.h>
 #include <category/vm/evm/revision.h>
 
 #include <cstdint>
 
 MONAD_NAMESPACE_BEGIN
 
-struct MonadL2 : Chain
+/// A MonadChain, not a Chain: the client refuses gasless execution on EvmTraits
+/// at compile time -- its path carries
+/// static_assert(!gasless || is_monad_trait_v<traits>) -- so a domain that
+/// meters gas without pricing it has no other family available. Monad pricing,
+/// the reserve balance, cold-access costs and the code-size limits follow, and
+/// all of them move the state root.
+struct MonadL2 : MonadChain
 {
     virtual uint256_t get_chain_id() const override;
 
-    virtual monad_eth_revision
-    get_revision(uint64_t block_number, uint64_t timestamp) const override;
+    virtual monad_revision get_monad_revision(uint64_t timestamp) const override;
 
     virtual BlobSchedule get_blob_schedule(uint64_t timestamp) const override;
 

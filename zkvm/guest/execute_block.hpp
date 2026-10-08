@@ -58,6 +58,7 @@ struct ZkvmBlockOutput
 /// refuse a dip, and a proof of one block cannot derive them, so they arrive
 /// in the witness.
 template <Traits traits>
+    requires(is_monad_trait_v<traits>)
 Result<ZkvmBlockOutput> execute_block_zkvm(
     Chain const &chain, Block const &block,
     std::span<byte_string_view const> root_transactions,

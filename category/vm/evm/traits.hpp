@@ -93,6 +93,7 @@ namespace monad
         // If true, BLOBHASH/BLOBBASEFEE exist and return
         // stub data. Separate from eip_4844_active.
         { T::has_blob_opcodes() } -> std::same_as<bool>;
+        { T::charges_gas_limit() } -> std::same_as<bool>;
 
         // Constants
         { T::max_code_size() } -> std::same_as<size_t>;
@@ -216,6 +217,11 @@ namespace monad
         static consteval bool has_blob_opcodes() noexcept
         {
             return Rev >= MONAD_ETH_CANCUN;
+        }
+
+        static consteval bool charges_gas_limit() noexcept
+        {
+            return false;
         }
 
         static consteval size_t max_code_size() noexcept
@@ -388,6 +394,11 @@ namespace monad
         static consteval bool has_blob_opcodes() noexcept
         {
             return evm_rev() >= MONAD_ETH_CANCUN;
+        }
+
+        static consteval bool charges_gas_limit() noexcept
+        {
+            return Rev >= MONAD_ONE;
         }
 
         static consteval bool mip_8_active() noexcept

@@ -344,7 +344,7 @@ namespace monad::vm::runtime
     template <Traits traits>
     evmc_access_status guest_sload_into(
         Host &host, evmc::address const &addr, evmc::bytes32 const &key,
-        bool const read_cold, evmc_bytes32 &value) noexcept
+        bool const read_cold, uint256_t &value) noexcept
     {
         return static_cast<EvmcHost<traits> &>(host)
             .EvmcHost<traits>::sload_into(addr, key, read_cold, value);

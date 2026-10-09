@@ -364,17 +364,22 @@ private:
     // has to give, and every other case. The account comes last, so the tail
     // call leaves sload_into's arguments where they are.
     [[gnu::noinline]] monad_access_status sload_cold(
-        Address const &, bytes32_t const &key, bool read_cold,
-        evmc_bytes32 &out, AccountState &);
+        Address const &, bytes32_t const &key, bool read_cold, uint256_t &out,
+        AccountState &);
 
     [[gnu::noinline]] monad_access_status sload_read(
-        Address const &, bytes32_t const &key, evmc_bytes32 &out,
+        Address const &, bytes32_t const &key, uint256_t &out,
         OriginalAccountState &);
 
     template <Traits traits>
     [[gnu::noinline]] monad_access_status sload_full(
-        Address const &, bytes32_t const &key, bool read_cold,
-        evmc_bytes32 &out);
+        Address const &, bytes32_t const &key, bool read_cold, uint256_t &out);
+
+    // current_storage_into's read for SLOAD, written in the stack's word
+    // order from where the value is kept.
+    [[gnu::always_inline]] inline void current_storage_load(
+        AccountState const &, Address const &, bytes32_t const &key,
+        uint256_t &out);
 
     // set_storage's work on the account it looked up.
     [[gnu::always_inline]] inline monad_storage_status set_storage_of(
@@ -496,8 +501,7 @@ public:
     // account: see vm::Host::sload_into.
     template <Traits traits>
     monad_access_status sload_into(
-        Address const &, bytes32_t const &key, bool read_cold,
-        evmc_bytes32 &out);
+        Address const &, bytes32_t const &key, bool read_cold, uint256_t &out);
 
     // SSTORE's access_storage and set_storage, with one lookup of the
     // account: see vm::runtime::guest_sstore_into.

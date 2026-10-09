@@ -65,9 +65,12 @@ namespace monad::vm
         /// the account. The value is read when the slot is warm, or when
         /// `read_cold` says the caller can pay for a cold access: one that
         /// cannot exits before reading, as it did between the two calls.
+        /// It is written in the stack's word order, straight from where the
+        /// state keeps it: through a big-endian copy, each SLOAD copied it
+        /// twice.
         virtual evmc_access_status sload_into(
-            evmc::address const &addr, evmc::bytes32 const &key,
-            bool read_cold, evmc_bytes32 &value) noexcept = 0;
+            evmc::address const &addr, evmc::bytes32 const &key, bool read_cold,
+            ::monad::uint256_t &value) noexcept = 0;
 
         /// EIP-7702's delegate of `addr`, read where its code is kept: through
         /// copy_code, the code's first bytes were copied out, at a run-time
@@ -306,7 +309,7 @@ namespace monad::vm::runtime
     template <Traits traits>
     evmc_access_status guest_sload_into(
         Host &, evmc::address const &, evmc::bytes32 const &, bool,
-        evmc_bytes32 &) noexcept;
+        ::monad::uint256_t &) noexcept;
 
     // SSTORE's two statuses from its one host call, as the State gives them:
     // a conversion between the two calls would keep the host's from being a

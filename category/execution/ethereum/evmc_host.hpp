@@ -288,7 +288,7 @@ struct EvmcHost final : public EvmcHostBase
 #if defined(MONAD_ZKVM_ZISK)
     virtual evmc_access_status sload_into(
         evmc::address const &address, evmc::bytes32 const &key,
-        bool const read_cold, evmc_bytes32 &value) noexcept override
+        bool const read_cold, uint256_t &value) noexcept override
     {
         MONAD_TRY
         {

@@ -18,15 +18,15 @@
 #include <category/core/likely.h>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/host.hpp>
 #include <category/vm/runtime/bin.hpp>
 #include <category/vm/runtime/log.hpp>
 #include <category/vm/runtime/types.hpp>
 
-#include <evmc/evmc.h>
-
 #include <span>
+#include <utility>
 
 namespace monad::vm::runtime
 {
@@ -35,7 +35,8 @@ namespace monad::vm::runtime
         Context *ctx, uint256_t const &offset_word, uint256_t const &size_word,
         std::span<bytes32_t const> topics)
     {
-        if (MONAD_UNLIKELY(ctx->env.evmc_flags & EVMC_STATIC)) {
+        if (MONAD_UNLIKELY(
+                ctx->env.flags & std::to_underlying(CallFlags::Static))) {
             ctx->exit(StatusCode::Error);
         }
 

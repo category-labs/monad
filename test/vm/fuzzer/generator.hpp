@@ -25,10 +25,9 @@
 #include <category/execution/monad/reserve_balance/reserve_balance_contract.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
 
+#include <category/vm/evm/message.hpp>
 #include <category/vm/fuzzing/choice.hpp>
 #include <category/vm/fuzzing/instruction_data.hpp>
-
-#include <evmc/evmc.hpp>
 
 #include <nlohmann/json.hpp>
 
@@ -38,6 +37,7 @@
 #include <memory>
 #include <random>
 #include <unordered_set>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -1045,7 +1045,7 @@ namespace monad::vm::fuzzing
         std::vector<Address> const &contract_addresses,
         LookupFunc address_lookup) noexcept
     {
-        using gas_t = decltype(evmc_message::gas);
+        using gas_t = decltype(Message::gas);
 
         auto const base_gas = discrete_choice<double>(
             eng,
@@ -1074,7 +1074,7 @@ namespace monad::vm::fuzzing
 
     struct message_deleter
     {
-        static void operator()(evmc_message *msg) noexcept
+        static void operator()(Message *msg) noexcept
         {
             if (!msg) {
                 return;
@@ -1085,7 +1085,7 @@ namespace monad::vm::fuzzing
         }
     };
 
-    using message_ptr = std::unique_ptr<evmc_message, message_deleter>;
+    using message_ptr = std::unique_ptr<Message, message_deleter>;
 
     /**
      * Generates and allocates a calldata buffer containing push-like elements.
@@ -1120,7 +1120,7 @@ namespace monad::vm::fuzzing
     }
 
     /**
-     * Generate a random EVMC message.
+     * Generate a random message.
      *
      * Returns a managed pointer to a message, rather than the message itself in
      * order that we can control the lifetime of the `input_data` buffer.
@@ -1138,28 +1138,30 @@ namespace monad::vm::fuzzing
         uint8_t *memory_handle, uint32_t const memory_capacity) noexcept
     {
         auto const kind = uniform_sample(
-            eng, std::array{EVMC_CALL, EVMC_DELEGATECALL, EVMC_CALLCODE});
-
-        auto const static_flag = discrete_choice<evmc_flags>(
             eng,
-            [](auto &) { return static_cast<evmc_flags>(0); },
-            Choice(0.02, [](auto &) { return EVMC_STATIC; }));
-        auto const delegated_flag = discrete_choice<evmc_flags>(
-            eng,
-            [](auto &) { return static_cast<evmc_flags>(0); },
-            Choice(0.5, [](auto &) { return EVMC_DELEGATED; }));
+            std::array{
+                CallKind::Call, CallKind::DelegateCall, CallKind::CallCode});
 
-        auto const flags =
-            static_cast<evmc_flags>(static_flag | delegated_flag);
+        auto const static_flag = discrete_choice<CallFlags>(
+            eng,
+            [](auto &) { return static_cast<CallFlags>(0); },
+            Choice(0.02, [](auto &) { return CallFlags::Static; }));
+        auto const delegated_flag = discrete_choice<CallFlags>(
+            eng,
+            [](auto &) { return static_cast<CallFlags>(0); },
+            Choice(0.5, [](auto &) { return CallFlags::Delegated; }));
+
+        auto const flags = std::to_underlying(static_flag) |
+                           std::to_underlying(delegated_flag);
 
         auto const depth =
-            std::uniform_int_distribution<decltype(evmc_message::depth)>(
-                0, 1023)(eng);
+            std::uniform_int_distribution<decltype(Message::depth)>(0, 1023)(
+                eng);
 
         auto const target = uniform_sample(eng, contract_addresses);
 
         auto const recipient =
-            (kind == EVMC_CALL)
+            (kind == CallKind::Call)
                 ? target
                 : discrete_choice<Address>(
                       eng,
@@ -1189,7 +1191,7 @@ namespace monad::vm::fuzzing
 
         auto const salt = random_constant(eng).value;
 
-        return message_ptr{new evmc_message{
+        return message_ptr{new Message{
             .kind = kind,
             .flags = flags,
             .depth = depth,
@@ -1199,9 +1201,8 @@ namespace monad::vm::fuzzing
             .sender = sender,
             .input_data = input_data,
             .input_size = input_size,
-            .value = static_cast<evmc::bytes32>(store_be_as<bytes32_t>(value)),
-            .create2_salt =
-                static_cast<evmc::bytes32>(store_be_as<bytes32_t>(salt)),
+            .value = store_be_as<bytes32_t>(value),
+            .create2_salt = store_be_as<bytes32_t>(salt),
             .code_address = target,
             .memory_handle = memory_handle,
             .memory = memory_handle,

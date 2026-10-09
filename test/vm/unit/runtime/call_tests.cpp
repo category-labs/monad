@@ -16,16 +16,16 @@
 #include "fixture.hpp"
 
 #include <category/vm/evm/access_status.h>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/runtime/call.hpp>
 #include <category/vm/runtime/keccak.hpp>
 #include <category/vm/runtime/transmute.hpp>
-
-#include <evmc/evmc.h>
 
 #include <gtest/gtest.h>
 
 #include <cstdint>
 #include <limits>
+#include <utility>
 
 using namespace monad;
 using namespace monad::vm;
@@ -388,14 +388,14 @@ TYPED_TEST(RuntimeTraitsTest, DelegatedCallPrecompile)
     if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_PRAGUE) {
         ASSERT_EQ(
             this->host_.recorded_calls[0].flags &
-                static_cast<uint32_t>(EVMC_DELEGATED),
-            static_cast<uint32_t>(EVMC_DELEGATED));
+                std::to_underlying(CallFlags::Delegated),
+            std::to_underlying(CallFlags::Delegated));
     }
     else {
         ASSERT_NE(
             this->host_.recorded_calls[0].flags &
-                static_cast<uint32_t>(EVMC_DELEGATED),
-            static_cast<uint32_t>(EVMC_DELEGATED));
+                std::to_underlying(CallFlags::Delegated),
+            std::to_underlying(CallFlags::Delegated));
     }
 }
 
@@ -418,7 +418,7 @@ TYPED_TEST(RuntimeTraitsTest, DelegatedCallBadCode1)
     ASSERT_EQ(this->host_.recorded_calls.size(), 1);
     ASSERT_EQ(
         this->host_.recorded_calls[0].flags &
-            static_cast<uint32_t>(EVMC_DELEGATED),
+            std::to_underlying(CallFlags::Delegated),
         0);
 }
 
@@ -439,6 +439,6 @@ TYPED_TEST(RuntimeTraitsTest, DelegatedCallBadCode2)
     ASSERT_EQ(this->host_.recorded_calls.size(), 1);
     ASSERT_EQ(
         this->host_.recorded_calls[0].flags &
-            static_cast<uint32_t>(EVMC_DELEGATED),
+            std::to_underlying(CallFlags::Delegated),
         0);
 }

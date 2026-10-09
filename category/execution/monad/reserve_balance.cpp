@@ -406,7 +406,6 @@ bool revert_transaction(
 EXPLICIT_MONAD_TRAITS(revert_transaction);
 
 template <Traits traits>
-    requires is_monad_trait_v<traits>
 bool revert_transaction_cached(State &state)
 {
     if constexpr (traits::monad_rev() >= MONAD_FOUR) {

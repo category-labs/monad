@@ -28,6 +28,7 @@
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/reserve_balance.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/monad/reserve_balance.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/monad/revision.h>
 #include <category/vm/evm/traits.hpp>

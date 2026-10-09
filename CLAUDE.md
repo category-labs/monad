@@ -107,7 +107,7 @@ The `category/execution/` tree is split into `ethereum/` and `monad/` subdirecto
 **Do not branch on `is_monad_trait_v` vs `is_evm_trait_v` inside `ethereum/` code.** Instead, use the trait system to dispatch different behavior via separate instantiations.
 
 The pattern is:
-1. **Declare** two overloads in `ethereum/`, constrained with `requires is_evm_trait_v<traits>` and `requires is_monad_trait_v<traits>` (one unconstrained template with a different body per TU would break the ODR)
+1. **Declare** the function template in `ethereum/` with a `Traits` parameter
 2. **Provide a default implementation** in `ethereum/*.cpp`, instantiated with `EXPLICIT_EVM_TRAITS`
 3. **Provide the Monad override** in `monad/*.cpp`, instantiated with `EXPLICIT_MONAD_TRAITS`
 
@@ -116,7 +116,6 @@ Example — `revert_transaction`:
 ```cpp
 // ethereum/reserve_balance.cpp — EVM default: no-op
 template <Traits traits>
-    requires is_evm_trait_v<traits>
 bool revert_transaction(Address const &, Transaction const &,
     uint256_t const &, uint64_t, State &, ChainContext<traits> const &) {
     return false;
@@ -125,7 +124,6 @@ EXPLICIT_EVM_TRAITS(revert_transaction);
 
 // monad/reserve_balance.cpp — Monad override: real implementation
 template <Traits traits>
-    requires is_monad_trait_v<traits>
 bool revert_transaction(Address const &sender, Transaction const &tx,
     uint256_t const &base_fee_per_gas, uint64_t i, State &state,
     ChainContext<traits> const &ctx) {
@@ -134,7 +132,7 @@ bool revert_transaction(Address const &sender, Transaction const &tx,
 EXPLICIT_MONAD_TRAITS(revert_transaction);
 ```
 
-Overload resolution picks the right one — EVM callers get the no-op, Monad callers get the real implementation. No `if constexpr (is_monad_trait_v<traits>)` needed in the shared code.
+The linker picks the right instantiation — EVM callers get the no-op, Monad callers get the real implementation. No `if constexpr (is_monad_trait_v<traits>)` needed in the shared code.
 
 **When branching IS acceptable:**
 - Using `if constexpr` on **feature flags** like `traits::eip_2929_active()` or `traits::evm_rev() >= EVMC_ISTANBUL` is fine — these are per-revision decisions, not monad-vs-EVM decisions.

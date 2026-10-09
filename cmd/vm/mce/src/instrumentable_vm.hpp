@@ -26,6 +26,7 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/vm/compiler/ir/x86.hpp>
 #include <category/vm/evm/message.hpp>
+#include <category/vm/evm/result.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/memory_pool.hpp>
 #include <category/vm/runtime/allocator.hpp>
@@ -39,7 +40,6 @@
 
 #include <asmjit/x86.h>
 #include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 #include <valgrind/cachegrind.h>
 
 #include <cstdint>
@@ -68,7 +68,7 @@ public:
     }
 
     template <monad::Traits traits>
-    evmc::Result execute(Binary &entry, InstrumentationDevice const device)
+    vm::Result execute(Binary &entry, InstrumentationDevice const device)
     {
         switch (device) {
         case InstrumentationDevice::Cachegrind:
@@ -80,7 +80,7 @@ public:
     }
 
     template <monad::Traits traits, InstrumentationDevice device>
-    evmc::Result execute(Binary &entry)
+    vm::Result execute(Binary &entry)
     {
         auto msg_memory = memory_pool_.alloc_ref();
         auto msg = new vm::Message{
@@ -152,7 +152,7 @@ public:
 
         delete msg;
 
-        return ctx.copy_to_evmc_result<traits>();
+        return ctx.copy_to_result<traits>();
     }
 
     void dispatch_execute(

@@ -21,11 +21,9 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/vm/evm/message.hpp>
+#include <category/vm/evm/result.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <monad/test/traits_test.hpp>
-
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 
 #include <gtest/gtest.h>
 
@@ -151,7 +149,7 @@ namespace
     {
         std::string name;
         byte_string input;
-        std::variant<byte_string, evmc_status_code> expected;
+        std::variant<byte_string, monad_status_code> expected;
         int64_t gas;
         std::optional<int64_t> gas_offset;
     };
@@ -167,7 +165,7 @@ namespace
         }
         else {
             MONAD_ASSERT(j.contains("ExpectedError"));
-            t.expected = evmc_status_code::EVMC_PRECOMPILE_FAILURE;
+            t.expected = MONAD_STATUS_PRECOMPILE_FAILURE;
         }
 
         // Expected-to-fail tests don't have a Gas field, so we assign them the
@@ -215,7 +213,7 @@ namespace
          .gas_offset = 3'000},
         {.name = "ecrecover_unrecoverable_key_insufficient_gas",
          .input = ECRECOVER_UNRECOVERABLE_KEY_INPUT,
-         .expected = evmc_status_code::EVMC_OUT_OF_GAS,
+         .expected = MONAD_STATUS_OUT_OF_GAS,
          .gas = 3'000,
          .gas_offset = -1},
         {.name = "ecrecover_valid_key_enough_gas",
@@ -225,7 +223,7 @@ namespace
          .gas_offset = 3'000},
         {.name = "ecrecover_valid_key_insufficient_gas",
          .input = ECRECOVER_VALID_KEY_INPUT,
-         .expected = evmc_status_code::EVMC_OUT_OF_GAS,
+         .expected = MONAD_STATUS_OUT_OF_GAS,
          .gas = 3'000,
          .gas_offset = -1}};
 
@@ -237,7 +235,7 @@ namespace
          .gas_offset = 40},
         {.name = "sha256_empty_insufficient_gas",
          .input = byte_string{},
-         .expected = evmc_status_code::EVMC_OUT_OF_GAS,
+         .expected = MONAD_STATUS_OUT_OF_GAS,
          .gas = 60,
          .gas_offset = -1},
         {.name = "sha256_message_enough_gas",
@@ -247,7 +245,7 @@ namespace
          .gas_offset = 1},
         {.name = "sha256_message_insufficient_gas",
          .input = byte_string{reinterpret_cast<uint8_t const *>("lol"), 3},
-         .expected = evmc_status_code::EVMC_OUT_OF_GAS,
+         .expected = MONAD_STATUS_OUT_OF_GAS,
          .gas = 72,
          .gas_offset = -1}};
 
@@ -259,7 +257,7 @@ namespace
          .gas_offset = 1},
         {.name = "ripemd160_empty_insufficient_gas",
          .input = byte_string{},
-         .expected = evmc_status_code::EVMC_OUT_OF_GAS,
+         .expected = MONAD_STATUS_OUT_OF_GAS,
          .gas = 600,
          .gas_offset = -1},
         {.name = "ripemd160_message_enough_gas",
@@ -269,7 +267,7 @@ namespace
          .gas_offset = 1},
         {.name = "ripemd160_message_insufficient_gas",
          .input = byte_string{reinterpret_cast<uint8_t const *>("lol"), 3},
-         .expected = evmc_status_code::EVMC_OUT_OF_GAS,
+         .expected = MONAD_STATUS_OUT_OF_GAS,
          .gas = 720,
          .gas_offset = -1}};
 
@@ -281,7 +279,7 @@ namespace
          .gas_offset = 1},
         {.name = "identity_empty_insufficient_gas",
          .input = byte_string{},
-         .expected = evmc_status_code::EVMC_OUT_OF_GAS,
+         .expected = MONAD_STATUS_OUT_OF_GAS,
          .gas = 15,
          .gas_offset = -1},
         {.name = "identity_nonempty_enough_gas",
@@ -291,7 +289,7 @@ namespace
          .gas_offset = 1},
         {.name = "identity_nonempty_insufficient_gas",
          .input = byte_string{reinterpret_cast<uint8_t const *>("dead"), 4},
-         .expected = evmc_status_code::EVMC_OUT_OF_GAS,
+         .expected = MONAD_STATUS_OUT_OF_GAS,
          .gas = 18,
          .gas_offset = -1}};
 
@@ -303,7 +301,7 @@ namespace
          .gas_offset = 3'000},
         {.name = "point_evaluation_insufficient_gas",
          .input = POINT_EVALUATION_INPUT,
-         .expected = evmc_status_code::EVMC_OUT_OF_GAS,
+         .expected = MONAD_STATUS_OUT_OF_GAS,
          .gas = 50'000,
          .gas_offset = -1}};
 
@@ -312,7 +310,7 @@ namespace
     static test_case const BLAKE2F_MAX_ROUNDS_TEST_CASES[] = {
         {.name = "blake_2f_max_rounds_gas_cost_only",
          .input = BLAKE2F_MAX_ROUNDS_INPUT,
-         .expected = evmc_status_code::EVMC_OUT_OF_GAS,
+         .expected = MONAD_STATUS_OUT_OF_GAS,
          .gas = 30'000'000,
          .gas_offset = 0}};
 
@@ -336,14 +334,13 @@ namespace
                     .code_address = code_address};
 
                 NoopCallTracer call_tracer{};
-                evmc::Result const result =
+                vm::Result const result =
                     check_call_precompile<traits>(s, call_tracer, input)
                         .value();
 
                 if (auto const *expected_value =
                         std::get_if<byte_string>(&test_case.expected)) {
-                    EXPECT_EQ(
-                        result.status_code, evmc_status_code::EVMC_SUCCESS)
+                    EXPECT_EQ(result.status_code, MONAD_STATUS_SUCCESS)
                         << suite_name << " test case " << test_case.name;
 
                     EXPECT_EQ(result.gas_left, gas_offset)
@@ -363,7 +360,7 @@ namespace
                 else {
                     EXPECT_EQ(
                         result.status_code,
-                        std::get<evmc_status_code>(test_case.expected))
+                        std::get<monad_status_code>(test_case.expected))
                         << suite_name << " test case " << test_case.name;
 
                     EXPECT_EQ(result.gas_left, 0)
@@ -683,9 +680,8 @@ TYPED_TEST(TraitsTest, modexp_truncated_input)
     // would just fail for gas reasons. After Osaka, the large padded
     // modulus size in this example fails to validate.
     static constexpr auto expected_failure =
-        TestFixture::Trait::eip_7823_active()
-            ? evmc_status_code::EVMC_PRECOMPILE_FAILURE
-            : evmc_status_code::EVMC_OUT_OF_GAS;
+        TestFixture::Trait::eip_7823_active() ? MONAD_STATUS_PRECOMPILE_FAILURE
+                                              : MONAD_STATUS_OUT_OF_GAS;
 
     static constexpr auto min_gas = [] {
         if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_OSAKA) {

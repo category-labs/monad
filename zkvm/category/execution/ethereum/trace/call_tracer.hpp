@@ -21,8 +21,7 @@
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/vm/evm/message.hpp>
-
-#include <evmc/evmc.hpp>
+#include <category/vm/evm/result.hpp>
 
 #include <cstdint>
 #include <span>
@@ -35,7 +34,7 @@ struct CallTracerBase
 {
     void on_enter(vm::Message const &) noexcept {}
 
-    void on_exit(evmc::Result const &) noexcept {}
+    void on_exit(vm::Result const &) noexcept {}
 
     void on_log(Receipt::Log) noexcept {}
 

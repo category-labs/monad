@@ -26,10 +26,9 @@
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/vm/evm/message.hpp>
+#include <category/vm/evm/result.hpp>
 #include <category/vm/evm/status_code.h>
 
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 #include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
 
@@ -73,7 +72,7 @@ namespace
 
 void NoopCallTracer::on_enter(vm::Message const &) {}
 
-void NoopCallTracer::on_exit(evmc::Result const &) {}
+void NoopCallTracer::on_exit(vm::Result const &) {}
 
 void NoopCallTracer::on_log(Receipt::Log) {}
 
@@ -161,7 +160,7 @@ void CallTracer::on_enter(vm::Message const &msg)
     last_.push(frames_.size() - 1);
 }
 
-void CallTracer::on_exit(evmc::Result const &res)
+void CallTracer::on_exit(vm::Result const &res)
 {
     MONAD_ASSERT(!frames_.empty());
     MONAD_ASSERT(!last_.empty());
@@ -172,12 +171,13 @@ void CallTracer::on_exit(evmc::Result const &res)
     MONAD_ASSERT(frame.gas >= static_cast<uint64_t>(res.gas_left));
     frame.gas_used = frame.gas - static_cast<uint64_t>(res.gas_left);
 
-    if (res.status_code == EVMC_SUCCESS || res.status_code == EVMC_REVERT) {
+    if (res.status_code == MONAD_STATUS_SUCCESS ||
+        res.status_code == MONAD_STATUS_REVERT) {
         frame.output = res.output_size == 0
                            ? byte_string{}
                            : byte_string{res.output_data, res.output_size};
     }
-    frame.status = from_evmc_status_code(res.status_code);
+    frame.status = res.status_code;
 
     if (frame.type == CallType::CREATE || frame.type == CallType::CREATE2) {
         frame.to = is_zero(res.create_address)

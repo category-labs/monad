@@ -20,6 +20,7 @@
 #include <category/vm/compiler.hpp>
 #include <category/vm/compiler/ir/x86.hpp>
 #include <category/vm/evm/message.hpp>
+#include <category/vm/evm/result.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/host.hpp>
 #include <category/vm/interpreter/execute.hpp>
@@ -136,7 +137,7 @@ namespace monad::vm
             InterpreterOnly
         };
 
-        using ExecuteOverride = std::function<evmc::Result(
+        using ExecuteOverride = std::function<Result(
             Host &host, monad_eth_revision rev, Message const *msg,
             uint8_t const *code, size_t code_size)>;
 
@@ -203,18 +204,18 @@ namespace monad::vm
         /// the varcode if set. Otherwise execute the intercode with
         /// interpreter and potentially start async compilation.
         template <Traits traits>
-        evmc::Result execute(
+        Result execute(
             Host &host, Message const *msg, bytes32_t const &code_hash,
             SharedVarcode const &vcode);
 
         /// Execute the bytecode `code` with interpreter.
         template <Traits traits>
-        evmc::Result execute_bytecode(
+        Result execute_bytecode(
             Host &host, Message const *msg, std::span<uint8_t const> code);
 
         /// Like `execute`, but without stack unwind support.
         template <Traits traits>
-        evmc::Result execute_raw(
+        Result execute_raw(
             runtime::Context &rt_ctx, bytes32_t const &code_hash,
             SharedVarcode const &vcode);
 
@@ -223,23 +224,23 @@ namespace monad::vm
         /// the native entrypoint. Otherwise start async compilation and
         /// execute with interpreter.
         template <Traits traits>
-        evmc::Result cached_compile_and_execute_raw(
+        Result cached_compile_and_execute_raw(
             runtime::Context &rt_ctx, bytes32_t const &code_hash,
             SharedIntercode const &icode);
 
         /// Execute with interpreter, without stack unwind support.
         template <Traits traits>
-        evmc::Result execute_intercode_raw(
+        Result execute_intercode_raw(
             runtime::Context &rt_ctx, SharedIntercode const &icode);
 
         /// Like `execute_bytecode`, but without stack unwind support.
         template <Traits traits>
-        evmc::Result execute_bytecode_raw(
+        Result execute_bytecode_raw(
             runtime::Context &rt_ctx, std::span<uint8_t const> code);
 
         /// Execute the entrypoint, without stack unwind support.
         template <Traits traits>
-        evmc::Result execute_native_entrypoint_raw(
+        Result execute_native_entrypoint_raw(
             runtime::Context &, compiler::native::entrypoint_t);
 
         [[nodiscard]]

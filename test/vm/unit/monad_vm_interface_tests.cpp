@@ -18,6 +18,7 @@
 #include <category/vm/code.hpp>
 #include <category/vm/evm/message.hpp>
 #include <category/vm/evm/opcodes.hpp>
+#include <category/vm/evm/result.hpp>
 #include <category/vm/host.hpp>
 #include <category/vm/runtime/allocator.hpp>
 #include <category/vm/runtime/types.hpp>
@@ -29,8 +30,6 @@
 #include <test/vm/utils/test_message.hpp>
 
 #include <asmjit/core/jitruntime.h>
-
-#include <evmc/evmc.hpp>
 
 #include <gtest/gtest.h>
 
@@ -83,7 +82,7 @@ namespace
     class HostMock : public Host
     {
         size_t calls_before_exception_;
-        std::function<evmc::Result(Host &, Message const &)> call_impl_;
+        std::function<vm::Result(Host &, Message const &)> call_impl_;
         TxContext tx_context_{};
 
     public:
@@ -94,7 +93,7 @@ namespace
 
         HostMock(
             size_t const calls_before_exception,
-            std::function<evmc::Result(Host &, Message const &)> call_impl)
+            std::function<vm::Result(Host &, Message const &)> call_impl)
             : calls_before_exception_{calls_before_exception}
             , call_impl_{std::move(call_impl)}
         {
@@ -144,7 +143,7 @@ namespace
             return false;
         }
 
-        evmc::Result call(Message const &msg) noexcept override
+        vm::Result call(Message const &msg) noexcept override
         {
             try {
                 if (calls_before_exception_-- == 0) {
@@ -423,7 +422,7 @@ TEST(MonadVmInterface, execute_bytecode_raw)
         host, &*msg, {bytecode0.data(), bytecode0.size()});
     auto result = vm.execute_bytecode_raw<TestTraits>(
         rt_ctx, {bytecode0.data(), bytecode0.size()});
-    ASSERT_EQ(result.status_code, EVMC_SUCCESS);
+    ASSERT_EQ(result.status_code, MONAD_STATUS_SUCCESS);
     ASSERT_EQ(result.output_size, 0);
     ASSERT_EQ(result.gas_left, 4);
 }
@@ -442,7 +441,7 @@ TEST(MonadVmInterface, execute_intercode_raw)
     auto rt_ctx = runtime::Context::from(
         host, &*msg, {bytecode0.data(), bytecode0.size()});
     auto result = vm.execute_intercode_raw<TestTraits>(rt_ctx, icode0);
-    ASSERT_EQ(result.status_code, EVMC_SUCCESS);
+    ASSERT_EQ(result.status_code, MONAD_STATUS_SUCCESS);
     ASSERT_EQ(result.output_size, 0);
     ASSERT_EQ(result.gas_left, 4);
 }
@@ -464,7 +463,7 @@ TEST(MonadVmInterface, execute_native_entrypoint_raw)
     auto rt_ctx = runtime::Context::from(
         host, &*msg, {bytecode0.data(), bytecode0.size()});
     auto result = vm.execute_native_entrypoint_raw<TestTraits>(rt_ctx, entry0);
-    ASSERT_EQ(result.status_code, EVMC_SUCCESS);
+    ASSERT_EQ(result.status_code, MONAD_STATUS_SUCCESS);
     ASSERT_EQ(result.output_size, 0);
     ASSERT_EQ(result.gas_left, 4);
 }
@@ -491,7 +490,7 @@ static void test_execute_raw(VM::Mode const mode)
         auto const &icode = vcode->intercode();
         auto rt_ctx = runtime::Context::from(host, &*msg, icode->code_span());
         auto result = vm.execute_raw<traits>(rt_ctx, hash, vcode);
-        ASSERT_EQ(result.status_code, EVMC_SUCCESS);
+        ASSERT_EQ(result.status_code, MONAD_STATUS_SUCCESS);
         ASSERT_EQ(result.output_size, 0);
     };
 
@@ -708,8 +707,7 @@ TEST(MonadVmInterface, execute)
 
     {
         VM vm;
-        HostMock host{
-            0, [&](Host &, Message const &) { return evmc::Result{}; }};
+        HostMock host{0, [&](Host &, Message const &) { return vm::Result{}; }};
         std::vector<uint8_t> bytecode{};
         auto hash = std::bit_cast<bytes32_t>(
             keccak256({bytecode.data(), bytecode.size()}));
@@ -717,7 +715,7 @@ TEST(MonadVmInterface, execute)
         auto vcode = vm.try_insert_varcode(hash, icode);
         auto result =
             vm.execute<EvmTraits<MONAD_ETH_PRAGUE>>(host, &*msg, hash, vcode);
-        ASSERT_EQ(result.status_code, EVMC_SUCCESS);
+        ASSERT_EQ(result.status_code, MONAD_STATUS_SUCCESS);
         ASSERT_EQ(result.output_size, 0);
     }
 
@@ -779,12 +777,11 @@ TEST(MonadVmInterface, execute_bytecode)
     msg->gas = 100'000'000'000'000;
 
     {
-        HostMock host{
-            0, [&](Host &, Message const &) { return evmc::Result{}; }};
+        HostMock host{0, [&](Host &, Message const &) { return vm::Result{}; }};
         std::vector<uint8_t> bytecode{};
         auto result = vm.execute_bytecode<EvmTraits<MONAD_ETH_PRAGUE>>(
             host, &*msg, bytecode);
-        ASSERT_EQ(result.status_code, EVMC_SUCCESS);
+        ASSERT_EQ(result.status_code, MONAD_STATUS_SUCCESS);
         ASSERT_EQ(result.output_size, 0);
     }
 

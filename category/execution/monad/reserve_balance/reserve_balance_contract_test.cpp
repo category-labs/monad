@@ -53,7 +53,6 @@
 #include <test/vm/utils/test_message.hpp>
 
 #include <ankerl/unordered_dense.h>
-#include <evmc/evmc.h>
 
 #include <gtest/gtest.h>
 
@@ -357,16 +356,16 @@ void run_dipped_into_reserve_test(
         auto icode =
             make_shared_intercode(std::span<uint8_t const>{entrypoint_code});
 
-        evmc_status_code expected;
+        monad_status_code expected;
         switch (outcome) {
         case WillRevert:
-            expected = EVMC_REVERT;
+            expected = MONAD_STATUS_REVERT;
             break;
         case WontRevert:
-            expected = EVMC_SUCCESS;
+            expected = MONAD_STATUS_SUCCESS;
             break;
         case ContractMissing:
-            expected = EVMC_FAILURE;
+            expected = MONAD_STATUS_FAILURE;
             break;
         }
 
@@ -402,7 +401,7 @@ TEST_F(ReserveBalanceEvm, precompile_fallback)
             h.chain_ctx_);
 
         auto const result = h.call(m);
-        EXPECT_EQ(result.status_code, EVMC_REVERT);
+        EXPECT_EQ(result.status_code, MONAD_STATUS_REVERT);
         EXPECT_EQ(result.gas_left, 0);
         EXPECT_EQ(result.gas_refund, 0);
         EXPECT_EQ(result.output_size, 20);
@@ -435,7 +434,7 @@ TEST_F(ReserveBalanceEvm, precompile_fallback)
             h.chain_ctx_);
 
         auto const result = h.call(m);
-        EXPECT_EQ(result.status_code, EVMC_OUT_OF_GAS);
+        EXPECT_EQ(result.status_code, MONAD_STATUS_OUT_OF_GAS);
         EXPECT_EQ(result.gas_left, 0);
         EXPECT_EQ(result.gas_refund, 0);
         EXPECT_EQ(result.output_size, 0);
@@ -467,7 +466,7 @@ TEST_F(ReserveBalanceEvm, precompile_dipped_into_reserve_present)
         h.chain_ctx_);
 
     auto const result = h.call(m);
-    EXPECT_EQ(result.status_code, EVMC_SUCCESS);
+    EXPECT_EQ(result.status_code, MONAD_STATUS_SUCCESS);
     EXPECT_EQ(result.gas_left, 0);
     EXPECT_EQ(result.gas_refund, 0);
     EXPECT_EQ(result.output_size, 32);
@@ -498,7 +497,7 @@ TEST_F(ReserveBalanceEvm, precompile_dipped_into_reserve_oog)
         h.chain_ctx_);
 
     auto const result = h.call(m);
-    EXPECT_EQ(result.status_code, EVMC_OUT_OF_GAS);
+    EXPECT_EQ(result.status_code, MONAD_STATUS_OUT_OF_GAS);
     EXPECT_EQ(result.gas_left, 0);
     EXPECT_EQ(result.gas_refund, 0);
     EXPECT_EQ(result.output_size, 0);
@@ -529,7 +528,7 @@ TEST_F(ReserveBalanceEvm, precompile_dipped_into_reserve_with_argument)
         h.chain_ctx_);
 
     auto const result = h.call(m);
-    EXPECT_EQ(result.status_code, EVMC_REVERT);
+    EXPECT_EQ(result.status_code, MONAD_STATUS_REVERT);
     EXPECT_EQ(result.gas_left, 0);
     EXPECT_EQ(result.gas_refund, 0);
     EXPECT_EQ(result.output_size, 16);
@@ -569,7 +568,7 @@ TYPED_TEST(MonadTraitsTest, reverttransaction_revert)
 template <Traits traits>
     requires is_monad_trait_v<traits>
 void run_check_call_precompile_test(
-    State &state, Message const &msg, evmc_status_code expected_status,
+    State &state, Message const &msg, monad_status_code expected_status,
     std::string_view expected_message = "")
 {
     NoopCallTracer call_tracer;
@@ -722,7 +721,7 @@ TYPED_TEST(
 
                             run_check_call_precompile_test<
                                 typename TestFixture::Trait>(
-                                this->state, msg, EVMC_REJECTED);
+                                this->state, msg, MONAD_STATUS_REJECTED);
                         }
                     }
                 }
@@ -744,7 +743,7 @@ TYPED_TEST(
                 msg.input_size = calldata_variant.size();
 
                 run_check_call_precompile_test<typename TestFixture::Trait>(
-                    this->state, msg, EVMC_OUT_OF_GAS);
+                    this->state, msg, MONAD_STATUS_OUT_OF_GAS);
             }
         }
     }
@@ -773,7 +772,10 @@ TYPED_TEST(
                 msg.value = value;
 
                 run_check_call_precompile_test<typename TestFixture::Trait>(
-                    this->state, msg, EVMC_REVERT, "method not supported");
+                    this->state,
+                    msg,
+                    MONAD_STATUS_REVERT,
+                    "method not supported");
             }
         }
     }
@@ -798,7 +800,10 @@ TYPED_TEST(
                 msg.input_data = data;
                 msg.input_size = size;
                 run_check_call_precompile_test<typename TestFixture::Trait>(
-                    this->state, msg, EVMC_REVERT, "method not supported");
+                    this->state,
+                    msg,
+                    MONAD_STATUS_REVERT,
+                    "method not supported");
             }
         }
     }
@@ -820,7 +825,7 @@ TYPED_TEST(
             msg.input_data = data;
             msg.input_size = size;
             run_check_call_precompile_test<typename TestFixture::Trait>(
-                this->state, msg, EVMC_REVERT, "value is nonzero");
+                this->state, msg, MONAD_STATUS_REVERT, "value is nonzero");
         }
     }
 
@@ -832,7 +837,7 @@ TYPED_TEST(
         msg.input_data = too_long.data();
         msg.input_size = too_long.size();
         run_check_call_precompile_test<typename TestFixture::Trait>(
-            this->state, msg, EVMC_REVERT, "input is invalid");
+            this->state, msg, MONAD_STATUS_REVERT, "input is invalid");
     }
 
     // Case 7: A well-formed call that should be accepted.
@@ -856,6 +861,6 @@ TYPED_TEST(
         };
 
         run_check_call_precompile_test<typename TestFixture::Trait>(
-            this->state, msg, EVMC_SUCCESS, expected_message_view);
+            this->state, msg, MONAD_STATUS_SUCCESS, expected_message_view);
     }
 }

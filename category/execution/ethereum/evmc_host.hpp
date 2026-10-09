@@ -34,13 +34,11 @@
 #include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/message.hpp>
 #include <category/vm/evm/page_storage_status.h>
+#include <category/vm/evm/result.hpp>
 #include <category/vm/evm/storage_status.h>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/host.hpp>
 #include <category/vm/runtime/types.hpp>
-
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 
 #include <functional>
 #include <utility>
@@ -166,7 +164,7 @@ struct EvmcHost final : public EvmcHostBase
         stack_unwind();
     }
 
-    virtual evmc::Result call(vm::Message const &msg) override
+    virtual vm::Result call(vm::Message const &msg) override
     {
         MONAD_TRY
         {
@@ -176,8 +174,8 @@ struct EvmcHost final : public EvmcHostBase
                     ::monad::execute_create_message<traits>(this, state_, msg);
 
                 // EIP-211
-                if (result.status_code != EVMC_REVERT) {
-                    result = evmc::Result{
+                if (result.status_code != MONAD_STATUS_REVERT) {
+                    result = vm::Result{
                         result.status_code,
                         result.gas_left,
                         result.gas_refund,

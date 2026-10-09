@@ -88,6 +88,16 @@ namespace
         State &state, StateHost<traits> &host, monad_address const &from,
         monad_address const &to, uint256_t const &value)
     {
+        if constexpr (!is_monad_trait_v<traits>) {
+            // The sender has code or a nonce. Only a recipient without code
+            // can need creation or a touch for EIP-161 cleanup.
+            if (value == 0) {
+                if (!state.has_code(to)) {
+                    state.add_to_balance(to, value);
+                }
+                return;
+            }
+        }
         state.subtract_from_balance(from, value);
         state.add_to_balance(to, value);
         emit_native_transfer_logs<traits>(

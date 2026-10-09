@@ -90,10 +90,13 @@ namespace
         if constexpr (!is_monad_trait_v<traits>) {
             // No value: the debit would only touch the sender, an account
             // with code or a nonce that EIP-161 never removes, and Ethereum
-            // keeps no reserve and emits no transfer event. The recipient's
-            // touch is kept.
+            // keeps no reserve and emits no transfer event. The credit is the
+            // same for a recipient with code; one without keeps its touch,
+            // which EIP-161 reads, and its creation.
             if (value == 0) {
-                state.add_to_balance(to, value);
+                if (!state.has_code(to)) {
+                    state.add_to_balance(to, value);
+                }
                 return;
             }
         }

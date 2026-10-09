@@ -246,15 +246,39 @@ void EvmcHostBase::emit_log(
 {
     MONAD_TRY
     {
-        Receipt::Log log{.data = {data, data_size}, .address = address};
 #if defined(MONAD_ZKVM_ZISK)
         // A topic's bytes are a bytes32_t's, so the topics are taken as one
         // range: one allocation and one copy, where a loop of emplace_back
         // tested the capacity and widened an unsigned index for each topic.
         static_assert(sizeof(bytes32_t) == sizeof(evmc::bytes32));
         auto const *const first = reinterpret_cast<bytes32_t const *>(topics);
-        log.topics.assign(first, first + num_topics);
+
+        // Made where the state keeps it: the list's emplace converts this to
+        // the log it returns, in place. Made here, the log was moved into the
+        // list, its string and vector taken over field by field.
+        struct Maker
+        {
+            evmc::address const &address;
+            uint8_t const *data;
+            size_t data_size;
+            bytes32_t const *first;
+            size_t num_topics;
+
+            operator Receipt::Log() const
+            {
+                return Receipt::Log{
+                    .data = {data, data_size},
+                    .topics = {first, first + num_topics},
+                    .address = address};
+            }
+        };
+
+        Receipt::Log const &log = state_.emplace_log(
+            Maker{address, data, data_size, first, num_topics});
+        call_tracer_.on_log(log);
+        return;
 #else
+        Receipt::Log log{.data = {data, data_size}, .address = address};
         // Reserved: a LOG4 pushes four topics into an empty vector, which
         // reallocates at one, two and four and copies the run forward each
         // time -- 3 allocations and 7 topic copies vs 1 allocation and 4

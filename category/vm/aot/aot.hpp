@@ -24,6 +24,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 
 namespace monad::vm::aot
 {
@@ -32,10 +33,25 @@ namespace monad::vm::aot
         uint64_t hash[4];
         size_t size;
         interpreter::core_loop_fn_t fn;
+        Entry const *next;
     };
+
+    // The entries by the first byte of their code hash: a frame whose code
+    // is not among them reads one empty slot.
+    extern Entry const *const table[256];
 
     // The compiled function for a code of the revision the table was written
     // for, or null.
-    interpreter::core_loop_fn_t
-    find(bytes32_t const &code_hash, size_t code_size) noexcept;
+    [[gnu::always_inline]] inline interpreter::core_loop_fn_t
+    find(bytes32_t const &code_hash, size_t const code_size) noexcept
+    {
+        for (Entry const *e = table[code_hash.bytes[0]]; e != nullptr;
+             e = e->next) {
+            if (e->size == code_size &&
+                std::memcmp(e->hash, code_hash.bytes, 32) == 0) {
+                return e->fn;
+            }
+        }
+        return nullptr;
+    }
 }

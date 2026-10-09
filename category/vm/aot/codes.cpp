@@ -431,7 +431,7 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x60, 0x60, 0x52, 0x60, 0x36, 0x10, 0x61, 0x57}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            aot::mstore<traits>(ctx, gas, uint256_t{0x40ull}, uint256_t{0x60ull});
+            aot::mstore_c<traits, 64u, 96u, 9>(ctx, gas, uint256_t{0x60ull});
             uint256_t const t1 = uint256_t{static_cast<uint64_t>(ctx->env.input_data_size)};
             uint256_t const t2 = aot::from_bool(t1 < uint256_t{0x4ull});
             bool const j7 = aot::nonzero(t2);
@@ -457,7 +457,7 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x80, 0x63, 0x14, 0x61, 0x57}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            uint256_t const s0 = top[0];
+            uint256_t const &s0 = top[0];
             uint256_t const t1 = aot::from_bool(uint256_t{0x95ea7b3ull} == s0);
             bool const j4 = aot::nonzero(t1);
             if (j4) goto B_147;
@@ -468,7 +468,7 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x80, 0x63, 0x14, 0x61, 0x57}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            uint256_t const s0 = top[0];
+            uint256_t const &s0 = top[0];
             uint256_t const t1 = aot::from_bool(uint256_t{0x18160dddull} == s0);
             bool const j4 = aot::nonzero(t1);
             if (j4) goto B_1a1;
@@ -479,7 +479,7 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x80, 0x63, 0x14, 0x61, 0x57}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            uint256_t const s0 = top[0];
+            uint256_t const &s0 = top[0];
             uint256_t const t1 = aot::from_bool(uint256_t{0x23b872ddull} == s0);
             bool const j4 = aot::nonzero(t1);
             if (j4) goto B_1ca;
@@ -490,7 +490,7 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x80, 0x63, 0x14, 0x61, 0x57}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            uint256_t const s0 = top[0];
+            uint256_t const &s0 = top[0];
             uint256_t const t1 = aot::from_bool(uint256_t{0x2e1a7d4dull} == s0);
             bool const j4 = aot::nonzero(t1);
             if (j4) goto B_243;
@@ -501,7 +501,7 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x80, 0x63, 0x14, 0x61, 0x57}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            uint256_t const s0 = top[0];
+            uint256_t const &s0 = top[0];
             uint256_t const t1 = aot::from_bool(uint256_t{0x313ce567ull} == s0);
             bool const j4 = aot::nonzero(t1);
             if (j4) goto B_266;
@@ -512,7 +512,7 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x80, 0x63, 0x14, 0x61, 0x57}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            uint256_t const s0 = top[0];
+            uint256_t const &s0 = top[0];
             uint256_t const t1 = aot::from_bool(uint256_t{0x70a08231ull} == s0);
             bool const j4 = aot::nonzero(t1);
             if (j4) goto B_295;
@@ -523,7 +523,7 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x80, 0x63, 0x14, 0x61, 0x57}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            uint256_t const s0 = top[0];
+            uint256_t const &s0 = top[0];
             uint256_t const t1 = aot::from_bool(uint256_t{0x95d89b41ull} == s0);
             bool const j4 = aot::nonzero(t1);
             if (j4) goto B_2e2;
@@ -534,7 +534,7 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x80, 0x63, 0x14, 0x61, 0x57}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            uint256_t const s0 = top[0];
+            uint256_t const &s0 = top[0];
             uint256_t const t1 = aot::from_bool(uint256_t{0xa9059cbbull} == s0);
             bool const j4 = aot::nonzero(t1);
             if (j4) goto B_370;
@@ -545,7 +545,7 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x80, 0x63, 0x14, 0x61, 0x57}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            uint256_t const s0 = top[0];
+            uint256_t const &s0 = top[0];
             uint256_t const t1 = aot::from_bool(uint256_t{0xd0e30db0ull} == s0);
             bool const j4 = aot::nonzero(t1);
             if (j4) goto B_3ca;
@@ -556,7 +556,7 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x80, 0x63, 0x14, 0x61, 0x57}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            uint256_t const s0 = top[0];
+            uint256_t const &s0 = top[0];
             uint256_t const t1 = aot::from_bool(uint256_t{0xdd62ed3eull} == s0);
             bool const j4 = aot::nonzero(t1);
             if (j4) goto B_3d4;
@@ -610,11 +610,11 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom > 1015)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x60, 0x51, 0x80, 0x80, 0x60, 0x01, 0x82, 0x81, 0x03, 0x82, 0x52, 0x83, 0x81, 0x81, 0x51, 0x81, 0x52, 0x60, 0x01, 0x91, 0x50, 0x80, 0x51, 0x90, 0x60, 0x01, 0x90, 0x80, 0x83, 0x83, 0x60}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            uint256_t const t1 = aot::mload<traits>(ctx, gas, uint256_t{0x40ull});
+            uint256_t const t1 = aot::mload_c<traits, 64u, 96u, 9>(ctx, gas);
             uint256_t const t2 = uint256_t{0x20ull} + t1;
             uint256_t const t3 = t2 - t1;
             aot::mstore<traits>(ctx, gas, t1, t3);
-            uint256_t const s0 = top[0];
+            uint256_t const &s0 = top[0];
             uint256_t const t4 = aot::mload<traits>(ctx, gas, s0);
             aot::mstore<traits>(ctx, gas, t2, t4);
             uint256_t const t5 = uint256_t{0x20ull} + t2;
@@ -637,8 +637,8 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x83, 0x81, 0x10, 0x15, 0x61, 0x57}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            uint256_t const s0 = top[0];
-            uint256_t const s3 = top[-3];
+            uint256_t const &s0 = top[0];
+            uint256_t const &s3 = top[-3];
             uint256_t const t1 = aot::from_bool(s0 < s3);
             uint256_t const t2 = aot::from_bool(!aot::nonzero(t1));
             bool const j6 = aot::nonzero(t2);
@@ -650,11 +650,11 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom > 1021)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x80, 0x82, 0x01, 0x51, 0x81, 0x84, 0x01, 0x52, 0x60, 0x81, 0x01, 0x90, 0x50, 0x61, 0x56}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            uint256_t const s1 = top[-1];
-            uint256_t const s0 = top[0];
+            uint256_t const &s1 = top[-1];
+            uint256_t const &s0 = top[0];
             uint256_t const t1 = s1 + s0;
             uint256_t const t2 = aot::mload<traits>(ctx, gas, t1);
-            uint256_t const s2 = top[-2];
+            uint256_t const &s2 = top[-2];
             uint256_t const t3 = s2 + s0;
             aot::mstore<traits>(ctx, gas, t3, t2);
             uint256_t const t4 = s0 + uint256_t{0x20ull};
@@ -666,8 +666,8 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom < 7)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x50, 0x50, 0x50, 0x50, 0x90, 0x50, 0x90, 0x81, 0x01, 0x90, 0x60, 0x16, 0x80, 0x15, 0x61, 0x57}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            uint256_t const s4 = top[-4];
-            uint256_t const s6 = top[-6];
+            uint256_t const &s4 = top[-4];
+            uint256_t const &s6 = top[-6];
             uint256_t const t1 = s4 + s6;
             uint256_t const t2 = uint256_t{0x1full} & s4;
             uint256_t const t3 = aot::from_bool(!aot::nonzero(t2));
@@ -683,8 +683,8 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom > 1019)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x80, 0x82, 0x03, 0x80, 0x51, 0x60, 0x83, 0x60, 0x03, 0x61, 0x0a, 0x03, 0x19, 0x16, 0x81, 0x52, 0x60, 0x01, 0x91, 0x50}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            uint256_t const s1 = top[-1];
-            uint256_t const s0 = top[0];
+            uint256_t const &s1 = top[-1];
+            uint256_t const &s0 = top[0];
             uint256_t const t1 = s1 - s0;
             uint256_t const t2 = aot::mload<traits>(ctx, gas, t1);
             uint256_t const t3 = uint256_t{0x20ull} - s0;
@@ -702,8 +702,8 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom < 5)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x50, 0x92, 0x50, 0x50, 0x50, 0x60, 0x51, 0x80, 0x91, 0x03, 0x90, 0xf3}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            uint256_t const t1 = aot::mload<traits>(ctx, gas, uint256_t{0x40ull});
-            uint256_t const s1 = top[-1];
+            uint256_t const t1 = aot::mload_c<traits, 64u, 96u, 9>(ctx, gas);
+            uint256_t const &s1 = top[-1];
             uint256_t const t2 = s1 - t1;
             aot::finish(ctx, gas, StatusCode::Success, t1, t2);
             return;
@@ -746,15 +746,15 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom > 1020)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x60, 0x51, 0x80, 0x82, 0x15, 0x15, 0x15, 0x15, 0x81, 0x52, 0x60, 0x01, 0x91, 0x50, 0x50, 0x60, 0x51, 0x80, 0x91, 0x03, 0x90, 0xf3}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            uint256_t const t1 = aot::mload<traits>(ctx, gas, uint256_t{0x40ull});
-            uint256_t const s0 = top[0];
+            uint256_t const t1 = aot::mload_c<traits, 64u, 96u, 9>(ctx, gas);
+            uint256_t const &s0 = top[0];
             uint256_t const t2 = aot::from_bool(!aot::nonzero(s0));
             uint256_t const t3 = aot::from_bool(!aot::nonzero(t2));
             uint256_t const t4 = aot::from_bool(!aot::nonzero(t3));
             uint256_t const t5 = aot::from_bool(!aot::nonzero(t4));
             aot::mstore<traits>(ctx, gas, t1, t5);
             uint256_t const t6 = uint256_t{0x20ull} + t1;
-            uint256_t const t7 = aot::mload<traits>(ctx, gas, uint256_t{0x40ull});
+            uint256_t const t7 = aot::mload_c<traits, 64u, 96u, 9>(ctx, gas);
             uint256_t const t8 = t6 - t7;
             aot::finish(ctx, gas, StatusCode::Success, t7, t8);
             return;
@@ -792,11 +792,11 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom > 1020)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x60, 0x51, 0x80, 0x82, 0x81, 0x52, 0x60, 0x01, 0x91, 0x50, 0x50, 0x60, 0x51, 0x80, 0x91, 0x03, 0x90, 0xf3}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            uint256_t const t1 = aot::mload<traits>(ctx, gas, uint256_t{0x40ull});
-            uint256_t const s0 = top[0];
+            uint256_t const t1 = aot::mload_c<traits, 64u, 96u, 9>(ctx, gas);
+            uint256_t const &s0 = top[0];
             aot::mstore<traits>(ctx, gas, t1, s0);
             uint256_t const t2 = uint256_t{0x20ull} + t1;
-            uint256_t const t3 = aot::mload<traits>(ctx, gas, uint256_t{0x40ull});
+            uint256_t const t3 = aot::mload_c<traits, 64u, 96u, 9>(ctx, gas);
             uint256_t const t4 = t2 - t3;
             aot::finish(ctx, gas, StatusCode::Success, t3, t4);
             return;
@@ -842,15 +842,15 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom > 1020)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x60, 0x51, 0x80, 0x82, 0x15, 0x15, 0x15, 0x15, 0x81, 0x52, 0x60, 0x01, 0x91, 0x50, 0x50, 0x60, 0x51, 0x80, 0x91, 0x03, 0x90, 0xf3}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            uint256_t const t1 = aot::mload<traits>(ctx, gas, uint256_t{0x40ull});
-            uint256_t const s0 = top[0];
+            uint256_t const t1 = aot::mload_c<traits, 64u, 96u, 9>(ctx, gas);
+            uint256_t const &s0 = top[0];
             uint256_t const t2 = aot::from_bool(!aot::nonzero(s0));
             uint256_t const t3 = aot::from_bool(!aot::nonzero(t2));
             uint256_t const t4 = aot::from_bool(!aot::nonzero(t3));
             uint256_t const t5 = aot::from_bool(!aot::nonzero(t4));
             aot::mstore<traits>(ctx, gas, t1, t5);
             uint256_t const t6 = uint256_t{0x20ull} + t1;
-            uint256_t const t7 = aot::mload<traits>(ctx, gas, uint256_t{0x40ull});
+            uint256_t const t7 = aot::mload_c<traits, 64u, 96u, 9>(ctx, gas);
             uint256_t const t8 = t6 - t7;
             aot::finish(ctx, gas, StatusCode::Success, t7, t8);
             return;
@@ -924,13 +924,13 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom > 1020)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x60, 0x51, 0x80, 0x82, 0x60, 0x16, 0x60, 0x16, 0x81, 0x52, 0x60, 0x01, 0x91, 0x50, 0x50, 0x60, 0x51, 0x80, 0x91, 0x03, 0x90, 0xf3}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            uint256_t const t1 = aot::mload<traits>(ctx, gas, uint256_t{0x40ull});
-            uint256_t const s0 = top[0];
+            uint256_t const t1 = aot::mload_c<traits, 64u, 96u, 9>(ctx, gas);
+            uint256_t const &s0 = top[0];
             uint256_t const t2 = uint256_t{0xffull} & s0;
             uint256_t const t3 = uint256_t{0xffull} & t2;
             aot::mstore<traits>(ctx, gas, t1, t3);
             uint256_t const t4 = uint256_t{0x20ull} + t1;
-            uint256_t const t5 = aot::mload<traits>(ctx, gas, uint256_t{0x40ull});
+            uint256_t const t5 = aot::mload_c<traits, 64u, 96u, 9>(ctx, gas);
             uint256_t const t6 = t4 - t5;
             aot::finish(ctx, gas, StatusCode::Success, t5, t6);
             return;
@@ -971,11 +971,11 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom > 1020)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x60, 0x51, 0x80, 0x82, 0x81, 0x52, 0x60, 0x01, 0x91, 0x50, 0x50, 0x60, 0x51, 0x80, 0x91, 0x03, 0x90, 0xf3}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            uint256_t const t1 = aot::mload<traits>(ctx, gas, uint256_t{0x40ull});
-            uint256_t const s0 = top[0];
+            uint256_t const t1 = aot::mload_c<traits, 64u, 96u, 9>(ctx, gas);
+            uint256_t const &s0 = top[0];
             aot::mstore<traits>(ctx, gas, t1, s0);
             uint256_t const t2 = uint256_t{0x20ull} + t1;
-            uint256_t const t3 = aot::mload<traits>(ctx, gas, uint256_t{0x40ull});
+            uint256_t const t3 = aot::mload_c<traits, 64u, 96u, 9>(ctx, gas);
             uint256_t const t4 = t2 - t3;
             aot::finish(ctx, gas, StatusCode::Success, t3, t4);
             return;
@@ -1013,11 +1013,11 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom > 1015)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x60, 0x51, 0x80, 0x80, 0x60, 0x01, 0x82, 0x81, 0x03, 0x82, 0x52, 0x83, 0x81, 0x81, 0x51, 0x81, 0x52, 0x60, 0x01, 0x91, 0x50, 0x80, 0x51, 0x90, 0x60, 0x01, 0x90, 0x80, 0x83, 0x83, 0x60}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            uint256_t const t1 = aot::mload<traits>(ctx, gas, uint256_t{0x40ull});
+            uint256_t const t1 = aot::mload_c<traits, 64u, 96u, 9>(ctx, gas);
             uint256_t const t2 = uint256_t{0x20ull} + t1;
             uint256_t const t3 = t2 - t1;
             aot::mstore<traits>(ctx, gas, t1, t3);
-            uint256_t const s0 = top[0];
+            uint256_t const &s0 = top[0];
             uint256_t const t4 = aot::mload<traits>(ctx, gas, s0);
             aot::mstore<traits>(ctx, gas, t2, t4);
             uint256_t const t5 = uint256_t{0x20ull} + t2;
@@ -1040,8 +1040,8 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x83, 0x81, 0x10, 0x15, 0x61, 0x57}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            uint256_t const s0 = top[0];
-            uint256_t const s3 = top[-3];
+            uint256_t const &s0 = top[0];
+            uint256_t const &s3 = top[-3];
             uint256_t const t1 = aot::from_bool(s0 < s3);
             uint256_t const t2 = aot::from_bool(!aot::nonzero(t1));
             bool const j6 = aot::nonzero(t2);
@@ -1053,11 +1053,11 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom > 1021)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x80, 0x82, 0x01, 0x51, 0x81, 0x84, 0x01, 0x52, 0x60, 0x81, 0x01, 0x90, 0x50, 0x61, 0x56}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            uint256_t const s1 = top[-1];
-            uint256_t const s0 = top[0];
+            uint256_t const &s1 = top[-1];
+            uint256_t const &s0 = top[0];
             uint256_t const t1 = s1 + s0;
             uint256_t const t2 = aot::mload<traits>(ctx, gas, t1);
-            uint256_t const s2 = top[-2];
+            uint256_t const &s2 = top[-2];
             uint256_t const t3 = s2 + s0;
             aot::mstore<traits>(ctx, gas, t3, t2);
             uint256_t const t4 = s0 + uint256_t{0x20ull};
@@ -1069,8 +1069,8 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom < 7)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x50, 0x50, 0x50, 0x50, 0x90, 0x50, 0x90, 0x81, 0x01, 0x90, 0x60, 0x16, 0x80, 0x15, 0x61, 0x57}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            uint256_t const s4 = top[-4];
-            uint256_t const s6 = top[-6];
+            uint256_t const &s4 = top[-4];
+            uint256_t const &s6 = top[-6];
             uint256_t const t1 = s4 + s6;
             uint256_t const t2 = uint256_t{0x1full} & s4;
             uint256_t const t3 = aot::from_bool(!aot::nonzero(t2));
@@ -1086,8 +1086,8 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom > 1019)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x80, 0x82, 0x03, 0x80, 0x51, 0x60, 0x83, 0x60, 0x03, 0x61, 0x0a, 0x03, 0x19, 0x16, 0x81, 0x52, 0x60, 0x01, 0x91, 0x50}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            uint256_t const s1 = top[-1];
-            uint256_t const s0 = top[0];
+            uint256_t const &s1 = top[-1];
+            uint256_t const &s0 = top[0];
             uint256_t const t1 = s1 - s0;
             uint256_t const t2 = aot::mload<traits>(ctx, gas, t1);
             uint256_t const t3 = uint256_t{0x20ull} - s0;
@@ -1105,8 +1105,8 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom < 5)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x50, 0x92, 0x50, 0x50, 0x50, 0x60, 0x51, 0x80, 0x91, 0x03, 0x90, 0xf3}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            uint256_t const t1 = aot::mload<traits>(ctx, gas, uint256_t{0x40ull});
-            uint256_t const s1 = top[-1];
+            uint256_t const t1 = aot::mload_c<traits, 64u, 96u, 9>(ctx, gas);
+            uint256_t const &s1 = top[-1];
             uint256_t const t2 = s1 - t1;
             aot::finish(ctx, gas, StatusCode::Success, t1, t2);
             return;
@@ -1149,15 +1149,15 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom > 1020)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x60, 0x51, 0x80, 0x82, 0x15, 0x15, 0x15, 0x15, 0x81, 0x52, 0x60, 0x01, 0x91, 0x50, 0x50, 0x60, 0x51, 0x80, 0x91, 0x03, 0x90, 0xf3}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            uint256_t const t1 = aot::mload<traits>(ctx, gas, uint256_t{0x40ull});
-            uint256_t const s0 = top[0];
+            uint256_t const t1 = aot::mload_c<traits, 64u, 96u, 9>(ctx, gas);
+            uint256_t const &s0 = top[0];
             uint256_t const t2 = aot::from_bool(!aot::nonzero(s0));
             uint256_t const t3 = aot::from_bool(!aot::nonzero(t2));
             uint256_t const t4 = aot::from_bool(!aot::nonzero(t3));
             uint256_t const t5 = aot::from_bool(!aot::nonzero(t4));
             aot::mstore<traits>(ctx, gas, t1, t5);
             uint256_t const t6 = uint256_t{0x20ull} + t1;
-            uint256_t const t7 = aot::mload<traits>(ctx, gas, uint256_t{0x40ull});
+            uint256_t const t7 = aot::mload_c<traits, 64u, 96u, 9>(ctx, gas);
             uint256_t const t8 = t6 - t7;
             aot::finish(ctx, gas, StatusCode::Success, t7, t8);
             return;
@@ -1217,11 +1217,11 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom > 1020)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x60, 0x51, 0x80, 0x82, 0x81, 0x52, 0x60, 0x01, 0x91, 0x50, 0x50, 0x60, 0x51, 0x80, 0x91, 0x03, 0x90, 0xf3}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            uint256_t const t1 = aot::mload<traits>(ctx, gas, uint256_t{0x40ull});
-            uint256_t const s0 = top[0];
+            uint256_t const t1 = aot::mload_c<traits, 64u, 96u, 9>(ctx, gas);
+            uint256_t const &s0 = top[0];
             aot::mstore<traits>(ctx, gas, t1, s0);
             uint256_t const t2 = uint256_t{0x20ull} + t1;
-            uint256_t const t3 = aot::mload<traits>(ctx, gas, uint256_t{0x40ull});
+            uint256_t const t3 = aot::mload_c<traits, 64u, 96u, 9>(ctx, gas);
             uint256_t const t4 = t2 - t3;
             aot::finish(ctx, gas, StatusCode::Success, t3, t4);
             return;
@@ -1236,8 +1236,8 @@ namespace monad::vm::aot
             uint256_t const t2 = runtime::uint256_from_address(ctx->env.sender);
             uint256_t const t3 = uint256_t{0xffffffffffffffffull, 0xffffffffffffffffull, 0xffffffffull, 0x0ull} & t2;
             uint256_t const t4 = uint256_t{0xffffffffffffffffull, 0xffffffffffffffffull, 0xffffffffull, 0x0ull} & t3;
-            aot::mstore<traits>(ctx, gas, uint256_t{0x0ull}, t4);
-            aot::mstore<traits>(ctx, gas, uint256_t{0x20ull}, uint256_t{0x3ull});
+            aot::mstore_c<traits, 0u, 32u, 3>(ctx, gas, t4);
+            aot::mstore_c<traits, 32u, 64u, 6>(ctx, gas, uint256_t{0x3ull});
             uint256_t const t5 = aot::sha3_n<traits, 64>(ctx, gas, uint256_t{0x0ull});
             uint256_t const t6 = aot::sload<traits>(ctx, gas, t5);
             uint256_t const t7 = t6 + t1;
@@ -1245,14 +1245,14 @@ namespace monad::vm::aot
             uint256_t const t8 = runtime::uint256_from_address(ctx->env.sender);
             uint256_t const t9 = uint256_t{0xffffffffffffffffull, 0xffffffffffffffffull, 0xffffffffull, 0x0ull} & t8;
             uint256_t const t10 = ::monad::load_be<uint256_t>(ctx->env.value);
-            uint256_t const t11 = aot::mload<traits>(ctx, gas, uint256_t{0x40ull});
+            uint256_t const t11 = aot::mload_c<traits, 64u, 96u, 9>(ctx, gas);
             aot::mstore<traits>(ctx, gas, t11, t10);
             uint256_t const t12 = uint256_t{0x20ull} + t11;
-            uint256_t const t13 = aot::mload<traits>(ctx, gas, uint256_t{0x40ull});
+            uint256_t const t13 = aot::mload_c<traits, 64u, 96u, 9>(ctx, gas);
             uint256_t const t14 = t12 - t13;
             aot::log2<traits>(ctx, gas, t13, t14, uint256_t{0xc2402c5c5cc9109cull, 0x4eb5b0d3c460751ull, 0x59f4d29a8bfc6cdaull, 0xe1fffcc4923d04b5ull}, t9);
             gas = ctx->gas_remaining;
-            uint256_t const s0 = top[0];
+            uint256_t const &s0 = top[0];
             jt = aot::jump_offset(s0);
             top += -1;
             goto dyn;
@@ -1273,9 +1273,9 @@ namespace monad::vm::aot
             uint256_t const t9 = aot::shr_c<5>(t8);
             uint256_t const t10 = aot::shl_c<5>(t9);
             uint256_t const t11 = uint256_t{0x20ull} + t10;
-            uint256_t const t12 = aot::mload<traits>(ctx, gas, uint256_t{0x40ull});
+            uint256_t const t12 = aot::mload_c<traits, 64u, 96u, 9>(ctx, gas);
             uint256_t const t13 = t12 + t11;
-            aot::mstore<traits>(ctx, gas, uint256_t{0x40ull}, t13);
+            aot::mstore_c<traits, 64u, 96u, 9>(ctx, gas, t13);
             aot::mstore<traits>(ctx, gas, t12, t7);
             uint256_t const t14 = uint256_t{0x20ull} + t12;
             uint256_t const t15 = aot::sload<traits>(ctx, gas, uint256_t{0x0ull});
@@ -1302,7 +1302,7 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x80, 0x60, 0x10, 0x61, 0x57}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            uint256_t const s0 = top[0];
+            uint256_t const &s0 = top[0];
             uint256_t const t1 = aot::from_bool(uint256_t{0x1full} < s0);
             bool const j4 = aot::nonzero(t1);
             if (j4) goto B_548;
@@ -1313,11 +1313,11 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom > 1021)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x61, 0x80, 0x83, 0x54, 0x04, 0x02, 0x83, 0x52, 0x91, 0x60, 0x01, 0x91, 0x61, 0x56}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            uint256_t const s1 = top[-1];
+            uint256_t const &s1 = top[-1];
             uint256_t const t1 = aot::sload<traits>(ctx, gas, s1);
             uint256_t const t2 = aot::shr_c<8>(t1);
             uint256_t const t3 = aot::shl_c<8>(t2);
-            uint256_t const s2 = top[-2];
+            uint256_t const &s2 = top[-2];
             aot::mstore<traits>(ctx, gas, s2, t3);
             uint256_t const t4 = uint256_t{0x20ull} + s2;
             top[-2] = t4;
@@ -1329,15 +1329,16 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom > 1023)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x82, 0x01, 0x91, 0x90, 0x60, 0x52, 0x60, 0x60, 0x20, 0x90}) + 6;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            uint256_t const s2 = top[-2];
-            uint256_t const s0 = top[0];
+            uint256_t const &s2 = top[-2];
+            uint256_t const &s0 = top[0];
             uint256_t const t1 = s2 + s0;
-            uint256_t const s1 = top[-1];
-            aot::mstore<traits>(ctx, gas, uint256_t{0x0ull}, s1);
+            uint256_t const &s1 = top[-1];
+            aot::mstore_c<traits, 0u, 32u, 3>(ctx, gas, s1);
             uint256_t const t2 = aot::sha3_n<traits, 32>(ctx, gas, uint256_t{0x0ull});
+            uint256_t const m2 = s2;
             top[-2] = t1;
             top[-1] = t2;
-            top[0] = s2;
+            top[0] = m2;
         }
         B_556: {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x81, 0x54, 0x81, 0x52, 0x90, 0x60, 0x01, 0x90, 0x60, 0x01, 0x80, 0x83, 0x11, 0x61, 0x57}, 3, 2));
@@ -1345,13 +1346,13 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x81, 0x54, 0x81, 0x52, 0x90, 0x60, 0x01, 0x90, 0x60, 0x01, 0x80, 0x83, 0x11, 0x61, 0x57}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            uint256_t const s1 = top[-1];
+            uint256_t const &s1 = top[-1];
             uint256_t const t1 = aot::sload<traits>(ctx, gas, s1);
-            uint256_t const s0 = top[0];
+            uint256_t const &s0 = top[0];
             aot::mstore<traits>(ctx, gas, s0, t1);
             uint256_t const t2 = uint256_t{0x1ull} + s1;
             uint256_t const t3 = uint256_t{0x20ull} + s0;
-            uint256_t const s2 = top[-2];
+            uint256_t const &s2 = top[-2];
             uint256_t const t4 = aot::from_bool(t3 < s2);
             bool const j15 = aot::nonzero(t4);
             top[-1] = t2;
@@ -1364,20 +1365,21 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom > 1023)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x82, 0x90, 0x03, 0x60, 0x16, 0x82, 0x01, 0x91}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            uint256_t const s0 = top[0];
-            uint256_t const s2 = top[-2];
+            uint256_t const &s0 = top[0];
+            uint256_t const &s2 = top[-2];
             uint256_t const t1 = s0 - s2;
             uint256_t const t2 = uint256_t{0x1full} & t1;
             uint256_t const t3 = s2 + t2;
+            uint256_t const m2 = s2;
             top[-2] = t3;
-            top[0] = s2;
+            top[0] = m2;
         }
         B_573: {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x50, 0x50, 0x50, 0x50, 0x50, 0x81, 0x56}, 7, 0));
             if (MONAD_UNLIKELY(top - bottom < 7)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x50, 0x50, 0x50, 0x50, 0x50, 0x81, 0x56}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            uint256_t const s6 = top[-6];
+            uint256_t const &s6 = top[-6];
             jt = aot::jump_offset(s6);
             top += -5;
             goto dyn;
@@ -1391,28 +1393,28 @@ namespace monad::vm::aot
             uint256_t const t1 = runtime::uint256_from_address(ctx->env.sender);
             uint256_t const t2 = uint256_t{0xffffffffffffffffull, 0xffffffffffffffffull, 0xffffffffull, 0x0ull} & t1;
             uint256_t const t3 = uint256_t{0xffffffffffffffffull, 0xffffffffffffffffull, 0xffffffffull, 0x0ull} & t2;
-            aot::mstore<traits>(ctx, gas, uint256_t{0x0ull}, t3);
-            aot::mstore<traits>(ctx, gas, uint256_t{0x20ull}, uint256_t{0x4ull});
+            aot::mstore_c<traits, 0u, 32u, 3>(ctx, gas, t3);
+            aot::mstore_c<traits, 32u, 64u, 6>(ctx, gas, uint256_t{0x4ull});
             uint256_t const t4 = aot::sha3_n<traits, 64>(ctx, gas, uint256_t{0x0ull});
-            uint256_t const s1 = top[-1];
+            uint256_t const &s1 = top[-1];
             uint256_t const t5 = uint256_t{0xffffffffffffffffull, 0xffffffffffffffffull, 0xffffffffull, 0x0ull} & s1;
             uint256_t const t6 = uint256_t{0xffffffffffffffffull, 0xffffffffffffffffull, 0xffffffffull, 0x0ull} & t5;
-            aot::mstore<traits>(ctx, gas, uint256_t{0x0ull}, t6);
-            aot::mstore<traits>(ctx, gas, uint256_t{0x20ull}, t4);
+            aot::mstore_c<traits, 0u, 32u, 3>(ctx, gas, t6);
+            aot::mstore_c<traits, 32u, 64u, 6>(ctx, gas, t4);
             uint256_t const t7 = aot::sha3_n<traits, 64>(ctx, gas, uint256_t{0x0ull});
-            uint256_t const s0 = top[0];
+            uint256_t const &s0 = top[0];
             aot::sstore<traits>(ctx, gas, t7, s0, (aot::gas_of<traits>({0x50, 0x82, 0x73, 0x16, 0x33, 0x73, 0x16, 0x7f, 0x84, 0x60, 0x51, 0x80, 0x82, 0x81, 0x52, 0x60, 0x01, 0x91, 0x50, 0x50, 0x60, 0x51, 0x80, 0x91, 0x03, 0x90, 0xa3, 0x60, 0x90, 0x50, 0x92, 0x91, 0x50, 0x50, 0x56}) + 0));
             uint256_t const t8 = uint256_t{0xffffffffffffffffull, 0xffffffffffffffffull, 0xffffffffull, 0x0ull} & s1;
             uint256_t const t9 = runtime::uint256_from_address(ctx->env.sender);
             uint256_t const t10 = uint256_t{0xffffffffffffffffull, 0xffffffffffffffffull, 0xffffffffull, 0x0ull} & t9;
-            uint256_t const t11 = aot::mload<traits>(ctx, gas, uint256_t{0x40ull});
+            uint256_t const t11 = aot::mload_c<traits, 64u, 96u, 9>(ctx, gas);
             aot::mstore<traits>(ctx, gas, t11, s0);
             uint256_t const t12 = uint256_t{0x20ull} + t11;
-            uint256_t const t13 = aot::mload<traits>(ctx, gas, uint256_t{0x40ull});
+            uint256_t const t13 = aot::mload_c<traits, 64u, 96u, 9>(ctx, gas);
             uint256_t const t14 = t12 - t13;
             aot::log3<traits>(ctx, gas, t13, t14, uint256_t{0x5b200ac8c7c3b925ull, 0xdd0314c0f7b2291eull, 0xd14f71427d1e84f3ull, 0x8c5be1e5ebec7d5bull}, t10, t8);
             gas = ctx->gas_remaining;
-            uint256_t const s2 = top[-2];
+            uint256_t const &s2 = top[-2];
             jt = aot::jump_offset(s2);
             top[-2] = uint256_t{0x1ull};
             top += -2;
@@ -1428,7 +1430,7 @@ namespace monad::vm::aot
             uint256_t const t2 = uint256_t{0xffffffffffffffffull, 0xffffffffffffffffull, 0xffffffffull, 0x0ull} & t1;
             auto const r5 = aot::balance<traits>(ctx, gas, t2);
             gas = ctx->gas_remaining;
-            uint256_t const s0 = top[0];
+            uint256_t const &s0 = top[0];
             jt = aot::jump_offset(s0);
             top[0] = r5;
             goto dyn;
@@ -1439,14 +1441,14 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom > 1018)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x60, 0x81, 0x60, 0x60, 0x86, 0x73, 0x16, 0x73, 0x16, 0x81, 0x52, 0x60, 0x01, 0x90, 0x81, 0x52, 0x60, 0x01, 0x60, 0x20, 0x54, 0x10, 0x15, 0x15, 0x15, 0x61, 0x57}) + 12;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            uint256_t const s2 = top[-2];
+            uint256_t const &s2 = top[-2];
             uint256_t const t1 = uint256_t{0xffffffffffffffffull, 0xffffffffffffffffull, 0xffffffffull, 0x0ull} & s2;
             uint256_t const t2 = uint256_t{0xffffffffffffffffull, 0xffffffffffffffffull, 0xffffffffull, 0x0ull} & t1;
-            aot::mstore<traits>(ctx, gas, uint256_t{0x0ull}, t2);
-            aot::mstore<traits>(ctx, gas, uint256_t{0x20ull}, uint256_t{0x3ull});
+            aot::mstore_c<traits, 0u, 32u, 3>(ctx, gas, t2);
+            aot::mstore_c<traits, 32u, 64u, 6>(ctx, gas, uint256_t{0x3ull});
             uint256_t const t3 = aot::sha3_n<traits, 64>(ctx, gas, uint256_t{0x0ull});
             uint256_t const t4 = aot::sload<traits>(ctx, gas, t3);
-            uint256_t const s0 = top[0];
+            uint256_t const &s0 = top[0];
             uint256_t const t5 = aot::from_bool(t4 < s0);
             uint256_t const t6 = aot::from_bool(!aot::nonzero(t5));
             uint256_t const t7 = aot::from_bool(!aot::nonzero(t6));
@@ -1472,7 +1474,7 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
             uint256_t const t1 = runtime::uint256_from_address(ctx->env.sender);
             uint256_t const t2 = uint256_t{0xffffffffffffffffull, 0xffffffffffffffffull, 0xffffffffull, 0x0ull} & t1;
-            uint256_t const s3 = top[-3];
+            uint256_t const &s3 = top[-3];
             uint256_t const t3 = uint256_t{0xffffffffffffffffull, 0xffffffffffffffffull, 0xffffffffull, 0x0ull} & s3;
             uint256_t const t4 = aot::from_bool(t3 == t2);
             uint256_t const t5 = aot::from_bool(!aot::nonzero(t4));
@@ -1488,17 +1490,17 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom > 1020)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x50, 0x7f, 0x60, 0x60, 0x86, 0x73, 0x16, 0x73, 0x16, 0x81, 0x52, 0x60, 0x01, 0x90, 0x81, 0x52, 0x60, 0x01, 0x60, 0x20, 0x60, 0x33, 0x73, 0x16, 0x73, 0x16, 0x81, 0x52, 0x60, 0x01, 0x90, 0x81, 0x52, 0x60, 0x01, 0x60, 0x20, 0x54, 0x14, 0x15}) + 24;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            uint256_t const s4 = top[-4];
+            uint256_t const &s4 = top[-4];
             uint256_t const t1 = uint256_t{0xffffffffffffffffull, 0xffffffffffffffffull, 0xffffffffull, 0x0ull} & s4;
             uint256_t const t2 = uint256_t{0xffffffffffffffffull, 0xffffffffffffffffull, 0xffffffffull, 0x0ull} & t1;
-            aot::mstore<traits>(ctx, gas, uint256_t{0x0ull}, t2);
-            aot::mstore<traits>(ctx, gas, uint256_t{0x20ull}, uint256_t{0x4ull});
+            aot::mstore_c<traits, 0u, 32u, 3>(ctx, gas, t2);
+            aot::mstore_c<traits, 32u, 64u, 6>(ctx, gas, uint256_t{0x4ull});
             uint256_t const t3 = aot::sha3_n<traits, 64>(ctx, gas, uint256_t{0x0ull});
             uint256_t const t4 = runtime::uint256_from_address(ctx->env.sender);
             uint256_t const t5 = uint256_t{0xffffffffffffffffull, 0xffffffffffffffffull, 0xffffffffull, 0x0ull} & t4;
             uint256_t const t6 = uint256_t{0xffffffffffffffffull, 0xffffffffffffffffull, 0xffffffffull, 0x0ull} & t5;
-            aot::mstore<traits>(ctx, gas, uint256_t{0x0ull}, t6);
-            aot::mstore<traits>(ctx, gas, uint256_t{0x20ull}, t3);
+            aot::mstore_c<traits, 0u, 32u, 3>(ctx, gas, t6);
+            aot::mstore_c<traits, 32u, 64u, 6>(ctx, gas, t3);
             uint256_t const t7 = aot::sha3_n<traits, 64>(ctx, gas, uint256_t{0x0ull});
             uint256_t const t8 = aot::sload<traits>(ctx, gas, t7);
             uint256_t const t9 = aot::from_bool(t8 == uint256_t{0xffffffffffffffffull, 0xffffffffffffffffull, 0xffffffffffffffffull, 0xffffffffffffffffull});
@@ -1511,7 +1513,7 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom > 1023)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x15, 0x61, 0x57}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            uint256_t const s0 = top[0];
+            uint256_t const &s0 = top[0];
             uint256_t const t1 = aot::from_bool(!aot::nonzero(s0));
             bool const j3 = aot::nonzero(t1);
             top += -1;
@@ -1523,20 +1525,20 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom > 1019)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x81, 0x60, 0x60, 0x86, 0x73, 0x16, 0x73, 0x16, 0x81, 0x52, 0x60, 0x01, 0x90, 0x81, 0x52, 0x60, 0x01, 0x60, 0x20, 0x60, 0x33, 0x73, 0x16, 0x73, 0x16, 0x81, 0x52, 0x60, 0x01, 0x90, 0x81, 0x52, 0x60, 0x01, 0x60, 0x20, 0x54, 0x10, 0x15, 0x15, 0x15, 0x61, 0x57}) + 24;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            uint256_t const s3 = top[-3];
+            uint256_t const &s3 = top[-3];
             uint256_t const t1 = uint256_t{0xffffffffffffffffull, 0xffffffffffffffffull, 0xffffffffull, 0x0ull} & s3;
             uint256_t const t2 = uint256_t{0xffffffffffffffffull, 0xffffffffffffffffull, 0xffffffffull, 0x0ull} & t1;
-            aot::mstore<traits>(ctx, gas, uint256_t{0x0ull}, t2);
-            aot::mstore<traits>(ctx, gas, uint256_t{0x20ull}, uint256_t{0x4ull});
+            aot::mstore_c<traits, 0u, 32u, 3>(ctx, gas, t2);
+            aot::mstore_c<traits, 32u, 64u, 6>(ctx, gas, uint256_t{0x4ull});
             uint256_t const t3 = aot::sha3_n<traits, 64>(ctx, gas, uint256_t{0x0ull});
             uint256_t const t4 = runtime::uint256_from_address(ctx->env.sender);
             uint256_t const t5 = uint256_t{0xffffffffffffffffull, 0xffffffffffffffffull, 0xffffffffull, 0x0ull} & t4;
             uint256_t const t6 = uint256_t{0xffffffffffffffffull, 0xffffffffffffffffull, 0xffffffffull, 0x0ull} & t5;
-            aot::mstore<traits>(ctx, gas, uint256_t{0x0ull}, t6);
-            aot::mstore<traits>(ctx, gas, uint256_t{0x20ull}, t3);
+            aot::mstore_c<traits, 0u, 32u, 3>(ctx, gas, t6);
+            aot::mstore_c<traits, 32u, 64u, 6>(ctx, gas, t3);
             uint256_t const t7 = aot::sha3_n<traits, 64>(ctx, gas, uint256_t{0x0ull});
             uint256_t const t8 = aot::sload<traits>(ctx, gas, t7);
-            uint256_t const s1 = top[-1];
+            uint256_t const &s1 = top[-1];
             uint256_t const t9 = aot::from_bool(t8 < s1);
             uint256_t const t10 = aot::from_bool(!aot::nonzero(t9));
             uint256_t const t11 = aot::from_bool(!aot::nonzero(t10));
@@ -1558,20 +1560,20 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom > 1019)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x81, 0x60, 0x60, 0x86, 0x73, 0x16, 0x73, 0x16, 0x81, 0x52, 0x60, 0x01, 0x90, 0x81, 0x52, 0x60, 0x01, 0x60, 0x20, 0x60, 0x33, 0x73, 0x16, 0x73, 0x16, 0x81, 0x52, 0x60, 0x01, 0x90, 0x81, 0x52, 0x60, 0x01, 0x60, 0x20, 0x60, 0x82, 0x82, 0x54, 0x03, 0x92, 0x50, 0x50, 0x81, 0x90, 0x55, 0x50}) + 24;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            uint256_t const s3 = top[-3];
+            uint256_t const &s3 = top[-3];
             uint256_t const t1 = uint256_t{0xffffffffffffffffull, 0xffffffffffffffffull, 0xffffffffull, 0x0ull} & s3;
             uint256_t const t2 = uint256_t{0xffffffffffffffffull, 0xffffffffffffffffull, 0xffffffffull, 0x0ull} & t1;
-            aot::mstore<traits>(ctx, gas, uint256_t{0x0ull}, t2);
-            aot::mstore<traits>(ctx, gas, uint256_t{0x20ull}, uint256_t{0x4ull});
+            aot::mstore_c<traits, 0u, 32u, 3>(ctx, gas, t2);
+            aot::mstore_c<traits, 32u, 64u, 6>(ctx, gas, uint256_t{0x4ull});
             uint256_t const t3 = aot::sha3_n<traits, 64>(ctx, gas, uint256_t{0x0ull});
             uint256_t const t4 = runtime::uint256_from_address(ctx->env.sender);
             uint256_t const t5 = uint256_t{0xffffffffffffffffull, 0xffffffffffffffffull, 0xffffffffull, 0x0ull} & t4;
             uint256_t const t6 = uint256_t{0xffffffffffffffffull, 0xffffffffffffffffull, 0xffffffffull, 0x0ull} & t5;
-            aot::mstore<traits>(ctx, gas, uint256_t{0x0ull}, t6);
-            aot::mstore<traits>(ctx, gas, uint256_t{0x20ull}, t3);
+            aot::mstore_c<traits, 0u, 32u, 3>(ctx, gas, t6);
+            aot::mstore_c<traits, 32u, 64u, 6>(ctx, gas, t3);
             uint256_t const t7 = aot::sha3_n<traits, 64>(ctx, gas, uint256_t{0x0ull});
             uint256_t const t8 = aot::sload<traits>(ctx, gas, t7);
-            uint256_t const s1 = top[-1];
+            uint256_t const &s1 = top[-1];
             uint256_t const t9 = t8 - s1;
             aot::sstore<traits>(ctx, gas, t7, t9, (aot::gas_of<traits>({0x50}) + 0));
         }
@@ -1581,35 +1583,35 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom > 1016)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x81, 0x60, 0x60, 0x86, 0x73, 0x16, 0x73, 0x16, 0x81, 0x52, 0x60, 0x01, 0x90, 0x81, 0x52, 0x60, 0x01, 0x60, 0x20, 0x60, 0x82, 0x82, 0x54, 0x03, 0x92, 0x50, 0x50, 0x81, 0x90, 0x55, 0x50, 0x81, 0x60, 0x60, 0x85, 0x73, 0x16, 0x73, 0x16, 0x81, 0x52, 0x60, 0x01, 0x90, 0x81, 0x52, 0x60, 0x01, 0x60, 0x20, 0x60, 0x82, 0x82, 0x54, 0x01, 0x92, 0x50, 0x50, 0x81, 0x90, 0x55, 0x50, 0x82, 0x73, 0x16, 0x84, 0x73, 0x16, 0x7f, 0x84, 0x60, 0x51, 0x80, 0x82, 0x81, 0x52, 0x60, 0x01, 0x91, 0x50, 0x50, 0x60, 0x51, 0x80, 0x91, 0x03, 0x90, 0xa3, 0x60, 0x90, 0x50, 0x93, 0x92, 0x50, 0x50, 0x50, 0x56}) + 24;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            uint256_t const s3 = top[-3];
+            uint256_t const &s3 = top[-3];
             uint256_t const t1 = uint256_t{0xffffffffffffffffull, 0xffffffffffffffffull, 0xffffffffull, 0x0ull} & s3;
             uint256_t const t2 = uint256_t{0xffffffffffffffffull, 0xffffffffffffffffull, 0xffffffffull, 0x0ull} & t1;
-            aot::mstore<traits>(ctx, gas, uint256_t{0x0ull}, t2);
-            aot::mstore<traits>(ctx, gas, uint256_t{0x20ull}, uint256_t{0x3ull});
+            aot::mstore_c<traits, 0u, 32u, 3>(ctx, gas, t2);
+            aot::mstore_c<traits, 32u, 64u, 6>(ctx, gas, uint256_t{0x3ull});
             uint256_t const t3 = aot::sha3_n<traits, 64>(ctx, gas, uint256_t{0x0ull});
             uint256_t const t4 = aot::sload<traits>(ctx, gas, t3);
-            uint256_t const s1 = top[-1];
+            uint256_t const &s1 = top[-1];
             uint256_t const t5 = t4 - s1;
             aot::sstore<traits>(ctx, gas, t3, t5, (aot::gas_of<traits>({0x50, 0x81, 0x60, 0x60, 0x85, 0x73, 0x16, 0x73, 0x16, 0x81, 0x52, 0x60, 0x01, 0x90, 0x81, 0x52, 0x60, 0x01, 0x60, 0x20, 0x60, 0x82, 0x82, 0x54, 0x01, 0x92, 0x50, 0x50, 0x81, 0x90, 0x55, 0x50, 0x82, 0x73, 0x16, 0x84, 0x73, 0x16, 0x7f, 0x84, 0x60, 0x51, 0x80, 0x82, 0x81, 0x52, 0x60, 0x01, 0x91, 0x50, 0x50, 0x60, 0x51, 0x80, 0x91, 0x03, 0x90, 0xa3, 0x60, 0x90, 0x50, 0x93, 0x92, 0x50, 0x50, 0x50, 0x56}) + 12));
-            uint256_t const s2 = top[-2];
+            uint256_t const &s2 = top[-2];
             uint256_t const t6 = uint256_t{0xffffffffffffffffull, 0xffffffffffffffffull, 0xffffffffull, 0x0ull} & s2;
             uint256_t const t7 = uint256_t{0xffffffffffffffffull, 0xffffffffffffffffull, 0xffffffffull, 0x0ull} & t6;
-            aot::mstore<traits>(ctx, gas, uint256_t{0x0ull}, t7);
-            aot::mstore<traits>(ctx, gas, uint256_t{0x20ull}, uint256_t{0x3ull});
+            aot::mstore_c<traits, 0u, 32u, 3>(ctx, gas, t7);
+            aot::mstore_c<traits, 32u, 64u, 6>(ctx, gas, uint256_t{0x3ull});
             uint256_t const t8 = aot::sha3_n<traits, 64>(ctx, gas, uint256_t{0x0ull});
             uint256_t const t9 = aot::sload<traits>(ctx, gas, t8);
             uint256_t const t10 = t9 + s1;
             aot::sstore<traits>(ctx, gas, t8, t10, (aot::gas_of<traits>({0x50, 0x82, 0x73, 0x16, 0x84, 0x73, 0x16, 0x7f, 0x84, 0x60, 0x51, 0x80, 0x82, 0x81, 0x52, 0x60, 0x01, 0x91, 0x50, 0x50, 0x60, 0x51, 0x80, 0x91, 0x03, 0x90, 0xa3, 0x60, 0x90, 0x50, 0x93, 0x92, 0x50, 0x50, 0x50, 0x56}) + 0));
             uint256_t const t11 = uint256_t{0xffffffffffffffffull, 0xffffffffffffffffull, 0xffffffffull, 0x0ull} & s2;
             uint256_t const t12 = uint256_t{0xffffffffffffffffull, 0xffffffffffffffffull, 0xffffffffull, 0x0ull} & s3;
-            uint256_t const t13 = aot::mload<traits>(ctx, gas, uint256_t{0x40ull});
+            uint256_t const t13 = aot::mload_c<traits, 64u, 96u, 9>(ctx, gas);
             aot::mstore<traits>(ctx, gas, t13, s1);
             uint256_t const t14 = uint256_t{0x20ull} + t13;
-            uint256_t const t15 = aot::mload<traits>(ctx, gas, uint256_t{0x40ull});
+            uint256_t const t15 = aot::mload_c<traits, 64u, 96u, 9>(ctx, gas);
             uint256_t const t16 = t14 - t15;
             aot::log3<traits>(ctx, gas, t15, t16, uint256_t{0x28f55a4df523b3efull, 0x952ba7f163c4a116ull, 0x69c2b068fc378daaull, 0xddf252ad1be2c89bull}, t12, t11);
             gas = ctx->gas_remaining;
-            uint256_t const s4 = top[-4];
+            uint256_t const &s4 = top[-4];
             jt = aot::jump_offset(s4);
             top[-4] = uint256_t{0x1ull};
             top += -4;
@@ -1624,11 +1626,11 @@ namespace monad::vm::aot
             uint256_t const t1 = runtime::uint256_from_address(ctx->env.sender);
             uint256_t const t2 = uint256_t{0xffffffffffffffffull, 0xffffffffffffffffull, 0xffffffffull, 0x0ull} & t1;
             uint256_t const t3 = uint256_t{0xffffffffffffffffull, 0xffffffffffffffffull, 0xffffffffull, 0x0ull} & t2;
-            aot::mstore<traits>(ctx, gas, uint256_t{0x0ull}, t3);
-            aot::mstore<traits>(ctx, gas, uint256_t{0x20ull}, uint256_t{0x3ull});
+            aot::mstore_c<traits, 0u, 32u, 3>(ctx, gas, t3);
+            aot::mstore_c<traits, 32u, 64u, 6>(ctx, gas, uint256_t{0x3ull});
             uint256_t const t4 = aot::sha3_n<traits, 64>(ctx, gas, uint256_t{0x0ull});
             uint256_t const t5 = aot::sload<traits>(ctx, gas, t4);
-            uint256_t const s0 = top[0];
+            uint256_t const &s0 = top[0];
             uint256_t const t6 = aot::from_bool(t5 < s0);
             uint256_t const t7 = aot::from_bool(!aot::nonzero(t6));
             uint256_t const t8 = aot::from_bool(!aot::nonzero(t7));
@@ -1653,19 +1655,19 @@ namespace monad::vm::aot
             uint256_t const t1 = runtime::uint256_from_address(ctx->env.sender);
             uint256_t const t2 = uint256_t{0xffffffffffffffffull, 0xffffffffffffffffull, 0xffffffffull, 0x0ull} & t1;
             uint256_t const t3 = uint256_t{0xffffffffffffffffull, 0xffffffffffffffffull, 0xffffffffull, 0x0ull} & t2;
-            aot::mstore<traits>(ctx, gas, uint256_t{0x0ull}, t3);
-            aot::mstore<traits>(ctx, gas, uint256_t{0x20ull}, uint256_t{0x3ull});
+            aot::mstore_c<traits, 0u, 32u, 3>(ctx, gas, t3);
+            aot::mstore_c<traits, 32u, 64u, 6>(ctx, gas, uint256_t{0x3ull});
             uint256_t const t4 = aot::sha3_n<traits, 64>(ctx, gas, uint256_t{0x0ull});
             uint256_t const t5 = aot::sload<traits>(ctx, gas, t4);
-            uint256_t const s0 = top[0];
+            uint256_t const &s0 = top[0];
             uint256_t const t6 = t5 - s0;
             aot::sstore<traits>(ctx, gas, t4, t6, (aot::gas_of<traits>({0x50, 0x33, 0x73, 0x16, 0x61, 0x82, 0x90, 0x81, 0x15, 0x02, 0x90, 0x60, 0x51, 0x60, 0x60, 0x51, 0x80, 0x83, 0x03, 0x81, 0x85, 0x88, 0x88, 0xf1, 0x93, 0x50, 0x50, 0x50, 0x50, 0x15, 0x15, 0x61, 0x57}) + 0));
             uint256_t const t7 = runtime::uint256_from_address(ctx->env.sender);
             uint256_t const t8 = uint256_t{0xffffffffffffffffull, 0xffffffffffffffffull, 0xffffffffull, 0x0ull} & t7;
             uint256_t const t9 = aot::from_bool(!aot::nonzero(s0));
             uint256_t const t10 = aot::mul(t9, uint256_t{0x8fcull});
-            uint256_t const t11 = aot::mload<traits>(ctx, gas, uint256_t{0x40ull});
-            uint256_t const t12 = aot::mload<traits>(ctx, gas, uint256_t{0x40ull});
+            uint256_t const t11 = aot::mload_c<traits, 64u, 96u, 9>(ctx, gas);
+            uint256_t const t12 = aot::mload_c<traits, 64u, 96u, 9>(ctx, gas);
             uint256_t const t13 = t11 - t12;
             auto const c54 = aot::call<traits>(ctx, gas, t10, t8, s0, t12, t13, t12, uint256_t{0x0ull}, (aot::gas_of<traits>({0x93, 0x50, 0x50, 0x50, 0x50, 0x15, 0x15, 0x61, 0x57}) + 0));
             gas = ctx->gas_remaining;
@@ -1690,15 +1692,15 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
             uint256_t const t1 = runtime::uint256_from_address(ctx->env.sender);
             uint256_t const t2 = uint256_t{0xffffffffffffffffull, 0xffffffffffffffffull, 0xffffffffull, 0x0ull} & t1;
-            uint256_t const t3 = aot::mload<traits>(ctx, gas, uint256_t{0x40ull});
-            uint256_t const s0 = top[0];
+            uint256_t const t3 = aot::mload_c<traits, 64u, 96u, 9>(ctx, gas);
+            uint256_t const &s0 = top[0];
             aot::mstore<traits>(ctx, gas, t3, s0);
             uint256_t const t4 = uint256_t{0x20ull} + t3;
-            uint256_t const t5 = aot::mload<traits>(ctx, gas, uint256_t{0x40ull});
+            uint256_t const t5 = aot::mload_c<traits, 64u, 96u, 9>(ctx, gas);
             uint256_t const t6 = t4 - t5;
             aot::log2<traits>(ctx, gas, t5, t6, uint256_t{0x7268a95bf5081b65ull, 0x30d808c7d98cb3bfull, 0xbd6d0e038bea71dull, 0x7fcf532c15f0a6dbull}, t2);
             gas = ctx->gas_remaining;
-            uint256_t const s1 = top[-1];
+            uint256_t const &s1 = top[-1];
             jt = aot::jump_offset(s1);
             top += -2;
             goto dyn;
@@ -1711,7 +1713,7 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
             uint256_t const t1 = aot::sload<traits>(ctx, gas, uint256_t{0x2ull});
             uint256_t const t2 = uint256_t{0xffull} & t1;
-            uint256_t const s0 = top[0];
+            uint256_t const &s0 = top[0];
             jt = aot::jump_offset(s0);
             top[1] = t2;
             top += 1;
@@ -1723,12 +1725,12 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x60, 0x60, 0x52, 0x80, 0x60, 0x52, 0x60, 0x60, 0x20, 0x60, 0x91, 0x50, 0x90, 0x50, 0x54, 0x81, 0x56}) + 12;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            aot::mstore<traits>(ctx, gas, uint256_t{0x20ull}, uint256_t{0x3ull});
-            uint256_t const s0 = top[0];
-            aot::mstore<traits>(ctx, gas, uint256_t{0x0ull}, s0);
+            aot::mstore_c<traits, 32u, 64u, 6>(ctx, gas, uint256_t{0x3ull});
+            uint256_t const &s0 = top[0];
+            aot::mstore_c<traits, 0u, 32u, 3>(ctx, gas, s0);
             uint256_t const t1 = aot::sha3_n<traits, 64>(ctx, gas, uint256_t{0x0ull});
             uint256_t const t2 = aot::sload<traits>(ctx, gas, t1);
-            uint256_t const s1 = top[-1];
+            uint256_t const &s1 = top[-1];
             jt = aot::jump_offset(s1);
             top[0] = t2;
             goto dyn;
@@ -1749,9 +1751,9 @@ namespace monad::vm::aot
             uint256_t const t9 = aot::shr_c<5>(t8);
             uint256_t const t10 = aot::shl_c<5>(t9);
             uint256_t const t11 = uint256_t{0x20ull} + t10;
-            uint256_t const t12 = aot::mload<traits>(ctx, gas, uint256_t{0x40ull});
+            uint256_t const t12 = aot::mload_c<traits, 64u, 96u, 9>(ctx, gas);
             uint256_t const t13 = t12 + t11;
-            aot::mstore<traits>(ctx, gas, uint256_t{0x40ull}, t13);
+            aot::mstore_c<traits, 64u, 96u, 9>(ctx, gas, t13);
             aot::mstore<traits>(ctx, gas, t12, t7);
             uint256_t const t14 = uint256_t{0x20ull} + t12;
             uint256_t const t15 = aot::sload<traits>(ctx, gas, uint256_t{0x1ull});
@@ -1778,7 +1780,7 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x80, 0x60, 0x10, 0x61, 0x57}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            uint256_t const s0 = top[0];
+            uint256_t const &s0 = top[0];
             uint256_t const t1 = aot::from_bool(uint256_t{0x1full} < s0);
             bool const j4 = aot::nonzero(t1);
             if (j4) goto B_b9b;
@@ -1789,11 +1791,11 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom > 1021)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x61, 0x80, 0x83, 0x54, 0x04, 0x02, 0x83, 0x52, 0x91, 0x60, 0x01, 0x91, 0x61, 0x56}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            uint256_t const s1 = top[-1];
+            uint256_t const &s1 = top[-1];
             uint256_t const t1 = aot::sload<traits>(ctx, gas, s1);
             uint256_t const t2 = aot::shr_c<8>(t1);
             uint256_t const t3 = aot::shl_c<8>(t2);
-            uint256_t const s2 = top[-2];
+            uint256_t const &s2 = top[-2];
             aot::mstore<traits>(ctx, gas, s2, t3);
             uint256_t const t4 = uint256_t{0x20ull} + s2;
             top[-2] = t4;
@@ -1805,15 +1807,16 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom > 1023)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x82, 0x01, 0x91, 0x90, 0x60, 0x52, 0x60, 0x60, 0x20, 0x90}) + 6;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            uint256_t const s2 = top[-2];
-            uint256_t const s0 = top[0];
+            uint256_t const &s2 = top[-2];
+            uint256_t const &s0 = top[0];
             uint256_t const t1 = s2 + s0;
-            uint256_t const s1 = top[-1];
-            aot::mstore<traits>(ctx, gas, uint256_t{0x0ull}, s1);
+            uint256_t const &s1 = top[-1];
+            aot::mstore_c<traits, 0u, 32u, 3>(ctx, gas, s1);
             uint256_t const t2 = aot::sha3_n<traits, 32>(ctx, gas, uint256_t{0x0ull});
+            uint256_t const m2 = s2;
             top[-2] = t1;
             top[-1] = t2;
-            top[0] = s2;
+            top[0] = m2;
         }
         B_ba9: {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x81, 0x54, 0x81, 0x52, 0x90, 0x60, 0x01, 0x90, 0x60, 0x01, 0x80, 0x83, 0x11, 0x61, 0x57}, 3, 2));
@@ -1821,13 +1824,13 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x81, 0x54, 0x81, 0x52, 0x90, 0x60, 0x01, 0x90, 0x60, 0x01, 0x80, 0x83, 0x11, 0x61, 0x57}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            uint256_t const s1 = top[-1];
+            uint256_t const &s1 = top[-1];
             uint256_t const t1 = aot::sload<traits>(ctx, gas, s1);
-            uint256_t const s0 = top[0];
+            uint256_t const &s0 = top[0];
             aot::mstore<traits>(ctx, gas, s0, t1);
             uint256_t const t2 = uint256_t{0x1ull} + s1;
             uint256_t const t3 = uint256_t{0x20ull} + s0;
-            uint256_t const s2 = top[-2];
+            uint256_t const &s2 = top[-2];
             uint256_t const t4 = aot::from_bool(t3 < s2);
             bool const j15 = aot::nonzero(t4);
             top[-1] = t2;
@@ -1840,20 +1843,21 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom > 1023)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x82, 0x90, 0x03, 0x60, 0x16, 0x82, 0x01, 0x91}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            uint256_t const s0 = top[0];
-            uint256_t const s2 = top[-2];
+            uint256_t const &s0 = top[0];
+            uint256_t const &s2 = top[-2];
             uint256_t const t1 = s0 - s2;
             uint256_t const t2 = uint256_t{0x1full} & t1;
             uint256_t const t3 = s2 + t2;
+            uint256_t const m2 = s2;
             top[-2] = t3;
-            top[0] = s2;
+            top[0] = m2;
         }
         B_bc6: {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x50, 0x50, 0x50, 0x50, 0x50, 0x81, 0x56}, 7, 0));
             if (MONAD_UNLIKELY(top - bottom < 7)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x50, 0x50, 0x50, 0x50, 0x50, 0x81, 0x56}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            uint256_t const s6 = top[-6];
+            uint256_t const &s6 = top[-6];
             jt = aot::jump_offset(s6);
             top += -5;
             goto dyn;
@@ -1865,13 +1869,15 @@ namespace monad::vm::aot
             gas -= aot::gas_of<traits>({0x5b, 0x60, 0x61, 0x33, 0x84, 0x84, 0x61, 0x56}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
             uint256_t const t1 = runtime::uint256_from_address(ctx->env.sender);
-            uint256_t const s1 = top[-1];
-            uint256_t const s0 = top[0];
+            uint256_t const &s1 = top[-1];
+            uint256_t const m1 = s1;
+            uint256_t const &s0 = top[0];
+            uint256_t const m0 = s0;
             top[1] = uint256_t{0x0ull};
             top[2] = uint256_t{0xbdbull};
             top[3] = t1;
-            top[4] = s1;
-            top[5] = s0;
+            top[4] = m1;
+            top[5] = m0;
             top += 5;
             goto B_68c;
         }
@@ -1880,10 +1886,11 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom < 5)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x90, 0x50, 0x92, 0x91, 0x50, 0x50, 0x56}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            uint256_t const s4 = top[-4];
+            uint256_t const &s4 = top[-4];
             jt = aot::jump_offset(s4);
-            uint256_t const s0 = top[0];
-            top[-4] = s0;
+            uint256_t const &s0 = top[0];
+            uint256_t const m0 = s0;
+            top[-4] = m0;
             top += -4;
             goto dyn;
         }
@@ -1893,16 +1900,16 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x60, 0x60, 0x52, 0x81, 0x60, 0x52, 0x60, 0x60, 0x20, 0x60, 0x52, 0x80, 0x60, 0x52, 0x60, 0x60, 0x20, 0x60, 0x91, 0x50, 0x91, 0x50, 0x50, 0x54, 0x81, 0x56}) + 24;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            aot::mstore<traits>(ctx, gas, uint256_t{0x20ull}, uint256_t{0x4ull});
-            uint256_t const s1 = top[-1];
-            aot::mstore<traits>(ctx, gas, uint256_t{0x0ull}, s1);
+            aot::mstore_c<traits, 32u, 64u, 6>(ctx, gas, uint256_t{0x4ull});
+            uint256_t const &s1 = top[-1];
+            aot::mstore_c<traits, 0u, 32u, 3>(ctx, gas, s1);
             uint256_t const t1 = aot::sha3_n<traits, 64>(ctx, gas, uint256_t{0x0ull});
-            aot::mstore<traits>(ctx, gas, uint256_t{0x20ull}, t1);
-            uint256_t const s0 = top[0];
-            aot::mstore<traits>(ctx, gas, uint256_t{0x0ull}, s0);
+            aot::mstore_c<traits, 32u, 64u, 6>(ctx, gas, t1);
+            uint256_t const &s0 = top[0];
+            aot::mstore_c<traits, 0u, 32u, 3>(ctx, gas, s0);
             uint256_t const t2 = aot::sha3_n<traits, 64>(ctx, gas, uint256_t{0x0ull});
             uint256_t const t3 = aot::sload<traits>(ctx, gas, t2);
-            uint256_t const s2 = top[-2];
+            uint256_t const &s2 = top[-2];
             jt = aot::jump_offset(s2);
             top[-1] = t3;
             top += -1;
@@ -1921,23 +1928,44 @@ namespace monad::vm::aot
 
     using Osaka = EvmTraits<MONAD_ETH_OSAKA>;
 
-    // By code hash, in four little-endian words of its bytes.
-    inline constexpr Entry entries[] = {
-        {{0x3b8647ac126ba0d0u, 0xadea2d5c18e47b5cu, 0x7d6cf5337055611cu, 0x235eb2cb2944a74eu}, 3124, &code_d0a06b12ac47863b<Osaka>},
-    };
+    constexpr Entry entry_0{
+        {0x3b8647ac126ba0d0u, 0xadea2d5c18e47b5cu, 0x7d6cf5337055611cu, 0x235eb2cb2944a74eu},
+        3124,
+        &code_d0a06b12ac47863b<Osaka>,
+        nullptr};
 
-    interpreter::core_loop_fn_t
-    find(bytes32_t const &code_hash, size_t const code_size) noexcept
-    {
-        uint64_t w[4];
-        std::memcpy(w, code_hash.bytes, 32);
-        for (auto const &e : entries) {
-            if (((w[0] ^ e.hash[0]) | (w[1] ^ e.hash[1]) | (w[2] ^ e.hash[2]) |
-                 (w[3] ^ e.hash[3])) == 0 &&
-                code_size == e.size) {
-                return e.fn;
-            }
-        }
-        return nullptr;
-    }
+    Entry const *const table[256] = {
+        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+        &entry_0, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+    };
 }

@@ -106,7 +106,7 @@ namespace monad::vm::aot
 
     template <Traits traits>
     [[gnu::noinline, gnu::cold]] uint256_t
-    mload_grow(Context *const ctx, int64_t const gas, uint256_t const offset)
+    mload_grow(Context *const ctx, int64_t const gas, uint256_t const &offset)
     {
         ctx->gas_remaining = gas;
         uint256_t r;
@@ -136,8 +136,8 @@ namespace monad::vm::aot
 
     template <Traits traits>
     [[gnu::noinline]] void mstore_grow(
-        Context *const ctx, int64_t const gas, uint256_t const offset,
-        uint256_t const value)
+        Context *const ctx, int64_t const gas, uint256_t const &offset,
+        uint256_t const &value)
     {
         ctx->gas_remaining = gas;
         runtime::mstore<traits>(ctx, &offset, &value);
@@ -162,10 +162,61 @@ namespace monad::vm::aot
             &value);
     }
 
+    // The memory grown to NEW_SIZE bytes, whose cost is NEW_COST, for a
+    // 32-byte access at the constant offset OFF that reaches past it: the
+    // interpreter's mstore_grow, its sizes folded. Returns the gas left.
+    template <Traits traits, uint32_t OFF, uint32_t NEW_SIZE, int64_t NEW_COST>
+    [[gnu::noinline]] int64_t grow32(Context *const ctx, int64_t gas)
+    {
+        static_assert(!traits::mip_3_active());
+        static_assert(NEW_SIZE % 32 == 0 && NEW_SIZE >= OFF + 32);
+        static_assert(
+            NEW_COST == Context::memory_cost_from_word_count<traits>(
+                            runtime::Bin<25>::unsafe_from(NEW_SIZE / 32)));
+        if (MONAD_LIKELY(ctx->memory.capacity >= NEW_SIZE)) {
+            gas -= NEW_COST - ctx->memory.cost;
+            if (MONAD_UNLIKELY(gas < 0)) {
+                ctx->exit(StatusCode::OutOfGas);
+            }
+            ctx->memory.size = NEW_SIZE;
+            ctx->memory_access32_end = NEW_SIZE - 31;
+            ctx->memory.cost = NEW_COST;
+            return gas;
+        }
+        ctx->gas_remaining = gas;
+        ctx->expand_memory<traits>(
+            runtime::Memory::Offset::unsafe_from(OFF) + runtime::bin<32>);
+        return ctx->gas_remaining;
+    }
+
+    template <Traits traits, uint32_t OFF, uint32_t NEW_SIZE, int64_t NEW_COST>
+    [[gnu::always_inline]] inline uint256_t
+    mload_c(Context *const ctx, int64_t &gas)
+    {
+        if (MONAD_UNLIKELY(ctx->memory_access32_end <= OFF)) {
+            gas = grow32<traits, OFF, NEW_SIZE, NEW_COST>(ctx, gas);
+        }
+        uint256_t r;
+        runtime::mload_at<traits>(
+            ctx, &r, runtime::Memory::Offset::unsafe_from(OFF));
+        return r;
+    }
+
+    template <Traits traits, uint32_t OFF, uint32_t NEW_SIZE, int64_t NEW_COST>
+    [[gnu::always_inline]] inline void
+    mstore_c(Context *const ctx, int64_t &gas, uint256_t const &value)
+    {
+        if (MONAD_UNLIKELY(ctx->memory_access32_end <= OFF)) {
+            gas = grow32<traits, OFF, NEW_SIZE, NEW_COST>(ctx, gas);
+        }
+        runtime::mstore_at<traits>(
+            ctx, runtime::Memory::Offset::unsafe_from(OFF), &value);
+    }
+
     template <Traits traits>
     [[gnu::noinline]] void mstore8(
-        Context *const ctx, int64_t const gas, uint256_t const offset,
-        uint256_t const value)
+        Context *const ctx, int64_t const gas, uint256_t const &offset,
+        uint256_t const &value)
     {
         ctx->gas_remaining = gas;
         runtime::mstore8<traits>(ctx, &offset, &value);
@@ -175,8 +226,8 @@ namespace monad::vm::aot
 
     template <Traits traits>
     [[gnu::noinline]] uint256_t sha3_any(
-        Context *const ctx, int64_t const gas, uint256_t const offset,
-        uint256_t const size)
+        Context *const ctx, int64_t const gas, uint256_t const &offset,
+        uint256_t const &size)
     {
         ctx->gas_remaining = gas;
         uint256_t r;
@@ -305,8 +356,8 @@ namespace monad::vm::aot
 
     template <Traits traits>
     [[gnu::noinline]] uint256_t exp(
-        Context *const ctx, int64_t const gas, uint256_t const base,
-        uint256_t const exponent)
+        Context *const ctx, int64_t const gas, uint256_t const &base,
+        uint256_t const &exponent)
     {
         ctx->gas_remaining = gas;
         uint256_t r;
@@ -326,7 +377,7 @@ namespace monad::vm::aot
 
     template <Traits traits>
     [[gnu::noinline]] uint256_t
-    balance(Context *const ctx, int64_t const gas, uint256_t const address)
+    balance(Context *const ctx, int64_t const gas, uint256_t const &address)
     {
         ctx->gas_remaining = gas;
         uint256_t r;
@@ -361,8 +412,8 @@ namespace monad::vm::aot
 
     template <Traits traits>
     [[gnu::noinline]] void log2(
-        Context *const ctx, int64_t const gas, uint256_t const offset,
-        uint256_t const size, uint256_t const t1, uint256_t const t2)
+        Context *const ctx, int64_t const gas, uint256_t const &offset,
+        uint256_t const &size, uint256_t const &t1, uint256_t const &t2)
     {
         ctx->gas_remaining = gas;
         runtime::log2<traits>(ctx, &offset, &size, &t1, &t2);
@@ -370,9 +421,9 @@ namespace monad::vm::aot
 
     template <Traits traits>
     [[gnu::noinline]] void log3(
-        Context *const ctx, int64_t const gas, uint256_t const offset,
-        uint256_t const size, uint256_t const t1, uint256_t const t2,
-        uint256_t const t3)
+        Context *const ctx, int64_t const gas, uint256_t const &offset,
+        uint256_t const &size, uint256_t const &t1, uint256_t const &t2,
+        uint256_t const &t3)
     {
         ctx->gas_remaining = gas;
         runtime::log3<traits>(ctx, &offset, &size, &t1, &t2, &t3);
@@ -380,10 +431,10 @@ namespace monad::vm::aot
 
     template <Traits traits>
     [[gnu::noinline]] uint256_t call(
-        Context *const ctx, int64_t const gas, uint256_t const g,
-        uint256_t const address, uint256_t const value,
-        uint256_t const args_offset, uint256_t const args_size,
-        uint256_t const ret_offset, uint256_t const ret_size,
+        Context *const ctx, int64_t const gas, uint256_t const &g,
+        uint256_t const &address, uint256_t const &value,
+        uint256_t const &args_offset, uint256_t const &args_size,
+        uint256_t const &ret_offset, uint256_t const &ret_size,
         int64_t const remaining_block_base_gas)
     {
         ctx->gas_remaining = gas;

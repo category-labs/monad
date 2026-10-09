@@ -734,15 +734,24 @@ bool State::is_current_incarnation(monad_address const &address)
     return false;
 }
 
+template <typename Output>
 inline void State::current_storage_into(
     AccountState const &account_state, monad_address const &address,
-    bytes32_t const &key, bytes32_t &out)
+    bytes32_t const &key, Output &out)
 {
+    auto const write_value = [&out](bytes32_t const &value) {
+        if constexpr (std::is_same_v<Output, uint256_t>) {
+            out = load_be<uint256_t>(value);
+        }
+        else {
+            out = value;
+        }
+    };
     auto const &account = account_state.account_;
     MONAD_ASSERT(account.has_value());
     auto const &storage = account_state.storage_;
     if (auto const *const stored_value = storage.find(key); stored_value) {
-        out = *stored_value;
+        write_value(*stored_value);
         return;
     }
     MONAD_ASSERT(account_state.original_state_ != nullptr);
@@ -756,7 +765,7 @@ inline void State::current_storage_into(
     auto &original_storage = original_account_state.prestate_storage_;
     if (auto const *const original_value = original_storage.find(key);
         original_value) {
-        out = *original_value;
+        write_value(*original_value);
     }
     else {
 #ifdef MONAD_ZKVM_ZISK
@@ -770,7 +779,7 @@ inline void State::current_storage_into(
             address, account.value().incarnation, key);
 #endif
         original_storage.insert(key, value);
-        out = value;
+        write_value(value);
     }
 }
 
@@ -1031,7 +1040,7 @@ EXPLICIT_TRAITS_MEMBER(State::access_storage);
 template <Traits traits>
 AccessStatus State::sload_full(
     monad_address const &address, bytes32_t const &key,
-    bool const can_pay_cold_access, bytes32_t &out)
+    bool const can_pay_cold_access, uint256_t &out)
 {
     auto &account_state = current_account_state(address);
     AccessStatus const status =
@@ -1044,7 +1053,7 @@ AccessStatus State::sload_full(
 
 AccessStatus State::sload_cold(
     monad_address const &address, bytes32_t const &key,
-    bool const can_pay_cold_access, bytes32_t &out, AccountState &account_state)
+    bool const can_pay_cold_access, uint256_t &out, AccountState &account_state)
 {
     account_state.add_accessed_storage(key);
     journal_warm_slot(address, key);
@@ -1056,7 +1065,7 @@ AccessStatus State::sload_cold(
 
 // The caller checked that the current and original incarnations match.
 AccessStatus State::sload_read(
-    monad_address const &address, bytes32_t const &key, bytes32_t &out,
+    monad_address const &address, bytes32_t const &key, uint256_t &out,
     OriginalAccountState &original_state)
 {
     bytes32_t const &value = block_state_.read_storage(
@@ -1065,7 +1074,7 @@ AccessStatus State::sload_read(
         original_state.account_.value().incarnation,
         key);
     original_state.prestate_storage_.insert(key, value);
-    out = value;
+    out = load_be<uint256_t>(value);
     return AccessStatus::Warm;
 }
 
@@ -1074,7 +1083,7 @@ AccessStatus State::sload_read(
 template <Traits traits>
 AccessStatus State::sload_into(
     monad_address const &address, bytes32_t const &key,
-    bool const can_pay_cold_access, bytes32_t &out)
+    bool const can_pay_cold_access, uint256_t &out)
 {
     if constexpr (!traits::mip_8_active()) {
         AccountState *const current_state =
@@ -1093,7 +1102,7 @@ AccessStatus State::sload_into(
                 if (auto const *const cached_value =
                         current_state->storage_.find(key);
                     cached_value) {
-                    out = *cached_value;
+                    out = load_be<uint256_t>(*cached_value);
                     return AccessStatus::Warm;
                 }
                 if (MONAD_LIKELY(original_state != nullptr)) {
@@ -1107,7 +1116,7 @@ AccessStatus State::sload_into(
                     if (auto const *const cached_value =
                             original_state->prestate_storage_.find(key);
                         cached_value) {
-                        out = *cached_value;
+                        out = load_be<uint256_t>(*cached_value);
                         return AccessStatus::Warm;
                     }
                     return sload_read(address, key, out, *original_state);

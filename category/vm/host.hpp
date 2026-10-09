@@ -108,7 +108,7 @@ namespace monad::vm
         /// The caller must charge cold-access gas before using value.
         virtual AccessStatus sload_into(
             Address const &address, bytes32_t const &key,
-            bool can_pay_cold_access, bytes32_t &value) noexcept = 0;
+            bool can_pay_cold_access, uint256_t &value) noexcept = 0;
 
         // Warm the slot, then write if it was warm or the cold access is
         // affordable.
@@ -200,7 +200,7 @@ namespace monad::vm::runtime
     // concrete host lets the compiler inline its methods.
     template <Traits traits>
     AccessStatus guest_sload_into(
-        Host &, Address const &, bytes32_t const &, bool, bytes32_t &) noexcept;
+        Host &, Address const &, bytes32_t const &, bool, uint256_t &) noexcept;
 
     template <Traits traits>
     SstoreStatus guest_sstore_into(

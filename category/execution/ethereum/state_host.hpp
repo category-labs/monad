@@ -251,7 +251,7 @@ struct StateHost final : public StateHostBase
 #if defined(MONAD_ZKVM_ZISK)
     virtual AccessStatus sload_into(
         Address const &address, bytes32_t const &key,
-        bool const can_pay_cold_access, bytes32_t &value) noexcept override
+        bool const can_pay_cold_access, uint256_t &value) noexcept override
     {
         MONAD_TRY
         {

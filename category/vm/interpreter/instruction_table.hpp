@@ -1756,15 +1756,89 @@ namespace monad::vm::interpreter
     }
 
     // Data
+#if defined(MONAD_ZKVM_ZISK)
+    // SHA3 past runtime::sha3_memo, out of line so that a hash the memo
+    // holds takes no frame. The checks have run; do not repeat them.
+    template <Traits traits>
+    [[gnu::noinline]] MONAD_VM_TWIN_CALL void sha3_hash(
+        runtime::Context &ctx, MONAD_VM_ANALYSIS_PARAM,
+        uint256_t const *stack_bottom, uint256_t *stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+    {
+        MONAD_VM_TWIN_ENTRY();
+        call_runtime(
+            runtime::sha3<base_traits<traits>>, ctx, stack_top, gas_remaining);
+
+        MONAD_VM_NEXT(SHA3);
+    }
+
+    // The 64 bytes sha3 found inside the memory but not in the memo: hashed
+    // and kept, their gas charged.
+    template <Traits traits>
+    [[gnu::noinline]] MONAD_VM_TWIN_CALL void sha3_fill(
+        runtime::Context &ctx, MONAD_VM_ANALYSIS_PARAM,
+        uint256_t const *stack_bottom, uint256_t *stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+    {
+        MONAD_VM_TWIN_ENTRY();
+        runtime::sha3_memo_fill(
+            reinterpret_cast<uint64_t const *>(
+                ctx.memory.data + stack_top[0][0]),
+            &stack_top[-1]);
+        gas_remaining -= 12;
+
+        MONAD_VM_NEXT(SHA3);
+    }
+
+#endif
     template <Traits traits>
     MONAD_VM_INSTRUCTION_CALL void sha3(
         runtime::Context &ctx, MONAD_VM_ANALYSIS_PARAM,
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
+#if defined(MONAD_ZKVM_ZISK)
+        MONAD_VM_CHECK(SHA3);
+        // 64 bytes at an 8-aligned offset inside the memory, with their two
+        // words of gas: the memo's word if it holds them, else sha3_fill.
+        // Anything else goes through sha3_hash.
+        uint256_t const &offset = stack_top[0];
+        uint256_t const &size = stack_top[-1];
+        uint64_t const o = offset[0];
+        uint64_t const end = ctx.memory_access32_end;
+        if (MONAD_UNLIKELY(
+                ((size[0] ^ 64) | size[1] | size[2] | size[3]) != 0 ||
+                ((o & 7) | offset[1] | offset[2] | offset[3]) != 0 ||
+                o >= end || o + 32 >= end || gas_remaining < 12)) {
+            MONAD_VM_MUST_TAIL return sha3_hash<quiet_traits<traits>>(
+                ctx,
+                MONAD_VM_ANALYSIS_ARG,
+                stack_bottom,
+                stack_top,
+                gas_remaining,
+                MONAD_VM_AS_CALLED(instr_ptr) MONAD_VM_TBL_ARG);
+        }
+        auto const *const in =
+            reinterpret_cast<uint64_t const *>(ctx.memory.data + o);
+        runtime::Sha3Memo const &e = runtime::sha3_memo_entry(in);
+        if (MONAD_UNLIKELY(!runtime::sha3_memo_holds(e, in))) {
+            MONAD_VM_MUST_TAIL return sha3_fill<quiet_traits<traits>>(
+                ctx,
+                MONAD_VM_ANALYSIS_ARG,
+                stack_bottom,
+                stack_top,
+                gas_remaining,
+                MONAD_VM_AS_CALLED(instr_ptr) MONAD_VM_TBL_ARG);
+        }
+        gas_remaining -= 12;
+        stack_top[-1] = e.out;
+
+        MONAD_VM_NEXT(SHA3);
+#else
         MONAD_VM_CHECKED_RUNTIME_CALL(SHA3, runtime::sha3<base_traits<traits>>);
 
         MONAD_VM_NEXT(SHA3);
+#endif
     }
 
     template <Traits traits>

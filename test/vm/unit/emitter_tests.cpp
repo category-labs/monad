@@ -4105,6 +4105,102 @@ TEST(Emitter, MemoryRepeatedOffset)
     memory_repeated_offset_test_impl<runtime::Memory::Version::MIP3>();
 }
 
+template <runtime::Memory::Version memory_version>
+static void memory_repeated_literal_offset_test_impl()
+{
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from(
+        {PUSH1,    1,     PUSH1, 64,       MSTORE, PUSH1, 2,     PUSH1, 32,
+         MSTORE,   PUSH1, 64,    MLOAD,    PUSH1,  96,    MLOAD, ADD,   MSIZE,
+         PUSH1,    27,    JUMP,  JUMPDEST, PUSH2,  1,     0,     MLOAD, STOP,
+         JUMPDEST, PUSH1, 160,   MLOAD,    POP,    RETURN});
+
+    asmjit::JitRuntime rt;
+    TestEmitter emit{rt, ir.codesize};
+    for (auto const &[k, _] : ir.jump_dests()) {
+        emit.add_jump_dest(k);
+    }
+    (void)emit.begin_new_block(ir.blocks().at(0));
+    emit.push(1);
+    emit.push(64);
+    emit.mstore<memory_version>();
+    emit.push(2);
+    emit.push(32);
+    emit.mstore<memory_version>();
+    emit.push(64);
+    emit.mload<memory_version>();
+    emit.push(96);
+    emit.mload<memory_version>();
+    emit.add();
+    emit.msize();
+    emit.push(27);
+    emit.jump();
+    (void)emit.begin_new_block(ir.blocks().at(1));
+    emit.push(256);
+    emit.mload<memory_version>();
+    emit.stop();
+    (void)emit.begin_new_block(ir.blocks().at(2));
+    emit.push(160);
+    emit.mload<memory_version>();
+    emit.pop();
+    emit.return_();
+
+    entrypoint_t entry = emit.finish_contract(rt);
+    evmc_tx_context tx_context{};
+    auto ctx = test_context(&tx_context);
+    auto const &ret = ctx->result;
+    auto stack_memory = test_stack_memory();
+    entry(&*ctx, stack_memory.get());
+
+    ASSERT_EQ(ret.status, runtime::StatusCode::Success);
+    ASSERT_EQ(load_le<uint256_t>(ret.offset), 128);
+    ASSERT_EQ(load_le<uint256_t>(ret.size), 1);
+    ASSERT_EQ(ctx->memory.size, 192);
+}
+
+template <runtime::Memory::Version memory_version>
+static void memory_literal_offset_kept_fallthrough_test_impl()
+{
+    static constexpr std::array<uint8_t, 3> offsets{32, 32, 80};
+    std::vector<uint8_t> bytecode{PUSH1, 64, MLOAD, POP, PUSH0, PUSH0, JUMPI};
+    for (auto const off : offsets) {
+        bytecode.insert(bytecode.end(), {PUSH1, off, MLOAD, POP});
+    }
+    bytecode.push_back(STOP);
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from(bytecode);
+
+    asmjit::JitRuntime const rt;
+    TestEmitter emit{rt, ir.codesize};
+    (void)emit.begin_new_block(ir.blocks().at(0));
+    emit.push(64);
+    emit.mload<memory_version>();
+    emit.pop();
+    emit.push(0);
+    emit.push(0);
+    emit.jumpi(ir.blocks().at(1));
+    (void)emit.begin_new_block(ir.blocks().at(1));
+    std::vector<size_t> sizes{emit.estimate_size()};
+    for (auto const off : offsets) {
+        emit.push(off);
+        emit.mload<memory_version>();
+        emit.pop();
+        sizes.push_back(emit.estimate_size());
+    }
+    emit.stop();
+
+    ASSERT_EQ(sizes[1] - sizes[0], sizes[2] - sizes[1]);
+    ASSERT_GT(sizes[3] - sizes[2], sizes[2] - sizes[1]);
+}
+
+TEST(Emitter, MemoryRepeatedLiteralOffset)
+{
+    memory_repeated_literal_offset_test_impl<runtime::Memory::Version::V1>();
+    memory_repeated_literal_offset_test_impl<runtime::Memory::Version::MIP3>();
+    memory_literal_offset_kept_fallthrough_test_impl<
+        runtime::Memory::Version::V1>();
+    memory_literal_offset_kept_fallthrough_test_impl<
+        runtime::Memory::Version::MIP3>();
+}
+
 TEST(Emitter, calldataload)
 {
     evmc_tx_context tx_context{};

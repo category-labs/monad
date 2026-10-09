@@ -23,6 +23,7 @@
 #include <category/vm/compiler/ir/x86/types.hpp>
 #include <category/vm/compiler/types.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/opcodes.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/runtime/types.hpp>
@@ -284,7 +285,17 @@ namespace
             }
             break;
         case Extension:
-            MONAD_ABORT();
+            switch (instr.index()) {
+            case CALLSTACKDEPTH:
+                emit.callstackdepth();
+                break;
+            case CALLERN:
+                emit.callern(remaining_base_gas);
+                break;
+            default:
+                MONAD_ABORT();
+            }
+            break;
         case Create:
             emit.create<traits>(remaining_base_gas);
             break;

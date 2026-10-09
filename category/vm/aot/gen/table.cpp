@@ -502,8 +502,268 @@ namespace monad::vm::aot
             uint256_t *, void *);
     }
 
+    namespace c_a3d86a4f8df23797
+    {
+        template <Traits traits>
+        void run(
+            void *, runtime::Context *, interpreter::Intercode const *,
+            uint256_t *, void *);
+    }
+
+    namespace c_deba17f16fdba566
+    {
+        template <Traits traits>
+        void run(
+            void *, runtime::Context *, interpreter::Intercode const *,
+            uint256_t *, void *);
+    }
+
+    namespace c_16f41184f797cb8f
+    {
+        template <Traits traits>
+        void run(
+            void *, runtime::Context *, interpreter::Intercode const *,
+            uint256_t *, void *);
+    }
+
+    namespace c_74499ac0cce14428
+    {
+        template <Traits traits>
+        void run(
+            void *, runtime::Context *, interpreter::Intercode const *,
+            uint256_t *, void *);
+    }
+
+    namespace c_256bb2b8e3c1ccfa
+    {
+        template <Traits traits>
+        void run(
+            void *, runtime::Context *, interpreter::Intercode const *,
+            uint256_t *, void *);
+    }
+
+    namespace c_bd92a3cc7c85be4a
+    {
+        template <Traits traits>
+        void run(
+            void *, runtime::Context *, interpreter::Intercode const *,
+            uint256_t *, void *);
+    }
+
+    namespace c_969ae873bccdbfa0
+    {
+        template <Traits traits>
+        void run(
+            void *, runtime::Context *, interpreter::Intercode const *,
+            uint256_t *, void *);
+    }
+
+    namespace c_8352c8b920e2d04c
+    {
+        template <Traits traits>
+        void run(
+            void *, runtime::Context *, interpreter::Intercode const *,
+            uint256_t *, void *);
+    }
+
+    namespace c_460b999daae2ccd7
+    {
+        template <Traits traits>
+        void run(
+            void *, runtime::Context *, interpreter::Intercode const *,
+            uint256_t *, void *);
+    }
+
+    namespace c_21780f10fb135da9
+    {
+        template <Traits traits>
+        void run(
+            void *, runtime::Context *, interpreter::Intercode const *,
+            uint256_t *, void *);
+    }
+
+    namespace c_4f54cec4f81d7f8d
+    {
+        template <Traits traits>
+        void run(
+            void *, runtime::Context *, interpreter::Intercode const *,
+            uint256_t *, void *);
+    }
+
+    namespace c_67c1ba2b462c439f
+    {
+        template <Traits traits>
+        void run(
+            void *, runtime::Context *, interpreter::Intercode const *,
+            uint256_t *, void *);
+    }
+
+    namespace c_8db5ff695839d655
+    {
+        template <Traits traits>
+        void run(
+            void *, runtime::Context *, interpreter::Intercode const *,
+            uint256_t *, void *);
+    }
+
+    namespace c_2a702477d7de9da1
+    {
+        template <Traits traits>
+        void run(
+            void *, runtime::Context *, interpreter::Intercode const *,
+            uint256_t *, void *);
+    }
+
+    namespace c_8b6fccc1730ea989
+    {
+        template <Traits traits>
+        void run(
+            void *, runtime::Context *, interpreter::Intercode const *,
+            uint256_t *, void *);
+    }
+
+    namespace c_fdd36aa686b8ee09
+    {
+        template <Traits traits>
+        void run(
+            void *, runtime::Context *, interpreter::Intercode const *,
+            uint256_t *, void *);
+    }
+
+    namespace c_1a6cce00b2d648be
+    {
+        template <Traits traits>
+        void run(
+            void *, runtime::Context *, interpreter::Intercode const *,
+            uint256_t *, void *);
+    }
+
+    namespace c_a440733ebb83caa3
+    {
+        template <Traits traits>
+        void run(
+            void *, runtime::Context *, interpreter::Intercode const *,
+            uint256_t *, void *);
+    }
+
+    namespace c_9ededa4fab88761b
+    {
+        template <Traits traits>
+        void run(
+            void *, runtime::Context *, interpreter::Intercode const *,
+            uint256_t *, void *);
+    }
+
+    namespace c_a2ee2404f7434f47
+    {
+        template <Traits traits>
+        void run(
+            void *, runtime::Context *, interpreter::Intercode const *,
+            uint256_t *, void *);
+    }
+
     using Osaka = EvmTraits<MONAD_ETH_OSAKA>;
 
+    constexpr Entry entry_79{
+        {0x474f43f70424eea2u, 0xcbd1620177a08858u, 0xbc0c5a92c1d052cbu, 0x87431ee691364d33u},
+        21007,
+        &c_a2ee2404f7434f47::run<Osaka>,
+        nullptr};
+    constexpr Entry entry_78{
+        {0x1b7688ab4fdade9eu, 0x837f9c8d6a6b83cbu, 0x5f6687da2562e0ffu, 0xed135b754b84b9bu},
+        22123,
+        &c_9ededa4fab88761b::run<Osaka>,
+        nullptr};
+    constexpr Entry entry_77{
+        {0xa3ca83bb3e7340a4u, 0x3feed1ae156e94efu, 0x95796170873104d9u, 0xab9389457762c22cu},
+        24194,
+        &c_a440733ebb83caa3::run<Osaka>,
+        nullptr};
+    constexpr Entry entry_76{
+        {0xbe48d6b200ce6c1au, 0x29a064585656365cu, 0x1ca0ea99016c5bau, 0x1789c2170764142cu},
+        20490,
+        &c_1a6cce00b2d648be::run<Osaka>,
+        nullptr};
+    constexpr Entry entry_75{
+        {0x9eeb886a66ad3fdu, 0xfbc396302448668fu, 0x31373b458fa926acu, 0xc35101b2c85b52abu},
+        13303,
+        &c_fdd36aa686b8ee09::run<Osaka>,
+        nullptr};
+    constexpr Entry entry_74{
+        {0x89a90e73c1cc6f8bu, 0xc3115750fadc2f58u, 0xb748c25fa37e38fdu, 0xa8e286a2e297d61fu},
+        11703,
+        &c_8b6fccc1730ea989::run<Osaka>,
+        nullptr};
+    constexpr Entry entry_73{
+        {0xa19dded77724702au, 0xef9acf9f5b49c0b0u, 0xaf27b3ad043f439eu, 0x77e0fc34ac91b234u},
+        19335,
+        &c_2a702477d7de9da1::run<Osaka>,
+        nullptr};
+    constexpr Entry entry_72{
+        {0x55d6395869ffb58du, 0xd8a5b70b49c87c40u, 0xf0c3396b6aa83723u, 0x58fc82b5c3a68a25u},
+        16035,
+        &c_8db5ff695839d655::run<Osaka>,
+        nullptr};
+    constexpr Entry entry_71{
+        {0x9f432c462bbac167u, 0x5cb69669ffa384b8u, 0x885f2c76b75dc723u, 0x449412185f203662u},
+        15762,
+        &c_67c1ba2b462c439f::run<Osaka>,
+        nullptr};
+    constexpr Entry entry_70{
+        {0x8d7f1df8c4ce544fu, 0x4f78f7886f19a3c2u, 0xc26eed843af8270fu, 0x5e072b2fe64073acu},
+        5047,
+        &c_4f54cec4f81d7f8d::run<Osaka>,
+        nullptr};
+    constexpr Entry entry_69{
+        {0xa95d13fb100f7821u, 0x25340c11c0ba6babu, 0x8ce91a7a50125a06u, 0xaeed6d59993b39f1u},
+        14927,
+        &c_21780f10fb135da9::run<Osaka>,
+        nullptr};
+    constexpr Entry entry_68{
+        {0xd7cce2aa9d990b46u, 0x8a88c27018a7e5a8u, 0x42478ca59833bd08u, 0x718425475f8f6feau},
+        14703,
+        &c_460b999daae2ccd7::run<Osaka>,
+        nullptr};
+    constexpr Entry entry_67{
+        {0x4cd0e220b9c85283u, 0xd7ebb40706ca914du, 0x8e9540f019626f34u, 0x14acf50fc031b4d8u},
+        22210,
+        &c_8352c8b920e2d04c::run<Osaka>,
+        nullptr};
+    constexpr Entry entry_66{
+        {0xa0bfcdbc73e89a96u, 0x47f5eba4ee4c6248u, 0x18b1fe7a584e24u, 0x742e39df4582f84cu},
+        24024,
+        &c_969ae873bccdbfa0::run<Osaka>,
+        nullptr};
+    constexpr Entry entry_65{
+        {0x4abe857ccca392bdu, 0x8d206c898cb20c3fu, 0xadca08a5fc16d27cu, 0x29af8a4edf4e5df3u},
+        23326,
+        &c_bd92a3cc7c85be4a::run<Osaka>,
+        nullptr};
+    constexpr Entry entry_64{
+        {0xfaccc1e3b8b26b25u, 0xd06f74219e7f9a24u, 0xa469958490c0c364u, 0x32963326bf2d79aeu},
+        19712,
+        &c_256bb2b8e3c1ccfa::run<Osaka>,
+        nullptr};
+    constexpr Entry entry_63{
+        {0x2844e1ccc09a4974u, 0x284fe4d54115b4e4u, 0x11d051102a88a6f5u, 0xc0aed53ca9c26788u},
+        23981,
+        &c_74499ac0cce14428::run<Osaka>,
+        nullptr};
+    constexpr Entry entry_62{
+        {0x8fcb97f78411f416u, 0xa9f2ebf00d681889u, 0x6104b1a62a19c37cu, 0xaaf274c66f09615fu},
+        22337,
+        &c_16f41184f797cb8f::run<Osaka>,
+        nullptr};
+    constexpr Entry entry_61{
+        {0x66a5db6ff117badeu, 0x86065e5719805db4u, 0x7ca16f98c63c4025u, 0x6808aa08df6eddeau},
+        12567,
+        &c_deba17f16fdba566::run<Osaka>,
+        nullptr};
+    constexpr Entry entry_60{
+        {0x9737f28d4f6ad8a3u, 0x778ad98477afa40u, 0xa7d35a9a63feb43eu, 0x5d24cce1758af1dfu},
+        22146,
+        &c_a3d86a4f8df23797::run<Osaka>,
+        nullptr};
     constexpr Entry entry_59{
         {0xe204d3284ffe3cc2u, 0xdb1a3f4ae1e239f2u, 0xf1c0003206f13805u, 0x948e74802cb5413cu},
         11479,
@@ -643,7 +903,7 @@ namespace monad::vm::aot
         {0xb691d0b37dbc24a3u, 0x709c8ae426d5a2f1u, 0x447d5fc33c3be039u, 0xd2114c54a1c75ab1u},
         21943,
         &c_a324bc7db3d091b6::run<Osaka>,
-        nullptr};
+        &entry_60};
     constexpr Entry entry_31{
         {0x5aff2f5223b51acu, 0x4b93ec9e6665c60du, 0x77745262c84e8001u, 0x48a7f6760442607bu},
         5942,
@@ -743,7 +1003,7 @@ namespace monad::vm::aot
         {0x3d51e9125c4e89deu, 0xcb5e37ff8f3c6150u, 0x66c0be539a5d9bf1u, 0x158fece367962b2eu},
         4720,
         &c_de894e5c12e9513d::run<Osaka>,
-        nullptr};
+        &entry_61};
     constexpr Entry entry_11{
         {0x69450c11d7b9eebau, 0x7bedcc6a8134c88eu, 0xfeb77adecc506e85u, 0x1187fa4ac4e97868u},
         21139,
@@ -808,28 +1068,28 @@ namespace monad::vm::aot
     Entry const *const table[256] = {
         nullptr, nullptr, &entry_17, nullptr, nullptr, nullptr, &entry_14, nullptr,
         nullptr, nullptr, nullptr, &entry_50, nullptr, nullptr, nullptr, &entry_15,
+        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, &entry_62, nullptr,
+        nullptr, nullptr, &entry_76, nullptr, nullptr, nullptr, nullptr, &entry_35,
+        nullptr, &entry_69, nullptr, nullptr, nullptr, &entry_64, &entry_22, &entry_36,
+        nullptr, nullptr, &entry_73, nullptr, nullptr, nullptr, nullptr, nullptr,
         nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, &entry_35,
-        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, &entry_22, &entry_36,
         nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-        &entry_39, nullptr, nullptr, nullptr, &entry_20, nullptr, nullptr, nullptr,
-        &entry_53, nullptr, nullptr, nullptr, nullptr, &entry_56, nullptr, nullptr,
+        &entry_39, nullptr, nullptr, nullptr, &entry_20, nullptr, &entry_68, nullptr,
+        &entry_53, nullptr, nullptr, nullptr, nullptr, &entry_56, nullptr, &entry_70,
         nullptr, nullptr, nullptr, nullptr, &entry_21, nullptr, nullptr, nullptr,
         nullptr, nullptr, nullptr, &entry_2, nullptr, &entry_7, nullptr, nullptr,
-        nullptr, &entry_23, nullptr, &entry_19, nullptr, &entry_13, nullptr, nullptr,
+        nullptr, &entry_23, nullptr, &entry_19, nullptr, &entry_13, nullptr, &entry_71,
         nullptr, nullptr, &entry_26, nullptr, nullptr, nullptr, &entry_34, nullptr,
-        &entry_33, nullptr, nullptr, nullptr, nullptr, nullptr, &entry_40, nullptr,
+        &entry_33, nullptr, nullptr, nullptr, &entry_63, nullptr, &entry_40, nullptr,
         &entry_0, nullptr, nullptr, &entry_43, nullptr, nullptr, nullptr, nullptr,
-        nullptr, nullptr, nullptr, nullptr, &entry_44, nullptr, nullptr, nullptr,
-        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-        nullptr, nullptr, nullptr, nullptr, nullptr, &entry_41, nullptr, &entry_16,
-        nullptr, nullptr, nullptr, &entry_10, nullptr, &entry_58, &entry_57, nullptr,
+        nullptr, nullptr, nullptr, &entry_67, &entry_44, nullptr, nullptr, nullptr,
+        nullptr, nullptr, nullptr, &entry_74, nullptr, &entry_72, nullptr, nullptr,
+        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, &entry_66, nullptr,
+        nullptr, nullptr, nullptr, nullptr, nullptr, &entry_41, &entry_78, &entry_16,
+        nullptr, nullptr, &entry_79, &entry_10, &entry_77, &entry_58, &entry_57, nullptr,
         nullptr, &entry_9, nullptr, nullptr, &entry_31, nullptr, nullptr, nullptr,
         &entry_48, nullptr, nullptr, &entry_4, &entry_5, nullptr, &entry_47, nullptr,
-        nullptr, nullptr, &entry_11, nullptr, nullptr, nullptr, nullptr, nullptr,
+        nullptr, nullptr, &entry_11, nullptr, nullptr, &entry_65, nullptr, nullptr,
         &entry_18, nullptr, &entry_59, &entry_38, nullptr, &entry_46, &entry_27, &entry_25,
         nullptr, nullptr, nullptr, nullptr, &entry_54, &entry_1, &entry_6, &entry_30,
         &entry_3, &entry_52, nullptr, nullptr, nullptr, &entry_42, nullptr, &entry_45,
@@ -837,6 +1097,6 @@ namespace monad::vm::aot
         nullptr, &entry_24, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
         nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
         &entry_49, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+        nullptr, nullptr, nullptr, nullptr, nullptr, &entry_75, nullptr, nullptr,
     };
 }

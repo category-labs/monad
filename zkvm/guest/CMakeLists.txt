@@ -542,12 +542,36 @@ else()
     # The x86 driver links the shared monad-zkvm-guest objects against the
     # host's existing monad_execution target.
 
+    # The host archive's copies of the TUs that consult the visibility
+    # predicates fold them to true (category/execution/ethereum/
+    # visible_state.hpp). Recompile just those TUs against the zkvm/ shadow
+    # of that one header, so the runner answers them from the witness like
+    # the RISC-V guest does. Only this header may be shadowed on x86 — the
+    # rest of zkvm/ (assert, crypto, ...) is bare-metal — hence the one-entry
+    # include dir. These objects precede the archive on the link line, so the
+    # archive's members for the same TUs are never pulled in.
+    set(_shadow_inc "${CMAKE_CURRENT_BINARY_DIR}/shadow-include")
+    file(MAKE_DIRECTORY "${_shadow_inc}/category/execution/ethereum")
+    file(CREATE_LINK
+        "${CMAKE_CURRENT_SOURCE_DIR}/../category/execution/ethereum/visible_state.hpp"
+        "${_shadow_inc}/category/execution/ethereum/visible_state.hpp"
+        SYMBOLIC)
+    add_library(monad-zkvm-x86-visible-state OBJECT
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../category/execution/ethereum/block_hash_history.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../category/execution/ethereum/state3/state.cpp"
+    )
+    monad_compile_options(monad-zkvm-x86-visible-state)
+    target_include_directories(monad-zkvm-x86-visible-state
+        BEFORE PRIVATE "${_shadow_inc}")
+    target_link_libraries(monad-zkvm-x86-visible-state PRIVATE monad_execution)
+
     add_executable(monad-zkvm-x86-test-runner
         "${CMAKE_CURRENT_SOURCE_DIR}/x86_test_runner.cpp"
     )
     monad_compile_options(monad-zkvm-x86-test-runner)
     target_link_libraries(monad-zkvm-x86-test-runner
-        PRIVATE monad-zkvm-guest monad_execution zkevm-standards)
+        PRIVATE monad-zkvm-guest monad-zkvm-x86-visible-state monad_execution
+        zkevm-standards)
 
 endif()
 
@@ -560,6 +584,10 @@ add_library(monad-zkvm-guest OBJECT
     "${CMAKE_CURRENT_SOURCE_DIR}/execute_block.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/execute_witness.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/witness_block_hash_buffer.cpp"
+    # The guest's definitions of is_account_in_partial_state / is_storage_in_partial_state (the
+    # host inlines them as true; see category/execution/ethereum/
+    # visible_state.hpp and its zkvm/ shadow header).
+    "${CMAKE_CURRENT_SOURCE_DIR}/../category/execution/ethereum/visible_state.cpp"
 )
 monad_compile_options(monad-zkvm-guest)
 target_link_libraries(monad-zkvm-guest PRIVATE zkevm-standards)

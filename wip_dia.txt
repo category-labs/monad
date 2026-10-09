@@ -1,0 +1,52 @@
+                     beacon p2p
+                         |
+                         v
+   +---------------------------------------------+
+   | consensus client: lighthouse (checkpoint    |
+   | sync, blob pruning)                         |
+   +---------------------------------------------+
+                         | engine API (JWT): newPayload / forkchoiceUpdated
+                         v
+   +---------------------------------------------+
+   | execution client: reth (debug API enabled)  |
+   +---------------------------------------------+
+        |                            |
+        | debug_getRawBlock(N)       | debug_executionWitness(N)
+        | -> block RLP               | -> { state: MPT nodes touched by exec +
+        |                            |      state-root recompute,
+        |                            |      codes, keys,
+        |                            |      headers: lowest BLOCKHASH..parent }
+        v                            v
+   +=====================================================================+
+   | zisk-ethproofs orchestrator, using custom zisk-eth-client           |
+   |                                                                     |
+   |  follow new blocks (poll latest block number or head subscription)  |
+   |  per block/every n-th block:                                        |
+   |   1. fetch block RLP and reth witness                               |
+   |   2. convert reth witness -> monad witness                          |
+   |   3. frame as ZisK input                                            |
+   |   4. execute / prove the embedded monad guest ELF via zisk-sdk      |
+   |   5. public value = sealed block hash; collect metrics              |
+   |   6. submit proof to ethproofs                                      |
+   +=====================================================================+
+        |                                      ^                       |
+        | monad witness                        | output buffer:        | proof + block number/hash
+        |                                      |   [0..32) = keccak(   |   + cycle count
+        |                                      |     sealed header)    | (public value = sealed
+        |                                      |   (state root from    |  block hash; the verifier
+        v                                      |    the guest)         |  checks it against the
+   +---------------------------------------------+                     |  canonical chain)
+   | ZisK                                        |                     v
+   +---------------------------------------------+               +-----------+
+        ^                                                        | ethproofs |
+        | monad zk guest ELF, built once per monad commit        +-----------+
+        |
+   +---------------------------------------------+
+   | guest program (monad execution, RISC-V)     |
+   |   parse monad witness                       |
+   |   build partial state trie + code index     |
+   |   verify header chain and pre-state root    |
+   |   execute block (revision by timestamp)     |
+   |   compute post-state root, seal header,     |
+   |   output keccak(sealed header)              |
+   +---------------------------------------------+

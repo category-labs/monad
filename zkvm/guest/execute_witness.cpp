@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <io-interface/zkvm_io.h>
+#include <zkvm/category/execution/ethereum/visible_state.hpp>
 #include <zkvm/guest/execute_block.hpp>
 #include <zkvm/guest/witness_block_hash_buffer.hpp>
 
@@ -79,6 +80,7 @@ extern "C" void monad_zkvm_execute_witness(void)
     // signifies an empty trie.
     MONAD_ASSERT(!monad::mpt::is_overlay_id(trie.root));
     monad::PartialTrieDb pdb{std::move(trie), std::move(code_index)};
+    monad::set_visible_state_db(pdb);
 
     monad::byte_string_view block_view = witness.value().block_rlp;
     // Keep each transaction's original bytes to verify transactions_root

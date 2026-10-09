@@ -20,6 +20,7 @@
 #include <category/core/bytes.hpp>
 #include <category/core/cases.hpp>
 #include <category/core/keccak.hpp>
+#include <category/core/likely.h>
 #include <category/core/nibble.h>
 #include <category/core/rlp/encode.hpp>
 #include <category/execution/ethereum/core/account.hpp>
@@ -35,6 +36,7 @@
 #include <bit>
 #include <cstdint>
 #include <cstring>
+#include <optional>
 #include <span>
 #include <utility>
 #include <vector>
@@ -173,9 +175,20 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
         node_offsets, [](uint64_t const w) { return w == 0; }));
 }
 
-NodeViewBase OffsetTrie::find_original(NodeId id, NibblesView key) const
+NodeViewBase
+OffsetTrie::find_original(NodeId const id, NibblesView const key) const
 {
-    NodeViewBase found = empty();
+    auto const found = try_find_original(id, key);
+    if (MONAD_UNLIKELY(!found)) {
+        MONAD_ABORT("incomplete witness: lookup hit a Digest");
+    }
+    return *found;
+}
+
+std::optional<NodeViewBase>
+OffsetTrie::try_find_original(NodeId id, NibblesView key) const
+{
+    std::optional<NodeViewBase> found = empty();
     while (id != NULL_ID) {
         id = match(
             get_original(id),
@@ -208,8 +221,9 @@ NodeViewBase OffsetTrie::find_original(NodeId id, NibblesView key) const
                     }
                     return NULL_ID;
                 },
-                [](DigestView) -> NodeId {
-                    MONAD_ABORT("incomplete witness: lookup hit a Digest");
+                [&](DigestView) -> NodeId {
+                    found = std::nullopt;
+                    return NULL_ID;
                 },
                 [](NullView) -> NodeId {
                     // There is only a single NullView node, namely the NULL_ID

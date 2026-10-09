@@ -65,6 +65,14 @@ public:
     bytes32_t
     read_storage(Address const &, Incarnation, bytes32_t const &) override;
 
+    // Whether the reads above would resolve (to a leaf or a proven absence)
+    // rather than abort on a Digest, i.e. whether the witness carries the
+    // node that decides the answer. Pre-state only: the overlay of this
+    // block's writes is not consulted.
+    bool account_in_partial_state(Address const &);
+
+    bool storage_in_partial_state(Address const &, bytes32_t const &);
+
     storage_page_t
     read_storage_page(Address const &, Incarnation, bytes32_t const &) override
     {

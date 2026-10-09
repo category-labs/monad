@@ -65,6 +65,23 @@
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
+#if defined(MONAD_ZKVM_ZISK)
+// A price per gas times an amount of gas, in 128 bits where the price fits a
+// word, as every real one does: the general product is a call and a 256-bit
+// multiply.
+[[gnu::always_inline]] inline uint256_t
+fee_times(uint256_t const &fee, uint64_t const gas)
+{
+    if (MONAD_LIKELY((fee[1] | fee[2] | fee[3]) == 0)) {
+        unsigned __int128 const p =
+            static_cast<unsigned __int128>(fee[0]) * gas;
+        return uint256_t{
+            static_cast<uint64_t>(p), static_cast<uint64_t>(p >> 64)};
+    }
+    return fee * gas;
+}
+
+#endif
 // YP Sec 6.2 "irrevocable_change"
 template <Traits traits>
 constexpr void irrevocable_change(
@@ -83,8 +100,13 @@ constexpr void irrevocable_change(
                        ? calc_blob_fee(tx, excess_blob_gas, blob_schedule)
                        : 0;
     }
+#if defined(MONAD_ZKVM_ZISK)
+    auto const upfront_cost =
+        fee_times(gas_price<traits>(tx, base_fee_per_gas), tx.gas_limit);
+#else
     auto const upfront_cost =
         tx.gas_limit * gas_price<traits>(tx, base_fee_per_gas);
+#endif
     state.subtract_from_balance(sender, upfront_cost + blob_gas);
 }
 
@@ -423,7 +445,11 @@ Receipt ExecuteTransaction<traits>::execute_final(
         static_cast<uint64_t>(result.gas_refund));
     auto const gas_cost =
         gas_price<traits>(tx_, header_.base_fee_per_gas.value_or(0));
+#if defined(MONAD_ZKVM_ZISK)
+    state.add_to_balance(sender_, fee_times(gas_cost, gas_refund));
+#else
     state.add_to_balance(sender_, gas_cost * gas_refund);
+#endif
 
     auto gas_used = tx_.gas_limit - gas_refund;
 
@@ -432,7 +458,11 @@ Receipt ExecuteTransaction<traits>::execute_final(
         auto const floor_gas = floor_data_gas_counted<traits>(tx_, tokens_);
         if (gas_used < floor_gas) {
             auto const delta = floor_gas - gas_used;
+#if defined(MONAD_ZKVM_ZISK)
+            state.subtract_from_balance(sender_, fee_times(gas_cost, delta));
+#else
             state.subtract_from_balance(sender_, gas_cost * delta);
+#endif
 
             gas_used = floor_gas;
         }

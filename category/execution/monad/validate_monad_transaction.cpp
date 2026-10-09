@@ -34,10 +34,14 @@ Result<void> validate_transaction(
     Transaction const &tx, Address const &sender, State &state,
     uint256_t const &base_fee_per_gas,
     std::span<std::optional<Address> const> const authorities,
-    trace::StateTracer &state_tracer)
+    trace::StateTracer &state_tracer, ExecutionMode const &mode)
 {
-    auto res =
-        validate_ethereum_transaction<traits>(tx, sender, state, state_tracer);
+    bool const strict = strict_validation(mode);
+    auto res = validate_ethereum_transaction<traits>(
+        tx, sender, state, state_tracer, strict);
+    if (!strict) {
+        return res;
+    }
     if constexpr (traits::reserve_balance_active()) {
         if (res.has_error() &&
             res.error() != TransactionError::InsufficientBalance) {

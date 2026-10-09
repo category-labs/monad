@@ -21,6 +21,7 @@
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/chain/blob_schedule.hpp>
 #include <category/execution/ethereum/chain/genesis_state.hpp>
+#include <category/execution/ethereum/execution_modalities.hpp>
 #include <category/vm/evm/traits.hpp>
 
 #include <evmc/evmc.h>
@@ -57,6 +58,8 @@ template <typename T>
     requires is_evm_trait_v<T>
 struct ChainContext<T>
 {
+    static constexpr ExecutionMode mode{};
+
     // Returns an empty ChainContext for unit testing purposes.
     // Not intended for production use.
     static ChainContext<T> const &debug_empty()

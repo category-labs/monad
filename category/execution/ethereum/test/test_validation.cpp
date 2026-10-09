@@ -116,9 +116,13 @@ TYPED_TEST(InMemoryStateTraitsTest, validate_deployed_code)
     trace::StateTracer noop_state_tracer = std::monostate{};
     auto const result =
         validate_ethereum_transaction<typename TestFixture::Trait>(
-            tx, sender, this->state, noop_state_tracer);
+            tx, sender, this->state, noop_state_tracer, true);
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.error(), TransactionError::SenderNotEoa);
+
+    EXPECT_TRUE(validate_ethereum_transaction<typename TestFixture::Trait>(
+                    tx, sender, this->state, noop_state_tracer, false)
+                    .has_value());
 }
 
 // EIP-7702
@@ -132,7 +136,7 @@ TYPED_TEST(InMemoryStateTraitsTest, validate_deployed_code_delegated)
     trace::StateTracer noop_state_tracer = std::monostate{};
     auto const result =
         validate_ethereum_transaction<typename TestFixture::Trait>(
-            tx, sender, this->state, noop_state_tracer);
+            tx, sender, this->state, noop_state_tracer, true);
     if constexpr (TestFixture::Trait::eip_7702_active()) {
         EXPECT_TRUE(result.has_value());
     }
@@ -155,9 +159,33 @@ TYPED_TEST(InMemoryStateTraitsTest, validate_nonce)
     trace::StateTracer noop_state_tracer = std::monostate{};
     auto const result =
         validate_ethereum_transaction<typename TestFixture::Trait>(
-            tx, sender, this->state, noop_state_tracer);
+            tx, sender, this->state, noop_state_tracer, true);
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.error(), TransactionError::BadNonce);
+}
+
+TYPED_TEST(InMemoryStateTraitsTest, validate_nonce_relaxed)
+{
+    this->state.add_to_balance(sender, 1);
+    this->state.set_nonce(sender, 24);
+    Transaction const tx{.nonce = 23, .gas_limit = 60'500};
+
+    trace::StateTracer noop_state_tracer = std::monostate{};
+    auto const result =
+        validate_ethereum_transaction<typename TestFixture::Trait>(
+            tx, sender, this->state, noop_state_tracer, true);
+    ASSERT_TRUE(result.has_error());
+    EXPECT_EQ(result.error(), TransactionError::BadNonce);
+    EXPECT_TRUE(validate_ethereum_transaction<typename TestFixture::Trait>(
+                    tx, sender, this->state, noop_state_tracer, false)
+                    .has_value());
+    EXPECT_EQ(this->state.get_nonce(sender), 24);
+
+    this->state.set_nonce(sender, std::numeric_limits<uint64_t>::max());
+    auto const overflow_result =
+        validate_ethereum_transaction<typename TestFixture::Trait>(
+            tx, sender, this->state, noop_state_tracer, false);
+    ASSERT_TRUE(overflow_result.has_value());
 }
 
 TYPED_TEST(InMemoryStateTraitsTest, validate_nonce_optimistically)
@@ -173,7 +201,7 @@ TYPED_TEST(InMemoryStateTraitsTest, validate_nonce_optimistically)
     trace::StateTracer noop_state_tracer = std::monostate{};
     auto const result =
         validate_ethereum_transaction<typename TestFixture::Trait>(
-            tx, sender, this->state, noop_state_tracer);
+            tx, sender, this->state, noop_state_tracer, true);
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.error(), TransactionError::BadNonce);
 }
@@ -192,9 +220,15 @@ TYPED_TEST(InMemoryStateTraitsTest, validate_enough_balance)
     trace::StateTracer noop_state_tracer = std::monostate{};
     auto const result =
         validate_ethereum_transaction<typename TestFixture::Trait>(
-            tx, sender, this->state, noop_state_tracer);
+            tx, sender, this->state, noop_state_tracer, true);
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.error(), TransactionError::InsufficientBalance);
+
+    auto const relaxed_result =
+        validate_ethereum_transaction<typename TestFixture::Trait>(
+            tx, sender, this->state, noop_state_tracer, false);
+    ASSERT_TRUE(relaxed_result.has_error());
+    EXPECT_EQ(relaxed_result.error(), TransactionError::InsufficientBalance);
 }
 
 TYPED_TEST(InMemoryStateTraitsTest, successful_validation)
@@ -221,7 +255,7 @@ TYPED_TEST(InMemoryStateTraitsTest, successful_validation)
     trace::StateTracer noop_state_tracer = std::monostate{};
     auto const result2 =
         validate_ethereum_transaction<typename TestFixture::Trait>(
-            tx, sender, this->state, noop_state_tracer);
+            tx, sender, this->state, noop_state_tracer, true);
     EXPECT_TRUE(result2.has_value());
 }
 
@@ -302,7 +336,7 @@ TYPED_TEST(InMemoryStateTraitsTest, insufficent_balance_overflow)
     trace::StateTracer noop_state_tracer = std::monostate{};
     auto const result =
         validate_ethereum_transaction<typename TestFixture::Trait>(
-            tx, sender, this->state, noop_state_tracer);
+            tx, sender, this->state, noop_state_tracer, true);
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.error(), TransactionError::InsufficientBalance);
 }

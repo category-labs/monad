@@ -2232,7 +2232,7 @@ TYPED_TEST(TraitsTest, code_tracer_records_sender_code_in_validate)
         Transaction const tx{.gas_limit = 60'500};
         trace::StateTracer state_tracer = trace::CodeTracer{};
         (void)validate_ethereum_transaction<typename TestFixture::Trait>(
-            tx, ADDR_A, state, state_tracer);
+            tx, ADDR_A, state, state_tracer, true);
 
         auto const &codes = std::get<trace::CodeTracer>(state_tracer).codes;
         auto const it = codes.find(C_CODE_HASH);

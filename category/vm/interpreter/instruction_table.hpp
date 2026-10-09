@@ -1772,8 +1772,8 @@ namespace monad::vm::interpreter
         MONAD_VM_NEXT(SHA3);
     }
 
-    // The 64 bytes sha3 found inside the memory but not in the memo: hashed
-    // and kept, their gas charged.
+    // The 32 or 64 bytes sha3 found inside the memory but not in the memo:
+    // hashed and kept, their gas charged.
     template <Traits traits>
     [[gnu::noinline]] MONAD_VM_TWIN_CALL void sha3_fill(
         runtime::Context &ctx, MONAD_VM_ANALYSIS_PARAM,
@@ -1781,11 +1781,16 @@ namespace monad::vm::interpreter
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_TWIN_ENTRY();
-        runtime::sha3_memo_fill(
-            reinterpret_cast<uint64_t const *>(
-                ctx.memory.data + stack_top[0][0]),
-            &stack_top[-1]);
-        gas_remaining -= 12;
+        uint64_t const n = stack_top[-1][0];
+        auto const *const in = reinterpret_cast<uint64_t const *>(
+            ctx.memory.data + stack_top[0][0]);
+        if (n == 64) {
+            runtime::sha3_memo_fill<64>(in, &stack_top[-1]);
+        }
+        else {
+            runtime::sha3_memo_fill<32>(in, &stack_top[-1]);
+        }
+        gas_remaining -= static_cast<int64_t>((n >> 4) * 3);
 
         MONAD_VM_NEXT(SHA3);
     }
@@ -1799,17 +1804,21 @@ namespace monad::vm::interpreter
     {
 #if defined(MONAD_ZKVM_ZISK)
         MONAD_VM_CHECK(SHA3);
-        // 64 bytes at an 8-aligned offset inside the memory, with their two
+        // 32 or 64 bytes at an 8-aligned offset inside the memory, with their
         // words of gas: the memo's word if it holds them, else sha3_fill.
-        // Anything else goes through sha3_hash.
+        // Anything else goes through sha3_hash. (n - 32) & ~32 is zero for
+        // the two sizes alone.
         uint256_t const &offset = stack_top[0];
         uint256_t const &size = stack_top[-1];
+        uint64_t const n = size[0];
         uint64_t const o = offset[0];
         uint64_t const end = ctx.memory_access32_end;
+        int64_t const gas = static_cast<int64_t>((n >> 4) * 3);
         if (MONAD_UNLIKELY(
-                ((size[0] ^ 64) | size[1] | size[2] | size[3]) != 0 ||
+                (((n - 32) & ~uint64_t{32}) | size[1] | size[2] | size[3]) !=
+                    0 ||
                 ((o & 7) | offset[1] | offset[2] | offset[3]) != 0 ||
-                o >= end || o + 32 >= end || gas_remaining < 12)) {
+                o >= end || o + 32 >= end || gas_remaining < gas)) {
             MONAD_VM_MUST_TAIL return sha3_hash<quiet_traits<traits>>(
                 ctx,
                 MONAD_VM_ANALYSIS_ARG,
@@ -1820,8 +1829,16 @@ namespace monad::vm::interpreter
         }
         auto const *const in =
             reinterpret_cast<uint64_t const *>(ctx.memory.data + o);
-        runtime::Sha3Memo const &e = runtime::sha3_memo_entry(in);
-        if (MONAD_UNLIKELY(!runtime::sha3_memo_holds(e, in))) {
+        uint256_t const *word;
+        if (n == 64) {
+            auto const &e = runtime::sha3_memo_entry<64>(in);
+            word = runtime::sha3_memo_holds(e, in) ? &e.out : nullptr;
+        }
+        else {
+            auto const &e = runtime::sha3_memo_entry<32>(in);
+            word = runtime::sha3_memo_holds(e, in) ? &e.out : nullptr;
+        }
+        if (MONAD_UNLIKELY(word == nullptr)) {
             MONAD_VM_MUST_TAIL return sha3_fill<quiet_traits<traits>>(
                 ctx,
                 MONAD_VM_ANALYSIS_ARG,
@@ -1830,8 +1847,8 @@ namespace monad::vm::interpreter
                 gas_remaining,
                 MONAD_VM_AS_CALLED(instr_ptr) MONAD_VM_TBL_ARG);
         }
-        gas_remaining -= 12;
-        stack_top[-1] = e.out;
+        gas_remaining -= gas;
+        stack_top[-1] = *word;
 
         MONAD_VM_NEXT(SHA3);
 #else

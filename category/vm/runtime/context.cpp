@@ -329,6 +329,20 @@ namespace monad::vm::runtime
             Cases{
                 [](evmc_status_code ec) { return evmc_error_result(ec); },
                 [this](std::span<uint8_t const> output) {
+#if defined(MONAD_ZKVM_ZISK)
+                    // Built where it is returned: an evmc_result handed to
+                    // evmc::Result is staged in the frame and copied, 72
+                    // bytes a call.
+                    evmc::Result r{
+                        result.status == Success ? EVMC_SUCCESS : EVMC_REVERT,
+                        gas_remaining,
+                        result.status == Success ? gas_refund : 0};
+                    evmc_result &raw = r.raw();
+                    raw.output_data = output.data();
+                    raw.output_size = output.size();
+                    raw.release = release_result;
+                    return r;
+#else
                     return evmc::Result{evmc_result{
                         .status_code = result.status == Success ? EVMC_SUCCESS
                                                                 : EVMC_REVERT,
@@ -340,6 +354,7 @@ namespace monad::vm::runtime
                         .create_address = {},
                         .padding = {},
                     }};
+#endif
                 }},
             copy_result_data<traits>());
     }

@@ -3407,7 +3407,37 @@ namespace monad::vm::interpreter
                 *stack_top <<= monad_vm_imm;
             }
             else if constexpr (OP == SHR) {
+    #if defined(MONAD_ZKVM_ZISK)
+                // By the immediate's range, each with its own exit: through
+                // one exit, gcc built the four words in registers, the zeros
+                // too, and jumped to their stores, and the general shift's
+                // callee-saved register put a frame around every shift.
+                uint64_t const monad_vm_k = monad_vm_imm[0];
+                unsigned const monad_vm_b = monad_vm_k & 63;
+                auto &monad_vm_x = *stack_top;
+                if (monad_vm_k >= 192) {
+                    monad_vm_x[0] = monad_vm_x[3] >> monad_vm_b;
+                    monad_vm_x[1] = 0;
+                    monad_vm_x[2] = 0;
+                    monad_vm_x[3] = 0;
+                    MONAD_VM_FUSED_NEXT(3, 0);
+                }
+                if (monad_vm_k >= 128) {
+                    uint64_t const monad_vm_hi = monad_vm_x[3];
+                    // hi << (64 - b) in two shifts, so that b = 0 shifts
+                    // nothing in rather than by 64.
+                    monad_vm_x[0] = (monad_vm_x[2] >> monad_vm_b) |
+                                    ((monad_vm_hi << 1) << (63 - monad_vm_b));
+                    monad_vm_x[1] = monad_vm_hi >> monad_vm_b;
+                    monad_vm_x[2] = 0;
+                    monad_vm_x[3] = 0;
+                    MONAD_VM_FUSED_NEXT(3, 0);
+                }
                 *stack_top >>= monad_vm_imm;
+                MONAD_VM_FUSED_NEXT(3, 0);
+    #else
+                *stack_top >>= monad_vm_imm;
+    #endif
             }
             else {
                 *stack_top = sar(monad_vm_imm, *stack_top);

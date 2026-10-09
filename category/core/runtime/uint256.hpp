@@ -406,6 +406,38 @@ public:
         if (MONAD_UNLIKELY(static_cast<uint64_t>(shift0) >= 256)) {
             return 0;
         }
+#if defined(MONAD_ZKVM_ZISK)
+        // What a word passes to the next is one shift by 64 - b, where shld
+        // guards each word against b = 0, a shift by 64, with two. b = 0 is
+        // tested once, in the ranges that pass bits between words, and nb is
+        // used only past that test.
+        auto const shift = static_cast<unsigned>(shift0);
+        unsigned const b = shift & 63;
+        unsigned const nb = 64 - b;
+        auto const up = [b, nb](uint64_t const hi, uint64_t const lo) {
+            return (hi << b) | (lo >> nb);
+        };
+        if (shift < 128) {
+            if (shift < 64) {
+                if (b == 0) {
+                    return x;
+                }
+                return uint256_t{
+                    x[0] << b, up(x[1], x[0]), up(x[2], x[1]), up(x[3], x[2])};
+            }
+            if (b == 0) {
+                return uint256_t{0, x[0], x[1], x[2]};
+            }
+            return uint256_t{0, x[0] << b, up(x[1], x[0]), up(x[2], x[1])};
+        }
+        if (shift < 192) {
+            if (b == 0) {
+                return uint256_t{0, 0, x[0], x[1]};
+            }
+            return uint256_t{0, 0, x[0] << b, up(x[1], x[0])};
+        }
+        return uint256_t{0, 0, 0, x[0] << b};
+#else
         auto shift = static_cast<uint8_t>(shift0);
         if (shift < 128) {
             if (shift < 64) {
@@ -441,6 +473,7 @@ public:
                 return uint256_t{0, 0, 0, x[0] << shift};
             }
         }
+#endif
     }
 
     [[gnu::always_inline]]
@@ -482,6 +515,44 @@ public:
                 shift0[3] | shift0[2] | shift0[1] | (shift0[0] >= 256))) {
             return uint256_t{fill, fill, fill, fill};
         }
+#if defined(MONAD_ZKVM_ZISK)
+        // As operator<<'s: what a word takes from the next is one shift by
+        // 64 - b, b = 0 tested once where words pass bits. The top word
+        // shifted arithmetically is the tail with the sign's fill.
+        auto const shift = static_cast<unsigned>(shift0[0]);
+        unsigned const b = shift & 63;
+        unsigned const nb = 64 - b;
+        auto const down = [b, nb](uint64_t const hi, uint64_t const lo) {
+            return (lo >> b) | (hi << nb);
+        };
+        uint64_t tail;
+        if constexpr (type == RightShiftType::Logical) {
+            tail = x[3] >> b;
+        }
+        else {
+            tail = static_cast<uint64_t>(static_cast<int64_t>(x[3]) >> b);
+        }
+        if (shift < 128) {
+            if (shift < 64) {
+                if (b == 0) {
+                    return x;
+                }
+                return uint256_t{
+                    down(x[1], x[0]), down(x[2], x[1]), down(x[3], x[2]), tail};
+            }
+            if (b == 0) {
+                return uint256_t{x[1], x[2], x[3], fill};
+            }
+            return uint256_t{down(x[2], x[1]), down(x[3], x[2]), tail, fill};
+        }
+        if (shift < 192) {
+            if (b == 0) {
+                return uint256_t{x[2], x[3], fill, fill};
+            }
+            return uint256_t{down(x[3], x[2]), tail, fill, fill};
+        }
+        return uint256_t{tail, fill, fill, fill};
+#else
         auto shift = static_cast<uint8_t>(shift0);
         uint64_t tail;
         if constexpr (type == RightShiftType::Logical) {
@@ -518,6 +589,7 @@ public:
                 return uint256_t{tail, fill, fill, fill};
             }
         }
+#endif
     }
 
     [[gnu::always_inline]] friend constexpr uint256_t

@@ -29,6 +29,10 @@ namespace monad::uint256::overrides
     constexpr bool less(U const &, U const &) noexcept;
     template <typename U>
     constexpr bool equal(U const &, U const &) noexcept;
+    template <typename U, typename T>
+    constexpr U shift_left(U const &, T) noexcept;
+    template <auto Type, typename U>
+    constexpr U shift_right(U const &, U const &, uint64_t) noexcept;
     template <typename U>
     constexpr U multiply(U const &, U const &) noexcept;
     template <typename U>

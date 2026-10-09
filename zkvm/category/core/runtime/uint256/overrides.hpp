@@ -69,6 +69,101 @@ namespace monad::uint256::overrides
         return x[3] == y[3];
     }
 
+    template <typename U, typename T>
+    [[gnu::always_inline]] constexpr U
+    shift_left(U const &x, T const shift_amount) noexcept
+    {
+        // Whole-word shifts need a separate path to avoid shifting by 64.
+        auto const bit_shift = static_cast<unsigned>(shift_amount);
+        unsigned const intra_word_shift = bit_shift & 63; // bit_shift % 64
+        unsigned const cross_word_shift = 64 - intra_word_shift;
+        auto const merge_left_words = [intra_word_shift, cross_word_shift](
+                                          uint64_t const upper_word,
+                                          uint64_t const lower_word) {
+            return (upper_word << intra_word_shift) |
+                   (lower_word >> cross_word_shift);
+        };
+        if (bit_shift < 128) {
+            if (bit_shift < 64) {
+                if (intra_word_shift == 0) {
+                    return x; // bit_shift = 0
+                }
+                return U{
+                    x[0] << intra_word_shift,
+                    merge_left_words(x[1], x[0]),
+                    merge_left_words(x[2], x[1]),
+                    merge_left_words(x[3], x[2])};
+            }
+            if (intra_word_shift == 0) {
+                return U{0, x[0], x[1], x[2]}; // bit_shift == 64
+            }
+            return U{
+                0,
+                x[0] << intra_word_shift,
+                merge_left_words(x[1], x[0]),
+                merge_left_words(x[2], x[1])};
+        }
+        if (bit_shift < 192) {
+            if (intra_word_shift == 0) {
+                return U{0, 0, x[0], x[1]}; // bit_shift == 128
+            }
+            return U{
+                0, 0, x[0] << intra_word_shift, merge_left_words(x[1], x[0])};
+        }
+        return U{0, 0, 0, x[0] << intra_word_shift};
+    }
+
+    template <auto Type, typename U>
+    [[gnu::always_inline]] constexpr U
+    shift_right(U const &x, U const &shift_amount, uint64_t const fill) noexcept
+    {
+        // Keep whole-word shifts separate; top_word and fill preserve the sign.
+        auto const bit_shift = static_cast<unsigned>(shift_amount[0]);
+        unsigned const intra_word_shift = bit_shift & 63;
+        unsigned const cross_word_shift = 64 - intra_word_shift;
+        auto const merge_right_words = [intra_word_shift, cross_word_shift](
+                                           uint64_t const upper_word,
+                                           uint64_t const lower_word) {
+            return (lower_word >> intra_word_shift) |
+                   (upper_word << cross_word_shift);
+        };
+        uint64_t top_word;
+        if constexpr (Type == U::RightShiftType::Logical) {
+            top_word = x[3] >> intra_word_shift;
+        }
+        else {
+            top_word = static_cast<uint64_t>(
+                static_cast<int64_t>(x[3]) >> intra_word_shift);
+        }
+        if (bit_shift < 128) {
+            if (bit_shift < 64) {
+                if (intra_word_shift == 0) {
+                    return x;
+                }
+                return U{
+                    merge_right_words(x[1], x[0]),
+                    merge_right_words(x[2], x[1]),
+                    merge_right_words(x[3], x[2]),
+                    top_word};
+            }
+            if (intra_word_shift == 0) {
+                return U{x[1], x[2], x[3], fill};
+            }
+            return U{
+                merge_right_words(x[2], x[1]),
+                merge_right_words(x[3], x[2]),
+                top_word,
+                fill};
+        }
+        if (bit_shift < 192) {
+            if (intra_word_shift == 0) {
+                return U{x[2], x[3], fill, fill};
+            }
+            return U{merge_right_words(x[3], x[2]), top_word, fill, fill};
+        }
+        return U{top_word, fill, fill, fill};
+    }
+
     template <typename U>
     [[gnu::always_inline]] constexpr U
     multiply(U const &lhs, U const &rhs) noexcept

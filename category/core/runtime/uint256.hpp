@@ -386,6 +386,9 @@ public:
         if (MONAD_UNLIKELY(static_cast<uint64_t>(shift0) >= 256)) {
             return 0;
         }
+        if constexpr (uint256::overrides::enabled) {
+            return uint256::overrides::shift_left(x, shift0);
+        }
         auto shift = static_cast<uint8_t>(shift0);
         if (shift < 128) {
             if (shift < 64) {
@@ -461,6 +464,9 @@ public:
         if (MONAD_UNLIKELY(
                 shift0[3] | shift0[2] | shift0[1] | (shift0[0] >= 256))) {
             return uint256_t{fill, fill, fill, fill};
+        }
+        if constexpr (uint256::overrides::enabled) {
+            return uint256::overrides::shift_right<type>(x, shift0, fill);
         }
         auto shift = static_cast<uint8_t>(shift0);
         uint64_t tail;

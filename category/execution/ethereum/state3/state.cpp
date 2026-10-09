@@ -30,7 +30,9 @@
 #include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/version_stack.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
+#include <category/execution/ethereum/visible_state.hpp>
 #include <category/vm/code.hpp>
+#include <category/vm/evm/access_status.h>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
@@ -417,6 +419,28 @@ void State::touch(Address const &address)
 
 monad_access_status State::access_account(Address const &address)
 {
+    // An account the backing state cannot show (only ever a witness) was
+    // never loaded, hence is cold. Answer without loading: the caller charges
+    // the cold cost (out of gas if it cannot afford it, matching revm's
+    // gas-check-before-load), and any real read still aborts on the missing
+    // node. Likewise for EIP-2930 warm-up of an entry the transaction never
+    // accesses, whose warmth is unobservable.
+    //
+    // This relies on an implicit invariant rather than on checking the caches:
+    // "not in the partial state" must imply "not loaded". It holds because
+    // every cache entry originates from a successful read of the pre-state
+    // trie, which is immutable until the block commits: original_ is only
+    // populated after block_state_.read_account (original_account_state),
+    // current_ only from original_ (current_account_state), BlockState caches
+    // what it read and its merge asserts the entry already exists. An account
+    // created in this block is covered too: creation reads it first for the
+    // EIP-684 check (execute_message.cpp), so its pre-state path is proven
+    // absent, which counts as resolvable. A new way of populating a cache
+    // without a prior read would break this and make the guest answer cold
+    // for a warm account; the host is unaffected, the predicate folds to true.
+    if (MONAD_UNLIKELY(!is_account_in_partial_state(address))) {
+        return MONAD_ACCESS_COLD;
+    }
     auto &account_state = current_account_state(address);
     return account_state.access();
 }
@@ -425,6 +449,11 @@ template <Traits traits>
 monad_access_status
 State::access_storage(Address const &address, bytes32_t const &key)
 {
+    // Same gate and invariant as access_account: only the account is loaded
+    // here, the slot itself is never read.
+    if (MONAD_UNLIKELY(!is_account_in_partial_state(address))) {
+        return MONAD_ACCESS_COLD;
+    }
     auto &account_state = current_account_state(address);
     auto const slot_status = account_state.access_storage(key);
     if constexpr (traits::mip_8_active()) {

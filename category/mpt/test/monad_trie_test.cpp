@@ -846,7 +846,7 @@ int main(int const argc, char *argv[])
                     // this is referenced in the receivers
                     // NOLINTNEXTLINE(clang-analyzer-deadcode.DeadStores)
                     signal_done = true;
-                    aux.io->wait_until_done();
+                    aux.io->flush();
                 }
 
                 {
@@ -921,7 +921,7 @@ int main(int const argc, char *argv[])
                     fflush(stdout);
                     signal_done = true;
                     for (auto &fiber : fibers) {
-                        io.wait_until_done();
+                        io.flush();
                         fiber.join();
                     }
                     poll_fiber.join();
@@ -985,7 +985,7 @@ int main(int const argc, char *argv[])
                                 aux->io->poll_nonblocking(1);
                             }
                             else {
-                                aux->io->wait_until_done();
+                                aux->io->flush();
                                 return;
                             }
                             if (req.try_dequeue(request)) {

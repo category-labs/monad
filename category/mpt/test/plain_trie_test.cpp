@@ -511,7 +511,7 @@ TYPED_TEST(PlainTrieTest, large_values)
         auto fut = p.get_future();
         find_notify_fiber_future(this->aux, std::move(p), this->root, key1);
         if (this->aux.io) {
-            this->aux.io->wait_until_done();
+            this->aux.io->flush();
         }
         auto [leaf_it, res] = fut.get();
         auto const &leaf = leaf_it.node;
@@ -527,7 +527,7 @@ TYPED_TEST(PlainTrieTest, large_values)
         auto fut = p.get_future();
         find_notify_fiber_future(this->aux, std::move(p), this->root, key2);
         if (this->aux.io) {
-            this->aux.io->wait_until_done();
+            this->aux.io->flush();
         }
         auto [leaf_it, res] = fut.get();
         auto const &leaf = leaf_it.node;

@@ -539,6 +539,8 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         add_library(monad-vm-aot OBJECT ${_monad_zkvm_aot_names})
         monad_compile_options(monad-vm-aot)
         monad_riscv_compile_options(monad-vm-aot)
+        # For size: the ROM is what bounds how much code is compiled.
+        target_compile_options(monad-vm-aot PRIVATE -Os)
         target_link_libraries(monad-vm-aot
             PUBLIC monad-vm-runtime monad-vm-interpreter unordered_dense evmc)
         set(_monad_zkvm_aot_objs $<TARGET_OBJECTS:monad-vm-aot>)

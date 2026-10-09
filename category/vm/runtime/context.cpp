@@ -291,6 +291,17 @@ namespace monad::vm::runtime
             Cases{
                 [](CallStatus ec) { return vm::Result{ec}; },
                 [this](std::span<uint8_t const> output) {
+#if defined(MONAD_ZKVM_ZISK)
+                    // Attach the buffer already allocated by copy_result_data.
+                    vm::Result call_result{
+                        result.status == Success ? CallStatus::Success
+                                                 : CallStatus::Revert,
+                        gas_remaining,
+                        result.status == Success ? gas_refund : 0};
+                    call_result.output_data = output.data();
+                    call_result.output_size = output.size();
+                    return call_result;
+#else
                     return vm::Result{vm::RawResult{
                         .status_code = result.status == Success
                                            ? CallStatus::Success
@@ -301,6 +312,7 @@ namespace monad::vm::runtime
                         .output_size = output.size(),
                         .create_address = {},
                     }};
+#endif
                 }},
             copy_result_data<traits>());
     }

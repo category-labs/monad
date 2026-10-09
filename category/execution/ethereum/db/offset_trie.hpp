@@ -70,6 +70,86 @@ inline constexpr size_t MAX_NODE_RLP = 700;
 // shrinks as bytes are written. The live RLP region is therefore
 // [data() + size(), buf_end):
 //   rlp_data() = data() + size(),  rlp_size() = Capacity - size().
+#if defined(MONAD_ZKVM_ZISK)
+// On ZisK the span is kept as the buffer's start and the RLP's: a byte
+// prepended is then a decrement and a store, where a start and a size took an
+// add to form the address of every byte.
+template <size_t Capacity>
+struct node_rlp_span
+{
+    explicit node_rlp_span(unsigned char (&buf)[Capacity])
+        : base_{buf}
+        , end_{buf + Capacity}
+    {
+    }
+
+    size_t size() const
+    {
+        return static_cast<size_t>(end_ - base_);
+    }
+
+    bool empty() const
+    {
+        return end_ == base_;
+    }
+
+    unsigned char const *rlp_data() const
+    {
+        return end_;
+    }
+
+    unsigned char *base() const
+    {
+        return base_;
+    }
+
+    node_rlp_span prepend_unchecked(unsigned char const b) const
+    {
+        end_[-1] = b;
+        return node_rlp_span{base_, end_ - 1};
+    }
+
+    node_rlp_span
+    prepend_unchecked(unsigned char const *const src, size_t const n) const
+    {
+        std::memcpy(end_ - n, src, n);
+        return node_rlp_span{base_, end_ - n};
+    }
+
+    size_t rlp_size() const
+    {
+        return static_cast<size_t>(base_ + Capacity - end_);
+    }
+
+    unsigned char &back() const
+    {
+        MONAD_ASSERT(!empty());
+        return end_[-1];
+    }
+
+    std::span<unsigned char> last(size_t const n) const
+    {
+        MONAD_ASSERT(n <= size());
+        return std::span<unsigned char>{end_ - n, n};
+    }
+
+    node_rlp_span shrink(size_t const n) const
+    {
+        MONAD_ASSERT(n <= size());
+        return node_rlp_span{base_, end_ - n};
+    }
+
+private:
+    node_rlp_span(unsigned char *const base, unsigned char *const end)
+        : base_{base}
+        , end_{end}
+    {
+    }
+
+    unsigned char *base_;
+    unsigned char *end_;
+};
+#else
 template <size_t Capacity>
 struct node_rlp_span : private std::span<unsigned char>
 {
@@ -141,6 +221,7 @@ private:
     {
     }
 };
+#endif
 
 // Longest path a node may carry.
 inline constexpr unsigned MAX_PATH_NIBBLES = 64;

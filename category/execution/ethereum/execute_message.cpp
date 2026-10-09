@@ -89,11 +89,15 @@ namespace
         evmc_address const &to, uint256_t const &value)
     {
         if constexpr (!is_monad_trait_v<traits>) {
-            // The caller has code or a nonce, so touching it cannot affect
-            // EIP-161 cleanup. Keep the recipient touch; Ethereum has no
-            // reserve tracking, and zero transfers emit no event.
+            // No value: the debit would only touch the sender, an account
+            // with code or a nonce that EIP-161 never removes, and Ethereum
+            // keeps no reserve and emits no transfer event. The credit is the
+            // same for a recipient with code; one without keeps its touch,
+            // which EIP-161 reads, and its creation.
             if (value == 0) {
-                state.add_to_balance(to, value);
+                if (!state.has_code(to)) {
+                    state.add_to_balance(to, value);
+                }
                 return;
             }
         }

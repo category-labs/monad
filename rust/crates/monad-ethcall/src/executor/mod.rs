@@ -34,6 +34,7 @@ mod trace;
 
 pub(super) const ETH_CALL_SUCCESS: i32 = 0;
 pub(super) const EVMC_OUT_OF_GAS: i32 = 3;
+pub(super) const EVMC_INSUFFICIENT_BALANCE: i32 = 4;
 pub(super) const EVMC_MONAD_RESERVE_BALANCE_VIOLATION: i32 = 18;
 
 #[derive(Clone, Debug)]

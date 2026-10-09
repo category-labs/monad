@@ -681,6 +681,18 @@ else()
     target_link_libraries(monad-zkvm-x86-test-runner
         PRIVATE monad-zkvm-guest monad_execution zkevm-standards)
 
+    add_executable(monad-zkvm-keccak-test
+        keccak_accel.cpp
+        test/keccak_accel_test.cpp
+        test/keccak_reference.c
+    )
+    monad_compile_options(monad-zkvm-keccak-test)
+    target_compile_definitions(monad-zkvm-keccak-test
+        PRIVATE MONAD_ZKVM_KECCAK_TEST)
+    target_include_directories(monad-zkvm-keccak-test
+        PRIVATE "${THIRD_PARTY_DIR}/ethash/include")
+    add_test(NAME monad-zkvm-keccak-test COMMAND monad-zkvm-keccak-test)
+
 endif()
 
 # ---- Guest sources, shared by both modes ----

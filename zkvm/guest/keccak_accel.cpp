@@ -16,7 +16,7 @@
 // ZisK Keccak-256: absorb 136-byte blocks as 17 words, then call the
 // Keccak-f precompile. Apply Ethereum's 0x01/0x80 padding to the final block.
 
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_KECCAK_TEST)
 
 #include <cstddef>
 #include <cstdint>
@@ -33,6 +33,11 @@ load64(unsigned char const *const p)
     return v;
 }
 
+    #ifdef MONAD_ZKVM_KECCAK_TEST
+// Software permutation supplied by the host tests.
+extern "C" void test_keccak_f(uint64_t (*state)[25]);
+    #endif
+
 extern "C"
 {
 
@@ -41,6 +46,7 @@ extern "C"
 // compiler that this instruction reads and writes memory.
 [[gnu::always_inline]] inline void zisk_keccakf(uint64_t (*state)[25]) noexcept
 {
+    #ifdef MONAD_ZKVM_ZISK
     asm volatile(".option push\n\t"
                  ".option arch, +zicsr\n\t"
                  "csrs 0x800, %0\n\t"
@@ -48,6 +54,10 @@ extern "C"
                  :
                  : "r"(state)
                  : "memory");
+    #else
+    // Host tests supply a software permutation; the sponge stays unchanged.
+    test_keccak_f(state);
+    #endif
 }
 
 static inline void keccak_permute(uint64_t (*state)[25])
@@ -145,4 +155,4 @@ void monad_zkvm_keccak256_fast(void const *const in, size_t len, uint8_t out[32]
 
 } // extern "C"
 
-#endif // MONAD_ZKVM_ZISK
+#endif // MONAD_ZKVM_ZISK || MONAD_ZKVM_KECCAK_TEST

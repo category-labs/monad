@@ -194,11 +194,11 @@ Result<void> validate_transaction(
     Transaction const &tx, Address const &sender, State &state,
     uint256_t const & /*base_fee_per_gas*/,
     std::span<std::optional<Address> const> const /*authorities*/,
-    trace::StateTracer &state_tracer)
+    trace::StateTracer &state_tracer, bool const validate_sender)
 {
     static_assert(is_evm_trait_v<traits>);
     return validate_ethereum_transaction<traits>(
-        tx, sender, state, state_tracer);
+        tx, sender, state, state_tracer, validate_sender);
 }
 
 EXPLICIT_EVM_TRAITS(validate_transaction);

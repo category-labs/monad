@@ -52,6 +52,8 @@ struct ChainContext<T>
     std::vector<Address> const &senders;
     std::vector<std::vector<std::optional<Address>>> const &authorities;
 
+    bool validate_sender = true;
+
     // Returns an empty ChainContext for unit testing purposes.
     // Not intended for production use.
     static ChainContext<T> debug_empty();

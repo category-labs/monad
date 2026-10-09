@@ -51,6 +51,8 @@ namespace
         case SimulationError::InvalidBlockGap:
         case SimulationError::GasLimitExceeded:
             return EVMC_INTERNAL_ERROR;
+        case SimulationError::UnsupportedValidationMode:
+            return EVMC_REJECTED;
         }
         return EVMC_INTERNAL_ERROR;
     }
@@ -140,7 +142,11 @@ quick_status_code_from_enum<monad::SimulationError>::value_mappings()
         {SimulationError::InvalidBlockGap,
          "the block gap must be exactly 1 after filling in synthetic blocks",
          {}},
-        {SimulationError::GasLimitExceeded, "gas limit exceeded", {}}};
+        {SimulationError::GasLimitExceeded, "gas limit exceeded", {}},
+        {SimulationError::UnsupportedValidationMode,
+         "validation mode is unsupported",
+         {}},
+    };
 
     return v;
 }

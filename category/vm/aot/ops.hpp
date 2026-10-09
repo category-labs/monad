@@ -104,26 +104,52 @@ namespace monad::vm::aot
 
     // Memory
 
+    // The memory grown for a 32-byte access at a run-time offset that
+    // reaches past it: within its capacity as the interpreter's mstore_grow
+    // does it, else through expand_memory, which exits past 2^28. Returns
+    // the gas left.
     template <Traits traits>
-    [[gnu::noinline, gnu::cold]] uint256_t
-    mload_grow(Context *const ctx, int64_t const gas, uint256_t const &offset)
+    [[gnu::noinline]] int64_t
+    grow32_at(Context *const ctx, int64_t gas, uint64_t const off)
     {
+        static_assert(!traits::mip_3_active());
+        if (MONAD_LIKELY((off >> runtime::Memory::offset_bits) == 0)) {
+            auto const offset = runtime::Memory::Offset::unsafe_from(
+                static_cast<runtime::Memory::Offset::rep>(off));
+            auto const word_count =
+                Context::memory_size_to_word_count(offset + runtime::bin<32>);
+            auto const new_size =
+                Context::word_count_to_memory_size(word_count);
+            if (MONAD_LIKELY(ctx->memory.capacity >= *new_size)) {
+                auto const new_cost =
+                    Context::memory_cost_from_word_count<traits>(word_count);
+                gas -= new_cost - ctx->memory.cost;
+                if (MONAD_UNLIKELY(gas < 0)) {
+                    ctx->exit(StatusCode::OutOfGas);
+                }
+                ctx->memory.size = *new_size;
+                ctx->memory_access32_end = *new_size - 31;
+                ctx->memory.cost = new_cost;
+                return gas;
+            }
+        }
         ctx->gas_remaining = gas;
-        uint256_t r;
-        runtime::mload<traits>(ctx, &r, &offset);
-        return r;
+        auto const offset = ctx->get_memory_offset(uint256_t{off});
+        ctx->expand_memory<traits>(offset + runtime::bin<32>);
+        return ctx->gas_remaining;
     }
 
+    // MLOAD and MSTORE at a run-time offset: high words zero and a low word
+    // under memory_access32_end, as in their handlers.
     template <Traits traits>
     [[gnu::always_inline]] inline uint256_t
     mload(Context *const ctx, int64_t &gas, uint256_t const &offset)
     {
-        if (MONAD_UNLIKELY(
-                (offset[1] | offset[2] | offset[3]) != 0 ||
-                offset[0] >= ctx->memory_access32_end)) {
-            uint256_t const r = mload_grow<traits>(ctx, gas, offset);
-            gas = ctx->gas_remaining;
-            return r;
+        if (MONAD_UNLIKELY((offset[1] | offset[2] | offset[3]) != 0)) {
+            ctx->exit(StatusCode::OutOfGas);
+        }
+        if (MONAD_UNLIKELY(offset[0] >= ctx->memory_access32_end)) {
+            gas = grow32_at<traits>(ctx, gas, offset[0]);
         }
         uint256_t r;
         runtime::mload_at<traits>(
@@ -135,25 +161,15 @@ namespace monad::vm::aot
     }
 
     template <Traits traits>
-    [[gnu::noinline]] void mstore_grow(
-        Context *const ctx, int64_t const gas, uint256_t const &offset,
-        uint256_t const &value)
-    {
-        ctx->gas_remaining = gas;
-        runtime::mstore<traits>(ctx, &offset, &value);
-    }
-
-    template <Traits traits>
     [[gnu::always_inline]] inline void mstore(
         Context *const ctx, int64_t &gas, uint256_t const &offset,
         uint256_t const &value)
     {
-        if (MONAD_UNLIKELY(
-                (offset[1] | offset[2] | offset[3]) != 0 ||
-                offset[0] >= ctx->memory_access32_end)) {
-            mstore_grow<traits>(ctx, gas, offset, value);
-            gas = ctx->gas_remaining;
-            return;
+        if (MONAD_UNLIKELY((offset[1] | offset[2] | offset[3]) != 0)) {
+            ctx->exit(StatusCode::OutOfGas);
+        }
+        if (MONAD_UNLIKELY(offset[0] >= ctx->memory_access32_end)) {
+            gas = grow32_at<traits>(ctx, gas, offset[0]);
         }
         runtime::mstore_at<traits>(
             ctx,

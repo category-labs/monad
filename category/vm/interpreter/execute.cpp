@@ -1363,10 +1363,7 @@ namespace monad::vm::interpreter
         auto const *const instr_ptr = ctx.landing_base - 1 + pc;
         void const *itbl;
         if constexpr (has_slots<traits>) {
-            itbl = monad_vm_slots +
-                   ((MONAD_ETH_AMSTERDAM - traits::evm_rev()) << 8
-                                                             << slot_shift) +
-                   slot_lead;
+            itbl = monad_vm_slots + slot_lead;
         }
         else {
             itbl = instruction_table<traits>.data();

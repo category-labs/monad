@@ -87,6 +87,16 @@ namespace
         Address const &to, uint256_t const &value)
     {
         Address const &from = msg_address(msg.sender);
+        if constexpr (!is_monad_trait_v<traits>) {
+            // No value: the debit would only touch the sender, an account
+            // with code or a nonce that EIP-161 never removes, and Ethereum
+            // keeps no reserve and emits no transfer event. The recipient's
+            // touch is kept.
+            if (value == 0) {
+                state.add_to_balance(to, value);
+                return;
+            }
+        }
         state.subtract_from_balance(from, value);
         state.add_to_balance(to, value);
         host.emit_native_transfer_event(from, to, value);

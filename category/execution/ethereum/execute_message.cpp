@@ -162,7 +162,15 @@ pre_call(EvmcHost<traits> &host, evmc_message const &msg, State &state)
     if (msg.kind != EVMC_DELEGATECALL) {
 #if defined(MONAD_ZKVM_ZISK)
         uint256_t const value = load_be<uint256_t>(msg.value);
+    #if defined(MONAD_ZKVM_NO_MERGE_CONSTRAINTS)
+        // Without merge constraints a debit of zero, which most calls are,
+        // is covered by any balance and records nothing: the call and the
+        // value's staging for it are left out.
+        if (MONAD_UNLIKELY(
+                value != 0 && !sender_has_balance(state, msg, value))) {
+    #else
         if (MONAD_UNLIKELY(!sender_has_balance(state, msg, value))) {
+    #endif
 #else
         if (MONAD_UNLIKELY(!sender_has_balance(state, msg))) {
 #endif

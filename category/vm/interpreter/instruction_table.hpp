@@ -704,36 +704,51 @@ namespace monad::vm::interpreter
     // x >> k and x << k in place, for k under 256: one arm per whole words
     // of the shift, whose few temporaries leave the handler without the frame
     // the general shift needs for its run-time word index. A word's bits that
-    // cross into its neighbour move in two shifts, (w << 1) << (63 - b) and
-    // (w >> 1) >> (63 - b), which are also right for b = 0.
+    // cross into its neighbour move in one shift by 64 - b, as in uint256_t's
+    // shifts: a zero b, which would make it a shift by 64, is taken apart in
+    // the arms where words pass bits.
     [[gnu::always_inline]] inline void
     shr_in_place(uint256_t &x, uint64_t const k) noexcept
     {
         unsigned const b = static_cast<unsigned>(k & 63);
-        auto const down = [b](uint64_t const w) {
-            return (w << 1) << (63 - b);
-        };
+        unsigned const nb = 64 - b;
         switch (k >> 6) {
         case 0: {
+            if (b == 0) {
+                break;
+            }
             uint64_t const x0 = x[0], x1 = x[1], x2 = x[2], x3 = x[3];
-            x[0] = (x0 >> b) | down(x1);
-            x[1] = (x1 >> b) | down(x2);
-            x[2] = (x2 >> b) | down(x3);
+            x[0] = (x0 >> b) | (x1 << nb);
+            x[1] = (x1 >> b) | (x2 << nb);
+            x[2] = (x2 >> b) | (x3 << nb);
             x[3] = x3 >> b;
             break;
         }
         case 1: {
             uint64_t const x1 = x[1], x2 = x[2], x3 = x[3];
-            x[0] = (x1 >> b) | down(x2);
-            x[1] = (x2 >> b) | down(x3);
-            x[2] = x3 >> b;
+            if (b == 0) {
+                x[0] = x1;
+                x[1] = x2;
+                x[2] = x3;
+            }
+            else {
+                x[0] = (x1 >> b) | (x2 << nb);
+                x[1] = (x2 >> b) | (x3 << nb);
+                x[2] = x3 >> b;
+            }
             x[3] = 0;
             break;
         }
         case 2: {
             uint64_t const x2 = x[2], x3 = x[3];
-            x[0] = (x2 >> b) | down(x3);
-            x[1] = x3 >> b;
+            if (b == 0) {
+                x[0] = x2;
+                x[1] = x3;
+            }
+            else {
+                x[0] = (x2 >> b) | (x3 << nb);
+                x[1] = x3 >> b;
+            }
             x[2] = 0;
             x[3] = 0;
             break;
@@ -753,28 +768,44 @@ namespace monad::vm::interpreter
     shl_in_place(uint256_t &x, uint64_t const k) noexcept
     {
         unsigned const b = static_cast<unsigned>(k & 63);
-        auto const up = [b](uint64_t const w) { return (w >> 1) >> (63 - b); };
+        unsigned const nb = 64 - b;
         switch (k >> 6) {
         case 0: {
+            if (b == 0) {
+                break;
+            }
             uint64_t const x0 = x[0], x1 = x[1], x2 = x[2], x3 = x[3];
-            x[3] = (x3 << b) | up(x2);
-            x[2] = (x2 << b) | up(x1);
-            x[1] = (x1 << b) | up(x0);
+            x[3] = (x3 << b) | (x2 >> nb);
+            x[2] = (x2 << b) | (x1 >> nb);
+            x[1] = (x1 << b) | (x0 >> nb);
             x[0] = x0 << b;
             break;
         }
         case 1: {
             uint64_t const x0 = x[0], x1 = x[1], x2 = x[2];
-            x[3] = (x2 << b) | up(x1);
-            x[2] = (x1 << b) | up(x0);
-            x[1] = x0 << b;
+            if (b == 0) {
+                x[3] = x2;
+                x[2] = x1;
+                x[1] = x0;
+            }
+            else {
+                x[3] = (x2 << b) | (x1 >> nb);
+                x[2] = (x1 << b) | (x0 >> nb);
+                x[1] = x0 << b;
+            }
             x[0] = 0;
             break;
         }
         case 2: {
             uint64_t const x0 = x[0], x1 = x[1];
-            x[3] = (x1 << b) | up(x0);
-            x[2] = x0 << b;
+            if (b == 0) {
+                x[3] = x1;
+                x[2] = x0;
+            }
+            else {
+                x[3] = (x1 << b) | (x0 >> nb);
+                x[2] = x0 << b;
+            }
             x[1] = 0;
             x[0] = 0;
             break;

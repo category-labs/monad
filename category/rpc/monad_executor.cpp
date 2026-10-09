@@ -49,6 +49,7 @@
 #include <category/execution/ethereum/execute_block.hpp>
 #include <category/execution/ethereum/execute_block_header.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
+#include <category/execution/ethereum/execution_modalities.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/rlp/decode.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
@@ -231,7 +232,8 @@ namespace
         std::vector<std::optional<Address>> const &authorities, Db &db,
         vm::VM &vm, BlockHashBuffer const &buffer,
         monad_state_override const &state_overrides,
-        CallTracerBase &call_tracer, trace::StateTracer &state_tracer)
+        CallTracerBase &call_tracer, trace::StateTracer &state_tracer,
+        Simulation const &execution_mode)
     {
         Transaction enriched_txn{txn};
 
@@ -258,23 +260,10 @@ namespace
 
         State state{block_state, incarnation};
 
-        // validate_transaction expects nonce to match.
-        // However, eth_call doesn't take a nonce parameter.
-        // Solving the issue by manually setting nonce to match with the
-        // expected nonce
-        enriched_txn.nonce = state.get_nonce(sender);
-
-        // Safe to pass empty code to validation here because the above override
-        // will always mark this transaction as coming from an EOA.
         {
             State state{block_state, incarnation};
-            // validate_transaction expects the sender of a transaction is EOA,
-            // not CA. However, eth_call allows the sender to be CA to simulate
-            // a subroutine. Solving this issue by manually setting account to
-            // be EOA for validation
-            state.set_code(sender, {});
             BOOST_OUTCOME_TRY(validate_ethereum_transaction<traits>(
-                enriched_txn, sender, state, state_tracer));
+                enriched_txn, sender, state, state_tracer, execution_mode));
         }
 
         auto const senders = std::vector{sender};
@@ -297,6 +286,7 @@ namespace
                     .senders_and_authorities = senders_and_authorities,
                     .senders = senders,
                     .authorities = authorities_vec,
+                    .mode = execution_mode,
                 };
             }
             else {
@@ -787,6 +777,20 @@ namespace
         return carried_size;
     }
 
+    // Returns the base fee of a simulated block whose parent is `parent`.
+    std::optional<uint256_t> simulated_base_fee(
+        std::optional<uint256_t> const &base_fee_override,
+        BlockHeader const &parent, Simulation const &execution_mode)
+    {
+        if (base_fee_override.has_value()) {
+            return base_fee_override;
+        }
+        if (inherit_base_fee(execution_mode)) {
+            return parent.base_fee_per_gas;
+        }
+        return std::nullopt;
+    }
+
     // Executes one simulated block under the fork rules active at its
     // header. Fork-dependent header fields are populated here.
     template <Traits traits>
@@ -799,7 +803,7 @@ namespace
         std::vector<std::unique_ptr<CallTracerBase>> &call_tracers,
         std::vector<std::unique_ptr<trace::StateTracer>> &state_tracers,
         ChainContextBuffer &context_buffer,
-        bool const emit_native_transfer_logs)
+        bool const emit_native_transfer_logs, Simulation const &execution_mode)
     {
         if constexpr (traits::eip_7843_active()) {
             block.header.requests_hash = bytes32_t{};
@@ -811,8 +815,11 @@ namespace
 
         auto block_metrics = BlockMetrics{};
         trace::StateTracer system_call_state_tracer{std::monostate{}};
-        auto const chain_context =
+        auto chain_context =
             context_buffer.advance<traits>(senders, authorities);
+
+        static_assert(is_monad_trait_v<traits>);
+        chain_context.mode = execution_mode;
 
         return execute_block<traits>(
             chain,
@@ -841,48 +848,31 @@ namespace
         std::vector<std::unique_ptr<CallTracerBase>> &call_tracers,
         std::vector<std::unique_ptr<trace::StateTracer>> &state_tracers,
         ChainContextBuffer &context_buffer,
-        bool const emit_native_transfer_logs)
+        bool const emit_native_transfer_logs, Simulation const &execution_mode)
     {
-        if constexpr (is_monad_trait_v<base_traits>) {
-            auto const *const monad_chain =
-                dynamic_cast<MonadChain const *>(&chain);
-            MONAD_ASSERT(monad_chain);
-            auto const rev =
-                monad_chain->get_monad_revision(block.header.timestamp);
-            SWITCH_MONAD_TRAITS(
-                eth_simulate_execute_block,
-                chain,
-                parent,
-                block,
-                senders,
-                authorities,
-                block_state,
-                block_hash_buffer,
-                tx_exec_pool,
-                call_tracers,
-                state_tracers,
-                context_buffer,
-                emit_native_transfer_logs);
-        }
-        else {
-            EvmRevision const rev =
-                chain.get_revision(block.header.number, block.header.timestamp);
-            SWITCH_EVM_TRAITS(
-                eth_simulate_execute_block,
-                chain,
-                parent,
-                block,
-                senders,
-                authorities,
-                block_state,
-                block_hash_buffer,
-                tx_exec_pool,
-                call_tracers,
-                state_tracers,
-                context_buffer,
-                emit_native_transfer_logs);
-        }
-        MONAD_ASSERT(false);
+        static_assert(is_monad_trait_v<base_traits>);
+        auto const *const monad_chain =
+            dynamic_cast<MonadChain const *>(&chain);
+        MONAD_ASSERT_THROW(monad_chain, "Failed to cast chain to MonadChain");
+        auto const rev =
+            monad_chain->get_monad_revision(block.header.timestamp);
+        SWITCH_MONAD_TRAITS(
+            eth_simulate_execute_block,
+            chain,
+            parent,
+            block,
+            senders,
+            authorities,
+            block_state,
+            block_hash_buffer,
+            tx_exec_pool,
+            call_tracers,
+            state_tracers,
+            context_buffer,
+            emit_native_transfer_logs,
+            execution_mode);
+        MONAD_ASSERT_THROW(
+            false, "Unreachable code reached in eth_simulate_dispatch_block");
     }
 
     template <Traits traits>
@@ -897,7 +887,7 @@ namespace
         struct monad_state_override_vec const &state_overrides,
         struct monad_block_override_vec const &block_overrides,
         uint64_t const gas_limit, size_t const max_calls, size_t const max_size,
-        bool emit_native_transfer_logs)
+        Simulation const execution_mode, bool emit_native_transfer_logs)
     {
         // TODO(dhil): Decide on the default timestamp increment.
         static constexpr uint64_t DEFAULT_TIMESTAMP_INCREMENT = 1;
@@ -1027,6 +1017,8 @@ namespace
                             // NOTE(dhil): Synthetic blocks carry forward the
                             // block beneficiary.
                             .beneficiary = header.beneficiary,
+                            .base_fee_per_gas = simulated_base_fee(
+                                std::nullopt, header, execution_mode),
                             // TODO(dhil): The simulation does not compute roots
                             // at this time.
                             .parent_beacon_block_root = bytes32_t{},
@@ -1056,7 +1048,8 @@ namespace
                         call_tracers,
                         state_tracers,
                         context_buffer,
-                        emit_native_transfer_logs));
+                        emit_native_transfer_logs,
+                        execution_mode));
 
                 // NOTE(dhil): Synthetic blocks are free, so we don't update
                 // `gas_consumed_so_far`.
@@ -1105,7 +1098,8 @@ namespace
                 .timestamp = bo.time.value_or(
                     header.timestamp + DEFAULT_TIMESTAMP_INCREMENT),
                 .beneficiary = bo.fee_recipient.value_or(header.beneficiary),
-                .base_fee_per_gas = bo.base_fee_per_gas,
+                .base_fee_per_gas = simulated_base_fee(
+                    bo.base_fee_per_gas, header, execution_mode),
                 // TODO(dhil): The simulation does not compute roots at this
                 // time.
                 .parent_beacon_block_root = bytes32_t{},
@@ -1185,7 +1179,8 @@ namespace
                     call_tracers,
                     state_tracers,
                     context_buffer,
-                    emit_native_transfer_logs));
+                    emit_native_transfer_logs,
+                    execution_mode));
 
             for (auto const &call_tracer : call_tracers) {
                 static_cast<CallTracer const &>(*call_tracer)
@@ -1568,6 +1563,7 @@ struct monad_executor
              call_tracer_max_size = call_tracer_max_size,
              tracer_config = tracer_config,
              gas_specified = gas_specified,
+             execution_mode = Simulation{false},
              active_pool = &active_pool] {
                 active_pool->queued_count.fetch_sub(
                     1, std::memory_order_relaxed);
@@ -1665,7 +1661,8 @@ struct monad_executor
                                 block_hash_buffer,
                                 *state_overrides,
                                 *call_tracer,
-                                state_tracer);
+                                state_tracer,
+                                execution_mode);
                             MONAD_ASSERT(false);
                         }
                         else {
@@ -1687,7 +1684,8 @@ struct monad_executor
                                 block_hash_buffer,
                                 *state_overrides,
                                 *call_tracer,
-                                state_tracer);
+                                state_tracer,
+                                execution_mode);
                             MONAD_ASSERT(false);
                         }
                     }();
@@ -2093,7 +2091,7 @@ struct monad_executor
         BlockHeader const &block_header, uint64_t const block_number,
         bytes32_t const &block_id, bytes32_t const &grandparent_id,
         uint64_t const gas_limit, size_t const max_calls, size_t const max_size,
-        bool emit_native_transfer_logs,
+        bool const validation, bool emit_native_transfer_logs,
         void (*complete)(monad_executor_result *, void *user), void *const user)
     {
         monad_executor_result *const result = new monad_executor_result();
@@ -2123,6 +2121,7 @@ struct monad_executor
              gas_limit = gas_limit,
              max_calls = max_calls,
              max_size = max_size,
+             execution_mode = Simulation{validation},
              emit_native_transfer_logs = emit_native_transfer_logs,
              fiber_group = &trace_block_group_,
              tx_exec_group = &trace_tx_exec_group_,
@@ -2173,28 +2172,8 @@ struct monad_executor
 
                         if (chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET ||
                             chain_config == CHAIN_CONFIG_HIVE_NET) {
-                            EvmRevision const rev = chain->get_revision(
-                                block_header.number, block_header.timestamp);
-                            SWITCH_EVM_TRAITS(
-                                eth_simulate_impl,
-                                *chain,
-                                calls,
-                                block_header,
-                                base_block_number,
-                                block_id,
-                                grandparent_id,
-                                senders,
-                                authorities,
-                                db,
-                                vm,
-                                *tx_exec_group->group,
-                                *state_overrides,
-                                *block_overrides,
-                                gas_limit,
-                                max_calls,
-                                max_size,
-                                emit_native_transfer_logs);
-                            MONAD_ASSERT(false);
+                            return Result<nlohmann::json>::error_type{
+                                SimulationError::UnsupportedChainConfig};
                         }
                         else {
                             auto const rev =
@@ -2219,6 +2198,7 @@ struct monad_executor
                                 gas_limit,
                                 max_calls,
                                 max_size,
+                                execution_mode,
                                 emit_native_transfer_logs);
                             MONAD_ASSERT(false);
                         }
@@ -2491,7 +2471,7 @@ void monad_executor_eth_simulate_submit(
     size_t max_calls, size_t max_output_size,
     struct monad_state_override_vec const *const state_overrides,
     struct monad_block_override_vec const *const block_overrides,
-    bool emit_native_transfer_logs,
+    bool const validation, bool emit_native_transfer_logs,
     void (*complete)(monad_executor_result *, void *user), void *user)
 {
 
@@ -2553,6 +2533,7 @@ void monad_executor_eth_simulate_submit(
         gas_limit,
         max_calls,
         max_output_size,
+        validation,
         emit_native_transfer_logs,
         complete,
         user);

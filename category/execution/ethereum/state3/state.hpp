@@ -497,6 +497,14 @@ public:
 
     bytes32_t get_code_hash(monad_address const &);
 
+#if defined(MONAD_ZKVM_ZISK)
+    bool has_code(monad_address const &address)
+    {
+        auto const &account = recent_account(address);
+        return account.has_value() && account->code_hash != NULL_HASH;
+    }
+#endif
+
     bool is_destructed(monad_address const &);
 
     bool is_current_incarnation(monad_address const &);

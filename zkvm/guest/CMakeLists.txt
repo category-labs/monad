@@ -530,9 +530,13 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # The codes compiled ahead of time (category/vm/aot), on ZisK.
     set(_monad_zkvm_aot_objs "")
     if(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
-        file(GLOB _monad_zkvm_aot_sources CONFIGURE_DEPENDS
-            "${MONAD_ROOT}/category/vm/aot/gen/*.cpp")
-        add_library(monad-vm-aot OBJECT ${_monad_zkvm_aot_sources})
+        # The files aotgen.py wrote last, as its manifest lists them.
+        set(_monad_zkvm_aot_dir "${MONAD_ROOT}/category/vm/aot/gen")
+        file(STRINGS "${_monad_zkvm_aot_dir}/sources.txt" _monad_zkvm_aot_names)
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+            "${_monad_zkvm_aot_dir}/sources.txt")
+        list(TRANSFORM _monad_zkvm_aot_names PREPEND "${_monad_zkvm_aot_dir}/")
+        add_library(monad-vm-aot OBJECT ${_monad_zkvm_aot_names})
         monad_compile_options(monad-vm-aot)
         monad_riscv_compile_options(monad-vm-aot)
         target_link_libraries(monad-vm-aot

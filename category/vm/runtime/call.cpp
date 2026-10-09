@@ -250,9 +250,12 @@ namespace monad::vm::runtime
         };
 
 #if defined(MONAD_ZKVM_ZISK)
-        // What the C adapter does, without its frame.
-        auto const result =
-            guest_call<traits>(host_of(*ctx), message).release_raw();
+        // What the C adapter does, without its frame, and read where it was
+        // returned: release_raw copied the 72 bytes out first. The output
+        // passes to the return data below, so the result releases nothing.
+        evmc::Result callee = guest_call<traits>(host_of(*ctx), message);
+        evmc_result &result = callee.raw();
+        result.release = nullptr;
 #else
         auto const result = ctx->host->call(ctx->context, &message);
 #endif

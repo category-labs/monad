@@ -130,7 +130,7 @@ public:
     void stop()
     {
         test_is_done_ = true;
-        fixture_shared_state_->testio->wait_until_done();
+        fixture_shared_state_->testio->flush();
     }
 
     virtual bool reinitiate(

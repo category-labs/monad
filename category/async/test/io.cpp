@@ -122,7 +122,7 @@ namespace
             state->initiate(); // will reap completions if no buffers free
             (void)state.release();
         }
-        testio.wait_until_done();
+        testio.flush();
     }
 
     TEST(AsyncIO, buffer_exhaustion_pauses_until_io_completes_read)
@@ -144,7 +144,7 @@ namespace
             state->initiate(); // will reap completions if no buffers free
             (void)state.release();
         }
-        testio.wait_until_done();
+        testio.flush();
     }
 
     struct sqe_exhaustion_does_not_reorder_writes_receiver
@@ -238,7 +238,7 @@ namespace
         s1->sender().advance_buffer_append(monad::async::DISK_PAGE_SIZE);
         s1->initiate();
         (void)s1.release();
-        testio.wait_until_done();
+        testio.flush();
         std::cout << "   " << seq.size() << " offsets written." << std::endl;
 
         uint32_t offset2 = 0;
@@ -304,7 +304,7 @@ namespace
             (void)state.release();
         }
 
-        testio.wait_until_done();
+        testio.flush();
 
         EXPECT_LE(testio.max_reads_in_flight(), 2u);
 

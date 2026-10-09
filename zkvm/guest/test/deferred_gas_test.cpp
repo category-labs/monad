@@ -278,6 +278,27 @@ extern "C" uint32_t monad_zkvm_deferred_gas_test()
                                    r.gas == gas - 11 && r.output == 0 &&
                                    r.refund == 0 && r.accesses == 0;
     }
+    // Distinct bytes expose carries and zero-fill around both wide SHR
+    // boundaries.
+    for (unsigned shift : {127u, 128u, 129u, 191u, 192u, 193u, 255u}) {
+        bytes32_t input{};
+        for (unsigned i = 0; i < sizeof(input.bytes); ++i) {
+            input.bytes[i] = static_cast<uint8_t>(0x81u + i);
+        }
+        std::vector<uint8_t> code{PUSH32};
+        code.insert(code.end(), std::begin(input.bytes), std::end(input.bytes));
+        code.insert(
+            code.end(), {PUSH1, static_cast<uint8_t>(shift), SHR, PUSH32});
+        auto const expected =
+            store_be_as<bytes32_t>(load_be<uint256_t>(input) >> shift);
+        code.insert(code.end(), expected.bytes, expected.bytes + 32);
+        code.insert(code.end(), {EQ, PUSH2, 0, 0, JUMPI, 0xfe});
+        code[code.size() - 3] = static_cast<uint8_t>(code.size());
+        code.insert(code.end(), {JUMPDEST, STOP});
+        auto const result = run(code, 29);
+        boundary &= result.status == CallStatus::Success && result.gas == 0;
+        boundary &= failed_cleanly(run(code, 28));
+    }
     // Exercise all five pair prefixes plus an ordinary fall-through prefix.
     for (auto op : {ADD, SHL, SHR, SAR, PUSH1, POP}) {
         std::vector<uint8_t> code{PUSH0, PUSH1, 1, static_cast<uint8_t>(op)};

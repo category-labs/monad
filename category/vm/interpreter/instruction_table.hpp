@@ -2719,6 +2719,30 @@ namespace monad::vm::interpreter
                 *stack_top <<= immediate;
             }
             else if constexpr (OP == SHR) {
+                // Dispatch each wide shift here so its stores stay on this
+                // path.
+                uint64_t const total_shift = immediate[0];
+                unsigned const intra_word_shift =
+                    static_cast<unsigned>(total_shift & 63);
+                auto &value = *stack_top;
+                if (total_shift >= 192) {
+                    value[0] = value[3] >> intra_word_shift;
+                    value[1] = 0;
+                    value[2] = 0;
+                    value[3] = 0;
+                    MONAD_VM_FUSED_NEXT(3, 0);
+                }
+                if (total_shift >= 128) {
+                    uint64_t const high_word = value[3];
+                    // Splitting the left shift gives zero carry at exactly 128
+                    // without shifting a 64-bit word by 64.
+                    value[0] = (value[2] >> intra_word_shift) |
+                               ((high_word << 1) << (63 - intra_word_shift));
+                    value[1] = high_word >> intra_word_shift;
+                    value[2] = 0;
+                    value[3] = 0;
+                    MONAD_VM_FUSED_NEXT(3, 0);
+                }
                 *stack_top >>= immediate;
             }
             else {

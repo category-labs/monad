@@ -1232,6 +1232,87 @@ namespace monad::vm::interpreter
     }
 
 #if defined(MONAD_ZKVM_ZISK) && !defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
+    // Aligned storage for the three selector-extraction patterns. Only the
+    // first 5, 6 or 41 bytes are compared; trailing padding is ignored.
+    alignas(8) inline constexpr unsigned char selector_push0_pattern[8] = {
+        static_cast<unsigned char>(PUSH0),
+        static_cast<unsigned char>(CALLDATALOAD),
+        static_cast<unsigned char>(PUSH1),
+        0xe0,
+        static_cast<unsigned char>(SHR)};
+    alignas(8) inline constexpr unsigned char selector_push1_pattern[8] = {
+        static_cast<unsigned char>(PUSH1),
+        0,
+        static_cast<unsigned char>(CALLDATALOAD),
+        static_cast<unsigned char>(PUSH1),
+        0xe0,
+        static_cast<unsigned char>(SHR)};
+    alignas(8) inline constexpr unsigned char selector_div_pattern[48] = {
+        static_cast<unsigned char>(PUSH1),
+        0,
+        static_cast<unsigned char>(CALLDATALOAD),
+        static_cast<unsigned char>(PUSH29),
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        static_cast<unsigned char>(SWAP1),
+        static_cast<unsigned char>(DIV),
+        static_cast<unsigned char>(PUSH4),
+        0xff,
+        0xff,
+        0xff,
+        0xff,
+        static_cast<unsigned char>(AND)};
+
+    // Compare N bytecode bytes with a constant pattern using ZisK's DMA
+    // comparator (CSR 0x814). The following instruction encodes the length.
+    template <size_t N, size_t M>
+    [[gnu::always_inline]] inline bool code_matches(
+        uint8_t const *const instructions,
+        unsigned char const (&pattern)[M]) noexcept
+    {
+        static_assert(N <= M);
+        uint64_t mismatch;
+        asm(".option push\n\t"
+            ".option arch, +zicsr\n\t"
+            "csrrs %0, 0x814, %1\n\t"
+            "addi x0, %2, %5\n\t"
+            ".option pop"
+            : "=&r"(mismatch)
+            : "r"(instructions),
+              "r"(pattern),
+              "m"(*reinterpret_cast<uint8_t const(*)[N]>(instructions)),
+              "m"(pattern),
+              "i"(N));
+        return mismatch == 0;
+    }
+
     // These fusions use deferred gas checks; eager mode keeps per-opcode
     // dispatch. Recognize one of these selector extractions:
     //
@@ -1250,58 +1331,34 @@ namespace monad::vm::interpreter
         size_t extraction_length = 0;
         if (traits::evm_rev() >= MONAD_ETH_SHANGHAI &&
             opcode_at_is(extraction_code, 0, PUSH0)) {
-            if (opcode_at_is(extraction_code, 1, CALLDATALOAD) &&
-                opcode_at_is(extraction_code, 2, PUSH1) &&
-                extraction_code[3] == 0xe0 &&
-                opcode_at_is(extraction_code, 4, SHR)) {
+            if (code_matches<5>(extraction_code, selector_push0_pattern)) {
                 gas_remaining -=
                     static_gas<traits, PUSH0, CALLDATALOAD, PUSH1, SHR>();
                 extraction_length = 5;
             }
         }
-        else if (
-            opcode_at_is(extraction_code, 0, PUSH1) &&
-            extraction_code[1] == 0 &&
-            opcode_at_is(extraction_code, 2, CALLDATALOAD)) {
-            if (opcode_at_is(extraction_code, 3, PUSH1) &&
-                extraction_code[4] == 0xe0 &&
-                opcode_at_is(extraction_code, 5, SHR)) {
+        else if (opcode_at_is(extraction_code, 0, PUSH1)) {
+            if (code_matches<6>(extraction_code, selector_push1_pattern)) {
                 gas_remaining -=
                     static_gas<traits, PUSH1, CALLDATALOAD, PUSH1, SHR>();
                 extraction_length = 6;
             }
+            // Offset 33 is safe with the code's 33-byte zero padding. A
+            // nonzero SWAP1 there guarantees enough real code for the 41-byte
+            // comparison to remain within the padded allocation.
             else if (
-                opcode_at_is(extraction_code, 3, PUSH29) &&
-                extraction_code[4] == 1 &&
                 opcode_at_is(extraction_code, 33, SWAP1) &&
-                opcode_at_is(extraction_code, 34, DIV) &&
-                opcode_at_is(extraction_code, 35, PUSH4) &&
-                opcode_at_is(extraction_code, 40, AND)) {
-                uint64_t divisor_zero_bytes_0, divisor_zero_bytes_1,
-                    divisor_zero_bytes_2;
-                uint32_t divisor_zero_bytes_3, selector_mask;
-                __builtin_memcpy(&divisor_zero_bytes_0, extraction_code + 5, 8);
-                __builtin_memcpy(
-                    &divisor_zero_bytes_1, extraction_code + 13, 8);
-                __builtin_memcpy(
-                    &divisor_zero_bytes_2, extraction_code + 21, 8);
-                __builtin_memcpy(
-                    &divisor_zero_bytes_3, extraction_code + 29, 4);
-                __builtin_memcpy(&selector_mask, extraction_code + 36, 4);
-                if ((divisor_zero_bytes_0 | divisor_zero_bytes_1 |
-                     divisor_zero_bytes_2 | divisor_zero_bytes_3) == 0 &&
-                    selector_mask == 0xffffffffu) {
-                    gas_remaining -= static_gas<
-                        traits,
-                        PUSH1,
-                        CALLDATALOAD,
-                        PUSH29,
-                        SWAP1,
-                        DIV,
-                        PUSH4,
-                        AND>();
-                    extraction_length = 41;
-                }
+                code_matches<41>(extraction_code, selector_div_pattern)) {
+                gas_remaining -= static_gas<
+                    traits,
+                    PUSH1,
+                    CALLDATALOAD,
+                    PUSH29,
+                    SWAP1,
+                    DIV,
+                    PUSH4,
+                    AND>();
+                extraction_length = 41;
             }
         }
         if (extraction_length != 0) {

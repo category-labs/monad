@@ -534,6 +534,21 @@ extern "C" uint32_t monad_zkvm_deferred_gas_test()
             }
         }
     }
+    // Truncated extraction must fall back without a 41-byte DMA read beyond
+    // the bytecode padding. An incomplete PUSH reads zero-padded immediates.
+    for (bool const long_prefix : {false, true}) {
+        std::vector<uint8_t> code{
+            PUSH1, 4, CALLDATASIZE, LT, PUSH2, 0, 0, JUMPI, PUSH1};
+        if (long_prefix) {
+            code.insert(code.end(), {0, CALLDATALOAD, PUSH29, 1});
+            code.insert(code.end(), 28, 0);
+            code.insert(code.end(), {SWAP1, DIV, PUSH4, 255, 255, 255, 255});
+        }
+        int64_t const cost = long_prefix ? 41 : 24;
+        auto const result = run(code, cost, input);
+        extraction &= result.status == EVMC_SUCCESS && result.gas == 0;
+        extraction &= failed_cleanly(run(code, cost - 1, input));
+    }
     // One spare slot suffices for selector extraction; a full stack must fail.
     for (size_t height : {size_t{1023}, size_t{1024}}) {
         std::vector<uint8_t> code(height - 1, PUSH0);

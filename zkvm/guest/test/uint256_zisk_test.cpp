@@ -136,6 +136,54 @@ namespace
             }
         }
     }
+
+    // Every shift up to past 256, then amounts with upper words set.
+    std::vector<uint256_t> make_shifts()
+    {
+        std::vector<uint256_t> shifts;
+        for (uint64_t shift = 0; shift <= 260; ++shift) {
+            shifts.emplace_back(shift);
+        }
+        shifts.emplace_back(0, 1, 0, 0);
+        shifts.emplace_back(64, 0, 0, 1);
+        uint64_t const ones = ~uint64_t{0};
+        shifts.emplace_back(ones, ones, ones, ones);
+        return shifts;
+    }
+
+    // Arithmetic right shift: complement a negative value, shift it
+    // logically, then complement the result.
+    ::intx::uint256
+    sar_reference(::intx::uint256 const &x, ::intx::uint256 const &shift)
+    {
+        bool const negative = (x[3] >> 63) != 0;
+        return negative ? ~(~x >> shift) : x >> shift;
+    }
+
+    void check_shifts(std::vector<uint256_t> const &inputs)
+    {
+        auto const shifts = make_shifts();
+        for (auto const &x : inputs) {
+            auto const ix = to_intx(x);
+            for (auto const &shift : shifts) {
+                auto const is = to_intx(shift);
+                require(to_intx(x << shift) == (ix << is), "<<", x, shift);
+                require(to_intx(x >> shift) == (ix >> is), ">>", x, shift);
+                require(
+                    to_intx(sar(shift, x)) == sar_reference(ix, is),
+                    "sar",
+                    x,
+                    shift);
+                if (shift[1] == 0 && shift[2] == 0 && shift[3] == 0) {
+                    require(
+                        to_intx(x << shift[0]) == (ix << is),
+                        "<< by a word",
+                        x,
+                        shift);
+                }
+            }
+        }
+    }
 }
 
 int main()
@@ -143,5 +191,6 @@ int main()
     auto const inputs = make_inputs();
     check_comparisons(inputs);
     check_multiply(inputs);
+    check_shifts(inputs);
     return 0;
 }

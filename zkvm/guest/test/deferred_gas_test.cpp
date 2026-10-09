@@ -22,6 +22,7 @@
 #include <cstdint>
 #include <initializer_list>
 #include <span>
+#include <utility>
 #include <vector>
 
 namespace
@@ -1247,14 +1248,15 @@ extern "C" uint32_t monad_zkvm_deferred_gas_test()
     check(masks);
     // Nonuniform immediate masks exercise byte order and all word boundaries.
     bool immediate_masks = true;
-    for (unsigned width : {4u, 20u}) {
+    for (auto const &[width, all_ones] :
+         {std::pair{4u, false}, std::pair{20u, false}, std::pair{20u, true}}) {
         std::array<uint8_t, 32> value{};
         std::array<uint8_t, 32> mask{};
         std::array<uint8_t, 32> expected{};
         for (unsigned i = 0; i < 32; ++i) {
             value[i] = static_cast<uint8_t>(0xa5 ^ (i * 7));
             if (i >= 32 - width) {
-                mask[i] = static_cast<uint8_t>(i * 13 + 1);
+                mask[i] = all_ones ? 0xff : static_cast<uint8_t>(i * 13 + 1);
             }
             expected[i] = value[i] & mask[i];
         }

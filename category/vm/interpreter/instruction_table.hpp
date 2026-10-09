@@ -3569,6 +3569,15 @@ namespace monad::vm::interpreter
         }
         else {
             static_assert(N == 20);
+            alignas(8) static constexpr uint8_t address_mask[20] = {
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
+            if (MONAD_LIKELY(code_matches<20>(instr_ptr + 1, address_mask))) {
+                // Keep the low 160 bits: two full words and half of word 2.
+                value[2] &= 0xffffffffu;
+                value[3] = 0;
+                MONAD_VM_FUSED_NEXT(N + 2, 0);
+            }
             // PUSH20 stores the mask big-endian, most significant bytes first:
             // offset: 0       1..4       5..12      13..20     21
             //         PUSH20  [word 2]   [word 1]   [word 0]   AND

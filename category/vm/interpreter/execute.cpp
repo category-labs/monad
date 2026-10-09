@@ -1364,6 +1364,38 @@ namespace monad::vm::interpreter
         }
     }
 
+#if defined(MONAD_ZKVM_ZISK)
+    template <Traits traits>
+    void resume(
+        runtime::Context &ctx, uint256_t const *const bottom,
+        uint256_t *const stack_top, int64_t const gas_remaining,
+        size_t const pc)
+    {
+        auto const *const stack_bottom = bottom + MONAD_VM_STACK_BOTTOM_BIAS;
+        auto const *const instr_ptr = ctx.landing_base - 1 + pc;
+        void const *itbl;
+        if constexpr (has_slots<traits>) {
+            itbl = monad_vm_slots +
+                   ((MONAD_ETH_AMSTERDAM - traits::evm_rev()) << 8
+                                                             << slot_shift) +
+                   slot_lead;
+        }
+        else {
+            itbl = instruction_table<traits>.data();
+        }
+        InstrEval const first = dispatch_table<traits>(itbl)[*instr_ptr];
+        first(
+            ctx,
+            ctx.stack_limit,
+            stack_bottom,
+            stack_top,
+            gas_remaining,
+            instr_ptr MONAD_VM_TBL_ARG);
+    }
+
+    EXPLICIT_TRAITS(resume);
+#endif
+
     template <Traits traits>
     void execute(
         runtime::Context &ctx, Intercode const &analysis, uint8_t *stack_ptr)

@@ -172,6 +172,7 @@ namespace monad::vm
                 compiled = aot::find(code_hash, icode->size());
             }
             if (compiled != nullptr) {
+                interpreter::prepare(rt_ctx, *icode, stack_ptr.get());
                 interpreter::trampoline(
                     rt_ctx,
                     *icode,

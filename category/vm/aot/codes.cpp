@@ -23,410 +23,753 @@ namespace monad::vm::aot
     using runtime::Context;
     using runtime::StatusCode;
 
+#define MONAD_AOT_TAIL __attribute__((musttail))
+
     // 3124 bytes, keccak d0a06b12ac47863b5c7be4185c2deaad1c61557033f56c7d4ea74429cbb25e23
-    template <Traits traits>
-    void code_d0a06b12ac47863b(
-        void *, Context *const ctx, interpreter::Intercode const *,
-        uint256_t *const stack_ptr, void *)
+    namespace c_d0a06b12ac47863b
     {
-        uint256_t const *const bottom = stack_ptr - 1;
-        uint256_t *top = stack_ptr - 1;
-        int64_t gas = ctx->gas_remaining;
-        uint64_t jt;
-        static void *const jump_table[] = {
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&B_af,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&B_b7,
-            &&bad, &&B_b9, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&B_c4, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&B_cc, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&B_f1, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&B_10c, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&B_139, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&B_147,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&B_152, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&B_187,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&B_1a1, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&B_1ac, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&B_1b4, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&B_1ca, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&B_1d5, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&B_229, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&B_243, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&B_24e, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&B_264, &&bad, &&B_266, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&B_271, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&B_279, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&B_295, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&B_2a0, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&B_2cc, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&B_2e2, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&B_2ed, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&B_2f5, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&B_31a, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&B_335, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&B_362, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&B_370, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&B_37b, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&B_3b0, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&B_3ca, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&B_3d2, &&bad, &&B_3d4, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&B_3df,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&B_42a, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&B_440, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&B_4dd, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&B_548, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&B_556, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&B_573, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&B_57b, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&B_66d, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&B_68c, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&B_6dc, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&B_7b4, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&B_844, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&B_8cf,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&B_9d9, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&B_a27,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&B_ab4, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&B_b05, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&B_b18, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&B_b30, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&B_b9b, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&B_ba9, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&B_bc6, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&B_bce, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&B_bdb, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&B_be3, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad, &&bad,
-            &&bad, &&bad, &&bad, &&bad,
+        template <Traits traits>
+        using Block = void (*)(Context *, uint256_t const *, uint256_t *, int64_t);
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_0(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_d(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_41(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_4c(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_57(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_62(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_6d(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_78(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_83(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_8e(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_99(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_a4(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_af(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_b7(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_b9(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_c0(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_c4(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_cc(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_f1(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_fa(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_10c(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_120(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_139(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_147(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_14e(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_152(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_187(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_1a1(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_1a8(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_1ac(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_1b4(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_1ca(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_1d1(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_1d5(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_229(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_243(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_24a(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_24e(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_264(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_266(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_26d(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_271(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_279(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_295(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_29c(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_2a0(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_2cc(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_2e2(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_2e9(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_2ed(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_2f5(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_31a(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_323(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_335(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_349(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_362(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_370(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_377(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_37b(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_3b0(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_3ca(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_3d2(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_3d4(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_3db(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_3df(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_42a(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_440(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_4dd(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_52d(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_535(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_548(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_556(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_56a(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_573(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_57b(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_66d(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_68c(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_6d8(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_6dc(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_713(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_7b4(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_7ba(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_840(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_844(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_8cf(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_9d9(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_a23(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_a27(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_ab0(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_ab4(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_b05(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_b18(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_b30(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_b80(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_b88(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_b9b(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_ba9(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_bbd(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_bc6(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_bce(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_bdb(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline]] void b_be3(Context *, uint256_t const *, uint256_t *, int64_t);
+
+        template <Traits traits>
+        void bad(Context *const ctx, uint256_t const *, uint256_t *, int64_t)
+        {
+            ctx->exit(StatusCode::Error);
+        }
+
+        template <Traits traits>
+        inline constexpr Block<traits> jump_table[3124] = {
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &b_af<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &b_b7<traits>, &bad<traits>, &b_b9<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &b_c4<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &b_cc<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &b_f1<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &b_10c<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &b_139<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &b_147<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &b_152<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &b_187<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &b_1a1<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &b_1ac<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &b_1b4<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &b_1ca<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &b_1d5<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &b_229<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &b_243<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &b_24e<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &b_264<traits>, &bad<traits>, &b_266<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &b_271<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &b_279<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &b_295<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &b_2a0<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &b_2cc<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &b_2e2<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &b_2ed<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &b_2f5<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &b_31a<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &b_335<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &b_362<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &b_370<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &b_37b<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &b_3b0<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &b_3ca<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &b_3d2<traits>, &bad<traits>, &b_3d4<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &b_3df<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &b_42a<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &b_440<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &b_4dd<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &b_548<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &b_556<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &b_573<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &b_57b<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &b_66d<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &b_68c<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &b_6dc<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &b_7b4<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &b_844<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &b_8cf<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &b_9d9<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &b_a27<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &b_ab4<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &b_b05<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &b_b18<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &b_b30<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &b_b9b<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &b_ba9<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &b_bc6<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &b_bce<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &b_bdb<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &b_be3<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
         };
-        B_0: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_0(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x60, 0x60, 0x52, 0x60, 0x36, 0x10, 0x61, 0x57}, 0, 2));
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x60, 0x60, 0x52, 0x60, 0x36, 0x10, 0x61, 0x57}) + 0;
@@ -435,9 +778,13 @@ namespace monad::vm::aot
             uint256_t const t1 = uint256_t{static_cast<uint64_t>(ctx->env.input_data_size)};
             uint256_t const t2 = aot::from_bool(t1 < uint256_t{0x4ull});
             bool const j7 = aot::nonzero(t2);
-            if (j7) goto B_af;
+            if (j7) { MONAD_AOT_TAIL return b_af<traits>(ctx, bottom, top, gas); }
+            MONAD_AOT_TAIL return b_d<traits>(ctx, bottom, top, gas);
         }
-        B_d: {
+
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_d(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x60, 0x35, 0x7c, 0x90, 0x04, 0x63, 0x16, 0x80, 0x63, 0x14, 0x61, 0x57}, 0, 3));
             if (MONAD_UNLIKELY(top - bottom > 1021)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x60, 0x35, 0x7c, 0x90, 0x04, 0x63, 0x16, 0x80, 0x63, 0x14, 0x61, 0x57}) + 0;
@@ -449,9 +796,13 @@ namespace monad::vm::aot
             bool const j11 = aot::nonzero(t4);
             top[1] = t3;
             top += 1;
-            if (j11) goto B_b9;
+            if (j11) { MONAD_AOT_TAIL return b_b9<traits>(ctx, bottom, top, gas); }
+            MONAD_AOT_TAIL return b_41<traits>(ctx, bottom, top, gas);
         }
-        B_41: {
+
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_41(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x80, 0x63, 0x14, 0x61, 0x57}, 1, 2));
             if (MONAD_UNLIKELY(top - bottom < 1)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
@@ -460,9 +811,13 @@ namespace monad::vm::aot
             uint256_t const &s0 = top[0];
             uint256_t const t1 = aot::from_bool(uint256_t{0x95ea7b3ull} == s0);
             bool const j4 = aot::nonzero(t1);
-            if (j4) goto B_147;
+            if (j4) { MONAD_AOT_TAIL return b_147<traits>(ctx, bottom, top, gas); }
+            MONAD_AOT_TAIL return b_4c<traits>(ctx, bottom, top, gas);
         }
-        B_4c: {
+
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_4c(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x80, 0x63, 0x14, 0x61, 0x57}, 1, 2));
             if (MONAD_UNLIKELY(top - bottom < 1)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
@@ -471,9 +826,13 @@ namespace monad::vm::aot
             uint256_t const &s0 = top[0];
             uint256_t const t1 = aot::from_bool(uint256_t{0x18160dddull} == s0);
             bool const j4 = aot::nonzero(t1);
-            if (j4) goto B_1a1;
+            if (j4) { MONAD_AOT_TAIL return b_1a1<traits>(ctx, bottom, top, gas); }
+            MONAD_AOT_TAIL return b_57<traits>(ctx, bottom, top, gas);
         }
-        B_57: {
+
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_57(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x80, 0x63, 0x14, 0x61, 0x57}, 1, 2));
             if (MONAD_UNLIKELY(top - bottom < 1)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
@@ -482,9 +841,13 @@ namespace monad::vm::aot
             uint256_t const &s0 = top[0];
             uint256_t const t1 = aot::from_bool(uint256_t{0x23b872ddull} == s0);
             bool const j4 = aot::nonzero(t1);
-            if (j4) goto B_1ca;
+            if (j4) { MONAD_AOT_TAIL return b_1ca<traits>(ctx, bottom, top, gas); }
+            MONAD_AOT_TAIL return b_62<traits>(ctx, bottom, top, gas);
         }
-        B_62: {
+
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_62(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x80, 0x63, 0x14, 0x61, 0x57}, 1, 2));
             if (MONAD_UNLIKELY(top - bottom < 1)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
@@ -493,9 +856,13 @@ namespace monad::vm::aot
             uint256_t const &s0 = top[0];
             uint256_t const t1 = aot::from_bool(uint256_t{0x2e1a7d4dull} == s0);
             bool const j4 = aot::nonzero(t1);
-            if (j4) goto B_243;
+            if (j4) { MONAD_AOT_TAIL return b_243<traits>(ctx, bottom, top, gas); }
+            MONAD_AOT_TAIL return b_6d<traits>(ctx, bottom, top, gas);
         }
-        B_6d: {
+
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_6d(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x80, 0x63, 0x14, 0x61, 0x57}, 1, 2));
             if (MONAD_UNLIKELY(top - bottom < 1)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
@@ -504,9 +871,13 @@ namespace monad::vm::aot
             uint256_t const &s0 = top[0];
             uint256_t const t1 = aot::from_bool(uint256_t{0x313ce567ull} == s0);
             bool const j4 = aot::nonzero(t1);
-            if (j4) goto B_266;
+            if (j4) { MONAD_AOT_TAIL return b_266<traits>(ctx, bottom, top, gas); }
+            MONAD_AOT_TAIL return b_78<traits>(ctx, bottom, top, gas);
         }
-        B_78: {
+
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_78(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x80, 0x63, 0x14, 0x61, 0x57}, 1, 2));
             if (MONAD_UNLIKELY(top - bottom < 1)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
@@ -515,9 +886,13 @@ namespace monad::vm::aot
             uint256_t const &s0 = top[0];
             uint256_t const t1 = aot::from_bool(uint256_t{0x70a08231ull} == s0);
             bool const j4 = aot::nonzero(t1);
-            if (j4) goto B_295;
+            if (j4) { MONAD_AOT_TAIL return b_295<traits>(ctx, bottom, top, gas); }
+            MONAD_AOT_TAIL return b_83<traits>(ctx, bottom, top, gas);
         }
-        B_83: {
+
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_83(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x80, 0x63, 0x14, 0x61, 0x57}, 1, 2));
             if (MONAD_UNLIKELY(top - bottom < 1)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
@@ -526,9 +901,13 @@ namespace monad::vm::aot
             uint256_t const &s0 = top[0];
             uint256_t const t1 = aot::from_bool(uint256_t{0x95d89b41ull} == s0);
             bool const j4 = aot::nonzero(t1);
-            if (j4) goto B_2e2;
+            if (j4) { MONAD_AOT_TAIL return b_2e2<traits>(ctx, bottom, top, gas); }
+            MONAD_AOT_TAIL return b_8e<traits>(ctx, bottom, top, gas);
         }
-        B_8e: {
+
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_8e(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x80, 0x63, 0x14, 0x61, 0x57}, 1, 2));
             if (MONAD_UNLIKELY(top - bottom < 1)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
@@ -537,9 +916,13 @@ namespace monad::vm::aot
             uint256_t const &s0 = top[0];
             uint256_t const t1 = aot::from_bool(uint256_t{0xa9059cbbull} == s0);
             bool const j4 = aot::nonzero(t1);
-            if (j4) goto B_370;
+            if (j4) { MONAD_AOT_TAIL return b_370<traits>(ctx, bottom, top, gas); }
+            MONAD_AOT_TAIL return b_99<traits>(ctx, bottom, top, gas);
         }
-        B_99: {
+
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_99(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x80, 0x63, 0x14, 0x61, 0x57}, 1, 2));
             if (MONAD_UNLIKELY(top - bottom < 1)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
@@ -548,9 +931,13 @@ namespace monad::vm::aot
             uint256_t const &s0 = top[0];
             uint256_t const t1 = aot::from_bool(uint256_t{0xd0e30db0ull} == s0);
             bool const j4 = aot::nonzero(t1);
-            if (j4) goto B_3ca;
+            if (j4) { MONAD_AOT_TAIL return b_3ca<traits>(ctx, bottom, top, gas); }
+            MONAD_AOT_TAIL return b_a4<traits>(ctx, bottom, top, gas);
         }
-        B_a4: {
+
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_a4(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x80, 0x63, 0x14, 0x61, 0x57}, 1, 2));
             if (MONAD_UNLIKELY(top - bottom < 1)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
@@ -559,25 +946,35 @@ namespace monad::vm::aot
             uint256_t const &s0 = top[0];
             uint256_t const t1 = aot::from_bool(uint256_t{0xdd62ed3eull} == s0);
             bool const j4 = aot::nonzero(t1);
-            if (j4) goto B_3d4;
+            if (j4) { MONAD_AOT_TAIL return b_3d4<traits>(ctx, bottom, top, gas); }
+            MONAD_AOT_TAIL return b_af<traits>(ctx, bottom, top, gas);
         }
-        B_af: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_af(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x61, 0x61, 0x56}, 0, 2));
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x61, 0x61, 0x56}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
             top[1] = uint256_t{0xb7ull};
             top += 1;
-            goto B_440;
+            MONAD_AOT_TAIL return b_440<traits>(ctx, bottom, top, gas);
         }
-        B_b7: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_b7(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x00}, 0, 0));
             gas -= aot::gas_of<traits>({0x5b, 0x00}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
             aot::stop(ctx, gas);
             return;
         }
-        B_b9: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_b9(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x34, 0x15, 0x61, 0x57}, 0, 2));
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x34, 0x15, 0x61, 0x57}) + 0;
@@ -585,9 +982,13 @@ namespace monad::vm::aot
             uint256_t const t1 = ::monad::load_be<uint256_t>(ctx->env.value);
             uint256_t const t2 = aot::from_bool(!aot::nonzero(t1));
             bool const j4 = aot::nonzero(t2);
-            if (j4) goto B_c4;
+            if (j4) { MONAD_AOT_TAIL return b_c4<traits>(ctx, bottom, top, gas); }
+            MONAD_AOT_TAIL return b_c0<traits>(ctx, bottom, top, gas);
         }
-        B_c0: {
+
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_c0(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x60, 0x80, 0xfd}, 0, 2));
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x60, 0x80, 0xfd}) + 0;
@@ -595,16 +996,22 @@ namespace monad::vm::aot
             aot::finish(ctx, gas, StatusCode::Revert, uint256_t{0x0ull}, uint256_t{0x0ull});
             return;
         }
-        B_c4: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_c4(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x61, 0x61, 0x56}, 0, 2));
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x61, 0x61, 0x56}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
             top[1] = uint256_t{0xccull};
             top += 1;
-            goto B_4dd;
+            MONAD_AOT_TAIL return b_4dd<traits>(ctx, bottom, top, gas);
         }
-        B_cc: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_cc(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x60, 0x51, 0x80, 0x80, 0x60, 0x01, 0x82, 0x81, 0x03, 0x82, 0x52, 0x83, 0x81, 0x81, 0x51, 0x81, 0x52, 0x60, 0x01, 0x91, 0x50, 0x80, 0x51, 0x90, 0x60, 0x01, 0x90, 0x80, 0x83, 0x83, 0x60}, 1, 9));
             if (MONAD_UNLIKELY(top - bottom < 1)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1015)) { ctx->exit(StatusCode::Error); }
@@ -630,8 +1037,12 @@ namespace monad::vm::aot
             top[8] = t7;
             top[9] = uint256_t{0x0ull};
             top += 9;
+            MONAD_AOT_TAIL return b_f1<traits>(ctx, bottom, top, gas);
         }
-        B_f1: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_f1(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x83, 0x81, 0x10, 0x15, 0x61, 0x57}, 4, 2));
             if (MONAD_UNLIKELY(top - bottom < 4)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
@@ -642,9 +1053,13 @@ namespace monad::vm::aot
             uint256_t const t1 = aot::from_bool(s0 < s3);
             uint256_t const t2 = aot::from_bool(!aot::nonzero(t1));
             bool const j6 = aot::nonzero(t2);
-            if (j6) goto B_10c;
+            if (j6) { MONAD_AOT_TAIL return b_10c<traits>(ctx, bottom, top, gas); }
+            MONAD_AOT_TAIL return b_fa<traits>(ctx, bottom, top, gas);
         }
-        B_fa: {
+
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_fa(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x80, 0x82, 0x01, 0x51, 0x81, 0x84, 0x01, 0x52, 0x60, 0x81, 0x01, 0x90, 0x50, 0x61, 0x56}, 3, 3));
             if (MONAD_UNLIKELY(top - bottom < 3)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1021)) { ctx->exit(StatusCode::Error); }
@@ -659,9 +1074,12 @@ namespace monad::vm::aot
             aot::mstore<traits>(ctx, gas, t3, t2);
             uint256_t const t4 = s0 + uint256_t{0x20ull};
             top[0] = t4;
-            goto B_f1;
+            MONAD_AOT_TAIL return b_f1<traits>(ctx, bottom, top, gas);
         }
-        B_10c: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_10c(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x50, 0x50, 0x50, 0x50, 0x90, 0x50, 0x90, 0x81, 0x01, 0x90, 0x60, 0x16, 0x80, 0x15, 0x61, 0x57}, 7, 0));
             if (MONAD_UNLIKELY(top - bottom < 7)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x50, 0x50, 0x50, 0x50, 0x90, 0x50, 0x90, 0x81, 0x01, 0x90, 0x60, 0x16, 0x80, 0x15, 0x61, 0x57}) + 0;
@@ -675,9 +1093,13 @@ namespace monad::vm::aot
             top[-6] = t1;
             top[-5] = t2;
             top += -5;
-            if (j16) goto B_139;
+            if (j16) { MONAD_AOT_TAIL return b_139<traits>(ctx, bottom, top, gas); }
+            MONAD_AOT_TAIL return b_120<traits>(ctx, bottom, top, gas);
         }
-        B_120: {
+
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_120(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x80, 0x82, 0x03, 0x80, 0x51, 0x60, 0x83, 0x60, 0x03, 0x61, 0x0a, 0x03, 0x19, 0x16, 0x81, 0x52, 0x60, 0x01, 0x91, 0x50}, 2, 5));
             if (MONAD_UNLIKELY(top - bottom < 2)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1019)) { ctx->exit(StatusCode::Error); }
@@ -696,8 +1118,12 @@ namespace monad::vm::aot
             aot::mstore<traits>(ctx, gas, t1, t6);
             uint256_t const t7 = uint256_t{0x20ull} + t1;
             top[-1] = t7;
+            MONAD_AOT_TAIL return b_139<traits>(ctx, bottom, top, gas);
         }
-        B_139: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_139(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x50, 0x92, 0x50, 0x50, 0x50, 0x60, 0x51, 0x80, 0x91, 0x03, 0x90, 0xf3}, 5, 0));
             if (MONAD_UNLIKELY(top - bottom < 5)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x50, 0x92, 0x50, 0x50, 0x50, 0x60, 0x51, 0x80, 0x91, 0x03, 0x90, 0xf3}) + 0;
@@ -708,7 +1134,10 @@ namespace monad::vm::aot
             aot::finish(ctx, gas, StatusCode::Success, t1, t2);
             return;
         }
-        B_147: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_147(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x34, 0x15, 0x61, 0x57}, 0, 2));
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x34, 0x15, 0x61, 0x57}) + 0;
@@ -716,9 +1145,13 @@ namespace monad::vm::aot
             uint256_t const t1 = ::monad::load_be<uint256_t>(ctx->env.value);
             uint256_t const t2 = aot::from_bool(!aot::nonzero(t1));
             bool const j4 = aot::nonzero(t2);
-            if (j4) goto B_152;
+            if (j4) { MONAD_AOT_TAIL return b_152<traits>(ctx, bottom, top, gas); }
+            MONAD_AOT_TAIL return b_14e<traits>(ctx, bottom, top, gas);
         }
-        B_14e: {
+
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_14e(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x60, 0x80, 0xfd}, 0, 2));
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x60, 0x80, 0xfd}) + 0;
@@ -726,7 +1159,10 @@ namespace monad::vm::aot
             aot::finish(ctx, gas, StatusCode::Revert, uint256_t{0x0ull}, uint256_t{0x0ull});
             return;
         }
-        B_152: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_152(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x61, 0x60, 0x80, 0x80, 0x35, 0x73, 0x16, 0x90, 0x60, 0x01, 0x90, 0x91, 0x90, 0x80, 0x35, 0x90, 0x60, 0x01, 0x90, 0x91, 0x90, 0x50, 0x50, 0x61, 0x56}, 0, 6));
             if (MONAD_UNLIKELY(top - bottom > 1018)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x61, 0x60, 0x80, 0x80, 0x35, 0x73, 0x16, 0x90, 0x60, 0x01, 0x90, 0x91, 0x90, 0x80, 0x35, 0x90, 0x60, 0x01, 0x90, 0x91, 0x90, 0x50, 0x50, 0x61, 0x56}) + 0;
@@ -738,9 +1174,12 @@ namespace monad::vm::aot
             top[2] = t2;
             top[3] = t3;
             top += 3;
-            goto B_57b;
+            MONAD_AOT_TAIL return b_57b<traits>(ctx, bottom, top, gas);
         }
-        B_187: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_187(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x60, 0x51, 0x80, 0x82, 0x15, 0x15, 0x15, 0x15, 0x81, 0x52, 0x60, 0x01, 0x91, 0x50, 0x50, 0x60, 0x51, 0x80, 0x91, 0x03, 0x90, 0xf3}, 1, 4));
             if (MONAD_UNLIKELY(top - bottom < 1)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1020)) { ctx->exit(StatusCode::Error); }
@@ -759,7 +1198,10 @@ namespace monad::vm::aot
             aot::finish(ctx, gas, StatusCode::Success, t7, t8);
             return;
         }
-        B_1a1: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_1a1(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x34, 0x15, 0x61, 0x57}, 0, 2));
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x34, 0x15, 0x61, 0x57}) + 0;
@@ -767,9 +1209,13 @@ namespace monad::vm::aot
             uint256_t const t1 = ::monad::load_be<uint256_t>(ctx->env.value);
             uint256_t const t2 = aot::from_bool(!aot::nonzero(t1));
             bool const j4 = aot::nonzero(t2);
-            if (j4) goto B_1ac;
+            if (j4) { MONAD_AOT_TAIL return b_1ac<traits>(ctx, bottom, top, gas); }
+            MONAD_AOT_TAIL return b_1a8<traits>(ctx, bottom, top, gas);
         }
-        B_1a8: {
+
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_1a8(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x60, 0x80, 0xfd}, 0, 2));
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x60, 0x80, 0xfd}) + 0;
@@ -777,16 +1223,22 @@ namespace monad::vm::aot
             aot::finish(ctx, gas, StatusCode::Revert, uint256_t{0x0ull}, uint256_t{0x0ull});
             return;
         }
-        B_1ac: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_1ac(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x61, 0x61, 0x56}, 0, 2));
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x61, 0x61, 0x56}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
             top[1] = uint256_t{0x1b4ull};
             top += 1;
-            goto B_66d;
+            MONAD_AOT_TAIL return b_66d<traits>(ctx, bottom, top, gas);
         }
-        B_1b4: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_1b4(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x60, 0x51, 0x80, 0x82, 0x81, 0x52, 0x60, 0x01, 0x91, 0x50, 0x50, 0x60, 0x51, 0x80, 0x91, 0x03, 0x90, 0xf3}, 1, 4));
             if (MONAD_UNLIKELY(top - bottom < 1)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1020)) { ctx->exit(StatusCode::Error); }
@@ -801,7 +1253,10 @@ namespace monad::vm::aot
             aot::finish(ctx, gas, StatusCode::Success, t3, t4);
             return;
         }
-        B_1ca: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_1ca(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x34, 0x15, 0x61, 0x57}, 0, 2));
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x34, 0x15, 0x61, 0x57}) + 0;
@@ -809,9 +1264,13 @@ namespace monad::vm::aot
             uint256_t const t1 = ::monad::load_be<uint256_t>(ctx->env.value);
             uint256_t const t2 = aot::from_bool(!aot::nonzero(t1));
             bool const j4 = aot::nonzero(t2);
-            if (j4) goto B_1d5;
+            if (j4) { MONAD_AOT_TAIL return b_1d5<traits>(ctx, bottom, top, gas); }
+            MONAD_AOT_TAIL return b_1d1<traits>(ctx, bottom, top, gas);
         }
-        B_1d1: {
+
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_1d1(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x60, 0x80, 0xfd}, 0, 2));
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x60, 0x80, 0xfd}) + 0;
@@ -819,7 +1278,10 @@ namespace monad::vm::aot
             aot::finish(ctx, gas, StatusCode::Revert, uint256_t{0x0ull}, uint256_t{0x0ull});
             return;
         }
-        B_1d5: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_1d5(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x61, 0x60, 0x80, 0x80, 0x35, 0x73, 0x16, 0x90, 0x60, 0x01, 0x90, 0x91, 0x90, 0x80, 0x35, 0x73, 0x16, 0x90, 0x60, 0x01, 0x90, 0x91, 0x90, 0x80, 0x35, 0x90, 0x60, 0x01, 0x90, 0x91, 0x90, 0x50, 0x50, 0x61, 0x56}, 0, 7));
             if (MONAD_UNLIKELY(top - bottom > 1017)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x61, 0x60, 0x80, 0x80, 0x35, 0x73, 0x16, 0x90, 0x60, 0x01, 0x90, 0x91, 0x90, 0x80, 0x35, 0x73, 0x16, 0x90, 0x60, 0x01, 0x90, 0x91, 0x90, 0x80, 0x35, 0x90, 0x60, 0x01, 0x90, 0x91, 0x90, 0x50, 0x50, 0x61, 0x56}) + 0;
@@ -834,9 +1296,12 @@ namespace monad::vm::aot
             top[3] = t4;
             top[4] = t5;
             top += 4;
-            goto B_68c;
+            MONAD_AOT_TAIL return b_68c<traits>(ctx, bottom, top, gas);
         }
-        B_229: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_229(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x60, 0x51, 0x80, 0x82, 0x15, 0x15, 0x15, 0x15, 0x81, 0x52, 0x60, 0x01, 0x91, 0x50, 0x50, 0x60, 0x51, 0x80, 0x91, 0x03, 0x90, 0xf3}, 1, 4));
             if (MONAD_UNLIKELY(top - bottom < 1)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1020)) { ctx->exit(StatusCode::Error); }
@@ -855,7 +1320,10 @@ namespace monad::vm::aot
             aot::finish(ctx, gas, StatusCode::Success, t7, t8);
             return;
         }
-        B_243: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_243(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x34, 0x15, 0x61, 0x57}, 0, 2));
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x34, 0x15, 0x61, 0x57}) + 0;
@@ -863,9 +1331,13 @@ namespace monad::vm::aot
             uint256_t const t1 = ::monad::load_be<uint256_t>(ctx->env.value);
             uint256_t const t2 = aot::from_bool(!aot::nonzero(t1));
             bool const j4 = aot::nonzero(t2);
-            if (j4) goto B_24e;
+            if (j4) { MONAD_AOT_TAIL return b_24e<traits>(ctx, bottom, top, gas); }
+            MONAD_AOT_TAIL return b_24a<traits>(ctx, bottom, top, gas);
         }
-        B_24a: {
+
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_24a(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x60, 0x80, 0xfd}, 0, 2));
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x60, 0x80, 0xfd}) + 0;
@@ -873,7 +1345,10 @@ namespace monad::vm::aot
             aot::finish(ctx, gas, StatusCode::Revert, uint256_t{0x0ull}, uint256_t{0x0ull});
             return;
         }
-        B_24e: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_24e(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x61, 0x60, 0x80, 0x80, 0x35, 0x90, 0x60, 0x01, 0x90, 0x91, 0x90, 0x50, 0x50, 0x61, 0x56}, 0, 5));
             if (MONAD_UNLIKELY(top - bottom > 1019)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x61, 0x60, 0x80, 0x80, 0x35, 0x90, 0x60, 0x01, 0x90, 0x91, 0x90, 0x50, 0x50, 0x61, 0x56}) + 0;
@@ -882,16 +1357,22 @@ namespace monad::vm::aot
             top[1] = uint256_t{0x264ull};
             top[2] = t1;
             top += 2;
-            goto B_9d9;
+            MONAD_AOT_TAIL return b_9d9<traits>(ctx, bottom, top, gas);
         }
-        B_264: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_264(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x00}, 0, 0));
             gas -= aot::gas_of<traits>({0x5b, 0x00}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
             aot::stop(ctx, gas);
             return;
         }
-        B_266: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_266(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x34, 0x15, 0x61, 0x57}, 0, 2));
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x34, 0x15, 0x61, 0x57}) + 0;
@@ -899,9 +1380,13 @@ namespace monad::vm::aot
             uint256_t const t1 = ::monad::load_be<uint256_t>(ctx->env.value);
             uint256_t const t2 = aot::from_bool(!aot::nonzero(t1));
             bool const j4 = aot::nonzero(t2);
-            if (j4) goto B_271;
+            if (j4) { MONAD_AOT_TAIL return b_271<traits>(ctx, bottom, top, gas); }
+            MONAD_AOT_TAIL return b_26d<traits>(ctx, bottom, top, gas);
         }
-        B_26d: {
+
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_26d(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x60, 0x80, 0xfd}, 0, 2));
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x60, 0x80, 0xfd}) + 0;
@@ -909,16 +1394,22 @@ namespace monad::vm::aot
             aot::finish(ctx, gas, StatusCode::Revert, uint256_t{0x0ull}, uint256_t{0x0ull});
             return;
         }
-        B_271: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_271(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x61, 0x61, 0x56}, 0, 2));
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x61, 0x61, 0x56}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
             top[1] = uint256_t{0x279ull};
             top += 1;
-            goto B_b05;
+            MONAD_AOT_TAIL return b_b05<traits>(ctx, bottom, top, gas);
         }
-        B_279: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_279(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x60, 0x51, 0x80, 0x82, 0x60, 0x16, 0x60, 0x16, 0x81, 0x52, 0x60, 0x01, 0x91, 0x50, 0x50, 0x60, 0x51, 0x80, 0x91, 0x03, 0x90, 0xf3}, 1, 4));
             if (MONAD_UNLIKELY(top - bottom < 1)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1020)) { ctx->exit(StatusCode::Error); }
@@ -935,7 +1426,10 @@ namespace monad::vm::aot
             aot::finish(ctx, gas, StatusCode::Success, t5, t6);
             return;
         }
-        B_295: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_295(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x34, 0x15, 0x61, 0x57}, 0, 2));
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x34, 0x15, 0x61, 0x57}) + 0;
@@ -943,9 +1437,13 @@ namespace monad::vm::aot
             uint256_t const t1 = ::monad::load_be<uint256_t>(ctx->env.value);
             uint256_t const t2 = aot::from_bool(!aot::nonzero(t1));
             bool const j4 = aot::nonzero(t2);
-            if (j4) goto B_2a0;
+            if (j4) { MONAD_AOT_TAIL return b_2a0<traits>(ctx, bottom, top, gas); }
+            MONAD_AOT_TAIL return b_29c<traits>(ctx, bottom, top, gas);
         }
-        B_29c: {
+
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_29c(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x60, 0x80, 0xfd}, 0, 2));
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x60, 0x80, 0xfd}) + 0;
@@ -953,7 +1451,10 @@ namespace monad::vm::aot
             aot::finish(ctx, gas, StatusCode::Revert, uint256_t{0x0ull}, uint256_t{0x0ull});
             return;
         }
-        B_2a0: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_2a0(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x61, 0x60, 0x80, 0x80, 0x35, 0x73, 0x16, 0x90, 0x60, 0x01, 0x90, 0x91, 0x90, 0x50, 0x50, 0x61, 0x56}, 0, 5));
             if (MONAD_UNLIKELY(top - bottom > 1019)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x61, 0x60, 0x80, 0x80, 0x35, 0x73, 0x16, 0x90, 0x60, 0x01, 0x90, 0x91, 0x90, 0x50, 0x50, 0x61, 0x56}) + 0;
@@ -963,9 +1464,12 @@ namespace monad::vm::aot
             top[1] = uint256_t{0x2ccull};
             top[2] = t2;
             top += 2;
-            goto B_b18;
+            MONAD_AOT_TAIL return b_b18<traits>(ctx, bottom, top, gas);
         }
-        B_2cc: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_2cc(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x60, 0x51, 0x80, 0x82, 0x81, 0x52, 0x60, 0x01, 0x91, 0x50, 0x50, 0x60, 0x51, 0x80, 0x91, 0x03, 0x90, 0xf3}, 1, 4));
             if (MONAD_UNLIKELY(top - bottom < 1)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1020)) { ctx->exit(StatusCode::Error); }
@@ -980,7 +1484,10 @@ namespace monad::vm::aot
             aot::finish(ctx, gas, StatusCode::Success, t3, t4);
             return;
         }
-        B_2e2: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_2e2(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x34, 0x15, 0x61, 0x57}, 0, 2));
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x34, 0x15, 0x61, 0x57}) + 0;
@@ -988,9 +1495,13 @@ namespace monad::vm::aot
             uint256_t const t1 = ::monad::load_be<uint256_t>(ctx->env.value);
             uint256_t const t2 = aot::from_bool(!aot::nonzero(t1));
             bool const j4 = aot::nonzero(t2);
-            if (j4) goto B_2ed;
+            if (j4) { MONAD_AOT_TAIL return b_2ed<traits>(ctx, bottom, top, gas); }
+            MONAD_AOT_TAIL return b_2e9<traits>(ctx, bottom, top, gas);
         }
-        B_2e9: {
+
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_2e9(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x60, 0x80, 0xfd}, 0, 2));
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x60, 0x80, 0xfd}) + 0;
@@ -998,16 +1509,22 @@ namespace monad::vm::aot
             aot::finish(ctx, gas, StatusCode::Revert, uint256_t{0x0ull}, uint256_t{0x0ull});
             return;
         }
-        B_2ed: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_2ed(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x61, 0x61, 0x56}, 0, 2));
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x61, 0x61, 0x56}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
             top[1] = uint256_t{0x2f5ull};
             top += 1;
-            goto B_b30;
+            MONAD_AOT_TAIL return b_b30<traits>(ctx, bottom, top, gas);
         }
-        B_2f5: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_2f5(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x60, 0x51, 0x80, 0x80, 0x60, 0x01, 0x82, 0x81, 0x03, 0x82, 0x52, 0x83, 0x81, 0x81, 0x51, 0x81, 0x52, 0x60, 0x01, 0x91, 0x50, 0x80, 0x51, 0x90, 0x60, 0x01, 0x90, 0x80, 0x83, 0x83, 0x60}, 1, 9));
             if (MONAD_UNLIKELY(top - bottom < 1)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1015)) { ctx->exit(StatusCode::Error); }
@@ -1033,8 +1550,12 @@ namespace monad::vm::aot
             top[8] = t7;
             top[9] = uint256_t{0x0ull};
             top += 9;
+            MONAD_AOT_TAIL return b_31a<traits>(ctx, bottom, top, gas);
         }
-        B_31a: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_31a(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x83, 0x81, 0x10, 0x15, 0x61, 0x57}, 4, 2));
             if (MONAD_UNLIKELY(top - bottom < 4)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
@@ -1045,9 +1566,13 @@ namespace monad::vm::aot
             uint256_t const t1 = aot::from_bool(s0 < s3);
             uint256_t const t2 = aot::from_bool(!aot::nonzero(t1));
             bool const j6 = aot::nonzero(t2);
-            if (j6) goto B_335;
+            if (j6) { MONAD_AOT_TAIL return b_335<traits>(ctx, bottom, top, gas); }
+            MONAD_AOT_TAIL return b_323<traits>(ctx, bottom, top, gas);
         }
-        B_323: {
+
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_323(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x80, 0x82, 0x01, 0x51, 0x81, 0x84, 0x01, 0x52, 0x60, 0x81, 0x01, 0x90, 0x50, 0x61, 0x56}, 3, 3));
             if (MONAD_UNLIKELY(top - bottom < 3)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1021)) { ctx->exit(StatusCode::Error); }
@@ -1062,9 +1587,12 @@ namespace monad::vm::aot
             aot::mstore<traits>(ctx, gas, t3, t2);
             uint256_t const t4 = s0 + uint256_t{0x20ull};
             top[0] = t4;
-            goto B_31a;
+            MONAD_AOT_TAIL return b_31a<traits>(ctx, bottom, top, gas);
         }
-        B_335: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_335(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x50, 0x50, 0x50, 0x50, 0x90, 0x50, 0x90, 0x81, 0x01, 0x90, 0x60, 0x16, 0x80, 0x15, 0x61, 0x57}, 7, 0));
             if (MONAD_UNLIKELY(top - bottom < 7)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x50, 0x50, 0x50, 0x50, 0x90, 0x50, 0x90, 0x81, 0x01, 0x90, 0x60, 0x16, 0x80, 0x15, 0x61, 0x57}) + 0;
@@ -1078,9 +1606,13 @@ namespace monad::vm::aot
             top[-6] = t1;
             top[-5] = t2;
             top += -5;
-            if (j16) goto B_362;
+            if (j16) { MONAD_AOT_TAIL return b_362<traits>(ctx, bottom, top, gas); }
+            MONAD_AOT_TAIL return b_349<traits>(ctx, bottom, top, gas);
         }
-        B_349: {
+
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_349(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x80, 0x82, 0x03, 0x80, 0x51, 0x60, 0x83, 0x60, 0x03, 0x61, 0x0a, 0x03, 0x19, 0x16, 0x81, 0x52, 0x60, 0x01, 0x91, 0x50}, 2, 5));
             if (MONAD_UNLIKELY(top - bottom < 2)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1019)) { ctx->exit(StatusCode::Error); }
@@ -1099,8 +1631,12 @@ namespace monad::vm::aot
             aot::mstore<traits>(ctx, gas, t1, t6);
             uint256_t const t7 = uint256_t{0x20ull} + t1;
             top[-1] = t7;
+            MONAD_AOT_TAIL return b_362<traits>(ctx, bottom, top, gas);
         }
-        B_362: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_362(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x50, 0x92, 0x50, 0x50, 0x50, 0x60, 0x51, 0x80, 0x91, 0x03, 0x90, 0xf3}, 5, 0));
             if (MONAD_UNLIKELY(top - bottom < 5)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x50, 0x92, 0x50, 0x50, 0x50, 0x60, 0x51, 0x80, 0x91, 0x03, 0x90, 0xf3}) + 0;
@@ -1111,7 +1647,10 @@ namespace monad::vm::aot
             aot::finish(ctx, gas, StatusCode::Success, t1, t2);
             return;
         }
-        B_370: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_370(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x34, 0x15, 0x61, 0x57}, 0, 2));
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x34, 0x15, 0x61, 0x57}) + 0;
@@ -1119,9 +1658,13 @@ namespace monad::vm::aot
             uint256_t const t1 = ::monad::load_be<uint256_t>(ctx->env.value);
             uint256_t const t2 = aot::from_bool(!aot::nonzero(t1));
             bool const j4 = aot::nonzero(t2);
-            if (j4) goto B_37b;
+            if (j4) { MONAD_AOT_TAIL return b_37b<traits>(ctx, bottom, top, gas); }
+            MONAD_AOT_TAIL return b_377<traits>(ctx, bottom, top, gas);
         }
-        B_377: {
+
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_377(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x60, 0x80, 0xfd}, 0, 2));
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x60, 0x80, 0xfd}) + 0;
@@ -1129,7 +1672,10 @@ namespace monad::vm::aot
             aot::finish(ctx, gas, StatusCode::Revert, uint256_t{0x0ull}, uint256_t{0x0ull});
             return;
         }
-        B_37b: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_37b(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x61, 0x60, 0x80, 0x80, 0x35, 0x73, 0x16, 0x90, 0x60, 0x01, 0x90, 0x91, 0x90, 0x80, 0x35, 0x90, 0x60, 0x01, 0x90, 0x91, 0x90, 0x50, 0x50, 0x61, 0x56}, 0, 6));
             if (MONAD_UNLIKELY(top - bottom > 1018)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x61, 0x60, 0x80, 0x80, 0x35, 0x73, 0x16, 0x90, 0x60, 0x01, 0x90, 0x91, 0x90, 0x80, 0x35, 0x90, 0x60, 0x01, 0x90, 0x91, 0x90, 0x50, 0x50, 0x61, 0x56}) + 0;
@@ -1141,9 +1687,12 @@ namespace monad::vm::aot
             top[2] = t2;
             top[3] = t3;
             top += 3;
-            goto B_bce;
+            MONAD_AOT_TAIL return b_bce<traits>(ctx, bottom, top, gas);
         }
-        B_3b0: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_3b0(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x60, 0x51, 0x80, 0x82, 0x15, 0x15, 0x15, 0x15, 0x81, 0x52, 0x60, 0x01, 0x91, 0x50, 0x50, 0x60, 0x51, 0x80, 0x91, 0x03, 0x90, 0xf3}, 1, 4));
             if (MONAD_UNLIKELY(top - bottom < 1)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1020)) { ctx->exit(StatusCode::Error); }
@@ -1162,23 +1711,32 @@ namespace monad::vm::aot
             aot::finish(ctx, gas, StatusCode::Success, t7, t8);
             return;
         }
-        B_3ca: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_3ca(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x61, 0x61, 0x56}, 0, 2));
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x61, 0x61, 0x56}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
             top[1] = uint256_t{0x3d2ull};
             top += 1;
-            goto B_440;
+            MONAD_AOT_TAIL return b_440<traits>(ctx, bottom, top, gas);
         }
-        B_3d2: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_3d2(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x00}, 0, 0));
             gas -= aot::gas_of<traits>({0x5b, 0x00}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
             aot::stop(ctx, gas);
             return;
         }
-        B_3d4: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_3d4(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x34, 0x15, 0x61, 0x57}, 0, 2));
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x34, 0x15, 0x61, 0x57}) + 0;
@@ -1186,9 +1744,13 @@ namespace monad::vm::aot
             uint256_t const t1 = ::monad::load_be<uint256_t>(ctx->env.value);
             uint256_t const t2 = aot::from_bool(!aot::nonzero(t1));
             bool const j4 = aot::nonzero(t2);
-            if (j4) goto B_3df;
+            if (j4) { MONAD_AOT_TAIL return b_3df<traits>(ctx, bottom, top, gas); }
+            MONAD_AOT_TAIL return b_3db<traits>(ctx, bottom, top, gas);
         }
-        B_3db: {
+
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_3db(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x60, 0x80, 0xfd}, 0, 2));
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x60, 0x80, 0xfd}) + 0;
@@ -1196,7 +1758,10 @@ namespace monad::vm::aot
             aot::finish(ctx, gas, StatusCode::Revert, uint256_t{0x0ull}, uint256_t{0x0ull});
             return;
         }
-        B_3df: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_3df(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x61, 0x60, 0x80, 0x80, 0x35, 0x73, 0x16, 0x90, 0x60, 0x01, 0x90, 0x91, 0x90, 0x80, 0x35, 0x73, 0x16, 0x90, 0x60, 0x01, 0x90, 0x91, 0x90, 0x50, 0x50, 0x61, 0x56}, 0, 6));
             if (MONAD_UNLIKELY(top - bottom > 1018)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x61, 0x60, 0x80, 0x80, 0x35, 0x73, 0x16, 0x90, 0x60, 0x01, 0x90, 0x91, 0x90, 0x80, 0x35, 0x73, 0x16, 0x90, 0x60, 0x01, 0x90, 0x91, 0x90, 0x50, 0x50, 0x61, 0x56}) + 0;
@@ -1209,9 +1774,12 @@ namespace monad::vm::aot
             top[2] = t2;
             top[3] = t4;
             top += 3;
-            goto B_be3;
+            MONAD_AOT_TAIL return b_be3<traits>(ctx, bottom, top, gas);
         }
-        B_42a: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_42a(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x60, 0x51, 0x80, 0x82, 0x81, 0x52, 0x60, 0x01, 0x91, 0x50, 0x50, 0x60, 0x51, 0x80, 0x91, 0x03, 0x90, 0xf3}, 1, 4));
             if (MONAD_UNLIKELY(top - bottom < 1)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1020)) { ctx->exit(StatusCode::Error); }
@@ -1226,7 +1794,10 @@ namespace monad::vm::aot
             aot::finish(ctx, gas, StatusCode::Success, t3, t4);
             return;
         }
-        B_440: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_440(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x34, 0x60, 0x60, 0x33, 0x73, 0x16, 0x73, 0x16, 0x81, 0x52, 0x60, 0x01, 0x90, 0x81, 0x52, 0x60, 0x01, 0x60, 0x20, 0x60, 0x82, 0x82, 0x54, 0x01, 0x92, 0x50, 0x50, 0x81, 0x90, 0x55, 0x50, 0x33, 0x73, 0x16, 0x7f, 0x34, 0x60, 0x51, 0x80, 0x82, 0x81, 0x52, 0x60, 0x01, 0x91, 0x50, 0x50, 0x60, 0x51, 0x80, 0x91, 0x03, 0x90, 0xa2, 0x56}, 1, 7));
             if (MONAD_UNLIKELY(top - bottom < 1)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1017)) { ctx->exit(StatusCode::Error); }
@@ -1253,11 +1824,17 @@ namespace monad::vm::aot
             aot::log2<traits>(ctx, gas, t13, t14, uint256_t{0xc2402c5c5cc9109cull, 0x4eb5b0d3c460751ull, 0x59f4d29a8bfc6cdaull, 0xe1fffcc4923d04b5ull}, t9);
             gas = ctx->gas_remaining;
             uint256_t const &s0 = top[0];
-            jt = aot::jump_offset(s0);
+            uint64_t const jt = aot::jump_offset(s0);
             top += -1;
-            goto dyn;
+            if (MONAD_LIKELY(jt < 3124)) {
+                MONAD_AOT_TAIL return jump_table<traits>[jt](ctx, bottom, top, gas);
+            }
+            ctx->exit(StatusCode::Error);
         }
-        B_4dd: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_4dd(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x60, 0x80, 0x54, 0x60, 0x81, 0x60, 0x16, 0x15, 0x61, 0x02, 0x03, 0x16, 0x60, 0x90, 0x04, 0x80, 0x60, 0x01, 0x60, 0x80, 0x91, 0x04, 0x02, 0x60, 0x01, 0x60, 0x51, 0x90, 0x81, 0x01, 0x60, 0x52, 0x80, 0x92, 0x91, 0x90, 0x81, 0x81, 0x52, 0x60, 0x01, 0x82, 0x80, 0x54, 0x60, 0x81, 0x60, 0x16, 0x15, 0x61, 0x02, 0x03, 0x16, 0x60, 0x90, 0x04, 0x80, 0x15, 0x61, 0x57}, 0, 9));
             if (MONAD_UNLIKELY(top - bottom > 1015)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x60, 0x80, 0x54, 0x60, 0x81, 0x60, 0x16, 0x15, 0x61, 0x02, 0x03, 0x16, 0x60, 0x90, 0x04, 0x80, 0x60, 0x01, 0x60, 0x80, 0x91, 0x04, 0x02, 0x60, 0x01, 0x60, 0x51, 0x90, 0x81, 0x01, 0x60, 0x52, 0x80, 0x92, 0x91, 0x90, 0x81, 0x81, 0x52, 0x60, 0x01, 0x82, 0x80, 0x54, 0x60, 0x81, 0x60, 0x16, 0x15, 0x61, 0x02, 0x03, 0x16, 0x60, 0x90, 0x04, 0x80, 0x15, 0x61, 0x57}) + 0;
@@ -1294,9 +1871,13 @@ namespace monad::vm::aot
             top[5] = uint256_t{0x0ull};
             top[6] = t21;
             top += 6;
-            if (j60) goto B_573;
+            if (j60) { MONAD_AOT_TAIL return b_573<traits>(ctx, bottom, top, gas); }
+            MONAD_AOT_TAIL return b_52d<traits>(ctx, bottom, top, gas);
         }
-        B_52d: {
+
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_52d(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x80, 0x60, 0x10, 0x61, 0x57}, 1, 2));
             if (MONAD_UNLIKELY(top - bottom < 1)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
@@ -1305,9 +1886,13 @@ namespace monad::vm::aot
             uint256_t const &s0 = top[0];
             uint256_t const t1 = aot::from_bool(uint256_t{0x1full} < s0);
             bool const j4 = aot::nonzero(t1);
-            if (j4) goto B_548;
+            if (j4) { MONAD_AOT_TAIL return b_548<traits>(ctx, bottom, top, gas); }
+            MONAD_AOT_TAIL return b_535<traits>(ctx, bottom, top, gas);
         }
-        B_535: {
+
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_535(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x61, 0x80, 0x83, 0x54, 0x04, 0x02, 0x83, 0x52, 0x91, 0x60, 0x01, 0x91, 0x61, 0x56}, 3, 3));
             if (MONAD_UNLIKELY(top - bottom < 3)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1021)) { ctx->exit(StatusCode::Error); }
@@ -1321,9 +1906,12 @@ namespace monad::vm::aot
             aot::mstore<traits>(ctx, gas, s2, t3);
             uint256_t const t4 = uint256_t{0x20ull} + s2;
             top[-2] = t4;
-            goto B_573;
+            MONAD_AOT_TAIL return b_573<traits>(ctx, bottom, top, gas);
         }
-        B_548: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_548(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x82, 0x01, 0x91, 0x90, 0x60, 0x52, 0x60, 0x60, 0x20, 0x90}, 3, 1));
             if (MONAD_UNLIKELY(top - bottom < 3)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1023)) { ctx->exit(StatusCode::Error); }
@@ -1339,8 +1927,12 @@ namespace monad::vm::aot
             top[-2] = t1;
             top[-1] = t2;
             top[0] = m2;
+            MONAD_AOT_TAIL return b_556<traits>(ctx, bottom, top, gas);
         }
-        B_556: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_556(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x81, 0x54, 0x81, 0x52, 0x90, 0x60, 0x01, 0x90, 0x60, 0x01, 0x80, 0x83, 0x11, 0x61, 0x57}, 3, 2));
             if (MONAD_UNLIKELY(top - bottom < 3)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
@@ -1357,9 +1949,13 @@ namespace monad::vm::aot
             bool const j15 = aot::nonzero(t4);
             top[-1] = t2;
             top[0] = t3;
-            if (j15) goto B_556;
+            if (j15) { MONAD_AOT_TAIL return b_556<traits>(ctx, bottom, top, gas); }
+            MONAD_AOT_TAIL return b_56a<traits>(ctx, bottom, top, gas);
         }
-        B_56a: {
+
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_56a(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x82, 0x90, 0x03, 0x60, 0x16, 0x82, 0x01, 0x91}, 3, 1));
             if (MONAD_UNLIKELY(top - bottom < 3)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1023)) { ctx->exit(StatusCode::Error); }
@@ -1373,18 +1969,28 @@ namespace monad::vm::aot
             uint256_t const m2 = s2;
             top[-2] = t3;
             top[0] = m2;
+            MONAD_AOT_TAIL return b_573<traits>(ctx, bottom, top, gas);
         }
-        B_573: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_573(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x50, 0x50, 0x50, 0x50, 0x50, 0x81, 0x56}, 7, 0));
             if (MONAD_UNLIKELY(top - bottom < 7)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x50, 0x50, 0x50, 0x50, 0x50, 0x81, 0x56}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
             uint256_t const &s6 = top[-6];
-            jt = aot::jump_offset(s6);
+            uint64_t const jt = aot::jump_offset(s6);
             top += -5;
-            goto dyn;
+            if (MONAD_LIKELY(jt < 3124)) {
+                MONAD_AOT_TAIL return jump_table<traits>[jt](ctx, bottom, top, gas);
+            }
+            ctx->exit(StatusCode::Error);
         }
-        B_57b: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_57b(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x60, 0x81, 0x60, 0x60, 0x33, 0x73, 0x16, 0x73, 0x16, 0x81, 0x52, 0x60, 0x01, 0x90, 0x81, 0x52, 0x60, 0x01, 0x60, 0x20, 0x60, 0x85, 0x73, 0x16, 0x73, 0x16, 0x81, 0x52, 0x60, 0x01, 0x90, 0x81, 0x52, 0x60, 0x01, 0x60, 0x20, 0x81, 0x90, 0x55, 0x50, 0x82, 0x73, 0x16, 0x33, 0x73, 0x16, 0x7f, 0x84, 0x60, 0x51, 0x80, 0x82, 0x81, 0x52, 0x60, 0x01, 0x91, 0x50, 0x50, 0x60, 0x51, 0x80, 0x91, 0x03, 0x90, 0xa3, 0x60, 0x90, 0x50, 0x92, 0x91, 0x50, 0x50, 0x56}, 3, 9));
             if (MONAD_UNLIKELY(top - bottom < 3)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1015)) { ctx->exit(StatusCode::Error); }
@@ -1415,12 +2021,18 @@ namespace monad::vm::aot
             aot::log3<traits>(ctx, gas, t13, t14, uint256_t{0x5b200ac8c7c3b925ull, 0xdd0314c0f7b2291eull, 0xd14f71427d1e84f3ull, 0x8c5be1e5ebec7d5bull}, t10, t8);
             gas = ctx->gas_remaining;
             uint256_t const &s2 = top[-2];
-            jt = aot::jump_offset(s2);
+            uint64_t const jt = aot::jump_offset(s2);
             top[-2] = uint256_t{0x1ull};
             top += -2;
-            goto dyn;
+            if (MONAD_LIKELY(jt < 3124)) {
+                MONAD_AOT_TAIL return jump_table<traits>[jt](ctx, bottom, top, gas);
+            }
+            ctx->exit(StatusCode::Error);
         }
-        B_66d: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_66d(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x60, 0x30, 0x73, 0x16, 0x31, 0x90, 0x50, 0x90, 0x56}, 1, 3));
             if (MONAD_UNLIKELY(top - bottom < 1)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1021)) { ctx->exit(StatusCode::Error); }
@@ -1431,11 +2043,17 @@ namespace monad::vm::aot
             auto const r5 = aot::balance<traits>(ctx, gas, t2);
             gas = ctx->gas_remaining;
             uint256_t const &s0 = top[0];
-            jt = aot::jump_offset(s0);
+            uint64_t const jt = aot::jump_offset(s0);
             top[0] = r5;
-            goto dyn;
+            if (MONAD_LIKELY(jt < 3124)) {
+                MONAD_AOT_TAIL return jump_table<traits>[jt](ctx, bottom, top, gas);
+            }
+            ctx->exit(StatusCode::Error);
         }
-        B_68c: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_68c(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x60, 0x81, 0x60, 0x60, 0x86, 0x73, 0x16, 0x73, 0x16, 0x81, 0x52, 0x60, 0x01, 0x90, 0x81, 0x52, 0x60, 0x01, 0x60, 0x20, 0x54, 0x10, 0x15, 0x15, 0x15, 0x61, 0x57}, 3, 6));
             if (MONAD_UNLIKELY(top - bottom < 3)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1018)) { ctx->exit(StatusCode::Error); }
@@ -1456,9 +2074,13 @@ namespace monad::vm::aot
             bool const j27 = aot::nonzero(t8);
             top[1] = uint256_t{0x0ull};
             top += 1;
-            if (j27) goto B_6dc;
+            if (j27) { MONAD_AOT_TAIL return b_6dc<traits>(ctx, bottom, top, gas); }
+            MONAD_AOT_TAIL return b_6d8<traits>(ctx, bottom, top, gas);
         }
-        B_6d8: {
+
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_6d8(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x60, 0x80, 0xfd}, 0, 2));
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x60, 0x80, 0xfd}) + 0;
@@ -1466,7 +2088,10 @@ namespace monad::vm::aot
             aot::finish(ctx, gas, StatusCode::Revert, uint256_t{0x0ull}, uint256_t{0x0ull});
             return;
         }
-        B_6dc: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_6dc(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x33, 0x73, 0x16, 0x84, 0x73, 0x16, 0x14, 0x15, 0x80, 0x15, 0x61, 0x57}, 4, 3));
             if (MONAD_UNLIKELY(top - bottom < 4)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1021)) { ctx->exit(StatusCode::Error); }
@@ -1482,9 +2107,13 @@ namespace monad::vm::aot
             bool const j12 = aot::nonzero(t6);
             top[1] = t5;
             top += 1;
-            if (j12) goto B_7b4;
+            if (j12) { MONAD_AOT_TAIL return b_7b4<traits>(ctx, bottom, top, gas); }
+            MONAD_AOT_TAIL return b_713<traits>(ctx, bottom, top, gas);
         }
-        B_713: {
+
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_713(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x50, 0x7f, 0x60, 0x60, 0x86, 0x73, 0x16, 0x73, 0x16, 0x81, 0x52, 0x60, 0x01, 0x90, 0x81, 0x52, 0x60, 0x01, 0x60, 0x20, 0x60, 0x33, 0x73, 0x16, 0x73, 0x16, 0x81, 0x52, 0x60, 0x01, 0x90, 0x81, 0x52, 0x60, 0x01, 0x60, 0x20, 0x54, 0x14, 0x15}, 5, 4));
             if (MONAD_UNLIKELY(top - bottom < 5)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1020)) { ctx->exit(StatusCode::Error); }
@@ -1506,8 +2135,12 @@ namespace monad::vm::aot
             uint256_t const t9 = aot::from_bool(t8 == uint256_t{0xffffffffffffffffull, 0xffffffffffffffffull, 0xffffffffffffffffull, 0xffffffffffffffffull});
             uint256_t const t10 = aot::from_bool(!aot::nonzero(t9));
             top[0] = t10;
+            MONAD_AOT_TAIL return b_7b4<traits>(ctx, bottom, top, gas);
         }
-        B_7b4: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_7b4(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x15, 0x61, 0x57}, 1, 1));
             if (MONAD_UNLIKELY(top - bottom < 1)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1023)) { ctx->exit(StatusCode::Error); }
@@ -1517,9 +2150,13 @@ namespace monad::vm::aot
             uint256_t const t1 = aot::from_bool(!aot::nonzero(s0));
             bool const j3 = aot::nonzero(t1);
             top += -1;
-            if (j3) goto B_8cf;
+            if (j3) { MONAD_AOT_TAIL return b_8cf<traits>(ctx, bottom, top, gas); }
+            MONAD_AOT_TAIL return b_7ba<traits>(ctx, bottom, top, gas);
         }
-        B_7ba: {
+
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_7ba(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x81, 0x60, 0x60, 0x86, 0x73, 0x16, 0x73, 0x16, 0x81, 0x52, 0x60, 0x01, 0x90, 0x81, 0x52, 0x60, 0x01, 0x60, 0x20, 0x60, 0x33, 0x73, 0x16, 0x73, 0x16, 0x81, 0x52, 0x60, 0x01, 0x90, 0x81, 0x52, 0x60, 0x01, 0x60, 0x20, 0x54, 0x10, 0x15, 0x15, 0x15, 0x61, 0x57}, 4, 5));
             if (MONAD_UNLIKELY(top - bottom < 4)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1019)) { ctx->exit(StatusCode::Error); }
@@ -1544,9 +2181,13 @@ namespace monad::vm::aot
             uint256_t const t11 = aot::from_bool(!aot::nonzero(t10));
             uint256_t const t12 = aot::from_bool(!aot::nonzero(t11));
             bool const j42 = aot::nonzero(t12);
-            if (j42) goto B_844;
+            if (j42) { MONAD_AOT_TAIL return b_844<traits>(ctx, bottom, top, gas); }
+            MONAD_AOT_TAIL return b_840<traits>(ctx, bottom, top, gas);
         }
-        B_840: {
+
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_840(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x60, 0x80, 0xfd}, 0, 2));
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x60, 0x80, 0xfd}) + 0;
@@ -1554,7 +2195,10 @@ namespace monad::vm::aot
             aot::finish(ctx, gas, StatusCode::Revert, uint256_t{0x0ull}, uint256_t{0x0ull});
             return;
         }
-        B_844: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_844(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x81, 0x60, 0x60, 0x86, 0x73, 0x16, 0x73, 0x16, 0x81, 0x52, 0x60, 0x01, 0x90, 0x81, 0x52, 0x60, 0x01, 0x60, 0x20, 0x60, 0x33, 0x73, 0x16, 0x73, 0x16, 0x81, 0x52, 0x60, 0x01, 0x90, 0x81, 0x52, 0x60, 0x01, 0x60, 0x20, 0x60, 0x82, 0x82, 0x54, 0x03, 0x92, 0x50, 0x50, 0x81, 0x90, 0x55, 0x50}, 4, 5));
             if (MONAD_UNLIKELY(top - bottom < 4)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1019)) { ctx->exit(StatusCode::Error); }
@@ -1576,8 +2220,12 @@ namespace monad::vm::aot
             uint256_t const &s1 = top[-1];
             uint256_t const t9 = t8 - s1;
             aot::sstore<traits>(ctx, gas, t7, t9, (aot::gas_of<traits>({0x50}) + 0));
+            MONAD_AOT_TAIL return b_8cf<traits>(ctx, bottom, top, gas);
         }
-        B_8cf: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_8cf(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x81, 0x60, 0x60, 0x86, 0x73, 0x16, 0x73, 0x16, 0x81, 0x52, 0x60, 0x01, 0x90, 0x81, 0x52, 0x60, 0x01, 0x60, 0x20, 0x60, 0x82, 0x82, 0x54, 0x03, 0x92, 0x50, 0x50, 0x81, 0x90, 0x55, 0x50, 0x81, 0x60, 0x60, 0x85, 0x73, 0x16, 0x73, 0x16, 0x81, 0x52, 0x60, 0x01, 0x90, 0x81, 0x52, 0x60, 0x01, 0x60, 0x20, 0x60, 0x82, 0x82, 0x54, 0x01, 0x92, 0x50, 0x50, 0x81, 0x90, 0x55, 0x50, 0x82, 0x73, 0x16, 0x84, 0x73, 0x16, 0x7f, 0x84, 0x60, 0x51, 0x80, 0x82, 0x81, 0x52, 0x60, 0x01, 0x91, 0x50, 0x50, 0x60, 0x51, 0x80, 0x91, 0x03, 0x90, 0xa3, 0x60, 0x90, 0x50, 0x93, 0x92, 0x50, 0x50, 0x50, 0x56}, 5, 8));
             if (MONAD_UNLIKELY(top - bottom < 5)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1016)) { ctx->exit(StatusCode::Error); }
@@ -1612,12 +2260,18 @@ namespace monad::vm::aot
             aot::log3<traits>(ctx, gas, t15, t16, uint256_t{0x28f55a4df523b3efull, 0x952ba7f163c4a116ull, 0x69c2b068fc378daaull, 0xddf252ad1be2c89bull}, t12, t11);
             gas = ctx->gas_remaining;
             uint256_t const &s4 = top[-4];
-            jt = aot::jump_offset(s4);
+            uint64_t const jt = aot::jump_offset(s4);
             top[-4] = uint256_t{0x1ull};
             top += -4;
-            goto dyn;
+            if (MONAD_LIKELY(jt < 3124)) {
+                MONAD_AOT_TAIL return jump_table<traits>[jt](ctx, bottom, top, gas);
+            }
+            ctx->exit(StatusCode::Error);
         }
-        B_9d9: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_9d9(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x80, 0x60, 0x60, 0x33, 0x73, 0x16, 0x73, 0x16, 0x81, 0x52, 0x60, 0x01, 0x90, 0x81, 0x52, 0x60, 0x01, 0x60, 0x20, 0x54, 0x10, 0x15, 0x15, 0x15, 0x61, 0x57}, 1, 5));
             if (MONAD_UNLIKELY(top - bottom < 1)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1019)) { ctx->exit(StatusCode::Error); }
@@ -1636,9 +2290,13 @@ namespace monad::vm::aot
             uint256_t const t8 = aot::from_bool(!aot::nonzero(t7));
             uint256_t const t9 = aot::from_bool(!aot::nonzero(t8));
             bool const j26 = aot::nonzero(t9);
-            if (j26) goto B_a27;
+            if (j26) { MONAD_AOT_TAIL return b_a27<traits>(ctx, bottom, top, gas); }
+            MONAD_AOT_TAIL return b_a23<traits>(ctx, bottom, top, gas);
         }
-        B_a23: {
+
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_a23(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x60, 0x80, 0xfd}, 0, 2));
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x60, 0x80, 0xfd}) + 0;
@@ -1646,7 +2304,10 @@ namespace monad::vm::aot
             aot::finish(ctx, gas, StatusCode::Revert, uint256_t{0x0ull}, uint256_t{0x0ull});
             return;
         }
-        B_a27: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_a27(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x80, 0x60, 0x60, 0x33, 0x73, 0x16, 0x73, 0x16, 0x81, 0x52, 0x60, 0x01, 0x90, 0x81, 0x52, 0x60, 0x01, 0x60, 0x20, 0x60, 0x82, 0x82, 0x54, 0x03, 0x92, 0x50, 0x50, 0x81, 0x90, 0x55, 0x50, 0x33, 0x73, 0x16, 0x61, 0x82, 0x90, 0x81, 0x15, 0x02, 0x90, 0x60, 0x51, 0x60, 0x60, 0x51, 0x80, 0x83, 0x03, 0x81, 0x85, 0x88, 0x88, 0xf1, 0x93, 0x50, 0x50, 0x50, 0x50, 0x15, 0x15, 0x61, 0x57}, 1, 11));
             if (MONAD_UNLIKELY(top - bottom < 1)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1013)) { ctx->exit(StatusCode::Error); }
@@ -1674,9 +2335,13 @@ namespace monad::vm::aot
             uint256_t const t14 = aot::from_bool(!aot::nonzero(c54));
             uint256_t const t15 = aot::from_bool(!aot::nonzero(t14));
             bool const j63 = aot::nonzero(t15);
-            if (j63) goto B_ab4;
+            if (j63) { MONAD_AOT_TAIL return b_ab4<traits>(ctx, bottom, top, gas); }
+            MONAD_AOT_TAIL return b_ab0<traits>(ctx, bottom, top, gas);
         }
-        B_ab0: {
+
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_ab0(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x60, 0x80, 0xfd}, 0, 2));
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x60, 0x80, 0xfd}) + 0;
@@ -1684,7 +2349,10 @@ namespace monad::vm::aot
             aot::finish(ctx, gas, StatusCode::Revert, uint256_t{0x0ull}, uint256_t{0x0ull});
             return;
         }
-        B_ab4: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_ab4(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x33, 0x73, 0x16, 0x7f, 0x82, 0x60, 0x51, 0x80, 0x82, 0x81, 0x52, 0x60, 0x01, 0x91, 0x50, 0x50, 0x60, 0x51, 0x80, 0x91, 0x03, 0x90, 0xa2, 0x50, 0x56}, 2, 7));
             if (MONAD_UNLIKELY(top - bottom < 2)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1017)) { ctx->exit(StatusCode::Error); }
@@ -1701,11 +2369,17 @@ namespace monad::vm::aot
             aot::log2<traits>(ctx, gas, t5, t6, uint256_t{0x7268a95bf5081b65ull, 0x30d808c7d98cb3bfull, 0xbd6d0e038bea71dull, 0x7fcf532c15f0a6dbull}, t2);
             gas = ctx->gas_remaining;
             uint256_t const &s1 = top[-1];
-            jt = aot::jump_offset(s1);
+            uint64_t const jt = aot::jump_offset(s1);
             top += -2;
-            goto dyn;
+            if (MONAD_LIKELY(jt < 3124)) {
+                MONAD_AOT_TAIL return jump_table<traits>[jt](ctx, bottom, top, gas);
+            }
+            ctx->exit(StatusCode::Error);
         }
-        B_b05: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_b05(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x60, 0x60, 0x90, 0x54, 0x90, 0x61, 0x0a, 0x90, 0x04, 0x60, 0x16, 0x81, 0x56}, 1, 3));
             if (MONAD_UNLIKELY(top - bottom < 1)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1021)) { ctx->exit(StatusCode::Error); }
@@ -1714,12 +2388,18 @@ namespace monad::vm::aot
             uint256_t const t1 = aot::sload<traits>(ctx, gas, uint256_t{0x2ull});
             uint256_t const t2 = uint256_t{0xffull} & t1;
             uint256_t const &s0 = top[0];
-            jt = aot::jump_offset(s0);
+            uint64_t const jt = aot::jump_offset(s0);
             top[1] = t2;
             top += 1;
-            goto dyn;
+            if (MONAD_LIKELY(jt < 3124)) {
+                MONAD_AOT_TAIL return jump_table<traits>[jt](ctx, bottom, top, gas);
+            }
+            ctx->exit(StatusCode::Error);
         }
-        B_b18: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_b18(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x60, 0x60, 0x52, 0x80, 0x60, 0x52, 0x60, 0x60, 0x20, 0x60, 0x91, 0x50, 0x90, 0x50, 0x54, 0x81, 0x56}, 2, 2));
             if (MONAD_UNLIKELY(top - bottom < 2)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
@@ -1731,11 +2411,17 @@ namespace monad::vm::aot
             uint256_t const t1 = aot::sha3_n<traits, 64>(ctx, gas, uint256_t{0x0ull});
             uint256_t const t2 = aot::sload<traits>(ctx, gas, t1);
             uint256_t const &s1 = top[-1];
-            jt = aot::jump_offset(s1);
+            uint64_t const jt = aot::jump_offset(s1);
             top[0] = t2;
-            goto dyn;
+            if (MONAD_LIKELY(jt < 3124)) {
+                MONAD_AOT_TAIL return jump_table<traits>[jt](ctx, bottom, top, gas);
+            }
+            ctx->exit(StatusCode::Error);
         }
-        B_b30: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_b30(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x60, 0x80, 0x54, 0x60, 0x81, 0x60, 0x16, 0x15, 0x61, 0x02, 0x03, 0x16, 0x60, 0x90, 0x04, 0x80, 0x60, 0x01, 0x60, 0x80, 0x91, 0x04, 0x02, 0x60, 0x01, 0x60, 0x51, 0x90, 0x81, 0x01, 0x60, 0x52, 0x80, 0x92, 0x91, 0x90, 0x81, 0x81, 0x52, 0x60, 0x01, 0x82, 0x80, 0x54, 0x60, 0x81, 0x60, 0x16, 0x15, 0x61, 0x02, 0x03, 0x16, 0x60, 0x90, 0x04, 0x80, 0x15, 0x61, 0x57}, 0, 9));
             if (MONAD_UNLIKELY(top - bottom > 1015)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x60, 0x80, 0x54, 0x60, 0x81, 0x60, 0x16, 0x15, 0x61, 0x02, 0x03, 0x16, 0x60, 0x90, 0x04, 0x80, 0x60, 0x01, 0x60, 0x80, 0x91, 0x04, 0x02, 0x60, 0x01, 0x60, 0x51, 0x90, 0x81, 0x01, 0x60, 0x52, 0x80, 0x92, 0x91, 0x90, 0x81, 0x81, 0x52, 0x60, 0x01, 0x82, 0x80, 0x54, 0x60, 0x81, 0x60, 0x16, 0x15, 0x61, 0x02, 0x03, 0x16, 0x60, 0x90, 0x04, 0x80, 0x15, 0x61, 0x57}) + 0;
@@ -1772,9 +2458,13 @@ namespace monad::vm::aot
             top[5] = uint256_t{0x1ull};
             top[6] = t21;
             top += 6;
-            if (j60) goto B_bc6;
+            if (j60) { MONAD_AOT_TAIL return b_bc6<traits>(ctx, bottom, top, gas); }
+            MONAD_AOT_TAIL return b_b80<traits>(ctx, bottom, top, gas);
         }
-        B_b80: {
+
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_b80(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x80, 0x60, 0x10, 0x61, 0x57}, 1, 2));
             if (MONAD_UNLIKELY(top - bottom < 1)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
@@ -1783,9 +2473,13 @@ namespace monad::vm::aot
             uint256_t const &s0 = top[0];
             uint256_t const t1 = aot::from_bool(uint256_t{0x1full} < s0);
             bool const j4 = aot::nonzero(t1);
-            if (j4) goto B_b9b;
+            if (j4) { MONAD_AOT_TAIL return b_b9b<traits>(ctx, bottom, top, gas); }
+            MONAD_AOT_TAIL return b_b88<traits>(ctx, bottom, top, gas);
         }
-        B_b88: {
+
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_b88(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x61, 0x80, 0x83, 0x54, 0x04, 0x02, 0x83, 0x52, 0x91, 0x60, 0x01, 0x91, 0x61, 0x56}, 3, 3));
             if (MONAD_UNLIKELY(top - bottom < 3)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1021)) { ctx->exit(StatusCode::Error); }
@@ -1799,9 +2493,12 @@ namespace monad::vm::aot
             aot::mstore<traits>(ctx, gas, s2, t3);
             uint256_t const t4 = uint256_t{0x20ull} + s2;
             top[-2] = t4;
-            goto B_bc6;
+            MONAD_AOT_TAIL return b_bc6<traits>(ctx, bottom, top, gas);
         }
-        B_b9b: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_b9b(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x82, 0x01, 0x91, 0x90, 0x60, 0x52, 0x60, 0x60, 0x20, 0x90}, 3, 1));
             if (MONAD_UNLIKELY(top - bottom < 3)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1023)) { ctx->exit(StatusCode::Error); }
@@ -1817,8 +2514,12 @@ namespace monad::vm::aot
             top[-2] = t1;
             top[-1] = t2;
             top[0] = m2;
+            MONAD_AOT_TAIL return b_ba9<traits>(ctx, bottom, top, gas);
         }
-        B_ba9: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_ba9(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x81, 0x54, 0x81, 0x52, 0x90, 0x60, 0x01, 0x90, 0x60, 0x01, 0x80, 0x83, 0x11, 0x61, 0x57}, 3, 2));
             if (MONAD_UNLIKELY(top - bottom < 3)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
@@ -1835,9 +2536,13 @@ namespace monad::vm::aot
             bool const j15 = aot::nonzero(t4);
             top[-1] = t2;
             top[0] = t3;
-            if (j15) goto B_ba9;
+            if (j15) { MONAD_AOT_TAIL return b_ba9<traits>(ctx, bottom, top, gas); }
+            MONAD_AOT_TAIL return b_bbd<traits>(ctx, bottom, top, gas);
         }
-        B_bbd: {
+
+        template <Traits traits>
+        [[gnu::always_inline]] inline void b_bbd(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x82, 0x90, 0x03, 0x60, 0x16, 0x82, 0x01, 0x91}, 3, 1));
             if (MONAD_UNLIKELY(top - bottom < 3)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1023)) { ctx->exit(StatusCode::Error); }
@@ -1851,18 +2556,28 @@ namespace monad::vm::aot
             uint256_t const m2 = s2;
             top[-2] = t3;
             top[0] = m2;
+            MONAD_AOT_TAIL return b_bc6<traits>(ctx, bottom, top, gas);
         }
-        B_bc6: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_bc6(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x50, 0x50, 0x50, 0x50, 0x50, 0x81, 0x56}, 7, 0));
             if (MONAD_UNLIKELY(top - bottom < 7)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x50, 0x50, 0x50, 0x50, 0x50, 0x81, 0x56}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
             uint256_t const &s6 = top[-6];
-            jt = aot::jump_offset(s6);
+            uint64_t const jt = aot::jump_offset(s6);
             top += -5;
-            goto dyn;
+            if (MONAD_LIKELY(jt < 3124)) {
+                MONAD_AOT_TAIL return jump_table<traits>[jt](ctx, bottom, top, gas);
+            }
+            ctx->exit(StatusCode::Error);
         }
-        B_bce: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_bce(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x60, 0x61, 0x33, 0x84, 0x84, 0x61, 0x56}, 2, 6));
             if (MONAD_UNLIKELY(top - bottom < 2)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1018)) { ctx->exit(StatusCode::Error); }
@@ -1879,22 +2594,31 @@ namespace monad::vm::aot
             top[4] = m1;
             top[5] = m0;
             top += 5;
-            goto B_68c;
+            MONAD_AOT_TAIL return b_68c<traits>(ctx, bottom, top, gas);
         }
-        B_bdb: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_bdb(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x90, 0x50, 0x92, 0x91, 0x50, 0x50, 0x56}, 5, 0));
             if (MONAD_UNLIKELY(top - bottom < 5)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x90, 0x50, 0x92, 0x91, 0x50, 0x50, 0x56}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
             uint256_t const &s4 = top[-4];
-            jt = aot::jump_offset(s4);
+            uint64_t const jt = aot::jump_offset(s4);
             uint256_t const &s0 = top[0];
             uint256_t const m0 = s0;
             top[-4] = m0;
             top += -4;
-            goto dyn;
+            if (MONAD_LIKELY(jt < 3124)) {
+                MONAD_AOT_TAIL return jump_table<traits>[jt](ctx, bottom, top, gas);
+            }
+            ctx->exit(StatusCode::Error);
         }
-        B_be3: {
+
+        template <Traits traits>
+        [[gnu::noinline]] void b_be3(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x60, 0x60, 0x52, 0x81, 0x60, 0x52, 0x60, 0x60, 0x20, 0x60, 0x52, 0x80, 0x60, 0x52, 0x60, 0x60, 0x20, 0x60, 0x91, 0x50, 0x91, 0x50, 0x50, 0x54, 0x81, 0x56}, 3, 2));
             if (MONAD_UNLIKELY(top - bottom < 3)) { ctx->exit(StatusCode::Error); }
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
@@ -1910,20 +2634,22 @@ namespace monad::vm::aot
             uint256_t const t2 = aot::sha3_n<traits, 64>(ctx, gas, uint256_t{0x0ull});
             uint256_t const t3 = aot::sload<traits>(ctx, gas, t2);
             uint256_t const &s2 = top[-2];
-            jt = aot::jump_offset(s2);
+            uint64_t const jt = aot::jump_offset(s2);
             top[-1] = t3;
             top += -1;
-            goto dyn;
+            if (MONAD_LIKELY(jt < 3124)) {
+                MONAD_AOT_TAIL return jump_table<traits>[jt](ctx, bottom, top, gas);
+            }
+            ctx->exit(StatusCode::Error);
         }
-    B_end:
-        aot::stop(ctx, gas);
-        return;
-    dyn:
-        if (MONAD_LIKELY(jt < 3124)) {
-            goto *jump_table[jt];
+
+        template <Traits traits>
+        void run(
+            void *, Context *const ctx, interpreter::Intercode const *,
+            uint256_t *const stack_ptr, void *)
+        {
+            b_0<traits>(ctx, stack_ptr - 1, stack_ptr - 1, ctx->gas_remaining);
         }
-    bad:
-        ctx->exit(StatusCode::Error);
     }
 
     using Osaka = EvmTraits<MONAD_ETH_OSAKA>;
@@ -1931,7 +2657,7 @@ namespace monad::vm::aot
     constexpr Entry entry_0{
         {0x3b8647ac126ba0d0u, 0xadea2d5c18e47b5cu, 0x7d6cf5337055611cu, 0x235eb2cb2944a74eu},
         3124,
-        &code_d0a06b12ac47863b<Osaka>,
+        &c_d0a06b12ac47863b::run<Osaka>,
         nullptr};
 
     Entry const *const table[256] = {

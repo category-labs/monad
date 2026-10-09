@@ -610,6 +610,14 @@ public:
 
     void store_log(Receipt::Log const &);
     void store_log(Receipt::Log &&);
+#if defined(MONAD_ZKVM_ZISK)
+    // A log made in place at the end of the list, from what makes one.
+    template <typename Maker>
+    Receipt::Log const &emplace_log(Maker const &maker)
+    {
+        return logs_.emplace_back(maker);
+    }
+#endif
 
     ////////////////////////////////////////
 

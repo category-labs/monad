@@ -452,9 +452,8 @@ fn manifest_dir() -> PathBuf {
 }
 
 /// The linker script that lays out the interpreter's handler slots
-/// (category/vm/interpreter/execute.cpp): one per revision from OSAKA (14) to
-/// AMSTERDAM (15) and per opcode, 4 KiB each, the newest revision first and
-/// then in opcode order, so that a handler's address is `monad_vm_slots` plus
+/// (category/vm/interpreter/execute.cpp): one per opcode of OSAKA (14), 4 KiB
+/// each, in opcode order, so that a handler's address is `monad_vm_slots` plus
 /// its offset. A slot holds the handler's six copies (instruction_table.hpp's
 /// lag_offset), copies 4, 5, 0, 1, 2 and 3 in address order; each opens with
 /// LEAD bytes where PUSH1 and PUSH2 land on the opcode, then the copy. The
@@ -480,7 +479,7 @@ fn zisk_slots_ld() -> String {
         "SECTIONS {\n    .monad_vm_slots : ALIGN(0x400) {\n        \
          FILL(0x13000000)\n        monad_vm_slots = .;\n",
     );
-    for (rank, rev) in (14..=15).rev().enumerate() {
+    for (rank, rev) in (14..=14).rev().enumerate() {
         for op in 0..256 {
             let at = (rank * 256 + op) * SLOT;
             for (start, sections, copy) in COPIES {
@@ -515,7 +514,7 @@ fn zisk_slots_ld() -> String {
          KEEP(*(.monad_vm_swapn*))\n        \
          KEEP(*(.monad_vm_bool*))\n        \
          KEEP(*(.monad_vm_body*))\n    }}\n}} INSERT AFTER .text;\n",
-        2 * 256 * SLOT
+        256 * SLOT
     );
     ld
 }

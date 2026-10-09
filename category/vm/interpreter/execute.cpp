@@ -26,9 +26,7 @@
 
 #if defined(MONAD_ZKVM_ZISK)
 // The base of the handlers' slots, laid out by the linker script that
-// zkvm/build-support writes: 256 per revision, the newest revision first, so
-// that the revisions blocks run on sit nearest the functions their handlers
-// call, the newest within a jal's reach.
+// zkvm/build-support writes: 256, Osaka's, the revision blocks run on.
 extern "C" unsigned char const monad_vm_slots[];
 #endif
 
@@ -1080,7 +1078,6 @@ namespace monad::vm::interpreter
         MONAD_VM_SLOTS_16(REV, NAME, f)
 
     MONAD_VM_SLOTS(MONAD_ETH_OSAKA, 14)
-    MONAD_VM_SLOTS(MONAD_ETH_AMSTERDAM, 15)
 
     #undef MONAD_VM_SLOTS
     #undef MONAD_VM_SLOTS_16
@@ -1332,10 +1329,7 @@ namespace monad::vm::interpreter
 #if defined(MONAD_ZKVM_ZISK)
             void const *itbl;
             if constexpr (has_slots<traits>) {
-                itbl = monad_vm_slots +
-                       ((MONAD_ETH_AMSTERDAM - traits::evm_rev())
-                        << 8 << slot_shift) +
-                       slot_lead;
+                itbl = monad_vm_slots + slot_lead;
             }
             else {
                 itbl = instruction_table<traits>.data();

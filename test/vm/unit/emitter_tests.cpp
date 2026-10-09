@@ -4045,6 +4045,66 @@ TEST(Emitter, mload_upper_bound)
     mload_upper_bound_test_impl<runtime::Memory::Version::MIP3>();
 }
 
+template <runtime::Memory::Version memory_version>
+static void memory_repeated_offset_test_impl()
+{
+    std::vector<uint8_t> bytecode{
+        PUSH1,  31,    PUSH1, 1,     DUP2,  MSTORE8, PUSH1, 2,       DUP2,
+        MSTORE, PUSH0, PUSH0, PUSH0, PUSH1, 3,       DUP5,  MSTORE8, POP,
+        POP,    POP,   DUP1,  MLOAD, MSIZE, SWAP1,   RETURN};
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from(bytecode);
+
+    for (auto loc : all_locations) {
+        asmjit::JitRuntime rt;
+        TestEmitter emit{rt, ir.codesize};
+        (void)emit.begin_new_block(ir.blocks().at(0));
+
+        emit.push(31);
+        mov_literal_to_location_type(emit, 0, loc);
+        emit.push(1);
+        emit.dup(2);
+        emit.mstore8<memory_version>();
+        emit.push(2);
+        emit.dup(2);
+        emit.mstore<memory_version>();
+        for (int32_t i = 1; i <= 3; ++i) {
+            emit.push(0);
+            mov_literal_to_location_type(
+                emit, i, Emitter::LocationType::GeneralReg);
+        }
+        emit.push(3);
+        mov_literal_to_location_type(
+            emit, 4, Emitter::LocationType::StackOffset);
+        emit.dup(5);
+        emit.mstore8<memory_version>();
+        emit.pop();
+        emit.pop();
+        emit.pop();
+        emit.dup(1);
+        emit.mload<memory_version>();
+        emit.msize();
+        emit.swap(1);
+        emit.return_();
+
+        entrypoint_t entry = emit.finish_contract(rt);
+        evmc_tx_context tx_context{};
+        auto ctx = test_context(&tx_context);
+        auto const &ret = ctx->result;
+        auto stack_memory = test_stack_memory();
+        entry(&*ctx, stack_memory.get());
+
+        ASSERT_EQ(ret.status, runtime::StatusCode::Success);
+        ASSERT_EQ(load_le<uint256_t>(ret.offset), (uint256_t{3} << 248) | 2);
+        ASSERT_EQ(load_le<uint256_t>(ret.size), 64);
+    }
+}
+
+TEST(Emitter, MemoryRepeatedOffset)
+{
+    memory_repeated_offset_test_impl<runtime::Memory::Version::V1>();
+    memory_repeated_offset_test_impl<runtime::Memory::Version::MIP3>();
+}
+
 TEST(Emitter, calldataload)
 {
     evmc_tx_context tx_context{};

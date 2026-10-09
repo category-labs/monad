@@ -62,8 +62,7 @@ namespace
                 msg.memory_capacity = init_memory_.capacity;
             }
 
-            Context rt_ctx = Context::from(
-                &host_.get_interface(), host_.to_context(), &msg, {});
+            Context rt_ctx = Context::from(host_, &msg, {});
             rt_ctx.gas_remaining = 100'000'000;
 
             auto const tmp_rt_ctx = prev_rt_ctx_;

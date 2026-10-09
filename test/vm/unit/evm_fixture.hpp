@@ -132,8 +132,7 @@ namespace monad::vm::test
 
             auto icode = make_shared_intercode(code);
 
-            auto rt_ctx = runtime::Context::from(
-                &host_.get_interface(), host_.to_context(), &msg_, code);
+            auto rt_ctx = runtime::Context::from(host_, &msg_, code);
             if (impl == Compiler) {
                 auto ncode =
                     vm_.compiler().compile<typename TraitsTest<T>::Trait>(

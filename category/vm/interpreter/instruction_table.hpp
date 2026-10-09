@@ -17,6 +17,7 @@
 
 #include <category/core/int.hpp>
 #include <category/core/runtime/uint256.hpp>
+#include <category/vm/bytes_match.hpp>
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/interpreter/call_runtime.hpp>
@@ -517,27 +518,11 @@ namespace monad::vm::interpreter
     }
 
 #if defined(MONAD_ZKVM_ZISK)
-    // Compare N bytecode bytes with a constant pattern using ZisK's DMA
-    // comparator (CSR 0x814). The following instruction encodes the length.
     template <size_t N, size_t M>
     [[gnu::always_inline]] inline bool code_matches(
-        uint8_t const *const instructions,
-        unsigned char const (&pattern)[M]) noexcept
+        uint8_t const *instructions, unsigned char const (&pattern)[M]) noexcept
     {
-        static_assert(N <= M);
-        uint64_t mismatch;
-        asm(".option push\n\t"
-            ".option arch, +zicsr\n\t"
-            "csrrs %0, 0x814, %1\n\t"
-            "addi x0, %2, %5\n\t"
-            ".option pop"
-            : "=&r"(mismatch)
-            : "r"(instructions),
-              "r"(pattern),
-              "m"(*reinterpret_cast<uint8_t const(*)[N]>(instructions)),
-              "m"(pattern),
-              "i"(N));
-        return mismatch == 0;
+        return bytes_match<N>(instructions, pattern);
     }
 
 #endif
@@ -1598,15 +1583,83 @@ namespace monad::vm::interpreter
     }
 
     // Data
+#if defined(MONAD_ZKVM_ZISK)
+    // The handler already checked the stack and charged the base gas.
+    template <Traits traits>
+    [[gnu::noinline]] MONAD_VM_TWIN_CALL void sha3_general(
+        runtime::Context &ctx, MONAD_VM_DISPATCH_STATE_PARAM,
+        uint256_t const *stack_lower_bound, StackTop stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+    {
+        MONAD_VM_TWIN_ENTRY();
+        call_runtime(
+            runtime::sha3<base_traits<traits>>, ctx, stack_top, gas_remaining);
+
+        MONAD_VM_NEXT(SHA3);
+    }
+
+    template <Traits traits>
+    [[gnu::noinline]] MONAD_VM_TWIN_CALL void sha3_cache_miss(
+        runtime::Context &ctx, MONAD_VM_DISPATCH_STATE_PARAM,
+        uint256_t const *stack_lower_bound, StackTop stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+    {
+        MONAD_VM_TWIN_ENTRY();
+        stack_top[-1] =
+            runtime::hash_and_cache_64(ctx.memory.data + stack_top[0][0]);
+        gas_remaining -= 12;
+
+        MONAD_VM_NEXT(SHA3);
+    }
+
+#endif
     template <Traits traits>
     MONAD_VM_INSTRUCTION_CALL void sha3(
         runtime::Context &ctx, MONAD_VM_DISPATCH_STATE_PARAM,
         uint256_t const *stack_lower_bound, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
+#if defined(MONAD_ZKVM_ZISK)
+        MONAD_VM_CHECK(SHA3);
+        uint256_t const &offset = stack_top[0];
+        uint256_t const &size = stack_top[-1];
+        uint64_t const start = offset[0];
+        // The fast path needs two words of existing memory and 6 gas per word.
+        if (MONAD_UNLIKELY(
+                size != uint256_t{64} ||
+                (offset[1] | offset[2] | offset[3]) != 0 ||
+                start >= (uint64_t{1} << runtime::Memory::offset_bits) ||
+                start + 64 > ctx.memory.size || gas_remaining < 12)) {
+            MONAD_VM_MUST_TAIL return sha3_general<
+                compiler_dispatch_traits<traits>>(
+                ctx,
+                MONAD_VM_DISPATCH_STATE_ARG,
+                stack_lower_bound,
+                stack_top,
+                gas_remaining,
+                MONAD_VM_AS_CALLED(instr_ptr) MONAD_VM_TBL_ARG);
+        }
+        auto const *input = ctx.memory.data + start;
+        auto const *cached_hash = runtime::find_cached_sha3(input);
+        if (MONAD_UNLIKELY(cached_hash == nullptr)) {
+            MONAD_VM_MUST_TAIL return sha3_cache_miss<
+                compiler_dispatch_traits<traits>>(
+                ctx,
+                MONAD_VM_DISPATCH_STATE_ARG,
+                stack_lower_bound,
+                stack_top,
+                gas_remaining,
+                MONAD_VM_AS_CALLED(instr_ptr) MONAD_VM_TBL_ARG);
+        }
+        gas_remaining -= 12;
+        stack_top[-1] = *cached_hash;
+
+        MONAD_VM_NEXT(SHA3);
+#else
         MONAD_VM_CHECKED_RUNTIME_CALL(SHA3, runtime::sha3<base_traits<traits>>);
 
         MONAD_VM_NEXT(SHA3);
+#endif
     }
 
     template <Traits traits>

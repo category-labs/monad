@@ -88,6 +88,7 @@ impl MonadExecutor {
         gas_limit: u64,
         max_calls: usize,
         max_output_size: usize,
+        validation: bool,
         emit_native_transfer_logs: bool,
         overrides: &[(&BlockOverride, &StateOverrideSet)],
     ) -> Result<EthSimulateSuccess, EthSimulateError> {
@@ -234,6 +235,7 @@ impl MonadExecutor {
                 max_output_size,
                 state_overrides.as_mut_ptr(),
                 block_overrides.as_mut_ptr(),
+                validation,
                 emit_native_transfer_logs,
                 Some(eth_simulate_v1_submit_callback),
                 Box::into_raw(sender_ctx) as *mut std::ffi::c_void,

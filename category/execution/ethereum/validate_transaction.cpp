@@ -33,6 +33,7 @@
 
 #include <boost/outcome/config.hpp>
 #include <boost/outcome/success_failure.hpp>
+#include <boost/outcome/try.hpp>
 
 #include <cstdint>
 #include <limits>
@@ -163,11 +164,15 @@ Result<void> validate_transaction(
     Transaction const &tx, Address const &sender, State &state,
     uint256_t const & /*base_fee_per_gas*/,
     std::span<std::optional<Address> const> const /*authorities*/,
-    trace::StateTracer &state_tracer)
+    trace::StateTracer &state_tracer, ExecutionMode const &mode)
 {
     static_assert(is_evm_trait_v<traits>);
+    bool const strict = strict_validation(mode);
+    if (!strict) {
+        BOOST_OUTCOME_TRY(validate_relaxed_sender_nonce(sender, state));
+    }
     return validate_ethereum_transaction<traits>(
-        tx, sender, state, state_tracer);
+        tx, sender, state, state_tracer, strict);
 }
 
 EXPLICIT_EVM_TRAITS(validate_transaction);

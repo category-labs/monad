@@ -29,6 +29,7 @@
 #include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/execute_message.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
+#include <category/execution/ethereum/execution_modalities.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
@@ -39,6 +40,7 @@
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
+#include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/staking/priority_fee.hpp>
 #include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
@@ -333,10 +335,11 @@ Result<evmc::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
             state,
             header_.base_fee_per_gas.value_or(0),
             authorities_,
-            state_tracer_);
+            state_tracer_,
+            chain_ctx_.mode);
         if (!result) {
             // RELAXED MERGE
-            // if `validate_transaction` fails using current values, require
+            // if transaction validation fails using current values, require
             // exact match during merge as a precaution
             state.original_account_state(sender_).set_validate_exact_balance();
         }
@@ -452,7 +455,9 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
         TRACE_TXN_EVENT(StartExecution);
 
         State state{block_state_, Incarnation{header_.number, i_ + 1}};
-        state.set_original_nonce(sender_, tx_.nonce);
+        if (strict_validation(chain_ctx_.mode)) {
+            state.set_original_nonce(sender_, tx_.nonce);
+        }
 
         call_tracer_.reset();
         trace::reset(state_tracer_);

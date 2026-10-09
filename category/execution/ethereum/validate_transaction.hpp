@@ -21,6 +21,7 @@
 #include <category/core/int.hpp>
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/execution_modalities.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
@@ -38,6 +39,7 @@
 #include <category/core/likely.h>
 
 #include <initializer_list>
+#include <limits>
 #include <optional>
 #include <span>
 
@@ -54,12 +56,12 @@ Result<void> validate_transaction(
     Transaction const &tx, Address const &sender, State &state,
     uint256_t const &base_fee_per_gas,
     std::span<std::optional<Address> const> const authorities,
-    trace::StateTracer &state_tracer);
+    trace::StateTracer &state_tracer, ExecutionMode const &mode);
 
 template <Traits traits>
 [[gnu::always_inline]] inline Result<void> validate_ethereum_transaction(
     Transaction const &tx, Address const &sender, State &state,
-    trace::StateTracer &state_tracer)
+    trace::StateTracer &state_tracer, bool const strict_validation)
 {
     using BOOST_OUTCOME_V2_NAMESPACE::success;
 
@@ -87,7 +89,7 @@ template <Traits traits>
 
     if (MONAD_UNLIKELY(!state.account_exists(sender))) {
         // YP (71)
-        if (tx.nonce) {
+        if (strict_validation && tx.nonce) {
             return TransactionError::BadNonce;
         }
         // YP (71)
@@ -107,12 +109,13 @@ template <Traits traits>
                         vm::evm::is_delegated({icode->code(), icode->size()});
     }
 
-    if (MONAD_UNLIKELY(!sender_is_eoa)) {
+    if (MONAD_UNLIKELY(strict_validation && !sender_is_eoa)) {
         return TransactionError::SenderNotEoa;
     }
 
     // YP (71)
-    if (MONAD_UNLIKELY(state.get_nonce(sender) != tx.nonce)) {
+    if (MONAD_UNLIKELY(
+            strict_validation && state.get_nonce(sender) != tx.nonce)) {
         return TransactionError::BadNonce;
     }
 
@@ -129,6 +132,21 @@ template <Traits traits>
     // (It requires knowing the parent block)
 
     return success();
+}
+
+// EIP-2681: the sender's state nonce must stay below 2^64 - 1. Strict
+// validation implies this, since it requires the state nonce to equal
+// `tx.nonce`, which `static_validate_transaction` bounds. Relaxed validation
+// skips that check, so it must bound the state nonce directly; otherwise
+// execution could increment it past 2^64 - 1.
+[[gnu::always_inline]] inline Result<void>
+validate_relaxed_sender_nonce(Address const &sender, State &state)
+{
+    if (MONAD_UNLIKELY(
+            state.get_nonce(sender) == std::numeric_limits<uint64_t>::max())) {
+        return TransactionError::NonceExceedsMax;
+    }
+    return BOOST_OUTCOME_V2_NAMESPACE::success();
 }
 
 MONAD_NAMESPACE_END

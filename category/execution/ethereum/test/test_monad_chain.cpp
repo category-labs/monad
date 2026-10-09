@@ -23,6 +23,7 @@
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/core/units.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
+#include <category/execution/ethereum/execution_modalities.hpp>
 #include <category/execution/ethereum/reserve_balance.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
@@ -837,8 +838,9 @@ TYPED_TEST(MonadTraitsTest, system_transaction_sender_is_authority)
     std::vector<std::optional<Address>> const authorities = {SYSTEM_SENDER};
 
     trace::StateTracer noop_state_tracer = std::monostate{};
+    auto mode = ExecutionMode{};
     auto const res = validate_transaction<typename TestFixture::Trait>(
-        {}, {}, state, 0, authorities, noop_state_tracer);
+        {}, {}, state, 0, authorities, noop_state_tracer, mode);
     if constexpr (!TestFixture::Trait::staking_active()) {
         EXPECT_TRUE(res.has_value());
     }

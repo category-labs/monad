@@ -51,6 +51,8 @@ namespace
         case SimulationError::InvalidBlockGap:
         case SimulationError::GasLimitExceeded:
             return MONAD_STATUS_INTERNAL_ERROR;
+        case SimulationError::UnsupportedMode:
+            return MONAD_STATUS_REJECTED;
         }
         return MONAD_STATUS_INTERNAL_ERROR;
     }
@@ -140,7 +142,9 @@ quick_status_code_from_enum<monad::SimulationError>::value_mappings()
         {SimulationError::InvalidBlockGap,
          "the block gap must be exactly 1 after filling in synthetic blocks",
          {}},
-        {SimulationError::GasLimitExceeded, "gas limit exceeded", {}}};
+        {SimulationError::GasLimitExceeded, "gas limit exceeded", {}},
+        {SimulationError::UnsupportedMode, "ethereum mode is unsupported", {}},
+    };
 
     return v;
 }

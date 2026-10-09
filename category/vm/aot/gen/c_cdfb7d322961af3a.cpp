@@ -705,11 +705,11 @@ namespace monad::vm::aot
         template <Traits traits>
         [[gnu::always_inline]] inline void b_3d70(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
-        [[gnu::noinline, gnu::optimize("Os")]] void b_3e18(Context *, uint256_t const *, uint256_t *, int64_t);
+        [[gnu::noinline]] void b_3e18(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
         [[gnu::always_inline]] inline void b_3e34(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
-        [[gnu::noinline, gnu::optimize("Os")]] void b_3e84(Context *, uint256_t const *, uint256_t *, int64_t);
+        [[gnu::noinline]] void b_3e84(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
         [[gnu::always_inline]] inline void b_3ea0(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
@@ -10820,7 +10820,7 @@ namespace monad::vm::aot
         }
 
         template <Traits traits>
-        [[gnu::noinline, gnu::optimize("Os")]] void b_3e18(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        [[gnu::noinline]] void b_3e18(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
         {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x73, 0x83, 0x16, 0x61, 0x57}, 3, 2));
             if (MONAD_UNLIKELY(top - bottom < 3)) { ctx->exit(StatusCode::Error); }
@@ -10862,7 +10862,7 @@ namespace monad::vm::aot
         }
 
         template <Traits traits>
-        [[gnu::noinline, gnu::optimize("Os")]] void b_3e84(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        [[gnu::noinline]] void b_3e84(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
         {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x73, 0x82, 0x16, 0x61, 0x57}, 2, 2));
             if (MONAD_UNLIKELY(top - bottom < 2)) { ctx->exit(StatusCode::Error); }

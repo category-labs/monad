@@ -18,6 +18,7 @@
 #include <category/core/bytes.hpp>
 #include <category/vm/code.hpp>
 #include <category/vm/compiler/ir/x86.hpp>
+#include <category/vm/compiler/ir/x86/near_jit_runtime.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/utils/debug.hpp>
 #include <category/vm/utils/log_utils.hpp>
@@ -230,7 +231,7 @@ namespace monad::vm
                 .options = asmjit::JitAllocatorOptions::kUseDualMapping,
             };
 
-        asmjit::JitRuntime asmjit_rt_;
+        compiler::native::NearJitRuntime asmjit_rt_;
         VarcodeCache varcode_cache_;
         CompileJobMap compile_job_map_;
         CompileJobQueue compile_job_queue_;

@@ -330,14 +330,6 @@ namespace monad::vm::compiler::native
         return add32(lit.value);
     }
 
-    template <typename F>
-    asmjit::x86::Mem Emitter::RoData::add_external_function(F f)
-    {
-        static_assert(sizeof(F) == sizeof(uint64_t));
-        static_assert(alignof(F) == alignof(uint64_t));
-        return add8(reinterpret_cast<uint64_t>(f));
-    }
-
     asmjit::x86::Mem Emitter::RoData::add32(uint256_t const &x)
     {
         // We need `data_` size upper bounded to not overflow `int32_t`,
@@ -530,8 +522,8 @@ namespace monad::vm::compiler::native
         if (spill_avx_) {
             em_->as_.vzeroupper();
         }
-        auto const fn_mem = em_->rodata_.add_external_function(runtime_fun_);
-        em_->as_.call(fn_mem);
+        // asmjit makes this a direct call when the target is in rel32 range.
+        em_->as_.call(asmjit::imm(runtime_fun_));
     }
 
     size_t Emitter::RuntimeImpl::implicit_arg_count()
@@ -812,23 +804,19 @@ namespace monad::vm::compiler::native
     {
         auto const msg_lbl = as_.newLabel();
         debug_messages_.emplace_back(msg_lbl, msg);
-        auto const fn_mem =
-            rodata_.add_external_function(runtime_print_gas_remaining_impl);
 
         discharge_deferred_comparison();
         spill_caller_save_regs(true);
         as_.lea(x86::rdi, x86::qword_ptr(msg_lbl));
         as_.mov(x86::rsi, reg_context);
         as_.vzeroupper();
-        as_.call(fn_mem);
+        as_.call(asmjit::imm(runtime_print_gas_remaining_impl));
     }
 
     void Emitter::runtime_print_input_stack(std::string const &msg)
     {
         auto const msg_lbl = as_.newLabel();
         debug_messages_.emplace_back(msg_lbl, msg);
-        auto const fn_mem =
-            rodata_.add_external_function(runtime_print_input_stack_impl);
 
         discharge_deferred_comparison();
         spill_caller_save_regs(true);
@@ -836,7 +824,7 @@ namespace monad::vm::compiler::native
         as_.mov(x86::rsi, reg_stack);
         as_.mov(x86::rdx, x86::qword_ptr(x86::rsp, sp_offset_stack_size));
         as_.vzeroupper();
-        as_.call(fn_mem);
+        as_.call(asmjit::imm(runtime_print_input_stack_impl));
     }
 
     /**
@@ -858,9 +846,6 @@ namespace monad::vm::compiler::native
 
         checked_debug_comment("Store stack in transient storage");
 
-        auto const fn_mem =
-            rodata_.add_external_function(runtime_store_input_stack_impl);
-
         discharge_deferred_comparison();
         spill_caller_save_regs(true);
 
@@ -881,7 +866,7 @@ namespace monad::vm::compiler::native
         as_.mov(x86::rcx, 0);
         as_.mov(x86::r8, base_offset);
         as_.vzeroupper();
-        as_.call(fn_mem);
+        as_.call(asmjit::imm(runtime_store_input_stack_impl));
 
         as_.add(x86::rsp, current_stack_size * 32);
 
@@ -899,7 +884,7 @@ namespace monad::vm::compiler::native
         as_.mov(x86::rcx, current_stack_size);
         as_.mov(x86::r8, base_offset);
 
-        as_.call(fn_mem);
+        as_.call(asmjit::imm(runtime_store_input_stack_impl));
 
         as_.bind(skip_lbl);
     }
@@ -908,8 +893,6 @@ namespace monad::vm::compiler::native
     {
         auto const msg_lbl = as_.newLabel();
         debug_messages_.emplace_back(msg_lbl, msg);
-        auto const fn_mem =
-            rodata_.add_external_function(runtime_print_top2_impl);
 
         discharge_deferred_comparison();
         spill_caller_save_regs(true);
@@ -939,15 +922,13 @@ namespace monad::vm::compiler::native
             as_.lea(x86::rdx, m);
         }
         as_.vzeroupper();
-        as_.call(fn_mem);
+        as_.call(asmjit::imm(runtime_print_top2_impl));
     }
 
     void Emitter::runtime_print_top1(std::string const &msg)
     {
         auto const msg_lbl = as_.newLabel();
         debug_messages_.emplace_back(msg_lbl, msg);
-        auto const fn_mem =
-            rodata_.add_external_function(runtime_print_top1_impl);
 
         discharge_deferred_comparison();
         spill_caller_save_regs(true);
@@ -966,7 +947,7 @@ namespace monad::vm::compiler::native
             as_.lea(x86::rsi, m);
         }
         as_.vzeroupper();
-        as_.call(fn_mem);
+        as_.call(asmjit::imm(runtime_print_top1_impl));
     }
 
     void Emitter::breakpoint()
@@ -1023,10 +1004,13 @@ namespace monad::vm::compiler::native
         // awaiting code gen for CALLDATALOAD instructions +
         // awaiting code gen for BYTE instructions +
         // size of read-only data section +
-        // size of jump table
+        // size of jump table +
+        // size of address table for out of range calls
+        auto const *const addrtab = code_holder_.addressTableSection();
         return code_holder_.textSection()->realSize() +
                (load_bounded_le_handlers_.size() << 5) +
-               rodata_.estimate_size() + (*bytecode_size_ << 2);
+               rodata_.estimate_size() + (*bytecode_size_ << 2) +
+               (addrtab ? addrtab->virtualSize() : 0);
     }
 
     void Emitter::add_jump_dest(byte_offset const d)
@@ -3324,7 +3308,7 @@ namespace monad::vm::compiler::native
 
         auto const load_bounded_label = as_.newLabel();
         auto const load_bounded_fn =
-            rodata_.add_external_function(monad_vm_runtime_load_bounded_le_raw);
+            asmjit::imm(monad_vm_runtime_load_bounded_le_raw);
         auto const bswap_label = as_.newLabel();
         load_bounded_le_handlers_.emplace_back(
             load_bounded_label, load_bounded_fn, bswap_label);
@@ -6330,14 +6314,10 @@ namespace monad::vm::compiler::native
             as_.jae(after_increase_label);
         }
 
-        auto const increase_memory_fn =
+        as_.call(asmjit::imm(
             memory_version == runtime::Memory::Version::V1
-                ? rodata_.add_external_function(
-                      monad_vm_runtime_increase_memory_raw_v1)
-                : rodata_.add_external_function(
-                      monad_vm_runtime_increase_memory_raw_mip3);
-
-        as_.call(increase_memory_fn);
+                ? monad_vm_runtime_increase_memory_raw_v1
+                : monad_vm_runtime_increase_memory_raw_mip3));
 
         as_.bind(after_increase_label);
 

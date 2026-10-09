@@ -26,6 +26,7 @@ target_sources(vm-unit-tests PRIVATE
     monad_vm_interface_tests.cpp
     monad_vm_memory_pool_tests.cpp
     mocked_host_tests.cpp
+    near_jit_runtime_tests.cpp
     utils_tests.cpp
     uint256_tests.cpp
     uint128_tests.cpp

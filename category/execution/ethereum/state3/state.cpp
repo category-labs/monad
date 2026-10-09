@@ -390,6 +390,18 @@ void State::push()
 #endif
     // Built in the vector: a pushed UndoMark is built on the stack and then
     // copied in, 64 bytes a frame.
+#if defined(MONAD_ZKVM_ZISK)
+    // All six in bytes, as the accounts' already are: a count is the bytes
+    // shifted down, a step a vector on every frame, and only a rejected frame
+    // reads them back.
+    undo_marks_.emplace_back(
+        bytes_of(undo_),
+        bytes_of(undo_accts_),
+        bytes_of(undo_words_),
+        bytes_of(undo_u64_),
+        bytes_of(undo_slots_),
+        bytes_of(undo_pages_));
+#else
     undo_marks_.emplace_back(
         undo_.size(),
         bytes_of(undo_accts_),
@@ -397,6 +409,7 @@ void State::push()
         undo_u64_.size(),
         undo_slots_.size(),
         undo_pages_.size());
+#endif
     log_marks_.push_back(bytes_of(logs_));
 }
 
@@ -470,7 +483,11 @@ void State::pop_reject()
     // Replay backwards to restore the earliest values last.
     UndoMark const mark = undo_marks_.back();
     undo_marks_.pop_back();
+#if defined(MONAD_ZKVM_ZISK)
+    while (bytes_of(undo_) > mark.log) {
+#else
     while (undo_.size() > mark.log) {
+#endif
         Undo &u = undo_.back();
         if (u.kind == Undo::Kind::Created) {
             current_.erase(u.addr);
@@ -555,10 +572,17 @@ void State::pop_reject()
         undo_.pop_back();
     }
     undo_accts_.resize(mark.accts / sizeof(std::optional<Account>));
+#if defined(MONAD_ZKVM_ZISK)
+    undo_words_.resize(mark.words / sizeof(bytes32_t));
+    undo_u64_.resize(mark.u64 / sizeof(std::uint64_t));
+    undo_slots_.resize(mark.slots / sizeof(SlotUndo));
+    undo_pages_.resize(mark.pages / sizeof(PageTracker));
+#else
     undo_words_.resize(mark.words);
     undo_u64_.resize(mark.u64);
     undo_slots_.resize(mark.slots);
     undo_pages_.resize(mark.pages);
+#endif
     if (undo_marks_.empty()) {
         undo_.clear();
         undo_accts_.clear();

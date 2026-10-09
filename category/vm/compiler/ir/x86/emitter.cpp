@@ -3396,11 +3396,20 @@ namespace monad::vm::compiler::native
         }
         else {
             MONAD_DEBUG_ASSERT(value->stack_offset().has_value());
-            MONAD_DEBUG_ASSERT(volatile_general_reg == rcx_general_reg);
-            MONAD_DEBUG_ASSERT(
-                !stack_.is_general_reg_on_stack(volatile_general_reg));
-            as_.mov(x86::cl, stack_offset_to_mem(*value->stack_offset()));
-            as_.mov(*mem, x86::cl);
+            auto src = stack_offset_to_mem(*value->stack_offset());
+            src.setSize(4);
+            if (stack_.has_free_general_reg()) {
+                auto [tmp, tmp_reserv] = alloc_general_reg();
+                auto const &gpq = general_reg_to_gpq256(*tmp->general_reg());
+                as_.mov(gpq[0].r32(), src);
+                as_.mov(*mem, gpq[0].r8());
+            }
+            else {
+                auto [tmp, tmp_reserv] = alloc_avx_reg();
+                auto const tmp_x = avx_reg_to_xmm(*tmp->avx_reg());
+                as_.vmovd(tmp_x, src);
+                as_.vpextrb(*mem, tmp_x, 0);
+            }
         }
     }
 
@@ -6288,6 +6297,19 @@ namespace monad::vm::compiler::native
         // It is later assumed that volatile_general_reg coincides with
         // rdi_general_reg.
         MONAD_DEBUG_ASSERT(rdi_general_reg == volatile_general_reg);
+
+        if (!offset->literal()) {
+            // Memory never shrinks, so these checks need to pass only once.
+            if (offset->touched_memory_size() >= read_size) {
+                mov_stack_elem_low64_to_gpq(offset, x86::rax);
+                as_.add(
+                    x86::rax,
+                    x86::qword_ptr(
+                        reg_context, runtime::context_offset_memory_data));
+                return x86::qword_ptr(x86::rax);
+            }
+            offset->set_touched_memory_size(read_size);
+        }
 
         auto const after_increase_label = as_.newLabel();
 

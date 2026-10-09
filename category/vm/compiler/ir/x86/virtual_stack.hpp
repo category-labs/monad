@@ -213,6 +213,18 @@ namespace monad::vm::compiler::native
             return !stack_indices_.empty();
         }
 
+        // Largest access size `touch_memory` has checked with this offset.
+        int32_t touched_memory_size() const
+        {
+            return touched_memory_size_;
+        }
+
+        void set_touched_memory_size(int32_t const n)
+        {
+            MONAD_DEBUG_ASSERT(n >= touched_memory_size_);
+            touched_memory_size_ = n;
+        }
+
         // Remember to match this with a call to `unreserve_avx_reg`.
         void reserve_avx_reg()
         {
@@ -264,6 +276,7 @@ namespace monad::vm::compiler::native
         std::optional<AvxReg> avx_reg_;
         std::optional<GeneralReg> general_reg_;
         std::optional<Literal> literal_;
+        int32_t touched_memory_size_{};
     };
 
     using StackElemRef = utils::RcPtr<StackElem, StackElemDeleter>;

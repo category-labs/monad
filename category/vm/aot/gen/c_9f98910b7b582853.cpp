@@ -22420,6 +22420,13 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x5b, 0x83, 0x81, 0x10, 0x15, 0x61, 0x57}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
+            {
+                int64_t const g = aot::copy_loop<traits, aot::gas_of<traits>({0x5b, 0x83, 0x81, 0x10, 0x15, 0x61, 0x57}), aot::gas_of<traits>({0x81, 0x81, 0x01, 0x51, 0x83, 0x82, 0x01, 0x52, 0x60, 0x01, 0x61, 0x56})>(ctx, gas, top);
+                if (g != INT64_MIN) {
+                    gas = g;
+                    MONAD_AOT_TAIL return b_5208<traits>(ctx, bottom, top, gas);
+                }
+            }
             uint256_t const &s0 = top[0];
             uint256_t const &s3 = top[-3];
             uint256_t const t1 = aot::from_bool(s0 < s3);

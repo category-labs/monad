@@ -241,6 +241,79 @@ namespace monad::vm::aot
         runtime::mstore8<traits>(ctx, &offset, &value);
     }
 
+    // Solidity's word-by-word memory copy, the interpreter's copy_loop:
+    //
+    //     h: JUMPDEST DUP4 DUP2 LT ISZERO PUSH2 <end> JUMPI
+    //        DUP2 DUP2 ADD MLOAD DUP4 DUP3 ADD MSTORE PUSH1 0x20 ADD
+    //        PUSH2 <h> JUMP
+    //
+    // over [.. len dst src i], every turn at once when the words are under
+    // 2^28 and the memory grows within its capacity: the words copied as the
+    // turns copy them, i past len, the gas of the turns' bodies and heads
+    // after the first (HEAD and BODY, the two blocks' static gas; h charged
+    // its first head on entry) and of the growth. Returns the gas left, or
+    // INT64_MIN where the compiled turns run instead.
+    template <Traits traits, int64_t HEAD, int64_t BODY>
+    [[gnu::noinline]] int64_t
+    copy_loop(Context *const ctx, int64_t gas, uint256_t *const top)
+    {
+        static_assert(!traits::mip_3_active());
+        auto const small = [](uint256_t const &x) {
+            return (x[1] | x[2] | x[3]) == 0 && x[0] < (uint64_t{1} << 28);
+        };
+        uint256_t const &i = top[0];
+        uint256_t const &src = top[-1];
+        uint256_t const &dst = top[-2];
+        uint256_t const &len = top[-3];
+        if (!(small(len) && small(i) && small(src) && small(dst) &&
+              i[0] < len[0])) {
+            return INT64_MIN;
+        }
+        uint64_t const first = i[0];
+        uint64_t const s = src[0];
+        uint64_t const d = dst[0];
+        uint64_t const turns = (len[0] - first + 31) >> 5;
+        uint64_t const last = first + 32 * (turns - 1);
+        if (s + last >= (uint64_t{1} << 28) || d + last >= (uint64_t{1} << 28)) {
+            return INT64_MIN;
+        }
+        uint64_t const far = std::max(s, d) + last + 32;
+        int64_t expansion = 0;
+        if (far > ctx->memory.size) {
+            auto const words = Context::memory_size_to_word_count(
+                runtime::Bin<29>::unsafe_from(far));
+            auto const size = Context::word_count_to_memory_size(words);
+            if (MONAD_UNLIKELY(ctx->memory.capacity < *size)) {
+                return INT64_MIN;
+            }
+            auto const cost = Context::memory_cost_from_word_count<traits>(words);
+            expansion = cost - ctx->memory.cost;
+            ctx->memory.size = *size;
+            ctx->memory_access32_end = *size - 31;
+            ctx->memory.cost = cost;
+        }
+        gas -= (HEAD + BODY) * static_cast<int64_t>(turns) + expansion;
+        if (MONAD_UNLIKELY(gas < 0)) {
+            ctx->exit(StatusCode::OutOfGas);
+        }
+        uint8_t *const mem = ctx->memory.data;
+        uint64_t const bytes = 32 * turns;
+        // The turns read no word an earlier one wrote when the ranges are
+        // apart: one copy. Otherwise word by word, in their order.
+        if (d + bytes <= s || s + bytes <= d) {
+            std::memcpy(mem + d + first, mem + s + first, bytes);
+        }
+        else {
+            for (uint64_t k = first; k <= last; k += 32) {
+                uint64_t word[4];
+                std::memcpy(word, mem + s + k, 32);
+                std::memcpy(mem + d + k, word, 32);
+            }
+        }
+        top[0] = uint256_t{last + 32};
+        return gas;
+    }
+
     // SHA3
 
     template <Traits traits>

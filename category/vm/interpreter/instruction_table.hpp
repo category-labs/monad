@@ -3579,6 +3579,32 @@ namespace monad::vm::interpreter
             instr_ptr MONAD_VM_TBL_ARG);
     }
 
+    #if defined(MONAD_ZKVM_ZISK)
+    // Twenty ones, aligned, for push_and's address mask.
+    alignas(8) inline constexpr unsigned char twenty_ones[24] = {
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
+
+    // Whether the 20 bytes at p are all ones, by the DMA comparator (CSR
+    // 0x814, the length in the flag after it).
+    [[gnu::always_inline]] inline bool
+    twenty_ones_at(uint8_t const *const p) noexcept
+    {
+        uint64_t differ;
+        asm(".option push\n\t"
+            ".option arch, +zicsr\n\t"
+            "csrrs %0, 0x814, %1\n\t"
+            "addi x0, %2, 20\n\t"
+            ".option pop"
+            : "=&r"(differ)
+            : "r"(p),
+              "r"(twenty_ones),
+              "m"(*reinterpret_cast<uint8_t const(*)[20]>(p)),
+              "m"(twenty_ones));
+        return differ == 0;
+    }
+
+    #endif
     // PUSH4 <mask> AND and PUSH20 <mask> AND, which Solidity cleans a
     // selector and an address with: the immediate applied to the top in
     // place, without the push. Apart from push<N>: in it the arm's
@@ -3609,6 +3635,17 @@ namespace monad::vm::interpreter
         }
         else {
             static_assert(N == 20);
+    #if defined(MONAD_ZKVM_ZISK)
+            // The address mask, twenty ones, as Solidity nearly always
+            // writes it: the AND clears the top twelve bytes. Comparing the
+            // immediate with the DMA comparator costs less than the three
+            // unaligned reads that apply any other.
+            if (MONAD_LIKELY(twenty_ones_at(instr_ptr + 1))) {
+                monad_vm_x[2] &= 0xffffffffu;
+                monad_vm_x[3] = 0;
+                MONAD_VM_FUSED_NEXT(N + 2, 0);
+            }
+    #endif
             monad_vm_x[0] &= detail::read_unaligned(instr_ptr + 13);
             monad_vm_x[1] &= detail::read_unaligned(instr_ptr + 5);
             monad_vm_x[2] &= detail::load_be_k<4>(instr_ptr + 1);

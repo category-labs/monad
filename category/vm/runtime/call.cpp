@@ -189,29 +189,45 @@ namespace monad::vm::runtime
             .memory_capacity = ctx->memory.capacity - ctx->memory.size,
         };
 
+        // Even after releasing its buffer, result's destructor remains
+        // non-trivial: longjmp must not bypass it. Destroy the result before
+        // propagate_stack_unwind, keeping the gas and status needed afterward.
+        int64_t gas_left;
+        int64_t gas_refund;
+        bool success;
+        {
 #if defined(MONAD_ZKVM_ZISK)
-        // Transfer result ownership as the C adapter does.
-        auto const result =
-            guest_call<traits>(host_of(*ctx), message).release_raw();
+            auto result = guest_call<traits>(host_of(*ctx), message);
+            // The environment takes ownership of the output buffer, which
+            // survives the destruction of result below.
+            auto const *const output_data =
+                std::exchange(result.output_data, nullptr);
 #else
-        auto const result = ctx->host->call(message).release_raw();
+            auto const result = ctx->host->call(message).release_raw();
 #endif
-
-        ctx->env.set_return_data(result.output_data, result.output_size);
+#if defined(MONAD_ZKVM_ZISK)
+            ctx->env.set_return_data(output_data, result.output_size);
+#else
+            ctx->env.set_return_data(result.output_data, result.output_size);
+#endif
+            gas_left = result.gas_left;
+            gas_refund = result.gas_refund;
+            success = result.status_code == CallStatus::Success;
+        }
 
         // Unwind the stack after setting return data, so that return data
         // is deallocated by the `Environment` destructor.
         ctx->propagate_stack_unwind();
 
-        ctx->deduct_gas(gas - result.gas_left);
-        ctx->gas_refund += result.gas_refund;
+        ctx->deduct_gas(gas - gas_left);
+        ctx->gas_refund += gas_refund;
 
         auto const copy_size =
-            std::min(static_cast<size_t>(*ret_size), result.output_size);
+            std::min(static_cast<size_t>(*ret_size), ctx->env.return_data_size);
         std::copy_n(
-            result.output_data, copy_size, ctx->memory.data + *ret_offset);
+            ctx->env.return_data, copy_size, ctx->memory.data + *ret_offset);
 
-        return (result.status_code == CallStatus::Success) ? 1 : 0;
+        return success ? 1 : 0;
     }
 
     EXPLICIT_TRAITS(call_impl);

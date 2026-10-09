@@ -530,8 +530,9 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # The codes compiled ahead of time (category/vm/aot), on ZisK.
     set(_monad_zkvm_aot_objs "")
     if(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
-        add_library(monad-vm-aot OBJECT
-            "${MONAD_ROOT}/category/vm/aot/codes.cpp")
+        file(GLOB _monad_zkvm_aot_sources CONFIGURE_DEPENDS
+            "${MONAD_ROOT}/category/vm/aot/gen/*.cpp")
+        add_library(monad-vm-aot OBJECT ${_monad_zkvm_aot_sources})
         monad_compile_options(monad-vm-aot)
         monad_riscv_compile_options(monad-vm-aot)
         target_link_libraries(monad-vm-aot

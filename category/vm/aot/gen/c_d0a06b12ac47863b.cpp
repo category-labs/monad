@@ -13,17 +13,17 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// Written by aotgen.py from the codes below: not to be edited.
+// Written by aotgen.py from the code whose keccak is d0a06b12ac47863b5c7be4185c2deaad1c61557033f56c7d4ea74429cbb25e23: not to be edited.
 
-#include <category/vm/aot/aot.hpp>
 #include <category/vm/aot/ops.hpp>
+#include <category/vm/interpreter/intercode.hpp>
+
+#define MONAD_AOT_TAIL __attribute__((musttail))
 
 namespace monad::vm::aot
 {
     using runtime::Context;
     using runtime::StatusCode;
-
-#define MONAD_AOT_TAIL __attribute__((musttail))
 
     // 3124 bytes, keccak d0a06b12ac47863b5c7be4185c2deaad1c61557033f56c7d4ea74429cbb25e23
     namespace c_d0a06b12ac47863b
@@ -2652,46 +2652,6 @@ namespace monad::vm::aot
         }
     }
 
-    using Osaka = EvmTraits<MONAD_ETH_OSAKA>;
-
-    constexpr Entry entry_0{
-        {0x3b8647ac126ba0d0u, 0xadea2d5c18e47b5cu, 0x7d6cf5337055611cu, 0x235eb2cb2944a74eu},
-        3124,
-        &c_d0a06b12ac47863b::run<Osaka>,
-        nullptr};
-
-    Entry const *const table[256] = {
-        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-        &entry_0, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-    };
+    template void c_d0a06b12ac47863b::run<EvmTraits<MONAD_ETH_OSAKA>>(
+        void *, Context *, interpreter::Intercode const *, uint256_t *, void *);
 }

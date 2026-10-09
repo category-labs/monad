@@ -26,12 +26,15 @@
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/runtime/call.hpp>
+#include <category/vm/runtime/create.hpp>
 #include <category/vm/runtime/data.hpp>
+#include <category/vm/runtime/environment.hpp>
 #include <category/vm/runtime/keccak.hpp>
 #include <category/vm/runtime/log.hpp>
 #include <category/vm/runtime/math.hpp>
 #include <category/vm/runtime/math/intrinsics.hpp>
 #include <category/vm/runtime/memory.hpp>
+#include <category/vm/runtime/selfdestruct.hpp>
 #include <category/vm/runtime/storage.hpp>
 #include <category/vm/runtime/transmute.hpp>
 #include <category/vm/runtime/types.hpp>
@@ -342,6 +345,29 @@ namespace monad::vm::aot
                 }
             }
             r[i] = v;
+        }
+        return r;
+    }
+
+    // SHL and SHR by a run-time amount, as their handlers: zero from 256 up.
+    [[gnu::always_inline]] inline uint256_t
+    shl(uint256_t const &shift, uint256_t const &value) noexcept
+    {
+        uint256_t r{0};
+        if ((shift[1] | shift[2] | shift[3]) == 0 && shift[0] < 256) {
+            r = value;
+            r <<= shift;
+        }
+        return r;
+    }
+
+    [[gnu::always_inline]] inline uint256_t
+    shr(uint256_t const &shift, uint256_t const &value) noexcept
+    {
+        uint256_t r{0};
+        if ((shift[1] | shift[2] | shift[3]) == 0 && shift[0] < 256) {
+            r = value;
+            r >>= shift;
         }
         return r;
     }

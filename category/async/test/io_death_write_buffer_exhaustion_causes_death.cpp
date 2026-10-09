@@ -51,8 +51,8 @@ namespace
                 monad::async::AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE);
         monad::async::AsyncIO testio(pool, testrwbuf);
         std::vector<monad::async::erased_connected_operation_ptr> states;
-        auto const empty_testio = monad::make_scope_exit(
-            [&]() noexcept { testio.wait_until_done(); });
+        auto const empty_testio =
+            monad::make_scope_exit([&]() noexcept { testio.flush(); });
 
         struct empty_receiver
         {

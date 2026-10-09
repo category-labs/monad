@@ -527,6 +527,18 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     monad_compile_options(monad-vm-mempool)
     monad_riscv_compile_options(monad-vm-mempool)
 
+    # The codes compiled ahead of time (category/vm/aot), on ZisK.
+    set(_monad_zkvm_aot_objs "")
+    if(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
+        add_library(monad-vm-aot OBJECT
+            "${MONAD_ROOT}/category/vm/aot/codes.cpp")
+        monad_compile_options(monad-vm-aot)
+        monad_riscv_compile_options(monad-vm-aot)
+        target_link_libraries(monad-vm-aot
+            PUBLIC monad-vm-runtime monad-vm-interpreter unordered_dense evmc)
+        set(_monad_zkvm_aot_objs $<TARGET_OBJECTS:monad-vm-aot>)
+    endif()
+
     # ---- Extract setjmp/longjmp from the compiler's newlib libc.a ----
 
     # The query must carry the same -march/-mabi as the compile, or a multilib
@@ -897,6 +909,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         $<TARGET_OBJECTS:monad-vm-runtime>
         $<TARGET_OBJECTS:monad-vm-interpreter>
         $<TARGET_OBJECTS:monad-vm-mempool>
+        ${_monad_zkvm_aot_objs}
         ${_libc_objs}
         ${_libgcc_objs}
     )

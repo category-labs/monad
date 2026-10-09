@@ -44,6 +44,12 @@
 #if defined(MONAD_ZKVM_VARCODE_CACHE)
     #include <ankerl/unordered_dense.h>
 #endif
+#if defined(MONAD_ZKVM_ZISK)
+    #include <category/vm/aot/aot.hpp>
+    #include <category/vm/interpreter/trampoline.hpp>
+
+    #include <type_traits>
+#endif
 #include <category/vm/code.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/host.hpp>
@@ -146,7 +152,8 @@ namespace monad::vm
         template <Traits traits>
         evmc::Result execute(
             Host &host, evmc_message const *const msg,
-            bytes32_t const & /*code_hash*/, SharedVarcode const &vcode)
+            bytes32_t const &code_hash [[maybe_unused]],
+            SharedVarcode const &vcode)
         {
             auto const &icode = vcode->intercode();
             auto rt_ctx = runtime::Context::from(
@@ -157,7 +164,26 @@ namespace monad::vm
 
             auto *const prev_rt_ctx = host.set_runtime_context(&rt_ctx);
             auto const stack_ptr = stack_allocator_.allocate();
+#if defined(MONAD_ZKVM_ZISK)
+            // A code compiled ahead of time runs its own function, under the
+            // interpreter's trampoline (aot/aot.hpp).
+            interpreter::core_loop_fn_t compiled = nullptr;
+            if constexpr (std::is_same_v<traits, EvmTraits<MONAD_ETH_OSAKA>>) {
+                compiled = aot::find(code_hash, icode->size());
+            }
+            if (compiled != nullptr) {
+                interpreter::trampoline(
+                    rt_ctx,
+                    *icode,
+                    reinterpret_cast<uint256_t *>(stack_ptr.get()),
+                    compiled);
+            }
+            else {
+                interpreter::execute<traits>(rt_ctx, *icode, stack_ptr.get());
+            }
+#else
             interpreter::execute<traits>(rt_ctx, *icode, stack_ptr.get());
+#endif
             auto result = rt_ctx.template copy_to_evmc_result<traits>();
             rt_ctx.template return_to<traits>(prev_rt_ctx);
             (void)host.set_runtime_context(prev_rt_ctx);

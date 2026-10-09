@@ -55,6 +55,25 @@ namespace
         static_assert(std::is_standard_layout_v<Address>);
         return reinterpret_cast<Address const &>(a);
     }
+
+    // A message's value tested for zero on its words as they lie: converted
+    // first, it costs a byte swap and a store a word.
+    [[gnu::always_inline]] inline bool
+    is_zero_value(evmc_bytes32 const &v) noexcept
+    {
+        uint64_t w0;
+        uint64_t w1;
+        uint64_t w2;
+        uint64_t w3;
+        __builtin_memcpy(&w0, v.bytes, sizeof(w0));
+        __builtin_memcpy(&w1, v.bytes + 8, sizeof(w1));
+        __builtin_memcpy(&w2, v.bytes + 16, sizeof(w2));
+        __builtin_memcpy(&w3, v.bytes + 24, sizeof(w3));
+        return (w0 | w1 | w2 | w3) == 0;
+    }
+
+    // The value of a call that moves none, bound where a converted one is.
+    constexpr uint256_t zero_value{};
 #endif
 
     bool sender_has_balance(State &state, evmc_message const &msg) noexcept
@@ -173,33 +192,47 @@ pre_call(EvmcHost<traits> &host, evmc_message const &msg, State &state)
     bool const static_call = msg.flags & EVMC_STATIC;
 
     if (msg.kind != EVMC_DELEGATECALL) {
-#if defined(MONAD_ZKVM_ZISK)
-        uint256_t const value = load_be<uint256_t>(msg.value);
-    #if defined(MONAD_ZKVM_NO_MERGE_CONSTRAINTS)
+#if defined(MONAD_ZKVM_ZISK) && defined(MONAD_ZKVM_NO_MERGE_CONSTRAINTS)
         // Without merge constraints a debit of zero, which most calls are,
-        // is covered by any balance and records nothing: the call and the
-        // value's staging for it are left out.
-        if (MONAD_UNLIKELY(
-                value != 0 && !sender_has_balance(state, msg, value))) {
-    #else
-        if (MONAD_UNLIKELY(!sender_has_balance(state, msg, value))) {
-    #endif
+        // is covered by any balance and records nothing: the call is left
+        // out. Only a value that is not zero is converted, and staged for
+        // the calls that take it.
+        if (MONAD_LIKELY(is_zero_value(msg.value))) {
+            if (!static_call) {
+                transfer_balances<traits>(
+                    state, host, msg, msg_address(msg.recipient), zero_value);
+            }
+        }
+        else if (uint256_t const value = load_be<uint256_t>(msg.value);
+                 MONAD_UNLIKELY(!sender_has_balance(state, msg, value))) {
+            state.pop_reject();
+            return evmc::Result{EVMC_INSUFFICIENT_BALANCE, msg.gas};
+        }
+        else if (!static_call) {
+            transfer_balances<traits>(
+                state, host, msg, msg_address(msg.recipient), value);
+        }
 #else
+    #if defined(MONAD_ZKVM_ZISK)
+        uint256_t const value = load_be<uint256_t>(msg.value);
+        if (MONAD_UNLIKELY(!sender_has_balance(state, msg, value))) {
+    #else
         if (MONAD_UNLIKELY(!sender_has_balance(state, msg))) {
-#endif
+    #endif
             // The pushed frame exits before bytecode, account access, or
             // storage access, so there is no access-list metadata to capture.
             state.pop_reject();
             return evmc::Result{EVMC_INSUFFICIENT_BALANCE, msg.gas};
         }
         else if (!static_call) {
-#if defined(MONAD_ZKVM_ZISK)
+    #if defined(MONAD_ZKVM_ZISK)
             transfer_balances<traits>(
                 state, host, msg, msg_address(msg.recipient), value);
-#else
+    #else
             transfer_balances<traits>(state, host, msg, msg.recipient);
-#endif
+    #endif
         }
+#endif
     }
 
     if constexpr (traits::evm_rev() < MONAD_ETH_PRAGUE) {

@@ -551,6 +551,14 @@ public:
 
     CodeRef code_ref_of(Address const &);
 
+    // Whether the account has code, as its recent row says: false for one
+    // that does not exist.
+    bool has_code(Address const &address)
+    {
+        auto const &account = recent_account(address);
+        return account.has_value() && account->code_hash != NULL_HASH;
+    }
+
     // EIP-7702's delegate of the address, read where its code is kept, and
     // returned where it lies in the code, or null.
     Address const *delegate_of(Address const &);

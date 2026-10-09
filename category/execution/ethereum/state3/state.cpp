@@ -758,6 +758,42 @@ inline void State::current_storage_into(
     }
 }
 
+#if defined(MONAD_ZKVM_ZISK)
+inline void State::current_storage_load(
+    AccountState const &account_state, Address const &address,
+    bytes32_t const &key, uint256_t &out)
+{
+    auto const &account = account_state.account_;
+    MONAD_ASSERT(account.has_value());
+    auto const &storage = account_state.storage_;
+    if (auto const *const it2 = storage.find(key); it2) {
+        out = load_be<uint256_t>(*it2);
+        return;
+    }
+    MONAD_ASSERT(account_state.orig_ != nullptr);
+    auto &original_account_state = *account_state.orig_;
+    auto const &original_account = original_account_state.account_;
+    if (!original_account.has_value() ||
+        account.value().incarnation != original_account.value().incarnation) {
+        out = uint256_t{};
+        return;
+    }
+    auto &original_storage = original_account_state.prestate_storage_;
+    if (auto const *const it3 = original_storage.find(key); it3) {
+        out = load_be<uint256_t>(*it3);
+    }
+    else {
+        bytes32_t const &value = block_state_.read_storage(
+            *original_account_state.delta_,
+            address,
+            account.value().incarnation,
+            key);
+        original_storage.insert(key, value);
+        out = load_be<uint256_t>(value);
+    }
+}
+
+#endif
 void State::get_storage_into(
     Address const &address, bytes32_t const &key, evmc_bytes32 &out)
 {
@@ -995,25 +1031,25 @@ EXPLICIT_TRAITS_MEMBER(State::access_storage);
 template <Traits traits>
 monad_access_status State::sload_full(
     Address const &address, bytes32_t const &key, bool const read_cold,
-    evmc_bytes32 &out)
+    uint256_t &out)
 {
     auto &account_state = current_account_state(address);
     monad_access_status const status =
         access_storage_of<traits>(account_state, address, key);
     if (status == MONAD_ACCESS_WARM || read_cold) {
-        current_storage_into(account_state, address, key, out);
+        current_storage_load(account_state, address, key, out);
     }
     return status;
 }
 
 monad_access_status State::sload_cold(
     Address const &address, bytes32_t const &key, bool const read_cold,
-    evmc_bytes32 &out, AccountState &account_state)
+    uint256_t &out, AccountState &account_state)
 {
     account_state.add_accessed_storage(key);
     journal_warm_slot(address, key);
     if (read_cold) {
-        current_storage_into(account_state, address, key, out);
+        current_storage_load(account_state, address, key, out);
     }
     return MONAD_ACCESS_COLD;
 }
@@ -1021,13 +1057,13 @@ monad_access_status State::sload_cold(
 // current_storage_into's read of the block's state, for an original row whose
 // incarnation sload_into found to be the account's.
 monad_access_status State::sload_read(
-    Address const &address, bytes32_t const &key, evmc_bytes32 &out,
+    Address const &address, bytes32_t const &key, uint256_t &out,
     OriginalAccountState &orig)
 {
     bytes32_t const &value = block_state_.read_storage(
         *orig.delta_, address, orig.account_.value().incarnation, key);
     orig.prestate_storage_.insert(key, value);
-    out = value;
+    out = load_be<uint256_t>(value);
     return MONAD_ACCESS_WARM;
 }
 
@@ -1039,7 +1075,7 @@ monad_access_status State::sload_read(
 template <Traits traits>
 monad_access_status State::sload_into(
     Address const &address, bytes32_t const &key, bool const read_cold,
-    evmc_bytes32 &out)
+    uint256_t &out)
 {
     if constexpr (!traits::mip_8_active()) {
         AccountState *const cur = memoised_current(address);
@@ -1052,7 +1088,7 @@ monad_access_status State::sload_into(
             OriginalAccountState *const orig = cur->orig_;
             if (MONAD_LIKELY(account.has_value())) {
                 if (auto const *const v = cur->storage_.find(key); v) {
-                    out = *v;
+                    out = load_be<uint256_t>(*v);
                     return MONAD_ACCESS_WARM;
                 }
                 if (MONAD_LIKELY(orig != nullptr)) {
@@ -1060,12 +1096,12 @@ monad_access_status State::sload_into(
                     if (!original_account.has_value() ||
                         account.value().incarnation !=
                             original_account.value().incarnation) {
-                        out = {};
+                        out = uint256_t{};
                         return MONAD_ACCESS_WARM;
                     }
                     if (auto const *const v = orig->prestate_storage_.find(key);
                         v) {
-                        out = *v;
+                        out = load_be<uint256_t>(*v);
                         return MONAD_ACCESS_WARM;
                     }
                     return sload_read(address, key, out, *orig);

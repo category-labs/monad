@@ -16,9 +16,10 @@ concurrency:
 jobs:
   build-base:
     runs-on: ubuntu-26.04-32
+    timeout-minutes: 90
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Build and cache `base` stage
         uses: ./.github/actions/docker-stage
@@ -31,9 +32,10 @@ jobs:
   cache-rust:
     needs: build-base
     runs-on: ubuntu-26.04-32
+    timeout-minutes: 90
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Build and cache `base_rust` stage
         uses: ./.github/actions/docker-stage
@@ -48,9 +50,10 @@ jobs:
   cache-ocaml:
     needs: build-base
     runs-on: ubuntu-26.04-32
+    timeout-minutes: 90
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Checkout monad-execution-specs
         run: git submodule update --init third_party/monad-execution-specs
@@ -68,9 +71,10 @@ jobs:
   cache-riscv:
     needs: build-base
     runs-on: ubuntu-26.04-32
+    timeout-minutes: 90
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Build and cache `base_riscv_toolchain` stage
         uses: ./.github/actions/docker-stage

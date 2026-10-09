@@ -39,12 +39,15 @@ runs:
 
     - name: Set up Docker Buildx
       if: inputs.setup == 'true'
-      uses: docker/setup-buildx-action@v3
+      uses: docker/setup-buildx-action@v4
       with:
         cleanup: false
 
     - name: Build `${{ inputs.target }}` stage
-      uses: docker/build-push-action@v5
+      uses: docker/build-push-action@v7
+      env:
+        DOCKER_BUILD_RECORD_UPLOAD: false
+        DOCKER_BUILD_SUMMARY: false
       with:
         context: .
         file: docker/Dockerfile

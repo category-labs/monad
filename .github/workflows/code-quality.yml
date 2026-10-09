@@ -18,11 +18,12 @@ jobs:
   formatting-check:
     name: Check clang-format
     runs-on: ubuntu-26.04
+    timeout-minutes: 15
     env:
       LLVM_VERSION: '19'
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install clang-format-${{ env.LLVM_VERSION }}
         run: |
@@ -35,15 +36,16 @@ jobs:
   traits-check:
     name: Trait instantiation check
     runs-on: ubuntu-26.04
+    timeout-minutes: 15
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v10.2.0
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
 
       - name: Check instantiations
         run: uv run scripts/check-trait-instantiations.py category
@@ -51,9 +53,10 @@ jobs:
   clang-tidy:
     name: Check clang-tidy
     runs-on: ubuntu-26.04-32
+    timeout-minutes: 90
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Build `code_quality` stage
         uses: ./.github/actions/docker-stage

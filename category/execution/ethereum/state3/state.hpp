@@ -362,9 +362,10 @@ private:
         AccountState &, monad_address const &, bytes32_t const &key);
 
     // Read a slot from an account already located in current_.
+    template <typename Output>
     [[gnu::always_inline]] inline void current_storage_into(
         AccountState const &, monad_address const &, bytes32_t const &key,
-        bytes32_t &out);
+        Output &out);
 #if defined(MONAD_ZKVM_ZISK)
 
     // Reuse the memo only when current_account_state needs no bookkeeping.
@@ -383,16 +384,16 @@ private:
     // sload_into's argument registers when tail-calling these helpers.
     [[gnu::noinline]] AccessStatus sload_cold(
         monad_address const &, bytes32_t const &key, bool can_pay_cold_access,
-        bytes32_t &out, AccountState &);
+        uint256_t &out, AccountState &);
 
     [[gnu::noinline]] AccessStatus sload_read(
-        monad_address const &, bytes32_t const &key, bytes32_t &out,
+        monad_address const &, bytes32_t const &key, uint256_t &out,
         OriginalAccountState &);
 
     template <Traits traits>
     [[gnu::noinline]] AccessStatus sload_full(
         monad_address const &, bytes32_t const &key, bool can_pay_cold_access,
-        bytes32_t &out);
+        uint256_t &out);
 
     [[gnu::always_inline]] inline StorageStatus set_storage_of(
         AccountState &, monad_address const &, bytes32_t const &key,
@@ -511,7 +512,7 @@ public:
     template <Traits traits>
     AccessStatus sload_into(
         monad_address const &, bytes32_t const &key, bool can_pay_cold_access,
-        bytes32_t &out);
+        uint256_t &out);
 
     template <Traits traits>
     vm::runtime::SstoreStatus sstore_into(

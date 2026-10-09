@@ -40,18 +40,17 @@ namespace monad::vm::runtime
     {
         static_assert(traits::evm_rev() >= EvmRevision::Berlin);
 
+        // SLOAD replaces the key on the stack. Save it before writing the
+        // result.
         auto const key = store_be_as<bytes32_t>(*key_ptr);
 
 #if defined(MONAD_ZKVM_ZISK)
-        // Skip the read if cold-access gas is insufficient; deduct_gas then
-        // exits before the uninitialized value can be used.
-        bytes32_t value;
         if (guest_sload_into<traits>(
                 host_of(*ctx),
                 ctx->env.recipient,
                 key,
                 ctx->gas_remaining >= traits::cold_storage_cost(),
-                value) == AccessStatus::Cold) {
+                *result_ptr) == AccessStatus::Cold) {
             ctx->deduct_gas(traits::cold_storage_cost());
         }
 #else
@@ -61,10 +60,9 @@ namespace monad::vm::runtime
             ctx->deduct_gas(traits::cold_storage_cost());
         }
 
-        auto const value = ctx->host->get_storage(ctx->env.recipient, key);
-#endif
-
+        bytes32_t const value = ctx->host->get_storage(ctx->env.recipient, key);
         *result_ptr = load_be<uint256_t>(value);
+#endif
     }
 
     EXPLICIT_TRAITS(sload);

@@ -320,7 +320,7 @@ namespace monad::vm::runtime
     template <Traits traits>
     AccessStatus guest_sload_into(
         Host &host, Address const &address, bytes32_t const &key,
-        bool const can_pay_cold_access, bytes32_t &value) noexcept
+        bool const can_pay_cold_access, uint256_t &value) noexcept
     {
         return static_cast<StateHost<traits> &>(host).sload_into(
             address, key, can_pay_cold_access, value);

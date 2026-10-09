@@ -1,8 +1,10 @@
 # The Monad guest: what it does, and what is left
 
-This branch takes the zkVM guest from `EvmTraits` to `MonadTraits`. The guest
-builds and the ELF links; it has never been run. Everything below separates
-what was established by building or reading the code from what was not.
+This branch takes the zkVM guest from `EvmTraits` to `MonadTraits`, and adds a
+domain arm on top of it. The domain arm has been run: six witnesses, natively
+and under ZisK, each publishing what an independent host run computed. The L1
+arm builds and links and has not been run. Everything below separates what was
+established by building, reading or running from what was not.
 
 The companion documents are [DECISIONS.md](DECISIONS.md), for choices the
 specification does not make, and [CONFORMANCE.md](CONFORMANCE.md), for
@@ -65,11 +67,14 @@ the right one of the two was not checked.
 
 ## What is left
 
-### 1. Run it
+### 1. Run the L1 arm
 
-A witness generator that fills the two ancestor sender sets, and one block
-proved end to end. Until that exists, nothing else on this list can be
-measured, and the port is unexercised code.
+The domain arm runs. The L1 arm does not, for want of a corpus: the generator
+builds Monad blocks only under `MONAD_ZKVM_L2`, and it leaves both ancestor
+sender sets empty -- which is right for a domain, whose blocks are not pending
+blocks of the chain that carries them, and wrong for an L1 block, where the
+node fills them from its block cache. Until an L1 corpus exists, the reserve
+rule that reads those sets is unexercised on the arm that needs it.
 
 ### 2. `read_valset.cpp`
 
@@ -147,13 +152,27 @@ tree does not answer.
 Most of the above does not reach a domain, and that is worth stating plainly so
 it is not re-derived later:
 
-- the reserve balance is **off** below MONAD_FOUR and for every EVM trait
-  (`tracking_disabled` in `reserve_balance.cpp`), so the ancestor sets are
-  inert there;
+- the reserve balance **applies**, and the client applies it too: its domain
+  path is instantiated with `EXPLICIT_MONAD_TRAITS` and its reserve context is
+  gated on the trait family, not on `gasless`;
+- but a domain has **no ancestors**. The node builds its domain ChainContext
+  with both sets empty, so the guest does the same, and nothing about them is
+  published;
 - the staking prelude returns before constructing anything, because the staking
-  contract is not deployed on a domain;
-- the staking precompile is never called for the same reason.
+  contract is not deployed on a domain, and the precompile is refused outright
+  rather than left unreachable by argument.
 
-What the L2 takes from this work is the trait family itself. Pinning a domain
-to MONAD_ZERO..THREE keeps the whole reserve-balance machinery inert, at the
-cost of a Cancun base: no EIP-7951, lower code-size limits, no MIP-3.
+Two constraints the domain arm discovered, which bind any guest that tracks the
+reserve:
+
+- **`MONAD_ZKVM_L2_REVISION` must be MONAD_FOUR or later.** Below it
+  `ReserveBalance::init_from_tx` turns its own tracking off, so the client
+  would apply reserve rules the guest would not. Pinning a domain to
+  MONAD_ZERO..THREE to keep that machinery inert is therefore not an option,
+  whatever a Cancun base would have saved.
+- **`MONAD_ZKVM_NO_DIRTY_ACCOUNTS` cannot be used.** `State::push` asserts that
+  tracking is off when that lever drops the per-frame dirty account sets, and
+  `dipped_into_reserve` has nothing to walk without them. An ELF carrying both
+  halts at its first call frame; `cmake/l2.cmake` refuses the combination. The
+  lever is worth 1.9 % of emulator steps, measured on the arm that can take
+  both values.

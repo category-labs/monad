@@ -557,6 +557,7 @@ version = "0.1.0"
 dependencies = [
  "cargo_metadata",
  "cmake",
+ "sha2",
  "sp1-build",
 ]
 

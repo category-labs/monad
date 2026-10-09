@@ -1957,6 +1957,7 @@ version = "0.1.0"
 dependencies = [
  "cargo_metadata",
  "cmake",
+ "sha2",
  "sp1-build 6.8.1 (git+https://github.com/succinctlabs/sp1?rev=9e94952a5a04ea1b1a5360262e68af0586f1e387)",
 ]
 

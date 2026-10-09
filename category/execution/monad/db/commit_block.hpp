@@ -1,4 +1,4 @@
-// Copyright (C) 2025 Category Labs, Inc.
+// Copyright (C) 2025-26 Category Labs, Inc.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -33,10 +33,9 @@ struct Transaction;
 struct Withdrawal;
 struct Db;
 
-// Per-block ancillary inputs that the dual commit path forwards to the
-// shared CommitBuilder helpers. State deltas are passed separately because
-// each builder (slot for Db1, page for Db2) has its own add_state_deltas
-// override that needs the same StateDeltas instance.
+// Per-block ancillary inputs forwarded to the CommitBuilder. State deltas are
+// passed separately because the builder's add_state_deltas override (slot or
+// page, chosen by make_commit_builder from the db's encoding) consumes them.
 struct BlockCommitAncillaries
 {
     Code const &code;
@@ -48,21 +47,12 @@ struct BlockCommitAncillaries
     std::optional<std::vector<Withdrawal>> const &withdrawals;
 };
 
+// Commit one block to `db`. The db's storage encoding must match the block's
+// revision (slot before MIP-8, page after); asserted on entry.
 template <Traits traits>
     requires is_monad_trait_v<traits>
 void commit_block(
-    Db &primary_db, Db *secondary_db, bytes32_t const &block_id,
-    BlockHeader const &header, StateDeltas const &state,
-    BlockCommitAncillaries const &anc);
-
-// apply f to both dbs that are present
-template <typename F>
-void for_each_db(Db &db, Db *const secondary_db, F &&f)
-{
-    f(db);
-    if (secondary_db != nullptr) {
-        f(*secondary_db);
-    }
-}
+    Db &db, bytes32_t const &block_id, BlockHeader const &header,
+    StateDeltas const &state, BlockCommitAncillaries const &anc);
 
 MONAD_NAMESPACE_END

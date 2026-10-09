@@ -47,9 +47,8 @@
 
 MONAD_NAMESPACE_BEGIN
 
-BlockState::BlockState(Db &db, vm::VM &monad_vm, Db *const secondary_db)
+BlockState::BlockState(Db &db, vm::VM &monad_vm)
     : db_{db}
-    , secondary_db_{secondary_db}
     , vm_{monad_vm}
     , state_(std::make_unique<StateDeltas>())
 {
@@ -107,9 +106,6 @@ bytes32_t BlockState::read_storage(
         bytes32_t result{};
         if (read_storage) {
             result = db_.read_storage(address, incarnation, key);
-            MONAD_ASSERT(
-                !secondary_db_ || secondary_db_->read_storage(
-                                      address, incarnation, key) == result);
         }
         StateDeltas::accessor it{};
         MONAD_ASSERT(state_->find(it, address));

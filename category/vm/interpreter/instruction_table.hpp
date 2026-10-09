@@ -2148,6 +2148,86 @@ namespace monad::vm::interpreter
     // gas charged and the selector pushed at stack_top + 1; 0 for other bytes,
     // with nothing done. Each form reads its bytes at constant offsets. The
     // forms push one word at most above stack_top + 1.
+    // The three forms' bytes, for the DMA comparator.
+    alignas(8) inline constexpr unsigned char selector_after_push0[8] = {
+        static_cast<unsigned char>(PUSH0),
+        static_cast<unsigned char>(CALLDATALOAD),
+        static_cast<unsigned char>(PUSH1),
+        0xe0,
+        static_cast<unsigned char>(SHR)};
+    alignas(8) inline constexpr unsigned char selector_after_push1[8] = {
+        static_cast<unsigned char>(PUSH1),
+        0,
+        static_cast<unsigned char>(CALLDATALOAD),
+        static_cast<unsigned char>(PUSH1),
+        0xe0,
+        static_cast<unsigned char>(SHR)};
+    alignas(8) inline constexpr unsigned char selector_by_div[48] = {
+        static_cast<unsigned char>(PUSH1),
+        0,
+        static_cast<unsigned char>(CALLDATALOAD),
+        static_cast<unsigned char>(PUSH29),
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        static_cast<unsigned char>(SWAP1),
+        static_cast<unsigned char>(DIV),
+        static_cast<unsigned char>(PUSH4),
+        0xff,
+        0xff,
+        0xff,
+        0xff,
+        static_cast<unsigned char>(AND)};
+
+    // Whether the N bytes at p are those of pattern, by the DMA comparator
+    // (CSR 0x814, the length in the flag after it): one compare where a byte
+    // at a time takes a read, a constant and a branch each.
+    template <size_t N, size_t M>
+    [[gnu::always_inline]] inline bool code_matches(
+        uint8_t const *const p, unsigned char const (&pattern)[M]) noexcept
+    {
+        static_assert(N <= M);
+        uint64_t differ;
+        asm(".option push\n\t"
+            ".option arch, +zicsr\n\t"
+            "csrrs %0, 0x814, %1\n\t"
+            "addi x0, %2, %5\n\t"
+            ".option pop"
+            : "=&r"(differ)
+            : "r"(p),
+              "r"(pattern),
+              "m"(*reinterpret_cast<uint8_t const(*)[N]>(p)),
+              "m"(pattern),
+              "i"(N));
+        return differ == 0;
+    }
+
     template <Traits traits>
     [[gnu::always_inline]] inline size_t push_selector(
         runtime::Context const &ctx, uint8_t const *const q,
@@ -2158,41 +2238,29 @@ namespace monad::vm::interpreter
         };
         size_t length = 0;
         if (is(0, PUSH0)) {
-            if (is(1, CALLDATALOAD) && is(2, PUSH1) && q[3] == 0xe0 &&
-                is(4, SHR)) {
+            if (code_matches<5>(q, selector_after_push0)) {
                 gas_remaining -=
                     static_gas<traits, PUSH0, CALLDATALOAD, PUSH1, SHR>();
                 length = 5;
             }
         }
-        else if (is(0, PUSH1) && q[1] == 0 && is(2, CALLDATALOAD)) {
-            if (is(3, PUSH1) && q[4] == 0xe0 && is(5, SHR)) {
+        else if (is(0, PUSH1)) {
+            if (code_matches<6>(q, selector_after_push1)) {
                 gas_remaining -=
                     static_gas<traits, PUSH1, CALLDATALOAD, PUSH1, SHR>();
                 length = 6;
             }
-            else if (
-                is(3, PUSH29) && q[4] == 1 && is(33, SWAP1) && is(34, DIV) &&
-                is(35, PUSH4) && is(40, AND)) {
-                uint64_t w0, w1, w2;
-                uint32_t w3, mask;
-                __builtin_memcpy(&w0, q + 5, 8);
-                __builtin_memcpy(&w1, q + 13, 8);
-                __builtin_memcpy(&w2, q + 21, 8);
-                __builtin_memcpy(&w3, q + 29, 4);
-                __builtin_memcpy(&mask, q + 36, 4);
-                if ((w0 | w1 | w2 | w3) == 0 && mask == 0xffffffffu) {
-                    gas_remaining -= static_gas<
-                        traits,
-                        PUSH1,
-                        CALLDATALOAD,
-                        PUSH29,
-                        SWAP1,
-                        DIV,
-                        PUSH4,
-                        AND>();
-                    length = 41;
-                }
+            else if (code_matches<41>(q, selector_by_div)) {
+                gas_remaining -= static_gas<
+                    traits,
+                    PUSH1,
+                    CALLDATALOAD,
+                    PUSH29,
+                    SWAP1,
+                    DIV,
+                    PUSH4,
+                    AND>();
+                length = 41;
             }
         }
         if (length != 0) {

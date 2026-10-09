@@ -449,19 +449,10 @@ bytes32_t for_each_header(
         auto const rev = chain.get_monad_revision(ts.value());
 
         auto const body = [&]<Traits traits> {
-            std::optional<bytes32_t> next_id;
-            if constexpr (traits::monad_rev() >= MONAD_FOUR) {
-                next_id = handle_header<MonadConsensusBlockHeaderV2>(
-                    id, data, start_exclusive, end_inclusive, fn);
-            }
-            else if constexpr (traits::monad_rev() >= MONAD_THREE) {
-                next_id = handle_header<MonadConsensusBlockHeaderV1>(
-                    id, data, start_exclusive, end_inclusive, fn);
-            }
-            else {
-                next_id = handle_header<MonadConsensusBlockHeaderV0>(
-                    id, data, start_exclusive, end_inclusive, fn);
-            }
+            using Header = MonadConsensusBlockHeaderForVersion<
+                traits::consensus_header_version()>;
+            auto const next_id = handle_header<Header>(
+                id, data, start_exclusive, end_inclusive, fn);
             if (!next_id.has_value()) {
                 return false;
             }

@@ -374,12 +374,12 @@ namespace monad::vm::interpreter
         }                                                                      \
         while (false)
 
-    // The revisions whose handlers have slots: the EVM ones the guest runs.
-    // Other traits dispatch through their table.
+    // The revisions whose handlers have slots: the EVM ones the guest runs
+    // blocks of, Osaka on. Other traits dispatch through their table.
     template <Traits traits>
     inline constexpr bool has_slots =
         std::is_same_v<base_traits<traits>, EvmTraits<traits::evm_rev()>> &&
-        traits::evm_rev() >= MONAD_ETH_BERLIN &&
+        traits::evm_rev() >= MONAD_ETH_OSAKA &&
         traits::evm_rev() <= MONAD_ETH_AMSTERDAM;
 
     // Whether a handler's dispatches go to its follower's lagging copies

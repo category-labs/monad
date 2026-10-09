@@ -543,6 +543,8 @@ private:
                 if (did_nothing_count > 1000000) {
                     std::unique_lock g(parent->lock_);
                     sleeping.store(true, std::memory_order_release);
+                    // Pairs with the fence in submit()
+                    std::atomic_thread_fence(std::memory_order_seq_cst);
                     /* Very irritatingly, Boost.Fiber may have fibers scheduled
                      which weren't ready before, and if we sleep forever here
                      then they never run and cause anything waiting on them to
@@ -651,6 +653,8 @@ private:
                 if (did_nothing_count > 1000000) {
                     std::unique_lock g(parent->lock_);
                     sleeping.store(true, std::memory_order_release);
+                    // Pairs with the fence in submit()
+                    std::atomic_thread_fence(std::memory_order_seq_cst);
                     /* Very irritatingly, Boost.Fiber may have fibers scheduled
                      which weren't ready before, and if we sleep forever here
                      then they never run and cause anything waiting on them to
@@ -722,6 +726,8 @@ public:
     {
         MONAD_ASSERT(worker_ != nullptr);
         comms_.enqueue(std::move(request));
+        // Pairs with the fences in rodb_run() and rwdb_run()
+        std::atomic_thread_fence(std::memory_order_seq_cst);
         if (worker_->sleeping.load(std::memory_order_acquire)) {
             std::unique_lock const g(lock_);
             cond_.notify_one();

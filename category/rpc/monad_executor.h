@@ -131,7 +131,7 @@ void monad_executor_eth_simulate_submit(
     size_t max_output_size,
     struct monad_state_override_vec const *const state_overrides,
     struct monad_block_override_vec const *const block_overrides,
-    bool emit_native_transfer_logs,
+    bool validation, bool emit_native_transfer_logs,
     void (*complete)(monad_executor_result *, void *user), void *user);
 
 #ifdef __cplusplus

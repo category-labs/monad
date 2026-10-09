@@ -39,6 +39,7 @@
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
+#include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/staking/priority_fee.hpp>
 #include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
@@ -336,7 +337,8 @@ Result<evmc::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
             state,
             header_.base_fee_per_gas.value_or(0),
             authorities_,
-            state_tracer_);
+            state_tracer_,
+            chain_ctx_.validate_sender);
         if (!result) {
             // RELAXED MERGE
             // if `validate_transaction` fails using current values, require

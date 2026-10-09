@@ -787,10 +787,15 @@ namespace
         struct monad_state_override_vec const &state_overrides,
         struct monad_block_override_vec const &block_overrides,
         uint64_t const gas_limit, size_t const max_calls, size_t const max_size,
-        bool emit_native_transfer_logs)
+        bool const validation, bool emit_native_transfer_logs)
     {
         // TODO(dhil): Decide on the default timestamp increment.
         static constexpr uint64_t DEFAULT_TIMESTAMP_INCREMENT = 1;
+
+        if (MONAD_UNLIKELY(validation && is_evm_trait_v<traits>)) {
+            return Result<nlohmann::json>::error_type{
+                SimulationError::UnsupportedValidationMode};
+        }
 
         if (MONAD_UNLIKELY(
                 calls.size() != senders.size() ||
@@ -1046,8 +1051,11 @@ namespace
                     std::make_unique<trace::StateTracer>());
             }
 
-            auto const chain_context = context_buffer.advance(
+            auto chain_context = context_buffer.advance(
                 senders[block_idx], authorities[block_idx]);
+            if constexpr (is_monad_trait_v<traits>) {
+                chain_context.validate_sender = validation;
+            }
 
             auto block = Block{
                 .header = current_header,
@@ -1933,7 +1941,7 @@ struct monad_executor
         BlockHeader const &block_header, uint64_t const block_number,
         bytes32_t const &block_id, bytes32_t const &grandparent_id,
         uint64_t const gas_limit, size_t const max_calls, size_t const max_size,
-        bool emit_native_transfer_logs,
+        bool const validation, bool emit_native_transfer_logs,
         void (*complete)(monad_executor_result *, void *user), void *const user)
     {
         monad_executor_result *const result = new monad_executor_result();
@@ -1963,6 +1971,7 @@ struct monad_executor
              gas_limit = gas_limit,
              max_calls = max_calls,
              max_size = max_size,
+             validation = validation,
              emit_native_transfer_logs = emit_native_transfer_logs,
              fiber_group = &trace_block_group_,
              tx_exec_group = &trace_tx_exec_group_,
@@ -2033,6 +2042,7 @@ struct monad_executor
                                 gas_limit,
                                 max_calls,
                                 max_size,
+                                validation,
                                 emit_native_transfer_logs);
                             MONAD_ASSERT(false);
                         }
@@ -2059,6 +2069,7 @@ struct monad_executor
                                 gas_limit,
                                 max_calls,
                                 max_size,
+                                validation,
                                 emit_native_transfer_logs);
                             MONAD_ASSERT(false);
                         }
@@ -2320,7 +2331,7 @@ void monad_executor_eth_simulate_submit(
     size_t max_calls, size_t max_output_size,
     struct monad_state_override_vec const *const state_overrides,
     struct monad_block_override_vec const *const block_overrides,
-    bool emit_native_transfer_logs,
+    bool const validation, bool emit_native_transfer_logs,
     void (*complete)(monad_executor_result *, void *user), void *user)
 {
 
@@ -2382,6 +2393,7 @@ void monad_executor_eth_simulate_submit(
         gas_limit,
         max_calls,
         max_output_size,
+        validation,
         emit_native_transfer_logs,
         complete,
         user);

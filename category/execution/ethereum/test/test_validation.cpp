@@ -27,10 +27,13 @@
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
+#include <category/execution/monad/system_sender.hpp>
+#include <category/execution/monad/validate_monad_transaction.hpp>
 #include <monad/test/traits_test.hpp>
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -123,6 +126,10 @@ TYPED_TEST(InMemoryStateTraitsTest, validate_deployed_code)
             tx, sender, this->state, noop_state_tracer);
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.error(), TransactionError::SenderNotEoa);
+
+    EXPECT_TRUE(validate_ethereum_transaction<typename TestFixture::Trait>(
+                    tx, sender, this->state, noop_state_tracer, false)
+                    .has_value());
 }
 
 // EIP-7702
@@ -164,6 +171,31 @@ TYPED_TEST(InMemoryStateTraitsTest, validate_nonce)
     EXPECT_EQ(result.error(), TransactionError::BadNonce);
 }
 
+TYPED_TEST(InMemoryStateTraitsTest, validate_nonce_relaxed)
+{
+    this->state.add_to_balance(sender, 1);
+    this->state.set_nonce(sender, 24);
+    Transaction const tx{.nonce = 23, .gas_limit = 60'500};
+
+    trace::StateTracer noop_state_tracer = std::monostate{};
+    auto const result =
+        validate_ethereum_transaction<typename TestFixture::Trait>(
+            tx, sender, this->state, noop_state_tracer);
+    ASSERT_TRUE(result.has_error());
+    EXPECT_EQ(result.error(), TransactionError::BadNonce);
+    EXPECT_TRUE(validate_ethereum_transaction<typename TestFixture::Trait>(
+                    tx, sender, this->state, noop_state_tracer, false)
+                    .has_value());
+    EXPECT_EQ(this->state.get_nonce(sender), 24);
+
+    this->state.set_nonce(sender, std::numeric_limits<uint64_t>::max());
+    auto const overflow_result =
+        validate_ethereum_transaction<typename TestFixture::Trait>(
+            tx, sender, this->state, noop_state_tracer, false);
+    ASSERT_TRUE(overflow_result.has_error());
+    EXPECT_EQ(overflow_result.error(), TransactionError::NonceExceedsMax);
+}
+
 TYPED_TEST(InMemoryStateTraitsTest, validate_nonce_optimistically)
 {
     this->state.add_to_balance(sender, 56'939'568'773'815'811);
@@ -199,6 +231,39 @@ TYPED_TEST(InMemoryStateTraitsTest, validate_enough_balance)
             tx, sender, this->state, noop_state_tracer);
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.error(), TransactionError::InsufficientBalance);
+
+    auto const relaxed_result =
+        validate_ethereum_transaction<typename TestFixture::Trait>(
+            tx, sender, this->state, noop_state_tracer, false);
+    ASSERT_TRUE(relaxed_result.has_error());
+    EXPECT_EQ(relaxed_result.error(), TransactionError::InsufficientBalance);
+}
+
+TYPED_TEST(InMemoryStateTraitsTest, validate_system_authority_relaxed)
+{
+    using traits = typename TestFixture::Trait;
+    if constexpr (is_monad_trait_v<traits>) {
+        this->state.add_to_balance(sender, 1);
+        this->state.set_code(sender, 0x00_bytes);
+        Transaction const tx{
+            .gas_limit = 60'500,
+            .type = TransactionType::eip7702,
+            .authorization_list = {AuthorizationEntry{}},
+        };
+        auto const authorities = std::array{std::optional{SYSTEM_SENDER}};
+        trace::StateTracer noop_state_tracer = std::monostate{};
+        auto const result = validate_transaction<traits>(
+            tx, sender, this->state, 0, authorities, noop_state_tracer, false);
+        if constexpr (traits::monad_rev() >= MONAD_FOUR) {
+            ASSERT_TRUE(result.has_error());
+            EXPECT_EQ(
+                result.error(),
+                MonadTransactionError::SystemTransactionSenderIsAuthority);
+        }
+        else {
+            EXPECT_TRUE(result.has_value());
+        }
+    }
 }
 
 TYPED_TEST(InMemoryStateTraitsTest, successful_validation)

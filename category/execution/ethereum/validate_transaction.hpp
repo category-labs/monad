@@ -38,6 +38,7 @@
 #include <category/core/likely.h>
 
 #include <initializer_list>
+#include <limits>
 #include <optional>
 #include <span>
 
@@ -54,12 +55,12 @@ Result<void> validate_transaction(
     Transaction const &tx, Address const &sender, State &state,
     uint256_t const &base_fee_per_gas,
     std::span<std::optional<Address> const> const authorities,
-    trace::StateTracer &state_tracer);
+    trace::StateTracer &state_tracer, bool validate_sender = true);
 
 template <Traits traits>
 [[gnu::always_inline]] inline Result<void> validate_ethereum_transaction(
     Transaction const &tx, Address const &sender, State &state,
-    trace::StateTracer &state_tracer)
+    trace::StateTracer &state_tracer, bool const validate_sender = true)
 {
     using BOOST_OUTCOME_V2_NAMESPACE::success;
 
@@ -87,7 +88,7 @@ template <Traits traits>
 
     if (MONAD_UNLIKELY(!state.account_exists(sender))) {
         // YP (71)
-        if (tx.nonce) {
+        if (validate_sender && tx.nonce) {
             return TransactionError::BadNonce;
         }
         // YP (71)
@@ -108,13 +109,19 @@ template <Traits traits>
                         vm::evm::is_delegated({icode->code(), icode->size()});
     }
 
-    if (MONAD_UNLIKELY(!sender_is_eoa)) {
+    if (MONAD_UNLIKELY(validate_sender && !sender_is_eoa)) {
         return TransactionError::SenderNotEoa;
     }
 
     // YP (71)
-    if (MONAD_UNLIKELY(state.get_nonce(sender) != tx.nonce)) {
+    if (MONAD_UNLIKELY(
+            validate_sender && state.get_nonce(sender) != tx.nonce)) {
         return TransactionError::BadNonce;
+    }
+    if (MONAD_UNLIKELY(
+            !validate_sender &&
+            state.get_nonce(sender) == std::numeric_limits<uint64_t>::max())) {
+        return TransactionError::NonceExceedsMax;
     }
 
     // YP (71)

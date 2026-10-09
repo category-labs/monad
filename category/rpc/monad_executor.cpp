@@ -49,6 +49,7 @@
 #include <category/execution/ethereum/execute_block.hpp>
 #include <category/execution/ethereum/execute_block_header.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
+#include <category/execution/ethereum/execution_modalities.hpp>
 #include <category/execution/ethereum/rlp/decode.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
@@ -237,23 +238,10 @@ namespace
 
         State state{block_state, incarnation};
 
-        // validate_transaction expects nonce to match.
-        // However, eth_call doesn't take a nonce parameter.
-        // Solving the issue by manually setting nonce to match with the
-        // expected nonce
-        enriched_txn.nonce = state.get_nonce(sender);
-
-        // Safe to pass empty code to validation here because the above override
-        // will always mark this transaction as coming from an EOA.
         {
             State state{block_state, incarnation};
-            // validate_transaction expects the sender of a transaction is EOA,
-            // not CA. However, eth_call allows the sender to be CA to simulate
-            // a subroutine. Solving this issue by manually setting account to
-            // be EOA for validation
-            state.set_code(sender, {});
             BOOST_OUTCOME_TRY(validate_ethereum_transaction<traits>(
-                enriched_txn, sender, state, state_tracer));
+                enriched_txn, sender, state, state_tracer, false));
         }
 
         auto const senders = std::vector{sender};
@@ -788,10 +776,15 @@ namespace
         struct monad_state_override_vec const &state_overrides,
         struct monad_block_override_vec const &block_overrides,
         uint64_t const gas_limit, size_t const max_calls, size_t const max_size,
-        bool emit_native_transfer_logs)
+        Simulation const execution_mode, bool emit_native_transfer_logs)
     {
         // TODO(dhil): Decide on the default timestamp increment.
         static constexpr uint64_t DEFAULT_TIMESTAMP_INCREMENT = 1;
+
+        if (MONAD_UNLIKELY(is_evm_trait_v<traits>)) {
+            return Result<nlohmann::json>::error_type{
+                SimulationError::UnsupportedMode};
+        }
 
         if (MONAD_UNLIKELY(
                 calls.size() != senders.size() ||
@@ -1025,6 +1018,13 @@ namespace
                     // Update tx.nonce to match the expected nonce in the
                     // current block state.
                     tx.nonce = state.get_nonce(senders[block_idx][tx_idx]);
+                    // NOTE(dhil): Unlike eth_call, eth_simulateV1 always
+                    // performs the max nonce check.
+                    if (MONAD_UNLIKELY(
+                            tx.nonce == std::numeric_limits<uint64_t>::max())) {
+                        return Result<nlohmann::json>::error_type{
+                            TransactionError::NonceExceedsMax};
+                    }
                     state.set_nonce(senders[block_idx][tx_idx], tx.nonce + 1);
                 }
             }
@@ -1054,8 +1054,11 @@ namespace
                     std::make_unique<trace::StateTracer>());
             }
 
-            auto const chain_context = context_buffer.advance(
+            auto chain_context = context_buffer.advance(
                 senders[block_idx], authorities[block_idx]);
+            if constexpr (is_monad_trait_v<traits>) {
+                chain_context.mode = execution_mode;
+            }
 
             auto block = Block{
                 .header = current_header,
@@ -1960,7 +1963,7 @@ struct monad_executor
         BlockHeader const &block_header, uint64_t const block_number,
         bytes32_t const &block_id, bytes32_t const &grandparent_id,
         uint64_t const gas_limit, size_t const max_calls, size_t const max_size,
-        bool emit_native_transfer_logs,
+        bool const validation, bool emit_native_transfer_logs,
         void (*complete)(monad_executor_result *, void *user), void *const user)
     {
         monad_executor_result *const result = new monad_executor_result();
@@ -1990,6 +1993,7 @@ struct monad_executor
              gas_limit = gas_limit,
              max_calls = max_calls,
              max_size = max_size,
+             execution_mode = Simulation{validation},
              emit_native_transfer_logs = emit_native_transfer_logs,
              fiber_group = &trace_block_group_,
              tx_exec_group = &trace_tx_exec_group_,
@@ -2060,6 +2064,7 @@ struct monad_executor
                                 gas_limit,
                                 max_calls,
                                 max_size,
+                                execution_mode,
                                 emit_native_transfer_logs);
                             MONAD_ASSERT(false);
                         }
@@ -2086,6 +2091,7 @@ struct monad_executor
                                 gas_limit,
                                 max_calls,
                                 max_size,
+                                execution_mode,
                                 emit_native_transfer_logs);
                             MONAD_ASSERT(false);
                         }
@@ -2348,7 +2354,7 @@ void monad_executor_eth_simulate_submit(
     size_t max_calls, size_t max_output_size,
     struct monad_state_override_vec const *const state_overrides,
     struct monad_block_override_vec const *const block_overrides,
-    bool emit_native_transfer_logs,
+    bool const validation, bool emit_native_transfer_logs,
     void (*complete)(monad_executor_result *, void *user), void *user)
 {
 
@@ -2410,6 +2416,7 @@ void monad_executor_eth_simulate_submit(
         gas_limit,
         max_calls,
         max_output_size,
+        validation,
         emit_native_transfer_logs,
         complete,
         user);

@@ -151,6 +151,7 @@ add_library(
   "ethereum/execute_message.hpp"
   "ethereum/execute_transaction.cpp"
   "ethereum/execute_transaction.hpp"
+  "ethereum/execution_modalities.hpp"
   "ethereum/fmt/event_trace_fmt.hpp"
   "ethereum/process_requests.cpp"
   "ethereum/process_requests.hpp"

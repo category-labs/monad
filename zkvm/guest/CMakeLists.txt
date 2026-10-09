@@ -681,6 +681,18 @@ else()
     target_link_libraries(monad-zkvm-x86-test-runner
         PRIVATE monad-zkvm-guest monad_execution zkevm-standards)
 
+    add_executable(monad-zkvm-keccak-test
+        keccak_accel.cpp
+        test/keccak_accel_test.cpp
+        test/keccak_reference.c
+    )
+    monad_compile_options(monad-zkvm-keccak-test)
+    target_compile_definitions(monad-zkvm-keccak-test
+        PRIVATE MONAD_ZKVM_KECCAK_TEST)
+    target_include_directories(monad-zkvm-keccak-test
+        PRIVATE "${THIRD_PARTY_DIR}/ethash/include")
+    add_test(NAME monad-zkvm-keccak-test COMMAND monad-zkvm-keccak-test)
+
 endif()
 
 # ---- Guest sources, shared by both modes ----
@@ -689,6 +701,7 @@ endif()
 # bare-metal targets on RISC-V, the host's monad_execution on x86 — so only
 # the dependency edge is conditional, never the target or its file list.
 add_library(monad-zkvm-guest OBJECT
+    "${CMAKE_CURRENT_SOURCE_DIR}/keccak_accel.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/execute_block.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/execute_witness.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/witness_block_hash_buffer.cpp"

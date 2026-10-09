@@ -26,6 +26,7 @@
 #include <category/vm/runtime/types.hpp>
 #include <category/vm/vm.hpp>
 #include <monad/test/traits_test.hpp>
+#include <test/vm/utils/evmc_host_adapter.hpp>
 #include <test/vm/utils/mocked_host.hpp>
 #include <test/vm/utils/test_message.hpp>
 
@@ -151,10 +152,11 @@ namespace monad::vm::test
             else {
                 MONAD_ASSERT(impl == Spec);
                 evmc::VM spec_vm{evmc_create_monadml_evm()};
+                EvmcHostAdapter host{host_};
 
                 result_ = spec_vm.execute(
-                    host_.get_interface(),
-                    host_.to_context(),
+                    host.get_interface(),
+                    host.to_context(),
                     to_evmc_revision(TraitsTest<T>::Trait::evm_rev()),
                     msg_,
                     code.data(),

@@ -88,6 +88,15 @@ namespace
         State &state, EvmcHost<traits> &host, evmc_address const &from,
         evmc_address const &to, uint256_t const &value)
     {
+        if constexpr (!is_monad_trait_v<traits>) {
+            // The caller has code or a nonce, so touching it cannot affect
+            // EIP-161 cleanup. Keep the recipient touch; Ethereum has no
+            // reserve tracking, and zero transfers emit no event.
+            if (value == 0) {
+                state.add_to_balance(to, value);
+                return;
+            }
+        }
         state.subtract_from_balance(from, value);
         state.add_to_balance(to, value);
         host.emit_native_transfer_event(from, to, value);

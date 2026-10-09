@@ -39,17 +39,17 @@ namespace monad::vm::runtime
     {
         static_assert(traits::evm_rev() >= MONAD_ETH_BERLIN);
 
+        // The key is copied out first: the value is written over it, in the
+        // stack's word order.
         auto const key = store_be_as<evmc_bytes32>(*key_ptr);
-        evmc_bytes32 value;
         if (guest_sload_into<traits>(
                 host_of(*ctx),
                 host_shim::addr(&ctx->env.recipient),
                 host_shim::word(&key),
                 ctx->gas_remaining >= traits::cold_storage_cost(),
-                value) == EVMC_ACCESS_COLD) {
+                *result_ptr) == EVMC_ACCESS_COLD) {
             ctx->deduct_gas(traits::cold_storage_cost());
         }
-        *result_ptr = load_be<uint256_t>(value);
     }
 
     // SSTORE's, inline on ZisK for the same reason.
@@ -71,7 +71,7 @@ namespace monad::vm::runtime
             ctx->exit(StatusCode::OutOfGas);
         }
 
-        auto key = store_be_as<bytes32_t>(*key_ptr);
+        auto const key = store_be_as<evmc_bytes32>(*key_ptr);
         auto value = store_be_as<bytes32_t>(*value_ptr);
 
         if constexpr (traits::mip_8_active()) {

@@ -396,17 +396,22 @@ private:
     // Keep slow paths out of line. Account arguments come last to preserve
     // sload_into's argument registers when tail-calling these helpers.
     [[gnu::noinline]] monad_access_status sload_cold(
-        evmc_address const &, bytes32_t const &key, bool can_pay_cold_access,
-        evmc_bytes32 &out, AccountState &);
+        evmc_address const &, bytes32_t const &key, bool can_pay_cold_access, uint256_t &out,
+        AccountState &);
 
     [[gnu::noinline]] monad_access_status sload_read(
-        evmc_address const &, bytes32_t const &key, evmc_bytes32 &out,
+        evmc_address const &, bytes32_t const &key, uint256_t &out,
         OriginalAccountState &);
 
     template <Traits traits>
     [[gnu::noinline]] monad_access_status sload_full(
-        evmc_address const &, bytes32_t const &key, bool can_pay_cold_access,
-        evmc_bytes32 &out);
+        evmc_address const &, bytes32_t const &key, bool can_pay_cold_access, uint256_t &out);
+
+    // current_storage_into's read for SLOAD, written in the stack's word
+    // order from where the value is kept.
+    [[gnu::always_inline]] inline void current_storage_load(
+        AccountState const &, evmc_address const &, bytes32_t const &key,
+        uint256_t &out);
 
     // set_storage's work on the account it looked up.
     [[gnu::always_inline]] inline monad_storage_status set_storage_of(
@@ -525,8 +530,7 @@ public:
     // Warm and read a slot with one account lookup; see vm::Host::sload_into.
     template <Traits traits>
     monad_access_status sload_into(
-        evmc_address const &, bytes32_t const &key, bool can_pay_cold_access,
-        evmc_bytes32 &out);
+        evmc_address const &, bytes32_t const &key, bool can_pay_cold_access, uint256_t &out);
 
     // SSTORE's access_storage and set_storage, with one lookup of the
     // account: see vm::runtime::guest_sstore_into.
@@ -595,7 +599,7 @@ public:
 
     // A CALL's access_account and delegate_of, with one lookup of the
     // account: see vm::runtime::guest_call_target.
-    vm::runtime::CallTarget call_target(evmc_address const &, bool read_cold);
+    vm::runtime::CallTarget call_target(evmc_address const &, bool can_pay_cold_access);
 
     // The same for a target that is warm without its row, a precompile: its
     // delegate only. With both in the State, the host jumps to either: a

@@ -8264,11 +8264,10 @@ namespace monad::vm::aot
             gas -= aot::gas_of<traits>({0x5b, 0x61, 0x51, 0x60, 0x0a, 0x80, 0x80, 0x61, 0x57}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
             uint256_t const t1 = aot::mload_c<traits, 320u, 352u, 33>(ctx, gas);
-            auto const e4 = aot::exp<traits>(ctx, gas, uint256_t{0x2ull}, t1);
-            gas = ctx->gas_remaining;
-            bool const j8 = aot::nonzero(e4);
-            top[1] = e4;
-            top[2] = e4;
+            uint256_t const t2 = aot::exp_pow2<traits, 1>(ctx, gas, t1);
+            bool const j8 = aot::nonzero(t2);
+            top[1] = t2;
+            top[2] = t2;
             top += 2;
             if (j8) { MONAD_AOT_TAIL return b_16a7<traits>(ctx, bottom, top, gas); }
             MONAD_AOT_TAIL return b_16a3<traits>(ctx, bottom, top, gas);

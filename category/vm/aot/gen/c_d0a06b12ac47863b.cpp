@@ -977,14 +977,13 @@ namespace monad::vm::aot
             uint256_t const t1 = s1 - s0;
             uint256_t const t2 = aot::mload<traits>(ctx, gas, t1);
             uint256_t const t3 = uint256_t{0x20ull} - s0;
-            auto const e10 = aot::exp<traits>(ctx, gas, uint256_t{0x100ull}, t3);
-            gas = ctx->gas_remaining;
-            uint256_t const t4 = e10 - uint256_t{0x1ull};
-            uint256_t const t5 = ~t4;
-            uint256_t const t6 = t5 & t2;
-            aot::mstore<traits>(ctx, gas, t1, t6);
-            uint256_t const t7 = uint256_t{0x20ull} + t1;
-            top[-1] = t7;
+            uint256_t const t4 = aot::exp_pow2<traits, 8>(ctx, gas, t3);
+            uint256_t const t5 = t4 - uint256_t{0x1ull};
+            uint256_t const t6 = ~t5;
+            uint256_t const t7 = t6 & t2;
+            aot::mstore<traits>(ctx, gas, t1, t7);
+            uint256_t const t8 = uint256_t{0x20ull} + t1;
+            top[-1] = t8;
             MONAD_AOT_TAIL return interpreter::resume<traits>(*ctx, bottom, top, gas, 0x139);
         }
 
@@ -1382,14 +1381,13 @@ namespace monad::vm::aot
             uint256_t const t1 = s1 - s0;
             uint256_t const t2 = aot::mload<traits>(ctx, gas, t1);
             uint256_t const t3 = uint256_t{0x20ull} - s0;
-            auto const e10 = aot::exp<traits>(ctx, gas, uint256_t{0x100ull}, t3);
-            gas = ctx->gas_remaining;
-            uint256_t const t4 = e10 - uint256_t{0x1ull};
-            uint256_t const t5 = ~t4;
-            uint256_t const t6 = t5 & t2;
-            aot::mstore<traits>(ctx, gas, t1, t6);
-            uint256_t const t7 = uint256_t{0x20ull} + t1;
-            top[-1] = t7;
+            uint256_t const t4 = aot::exp_pow2<traits, 8>(ctx, gas, t3);
+            uint256_t const t5 = t4 - uint256_t{0x1ull};
+            uint256_t const t6 = ~t5;
+            uint256_t const t7 = t6 & t2;
+            aot::mstore<traits>(ctx, gas, t1, t7);
+            uint256_t const t8 = uint256_t{0x20ull} + t1;
+            top[-1] = t8;
             MONAD_AOT_TAIL return interpreter::resume<traits>(*ctx, bottom, top, gas, 0x362);
         }
 

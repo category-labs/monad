@@ -469,6 +469,26 @@ namespace monad::vm::aot
         }
     }
 
+    // (2^S) ** e, the byte shift older Solidity compiles to EXP (base 256):
+    // 2^(S e), zero from 256 bits on, after the exponent's byte gas, as the
+    // EXP handler's power-of-two path.
+    template <Traits traits, unsigned S>
+    [[gnu::always_inline]] inline uint256_t
+    exp_pow2(Context *const ctx, int64_t &gas, uint256_t const &e)
+    {
+        static_assert(S > 0 && S < 256);
+        gas -= static_cast<int64_t>(runtime::exp_dynamic_gas_cost_multiplier<traits>()) *
+               static_cast<int64_t>(count_significant_bytes(e));
+        if (MONAD_UNLIKELY(gas < 0)) {
+            ctx->exit(StatusCode::OutOfGas);
+        }
+        uint256_t r{0};
+        if ((e[1] | e[2] | e[3]) == 0 && e[0] < 256 / S + 1 && S * e[0] < 256) {
+            r[(S * e[0]) / 64] = uint64_t{1} << ((S * e[0]) % 64);
+        }
+        return r;
+    }
+
     template <Traits traits>
     [[gnu::noinline]] uint256_t exp(
         Context *const ctx, int64_t const gas, uint256_t const &base,

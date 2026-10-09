@@ -312,6 +312,7 @@ Result<Transaction> decode_transaction_eip2718(byte_string_view &enc)
         return DecodeError::InputTooShort;
     }
     if (MONAD_UNLIKELY(
+            enc[0] == static_cast<unsigned char>(TransactionType::legacy) ||
             enc[0] >= static_cast<unsigned char>(TransactionType::LAST))) {
         return DecodeError::InvalidTxnType;
     }

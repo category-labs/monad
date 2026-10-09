@@ -1517,7 +1517,7 @@ namespace monad::vm::aot
         template <Traits traits>
         [[gnu::always_inline]] inline void b_4efe(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
-        [[gnu::noinline, gnu::optimize("Os")]] void b_4eff(Context *, uint256_t const *, uint256_t *, int64_t);
+        [[gnu::noinline]] void b_4eff(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
         [[gnu::always_inline]] inline void b_4f14(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
@@ -20068,7 +20068,7 @@ namespace monad::vm::aot
         }
 
         template <Traits traits>
-        [[gnu::noinline, gnu::optimize("Os")]] void b_4eff(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        [[gnu::noinline]] void b_4eff(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
         {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x80, 0x82, 0x02, 0x94, 0x50, 0x91, 0x50, 0x81, 0x15, 0x82, 0x85, 0x04, 0x82, 0x14, 0x17, 0x15, 0x61, 0x57}, 5, 2));
             if (MONAD_UNLIKELY(top - bottom < 5)) { ctx->exit(StatusCode::Error); }

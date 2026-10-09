@@ -1079,7 +1079,7 @@ namespace monad::vm::aot
         template <Traits traits>
         [[gnu::always_inline]] inline void b_2c06(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
-        [[gnu::noinline, gnu::optimize("Os")]] void b_2c0d(Context *, uint256_t const *, uint256_t *, int64_t);
+        [[gnu::noinline]] void b_2c0d(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
         [[gnu::noinline]] void b_2c2f(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
@@ -1245,7 +1245,7 @@ namespace monad::vm::aot
         template <Traits traits>
         [[gnu::noinline, gnu::optimize("Os")]] void b_31a9(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
-        [[gnu::noinline, gnu::optimize("Os")]] void b_31b3(Context *, uint256_t const *, uint256_t *, int64_t);
+        [[gnu::noinline]] void b_31b3(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
         [[gnu::noinline, gnu::optimize("Os")]] void b_31d6(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
@@ -16861,7 +16861,7 @@ namespace monad::vm::aot
         }
 
         template <Traits traits>
-        [[gnu::noinline, gnu::optimize("Os")]] void b_2c0d(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        [[gnu::noinline]] void b_2c0d(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
         {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x60, 0x02, 0x60, 0x01, 0x01, 0x90, 0x60, 0x60, 0x60, 0x1b, 0x03, 0x16, 0x90, 0x81, 0x60, 0x60, 0x60, 0x1b, 0x03, 0x16, 0x81, 0x52, 0x50, 0x50, 0x50}, 4, 3));
             if (MONAD_UNLIKELY(top - bottom < 4)) { ctx->exit(StatusCode::Error); }
@@ -18569,7 +18569,7 @@ namespace monad::vm::aot
         }
 
         template <Traits traits>
-        [[gnu::noinline, gnu::optimize("Os")]] void b_31b3(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        [[gnu::noinline]] void b_31b3(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
         {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x80, 0x54, 0x90, 0x91, 0x50, 0x61, 0x90, 0x84, 0x90, 0x61, 0x90, 0x60, 0x60, 0x1b, 0x90, 0x04, 0x63, 0x16, 0x60, 0x61, 0x56}, 4, 5));
             if (MONAD_UNLIKELY(top - bottom < 4)) { ctx->exit(StatusCode::Error); }

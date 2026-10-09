@@ -217,7 +217,7 @@ namespace monad::vm::aot
         template <Traits traits>
         [[gnu::noinline, gnu::optimize("Os")]] void b_ae3(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
-        [[gnu::noinline, gnu::optimize("Os")]] void b_ae5(Context *, uint256_t const *, uint256_t *, int64_t);
+        [[gnu::noinline]] void b_ae5(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
         [[gnu::noinline, gnu::optimize("Os")]] void b_b06(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
@@ -245,7 +245,7 @@ namespace monad::vm::aot
         template <Traits traits>
         [[gnu::always_inline]] inline void b_c6c(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
-        [[gnu::noinline, gnu::optimize("Os")]] void b_c75(Context *, uint256_t const *, uint256_t *, int64_t);
+        [[gnu::noinline]] void b_c75(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
         [[gnu::noinline, gnu::optimize("Os")]] void b_c82(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
@@ -253,11 +253,11 @@ namespace monad::vm::aot
         template <Traits traits>
         [[gnu::noinline, gnu::optimize("Os")]] void b_cbc(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
-        [[gnu::noinline, gnu::optimize("Os")]] void b_cd6(Context *, uint256_t const *, uint256_t *, int64_t);
+        [[gnu::noinline]] void b_cd6(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
         [[gnu::always_inline]] inline void b_cdb(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
-        [[gnu::noinline, gnu::optimize("Os")]] void b_ce6(Context *, uint256_t const *, uint256_t *, int64_t);
+        [[gnu::noinline]] void b_ce6(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
         [[gnu::noinline, gnu::optimize("Os")]] void b_d13(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
@@ -265,9 +265,9 @@ namespace monad::vm::aot
         template <Traits traits>
         [[gnu::noinline, gnu::optimize("Os")]] void b_d49(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
-        [[gnu::noinline, gnu::optimize("Os")]] void b_d60(Context *, uint256_t const *, uint256_t *, int64_t);
+        [[gnu::noinline]] void b_d60(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
-        [[gnu::noinline, gnu::optimize("Os")]] void b_d6b(Context *, uint256_t const *, uint256_t *, int64_t);
+        [[gnu::noinline]] void b_d6b(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
         [[gnu::noinline, gnu::optimize("Os")]] void b_db0(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
@@ -291,11 +291,29 @@ namespace monad::vm::aot
         template <Traits traits>
         [[gnu::always_inline]] inline void b_e6b(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
+        [[gnu::noinline, gnu::optimize("Os")]] void b_e9d(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline, gnu::optimize("Os")]] void b_ebf(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
         [[gnu::always_inline]] inline void b_ecf(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline, gnu::optimize("Os")]] void b_ed6(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline, gnu::optimize("Os")]] void b_edc(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
         [[gnu::always_inline]] inline void b_ee2(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
+        [[gnu::noinline, gnu::optimize("Os")]] void b_eeb(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline, gnu::optimize("Os")]] void b_eef(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline, gnu::optimize("Os")]] void b_f0b(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
         [[gnu::always_inline]] inline void b_f14(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline, gnu::optimize("Os")]] void b_f17(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline, gnu::optimize("Os")]] void b_f25(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
         [[gnu::noinline, gnu::optimize("Os")]] void b_f35(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
@@ -539,7 +557,7 @@ namespace monad::vm::aot
         template <Traits traits>
         [[gnu::noinline, gnu::optimize("Os")]] void b_2c27(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
-        [[gnu::noinline, gnu::optimize("Os")]] void b_2c2b(Context *, uint256_t const *, uint256_t *, int64_t);
+        [[gnu::noinline]] void b_2c2b(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
         [[gnu::always_inline]] inline void b_2c3e(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
@@ -677,7 +695,7 @@ namespace monad::vm::aot
         template <Traits traits>
         [[gnu::always_inline]] inline void b_3071(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
-        [[gnu::noinline, gnu::optimize("Os")]] void b_3072(Context *, uint256_t const *, uint256_t *, int64_t);
+        [[gnu::noinline]] void b_3072(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
         [[gnu::noinline]] void b_3076(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
@@ -685,7 +703,7 @@ namespace monad::vm::aot
         template <Traits traits>
         [[gnu::noinline]] void b_308d(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
-        [[gnu::noinline, gnu::optimize("Os")]] void b_309f(Context *, uint256_t const *, uint256_t *, int64_t);
+        [[gnu::noinline]] void b_309f(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
         [[gnu::always_inline]] inline void b_30bf(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
@@ -769,11 +787,11 @@ namespace monad::vm::aot
         template <Traits traits>
         [[gnu::always_inline]] inline void b_3231(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
-        [[gnu::noinline, gnu::optimize("Os")]] void b_3237(Context *, uint256_t const *, uint256_t *, int64_t);
+        [[gnu::noinline]] void b_3237(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
         [[gnu::always_inline]] inline void b_323f(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
-        [[gnu::noinline, gnu::optimize("Os")]] void b_3256(Context *, uint256_t const *, uint256_t *, int64_t);
+        [[gnu::noinline]] void b_3256(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
         [[gnu::always_inline]] inline void b_325c(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
@@ -783,7 +801,7 @@ namespace monad::vm::aot
         template <Traits traits>
         [[gnu::noinline, gnu::optimize("Os")]] void b_3282(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
-        [[gnu::noinline, gnu::optimize("Os")]] void b_3291(Context *, uint256_t const *, uint256_t *, int64_t);
+        [[gnu::noinline]] void b_3291(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
         [[gnu::always_inline]] inline void b_329f(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
@@ -809,11 +827,19 @@ namespace monad::vm::aot
         template <Traits traits>
         [[gnu::noinline]] void b_3382(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
+        [[gnu::noinline, gnu::optimize("Os")]] void b_3389(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
         [[gnu::always_inline]] inline void b_3398(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
         [[gnu::always_inline]] inline void b_33a9(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
+        [[gnu::noinline, gnu::optimize("Os")]] void b_33aa(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
         [[gnu::always_inline]] inline void b_340e(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline, gnu::optimize("Os")]] void b_3419(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline, gnu::optimize("Os")]] void b_341c(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
         [[gnu::always_inline]] inline void b_3462(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
@@ -823,9 +849,19 @@ namespace monad::vm::aot
         template <Traits traits>
         [[gnu::always_inline]] inline void b_34fe(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
+        [[gnu::noinline, gnu::optimize("Os")]] void b_3510(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline, gnu::optimize("Os")]] void b_351c(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline, gnu::optimize("Os")]] void b_35ef(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
         [[gnu::always_inline]] inline void b_35fd(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
         [[gnu::always_inline]] inline void b_361e(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline, gnu::optimize("Os")]] void b_364f(Context *, uint256_t const *, uint256_t *, int64_t);
+        template <Traits traits>
+        [[gnu::noinline, gnu::optimize("Os")]] void b_3654(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
         [[gnu::always_inline]] inline void b_3674(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
@@ -1001,7 +1037,7 @@ namespace monad::vm::aot
         template <Traits traits>
         [[gnu::always_inline]] inline void b_4434(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
-        [[gnu::noinline, gnu::optimize("Os")]] void b_44b6(Context *, uint256_t const *, uint256_t *, int64_t);
+        [[gnu::noinline]] void b_44b6(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
         [[gnu::noinline, gnu::optimize("Os")]] void b_44c8(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
@@ -1083,7 +1119,7 @@ namespace monad::vm::aot
         template <Traits traits>
         [[gnu::always_inline]] inline void b_466f(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
-        [[gnu::noinline, gnu::optimize("Os")]] void b_4672(Context *, uint256_t const *, uint256_t *, int64_t);
+        [[gnu::noinline]] void b_4672(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
         [[gnu::always_inline]] inline void b_4678(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
@@ -1115,7 +1151,7 @@ namespace monad::vm::aot
         template <Traits traits>
         [[gnu::noinline]] void b_4759(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
-        [[gnu::noinline, gnu::optimize("Os")]] void b_4770(Context *, uint256_t const *, uint256_t *, int64_t);
+        [[gnu::noinline]] void b_4770(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
         [[gnu::noinline]] void b_477f(Context *, uint256_t const *, uint256_t *, int64_t);
         template <Traits traits>
@@ -1926,30 +1962,30 @@ namespace monad::vm::aot
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
-            &bad<traits>, &bad<traits>, &bad<traits>, nullptr, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &b_e9d<traits>, &bad<traits>, &bad<traits>,
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
-            &bad<traits>, nullptr, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &b_ebf<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
-            nullptr, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
-            nullptr, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &b_ed6<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &b_edc<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
-            &bad<traits>, &bad<traits>, &bad<traits>, nullptr, &bad<traits>, &bad<traits>,
-            &bad<traits>, nullptr, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
-            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
-            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
-            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
-            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, nullptr,
-            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
-            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, nullptr,
+            &bad<traits>, &bad<traits>, &bad<traits>, &b_eeb<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &b_eef<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
-            &bad<traits>, nullptr, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &b_f0b<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &b_f17<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &b_f25<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &b_f35<traits>,
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
@@ -3501,19 +3537,13 @@ namespace monad::vm::aot
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &b_3382<traits>, &bad<traits>,
-            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, nullptr,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &b_3389<traits>,
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
-            &bad<traits>, &bad<traits>, nullptr, &bad<traits>, &bad<traits>, &bad<traits>,
-            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
-            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
-            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
-            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
-            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
-            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &b_33aa<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
@@ -3525,8 +3555,14 @@ namespace monad::vm::aot
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
-            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, nullptr,
-            &bad<traits>, &bad<traits>, nullptr, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &b_3419<traits>,
+            &bad<traits>, &bad<traits>, &b_341c<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, nullptr, &bad<traits>,
@@ -3567,11 +3603,9 @@ namespace monad::vm::aot
             &bad<traits>, nullptr, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
-            nullptr, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &b_3510<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
-            nullptr, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
-            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
-            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &b_351c<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
@@ -3604,7 +3638,9 @@ namespace monad::vm::aot
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
-            &bad<traits>, nullptr, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &b_35ef<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
@@ -3620,8 +3656,8 @@ namespace monad::vm::aot
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
-            &bad<traits>, nullptr, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
-            nullptr, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &bad<traits>, &b_364f<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
+            &b_3654<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
             &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>, &bad<traits>,
@@ -6377,7 +6413,7 @@ namespace monad::vm::aot
         }
 
         template <Traits traits>
-        [[gnu::noinline, gnu::optimize("Os")]] void b_ae5(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        [[gnu::noinline]] void b_ae5(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
         {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x60, 0x16, 0x81, 0x52, 0x60, 0x54, 0x60, 0x60, 0x60, 0x1b, 0x03, 0x16, 0x60, 0x82, 0x01, 0x52, 0x60, 0x01, 0x61, 0x61, 0x56}, 2, 3));
             if (MONAD_UNLIKELY(top - bottom < 2)) { ctx->exit(StatusCode::Error); }
@@ -6673,7 +6709,7 @@ namespace monad::vm::aot
         }
 
         template <Traits traits>
-        [[gnu::noinline, gnu::optimize("Os")]] void b_c75(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        [[gnu::noinline]] void b_c75(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
         {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x61, 0x81, 0x60, 0x01, 0x51, 0x61, 0x56}, 1, 3));
             if (MONAD_UNLIKELY(top - bottom < 1)) { ctx->exit(StatusCode::Error); }
@@ -6755,7 +6791,7 @@ namespace monad::vm::aot
         }
 
         template <Traits traits>
-        [[gnu::noinline, gnu::optimize("Os")]] void b_cd6(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        [[gnu::noinline]] void b_cd6(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
         {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x61, 0x57}, 1, 1));
             if (MONAD_UNLIKELY(top - bottom < 1)) { ctx->exit(StatusCode::Error); }
@@ -6786,7 +6822,7 @@ namespace monad::vm::aot
         }
 
         template <Traits traits>
-        [[gnu::noinline, gnu::optimize("Os")]] void b_ce6(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        [[gnu::noinline]] void b_ce6(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
         {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x60, 0x85, 0x01, 0x51, 0x85, 0x51, 0x7f, 0x61, 0x56}, 5, 4));
             if (MONAD_UNLIKELY(top - bottom < 5)) { ctx->exit(StatusCode::Error); }
@@ -6879,7 +6915,7 @@ namespace monad::vm::aot
         }
 
         template <Traits traits>
-        [[gnu::noinline, gnu::optimize("Os")]] void b_d60(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        [[gnu::noinline]] void b_d60(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
         {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x60, 0x84, 0x01, 0x51, 0x90, 0x61, 0x56}, 4, 2));
             if (MONAD_UNLIKELY(top - bottom < 4)) { ctx->exit(StatusCode::Error); }
@@ -6898,7 +6934,7 @@ namespace monad::vm::aot
         }
 
         template <Traits traits>
-        [[gnu::noinline, gnu::optimize("Os")]] void b_d6b(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        [[gnu::noinline]] void b_d6b(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
         {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x60, 0x83, 0x01, 0x52, 0x61, 0x56}, 3, 2));
             if (MONAD_UNLIKELY(top - bottom < 3)) { ctx->exit(StatusCode::Error); }
@@ -7101,7 +7137,7 @@ namespace monad::vm::aot
             uint256_t const t1 = uint256_t{0xa0ull} + s3;
             uint256_t const t2 = aot::mload<traits>(ctx, gas, t1);
             bool const j5 = aot::nonzero(t2);
-            if (j5) { MONAD_AOT_TAIL return interpreter::resume<traits>(*ctx, bottom, top, gas, 0xebf); }
+            if (j5) { MONAD_AOT_TAIL return b_ebf<traits>(ctx, bottom, top, gas); }
             MONAD_AOT_TAIL return b_e6b<traits>(ctx, bottom, top, gas);
         }
 
@@ -7134,7 +7170,52 @@ namespace monad::vm::aot
             top[7] = t8;
             top[8] = t10;
             top += 8;
-            MONAD_AOT_TAIL return interpreter::resume<traits>(*ctx, bottom, top, gas, 0x3389);
+            MONAD_AOT_TAIL return b_3389<traits>(ctx, bottom, top, gas);
+        }
+
+        template <Traits traits>
+        [[gnu::noinline, gnu::optimize("Os")]] void b_e9d(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
+            static_assert(aot::stack_bounds_are<traits>({0x5b, 0x60, 0x60, 0x60, 0x1b, 0x03, 0x16, 0x60, 0x86, 0x01, 0x52, 0x60, 0x90, 0x81, 0x0b, 0x90, 0x0b, 0x60, 0x85, 0x01, 0x52, 0x60, 0x60, 0x85, 0x01, 0x52}, 6, 3));
+            if (MONAD_UNLIKELY(top - bottom < 6)) { ctx->exit(StatusCode::Error); }
+            if (MONAD_UNLIKELY(top - bottom > 1021)) { ctx->exit(StatusCode::Error); }
+            gas -= aot::gas_of<traits>({0x5b, 0x60, 0x60, 0x60, 0x1b, 0x03, 0x16, 0x60, 0x86, 0x01, 0x52, 0x60, 0x90, 0x81, 0x0b, 0x90, 0x0b, 0x60, 0x85, 0x01, 0x52, 0x60, 0x60, 0x85, 0x01, 0x52}) + 0;
+            if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
+            uint256_t const &s0 = top[0];
+            uint256_t const t1 = uint256_t{0xffffffffffffffffull, 0xffffffffffffffffull, 0xffffffffull, 0x0ull} & s0;
+            uint256_t const &s5 = top[-5];
+            uint256_t const t2 = s5 + uint256_t{0x80ull};
+            aot::mstore<traits>(ctx, gas, t2, t1);
+            uint256_t const &s1 = top[-1];
+            uint256_t const t3 = signextend(uint256_t{0x6ull}, s1);
+            uint256_t const t4 = signextend(uint256_t{0x6ull}, t3);
+            uint256_t const t5 = s5 + uint256_t{0x60ull};
+            aot::mstore<traits>(ctx, gas, t5, t4);
+            uint256_t const t6 = s5 + uint256_t{0xa0ull};
+            aot::mstore<traits>(ctx, gas, t6, uint256_t{0x1ull});
+            top += -2;
+            MONAD_AOT_TAIL return b_ebf<traits>(ctx, bottom, top, gas);
+        }
+
+        template <Traits traits>
+        [[gnu::noinline, gnu::optimize("Os")]] void b_ebf(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
+            static_assert(aot::stack_bounds_are<traits>({0x5b, 0x60, 0x61, 0x82, 0x60, 0x01, 0x51, 0x8e, 0x61, 0x57}, 12, 5));
+            if (MONAD_UNLIKELY(top - bottom < 12)) { ctx->exit(StatusCode::Error); }
+            if (MONAD_UNLIKELY(top - bottom > 1019)) { ctx->exit(StatusCode::Error); }
+            gas -= aot::gas_of<traits>({0x5b, 0x60, 0x61, 0x82, 0x60, 0x01, 0x51, 0x8e, 0x61, 0x57}) + 0;
+            if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
+            uint256_t const &s0 = top[0];
+            uint256_t const t1 = uint256_t{0x20ull} + s0;
+            uint256_t const t2 = aot::mload<traits>(ctx, gas, t1);
+            uint256_t const &s11 = top[-11];
+            bool const j9 = aot::nonzero(s11);
+            top[1] = uint256_t{0x0ull};
+            top[2] = uint256_t{0xf0bull};
+            top[3] = t2;
+            top += 3;
+            if (j9) { MONAD_AOT_TAIL return b_ed6<traits>(ctx, bottom, top, gas); }
+            MONAD_AOT_TAIL return b_ecf<traits>(ctx, bottom, top, gas);
         }
 
         template <Traits traits>
@@ -7147,7 +7228,37 @@ namespace monad::vm::aot
             uint256_t const t1 = aot::sload<traits>(ctx, gas, uint256_t{0x1ull});
             top[1] = t1;
             top += 1;
-            MONAD_AOT_TAIL return interpreter::resume<traits>(*ctx, bottom, top, gas, 0xedc);
+            MONAD_AOT_TAIL return b_edc<traits>(ctx, bottom, top, gas);
+        }
+
+        template <Traits traits>
+        [[gnu::noinline, gnu::optimize("Os")]] void b_ed6(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
+            static_assert(aot::stack_bounds_are<traits>({0x5b, 0x84, 0x60, 0x01, 0x51}, 5, 2));
+            if (MONAD_UNLIKELY(top - bottom < 5)) { ctx->exit(StatusCode::Error); }
+            if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
+            gas -= aot::gas_of<traits>({0x5b, 0x84, 0x60, 0x01, 0x51}) + 0;
+            if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
+            uint256_t const &s4 = top[-4];
+            uint256_t const t1 = uint256_t{0x80ull} + s4;
+            uint256_t const t2 = aot::mload<traits>(ctx, gas, t1);
+            top[1] = t2;
+            top += 1;
+            MONAD_AOT_TAIL return b_edc<traits>(ctx, bottom, top, gas);
+        }
+
+        template <Traits traits>
+        [[gnu::noinline, gnu::optimize("Os")]] void b_edc(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
+            static_assert(aot::stack_bounds_are<traits>({0x5b, 0x8f, 0x61, 0x57}, 16, 2));
+            if (MONAD_UNLIKELY(top - bottom < 16)) { ctx->exit(StatusCode::Error); }
+            if (MONAD_UNLIKELY(top - bottom > 1022)) { ctx->exit(StatusCode::Error); }
+            gas -= aot::gas_of<traits>({0x5b, 0x8f, 0x61, 0x57}) + 0;
+            if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
+            uint256_t const &s15 = top[-15];
+            bool const j3 = aot::nonzero(s15);
+            if (j3) { MONAD_AOT_TAIL return b_eeb<traits>(ctx, bottom, top, gas); }
+            MONAD_AOT_TAIL return b_ee2<traits>(ctx, bottom, top, gas);
         }
 
         template <Traits traits>
@@ -7163,7 +7274,71 @@ namespace monad::vm::aot
             uint256_t const t2 = aot::mload<traits>(ctx, gas, t1);
             top[1] = t2;
             top += 1;
-            MONAD_AOT_TAIL return interpreter::resume<traits>(*ctx, bottom, top, gas, 0xeef);
+            MONAD_AOT_TAIL return b_eef<traits>(ctx, bottom, top, gas);
+        }
+
+        template <Traits traits>
+        [[gnu::noinline, gnu::optimize("Os")]] void b_eeb(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
+            static_assert(aot::stack_bounds_are<traits>({0x5b, 0x60, 0x54}, 0, 1));
+            if (MONAD_UNLIKELY(top - bottom > 1023)) { ctx->exit(StatusCode::Error); }
+            gas -= aot::gas_of<traits>({0x5b, 0x60, 0x54}) + 0;
+            if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
+            uint256_t const t1 = aot::sload<traits>(ctx, gas, uint256_t{0x2ull});
+            top[1] = t1;
+            top += 1;
+            MONAD_AOT_TAIL return b_eef<traits>(ctx, bottom, top, gas);
+        }
+
+        template <Traits traits>
+        [[gnu::noinline, gnu::optimize("Os")]] void b_eef(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
+            static_assert(aot::stack_bounds_are<traits>({0x5b, 0x60, 0x89, 0x01, 0x51, 0x60, 0x8a, 0x01, 0x51, 0x60, 0x8b, 0x01, 0x51, 0x60, 0x95, 0x94, 0x93, 0x92, 0x91, 0x90, 0x61, 0x56}, 9, 5));
+            if (MONAD_UNLIKELY(top - bottom < 9)) { ctx->exit(StatusCode::Error); }
+            if (MONAD_UNLIKELY(top - bottom > 1019)) { ctx->exit(StatusCode::Error); }
+            gas -= aot::gas_of<traits>({0x5b, 0x60, 0x89, 0x01, 0x51, 0x60, 0x8a, 0x01, 0x51, 0x60, 0x8b, 0x01, 0x51, 0x60, 0x95, 0x94, 0x93, 0x92, 0x91, 0x90, 0x61, 0x56}) + 0;
+            if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
+            uint256_t const &s8 = top[-8];
+            uint256_t const t1 = s8 + uint256_t{0x80ull};
+            uint256_t const t2 = aot::mload<traits>(ctx, gas, t1);
+            uint256_t const t3 = s8 + uint256_t{0x60ull};
+            uint256_t const t4 = aot::mload<traits>(ctx, gas, t3);
+            uint256_t const t5 = s8 + uint256_t{0x40ull};
+            uint256_t const t6 = aot::mload<traits>(ctx, gas, t5);
+            uint256_t const &s2 = top[-2];
+            uint256_t const m2 = s2;
+            uint256_t const &s1 = top[-1];
+            uint256_t const m1 = s1;
+            uint256_t const &s0 = top[0];
+            uint256_t const m0 = s0;
+            top[-2] = uint256_t{0x5ull};
+            top[-1] = m2;
+            top[0] = m1;
+            top[1] = m0;
+            top[2] = t2;
+            top[3] = t4;
+            top[4] = t6;
+            top += 4;
+            MONAD_AOT_TAIL return b_351c<traits>(ctx, bottom, top, gas);
+        }
+
+        template <Traits traits>
+        [[gnu::noinline, gnu::optimize("Os")]] void b_f0b(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
+            static_assert(aot::stack_bounds_are<traits>({0x5b, 0x90, 0x50, 0x8c, 0x15, 0x61, 0x57}, 14, 1));
+            if (MONAD_UNLIKELY(top - bottom < 14)) { ctx->exit(StatusCode::Error); }
+            if (MONAD_UNLIKELY(top - bottom > 1023)) { ctx->exit(StatusCode::Error); }
+            gas -= aot::gas_of<traits>({0x5b, 0x90, 0x50, 0x8c, 0x15, 0x61, 0x57}) + 0;
+            if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
+            uint256_t const &s13 = top[-13];
+            uint256_t const t1 = aot::from_bool(!aot::nonzero(s13));
+            bool const j6 = aot::nonzero(t1);
+            uint256_t const &s0 = top[0];
+            uint256_t const m0 = s0;
+            top[-1] = m0;
+            top += -1;
+            if (j6) { MONAD_AOT_TAIL return b_f17<traits>(ctx, bottom, top, gas); }
+            MONAD_AOT_TAIL return b_f14<traits>(ctx, bottom, top, gas);
         }
 
         template <Traits traits>
@@ -7177,7 +7352,44 @@ namespace monad::vm::aot
             uint256_t const &s0 = top[0];
             uint256_t const t1 = uint256_t{0x0ull} - s0;
             top[0] = t1;
-            MONAD_AOT_TAIL return interpreter::resume<traits>(*ctx, bottom, top, gas, 0xf17);
+            MONAD_AOT_TAIL return b_f17<traits>(ctx, bottom, top, gas);
+        }
+
+        template <Traits traits>
+        [[gnu::noinline, gnu::optimize("Os")]] void b_f17(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
+            static_assert(aot::stack_bounds_are<traits>({0x5b, 0x61, 0x83, 0x60, 0x01, 0x51, 0x82, 0x61, 0x56}, 3, 4));
+            if (MONAD_UNLIKELY(top - bottom < 3)) { ctx->exit(StatusCode::Error); }
+            if (MONAD_UNLIKELY(top - bottom > 1020)) { ctx->exit(StatusCode::Error); }
+            gas -= aot::gas_of<traits>({0x5b, 0x61, 0x83, 0x60, 0x01, 0x51, 0x82, 0x61, 0x56}) + 0;
+            if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
+            uint256_t const &s2 = top[-2];
+            uint256_t const t1 = uint256_t{0xc0ull} + s2;
+            uint256_t const t2 = aot::mload<traits>(ctx, gas, t1);
+            uint256_t const &s0 = top[0];
+            uint256_t const m0 = s0;
+            top[1] = uint256_t{0xf25ull};
+            top[2] = t2;
+            top[3] = m0;
+            top += 3;
+            MONAD_AOT_TAIL return b_35ef<traits>(ctx, bottom, top, gas);
+        }
+
+        template <Traits traits>
+        [[gnu::noinline, gnu::optimize("Os")]] void b_f25(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
+            static_assert(aot::stack_bounds_are<traits>({0x5b, 0x60, 0x60, 0x60, 0x1b, 0x03, 0x16, 0x60, 0x84, 0x01, 0x52, 0x50}, 4, 3));
+            if (MONAD_UNLIKELY(top - bottom < 4)) { ctx->exit(StatusCode::Error); }
+            if (MONAD_UNLIKELY(top - bottom > 1021)) { ctx->exit(StatusCode::Error); }
+            gas -= aot::gas_of<traits>({0x5b, 0x60, 0x60, 0x60, 0x1b, 0x03, 0x16, 0x60, 0x84, 0x01, 0x52, 0x50}) + 0;
+            if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
+            uint256_t const &s0 = top[0];
+            uint256_t const t1 = uint256_t{0xffffffffffffffffull, 0xffffffffffffffffull, 0x0ull, 0x0ull} & s0;
+            uint256_t const &s3 = top[-3];
+            uint256_t const t2 = s3 + uint256_t{0xc0ull};
+            aot::mstore<traits>(ctx, gas, t2, t1);
+            top += -2;
+            MONAD_AOT_TAIL return b_f35<traits>(ctx, bottom, top, gas);
         }
 
         template <Traits traits>
@@ -9428,7 +9640,7 @@ namespace monad::vm::aot
         }
 
         template <Traits traits>
-        [[gnu::noinline, gnu::optimize("Os")]] void b_2c2b(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        [[gnu::noinline]] void b_2c2b(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
         {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x60, 0x80, 0x60, 0x84, 0x60, 0x0b, 0x86, 0x60, 0x0b, 0x81, 0x61, 0x57}, 3, 7));
             if (MONAD_UNLIKELY(top - bottom < 3)) { ctx->exit(StatusCode::Error); }
@@ -10600,7 +10812,7 @@ namespace monad::vm::aot
         }
 
         template <Traits traits>
-        [[gnu::noinline, gnu::optimize("Os")]] void b_3072(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        [[gnu::noinline]] void b_3072(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
         {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x04, 0x90, 0x50}, 3, 0));
             if (MONAD_UNLIKELY(top - bottom < 3)) { ctx->exit(StatusCode::Error); }
@@ -10670,7 +10882,7 @@ namespace monad::vm::aot
         }
 
         template <Traits traits>
-        [[gnu::noinline, gnu::optimize("Os")]] void b_309f(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        [[gnu::noinline]] void b_309f(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
         {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x60, 0x80, 0x80, 0x80, 0x60, 0x60, 0x60, 0x1b, 0x03, 0x80, 0x89, 0x16, 0x90, 0x8a, 0x16, 0x10, 0x15, 0x81, 0x87, 0x12, 0x80, 0x15, 0x90, 0x61, 0x57}, 5, 8));
             if (MONAD_UNLIKELY(top - bottom < 5)) { ctx->exit(StatusCode::Error); }
@@ -11379,7 +11591,7 @@ namespace monad::vm::aot
         }
 
         template <Traits traits>
-        [[gnu::noinline, gnu::optimize("Os")]] void b_3237(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        [[gnu::noinline]] void b_3237(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
         {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x81, 0x80, 0x15, 0x61, 0x57}, 2, 3));
             if (MONAD_UNLIKELY(top - bottom < 2)) { ctx->exit(StatusCode::Error); }
@@ -11415,7 +11627,7 @@ namespace monad::vm::aot
         }
 
         template <Traits traits>
-        [[gnu::noinline, gnu::optimize("Os")]] void b_3256(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        [[gnu::noinline]] void b_3256(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
         {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x15, 0x61, 0x57}, 1, 1));
             if (MONAD_UNLIKELY(top - bottom < 1)) { ctx->exit(StatusCode::Error); }
@@ -11514,7 +11726,7 @@ namespace monad::vm::aot
         }
 
         template <Traits traits>
-        [[gnu::noinline, gnu::optimize("Os")]] void b_3291(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        [[gnu::noinline]] void b_3291(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
         {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x60, 0x60, 0x60, 0x1b, 0x82, 0x10, 0x61, 0x57}, 1, 3));
             if (MONAD_UNLIKELY(top - bottom < 1)) { ctx->exit(StatusCode::Error); }
@@ -11734,6 +11946,24 @@ namespace monad::vm::aot
         }
 
         template <Traits traits>
+        [[gnu::noinline, gnu::optimize("Os")]] void b_3389(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
+            static_assert(aot::stack_bounds_are<traits>({0x5b, 0x60, 0x80, 0x63, 0x87, 0x16, 0x61, 0x57}, 5, 4));
+            if (MONAD_UNLIKELY(top - bottom < 5)) { ctx->exit(StatusCode::Error); }
+            if (MONAD_UNLIKELY(top - bottom > 1020)) { ctx->exit(StatusCode::Error); }
+            gas -= aot::gas_of<traits>({0x5b, 0x60, 0x80, 0x63, 0x87, 0x16, 0x61, 0x57}) + 0;
+            if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
+            uint256_t const &s4 = top[-4];
+            uint256_t const t1 = s4 & uint256_t{0xffffffffull};
+            bool const j7 = aot::nonzero(t1);
+            top[1] = uint256_t{0x0ull};
+            top[2] = uint256_t{0x0ull};
+            top += 2;
+            if (j7) { MONAD_AOT_TAIL return interpreter::resume<traits>(*ctx, bottom, top, gas, 0x3430); }
+            MONAD_AOT_TAIL return b_3398<traits>(ctx, bottom, top, gas);
+        }
+
+        template <Traits traits>
         [[gnu::always_inline]] inline void b_3398(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
         {
             static_assert(aot::stack_bounds_are<traits>({0x60, 0x89, 0x86, 0x61, 0x16, 0x61, 0x81, 0x10, 0x61, 0x57}, 9, 5));
@@ -11751,7 +11981,7 @@ namespace monad::vm::aot
             top[2] = m8;
             top[3] = t1;
             top += 3;
-            if (j9) { MONAD_AOT_TAIL return interpreter::resume<traits>(*ctx, bottom, top, gas, 0x33aa); }
+            if (j9) { MONAD_AOT_TAIL return b_33aa<traits>(ctx, bottom, top, gas); }
             MONAD_AOT_TAIL return b_33a9<traits>(ctx, bottom, top, gas);
         }
 
@@ -11763,6 +11993,49 @@ namespace monad::vm::aot
             gas -= aot::gas_of<traits>({0xfe}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
             ctx->exit(StatusCode::Error);
+        }
+
+        template <Traits traits>
+        [[gnu::noinline, gnu::optimize("Os")]] void b_33aa(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
+            static_assert(aot::stack_bounds_are<traits>({0x5b, 0x60, 0x80, 0x51, 0x60, 0x81, 0x01, 0x82, 0x52, 0x91, 0x90, 0x92, 0x01, 0x54, 0x63, 0x80, 0x82, 0x16, 0x80, 0x84, 0x52, 0x64, 0x83, 0x04, 0x60, 0x90, 0x81, 0x0b, 0x81, 0x0b, 0x90, 0x0b, 0x60, 0x85, 0x01, 0x52, 0x60, 0x60, 0x1b, 0x83, 0x04, 0x60, 0x60, 0x60, 0x1b, 0x03, 0x16, 0x94, 0x84, 0x01, 0x94, 0x90, 0x94, 0x52, 0x60, 0x60, 0x1b, 0x90, 0x91, 0x04, 0x60, 0x16, 0x15, 0x15, 0x60, 0x83, 0x01, 0x52, 0x90, 0x92, 0x50, 0x8a, 0x16, 0x14, 0x61, 0x57}, 11, 7));
+            if (MONAD_UNLIKELY(top - bottom < 11)) { ctx->exit(StatusCode::Error); }
+            if (MONAD_UNLIKELY(top - bottom > 1017)) { ctx->exit(StatusCode::Error); }
+            gas -= aot::gas_of<traits>({0x5b, 0x60, 0x80, 0x51, 0x60, 0x81, 0x01, 0x82, 0x52, 0x91, 0x90, 0x92, 0x01, 0x54, 0x63, 0x80, 0x82, 0x16, 0x80, 0x84, 0x52, 0x64, 0x83, 0x04, 0x60, 0x90, 0x81, 0x0b, 0x81, 0x0b, 0x90, 0x0b, 0x60, 0x85, 0x01, 0x52, 0x60, 0x60, 0x1b, 0x83, 0x04, 0x60, 0x60, 0x60, 0x1b, 0x03, 0x16, 0x94, 0x84, 0x01, 0x94, 0x90, 0x94, 0x52, 0x60, 0x60, 0x1b, 0x90, 0x91, 0x04, 0x60, 0x16, 0x15, 0x15, 0x60, 0x83, 0x01, 0x52, 0x90, 0x92, 0x50, 0x8a, 0x16, 0x14, 0x61, 0x57}) + 0;
+            if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
+            uint256_t const t1 = aot::mload_c<traits, 64u, 96u, 9>(ctx, gas);
+            uint256_t const t2 = t1 + uint256_t{0x80ull};
+            aot::mstore_c<traits, 64u, 96u, 9>(ctx, gas, t2);
+            uint256_t const &s1 = top[-1];
+            uint256_t const &s0 = top[0];
+            uint256_t const t3 = s1 + s0;
+            uint256_t const t4 = aot::sload<traits>(ctx, gas, t3);
+            uint256_t const t5 = t4 & uint256_t{0xffffffffull};
+            aot::mstore<traits>(ctx, gas, t1, t5);
+            uint256_t const t6 = aot::shr_c<32>(t4);
+            uint256_t const t7 = signextend(uint256_t{0x6ull}, t6);
+            uint256_t const t8 = signextend(uint256_t{0x6ull}, t7);
+            uint256_t const t9 = signextend(uint256_t{0x6ull}, t8);
+            uint256_t const t10 = t1 + uint256_t{0x20ull};
+            aot::mstore<traits>(ctx, gas, t10, t9);
+            uint256_t const t11 = aot::shr_c<88>(t4);
+            uint256_t const t12 = uint256_t{0xffffffffffffffffull, 0xffffffffffffffffull, 0xffffffffull, 0x0ull} & t11;
+            uint256_t const t13 = t1 + uint256_t{0x40ull};
+            aot::mstore<traits>(ctx, gas, t13, t12);
+            uint256_t const t14 = aot::shr_c<248>(t4);
+            uint256_t const t15 = uint256_t{0xffull} & t14;
+            uint256_t const t16 = aot::from_bool(!aot::nonzero(t15));
+            uint256_t const t17 = aot::from_bool(!aot::nonzero(t16));
+            uint256_t const t18 = t1 + uint256_t{0x60ull};
+            aot::mstore<traits>(ctx, gas, t18, t17);
+            uint256_t const &s10 = top[-10];
+            uint256_t const t19 = s10 & uint256_t{0xffffffffull};
+            uint256_t const t20 = aot::from_bool(t19 == t5);
+            bool const j75 = aot::nonzero(t20);
+            top[-2] = t1;
+            top += -2;
+            if (j75) { MONAD_AOT_TAIL return b_341c<traits>(ctx, bottom, top, gas); }
+            MONAD_AOT_TAIL return b_340e<traits>(ctx, bottom, top, gas);
         }
 
         template <Traits traits>
@@ -11791,6 +12064,39 @@ namespace monad::vm::aot
         }
 
         template <Traits traits>
+        [[gnu::noinline, gnu::optimize("Os")]] void b_3419(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
+            static_assert(aot::stack_bounds_are<traits>({0x5b, 0x90, 0x50}, 2, 0));
+            if (MONAD_UNLIKELY(top - bottom < 2)) { ctx->exit(StatusCode::Error); }
+            gas -= aot::gas_of<traits>({0x5b, 0x90, 0x50}) + 0;
+            if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
+            uint256_t const &s0 = top[0];
+            uint256_t const m0 = s0;
+            top[-1] = m0;
+            top += -1;
+            MONAD_AOT_TAIL return b_341c<traits>(ctx, bottom, top, gas);
+        }
+
+        template <Traits traits>
+        [[gnu::noinline, gnu::optimize("Os")]] void b_341c(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
+            static_assert(aot::stack_bounds_are<traits>({0x5b, 0x80, 0x60, 0x01, 0x51, 0x81, 0x60, 0x01, 0x51, 0x92, 0x50, 0x92, 0x50, 0x50, 0x61, 0x56}, 3, 3));
+            if (MONAD_UNLIKELY(top - bottom < 3)) { ctx->exit(StatusCode::Error); }
+            if (MONAD_UNLIKELY(top - bottom > 1021)) { ctx->exit(StatusCode::Error); }
+            gas -= aot::gas_of<traits>({0x5b, 0x80, 0x60, 0x01, 0x51, 0x81, 0x60, 0x01, 0x51, 0x92, 0x50, 0x92, 0x50, 0x50, 0x61, 0x56}) + 0;
+            if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
+            uint256_t const &s0 = top[0];
+            uint256_t const t1 = uint256_t{0x20ull} + s0;
+            uint256_t const t2 = aot::mload<traits>(ctx, gas, t1);
+            uint256_t const t3 = uint256_t{0x40ull} + s0;
+            uint256_t const t4 = aot::mload<traits>(ctx, gas, t3);
+            top[-2] = t2;
+            top[-1] = t4;
+            top += -1;
+            MONAD_AOT_TAIL return b_3510<traits>(ctx, bottom, top, gas);
+        }
+
+        template <Traits traits>
         [[gnu::always_inline]] inline void b_3462(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
         {
             static_assert(aot::stack_bounds_are<traits>({0x81, 0x60, 0x01, 0x51, 0x82, 0x60, 0x01, 0x51, 0x94, 0x50, 0x94, 0x50, 0x50, 0x50, 0x50, 0x61, 0x56}, 5, 3));
@@ -11806,7 +12112,7 @@ namespace monad::vm::aot
             top[-4] = t2;
             top[-3] = t4;
             top += -3;
-            MONAD_AOT_TAIL return interpreter::resume<traits>(*ctx, bottom, top, gas, 0x3510);
+            MONAD_AOT_TAIL return b_3510<traits>(ctx, bottom, top, gas);
         }
 
         template <Traits traits>
@@ -11825,7 +12131,7 @@ namespace monad::vm::aot
             top[-4] = t2;
             top[-3] = t4;
             top += -3;
-            MONAD_AOT_TAIL return interpreter::resume<traits>(*ctx, bottom, top, gas, 0x3510);
+            MONAD_AOT_TAIL return b_3510<traits>(ctx, bottom, top, gas);
         }
 
         template <Traits traits>
@@ -11849,6 +12155,119 @@ namespace monad::vm::aot
         }
 
         template <Traits traits>
+        [[gnu::noinline, gnu::optimize("Os")]] void b_3510(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
+            static_assert(aot::stack_bounds_are<traits>({0x5b, 0x97, 0x50, 0x97, 0x95, 0x50, 0x50, 0x50, 0x50, 0x50, 0x50, 0x56}, 10, 0));
+            if (MONAD_UNLIKELY(top - bottom < 10)) { ctx->exit(StatusCode::Error); }
+            gas -= aot::gas_of<traits>({0x5b, 0x97, 0x50, 0x97, 0x95, 0x50, 0x50, 0x50, 0x50, 0x50, 0x50, 0x56}) + 0;
+            if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
+            uint256_t const &s9 = top[-9];
+            uint64_t const jt = aot::jump_offset(s9);
+            uint256_t const &s1 = top[-1];
+            uint256_t const m1 = s1;
+            uint256_t const &s0 = top[0];
+            uint256_t const m0 = s0;
+            top[-9] = m1;
+            top[-8] = m0;
+            top += -8;
+            if (MONAD_LIKELY(jt < 22142)) {
+                Block<traits> const f = jump_table<traits>[jt];
+                if (MONAD_LIKELY(f != nullptr)) {
+                    MONAD_AOT_TAIL return f(ctx, bottom, top, gas);
+                }
+                MONAD_AOT_TAIL return interpreter::resume<traits>(*ctx, bottom, top, gas, jt);
+            }
+            ctx->exit(StatusCode::Error);
+        }
+
+        template <Traits traits>
+        [[gnu::noinline, gnu::optimize("Os")]] void b_351c(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
+            static_assert(aot::stack_bounds_are<traits>({0x5b, 0x60, 0x95, 0x86, 0x0b, 0x86, 0x0b, 0x60, 0x90, 0x81, 0x52, 0x60, 0x97, 0x90, 0x97, 0x52, 0x60, 0x90, 0x96, 0x20, 0x60, 0x81, 0x01, 0x80, 0x54, 0x90, 0x95, 0x03, 0x90, 0x94, 0x55, 0x93, 0x83, 0x01, 0x80, 0x54, 0x90, 0x92, 0x03, 0x90, 0x91, 0x55, 0x60, 0x82, 0x01, 0x80, 0x54, 0x63, 0x60, 0x60, 0x1b, 0x60, 0x60, 0x60, 0x1b, 0x03, 0x67, 0x80, 0x85, 0x04, 0x82, 0x16, 0x90, 0x96, 0x03, 0x16, 0x90, 0x94, 0x02, 0x7f, 0x90, 0x92, 0x16, 0x91, 0x90, 0x91, 0x17, 0x60, 0x81, 0x81, 0x0b, 0x90, 0x96, 0x03, 0x90, 0x95, 0x0b, 0x66, 0x16, 0x66, 0x19, 0x90, 0x95, 0x16, 0x94, 0x90, 0x94, 0x17, 0x82, 0x81, 0x04, 0x85, 0x16, 0x90, 0x95, 0x03, 0x90, 0x93, 0x16, 0x02, 0x63, 0x60, 0x1b, 0x19, 0x90, 0x93, 0x16, 0x92, 0x90, 0x92, 0x17, 0x90, 0x55, 0x54, 0x60, 0x60, 0x1b, 0x90, 0x04, 0x60, 0x0b, 0x90, 0x56}, 8, 5));
+            if (MONAD_UNLIKELY(top - bottom < 8)) { ctx->exit(StatusCode::Error); }
+            if (MONAD_UNLIKELY(top - bottom > 1019)) { ctx->exit(StatusCode::Error); }
+            gas -= aot::gas_of<traits>({0x5b, 0x60, 0x95, 0x86, 0x0b, 0x86, 0x0b, 0x60, 0x90, 0x81, 0x52, 0x60, 0x97, 0x90, 0x97, 0x52, 0x60, 0x90, 0x96, 0x20, 0x60, 0x81, 0x01, 0x80, 0x54, 0x90, 0x95, 0x03, 0x90, 0x94, 0x55, 0x93, 0x83, 0x01, 0x80, 0x54, 0x90, 0x92, 0x03, 0x90, 0x91, 0x55, 0x60, 0x82, 0x01, 0x80, 0x54, 0x63, 0x60, 0x60, 0x1b, 0x60, 0x60, 0x60, 0x1b, 0x03, 0x67, 0x80, 0x85, 0x04, 0x82, 0x16, 0x90, 0x96, 0x03, 0x16, 0x90, 0x94, 0x02, 0x7f, 0x90, 0x92, 0x16, 0x91, 0x90, 0x91, 0x17, 0x60, 0x81, 0x81, 0x0b, 0x90, 0x96, 0x03, 0x90, 0x95, 0x0b, 0x66, 0x16, 0x66, 0x19, 0x90, 0x95, 0x16, 0x94, 0x90, 0x94, 0x17, 0x82, 0x81, 0x04, 0x85, 0x16, 0x90, 0x95, 0x03, 0x90, 0x93, 0x16, 0x02, 0x63, 0x60, 0x1b, 0x19, 0x90, 0x93, 0x16, 0x92, 0x90, 0x92, 0x17, 0x90, 0x55, 0x54, 0x60, 0x60, 0x1b, 0x90, 0x04, 0x60, 0x0b, 0x90, 0x56}) + 12;
+            if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
+            uint256_t const &s5 = top[-5];
+            uint256_t const t1 = signextend(uint256_t{0x2ull}, s5);
+            uint256_t const t2 = signextend(uint256_t{0x2ull}, t1);
+            aot::mstore_c<traits, 0u, 32u, 3>(ctx, gas, t2);
+            uint256_t const &s6 = top[-6];
+            aot::mstore_c<traits, 32u, 64u, 6>(ctx, gas, s6);
+            uint256_t const t3 = aot::sha3_n<traits, 64>(ctx, gas, uint256_t{0x0ull});
+            uint256_t const t4 = t3 + uint256_t{0x1ull};
+            uint256_t const t5 = aot::sload<traits>(ctx, gas, t4);
+            uint256_t const &s4 = top[-4];
+            uint256_t const t6 = s4 - t5;
+            aot::sstore<traits>(ctx, gas, t4, t6, (aot::gas_of<traits>({0x93, 0x83, 0x01, 0x80, 0x54, 0x90, 0x92, 0x03, 0x90, 0x91, 0x55, 0x60, 0x82, 0x01, 0x80, 0x54, 0x63, 0x60, 0x60, 0x1b, 0x60, 0x60, 0x60, 0x1b, 0x03, 0x67, 0x80, 0x85, 0x04, 0x82, 0x16, 0x90, 0x96, 0x03, 0x16, 0x90, 0x94, 0x02, 0x7f, 0x90, 0x92, 0x16, 0x91, 0x90, 0x91, 0x17, 0x60, 0x81, 0x81, 0x0b, 0x90, 0x96, 0x03, 0x90, 0x95, 0x0b, 0x66, 0x16, 0x66, 0x19, 0x90, 0x95, 0x16, 0x94, 0x90, 0x94, 0x17, 0x82, 0x81, 0x04, 0x85, 0x16, 0x90, 0x95, 0x03, 0x90, 0x93, 0x16, 0x02, 0x63, 0x60, 0x1b, 0x19, 0x90, 0x93, 0x16, 0x92, 0x90, 0x92, 0x17, 0x90, 0x55, 0x54, 0x60, 0x60, 0x1b, 0x90, 0x04, 0x60, 0x0b, 0x90, 0x56}) + 0));
+            uint256_t const t7 = t3 + uint256_t{0x2ull};
+            uint256_t const t8 = aot::sload<traits>(ctx, gas, t7);
+            uint256_t const &s3 = top[-3];
+            uint256_t const t9 = s3 - t8;
+            aot::sstore<traits>(ctx, gas, t7, t9, (aot::gas_of<traits>({0x60, 0x82, 0x01, 0x80, 0x54, 0x63, 0x60, 0x60, 0x1b, 0x60, 0x60, 0x60, 0x1b, 0x03, 0x67, 0x80, 0x85, 0x04, 0x82, 0x16, 0x90, 0x96, 0x03, 0x16, 0x90, 0x94, 0x02, 0x7f, 0x90, 0x92, 0x16, 0x91, 0x90, 0x91, 0x17, 0x60, 0x81, 0x81, 0x0b, 0x90, 0x96, 0x03, 0x90, 0x95, 0x0b, 0x66, 0x16, 0x66, 0x19, 0x90, 0x95, 0x16, 0x94, 0x90, 0x94, 0x17, 0x82, 0x81, 0x04, 0x85, 0x16, 0x90, 0x95, 0x03, 0x90, 0x93, 0x16, 0x02, 0x63, 0x60, 0x1b, 0x19, 0x90, 0x93, 0x16, 0x92, 0x90, 0x92, 0x17, 0x90, 0x55, 0x54, 0x60, 0x60, 0x1b, 0x90, 0x04, 0x60, 0x0b, 0x90, 0x56}) + 0));
+            uint256_t const t10 = t3 + uint256_t{0x3ull};
+            uint256_t const t11 = aot::sload<traits>(ctx, gas, t10);
+            uint256_t const t12 = aot::shr_c<56>(t11);
+            uint256_t const t13 = uint256_t{0xffffffffffffffffull, 0xffffffffffffffffull, 0xffffffffull, 0x0ull} & t12;
+            uint256_t const &s2 = top[-2];
+            uint256_t const t14 = s2 - t13;
+            uint256_t const t15 = t14 & uint256_t{0xffffffffffffffffull, 0xffffffffffffffffull, 0xffffffffull, 0x0ull};
+            uint256_t const t16 = aot::shl_c<56>(t15);
+            uint256_t const t17 = t11 & uint256_t{0xffffffffffffffull, 0x0ull, 0x0ull, 0xffffffffff000000ull};
+            uint256_t const t18 = t17 | t16;
+            uint256_t const t19 = signextend(uint256_t{0x6ull}, t18);
+            uint256_t const &s1 = top[-1];
+            uint256_t const t20 = s1 - t19;
+            uint256_t const t21 = signextend(uint256_t{0x6ull}, t20);
+            uint256_t const t22 = uint256_t{0xffffffffffffffull} & t21;
+            uint256_t const t23 = t18 & uint256_t{0xff00000000000000ull, 0xffffffffffffffffull, 0xffffffffffffffffull, 0xffffffffffffffffull};
+            uint256_t const t24 = t23 | t22;
+            uint256_t const t25 = aot::shr_c<216>(t24);
+            uint256_t const t26 = uint256_t{0xffffffffull} & t25;
+            uint256_t const &s0 = top[0];
+            uint256_t const t27 = s0 - t26;
+            uint256_t const t28 = uint256_t{0xffffffffull} & t27;
+            uint256_t const t29 = aot::shl_c<216>(t28);
+            uint256_t const t30 = t24 & uint256_t{0xffffffffffffffffull, 0xffffffffffffffffull, 0xffffffffffffffffull, 0xff00000000ffffffull};
+            uint256_t const t31 = t30 | t29;
+            aot::sstore<traits>(ctx, gas, t10, t31, (aot::gas_of<traits>({0x54, 0x60, 0x60, 0x1b, 0x90, 0x04, 0x60, 0x0b, 0x90, 0x56}) + 0));
+            uint256_t const t32 = aot::sload<traits>(ctx, gas, t3);
+            uint256_t const t33 = aot::shr_c<128>(t32);
+            uint256_t const t34 = signextend(uint256_t{0xfull}, t33);
+            uint256_t const &s7 = top[-7];
+            uint64_t const jt = aot::jump_offset(s7);
+            top[-7] = t34;
+            top += -7;
+            if (MONAD_LIKELY(jt < 22142)) {
+                Block<traits> const f = jump_table<traits>[jt];
+                if (MONAD_LIKELY(f != nullptr)) {
+                    MONAD_AOT_TAIL return f(ctx, bottom, top, gas);
+                }
+                MONAD_AOT_TAIL return interpreter::resume<traits>(*ctx, bottom, top, gas, jt);
+            }
+            ctx->exit(StatusCode::Error);
+        }
+
+        template <Traits traits>
+        [[gnu::noinline, gnu::optimize("Os")]] void b_35ef(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
+            static_assert(aot::stack_bounds_are<traits>({0x5b, 0x60, 0x80, 0x82, 0x60, 0x0b, 0x12, 0x15, 0x61, 0x57}, 1, 4));
+            if (MONAD_UNLIKELY(top - bottom < 1)) { ctx->exit(StatusCode::Error); }
+            if (MONAD_UNLIKELY(top - bottom > 1020)) { ctx->exit(StatusCode::Error); }
+            gas -= aot::gas_of<traits>({0x5b, 0x60, 0x80, 0x82, 0x60, 0x0b, 0x12, 0x15, 0x61, 0x57}) + 0;
+            if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
+            uint256_t const &s0 = top[0];
+            uint256_t const t1 = signextend(uint256_t{0xfull}, s0);
+            uint256_t const t2 = aot::from_bool(slt(t1, uint256_t{0x0ull}));
+            uint256_t const t3 = aot::from_bool(!aot::nonzero(t2));
+            bool const j9 = aot::nonzero(t3);
+            top[1] = uint256_t{0x0ull};
+            top += 1;
+            if (j9) { MONAD_AOT_TAIL return b_3654<traits>(ctx, bottom, top, gas); }
+            MONAD_AOT_TAIL return b_35fd<traits>(ctx, bottom, top, gas);
+        }
+
+        template <Traits traits>
         [[gnu::always_inline]] inline void b_35fd(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
         {
             static_assert(aot::stack_bounds_are<traits>({0x82, 0x60, 0x60, 0x60, 0x1b, 0x03, 0x16, 0x82, 0x60, 0x03, 0x84, 0x03, 0x91, 0x50, 0x81, 0x60, 0x60, 0x60, 0x1b, 0x03, 0x16, 0x10, 0x61, 0x57}, 3, 5));
@@ -11865,7 +12284,7 @@ namespace monad::vm::aot
             uint256_t const t5 = aot::from_bool(t4 < t1);
             bool const j23 = aot::nonzero(t5);
             top[0] = t3;
-            if (j23) { MONAD_AOT_TAIL return interpreter::resume<traits>(*ctx, bottom, top, gas, 0x364f); }
+            if (j23) { MONAD_AOT_TAIL return b_364f<traits>(ctx, bottom, top, gas); }
             MONAD_AOT_TAIL return b_361e<traits>(ctx, bottom, top, gas);
         }
 
@@ -11889,6 +12308,37 @@ namespace monad::vm::aot
             uint256_t const t7 = uint256_t{0x64ull} + t6;
             aot::finish(ctx, gas, StatusCode::Revert, t5, t7);
             return;
+        }
+
+        template <Traits traits>
+        [[gnu::noinline, gnu::optimize("Os")]] void b_364f(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
+            static_assert(aot::stack_bounds_are<traits>({0x5b, 0x61, 0x56}, 0, 1));
+            if (MONAD_UNLIKELY(top - bottom > 1023)) { ctx->exit(StatusCode::Error); }
+            gas -= aot::gas_of<traits>({0x5b, 0x61, 0x56}) + 0;
+            if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
+            MONAD_AOT_TAIL return b_32bd<traits>(ctx, bottom, top, gas);
+        }
+
+        template <Traits traits>
+        [[gnu::noinline, gnu::optimize("Os")]] void b_3654(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        {
+            static_assert(aot::stack_bounds_are<traits>({0x5b, 0x82, 0x60, 0x60, 0x60, 0x1b, 0x03, 0x16, 0x82, 0x84, 0x01, 0x91, 0x50, 0x81, 0x60, 0x60, 0x60, 0x1b, 0x03, 0x16, 0x10, 0x15, 0x61, 0x57}, 3, 5));
+            if (MONAD_UNLIKELY(top - bottom < 3)) { ctx->exit(StatusCode::Error); }
+            if (MONAD_UNLIKELY(top - bottom > 1019)) { ctx->exit(StatusCode::Error); }
+            gas -= aot::gas_of<traits>({0x5b, 0x82, 0x60, 0x60, 0x60, 0x1b, 0x03, 0x16, 0x82, 0x84, 0x01, 0x91, 0x50, 0x81, 0x60, 0x60, 0x60, 0x1b, 0x03, 0x16, 0x10, 0x15, 0x61, 0x57}) + 0;
+            if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
+            uint256_t const &s2 = top[-2];
+            uint256_t const t1 = uint256_t{0xffffffffffffffffull, 0xffffffffffffffffull, 0x0ull, 0x0ull} & s2;
+            uint256_t const &s1 = top[-1];
+            uint256_t const t2 = s2 + s1;
+            uint256_t const t3 = uint256_t{0xffffffffffffffffull, 0xffffffffffffffffull, 0x0ull, 0x0ull} & t2;
+            uint256_t const t4 = aot::from_bool(t3 < t1);
+            uint256_t const t5 = aot::from_bool(!aot::nonzero(t4));
+            bool const j23 = aot::nonzero(t5);
+            top[0] = t2;
+            if (j23) { MONAD_AOT_TAIL return b_32bd<traits>(ctx, bottom, top, gas); }
+            MONAD_AOT_TAIL return b_3674<traits>(ctx, bottom, top, gas);
         }
 
         template <Traits traits>
@@ -12387,7 +12837,7 @@ namespace monad::vm::aot
             top[-2] = m8;
             top[-1] = m4;
             top += -1;
-            MONAD_AOT_TAIL return interpreter::resume<traits>(*ctx, bottom, top, gas, 0x3510);
+            MONAD_AOT_TAIL return b_3510<traits>(ctx, bottom, top, gas);
         }
 
         template <Traits traits>
@@ -13762,7 +14212,7 @@ namespace monad::vm::aot
         }
 
         template <Traits traits>
-        [[gnu::noinline, gnu::optimize("Os")]] void b_44b6(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        [[gnu::noinline]] void b_44b6(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
         {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x60, 0x0b, 0x60, 0x81, 0x90, 0x1d, 0x91, 0x61, 0x90, 0x91, 0x07, 0x90, 0x56}, 2, 2));
             if (MONAD_UNLIKELY(top - bottom < 2)) { ctx->exit(StatusCode::Error); }
@@ -14425,7 +14875,7 @@ namespace monad::vm::aot
         }
 
         template <Traits traits>
-        [[gnu::noinline, gnu::optimize("Os")]] void b_4672(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        [[gnu::noinline]] void b_4672(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
         {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x81, 0x61, 0x57}, 2, 2));
             if (MONAD_UNLIKELY(top - bottom < 2)) { ctx->exit(StatusCode::Error); }
@@ -14703,7 +15153,7 @@ namespace monad::vm::aot
         }
 
         template <Traits traits>
-        [[gnu::noinline, gnu::optimize("Os")]] void b_4770(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
+        [[gnu::noinline]] void b_4770(Context *const ctx, uint256_t const *const bottom, uint256_t *top, int64_t gas)
         {
             static_assert(aot::stack_bounds_are<traits>({0x5b, 0x88, 0x60, 0x60, 0x60, 0x1b, 0x03, 0x16, 0x61, 0x56}, 9, 4));
             if (MONAD_UNLIKELY(top - bottom < 9)) { ctx->exit(StatusCode::Error); }
@@ -15086,7 +15536,7 @@ namespace monad::vm::aot
             if (MONAD_UNLIKELY(top - bottom > 1023)) { ctx->exit(StatusCode::Error); }
             gas -= aot::gas_of<traits>({0x61, 0x56}) + 0;
             if (MONAD_UNLIKELY(gas < 0)) { ctx->exit(StatusCode::OutOfGas); }
-            MONAD_AOT_TAIL return interpreter::resume<traits>(*ctx, bottom, top, gas, 0x3510);
+            MONAD_AOT_TAIL return b_3510<traits>(ctx, bottom, top, gas);
         }
 
         template <Traits traits>

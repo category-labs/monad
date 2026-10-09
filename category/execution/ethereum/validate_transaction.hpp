@@ -21,6 +21,7 @@
 #include <category/core/int.hpp>
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/execution_modalities.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
@@ -36,6 +37,7 @@
 #include <category/core/likely.h>
 
 #include <initializer_list>
+#include <limits>
 #include <optional>
 #include <span>
 
@@ -52,14 +54,22 @@ Result<void> validate_transaction(
     Transaction const &tx, Address const &sender, State &state,
     uint256_t const &base_fee_per_gas,
     std::span<std::optional<Address> const> const authorities,
-    trace::StateTracer &state_tracer);
+    trace::StateTracer &state_tracer, ExecutionMode const &mode);
 
+// Validates `tx` against the sender's state. The sender checks depend on `mode`
+// (see `sender_nonce_check` and `sender_eoa_check`). The sender's state-nonce
+// bound is applied by `validate_transaction` instead (see
+// `validate_simulation_sender_nonce`): eth_call validates in simulation mode
+// but, like geth, does not bound it.
 template <Traits traits>
 [[gnu::always_inline]] inline Result<void> validate_ethereum_transaction(
     Transaction const &tx, Address const &sender, State &state,
-    trace::StateTracer &state_tracer)
+    trace::StateTracer &state_tracer, ExecutionMode const &mode)
 {
     using BOOST_OUTCOME_V2_NAMESPACE::success;
+
+    bool const check_nonce = sender_nonce_check(mode);
+    bool const check_sender_eoa = sender_eoa_check(mode);
 
     // YP (70): total cost = value + gas_cost (+ blob_fee).
     Result<uint256_t> const v0_r = [&]() -> Result<uint256_t> {
@@ -85,7 +95,7 @@ template <Traits traits>
 
     if (MONAD_UNLIKELY(!state.account_exists(sender))) {
         // YP (71)
-        if (tx.nonce) {
+        if (check_nonce && tx.nonce) {
             return TransactionError::BadNonce;
         }
         // YP (71)
@@ -105,12 +115,12 @@ template <Traits traits>
                         vm::evm::is_delegated({icode->code(), icode->size()});
     }
 
-    if (MONAD_UNLIKELY(!sender_is_eoa)) {
+    if (MONAD_UNLIKELY(check_sender_eoa && !sender_is_eoa)) {
         return TransactionError::SenderNotEoa;
     }
 
     // YP (71)
-    if (MONAD_UNLIKELY(state.get_nonce(sender) != tx.nonce)) {
+    if (MONAD_UNLIKELY(check_nonce && state.get_nonce(sender) != tx.nonce)) {
         return TransactionError::BadNonce;
     }
 
@@ -127,6 +137,20 @@ template <Traits traits>
     // (It requires knowing the parent block)
 
     return success();
+}
+
+// EIP-2681: the sender's state nonce must stay below 2^64 - 1. The nonce check
+// implies this, since it requires the state nonce to equal `tx.nonce`, which
+// `static_validate_transaction` bounds. Simulation skips the nonce check, so it
+// checks the bound directly.
+[[gnu::always_inline]] inline Result<void>
+validate_simulation_sender_nonce(Address const &sender, State &state)
+{
+    if (MONAD_UNLIKELY(
+            state.get_nonce(sender) == std::numeric_limits<uint64_t>::max())) {
+        return TransactionError::NonceExceedsMax;
+    }
+    return BOOST_OUTCOME_V2_NAMESPACE::success();
 }
 
 MONAD_NAMESPACE_END

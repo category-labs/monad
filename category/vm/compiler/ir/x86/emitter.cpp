@@ -670,6 +670,9 @@ namespace monad::vm::compiler::native
     {
         contract_epilogue();
 
+        if (!load_bounded_le_handlers_.empty()) {
+            checked_debug_comment("  calldataload bounded loads");
+        }
         for (auto const &[lbl, fn, back] : load_bounded_le_handlers_) {
             as_.bind(lbl);
             as_.call(fn);
@@ -1292,6 +1295,7 @@ namespace monad::vm::compiler::native
             return;
         }
 
+        checked_debug_comment("        gas decrement");
         as_.sub(
             x86::qword_ptr(reg_context, runtime::context_offset_gas_remaining),
             static_cast<int32_t>(gas));
@@ -1299,6 +1303,7 @@ namespace monad::vm::compiler::native
 
     void Emitter::gas_decrement_no_check(x86::Gpq const gas)
     {
+        checked_debug_comment("        gas decrement");
         as_.sub(
             x86::qword_ptr(reg_context, runtime::context_offset_gas_remaining),
             gas);
@@ -1341,8 +1346,13 @@ namespace monad::vm::compiler::native
         auto const max_delta = stack_.max_delta();
         if (max_delta - min_delta > 1024) {
             // No stack size passes both of the checks below.
+            checked_debug_comment("        stack bound check");
             as_.jmp(error_label_);
             return false;
+        }
+        if (stack_.did_min_delta_decrease() ||
+            stack_.did_max_delta_increase()) {
+            checked_debug_comment("        stack bound check");
         }
         auto const size_mem = x86::qword_ptr(x86::rsp, sp_offset_stack_size);
         if (stack_.did_min_delta_decrease()) {
@@ -1366,6 +1376,7 @@ namespace monad::vm::compiler::native
     {
         auto const delta = stack_.delta();
         if (delta != 0) {
+            checked_debug_comment("        adjust by stack delta");
             auto const ssm = x86::qword_ptr(x86::rsp, sp_offset_stack_size);
             if constexpr (preserve_eflags) {
                 as_.mov(x86::rax, ssm);
@@ -1397,6 +1408,10 @@ namespace monad::vm::compiler::native
             // Nothing on the stack.
             MONAD_DEBUG_ASSERT(stack_.missing_spill_count() == 0);
             return;
+        }
+        if (MONAD_UNLIKELY(debug_logger_.file()) &&
+            stack_.missing_spill_count()) {
+            unchecked_debug_comment("        write to final stack offsets");
         }
 
         // The macros defined below are for counting the number of stack
@@ -3475,6 +3490,7 @@ namespace monad::vm::compiler::native
     // Discharge
     void Emitter::call_runtime_impl(RuntimeImpl &rt)
     {
+        checked_debug_comment("        runtime call");
         discharge_deferred_comparison();
         spill_caller_save_regs(rt.spill_avx_regs());
         size_t const n = rt.explicit_arg_count();
@@ -3686,6 +3702,7 @@ namespace monad::vm::compiler::native
         }
         jump_table_label_ = jump_table_label_ ? jump_table_label_
                                               : as_.newNamedLabel("JumpTable");
+        checked_debug_comment("        jump table lookup");
         if (std::holds_alternative<Gpq256>(dest_op)) {
             Gpq256 const &gpq = std::get<Gpq256>(dest_op);
             as_.cmp(gpq[0], *bytecode_size_);
@@ -6203,6 +6220,7 @@ namespace monad::vm::compiler::native
         if (elem->literal()) {
             auto const &lit = elem->literal()->value;
             if (lit >= uint64_t{1} << bits) {
+                checked_debug_comment("        offset bound check");
                 as_.jmp(skip_label);
                 return {};
             }
@@ -6212,6 +6230,7 @@ namespace monad::vm::compiler::native
         static constexpr auto mask = std::numeric_limits<uint64_t>::max()
                                      << bits;
 
+        checked_debug_comment("        offset bound check");
         if (elem->general_reg()) {
             auto const &gpq = general_reg_to_gpq256(*elem->general_reg());
             if (is_live(elem, live)) {
@@ -6320,6 +6339,7 @@ namespace monad::vm::compiler::native
             return std::nullopt;
         }
 
+        checked_debug_comment("        memory expansion check");
         if (std::holds_alternative<uint64_t>(offset_op)) {
             release_volatile_general_reg(live);
             spill_avx_reg_range(5);

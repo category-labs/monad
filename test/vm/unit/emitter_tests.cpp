@@ -4622,7 +4622,22 @@ TEST(Emitter, AsmLogLabelsEachInstruction)
     auto const path = std::filesystem::temp_directory_path() /
                       "monad_vm_asm_log_labels_each_instruction.s";
     std::vector<uint8_t> const bytecode{
-        CALLVALUE, PUSH1, 0x06, JUMPI, CALLVALUE, STOP, JUMPDEST, STOP};
+        CALLVALUE,
+        PUSH1,
+        0x0e,
+        JUMPI,
+        CALLVALUE,
+        CALLVALUE,
+        MSTORE,
+        CALLVALUE,
+        CALLDATALOAD,
+        CALLVALUE,
+        SLOAD,
+        CALLVALUE,
+        CALLVALUE,
+        JUMP,
+        JUMPDEST,
+        STOP};
     auto const ir = basic_blocks::BasicBlocksIR::unsafe_from(bytecode);
 
     asmjit::JitRuntime rt;
@@ -4642,14 +4657,35 @@ TEST(Emitter, AsmLogLabelsEachInstruction)
 
     std::vector<std::string> const expected{
         "//   0x00:",
+        "//         stack bound check",
+        "//         gas decrement",
         "//       0x00: CALLVALUE",
-        "//       0x01: PUSH1 0x6",
+        "//       0x01: PUSH1 0xe",
         "//     0x03: JumpI 1",
         "//   0x04:",
+        "//         stack bound check",
+        "//         gas decrement",
         "//       0x04: CALLVALUE",
-        "//     0x05: Stop",
-        "//   0x06:",
-        "//     0x07: Stop"};
+        "//       0x05: CALLVALUE",
+        "//       0x06: MSTORE",
+        "//         offset bound check",
+        "//         memory expansion check",
+        "//       0x07: CALLVALUE",
+        "//       0x08: CALLDATALOAD",
+        "//         offset bound check",
+        "//       0x09: CALLVALUE",
+        "//       0x0a: SLOAD",
+        "//         runtime call",
+        "//       0x0b: CALLVALUE",
+        "//       0x0c: CALLVALUE",
+        "//     0x0d: Jump",
+        "//         write to final stack offsets",
+        "//         adjust by stack delta",
+        "//         jump table lookup",
+        "//   0x0e:",
+        "//         gas decrement",
+        "//     0x0f: Stop",
+        "//   calldataload bounded loads"};
     EXPECT_EQ(labels, expected);
 }
 

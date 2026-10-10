@@ -19,6 +19,7 @@
 #include <category/core/fiber/priority_properties.hpp>
 #include <category/core/fiber/priority_queue.hpp>
 #include <category/core/likely.h>
+#include <category/core/thread_idle.hpp>
 
 #include <boost/assert.hpp>
 #include <boost/fiber/context.hpp>
@@ -30,10 +31,11 @@
 MONAD_FIBER_NAMESPACE_BEGIN
 
 PriorityAlgorithm::PriorityAlgorithm(
-    PriorityQueue &rqueue, bool const prevent_spin)
+    PriorityQueue &rqueue, bool const prevent_spin,
+    ThreadIdleCounter *const idle_counter)
     : prevent_spin_(prevent_spin)
     , rqueue_{rqueue}
-
+    , idle_counter_{idle_counter}
 {
 }
 
@@ -55,6 +57,9 @@ context *PriorityAlgorithm::pick_next() noexcept
     context *ctx = rqueue_.pop();
     if (prevent_spin_ && !ctx) {
         if (!recent_) {
+            if (idle_counter_ != nullptr) {
+                idle_counter_->mark_idle();
+            }
             std::this_thread::sleep_for(std::chrono::microseconds(10));
         }
         recent_ = false;
@@ -66,6 +71,14 @@ context *PriorityAlgorithm::pick_next() noexcept
     else if (!lqueue_.empty()) {
         ctx = &lqueue_.front();
         lqueue_.pop_front();
+    }
+    if (idle_counter_ != nullptr) {
+        if (ctx != nullptr) {
+            idle_counter_->mark_busy();
+        }
+        else {
+            idle_counter_->mark_idle();
+        }
     }
     return ctx;
 }

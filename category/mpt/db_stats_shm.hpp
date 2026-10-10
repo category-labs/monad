@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/thread_idle.hpp>
 #include <category/mpt/config.hpp>
 #include <category/mpt/detail/collected_stats.hpp>
 
@@ -22,6 +23,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <optional>
+#include <span>
 #include <type_traits>
 
 MONAD_MPT_NAMESPACE_BEGIN
@@ -41,6 +43,23 @@ namespace detail
     // so a reader accepts a writer of any age and reports the sections it
     // predates as absent. A layout change that is not an append bumps
     // format_version, which readers require to match exactly.
+    struct ThreadIdleSlot
+    {
+        char name[16]; // NUL-terminated
+        uint64_t idle_ns; // cumulative, CLOCK_MONOTONIC
+        uint64_t registered_at_ns; // CLOCK_MONOTONIC in the writer
+    };
+
+    struct ThreadIdleSection
+    {
+        uint32_t count; // leading slots in use, at most the slot count
+        uint32_t unused_; // always zero
+        ThreadIdleSlot slots[ThreadIdleRegistry::MAX_THREADS];
+    };
+
+    // Part of the frozen layout: resizing needs a FORMAT_VERSION bump.
+    static_assert(sizeof(ThreadIdleSection) == 8 + 32 * 32);
+
     struct db_stats_shm
     {
         static constexpr uint64_t MAGIC = 0x4d4f4e4144535453; // "MONADSTS"
@@ -54,12 +73,14 @@ namespace detail
         uint32_t unused_; // always zero
 
         TrieUpdateCollectedStats update_stats;
+        ThreadIdleSection thread_idle;
     };
 
     static_assert(std::is_trivially_copyable_v<db_stats_shm>);
     static_assert(
-        sizeof(db_stats_shm) ==
-        db_stats_shm::HEADER_SIZE + sizeof(TrieUpdateCollectedStats));
+        sizeof(db_stats_shm) == db_stats_shm::HEADER_SIZE +
+                                    sizeof(TrieUpdateCollectedStats) +
+                                    sizeof(ThreadIdleSection));
     // A reader maps this much even when the writer's file is shorter, which is
     // only safe while it all lands in the page that holds end of file.
     static_assert(sizeof(db_stats_shm) <= 4096);
@@ -97,6 +118,13 @@ public:
 
     void
     publish_update_stats(detail::TrieUpdateCollectedStats const &s) noexcept;
+    // Slots beyond the section's capacity are dropped.
+    void
+    publish_thread_idle(std::span<ThreadIdleSample const> samples) noexcept;
+
+private:
+    template <typename Write>
+    void publish_(Write &&write) noexcept;
 };
 
 class DbStatsReader
@@ -124,6 +152,15 @@ public:
     // overwriting it for the whole retry budget.
     std::optional<detail::TrieUpdateCollectedStats>
     read_update_stats() const noexcept;
+    // nullopt if the writer predates the section, the section is corrupt, or
+    // a publish kept overwriting it for the whole retry budget.
+    std::optional<detail::ThreadIdleSection> read_thread_idle() const noexcept;
+
+private:
+    template <typename Section>
+    std::optional<Section> read_(
+        Section detail::db_stats_shm::*section,
+        uint32_t min_payload_size) const noexcept;
 };
 
 MONAD_MPT_NAMESPACE_END

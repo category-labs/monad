@@ -535,6 +535,34 @@ void MachineBase::down(unsigned char const nibble)
     }
 }
 
+// Equivalent to down() on each nibble: only the trie-section and table nibbles
+// change state other than depth.
+void MachineBase::down(mpt::NibblesView const path)
+{
+    auto const n = static_cast<unsigned>(path.nibble_size());
+    unsigned i = 0;
+    if (MONAD_UNLIKELY(depth < TOP_NIBBLE_PREFIX_LEN) && i < n) {
+        MachineBase::down(path.get(i++));
+    }
+    if (i == n) {
+        return;
+    }
+    MONAD_ASSERT(trie_section != TrieType::Undefined);
+    auto const prefix_length = prefix_len();
+    if (MONAD_UNLIKELY(depth < prefix_length)) {
+        auto const table_nibble =
+            i + static_cast<unsigned>(prefix_length - depth) - 1;
+        if (table_nibble < n) {
+            depth = static_cast<uint8_t>(depth + (table_nibble - i));
+            i = table_nibble;
+            MachineBase::down(path.get(i++));
+        }
+    }
+    auto const new_depth = depth + (n - i);
+    MONAD_ASSERT(new_depth <= max_depth(prefix_length));
+    depth = static_cast<uint8_t>(new_depth);
+}
+
 void MachineBase::up(size_t const n)
 {
     MONAD_ASSERT(n <= depth);

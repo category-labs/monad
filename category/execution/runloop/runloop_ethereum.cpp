@@ -114,8 +114,8 @@ Result<void> process_ethereum_block(
         std::nullopt);
 
     // Block input validation
-    BOOST_OUTCOME_TRY(
-        static_validate_block_with_parent<traits>(chain, block, parent_header));
+    BOOST_OUTCOME_TRY(static_validate_ethereum_block_with_parent<traits>(
+        chain, block, parent_header));
 
     // Sender and authority recovery
     auto const sender_recovery_begin = std::chrono::steady_clock::now();

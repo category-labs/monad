@@ -131,7 +131,10 @@ extern "C" void monad_zkvm_execute_witness(void)
     // block's parent_hash and its state root is the pre-state trie's.
     auto const valid = [&]() -> monad::Result<void> {
         SWITCH_EVM_TRAITS(
-            static_validate_block_with_parent, chain, block, parent_header);
+            static_validate_ethereum_block_with_parent,
+            chain,
+            block,
+            parent_header);
         MONAD_ABORT("unsupported revision");
     }();
     MONAD_ASSERT(valid.has_value());

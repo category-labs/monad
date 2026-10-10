@@ -80,6 +80,8 @@ namespace
         case BlockError::SystemCallFailed:
         case BlockError::InvalidRequestsHash:
         case BlockError::InvalidDepositLog:
+        case BlockError::InvalidBaseFeePerGas:
+        case BlockError::InvalidTimestamp:
             return EVMC_REJECTED;
         }
         return EVMC_INTERNAL_ERROR;

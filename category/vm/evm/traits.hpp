@@ -72,6 +72,7 @@ namespace monad
         // Feature flags
 
         { T::eip_1153_active() } -> std::same_as<bool>;
+        { T::eip_1559_active() } -> std::same_as<bool>;
         { T::eip_3198_active() } -> std::same_as<bool>;
         { T::eip_3855_active() } -> std::same_as<bool>;
         { T::eip_4399_active() } -> std::same_as<bool>;
@@ -122,6 +123,11 @@ namespace monad
         static consteval bool eip_1153_active() noexcept
         {
             return Rev >= MONAD_ETH_CANCUN;
+        }
+
+        static consteval bool eip_1559_active() noexcept
+        {
+            return Rev >= MONAD_ETH_LONDON;
         }
 
         static consteval bool eip_3198_active() noexcept
@@ -299,6 +305,12 @@ namespace monad
         static consteval bool eip_1153_active() noexcept
         {
             return evm_rev() >= MONAD_ETH_CANCUN;
+        }
+
+        static consteval bool eip_1559_active() noexcept
+        {
+            // Monad uses its own base-fee adjustment rule.
+            return false;
         }
 
         static consteval bool eip_3198_active() noexcept

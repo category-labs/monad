@@ -43,7 +43,29 @@ RUN apt-get update && \
 COPY scripts/ubuntu-build/install-ocaml.sh third_party/monad-execution-specs/monad-spec.opam /tmp/ocaml/
 RUN /tmp/ocaml/install-ocaml.sh /tmp/ocaml && rm -rf /tmp/ocaml
 
+# Spec test fixture tarballs for test/ethereum_test, fetched in their own
+# stage so the layers are cached (keyed on the checksums) and CI does not
+# depend on GitHub release downloads succeeding on every run. Keep the URLs
+# and checksums in sync with test/ethereum_test/CMakeLists.txt.
+FROM scratch AS test_fixtures
+
+ADD --checksum=sha256:3e2b02d49fe903eda4fd8caca5cbf0d139c470e97e1de9a85299b1b034f97099 \
+    https://github.com/ethereum/execution-spec-tests/releases/download/v5.4.0/fixtures_develop.tar.gz \
+    /fixtures/
+ADD --checksum=sha256:c96c822d2e187e9168aa20f2c158c8a2de96ea076f6e6c473a1b6d3fc5c064df \
+    https://github.com/monad-developers/execution-specs/releases/download/tests-monad@v1.2.2/fixtures_monad.tar.gz \
+    /fixtures/
+ADD --checksum=sha256:20b2a55f49a4b777f1abc6c196dc0afad22475b0ac598a39cc94fc598e22619d \
+    https://github.com/monad-developers/execution-specs/releases/download/tests-monad_amsterdam@v0.2.0/fixtures_monad_amsterdam.tar.gz \
+    /fixtures/
+ADD --checksum=sha256:d624ec9c38c945c48f43ffb229c0a963660b8506d5bf4fe8068e13df4fdf0b8d \
+    https://github.com/monad-developers/execution-specs/releases/download/tests-monad_eip7981@v0.1.0/fixtures_monad_eip7981.tar.gz \
+    /fixtures/
+
 FROM base AS build_and_test
+
+COPY --from=test_fixtures /fixtures /fixtures
+ENV MONAD_TEST_FIXTURES_DIR=/fixtures
 
 COPY . src
 

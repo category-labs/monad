@@ -32,3 +32,10 @@ jobs:
           target: base_rust
           cache-from: type=gha,scope=base
           cache-to: type=gha,scope=base_rust
+
+      - name: Build and cache `test_fixtures` stage
+        uses: ./.github/actions/docker-stage
+        with:
+          target: test_fixtures
+          cache-from: type=gha,scope=test_fixtures
+          cache-to: type=gha,scope=test_fixtures

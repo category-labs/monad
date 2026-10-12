@@ -15,45 +15,63 @@
 
 include(ExternalProject)
 
-ExternalProject_Add(
+# Directory of pre-downloaded fixture tarballs. The CI Docker image fills it
+# from the `test_fixtures` stage of docker/Dockerfile, so the build does not
+# have to fetch the (large) tarballs from GitHub on every run. Tarballs that
+# are missing from it are downloaded instead; a tarball whose hash does not
+# match is an error, as it means docker/Dockerfile is out of sync with this
+# file.
+set(MONAD_TEST_FIXTURES_DIR
+    "$ENV{MONAD_TEST_FIXTURES_DIR}"
+    CACHE PATH "Directory of pre-downloaded spec test fixture tarballs")
+
+# The URLs and hashes here are mirrored in the `test_fixtures` stage of
+# docker/Dockerfile; update both together.
+function(add_test_fixtures name url sha256)
+  get_filename_component(filename "${url}" NAME)
+  set(cached "${MONAD_TEST_FIXTURES_DIR}/${filename}")
+  if(MONAD_TEST_FIXTURES_DIR AND EXISTS "${cached}")
+    file(SHA256 "${cached}" cached_sha256)
+    if(cached_sha256 STREQUAL sha256)
+      set(url "${cached}")
+    else()
+      message(FATAL_ERROR
+        "${cached} has SHA256 ${cached_sha256}, expected ${sha256}. "
+        "Update the `test_fixtures` stage of docker/Dockerfile to match "
+        "${url}, or remove the stale tarball from MONAD_TEST_FIXTURES_DIR.")
+    endif()
+  endif()
+
+  ExternalProject_Add(
+    ${name}
+    URL "${url}"
+    URL_HASH "SHA256=${sha256}"
+    PREFIX ${CMAKE_BINARY_DIR}
+    CONFIGURE_COMMAND ""
+    BUILD_COMMAND ""
+    INSTALL_COMMAND ""
+    LOG_DOWNLOAD ON)
+endfunction()
+
+add_test_fixtures(
   ExecutionSpecTestFixtures
-  URL "https://github.com/ethereum/execution-spec-tests/releases/download/v5.4.0/fixtures_develop.tar.gz"
-  URL_HASH "SHA256=3e2b02d49fe903eda4fd8caca5cbf0d139c470e97e1de9a85299b1b034f97099"
-  PREFIX ${CMAKE_BINARY_DIR}
-  CONFIGURE_COMMAND ""
-  BUILD_COMMAND ""
-  INSTALL_COMMAND ""
-  LOG_DOWNLOAD ON)
+  "https://github.com/ethereum/execution-spec-tests/releases/download/v5.4.0/fixtures_develop.tar.gz"
+  3e2b02d49fe903eda4fd8caca5cbf0d139c470e97e1de9a85299b1b034f97099)
 
-ExternalProject_Add(
+add_test_fixtures(
   MonadSpecTestFixtures
-  URL "https://github.com/monad-developers/execution-specs/releases/download/tests-monad@v1.2.2/fixtures_monad.tar.gz"
-  URL_HASH "SHA256=c96c822d2e187e9168aa20f2c158c8a2de96ea076f6e6c473a1b6d3fc5c064df"
-  PREFIX ${CMAKE_BINARY_DIR}
-  CONFIGURE_COMMAND ""
-  BUILD_COMMAND ""
-  INSTALL_COMMAND ""
-  LOG_DOWNLOAD ON)
+  "https://github.com/monad-developers/execution-specs/releases/download/tests-monad@v1.2.2/fixtures_monad.tar.gz"
+  c96c822d2e187e9168aa20f2c158c8a2de96ea076f6e6c473a1b6d3fc5c064df)
 
-ExternalProject_Add(
+add_test_fixtures(
   MonadAmsterdamSpecTestFixtures
-  URL "https://github.com/monad-developers/execution-specs/releases/download/tests-monad_amsterdam@v0.2.0/fixtures_monad_amsterdam.tar.gz"
-  URL_HASH "SHA256=20b2a55f49a4b777f1abc6c196dc0afad22475b0ac598a39cc94fc598e22619d"
-  PREFIX ${CMAKE_BINARY_DIR}
-  CONFIGURE_COMMAND ""
-  BUILD_COMMAND ""
-  INSTALL_COMMAND ""
-  LOG_DOWNLOAD ON)
+  "https://github.com/monad-developers/execution-specs/releases/download/tests-monad_amsterdam@v0.2.0/fixtures_monad_amsterdam.tar.gz"
+  20b2a55f49a4b777f1abc6c196dc0afad22475b0ac598a39cc94fc598e22619d)
 
-ExternalProject_Add(
+add_test_fixtures(
   MonadEip7981SpecTestFixtures
-  URL "https://github.com/monad-developers/execution-specs/releases/download/tests-monad_eip7981@v0.1.0/fixtures_monad_eip7981.tar.gz"
-  URL_HASH "SHA256=d624ec9c38c945c48f43ffb229c0a963660b8506d5bf4fe8068e13df4fdf0b8d"
-  PREFIX ${CMAKE_BINARY_DIR}
-  CONFIGURE_COMMAND ""
-  BUILD_COMMAND ""
-  INSTALL_COMMAND ""
-  LOG_DOWNLOAD ON)
+  "https://github.com/monad-developers/execution-specs/releases/download/tests-monad_eip7981@v0.1.0/fixtures_monad_eip7981.tar.gz"
+  d624ec9c38c945c48f43ffb229c0a963660b8506d5bf4fe8068e13df4fdf0b8d)
 
 add_executable(monad-ethereum-test)
 target_link_libraries(monad-ethereum-test PRIVATE GTest::gtest monad-test-utils)

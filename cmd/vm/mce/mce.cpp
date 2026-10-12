@@ -24,6 +24,7 @@
 #include <category/core/hex.hpp>
 #include <category/core/log.hpp>
 #include <category/vm/compiler/ir/basic_blocks.hpp>
+#include <category/vm/compiler/ir/x86/near_jit_runtime.hpp>
 #include <category/vm/compiler/ir/x86/types.hpp>
 #include <category/vm/evm/traits.hpp>
 
@@ -213,7 +214,7 @@ int mce_main(arguments const &args)
         abort();
     }
 
-    asmjit::JitRuntime rt{};
+    native::NearJitRuntime rt{};
 
     // Must be declared after `rt`: ~Nativecode releases its code via `rt`.
     Binary bin;

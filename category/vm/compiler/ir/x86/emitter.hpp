@@ -98,9 +98,6 @@ namespace monad::vm::compiler::native
 
             asmjit::x86::Mem add_literal(Literal const &);
 
-            template <typename F>
-            asmjit::x86::Mem add_external_function(F);
-
             asmjit::x86::Mem add32(uint256_t const &);
             asmjit::x86::Mem add96(
                 uint256_t const &, uint256_t const &, uint256_t const &,
@@ -1081,7 +1078,7 @@ namespace monad::vm::compiler::native
         interpreter::code_size_t bytecode_size_;
         std::unordered_map<byte_offset, asmjit::Label> jump_dests_;
         RoData rodata_;
-        std::vector<std::tuple<asmjit::Label, asmjit::x86::Mem, asmjit::Label>>
+        std::vector<std::tuple<asmjit::Label, asmjit::Imm, asmjit::Label>>
             load_bounded_le_handlers_;
         std::vector<std::pair<asmjit::Label, std::string>> debug_messages_;
         uint32_t exponential_constant_fold_counter_;

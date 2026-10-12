@@ -24,6 +24,21 @@ use std::{
 #[cfg(feature = "sp1")]
 use std::process::Command;
 
+#[cfg(feature = "zisk-host")]
+mod zisk;
+
+/// Build the RISC-V executor or embed it in a host library, based on TARGET.
+pub fn build_zisk() {
+    if env::var("TARGET").as_deref() == Ok("riscv64ima-zisk-zkvm-elf") {
+        Backend::Zisk.build_guest_lib();
+    } else {
+        #[cfg(feature = "zisk-host")]
+        zisk::embed_guest();
+        #[cfg(not(feature = "zisk-host"))]
+        panic!("host builds of the ZisK guest require the zisk-host build helper");
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub enum Backend {
     Zisk,

@@ -34,8 +34,10 @@ load64(unsigned char const *const p)
 }
 
     #ifdef MONAD_ZKVM_KECCAK_TEST
-// Software permutation supplied by the host tests.
+// Software permutation and executor hints supplied by the host tests.
 extern "C" void test_keccak_f(uint64_t (*state)[25]);
+void test_set_keccakf_index(uint64_t index);
+uint64_t test_get_keccakf_index(uint64_t const *state);
     #endif
 
 // Inline ZisK's Keccak-f marker (CSR 0x800) to avoid call/return overhead.
@@ -67,7 +69,8 @@ extern "C" void test_keccak_f(uint64_t (*state)[25]);
             #define MONAD_ZKVM_KECCAKF_MEMO 0
         #endif
     #endif
-    #if MONAD_ZKVM_KECCAKF_MEMO && !defined(MONAD_ZKVM_ZISK)
+    #if MONAD_ZKVM_KECCAKF_MEMO && !defined(MONAD_ZKVM_ZISK) &&                \
+        !defined(MONAD_ZKVM_KECCAK_TEST)
         #error "the Keccak-f memo needs the ZisK executor"
     #endif
 
@@ -97,16 +100,21 @@ static_assert(
         sizeof(KeccakfEntry) > 2 * KECCAKF_STATE_BYTES,
     "an entry is the two states, padded to a shift");
 
+        #if defined(MONAD_ZKVM_KECCAK_TEST) && !defined(MONAD_ZKVM_ZISK)
+// Reach the full-table fallback in host tests.
+constexpr size_t KECCAKF_MEMO_ENTRIES = 16;
+        #else
 constexpr size_t KECCAKF_MEMO_ENTRIES = size_t{1} << 18;
+        #endif
 
 // Extra scratch entry for short inputs when the table is full.
 // It is never published, so a hint cannot select it.
 static KeccakfEntry keccakf_memo[KECCAKF_MEMO_ENTRIES + 1];
 static uint64_t keccakf_memo_used = 0;
 
-        // Preserve constant lengths with -mzisk-dma for inline DMA lowering.
-        // Otherwise hide the length to retain library calls instead of
-        // expanding copies and comparisons into per-word operations.
+    // Preserve constant lengths with -mzisk-dma for inline DMA lowering.
+    // Otherwise hide the length to retain library calls instead of expanding
+    // copies and comparisons into per-word operations.
         #ifdef MONAD_ZKVM_ZISK_DMA_LOWERING
             #define MONAD_KECCAKF_LEN(n) (n)
         #else
@@ -138,17 +146,22 @@ constexpr uint64_t KECCAKF_INDEX_NOT_FOUND = ~uint64_t{0};
 // No other Keccak-f call may intervene.
 static inline void fcall_set_keccakf_index(uint64_t const index)
 {
+        #ifdef MONAD_ZKVM_ZISK
     register unsigned long a0 asm("a0") = static_cast<unsigned long>(index);
     asm volatile("csrs 0x8F0, %0\n\t" // one parameter, by value
                  "csrwi 0x8C0, 24" // FCALL_SET_KECCAKF_CACHE_INDEX_ID
                  :
                  : "r"(a0)
                  : "memory");
+        #else
+    test_set_keccakf_index(index);
+        #endif
 }
 
 // The index `state` was filed under, or KECCAKF_INDEX_NOT_FOUND.
 static inline uint64_t fcall_get_keccakf_index(uint64_t const *const state)
 {
+        #ifdef MONAD_ZKVM_ZISK
     register unsigned long a0 asm("a0") =
         reinterpret_cast<unsigned long>(state);
     uint64_t index;
@@ -159,6 +172,9 @@ static inline uint64_t fcall_get_keccakf_index(uint64_t const *const state)
                  : [st] "r"(a0)
                  : "memory");
     return index;
+        #else
+    return test_get_keccakf_index(state);
+        #endif
 }
 
 // Build a padded input (< KECCAK_RATE bytes) in the next memo entry.

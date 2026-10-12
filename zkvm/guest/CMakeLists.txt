@@ -578,6 +578,17 @@ else()
         PRIVATE "${THIRD_PARTY_DIR}/ethash/include")
     add_test(NAME monad-zkvm-keccak-test COMMAND monad-zkvm-keccak-test)
 
+    add_executable(monad-zkvm-keccak-memo-test
+        test/keccak_memo_test.cpp
+        test/keccak_reference.c
+    )
+    monad_compile_options(monad-zkvm-keccak-memo-test)
+    target_compile_definitions(monad-zkvm-keccak-memo-test
+        PRIVATE MONAD_ZKVM_KECCAK_TEST MONAD_ZKVM_KECCAKF_MEMO=1)
+    target_include_directories(monad-zkvm-keccak-memo-test
+        PRIVATE "${THIRD_PARTY_DIR}/ethash/include")
+    add_test(NAME monad-zkvm-keccak-memo-test COMMAND monad-zkvm-keccak-memo-test)
+
 endif()
 
 # ---- Guest sources, shared by both modes ----

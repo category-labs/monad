@@ -593,6 +593,16 @@ else()
     target_compile_definitions(monad-zkvm-keccak-test
         PRIVATE MONAD_ZKVM_KECCAK_TEST)
 
+    add_executable(monad-zkvm-keccak-memo-test
+        test/keccak_memo_test.cpp
+        test/keccak_reference.c
+    )
+    monad_compile_options(monad-zkvm-keccak-memo-test)
+    target_compile_definitions(monad-zkvm-keccak-memo-test
+        PRIVATE MONAD_ZKVM_KECCAK_TEST MONAD_ZKVM_KECCAKF_MEMO=1)
+    target_link_libraries(monad-zkvm-keccak-memo-test PRIVATE monad_crypto)
+    add_test(NAME monad-zkvm-keccak-memo-test COMMAND monad-zkvm-keccak-memo-test)
+
 endif()
 
 # ---- Guest sources, shared by both modes ----

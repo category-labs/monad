@@ -35,7 +35,7 @@ secp256k1_context const *get_secp_context()
     thread_local std::
         unique_ptr<secp256k1_context, void (*)(secp256k1_context *)> const
             secp_context(
-                secp256k1_context_create(SECP256K1_CONTEXT_VERIFY),
+                secp256k1_context_create(SECP256K1_CONTEXT_NONE),
                 &secp256k1_context_destroy);
     return secp_context.get();
 }

@@ -86,18 +86,6 @@ add_subdirectory("third_party/concurrentqueue")
 # cthash
 add_subdirectory("third_party/cthash")
 
-# ethash
-# No monad code uses ethash: hashing goes through category/crypto/keccak.h and
-# the digest type is monad_hash256 (category/crypto/hash256.h). It is still
-# configured because silkpre links ethash::keccak privately. Retiring the
-# submodule means finishing the silkpre -> silkpre_vendor migration.
-set(ETHASH_TESTING NO)
-add_subdirectory("third_party/ethash")
-# ethash carries clang::no_sanitize attributes that GCC ignores and warns about.
-# Match the narrow, GNU-only form monad_compile_options() uses above.
-target_compile_options(
-  ethash PRIVATE $<$<CXX_COMPILER_ID:GNU>:-Wno-attributes=clang::no_sanitize>)
-
 # fiber (boost)
 # Boost.Fiber's CMakeLists.txt expects granular Boost targets from the
 # superproject build. The system-installed Boost only provides Boost::headers
@@ -142,6 +130,24 @@ add_subdirectory("third_party/evmc")
 add_library(komihash INTERFACE)
 target_include_directories(komihash INTERFACE "third_party/komihash")
 
+# libff
+set(CURVE "ALT_BN128" CACHE STRING "" FORCE)
+option(WITH_PROCPS "" OFF)
+option(IS_LIBFF_PARENT "" OFF)
+set(OLD_CMAKE_POLICY_VERSION_MINIMUM "${CMAKE_POLICY_VERSION_MINIMUM}")
+set(CMAKE_POLICY_VERSION_MINIMUM "3.5")
+add_subdirectory(third_party/libff)
+set(CMAKE_POLICY_VERSION_MINIMUM "${OLD_CMAKE_POLICY_VERSION_MINIMUM}")
+# undo the injection of ccache libff does
+set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE)
+set_property(GLOBAL PROPERTY RULE_LAUNCH_LINK)
+# libff trips several warnings under our flags: unused parameters/constants in
+# stubbed-out code, and an uninitialized timespec in its profiling clock helper
+# (only flagged once the optimizer runs).
+target_compile_options(
+  ff
+  PRIVATE -Wno-unused-parameter -Wno-unused-const-variable -Wno-uninitialized)
+
 # magic_enum
 add_subdirectory("third_party/magic_enum")
 
@@ -153,21 +159,16 @@ add_subdirectory("third_party/quill")
 # hide warnings from quill
 include_directories(SYSTEM ${CMAKE_CURRENT_SOURCE_DIR}/third_party/quill/include)
 
-# silkpre
-set(OPTIONAL_BUILD_TESTS OFF)
-set(OLD_CMAKE_POLICY_VERSION_MINIMUM "${CMAKE_POLICY_VERSION_MINIMUM}")
-set(CMAKE_POLICY_VERSION_MINIMUM "3.5")
-add_subdirectory(third_party/silkpre)
-set(CMAKE_POLICY_VERSION_MINIMUM "${OLD_CMAKE_POLICY_VERSION_MINIMUM}")
-# undo the injection of ccache silkpre/ff does
-set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE)
-set_property(GLOBAL PROPERTY RULE_LAUNCH_LINK)
-# libff (pulled in by silkpre) trips several warnings under our flags: unused
-# parameters/constants in stubbed-out code, and an uninitialized timespec in its
-# profiling clock helper (only flagged once the optimizer runs).
-target_compile_options(
-  ff
-  PRIVATE -Wno-unused-parameter -Wno-unused-const-variable -Wno-uninitialized)
+# secp256k1
+add_library(secp256k1 third_party/secp256k1/src/secp256k1.c)
+target_compile_definitions(
+  secp256k1
+  PUBLIC USE_NUM_NONE USE_FIELD_INV_BUILTIN USE_SCALAR_INV_BUILTIN
+         USE_FIELD_5X52 USE_SCALAR_4X64 HAVE___INT128
+         ECMULT_WINDOW_SIZE=15 ECMULT_GEN_PREC_BITS=4 USE_ENDOMORPHISM
+         ENABLE_MODULE_ECDH ENABLE_MODULE_RECOVERY)
+target_include_directories(
+  secp256k1 INTERFACE "${THIRD_PARTY_DIR}/secp256k1/include")
 
 # tbb
 find_package(TBB REQUIRED)

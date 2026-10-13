@@ -330,8 +330,7 @@ target_include_directories(
   PUBLIC ${CATEGORY_MAIN_DIR}
   PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/test
   PRIVATE ${Boost_INCLUDE_DIRS}
-  PUBLIC ${cthash_SOURCE_DIR}/include
-  PRIVATE ${silkpre_SOURCE_DIR}/lib)
+  PUBLIC ${cthash_SOURCE_DIR}/include)
 
 target_include_directories(
   monad_execution_native
@@ -354,7 +353,6 @@ target_compile_definitions(
 target_include_directories(
   monad_precompiles
   PUBLIC ${CATEGORY_MAIN_DIR}
-  PUBLIC ${silkpre_SOURCE_DIR}/lib
   PUBLIC ${monad_crypto_SOURCE_DIR}/src)
 
 target_link_libraries(
@@ -365,12 +363,10 @@ target_link_libraries(
   PUBLIC blst::blst
   PUBLIC c-kzg-4844
   PRIVATE PkgConfig::crypto++
-  PUBLIC ethash::keccak
   PUBLIC evmc
   PUBLIC immer
   PUBLIC intx::intx
   PUBLIC nlohmann_json::nlohmann_json
-  PUBLIC silkpre
   PUBLIC unordered_dense)
 monad_compile_options(monad_precompiles)
 
@@ -391,7 +387,6 @@ target_link_libraries(
   PUBLIC intx::intx
   PUBLIC nlohmann_json::nlohmann_json
   PUBLIC quill::quill
-  PRIVATE silkpre
   PUBLIC unordered_dense
   PUBLIC TBB::tbb)
 monad_compile_options(monad_execution_ethereum)

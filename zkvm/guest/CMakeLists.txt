@@ -386,7 +386,6 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         PkgConfig::secp256k1
         intx::intx
         quill::quill
-        silkpre
         TBB::tbb)
 
     # validate_block.cpp carries the validators and the BlockError
@@ -429,10 +428,8 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         monad_core
         monad_crypto
         c-kzg-4844
-        ethash::keccak
         PkgConfig::crypto++
-        intx::intx
-        silkpre)
+        intx::intx)
     target_link_libraries(monad_precompiles
         PUBLIC komihash
         PUBLIC cthash

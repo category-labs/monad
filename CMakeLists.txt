@@ -56,15 +56,11 @@ set(THIRD_PARTY_DIR "${PROJECT_SOURCE_DIR}/third_party")
 
 include(cmake/compile_options.cmake)
 
-find_package(Boost REQUIRED COMPONENTS context filesystem json CONFIG)
+find_package(Boost REQUIRED COMPONENTS context json CONFIG)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(brotli REQUIRED IMPORTED_TARGET libbrotlienc libbrotlidec)
 pkg_check_modules(crypto++ REQUIRED IMPORTED_TARGET libcrypto++)
 pkg_check_modules(zstd REQUIRED IMPORTED_TARGET libzstd)
-
-# ankerl
-add_library(ankerl_hash INTERFACE)
-target_include_directories(ankerl_hash INTERFACE "third_party/ankerl")
 
 # asmjit
 set(ASMJIT_STATIC ON)
@@ -148,9 +144,6 @@ target_include_directories(komihash INTERFACE "third_party/komihash")
 
 # magic_enum
 add_subdirectory("third_party/magic_enum")
-
-# nanobench
-add_subdirectory("third_party/nanobench")
 
 # nlohmann_json
 add_subdirectory("third_party/nlohmann_json" SYSTEM)

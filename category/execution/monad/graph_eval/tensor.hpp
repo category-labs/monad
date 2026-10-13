@@ -15,7 +15,9 @@
 
 #pragma once
 
+#include <category/core/address.hpp>
 #include <category/core/byte_string.hpp>
+#include <category/core/bytes.hpp>
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/core/contract/abi_decode.hpp>
 #include <category/execution/ethereum/core/contract/big_endian.hpp>
@@ -27,7 +29,9 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <optional>
 #include <span>
+#include <variant>
 
 MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
 
@@ -101,13 +105,71 @@ public:
     }
 };
 
-// A Tensor as abi_decode_tensor reads it from the calldata: its dtype and
-// shape, and its data, still in place and big-endian
-struct EncodedTensor
+// The byte order of a tensor's elements outside the interpreter: in the
+// calldata, in an account's code or in storage. Inside, they're in host order
+enum class ByteOrder : uint8_t
 {
-    Dtype dtype;
-    Shape shape;
-    byte_string_view data;
+    BigEndian = 0,
+    LittleEndian = 1,
+    Last_valid = LittleEndian,
+};
+
+// Where a TensorInput's elements are, or where a TensorOutput's go
+enum class Location : uint8_t
+{
+    Literal = 0, // In the calldata, or for an output, the return data
+    Code = 1, // In an account's code, as for a TensorRef node
+    Storage = 2, // In contiguous slots of the caller's storage
+    Last_valid = Storage,
+};
+
+// A tensor in an account's code, at a byte offset counted from the code's
+// first byte, as EXTCODECOPY counts
+struct CodeRef
+{
+    Address address;
+    uint32_t offset;
+};
+
+// A tensor's elements in the caller's storage, in the contiguous slots from
+// this one on, as load_storage_tensor reads them
+struct StorageRef
+{
+    bytes32_t slot;
+};
+
+// Solidity:
+// struct TensorInput {
+//     uint8 dtype;
+//     uint16[] dimensions;
+//     uint8 byteOrder;
+//     uint8 location;
+//     bytes payload;
+// }
+// The payload is the elements for a literal, abi.encode(address, uint32
+// offset) for a CodeRef, and abi.encode(uint256 slot) for a StorageRef. As
+// abi_decode_tensor_input reads it from the calldata, a literal's elements are
+// still in place there
+struct TensorInput
+{
+    TensorType type;
+    ByteOrder byte_order;
+    std::variant<byte_string_view, CodeRef, StorageRef> source;
+};
+
+// Solidity:
+// struct TensorOutput {
+//     uint8 byteOrder;
+//     uint8 location;
+//     bytes payload;
+// }
+// An output is returned by value, for a literal, whose payload is empty, or
+// stored, for a StorageRef, whose payload is abi.encode(uint256 slot)
+struct TensorOutput
+{
+    ByteOrder byte_order;
+    // Where the output is stored, or none if it's returned
+    std::optional<StorageRef> destination;
 };
 
 // The size in bytes of a tensor's data, or ShapeError if that overflows
@@ -121,12 +183,22 @@ bool same_shape(Shape const &a, Shape const &b);
 // none. ShapeError if they don't broadcast together.
 Result<Shape> broadcast_shape(std::span<Shape const> shapes);
 
-Result<EncodedTensor> abi_decode_tensor(byte_string_view &enc);
+// ABI-decode a TensorInput or a TensorOutput tuple. Only the canonical layout
+// is accepted. InvalidInput if a tag isn't one of its values, or a payload
+// isn't what its location takes, ShapeError if a literal's elements don't have
+// the size its type gives, and TypeError, RankError or ShapeError for an
+// invalid type
+Result<TensorInput> abi_decode_tensor_input(byte_string_view &enc);
+Result<TensorOutput> abi_decode_tensor_output(byte_string_view &enc);
 
-// Copies an encoded tensor's elements to `data`, converting them to host order
-void abi_load_tensor_data(EncodedTensor const &tensor, uint8_t *data);
+// Copies the elements in `src`, of type `dtype`, to `dst`, converting them
+// between `order` and host order. The conversion is its own inverse, so this
+// works in either direction
+void copy_elements(
+    Dtype dtype, ByteOrder order, std::span<uint8_t const> src, uint8_t *dst);
 
-// Append an ABI-encoded tensor to a returndata buffer
-void abi_append_tensor(Tensor const &tensor, byte_string &out);
+// Append an ABI-encoded tensor to a returndata buffer, with its elements in
+// `order`
+void abi_append_tensor(Tensor const &tensor, ByteOrder order, byte_string &out);
 
 MONAD_GRAPH_EVAL_NAMESPACE_END

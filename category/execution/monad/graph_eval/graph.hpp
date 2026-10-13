@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/address.hpp>
 #include <category/core/assert.h>
 #include <category/core/likely.h>
 #include <category/core/result.hpp>
@@ -67,7 +68,9 @@ enum class Op : uint16_t
     ReduceMax,
     QExp,
     QInvSqrt,
-    Last_valid_op = QInvSqrt,
+    Gather,
+    Concat,
+    Last_valid_op = Concat,
 };
 
 inline char const *op_name(Op const op)
@@ -129,6 +132,10 @@ inline char const *op_name(Op const op)
         return "QExp";
     case Op::QInvSqrt:
         return "QInvSqrt";
+    case Op::Gather:
+        return "Gather";
+    case Op::Concat:
+        return "Concat";
     }
     MONAD_ABORT();
 }
@@ -201,6 +208,20 @@ inline Result<Shape> read_next<Shape>(std::span<uint8_t const> &input)
         }
     }
     return shape;
+}
+
+// An account's address: its 20 bytes, in order
+template <>
+[[gnu::always_inline]]
+inline Result<Address> read_next<Address>(std::span<uint8_t const> &input)
+{
+    Address address;
+    if (input.size() < sizeof(address.bytes)) {
+        return GraphEvalError::GraphValidationError;
+    }
+    std::memcpy(address.bytes, input.data(), sizeof(address.bytes));
+    input = input.subspan(sizeof(address.bytes));
+    return address;
 }
 
 template <typename T>

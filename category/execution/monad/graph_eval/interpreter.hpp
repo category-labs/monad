@@ -19,20 +19,28 @@
 #include "category/execution/ethereum/state3/state.hpp"
 #include "category/execution/monad/graph_eval/config.hpp"
 #include "category/execution/monad/graph_eval/graphcode.hpp"
+#include "category/execution/monad/graph_eval/references.hpp"
 #include "category/execution/monad/graph_eval/tensor.hpp"
+#include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <utility>
 #include <vector>
 
 MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
 
-// Evaluates graphcode on inputs as read from the calldata
+// Evaluates graphcode on inputs as read from the calldata: literals, or
+// references to tensors in accounts' code or in the caller's storage
 class Interpreter
 {
     Graphcode const &graphcode_;
     State &state_;
-    std::vector<EncodedTensor> inputs_;
+    std::vector<TensorInput> inputs_;
+    // The caller's storage, for storage references, under DELEGATECALL only
+    CallerStorage *const caller_storage_;
+    // For evalGraphInto, its number of outputs, which must be the graph's
+    std::optional<size_t> const output_count_;
 
     std::span<uint8_t const> code_span_;
     std::vector<Tensor> node_values_;
@@ -46,11 +54,15 @@ class Interpreter
 
 public:
     Interpreter(
-        State &state, std::vector<EncodedTensor> &&inputs,
-        Graphcode const &graphcode, uint8_t *const arena)
+        State &state, std::vector<TensorInput> &&inputs,
+        CallerStorage *const caller_storage,
+        std::optional<size_t> const output_count, Graphcode const &graphcode,
+        uint8_t *const arena)
         : graphcode_(graphcode)
         , state_(state)
         , inputs_(std::move(inputs))
+        , caller_storage_(caller_storage)
+        , output_count_(output_count)
         , code_span_(graphcode.code(), graphcode.code_size())
         , arena_(arena)
     {
@@ -65,5 +77,10 @@ public:
 
     Result<std::vector<Tensor>> run();
 };
+
+// Benchmarking: prints how long each node of the thread's last evaluation took,
+// once, if interpreter.cpp's TIME_NODES is set. The evaluation only records
+// the times, so that the printing can be done after anything being timed
+void print_node_times();
 
 MONAD_GRAPH_EVAL_NAMESPACE_END

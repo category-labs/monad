@@ -21,12 +21,14 @@
 #include <category/execution/monad/staking/staking_contract.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
 #include <category/execution/monad/graph_eval/graph_eval.hpp>
+#include <category/execution/monad/graph_eval/interpreter.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <array>
 #include <chrono>
 #include <cstdint>
 #include <format>
 #include <iostream>
+#include <type_traits>
 
 #include <linux/perf_event.h>
 #include <sys/resource.h>
@@ -105,13 +107,25 @@ template <Traits traits, typename Contract, Address contract_address>
 std::optional<evmc::Result> check_call_monad_precompile(
     State &state, CallTracerBase &call_tracer, evmc_message const &msg)
 {
-    auto const start = std::chrono::high_resolution_clock::now();
+    // auto const start = std::chrono::high_resolution_clock::now();
 
     if (msg.code_address != contract_address) {
         return std::nullopt;
     }
 
-    if (MONAD_UNLIKELY(msg.kind != EVMC_CALL) || (msg.flags != 0)) {
+    // Graph eval takes static calls and DELEGATECALLs too, under which its
+    // storage references are to the caller's storage. The other precompiles
+    // take plain calls only. EIP-7702 delegated calls are rejected either way
+    constexpr bool is_graph_eval =
+        std::is_same_v<Contract, graph_eval::GraphEvalContract>;
+    if constexpr (is_graph_eval) {
+        if (MONAD_UNLIKELY(
+                (msg.kind != EVMC_CALL && msg.kind != EVMC_DELEGATECALL) ||
+                (msg.flags & ~static_cast<uint32_t>(EVMC_STATIC)) != 0)) {
+            return evmc::Result{evmc_status_code::EVMC_REJECTED};
+        }
+    }
+    else if (MONAD_UNLIKELY(msg.kind != EVMC_CALL) || (msg.flags != 0)) {
         return evmc::Result{evmc_status_code::EVMC_REJECTED};
     }
 
@@ -123,11 +137,25 @@ std::optional<evmc::Result> check_call_monad_precompile(
     }
 
     Contract contract = Contract{state, call_tracer};
-    auto const res = (contract.*method)(input, msg.sender, msg.value);
+    auto const res = [&] {
+        if constexpr (is_graph_eval) {
+            return (contract.*method)(
+                input,
+                graph_eval::CallContext{
+                    .sender = msg.sender,
+                    .recipient = msg.recipient,
+                    .value = msg.value,
+                    .delegatecall = msg.kind == EVMC_DELEGATECALL,
+                    .is_static = (msg.flags & EVMC_STATIC) != 0});
+        }
+        else {
+            return (contract.*method)(input, msg.sender, msg.value);
+        }
+    }();
     if (MONAD_LIKELY(res.has_value())) {
         int64_t const gas_left = msg.gas - static_cast<int64_t>(cost);
         int64_t const gas_refund = 0;
-        auto const end = std::chrono::high_resolution_clock::now();
+        // auto const end = std::chrono::high_resolution_clock::now();
         // evmc::Result copies the output into memory of its own
         evmc::Result result(
             EVMC_SUCCESS,
@@ -135,14 +163,17 @@ std::optional<evmc::Result> check_call_monad_precompile(
             gas_refund,
             res.value().data(),
             res.value().size());
-        auto const copy_end = std::chrono::high_resolution_clock::now();
-        std::cout << "Precompile took " << std::chrono::duration_cast<std::chrono::microseconds>(end - start) << "\n";
-        std::cout << "  copy output to evmc::Result: "
-                  << std::chrono::duration_cast<std::chrono::microseconds>(
-                         copy_end - end)
-                  << "\n";
+        // auto const copy_end = std::chrono::high_resolution_clock::now();
+        // std::cout << "Precompile took " << std::chrono::duration_cast<std::chrono::microseconds>(end - start) << "\n";
+        // std::cout << "  copy output to evmc::Result: "
+        //           << std::chrono::duration_cast<std::chrono::microseconds>(
+        //                  copy_end - end)
+        //           << "\n";
+        // // Benchmarking: after the timings above, so as not to add to them
+        // graph_eval::print_node_times();
         return result;
     }
+    // graph_eval::print_node_times();
     return evmc::Result(
         EVMC_REVERT,
         0 /* gas left */,

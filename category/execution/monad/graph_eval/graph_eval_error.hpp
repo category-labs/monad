@@ -45,6 +45,10 @@ enum class GraphEvalError
     InternalError,
     DivisionByZero,
     DomainError,
+    InvalidTensorRef,
+    IndexError,
+    StorageRefOutsideDelegateCall,
+    StorageWriteInStaticCall,
 };
 
 MONAD_GRAPH_EVAL_NAMESPACE_END

@@ -20,14 +20,109 @@
 #include "category/execution/monad/graph_eval/ops.hpp"
 #include <category/execution/monad/graph_eval/interpreter.hpp>
 #include <category/execution/monad/graph_eval/kernel.hpp>
+#include <category/execution/monad/graph_eval/references.hpp>
 #include <category/execution/monad/graph_eval/tensor.hpp>
+#include <category/execution/ethereum/state3/state.hpp>
+
+#include <x86intrin.h>
 
 #include <array>
 #include <chrono>
+#include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <format>
 #include <iostream>
+#include <iterator>
+#include <memory>
+#include <span>
+#include <string>
+#include <tuple>
+#include <variant>
 #include <vector>
+
+MONAD_GRAPH_EVAL_ANONYMOUS_NAMESPACE_BEGIN
+
+// Benchmarking: set to time each node of each evaluation, for
+// print_node_times to report
+constexpr bool TIME_NODES = false;
+
+// A node of an evaluation: what it computed, and when it finished, as a
+// reading of the timestamp counter
+struct NodeTime
+{
+    uint64_t end;
+    Op op;
+    TensorType type;
+};
+
+// The nodes of the thread's last evaluation, until print_node_times reports
+// them. The loop over the nodes only reads the timestamp counter and stores
+// to this buffer, which has room for the most ops a graph can have. It's
+// allocated the first time the thread uses it, uninitialized, so only the
+// pages used are ever touched
+struct NodeTimes
+{
+    std::unique_ptr<NodeTime[]> nodes{new NodeTime[size_t{1} << 16]};
+    size_t count = 0;
+    size_t first_id = 0; // The node id of the first op, after the inputs'
+    uint64_t start = 0; // The timestamp counter before the first op
+    std::chrono::steady_clock::time_point start_time;
+};
+
+NodeTimes &node_times()
+{
+    thread_local NodeTimes times;
+    return times;
+}
+
+char const *dtype_name(Dtype const dtype)
+{
+    switch (dtype) {
+    case Dtype::int8:
+        return "int8";
+    case Dtype::uint8:
+        return "uint8";
+    case Dtype::int16:
+        return "int16";
+    case Dtype::uint16:
+        return "uint16";
+    case Dtype::int32:
+        return "int32";
+    case Dtype::uint32:
+        return "uint32";
+    case Dtype::int64:
+        return "int64";
+    case Dtype::uint64:
+        return "uint64";
+    }
+    MONAD_ABORT();
+}
+
+// TensorRef: a tensor copied out of an account's code. Its parameters are a
+// tensor header, as for a Literal, the account's address, then the tensor's
+// offset in the account's code (uint32), counted from the code's first byte,
+// as EXTCODECOPY counts. load_code_tensor reads it, with little-endian
+// elements, which must have the type the TensorRef's give.
+//
+// TODO: give TensorRef a byte order parameter, for consistency with code
+// inputs, which have one. TODO: perhaps make TensorRef a GraphOp. It's handled
+// ad hoc, here and in the planner, because it would be the only op that reads
+// the state, which GraphOp::evaluate has no access to. TODO: charge gas for
+// reading the account and copying its code, as EXTCODECOPY does
+Result<void> evaluate_tensor_ref(
+    State &state, std::span<uint8_t const> &graphcode, Tensor &output)
+{
+    BOOST_OUTCOME_TRY(
+        auto const params,
+        read_next<std::tuple<Dtype, Shape, Address, uint32_t>>(graphcode));
+    // The planner gave the output the type in the parameters
+    CodeRef const ref{std::get<2>(params), std::get<3>(params)};
+    return load_code_tensor(state, ref, ByteOrder::LittleEndian, output);
+}
+
+MONAD_GRAPH_EVAL_ANONYMOUS_NAMESPACE_END
 
 MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
 
@@ -54,18 +149,18 @@ Result<void> Interpreter::check_inputs()
         auto const &input = inputs_[static_cast<size_t>(i)];
 
         BOOST_OUTCOME_TRY(auto const dtype, read_next<uint8_t>(code_span_));
-        if (dtype != static_cast<uint8_t>(input.dtype)) {
+        if (dtype != static_cast<uint8_t>(input.type.dtype)) {
             return GraphEvalError::TypeError;
         }
 
         BOOST_OUTCOME_TRY(auto const rank, read_next<uint8_t>(code_span_));
-        if (rank != input.shape.rank) {
+        if (rank != input.type.shape.rank) {
             return GraphEvalError::RankError;
         }
 
         for (auto j = 0; j < rank; j++) {
             BOOST_OUTCOME_TRY(auto const d_j, read_next<uint16_t>(code_span_));
-            if (d_j != input.shape.dimensions[static_cast<size_t>(j)]) {
+            if (d_j != input.type.shape.dimensions[static_cast<size_t>(j)]) {
                 return GraphEvalError::ShapeError;
             }
         }
@@ -74,14 +169,34 @@ Result<void> Interpreter::check_inputs()
     return outcome::success();
 }
 
-// Copies the inputs out of the calldata into tensors from the allocator, in
-// host byte order, once check_inputs has checked them against the graphcode
+// Copies the inputs into tensors from the allocator, in host byte order, once
+// check_inputs has checked their types against the graphcode: a literal's
+// elements from the calldata, and a reference's from an account's code or the
+// caller's storage. InvalidTensorRef for the first reference whose data
+// doesn't match its type
 Result<void> Interpreter::load_inputs()
 {
-    size_t i = 0;
-    for (EncodedTensor const &input : inputs_) {
-        abi_load_tensor_data(input, node_values_[i].data());
-        i += 1;
+    for (size_t i = 0; i < inputs_.size(); i++) {
+        TensorInput const &input = inputs_[i];
+        Tensor &tensor = node_values_[i];
+        if (auto const *const data =
+                std::get_if<byte_string_view>(&input.source)) {
+            copy_elements(
+                input.type.dtype, input.byte_order, *data, tensor.data());
+        }
+        else if (auto const *const ref = std::get_if<CodeRef>(&input.source)) {
+            BOOST_OUTCOME_TRY(
+                load_code_tensor(state_, *ref, input.byte_order, tensor));
+        }
+        else {
+            // Storage references outside a DELEGATECALL were rejected before
+            MONAD_ASSERT(caller_storage_ != nullptr);
+            BOOST_OUTCOME_TRY(load_storage_tensor(
+                *caller_storage_,
+                std::get<StorageRef>(input.source),
+                input.byte_order,
+                tensor));
+        }
     }
     return outcome::success();
 }
@@ -107,7 +222,6 @@ Result<std::vector<Tensor>> Interpreter::run()
     BOOST_OUTCOME_TRY(check_magic_number());
     BOOST_OUTCOME_TRY(check_inputs());
     BOOST_OUTCOME_TRY(prepare_node_placement());
-    BOOST_OUTCOME_TRY(load_inputs());
 
     auto const n_inputs = inputs_.size();
     // Read output-tensor indices. TODO: constrain number of outputs
@@ -115,12 +229,25 @@ Result<std::vector<Tensor>> Interpreter::run()
     if (n_outputs > MAX_GRAPH_OUTPUTS) {
         return GraphEvalError::GraphValidationError;
     }
+    if (output_count_.has_value() && *output_count_ != n_outputs) {
+        return GraphEvalError::ArityError;
+    }
     std::array<uint16_t, MAX_GRAPH_OUTPUTS> outputs{};
     for (size_t i = 0; i < n_outputs; i++) {
         BOOST_OUTCOME_TRY(outputs[i], read_next<uint16_t>(code_span_));
     }
 
+    // After everything static, so that reference errors come after those
+    BOOST_OUTCOME_TRY(load_inputs());
+
     BOOST_OUTCOME_TRY(auto const n_ops, read_next<uint16_t>(code_span_));
+    NodeTimes *const times = TIME_NODES ? &node_times() : nullptr;
+    if constexpr (TIME_NODES) {
+        times->count = 0;
+        times->first_id = n_inputs;
+        times->start_time = std::chrono::steady_clock::now();
+        times->start = __rdtsc();
+    }
     for (size_t i = 0; i < n_ops; i++) {
         BOOST_OUTCOME_TRY(
             auto const opcode_id, read_next<uint16_t>(code_span_));
@@ -137,7 +264,7 @@ Result<std::vector<Tensor>> Interpreter::run()
             break;
         }
         case Op::TensorRef: {
-            return GraphEvalError::InternalError;
+            BOOST_OUTCOME_TRY(evaluate_tensor_ref(state_, code_span_, result));
             break;
         }
         case Op::Add: {
@@ -244,6 +371,18 @@ Result<std::vector<Tensor>> Interpreter::run()
             BOOST_OUTCOME_TRY(QInvSqrtOp{}.evaluate(code_span_, result, node_values_));
             break;
         }
+        case Op::Gather: {
+            BOOST_OUTCOME_TRY(GatherOp{}.evaluate(code_span_, result, node_values_));
+            break;
+        }
+        case Op::Concat: {
+            BOOST_OUTCOME_TRY(ConcatOp{}.evaluate(code_span_, result, node_values_));
+            break;
+        }
+        }
+        if constexpr (TIME_NODES) {
+            times->nodes[times->count++] =
+                NodeTime{__rdtsc(), opcode, result.type()};
         }
     }
 
@@ -258,6 +397,59 @@ Result<std::vector<Tensor>> Interpreter::run()
         output_values.push_back(node_values_[outputs[i]]);
     }
     return output_values;
+}
+
+void print_node_times()
+{
+    NodeTimes &times = node_times();
+    if (times.count == 0) {
+        return;
+    }
+
+    // The timestamp counter's rate, over the time since the first op started
+    uint64_t const now = __rdtsc();
+    auto const now_time = std::chrono::steady_clock::now();
+    double const ns_per_tick =
+        std::chrono::duration<double, std::nano>(now_time - times.start_time)
+            .count() /
+        static_cast<double>(now - times.start);
+    auto const microseconds = [&](uint64_t const ticks) {
+        return static_cast<double>(ticks) * ns_per_tick / 1000;
+    };
+
+    std::string report;
+    auto out = std::back_inserter(report);
+    std::format_to(
+        out,
+        "evalGraph: {} nodes in {:.3f} µs\n",
+        times.count,
+        microseconds(times.nodes[times.count - 1].end - times.start));
+    uint64_t previous = times.start;
+    std::string type;
+    for (size_t i = 0; i < times.count; i++) {
+        NodeTime const &node = times.nodes[i];
+        Shape const &shape = node.type.shape;
+        type = dtype_name(node.type.dtype);
+        type += '[';
+        for (size_t d = 0; d < shape.rank; d++) {
+            std::format_to(
+                std::back_inserter(type),
+                "{}{}",
+                d == 0 ? "" : ", ",
+                shape.dimensions[d]);
+        }
+        type += ']';
+        std::format_to(
+            out,
+            "  node {:>5} {:<10} {:<24} {:>10.3f} µs\n",
+            times.first_id + i,
+            op_name(node.op),
+            type,
+            microseconds(node.end - previous));
+        previous = node.end;
+    }
+    times.count = 0;
+    std::cout << report;
 }
 
 MONAD_GRAPH_EVAL_NAMESPACE_END

@@ -24,6 +24,8 @@
 #include "category/execution/monad/graph_eval/matmul.hpp"
 #include "category/execution/monad/graph_eval/tensor.hpp"
 #include <algorithm>
+#include <cstring>
+#include <limits>
 #include <span>
 #include <tuple>
 #include <type_traits>
@@ -122,6 +124,11 @@ struct LiteralOp final
         Tensor &output, Inputs<0> const &) override
     {
         auto const &[type, data] = params;
+        // TODO: skip the copy by making the node's tensor a view of these
+        // bytes, with no arena memory, as a Reshape shares its input's. Ops
+        // read elements through T *, so the data must then be aligned: at an
+        // aligned offset in the graphcode format, in a copy of the code that
+        // Intercode allocates aligned
         std::memcpy(output.data(), data.data(), data.size());
         return outcome::success();
     }
@@ -779,6 +786,9 @@ struct FixedPointOp2 final : GraphOp<uint8_t, 2>
     {
         TensorType const &x = *input_types[0];
         TensorType const &y = *input_types[1];
+        // TODO: also bound bits by the dtype's width, here and in
+        // evaluate_impl. As it is, a uint8 can have 35 fractional bits, which
+        // leaves it only values below 2^-27
         if (bits > MAX_FRACTIONAL_BITS) {
             return GraphEvalError::GraphValidationError;
         }
@@ -890,6 +900,8 @@ struct QMatMulOp final : GraphOp<std::tuple<uint8_t, Dtype>, 2>
         auto const [bits, out_dtype] = params;
         TensorType const &x = *input_types[0];
         TensorType const &y = *input_types[1];
+        // TODO: also bound bits by the inputs' dtype width, here and in
+        // evaluate_impl, as for the other fixed-point ops
         if (bits > MAX_FRACTIONAL_BITS) {
             return GraphEvalError::GraphValidationError;
         }
@@ -1012,6 +1024,9 @@ struct FixedPointOp1 final : GraphOp<uint8_t, 1>
     Result<TensorType>
     check_impl(uint8_t const bits, InputTypes<1> const &input_types) override
     {
+        // TODO: also bound bits by the dtype's width, here and in
+        // evaluate_impl. As it is, a uint8 can have 35 fractional bits, which
+        // leaves it only values below 2^-27
         if (bits > MAX_FRACTIONAL_BITS) {
             return GraphEvalError::GraphValidationError;
         }
@@ -1083,5 +1098,148 @@ struct FixedPointInvSqrt
 
 using QExpOp = FixedPointOp1<FixedPointExp>;
 using QInvSqrtOp = FixedPointOp1<FixedPointInvSqrt>;
+
+// The product of a shape's dimensions in [begin, end), and of `size`
+inline uint64_t dimensions_product(
+    Shape const &shape, size_t const begin, size_t const end,
+    uint64_t const size = 1)
+{
+    uint64_t product = size;
+    for (size_t i = begin; i < end; i++) {
+        product *= shape.dimensions[i];
+    }
+    return product;
+}
+
+// Gather: the slices of `data` along the axis given as its parameter at each
+// of `indices`, which can have any dtype, as in numpy.take and ONNX. The
+// result's dimensions are data's before the axis, then the indices', then
+// data's after the axis. IndexError if an index isn't in [0, n), for data's
+// length n along the axis
+struct GatherOp final : GraphOp<uint8_t, 2>
+{
+    Result<TensorType>
+    check_impl(uint8_t const axis, InputTypes<2> const &input_types) override
+    {
+        TensorType const &data = *input_types[0];
+        Shape const &indices = input_types[1]->shape;
+        if (axis >= data.shape.rank) {
+            return GraphEvalError::RankError;
+        }
+        size_t const rank = data.shape.rank - 1u + indices.rank;
+        if (rank > data.shape.dimensions.size()) {
+            return GraphEvalError::RankError;
+        }
+        Shape shape{};
+        shape.rank = static_cast<uint8_t>(rank);
+        auto const dimensions = data.shape.dimensions.begin();
+        auto out = std::copy_n(dimensions, axis, shape.dimensions.begin());
+        out = std::copy_n(indices.dimensions.begin(), indices.rank, out);
+        std::copy(dimensions + axis + 1, dimensions + data.shape.rank, out);
+        return TensorType{data.dtype, shape};
+    }
+
+    Result<void> evaluate_impl(
+        uint8_t const axis, Tensor &out, Inputs<2> const &inputs) override
+    {
+        Tensor const &data = *inputs[0];
+        Tensor const &indices = *inputs[1];
+        Shape const &shape = data.type().shape;
+        if (axis >= shape.rank) {
+            return GraphEvalError::RankError;
+        }
+
+        // Data as `outer` blocks of `length` slices of `slice` bytes. Each
+        // block gives the result a slice per index
+        uint64_t const length = shape.dimensions[axis];
+        uint64_t const outer = dimensions_product(shape, 0, axis);
+        uint64_t const slice = dimensions_product(
+            shape, axis + 1u, shape.rank, dtype_size(data.type().dtype));
+
+        return visit_dtype(
+            indices.type().dtype, [&]<typename I>() -> Result<void> {
+                auto const ids = indices.elements<I const>();
+                for (I const id : ids) {
+                    if (std::cmp_less(id, 0) ||
+                        std::cmp_greater_equal(id, length)) {
+                        return GraphEvalError::IndexError;
+                    }
+                }
+                uint8_t *to = out.data();
+                for (uint64_t block = 0; block < outer; block++) {
+                    uint8_t const *const slices =
+                        data.data() + block * length * slice;
+                    for (I const id : ids) {
+                        std::memcpy(
+                            to,
+                            slices + static_cast<uint64_t>(id) * slice,
+                            slice);
+                        to += slice;
+                    }
+                }
+                return outcome::success();
+            });
+    }
+};
+
+// Concat: a and b joined along the axis given as its parameter, a's slices
+// first. They must have the same dtype and rank, and the same dimensions but
+// along the axis, where the result's is the sum, which must fit a dimension
+struct ConcatOp final : GraphOp<uint8_t, 2>
+{
+    static Result<TensorType>
+    type(uint8_t const axis, TensorType const &a, TensorType const &b)
+    {
+        if (a.dtype != b.dtype) {
+            return GraphEvalError::TypeError;
+        }
+        if (a.shape.rank != b.shape.rank || axis >= a.shape.rank) {
+            return GraphEvalError::RankError;
+        }
+        for (size_t i = 0; i < a.shape.rank; i++) {
+            if (i != axis && a.shape.dimensions[i] != b.shape.dimensions[i]) {
+                return GraphEvalError::ShapeError;
+            }
+        }
+        uint32_t const length =
+            uint32_t{a.shape.dimensions[axis]} + b.shape.dimensions[axis];
+        if (length > std::numeric_limits<uint16_t>::max()) {
+            return GraphEvalError::ShapeError;
+        }
+        Shape shape = a.shape;
+        shape.dimensions[axis] = static_cast<uint16_t>(length);
+        return TensorType{a.dtype, shape};
+    }
+
+    Result<TensorType>
+    check_impl(uint8_t const axis, InputTypes<2> const &input_types) override
+    {
+        return type(axis, *input_types[0], *input_types[1]);
+    }
+
+    Result<void> evaluate_impl(
+        uint8_t const axis, Tensor &out, Inputs<2> const &inputs) override
+    {
+        Tensor const &a = *inputs[0];
+        Tensor const &b = *inputs[1];
+        BOOST_OUTCOME_TRY(type(axis, a.type(), b.type()));
+
+        // Each as `outer` blocks, which alternate in the result, a's first
+        Shape const &shape = a.type().shape;
+        uint64_t const outer = dimensions_product(shape, 0, axis);
+        uint64_t const inner = dimensions_product(
+            shape, axis + 1u, shape.rank, dtype_size(a.type().dtype));
+        uint64_t const a_block = shape.dimensions[axis] * inner;
+        uint64_t const b_block = b.type().shape.dimensions[axis] * inner;
+        uint8_t *to = out.data();
+        for (uint64_t block = 0; block < outer; block++) {
+            std::memcpy(to, a.data() + block * a_block, a_block);
+            to += a_block;
+            std::memcpy(to, b.data() + block * b_block, b_block);
+            to += b_block;
+        }
+        return outcome::success();
+    }
+};
 
 MONAD_GRAPH_EVAL_NAMESPACE_END

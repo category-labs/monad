@@ -29,7 +29,6 @@
 #include <limits>
 #include <memory>
 #include <type_traits>
-#include <vector>
 
 // In matmul_i8, each element of the product is the dot product of a row of x
 // with a column of y. The columns are copied out of y 4 at a time into
@@ -211,30 +210,49 @@ template <typename Wide>
 using matmul_sum_t =
     std::conditional_t<sizeof(Wide) == 8, uint64_t, unsigned __int128>;
 
-// out = (x * y) >> bits, for an m x k matrix x and a k x n matrix y. Each row
-// of out is summed in a row of n sums, adding a row of y times each element of
-// x's row, so that y is read in order
+// Elements j to j + C - 1 of a row of out: the dot products of the row `xi` of
+// x, k long, with C adjacent columns of y, which is n wide. Each is summed in
+// a variable of its own, then shifted right by `bits` and narrowed into out
+template <size_t C, typename T, typename Out>
+[[gnu::always_inline]] inline void dot_columns(
+    T const *const xi, T const *const y, size_t const k, size_t const n,
+    size_t const j, unsigned const bits, Out *const out)
+{
+    using Wide = matmul_wide_t<T>;
+    using Sum = matmul_sum_t<Wide>;
+    Sum sums[C] = {};
+    for (size_t p = 0; p < k; p++) {
+        auto const a = static_cast<Wide>(xi[p]);
+        T const *const row = y + p * n + j;
+#pragma GCC unroll 4
+        for (size_t c = 0; c < C; c++) {
+            sums[c] += static_cast<Sum>(a * static_cast<Wide>(row[c]));
+        }
+    }
+#pragma GCC unroll 4
+    for (size_t c = 0; c < C; c++) {
+        out[j + c] = static_cast<Out>(static_cast<Wide>(sums[c]) >> bits);
+    }
+}
+
+// out = (x * y) >> bits, for an m x k matrix x and a k x n matrix y. Each
+// element of out is the dot product of a row of x with a column of y, 4
+// columns at a time: the 4 sums are independent, each element of x loaded
+// serves 4 products, and y is read 4 adjacent elements at a time
 template <typename T, typename Out>
 void matmul_generic(
     T const *const x, T const *const y, size_t const m, size_t const k,
     size_t const n, unsigned const bits, Out *const out)
 {
-    using Wide = matmul_wide_t<T>;
-    using Sum = matmul_sum_t<Wide>;
-    std::vector<Sum> row_sums(n);
-    Sum *__restrict const sums = row_sums.data();
     for (size_t i = 0; i < m; i++) {
-        std::fill_n(sums, n, Sum{0});
-        for (size_t p = 0; p < k; p++) {
-            auto const a = static_cast<Wide>(x[i * k + p]);
-            T const *__restrict const row = y + p * n;
-            for (size_t j = 0; j < n; j++) {
-                sums[j] += static_cast<Sum>(a * static_cast<Wide>(row[j]));
-            }
+        T const *const xi = x + i * k;
+        Out *const out_row = out + i * n;
+        size_t j = 0;
+        for (; j + 4 <= n; j += 4) {
+            dot_columns<4>(xi, y, k, n, j, bits, out_row);
         }
-        for (size_t j = 0; j < n; j++) {
-            out[i * n + j] =
-                static_cast<Out>(static_cast<Wide>(sums[j]) >> bits);
+        for (; j < n; j++) {
+            dot_columns<1>(xi, y, k, n, j, bits, out_row);
         }
     }
 }

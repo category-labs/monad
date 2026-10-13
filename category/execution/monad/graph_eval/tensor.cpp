@@ -19,6 +19,8 @@
 #include <category/execution/monad/graph_eval/tensor.hpp>
 
 #include <algorithm>
+#include <bit>
+#include <cstring>
 
 MONAD_GRAPH_EVAL_ANONYMOUS_NAMESPACE_BEGIN
 
@@ -37,6 +39,55 @@ copy_big_endian(uint8_t *const dst, std::span<uint8_t const> const src)
         BigEndian<T> const value_be{value};
         std::memcpy(dst + element_size * i, value_be.bytes, element_size);
     }
+}
+
+// A tag of a TensorInput or TensorOutput, a uint8 in the ABI: InvalidInput if
+// its word isn't one of the tag's values
+template <typename Tag>
+Result<Tag> abi_decode_tag(byte_string_view &enc)
+{
+    BOOST_OUTCOME_TRY(auto const word, abi_decode_fixed<u256_be>(enc));
+    uint256_t const value = word.native();
+    if (value > uint256_t{static_cast<uint8_t>(Tag::Last_valid)}) {
+        return GraphEvalError::InvalidInput;
+    }
+    return static_cast<Tag>(value.as_words()[0]);
+}
+
+// The length of a dynamic value, a whole uint256, which must fit in 64 bits
+Result<uint64_t> abi_decode_length(byte_string_view &enc)
+{
+    BOOST_OUTCOME_TRY(auto const length_be, abi_decode_fixed<u256_be>(enc));
+    uint256_t const length = length_be.native();
+    if (length.as_words()[1] || length.as_words()[2] || length.as_words()[3]) {
+        return GraphEvalError::InvalidInput;
+    }
+    return length.as_words()[0];
+}
+
+// The next `size` bytes of `enc`, which are padded with zeros to a multiple of
+// 32 bytes, consuming the padding too
+Result<byte_string_view>
+abi_decode_padded_bytes(byte_string_view &enc, uint64_t const size)
+{
+    // Checking the size first bounds it by the input's length, so the rounding
+    // below can't overflow
+    if (MONAD_UNLIKELY(enc.size() < size)) {
+        return AbiDecodeError::InputTooShort;
+    }
+    auto const padded_size = round_up<uint64_t>(size, 32);
+    if (MONAD_UNLIKELY(enc.size() < padded_size)) {
+        return AbiDecodeError::InputTooShort;
+    }
+    byte_string_view const data = enc.substr(0, static_cast<size_t>(size));
+    enc.remove_prefix(static_cast<size_t>(padded_size));
+    return data;
+}
+
+bool all_zero(byte_string_view const bytes)
+{
+    return std::all_of(
+        bytes.begin(), bytes.end(), [](uint8_t const b) { return b == 0; });
 }
 
 MONAD_GRAPH_EVAL_ANONYMOUS_NAMESPACE_END
@@ -91,7 +142,7 @@ Result<Shape> broadcast_shape(std::span<Shape const> const shapes)
     return result;
 }
 
-Result<EncodedTensor> abi_decode_tensor(byte_string_view &enc)
+Result<TensorInput> abi_decode_tensor_input(byte_string_view &enc)
 {
     // Static: uint8 dtype
     BOOST_OUTCOME_TRY(auto const dtype_be, abi_decode_fixed<u8_be>(enc));
@@ -101,13 +152,16 @@ Result<EncodedTensor> abi_decode_tensor(byte_string_view &enc)
     }
     auto const dtype = static_cast<Dtype>(dtype_id);
 
-    // Dynamic: head(uint16[]) and head(bytes), the offsets of their tails from
+    // Dynamic: head(uint16[]), static: uint8 byteOrder and uint8 location,
+    // then dynamic: head(bytes). The heads are the offsets of their tails from
     // the start of the tuple. The tails are read in place, so only the
-    // canonical layout is accepted: the dimensions right after the three head
-    // words, then the data
+    // canonical layout is accepted: the dimensions right after the five head
+    // words, then the payload
     BOOST_OUTCOME_TRY(
         auto const dimensions_head, abi_decode_fixed<u256_be>(enc));
-    BOOST_OUTCOME_TRY(auto const data_head, abi_decode_fixed<u256_be>(enc));
+    BOOST_OUTCOME_TRY(auto const byte_order, abi_decode_tag<ByteOrder>(enc));
+    BOOST_OUTCOME_TRY(auto const location, abi_decode_tag<Location>(enc));
+    BOOST_OUTCOME_TRY(auto const payload_head, abi_decode_fixed<u256_be>(enc));
 
     // Dynamic: read tail(uint16[]), whose length, a whole uint256, is the rank
     BOOST_OUTCOME_TRY(auto const rank_be, abi_decode_fixed<u256_be>(enc));
@@ -118,10 +172,11 @@ Result<EncodedTensor> abi_decode_tensor(byte_string_view &enc)
     }
     auto const rank = static_cast<uint8_t>(rank_256.as_words()[0]);
 
-    uint64_t const dimensions_offset = 3 * 32;
-    uint64_t const data_offset = dimensions_offset + 32 * (1 + uint64_t{rank});
+    uint64_t const dimensions_offset = 5 * 32;
+    uint64_t const payload_offset =
+        dimensions_offset + 32 * (1 + uint64_t{rank});
     if (dimensions_head.native() != dimensions_offset ||
-        data_head.native() != data_offset) {
+        payload_head.native() != payload_offset) {
         return GraphEvalError::InvalidInput;
     }
 
@@ -138,53 +193,103 @@ Result<EncodedTensor> abi_decode_tensor(byte_string_view &enc)
         }
     }
 
-    // Dynamic: read tail(bytes)
-    BOOST_OUTCOME_TRY(auto const data_size_be, abi_decode_fixed<u256_be>(enc));
-    uint256_t const data_size_256 = data_size_be.native();
-    if (data_size_256.as_words()[1] || data_size_256.as_words()[2] ||
-        data_size_256.as_words()[3]) {
-        return GraphEvalError::InvalidInput;
-    }
-    auto const data_size = data_size_256.as_words()[0];
-    if (MONAD_UNLIKELY(data_size != expected_data_size)) {
+    // Dynamic: read tail(bytes), the payload
+    BOOST_OUTCOME_TRY(auto const payload_size, abi_decode_length(enc));
+    if (MONAD_UNLIKELY(
+            location == Location::Literal &&
+            payload_size != expected_data_size)) {
         return GraphEvalError::ShapeError;
     }
+    BOOST_OUTCOME_TRY(
+        auto const payload, abi_decode_padded_bytes(enc, payload_size));
 
-    // Checking the size first bounds it by the input's length, so the rounding
-    // below can't overflow
-    if (MONAD_UNLIKELY(enc.size() < data_size)) {
-        return AbiDecodeError::InputTooShort;
+    TensorType const type{dtype, Shape{rank, dimensions}};
+    switch (location) {
+    case Location::Literal:
+        return TensorInput{type, byte_order, payload};
+    case Location::Code:
+        // abi.encode(address, uint32): each a word, with its high bytes zero
+        if (payload.size() != 64 || !all_zero(payload.substr(0, 12)) ||
+            !all_zero(payload.substr(32, 28))) {
+            return GraphEvalError::InvalidInput;
+        }
+        {
+            CodeRef ref{};
+            std::memcpy(ref.address.bytes, payload.data() + 12, 20);
+            ref.offset = u32_be::unsafe_from(payload.data() + 60).native();
+            return TensorInput{type, byte_order, ref};
+        }
+    case Location::Storage:
+        // abi.encode(uint256 slot)
+        if (payload.size() != 32) {
+            return GraphEvalError::InvalidInput;
+        }
+        {
+            StorageRef ref{};
+            std::memcpy(ref.slot.bytes, payload.data(), 32);
+            return TensorInput{type, byte_order, ref};
+        }
     }
-    auto const padded_size = round_up<uint64_t>(data_size, 32);
-    if (MONAD_UNLIKELY(enc.size() < padded_size)) {
-        return AbiDecodeError::InputTooShort;
-    }
-    byte_string_view const data = enc.substr(0, static_cast<size_t>(data_size));
-    enc.remove_prefix(static_cast<size_t>(padded_size));
-
-    return EncodedTensor{dtype, Shape{rank, dimensions}, data};
+    MONAD_ABORT();
 }
 
-void abi_load_tensor_data(EncodedTensor const &tensor, uint8_t *const data)
+Result<TensorOutput> abi_decode_tensor_output(byte_string_view &enc)
 {
+    // Static: uint8 byteOrder and uint8 location, then dynamic: head(bytes),
+    // which the canonical layout puts right after the three head words
+    BOOST_OUTCOME_TRY(auto const byte_order, abi_decode_tag<ByteOrder>(enc));
+    BOOST_OUTCOME_TRY(auto const location, abi_decode_tag<Location>(enc));
+    // An output is returned, as a literal, or stored, but can't go to code
+    if (location == Location::Code) {
+        return GraphEvalError::InvalidInput;
+    }
+    BOOST_OUTCOME_TRY(auto const payload_head, abi_decode_fixed<u256_be>(enc));
+    if (payload_head.native() != 3 * 32) {
+        return GraphEvalError::InvalidInput;
+    }
+
+    // Dynamic: read tail(bytes), the payload: empty for a literal, and
+    // abi.encode(uint256 slot) for storage
+    BOOST_OUTCOME_TRY(auto const payload_size, abi_decode_length(enc));
+    if (payload_size != (location == Location::Literal ? 0 : 32)) {
+        return GraphEvalError::InvalidInput;
+    }
+    BOOST_OUTCOME_TRY(
+        auto const payload, abi_decode_padded_bytes(enc, payload_size));
+    TensorOutput output{byte_order, std::nullopt};
+    if (location == Location::Storage) {
+        output.destination.emplace();
+        std::memcpy(output.destination->slot.bytes, payload.data(), 32);
+    }
+    return output;
+}
+
+void copy_elements(
+    Dtype const dtype, ByteOrder const order,
+    std::span<uint8_t const> const src, uint8_t *const dst)
+{
+    // Validators are x86, so host order is little-endian
+    static_assert(std::endian::native == std::endian::little);
+
     // TODO: ensure all these loops get compiled to vectorized code.
-    std::span<uint8_t const> const src{tensor.data};
-    switch (dtype_size(tensor.dtype)) {
-    case 1:
-        // An empty input's data may be null, and memcpy from null is UB even
+    size_t const element_size = dtype_size(dtype);
+    if (order == ByteOrder::LittleEndian || element_size == 1) {
+        // An empty tensor's data may be null, and memcpy from null is UB even
         // for zero bytes
         if (!src.empty()) {
-            std::memcpy(data, src.data(), src.size());
+            std::memcpy(dst, src.data(), src.size());
         }
-        break;
+        return;
+    }
+    switch (element_size) {
     case 2:
-        copy_big_endian<uint16_t>(data, src);
+        copy_big_endian<uint16_t>(dst, src);
         break;
     case 4:
-        copy_big_endian<uint32_t>(data, src);
+        copy_big_endian<uint32_t>(dst, src);
         break;
     case 8:
-        copy_big_endian<uint64_t>(data, src);
+        copy_big_endian<uint64_t>(dst, src);
         break;
     default:
         // Unreachable
@@ -193,7 +298,8 @@ void abi_load_tensor_data(EncodedTensor const &tensor, uint8_t *const data)
 }
 
 // Append an ABI-encoded tensor to a returndata buffer
-void abi_append_tensor(Tensor const &tensor, byte_string &out)
+void abi_append_tensor(
+    Tensor const &tensor, ByteOrder const order, byte_string &out)
 {
     uint64_t const encoded_tensor_head_size =
         32 /* dtype (uint8) */ + 32 /* head(uint16[]) */ + 32 /* head(bytes) */;
@@ -227,7 +333,7 @@ void abi_append_tensor(Tensor const &tensor, byte_string &out)
             abi_encode_uint(u64_be{shape.dimensions[static_cast<size_t>(i)]});
     }
 
-    // Encode data, converting it from host to big-endian order and padding it
+    // Encode data, converting it from host order to `order` and padding it
     // with zeros to a multiple of 32 bytes. resize_and_overwrite writes it in
     // place, without zero-filling it first.
     out += abi_encode_uint(u64_be{size_bytes});
@@ -235,28 +341,11 @@ void abi_append_tensor(Tensor const &tensor, byte_string &out)
     out.resize_and_overwrite(
         data_offset + padded_size_bytes, [&](uint8_t *buffer, size_t n) {
             uint8_t *const dst = buffer + data_offset;
-            std::span<uint8_t const> const src{
-                tensor.data(), static_cast<size_t>(size_bytes)};
-            switch (dtype_size(tensor.type().dtype)) {
-            case 1:
-                // An empty tensor's data may be null, and memcpy from null is
-                // UB even for zero bytes
-                if (size_bytes != 0) {
-                    std::memcpy(dst, src.data(), src.size());
-                }
-                break;
-            case 2:
-                copy_big_endian<uint16_t>(dst, src);
-                break;
-            case 4:
-                copy_big_endian<uint32_t>(dst, src);
-                break;
-            case 8:
-                copy_big_endian<uint64_t>(dst, src);
-                break;
-            default:
-                MONAD_ABORT();
-            }
+            copy_elements(
+                tensor.type().dtype,
+                order,
+                {tensor.data(), static_cast<size_t>(size_bytes)},
+                dst);
             std::memset(dst + size_bytes, 0, padded_size_bytes - size_bytes);
             return n;
         });

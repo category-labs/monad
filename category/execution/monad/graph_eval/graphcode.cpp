@@ -126,7 +126,19 @@ Result<TensorType> check_op(
         return QExpOp{}.check(graphcode, types, input_ids);
     case Op::QInvSqrt:
         return QInvSqrtOp{}.check(graphcode, types, input_ids);
-    case Op::TensorRef:
+    case Op::Gather:
+        return GatherOp{}.check(graphcode, types, input_ids);
+    case Op::Concat:
+        return ConcatOp{}.check(graphcode, types, input_ids);
+    case Op::TensorRef: {
+        // TODO: perhaps make TensorRef a GraphOp. interpreter.cpp's
+        // evaluate_tensor_ref says why it isn't one
+        BOOST_OUTCOME_TRY(
+            auto const params,
+            read_next<std::tuple<Dtype, Shape, Address, uint32_t>>(graphcode));
+        input_ids.clear();
+        return TensorType{std::get<0>(params), std::get<1>(params)};
+    }
     case Op::ArgMin:
     case Op::Clip:
     case Op::Cast:

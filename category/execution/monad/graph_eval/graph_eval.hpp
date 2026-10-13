@@ -28,6 +28,19 @@ MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
 
 inline constexpr Address GRAPH_EVAL_CA = Address{0x1002};
 
+// How the precompile was called. Unlike the other Monad precompiles, it takes
+// static calls and DELEGATECALLs too
+struct CallContext
+{
+    Address sender;
+    // Under DELEGATECALL, the caller, whose storage storage references are to
+    Address recipient;
+    uint256_be_t value;
+    bool delegatecall;
+    // In a static context, so it can't write to storage
+    bool is_static;
+};
+
 class GraphEvalContract
 {
     State &state_;
@@ -37,7 +50,7 @@ public:
     GraphEvalContract(State &state, CallTracerBase &tracer);
 
     using PrecompileFunc = Result<byte_string> (GraphEvalContract::*)(
-        byte_string_view, Address const &, uint256_be_t const &);
+        byte_string_view, CallContext const &);
 
     template <Traits traits>
     static std::pair<PrecompileFunc, uint64_t>
@@ -45,14 +58,18 @@ public:
 
     template <Traits traits>
     Result<byte_string>
-    precompile_eval_op(byte_string_view, Address const &, uint256_be_t const &);
+    precompile_eval_op(byte_string_view, CallContext const &);
 
     template <Traits traits>
     Result<byte_string>
-    precompile_eval_graph(byte_string_view, Address const &, uint256_be_t const &);
+    precompile_eval_graph(byte_string_view, CallContext const &);
 
-    Result<byte_string> precompile_fallback(
-        byte_string_view, Address const &, uint256_be_t const &);
+    template <Traits traits>
+    Result<byte_string>
+    precompile_eval_graph_into(byte_string_view, CallContext const &);
+
+    Result<byte_string>
+    precompile_fallback(byte_string_view, CallContext const &);
 };
 
 MONAD_GRAPH_EVAL_NAMESPACE_END

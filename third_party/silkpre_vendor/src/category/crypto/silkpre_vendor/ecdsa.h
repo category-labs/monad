@@ -17,6 +17,7 @@
 // Modified 2026 by Category Labs:
 //   - Rename to use monad prefixes
 //   - Remove secp256k1_ecdh and related functions
+//   - Create contexts with SECP256K1_CONTEXT_NONE
 
 #ifndef MONAD_ECDSA_H_
 #define MONAD_ECDSA_H_
@@ -32,7 +33,7 @@
 extern "C" {
 #endif
 
-enum { MONAD_SECP256K1_CONTEXT_FLAGS = SECP256K1_CONTEXT_VERIFY };
+enum { MONAD_SECP256K1_CONTEXT_FLAGS = SECP256K1_CONTEXT_NONE };
 
 //! \brief Tries recover the address used for message signing
 //! \param [in] message : the signed message

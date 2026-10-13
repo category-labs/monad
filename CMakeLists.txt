@@ -160,15 +160,18 @@ add_subdirectory("third_party/quill")
 include_directories(SYSTEM ${CMAKE_CURRENT_SOURCE_DIR}/third_party/quill/include)
 
 # secp256k1
-add_library(secp256k1 third_party/secp256k1/src/secp256k1.c)
-target_compile_definitions(
-  secp256k1
-  PUBLIC USE_NUM_NONE USE_FIELD_INV_BUILTIN USE_SCALAR_INV_BUILTIN
-         USE_FIELD_5X52 USE_SCALAR_4X64 HAVE___INT128
-         ECMULT_WINDOW_SIZE=15 ECMULT_GEN_PREC_BITS=4 USE_ENDOMORPHISM
-         ENABLE_MODULE_ECDH ENABLE_MODULE_RECOVERY)
-target_include_directories(
-  secp256k1 INTERFACE "${THIRD_PARTY_DIR}/secp256k1/include")
+set(SECP256K1_ENABLE_MODULE_RECOVERY ON)
+foreach(_module ECDH EXTRAKEYS SCHNORRSIG MUSIG ELLSWIFT SILENTPAYMENTS)
+  set(SECP256K1_ENABLE_MODULE_${_module} OFF)
+endforeach()
+foreach(_target BENCHMARK TESTS EXHAUSTIVE_TESTS CTIME_TESTS EXAMPLES)
+  set(SECP256K1_BUILD_${_target} OFF)
+endforeach()
+set(SECP256K1_VALGRIND OFF)
+# The x86-64 inline assembly is no faster than the C code here, and needs more
+# registers than clang has left in ASAN Debug builds.
+set(SECP256K1_ASM OFF)
+add_subdirectory(third_party/secp256k1 EXCLUDE_FROM_ALL)
 
 # tbb
 find_package(TBB REQUIRED)

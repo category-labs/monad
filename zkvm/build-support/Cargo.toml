@@ -12,6 +12,7 @@ path = "src/lib.rs"
 
 [dependencies]
 cmake = "0.1"
+sha2 = "0.10"
 
 # SP1-only dependencies, behind the `sp1` feature so the ZisK guest crate does
 # not fetch or build the SP1 prover graph it never uses.

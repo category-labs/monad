@@ -258,7 +258,6 @@ else()
   target_link_libraries(monad_core PRIVATE Boost::stacktrace_basic)
 endif()
 
-target_link_libraries(monad_core PUBLIC ankerl_hash)
 target_link_libraries(monad_core PUBLIC Boost::fiber TBB::tbb)
 target_link_libraries(monad_core PUBLIC CLI11::CLI11)
 target_link_libraries(monad_core PUBLIC komihash)

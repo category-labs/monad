@@ -224,11 +224,6 @@ public:
         return is_new_pool_;
     }
 
-    //! \brief Force both metadata copies to durable storage. Public entry
-    //! point for monad-mpt --upgrade's post-migration flush. Requires the
-    //! pool to have been opened writable (asserts can_write_to_map_).
-    void sync_metadata_to_disk();
-
     enum class chunk_list : uint8_t
     {
         free = 0,
@@ -427,8 +422,7 @@ private:
     // Reset the secondary_timeline ring's chunk storage to the empty state:
     // zero length, every cnv_chunks[] slot at the NULL_CHUNK sentinel
     // (0xffffffff), never 0 (which aliases cnv chunk 0, the db_metadata chunk).
-    // Caller holds the dirty bit. Used by the migration and
-    // repair_inactive_secondary_ring().
+    // Caller holds the dirty bit. Used by repair_inactive_secondary_ring().
     static void reset_secondary_ring_storage_(detail::db_metadata *m) noexcept;
 
     // Shared helper for the two map_* functions above. The `span_field`
@@ -635,10 +629,8 @@ private:
     metadata_copy copies_[2];
     // db_map_size_ is the logical bytes of live metadata (header +
     // chunk_info[]); metadata_mmap_size_ is the total VA reservation
-    // (cnv chunk 0 half-capacity). The latter is always >= the former
-    // and >= MONAD007_DB_METADATA_SIZE + chunk_info[], so migration
-    // from a MONAD007 pool can read and relocate chunk_info[] without
-    // remapping. Use metadata_mmap_size_ for mmap/munmap and db_map_size_
+    // (cnv chunk 0 half-capacity) and is always >= db_map_size_. Use
+    // metadata_mmap_size_ for mmap/munmap and db_map_size_
     // for msync, to avoid syncing megabytes of dead bytes beyond the logical
     // metadata; a copy-to-copy db_copy is sized by db_map_size_of_ instead,
     // as a copy can describe fewer chunks than the pool does mid-grow.

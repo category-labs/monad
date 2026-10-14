@@ -247,7 +247,6 @@ TEST(grow_database, reopening_a_grown_pool_changes_nothing)
 // scopes: pending record stamped, copy 0 grown, copy 1 not, neither copy
 // dirty. Built by raw file I/O on cnv chunk 0 rather than by driving
 // DbMetadataContext, whose constructor always leaves the two copies agreeing.
-// Same technique as provision_monad007_pool in cli_tool_test.cpp.
 TEST(grow_database, interrupted_growth_replays_on_reopen)
 {
     auto const dev0 = create_temp_file(20 * BLKSIZE);
@@ -403,7 +402,7 @@ TEST(grow_database, interrupted_growth_replays_on_reopen)
 // hundreds of gigabytes.
 TEST(grow_database, chunk_info_bounds)
 {
-    // 4096 chunks at 8 bytes each on top of the MONAD007 header, inside a 1Mb
+    // 4096 chunks at 8 bytes each on top of the header, inside a 1Mb
     // half-chunk: fits.
     MONAD_MPT_NAMESPACE::test::AddDevicesTestAccess::check_chunk_info_fits(
         4096, 1024 * 1024);
@@ -413,6 +412,6 @@ TEST(grow_database, chunk_info_bounds)
         "20 bit chunk id space");
     ASSERT_DEATH(
         MONAD_MPT_NAMESPACE::test::AddDevicesTestAccess::check_chunk_info_fits(
-            100000, 1024 * 1024),
+            200000, 1024 * 1024),
         "conventional chunk 0 only provides");
 }

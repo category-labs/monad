@@ -30,7 +30,6 @@
 #include <category/mpt/util.hpp>
 
 #include <algorithm>
-#include <array>
 #include <atomic>
 #include <cerrno>
 #include <chrono>
@@ -53,132 +52,12 @@ using namespace MONAD_ASYNC_NAMESPACE;
     #pragma GCC diagnostic push
     #pragma GCC diagnostic ignored "-Wclass-memaccess"
 #endif
-// MONAD007 -> MONAD008 fixed-header offsets used by the in-place migration
-// in DbMetadataContext::DbMetadataContext. MONAD007 had
-// root_offsets_ring_t::SIZE_ = 65536; MONAD008 dropped it to 32, shrinking
-// sizeof(db_metadata) from 528512 to 4480 bytes and shifting chunk_info[]
-// and the db_offsets/consensus block accordingly.
-static constexpr size_t MONAD007_DB_METADATA_SIZE =
-    detail::db_metadata::MONAD007_HEADER_BYTES;
-static constexpr size_t MONAD007_DB_OFFSETS_OFFSET = 524328;
-static constexpr size_t MONAD007_DB_OFFSETS_THROUGH_BLOCK_IDS_BYTES = 128;
-static constexpr size_t MONAD007_LIST_TRIPLE_OFFSET = 528488;
-static constexpr size_t DB_METADATA_LIST_TRIPLE_BYTES = 24;
-
 // storage_pool documents min_chunk_capacity as the smallest capacity a pool
 // carrying a database can have; check_chunk_info_fits_ below is what enforces
 // it at open time, by refusing a pool whose conventional chunk 0 cannot hold
 // the header. Half the capacity is what that chunk offers the header.
 static_assert(
-    storage_pool::min_chunk_capacity / 2 >=
-    detail::db_metadata::MONAD007_HEADER_BYTES);
-
-namespace detail
-{
-    void migrate_monad007_to_monad008(
-        db_metadata *const m, uint32_t const chunk_count)
-    {
-        auto *const m_bytes = reinterpret_cast<std::byte *>(m);
-
-        MONAD_ASSERT(
-            m->root_offsets.cnv_chunks_len() <
-                db_metadata::root_offsets_ring_t::SIZE_,
-            "MONAD007 pool has more primary cnv chunks than MONAD008's "
-            "SIZE_ cap allows — cannot migrate");
-
-        // 1. Stash the tail-of-header regions that step 2's chunk_info[]
-        //    memmove will overrun. Its destination grows up from
-        //    sizeof(db_metadata) and, for large chunk_count, runs over the
-        //    db_offsets..latest_proposed_block_id block (chunk_count > 64981)
-        //    and then the free/fast/slow list triple (chunk_count > 65501).
-        //    Both sources sit below the memmove source, so neither survives
-        //    the relocation in place — stash both before step 2.
-        std::array<std::byte, DB_METADATA_LIST_TRIPLE_BYTES> list_triple_buf{};
-        (void)memcpy(
-            list_triple_buf.data(),
-            m_bytes + MONAD007_LIST_TRIPLE_OFFSET,
-            DB_METADATA_LIST_TRIPLE_BYTES);
-        std::array<std::byte, MONAD007_DB_OFFSETS_THROUGH_BLOCK_IDS_BYTES>
-            db_offsets_buf{};
-        (void)memcpy(
-            db_offsets_buf.data(),
-            m_bytes + MONAD007_DB_OFFSETS_OFFSET,
-            MONAD007_DB_OFFSETS_THROUGH_BLOCK_IDS_BYTES);
-
-        // 2. Relocate chunk_info[]. memmove because src/dst may overlap for
-        //    pathologically large chunk_count.
-        (void)memmove(
-            m_bytes + sizeof(db_metadata),
-            m_bytes + MONAD007_DB_METADATA_SIZE,
-            size_t(chunk_count) * sizeof(db_metadata::chunk_info_t));
-
-        // 3. Install the stashed list triple at its new location.
-        (void)memcpy(
-            m_bytes + offsetof(db_metadata, free_list),
-            list_triple_buf.data(),
-            DB_METADATA_LIST_TRIPLE_BYTES);
-
-        // 4. Relocate db_offsets..latest_proposed_block_id from the stash,
-        //    dropping MONAD007's global auto_expire_version (sandwiched
-        //    between latest_proposed_version and latest_voted_block_id) since
-        //    MONAD008 promotes it to a per-timeline field in
-        //    timeline_state_t. Save the value, then copy the two halves
-        //    either side of the gap into the new gap-less layout. Offsets
-        //    into db_offsets_buf are relative to MONAD007_DB_OFFSETS_OFFSET.
-        static_assert(offsetof(db_metadata, db_offsets) == 312);
-        static_assert(offsetof(db_metadata, secondary_timeline) == 432);
-        constexpr size_t MONAD007_AUTO_EXPIRE_OFFSET =
-            MONAD007_DB_OFFSETS_OFFSET + 16 + 5 * 8; // 524384
-        constexpr size_t MONAD007_PRE_AUTO_EXPIRE_BYTES =
-            MONAD007_AUTO_EXPIRE_OFFSET - MONAD007_DB_OFFSETS_OFFSET; // 56
-        constexpr size_t MONAD007_POST_AUTO_EXPIRE_BYTES =
-            MONAD007_DB_OFFSETS_THROUGH_BLOCK_IDS_BYTES -
-            MONAD007_PRE_AUTO_EXPIRE_BYTES - 8; // 64
-        int64_t saved_auto_expire = 0;
-        (void)memcpy(
-            &saved_auto_expire,
-            db_offsets_buf.data() + MONAD007_PRE_AUTO_EXPIRE_BYTES,
-            sizeof(saved_auto_expire));
-        (void)memcpy(
-            m_bytes + offsetof(db_metadata, db_offsets),
-            db_offsets_buf.data(),
-            MONAD007_PRE_AUTO_EXPIRE_BYTES);
-        (void)memcpy(
-            m_bytes + offsetof(db_metadata, latest_voted_block_id),
-            db_offsets_buf.data() + MONAD007_PRE_AUTO_EXPIRE_BYTES + 8,
-            MONAD007_POST_AUTO_EXPIRE_BYTES);
-        // MONAD007 had no secondary, so the saved value belongs on what is now
-        // the primary.
-        m->root_offsets_state.auto_expire_version_ = saved_auto_expire;
-        // Stamp the primary timeline's state_machine_kind. The byte sat inside
-        // MONAD007's huge cnv_chunks[] (0xff for unused slots), which would
-        // trip create_state_machine()'s range check on the next open. MONAD007
-        // only supported ethereum.
-        m->root_offsets_state.state_machine_kind_ =
-            static_cast<uint8_t>(state_machine_kind::ethereum);
-        memset(
-            m->root_offsets_state.reserved_sm_,
-            0,
-            sizeof(m->root_offsets_state.reserved_sm_));
-
-        // 5. Zero the region between secondary_timeline and the live block
-        //    list (relocated in step 3). secondary_timeline_state
-        //    .state_machine_kind_ is left at zero (state_machine_kind
-        //    ::ethereum); secondary_timeline_active_ is also zero, so the byte
-        //    is unreachable until a later monad-mpt --activate-secondary
-        //    stamps the real kind.
-        auto *const new_fields_begin =
-            m_bytes + offsetof(db_metadata, secondary_timeline);
-        auto *const new_fields_end = m_bytes + offsetof(db_metadata, free_list);
-        memset(new_fields_begin, 0, size_t(new_fields_end - new_fields_begin));
-
-        // 6. Bump magic. The signal_fence keeps the preceding stores from
-        //    sinking past it under -O3 reordering; durability is enforced by
-        //    the caller's flush.
-        std::atomic_signal_fence(std::memory_order_seq_cst);
-        memcpy(m->magic, db_metadata::MAGIC, db_metadata::MAGIC_STRING_LEN);
-    }
-}
+    storage_pool::min_chunk_capacity / 2 >= sizeof(detail::db_metadata));
 
 DbMetadataContext::DbMetadataContext(AsyncIO &io)
     : io_(&io)
@@ -197,9 +76,7 @@ DbMetadataContext::DbMetadataContext(AsyncIO &io)
     mapflags_ = io_->storage_pool().is_read_only_allow_dirty() ? MAP_PRIVATE
                                                                : MAP_SHARED;
 
-    // Each copy gets a full half of cnv chunk 0 so the mapping holds any
-    // metadata layout (MONAD007's 528 KiB header or MONAD008's 4.4 KiB
-    // header) without a pre-mmap magic peek.
+    // Each copy gets a full half of cnv chunk 0.
     metadata_mmap_size_ = cnv_chunk.capacity() / 2;
     db_map_size_ = sizeof(detail::db_metadata) +
                    chunk_count * sizeof(detail::db_metadata::chunk_info_t);
@@ -249,90 +126,7 @@ DbMetadataContext::DbMetadataContext(AsyncIO &io)
         }
     }
 
-    // Migration: MONAD007 -> MONAD008. The fixed header shrank from
-    // 528512 to 4480 bytes; fields adjacent to root_offsets or at the
-    // tail of the header moved:
-    //
-    //   chunk_info[]              528512 -> 4480
-    //   free/fast/slow_list triple 528488 -> 4456  (last 24B of header)
-    //   db_offsets..latest_proposed_block_id (128B)  524328 -> 312
-    //
-    // root_offsets and its cnv_chunks[0..30] are byte-identical between
-    // layouts and are not moved. root_offsets_state (296..312) is seeded in
-    // step 4 (auto_expire from MONAD007's global, state_machine_kind stamped
-    // ethereum). The block at [432, 4456) — secondary_timeline,
-    // secondary_timeline_state, the role/identity bytes and
-    // pending_shrink_grow — was MONAD007 padding and is zeroed so new fields
-    // start at idle defaults. Each copy migrates under hold_dirty; the
-    // memmove/memcpy/memset operations preserve their sources, so a
-    // crash-replay is idempotent.
-    auto const is_previous_magic = [](detail::db_metadata const *m) {
-        return 0 == memcmp(
-                        m->magic,
-                        detail::db_metadata::PREVIOUS_MAGIC,
-                        detail::db_metadata::MAGIC_STRING_LEN);
-    };
-    if (is_previous_magic(copies_[0].main) ||
-        is_previous_magic(copies_[1].main)) {
-        if (!io_->storage_pool().is_migration_allowed()) {
-            MONAD_ABORT_PRINTF(
-                "DB is on older format (magic=%s) and this binary expects "
-                "%s. Run 'monad-mpt --upgrade --storage <path>' before "
-                "starting monad services.",
-                detail::db_metadata::PREVIOUS_MAGIC,
-                detail::db_metadata::MAGIC);
-        }
-        if (!can_write_to_map_) {
-            MONAD_ABORT_PRINTF(
-                "Detected pre-dual-timeline DB (magic=%s), which requires "
-                "writable mapping to migrate to %s. Open with write access.",
-                detail::db_metadata::PREVIOUS_MAGIC,
-                detail::db_metadata::MAGIC);
-        }
-        // Heal any dirty copy from its clean sibling before migration so
-        // the loop's hold_dirty cycles can't be confused with a real
-        // partial-write signal on a crash. memcpy (not db_copy) because
-        // the copies may still be on the previous metadata version.
-        for (size_t i = 0; i < 2; ++i) {
-            auto *const m = copies_[i].main;
-            if (!m->is_dirty().load(std::memory_order_acquire)) {
-                continue;
-            }
-            auto *const o = copies_[1 - i].main;
-            MONAD_ASSERT(
-                !o->is_dirty().load(std::memory_order_acquire),
-                "Both DB metadata copies are dirty — DB is unrecoverable, "
-                "restore from backup.");
-            (void)memcpy(m, o, metadata_mmap_size_);
-        }
-        for (auto const &copy : copies_) {
-            auto *const m = copy.main;
-            if (!is_previous_magic(m)) {
-                continue;
-            }
-            auto const g = m->hold_dirty();
-            detail::migrate_monad007_to_monad008(
-                m, static_cast<uint32_t>(chunk_count));
-            // The migration zero-fills the new secondary_timeline region, but
-            // the empty-ring sentinel is NULL_CHUNK (0xffffffff), not 0. A
-            // zeroed cnv_chunks[] slot decodes as cnv chunk id 0 — a *valid*
-            // chunk id, the one that holds db_metadata.
-            // activate_secondary_header would then MAP_FIXED the secondary ring
-            // onto cnv chunk 0 and 0xff-fill it, destroying both metadata
-            // copies. Re-initialise the secondary ring to the empty sentinel,
-            // as new-pool init does.
-            reset_secondary_ring_storage_(m);
-        }
-        // Flush the new layout before downstream code reads at the new
-        // offsets.
-        sync_metadata_to_disk_();
-        LOG_INFO(
-            "Migrated DB metadata from {} to {}.",
-            detail::db_metadata::PREVIOUS_MAGIC,
-            detail::db_metadata::MAGIC);
-    }
-
-    // Version mismatch detection (for any other version that we don't migrate)
+    // Version mismatch detection
     constexpr unsigned magic_version_len = 3;
     constexpr unsigned magic_prefix_len =
         detail::db_metadata::MAGIC_STRING_LEN - magic_version_len;
@@ -533,7 +327,7 @@ void DbMetadataContext::check_chunk_info_fits_(
         target,
         static_cast<unsigned long long>(
             MONAD_ASYNC_NAMESPACE::chunk_offset_t::max_id));
-    auto const needed = MONAD007_DB_METADATA_SIZE +
+    auto const needed = sizeof(detail::db_metadata) +
                         target * sizeof(detail::db_metadata::chunk_info_t);
     MONAD_ASSERT_PRINTF(
         metadata_mmap_size >= needed,
@@ -1158,11 +952,6 @@ void DbMetadataContext::replay_pending_shrink_grow_()
     sync_ring_data_to_disk_();
     sync_metadata_to_disk_();
     clear_pending_shrink_grow_();
-    sync_metadata_to_disk_();
-}
-
-void DbMetadataContext::sync_metadata_to_disk()
-{
     sync_metadata_to_disk_();
 }
 
@@ -1869,9 +1658,8 @@ void DbMetadataContext::init_new_pool(
     set_auto_expire_version_metadata(timeline_id::secondary, 0);
 
     // Zero the padding so any future field carved from it sees a
-    // consistent initial value on both fresh pools and pools migrated
-    // from earlier on-disk formats (the MONAD007->008 migration also
-    // zeros this region).
+    // consistent initial value on fresh pools, matching what the MONAD007 ->
+    // MONAD008 upgrade zeroed on every pool that already exists.
     for (auto const i : {0, 1}) {
         auto *const m = copies_[i].main;
         auto const g = m->hold_dirty();

@@ -219,7 +219,7 @@ TYPED_TEST(TraitsTest, txn_award)
     EXPECT_EQ(gas_price<typename TestFixture::Trait>(t0, 0u), 1'000);
     EXPECT_EQ(gas_price<typename TestFixture::Trait>(t1, 2'000u), 3'000);
     EXPECT_EQ(gas_price<typename TestFixture::Trait>(t2, 2'000u), 3'000);
-    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_LONDON) {
+    if constexpr (!TestFixture::Trait::eip_1559_header_active()) {
         EXPECT_EQ(gas_price<typename TestFixture::Trait>(t3, 2'000u), 5'000);
         EXPECT_EQ(gas_price<typename TestFixture::Trait>(t4, 2'000u), 5'000);
     }

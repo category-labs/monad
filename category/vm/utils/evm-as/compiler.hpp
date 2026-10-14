@@ -230,10 +230,8 @@ namespace monad::vm::utils::evm_as
                         size_t const offset = it->second;
                         size_t const n =
                             offset == 0 ? offset : byte_width(offset);
-                        if constexpr (traits::evm_rev() < MONAD_ETH_SHANGHAI) {
+                        if constexpr (!traits::eip_3855_active()) {
                             if (n == 0) {
-                                // Special case for zero offset before Shanghai,
-                                // as PUSH0 is not available.
                                 emit_byte(mc::EvmOpCode::PUSH1);
                                 emit_byte(0x00);
                                 return;
@@ -251,10 +249,8 @@ namespace monad::vm::utils::evm_as
                         static constexpr size_t addr_size = sizeof(Address);
                         // Emit the smallest possible PUSH opcode
                         size_t const least_n = addr_size - countl(push.address);
-                        if constexpr (traits::evm_rev() < MONAD_ETH_SHANGHAI) {
+                        if constexpr (!traits::eip_3855_active()) {
                             if (least_n == 0) {
-                                // Special case for zero address before
-                                // Shanghai, as PUSH0 is not available.
                                 emit_byte(mc::EvmOpCode::PUSH1);
                                 emit_byte(0x00);
                                 return;
@@ -388,9 +384,8 @@ namespace monad::vm::utils::evm_as
                             size_t offset = it->second;
                             if (offset == 0) {
                                 static constexpr std::string_view str =
-                                    traits::evm_rev() < MONAD_ETH_SHANGHAI
-                                        ? "PUSH1 0x00"
-                                        : "PUSH0";
+                                    !traits::eip_3855_active() ? "PUSH1 0x00"
+                                                               : "PUSH0";
                                 os << str;
                                 return str.size();
                             }
@@ -409,8 +404,7 @@ namespace monad::vm::utils::evm_as
                         static constexpr size_t addr_size = sizeof(Address);
                         size_t const least_n = addr_size - countl(push.address);
                         if (least_n == 0) {
-                            if constexpr (
-                                traits::evm_rev() < MONAD_ETH_SHANGHAI) {
+                            if constexpr (!traits::eip_3855_active()) {
                                 os << std::format("PUSH1 0x0");
                                 return 9;
                             }

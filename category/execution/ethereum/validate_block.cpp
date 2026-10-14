@@ -129,8 +129,7 @@ Result<void> static_validate_header(BlockHeader const &header)
         return BlockError::MissingField;
     }
 
-    // EIP-4895
-    if constexpr (traits::evm_rev() < MONAD_ETH_SHANGHAI) {
+    if constexpr (!traits::eip_4895_active()) {
         if (MONAD_UNLIKELY(header.withdrawals_root.has_value())) {
             return BlockError::FieldBeforeFork;
         }
@@ -259,8 +258,7 @@ Result<void> static_validate_4844_parent(
 template <Traits traits>
 Result<void> static_validate_body(Chain const &chain, Block const &block)
 {
-    // EIP-4895
-    if constexpr (traits::evm_rev() < MONAD_ETH_SHANGHAI) {
+    if constexpr (!traits::eip_4895_active()) {
         if (MONAD_UNLIKELY(block.withdrawals.has_value())) {
             return BlockError::FieldBeforeFork;
         }

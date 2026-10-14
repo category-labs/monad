@@ -254,7 +254,7 @@ TYPED_TEST(TraitsTest, TopLevelCreate)
         }
     }
     else {
-        if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_SHANGHAI) {
+        if constexpr (TestFixture::Trait::eip_3860_active()) {
             ASSERT_TRUE(receipt.has_error());
         }
         else {

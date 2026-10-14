@@ -257,8 +257,7 @@ evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
         auth_refund = process_authorizations(state, host);
     }
 
-    // EIP-3651
-    if constexpr (traits::evm_rev() >= MONAD_ETH_SHANGHAI) {
+    if constexpr (traits::eip_3651_active()) {
         host.access_account(header_.beneficiary);
     }
 

@@ -108,8 +108,7 @@ Result<void> static_validate_transaction(
         return TransactionError::PriorityFeeGreaterThanMax;
     }
 
-    // EIP-3860
-    if constexpr (traits::evm_rev() >= MONAD_ETH_SHANGHAI) {
+    if constexpr (traits::eip_3860_active()) {
         // In `MONAD_TWO`, the maximum code size for contracts was increased
         // without explicitly changing every corresponding check on initcode
         // size. This meant that in some places, the maximum initcode size was

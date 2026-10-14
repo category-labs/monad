@@ -38,6 +38,9 @@ class NibblesView;
 class Node;
 
 constexpr bool operator==(NibblesView const &a, NibblesView const &b);
+// How far two nibble runs agree: the index of the first differing nibble, or
+// min(size) when the shorter is a prefix of the longer.
+constexpr unsigned nibble_mismatch(NibblesView const &a, NibblesView const &b);
 constexpr std::strong_ordering
 operator<=>(NibblesView const &a, NibblesView const &b);
 
@@ -217,6 +220,14 @@ public:
         return data_;
     }
 
+    // Parity of the first nibble within data()'s first byte. Callers that
+    // walk a path by whole bytes need it to know whether the run is
+    // byte-aligned or displaced by one nibble.
+    [[nodiscard]] constexpr bool begin_nibble() const noexcept
+    {
+        return begin_nibble_;
+    }
+
     [[nodiscard]] bool empty() const noexcept
     {
         return !data_;
@@ -253,10 +264,28 @@ public:
 
     bool starts_with(NibblesView const other) const
     {
-        if (nibble_size() < other.nibble_size()) {
-            return false;
+        return nibble_size() >= other.nibble_size() &&
+               nibble_mismatch(*this, other) == other.nibble_size();
+    }
+
+    // Equivalent to *this = substr(1), but updates the pointer and nibble
+    // parity directly. Requires a non-empty view; resets to null if emptied.
+    constexpr void drop_front1()
+    {
+        MONAD_ASSERT(nibble_size() != 0);
+        if (begin_nibble_) {
+            ++data_;
+            begin_nibble_ = false;
+            end_nibble_ = static_cast<size_type>(end_nibble_ - 2);
         }
-        return substr(0, other.nibble_size()) == other;
+        else {
+            begin_nibble_ = true;
+        }
+        if (end_nibble_ == static_cast<size_type>(begin_nibble_)) {
+            data_ = nullptr;
+            begin_nibble_ = false;
+            end_nibble_ = 0;
+        }
     }
 
     [[nodiscard]] unsigned char get(unsigned const i) const
@@ -280,6 +309,70 @@ inline Nibbles::Nibbles(NibblesView const nibbles)
     }
 }
 
+// 16 nibbles at a time as a big-endian word, aligning an odd start with a 4-bit
+// shift, with the position of the first difference read out of the XOR: leading
+// zeros / 4.
+//
+// The reads never go past the nibbles being compared: the 16-nibble guard makes
+// the 8-byte load cover exactly the chunk, including the extra byte an odd
+// start needs.
+constexpr unsigned nibble_mismatch(NibblesView const &a, NibblesView const &b)
+{
+    // Neither run can be compared past the shorter of the two.
+    unsigned const common =
+        a.nibble_size() < b.nibble_size() ? a.nibble_size() : b.nibble_size();
+    // The answer, carried through both loops.
+    unsigned matched = 0;
+    // The chunked path needs 16 nibbles to read: below that the loop
+    // would not run and the tail is keyed off matched, so the whole
+    // block is dead. Stated here rather than left implicit, so that a
+    // short run cannot reach an 8-byte load of a smaller buffer.
+    if (!std::is_constant_evaluated() && common >= 16) {
+        auto const chunk = [](unsigned char const *const p, unsigned const s) {
+            // The 16 nibbles starting at nibble s; p + s / 2 holds the first
+            std::uint64_t v;
+            std::memcpy(&v, p + s / 2, sizeof(v));
+            // Byte-swap, so nibble s becomes the most significant one
+            std::uint64_t const be = __builtin_bswap64(v);
+            return (s % 2 == 0)
+                       ? be
+                       : ((be << 4) |
+                          static_cast<std::uint64_t>(p[s / 2 + 8] >> 4));
+        };
+        while (common - matched >= 16) {
+            std::uint64_t const diff =
+                chunk(a.data(), a.begin_nibble() + matched) ^
+                chunk(b.data(), b.begin_nibble() + matched);
+            if (diff) {
+                // A zero xor would mean equality, so the first bit set is the
+                // first disagreement, and clzll / 4 is its nibble index.
+                return matched +
+                       static_cast<unsigned>(__builtin_clzll(diff) / 4);
+            }
+            matched += 16;
+        }
+        // Compare the tail using the last 16 nibbles; i != 0 ensures they
+        // exist.
+        // The overlap was already checked equal, so any mismatch is the first
+        // remaining one. Uses the same load footprint as a forward chunk.
+        if (matched != 0 && matched != common) {
+            unsigned const tail = common - 16;
+            std::uint64_t const diff =
+                chunk(a.data(), a.begin_nibble() + tail) ^
+                chunk(b.data(), b.begin_nibble() + tail);
+            return diff
+                       ? tail + static_cast<unsigned>(__builtin_clzll(diff) / 4)
+                       : common;
+        }
+    }
+    for (; matched < common; ++matched) {
+        if (a.get(matched) != b.get(matched)) {
+            return matched;
+        }
+    }
+    return common;
+}
+
 constexpr bool operator==(NibblesView const &a, NibblesView const &b)
 {
     if (&a == &b) {
@@ -288,12 +381,7 @@ constexpr bool operator==(NibblesView const &a, NibblesView const &b)
     if (a.nibble_size() != b.nibble_size()) {
         return false;
     }
-    for (auto i = 0u; i < a.nibble_size(); ++i) {
-        if (a.get(i) != b.get(i)) {
-            return false;
-        }
-    }
-    return true;
+    return nibble_mismatch(a, b) == a.nibble_size();
 }
 
 constexpr std::strong_ordering

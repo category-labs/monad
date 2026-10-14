@@ -22,7 +22,9 @@
 #include <category/core/bytes.hpp>
 #include <category/core/cases.hpp>
 #include <category/core/config.hpp>
+#include <category/core/likely.h>
 #include <category/core/rlp/encode.hpp>
+#include <category/core/zisk_codegen.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/rlp/bytes_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/int_rlp.hpp>
@@ -87,6 +89,21 @@ struct node_rlp_span : private std::span<unsigned char>
         return std::span<unsigned char>::data() + size();
     }
 
+    // The start of the whole buffer, which an RLP written at its end leaves
+    // alone up to rlp_data().
+    unsigned char *base() const
+    {
+        return std::span<unsigned char>::data();
+    }
+
+    // `b` written just before the RLP already there, without back()'s room
+    // test: for a caller whose whole output is bounded under Capacity.
+    node_rlp_span prepend_unchecked(unsigned char const b) const
+    {
+        std::span<unsigned char>::data()[size() - 1] = b;
+        return node_rlp_span{std::span<unsigned char>::first(size() - 1)};
+    }
+
     size_t rlp_size() const
     {
         return Capacity - size();
@@ -136,9 +153,19 @@ using node_id_wire_t = uint32_t;
 
 inline constexpr size_t HASH_RLP_LEN = KECCAK256_SIZE + 1; // 0xa0 ‖ 32 B
 using hash_rlp_view = std::span<unsigned char const, HASH_RLP_LEN>;
+// A digest node's own size in the blob: DIGEST ‖ 32 B. Numerically the same
+// as HASH_RLP_LEN, but a different thing -- a node's extent, not an RLP
+// length.
+inline constexpr size_t DIGEST_NODE_LEN = KECCAK256_SIZE + 1;
 // Widest that run can get: 1 + 8 for the nonce, 1 + 32 for the balance. Both
 // are RLP-zeroless, so real accounts sit far below this.
 inline constexpr size_t MAX_NONCE_BALANCE_RLP_LEN = 42;
+
+// A path as a node stores it: the 1-byte nibble count then ceil(nlen/2) packed
+// nibbles. A key is 64 nibbles, so a whole one is 33 bytes. Used only to size a
+// node buffer up front, where an under-estimate would cost a reallocation and
+// nothing else.
+inline constexpr size_t MAX_STORED_PATH_LEN = 1 + 64 / 2;
 
 // Splits the NodeId space by the wire field's high bit: blob offsets live
 // below it, fresh overlay ids at/above it. The OffsetTrie constructor rejects
@@ -157,8 +184,22 @@ struct NodeIdHash
 
     uint64_t operator()(NodeId const id) const noexcept
     {
+#ifdef MONAD_ZKVM_ZISK
+        // Fibonacci, not wyhash. An id is a byte offset into the blob, so ids
+        // are ascending and at least a node apart -- they need spreading, but
+        // they need it in one direction only, and multiplying by an odd
+        // constant close to 2^64/phi puts the entropy in the high bits, which
+        // is the half unordered_dense takes its bucket from.
+        //
+        // unordered_dense::hash<uint64_t> is wyhash, whose mix is a 128-bit
+        // multiply: two multiplies where this has one, and ZisK prices a
+        // multiply at 97 cells against 15 for an add. This map is consulted
+        // once per child of every node the trie encodes.
+        return static_cast<uint64_t>(id) * 0x9E3779B97F4A7C15ull;
+#else
         return ankerl::unordered_dense::hash<uint64_t>{}(
             static_cast<uint64_t>(id));
+#endif
     }
 };
 
@@ -518,9 +559,227 @@ decltype(auto) match(NodeViewBase n, Fs &&...fs)
 class OffsetTrie
 {
     byte_string_view blob_;
+    // blob_.size() - HEADER_LEN, so the two-sided bound get_original tests is
+    // ONE unsigned compare against a value already formed. read_root has
+    // asserted blob_.size() >= HEADER_LEN before any lookup can run.
+    uint64_t blob_span_;
+#if defined(MONAD_ZKVM_ZISK)
+    // The overlay by id, laid out as the hashes are below: a blob id's node at
+    // blob_overlay_slots_[id / 4], a fresh id's at
+    // fresh_overlay_slots_[id - OVERLAY_BASE]. A slot holds the node's bytes or
+    // null; each is its own allocation, so an address outlives every insert.
+    byte_string **blob_overlay_slots_{nullptr};
+    byte_string **fresh_overlay_slots_{nullptr};
+#else
     ankerl::unordered_dense::map<NodeId, byte_string, NodeIdHash> overlay_{};
-    ankerl::unordered_dense::map<NodeId, bytes32_t, NodeIdHash> hashes_{};
+#endif
+
+    // A cached hash, and whether it is still the node's. The entry stays where
+    // it is with its flag down, and the next hash of that id overwrites it in
+    // place.
+    struct CachedHash
+    {
+        bytes32_t h;
+        // A word and not a bool. The flag is read on every hash lookup and
+        // written on every insert, and ZisK charges a 1-byte read 41 cells and
+        // a 1-byte write 66, against 16 and 18 for an aligned word. The width
+        // is free: the padding below fixes the pair at 64 bytes either way.
+        uint64_t valid;
+#if defined(MONAD_ZKVM_ZISK)
+        // A primed node's RLP, in the window the priming sweep encoded it in,
+        // and the children whose refs have changed since: bit k for a
+        // branch's child k, bit 0 for an extension's. A patch rewrites every
+        // dirty child's ref there, in place, so the window holds the priming
+        // RLP with those refs as the last patch left them. See encode_current.
+        unsigned char *rlp;
+        uint64_t rlp_len;
+        uint64_t dirty;
+#else
+        // Pad std::pair<NodeId, CachedHash> to 64 bytes so unordered_dense can
+        // convert between entry indices and addresses using shifts instead of
+        // multiplication or division by 48. Trades extra memory for cheaper
+        // indexing.
+        [[maybe_unused]] uint64_t pad_[2];
+#endif
+    };
+
+#if !defined(MONAD_ZKVM_ZISK)
+    // Asserted, because losing it is silent: the index arithmetic goes back to
+    // a reciprocal multiply and nothing else changes -- just a slower guest.
+    static_assert(sizeof(std::pair<NodeId, CachedHash>) == 64);
+#endif
+
+#if defined(MONAD_ZKVM_ZISK)
+    // The cached hashes by id, reached without hashing it. A blob node's slot
+    // is blob_hash_slots_[id / 4]: no two node starts share four bytes, the
+    // shortest node -- an extension with an empty path -- being six long. A
+    // fresh node's is fresh_hash_slots_[id - OVERLAY_BASE]. A slot holds its
+    // entry's address or null, and entries are carved from chunks that never
+    // move. The tables are bump memory, which ZisK reads as zero until it is
+    // written, so nothing is cleared. Every lookup follows a get_original or
+    // get_current of the same id, which bounds a blob id by the blob.
+    static constexpr uint64_t FRESH_HASH_SLOTS = uint64_t{1} << 20;
+    CachedHash **blob_hash_slots_{nullptr};
+    CachedHash **fresh_hash_slots_{nullptr};
+    CachedHash *hash_pool_{nullptr};
+    CachedHash *hash_pool_end_{nullptr};
+
+    void refill_hash_pool(size_t entries);
+
+    // The constructor's copy of the branch it validates and primes: its
+    // payload lies at any offset, so reading the children in place crosses a
+    // word seven times in eight, and the priming encode copied them again.
+    // The children are primed_slots_[2..18), 8-aligned, over a slot that
+    // stays zero: a digest run in the claims pass ends on it without a bound
+    // test.
+    alignas(8) node_id_wire_t primed_slots_[2 + 16]{};
+    static constexpr size_t PRIMED_CHILDREN = 2;
+
+    // The constructor's claim marks, for the branches whose priming encode
+    // claims their children, and the claims those encodes made, in the
+    // constructor's unit: DIGEST_NODE_LEN a claim.
+    unsigned char *claim_marks_{nullptr};
+    size_t claimed_bytes_{0};
+
+    // The priming sweep encodes each node at the end of its own window, which
+    // a hashed node keeps as its CachedHash::rlp. Windows are carved from
+    // chunks that never move, RLP_WINDOW_STRIDE apart: a multiple of eight,
+    // so a kept RLP starts at the alignment an 8-aligned buffer's copy of it
+    // does, which keeps encode_current's copy on DMA's cheap path.
+    static constexpr size_t RLP_WINDOW_STRIDE = 704;
+    static_assert(
+        RLP_WINDOW_STRIDE >= MAX_NODE_RLP && RLP_WINDOW_STRIDE % 8 == 0);
+    unsigned char *rlp_window_{nullptr};
+    unsigned char *rlp_windows_end_{nullptr};
+
+    void refill_rlp_windows();
+
+    // A descent through `e`'s node that leaves the node's bytes alone: the
+    // ref of its child `bit` changes (bit 0 for an extension's child).
+    static void mark_dirty(CachedHash *const e, unsigned const bit)
+    {
+        if (e != nullptr) {
+            e->dirty |= uint64_t{1} << bit;
+        }
+    }
+
+    CachedHash *new_hash_entry()
+    {
+        if (MONAD_UNLIKELY(hash_pool_ == hash_pool_end_)) {
+            refill_hash_pool(1024);
+        }
+        return hash_pool_++;
+    }
+
+    CachedHash *&hash_slot(NodeId const id) const
+    {
+        uint64_t const v = static_cast<uint64_t>(id);
+        if (MONAD_LIKELY(v < OVERLAY_BASE)) {
+            return blob_hash_slots_[v >> 2];
+        }
+        MONAD_ASSERT(v - OVERLAY_BASE < FRESH_HASH_SLOTS);
+        return fresh_hash_slots_[v - OVERLAY_BASE];
+    }
+#else
+    ankerl::unordered_dense::map<NodeId, CachedHash, NodeIdHash> hashes_{};
+#endif
+
+    // The cached hash of `id`, or nullptr: absent and present-but-invalid are
+    // the same answer. The pointer dies at the next insert.
+    [[nodiscard]] bytes32_t const *cached_hash(NodeId const id) const
+    {
+#if defined(MONAD_ZKVM_ZISK)
+        CachedHash const *const e = hash_slot(id);
+        return (e != nullptr && e->valid) ? &e->h : nullptr;
+#else
+        auto const it = hashes_.find(id);
+        return (it != hashes_.end() && it->second.valid) ? &it->second.h
+                                                         : nullptr;
+#endif
+    }
+
+    // Invalidate without erasing; the entry, or nullptr.
+    CachedHash *drop_hash(NodeId const id)
+    {
+#if defined(MONAD_ZKVM_ZISK)
+        CachedHash *const e = hash_slot(id);
+        if (e != nullptr) {
+            e->valid = false;
+        }
+        return e;
+#else
+        if (auto const it = hashes_.find(id); it != hashes_.end()) {
+            it->second.valid = false;
+            return &it->second;
+        }
+        return nullptr;
+#endif
+    }
+
+    // Cache `h` as the hash of `id`.
+    void store_hash(NodeId const id, bytes32_t const &h)
+    {
+#if defined(MONAD_ZKVM_ZISK)
+        CachedHash *&slot = hash_slot(id);
+        if (slot == nullptr) {
+            slot = new_hash_entry();
+        }
+        slot->h = h;
+        slot->valid = true;
+#else
+        hashes_.insert_or_assign(id, CachedHash{h, true});
+#endif
+    }
+
     NodeId next_id_{OVERLAY_BASE}; // fresh-id counter (>= OVERLAY_BASE)
+
+    // Negative filter in front of overlay_.
+    // A Bloom filter, not a fingerprint table: insertion only ever *sets*
+    // bits, so a false negative — which would silently skip a real overlay
+    // entry — is impossible by construction. False positives fall through to
+    // the real find and cost only the filter.
+    //
+    // 32,768 bits = 4 KB. At ~1,341 entries that is load 0.041, and with a
+    // single probe the false positive rate is about the load: ~4 %. Sized to
+    // the shadow set, not to the blob: a bitmap over blob offsets would be
+    // ~940 KB on a 7.5 MB witness. overlay_ is written in exactly two places
+    // and never erased or cleared, so the filter never needs a bit unset.
+#if !defined(MONAD_ZKVM_ZISK)
+    static constexpr unsigned OVERLAY_FILTER_WORDS = 512; // 32,768 bits
+    std::array<uint64_t, OVERLAY_FILTER_WORDS> overlay_filter_{};
+
+    static constexpr unsigned overlay_filter_bit(NodeId const id)
+    {
+        // The top 15 bits of the Fibonacci hash: multiply by ⌊2^64/φ⌋,
+        // which carries the low bits of `id` upward, and keep 15 -- the
+        // filter's size.
+        //
+        // The multiplier has to be 64-bit. With a 32-bit one the product
+        // tops out near 2^54, so `>> 49` keeps about five usable bits and
+        // the filter stops filtering: measured at 100 % false positives.
+        return static_cast<unsigned>(
+            (static_cast<uint64_t>(id) * 0x9E3779B97F4A7C15ull) >> 49);
+    }
+
+    void overlay_filter_mark(NodeId const id)
+    {
+        unsigned const b = overlay_filter_bit(id);
+        // b >> 6 = b / 64 is the index of the word in overlay_filter;
+        // b & 63 = b % 64 is the index of the bit to set to one.
+        // |= uint64_t{1} << (b & 63) sets the bit to 1 in
+        // overlay_filter_[b >> 6].
+        overlay_filter_[b >> 6] |= uint64_t{1} << (b & 63);
+    }
+
+    [[nodiscard]] bool overlay_filter_may_contain(NodeId const id) const
+    {
+        unsigned const b = overlay_filter_bit(id);
+        // overlay_filter_[b >> 6] >> (b & 63) puts the targeted bit in
+        // position 0, & 1 returns 1 iff this bit is 1
+        return (overlay_filter_[b >> 6] >> (b & 63)) & 1;
+    }
+#endif
+
 public:
     // Wrap the read-only node blob, structurally validate it, and prime the
     // hash cache (see prime()). Aborts if the blob is malformed.
@@ -545,9 +804,17 @@ public:
     {
         // NULL_ID resolves to the blob's first magic byte, i.e. the EMPTY
         // tag
+        //
+        // `id - HEADER_LEN < blob_.size() - HEADER_LEN` is the SAME predicate
+        // as `id >= HEADER_LEN && id < blob_.size()`: an id below HEADER_LEN
+        // wraps to at least 2^64 - HEADER_LEN, which exceeds any blob
+        // (read_root asserts blob_.size() <= OVERLAY_BASE), and an overlay id
+        // is rejected by the same bound it is rejected by today. Two priced
+        // `ltu` at 60 cells become one, and the low bound stops needing its own
+        // constant.
         MONAD_ASSERT(
-            id == NULL_ID || (static_cast<uint64_t>(id) >= HEADER_LEN &&
-                              static_cast<uint64_t>(id) < blob_.size()));
+            id == NULL_ID ||
+            static_cast<uint64_t>(id) - HEADER_LEN < blob_span_);
         return NodeViewBase{blob_.data() + static_cast<uint64_t>(id)};
     }
 
@@ -558,11 +825,31 @@ public:
     // has materialised: it reads as empty.
     NodeViewBase get_current(NodeId const id) const
     {
+#if defined(MONAD_ZKVM_ZISK)
+        uint64_t const v = static_cast<uint64_t>(id);
+        if (MONAD_LIKELY(v < OVERLAY_BASE)) {
+            // get_original asserts the id first: only a bounded id's slot is
+            // read.
+            NodeViewBase const original = get_original(id);
+            byte_string const *const n = blob_overlay_slots_[v >> 2];
+            return n != nullptr ? NodeViewBase{n->data()} : original;
+        }
+        MONAD_ASSERT(v - OVERLAY_BASE < FRESH_HASH_SLOTS);
+        byte_string const *const n = fresh_overlay_slots_[v - OVERLAY_BASE];
+        return n != nullptr ? NodeViewBase{n->data()} : empty();
+#else
+        // 97.7 % of these lookups find nothing; the filter answers those in
+        // ten instructions instead of forty-two. A negative is certain, so
+        // this cannot skip a live entry.
+        if (!overlay_filter_may_contain(id)) {
+            return is_overlay_id(id) ? empty() : get_original(id);
+        }
         auto const it = overlay_.find(id);
         if (it != overlay_.end()) {
             return NodeViewBase{it->second.data()};
         }
         return is_overlay_id(id) ? empty() : get_original(id);
+#endif
     }
 
     // Walk the (pre-state) trie rooted at `id` following `key`; return the
@@ -576,7 +863,7 @@ public:
     NodeId put_acct(NodeId, NibblesView, Account const &, NodeId);
     // Copies account data verbatim but appends a new path
     NodeId clone_acct(NodeId id, AccountLeafView acc, NibblesView new_path);
-    std::pair<NodeId, Nibbles>
+    std::pair<NodeId, NibblesView>
     upsert_node(NodeId const id, NibblesView const key);
 
     // What the node at the erased key's ancestor has to do about it. There is
@@ -592,17 +879,10 @@ public:
     };
     EraseResult erase_node(NodeId, NibblesView);
 
-    // keccak of the (current) trie rooted at `id`; NULL_ID -> NULL_ROOT.
-    // Serves the account root and the storage sub-root an account leaf spans.
-    // Consults hashes_; recomputes + caches a missing id.
-    //
-    // `id` must be a trie root. Unlike the priming pass this caches whatever
-    // it is given, and child_ref consults hashes_ before deciding whether to
-    // inline, so a cached id whose canonical RLP is under 32 B would be
-    // hash-referenced by its parent where the trie inlines it. Roots are
-    // exempt because they are never inlined — and both call sites hand over a
-    // node that spells a whole 64-nibble key, or a branch, so is over 32 B
-    // anyway.
+    // Cached root hash; NULL_ID maps to NULL_ROOT. Used for account and
+    // storage roots. Only pass trie roots: caching a non-root whose RLP is
+    // <32 bytes would make child_ref hash-reference it instead of inlining
+    // it.
     bytes32_t hash(NodeId id);
     bytes32_t state_root();
 
@@ -613,11 +893,21 @@ private:
     node_rlp_span child_ref_compute(
         NodeId const id, NodeViewBase const node, node_rlp_span dest);
 
+    // The current canonical RLP of `id`, whose current bytes are `node`, at
+    // the end of `buf`. On ZisK a primed node the block has not rewritten is
+    // its priming RLP with its dirty children's refs recomputed.
+    node_rlp_span encode_current(
+        NodeId id, NodeViewBase node, unsigned char (&buf)[MAX_NODE_RLP]);
+#if defined(MONAD_ZKVM_ZISK)
+    size_t patch_rlp(CachedHash const &e, NodeViewBase node);
+    bool patch_ref(NodeId child, unsigned char *ref, size_t ref_len);
+#endif
+
     template <bool priming_pass>
     inline node_rlp_span child_ref(NodeId const id, node_rlp_span dest)
     {
         if (id == NULL_ID) {
-            dest.back() = 0x80; // RLP empty string
+            dest.back() = zx(0x80); // RLP empty string
             return dest.shrink(1);
         }
         // Pre-state (priming) reads bound-check and resolve against the blob;
@@ -641,9 +931,8 @@ private:
                     return encode_rlp(d.hash_rlp(), dest);
                 },
                 [&](auto) {
-                    if (auto const it = hashes_.find(id); it != hashes_.end()) {
-                        bytes32_t const &hash = it->second;
-                        return encode_rlp(hash, dest);
+                    if (auto const *const hit = cached_hash(id)) {
+                        return encode_rlp(*hit, dest);
                     }
                     return child_ref_compute<priming_pass>(id, node, dest);
                 }});
@@ -653,7 +942,7 @@ private:
     {
         static_assert(HASH_RLP_LEN == KECCAK256_SIZE + 1);
         auto const hash_span = dest.last(HASH_RLP_LEN);
-        hash_span[0] = 0xa0;
+        hash_span[0] = zx(0xa0);
         std::memcpy(hash_span.data() + 1, hash32.bytes, KECCAK256_SIZE);
         return dest.shrink(HASH_RLP_LEN);
     }
@@ -666,8 +955,16 @@ private:
 
     // The node's full canonical Ethereum RLP. Reads `node`'s fields and
     // resolves its children through child_ref.
-    template <bool priming_pass = false>
-    node_rlp_span encode_rlp(NodeViewBase node, node_rlp_span dest);
+    // `children`, when given, is an aligned copy of a branch's sixteen
+    // children the caller already holds; otherwise the branch copies its own.
+    // `claims`: the priming encode of a branch the constructor has not
+    // validated claims its children itself, as it first reads them (ZisK).
+    // Its `children` are the constructor's copy, whose slot below the first
+    // is zero.
+    template <bool priming_pass = false, bool claims = false>
+    node_rlp_span encode_rlp(
+        NodeViewBase node, node_rlp_span dest,
+        node_id_wire_t const *children = nullptr);
 
     NodeId fresh_id();
 

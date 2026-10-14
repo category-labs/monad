@@ -28,9 +28,11 @@
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/account_state.hpp>
-#include <category/execution/ethereum/state3/version_stack.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/vm/code.hpp>
+#if defined(MONAD_ZKVM_ZISK)
+    #include <category/vm/evm/delegation.hpp>
+#endif
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
@@ -48,6 +50,18 @@
 
 MONAD_NAMESPACE_BEGIN
 
+namespace
+{
+    // end minus begin: size() would divide it by the element's size.
+    template <typename T>
+    [[gnu::always_inline]] inline size_t bytes_of(std::vector<T> const &v)
+    {
+        return static_cast<size_t>(
+            reinterpret_cast<char const *>(std::to_address(v.cend())) -
+            reinterpret_cast<char const *>(v.data()));
+    }
+}
+
 OriginalAccountState &State::original_account_state(Address const &address)
 {
     auto it = original_.find(address);
@@ -61,10 +75,13 @@ OriginalAccountState &State::original_account_state(Address const &address)
 
 AccountState const &State::recent_account_state(Address const &address)
 {
+    if (AccountState *const m = memoised(address); m != nullptr) {
+        return *m;
+    }
     // current
     auto const it = current_.find(address);
     if (it != current_.end()) {
-        return it->second.recent();
+        return it->second;
     }
     // original
     return original_account_state(address);
@@ -72,17 +89,150 @@ AccountState const &State::recent_account_state(Address const &address)
 
 AccountState &State::current_account_state(Address const &address)
 {
+    MONAD_GUEST_SITE(ACCT_LOOKUP);
+
+    // Reuse the cached account; register it as dirty again if the frame
+    // epoch changed.
+    if (memo_val_ != nullptr && address == memo_addr_) {
+        MONAD_GUEST_SITE(ACCT_MEMO_HIT);
+        if (memo_epoch_ != frame_epoch_) {
+#if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
+            if (!dirty_.empty()) {
+                MONAD_GUEST_SITE(DIRTY_EMPLACE);
+                // Track the account only; each mutation records its own undo
+                // state.
+                dirty_.back().emplace(address);
+            }
+#endif
+            memo_epoch_ = frame_epoch_;
+        }
+        return *memo_val_;
+    }
+
     // current
     auto it = current_.find(address);
+    bool created = false;
     if (MONAD_UNLIKELY(it == current_.end())) {
+        MONAD_GUEST_SITE(ACCT_FIND_MISS);
         // original
-        auto const &account_state = original_account_state(address);
-        it = current_.try_emplace(address, account_state, version_).first;
+        auto &account_state = original_account_state(address);
+        it = current_.try_emplace(address, account_state).first;
+        it->second.orig_ = &account_state;
+        created = true;
+        // Record creation separately from dirty tracking.
+        journal_created(address);
     }
+#if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
     if (!dirty_.empty()) {
+        MONAD_GUEST_SITE(DIRTY_EMPLACE);
         dirty_.back().emplace(address);
     }
-    return it->second.current(version_);
+#endif
+    (void)created;
+    memo_addr_ = address;
+    memo_val_ = &it->second;
+    memo_epoch_ = frame_epoch_;
+    return it->second;
+}
+
+// Save each mutation separately. Outside a frame, no undo record is needed.
+void State::journal_created(Address const &address)
+{
+    if (!journalling()) {
+        return;
+    }
+    undo_.emplace_back(address, Undo::Kind::Created, 0);
+}
+
+void State::journal_account(Address const &address, AccountState const &row)
+{
+    if (!journalling()) {
+        return;
+    }
+    undo_.emplace_back(address, Undo::Kind::AccountWhole, undo_accts_.size());
+    undo_accts_.push_back(row.account_);
+}
+
+void State::journal_balance(Address const &address, uint256_t const &prev)
+{
+    if (!journalling()) {
+        return;
+    }
+    bytes32_t w;
+    // Raw bytes, saved and restored verbatim. Nothing reads them as a number in
+    // between, so this is a copy and not a conversion.
+    static_assert(sizeof(w.bytes) == sizeof(prev));
+    __builtin_memcpy(w.bytes, &prev, sizeof(w.bytes));
+    undo_.emplace_back(address, Undo::Kind::Balance, undo_words_.size());
+    undo_words_.push_back(w);
+}
+
+void State::journal_code_hash(Address const &address, bytes32_t const &prev)
+{
+    if (!journalling()) {
+        return;
+    }
+    undo_.emplace_back(address, Undo::Kind::CodeHash, undo_words_.size());
+    undo_words_.push_back(prev);
+}
+
+void State::journal_nonce(Address const &address, std::uint64_t const prev)
+{
+    if (!journalling()) {
+        return;
+    }
+    undo_.emplace_back(address, Undo::Kind::Nonce, undo_u64_.size());
+    undo_u64_.push_back(prev);
+}
+
+void State::journal_flag(Address const &address, Undo::Kind const which)
+{
+    if (!journalling()) {
+        return;
+    }
+    undo_.emplace_back(address, which, 0);
+}
+
+void State::journal_warm_slot(Address const &address, bytes32_t const &key)
+{
+    if (!journalling()) {
+        return;
+    }
+    undo_.emplace_back(address, Undo::Kind::WarmSlot, undo_words_.size());
+    undo_words_.push_back(key);
+}
+
+// `prev` is the caller's probe of this row's slot, not one of our own: the
+// journal record, the status computation and the write all wanted it, and each
+// used to look it up again.
+void State::journal_slot(
+    Address const &address, bytes32_t const &key, bytes32_t const *const prev)
+{
+    if (!journalling()) {
+        return;
+    }
+    undo_.emplace_back(address, Undo::Kind::Slot, undo_slots_.size());
+    undo_slots_.emplace_back(key, prev ? *prev : bytes32_t{}, prev != nullptr);
+}
+
+void State::journal_transient(
+    Address const &address, AccountState const &row, bytes32_t const &key)
+{
+    if (!journalling()) {
+        return;
+    }
+    bytes32_t const *const prev = row.transient_storage_.find(key);
+    undo_.emplace_back(address, Undo::Kind::Transient, undo_slots_.size());
+    undo_slots_.emplace_back(key, prev ? *prev : bytes32_t{}, prev != nullptr);
+}
+
+void State::journal_pages(Address const &address, AccountState const &row)
+{
+    if (!journalling()) {
+        return;
+    }
+    undo_.emplace_back(address, Undo::Kind::Pages, undo_pages_.size());
+    undo_pages_.push_back(row.page_tracker_);
 }
 
 std::optional<Account> &State::current_account(Address const &address)
@@ -98,6 +248,20 @@ State::State(
     , relaxed_validation_{relaxed_validation}
     , rb_{this}
 {
+    // Reserve initial capacity to avoid repeated growth for each transaction.
+    // The guest's bump allocator does not reclaim old allocations.
+    // Containers can still grow beyond this floor.
+    constexpr size_t FLOOR = 16;
+    original_.reserve(FLOOR);
+    current_.reserve(FLOOR);
+    undo_.reserve(FLOOR);
+    undo_accts_.reserve(FLOOR);
+    undo_words_.reserve(FLOOR);
+    undo_u64_.reserve(FLOOR);
+    undo_slots_.reserve(FLOOR);
+    undo_marks_.reserve(FLOOR);
+    logs_.reserve(FLOOR);
+    log_marks_.reserve(FLOOR);
 }
 
 State::Map<Address, OriginalAccountState> const &State::original() const
@@ -105,7 +269,7 @@ State::Map<Address, OriginalAccountState> const &State::original() const
     return original_;
 }
 
-State::Map<Address, VersionStack<AccountState>> const &State::current() const
+State::Map<Address, AccountState> const &State::current() const
 {
     return current_;
 }
@@ -115,39 +279,81 @@ State::Map<bytes32_t, vm::SharedVarcode> const &State::code() const
     return code_;
 }
 
-State::Set<Address> const &State::current_frame_dirty_accounts() const
+#if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
+DirtyAccounts const &State::current_frame_dirty_accounts() const
 {
     MONAD_ASSERT(version_);
     MONAD_ASSERT(dirty_.size() == version_);
 
     return dirty_.back();
 }
+#endif
 
 void State::push()
 {
+#if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
     MONAD_ASSERT(dirty_.size() == version_);
+#else
+    MONAD_ASSERT(undo_marks_.size() == version_);
+    MONAD_ASSERT(
+        !rb_.tracking_enabled(), "reserve tracking requires dirty accounts");
+#endif
+
+    ++frame_epoch_;
 
     ++version_;
+#if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
     dirty_.emplace_back();
+#endif
+    // Built in the vector: a pushed UndoMark is built on the stack and then
+    // copied in, 64 bytes a frame.
+    undo_marks_.emplace_back(
+        undo_.size(),
+        bytes_of(undo_accts_),
+        undo_words_.size(),
+        undo_u64_.size(),
+        undo_slots_.size(),
+        undo_pages_.size());
+    log_marks_.push_back(bytes_of(logs_));
 }
 
 void State::pop_accept()
 {
     MONAD_ASSERT(version_);
+#if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
     MONAD_ASSERT(dirty_.size() == version_);
+#else
+    MONAD_ASSERT(undo_marks_.size() == version_);
+    MONAD_ASSERT(
+        !rb_.tracking_enabled(), "reserve tracking requires dirty accounts");
+#endif
 
+    ++frame_epoch_;
+
+#if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
     auto accounts = std::move(dirty_.back());
     dirty_.pop_back();
+    // Keep changes and merge dirty accounts into the parent. Retain undo
+    // records so a later parent rejection can roll back the accepted changes.
     for (auto const &dirty_address : accounts) {
-        auto const it = current_.find(dirty_address);
-        MONAD_ASSERT(it != current_.end());
-        it->second.pop_accept(version_);
         if (!dirty_.empty()) {
             dirty_.back().emplace(dirty_address);
         }
     }
+#endif
+    undo_marks_.pop_back();
+    // No open frame can roll back these records; release them.
+    if (undo_marks_.empty()) {
+        undo_.clear();
+        undo_accts_.clear();
+        undo_words_.clear();
+        undo_u64_.clear();
+        undo_slots_.clear();
+        undo_pages_.clear();
+    }
 
-    logs_.pop_accept(version_);
+    // Accepted: the frame's logs stay where they are, only its watermark goes.
+    log_marks_.pop_back();
 
     --version_;
 }
@@ -155,27 +361,133 @@ void State::pop_accept()
 void State::pop_reject()
 {
     MONAD_ASSERT(version_);
+#if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
     MONAD_ASSERT(dirty_.size() == version_);
+#else
+    MONAD_ASSERT(undo_marks_.size() == version_);
+    MONAD_ASSERT(
+        !rb_.tracking_enabled(), "reserve tracking requires dirty accounts");
+#endif
 
-    std::vector<Address> removals;
+    ++frame_epoch_;
+
+#if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
     auto accounts = std::move(dirty_.back());
     dirty_.pop_back();
-    for (auto const &dirty_address : accounts) {
-        auto const it = current_.find(dirty_address);
-        MONAD_ASSERT(it != current_.end());
-        if (it->second.pop_reject(version_)) {
-            removals.push_back(it->first);
+#endif
+
+    // Rejected: drop exactly what this frame appended.
+    logs_.resize(log_marks_.back() / sizeof(Receipt::Log));
+    log_marks_.pop_back();
+
+    // Rollback may erase and move map entries, invalidating the cached
+    // pointer.
+    memo_val_ = nullptr;
+
+    // Replay backwards to restore the earliest values last.
+    UndoMark const mark = undo_marks_.back();
+    undo_marks_.pop_back();
+    while (undo_.size() > mark.log) {
+        Undo &u = undo_.back();
+        if (u.kind == Undo::Kind::Created) {
+            current_.erase(u.addr);
+            undo_.pop_back();
+            continue;
         }
+        // Creation precedes mutations, so reverse replay restores the fields
+        // before erasing their entry.
+        auto const it = current_.find(u.addr);
+        MONAD_ASSERT(it != current_.end());
+        AccountState &row = it->second;
+        switch (u.kind) {
+        case Undo::Kind::Created:
+            break; // handled above
+
+        case Undo::Kind::AccountWhole:
+            row.account_ = std::move(undo_accts_[u.aux]);
+            break;
+
+        case Undo::Kind::Balance:
+            // Account-clearing cleanup runs outside frames; the account still
+            // exists.
+            MONAD_ASSERT(row.account_.has_value());
+            __builtin_memcpy(
+                &row.account_->balance,
+                undo_words_[u.aux].bytes,
+                sizeof(undo_words_[u.aux].bytes));
+            break;
+
+        case Undo::Kind::CodeHash:
+            MONAD_ASSERT(row.account_.has_value());
+            row.account_->code_hash = undo_words_[u.aux];
+            break;
+
+        case Undo::Kind::Nonce:
+            MONAD_ASSERT(row.account_.has_value());
+            row.account_->nonce = undo_u64_[u.aux];
+            break;
+
+        case Undo::Kind::FlagTouched:
+            row.undo_touched();
+            break;
+
+        case Undo::Kind::FlagDestructed:
+            row.undo_destructed();
+            break;
+
+        case Undo::Kind::FlagAccessed:
+            row.undo_accessed();
+            break;
+
+        case Undo::Kind::WarmSlot:
+            row.undo_warm_slot(undo_words_[u.aux]);
+            break;
+
+        case Undo::Kind::Slot: {
+            SlotUndo const &sl = undo_slots_[u.aux];
+            if (sl.had_value) {
+                row.storage_.upsert(sl.key, sl.value);
+            }
+            else {
+                row.storage_.erase(sl.key);
+            }
+            break;
+        }
+
+        case Undo::Kind::Transient: {
+            SlotUndo const &sl = undo_slots_[u.aux];
+            if (sl.had_value) {
+                row.transient_storage_.upsert(sl.key, sl.value);
+            }
+            else {
+                row.transient_storage_.erase(sl.key);
+            }
+            break;
+        }
+
+        case Undo::Kind::Pages:
+            row.page_tracker_ = std::move(undo_pages_[u.aux]);
+            break;
+        }
+        undo_.pop_back();
+    }
+    undo_accts_.resize(mark.accts / sizeof(std::optional<Account>));
+    undo_words_.resize(mark.words);
+    undo_u64_.resize(mark.u64);
+    undo_slots_.resize(mark.slots);
+    undo_pages_.resize(mark.pages);
+    if (undo_marks_.empty()) {
+        undo_.clear();
+        undo_accts_.clear();
+        undo_words_.clear();
+        undo_u64_.clear();
+        undo_slots_.clear();
+        undo_pages_.clear();
     }
 
-    logs_.pop_reject(version_);
-
-    while (removals.size()) {
-        current_.erase(removals.back());
-        removals.pop_back();
-    }
-
-    rb_.on_pop_reject(accounts);
+#if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
+    rb_.on_pop_reject(accounts.span());
+#endif
 
     --version_;
 }
@@ -183,6 +495,18 @@ void State::pop_reject()
 vm::VM &State::vm()
 {
     return block_state_.vm();
+}
+
+State::RowPair State::rows_for_read(Address const &address)
+{
+    auto const it = current_.find(address);
+    if (it != current_.end()) {
+        MONAD_ASSERT(it->second.orig_ != nullptr);
+        return {&it->second, it->second.orig_};
+    }
+    // No current row: the original row IS the row a read sees.
+    auto &orig = original_account_state(address);
+    return {&orig, &orig};
 }
 
 std::optional<Account> const &State::recent_account(Address const &address)
@@ -232,8 +556,14 @@ uint64_t State::get_nonce(Address const &address)
 
 uint256_t State::get_balance(Address const &address)
 {
+#if defined(MONAD_ZKVM_NO_MERGE_CONSTRAINTS)
+    // Sequential execution needs no merge constraint or original-row lookup.
     auto const &account = recent_account(address);
-    original_account_state(address).set_validate_exact_balance();
+#else
+    auto const [recent, orig] = rows_for_read(address);
+    orig->set_validate_exact_balance();
+    auto const &account = recent->account_;
+#endif
     if (MONAD_LIKELY(account.has_value())) {
         return account.value().balance;
     }
@@ -269,53 +599,67 @@ bool State::is_current_incarnation(Address const &address)
     return false;
 }
 
-bytes32_t State::get_storage(Address const &address, bytes32_t const &key)
+inline void State::current_storage_into(
+    AccountState const &account_state, Address const &address,
+    bytes32_t const &key, evmc_bytes32 &out)
 {
-    auto const it = current_.find(address);
-    if (it == current_.end()) {
+    auto const &account = account_state.account_;
+    MONAD_ASSERT(account.has_value());
+    auto const &storage = account_state.storage_;
+    if (auto const *const it2 = storage.find(key); it2) {
+        out = *it2;
+        return;
+    }
+    MONAD_ASSERT(account_state.orig_ != nullptr);
+    auto &original_account_state = *account_state.orig_;
+    auto const &original_account = original_account_state.account_;
+    if (!original_account.has_value() ||
+        account.value().incarnation != original_account.value().incarnation) {
+        out = {};
+        return;
+    }
+    auto &original_storage = original_account_state.prestate_storage_;
+    if (auto const *const it3 = original_storage.find(key); it3) {
+        out = *it3;
+    }
+    else {
+        bytes32_t const value = block_state_.read_storage(
+            address, account.value().incarnation, key);
+        original_storage.insert(key, value);
+        out = value;
+    }
+}
+
+void State::get_storage_into(
+    Address const &address, bytes32_t const &key, evmc_bytes32 &out)
+{
+    MONAD_GUEST_SITE(STOR_LOOKUP);
+    AccountState *cur = memoised(address);
+    if (cur == nullptr) {
+        auto const it = current_.find(address);
+        if (it != current_.end()) {
+            cur = &it->second;
+        }
+    }
+    if (cur == nullptr) {
         auto const it2 = original_.find(address);
         MONAD_ASSERT(it2 != original_.end());
         auto &account_state = it2->second;
         auto const &account = account_state.account_;
         MONAD_ASSERT(account.has_value());
-        auto &storage = account_state.storage_;
+        auto &storage = account_state.prestate_storage_;
         if (auto const *const it3 = storage.find(key); it3) {
-            return *it3;
+            out = *it3;
         }
         else {
             bytes32_t const value = block_state_.read_storage(
                 address, account.value().incarnation, key);
-            storage = storage.insert({key, value});
-            return value;
+            storage.insert(key, value);
+            out = value;
         }
     }
     else {
-        auto const &account_state = it->second.recent();
-        auto const &account = account_state.account_;
-        MONAD_ASSERT(account.has_value());
-        auto const &storage = account_state.storage_;
-        if (auto const *const it2 = storage.find(key); it2) {
-            return *it2;
-        }
-        auto const it2 = original_.find(address);
-        MONAD_ASSERT(it2 != original_.end());
-        auto &original_account_state = it2->second;
-        auto const &original_account = original_account_state.account_;
-        if (!original_account.has_value() ||
-            account.value().incarnation !=
-                original_account.value().incarnation) {
-            return {};
-        }
-        auto &original_storage = original_account_state.storage_;
-        if (auto const *const it3 = original_storage.find(key); it3) {
-            return *it3;
-        }
-        else {
-            bytes32_t const value = block_state_.read_storage(
-                address, account.value().incarnation, key);
-            original_storage = original_storage.insert({key, value});
-            return value;
-        }
+        current_storage_into(*cur, address, key, out);
     }
 }
 
@@ -328,14 +672,19 @@ State::get_transient_storage(Address const &address, bytes32_t const &key)
 bool State::is_touched(Address const &address)
 {
     auto const it = current_.find(address);
-    return it != current_.end() && it->second.recent().is_touched();
+    return it != current_.end() && it->second.is_touched();
 }
 
 void State::set_nonce(Address const &address, uint64_t const nonce)
 {
-    auto &account = current_account(address);
+    auto &account_state = current_account_state(address);
+    auto &account = account_state.account_;
     if (MONAD_UNLIKELY(!account.has_value())) {
+        journal_account(address, account_state);
         account = Account{.incarnation = incarnation_};
+    }
+    else {
+        journal_nonce(address, account->nonce);
     }
     account.value().nonce = nonce;
 }
@@ -345,16 +694,24 @@ void State::add_to_balance(Address const &address, uint256_t const &delta)
     auto &account_state = current_account_state(address);
     auto &account = account_state.account_;
     if (MONAD_UNLIKELY(!account.has_value())) {
+        journal_account(address, account_state);
         account = Account{.incarnation = incarnation_};
     }
 
-    MONAD_ASSERT_THROW(
-        std::numeric_limits<uint256_t>::max() - delta >=
-            account.value().balance,
-        "balance overflow");
+    // A zero delta, as most calls carry, changes no balance: nothing to
+    // check, journal or add, and the touch below is its whole effect.
+    if (delta != 0) {
+        MONAD_ASSERT_THROW(
+            std::numeric_limits<uint256_t>::max() - delta >=
+                account.value().balance,
+            "balance overflow");
 
-    account.value().balance += delta;
-    account_state.touch();
+        journal_balance(address, account.value().balance);
+        account.value().balance += delta;
+    }
+    if (account_state.touch()) {
+        journal_flag(address, Undo::Kind::FlagTouched);
+    }
     rb_.on_credit(address);
 }
 
@@ -364,13 +721,21 @@ void State::subtract_from_balance(
     auto &account_state = current_account_state(address);
     auto &account = account_state.account_;
     if (MONAD_UNLIKELY(!account.has_value())) {
+        journal_account(address, account_state);
         account = Account{.incarnation = incarnation_};
     }
 
-    MONAD_ASSERT_THROW(delta <= account.value().balance, "balance underflow");
+    // As in add_to_balance: a zero delta leaves only the touch.
+    if (delta != 0) {
+        MONAD_ASSERT_THROW(
+            delta <= account.value().balance, "balance underflow");
 
-    account.value().balance -= delta;
-    account_state.touch();
+        journal_balance(address, account.value().balance);
+        account.value().balance -= delta;
+    }
+    if (account_state.touch()) {
+        journal_flag(address, Undo::Kind::FlagTouched);
+    }
     rb_.on_debit(address);
 }
 
@@ -380,10 +745,14 @@ monad_storage_status State::set_storage(
     bytes32_t original_value;
     auto &account_state = current_account_state(address);
     MONAD_ASSERT(account_state.account_);
+    // Reuse one lookup for journaling, status computation and the write.
+    // The pre-state lookup below uses a separate container, preserving prev.
+    bytes32_t const *const prev = account_state.storage_.find(key);
     // original
     {
-        auto &orig_account_state = original_account_state(address);
-        auto &storage = orig_account_state.storage_;
+        MONAD_ASSERT(account_state.orig_ != nullptr);
+        auto &orig_account_state = *account_state.orig_;
+        auto &storage = orig_account_state.prestate_storage_;
         if (auto const *const it = storage.find(key); it) {
             original_value = *it;
         }
@@ -391,14 +760,15 @@ monad_storage_status State::set_storage(
             Incarnation const incarnation = account_state.account_->incarnation;
             bytes32_t const value =
                 block_state_.read_storage(address, incarnation, key);
-            storage = storage.insert({key, value});
+            storage.insert(key, value);
             original_value = value;
         }
     }
     // state
     {
+        journal_slot(address, key, prev);
         auto const result =
-            account_state.set_storage(key, value, original_value);
+            account_state.set_storage(key, value, original_value, prev);
         return result;
     }
 }
@@ -406,40 +776,80 @@ monad_storage_status State::set_storage(
 void State::set_transient_storage(
     Address const &address, bytes32_t const &key, bytes32_t const &value)
 {
-    current_account_state(address).set_transient_storage(key, value);
+    auto &account_state = current_account_state(address);
+    journal_transient(address, account_state, key);
+    account_state.set_transient_storage(key, value);
 }
 
 void State::touch(Address const &address)
 {
     auto &account_state = current_account_state(address);
-    account_state.touch();
+    if (account_state.touch()) {
+        journal_flag(address, Undo::Kind::FlagTouched);
+    }
 }
 
 monad_access_status State::access_account(Address const &address)
 {
     auto &account_state = current_account_state(address);
-    return account_state.access();
+    auto const status = account_state.access();
+    if (status == MONAD_ACCESS_COLD) {
+        journal_flag(address, Undo::Kind::FlagAccessed);
+    }
+    return status;
+}
+
+template <Traits traits>
+[[gnu::always_inline]] inline monad_access_status State::access_storage_of(
+    AccountState &account_state, Address const &address, bytes32_t const &key)
+{
+    auto const slot_status = account_state.access_storage(key);
+    if (slot_status == MONAD_ACCESS_COLD) {
+        journal_warm_slot(address, key);
+    }
+    if constexpr (traits::mip_8_active()) {
+        journal_pages(address, account_state);
+        return account_state.page_tracker_.access_page(key);
+    }
+    return slot_status;
 }
 
 template <Traits traits>
 monad_access_status
 State::access_storage(Address const &address, bytes32_t const &key)
 {
-    auto &account_state = current_account_state(address);
-    auto const slot_status = account_state.access_storage(key);
-    if constexpr (traits::mip_8_active()) {
-        return account_state.page_tracker_.access_page(key);
-    }
-    return slot_status;
+    return access_storage_of<traits>(
+        current_account_state(address), address, key);
 }
 
 EXPLICIT_TRAITS_MEMBER(State::access_storage);
+
+#if defined(MONAD_ZKVM_ZISK)
+// access_storage leaves the account in current_, where get_storage_into
+// would find it again: the value is read from the row just looked up.
+template <Traits traits>
+monad_access_status State::sload_into(
+    Address const &address, bytes32_t const &key, bool const read_cold,
+    evmc_bytes32 &out)
+{
+    auto &account_state = current_account_state(address);
+    monad_access_status const status =
+        access_storage_of<traits>(account_state, address, key);
+    if (status == MONAD_ACCESS_WARM || read_cold) {
+        current_storage_into(account_state, address, key, out);
+    }
+    return status;
+}
+
+EXPLICIT_TRAITS_MEMBER(State::sload_into);
+#endif
 
 monad_page_storage_status State::update_page(
     Address const &address, bytes32_t const &key,
     monad_storage_status const status)
 {
     auto &account_state = current_account_state(address);
+    journal_pages(address, account_state);
     return account_state.page_tracker_.update_page(key, status);
 }
 
@@ -466,6 +876,9 @@ State::selfdestruct(Address const &address, Address const &beneficiary)
     }
 
     bool const inserted = account_state.destruct();
+    if (inserted) {
+        journal_flag(address, Undo::Kind::FlagDestructed);
+    }
     // Recompute reserve-balance status after setting the destructed flag.
     rb_.on_debit(address);
     return {inserted, balance};
@@ -480,10 +893,7 @@ void State::destruct_suicides()
     MONAD_ASSERT(!version_);
 
     for (auto &it : current_) {
-        auto &stack = it.second;
-        MONAD_ASSERT(stack.size() == 1);
-        MONAD_ASSERT(stack.version() == 0);
-        auto &account_state = stack.current(0);
+        auto &account_state = it.second;
         if (account_state.is_destructed()) {
             auto &account = account_state.account_;
             if constexpr (traits::evm_rev() < MONAD_ETH_CANCUN) {
@@ -504,12 +914,15 @@ EXPLICIT_TRAITS_MEMBER(State::destruct_suicides);
 void State::destruct_touched_dead()
 {
     MONAD_ASSERT(!version_);
+    // All frames must be closed, including those that touched no accounts: an
+    // unbalanced push leaves a mark behind even when no row was touched.
+    MONAD_ASSERT(
+        undo_.empty() && undo_accts_.empty() && undo_words_.empty() &&
+        undo_u64_.empty() && undo_slots_.empty() && undo_pages_.empty() &&
+        undo_marks_.empty());
 
     for (auto &it : current_) {
-        auto &stack = it.second;
-        MONAD_ASSERT(stack.size() == 1);
-        MONAD_ASSERT(stack.version() == 0);
-        auto &account_state = stack.current(0);
+        auto &account_state = it.second;
         if (MONAD_LIKELY(!account_state.is_touched())) {
             continue;
         }
@@ -520,7 +933,7 @@ void State::destruct_touched_dead()
     }
 }
 
-vm::SharedVarcode State::read_code(bytes32_t const &code_hash)
+vm::SharedVarcode const &State::read_code_ref(bytes32_t const &code_hash)
 {
     {
         auto const it = code_.find(code_hash);
@@ -528,7 +941,17 @@ vm::SharedVarcode State::read_code(bytes32_t const &code_hash)
             return it->second;
         }
     }
-    return block_state_.read_code(code_hash);
+    if (last_code_ && code_hash == last_code_hash_) {
+        return last_code_;
+    }
+    last_code_ = block_state_.read_code(code_hash);
+    last_code_hash_ = code_hash;
+    return last_code_;
+}
+
+vm::SharedVarcode State::read_code(bytes32_t const &code_hash)
+{
+    return read_code_ref(code_hash);
 }
 
 vm::SharedVarcode State::get_code(Address const &address)
@@ -546,16 +969,7 @@ size_t State::get_code_size(Address const &address)
     if (MONAD_UNLIKELY(!account.has_value())) {
         return 0;
     }
-    bytes32_t const &code_hash = account.value().code_hash;
-    {
-        auto const it = code_.find(code_hash);
-        if (it != code_.end()) {
-            auto const &vcode = it->second;
-            MONAD_ASSERT(vcode);
-            return vcode->intercode()->size();
-        }
-    }
-    auto const vcode = block_state_.read_code(code_hash);
+    vm::SharedVarcode const &vcode = read_code_ref(account.value().code_hash);
     MONAD_ASSERT(vcode);
     return vcode->intercode()->size();
 }
@@ -568,10 +982,23 @@ size_t State::copy_code(
     if (MONAD_UNLIKELY(!account.has_value())) {
         return 0;
     }
-    vm::SharedVarcode const vcode = read_code(account.value().code_hash);
+    vm::SharedVarcode const &vcode = read_code_ref(account.value().code_hash);
     MONAD_ASSERT(vcode);
     return vcode->intercode()->copy_code(offset, buffer, buffer_size);
 }
+
+#if defined(MONAD_ZKVM_ZISK)
+std::optional<Address> State::delegate_of(Address const &address)
+{
+    auto const &account = recent_account(address);
+    if (MONAD_UNLIKELY(!account.has_value())) {
+        return std::nullopt;
+    }
+    vm::SharedVarcode const &vcode = read_code_ref(account.value().code_hash);
+    MONAD_ASSERT(vcode);
+    return vm::evm::designation_of(vcode->intercode()->code_span());
+}
+#endif
 
 void State::set_code(Address const &address, byte_string_view const code)
 {
@@ -582,13 +1009,17 @@ void State::set_code(Address const &address, byte_string_view const code)
 
     auto const code_hash = to_bytes(keccak256(code));
     code_[code_hash] = vm().try_insert_varcode_raw(code_hash, code);
+    journal_code_hash(address, account.value().code_hash);
     account.value().code_hash = code_hash;
     rb_.on_set_code(address, code);
 }
 
 void State::create_contract(Address const &address)
 {
-    auto &account = current_account(address);
+    auto &account_state = current_account_state(address);
+    auto &account = account_state.account_;
+    // Save account_ to restore presence and incarnation on rollback.
+    journal_account(address, account_state);
     if (MONAD_UNLIKELY(account.has_value())) {
         // EIP-684
         MONAD_ASSERT(account->nonce == 0);
@@ -615,7 +1046,11 @@ void State::create_contract(Address const &address)
  */
 void State::create_account_no_rollback(Address const &address)
 {
-    auto &account = current_account(address);
+    auto &account_state = current_account_state(address);
+    auto &account = account_state.account_;
+    // The name refers to SELFDESTRUCT protection; frame rejection still
+    // restores the previous account.
+    journal_account(address, account_state);
     MONAD_ASSERT(!account.has_value());
     account = Account{
         .incarnation = Incarnation{
@@ -624,20 +1059,31 @@ void State::create_account_no_rollback(Address const &address)
         }};
 }
 
-immer::vector<Receipt::Log> const &State::logs()
+std::vector<Receipt::Log> const &State::logs()
 {
-    return logs_.recent();
+    return logs_;
+}
+
+std::vector<Receipt::Log> State::take_logs()
+{
+    return std::exchange(logs_, {});
 }
 
 void State::store_log(Receipt::Log const &log)
 {
-    auto &logs = logs_.current(version_);
-    logs = logs.push_back(log);
+    logs_.push_back(log);
+}
+
+void State::store_log(Receipt::Log &&log)
+{
+    logs_.push_back(std::move(log));
 }
 
 void State::set_to_state_incarnation(Address const &address)
 {
-    auto &account = current_account(address);
+    auto &account_state = current_account_state(address);
+    auto &account = account_state.account_;
+    journal_account(address, account_state);
     if (MONAD_UNLIKELY(!account.has_value())) {
         account = Account{.incarnation = incarnation_};
     }
@@ -685,8 +1131,7 @@ bool State::try_fix_account_mismatch(
     // adjust balances
     auto const current_it = current_.find(address);
     if (current_it != current_.end()) {
-        MONAD_ASSERT(current_it->second.size() == 1);
-        auto &recent_state = current_it->second.recent();
+        auto &recent_state = current_it->second;
         auto &recent = recent_state.account_;
         if (!recent) {
             return false;
@@ -712,10 +1157,22 @@ bool State::try_fix_account_mismatch(
 bool State::record_balance_constraint_for_debit(
     Address const &address, uint256_t const &debit)
 {
+#if defined(MONAD_ZKVM_NO_MERGE_CONSTRAINTS)
+    // Keep the balance check; sequential execution needs no merge constraints.
+    // A debit of zero, which most calls are, is covered by any balance, and
+    // the lookup has no other effect here.
+    if (debit == 0) {
+        return true;
+    }
     auto const &account = recent_account(address);
     uint256_t const balance = account.has_value() ? account->balance : 0;
+    return balance >= debit;
+#else
+    auto const [recent, orig] = rows_for_read(address);
+    auto const &account = recent->account_;
+    uint256_t const balance = account.has_value() ? account->balance : 0;
 
-    auto &original_state = original_account_state(address);
+    auto &original_state = *orig;
     // RELAXED MERGE
     // if current balance  >= `debit`, then:
     // 1. compute the amount that current balance exceeds `debit`
@@ -739,6 +1196,7 @@ bool State::record_balance_constraint_for_debit(
     // original balance used during this execution exactly
     original_state.set_validate_exact_balance();
     return false;
+#endif
 }
 
 MONAD_NAMESPACE_END

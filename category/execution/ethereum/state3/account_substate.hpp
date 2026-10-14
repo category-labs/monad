@@ -15,28 +15,30 @@
 
 #pragma once
 
+#include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
+#include <category/execution/ethereum/state3/slot_index.hpp>
 #include <category/vm/evm/access_status.h>
 
-// TODO immer known to trigger incorrect warning
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Warray-bounds"
-#include <immer/set.hpp>
-#pragma GCC diagnostic pop
+#include <cstdint>
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
 // YP 6.1
 class AccountSubstate
 {
-    using Set =
-        immer::set<bytes32_t, ankerl::unordered_dense::hash<monad::bytes32_t>>;
+    // Warm-slot sets are typically small: linear lookup avoids hashing.
+    using Set = std::vector<bytes32_t>;
 
     bool destructed_{false}; // A_s
     bool touched_{false}; // A_t
     bool accessed_{false}; // A_a
     Set accessed_storage_{}; // A_K
+
+    // Undoing a warm slot invalidates the index.
+    SlotIndex aidx_{};
 
 public:
     AccountSubstate() = default;
@@ -58,7 +60,7 @@ public:
     }
 
     // A_K
-    Set get_accessed_storage() const
+    Set const &get_accessed_storage() const
     {
         return accessed_storage_;
     }
@@ -71,10 +73,12 @@ public:
         return inserted;
     }
 
-    // A_t
-    void touch()
+    // A_t. Returns true only on transition, so the journal records it once.
+    bool touch()
     {
+        bool const inserted = !touched_;
         touched_ = true;
+        return inserted;
     }
 
     // A_a
@@ -91,14 +95,63 @@ public:
     // A_K
     monad_access_status access_storage(bytes32_t const &key)
     {
-        if (accessed_storage_.count(key) == 0) {
-            accessed_storage_ = accessed_storage_.insert(key);
+        std::uint64_t const tail = key_tail(key);
+        if (aidx_) {
+            if (aidx_.lookup(key, tail, accessed_storage_) != 0) {
+                return MONAD_ACCESS_WARM;
+            }
+            accessed_storage_.push_back(key);
+            aidx_.on_insert(accessed_storage_);
             return MONAD_ACCESS_COLD;
         }
-        return MONAD_ACCESS_WARM;
+        MONAD_SLOT_SCAN
+        for (auto const &k : accessed_storage_) {
+            if (key_equals(key, tail, k)) {
+                return MONAD_ACCESS_WARM;
+            }
+        }
+        // Reserve on first insertion to avoid early reallocations without
+        // allocating for unused storage. The indexed path already has
+        // sufficient capacity.
+        if (MONAD_UNLIKELY(accessed_storage_.capacity() == 0)) {
+            accessed_storage_.reserve(8);
+        }
+        accessed_storage_.push_back(key);
+        aidx_.on_insert(accessed_storage_);
+        return MONAD_ACCESS_COLD;
+    }
+
+    // Undo operations, for the journal only. Each reverses exactly one
+    // journalled transition.
+    void undo_touched()
+    {
+        touched_ = false;
+    }
+
+    void undo_destructed()
+    {
+        destructed_ = false;
+    }
+
+    void undo_accessed()
+    {
+        accessed_ = false;
+    }
+
+    // Warm slots are appended; reverse replay must remove the last key.
+    void undo_warm_slot(bytes32_t const &key)
+    {
+        MONAD_ASSERT(!accessed_storage_.empty());
+        MONAD_ASSERT(
+            __builtin_memcmp(
+                accessed_storage_.back().bytes, key.bytes, sizeof(key.bytes)) ==
+            0);
+        accessed_storage_.pop_back();
+        aidx_.reset();
     }
 };
 
-static_assert(sizeof(AccountSubstate) == 24);
+// Guard against unintended growth of the per-account substate.
+static_assert(sizeof(AccountSubstate) == 40);
 
 MONAD_NAMESPACE_END

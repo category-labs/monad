@@ -16,7 +16,6 @@
 #pragma once
 
 #include <category/core/config.hpp>
-#include <category/core/keccak.hpp>
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
@@ -26,6 +25,7 @@
 #include <category/vm/vm.hpp>
 
 #include <category/core/hex.hpp>
+#include <category/core/trie_hash.hpp>
 
 #include <memory>
 #include <optional>
@@ -85,7 +85,7 @@ public:
             prefix_cursor_,
             mpt::concat(
                 STATE_NIBBLE,
-                mpt::NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})}),
+                mpt::NibblesView{trie_hash({addr.bytes, sizeof(addr.bytes)})}),
             block_number_);
         if (!acc_leaf_res.has_value()) {
             MONAD_ASSERT_THROW(
@@ -109,9 +109,9 @@ public:
             prefix_cursor_,
             mpt::concat(
                 STATE_NIBBLE,
-                mpt::NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
+                mpt::NibblesView{trie_hash({addr.bytes, sizeof(addr.bytes)})},
                 mpt::NibblesView{
-                    keccak256({lookup_key.bytes, sizeof(lookup_key.bytes)})}),
+                    trie_hash({lookup_key.bytes, sizeof(lookup_key.bytes)})}),
             block_number_);
         if (!storage_leaf_res.has_value()) {
             MONAD_ASSERT_THROW(

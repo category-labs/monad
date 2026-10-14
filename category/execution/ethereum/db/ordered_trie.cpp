@@ -18,8 +18,8 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
-#include <category/core/keccak.hpp>
 #include <category/core/rlp/encode.hpp>
+#include <category/core/trie_hash.hpp>
 #include <category/crypto/keccak.h>
 #include <category/execution/ethereum/db/offset_trie.hpp>
 #include <category/mpt/merkle/compact_encode.hpp>
@@ -47,7 +47,10 @@ namespace detail
                 std::copy(node.begin(), node.end(), ref_dest.last(size).data());
             }
             else {
-                monad_keccak256(node.data(), node.size(), ref_dest.data());
+#ifdef MONAD_ZKVM_KECCAK_SITES
+                MONAD_KECCAK_SITE(BODY_ROOTS, node.size());
+#endif
+                monad_trie_hash256(node.data(), node.size(), ref_dest.data());
             }
             return size;
         };
@@ -68,7 +71,7 @@ namespace detail
                     // string.
                     static_assert(sizeof(detail::Item::key) + 1 <= 55);
                     if (path_len > 1) {
-                        out[0] = static_cast<unsigned char>(0x80 + path_len);
+                        out[0] = zx(0x80 + path_len);
                         out = out.subspan(1);
                     }
                     mpt::compact_encode_raw(out.data(), path, true);
@@ -96,7 +99,7 @@ namespace detail
                         payload.last(KECCAK256_SIZE)});
                 payload = payload.shrink(len);
                 if (len == 32) {
-                    payload.back() = 0x80 + 32;
+                    payload.back() = zx(0x80 + 32);
                     payload = payload.shrink(1);
                 }
             };
@@ -113,12 +116,12 @@ namespace detail
             mpt::compact_encode_raw(payload.last(len).data(), path, false);
             payload = payload.shrink(len);
             if (len > 1) {
-                payload.back() = static_cast<unsigned char>(0x80 + len);
+                payload.back() = zx(0x80 + len);
                 payload = payload.shrink(1);
             }
         }
         else {
-            payload.back() = 0x80; // empty branch value
+            payload.back() = zx(0x80); // empty branch value
             payload = payload.shrink(1);
             // Emit rightmost children first because the buffer grows backwards.
             size_t k = hi;
@@ -128,7 +131,7 @@ namespace detail
                     --k;
                 }
                 if (k == end) {
-                    payload.back() = 0x80;
+                    payload.back() = zx(0x80);
                     payload = payload.shrink(1);
                 }
                 else {

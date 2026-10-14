@@ -20,8 +20,8 @@
 #include <category/core/bytes.hpp>
 #include <category/core/cases.hpp>
 #include <category/core/config.hpp>
-#include <category/core/keccak.hpp>
 #include <category/core/likely.h>
+#include <category/core/trie_hash.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/db/db.hpp>
@@ -60,18 +60,36 @@ bool is_changed(StateDelta const &d)
 
 MONAD_ANONYMOUS_NAMESPACE_END
 
+#ifdef MONAD_ZKVM_KECCAK_SITES
+    #include <category/core/keccak_sites.hpp>
+#else
+    #define MONAD_KECCAK_SITE(s, len) ((void)0)
+#endif
+
 MONAD_NAMESPACE_BEGIN
 
 std::optional<Account> PartialTrieDb::read_account(Address const &addr)
 {
-    auto const key = keccak256(addr.bytes);
+    MONAD_KECCAK_SITE(READ_ACCT_ADDR, sizeof(addr.bytes));
+    auto const key = trie_hash(addr.bytes);
+    // This descent already reaches the account's leaf, and the leaf carries its
+    // storage root -- so prime the one-entry cache with it.
     return match(
         trie_.find_original(trie_.root, mpt::NibblesView{key}),
         Cases{
-            [](mpt::NullView) -> std::optional<Account> {
+            [&](mpt::NullView) -> std::optional<Account> {
+                // An absent account is worth caching too, and NULL_ID is what
+                // read_storage would have concluded: otherwise every storage
+                // read against it re-descends to find the same nothing.
+                sroot_addr_ = addr;
+                sroot_id_ = mpt::NULL_ID;
+                sroot_valid_ = true;
                 return std::nullopt;
             },
-            [](mpt::AccountLeafView l) -> std::optional<Account> {
+            [&](mpt::AccountLeafView l) -> std::optional<Account> {
+                sroot_addr_ = addr;
+                sroot_id_ = l.storage();
+                sroot_valid_ = true;
                 return l.account();
             },
             [](auto) -> std::optional<Account> {
@@ -82,20 +100,31 @@ std::optional<Account> PartialTrieDb::read_account(Address const &addr)
 bytes32_t PartialTrieDb::read_storage(
     Address const &addr, Incarnation, bytes32_t const &slot)
 {
-    auto const akey = keccak256(addr.bytes);
-    auto const sroot = match(
-        trie_.find_original(trie_.root, mpt::NibblesView{akey}),
-        Cases{
-            [](mpt::NullView) { return mpt::NULL_ID; },
-            [](mpt::AccountLeafView l) { return l.storage(); },
-            [](auto) -> mpt::NodeId {
-                MONAD_ABORT("incorrect node type returned in read_storage");
-            }});
+    mpt::NodeId sroot;
+    if (sroot_valid_ && sroot_addr_ == addr) {
+        sroot = sroot_id_;
+    }
+    else {
+        MONAD_KECCAK_SITE(READ_STOR_ADDR, sizeof(addr.bytes));
+        auto const akey = trie_hash(addr.bytes);
+        sroot = match(
+            trie_.find_original(trie_.root, mpt::NibblesView{akey}),
+            Cases{
+                [](mpt::NullView) { return mpt::NULL_ID; },
+                [](mpt::AccountLeafView l) { return l.storage(); },
+                [](auto) -> mpt::NodeId {
+                    MONAD_ABORT("incorrect node type returned in read_storage");
+                }});
+        sroot_addr_ = addr;
+        sroot_id_ = sroot;
+        sroot_valid_ = true;
+    }
 
     if (sroot == mpt::NULL_ID) {
         return bytes32_t{};
     }
-    auto const skey = keccak256(slot.bytes);
+    MONAD_KECCAK_SITE(READ_STOR_SLOT, sizeof(slot.bytes));
+    auto const skey = trie_hash(slot.bytes);
 
     return match(
         trie_.find_original(sroot, mpt::NibblesView{skey}),
@@ -126,7 +155,8 @@ void PartialTrieDb::commit(
         if (!new_account || !is_changed(delta)) {
             continue;
         }
-        auto const acct_key = keccak256(addr.bytes);
+        MONAD_KECCAK_SITE(COMMIT_ACCT_ADDR, sizeof(addr.bytes));
+        auto const acct_key = trie_hash(addr.bytes);
         auto const [leaf, leaf_path] =
             trie_.upsert_node(trie_.root, mpt::NibblesView{acct_key});
         if (MONAD_UNLIKELY(trie_.root == NULL_ID)) {
@@ -152,7 +182,8 @@ void PartialTrieDb::commit(
         // compression could and hit a digest
         for (auto const &[slot, sdelta] : delta.storage) {
             if (is_changed(sdelta) && sdelta.second != bytes32_t{}) {
-                auto const slot_key = keccak256(slot.bytes);
+                MONAD_KECCAK_SITE(COMMIT_SLOT_PUT, sizeof(slot.bytes));
+                auto const slot_key = trie_hash(slot.bytes);
                 auto const [sleaf, sleaf_path] =
                     trie_.upsert_node(storage, mpt::NibblesView{slot_key});
                 if (storage == NULL_ID) {
@@ -164,7 +195,8 @@ void PartialTrieDb::commit(
         }
         for (auto const &[slot, sdelta] : delta.storage) {
             if (is_changed(sdelta) && sdelta.second == bytes32_t{}) {
-                auto const slot_key = keccak256(slot.bytes);
+                MONAD_KECCAK_SITE(COMMIT_SLOT_DEL, sizeof(slot.bytes));
+                auto const slot_key = trie_hash(slot.bytes);
                 if (trie_.erase_node(storage, mpt::NibblesView{slot_key}) ==
                     OffsetTrie::EraseResult::Erased) {
                     storage = NULL_ID;
@@ -184,7 +216,8 @@ void PartialTrieDb::commit(
         if (delta.account.second || !delta.account.first) {
             continue;
         }
-        auto const acct_key = keccak256(addr.bytes);
+        MONAD_KECCAK_SITE(COMMIT_DEL_ADDR, sizeof(addr.bytes));
+        auto const acct_key = trie_hash(addr.bytes);
         if (MONAD_UNLIKELY(
                 trie_.erase_node(trie_.root, mpt::NibblesView{acct_key}) ==
                 OffsetTrie::EraseResult::Erased)) {

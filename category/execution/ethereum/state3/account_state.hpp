@@ -25,15 +25,10 @@
 #include <category/execution/ethereum/state3/page_tracker.hpp>
 #include <category/vm/evm/storage_status.h>
 
-// TODO immer known to trigger incorrect warning
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Warray-bounds"
-#include <immer/map.hpp>
-#pragma GCC diagnostic pop
-
 #include <cstdint>
 #include <optional>
 #include <utility>
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -46,11 +41,114 @@ namespace trace
     struct StateDiffTracer;
 }
 
+// Mutable slots; undo records save only written slots.
+// Appending preserves indices, but reallocation can invalidate pointers
+// and erase can move the last entry.
+class FlatStorage
+{
+    std::vector<std::pair<bytes32_t, bytes32_t>> v_{};
+
+    // Small rows use linear scans; erase invalidates indexed positions.
+    SlotIndex idx_{};
+
+public:
+    [[nodiscard]] bytes32_t const *find(bytes32_t const &key) const
+    {
+        std::uint64_t const tail = key_tail(key);
+        if (idx_) {
+            std::uint32_t const p = idx_.lookup(key, tail, v_);
+            return p ? &v_[p - 1].second : nullptr;
+        }
+        MONAD_SLOT_SCAN
+        for (auto const &e : v_) {
+            if (key_equals(key, tail, e.first)) {
+                return &e.second;
+            }
+        }
+        return nullptr;
+    }
+
+    void upsert(bytes32_t const &key, bytes32_t const &value)
+    {
+        std::uint64_t const tail = key_tail(key);
+        if (idx_) {
+            if (std::uint32_t const p = idx_.lookup(key, tail, v_); p != 0) {
+                v_[p - 1].second = value;
+                return;
+            }
+            v_.emplace_back(key, value);
+            idx_.on_insert(v_);
+            return;
+        }
+        MONAD_SLOT_SCAN
+        for (auto &e : v_) {
+            if (key_equals(key, tail, e.first)) {
+                e.second = value;
+                return;
+            }
+        }
+        // Reserve on first insertion to avoid early reallocations without
+        // allocating for unused storage. The indexed path already has
+        // sufficient capacity.
+        if (MONAD_UNLIKELY(v_.capacity() == 0)) {
+            v_.reserve(8);
+        }
+        v_.emplace_back(key, value);
+        idx_.on_insert(v_);
+    }
+
+    // Restore absence after a reverted insertion: keeping the original value
+    // here would still include the slot in the commit set.
+    void erase(bytes32_t const &key)
+    {
+        std::uint64_t const tail = key_tail(key);
+        // The journal replays in reverse and only a new key appends, so the
+        // slot being removed is the one appended last. Without this the scan
+        // makes rejecting a frame that wrote n slots cost O(n^2), which the
+        // index cannot help: erase invalidates it, so it is never consulted.
+        if (!v_.empty() && key_equals(key, tail, v_.back().first)) {
+            v_.pop_back();
+            idx_.reset();
+            return;
+        }
+        MONAD_SLOT_SCAN
+        for (auto &e : v_) {
+            if (key_equals(key, tail, e.first)) {
+                e = v_.back();
+                v_.pop_back();
+                idx_.reset();
+                return;
+            }
+        }
+    }
+
+    [[nodiscard]] bool empty() const
+    {
+        return v_.empty();
+    }
+
+    [[nodiscard]] std::size_t size() const
+    {
+        return v_.size();
+    }
+
+    [[nodiscard]] auto begin() const
+    {
+        return v_.begin();
+    }
+
+    [[nodiscard]] auto end() const
+    {
+        return v_.end();
+    }
+};
+
+class OriginalAccountState;
+
 class AccountState : public AccountSubstate
 {
 public: // TODO
-    using StorageMap = immer::map<
-        bytes32_t, bytes32_t, ankerl::unordered_dense::hash<monad::bytes32_t>>;
+    using StorageMap = FlatStorage;
 
 protected:
     std::optional<Account> account_{};
@@ -69,6 +167,11 @@ public:
     StorageMap storage_{};
     StorageMap transient_storage_{};
     PageTracker page_tracker_{};
+
+    // Original row for overlay misses, avoiding another address lookup;
+    // null on original rows. Insertions into original_ preserve pointers,
+    // and no entries are erased during their use.
+    OriginalAccountState *orig_{nullptr};
 
     monad_storage_status zero_out_key(
         bytes32_t const &key, bytes32_t const &original_value,
@@ -132,16 +235,13 @@ public:
         return {};
     }
 
+    // `prev` is the caller's probe of this slot -- null when absent -- so this
+    // does not repeat it.
     monad_storage_status set_storage(
         bytes32_t const &key, bytes32_t const &value,
-        bytes32_t const &original_value)
+        bytes32_t const &original_value, bytes32_t const *const prev)
     {
-        bytes32_t current_value = original_value;
-        {
-            if (auto const *const it = storage_.find(key); it) {
-                current_value = *it;
-            }
-        }
+        bytes32_t const current_value = prev ? *prev : original_value;
         if (value == bytes32_t{}) {
             return zero_out_key(key, original_value, current_value);
         }
@@ -150,21 +250,84 @@ public:
 
     void set_transient_storage(bytes32_t const &key, bytes32_t const &value)
     {
-        transient_storage_ = transient_storage_.insert({key, value});
+        transient_storage_.upsert(key, value);
     }
 };
 
-static_assert(sizeof(AccountState) == 160);
+// Guard against unintended growth of the per-account state.
+// Two FlatStorage index pointers and A_K's account for 24 of these bytes.
+static_assert(sizeof(AccountState) == 216);
 
 // RELAXED MERGE
 // track the min original balance needed at start of transaction and if the
 // original and current balances can be adjusted
+// Cache original slot values on first read; entries are never overwritten
+// or rolled back. Append-only storage preserves indices, though vector
+// reallocation may invalidate pointers.
+class PrestateStorage
+{
+    // [(slot identifier, original value)]
+    std::vector<std::pair<bytes32_t, bytes32_t>> v_{};
+
+    // Append-only entries keep indexed positions stable.
+    SlotIndex idx_{};
+
+public:
+    bytes32_t const *find(bytes32_t const &k) const
+    {
+        std::uint64_t const tail = key_tail(k);
+        if (idx_) {
+            std::uint32_t const p = idx_.lookup(k, tail, v_);
+            return p ? &v_[p - 1].second : nullptr;
+        }
+        MONAD_SLOT_SCAN
+        for (auto const &e : v_) {
+            if (key_equals(k, tail, e.first)) {
+                return &e.second;
+            }
+        }
+        return nullptr;
+    }
+
+    void insert(bytes32_t const &k, bytes32_t const &v)
+    {
+        if (MONAD_UNLIKELY(v_.capacity() == 0)) {
+            v_.reserve(8);
+        }
+        v_.emplace_back(k, v);
+        idx_.on_insert(v_);
+    }
+
+    bool empty() const
+    {
+        return v_.empty();
+    }
+
+    std::size_t size() const
+    {
+        return v_.size();
+    }
+
+    auto begin() const
+    {
+        return v_.begin();
+    }
+
+    auto end() const
+    {
+        return v_.end();
+    }
+};
+
 class OriginalAccountState final : public AccountState
 {
     bool validate_exact_balance_{false};
     uint256_t min_balance_{0};
 
 public:
+    // Original slot values; replaces the inherited storage_, left unused here.
+    PrestateStorage prestate_storage_{};
+
     explicit OriginalAccountState(std::optional<Account> &&account)
         : AccountState(std::move(account))
     {

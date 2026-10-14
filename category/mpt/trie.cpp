@@ -193,7 +193,9 @@ Node::SharedPtr upsert(
         if (updates.empty()) {
             auto const old_path = old->path_nibble_view();
             auto const old_path_nibbles_len = old_path.nibble_size();
-            sm.down(old_path);
+            for (unsigned n = 0; n < old_path_nibbles_len; ++n) {
+                sm.down(old_path.get(n));
+            }
             // simply dispatch empty update and potentially do compaction
             Requests requests;
             Node const &old_node = *old;
@@ -311,7 +313,9 @@ struct load_all_impl_
         for (auto const [idx, i] : NodeChildrenRange(node->mask)) {
             NibblesView const nv =
                 node->path_nibble_view().substr(node_cursor.prefix_index);
-            sm.down(nv);
+            for (uint8_t n = 0; n < nv.nibble_size(); n++) {
+                sm.down(nv.get(n));
+            }
             sm.down(i);
             if (sm.cache()) {
                 auto next = node->next(idx);
@@ -730,7 +734,9 @@ void create_new_trie_(
         Update &update = updates.front();
         MONAD_ASSERT(update.value.has_value());
         auto const path = update.key.substr(prefix_index);
-        sm.down(path);
+        for (auto i = 0u; i < path.nibble_size(); ++i) {
+            sm.down(path.get(i));
+        }
         MONAD_ASSERT(
             !sm.is_variable_length() || update.next.empty(),
             "Invalid update detected: variable-length tables do not "
@@ -1088,7 +1094,9 @@ void mismatch_handler_(
             // nexts[j] is a path-shortened old node, trim prefix
             NibblesView const path_suffix =
                 old.path_nibble_view().substr(old_prefix_index + 1);
-            sm.down(path_suffix);
+            for (auto i = 0u; i < path_suffix.nibble_size(); ++i) {
+                sm.down(path_suffix.get(i));
+            }
             auto &child = children[index];
             child.branch = branch;
             // Updated node inherits the version number directly from old node

@@ -15,6 +15,9 @@
 
 #include <io-interface/zkvm_io.h>
 #include <zkvm/guest/execute_block.hpp>
+#if defined(MONAD_ZKVM_ZISK)
+    #include <zkvm/guest/known_codes.hpp>
+#endif
 #include <zkvm/guest/witness_block_hash_buffer.hpp>
 
 #include <category/core/assert.h>
@@ -165,6 +168,19 @@ namespace
 }
 #endif
 
+#if defined(MONAD_ZKVM_ZISK)
+// The JUMPDEST map of a known code, for Intercode's analysis (its weak default
+// in intercode.cpp returns null), for a code that reaches it: one built by the
+// block, a known code from the witness taking the table's Intercode whole.
+extern "C" uint64_t const *
+monad_zkvm_known_jumpdests(uint8_t const *const code, size_t const size) noexcept
+{
+    auto const *const e = monad::zkvm::known_code_find(code, size);
+    return e != nullptr ? monad::zkvm::known_code_jumpdests + e->jumpdests
+                        : nullptr;
+}
+#endif
+
 extern "C" void monad_zkvm_execute_witness(void)
 {
 #ifdef MONAD_ZKVM_SELFTEST
@@ -241,6 +257,14 @@ extern "C" void monad_zkvm_execute_witness(void)
             while (!codes.empty()) {
                 auto const bytes = monad::rlp::parse_string_metadata(codes);
                 MONAD_ASSERT(bytes.has_value());
+                if (auto const *const e = monad::zkvm::known_code_find(
+                        bytes.value().data(), bytes.value().size())) {
+                    monad::bytes32_t known_hash;
+                    std::memcpy(known_hash.bytes, e->hash, 32);
+                    code_index.emplace(
+                        known_hash, monad::zkvm::known_code_intercode(*e));
+                    continue;
+                }
                 auto code = intercode_of(bytes.value());
                 uintptr_t const tag =
                     code->size() >= CODE_RATE ? first_blocks.add(*code) : 0;
@@ -264,8 +288,17 @@ extern "C" void monad_zkvm_execute_witness(void)
         while (!codes.empty()) {
             auto const bytes = monad::rlp::parse_string_metadata(codes);
             MONAD_ASSERT(bytes.has_value());
-            auto const code = intercode_of(bytes.value());
             monad::bytes32_t code_hash;
+#if defined(MONAD_ZKVM_ZISK)
+            if (auto const *const e = monad::zkvm::known_code_find(
+                    bytes.value().data(), bytes.value().size())) {
+                std::memcpy(code_hash.bytes, e->hash, 32);
+                code_index.emplace(
+                    code_hash, monad::zkvm::known_code_intercode(*e));
+                continue;
+            }
+#endif
+            auto const code = intercode_of(bytes.value());
             monad_zkvm_keccak256_fast_nomemo(
                 code->code(), bytes.value().size(), code_hash.bytes);
             code_index.emplace(code_hash, code);

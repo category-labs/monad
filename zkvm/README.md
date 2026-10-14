@@ -51,7 +51,7 @@ for its runtime, I/O, and accelerators.
   Cargo reads this configuration when invoked from either backend directory.
 - For ZisK, install `cargo-zisk` and `ziskemu` using
   [ziskup](https://github.com/0xPolygonHermez/zisk). The guest pins `ziskos`
-  to **v1.3.1-alpha** in [Cargo.toml](zisk/Cargo.toml); use matching tools.
+  to **v1.3.2-alpha** in [Cargo.toml](zisk/Cargo.toml); use matching tools.
 - For SP1, install the `succinct` Rust toolchain using
   [sp1up](https://docs.succinct.xyz/getting-started/install.html), and provide
   `ld.lld` on `PATH` or through that toolchain. The host SDK is **6.8.1**;

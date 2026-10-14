@@ -371,20 +371,6 @@ public:
     void activate_secondary_header();
     void deactivate_secondary_header();
 
-    // True if the (inactive) secondary ring is in the pre-fix
-    // MONAD007->MONAD008 migration artifact state: some cnv_chunks[] slot holds
-    // cnv chunk id 0 (aliasing the db_metadata chunk) instead of the NULL_CHUNK
-    // sentinel. Always false for an active secondary. Used to gate --repair and
-    // to refuse --activate-secondary on an unrepaired pool.
-    bool secondary_ring_needs_repair() const noexcept;
-
-    // Reset an inactive secondary ring left zero-filled by the pre-fix
-    // MONAD007->MONAD008 migration back to the NULL_CHUNK sentinel, so a later
-    // activate won't map and wipe the db_metadata chunk. No-op (returns false)
-    // if the secondary is active or already well-formed. Requires a writable
-    // mapping. Backs `monad-mpt --repair`.
-    bool repair_inactive_secondary_ring();
-
     // Flips primary_ring_idx on both metadata copies, swapping which
     // physical ring is the logical primary. Persistent across restart
     // because the byte is on-disk metadata; map_ring_a_storage /
@@ -418,12 +404,6 @@ private:
     // the span pointer stable across shrink/grow.
     void map_ring_a_storage();
     void map_ring_b_storage();
-
-    // Reset the secondary_timeline ring's chunk storage to the empty state:
-    // zero length, every cnv_chunks[] slot at the NULL_CHUNK sentinel
-    // (0xffffffff), never 0 (which aliases cnv chunk 0, the db_metadata chunk).
-    // Caller holds the dirty bit. Used by repair_inactive_secondary_ring().
-    static void reset_secondary_ring_storage_(detail::db_metadata *m) noexcept;
 
     // Shared helper for the two map_* functions above. The `span_field`
     // member pointer selects which span slot on metadata_copy gets the
@@ -472,13 +452,12 @@ private:
                 continue;
             }
             // cnv chunk 0 holds db_metadata and must never appear as a ring
-            // data chunk; a 0 here is corrupt/zeroed cnv_chunks[] (the pre-fix
-            // migration artifact) that would alias the metadata chunk.
+            // data chunk; a 0 here is corrupt/zeroed cnv_chunks[] that would
+            // alias the metadata chunk.
             MONAD_ASSERT_PRINTF(
                 cnv_chunk_id != 0,
                 "ring cnv_chunks[%zu] == 0 (db_metadata chunk); corrupt "
-                "metadata. If this pool was migrated by a pre-fix binary, run "
-                "'monad-mpt --repair'.",
+                "metadata.",
                 n);
             auto chunk = io_->storage_pool().chunk(
                 MONAD_ASYNC_NAMESPACE::storage_pool::cnv, cnv_chunk_id);

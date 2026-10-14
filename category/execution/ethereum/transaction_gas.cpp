@@ -127,8 +127,8 @@ uint64_t intrinsic_gas(Transaction const &tx) noexcept
     uint64_t gas = 21'000 + g_data<traits>(tx) + g_txn_create(tx) +
                    g_access_and_storage(tx);
 
-    // EIP-3860: per-word initcode cost (Shanghai)
-    if constexpr (traits::evm_rev() >= MONAD_ETH_SHANGHAI) {
+    // EIP-3860: per-word initcode cost
+    if constexpr (traits::eip_3860_active()) {
         gas += g_extra_cost_init(tx);
     }
     // EIP-7702: authorization-list cost (Prague)

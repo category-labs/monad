@@ -365,6 +365,7 @@ target_link_libraries(
   PUBLIC blst::blst
   PUBLIC c-kzg-4844
   PRIVATE PkgConfig::crypto++
+  PRIVATE PkgConfig::gmp
   PUBLIC ethash::keccak
   PUBLIC evmc
   PUBLIC immer

@@ -68,7 +68,7 @@ TYPED_TEST(TraitsTest, apply_block_reward)
             BlockHeader{.number = 8, .beneficiary = c}}};
     apply_block_reward<typename TestFixture::Trait>(as, block);
 
-    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_PARIS) {
+    if constexpr (!TestFixture::Trait::eip_3675_active()) {
         EXPECT_EQ(as.get_balance(a), 2'125'000'000'000'000'000);
         EXPECT_EQ(as.get_balance(b), 1'750'000'000'000'000'000);
         EXPECT_EQ(as.get_balance(c), 1'500'000'000'000'000'000);

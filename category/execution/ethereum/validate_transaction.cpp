@@ -65,8 +65,7 @@ Result<void> static_validate_transaction(
     }
 
     // TODO: remove the below logic once we fully migrate over to traits
-    // EIP-1559
-    if constexpr (traits::evm_rev() < MONAD_ETH_LONDON) {
+    if constexpr (!traits::eip_1559_header_active()) {
         if (MONAD_UNLIKELY(
                 tx.type != TransactionType::legacy &&
                 tx.type != TransactionType::eip2930)) {

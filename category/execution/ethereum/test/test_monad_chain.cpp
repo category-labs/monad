@@ -160,7 +160,9 @@ TYPED_TEST(TraitsTest, Genesis)
 
         auto result =
             static_validate_header<typename TestFixture::Trait>(header);
-        if constexpr (TestFixture::Trait::evm_rev() == MONAD_ETH_CANCUN) {
+        if constexpr (
+            TestFixture::Trait::eip_4844_header_active() &&
+            !TestFixture::Trait::eip_7685_header_active()) {
             EXPECT_TRUE(result.has_value());
         }
         else {

@@ -48,9 +48,6 @@ namespace
     static constexpr auto s{
         0x121d855c539a23aadf6f06ac21165db1ad5efd261842e82a719c9863ca4ac04c_u256};
 
-    template <monad_eth_revision r>
-    using rev = std::integral_constant<monad_eth_revision, r>;
-
     static constexpr auto sender =
         0x000000000000000000000000000000000000000a_address;
 
@@ -354,9 +351,9 @@ TYPED_TEST(TraitsTest, invalid_gas_limit)
     EXPECT_EQ(result.error(), BlockError::InvalidGasLimit);
 }
 
-#define TEST_OPTIONAL_FIELD(f, default_val, REV)                               \
+#define TEST_OPTIONAL_FIELD(f, default_val, ACTIVE)                            \
     {                                                                          \
-        if constexpr (TestFixture::Trait::evm_rev() >= REV) {                  \
+        if constexpr (ACTIVE) {                                                \
             static_assert(!!valid_header.f);                                   \
             BlockHeader invalid_header = valid_header;                         \
             invalid_header.f = std::nullopt;                                   \
@@ -380,33 +377,26 @@ TYPED_TEST(TraitsTest, invalid_gas_limit)
 
 TYPED_TEST(TraitsTest, optional_fields_existence)
 {
-    auto value_since = []<monad_eth_revision rev, typename T>(
-                           std::integral_constant<monad_eth_revision, rev>,
-                           T val) consteval {
-        if constexpr (TestFixture::Trait::evm_rev() >= rev) {
-            return std::optional<T>{val};
-        }
-        else {
-            return std::nullopt;
-        }
+    auto value_if = []<typename T>(bool const active, T const val) consteval {
+        return active ? std::optional<T>{val} : std::nullopt;
     };
 
     static constexpr auto base_fee_per_gas =
-        value_since(rev<MONAD_ETH_LONDON>{}, uint256_t{});
+        value_if(TestFixture::Trait::eip_1559_header_active(), uint256_t{});
     static constexpr auto withdrawals_root =
-        value_since(rev<MONAD_ETH_SHANGHAI>{}, bytes32_t{});
+        value_if(TestFixture::Trait::eip_4895_active(), bytes32_t{});
     static constexpr auto blob_gas_used =
-        value_since(rev<MONAD_ETH_CANCUN>{}, uint64_t{});
+        value_if(TestFixture::Trait::eip_4844_header_active(), uint64_t{});
     static constexpr auto excess_blob_gas =
-        value_since(rev<MONAD_ETH_CANCUN>{}, uint64_t{});
+        value_if(TestFixture::Trait::eip_4844_header_active(), uint64_t{});
     static constexpr auto parent_beacon_block_root =
-        value_since(rev<MONAD_ETH_CANCUN>{}, bytes32_t{});
+        value_if(TestFixture::Trait::eip_4788_active(), bytes32_t{});
     static constexpr auto requests_hash =
-        value_since(rev<MONAD_ETH_PRAGUE>{}, bytes32_t{});
+        value_if(TestFixture::Trait::eip_7685_header_active(), bytes32_t{});
     static constexpr auto block_access_list_hash =
-        value_since(rev<MONAD_ETH_AMSTERDAM>{}, bytes32_t{});
+        value_if(TestFixture::Trait::eip_7843_active(), bytes32_t{});
     static constexpr auto slot_number =
-        value_since(rev<MONAD_ETH_AMSTERDAM>{}, uint64_t{});
+        value_if(TestFixture::Trait::eip_7843_active(), uint64_t{});
 
     static constexpr BlockHeader valid_header{
         .gas_limit = 10000,
@@ -424,15 +414,32 @@ TYPED_TEST(TraitsTest, optional_fields_existence)
         static_validate_header<typename TestFixture::Trait>(valid_header)
             .has_value());
 
-    TEST_OPTIONAL_FIELD(base_fee_per_gas, uint256_t{}, MONAD_ETH_LONDON)
-    TEST_OPTIONAL_FIELD(withdrawals_root, bytes32_t{}, MONAD_ETH_SHANGHAI)
-    TEST_OPTIONAL_FIELD(blob_gas_used, uint64_t{}, MONAD_ETH_CANCUN)
-    TEST_OPTIONAL_FIELD(excess_blob_gas, uint64_t{}, MONAD_ETH_CANCUN)
-    TEST_OPTIONAL_FIELD(parent_beacon_block_root, bytes32_t{}, MONAD_ETH_CANCUN)
-    TEST_OPTIONAL_FIELD(requests_hash, bytes32_t{}, MONAD_ETH_PRAGUE)
     TEST_OPTIONAL_FIELD(
-        block_access_list_hash, bytes32_t{}, MONAD_ETH_AMSTERDAM)
-    TEST_OPTIONAL_FIELD(slot_number, uint64_t{}, MONAD_ETH_AMSTERDAM)
+        base_fee_per_gas,
+        uint256_t{},
+        TestFixture::Trait::eip_1559_header_active())
+    TEST_OPTIONAL_FIELD(
+        withdrawals_root, bytes32_t{}, TestFixture::Trait::eip_4895_active())
+    TEST_OPTIONAL_FIELD(
+        blob_gas_used, uint64_t{}, TestFixture::Trait::eip_4844_header_active())
+    TEST_OPTIONAL_FIELD(
+        excess_blob_gas,
+        uint64_t{},
+        TestFixture::Trait::eip_4844_header_active())
+    TEST_OPTIONAL_FIELD(
+        parent_beacon_block_root,
+        bytes32_t{},
+        TestFixture::Trait::eip_4788_active())
+    TEST_OPTIONAL_FIELD(
+        requests_hash,
+        bytes32_t{},
+        TestFixture::Trait::eip_7685_header_active())
+    TEST_OPTIONAL_FIELD(
+        block_access_list_hash,
+        bytes32_t{},
+        TestFixture::Trait::eip_7843_active())
+    TEST_OPTIONAL_FIELD(
+        slot_number, uint64_t{}, TestFixture::Trait::eip_7843_active())
 }
 
 #undef TEST_OPTIONAL_FIELD
@@ -542,36 +549,29 @@ TYPED_TEST(TraitsTest, validate_excess_blob_gas_against_parent)
 
 TYPED_TEST(TraitsTest, invalid_nonce)
 {
-    auto value_since = []<monad_eth_revision rev, typename T>(
-                           std::integral_constant<monad_eth_revision, rev>,
-                           T val) consteval {
-        if constexpr (TestFixture::Trait::evm_rev() >= rev) {
-            return std::optional<T>{val};
-        }
-        else {
-            return std::nullopt;
-        }
+    auto value_if = []<typename T>(bool const active, T const val) consteval {
+        return active ? std::optional<T>{val} : std::nullopt;
     };
 
     static constexpr byte_string_fixed<8> nonce{
         0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08};
 
     static constexpr auto base_fee_per_gas =
-        value_since(rev<MONAD_ETH_LONDON>{}, uint256_t{});
+        value_if(TestFixture::Trait::eip_1559_header_active(), uint256_t{});
     static constexpr auto withdrawals_root =
-        value_since(rev<MONAD_ETH_SHANGHAI>{}, bytes32_t{});
+        value_if(TestFixture::Trait::eip_4895_active(), bytes32_t{});
     static constexpr auto blob_gas_used =
-        value_since(rev<MONAD_ETH_CANCUN>{}, uint64_t{});
+        value_if(TestFixture::Trait::eip_4844_header_active(), uint64_t{});
     static constexpr auto excess_blob_gas =
-        value_since(rev<MONAD_ETH_CANCUN>{}, uint64_t{});
+        value_if(TestFixture::Trait::eip_4844_header_active(), uint64_t{});
     static constexpr auto parent_beacon_block_root =
-        value_since(rev<MONAD_ETH_CANCUN>{}, bytes32_t{});
+        value_if(TestFixture::Trait::eip_4788_active(), bytes32_t{});
     static constexpr auto requests_hash =
-        value_since(rev<MONAD_ETH_PRAGUE>{}, bytes32_t{});
+        value_if(TestFixture::Trait::eip_7685_header_active(), bytes32_t{});
     static constexpr auto block_access_list_hash =
-        value_since(rev<MONAD_ETH_AMSTERDAM>{}, bytes32_t{});
+        value_if(TestFixture::Trait::eip_7843_active(), bytes32_t{});
     static constexpr auto slot_number =
-        value_since(rev<MONAD_ETH_AMSTERDAM>{}, uint64_t{});
+        value_if(TestFixture::Trait::eip_7843_active(), uint64_t{});
 
     static constexpr BlockHeader header{
         .gas_limit = 10000,

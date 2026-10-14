@@ -51,6 +51,7 @@
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
 
+#include <boost/fiber/future/promise.hpp>
 #include <boost/outcome/success_failure.hpp>
 #include <boost/outcome/try.hpp>
 
@@ -209,8 +210,9 @@ Result<bytes32_t> execute_block_zkvm(
                 block.header.gas_limit - block_gas_used)) {
             return BlockError::InvalidGasLimit;
         }
-        boost::fibers::promise<void> prev{};
-        prev.set_value();
+        boost::fibers::promise<void> prev_promise{};
+        auto prev = prev_promise.get_future();
+        prev_promise.set_value();
         ExecuteTransaction<traits> exec{
             chain,
             i,

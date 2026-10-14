@@ -28,7 +28,7 @@
 #include <category/vm/evm/result.hpp>
 #include <category/vm/evm/traits.hpp>
 
-#include <asmjit/core/jitruntime.h>
+#include <asmjit/core/jit_runtime.h>
 
 #include <CLI/CLI.hpp>
 

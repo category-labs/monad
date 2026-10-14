@@ -38,6 +38,8 @@
 #include <cstdint>
 #include <cstring>
 
+#include <zkvm/guest/known_inputs.hpp>
+
 // An unaligned 8-byte load. The memcpy is the portable spelling of one; gcc
 // folds it into a single instruction.
 [[gnu::always_inline]] static inline uint64_t
@@ -907,6 +909,10 @@ extern "C"
 
 void monad_zkvm_keccak256_fast(void const *const in, size_t len, uint8_t out[32])
 {
+    if (monad::zkvm::known_input_hash(
+            static_cast<unsigned char const *>(in), len, out)) {
+        return;
+    }
     keccak256_sponge<true>(in, len, out);
 }
 

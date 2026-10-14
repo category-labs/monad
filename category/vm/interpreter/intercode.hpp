@@ -138,6 +138,15 @@ namespace monad::vm::interpreter
 
         explicit Intercode(std::span<uint8_t const> const);
 
+#ifdef MONAD_ZKVM_ZISK
+        // A code the guest holds already padded, with its JUMPDEST map: no
+        // copy and no analysis. The guest's operator delete does nothing, so
+        // the destructor's delete of a buffer this does not own does nothing.
+        Intercode(
+            uint8_t const *padded_code, size_t code_size,
+            uint64_t const *jumpdest_words);
+#endif
+
         Intercode(uint8_t const *const code, size_t const code_size)
             : Intercode{std::span<uint8_t const>{code, code_size}}
         {

@@ -37,6 +37,22 @@ namespace monad::vm::interpreter
     {
     }
 
+#ifdef MONAD_ZKVM_ZISK
+    Intercode::Intercode(
+        uint8_t const *const padded_code, size_t const code_size,
+        uint64_t const *const jumpdest_words)
+        : padded_code_(padded_code)
+        , code_size_(
+              code_size_t::unsafe_from(static_cast<uint32_t>(code_size)))
+        , jumpdest_map_(code_size)
+    {
+        std::memcpy(
+            jumpdest_map_.words(),
+            jumpdest_words,
+            (code_size + 63) / 64 * sizeof(uint64_t));
+    }
+#endif
+
     Intercode::~Intercode()
     {
         delete[] (padded_code_ - start_padding_size);

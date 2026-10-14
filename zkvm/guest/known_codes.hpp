@@ -16,16 +16,17 @@
 #pragma once
 
 #if defined(MONAD_ZKVM_ZISK)
-    #include <category/core/bytes.hpp>
+    #include <category/vm/code.hpp>
 #endif
 
 #include <cstddef>
 #include <cstdint>
 
-// A table of bytecodes the guest knows, with their keccak computed when the
-// table was built. A witness code that is a byte-for-byte copy of an entry
-// takes the entry's hash: one DMA compare instead of hashing the code, one
-// Keccak-f permutation per 136 bytes.
+// A table of bytecodes the guest knows, each padded as Intercode pads a code,
+// with its keccak and JUMPDEST map computed when the table was built. A
+// witness code that is a byte-for-byte copy of an entry takes the entry's
+// hash, copy and map: one DMA compare instead of hashing the code (one
+// Keccak-f permutation per 136 bytes), copying it and analysing it.
 
 namespace monad::zkvm
 {
@@ -79,9 +80,10 @@ namespace monad::zkvm
         return differ == 0;
     }
 
-    // The entry the size bytes at code, 8-aligned, are a copy of, or null.
-    // The key reads the first word and the middle one, both whole for a code
-    // of 16 bytes or more; the table holds no shorter code.
+    // The entry the size bytes at code are a copy of, or null. The key reads
+    // the first word and the middle one, both whole for a code of 16 bytes or
+    // more; the table holds no shorter code. The compare is by DMA, aligned or
+    // not.
     inline KnownCode const *
     known_code_find(unsigned char const *const code, size_t const size) noexcept
     {
@@ -108,27 +110,13 @@ namespace monad::zkvm
         }
     }
 
-    // The lookup the JUMPDEST analysis of an Intercode made for its copy of a
-    // code (monad_zkvm_known_jumpdests), kept for known_code_hash on the same
-    // copy: one compare per code, not two. A copy is never freed or written
-    // again on this guest, so its address names its bytes.
-    inline unsigned char const *known_code_last_copy = nullptr;
-    inline KnownCode const *known_code_last = nullptr;
-
-    // The keccak of the size bytes at code, 8-aligned, when they are a known
-    // code.
-    inline bool known_code_hash(
-        unsigned char const *const code, size_t const size,
-        bytes32_t &hash) noexcept
+    // A known code's Intercode: the table's padded copy and JUMPDEST map.
+    inline vm::SharedIntercode known_code_intercode(KnownCode const &e)
     {
-        KnownCode const *const e = code == known_code_last_copy
-                                       ? known_code_last
-                                       : known_code_find(code, size);
-        if (e == nullptr) {
-            return false;
-        }
-        __builtin_memcpy(hash.bytes, e->hash, 32);
-        return true;
+        return vm::make_shared_intercode(
+            reinterpret_cast<uint8_t const *>(known_code_words) + e.offset,
+            size_t{e.size},
+            known_code_jumpdests + e.jumpdests);
     }
 #endif
 }

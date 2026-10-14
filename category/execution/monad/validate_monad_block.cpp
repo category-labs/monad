@@ -90,7 +90,7 @@ Result<void> static_validate_monad_body(
 {
     MONAD_ASSERT(senders.size() == txns.size());
 
-    if constexpr (traits::monad_rev() < MONAD_FOUR) {
+    if constexpr (!traits::staking_active()) {
         return outcome::success();
     }
 

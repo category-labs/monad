@@ -15,6 +15,9 @@
 
 #include <io-interface/zkvm_io.h>
 #include <zkvm/guest/execute_block.hpp>
+#if defined(MONAD_ZKVM_ZISK)
+    #include <zkvm/guest/known_codes.hpp>
+#endif
 #include <zkvm/guest/witness_block_hash_buffer.hpp>
 
 #include <category/core/assert.h>
@@ -242,6 +245,12 @@ extern "C" void monad_zkvm_execute_witness(void)
                 auto const bytes = monad::rlp::parse_string_metadata(codes);
                 MONAD_ASSERT(bytes.has_value());
                 auto code = intercode_of(bytes.value());
+                monad::bytes32_t known_hash;
+                if (monad::zkvm::known_code_hash(
+                        code->code(), code->size(), known_hash)) {
+                    code_index.emplace(known_hash, std::move(code));
+                    continue;
+                }
                 uintptr_t const tag =
                     code->size() >= CODE_RATE ? first_blocks.add(*code) : 0;
                 pending.push_back({std::move(code), tag});
@@ -266,6 +275,13 @@ extern "C" void monad_zkvm_execute_witness(void)
             MONAD_ASSERT(bytes.has_value());
             auto const code = intercode_of(bytes.value());
             monad::bytes32_t code_hash;
+#if defined(MONAD_ZKVM_ZISK)
+            if (monad::zkvm::known_code_hash(
+                    code->code(), bytes.value().size(), code_hash)) {
+                code_index.emplace(code_hash, code);
+                continue;
+            }
+#endif
             monad_zkvm_keccak256_fast_nomemo(
                 code->code(), bytes.value().size(), code_hash.bytes);
             code_index.emplace(code_hash, code);

@@ -1,0 +1,39 @@
+name: Gate
+
+on:
+  pull_request:
+    types: [ opened, synchronize, reopened ]
+
+permissions:
+  actions: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    name: All checks pass
+    runs-on: ubuntu-26.04
+    timeout-minutes: 120
+
+    steps:
+      - name: Wait for every other workflow on this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          query='[.workflow_runs[]
+                  | select(.path != ".github/workflows/gate.yml"
+                       and .path != ".github/workflows/claude.yml")]
+                 | group_by(.path) | map(max_by(.id))'
+          prev=
+          while :; do
+            sleep 60
+            runs=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$SHA&event=pull_request&per_page=100" --jq "$query") || continue
+            ids=$(jq -c 'map(.id)' <<< "$runs")
+            jq -e 'length > 0 and all(.status == "completed")' <<< "$runs" > /dev/null && [ "$ids" = "$prev" ] && break
+            prev=$ids
+          done
+          jq -r '.[] | "\(.conclusion)\t\(.name)"' <<< "$runs"
+          jq -e 'all(.conclusion | IN("success", "skipped", "neutral"))' <<< "$runs" > /dev/null

@@ -70,6 +70,13 @@ namespace monad::vm::interpreter
             return result;
         }
 
+        // Symmetric with operator+, so that a caller stepping down the stack
+        // need not spell it as a negative step.
+        constexpr StackTop operator-(std::ptrdiff_t const delta) const
+        {
+            return StackTop{ptr_ - delta};
+        }
+
         constexpr StackTop &operator--()
         {
             --ptr_;

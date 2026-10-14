@@ -33,6 +33,12 @@
 #include <variant>
 #include <vector>
 
+#if defined(MONAD_ZKVM_WIDE_MEMORY_SIZE) && defined(__x86_64__)
+    #error "MONAD_ZKVM_WIDE_MEMORY_SIZE is a guest-only layout: it moves \
+the Environment and Memory fields that context.S and the x86 emitter read at \
+fixed offsets."
+#endif
+
 namespace monad::vm::runtime
 {
     enum class StatusCode : uint64_t
@@ -50,10 +56,31 @@ namespace monad::vm::runtime
         StatusCode status;
     };
 
+    // The Environment's two sizes, 64-bit under MONAD_ZKVM_WIDE_MEMORY_SIZE for
+    // memory_size_t's reason and under its contract, both below: CALLDATALOAD
+    // and CALLDATASIZE read input_data_size on every execution, and the x86
+    // emitter reads both fields at fixed offsets.
+#ifdef MONAD_ZKVM_WIDE_MEMORY_SIZE
+    using env_size_t = uint64_t;
+#else
+    using env_size_t = uint32_t;
+#endif
+
+    // The flags and the depth at the same width, for the same reason: SSTORE,
+    // TSTORE and the LOGs read the flags for their static test, CALL and
+    // CREATE read both, and Context::from writes both for every message.
+#ifdef MONAD_ZKVM_WIDE_MEMORY_SIZE
+    using env_flags_t = uint64_t;
+    using env_depth_t = int64_t;
+#else
+    using env_flags_t = uint32_t;
+    using env_depth_t = int32_t;
+#endif
+
     struct Environment
     {
-        uint32_t evmc_flags;
-        int32_t depth;
+        env_flags_t evmc_flags;
+        env_depth_t depth;
         Address recipient;
         Address sender;
         bytes32_t value;
@@ -63,8 +90,8 @@ namespace monad::vm::runtime
         uint8_t const *code;
         uint8_t const *return_data;
 
-        uint32_t input_data_size;
-        uint32_t code_size;
+        env_size_t input_data_size;
+        env_size_t code_size;
         size_t return_data_size;
 
         evmc_tx_context const *tx_context;
@@ -92,12 +119,33 @@ namespace monad::vm::runtime
         }
     };
 
+    // 64-bit under MONAD_ZKVM_WIDE_MEMORY_SIZE, 32-bit everywhere else.
+    //
+    // Every memory-touching opcode reads `size`, and ZisK charges a 4-byte read
+    // 122 cells against 17 for an aligned 8-byte one: anything narrower than a
+    // word, even at a word-aligned address, is a sub-word access there. And
+    // adding 32 to an offset is an `add_w` at 60 rather than a native add at
+    // 15.3. On block 25815100 mstore and mload alone read the field 47,194 and
+    // 37,868 times.
+    //
+    // Only the guest can take it. The native compiler emits a 32-bit read of
+    // this field at a fixed offset -- emitter.cpp, via
+    // context_offset_memory_size -- and context.S addresses the same offsets by
+    // hand. The guest drops every .S and never builds the x86 emitter, so the
+    // contract below is x86's alone, and the #error at the top of this file
+    // makes a leak a build failure rather than a silent half-word read.
+#ifdef MONAD_ZKVM_WIDE_MEMORY_SIZE
+    using memory_size_t = uint64_t;
+#else
+    using memory_size_t = uint32_t;
+#endif
+
     struct Memory
     {
         // Size of the memory region for current call frame:
-        uint32_t size;
+        memory_size_t size;
         // Capacity of the memory region for current call frame:
-        uint32_t capacity;
+        memory_size_t capacity;
         // Start of memory region for current call frame:
         uint8_t *data;
         // Current accumulated memory cost for current call frame:
@@ -194,7 +242,7 @@ namespace monad::vm::runtime
             // to fail:
             MONAD_ASSERT(x <= Bin<30>::upper);
 
-            return Bin<30>::unsafe_from(static_cast<uint32_t>(x));
+            return Bin<30>::unsafe_from(static_cast<Bin<30>::rep>(x));
         }
 
         [[gnu::always_inline]]
@@ -248,6 +296,31 @@ namespace monad::vm::runtime
         exit_stack_ptr_t exit_stack_ptr = nullptr;
         bool is_stack_unwinding_active = false;
 
+        // Last valid stack slot, cached by interpreter::execute.
+        // Keep after members whose offsets are used by assembly.
+        uint256_t const *stack_limit = nullptr;
+
+#if defined(MONAD_ZKVM_ZISK)
+        // Shared temporary for SWAP1-16: no nested SWAP can occur between
+        // saving and restoring it. Keep last to preserve assembly offsets.
+        uint256_t swap_scratch;
+
+        // Reuse ADD parameters; execute initializes carry-in to 0.
+        // Keep last to preserve the assembly offsets.
+        ZiskAdd256Params add256_params{nullptr, nullptr, 0, nullptr};
+        // SUB uses carry-in 1 for a + ~b + 1.
+        ZiskAdd256Params sub256_params{nullptr, nullptr, 1, nullptr};
+
+        // The running code as the interpreter's jumps read it, from its
+        // analysis: its padded bytes from the second on, where a taken jump
+        // to pc goes on at landing_base + pc, past the JUMPDEST it lands on;
+        // its size; and its JUMPDEST map. The handlers' second argument
+        // carries stack_limit instead (interpreter/types.hpp).
+        uint8_t const *landing_base = nullptr;
+        size_t code_bound = 0;
+        uint64_t const *jumpdest_words = nullptr;
+#endif
+
         [[gnu::always_inline]]
         constexpr void deduct_gas(int64_t const gas) noexcept
         {
@@ -276,9 +349,11 @@ namespace monad::vm::runtime
                 return static_cast<int64_t>(*word_count >> 1);
             }
             else {
-                // V1 memory version
+                // V1: 3c + floor(c*c/512) = floor(c*(c + 1536)/512).
+                // Factoring saves arithmetic; callers provide Bin<25> counts,
+                // so the product fits in uint64_t.
                 auto const c = static_cast<uint64_t>(*word_count);
-                return static_cast<int64_t>((c * c) / 512 + (3 * c));
+                return static_cast<int64_t>((c * (c + 1536)) >> 9);
             }
         }
 
@@ -350,7 +425,8 @@ namespace monad::vm::runtime
                     !is_bounded_by_bits<Memory::offset_bits>(offset))) {
                 exit(StatusCode::OutOfGas);
             }
-            return Memory::Offset::unsafe_from(static_cast<uint32_t>(offset));
+            return Memory::Offset::unsafe_from(
+                static_cast<Memory::Offset::rep>(offset));
         }
 
         template <Traits traits>
@@ -398,14 +474,33 @@ namespace monad::vm::runtime
         copy_result_data();
     };
 
+    // memory_size_t and Bin's representation are two independent #ifdefs; the
+    // widening only pays if they agree, and nothing else checks that.
+    static_assert(std::is_same_v<memory_size_t, Memory::Offset::rep>);
+
     // Update context.S accordingly if these offsets change:
     static_assert(offsetof(Context, gas_remaining) == 16);
+#ifndef MONAD_ZKVM_WIDE_MEMORY_SIZE
+    // env_size_t moves it on the guest, which has no context.S.
     static_assert(offsetof(Context, memory) == 264);
+#endif
+    // The fields are packed in declaration order with no padding. That is the
+    // invariant, and it holds at either representation -- on x86 it evaluates
+    // to size 0, capacity 4, data 8, cost 16, data_handle 24, which is what
+    // context.S and the x86 emitter address by hand.
     static_assert(offsetof(Memory, size) == 0);
-    static_assert(offsetof(Memory, capacity) == 4);
-    static_assert(offsetof(Memory, data) == 8);
-    static_assert(offsetof(Memory, cost) == 16);
-    static_assert(offsetof(Memory, data_handle) == 24);
+    static_assert(
+        offsetof(Memory, capacity) ==
+        offsetof(Memory, size) + sizeof(Memory::size));
+    static_assert(
+        offsetof(Memory, data) ==
+        offsetof(Memory, capacity) + sizeof(Memory::capacity));
+    static_assert(
+        offsetof(Memory, cost) ==
+        offsetof(Memory, data) + sizeof(Memory::data));
+    static_assert(
+        offsetof(Memory, data_handle) ==
+        offsetof(Memory, cost) + sizeof(Memory::cost));
 
     constexpr auto context_offset_gas_remaining =
         offsetof(Context, gas_remaining);

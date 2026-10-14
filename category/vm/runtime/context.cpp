@@ -22,6 +22,9 @@
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
+#if defined(MONAD_ZKVM_ZISK)
+    #include <category/vm/host.hpp>
+#endif
 #include <category/vm/runtime/bin.hpp>
 #include <category/vm/runtime/transmute.hpp>
 #include <category/vm/runtime/types.hpp>
@@ -39,8 +42,21 @@
 
 using namespace monad::vm::runtime;
 
+// Bin is an ordinary C++ type everywhere else: the compiler sees both sides of
+// a call and picks the convention itself, whatever the width. Not here.
+// monad_vm_runtime_increase_capacity below is also called from x86 machine code
+// that the JIT emitter assembles at run time, and that code hard-codes the
+// convention -- a four-byte Bin<30> travels in a 32-bit register. No compiler
+// checks that, so sizeof(Bin) is an ABI fact and the assert pins it. The guest
+// builds no emitter, so nothing hand-written depends on the width there, and
+// that is what lets it widen the representation.
+#ifdef MONAD_ZKVM_WIDE_MEMORY_SIZE
+static_assert(sizeof(Bin<31>) == sizeof(Bin<31>::rep));
+static_assert(alignof(Bin<31>) == alignof(Bin<31>::rep));
+#else
 static_assert(sizeof(Bin<31>) == sizeof(uint32_t));
 static_assert(alignof(Bin<31>) == alignof(uint32_t));
+#endif
 static_assert(std::is_standard_layout_v<Bin<31>>);
 
 extern "C" void monad_vm_runtime_increase_capacity(
@@ -86,6 +102,26 @@ namespace monad::vm::runtime
         }
     }
 
+    namespace
+    {
+        // Read in Context's initialiser, where the message's fields are no
+        // longer needed: read before it, the arguments are spilled across
+        // the call and loaded back.
+        [[gnu::always_inline]] inline evmc_tx_context const *tx_context_of(
+            evmc_host_interface const *const host,
+            evmc_host_context *const context) noexcept
+        {
+#if defined(MONAD_ZKVM_ZISK)
+            // The guest's VM hands monad's host: its method, not the C
+            // adapter.
+            (void)host;
+            return host_shim::of(context)->get_tx_context();
+#else
+            return host->get_tx_context(context);
+#endif
+        }
+    }
+
     Context Context::from(
         evmc_host_interface const *const host, evmc_host_context *const context,
         evmc_message const *const msg,
@@ -107,10 +143,10 @@ namespace monad::vm::runtime
                     .input_data = msg->input_data,
                     .code = code.data(),
                     .return_data = {},
-                    .input_data_size = static_cast<uint32_t>(msg->input_size),
-                    .code_size = static_cast<uint32_t>(code.size()),
+                    .input_data_size = static_cast<env_size_t>(msg->input_size),
+                    .code_size = static_cast<env_size_t>(code.size()),
                     .return_data_size = 0,
-                    .tx_context = host->get_tx_context(context),
+                    .tx_context = tx_context_of(host, context),
                 },
             .result = {},
             .memory =

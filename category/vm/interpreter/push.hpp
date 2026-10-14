@@ -55,38 +55,72 @@ namespace monad::vm::interpreter
 
         using subword_t = uint256_t::word_type;
 
+        // Assemble K big-endian bytes directly to avoid a temporary and a
+        // software byte swap on targets without a byte-swap instruction.
+        template <size_t K>
+        [[gnu::always_inline]] inline subword_t
+        load_be_k(uint8_t const *const p) noexcept
+        {
+            static_assert(K >= 1 && K <= 8);
+#ifdef MONAD_ZKVM_ZISK
+            // ZisK charges less for two byte loads + packh than lhu/rev8/srli.
+            // Memory operands let GCC fold pointer offsets into the loads.
+            if constexpr (K == 2) {
+                subword_t hi;
+                subword_t lo;
+                // %0 = hi, %1 = lo; %2/%3 address p[0]/p[1].
+                // "=&r": write-only registers, distinct from input addresses.
+                // lbu zero-extends each byte.
+                asm("lbu %0, %2\n\t" // hi = p[0]
+                    "lbu %1, %3\n\t" // lo = p[1]
+                    "packh %0, %1, %0" // hi = (hi << 8) | lo
+                    : "=&r"(hi), "=&r"(lo)
+                    : "m"(p[0]), "m"(p[1]));
+                return hi;
+            }
+            // gcc reads four bytes with lw, whose sign-extended upper half
+            // rev8 and the shift then discard: lwu leaves out the
+            // signextend_w ZisK charges for it.
+            if constexpr (K == 4) {
+                subword_t v;
+                asm("lwu %0, %1\n\t"
+                    "rev8 %0, %0\n\t"
+                    "srli %0, %0, 32"
+                    : "=r"(v)
+                    : "m"(*reinterpret_cast<uint8_t const(*)[4]>(p)));
+                return v;
+            }
+#endif
+            return [p]<size_t... Is>(std::index_sequence<Is...>) {
+                return (
+                    (static_cast<subword_t>(p[Is]) << (8 * (K - 1 - Is))) |
+                    ...);
+            }(std::make_index_sequence<K>{});
+        }
+
         [[gnu::always_inline]] inline subword_t
         read_unaligned(uint8_t const *const ptr)
         {
-            return bswap(unaligned_load<subword_t>(ptr));
+            return load_be_k<8>(ptr);
         }
 
-        template <size_t N, Traits traits>
+        // Gas and stack checks stay in the handler so failures can tail-call
+        // Context::exit.
+        template <size_t N>
             requires(!detail::use_avx2_push(N))
-        [[gnu::always_inline]] inline void generic_push(
-            runtime::Context &ctx, Intercode const &analysis,
-            uint256_t const *const stack_bottom, StackTop const stack_top,
-            int64_t &gas_remaining, uint8_t const *const instr_ptr)
+        [[gnu::always_inline]] inline void
+        generic_push(StackTop const stack_top, uint8_t const *const instr_ptr)
         {
             static constexpr auto whole_words = N / 8;
             static constexpr auto leading_part = N % 8;
 
-            check_requirements<PUSH0 + N, traits>(
-                ctx, analysis, stack_bottom, stack_top, gas_remaining);
-
             auto const leading_word = [instr_ptr] {
-                auto word = subword_t{0};
-
                 if constexpr (leading_part == 0) {
-                    return word;
+                    return subword_t{0};
                 }
-
-                std::memcpy(
-                    reinterpret_cast<uint8_t *>(&word) + (8 - leading_part),
-                    instr_ptr + 1,
-                    leading_part);
-
-                return bswap(word);
+                else {
+                    return load_be_k<leading_part>(instr_ptr + 1);
+                }
             }();
 
             if constexpr (whole_words == 0) {
@@ -135,18 +169,14 @@ namespace monad::vm::interpreter
             }
         }
 
-        template <size_t N, Traits traits>
+        // The caller checks; see generic_push above.
+        template <size_t N>
             requires(detail::use_avx2_push(N))
-        [[gnu::always_inline]] inline void avx2_push(
-            runtime::Context &ctx, Intercode const &analysis,
-            uint256_t const *const stack_bottom, StackTop const stack_top,
-            int64_t &gas_remaining, uint8_t const *const instr_ptr)
+        [[gnu::always_inline]] inline void
+        avx2_push(StackTop const stack_top, uint8_t const *const instr_ptr)
         {
             static constexpr auto whole_words = N / 8;
             static constexpr auto leading_part = N % 8;
-
-            check_requirements<PUSH0 + N, traits>(
-                ctx, analysis, stack_bottom, stack_top, gas_remaining);
 
             static constexpr int64_t m = ~(
                 std::numeric_limits<int64_t>::max() >> (63 - leading_part * 8));
@@ -188,31 +218,19 @@ namespace monad::vm::interpreter
     template <size_t N, Traits traits>
     struct push_impl
     {
-        [[gnu::always_inline]] static inline void push(
-            runtime::Context &ctx, Intercode const &analysis,
-            uint256_t const *const stack_bottom, StackTop const stack_top,
-            int64_t &gas_remaining, uint8_t const *const instr_ptr)
+        [[gnu::always_inline]] static inline void
+        push(StackTop const stack_top, uint8_t const *const instr_ptr)
         {
-            detail::generic_push<N, traits>(
-                ctx,
-                analysis,
-                stack_bottom,
-                stack_top,
-                gas_remaining,
-                instr_ptr);
+            detail::generic_push<N>(stack_top, instr_ptr);
         }
     };
 
     template <Traits traits>
     struct push_impl<0, traits>
     {
-        [[gnu::always_inline]] static inline void push(
-            runtime::Context &ctx, Intercode const &analysis,
-            uint256_t const *const stack_bottom, StackTop const stack_top,
-            int64_t &gas_remaining, uint8_t const *)
+        [[gnu::always_inline]] static inline void
+        push(StackTop const stack_top, uint8_t const *)
         {
-            check_requirements<PUSH0, traits>(
-                ctx, analysis, stack_bottom, stack_top, gas_remaining);
             interpreter::push(stack_top, 0);
         }
     };
@@ -221,18 +239,10 @@ namespace monad::vm::interpreter
         requires(detail::use_avx2_push(N))
     struct push_impl<N, traits>
     {
-        [[gnu::always_inline]] static inline void push(
-            runtime::Context &ctx, Intercode const &analysis,
-            uint256_t const *const stack_bottom, StackTop const stack_top,
-            int64_t &gas_remaining, uint8_t const *const instr_ptr)
+        [[gnu::always_inline]] static inline void
+        push(StackTop const stack_top, uint8_t const *const instr_ptr)
         {
-            detail::avx2_push<N, traits>(
-                ctx,
-                analysis,
-                stack_bottom,
-                stack_top,
-                gas_remaining,
-                instr_ptr);
+            detail::avx2_push<N>(stack_top, instr_ptr);
         }
     };
 }

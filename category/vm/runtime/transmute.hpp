@@ -90,8 +90,9 @@ namespace monad::vm::runtime
     [[gnu::always_inline]]
     constexpr bool is_bounded_by_bits(uint256_t const &x)
     {
-        static constexpr uint64_t mask = ~((uint64_t{1} << N) - 1);
-        return ((x[0] & mask) | x[1] | x[2] | x[3]) == 0;
+        // Shifting detects bits outside the low N bits without loading a mask.
+        // N < 64 keeps the shift well-defined.
+        return ((x[0] >> N) | x[1] | x[2] | x[3]) == 0;
     }
 
     template <typename T>

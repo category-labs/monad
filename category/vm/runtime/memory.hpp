@@ -25,13 +25,62 @@
 
 namespace monad::vm::runtime
 {
+    // Load 32 bytes at a validated offset; [offset, offset + 32) must already
+    // be within memory.size.
+    template <Traits traits>
+    [[gnu::always_inline]] inline void
+    mload_at(Context *ctx, uint256_t *result_ptr, Memory::Offset const offset)
+    {
+#if defined(MONAD_ZKVM_ZISK)
+        // Load four words directly to avoid a 32-byte DMA copy to the stack.
+        // Big-endian order puts the first word in the highest result limb.
+        // Read all words before writing, in case input and result overlap.
+        {
+            auto const *const monad_s = ctx->memory.data + *offset;
+            auto const monad_w3 = load_be_unsafe<uint64_t>(monad_s);
+            auto const monad_w2 = load_be_unsafe<uint64_t>(monad_s + 8);
+            auto const monad_w1 = load_be_unsafe<uint64_t>(monad_s + 16);
+            auto const monad_w0 = load_be_unsafe<uint64_t>(monad_s + 24);
+            (*result_ptr)[0] = monad_w0;
+            (*result_ptr)[1] = monad_w1;
+            (*result_ptr)[2] = monad_w2;
+            (*result_ptr)[3] = monad_w3;
+        }
+#else
+        *result_ptr = load_be_unsafe<uint256_t>(ctx->memory.data + *offset);
+#endif
+    }
+
     template <Traits traits>
     inline void
     mload(Context *ctx, uint256_t *result_ptr, uint256_t const *offset_ptr)
     {
         auto const offset = ctx->get_memory_offset(*offset_ptr);
         ctx->expand_memory<traits>(offset + bin<32>);
-        *result_ptr = load_be_unsafe<uint256_t>(ctx->memory.data + *offset);
+        mload_at<traits>(ctx, result_ptr, offset);
+    }
+
+    // Store 32 bytes at a validated offset; [offset, offset + 32) must already
+    // be within memory.size.
+    template <Traits traits>
+    [[gnu::always_inline]] inline void mstore_at(
+        Context *ctx, Memory::Offset const offset, uint256_t const *value_ptr)
+    {
+#if defined(MONAD_ZKVM_ZISK)
+        // Store one byte-swapped word at a time to avoid staging a 32-byte
+        // temporary on the stack for a DMA copy. The resulting bytes match
+        // store_be.
+        {
+            auto const monad_be = bswap(*value_ptr);
+            auto *const monad_d = ctx->memory.data + *offset;
+            store_le(monad_d, monad_be[0]);
+            store_le(monad_d + 8, monad_be[1]);
+            store_le(monad_d + 16, monad_be[2]);
+            store_le(monad_d + 24, monad_be[3]);
+        }
+#else
+        store_be(ctx->memory.data + *offset, *value_ptr);
+#endif
     }
 
     template <Traits traits>
@@ -40,7 +89,7 @@ namespace monad::vm::runtime
     {
         auto const offset = ctx->get_memory_offset(*offset_ptr);
         ctx->expand_memory<traits>(offset + bin<32>);
-        store_be(ctx->memory.data + *offset, *value_ptr);
+        mstore_at<traits>(ctx, offset, value_ptr);
     }
 
     template <Traits traits>

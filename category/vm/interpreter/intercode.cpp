@@ -18,6 +18,7 @@
 #include <category/vm/interpreter/intercode.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -30,7 +31,8 @@ namespace monad::vm::interpreter
         : padded_code_(pad(code))
         , code_size_(
               code_size_t::unsafe_from(static_cast<uint32_t>(code.size())))
-        , jumpdest_map_(find_jumpdests(code))
+        // A truncated PUSH may advance past the code, but stays in the padding.
+        , jumpdest_map_(find_jumpdests(code_span()))
     {
     }
 
@@ -56,21 +58,62 @@ namespace monad::vm::interpreter
         return buffer + start_padding_size;
     }
 
+    namespace
+    {
+        // Whole advance per opcode: 1 + immediate data, 1 for non-PUSH.
+        // One lookup replaces range checks and subtraction during the scan,
+        // and holding the +1 here keeps an addiw out of the hot loop, which
+        // runs on every code byte of every distinct contract.
+        constexpr auto advance = [] {
+            std::array<uint8_t, 256> t{};
+            t.fill(1);
+            for (unsigned op = PUSH0; op <= PUSH32; ++op) {
+                t[op] = static_cast<uint8_t>(1 + op - PUSH0);
+            }
+            return t;
+        }();
+    }
+
     auto Intercode::find_jumpdests(std::span<uint8_t const> const code)
         -> JumpdestMap
     {
-        auto jumpdests = JumpdestMap(code.size(), false);
+        static_assert(end_padding_size >= PUSH32 - PUSH0);
+        auto jumpdests = JumpdestMap(code.size());
 
-        for (size_t i = 0; i < code.size(); ++i) {
-            auto const op = code[i];
+#if defined(MONAD_ZKVM_ZISK) && !defined(MONAD_ZKVM_JUMPDEST_SOFTWARE)
+        // ZisK's JUMPDEST precompile takes src via csrs, then dst and size via
+        // the following add. It requires nonempty input, 8-byte-aligned
+        // pointers and enough space for whole 64-bit output words.
+        auto const aligned =
+            (reinterpret_cast<uintptr_t>(code.data()) % 8) == 0 &&
+            (reinterpret_cast<uintptr_t>(jumpdests.words()) % 8) == 0;
+        auto const covered = jumpdests.word_count() >= (code.size() + 63) / 64;
+        if (aligned && covered && !code.empty()) {
+            uint64_t *const dst = jumpdests.words();
+            uint8_t const *const src = code.data();
+            size_t const size = code.size();
+            // zicsr is part of the official ZisK target architecture.
+            asm volatile("csrs 0x81c, %0\n\t"
+                         "add x0, %1, %2\n\t"
+                         :
+                         : "r"(src), "r"(dst), "r"(size)
+                         : "memory");
+            return jumpdests;
+        }
+#endif
 
+        // Software path: non-ZisK builds, MONAD_ZKVM_JUMPDEST_SOFTWARE (the
+        // L2 guest's default, which spares a proof the JumpDest instance) and
+        // unmet preconditions. Skip PUSH data: its bytes cannot be jump
+        // destinations.
+        uint8_t const *p = code.data();
+        uint8_t const *const end = p + code.size();
+        while (p < end) {
+            auto const op = *p;
             if (op == EvmOpCode::JUMPDEST) {
-                jumpdests[i] = true;
+                jumpdests.set(static_cast<size_t>(p - code.data()));
             }
-
-            if (is_push_opcode(op)) {
-                i += get_push_opcode_index(op);
-            }
+            p += advance[op];
         }
 
         return jumpdests;

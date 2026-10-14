@@ -22,6 +22,9 @@
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/revision.h>
 #include <category/vm/evm/traits.hpp>
+#if defined(MONAD_ZKVM_ZISK)
+    #include <category/vm/host.hpp>
+#endif
 #include <category/vm/runtime/bin.hpp>
 #include <category/vm/runtime/call.hpp>
 #include <category/vm/runtime/transmute.hpp>
@@ -54,8 +57,18 @@ namespace monad::vm::runtime
         return env_flags;
     }
 
+#if defined(MONAD_ZKVM_ZISK)
+    // Inlined into each caller: out of line, a call saves twelve registers,
+    // passes five arguments on the stack and copies its result out of a
+    // temporary, and the callers' constant call_kind, static_call and
+    // has_value do not fold.
+    #define MONAD_VM_CALL_IMPL_INLINE [[gnu::always_inline]] inline
+#else
+    #define MONAD_VM_CALL_IMPL_INLINE
+#endif
+
     template <Traits traits>
-    uint256_t call_impl(
+    MONAD_VM_CALL_IMPL_INLINE uint256_t call_impl(
         Context *ctx, uint256_t const &gas_word, uint256_t const &address,
         bool const has_value, bytes32_t const &value,
         uint256_t const &args_offset_word, uint256_t const &args_size_word,
@@ -81,8 +94,13 @@ namespace monad::vm::runtime
 
         auto const dest_address = address_from_uint256(address);
 
+#if defined(MONAD_ZKVM_ZISK)
+        auto const access_status =
+            host_of(*ctx).access_account(host_shim::addr(&dest_address));
+#else
         auto const access_status =
             ctx->host->access_account(ctx->context, &dest_address);
+#endif
         if (access_status == EVMC_ACCESS_COLD) {
             ctx->deduct_gas(traits::cold_account_cost());
         }
@@ -94,8 +112,13 @@ namespace monad::vm::runtime
                 // current authority.
                 if (auto delegate_address = evm::resolve_delegation(
                         ctx->host, ctx->context, dest_address)) {
+#if defined(MONAD_ZKVM_ZISK)
+                    auto const access_status = host_of(*ctx).access_account(
+                        host_shim::addr(&*delegate_address));
+#else
                     auto const access_status = ctx->host->access_account(
                         ctx->context, &*delegate_address);
+#endif
                     ctx->gas_remaining -= (access_status == EVMC_ACCESS_COLD
                                                ? traits::cold_account_cost()
                                                : 0) +
@@ -157,8 +180,10 @@ namespace monad::vm::runtime
         auto const message = evmc_message{
             .kind = call_kind,
             .flags = message_flags(
-                ctx->env.evmc_flags, static_call, dest_address != code_address),
-            .depth = ctx->env.depth + 1,
+                static_cast<uint32_t>(ctx->env.evmc_flags),
+                static_call,
+                dest_address != code_address),
+            .depth = static_cast<int32_t>(ctx->env.depth + 1),
             .gas = gas,
             .recipient = recipient,
             .sender = sender,
@@ -173,7 +198,12 @@ namespace monad::vm::runtime
             .memory_capacity = ctx->memory.capacity - ctx->memory.size,
         };
 
+#if defined(MONAD_ZKVM_ZISK)
+        // What the C adapter does, without its frame.
+        auto const result = host_of(*ctx).call(message).release_raw();
+#else
         auto const result = ctx->host->call(ctx->context, &message);
+#endif
 
         ctx->env.set_return_data(result.output_data, result.output_size);
 

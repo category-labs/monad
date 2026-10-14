@@ -435,15 +435,13 @@ TYPED_TEST(TraitsTest, modular_exponentiation)
 {
     static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_BERLIN);
 
-    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_OSAKA) {
-        // EIP-2565 repricing since Berlin
-        do_geth_tests<typename TestFixture::Trait>(
-            "Modular Exponentiation", "modexp_eip2565.json", 0x05_address);
-    }
-    else {
-        // EIP-7883 repricing since Osaka
+    if constexpr (TestFixture::Trait::eip_7883_active()) {
         do_geth_tests<typename TestFixture::Trait>(
             "Modular Exponentiation", "modexp_eip7883.json", 0x05_address);
+    }
+    else {
+        do_geth_tests<typename TestFixture::Trait>(
+            "Modular Exponentiation", "modexp_eip2565.json", 0x05_address);
     }
 }
 
@@ -681,7 +679,7 @@ TYPED_TEST(TraitsTest, modexp_truncated_input)
             : evmc_status_code::EVMC_OUT_OF_GAS;
 
     static constexpr auto min_gas = [] {
-        if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_OSAKA) {
+        if constexpr (TestFixture::Trait::eip_7883_active()) {
             return 500;
         }
         else {

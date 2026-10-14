@@ -34,3 +34,12 @@ if ! grep -Eq 'csrs?[[:space:]]+.*0x813' "$asm/dma.s"; then
     echo "-mzisk-dma emits no DMA marker for a block memcpy" >&2
     exit 1
 fi
+
+"$gcc" "${flags[@]}" -mzisk-clean-byte-stores -S -o "$asm/byte.s" \
+    "$here/probe-byte-stores.c"
+if ! grep -Eq 'li[[:space:]]+[a-z0-9]+,184$' "$asm/byte.s" ||
+    ! grep -Eq 'addi[[:space:]]+[a-z0-9]+,[a-z0-9]+,128$' "$asm/byte.s"; then
+    cat "$asm/byte.s"
+    echo "-mzisk-clean-byte-stores leaves a byte store's source sign-extended" >&2
+    exit 1
+fi

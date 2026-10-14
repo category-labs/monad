@@ -390,10 +390,69 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6d5a32815ae3f33302d95fdcb2ce17862f8c65363dcfd29360480ba1001fc9c"
 
 [[package]]
+name = "futures"
+version = "0.3.32"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b147ee9d1f6d097cef9ce628cd2ee62288d963e16fb287bd9286455b241382d"
+dependencies = [
+ "futures-channel",
+ "futures-core",
+ "futures-executor",
+ "futures-io",
+ "futures-sink",
+ "futures-task",
+ "futures-util",
+]
+
+[[package]]
+name = "futures-channel"
+version = "0.3.32"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "07bbe89c50d7a535e539b8c17bc0b49bdb77747034daa8087407d655f3f7cc1d"
+dependencies = [
+ "futures-core",
+ "futures-sink",
+]
+
+[[package]]
 name = "futures-core"
 version = "0.3.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7e3450815272ef58cec6d564423f6e755e25379b217b0bc688e295ba24df6b1d"
+
+[[package]]
+name = "futures-executor"
+version = "0.3.32"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "baf29c38818342a3b26b5b923639e7b1f4a61fc5e76102d4b1981c6dc7a7579d"
+dependencies = [
+ "futures-core",
+ "futures-task",
+ "futures-util",
+]
+
+[[package]]
+name = "futures-io"
+version = "0.3.32"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cecba35d7ad927e23624b22ad55235f2239cfa44fd10428eecbeba6d6a717718"
+
+[[package]]
+name = "futures-macro"
+version = "0.3.32"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e835b70203e41293343137df5c0664546da5745f82ec9b84d40be8336958447b"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
+name = "futures-sink"
+version = "0.3.32"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c39754e157331b013978ec91992bde1ac089843443c49cbc7f46150b0fad0893"
 
 [[package]]
 name = "futures-task"
@@ -407,8 +466,13 @@ version = "0.3.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "389ca41296e6190b48053de0321d02a77f32f8a5d2461dd38762c0593805c6d6"
 dependencies = [
+ "futures-channel",
  "futures-core",
+ "futures-io",
+ "futures-macro",
+ "futures-sink",
  "futures-task",
+ "memchr",
  "pin-project-lite",
  "slab",
 ]
@@ -933,8 +997,8 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 
 [[package]]
 name = "slop-algebra"
-version = "6.8.1"
-source = "git+https://github.com/succinctlabs/sp1?rev=9e94952a5a04ea1b1a5360262e68af0586f1e387#9e94952a5a04ea1b1a5360262e68af0586f1e387"
+version = "6.3.1"
+source = "git+https://github.com/succinctlabs/sp1?tag=v6.3.1#8252c2905ce32964df68248117015c61ebb854db"
 dependencies = [
  "itertools 0.14.0",
  "p3-field",
@@ -943,8 +1007,8 @@ dependencies = [
 
 [[package]]
 name = "slop-bn254"
-version = "6.8.1"
-source = "git+https://github.com/succinctlabs/sp1?rev=9e94952a5a04ea1b1a5360262e68af0586f1e387#9e94952a5a04ea1b1a5360262e68af0586f1e387"
+version = "6.3.1"
+source = "git+https://github.com/succinctlabs/sp1?tag=v6.3.1#8252c2905ce32964df68248117015c61ebb854db"
 dependencies = [
  "ff",
  "p3-bn254-fr",
@@ -957,9 +1021,10 @@ dependencies = [
 
 [[package]]
 name = "slop-challenger"
-version = "6.8.1"
-source = "git+https://github.com/succinctlabs/sp1?rev=9e94952a5a04ea1b1a5360262e68af0586f1e387#9e94952a5a04ea1b1a5360262e68af0586f1e387"
+version = "6.3.1"
+source = "git+https://github.com/succinctlabs/sp1?tag=v6.3.1#8252c2905ce32964df68248117015c61ebb854db"
 dependencies = [
+ "futures",
  "p3-challenger",
  "serde",
  "slop-algebra",
@@ -968,8 +1033,8 @@ dependencies = [
 
 [[package]]
 name = "slop-koala-bear"
-version = "6.8.1"
-source = "git+https://github.com/succinctlabs/sp1?rev=9e94952a5a04ea1b1a5360262e68af0586f1e387#9e94952a5a04ea1b1a5360262e68af0586f1e387"
+version = "6.3.1"
+source = "git+https://github.com/succinctlabs/sp1?tag=v6.3.1#8252c2905ce32964df68248117015c61ebb854db"
 dependencies = [
  "lazy_static",
  "p3-koala-bear",
@@ -982,29 +1047,32 @@ dependencies = [
 
 [[package]]
 name = "slop-poseidon2"
-version = "6.8.1"
-source = "git+https://github.com/succinctlabs/sp1?rev=9e94952a5a04ea1b1a5360262e68af0586f1e387#9e94952a5a04ea1b1a5360262e68af0586f1e387"
+version = "6.3.1"
+source = "git+https://github.com/succinctlabs/sp1?tag=v6.3.1#8252c2905ce32964df68248117015c61ebb854db"
 dependencies = [
  "p3-poseidon2",
 ]
 
 [[package]]
 name = "slop-primitives"
-version = "6.8.1"
-source = "git+https://github.com/succinctlabs/sp1?rev=9e94952a5a04ea1b1a5360262e68af0586f1e387#9e94952a5a04ea1b1a5360262e68af0586f1e387"
+version = "6.3.1"
+source = "git+https://github.com/succinctlabs/sp1?tag=v6.3.1#8252c2905ce32964df68248117015c61ebb854db"
+dependencies = [
+ "slop-algebra",
+]
 
 [[package]]
 name = "slop-symmetric"
-version = "6.8.1"
-source = "git+https://github.com/succinctlabs/sp1?rev=9e94952a5a04ea1b1a5360262e68af0586f1e387#9e94952a5a04ea1b1a5360262e68af0586f1e387"
+version = "6.3.1"
+source = "git+https://github.com/succinctlabs/sp1?tag=v6.3.1#8252c2905ce32964df68248117015c61ebb854db"
 dependencies = [
  "p3-symmetric",
 ]
 
 [[package]]
 name = "sp1-build"
-version = "6.8.1"
-source = "git+https://github.com/succinctlabs/sp1?rev=9e94952a5a04ea1b1a5360262e68af0586f1e387#9e94952a5a04ea1b1a5360262e68af0586f1e387"
+version = "6.3.1"
+source = "git+https://github.com/succinctlabs/sp1?tag=v6.3.1#8252c2905ce32964df68248117015c61ebb854db"
 dependencies = [
  "anyhow",
  "cargo_metadata",
@@ -1016,8 +1084,8 @@ dependencies = [
 
 [[package]]
 name = "sp1-primitives"
-version = "6.8.1"
-source = "git+https://github.com/succinctlabs/sp1?rev=9e94952a5a04ea1b1a5360262e68af0586f1e387#9e94952a5a04ea1b1a5360262e68af0586f1e387"
+version = "6.3.1"
+source = "git+https://github.com/succinctlabs/sp1?tag=v6.3.1#8252c2905ce32964df68248117015c61ebb854db"
 dependencies = [
  "bincode",
  "blake3",

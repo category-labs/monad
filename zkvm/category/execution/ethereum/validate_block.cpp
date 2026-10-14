@@ -45,13 +45,24 @@ quick_status_code_from_enum<monad::BlockError>::value_mappings()
         {BlockError::InvalidOmmerHeader, "invalid ommer header", {}},
         {BlockError::WrongLogsBloom, "wrong logs bloom", {}},
         {BlockError::InvalidGasUsed, "invalid gas used", {}},
+        {BlockError::InvalidExcessBlobGas, "invalid excess blob gas", {}},
         {BlockError::WrongMerkleRoot, "wrong merkle root", {}},
         {BlockError::SystemCallMissingCode,
          "system call target has no code",
          {}},
         {BlockError::SystemCallFailed, "system call failed", {}},
         {BlockError::InvalidRequestsHash, "invalid requests hash", {}},
-        {BlockError::InvalidDepositLog, "invalid deposit log", {}}};
+        {BlockError::InvalidDepositLog, "invalid deposit log", {}},
+        {BlockError::InvalidNamespaceLog, "invalid namespace log", {}},
+        {BlockError::WithdrawalsNotSupported,
+         "withdrawals are not supported on this chain",
+         {}},
+        {BlockError::OmmersNotSupported,
+         "ommers are not supported on this chain",
+         {}},
+        {BlockError::RequestsNotSupported,
+         "requests are not supported on this chain",
+         {}}};
 
     return v;
 }

@@ -16,13 +16,23 @@
 #![no_main]
 ziskos::entrypoint!(main);
 
-// zkvm/guest/execute_witness.cpp reads the RLP witness and writes the 32-byte
-// post-state root through the eth-act I/O functions supplied by ziskos.
+mod ecrecover;
+mod ecrecover_tables;
+
+// C++ execute_witness.cpp owns witness I/O through read_input/write_output;
+// ziskos provides these symbols and Rust dispatches. zkvm_halt uses the
+// RISC-V Linux exit syscall (a7 = 93), as ziskos _start does, to terminate
+// with the requested status.
+
+// The L2 guest's ECDH reaches ziskos' secp256k1 library through this module's
+// C entries; it is compiled in unconditionally because a symbol the C++ side
+// does not reference is dead-stripped anyway.
+mod secp256k1_bridge;
+
 extern "C" {
     fn monad_zkvm_execute_witness();
 }
 
-// Implement the C++ halt ABI with ZisK's exit syscall (a7 = 93, a0 = status).
 #[no_mangle]
 pub unsafe extern "C" fn zkvm_halt(status: i32) -> ! {
     core::arch::asm!(

@@ -13,16 +13,27 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! Build-script helpers for the ZisK and SP1 RISC-V guests.
-//! Both build `zkvm/guest/CMakeLists.txt`; ZisK links the archive through
-//! rustc, while SP1 links a standalone ELF against the SDK's `libzkevm.a`.
+//! Shared cmake-driver logic for the ZisK and SP1 guest build.rs files.
+//!
+//! Both crates drive `zkvm/guest/CMakeLists.txt` directly as the top-level
+//! CMake project. The only backend-distinguishing cmake input is
+//! `MONAD_ZKVM_GUEST_TARGET` (`zisk` or `sp1`) — the cmake derives the target
+//! name (`monad-zkvm-guest-<suffix>`) and the per-backend mirror include
+//! directory (`zkvm/<suffix>/`) from that. Backends also differ in RISC-V
+//! march/flags and a couple of linker args, handled here. Consumer build.rs
+//! files just call `Backend::Zisk.build_guest_lib()` (or `Sp1`).
 
-use std::{
-    env,
-    path::{Path, PathBuf},
-};
-#[cfg(feature = "sp1")]
-use std::process::Command;
+use std::{env, path::{Path, PathBuf}, process::Command};
+
+// SP1 v6's RISC-V profile is rv64im (no atomics); ZisK's is rv64ima. The
+// default zkvm/ toolchain file picks rv64ima, so for SP1 we override the
+// CMAKE_*_FLAGS_INIT block.
+const SP1_C_FLAGS: &str = "-march=rv64im -mabi=lp64 -mcmodel=medany \
+    -nostartfiles -ffunction-sections -fdata-sections";
+const SP1_CXX_FLAGS: &str = "-march=rv64im -mabi=lp64 -mcmodel=medany \
+    -nostartfiles -nostdlib++ -fno-exceptions -fno-rtti \
+    -ffunction-sections -fdata-sections";
+const SP1_ASM_FLAGS: &str = "-march=rv64im -mabi=lp64";
 
 #[derive(Clone, Copy, Debug)]
 pub enum Backend {
@@ -31,6 +42,8 @@ pub enum Backend {
 }
 
 impl Backend {
+    /// Short suffix used as the cmake `MONAD_ZKVM_GUEST_TARGET` value and
+    /// as the per-backend mirror-directory name under `zkvm/`.
     fn name(self) -> &'static str {
         match self {
             Self::Zisk => "zisk",
@@ -38,13 +51,18 @@ impl Backend {
         }
     }
 
-    fn guest_target(self) -> &'static str {
-        match self {
-            Self::Zisk => "monad-zkvm-guest-zisk",
-            Self::Sp1  => "monad-zkvm-guest-sp1",
-       }
+    /// Fully-qualified cmake target name produced by
+    /// `zkvm/guest/CMakeLists.txt` for this backend.
+    fn guest_target(self) -> String {
+        format!("monad-zkvm-guest-{}", self.name())
     }
 
+    /// The RISC-V guest target triple for this backend. Passed to cmake-rs via
+    /// `Config::target` so it treats this as a cross build and does NOT inject
+    /// host flags like `-m64` into the compiler probe. This matters because the
+    /// SP1 path drives cmake from the host-target `script` crate (cargo's
+    /// `TARGET` is the host there); the ZisK path already builds under this
+    /// triple, so setting it explicitly is a harmless no-op for ZisK.
     fn guest_triple(self) -> &'static str {
         match self {
             Self::Zisk => "riscv64ima-zisk-zkvm-elf",
@@ -52,20 +70,44 @@ impl Backend {
         }
     }
 
-    /// Cross-compile the guest archive and return its directory.
+    /// Drive the zkvm/ CMake project to build
+    /// `libmonad-zkvm-guest-<backend>.a` for this backend and return the
+    /// directory containing the archive.
+    ///
+    /// Always cross-compiles to RISC-V. Host x86 iteration goes through the
+    /// `monad-zkvm-x86-test-runner` executable produced by the main host
+    /// CMake build, not through cargo.
+    ///
+    /// Caller's `CARGO_MANIFEST_DIR` is used to locate the repo root.
     fn build_guest_archive(self) -> PathBuf {
         let manifest = manifest_dir();
         let repo_root = locate_repo_root(&manifest);
         let zkvm_dir = repo_root.join("zkvm");
         let guest_dir = zkvm_dir.join("guest");
-        let toolchain = repo_root.join("category/core/toolchains/riscv64-elf.cmake");
+        let toolchain =
+            repo_root.join("category/core/toolchains/riscv64-elf.cmake");
 
-        emit_rerun_directives(&repo_root);
+        emit_rerun_directives(&zkvm_dir, &repo_root);
 
         let mut cfg = cmake::Config::new(&guest_dir);
-        // SP1's caller targets the host. Set the guest triple explicitly so
-        // cmake-rs selects RISC-V flags instead of host flags such as -m64.
-        // The guest CMakeLists.txt supplies the remaining bare-metal flags.
+        // Reuse CMake outputs across commits, separately for each backend,
+        // toolchain path and official-profile setting.
+        // Store them under zkvm/<backend>/target/guest-build.
+        let mut key = format!("{}-{}", self.name(), riscv_toolchain_dir());
+        if env::var_os("MONAD_ZKVM_OFFICIAL_PROFILE").is_some() {
+            key.push_str("-official");
+        }
+        let key: String = key
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '_' })
+            .collect();
+        cfg.out_dir(
+            repo_root
+                .join("zkvm")
+                .join(self.name())
+                .join("target/guest-build")
+                .join(&key),
+        );
         cfg.target(self.guest_triple())
             .define("MONAD_ZKVM_GUEST_TARGET", self.name())
             .define("CMAKE_TOOLCHAIN_FILE", &toolchain)
@@ -73,34 +115,124 @@ impl Backend {
             .profile("Release")
             .build_target(&self.guest_target());
 
-        // Allow discovery of the host's header-only Boost.Outcome package.
-        let prefix_path = env::var("CMAKE_PREFIX_PATH").unwrap_or_else(|_| "/usr".to_string());
+        // cmake-rs forces CMAKE_PREFIX_PATH="" (env) to keep host-build paths
+        // from leaking in; we still need find_package(Boost CONFIG) to locate
+        // the host BoostConfig.cmake (Boost.Outcome is the only header-only
+        // Boost piece we use). Pass it as a cmake variable instead, which
+        // takes precedence over the env wipe.
+        let prefix_path = env::var("CMAKE_PREFIX_PATH").unwrap_or_else(|_| {
+            "/usr".to_string()
+        });
         cfg.define("CMAKE_PREFIX_PATH", &prefix_path);
 
-        cfg.build().join("build")
+        // Keep official-profile settings explicit instead of forwarding
+        // arbitrary CMake definitions.
+        match env::var("MONAD_ZKVM_OFFICIAL_PROFILE") {
+            Ok(profile) => {
+                assert_eq!(
+                    profile, "ON",
+                    "MONAD_ZKVM_OFFICIAL_PROFILE must be ON or unset"
+                );
+                assert!(
+                    env::var("MONAD_ZKVM_CMAKE_DEFINES").is_err(),
+                    "MONAD_ZKVM_CMAKE_DEFINES cannot be combined with the official profile"
+                );
+                cfg.define("MONAD_ZKVM_OFFICIAL_PROFILE", "ON")
+                    .define("MONAD_ZKVM_GIT_COMMIT", official_build_commit(&repo_root));
+            }
+            // Outside the official profile, keep the caller's commit label.
+            Err(_) => {
+                if let Ok(commit) = env::var("MONAD_ZKVM_GIT_COMMIT") {
+                    cfg.define("MONAD_ZKVM_GIT_COMMIT", commit);
+                }
+                // Diagnostic CMake overrides, outside the official profile:
+                //   MONAD_ZKVM_CMAKE_DEFINES="MONAD_ZKVM_KECCAK_SITES=ON;OTHER=..."
+                // Bare names default to ON. Cargo does not watch this variable;
+                // use a clean build when changing it, including when removing it.
+                if let Ok(defs) = env::var("MONAD_ZKVM_CMAKE_DEFINES") {
+                    for kv in defs.split(';').filter(|s| !s.trim().is_empty()) {
+                        let (k, v) = kv.split_once('=').unwrap_or((kv, "ON"));
+                        cfg.define(k.trim(), v.trim());
+                    }
+                }
+            }
+        }
+
+        if let Self::Sp1 = self {
+            cfg.define("CMAKE_C_FLAGS_INIT", SP1_C_FLAGS)
+                .define("CMAKE_CXX_FLAGS_INIT", SP1_CXX_FLAGS)
+                .define("CMAKE_ASM_FLAGS_INIT", SP1_ASM_FLAGS);
+        }
+
+        let dst = cfg.build();
+        // guest/ is the cmake project root, so the static archive ends up
+        // directly in <dst>/build/, not in a guest/ subdir.
+        dst.join("build")
     }
 
-    /// Build the guest archive and emit Cargo link directives.
-    /// Used by ZisK, where `ziskos` supplies `_start`.
+    /// Build the guest archive and emit the `cargo:rustc-link-*` directives
+    /// to link it into the consuming Rust crate. Used by the ZisK guest crate,
+    /// whose `_start` is provided by `ziskos` and linked by rustc.
     pub fn build_guest_lib(self) {
         let build_dir = self.build_guest_archive();
 
-        if let Self::Zisk = self {
-            let align_ld = manifest_dir().join("align.ld");
-            println!("cargo:rerun-if-changed={}", align_ld.display());
-            println!("cargo:rustc-link-arg=-T{}", align_ld.display());
+        match self {
+            Self::Zisk => {
+                let align_ld = manifest_dir().join("align.ld");
+                println!("cargo:rustc-link-arg=-T{}", align_ld.display());
+                // The witness-execution guest only: the precompile test
+                // guest does not link the interpreter.
+                let out_dir =
+                    PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR unset"));
+                let slots_ld = out_dir.join("slots.ld");
+                std::fs::write(&slots_ld, zisk_slots_ld())
+                    .expect("write slots.ld");
+                println!(
+                    "cargo:rustc-link-arg-bin=monad-zkvm-zisk=-T{}",
+                    slots_ld.display()
+                );
+            }
+            Self::Sp1 => {}
         }
         println!("cargo:rustc-link-arg=--gc-sections");
-        println!("cargo:rustc-link-search=native={}", build_dir.display());
+        println!(
+            "cargo:rustc-link-search=native={}",
+            build_dir.display()
+        );
         println!("cargo:rustc-link-lib=static={}", self.guest_target());
     }
 
-    /// Build the SP1 guest ELF from `program/main.c`, the guest archive, and
-    /// the SDK's `libzkevm.a`, which supplies the runtime and accelerators.
-    /// The SDK library, headers, and linker script come from one checkout.
-    #[cfg(feature = "sp1")]
+    /// SP1 full-SDK link. Build the guest archive, compile the entry
+    /// `program/main.c` with the same RISC-V GCC the cmake build uses, then
+    /// link `main.o` + the guest archive + `libzkevm.a` against `zkvm.ld` via
+    /// `ld.lld`. Returns the path to the resulting guest ELF.
+    ///
+    /// `libzkevm.a` is built from source from the SP1 zkEVM SDK's
+    /// `zkevm/libzkevm-cabi` staticlib crate (found in the `sp1-build` git
+    /// checkout) rather than vendored as a binary blob; `zkvm.ld` and the
+    /// accelerator header come from the same SP1 source. Unlike the ZisK path
+    /// there is no Rust guest crate: `libzkevm.a` supplies `_start`, the
+    /// allocator, the IO ABI, and every accelerator.
     pub fn build_guest_elf(self) -> PathBuf {
-        assert!(matches!(self, Self::Sp1), "build_guest_elf is SP1-only");
+        self.link_guest_elf("zkvm/sp1/program/main.c", "monad-zkvm-guest-sp1.elf")
+    }
+
+    /// SP1 guest ELF for the precompile golden-vector test entry. Same link as
+    /// [`Self::build_guest_elf`], but with the precompile-test `main.c` (which
+    /// calls `monad_zkvm_run_precompile_tests` instead of the witness entry).
+    pub fn build_precompile_test_elf(self) -> PathBuf {
+        self.link_guest_elf(
+            "zkvm/test/precompile_tests/sp1_main.c",
+            "monad-zkvm-precompile-test-sp1.elf",
+        )
+    }
+
+    /// Compile `main_rel` (a C entry relative to the repo root) and link it with
+    /// the shared guest archive + `libzkevm.a` into `elf_name`. The archive and
+    /// `libzkevm.a` builds are incremental/cached, so linking a second entry is
+    /// cheap.
+    fn link_guest_elf(self, main_rel: &str, elf_name: &str) -> PathBuf {
+        assert!(matches!(self, Self::Sp1), "link_guest_elf is SP1-only");
 
         let repo_root = locate_repo_root(&manifest_dir());
         let gcc = riscv_gcc(&riscv_toolchain_dir());
@@ -108,65 +240,61 @@ impl Backend {
         let build_dir = self.build_guest_archive();
         let archive = build_dir.join(format!("lib{}.a", self.guest_target()));
 
+        // Build libzkevm.a from source (SP1's zkevm/libzkevm-cabi staticlib
+        // crate) via the SP1 SDK's own helper, and take the accelerator header
+        // from the same SP1 zkevm/ source tree.
         let zkevm = sp1_zkevm_dir();
         let libzkevm = sp1_build::build_program_staticlib(
-            zkevm
-                .join("libzkevm-cabi")
-                .to_str()
-                .expect("cabi path is utf-8"),
+            zkevm.join("libzkevm-cabi").to_str().expect("cabi path is utf-8"),
         );
         let include = zkevm.join("include");
 
-        let main_c = repo_root.join("zkvm/sp1/program/main.c");
+        let main_c = repo_root.join(main_rel);
         let out_dir = PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR unset"));
-        let main_o = out_dir.join("main.o");
-        let elf = out_dir.join("monad-zkvm-guest-sp1.elf");
+        let main_o = out_dir.join(format!("{elf_name}.main.o"));
+        let elf = out_dir.join(elf_name);
 
-        // The SDK's zkvm.ld plus our overlay adding the C++ guest's RELRO
-        // sections (see relro.ld).
-        let zkvm_ld = zkevm.join("zkvm.ld");
-        let relro_ld = repo_root.join("zkvm/sp1/program/relro.ld");
+        // The upstream zkvm.ld targets Rust guests, whose `_start` never runs
+        // `.init_array`. The C++ guest's main.c runs the static constructors
+        // itself (RLP encoder tables, commit_builder/partial_trie_db statics,
+        // ...) via boundary symbols, so inject a `.init_array` section into the
+        // upstream script (kept otherwise verbatim from source) before `.data`.
+        let zkvm_ld = out_dir.join("zkvm.ld");
+        patch_zkvm_ld(&zkevm.join("zkvm.ld"), &zkvm_ld);
 
         println!("cargo:rerun-if-changed={}", main_c.display());
-        println!("cargo:rerun-if-changed={}", relro_ld.display());
 
+        // 1) Compile main.c -> main.o with the RISC-V GCC (rv64im / lp64),
+        //    matching the flags the cmake guest build uses for SP1.
         let status = Command::new(&gcc)
             .args([
-                "-march=rv64im",
-                "-mabi=lp64",
-                "-mcmodel=medany",
-                "-nostdlib",
-                "-ffreestanding",
-                "-fno-builtin",
-                "-O2",
-                "-Wall",
-                "-Wextra",
-                "-c",
+                "-march=rv64im", "-mabi=lp64", "-mcmodel=medany",
+                "-nostdlib", "-ffreestanding", "-fno-builtin",
+                "-O2", "-Wall", "-Wextra", "-c",
             ])
             .arg(format!("-I{}", include.display()))
-            .arg("-o")
-            .arg(&main_o)
+            .arg("-o").arg(&main_o)
             .arg(&main_c)
             .status()
             .unwrap_or_else(|e| panic!("failed to spawn {}: {e}", gcc.display()));
-        assert!(
-            status.success(),
-            "gcc failed compiling {}",
-            main_c.display()
-        );
+        assert!(status.success(), "gcc failed compiling {}", main_c.display());
 
+        // 2) Link main.o + guest archive + libzkevm.a against zkvm.ld via
+        //    ld.lld (the linker libzkevm.a was built/tested with).
         let lld = sp1_build::find_lld().expect(
             "ld.lld not found on PATH and no SP1 toolchain has a bundled copy. \
              Install lld (`apt install lld`) or run `sp1up`.",
         );
-        // Unreachable archive sections reference symbols this guest doesn't
-        // provide. Discard them before resolving references.
+        // --gc-sections dead-strips unreachable functions before resolving
+        // their references. The guest archive (shared with ZisK) contains code
+        // paths unreachable in this guest — e.g. Prague request hashing, Monad
+        // staking precompiles — that reference symbols not provided here; GC
+        // removes them, exactly as the ZisK rustc link does. Relies on the
+        // -ffunction-sections/-fdata-sections in SP1_C/CXX_FLAGS.
         let status = Command::new(&lld)
             .args(["-nostdlib", "-static", "--gc-sections"])
             .arg(format!("-T{}", zkvm_ld.display()))
-            .arg(format!("-T{}", relro_ld.display()))
-            .arg("-o")
-            .arg(&elf)
+            .arg("-o").arg(&elf)
             .arg(&main_o)
             .arg(&archive)
             .arg(&libzkevm)
@@ -178,8 +306,56 @@ impl Backend {
     }
 }
 
-/// Locate the SDK sources in Cargo's `sp1-build` git checkout.
-#[cfg(feature = "sp1")]
+/// Copy the upstream SP1 `zkvm.ld` to `dst`, injecting a `.init_array` section
+/// (before `.data`) so the C++ guest's `main()` can run its static
+/// constructors — the upstream script targets Rust guests whose `_start`
+/// skips `.init_array`. Everything else (RAM layout, symbols) is kept verbatim.
+fn patch_zkvm_ld(src: &Path, dst: &Path) {
+    let script = std::fs::read_to_string(src)
+        .unwrap_or_else(|e| panic!("failed to read {}: {e}", src.display()));
+
+    // Inject one contiguous RELRO block before `.data`:
+    //   .data.rel.ro, .init_array (+ boundary symbols), .got
+    //
+    // Two problems this fixes, both because the upstream script targets Rust
+    // guests and places neither section:
+    //  - `.got`: the C++ guest emits GOT-indirected references (e.g. the
+    //    out-of-line intx uint256 divide used by expmod_gas_cost). Without an
+    //    explicit placement ld.lld emits `.got` past `_end`/`_heap_start`, and
+    //    the first heap allocation clobbers the pointers — turning an indirect
+    //    call into a jump to heap garbage (SIGSEGV). Placing it before `.data`
+    //    keeps it inside the loaded image, below the heap.
+    //  - `.init_array`: the SDK's Rust `_start` never runs it, so the C++ guest
+    //    `main()` iterates it via the boundary symbols to run static ctors.
+    //
+    // The sections are kept adjacent because ld.lld requires the RELRO sections
+    // (which `.data.rel.ro`, `.init_array` and `.got` all are) to be contiguous.
+    let anchor = "    .data : ALIGN(16)";
+    assert!(
+        script.contains(anchor),
+        "upstream zkvm.ld layout changed ({}): no `{anchor}` to inject before",
+        src.display()
+    );
+    let relro = "\
+    .data.rel.ro : ALIGN(16)\n    {\n        \
+        *(.data.rel.ro .data.rel.ro.* .gnu.linkonce.d.rel.ro.*)\n    } > RAM\n\n    \
+    .init_array : ALIGN(8)\n    {\n        \
+        __init_array_start = .;\n        \
+        KEEP(*(SORT_BY_INIT_PRIORITY(.init_array.*)))\n        \
+        KEEP(*(.init_array))\n        \
+        __init_array_end = .;\n    } > RAM\n\n    \
+    .got : ALIGN(16)\n    {\n        \
+        *(.got.plt) *(.igot.plt) *(.got) *(.igot)\n    } > RAM\n\n";
+
+    let patched = script.replacen(anchor, &format!("{relro}{anchor}"), 1);
+    std::fs::write(dst, patched)
+        .unwrap_or_else(|e| panic!("failed to write {}: {e}", dst.display()));
+}
+
+/// Locate the SP1 `zkevm/` source tree inside the `sp1-build` git checkout that
+/// cargo fetched for that dependency. cargo checks out the whole SP1 repo, so
+/// `zkevm/libzkevm-cabi`, `zkevm/zkvm.ld`, and `zkevm/include/` sit alongside
+/// the `crates/build` crate we depend on — no submodule or vendored blob.
 fn sp1_zkevm_dir() -> PathBuf {
     let meta = cargo_metadata::MetadataCommand::new()
         .exec()
@@ -211,54 +387,181 @@ fn sp1_zkevm_dir() -> PathBuf {
     zkevm
 }
 
+/// Use Git HEAD, rejecting a mismatched supplied SHA or reported tracked changes.
+/// Without a usable HEAD, require MONAD_ZKVM_GIT_COMMIT (e.g. source archives).
+fn official_build_commit(repo_root: &Path) -> String {
+    let git = |args: &[&str]| -> Option<String> {
+        let out = Command::new("git")
+            .arg("-C")
+            .arg(repo_root)
+            .args(args)
+            .output()
+            .ok()?;
+        out.status
+            .success()
+            .then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
+    };
+    let supplied = env::var("MONAD_ZKVM_GIT_COMMIT").ok();
+    let head = match git(&["rev-parse", "HEAD"]) {
+        Some(h) if h.len() == 40 => h,
+        _ => {
+            return supplied.expect(
+                "official ZisK profile: no git in the build tree, so \
+                 MONAD_ZKVM_GIT_COMMIT must supply the commit",
+            );
+        }
+    };
+    // Check tracked changes; untracked files are excluded here.
+    if let Some(dirty) = git(&["status", "--porcelain", "--untracked-files=no"]) {
+        assert!(
+            dirty.is_empty(),
+            "official ZisK profile: the worktree is dirty, so no commit \
+             describes what would be built:\n{dirty}"
+        );
+    }
+    if let Some(supplied) = supplied {
+        assert_eq!(
+            supplied, head,
+            "MONAD_ZKVM_GIT_COMMIT does not match the tree being built"
+        );
+    }
+    head
+}
+
 fn manifest_dir() -> PathBuf {
     PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR unset"))
 }
 
-fn locate_repo_root(manifest: &Path) -> PathBuf {
-    manifest
-        .ancestors()
-        .find(|p| p.join("zkvm/guest/CMakeLists.txt").exists())
-        .expect("failed to locate monad repo root from build.rs CARGO_MANIFEST_DIR")
-        .to_path_buf()
+/// The linker script that lays out the interpreter's handler slots
+/// (category/vm/interpreter/execute.cpp): one per revision from BERLIN (8) to
+/// AMSTERDAM (15) and per opcode, 4 KiB each, the newest revision first and
+/// then in opcode order, so that a handler's address is `monad_vm_slots` plus
+/// its offset. A slot holds the handler's six copies (instruction_table.hpp's
+/// lag_offset), copies 4, 5, 0, 1, 2 and 3 in address order; each opens with
+/// LEAD bytes where PUSH1 and PUSH2 land on the opcode, then the copy. The
+/// pairs the landings jump to come past every slot, and so do the handlers
+/// too large for a copy, whose copies jump there. The gaps are nops. A
+/// landing longer than LEAD or a copy that outgrows its region fails the link,
+/// since the location counter cannot move backwards, and so does a region left
+/// without a landing, or a copy that does not start right after its landing.
+fn zisk_slots_ld() -> String {
+    const SLOT: usize = 0x1000;
+    // instruction_table.hpp's copies, in address order: where each copy's
+    // 212-byte lead starts in its slot, its sections' suffix, and the copy's.
+    const COPIES: [(usize, &str, &str); 6] = [
+        (0, "_4", "4"),
+        (684, "_5", "5"),
+        (1368, "", ""),
+        (2048, "_1", "1"),
+        (2728, "_2", "2"),
+        (3412, "_3", "3"),
+    ];
+    const LEAD: usize = 0xd4;
+    let mut ld = String::from(
+        "SECTIONS {\n    .monad_vm_slots : ALIGN(0x400) {\n        \
+         FILL(0x13000000)\n        monad_vm_slots = .;\n",
+    );
+    for (rank, rev) in (8..=15).rev().enumerate() {
+        for op in 0..256 {
+            let at = (rank * 256 + op) * SLOT;
+            for (start, sections, copy) in COPIES {
+                let lead = at + start;
+                let entry = lead + LEAD;
+                let symbol = if copy.is_empty() {
+                    String::new()
+                } else {
+                    format!("_{copy}")
+                };
+                ld += &format!(
+                    "        . = monad_vm_slots + {lead:#x};\n        \
+                     KEEP(*(.monad_vm_lead{sections}.{rev:02}.{op:02x}))\n        \
+                     ASSERT(. > monad_vm_slots + {lead:#x}, \
+                     \"monad_vm_slots: slot {rev:02}.{op:02x}{symbol} has no landing\")\n        \
+                     . = monad_vm_slots + {entry:#x};\n        \
+                     KEEP(*(.monad_vm_slot{copy}.{rev:02}.{op:02x}))\n        \
+                     ASSERT(monad_vm_slot_{rev:02}_{op:02x}{symbol} == monad_vm_slots + {entry:#x}, \
+                     \"monad_vm_slots: handler {rev:02}.{op:02x}{symbol} is not after its landing\")\n"
+                );
+            }
+        }
+    }
+    // The pairs the landings jump to, and the handlers too large for a copy,
+    // past every slot.
+    ld += &format!(
+        "        . = monad_vm_slots + {:#x};\n        \
+         KEEP(*(.monad_vm_push1*))\n        \
+         KEEP(*(.monad_vm_push2*))\n        \
+         KEEP(*(.monad_vm_swap1*))\n        \
+         KEEP(*(.monad_vm_dup*))\n        \
+         KEEP(*(.monad_vm_swapn*))\n        \
+         KEEP(*(.monad_vm_bool*))\n        \
+         KEEP(*(.monad_vm_body*))\n    }}\n}} INSERT AFTER .text;\n",
+        8 * 256 * SLOT
+    );
+    ld
 }
 
-fn emit_rerun_directives(repo_root: &Path) {
-    // Everything the guest cmake build reads. Emitting any rerun-if-changed
-    // disables Cargo's rerun-on-any-change default, so an input missing here
-    // leaves a stale guest marked fresh. Cargo scans each directory
-    // recursively, including added files. Keep in sync with the include
-    // paths and vendored sources in zkvm/guest/CMakeLists.txt and
-    // cmake/zkvm.cmake.
-    for dir in [
-        // The guest build itself and the shadow tree searched ahead of the
-        // host sources (zkvm/{boost,quill,immer} are shadow headers).
-        "zkvm/guest",
-        "zkvm/core",
-        "zkvm/category",
-        "zkvm/boost",
-        "zkvm/quill",
-        "zkvm/test",
-        "category",
-        "cmake",
-        // Vendored sources on the guest include path. third_party/ as a whole
-        // is not watched: it holds large test-suite submodules the guest
-        // never reads.
-        "third_party/blst",
-        "third_party/cthash",
-        "third_party/ethash_vendor",
-        "third_party/evmc",
-        "third_party/immer",
-        "third_party/komihash",
-        "third_party/nlohmann_json",
-        "third_party/silkpre_vendor",
-        "third_party/unordered_dense",
-        "third_party/zkevm-standards",
-    ] {
-        println!("cargo:rerun-if-changed={}", repo_root.join(dir).display());
+// Walk upward from the caller's manifest until we find
+// `zkvm/guest/CMakeLists.txt`, which marks the monad repo root. Works for
+// both zkvm/zisk and zkvm/sp1/program callers.
+fn locate_repo_root(manifest: &PathBuf) -> PathBuf {
+    let mut p = manifest.as_path();
+    loop {
+        if p.join("zkvm/guest/CMakeLists.txt").exists() {
+            return p.to_path_buf();
+        }
+        p = p
+            .parent()
+            .expect("failed to locate monad repo root from build.rs CARGO_MANIFEST_DIR");
     }
 }
 
+fn emit_rerun_directives(zkvm_dir: &Path, repo_root: &Path) {
+    println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-env-changed=RISCV_TOOLCHAIN_DIR");
+    println!("cargo:rerun-if-env-changed=MONAD_ZKVM_OFFICIAL_PROFILE");
+    println!("cargo:rerun-if-env-changed=MONAD_ZKVM_GIT_COMMIT");
+    // The levers reach CMake through this variable: without the directive, switching one
+    // rebuilds nothing, and the ELF is the previous configuration's under the new name.
+    println!("cargo:rerun-if-env-changed=MONAD_ZKVM_CMAKE_DEFINES");
+    // Watch Git metadata to refresh the build stamp when only the commit changes.
+    for git_path in ["HEAD", "refs"] {
+        let p = repo_root.join(".git").join(git_path);
+        if p.exists() {
+            println!("cargo:rerun-if-changed={}", p.display());
+        }
+    }
+    // Track source, header and CMake files explicitly so edits trigger a rebuild.
+    for sub in ["guest", "core", "category"] {
+        walk_emit(&zkvm_dir.join(sub));
+    }
+    walk_emit(&repo_root.join("category"));
+    walk_emit(&repo_root.join("cmake"));
+}
+
+fn walk_emit(root: &Path) {
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let Ok(ft) = entry.file_type() else { continue };
+        let path = entry.path();
+        if ft.is_dir() {
+            let name = entry.file_name();
+            let s = name.to_string_lossy();
+            if s == "target" || s == "build" || s == ".git" {
+                continue;
+            }
+            walk_emit(&path);
+        } else if ft.is_file() {
+            println!("cargo:rerun-if-changed={}", path.display());
+        }
+    }
+}
+
+// The RISC-V GCC toolchain dir, from the RISCV_TOOLCHAIN_DIR env var set in
+// the local zkvm/.cargo/config.toml (see zkvm/README.md). Required for both
+// backends.
 fn riscv_toolchain_dir() -> String {
     let dir = env::var("RISCV_TOOLCHAIN_DIR").unwrap_or_default();
     assert!(
@@ -269,8 +572,9 @@ fn riscv_toolchain_dir() -> String {
     dir
 }
 
-// Match the compiler prefixes accepted by riscv64-elf.cmake.
-#[cfg(feature = "sp1")]
+// Full path to the RISC-V gcc under `<toolchain_dir>/bin`, auto-detecting the
+// target prefix the same way category/core/toolchains/riscv64-elf.cmake
+// does (riscv64-none-elf- for nix, riscv64-unknown-elf- for ZisK).
 fn riscv_gcc(toolchain_dir: &str) -> PathBuf {
     let bin = Path::new(toolchain_dir).join("bin");
     for prefix in ["riscv64-none-elf-", "riscv64-unknown-elf-"] {

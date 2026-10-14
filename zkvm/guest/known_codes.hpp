@@ -15,7 +15,9 @@
 
 #pragma once
 
-#include <category/core/bytes.hpp>
+#if defined(MONAD_ZKVM_ZISK)
+    #include <category/core/bytes.hpp>
+#endif
 
 #include <cstddef>
 #include <cstdint>
@@ -37,6 +39,27 @@ namespace monad::zkvm
 
 #include <zkvm/guest/known_codes.inc>
 
+    // The key a code is filed under: its first word and its middle one, both
+    // whole and 8-aligned in a copy of 16 bytes or more.
+    [[gnu::always_inline]] inline uint64_t
+    known_code_key(unsigned char const *const code, size_t const size) noexcept
+    {
+        uint64_t w0;
+        uint64_t wm;
+        __builtin_memcpy(&w0, code, 8);
+        __builtin_memcpy(&wm, code + 8 * ((size / 8) / 2), 8);
+        return w0 ^ wm;
+    }
+
+    [[gnu::always_inline]] inline unsigned
+    known_code_slot(uint64_t const key, size_t const size) noexcept
+    {
+        return static_cast<unsigned>(
+            ((key ^ size) * 0x9E3779B97F4A7C15ull) >>
+            (64 - KNOWN_CODE_SLOTS_LOG2));
+    }
+
+#if defined(MONAD_ZKVM_ZISK)
     // Whether the size bytes at a and b are equal, by the DMA comparator (CSR
     // 0x814, the length in the register after it).
     [[gnu::always_inline]] inline bool dma_bytes_equal(
@@ -65,14 +88,8 @@ namespace monad::zkvm
         if (size < 16) {
             return false;
         }
-        uint64_t w0;
-        uint64_t wm;
-        __builtin_memcpy(&w0, code, 8);
-        __builtin_memcpy(&wm, code + 8 * ((size / 8) / 2), 8);
-        uint64_t const key = w0 ^ wm;
-        unsigned slot = static_cast<unsigned>(
-            ((key ^ size) * 0x9E3779B97F4A7C15ull) >>
-            (64 - KNOWN_CODE_SLOTS_LOG2));
+        uint64_t const key = known_code_key(code, size);
+        unsigned slot = known_code_slot(key, size);
         for (;;) {
             unsigned const n = known_code_index[slot];
             if (n == 0) {
@@ -91,4 +108,5 @@ namespace monad::zkvm
             slot = (slot + 1) & ((1u << KNOWN_CODE_SLOTS_LOG2) - 1);
         }
     }
+#endif
 }

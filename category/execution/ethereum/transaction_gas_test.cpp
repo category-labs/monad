@@ -29,25 +29,9 @@
 
 using namespace monad;
 
-namespace
-{
-    template <monad_eth_revision r>
-    using rev = std::integral_constant<monad_eth_revision, r>;
-}
-
 TYPED_TEST(TraitsTest, intrinsic_gas)
 {
     static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_BERLIN);
-
-    auto non_zero_since =
-        []<monad_eth_revision r>(rev<r>, uint64_t val) consteval {
-            if constexpr (TestFixture::Trait::evm_rev() >= r) {
-                return val;
-            }
-            else {
-                return 0;
-            }
-        };
 
     {
         Transaction t{};
@@ -65,10 +49,9 @@ TYPED_TEST(TraitsTest, intrinsic_gas)
     // EIP-2028
     static constexpr auto non_zero_token_cost = 16;
 
-    // EIP-3860
     // only charged when tx.to is not set
-    static constexpr auto extra_cost_per_evm_word =
-        non_zero_since(rev<MONAD_ETH_SHANGHAI>{}, 2);
+    static constexpr uint64_t extra_cost_per_evm_word =
+        TestFixture::Trait::eip_3860_active() ? 2 : 0;
 
     {
         Transaction t{};

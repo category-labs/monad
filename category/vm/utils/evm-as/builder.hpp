@@ -141,7 +141,7 @@ namespace monad::vm::utils::evm_as
             size_t n = n_bytes;
             uint256_t i = imm;
             if (n_bytes == 0) {
-                if (traits::evm_rev() >= MONAD_ETH_SHANGHAI) {
+                if (traits::eip_3855_active()) {
                     return push0();
                 }
                 n = 1;

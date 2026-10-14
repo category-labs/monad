@@ -47,6 +47,18 @@ option(MONAD_COMPILER_STATS "Print statistics about the compiler" OFF)
 option(MONAD_COMPILER_HOT_PATH_STATS "Print statistics about the vm" OFF)
 
 include(cmake/test.cmake)
+include(cmake/l2.cmake)
+
+# L2 consensus mode: encrypted transactions, message anchors and no gas
+# economics. Root scope applies it to every binary, including cmd/monad, so
+# the node and guest share the same rules. See cmake/l2.cmake for the ODR
+# requirement. L1 and L2 witness shapes reject each other.
+option(MONAD_ZKVM_L2
+       "L2 semantics: encrypted transactions, message anchor, no gas economics"
+       OFF)
+if(MONAD_ZKVM_L2)
+  monad_l2_compile_definitions()
+endif()
 
 # ##############################################################################
 # deps

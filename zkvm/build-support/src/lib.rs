@@ -29,6 +29,7 @@ const GUEST_SETTINGS: &[&str] = &[
     "MONAD_ZKVM_GIT_COMMIT",
     "MONAD_ZKVM_BUILD_ID",
     "MONAD_ZKVM_ZISK_DMA",
+    "MONAD_ZKVM_ZISK_CLEAN_BYTE_STORES",
 ];
 
 #[derive(Clone, Copy, Debug)]

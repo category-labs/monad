@@ -430,6 +430,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         c-kzg-4844
         ethash::keccak
         aws_lc::crypto
+        PkgConfig::gmp
         intx::intx
         silkpre)
     target_link_libraries(monad_precompiles

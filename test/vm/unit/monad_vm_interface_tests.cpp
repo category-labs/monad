@@ -27,7 +27,7 @@
 #include <test/vm/utils/test_context.hpp>
 #include <test/vm/utils/test_message.hpp>
 
-#include <asmjit/core/jitruntime.h>
+#include <asmjit/core/jit_runtime.h>
 
 #include <evmc/evmc.hpp>
 

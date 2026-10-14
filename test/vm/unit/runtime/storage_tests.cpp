@@ -64,7 +64,7 @@ TYPED_TEST(RuntimeTraitsTest, StorageLoadCold)
 
     this->ctx_.gas_remaining = [] {
         if constexpr (is_monad_trait_v<traits>) {
-            if constexpr (traits::monad_rev() >= MONAD_SEVEN) {
+            if constexpr (traits::monad_pricing_version() >= 1) {
                 return 8000;
             }
         }
@@ -132,7 +132,7 @@ TYPED_TEST(RuntimeTraitsTest, StorageOriginalEmpty)
         if constexpr (traits::mip_8_active()) {
             return do_test(27800, 0);
         }
-        if constexpr (traits::monad_rev() >= MONAD_SEVEN) {
+        if constexpr (traits::monad_pricing_version() >= 1) {
             return do_test(28000, 19900);
         }
     }
@@ -194,7 +194,7 @@ TYPED_TEST(RuntimeTraitsTest, StorageOriginalNonEmpty)
         if constexpr (traits::mip_8_active()) {
             return do_test(100, 2800);
         }
-        if constexpr (traits::monad_rev() >= MONAD_SEVEN) {
+        if constexpr (traits::monad_pricing_version() >= 1) {
             return do_test(0, 2800);
         }
     }

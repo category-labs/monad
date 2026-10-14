@@ -41,7 +41,7 @@ constexpr auto gas_remaining_cold_access()
     static_assert(Trait::evm_rev() >= MONAD_ETH_BERLIN);
 
     if constexpr (is_monad_trait_v<Trait>) {
-        if constexpr (Trait::monad_rev() >= MONAD_SEVEN) {
+        if constexpr (Trait::monad_pricing_version() >= 1) {
             return 0;
         }
     }

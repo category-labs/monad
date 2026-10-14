@@ -401,8 +401,7 @@ namespace
 TYPED_TEST(TraitsTest, ecrecover)
 {
     if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-        if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
-            // MONAD_SEVEN doubles the price of ecrecover
+        if constexpr (TestFixture::Trait::monad_pricing_version() >= 1) {
             auto const tests = transform_test_cases(
                 ECRECOVER_TEST_CASES, [](auto &test) { test.gas *= 2; });
             return do_geth_tests<typename TestFixture::Trait>(
@@ -456,8 +455,7 @@ TYPED_TEST(TraitsTest, bn_add)
         load_test_cases(test_resource::geth_vectors_dir / "bn256Add.json");
 
     if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-        if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
-            // MONAD_SEVEN doubles the price of bn_add
+        if constexpr (TestFixture::Trait::monad_pricing_version() >= 1) {
             tests =
                 transform_test_cases(tests, [](auto &test) { test.gas *= 2; });
         }
@@ -474,8 +472,7 @@ TYPED_TEST(TraitsTest, bn_mul)
         test_resource::geth_vectors_dir / "bn256ScalarMul.json");
 
     if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-        if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
-            // MONAD_SEVEN increases the price of bn_mul by 5x
+        if constexpr (TestFixture::Trait::monad_pricing_version() >= 1) {
             tests =
                 transform_test_cases(tests, [](auto &test) { test.gas *= 5; });
         }
@@ -492,8 +489,7 @@ TYPED_TEST(TraitsTest, bn_pairing)
         load_test_cases(test_resource::geth_vectors_dir / "bn256Pairing.json");
 
     if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-        if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
-            // MONAD_SEVEN increases the price of bn_pairing by 5x
+        if constexpr (TestFixture::Trait::monad_pricing_version() >= 1) {
             tests =
                 transform_test_cases(tests, [](auto &test) { test.gas *= 5; });
         }
@@ -512,8 +508,7 @@ TYPED_TEST(TraitsTest, blake2f)
             load_test_cases(test_resource::geth_vectors_dir / json);
 
         if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
-                // MONAD_SEVEN doubles the price of blake2F
+            if constexpr (TestFixture::Trait::monad_pricing_version() >= 1) {
                 tests = transform_test_cases(tests, [](auto &test) {
                     if (test.gas != std::numeric_limits<int64_t>::max()) {
                         test.gas *= 2;
@@ -543,8 +538,7 @@ TYPED_TEST(TraitsTest, point_evaluation)
         ASSERT_TRUE(init_trusted_setup());
 
         if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
-                // In MONAD_SEVEN point_evaluation cost is increased by 4x
+            if constexpr (TestFixture::Trait::monad_pricing_version() >= 1) {
                 auto const tests = transform_test_cases(
                     POINT_EVALUATION_CASES, [](auto &test) { test.gas *= 4; });
                 return do_geth_tests<typename TestFixture::Trait>(

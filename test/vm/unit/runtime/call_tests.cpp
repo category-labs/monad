@@ -80,7 +80,7 @@ TYPED_TEST(RuntimeTraitsTest, CallWithValueCold)
     ASSERT_EQ(this->ctx_.memory.size, 0);
     constexpr auto gas_remaining = [] {
         if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
+            if constexpr (TestFixture::Trait::monad_pricing_version() >= 1) {
                 return 48'000;
             }
         }
@@ -108,7 +108,7 @@ TYPED_TEST(RuntimeTraitsTest, CallGasLimit)
 
     constexpr auto gas_remaining = [] {
         if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
+            if constexpr (TestFixture::Trait::monad_pricing_version() >= 1) {
                 return 2882;
             }
         }
@@ -135,7 +135,7 @@ TYPED_TEST(RuntimeTraitsTest, CallFailure)
 
     constexpr auto gas_remaining = [] {
         if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
+            if constexpr (TestFixture::Trait::monad_pricing_version() >= 1) {
                 return 80'000;
             }
         }
@@ -160,7 +160,7 @@ TYPED_TEST(RuntimeTraitsTest, DelegateCall)
     ASSERT_EQ(this->ctx_.memory.size, 0);
     constexpr auto gas_remaining = [] {
         if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
+            if constexpr (TestFixture::Trait::monad_pricing_version() >= 1) {
                 return 82'000;
             }
         }
@@ -188,7 +188,7 @@ TYPED_TEST(RuntimeTraitsTest, CallCode)
             if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NINE) {
                 return 72'998;
             }
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
+            if constexpr (TestFixture::Trait::monad_pricing_version() >= 1) {
                 return 72'988;
             }
         }
@@ -216,7 +216,7 @@ TYPED_TEST(RuntimeTraitsTest, StaticCall)
             if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NINE) {
                 return 81'985;
             }
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
+            if constexpr (TestFixture::Trait::monad_pricing_version() >= 1) {
                 return 81'909;
             }
         }
@@ -242,7 +242,7 @@ TYPED_TEST(RuntimeTraitsTest, CallTooDeep)
     ASSERT_EQ(this->ctx_.memory.size, 0);
     constexpr auto gas_remaining = [] {
         if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
+            if constexpr (TestFixture::Trait::monad_pricing_version() >= 1) {
                 return 58'300;
             }
         }

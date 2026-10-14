@@ -86,9 +86,14 @@ namespace monad
         { T::eip_3855_active() } -> std::same_as<bool>;
         { T::eip_3860_active() } -> std::same_as<bool>;
         { T::eip_4399_active() } -> std::same_as<bool>;
+        { T::eip_4788_active() } -> std::same_as<bool>;
         { T::eip_4844_active() } -> std::same_as<bool>;
+        { T::eip_4844_header_active() } -> std::same_as<bool>;
+        { T::eip_4844_opcodes_active() } -> std::same_as<bool>;
+        { T::eip_4844_precompile_active() } -> std::same_as<bool>;
         { T::eip_4895_active() } -> std::same_as<bool>;
         { T::eip_5656_active() } -> std::same_as<bool>;
+        { T::eip_6780_active() } -> std::same_as<bool>;
         { T::eip_7623_active() } -> std::same_as<bool>;
         { T::eip_7685_active() } -> std::same_as<bool>;
         { T::eip_7685_header_active() } -> std::same_as<bool>;
@@ -111,9 +116,6 @@ namespace monad
         { T::mip_11_active() } -> std::same_as<bool>;
         { T::mip_12_active() } -> std::same_as<bool>;
         { T::can_create_inside_delegated() } -> std::same_as<bool>;
-        // If true, BLOBHASH/BLOBBASEFEE exist and return
-        // stub data. Separate from eip_4844_active.
-        { T::has_blob_opcodes() } -> std::same_as<bool>;
         { T::charges_gas_limit() } -> std::same_as<bool>;
         { T::deploys_block_hash_history() } -> std::same_as<bool>;
         { T::bumps_nonce_on_unfunded_create() } -> std::same_as<bool>;
@@ -202,7 +204,27 @@ namespace monad
             return Rev >= MONAD_ETH_PARIS;
         }
 
+        static consteval bool eip_4788_active() noexcept
+        {
+            return Rev >= MONAD_ETH_CANCUN;
+        }
+
         static consteval bool eip_4844_active() noexcept
+        {
+            return Rev >= MONAD_ETH_CANCUN;
+        }
+
+        static consteval bool eip_4844_header_active() noexcept
+        {
+            return Rev >= MONAD_ETH_CANCUN;
+        }
+
+        static consteval bool eip_4844_opcodes_active() noexcept
+        {
+            return Rev >= MONAD_ETH_CANCUN;
+        }
+
+        static consteval bool eip_4844_precompile_active() noexcept
         {
             return Rev >= MONAD_ETH_CANCUN;
         }
@@ -213,6 +235,11 @@ namespace monad
         }
 
         static consteval bool eip_5656_active() noexcept
+        {
+            return Rev >= MONAD_ETH_CANCUN;
+        }
+
+        static consteval bool eip_6780_active() noexcept
         {
             return Rev >= MONAD_ETH_CANCUN;
         }
@@ -325,11 +352,6 @@ namespace monad
         static consteval bool can_create_inside_delegated() noexcept
         {
             return true;
-        }
-
-        static consteval bool has_blob_opcodes() noexcept
-        {
-            return Rev >= MONAD_ETH_CANCUN;
         }
 
         static consteval bool charges_gas_limit() noexcept
@@ -479,6 +501,11 @@ namespace monad
             return evm_rev() >= MONAD_ETH_PARIS;
         }
 
+        static consteval bool eip_4788_active() noexcept
+        {
+            return evm_rev() >= MONAD_ETH_CANCUN;
+        }
+
         static consteval bool eip_4844_active() noexcept
         {
             // if this EIP is ever enabled, reserve balance must be modified
@@ -487,12 +514,32 @@ namespace monad
             return false;
         }
 
+        static consteval bool eip_4844_header_active() noexcept
+        {
+            return evm_rev() >= MONAD_ETH_CANCUN;
+        }
+
+        static consteval bool eip_4844_opcodes_active() noexcept
+        {
+            return evm_rev() >= MONAD_ETH_CANCUN;
+        }
+
+        static consteval bool eip_4844_precompile_active() noexcept
+        {
+            return evm_rev() >= MONAD_ETH_CANCUN;
+        }
+
         static consteval bool eip_4895_active() noexcept
         {
             return evm_rev() >= MONAD_ETH_SHANGHAI;
         }
 
         static consteval bool eip_5656_active() noexcept
+        {
+            return evm_rev() >= MONAD_ETH_CANCUN;
+        }
+
+        static consteval bool eip_6780_active() noexcept
         {
             return evm_rev() >= MONAD_ETH_CANCUN;
         }
@@ -601,11 +648,6 @@ namespace monad
         static consteval bool can_create_inside_delegated() noexcept
         {
             return false;
-        }
-
-        static consteval bool has_blob_opcodes() noexcept
-        {
-            return evm_rev() >= MONAD_ETH_CANCUN;
         }
 
         static consteval bool charges_gas_limit() noexcept

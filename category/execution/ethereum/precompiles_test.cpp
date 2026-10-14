@@ -529,7 +529,7 @@ TYPED_TEST(TraitsTest, blake2f)
 
 TYPED_TEST(TraitsTest, point_evaluation)
 {
-    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_CANCUN) {
+    if constexpr (!TestFixture::Trait::eip_4844_precompile_active()) {
         EXPECT_FALSE(is_precompile<typename TestFixture::Trait>(0x0a_address));
     }
     else {

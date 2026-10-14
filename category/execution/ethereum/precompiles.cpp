@@ -90,7 +90,7 @@ std::optional<PrecompiledContract> resolve_precompile(Address const &address)
 
     CASE(0x09, blake2bf_gas_cost<traits>, blake2bf_execute);
 
-    if constexpr (traits::evm_rev() >= MONAD_ETH_CANCUN) {
+    if constexpr (traits::eip_4844_precompile_active()) {
         CASE(0x0A, point_evaluation_gas_cost<traits>, point_evaluation_execute);
     }
 

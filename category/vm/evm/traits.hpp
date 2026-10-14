@@ -86,6 +86,7 @@ namespace monad
         { T::eip_7951_active() } -> std::same_as<bool>;
         { T::eip_7981_active() } -> std::same_as<bool>;
         { T::mip_3_active() } -> std::same_as<bool>;
+        { T::mip_4_active() } -> std::same_as<bool>;
         { T::mip_8_active() } -> std::same_as<bool>;
         { T::mip_11_active() } -> std::same_as<bool>;
         { T::mip_12_active() } -> std::same_as<bool>;
@@ -190,6 +191,11 @@ namespace monad
         }
 
         static consteval bool mip_3_active() noexcept
+        {
+            return false;
+        }
+
+        static consteval bool mip_4_active() noexcept
         {
             return false;
         }
@@ -375,10 +381,12 @@ namespace monad
 
         static consteval bool mip_3_active() noexcept
         {
-            if constexpr (Rev >= MONAD_NINE) {
-                return true;
-            }
-            return false;
+            return Rev >= MONAD_NINE;
+        }
+
+        static consteval bool mip_4_active() noexcept
+        {
+            return Rev >= MONAD_NINE;
         }
 
         static consteval bool mip_11_active() noexcept
@@ -437,6 +445,11 @@ namespace monad
         static consteval bool reserve_balance_uses_recent_code_hash() noexcept
         {
             return Rev >= MONAD_EIGHT;
+        }
+
+        static consteval bool reserve_balance_skips_init_selfdestruct() noexcept
+        {
+            return Rev >= MONAD_NINE;
         }
 
         static consteval int64_t base_sstore_cost() noexcept

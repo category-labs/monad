@@ -676,7 +676,7 @@ namespace monad::vm::fuzzing
         }
         pre_compiles.emplace_back(0x100);
         pre_compiles.push_back(staking::STAKING_CA);
-        if constexpr (traits::monad_rev() >= MONAD_NINE) {
+        if constexpr (traits::mip_4_active()) {
             pre_compiles.push_back(RESERVE_BALANCE_CA);
         }
         return pre_compiles;

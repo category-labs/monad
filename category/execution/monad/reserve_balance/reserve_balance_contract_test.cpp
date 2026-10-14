@@ -540,7 +540,7 @@ TEST_F(ReserveBalanceEvm, precompile_dipped_into_reserve_with_argument)
 TYPED_TEST(MonadTraitsTest, reverttransaction_no_dip)
 {
     constexpr Outcome outcome = [] {
-        if (TestFixture::Trait::monad_rev() >= MONAD_NINE) {
+        if (TestFixture::Trait::mip_4_active()) {
             return Outcome::WontRevert;
         }
         else {
@@ -554,7 +554,7 @@ TYPED_TEST(MonadTraitsTest, reverttransaction_no_dip)
 TYPED_TEST(MonadTraitsTest, reverttransaction_revert)
 {
     constexpr Outcome outcome = [] {
-        if (TestFixture::Trait::monad_rev() >= MONAD_NINE) {
+        if (TestFixture::Trait::mip_4_active()) {
             return Outcome::WillRevert;
         }
         else {
@@ -652,8 +652,7 @@ TYPED_TEST(
         };
     };
 
-    if constexpr (TestFixture::Trait::monad_rev() < MONAD_NINE) {
-        // The precompile should be unavailable prior to MONAD_NINE.
+    if constexpr (!TestFixture::Trait::mip_4_active()) {
         NoopCallTracer call_tracer;
         auto const result = check_call_precompile<typename TestFixture::Trait>(
             this->state, call_tracer, make_msg());

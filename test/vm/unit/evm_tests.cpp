@@ -111,10 +111,8 @@ TYPED_TEST(VMTraitsTest, MLoadAtBoundMIP3)
 TYPED_TEST(VMTraitsTest, MStore8AtBoundMIP3)
 {
     auto memory_version = [] {
-        if constexpr (TestFixture::is_monad_trait()) {
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NINE) {
-                return runtime::Memory::Version::MIP3;
-            }
+        if constexpr (TestFixture::Trait::mip_3_active()) {
+            return runtime::Memory::Version::MIP3;
         }
         return runtime::Memory::Version::V1;
     }();

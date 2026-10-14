@@ -116,10 +116,8 @@ TYPED_TEST(RuntimeTraitsTest, CallDataCopyAll)
     auto copy = TestFixture::wrap(calldatacopy<traits>);
 
     constexpr auto initial_gas = [] {
-        if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NINE) {
-                return 14;
-            }
+        if constexpr (TestFixture::Trait::mip_3_active()) {
+            return 14;
         }
         return 24;
     }();
@@ -140,10 +138,8 @@ TYPED_TEST(RuntimeTraitsTest, CallDataCopyPartial)
     auto copy = TestFixture::wrap(calldatacopy<traits>);
 
     constexpr auto initial_gas = [] {
-        if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NINE) {
-                return 4;
-            }
+        if constexpr (TestFixture::Trait::mip_3_active()) {
+            return 4;
         }
         return 12;
     }();
@@ -173,10 +169,8 @@ TYPED_TEST(RuntimeTraitsTest, CallDataCopyOutOfBounds)
     auto copy = TestFixture::wrap(calldatacopy<traits>);
 
     constexpr auto initial_gas = [] {
-        if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NINE) {
-                return 28;
-            }
+        if constexpr (TestFixture::Trait::mip_3_active()) {
+            return 28;
         }
         return 51;
     }();
@@ -206,10 +200,8 @@ TYPED_TEST(RuntimeTraitsTest, CodeCopyAll)
     auto copy = TestFixture::wrap(codecopy<traits>);
 
     constexpr auto initial_gas = [] {
-        if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NINE) {
-                return 14;
-            }
+        if constexpr (TestFixture::Trait::mip_3_active()) {
+            return 14;
         }
         return 24;
     }();
@@ -230,10 +222,8 @@ TYPED_TEST(RuntimeTraitsTest, CodeCopyPartial)
     auto copy = TestFixture::wrap(codecopy<traits>);
 
     constexpr auto initial_gas = [] {
-        if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NINE) {
-                return 4;
-            }
+        if constexpr (TestFixture::Trait::mip_3_active()) {
+            return 4;
         }
         return 12;
     }();
@@ -263,10 +253,8 @@ TYPED_TEST(RuntimeTraitsTest, CodeCopyOutOfBounds)
     auto copy = TestFixture::wrap(codecopy<traits>);
 
     constexpr auto initial_gas = [] {
-        if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NINE) {
-                return 28;
-            }
+        if constexpr (TestFixture::Trait::mip_3_active()) {
+            return 28;
         }
         return 51;
     }();
@@ -299,10 +287,8 @@ TYPED_TEST(RuntimeTraitsTest, ExtCodeCopy)
         byte_string(this->code_.begin(), this->code_.end());
 
     constexpr auto initial_gas = [] {
-        if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NINE) {
-                return 10'003;
-            }
+        if constexpr (TestFixture::Trait::mip_3_active()) {
+            return 10'003;
         }
         return 10'006;
     }();
@@ -327,10 +313,8 @@ TYPED_TEST(RuntimeTraitsTest, ExtCodeCopyOutOfBounds)
         byte_string(this->code_.begin(), this->code_.end());
 
     constexpr auto initial_gas = [] {
-        if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NINE) {
-                return 10'003;
-            }
+        if constexpr (TestFixture::Trait::mip_3_active()) {
+            return 10'003;
         }
         return 10'006;
     }();
@@ -396,10 +380,8 @@ TYPED_TEST(RuntimeTraitsTest, ReturnDataCopyAll)
     auto copy = TestFixture::wrap(returndatacopy<traits>);
 
     constexpr auto initial_gas = [] {
-        if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NINE) {
-                return 14;
-            }
+        if constexpr (TestFixture::Trait::mip_3_active()) {
+            return 14;
         }
         return 24;
     }();

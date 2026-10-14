@@ -37,10 +37,8 @@ TYPED_TEST(RuntimeTraitsTest, KeccakNoExpand)
     using traits = TestFixture::Trait;
 
     auto memory_version = [] {
-        if constexpr (is_monad_trait_v<traits>) {
-            if constexpr (traits::monad_rev() >= MONAD_NINE) {
-                return Memory::Version::MIP3;
-            }
+        if constexpr (traits::mip_3_active()) {
+            return Memory::Version::MIP3;
         }
         return Memory::Version::V1;
     }();
@@ -71,10 +69,8 @@ TYPED_TEST(RuntimeTraitsTest, KeccakExpand)
     using traits = TestFixture::Trait;
 
     auto memory_version = [] {
-        if constexpr (is_monad_trait_v<traits>) {
-            if constexpr (traits::monad_rev() >= MONAD_NINE) {
-                return Memory::Version::MIP3;
-            }
+        if constexpr (traits::mip_3_active()) {
+            return Memory::Version::MIP3;
         }
         return Memory::Version::V1;
     }();

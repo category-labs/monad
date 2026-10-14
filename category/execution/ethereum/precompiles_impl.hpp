@@ -22,7 +22,6 @@
 #include <category/core/hex.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
-#include <category/core/thread_local.h>
 #include <category/crypto/silkpre_vendor/blake2b.h>
 #include <category/crypto/silkpre_vendor/bn128.hpp>
 #include <category/crypto/silkpre_vendor/rmd160.h>
@@ -31,10 +30,11 @@
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/precompiles_bls12.hpp>
 
-#include <cryptopp/eccrypto.h>
-#include <cryptopp/ecp.h>
-#include <cryptopp/integer.h>
-#include <cryptopp/oids.h>
+#include <openssl/bn.h>
+#include <openssl/ec.h>
+#include <openssl/ec_key.h>
+#include <openssl/ecdsa.h>
+#include <openssl/err.h>
 
 #include <c-kzg-4844/trusted_setup.hpp>
 
@@ -329,72 +329,62 @@ blake2bf_impl(byte_string_view const input, std::span<uint8_t, 64> const out)
 [[gnu::always_inline]] inline PrecompileImplResult
 p256_verify_impl(byte_string_view const input, std::span<uint8_t, 32> const out)
 {
-    using namespace CryptoPP;
-
     if (input.size() != 160) {
         return PrecompileImplResult::failure();
     }
 
-    Integer h(input.data(), 32);
-    Integer r(input.data() + 32, 32);
-    Integer s(input.data() + 64, 32);
-    Integer qx(input.data() + 96, 32);
-    Integer qy(input.data() + 128, 32);
+    EC_GROUP const *const group = EC_group_p256();
+    static BIGNUM const *const p = [group] {
+        BIGNUM *const p = BN_new();
+        MONAD_ASSERT(p != nullptr);
+        bool const curve_ok =
+            EC_GROUP_get_curve_GFp(group, p, nullptr, nullptr, nullptr) == 1;
+        MONAD_ASSERT(curve_ok);
+        return p;
+    }();
 
-    MONAD_THREAD_LOCAL DL_GroupParameters_EC<ECP> const params(
-        ASN1::secp256r1());
-    auto const &ec = params.GetCurve();
-    auto const &n = params.GetSubgroupOrder();
-    auto const p_mod = ec.FieldSize();
-    auto const &G = params.GetSubgroupGenerator();
+    bssl::UniquePtr<BIGNUM> r{BN_bin2bn(input.data() + 32, 32, nullptr)};
+    bssl::UniquePtr<BIGNUM> s{BN_bin2bn(input.data() + 64, 32, nullptr)};
+    bssl::UniquePtr<BIGNUM> const qx{BN_bin2bn(input.data() + 96, 32, nullptr)};
+    bssl::UniquePtr<BIGNUM> const qy{
+        BN_bin2bn(input.data() + 128, 32, nullptr)};
+    bssl::UniquePtr<EC_POINT> const q{EC_POINT_new(group)};
+    bssl::UniquePtr<EC_KEY> const key{EC_KEY_new()};
+    bssl::UniquePtr<ECDSA_SIG> const sig{ECDSA_SIG_new()};
+    MONAD_ASSERT(r && s && qx && qy && q && key && sig);
 
     // if not (0 < r < n and 0 < s < n): return
-    if (!(r > Integer::Zero() && r < n)) {
+    BIGNUM const *const n = EC_GROUP_get0_order(group);
+    if (BN_is_zero(r.get()) || BN_cmp(r.get(), n) >= 0) {
         return PrecompileImplResult::failure();
     }
-
-    if (!(s > Integer::Zero() && s < n)) {
+    if (BN_is_zero(s.get()) || BN_cmp(s.get(), n) >= 0) {
         return PrecompileImplResult::failure();
     }
 
     // if not (0 ≤ qx < p and 0 ≤ qy < p): return
-    if (!(qx >= Integer::Zero() && qx < p_mod)) {
+    if (BN_cmp(qx.get(), p) >= 0 || BN_cmp(qy.get(), p) >= 0) {
         return PrecompileImplResult::failure();
     }
 
-    if (!(qy >= Integer::Zero() && qy < p_mod)) {
+    // Fails for any point not on the curve, (0, 0) included
+    if (EC_POINT_set_affine_coordinates_GFp(
+            group, q.get(), qx.get(), qy.get(), nullptr) != 1) {
+        ERR_clear_error();
         return PrecompileImplResult::failure();
     }
 
-    // if (qx, qy) == (0, 0): return
-    // (cheaper, check first)
-    if (qx.IsZero() && qy.IsZero()) {
-        return PrecompileImplResult::failure();
-    }
+    bool const group_ok = EC_KEY_set_group(key.get(), group) == 1;
+    MONAD_ASSERT(group_ok);
+    bool const key_ok = EC_KEY_set_public_key(key.get(), q.get()) == 1;
+    MONAD_ASSERT(key_ok);
+    bool const sig_ok =
+        ECDSA_SIG_set0(sig.get(), r.release(), s.release()) == 1;
+    MONAD_ASSERT(sig_ok);
 
-    // if qy^2 ≢ qx^3 + a*qx + b (mod p): return
-    if (!ec.VerifyPoint({qx, qy})) {
-        return PrecompileImplResult::failure();
-    }
-
-    // s1 = s^(-1) (mod n)
-    auto const s1 = s.InverseMod(n);
-
-    // R' = (h * s1) * G + (r * s1) * (qx, qy)
-    auto const u1 = a_times_b_mod_c(h, s1, n);
-    auto const u2 = a_times_b_mod_c(r, s1, n);
-
-    auto const p1 = ec.Multiply(u1, G);
-    auto const p2 = ec.Multiply(u2, {qx, qy});
-    auto const r_prime = ec.Add(p1, p2);
-
-    // If R' is at infinity: return
-    if (r_prime.identity) {
-        return PrecompileImplResult::failure();
-    }
-
-    // if R'.x ≢ r (mod n): return
-    if (r_prime.x % n != r) {
+    // SEC 1 v2 4.1.4: R' is not at infinity and R'.x ≡ r (mod n)
+    if (ECDSA_do_verify(input.data(), 32, sig.get(), key.get()) != 1) {
+        ERR_clear_error();
         return PrecompileImplResult::failure();
     }
 

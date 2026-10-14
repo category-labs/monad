@@ -75,8 +75,11 @@ namespace monad
         // Feature flags
 
         { T::eip_1153_active() } -> std::same_as<bool>;
+        { T::eip_1559_header_active() } -> std::same_as<bool>;
         { T::eip_2935_active() } -> std::same_as<bool>;
         { T::eip_3198_active() } -> std::same_as<bool>;
+        { T::eip_3529_active() } -> std::same_as<bool>;
+        { T::eip_3541_active() } -> std::same_as<bool>;
         { T::eip_3675_active() } -> std::same_as<bool>;
         { T::eip_3855_active() } -> std::same_as<bool>;
         { T::eip_4399_active() } -> std::same_as<bool>;
@@ -136,12 +139,27 @@ namespace monad
             return Rev >= MONAD_ETH_CANCUN;
         }
 
+        static consteval bool eip_1559_header_active() noexcept
+        {
+            return Rev >= MONAD_ETH_LONDON;
+        }
+
         static consteval bool eip_2935_active() noexcept
         {
             return Rev >= MONAD_ETH_PRAGUE;
         }
 
         static consteval bool eip_3198_active() noexcept
+        {
+            return Rev >= MONAD_ETH_LONDON;
+        }
+
+        static consteval bool eip_3529_active() noexcept
+        {
+            return Rev >= MONAD_ETH_LONDON;
+        }
+
+        static consteval bool eip_3541_active() noexcept
         {
             return Rev >= MONAD_ETH_LONDON;
         }
@@ -358,12 +376,27 @@ namespace monad
             return evm_rev() >= MONAD_ETH_CANCUN;
         }
 
+        static consteval bool eip_1559_header_active() noexcept
+        {
+            return evm_rev() >= MONAD_ETH_LONDON;
+        }
+
         static consteval bool eip_2935_active() noexcept
         {
             return Rev >= MONAD_SIX;
         }
 
         static consteval bool eip_3198_active() noexcept
+        {
+            return evm_rev() >= MONAD_ETH_LONDON;
+        }
+
+        static consteval bool eip_3529_active() noexcept
+        {
+            return evm_rev() >= MONAD_ETH_LONDON;
+        }
+
+        static consteval bool eip_3541_active() noexcept
         {
             return evm_rev() >= MONAD_ETH_LONDON;
         }

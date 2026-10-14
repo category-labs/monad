@@ -71,13 +71,20 @@ for f in "$PREFIX"/bin/riscv-none-elf-*; do
     b=$(basename "$f"); ln -sf "$f" "$PREFIX/bin/riscv64-unknown-elf-${b#riscv-none-elf-}"
 done
 
-say "checking the flag parses AND lowers"
+say "checking -mzisk-dma parses AND lowers"
 tmp=$(mktemp -d)
 printf '#include <cstring>\nextern void sink(void*);\nvoid f(void*d,const void*s){std::memcpy(d,s,32);sink(d);}\n' > "$tmp/t.cpp"
 "$PREFIX/bin/riscv-none-elf-g++" -O2 -march=rv64ima_zicsr -mabi=lp64 -mcmodel=medany \
     -mzisk-dma -S -o "$tmp/t.s" "$tmp/t.cpp" || die "compile with -mzisk-dma failed"
 grep -qE 'csrs?[[:space:]]+.*0x813' "$tmp/t.s" || { cat "$tmp/t.s"; die "flag parses but emits no DMA marker"; }
 say "marker emitted:"; grep -E 'csr' "$tmp/t.s" | head -3
+
+say "checking byte stores keep their sources zero-extended"
+printf 'void f(unsigned char *p) { *p = 0xb8; }\nvoid g(unsigned char *p, unsigned char n) { *p = 0x80 + n; }\n' > "$tmp/b.c"
+"$PREFIX/bin/riscv-none-elf-gcc" -O2 -march=rv64ima_zicsr -mabi=lp64 -mcmodel=medany \
+    -mzisk-clean-byte-stores -S -o "$tmp/b.s" "$tmp/b.c" || die "compile with -mzisk-clean-byte-stores failed"
+grep -qE 'li[[:space:]]+[a-z0-9]+,184$' "$tmp/b.s" && grep -qE 'addi[[:space:]]+[a-z0-9]+,[a-z0-9]+,128$' "$tmp/b.s" ||
+    { cat "$tmp/b.s"; die "flag parses but a byte store's source is sign-extended"; }
 rm -rf "$tmp"
 say "done: $PREFIX"
 "$PREFIX/bin/riscv-none-elf-g++" --version | head -1

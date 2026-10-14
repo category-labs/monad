@@ -827,7 +827,7 @@ StakingContract::precompile_dispatch(byte_string_view &input)
         return {&StakingContract::precompile_get_epoch, GET_EPOCH_OP_COST};
     case PrecompileSelector::GET_PROPOSER_VAL_ID:
         // [0, 1, 0, 0, 0, 0, 0]
-        if constexpr (traits::monad_rev() >= MONAD_FIVE) {
+        if constexpr (traits::tracks_proposer_val_id()) {
             return {
                 &StakingContract::precompile_get_proposer_val_id,
                 GET_PROPOSER_VAL_ID_OP_COST};
@@ -1725,7 +1725,7 @@ Result<void> StakingContract::syscall_reward(
         apply_reward(val_id.value(), SYSTEM_SENDER, del_reward, active_stake));
 
     // 5. Store the proposer validator id for other contracts to query.
-    if constexpr (traits::monad_rev() >= MONAD_FIVE) {
+    if constexpr (traits::tracks_proposer_val_id()) {
         vars.proposer_val_id.store(val_id.value());
     }
 

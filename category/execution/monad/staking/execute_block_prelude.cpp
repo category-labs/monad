@@ -25,7 +25,7 @@ MONAD_STAKING_NAMESPACE_BEGIN
 template <Traits traits>
 void execute_block_prelude(State &state)
 {
-    if constexpr (traits::monad_rev() < MONAD_FIVE) {
+    if constexpr (!traits::tracks_proposer_val_id()) {
         return;
     }
 

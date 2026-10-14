@@ -208,7 +208,7 @@ TYPED_TEST(TraitsTest, create_insufficient_balance_nonce_bump)
 
     auto const final_nonce = s.get_nonce(from);
     if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-        if constexpr (TestFixture::Trait::monad_rev() >= MONAD_FIVE) {
+        if constexpr (TestFixture::Trait::bumps_nonce_on_unfunded_create()) {
             EXPECT_EQ(final_nonce, initial_nonce + 1);
         }
         else {

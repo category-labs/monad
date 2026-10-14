@@ -96,6 +96,7 @@ namespace monad
         // stub data. Separate from eip_4844_active.
         { T::has_blob_opcodes() } -> std::same_as<bool>;
         { T::charges_gas_limit() } -> std::same_as<bool>;
+        { T::bumps_nonce_on_unfunded_create() } -> std::same_as<bool>;
 
         // Constants
         { T::max_code_size() } -> std::same_as<size_t>;
@@ -232,6 +233,11 @@ namespace monad
         }
 
         static consteval bool charges_gas_limit() noexcept
+        {
+            return false;
+        }
+
+        static consteval bool bumps_nonce_on_unfunded_create() noexcept
         {
             return false;
         }
@@ -420,6 +426,11 @@ namespace monad
             return Rev >= MONAD_ONE;
         }
 
+        static consteval bool bumps_nonce_on_unfunded_create() noexcept
+        {
+            return Rev >= MONAD_FIVE;
+        }
+
         static consteval bool mip_8_active() noexcept
         {
             return ::monad::mip_8_active(Rev);
@@ -461,6 +472,11 @@ namespace monad
         static consteval bool reserve_balance_skips_init_selfdestruct() noexcept
         {
             return Rev >= MONAD_NINE;
+        }
+
+        static consteval bool tracks_proposer_val_id() noexcept
+        {
+            return Rev >= MONAD_FIVE;
         }
 
         static consteval int64_t base_sstore_cost() noexcept

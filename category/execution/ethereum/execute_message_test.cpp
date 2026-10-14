@@ -1023,7 +1023,7 @@ TYPED_TEST(TraitsTest, create_inside_delegated_call)
         chain_ctx};
     init_rb_for_test<typename TestFixture::Trait>(s, h, Address{m.sender});
 
-    if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_PRAGUE) {
+    if constexpr (TestFixture::Trait::eip_7702_active()) {
         auto const result = h.call(m);
         // CREATE should fail on Monad chains and succeed on Ethereum chains
         if constexpr (TestFixture::Trait::can_create_inside_delegated()) {
@@ -1154,7 +1154,7 @@ TYPED_TEST(TraitsTest, create2_inside_delegated_call_via_delegatecall)
         chain_ctx};
     init_rb_for_test<typename TestFixture::Trait>(s, h, Address{m.sender});
 
-    if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_PRAGUE) {
+    if constexpr (TestFixture::Trait::eip_7702_active()) {
         auto const result = h.call(m);
         // CREATE2 should fail on Monad chains and succeed on Ethereum chains
         if constexpr (TestFixture::Trait::can_create_inside_delegated()) {
@@ -1249,8 +1249,7 @@ TYPED_TEST(TraitsTest, nested_call_to_delegated_precompile)
         .memory_capacity = vm.message_memory_capacity(),
     };
 
-    // requires EIP-7702
-    if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_PRAGUE) {
+    if constexpr (TestFixture::Trait::eip_7702_active()) {
         BlockHashBufferFinalized const block_hash_buffer;
         NoopCallTracer call_tracer;
         Transaction tx{};

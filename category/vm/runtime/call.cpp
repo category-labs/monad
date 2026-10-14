@@ -87,7 +87,7 @@ namespace monad::vm::runtime
         }
 
         auto const code_address = [&]() -> Address {
-            if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
+            if constexpr (traits::eip_7702_active()) {
                 // EIP-7702: if the code address starts with 0xEF0100, then
                 // treat it as a delegated call in the context of the
                 // current authority.

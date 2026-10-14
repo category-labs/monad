@@ -251,9 +251,8 @@ evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
         header_.excess_blob_gas.value_or(0),
         chain_.get_blob_schedule(header_.timestamp));
 
-    // EIP-7702
     uint64_t auth_refund = 0u;
-    if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
+    if constexpr (traits::eip_7702_active()) {
         auth_refund = process_authorizations(state, host);
     }
 
@@ -275,8 +274,7 @@ evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
     auto msg_memory = state.vm().message_memory_ref();
     auto msg = to_message(msg_memory, state.vm().message_memory_capacity());
 
-    // EIP-7702
-    if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
+    if constexpr (traits::eip_7702_active()) {
         if (tx_.to.has_value()) {
             if (auto const delegate = vm::evm::resolve_delegation(
                     &host.get_interface(), host.to_context(), *tx_.to)) {
@@ -389,8 +387,7 @@ Receipt ExecuteTransaction<traits>::execute_final(
 
     auto gas_used = tx_.gas_limit - gas_refund;
 
-    // EIP-7623
-    if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
+    if constexpr (traits::eip_7623_active()) {
         auto const floor_gas = floor_data_gas<traits>(tx_);
         if (gas_used < floor_gas) {
             auto const delta = floor_gas - gas_used;

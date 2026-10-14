@@ -28,19 +28,12 @@
 #include <category/execution/monad/graph_eval/graph_eval.hpp>
 #include <category/execution/monad/graph_eval/graph_eval_error.hpp>
 #include <category/execution/monad/graph_eval/interpreter.hpp>
-#include <category/execution/monad/graph_eval/kernel.hpp>
 #include <category/execution/monad/graph_eval/references.hpp>
 #include <category/execution/monad/graph_eval/tensor.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
 #include <category/execution/ethereum/core/contract/abi_signatures.hpp>
-
-#include <iree/hal/allocator.h>
-#include <iree/hal/buffer.h>
-#include <iree/hal/buffer_view.h>
-#include <iree/runtime/api.h>
-#include <iree/vm/bytecode/module.h>
 
 #include <boost/outcome/try.hpp>
 
@@ -49,7 +42,6 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
-#include <iree/runtime/session.h>
 #include <optional>
 #include <span>
 #include <utility>
@@ -192,7 +184,7 @@ struct ThreadArena
 
     ThreadArena()
         : data(static_cast<uint8_t *>(
-              std::aligned_alloc(IREE_ALIGNMENT, ARENA_SIZE)))
+              std::aligned_alloc(TENSOR_DATA_ALIGNMENT, ARENA_SIZE)))
     {
         MONAD_ASSERT(data != nullptr);
     }

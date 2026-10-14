@@ -22,7 +22,9 @@
 
 MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
 
-constexpr uint64_t IREE_ALIGNMENT = 64;
+// Each tensor's data in the arena starts at a multiple of this: a cache line,
+// so that 64-byte vector loads from its start never straddle two
+constexpr uint64_t TENSOR_DATA_ALIGNMENT = 64;
 
 // Memory for the tensors a graph evaluation computes; an evaluation that needs
 // more fails with OutOfMemory

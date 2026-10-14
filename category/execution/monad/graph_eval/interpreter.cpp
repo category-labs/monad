@@ -19,7 +19,6 @@
 #include "category/execution/monad/graph_eval/graph_eval_error.hpp"
 #include "category/execution/monad/graph_eval/ops.hpp"
 #include <category/execution/monad/graph_eval/interpreter.hpp>
-#include <category/execution/monad/graph_eval/kernel.hpp>
 #include <category/execution/monad/graph_eval/references.hpp>
 #include <category/execution/monad/graph_eval/tensor.hpp>
 #include <category/execution/ethereum/state3/state.hpp>

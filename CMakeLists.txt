@@ -45,6 +45,9 @@ option(MONAD_COMPILER_BENCHMARKS "Build compiler benchmarks" OFF)
 option(MONAD_COMPILER_DUMP_ASM "Dump assembly files into build/asm" OFF)
 option(MONAD_COMPILER_STATS "Print statistics about the compiler" OFF)
 option(MONAD_COMPILER_HOT_PATH_STATS "Print statistics about the vm" OFF)
+option(MONAD_GRAPH_EVAL_IREE
+       "Build the IREE runtime and graph_eval's IREE kernels (needs scripts/build_iree.sh)"
+       OFF)
 
 include(cmake/test.cmake)
 
@@ -182,37 +185,40 @@ find_package(TBB REQUIRED)
 # unordered_dense
 add_subdirectory("third_party/unordered_dense")
 
-# iree runtime. The compiler (LLVM/MLIR) is built out of tree by
-# scripts/build_iree.sh and currently only used at build time to AOT-compile
-# kernels.
-set(IREE_BUILD_COMPILER OFF)
-set(IREE_BUILD_TESTS OFF)
-set(IREE_BUILD_BENCHMARKS OFF)
-set(IREE_BUILD_SAMPLES OFF)
-set(IREE_BUILD_PYTHON_BINDINGS OFF)
-# Third-party warnings under new compilers or sanitizers should not break the
-# monad build
-set(IREE_ENABLE_WERROR_FLAG OFF)
-# Runtime: disable non-CPU backends
-set(IREE_HAL_DRIVER_DEFAULTS OFF)
-set(IREE_HAL_DRIVER_LOCAL_TASK ON)
-set(IREE_HAL_DRIVER_LOCAL_SYNC ON)
-set(IREE_HAL_EXECUTABLE_LOADER_DEFAULTS OFF)
-set(IREE_HAL_EXECUTABLE_LOADER_EMBEDDED_ELF ON)
-add_subdirectory(third_party/iree EXCLUDE_FROM_ALL SYSTEM)
+# iree runtime, for graph_eval's IREE kernels, which the interpreter doesn't
+# use, so it's only built with MONAD_GRAPH_EVAL_IREE. The compiler (LLVM/MLIR)
+# is built out of tree by scripts/build_iree.sh and only used at build time to
+# AOT-compile kernels.
+if(MONAD_GRAPH_EVAL_IREE)
+  set(IREE_BUILD_COMPILER OFF)
+  set(IREE_BUILD_TESTS OFF)
+  set(IREE_BUILD_BENCHMARKS OFF)
+  set(IREE_BUILD_SAMPLES OFF)
+  set(IREE_BUILD_PYTHON_BINDINGS OFF)
+  # Third-party warnings under new compilers or sanitizers should not break
+  # the monad build
+  set(IREE_ENABLE_WERROR_FLAG OFF)
+  # Runtime: disable non-CPU backends
+  set(IREE_HAL_DRIVER_DEFAULTS OFF)
+  set(IREE_HAL_DRIVER_LOCAL_TASK ON)
+  set(IREE_HAL_DRIVER_LOCAL_SYNC ON)
+  set(IREE_HAL_EXECUTABLE_LOADER_DEFAULTS OFF)
+  set(IREE_HAL_EXECUTABLE_LOADER_EMBEDDED_ELF ON)
+  add_subdirectory(third_party/iree EXCLUDE_FROM_ALL SYSTEM)
 
-# Out-of-tree IREE compiler, used to compile graph_eval kernels ahead of time
-set(MONAD_IREE_BUILD_DIR "${PROJECT_SOURCE_DIR}/build-iree"
-    CACHE PATH "IREE compiler build directory (see scripts/build_iree.sh)")
-set(MONAD_IREE_COMPILE "${MONAD_IREE_BUILD_DIR}/tools/iree-compile")
-if(NOT EXISTS "${MONAD_IREE_COMPILE}")
-  message(FATAL_ERROR
-    "${MONAD_IREE_COMPILE} does not exist; run scripts/build_iree.sh or set "
-    "MONAD_IREE_BUILD_DIR")
+  # Out-of-tree IREE compiler, used to compile graph_eval kernels ahead of time
+  set(MONAD_IREE_BUILD_DIR "${PROJECT_SOURCE_DIR}/build-iree"
+      CACHE PATH "IREE compiler build directory (see scripts/build_iree.sh)")
+  set(MONAD_IREE_COMPILE "${MONAD_IREE_BUILD_DIR}/tools/iree-compile")
+  if(NOT EXISTS "${MONAD_IREE_COMPILE}")
+    message(FATAL_ERROR
+      "${MONAD_IREE_COMPILE} does not exist; run scripts/build_iree.sh or set "
+      "MONAD_IREE_BUILD_DIR")
+  endif()
+  # The kernels run on every node, so this must not be the build machine's CPU
+  set(MONAD_IREE_TARGET_CPU "znver4" CACHE STRING
+      "LLVM CPU that graph_eval kernels are compiled for")
 endif()
-# The kernels run on every node, so this must not be the build machine's CPU
-set(MONAD_IREE_TARGET_CPU "znver4" CACHE STRING
-    "LLVM CPU that graph_eval kernels are compiled for")
 
 # ##############################################################################
 # unit tests

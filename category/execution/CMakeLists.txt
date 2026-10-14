@@ -268,8 +268,6 @@ add_library(
   "monad/graph_eval/graph.hpp"
   "monad/graph_eval/graphcode.cpp"
   "monad/graph_eval/graphcode.hpp"
-  "monad/graph_eval/kernel.cpp"
-  "monad/graph_eval/kernel.hpp"
   "monad/graph_eval/matmul.cpp"
   "monad/graph_eval/matmul.hpp"
   "monad/graph_eval/interpreter.cpp"
@@ -428,41 +426,48 @@ target_link_libraries(
   PUBLIC evmc
   PUBLIC magic_enum::magic_enum
   PUBLIC secp256k1
-  PUBLIC quill::quill
-  PRIVATE iree::runtime::unified)
+  PUBLIC quill::quill)
 monad_compile_options(monad_execution_native)
 
-# graph_eval kernels, compiled ahead of time and embedded in graph_eval.cpp
-set(GRAPH_EVAL_KERNELS_MLIR
-    "${CMAKE_CURRENT_SOURCE_DIR}/monad/graph_eval/kernels.mlir")
-set(GRAPH_EVAL_KERNELS_VMFB "${CMAKE_CURRENT_BINARY_DIR}/graph_eval_kernels.vmfb")
-add_custom_command(
-  OUTPUT "${GRAPH_EVAL_KERNELS_VMFB}"
-  COMMAND "${MONAD_IREE_COMPILE}"
-          --iree-hal-dump-executable-benchmarks-to=/home/malvarez/tensorflow/monad/executable-benchmarks
-          --iree-hal-dump-executable-intermediates-to=/home/malvarez/tensorflow/monad/executable-intermediates
-          --iree-hal-target-device=local
-          --iree-hal-local-target-device-backends=llvm-cpu
-          --iree-llvmcpu-target-cpu=${MONAD_IREE_TARGET_CPU}
-          --iree-opt-data-tiling
-          --iree-opt-level=O2
-          "${GRAPH_EVAL_KERNELS_MLIR}" -o "${GRAPH_EVAL_KERNELS_VMFB}"
-  # libIREECompiler.so is the actual compiler behind iree-compile
-  DEPENDS "${GRAPH_EVAL_KERNELS_MLIR}" "${MONAD_IREE_COMPILE}"
-          "${MONAD_IREE_BUILD_DIR}/lib/libIREECompiler.so"
-  COMMENT "Compiling graph_eval kernels with IREE"
-  VERBATIM)
-# Listing the .vmfb as a source attaches the command to the target;
-# OBJECT_DEPENDS rebuilds graph_eval.cpp when it changes
-target_sources(monad_execution_native PRIVATE "${GRAPH_EVAL_KERNELS_VMFB}")
-set_property(
-  SOURCE "monad/graph_eval/kernel.cpp"
-  APPEND PROPERTY OBJECT_DEPENDS "${GRAPH_EVAL_KERNELS_VMFB}")
-set_property(
-  SOURCE "monad/graph_eval/kernel.cpp"
-  APPEND
-  PROPERTY COMPILE_DEFINITIONS
-           "MONAD_GRAPH_EVAL_KERNELS_VMFB=\"${GRAPH_EVAL_KERNELS_VMFB}\"")
+# graph_eval's IREE kernels, compiled ahead of time and embedded in kernel.cpp.
+# The interpreter doesn't use them, so they're only built with
+# MONAD_GRAPH_EVAL_IREE
+if(MONAD_GRAPH_EVAL_IREE)
+  target_sources(
+    monad_execution_native
+    PRIVATE "monad/graph_eval/kernel.cpp" "monad/graph_eval/kernel.hpp")
+  target_link_libraries(monad_execution_native PRIVATE iree::runtime::unified)
+
+  set(GRAPH_EVAL_KERNELS_MLIR
+      "${CMAKE_CURRENT_SOURCE_DIR}/monad/graph_eval/kernels.mlir")
+  set(GRAPH_EVAL_KERNELS_VMFB
+      "${CMAKE_CURRENT_BINARY_DIR}/graph_eval_kernels.vmfb")
+  add_custom_command(
+    OUTPUT "${GRAPH_EVAL_KERNELS_VMFB}"
+    COMMAND "${MONAD_IREE_COMPILE}"
+            --iree-hal-target-device=local
+            --iree-hal-local-target-device-backends=llvm-cpu
+            --iree-llvmcpu-target-cpu=${MONAD_IREE_TARGET_CPU}
+            --iree-opt-data-tiling
+            --iree-opt-level=O2
+            "${GRAPH_EVAL_KERNELS_MLIR}" -o "${GRAPH_EVAL_KERNELS_VMFB}"
+    # libIREECompiler.so is the actual compiler behind iree-compile
+    DEPENDS "${GRAPH_EVAL_KERNELS_MLIR}" "${MONAD_IREE_COMPILE}"
+            "${MONAD_IREE_BUILD_DIR}/lib/libIREECompiler.so"
+    COMMENT "Compiling graph_eval kernels with IREE"
+    VERBATIM)
+  # Listing the .vmfb as a source attaches the command to the target;
+  # OBJECT_DEPENDS rebuilds kernel.cpp when it changes
+  target_sources(monad_execution_native PRIVATE "${GRAPH_EVAL_KERNELS_VMFB}")
+  set_property(
+    SOURCE "monad/graph_eval/kernel.cpp"
+    APPEND PROPERTY OBJECT_DEPENDS "${GRAPH_EVAL_KERNELS_VMFB}")
+  set_property(
+    SOURCE "monad/graph_eval/kernel.cpp"
+    APPEND
+    PROPERTY COMPILE_DEFINITIONS
+             "MONAD_GRAPH_EVAL_KERNELS_VMFB=\"${GRAPH_EVAL_KERNELS_VMFB}\"")
+endif()
 
 # The matmul kernel uses AVX-512 with VNNI. Every validator's CPU is a Zen 4,
 # which has them, although the rest of the build targets an older CPU. This

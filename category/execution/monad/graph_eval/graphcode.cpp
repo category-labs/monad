@@ -331,7 +331,8 @@ Result<void> Graphcode::compute_tensor_allocations()
             if (size == 0) {
                 continue;
             }
-            offsets[id] = blocks.allocate(round_up(size, IREE_ALIGNMENT));
+            offsets[id] =
+                blocks.allocate(round_up(size, TENSOR_DATA_ALIGNMENT));
             if (lifetime.last != END) {
                 freed_after[lifetime.last].push_back(id);
             }
@@ -339,7 +340,7 @@ Result<void> Graphcode::compute_tensor_allocations()
         for (size_t const freed : freed_after[time]) {
             blocks.release(
                 offsets[freed],
-                round_up(types[freed].size_bytes(), IREE_ALIGNMENT));
+                round_up(types[freed].size_bytes(), TENSOR_DATA_ALIGNMENT));
         }
     }
     // TODO: charge gas for the arena size

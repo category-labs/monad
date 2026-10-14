@@ -1,0 +1,970 @@
+// Copyright (C) 2025-26 Category Labs, Inc.
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+// keccak256 for the zkVM guests, entered directly at the permutation
+// precompile -- one word-wise sponge, two syscall doors.
+//
+// zisklib's wrapper assembles the sponge state BYTE BY BYTE — its
+// disassembly is 137 lbu / 119 slli / 119 or per iteration group — which
+// costs ~400-530 steps of marshalling around every keccak_f invocation.
+// This entry absorbs word-wise: 17 ld+xor on an aligned block, shift-combine
+// on a misaligned one (aligned reads only, never past the input), and the tail
+// goes through ZisK's emulator-accelerated memcpy.
+//
+// The permutation itself, the padding rule (0x01 domain, 0x80 close — the
+// Ethereum keccak, not SHA-3) and the 136-byte rate are identical to
+// zisklib's; only the marshalling differs.
+
+// SP1's wrapper has the same disease in a different coat: zkvm_keccak256 is
+// tiny_keccak's sponge in software (only keccak-f reaches the KECCAK_PERMUTE
+// precompile), absorbing byte by byte -- measured at 19.5 % of the SP1 guest's
+// attributed work, because the pre-state binding hashes the whole witness trie.
+
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_SP1)
+
+    #include <cstddef>
+    #include <cstdint>
+    #include <cstring>
+
+// An unaligned 8-byte load. The memcpy is the portable spelling of one; gcc
+// folds it into a single instruction.
+[[gnu::always_inline]] static inline uint64_t
+load64(unsigned char const *const p)
+{
+    uint64_t v;
+    __builtin_memcpy(&v, p, sizeof v);
+    return v;
+}
+
+    #ifdef MONAD_ZKVM_ZISK
+// ziskos's raw precompile entry (no_mangle, extern "C"), the same door
+// zisklib's own wrapper uses.
+extern "C" void syscall_keccak_f(uint64_t (*state)[25]);
+
+        #ifdef MONAD_ZKVM_KECCAKF_SOFTWARE
+        // Software Keccak avoids a mostly empty Keccakf instance for small
+        // blocks. Each permutation adds 4,138 steps and about 2,400 Binary
+        // operations; the saving ends when these require extra Main/Binary
+        // instances. See README.md for measured break-even points. CMake
+        // disables the precompile-backed memo.
+        //
+        // Public-domain Van Keer rounds (as in PQClean fips202.c), two per
+        // iteration (A -> E -> A) without lane copies. Rotations/chi use Zbb
+        // rori/andn.
+            #define KECCAKF_SW_ROL(a, n) (((a) << (n)) | ((a) >> (64 - (n))))
+            // chi on one plane of the rho-pi output, into lanes Y<r>a .. Y<r>u.
+            #define KECCAKF_SW_ROW(Y, r, B0, B1, B2, B3, B4)                   \
+                do {                                                           \
+                    uint64_t const b0 = (B0), b1 = (B1), b2 = (B2), b3 = (B3), \
+                                   b4 = (B4);                                  \
+                    Y##r##a = b0 ^ (~b1 & b2);                                 \
+                    Y##r##e = b1 ^ (~b2 & b3);                                 \
+                    Y##r##i = b2 ^ (~b3 & b4);                                 \
+                    Y##r##o = b3 ^ (~b4 & b0);                                 \
+                    Y##r##u = b4 ^ (~b0 & b1);                                 \
+                }                                                              \
+                while (0)
+            // One round from the lanes X.. into the lanes Y..: theta, then rho
+            // and pi feeding each plane's chi, then iota.
+            #define KECCAKF_SW_ROUND(X, Y, rc)                                 \
+                do {                                                           \
+                    uint64_t const Ca = X##ba ^ X##ga ^ X##ka ^ X##ma ^ X##sa; \
+                    uint64_t const Ce = X##be ^ X##ge ^ X##ke ^ X##me ^ X##se; \
+                    uint64_t const Ci = X##bi ^ X##gi ^ X##ki ^ X##mi ^ X##si; \
+                    uint64_t const Co = X##bo ^ X##go ^ X##ko ^ X##mo ^ X##so; \
+                    uint64_t const Cu = X##bu ^ X##gu ^ X##ku ^ X##mu ^ X##su; \
+                    uint64_t const Da = Cu ^ KECCAKF_SW_ROL(Ce, 1);            \
+                    uint64_t const De = Ca ^ KECCAKF_SW_ROL(Ci, 1);            \
+                    uint64_t const Di = Ce ^ KECCAKF_SW_ROL(Co, 1);            \
+                    uint64_t const Do = Ci ^ KECCAKF_SW_ROL(Cu, 1);            \
+                    uint64_t const Du = Co ^ KECCAKF_SW_ROL(Ca, 1);            \
+                    KECCAKF_SW_ROW(                                            \
+                        Y,                                                     \
+                        b,                                                     \
+                        X##ba ^ Da,                                            \
+                        KECCAKF_SW_ROL(X##ge ^ De, 44),                        \
+                        KECCAKF_SW_ROL(X##ki ^ Di, 43),                        \
+                        KECCAKF_SW_ROL(X##mo ^ Do, 21),                        \
+                        KECCAKF_SW_ROL(X##su ^ Du, 14));                       \
+                    Y##ba ^= (rc);                                             \
+                    KECCAKF_SW_ROW(                                            \
+                        Y,                                                     \
+                        g,                                                     \
+                        KECCAKF_SW_ROL(X##bo ^ Do, 28),                        \
+                        KECCAKF_SW_ROL(X##gu ^ Du, 20),                        \
+                        KECCAKF_SW_ROL(X##ka ^ Da, 3),                         \
+                        KECCAKF_SW_ROL(X##me ^ De, 45),                        \
+                        KECCAKF_SW_ROL(X##si ^ Di, 61));                       \
+                    KECCAKF_SW_ROW(                                            \
+                        Y,                                                     \
+                        k,                                                     \
+                        KECCAKF_SW_ROL(X##be ^ De, 1),                         \
+                        KECCAKF_SW_ROL(X##gi ^ Di, 6),                         \
+                        KECCAKF_SW_ROL(X##ko ^ Do, 25),                        \
+                        KECCAKF_SW_ROL(X##mu ^ Du, 8),                         \
+                        KECCAKF_SW_ROL(X##sa ^ Da, 18));                       \
+                    KECCAKF_SW_ROW(                                            \
+                        Y,                                                     \
+                        m,                                                     \
+                        KECCAKF_SW_ROL(X##bu ^ Du, 27),                        \
+                        KECCAKF_SW_ROL(X##ga ^ Da, 36),                        \
+                        KECCAKF_SW_ROL(X##ke ^ De, 10),                        \
+                        KECCAKF_SW_ROL(X##mi ^ Di, 15),                        \
+                        KECCAKF_SW_ROL(X##so ^ Do, 56));                       \
+                    KECCAKF_SW_ROW(                                            \
+                        Y,                                                     \
+                        s,                                                     \
+                        KECCAKF_SW_ROL(X##bi ^ Di, 62),                        \
+                        KECCAKF_SW_ROL(X##go ^ Do, 55),                        \
+                        KECCAKF_SW_ROL(X##ku ^ Du, 39),                        \
+                        KECCAKF_SW_ROL(X##ma ^ Da, 41),                        \
+                        KECCAKF_SW_ROL(X##se ^ De, 2));                        \
+                }                                                              \
+                while (0)
+
+// Out of line: eight call sites, and each copy would be 1.7 KB of code.
+[[gnu::noinline]] static void keccakf_software(uint64_t *const st) noexcept
+{
+    static constexpr uint64_t RC[24] = {
+        0x0000000000000001, 0x0000000000008082, 0x800000000000808A,
+        0x8000000080008000, 0x000000000000808B, 0x0000000080000001,
+        0x8000000080008081, 0x8000000000008009, 0x000000000000008A,
+        0x0000000000000088, 0x0000000080008009, 0x000000008000000A,
+        0x000000008000808B, 0x800000000000008B, 0x8000000000008089,
+        0x8000000000008003, 0x8000000000008002, 0x8000000000000080,
+        0x000000000000800A, 0x800000008000000A, 0x8000000080008081,
+        0x8000000000008080, 0x0000000080000001, 0x8000000080008008};
+    uint64_t Aba = st[0], Abe = st[1], Abi = st[2], Abo = st[3], Abu = st[4];
+    uint64_t Aga = st[5], Age = st[6], Agi = st[7], Ago = st[8], Agu = st[9];
+    uint64_t Aka = st[10], Ake = st[11], Aki = st[12], Ako = st[13],
+             Aku = st[14];
+    uint64_t Ama = st[15], Ame = st[16], Ami = st[17], Amo = st[18],
+             Amu = st[19];
+    uint64_t Asa = st[20], Ase = st[21], Asi = st[22], Aso = st[23],
+             Asu = st[24];
+    uint64_t Eba, Ebe, Ebi, Ebo, Ebu, Ega, Ege, Egi, Ego, Egu, Eka, Eke, Eki,
+        Eko, Eku, Ema, Eme, Emi, Emo, Emu, Esa, Ese, Esi, Eso, Esu;
+    for (unsigned r = 0; r < 24; r += 2) {
+        KECCAKF_SW_ROUND(A, E, RC[r]);
+        KECCAKF_SW_ROUND(E, A, RC[r + 1]);
+    }
+    st[0] = Aba, st[1] = Abe, st[2] = Abi, st[3] = Abo, st[4] = Abu;
+    st[5] = Aga, st[6] = Age, st[7] = Agi, st[8] = Ago, st[9] = Agu;
+    st[10] = Aka, st[11] = Ake, st[12] = Aki, st[13] = Ako, st[14] = Aku;
+    st[15] = Ama, st[16] = Ame, st[17] = Ami, st[18] = Amo, st[19] = Amu;
+    st[20] = Asa, st[21] = Ase, st[22] = Asi, st[23] = Aso, st[24] = Asu;
+}
+
+            #undef KECCAKF_SW_ROUND
+            #undef KECCAKF_SW_ROW
+            #undef KECCAKF_SW_ROL
+
+// The precompile entry's name, so that every permutation below runs this.
+[[gnu::always_inline]] inline void zisk_keccakf(uint64_t (*state)[25]) noexcept
+{
+    keccakf_software(&(*state)[0]);
+}
+        #else
+// ziskos' `syscall_keccak_f` is two instructions -- `csrs 0x800, a0` and the
+// return -- so the call costs more than the body: a `jal` in at 68 cells and a
+// `jalr` out at 68 plus the 60 its low-bit `and` is priced at, 196 cells on
+// each of the block's 97,918 permutations. Emitted here it is the one
+// instruction.
+//
+// The form is ziskos' own (`ziskos_syscall!(SYSCALL_KECCAKF_ID, state)` expands
+// to `csrs {port}, {value}`, and the transpiler shows it as `keccak 0, rs`).
+// rd = x0 is correct for THIS port; it is not for add256, where the same
+// spelling silently transpiles to an `or` -- see zisk_add256.
+//
+// Safe against the memo's ordering requirement. What that requires is that no
+// OTHER Keccak-f run between `fcall_set_keccakf_index` and this permutation,
+// and the compiler cannot introduce one; `asm volatile` statements are not
+// reordered against each other, and the "memory" clobber keeps the state's
+// stores and loads on the correct side.
+[[gnu::always_inline]] inline void zisk_keccakf(uint64_t (*state)[25]) noexcept
+{
+    asm volatile(".option push\n\t"
+                 ".option arch, +zicsr\n\t"
+                 "csrs 0x800, %0\n\t"
+                 ".option pop"
+                 :
+                 : "r"(state)
+                 : "memory");
+}
+        #endif
+
+        // Keccak-f memo. OFF gives the exact control arm: the mechanism is
+        // compiled out, not disabled, so an A/B measures the memo rather than a
+        // predicate.
+        #ifndef MONAD_ZKVM_KECCAKF_MEMO
+            #define MONAD_ZKVM_KECCAKF_MEMO 1
+        #endif
+
+        #if MONAD_ZKVM_KECCAKF_MEMO
+
+// ── the permutation memo ─────────────────────────────────────────────────
+//
+// A permutation is 38,454 of ZisK cost against 15-60 for an ordinary op, and
+// keccak is 24.4 % of this guest's COST -- both on ziskemu 1.2. About 14 % of
+// the permutations a block runs repeat a state an earlier one already
+// permuted.
+//
+// What makes the memo pay is that the LOOKUP is not in the proof. The guest
+// does not hash the state; it asks the executor, which keeps the same map
+// natively (zisk-core `opc_fcall`, plus the assembly emulator's copy in
+// zisk-lib-c, so the prover's EXECUTE phase knows it too). `fcall_param`,
+// `fcall` and `fcall_get` all cost ZERO in `zisk_ops_costs.rs`. A guest-side
+// fingerprint over the 25 words was measured at +9.09 % COST on 1.1, where a
+// permutation was priced at twice what 1.2 charges, so the margin against
+// fingerprinting is wider than that figure. Avoiding it is the whole reason
+// this is worth building.
+//
+// SOUNDNESS. The index is a HINT: a free-input call is not verified by the
+// VM, and a wrong or hostile answer must not be able to change a digest. Two
+// checks make that so, and neither trusts the executor:
+//
+//   1. the index must be below `keccakf_memo_used`, i.e. inside the part of
+//      the table THIS execution has written. That also subsumes the
+//      not-found sentinel, which is ~0 and so never in range;
+//   2. the entry it points at must hold THIS state, compared word for word.
+//
+// Only then is its output used, and that output was produced by this same
+// execution running the real permutation. Keccak-f is a function, so equal
+// inputs have equal outputs: a bad hint costs a wasted compare and never a
+// wrong answer. `keccakf_memo_used` moves only after both halves of an entry
+// are written, so an index that arrives early is still out of range.
+//
+// The entry owns the bytes it compares against. Keying on the caller's
+// pointer would be unsound — the sponge permutes a stack buffer the next
+// call reuses, so a later state landing at the same address would compare
+// equal to a stale entry and take an output computed from bytes long gone.
+constexpr size_t KECCAKF_LANES = 25;
+constexpr size_t KECCAKF_STATE_BYTES = KECCAKF_LANES * sizeof(uint64_t);
+
+// One entry per DISTINCT state, appended in first-permuted order; the index
+// the executor returns is a position in here. No sets, no ways, no eviction
+// — the executor's map is exact, so the guest side needs no geometry and
+// every distinct state that fits gets a slot instead of fighting for one.
+//
+// 2^18 x 400 B = 100 MiB of .bss, sized against the worst block on record
+// rather than the median: 234,215 permutations (block 25552366), of which
+// ~86 % carry a state not seen before, so ~201 k distinct. ZisK gives the
+// guest 512 MB and this guest's measured peak is 42.5 MB on 25815091, so the
+// table fits with room. Above capacity it stops growing, which costs proving
+// speed and never correctness.
+// Padded to a power of two. Two states are 400 bytes, and 400 is not a shift:
+// indexing the table costs a `mul` per permutation for `[index].in` and
+// another for `[used]`, 108,946 executions a block at 97 cells each where a
+// `slli` is 56. The padding is never read or written -- `keccakf_state_eq` and
+// `keccakf_state_copy` both work in lanes -- and costs 28 MiB of .bss on a
+// table that already holds 100 of a 512 MB budget.
+struct alignas(8) KeccakfEntry
+{
+    uint64_t in[KECCAKF_LANES]; // the state before the permutation
+    uint64_t out[KECCAKF_LANES]; // and after it
+    uint64_t pad[64 - 2 * KECCAKF_LANES];
+};
+
+static_assert(
+    sizeof(KeccakfEntry) == 512 &&
+        sizeof(KeccakfEntry) > 2 * KECCAKF_STATE_BYTES,
+    "an entry is the two states, padded to a shift");
+
+constexpr size_t KECCAKF_MEMO_ENTRIES = size_t{1} << 18;
+
+// One entry past capacity. `keccakf_memo[keccakf_memo_used]` is the scratch a
+// one-block digest builds its state in (keccak256_one_block below), and
+// `keccakf_memo_used` reaches KECCAKF_MEMO_ENTRIES when the table fills, so the
+// slot has to exist for the sponge to have somewhere to stand. It is never
+// filed and never in range: 512 B of .bss for one fewer bounds branch on the
+// hot path.
+static KeccakfEntry keccakf_memo[KECCAKF_MEMO_ENTRIES + 1];
+static uint64_t keccakf_memo_used = 0;
+
+            // A 200-byte block op that reaches the DMA port instead of being
+            // expanded inline. gcc turns a constant-size copy into 25 ld/sd
+            // pairs — 50 instructions AND the same 50 memory accesses the port
+            // pays — where the port is one op plus those accesses. This is the
+            // call the rate loop below says would be worth having and could not
+            // get; hiding the length behind an empty asm is what forces it, and
+            // here there is no surrounding work for the constant to fold into.
+            //
+            // Under -mzisk-dma the constant is what you want instead: the
+            // backend lowers a constant-size block move to the port INLINE, so
+            // the same port op arrives without the call, the frame or the
+            // a0/a1/a2 marshalling. Hiding the length there would give up the
+            // lowering and keep the call. MONAD_ZKVM_ZISK_DMA_LOWERING is set
+            // by the same CMake option that adds the flag, so the two never
+            // drift.
+            #ifdef MONAD_ZKVM_ZISK_DMA_LOWERING
+                #define MONAD_KECCAKF_LEN(n) (n)
+            #else
+static inline size_t keccakf_opaque(size_t n)
+{
+    asm("" : "+r"(n));
+    return n;
+}
+
+                #define MONAD_KECCAKF_LEN(n) keccakf_opaque(n)
+            #endif
+
+static inline bool keccakf_state_eq(uint64_t const *a, uint64_t const *b)
+{
+    return std::memcmp(a, b, MONAD_KECCAKF_LEN(KECCAKF_STATE_BYTES)) == 0;
+}
+
+static inline void keccakf_state_copy(uint64_t *dst, uint64_t const *src)
+{
+    std::memcpy(dst, src, MONAD_KECCAKF_LEN(KECCAKF_STATE_BYTES));
+}
+
+// The two free-input calls, in the encoding ziskos' fcall macros produce:
+//
+//   csrs  0x8F0+p, rs1   push a parameter; p selects the word count, 0 = the
+//                        register value itself, 8 = the 25 words at that
+//                        address
+//   csrwi 0x8C0, id      run fcall `id` over the parameters pushed
+//   csrr  rd,  0xFFE     read the next result word
+//
+// The parameter register is pinned rather than left to a plain "r": the
+// transpiler reads `csrrs x0, csr, x0` as a nop instead of a parameter push,
+// so a constraint the compiler may satisfy with x0 pushes nothing and the
+// fcall silently sees no arguments. `_zicsr` is already in the guest's
+// -march, which is what lets these assemble at all.
+constexpr uint64_t KECCAKF_INDEX_NOT_FOUND = ~uint64_t{0};
+
+// File the input state of the NEXT permutation under `index`.
+static inline void fcall_set_keccakf_index(uint64_t const index)
+{
+    register unsigned long a0 asm("a0") = static_cast<unsigned long>(index);
+    asm volatile("csrs 0x8F0, %0\n\t" // one parameter, by value
+                 "csrwi 0x8C0, 24" // FCALL_SET_KECCAKF_CACHE_INDEX_ID
+                 :
+                 : "r"(a0)
+                 : "memory");
+}
+
+// The index `state` was filed under, or KECCAKF_INDEX_NOT_FOUND.
+static inline uint64_t fcall_get_keccakf_index(uint64_t const *const state)
+{
+    register unsigned long a0 asm("a0") =
+        reinterpret_cast<unsigned long>(state);
+    uint64_t index;
+    asm volatile("csrs 0x8F8, %[st]\n\t" // one parameter: 25 words at [st]
+                 "csrwi 0x8C0, 25\n\t" // FCALL_GET_KECCAKF_CACHE_INDEX_ID
+                 "csrr %[idx], 0xFFE" // fcall_get: the index
+                 : [idx] "=&r"(index)
+                 : [st] "r"(a0)
+                 : "memory");
+    return index;
+}
+
+// A digest whose whole input fits in one rate block -- 33,123 of this guest's
+// 47,455 memoised calls on block 25815042 -- never needs the state to outlive
+// its single permutation. So it builds the padded block IN the slot the memo
+// would file it under, and the miss path's copy of the pre-state disappears:
+// the pre-state is already where the entry wants it. Two 200-byte port copies
+// become one on a miss and none on a hit, 1,232 cells either way.
+//
+// SOUNDNESS. Both of the memo's checks are here, unchanged and in the same
+// order, and neither trusts the executor: the hint must be below
+// `keccakf_memo_used`, and the entry it names must hold this state word for
+// word. The scratch is `keccakf_memo[keccakf_memo_used]`, which is not below
+// `keccakf_memo_used`, so it can never be served as its own hint; and
+// `keccakf_memo_used` still moves only after both halves of the entry are
+// written, so an index that arrives early is still out of range. A hit leaves
+// the scratch unpublished, for the next call to overwrite. `keccak_permute`'s
+// note on why an entry must own the bytes it compares against holds here too:
+// the entry owns them, the caller's buffer is never keyed on.
+//
+// Scratch must be zero on entry. Fresh .bss reads zero under ZisK's
+// memory AIR. Recording a miss advances to a fresh slot; a hit clears
+// the 136-byte rate. When full, the table reuses its spare slot and
+// clears all 200 bytes after the in-place permutation.
+static void
+keccak256_one_block(void const *const in, size_t const len, uint8_t out[32])
+{
+    static_assert(135 == 16 * 8 + 7, "the pad bit is byte 7 of lane 16");
+
+    KeccakfEntry &e = keccakf_memo[keccakf_memo_used];
+    uint64_t *const s = e.in;
+
+    if (len) {
+        std::memcpy(s, in, len);
+    }
+    reinterpret_cast<unsigned char *>(s)[len] = 0x01;
+    s[16] |= uint64_t{0x80} << 56;
+
+    uint64_t const index = fcall_get_keccakf_index(s);
+    if (index < keccakf_memo_used &&
+        keccakf_state_eq(keccakf_memo[index].in, s)) {
+        std::memcpy(out, keccakf_memo[index].out, 32);
+        // Clear 17 lanes (136 bytes) used by input and padding.
+        // No permutation ran here, so the other 64 bytes are still zero.
+        std::memset(s, 0, 17 * sizeof(uint64_t));
+        return;
+    }
+
+    if (keccakf_memo_used == KECCAKF_MEMO_ENTRIES) {
+        // Full table: permute the spare slot, then clear it for reuse.
+        zisk_keccakf(&e.in);
+        std::memcpy(out, s, 32);
+        std::memset(s, 0, KECCAKF_STATE_BYTES);
+        return;
+    }
+
+    // `in` holds the pre-state already. Stage the copy the permutation will
+    // consume, then keep the request and the permutation adjacent for the
+    // reason `keccak_permute` gives. The rate alone: a one-block pre-state's
+    // capacity is zero, and so is this slot's `out`, which nothing writes
+    // before the slot is published.
+    std::memcpy(e.out, s, 17 * sizeof(uint64_t));
+    fcall_set_keccakf_index(keccakf_memo_used);
+    zisk_keccakf(&e.out);
+    // Published last: this is what puts the entry in range, so it must not
+    // move until both halves are there.
+    ++keccakf_memo_used;
+    std::memcpy(out, e.out, 32);
+}
+
+// One permutation of the pre-state standing in the scratch slot,
+// `keccakf_memo[keccakf_memo_used].in`, with the memo's two checks in their
+// usual order; returns where the post-state lies. A hit names an earlier entry,
+// whose `out` is the post-state and is never written again, and leaves the
+// scratch holding the pre-state. A miss copies the scratch's `in` to its `out`,
+// permutes that, and publishes the slot. A full table permutes the spare the
+// same way without filing it. `First`: the sponge's first block, whose
+// capacity is zero, so a miss copies the rate alone -- the slot's `out` is
+// zero too, nothing writing it before the slot is published. The spare's is
+// not, and it gets the whole state.
+template <bool First>
+static inline uint64_t const *keccakf_memo_permute(uint64_t *const pre)
+{
+    uint64_t const index = fcall_get_keccakf_index(pre);
+    if (index < keccakf_memo_used &&
+        keccakf_state_eq(keccakf_memo[index].in, pre)) {
+        return keccakf_memo[index].out;
+    }
+    KeccakfEntry &e = keccakf_memo[keccakf_memo_used];
+    if (keccakf_memo_used == KECCAKF_MEMO_ENTRIES) {
+        keccakf_state_copy(e.out, pre);
+        zisk_keccakf(&e.out);
+        return e.out;
+    }
+    if constexpr (First) {
+        std::memcpy(e.out, pre, 17 * sizeof(uint64_t));
+    }
+    else {
+        keccakf_state_copy(e.out, pre);
+    }
+    // Adjacent, for the reason `keccak_permute` gives.
+    fcall_set_keccakf_index(keccakf_memo_used);
+    zisk_keccakf(&e.out);
+    // Published last, as in `keccak_permute`.
+    ++keccakf_memo_used;
+    return e.out;
+}
+
+// A digest of a rate block or more, built the way keccak256_one_block builds
+// one: each block's pre-state goes straight into the scratch slot the memo
+// would file it under, made from the previous post-state where that already
+// lies -- the entry a miss just published, or the one a hit named -- and the
+// block. Against a state kept on the stack, a miss copies one state instead of
+// two and a hit copies none, for a 64-byte copy of the capacity into each block
+// after the first: 12 of the 25 lanes' worth of port traffic saved or more.
+//
+// The scratch is zero on entry, which the first block relies on for its
+// capacity; every later block writes all 25 lanes. When the last permutation
+// leaves the scratch where it was -- a hit, or the spare of a full table -- it
+// is cleared before the call returns, so the next digest finds it zero too.
+//
+// `From` is where the blocks are read from, which the caller decides: the
+// input itself when it is 8-byte aligned; an aligned copy of it when it is not
+// and fits one, as the stack sponge stages it -- every lane would otherwise be
+// a boundary-crossing load, 159 against 16; and the misaligned input itself
+// when it is longer. Deciding it here instead would put a call in this
+// function's rare path, and gcc then copies all three arguments out of their
+// registers on entry, on every path.
+enum class MemoFrom
+{
+    Aligned,
+    Staged,
+    Misaligned
+};
+
+constexpr size_t MEMO_STAGED_BYTES = 8 * 136;
+
+template <MemoFrom From>
+static void
+keccak256_memo_sponge(void const *const in, size_t len, uint8_t out[32])
+{
+    constexpr size_t RATE = 136;
+    constexpr size_t WORDS = RATE / 8; // 17
+    static_assert(135 == 16 * 8 + 7, "the pad bit is byte 7 of lane 16");
+    auto const *p = static_cast<unsigned char const *>(in);
+
+    [[maybe_unused]] alignas(8) unsigned char staged[MEMO_STAGED_BYTES];
+    if constexpr (From == MemoFrom::Staged) {
+        std::memcpy(staged, p, len);
+        p = staged;
+    }
+
+    uint64_t *pre = keccakf_memo[keccakf_memo_used].in;
+    std::memcpy(pre, p, RATE);
+    p += RATE;
+    len -= RATE;
+    uint64_t const *post = keccakf_memo_permute<true>(pre);
+
+    while (len >= RATE) {
+        pre = keccakf_memo[keccakf_memo_used].in;
+        for (size_t i = 0; i < WORDS; ++i) {
+            pre[i] = post[i] ^ load64(p + 8 * i);
+        }
+        std::memcpy(pre + WORDS, post + WORDS, (KECCAKF_LANES - WORDS) * 8);
+        post = keccakf_memo_permute<false>(pre);
+        p += RATE;
+        len -= RATE;
+    }
+
+    // The final block, pad10*1 with the 0x01 domain byte: its whole lanes, a
+    // literal count per case; then its last partial lane; then the lanes it
+    // leaves as they were. Read aligned, the partial lane is the word that
+    // holds it, the bytes past the input's end masked off: the load stays in
+    // the aligned word holding the input's last byte, which the region holding
+    // the input holds whole -- RAM and ROM are word-granular, and an input
+    // record is padded to eight bytes. Read misaligned, it is the eight bytes
+    // that END at the input's end, shifted down, in bounds since a whole block
+    // came before -- a boundary-crossing load, like every lane of such an
+    // input.
+    pre = keccakf_memo[keccakf_memo_used].in;
+    size_t const whole = len / 8;
+    unsigned const rem = static_cast<unsigned>(len % 8);
+    // Entered through a table of the cases' addresses, not a switch: gcc's
+    // jump table holds 4-byte offsets from its base, read by a lw -- a
+    // sub-word ROM read ZisK prices at 120 cells, sign-extended -- and added
+    // to that base, behind a bound test. Each entry here is one aligned 8-byte
+    // read, and `whole` needs no bound: len < RATE after the loop.
+    static void *const entry[] = {
+        &&lanes0,
+        &&lanes1,
+        &&lanes2,
+        &&lanes3,
+        &&lanes4,
+        &&lanes5,
+        &&lanes6,
+        &&lanes7,
+        &&lanes8,
+        &&lanes9,
+        &&lanes10,
+        &&lanes11,
+        &&lanes12,
+        &&lanes13,
+        &&lanes14,
+        &&lanes15,
+        &&lanes16};
+    static_assert(sizeof(entry) / sizeof(entry[0]) == WORDS);
+    goto *entry[whole];
+lanes16:
+    pre[15] = post[15] ^ load64(p + 120);
+lanes15:
+    pre[14] = post[14] ^ load64(p + 112);
+lanes14:
+    pre[13] = post[13] ^ load64(p + 104);
+lanes13:
+    pre[12] = post[12] ^ load64(p + 96);
+lanes12:
+    pre[11] = post[11] ^ load64(p + 88);
+lanes11:
+    pre[10] = post[10] ^ load64(p + 80);
+lanes10:
+    pre[9] = post[9] ^ load64(p + 72);
+lanes9:
+    pre[8] = post[8] ^ load64(p + 64);
+lanes8:
+    pre[7] = post[7] ^ load64(p + 56);
+lanes7:
+    pre[6] = post[6] ^ load64(p + 48);
+lanes6:
+    pre[5] = post[5] ^ load64(p + 40);
+lanes5:
+    pre[4] = post[4] ^ load64(p + 32);
+lanes4:
+    pre[3] = post[3] ^ load64(p + 24);
+lanes3:
+    pre[2] = post[2] ^ load64(p + 16);
+lanes2:
+    pre[1] = post[1] ^ load64(p + 8);
+lanes1:
+    pre[0] = post[0] ^ load64(p);
+lanes0:
+    uint64_t lane = uint64_t{0x01} << (8 * rem);
+    if (rem != 0) {
+        if constexpr (From != MemoFrom::Misaligned) {
+            lane |= load64(p + 8 * whole) & (lane - 1);
+        }
+        else {
+            lane |= load64(p + len - 8) >> (8 * (8 - rem));
+        }
+    }
+    pre[whole] = post[whole] ^ lane;
+    std::memcpy(
+        pre + whole + 1, post + whole + 1, (KECCAKF_LANES - 1 - whole) * 8);
+    pre[16] ^= uint64_t{0x80} << 56;
+    post = keccakf_memo_permute<false>(pre);
+    std::memcpy(out, post, 32);
+
+    if (pre == keccakf_memo[keccakf_memo_used].in) {
+        std::memset(pre, 0, KECCAKF_STATE_BYTES);
+    }
+}
+
+        #endif // MONAD_ZKVM_KECCAKF_MEMO
+
+// Only `syscall_keccak_f` above and the two entry points below carry C linkage;
+// everything between them is C++ and the sponge is a template, which may not
+// have it.
+
+// The only Keccak-f this guest runs. With the memo on it IS the permutation,
+// with an earlier identical one reused when the executor knows of one.
+//
+// `Memo` is a template parameter and not a flag, because a flag would cost a
+// load and a branch on all 120,701 permutations of a block. The sponge below
+// is templated with it for the same reason.
+template <bool Memo>
+static inline void keccak_permute(uint64_t (*state)[25])
+{
+        #if MONAD_ZKVM_KECCAKF_MEMO
+    if constexpr (!Memo) {
+        zisk_keccakf(state);
+        return;
+    }
+    uint64_t *const s = &(*state)[0];
+    uint64_t const index = fcall_get_keccakf_index(s);
+
+    // Cheap check first, so an out-of-range index — which is what
+    // KECCAKF_INDEX_NOT_FOUND is — never reaches the compare.
+    if (index < keccakf_memo_used &&
+        keccakf_state_eq(keccakf_memo[index].in, s)) {
+        keccakf_state_copy(s, keccakf_memo[index].out);
+        return;
+    }
+
+    if (keccakf_memo_used == KECCAKF_MEMO_ENTRIES) {
+        // Full: keep permuting, stop remembering. Filing more would mean
+        // evicting, and an evicted slot only ever produces hints that fail
+        // the compare above.
+        zisk_keccakf(state);
+        return;
+    }
+
+    // Nothing may come between the request and the permutation: the executor
+    // files whichever Keccak-f runs next, and this binary has a second one --
+    // zisklib's own keccak256, 154 permutations a block on the ecrecover
+    // path. A stray permutation in between would file the wrong state under
+    // this index. The compare above would reject the resulting hint, so it is
+    // a poisoned entry rather than a wrong digest, but keep these adjacent.
+    KeccakfEntry &e = keccakf_memo[keccakf_memo_used];
+    keccakf_state_copy(e.in, s);
+    fcall_set_keccakf_index(keccakf_memo_used);
+    zisk_keccakf(state);
+    keccakf_state_copy(e.out, s);
+    // Published last: this is what puts the entry in range, so it must not
+    // move until both halves are there.
+    ++keccakf_memo_used;
+        #else
+    zisk_keccakf(state);
+        #endif
+}
+    #else
+// SP1's syscall_keccak_permute symbol is LTO-internalised inside libzkevm.a,
+// so emit the ecall the SDK itself emits: t0 = KECCAK_PERMUTE (0x00_01_01_09),
+// a0 = state, a1 = 0. The precompile rewrites the 25 u64 lanes in place.
+template <bool>
+static inline void keccak_permute(uint64_t (*state)[25])
+{
+    register uintptr_t a0 asm("a0") = reinterpret_cast<uintptr_t>(state);
+    register uintptr_t a1 asm("a1") = 0;
+    register uint32_t t0 asm("t0") = 0x00010109u;
+    asm volatile("ecall" : "+r"(a0) : "r"(t0), "r"(a1) : "memory");
+}
+    #endif
+
+// `Prefix` sends only the first `memo_blocks` rate blocks through the memo and
+// the rest past it, for an input that shares a prefix with another: the stack
+// sponge's memo, which copies the state in and out, on those blocks only.
+template <bool Memo, bool Prefix = false>
+static void keccak256_sponge(
+    void const *const in, size_t len, uint8_t out[32],
+    [[maybe_unused]] size_t memo_blocks = 0)
+{
+    constexpr size_t RATE = 136;
+    constexpr size_t WORDS = RATE / 8; // 17
+
+    #if defined(MONAD_ZKVM_ZISK) && MONAD_ZKVM_KECCAKF_MEMO
+    // 69.8 % of this entry's calls are one rate block (33,123 of 47,455 on
+    // 25815042 -- a key, an address, a leaf or extension node's RLP). They
+    // have a cheaper shape than the general sponge; see keccak256_one_block.
+    if constexpr (Memo) {
+        if (len < RATE) {
+            keccak256_one_block(in, len, out);
+        }
+        else if ((reinterpret_cast<uintptr_t>(in) & 7) == 0) {
+            keccak256_memo_sponge<MemoFrom::Aligned>(in, len, out);
+        }
+        else if (len <= MEMO_STAGED_BYTES) {
+            keccak256_memo_sponge<MemoFrom::Staged>(in, len, out);
+        }
+        else {
+            keccak256_memo_sponge<MemoFrom::Misaligned>(in, len, out);
+        }
+        return;
+    }
+    #endif
+
+    #ifdef MONAD_ZKVM_ZISK
+    // 200 bytes: rate in st[0..16], capacity in st[17..24].
+    uint64_t st[25];
+    // Skip 17 words (136 bytes) and zero only the 64-byte capacity.
+    std::memset(st + WORDS, 0, sizeof(st) - RATE);
+    if (len < RATE) {
+        // Short inputs leave bytes untouched; zero the rate before padding.
+        std::memset(st, 0, RATE);
+    }
+    #else
+    uint64_t st[25] = {};
+    #endif
+    auto const *p = static_cast<unsigned char const *>(in);
+
+    #ifdef MONAD_ZKVM_ZISK
+    // ZisK executes an unaligned load directly (the MemAlign state machine),
+    // so the sponge needs no alignment case at all: one loop, one load per
+    // lane, whatever `in` is aligned to.
+    //
+    // load64 is one `ld` here because the guest is built -mtune=size;
+    // under the default tuning it would be byte-staged and this loop would be
+    // far worse than the branch it replaces. The two changes are coupled.
+    //
+    // Stage a misaligned multi-block input once, then absorb it aligned.
+    //
+    // 136 is a multiple of 8, so the whole sponge inherits the alignment of the
+    // first byte: a misaligned `in` makes every one of the 17 lanes of every
+    // block a boundary-crossing load at 159 against 16.
+    alignas(8) unsigned char staged[8 * RATE];
+    if ((reinterpret_cast<uintptr_t>(p) & 7) != 0 && len >= RATE &&
+        len <= sizeof(staged)) {
+        std::memcpy(staged, p, len);
+        p = staged;
+    }
+
+    // Copy the first block into the rate; XOR subsequent blocks.
+    // -mzisk-dma lowers the copy to ZisK's block-move precompile.
+    bool first = true;
+    while (len >= RATE) {
+        if (first) {
+            // Initialize all 136 rate bytes before the first permutation.
+            std::memcpy(st, p, RATE);
+            first = false;
+        }
+        else {
+            for (size_t i = 0; i < WORDS; ++i) {
+                st[i] ^= load64(p + 8 * i);
+            }
+        }
+        if constexpr (Prefix) {
+            if (memo_blocks != 0) {
+                --memo_blocks;
+                keccak_permute<true>(&st);
+            }
+            else {
+                keccak_permute<false>(&st);
+            }
+        }
+        else {
+            keccak_permute<Memo>(&st);
+        }
+        p += RATE;
+        len -= RATE;
+    }
+    #else
+    // SP1 is rv32im and its handling of unaligned access has not been
+    // established, so it keeps the alignment split.
+    uintptr_t const mis = reinterpret_cast<uintptr_t>(p) & 7;
+
+    if (mis == 0) {
+        while (len >= RATE) {
+            auto const *const w = reinterpret_cast<uint64_t const *>(p);
+            for (size_t i = 0; i < WORDS; ++i) {
+                st[i] ^= w[i];
+            }
+            keccak_permute<Memo>(&st);
+            p += RATE;
+            len -= RATE;
+        }
+    }
+    else {
+        // Shift-combine over aligned reads. Each block consumes w[0..17]:
+        // w[17]'s highest bytes sit past p+RATE, so the loop requires a full
+        // block to FOLLOW (len > RATE + 7) and the last full block falls
+        // through to the buffered path below rather than reading past the
+        // caller's input.
+        unsigned const rs = 8u * static_cast<unsigned>(mis);
+        unsigned const ls = 64u - rs;
+        while (len > RATE + 7) {
+            auto const *const w = reinterpret_cast<uint64_t const *>(p - mis);
+            uint64_t lo = w[0];
+            for (size_t i = 0; i < WORDS; ++i) {
+                uint64_t const hi = w[i + 1];
+                st[i] ^= (lo >> rs) | (hi << ls);
+                lo = hi;
+            }
+            keccak_permute<Memo>(&st);
+            p += RATE;
+            len -= RATE;
+        }
+        if (len >= RATE) { // the trailing full block, via the aligned buffer
+            alignas(8) unsigned char blk[RATE];
+            std::memcpy(blk, p, RATE);
+            auto const *const w = reinterpret_cast<uint64_t const *>(blk);
+            for (size_t i = 0; i < WORDS; ++i) {
+                st[i] ^= w[i];
+            }
+            keccak_permute<Memo>(&st);
+            p += RATE;
+            len -= RATE;
+        }
+    }
+    #endif
+
+    // Final block: remainder plus pad10*1 with the 0x01 domain byte.
+    if (first) {
+        // Nothing absorbed yet, so the padded block can be built in the state
+        // itself: no 136-byte scratch to zero, no copy into it, and no 17-lane
+        // xor to fold it in. This is the common shape -- a trie node, an
+        // address, a slot -- everything under one rate block.
+        if (len) {
+            std::memcpy(st, p, len);
+        }
+        auto *const b = reinterpret_cast<unsigned char *>(st);
+        b[len] = 0x01;
+        // The high pad bit lands at byte RATE-1 = 135, which is byte 7 of lane
+        // 16 -- a constant position, so the lane takes it whole. The byte store
+        // is 193 cells against 34 for the aligned pair, and this runs once per
+        // call. `len` is not constant and stays a byte store: a variable lane
+        // index costs the shift it would save.
+        static_assert(RATE - 1 == 16 * 8 + 7);
+        st[16] |= uint64_t{0x80} << 56;
+    }
+    else {
+        alignas(8) unsigned char last[RATE] = {};
+        if (len) {
+            std::memcpy(last, p, len);
+        }
+        last[len] = 0x01;
+        auto const *const w = reinterpret_cast<uint64_t const *>(last);
+        // Skip zero lanes beyond the domain byte. Each branch uses a constant
+        // lane count to preserve loop unrolling; a runtime count measured
+        // worse.
+        if (len <= 31) {
+            for (size_t i = 0; i < 4; ++i) {
+                st[i] ^= w[i];
+            }
+        }
+        else if (len <= 63) {
+            for (size_t i = 0; i < 8; ++i) {
+                st[i] ^= w[i];
+            }
+        }
+        else if (len <= 95) {
+            for (size_t i = 0; i < 12; ++i) {
+                st[i] ^= w[i];
+            }
+        }
+        else if (len <= 127) {
+            for (size_t i = 0; i < 16; ++i) {
+                st[i] ^= w[i];
+            }
+        }
+        else {
+            for (size_t i = 0; i < WORDS; ++i) {
+                st[i] ^= w[i];
+            }
+        }
+        // The high pad bit goes into the state, not into `last`, for the reason
+        // the `first` arm above already gives: byte RATE-1 is byte 7 of lane
+        // 16, a constant position, so the lane takes it whole. In `last` it is
+        // a read-modify-write whose `|= 0x80` gcc lowers to `ori rd, rs, -128`
+        // -- a source register with bits 63..8 set, which prices the store at
+        // the 193-cell dirty form rather than 66. Here it is an xor of a
+        // constant into an aligned lane, and xor is commutative so the digest
+        // is unchanged: `last[RATE-1]` contributes to nothing else.
+        st[16] ^= uint64_t{0x80} << 56;
+    }
+    keccak_permute<Memo>(&st);
+
+    std::memcpy(out, st, 32);
+}
+
+extern "C"
+{
+
+void monad_zkvm_keccak256_fast(
+    void const *const in, size_t len, uint8_t out[32])
+{
+    keccak256_sponge<true>(in, len, out);
+}
+
+// The same sponge with the Keccak-f memo compiled out of it, for inputs whose
+// permutations are known in advance never to repeat.
+//
+// The memo pays 2 x 1,232 cells on every MISS -- keccakf_state_copy of the
+// input state before the permutation and of the output after it -- against
+// 38,454 saved on a hit, so it is a bet that a state recurs. Contract bytecode
+// is the one input where the bet is certain to lose: the 395 bodies a block
+// carry 28,451 of the 120,701 permutations and they are all distinct
+// contents, so no state in a bytecode's chain has been seen before or will be
+// seen again. Filing them is 82.5 M cells for zero hits, and it is also the
+// only site large enough to be worth splitting: the rest of the block's rate
+// blocks hit 12.1 %, above the 10.27 % break-even.
+//
+// Soundness is unaffected in both directions. Not filing an entry can only
+// cost a later hint; and a permutation that runs without a preceding
+// `fcall_set_keccakf_index` leaves the executor's next filing under a stale
+// index, which `keccakf_state_eq` rejects on the way out -- a poisoned entry,
+// never a wrong digest. That is the same argument the memo already relies on
+// for zisklib's own permutations, which run through this binary unannounced.
+void monad_zkvm_keccak256_fast_nomemo(
+    void const *const in, size_t len, uint8_t out[32])
+{
+    keccak256_sponge<false>(in, len, out);
+}
+
+// The same sponge, with the memo on its first `memo_blocks` rate blocks only:
+// for a bytecode whose chain recurs as far as the prefix it shares with
+// another, and no further. The argument above covers both halves: the memo's
+// two checks on the blocks it serves, and nothing filed on the others.
+void monad_zkvm_keccak256_fast_memo_prefix(
+    void const *const in, size_t len, size_t const memo_blocks, uint8_t out[32])
+{
+    #if defined(MONAD_ZKVM_ZISK) && MONAD_ZKVM_KECCAKF_MEMO
+    keccak256_sponge<false, true>(in, len, out, memo_blocks);
+    #else
+    (void)memo_blocks;
+    keccak256_sponge<false>(in, len, out);
+    #endif
+}
+
+} // extern "C"
+
+#endif // MONAD_ZKVM_ZISK || MONAD_ZKVM_SP1

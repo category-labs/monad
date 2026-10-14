@@ -48,6 +48,91 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
             "MONAD_COMPILER_TESTING is not supported in zkVM builds")
     endif()
 
+    # L2 consensus mode, also declared at root scope: this standalone project
+    # does not inherit root options. See cmake/l2.cmake for ODR requirements.
+    # Strict parsing distinguishes six-field L1 and eight-field L2 witnesses.
+    option(MONAD_ZKVM_L2
+           "L2 semantics: encrypted transactions, message anchor, no gas economics"
+           OFF)
+    if(MONAD_ZKVM_L2)
+        # Relative: MONAD_ROOT is not set until much further down this file.
+        include("${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/l2.cmake")
+        monad_l2_compile_definitions()
+        if(NOT MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
+            message(FATAL_ERROR
+                "MONAD_ZKVM_L2 needs ZisK: the ECDH rides zisklib's "
+                "secp256k1_add/_dbl precompiles and Poseidon2 rides csrs 0x812, "
+                "and SP1 has neither. A software curve would measure the "
+                "software curve, not this protocol.")
+        endif()
+    endif()
+
+    # Build-dependent optimisations must extend both the feature list and
+    # post-link audit. Source-only changes need no feature bit: the commit
+    # and ELF hash already identify them.
+    option(MONAD_ZKVM_OFFICIAL_PROFILE
+           "build the audited, fail-closed official ZisK guest profile" OFF)
+    set(_monad_zkvm_official_features "baseline" "zisk-dma" "keccakf-memo"
+                                      "wide-memory-size" "varcode-cache"
+                                      "no-dirty-accounts"
+                                      "no-merge-constraints"
+                                      "jumpdest-precompile")
+    set(_monad_zkvm_runtime_version "1.3.1-alpha")
+    set(_monad_zkvm_runtime_revision
+        "306a9c934ba4947b1d586d69b67120f8b4c41466")
+    if(MONAD_ZKVM_OFFICIAL_PROFILE AND
+       NOT MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
+        message(FATAL_ERROR
+            "MONAD_ZKVM_OFFICIAL_PROFILE is a ZisK-only build profile")
+    endif()
+
+    # Enable options required by the official profile; reject explicit OFF values.
+    # Add each new required option here and its feature to the list above.
+    # NO_DIRTY_ACCOUNTS and NO_MERGE_CONSTRAINTS both remove work whose only
+    # readers are outside the guest -- the state tracer this file excludes, and
+    # the can_merge the sequential path does not call.
+    set(_monad_zkvm_required_levers MONAD_ZKVM_ZISK_DMA
+                                    MONAD_ZKVM_KECCAKF_MEMO
+                                    MONAD_ZKVM_WIDE_MEMORY_SIZE
+                                    MONAD_ZKVM_VARCODE_CACHE
+                                    MONAD_ZKVM_NO_DIRTY_ACCOUNTS
+                                    MONAD_ZKVM_NO_MERGE_CONSTRAINTS)
+    if(MONAD_ZKVM_OFFICIAL_PROFILE)
+        # Audit the effective source list and per-source definitions.
+        set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE BOOL
+            "required by the official build audit" FORCE)
+        foreach(_lever ${_monad_zkvm_required_levers})
+            if(DEFINED ${_lever} AND NOT ${_lever})
+                message(FATAL_ERROR
+                    "${_lever}=OFF contradicts MONAD_ZKVM_OFFICIAL_PROFILE=ON: "
+                    "this lever is required by the official feature set. "
+                    "For an ablation, disable the official profile and "
+                    "configure the other levers explicitly.")
+            endif()
+            set(${_lever} ON CACHE BOOL
+                "required by the official ZisK profile" FORCE)
+        endforeach()
+    endif()
+
+    # The official profile signs one binary. The assertion below is extra work
+    # on the merge path and aborts where the shipped guest returns, so a build
+    # carrying it is not the guest the signature describes. Forbidding it here
+    # is also what keeps it from colliding with the NO_MERGE_CONSTRAINTS forced
+    # on just above, whose writes that assertion's can_merge would read.
+    if(MONAD_ZKVM_OFFICIAL_PROFILE AND MONAD_ZKVM_CHECK_SEQUENTIAL_MERGE)
+        message(FATAL_ERROR
+            "MONAD_ZKVM_CHECK_SEQUENTIAL_MERGE is forbidden in the official "
+            "ZisK profile")
+    endif()
+
+    # The official profile attests L1 mainnet rules. L2 requires a separate
+    # profile and marker, not merely a different feature selection.
+    if(MONAD_ZKVM_OFFICIAL_PROFILE AND MONAD_ZKVM_L2)
+        message(FATAL_ERROR
+            "MONAD_ZKVM_L2 changes the witness shape and the consensus rules; "
+            "the official profile must not claim one identity for two")
+    endif()
+
     # The riscv64-elf toolchain file specifies these as CMAKE_*_FLAGS_INIT,
     # but cmake-rs (driving this cmake invocation from build.rs) overrides
     # CMAKE_*_FLAGS with cc-rs's target-arch flags only — dropping the
@@ -58,53 +143,238 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     string(APPEND CMAKE_CXX_FLAGS
         " -mcmodel=medany -nostartfiles -nostdlib++ -fno-exceptions -fno-rtti")
 
-    # ZisK-only codegen tuning, duplicated from Polygon's ziskethone guest
-    # (github.com/0xPolygonHermez/ziskethone, cpp-guest/zisk/toolchain.cmake +
-    # cpp-guest/zisk/CMakeLists.txt).
-    #  - -march adds Zbb/Zbs/Zbkb, transpiled natively by ZisK >= v1.2.0-alpha.
-    #  - -mtune=size was ziskethone's dominant single win (-13% block cost);
-    #    -funroll-loops + the widened inliner --params cut call/loop overhead
-    #    on hot paths; -fno-schedule-insns* drops scheduling that only helps
-    #    real pipelines; -fno-jump-tables avoids indirect jumps. Combined
-    #    measurement upstream: -16% block cost / -21.6% steps. -flto was
-    #    rejected there (marginal gain, overran the ZisK RAM ceiling).
-    #  - -fno-pic: cmake-rs injects cc-rs's -fPIC, but the guest is a
-    #    statically linked fixed-address ELF, so PIC only buys GOT
-    #    indirections on global accesses.
+    # ZisK supports Zba/Zbb/Zbs/Zbkb since v1.3.0-alpha.
+    # The fixed-address guest needs no PIC/GOT indirections.
+    # -mtune=size favors direct unaligned word accesses over byte-wise loads.
+    # The interpreter keeps -mtune=generic-ooo, which runs fewer steps in its
+    # PUSH and DIV handlers.
     #
-    # These are appended (not set via CMAKE_*_FLAGS_INIT) because cmake-rs
-    # overrides CMAKE_*_FLAGS, and the -march must land after cc-rs's
-    # -march=rv64ima — the last flag wins.
+    # Append after cmake-rs's flags: the last -march wins.
     if(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
-        set(_zisk_march "-march=rv64ima_zicsr_zbb_zbs_zbkb -mabi=lp64")
-        string(JOIN " " _zisk_opt
-            "-fno-pic"
-            "-mtune=size"
-            "-funroll-loops"
-            "--param=max-inline-insns-single=1600"
-            "--param=max-inline-insns-auto=533"
-            "--param=inline-unit-growth=266"
-            "--param=max-inline-recursive-depth=6"
-            "--param=max-completely-peeled-insns=400"
-            "--param=large-function-growth=280"
-            "--param=large-unit-insns=30000"
-            "-fno-schedule-insns"
-            "-fno-schedule-insns2"
-            "-fno-jump-tables")
-        string(APPEND CMAKE_C_FLAGS " ${_zisk_march} ${_zisk_opt}")
-        string(APPEND CMAKE_CXX_FLAGS " ${_zisk_march} ${_zisk_opt}")
+        set(_zisk_march "-march=rv64ima_zicsr_zba_zbb_zbs_zbkb -mabi=lp64")
+        string(APPEND CMAKE_C_FLAGS " ${_zisk_march} -fno-pic -mtune=size")
+        string(APPEND CMAKE_CXX_FLAGS " ${_zisk_march} -fno-pic -mtune=size")
         string(APPEND CMAKE_ASM_FLAGS " ${_zisk_march}")
+        set(_monad_zkvm_interpreter_tune "-mtune=generic-ooo")
     endif()
+
+    # Tune C++ inlining for both guests to reduce call overhead.
+    # Allow more overall growth while limiting individual inlining candidates.
+    # Unroll eligible loops to reduce comparisons and branches.
+    # Keep these options in CMAKE_CXX_FLAGS so the official profile hashes them.
+    string(APPEND CMAKE_CXX_FLAGS
+        " --param inline-unit-growth=800"
+        " --param large-function-growth=1500"
+        " --param max-inline-insns-auto=200"
+        " --param max-inline-insns-single=800"
+        " --param inline-min-speedup=1"
+        " -finline-functions"
+        " -funroll-loops")
 
     set(_guest_target "monad-zkvm-guest-${MONAD_ZKVM_GUEST_TARGET}")
 
+    # Lever: Memory::size and ::capacity are uint32_t, and every memory-touching opcode reads
+    # size. ZisK charges a 4-byte read 122 cells against 17 for an aligned 8-byte one, and makes
+    # `*offset + 32` an add_w at 60 rather than a native add at 15.3.
+    #
+    # Declared only here, and only in this branch, because the layout is the guest's alone: the
+    # native x86 compiler emits a 32-bit read of the field at a fixed offset and context.S
+    # addresses the same offsets by hand. The guest drops every .S and never builds that emitter.
+    # types.hpp turns a leak into a build failure rather than a silent half-word read.
+    option(MONAD_ZKVM_WIDE_MEMORY_SIZE
+           "64-bit Memory::size and ::capacity, which x86 cannot take" OFF)
+    if(MONAD_ZKVM_WIDE_MEMORY_SIZE)
+        add_compile_definitions(MONAD_ZKVM_WIDE_MEMORY_SIZE)
+    endif()
+
+    # Lever: give the guest's VM shadow the varcode cache the host has. The
+    # shadow's find_varcode finds nothing without it, so every read of an
+    # existing contract rebuilds a Varcode and its control block out of an
+    # intercode BlockState::code_ already holds. Nothing is re-decoded.
+    option(MONAD_ZKVM_VARCODE_CACHE
+           "cache varcodes by code hash in the guest's VM shadow" OFF)
+    if(MONAD_ZKVM_VARCODE_CACHE)
+        add_compile_definitions(MONAD_ZKVM_VARCODE_CACHE)
+    endif()
+
+    # Omit dirty-account tracking when neither tracing nor reserve-balance
+    # tracking needs it. State rejects active reserve tracking in this mode.
+    option(MONAD_ZKVM_NO_DIRTY_ACCOUNTS
+           "omit dirty-account lists and forbid consumers that require them" OFF)
+    if(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
+        add_compile_definitions(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
+    endif()
+
+    # Diagnostic: the guest's per-tx loop is serialized, so it runs transactions through
+    # ExecuteTransaction::execute(SequentialExecutionToken), which skips the merge-conflict check
+    # the node's speculative scheduler needs. This restores that check as an assertion on the
+    # same path, in the same place, so a corpus run either upholds the token's claim or aborts.
+    # The differential arm for any change to the guest's scheduling; forbidden in the official
+    # profile alongside the other diagnostics.
+    option(MONAD_ZKVM_CHECK_SEQUENTIAL_MERGE
+           "assert can_merge on the sequential merge path" OFF)
+    if(MONAD_ZKVM_CHECK_SEQUENTIAL_MERGE)
+        add_compile_definitions(MONAD_ZKVM_CHECK_SEQUENTIAL_MERGE)
+    endif()
+
+    # Skip merge constraints in the sequential guest; the host keeps them.
+    # Incompatible with CHECK_SEQUENTIAL_MERGE, which reads those constraints.
+    option(MONAD_ZKVM_NO_MERGE_CONSTRAINTS
+           "stop writing the merge constraints only can_merge reads" OFF)
+    if(MONAD_ZKVM_NO_MERGE_CONSTRAINTS)
+        if(MONAD_ZKVM_CHECK_SEQUENTIAL_MERGE)
+            message(FATAL_ERROR
+                "MONAD_ZKVM_NO_MERGE_CONSTRAINTS removes what CHECK_SEQUENTIAL_MERGE's assertion "
+                "reads; enabling both would fail the assertion for the wrong reason")
+        endif()
+        add_compile_definitions(MONAD_ZKVM_NO_MERGE_CONSTRAINTS)
+    endif()
+
+    # Software JUMPDEST analysis avoids allocating a mostly empty ZisK
+    # JumpDest instance for small L2 blocks. Enabled by default only for L2;
+    # the official profile requires the precompile.
+    if(MONAD_ZKVM_L2)
+        set(_jumpdest_software_default ON)
+    else()
+        set(_jumpdest_software_default OFF)
+    endif()
+    option(MONAD_ZKVM_JUMPDEST_SOFTWARE
+           "build JUMPDEST bitmaps in software instead of with ZisK's precompile"
+           ${_jumpdest_software_default})
+    if(MONAD_ZKVM_JUMPDEST_SOFTWARE)
+        if(MONAD_ZKVM_OFFICIAL_PROFILE)
+            message(FATAL_ERROR
+                "MONAD_ZKVM_JUMPDEST_SOFTWARE drops the JUMPDEST precompile the official "
+                "profile requires")
+        endif()
+        add_compile_definitions(MONAD_ZKVM_JUMPDEST_SOFTWARE)
+    endif()
+
     # Expose the backend as a compile definition, for the places where the two
-    # diverge: the Keccak-f[1600] precompile is reached by a different entry on
-    # each (zkvm/category/crypto/keccak.h).
+    # diverge: the ripemd160 accelerators place the digest at opposite ends of
+    # their 32-byte output word, so the precompile shim normalises them
+    # differently (zkvm/category/execution/ethereum/precompiles_impl.hpp), and
+    # the Keccak-f[1600] precompile is reached by a different entry on each
+    # (zkvm/guest/keccak_accel.cpp).
+
+    # Diagnostic counters follow public values; execute_witness.cpp checks
+    # that both fit the output buffer. Layout: little-endian u32 call counts,
+    # then permutation counts, in keccak_sites.hpp site order.
+    option(MONAD_ZKVM_KECCAK_SITES "count keccak calls per call site" OFF)
+    if(MONAD_ZKVM_KECCAK_SITES)
+        add_compile_definitions(MONAD_ZKVM_KECCAK_SITES)
+    endif()
+
     if(MONAD_ZKVM_GUEST_TARGET STREQUAL "sp1")
         add_compile_definitions(MONAD_ZKVM_SP1)
     elseif(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
         add_compile_definitions(MONAD_ZKVM_ZISK)
+
+        # Memoise Keccak-f through ZisK's executor-side index (fcall 24/25),
+        # zkvm/guest/keccak_accel.cpp. ~14 % of a block's permutations repeat
+        # a state, and the lookup costs the guest nothing the cost model
+        # charges for. OFF compiles the mechanism out — table, fcalls and
+        # branch — so it is a control arm and not a disabled predicate:
+        #   -DMONAD_ZKVM_KECCAKF_MEMO=OFF
+        # It costs 100 MiB of .bss, which is why it is a switch at all.
+        option(MONAD_ZKVM_KECCAKF_MEMO "memoise Keccak-f via the ZisK executor index" ON)
+        if(NOT MONAD_ZKVM_KECCAKF_MEMO)
+            add_compile_definitions(MONAD_ZKVM_KECCAKF_MEMO=0)
+        endif()
+
+        # Software Keccak avoids a mostly empty Keccakf instance on small
+        # blocks. Disabled by default: each permutation adds 4,138 steps and
+        # can overflow Main/Binary capacity on larger blocks; see README.md
+        # for the break-even. Requires the precompile-backed memo off;
+        # excluded by the official profile.
+        option(MONAD_ZKVM_KECCAKF_SOFTWARE
+               "run Keccak-f in software instead of with ZisK's precompile" OFF)
+        if(MONAD_ZKVM_KECCAKF_SOFTWARE)
+            if(MONAD_ZKVM_OFFICIAL_PROFILE)
+                message(FATAL_ERROR
+                    "MONAD_ZKVM_KECCAKF_SOFTWARE leaves out the Keccak-f precompile "
+                    "and the memo the official profile requires")
+            endif()
+            if(MONAD_ZKVM_KECCAKF_MEMO)
+                message(FATAL_ERROR
+                    "MONAD_ZKVM_KECCAKF_SOFTWARE needs -DMONAD_ZKVM_KECCAKF_MEMO=OFF: "
+                    "the executor files the memo from precompile calls, so with the "
+                    "permutation in software it would never hit")
+            endif()
+            add_compile_definitions(MONAD_ZKVM_KECCAKF_SOFTWARE)
+        endif()
+        # Expose the no-op operator delete declarations to every ZisK C++ file.
+        string(APPEND CMAKE_CXX_FLAGS
+               " -include ${CMAKE_CURRENT_SOURCE_DIR}/nodelete.hpp")
+
+        # Lower eligible block memory operations, including struct copies,
+        # directly to ZisK DMA. Requires Zicsr and the patched compiler built by
+        # zkvm/toolchain/zisk-dma-gcc/build-gcc15.sh.
+        # The official profile also probes the emitted code for a DMA marker.
+        option(MONAD_ZKVM_ZISK_DMA
+               "lower block mem* to the ZisK DMA precompile" OFF)
+        if(MONAD_ZKVM_ZISK_DMA)
+            string(APPEND CMAKE_C_FLAGS " -mzisk-dma")
+            string(APPEND CMAKE_CXX_FLAGS " -mzisk-dma")
+            # Tells the keccak memo that a constant-size block move reaches the
+            # port INLINE here, so it should stop hiding the length from the
+            # optimiser to force an out-of-line call. Worth 20.2 M COST a block.
+            # Defined by the same branch that adds the flag: a source-side guess
+            # about which compiler is in use is exactly what would drift.
+            add_compile_definitions(MONAD_ZKVM_ZISK_DMA_LOWERING)
+        endif()
+    endif()
+
+    if(MONAD_ZKVM_OFFICIAL_PROFILE)
+        if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR
+           NOT CMAKE_CXX_COMPILER_VERSION VERSION_EQUAL "15.2.0")
+            message(FATAL_ERROR
+                "initial official ZisK 1.2 profile requires GCC 15.2.0; got "
+                "${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
+        endif()
+        if(NOT DEFINED MONAD_ZKVM_GIT_COMMIT)
+            message(FATAL_ERROR
+                "official ZisK profile requires MONAD_ZKVM_GIT_COMMIT")
+        endif()
+        string(LENGTH "${MONAD_ZKVM_GIT_COMMIT}" _official_git_commit_length)
+        if(NOT _official_git_commit_length EQUAL 40 OR
+           NOT MONAD_ZKVM_GIT_COMMIT MATCHES "^[0-9a-f]+$")
+            message(FATAL_ERROR
+                "MONAD_ZKVM_GIT_COMMIT must be a full lowercase Git SHA")
+        endif()
+
+        # When DMA is requested, verify emitted code, not just flag acceptance.
+        # A compiler hash identifies the binary but does not prove DMA support.
+        if(CMAKE_CXX_FLAGS MATCHES "-mzisk-dma" OR CMAKE_C_FLAGS MATCHES "-mzisk-dma")
+            # Use the guest's C flags, including Zicsr. sink exposes the copied
+            # bytes to an external call.
+            set(_dma_probe "${CMAKE_CURRENT_BINARY_DIR}/zisk-dma-probe.c")
+            file(WRITE "${_dma_probe}"
+                "void *memcpy(void *, void const *, unsigned long);\n"
+                "void sink(void *);\n"
+                "void p(char *d, char const *s) { memcpy(d, s, 512); sink(d); }\n")
+            separate_arguments(_dma_probe_flags UNIX_COMMAND "${CMAKE_C_FLAGS}")
+            execute_process(
+                COMMAND ${CMAKE_C_COMPILER} ${_dma_probe_flags} -O2 -S -o -
+                        "${_dma_probe}"
+                RESULT_VARIABLE _dma_rc OUTPUT_VARIABLE _dma_asm ERROR_QUIET)
+            if(NOT _dma_rc EQUAL 0)
+                message(FATAL_ERROR
+                    "-mzisk-dma is in the flags but ${CMAKE_C_COMPILER} cannot "
+                    "compile with it; build the compiler with "
+                    "zkvm/toolchain/zisk-dma-gcc/build-gcc15.sh")
+            endif()
+            if(NOT _dma_asm MATCHES "csrs?[ \t]+[^\n]*0x813")
+                message(FATAL_ERROR
+                    "${CMAKE_C_COMPILER} accepts -mzisk-dma but emits no DMA "
+                    "marker, so block mem* would still be thunk calls. Build it "
+                    "with zkvm/toolchain/zisk-dma-gcc/build-gcc15.sh")
+            endif()
+        endif()
+    endif()
+    if(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
+        add_compile_definitions(MONAD_ZKVM_ZISK)
+        # Also enables the interpreter's dispatch table argument (types.hpp).
     endif()
 
     # Repo + third-party paths.
@@ -151,6 +421,12 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
 
     add_subdirectory("${THIRD_PARTY_DIR}/unordered_dense" unordered_dense)
 
+    # Avoid soft-float calls with a guest-only header using integer load-factor
+    # arithmetic. Leave the unordered_dense submodule unchanged.
+    include("${CMAKE_CURRENT_SOURCE_DIR}/unordered_dense_derive.cmake")
+    monad_zkvm_unordered_dense_derive(unordered_dense "${THIRD_PARTY_DIR}"
+        "${CMAKE_CURRENT_BINARY_DIR}/unordered_dense-nofloat")
+
     # cthash — header-only constexpr hashing, used by abi_signatures.hpp
     # for compile-time ABI selector derivation. Has its own add_subdirectory
     # CMakeLists, exposes the include dir on the cthash target.
@@ -164,6 +440,45 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     option(immer_BUILD_EXAMPLES OFF)
     option(immer_BUILD_EXTRAS OFF)
     add_subdirectory("${THIRD_PARTY_DIR}/immer" immer SYSTEM)
+
+    # BLAKE3, for the validator addresses the staking contract derives. Its
+    # own CMake picks sources by processor name, and riscv64 matches none of
+    # the SIMD ones, so this is the portable C path.
+    # No monad_riscv_compile_options here: it carries the guest's include
+    # directories as INTERFACE paths, which CMake refuses on a target from
+    # another source directory. The toolchain file already aims the whole
+    # build at the bare-metal target, and this is plain C.
+    add_subdirectory("${THIRD_PARTY_DIR}/BLAKE3/c" blake3)
+
+    # libsecp256k1, for the validator public keys the staking contract parses
+    # and serialises. Same single translation unit and the same configuration
+    # silkpre builds on the host; __int128 is there on riscv64, so the 5x52
+    # field and 4x64 scalar are the ones to use here too.
+    set(_secp_dir "${THIRD_PARTY_DIR}/silkpre/third_party/secp256k1")
+    add_library(secp256k1 OBJECT "${_secp_dir}/src/secp256k1.c")
+    target_compile_definitions(secp256k1 PUBLIC
+        USE_NUM_NONE USE_FIELD_INV_BUILTIN USE_SCALAR_INV_BUILTIN
+        USE_FIELD_5X52 USE_SCALAR_4X64 HAVE___INT128
+        ECMULT_WINDOW_SIZE=15 ECMULT_GEN_PREC_BITS=4 USE_ENDOMORPHISM
+        USE_EXTERNAL_DEFAULT_CALLBACKS
+        ENABLE_MODULE_ECDH ENABLE_MODULE_RECOVERY)
+    target_include_directories(secp256k1
+        PRIVATE "${_secp_dir}" INTERFACE "${_secp_dir}/include")
+    target_compile_options(secp256k1 PRIVATE -w)
+    monad_riscv_compile_options(secp256k1)
+
+    # blst, for the BLS signatures the staking contract verifies. src/server.c
+    # is blst's single-translation-unit build and __BLST_NO_ASM__ selects the
+    # portable C: blst ships assembly for x86 and aarch64 only.
+    #
+    # The INTERFACE target above carries blst's headers for the type aliases
+    # the precompile shadow needs. This adds the implementation, which the
+    # staking path is the first to actually call.
+    add_library(blst_impl OBJECT "${THIRD_PARTY_DIR}/blst/src/server.c")
+    target_compile_definitions(blst_impl PRIVATE __BLST_NO_ASM__)
+    target_include_directories(blst_impl PRIVATE "${THIRD_PARTY_DIR}/blst/bindings")
+    target_compile_options(blst_impl PRIVATE -w)
+    monad_riscv_compile_options(blst_impl)
 
     # komihash — header-only, used by category/core/bytes_hash_compare.hpp.
     # Mirrors root CMakeLists.txt:138.
@@ -215,6 +530,10 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     add_subdirectory("${MONAD_ROOT}/category/vm/evm" evm)
     add_subdirectory("${MONAD_ROOT}/category/vm/runtime" runtime)
     add_subdirectory("${MONAD_ROOT}/category/vm/interpreter" interpreter)
+    if(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
+        target_compile_options(monad-vm-interpreter PRIVATE
+                               ${_monad_zkvm_interpreter_tune})
+    endif()
 
     # Strip x86-only assembly from the otherwise shared targets.
     monad_zkvm_drop_sources(monad-vm-runtime
@@ -237,8 +556,12 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
 
     # ---- Extract setjmp/longjmp from the compiler's newlib libc.a ----
 
+    # Match the guest's -march/-mabi when selecting multilib libraries.
+    # The compiler default may otherwise select incompatible RV32 objects.
+    separate_arguments(_arch_query UNIX_COMMAND "${CMAKE_C_FLAGS}")
+
     execute_process(
-        COMMAND ${CMAKE_C_COMPILER} -print-file-name=libc.a
+        COMMAND ${CMAKE_C_COMPILER} ${_arch_query} -print-file-name=libc.a
         OUTPUT_VARIABLE _libc_a
         OUTPUT_STRIP_TRAILING_WHITESPACE
     )
@@ -279,7 +602,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # and symbols by machine mode si = 32, di = 64, ti = 128 bits
     # where risvc64 word is 64 bits, hence __popcount*di*2
     execute_process(
-        COMMAND ${CMAKE_C_COMPILER} -print-libgcc-file-name
+        COMMAND ${CMAKE_C_COMPILER} ${_arch_query} -print-libgcc-file-name
         OUTPUT_VARIABLE _libgcc_a
         OUTPUT_STRIP_TRAILING_WHITESPACE
     )
@@ -298,6 +621,82 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     else()
         message(FATAL_ERROR
             "libgcc.a not found via compiler query")
+    endif()
+
+    # Compute the build identity after all guest flags are set.
+    # Add new flags above this block so the signature includes them.
+    if(MONAD_ZKVM_OFFICIAL_PROFILE)
+        file(SHA256 "${CMAKE_CXX_COMPILER}" _official_cxx_sha256)
+        # Hash the patch set separately from host-dependent compiler binaries.
+        set(_dma_patch_dir "${CMAKE_CURRENT_SOURCE_DIR}/../toolchain/zisk-dma-gcc")
+        set(_dma_patch_sha "")
+        foreach(_p 0001-riscv-zisk-dma-lowering-14.3.0.patch
+                   0002-riscv.md-forward-port-15.2.0.diff
+                   0003-guest-zicsr-15.2.0.patch)
+            if(NOT EXISTS "${_dma_patch_dir}/${_p}")
+                message(FATAL_ERROR
+                    "official ZisK profile: missing ${_p} in zkvm/toolchain/zisk-dma-gcc")
+            endif()
+            file(SHA256 "${_dma_patch_dir}/${_p}" _one)
+            string(APPEND _dma_patch_sha "${_one}")
+        endforeach()
+        string(SHA256 _dma_patch_sha "${_dma_patch_sha}")
+        list(JOIN _monad_zkvm_official_features "," _official_features_csv)
+        # Normalise the guest source path (e.g. in -include nodelete.hpp) so
+        # build signatures do not depend on the checkout location.
+        # Compilation still uses the original flags and paths.
+        set(_official_signed_inputs
+            "${_official_cxx_sha256}\n${CMAKE_C_FLAGS}\n${CMAKE_C_FLAGS_RELEASE}\n${CMAKE_CXX_FLAGS}\n${CMAKE_CXX_FLAGS_RELEASE}\n${CMAKE_ASM_FLAGS}\n${CMAKE_ASM_FLAGS_RELEASE}\n${_monad_zkvm_interpreter_tune}\n${_monad_zkvm_runtime_revision}\n${_official_features_csv}\n${_dma_patch_sha}")
+        string(REPLACE "${CMAKE_CURRENT_SOURCE_DIR}" "<guest>"
+               _official_signed_inputs "${_official_signed_inputs}")
+        string(SHA256 _official_build_signature "${_official_signed_inputs}")
+        # Keep the feature switch global, but attach build identity only to
+        # execute_witness.cpp, its sole reader. A new commit then recompiles
+        # that file without invalidating every object.
+        add_compile_definitions(MONAD_ZKVM_OFFICIAL_PROFILE=1)
+        set(_monad_zkvm_stamp_defs
+            "MONAD_ZKVM_BUILD_COMMIT=\"${MONAD_ZKVM_GIT_COMMIT}\""
+            "MONAD_ZKVM_BUILD_SIGNATURE=\"${_official_build_signature}\""
+            "MONAD_ZKVM_BUILD_FEATURES=\"${_official_features_csv}\""
+            "MONAD_ZKVM_RUNTIME_VERSION=\"${_monad_zkvm_runtime_version}\"")
+        file(WRITE "${CMAKE_BINARY_DIR}/monad-zkvm-official-profile.json"
+            "{\n"
+            "  \"schema\": 2,\n"
+            "  \"profile\": \"official\",\n"
+            "  \"target\": \"zisk\",\n"
+            "  \"runtime_version\": \"${_monad_zkvm_runtime_version}\",\n"
+            "  \"runtime_revision\": \"${_monad_zkvm_runtime_revision}\",\n"
+            "  \"features_csv\": \"${_official_features_csv}\",\n"
+            "  \"compiler\": \"${CMAKE_CXX_COMPILER}\",\n"
+            "  \"compiler_id\": \"${CMAKE_CXX_COMPILER_ID}\",\n"
+            "  \"compiler_version\": \"${CMAKE_CXX_COMPILER_VERSION}\",\n"
+            "  \"compiler_sha256\": \"${_official_cxx_sha256}\",\n"
+            "  \"dma_patch_sha256\": \"${_dma_patch_sha}\",\n"
+            "  \"commit\": \"${MONAD_ZKVM_GIT_COMMIT}\",\n"
+            "  \"build_signature\": \"${_official_build_signature}\",\n"
+            "  \"c_flags\": \"${CMAKE_C_FLAGS}\",\n"
+            "  \"c_flags_release\": \"${CMAKE_C_FLAGS_RELEASE}\",\n"
+            "  \"cxx_flags\": \"${CMAKE_CXX_FLAGS}\",\n"
+            "  \"cxx_flags_release\": \"${CMAKE_CXX_FLAGS_RELEASE}\",\n"
+            "  \"asm_flags\": \"${CMAKE_ASM_FLAGS}\",\n"
+            "  \"asm_flags_release\": \"${CMAKE_ASM_FLAGS_RELEASE}\",\n"
+            "  \"interpreter_flags\": \"${_monad_zkvm_interpreter_tune}\"\n"
+            "}\n")
+    else()
+        # Mark development builds explicitly in both the ELF and JSON profile.
+        add_compile_definitions(MONAD_ZKVM_DEV_PROFILE=1)
+        file(WRITE "${CMAKE_BINARY_DIR}/monad-zkvm-official-profile.json"
+            "{\n"
+            "  \"schema\": 2,\n"
+            "  \"profile\": \"dev\",\n"
+            "  \"target\": \"${MONAD_ZKVM_GUEST_TARGET}\",\n"
+            "  \"compiler\": \"${CMAKE_CXX_COMPILER}\",\n"
+            "  \"compiler_id\": \"${CMAKE_CXX_COMPILER_ID}\",\n"
+            "  \"compiler_version\": \"${CMAKE_CXX_COMPILER_VERSION}\",\n"
+            "  \"c_flags\": \"${CMAKE_C_FLAGS}\",\n"
+            "  \"cxx_flags\": \"${CMAKE_CXX_FLAGS}\",\n"
+            "  \"asm_flags\": \"${CMAKE_ASM_FLAGS}\"\n"
+            "}\n")
     endif()
 
     # ---- Bare-metal libc / libstdc++ stubs ----
@@ -323,6 +722,9 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         "${MONAD_ROOT}/category/core/rlp/decode_error.cpp"
         "${MONAD_ROOT}/category/core/checked_math.cpp"
         "${MONAD_ROOT}/category/core/seeded_fast_hash.cpp"
+        # Shared Poseidon2 sponge; software permutation on host, csrs 0x812 on
+        # ZisK.
+        "${MONAD_ROOT}/category/core/poseidon2.cpp"
     )
     monad_compile_options(monad-core)
     monad_riscv_compile_options(monad-core)
@@ -354,6 +756,10 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         "trie_db.cpp"
         "db/util.cpp"
         "db/commit_builder.cpp"
+        # The witness generator. Nothing in the guest produces a blob, and
+        # leaving it out keeps the guest's archive -- and so the official
+        # profile's ELF -- what it was before this file existed.
+        "db/witness_generator.cpp"
         "ecrecover/impl.cpp"
         "exec_event_ctypes_metadata.c"
         "exec_event_recorder.cpp"
@@ -391,6 +797,12 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
 
     # validate_block.cpp carries the validators and the BlockError
     # value_mappings() the shadow used to provide alone.
+
+    # Only the official profile supplies these build stamps.
+    if(_monad_zkvm_stamp_defs)
+        set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/execute_witness.cpp"
+            PROPERTIES COMPILE_DEFINITIONS "${_monad_zkvm_stamp_defs}")
+    endif()
 
     # Reduced guest deps not present in the inherited host link list.
     target_link_libraries(monad_execution_ethereum
@@ -457,8 +869,10 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         "staking/fuzzer/staking_contract_machine.cpp"
         "staking/fuzzer/staking_contract_model.cpp"
         "staking/test/input_generation.cpp"
-        "staking/util/secp256k1.cpp"
-        "staking/staking_contract.cpp"
+        # read_valset.cpp stays out: it reads the validator set straight from
+        # the trie through trie_db, which is a node's operation. A guest holds
+        # a witness, not a database. staking_contract.cpp is built, against
+        # the BLAKE3 and libsecp256k1 added above.
         "staking/read_valset.cpp"
         "dispatch_transaction.cpp"
         "execute_system_transaction.cpp"
@@ -473,15 +887,55 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         PkgConfig::secp256k1
         quill::quill)
     monad_riscv_compile_options(monad_execution_native)
+    # blake3.h and secp256k1.h by path: the staking contract includes both, and
+    # neither target's INTERFACE directories reach this adapted object library.
+    target_include_directories(monad_execution_native
+        PUBLIC "${THIRD_PARTY_DIR}/BLAKE3/c"
+        PUBLIC "${THIRD_PARTY_DIR}/silkpre/third_party/secp256k1/include")
 
     # ---- Final guest static archive ----
+    # Revert-semantics self-test. In the archive like the precompile golden vectors above, so a
+    # binary can link it and the witness binary dead-strips it. With MONAD_ZKVM_SELFTEST=ON the
+    # witness entry calls it instead of reading a witness, which is what lets it run under ziskemu
+    # on a machine where the node's host build cannot: that build requires __AVX2__.
+    option(MONAD_ZKVM_SELFTEST "guest entry runs the state self-test instead of a witness" OFF)
+    if(MONAD_ZKVM_SELFTEST)
+        add_compile_definitions(MONAD_ZKVM_SELFTEST)
+    endif()
+
+    # Compiled ONLY under the option. Measured: adding it to the archive unconditionally changed
+    # the witness binary's sha -- its static globals and the stub's vtable survive --gc-sections --
+    # so "in the archive, dead-stripped from the witness binary" does not hold for this file.
+    set(_selftest_sources "")
+    if(MONAD_ZKVM_SELFTEST)
+        set(_selftest_sources
+            "${CMAKE_CURRENT_SOURCE_DIR}/../../category/execution/ethereum/state3/test/revert_semantics_test.cpp")
+    endif()
+
+    # Compile L2 sources only when enabled: MonadL2's vtable survives
+    # --gc-sections and would otherwise change the non-L2 ELF/profile
+    # signature.
+    set(_l2_sources "")
+    if(MONAD_ZKVM_L2)
+        # Which sources a suite is made of lives in cmake/l2.cmake, next to the
+        # list of suites it validates against -- see the note there on why this
+        # is not spelled out in each of this file's two branches.
+        monad_l2_sources("${CMAKE_CURRENT_SOURCE_DIR}" _l2_sources)
+    endif()
+
     add_library(${_guest_target} STATIC
+        ${_selftest_sources}
         $<TARGET_OBJECTS:monad-zkvm-guest>
+        # Linked only by the precompile test binary.
+        "${CMAKE_CURRENT_SOURCE_DIR}/../test/precompile_tests/precompile_test.cpp"
         $<TARGET_OBJECTS:monad-core>
         $<TARGET_OBJECTS:monad-zkvm-core>
         $<TARGET_OBJECTS:monad_precompiles>
         $<TARGET_OBJECTS:monad_execution_ethereum>
         $<TARGET_OBJECTS:monad_execution_native>
+        $<TARGET_OBJECTS:blake3>
+        $<TARGET_OBJECTS:secp256k1>
+        $<TARGET_OBJECTS:blst_impl>
         $<TARGET_OBJECTS:monad-vm-evm>
         $<TARGET_OBJECTS:monad-vm-runtime>
         $<TARGET_OBJECTS:monad-vm-interpreter>
@@ -491,12 +945,26 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     )
     monad_compile_options(${_guest_target})
     monad_riscv_compile_options(${_guest_target})
+    # Guest sources include domain_anchor.hpp through l2_config.hpp and need
+    # cthash for its consteval event signature.
+    target_link_libraries(${_guest_target}
+        PRIVATE monad-core monad_execution_ethereum monad_execution_native)
 
 else()
     # ---- Host x86 mode ----
     # Reached via add_subdirectory(zkvm/guest) from the root host CMakeLists.
     # The x86 driver links the shared monad-zkvm-guest objects against the
     # host's existing monad_execution target.
+
+    # Mirrors the cross branch's gate. The definitions themselves come from the
+    # root scope, which this branch is a subdirectory of.
+    set(_l2_sources "")
+    if(MONAD_ZKVM_L2)
+        # Which sources a suite is made of lives in cmake/l2.cmake, next to the
+        # list of suites it validates against -- see the note there on why this
+        # is not spelled out in each of this file's two branches.
+        monad_l2_sources("${CMAKE_CURRENT_SOURCE_DIR}" _l2_sources)
+    endif()
 
     add_executable(monad-zkvm-x86-test-runner
         "${CMAKE_CURRENT_SOURCE_DIR}/x86_test_runner.cpp"
@@ -505,14 +973,119 @@ else()
     target_link_libraries(monad-zkvm-x86-test-runner
         PRIVATE monad-zkvm-guest monad_execution zkevm-standards)
 
+    # The corpus generator: builds witnesses from a genesis state rather than
+    # rewriting someone else's, so the blocks obey this chain's rules instead
+    # of being made to fit. See zkvm/test/corpus/corpus_builder.hpp.
+    set(_corpus_sources
+        "${CMAKE_CURRENT_SOURCE_DIR}/../test/corpus/tx_sign.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../test/corpus/genesis_bulk.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../test/corpus/witness_stats.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../test/corpus/corpus_builder.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../test/corpus/token_contracts.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../test/corpus/spoke_code.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../test/corpus/workload.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../test/corpus/scenarios.cpp")
+
+    # L2 corpus generation needs the selected suite and eight-field witness
+    # encoding; plaintext adds no cipher sources. ordered_trie_root is a
+    # header template. Non-L2 builds retain the mainnet corpus path.
+    set(_corpus_extra "")
+    set(_corpus_libs "")
+    if(MONAD_ZKVM_L2)
+        monad_l2_sources("${CMAKE_CURRENT_SOURCE_DIR}" _corpus_l2)
+        monad_l2_cipher_host_libs(_corpus_l2_libs)
+        list(APPEND _corpus_extra ${_corpus_l2})
+        list(APPEND _corpus_libs ${_corpus_l2_libs})
+    endif()
+
+    add_executable(monad-zkvm-corpus-gen
+        ${_corpus_sources}
+        ${_corpus_extra}
+        "${CMAKE_CURRENT_SOURCE_DIR}/../test/corpus/corpus_gen_main.cpp")
+    monad_compile_options(monad-zkvm-corpus-gen)
+    target_link_libraries(monad-zkvm-corpus-gen PRIVATE
+        monad_execution secp256k1 ${_corpus_libs})
+
+    # Link secp256k1 directly for the signer, even though monad_execution also
+    # supplies it transitively.
+    monad_add_test(test_corpus_builder
+        ${_corpus_sources}
+        ${_corpus_extra}
+        "${CMAKE_CURRENT_SOURCE_DIR}/../test/corpus/test_corpus_builder.cpp")
+    target_link_libraries(test_corpus_builder
+        secp256k1 ${_corpus_libs})
+
+    # The witnesses the guest must refuse. It drives the real runner as a
+    # subprocess -- a bad witness is signalled by aborting, so the thing under
+    # test is a process exit -- hence the dependency rather than a link.
+    monad_add_test(test_witness_rejection
+        ${_corpus_sources}
+        ${_corpus_extra}
+        "${CMAKE_CURRENT_SOURCE_DIR}/../test/corpus/test_witness_rejection.cpp")
+    target_link_libraries(test_witness_rejection
+        secp256k1 ${_corpus_libs})
+    add_dependencies(test_witness_rejection monad-zkvm-x86-test-runner)
+
+    # Precompile golden-vector test runner: same x86 driver, but its entry is
+    # the precompile-vector harness instead of the witness executor.
+    add_executable(monad-zkvm-x86-precompile-test
+        "${CMAKE_CURRENT_SOURCE_DIR}/../test/precompile_tests/precompile_test.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/x86_test_runner.cpp"
+    )
+    monad_compile_options(monad-zkvm-x86-precompile-test)
+    target_compile_definitions(monad-zkvm-x86-precompile-test PRIVATE
+        MONAD_ZKVM_X86_ENTRY=monad_zkvm_run_precompile_tests)
+    target_link_libraries(monad-zkvm-x86-precompile-test
+        PRIVATE monad_execution zkevm-standards)
+
+    # L2 tests compile guest sources absent from monad_execution. Register
+    # them explicitly, also in plain host builds so testing needs no
+    # deployment constants; l2_cipher_suite.hpp supplies the default suite.
+    monad_l2_cipher_sources("${CMAKE_CURRENT_SOURCE_DIR}" _l2_suite_sources)
+    monad_l2_cipher_host_libs(_l2_host_libs)
+
+    monad_add_test(l2_sponge_test
+        "${CMAKE_CURRENT_SOURCE_DIR}/../test/l2/l2_sponge_test.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/l2_sponge.cpp")
+
+    # The ECDH suite's own test, so it names that suite's source directly
+    # rather than the selected one: it exists to test secp256k1 against
+    # libsecp256k1, and means nothing for a suite without a curve.
+    monad_add_test(l2_ecdh_test
+        "${CMAKE_CURRENT_SOURCE_DIR}/../test/l2/l2_ecdh_test.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/l2_ecdh.cpp")
+    target_link_libraries(l2_ecdh_test secp256k1)
+
+    monad_add_test(l2_cipher_test
+        "${CMAKE_CURRENT_SOURCE_DIR}/../test/l2/l2_cipher_test.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/l2_sponge.cpp"
+        ${_l2_suite_sources})
+    target_link_libraries(l2_cipher_test ${_l2_host_libs})
+
+    # tx_sign because the drop rules include one on sender recovery, so the
+    # fixtures have to carry signatures that actually recover.
+    monad_add_test(domain_body_test
+        "${CMAKE_CURRENT_SOURCE_DIR}/../test/l2/domain_body_test.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/domain_body.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/l2_sponge.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../test/corpus/tx_sign.cpp"
+        ${_l2_suite_sources})
+    target_link_libraries(domain_body_test ${_l2_host_libs})
+
 endif()
 
-# ---- Guest sources, shared by both modes ----
-# The witness pipeline itself. Defined once, after the mode split: the two
-# modes differ only in what these sources compile against — the adapted
-# bare-metal targets on RISC-V, the host's monad_execution on x86 — so only
-# the dependency edge is conditional, never the target or its file list.
+# Shared witness pipeline for both modes. Only dependencies differ: bare-metal
+# targets on RISC-V, monad_execution on host. L2 sources come from the shared
+# suite selection helpers.
+set(_l2_sources "")
+if(MONAD_ZKVM_L2)
+    monad_l2_sources("${CMAKE_CURRENT_SOURCE_DIR}" _l2_sources)
+endif()
+
 add_library(monad-zkvm-guest OBJECT
+    ${_l2_sources}
+    "${CMAKE_CURRENT_SOURCE_DIR}/keccak_accel.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/secp256k1_callbacks.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/execute_block.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/execute_witness.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/witness_block_hash_buffer.cpp"
@@ -522,9 +1095,15 @@ target_link_libraries(monad-zkvm-guest PRIVATE zkevm-standards)
 if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     monad_riscv_compile_options(monad-zkvm-guest)
     target_link_libraries(monad-zkvm-guest
-        PRIVATE monad-core monad_execution_ethereum)
+        PRIVATE monad-core monad_execution_ethereum monad_execution_native)
 else()
     target_link_libraries(monad-zkvm-guest PRIVATE monad_execution)
+    if(MONAD_ZKVM_L2)
+        # Whatever the selected suite's host arm needs; see cmake/l2.cmake.
+        # PUBLIC so every binary that links these objects gets the curve.
+        monad_l2_cipher_host_libs(_l2_host_libs)
+        target_link_libraries(monad-zkvm-guest PUBLIC ${_l2_host_libs})
+    endif()
 endif()
 
 # ---- eth-act zkEVM standards (header-only), shared by both modes ----

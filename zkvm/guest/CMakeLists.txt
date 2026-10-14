@@ -58,7 +58,8 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     endif()
 
     # Enable required CMake boolean options; reject explicit OFF values.
-    set(_monad_zkvm_required_options MONAD_ZKVM_ZISK_DMA)
+    set(_monad_zkvm_required_options
+        MONAD_ZKVM_ZISK_DMA MONAD_ZKVM_ZISK_CLEAN_BYTE_STORES)
     if(MONAD_ZKVM_OFFICIAL_PROFILE)
         foreach(_option ${_monad_zkvm_required_options})
             if(DEFINED ${_option} AND NOT ${_option})
@@ -131,6 +132,15 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         if(MONAD_ZKVM_ZISK_DMA)
             string(APPEND CMAKE_C_FLAGS " -mzisk-dma")
             string(APPEND CMAKE_CXX_FLAGS " -mzisk-dma")
+        endif()
+
+        # Prefer zero-extended byte constants and addition immediates to reduce
+        # ZisK byte-store costs. Requires the patched GCC.
+        option(MONAD_ZKVM_ZISK_CLEAN_BYTE_STORES
+               "zero-extend the sources of byte stores for ZisK" OFF)
+        if(MONAD_ZKVM_ZISK_CLEAN_BYTE_STORES)
+            string(APPEND CMAKE_C_FLAGS " -mzisk-clean-byte-stores")
+            string(APPEND CMAKE_CXX_FLAGS " -mzisk-clean-byte-stores")
         endif()
     endif()
 

@@ -1,14 +1,19 @@
-# ZisK DMA lowering for GCC
+# ZisK patches for GCC
 
-These patches add `-mzisk-dma` to GCC's RISC-V backend, translating block memory
-operations into ZisK DMA markers. They mirror the LLVM patch in ZisK's Rust fork
-(`src/llvm-patches/0001-riscv-zisk-dma-lowering.patch`, enabled by `+zisk-dma`).
+These patches add two options to GCC's RISC-V backend:
 
-DMA lowering is off by default (`MONAD_ZKVM_ZISK_DMA=OFF`). The official ZisK
-profile requires it: it forces the option on, rejects an explicit `OFF`, and
-checks that a `memcpy` probe compiles to a DMA marker.
+- `-mzisk-dma` translates block memory operations into ZisK DMA markers. It
+  mirrors the LLVM patch in ZisK's Rust fork
+  (`src/llvm-patches/0001-riscv-zisk-dma-lowering.patch`, enabled by `+zisk-dma`).
+- `-mzisk-clean-byte-stores` uses zero-extended byte constants and addition
+  immediates to reduce ZisK's arithmetic and byte-store costs.
 
-## Why the guest wants it
+Both are off by default (`MONAD_ZKVM_ZISK_DMA=OFF`,
+`MONAD_ZKVM_ZISK_CLEAN_BYTE_STORES=OFF`). The official ZisK profile requires
+them: it forces both options on, rejects an explicit `OFF`, and checks that a
+probe compiles to the expected code for each.
+
+## Why the guest wants DMA lowering
 
 For `memcpy`, the compiler emits two adjacent markers. ZisK's cost depends on
 whether the length is an immediate or a register:
@@ -21,12 +26,31 @@ whether the length is an immediate or a register:
 Emitting these markers directly avoids the `ziskos` wrapper's call and return,
 and lets a known length use the cheaper immediate form when it fits.
 
+## Why the guest wants clean byte stores
+
+ZisK prices a byte store by its whole source register: 66 cells when the
+register holds a value below 0x100, 193 otherwise, as the prover then reads the
+surrounding word. GCC sets the upper bits in two common cases:
+
+| source | GCC | with `-mzisk-clean-byte-stores` |
+|---|---|---|
+| `*p = 0xb8` | `li a5,-72` | `li a5,184` |
+| `*p = 0x80 + n` | `addiw a5,a1,-128` | `addi a5,a1,128` |
+
+The low byte is unchanged. Small nonnegative operands can also use ZisK's
+FROP path, avoiding the addition's arithmetic cost. This benefits byte
+arithmetic such as PUSH-width computation, even without a store.
+
+The option does not guarantee clear upper bits: a sum can exceed 255, and GCC
+may still remove a mask such as `n & 0xff` before a byte store.
+
 ## The files
 
 | File | Purpose |
 |---|---|
 | `0001-riscv-zisk-dma-lowering-15.2.0.patch` | DMA lowering directly against GCC 15.2.0 |
-| `build-gcc15.sh` | builds the compiler and verifies the lowering |
+| `0002-riscv-zisk-clean-byte-stores-15.2.0.diff` | adds `-mzisk-clean-byte-stores`, on top of the DMA patch |
+| `build-gcc15.sh` | builds the compiler and verifies both options |
 
 The interpreter needs GCC 15's `__attribute__((musttail))`. The DMA patch
 combines the original GCC 14.3.0 implementation and its GCC 15.2.0 port;
@@ -35,17 +59,20 @@ the separate patches remain available in Git history.
 ## Building the compiler
 
 Requires GCC 15.2.0 sources, the matching xPack, and host `gcc-13`/`g++-13`.
-Apply the DMA patch to GCC, then run the build script:
+Apply the two patches to GCC in order, then run the build script:
 
 ```bash
 cd gcc-15.2.0
 patch -p1 < .../0001-riscv-zisk-dma-lowering-15.2.0.patch
+patch -p1 < .../0002-riscv-zisk-clean-byte-stores-15.2.0.diff
 ZISK_DMA_GCC_SRC=$PWD .../build-gcc15.sh
 ```
 
-The script expects patched sources. It builds only GCC, reuses xPack's binutils,
-headers and RV64 libraries, then compiles a 32-byte copy with `-mzisk-dma`.
-The check requires `csrs 0x813` in the assembly, not just acceptance of the flag.
+The script expects patched sources. It builds only GCC and reuses xPack's
+binutils, headers and RV64 libraries. Assembly probes require `csrs 0x813`
+for a 32-byte copy, `li ...,184` for a byte constant, and `addi ...,...,128`
+for a byte addition.
+
 
 ## Upstreaming
 

@@ -41,6 +41,17 @@
 #include <span>
 #include <utility>
 #include <vector>
+// A node's digest for the pre-state check, and for the post-state. On ZisK the
+// Keccak-f memo files the former's leading permutations, which the latter
+// reuses where a node's first children are unchanged, and nothing else.
+#if defined(MONAD_ZKVM_ZISK)
+    #define TRIE_PRIME_DIGEST monad_zkvm_keccak256_trie_prime
+    #define TRIE_PATCH_DIGEST monad_zkvm_keccak256_trie_patch
+#else
+    #define TRIE_PRIME_DIGEST monad_keccak256
+    #define TRIE_PATCH_DIGEST monad_keccak256
+#endif
+
 #ifdef MONAD_ZKVM_KECCAK_SITES
 #include <category/core/keccak_sites.hpp>
 #else
@@ -383,9 +394,9 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
             e->rlp_len = rem.rlp_size();
             walk_hash_slots[node_offset >> 2] = e;
             walk_window += RLP_WINDOW_STRIDE;
-            monad_keccak256(rem.rlp_data(), rem.rlp_size(), e->h.bytes);
+            TRIE_PRIME_DIGEST(rem.rlp_data(), rem.rlp_size(), e->h.bytes);
 #else
-            monad_keccak256(rem.rlp_data(), rem.rlp_size(), ch.h.bytes);
+            TRIE_PRIME_DIGEST(rem.rlp_data(), rem.rlp_size(), ch.h.bytes);
             hashes_.insert_or_assign(NodeId{node_offset}, ch);
 #endif
         }
@@ -611,7 +622,7 @@ bytes32_t OffsetTrie::hash(NodeId const id)
                 bytes32_t h;
                 // RLP occupies the tail: [rem.end(), buf_end).
                 MONAD_KECCAK_SITE(TRIE_PRIME, rem.rlp_size());
-                monad_keccak256(rem.rlp_data(), rem.rlp_size(), h.bytes);
+                TRIE_PRIME_DIGEST(rem.rlp_data(), rem.rlp_size(), h.bytes);
 
                 store_hash(id, h);
                 return h;
@@ -736,7 +747,7 @@ bool OffsetTrie::patch_ref(
                         return false;
                     }
                     MONAD_KECCAK_SITE(TRIE_ENCODE, len);
-                    monad_keccak256(e->rlp, len, e->h.bytes);
+                    TRIE_PATCH_DIGEST(e->rlp, len, e->h.bytes);
                     e->valid = true;
                     return true;
                 };
@@ -764,7 +775,7 @@ bool OffsetTrie::patch_ref(
                 slot = new_hash_entry();
             }
             MONAD_KECCAK_SITE(TRIE_ENCODE, rem.rlp_size());
-            monad_keccak256(rem.rlp_data(), rem.rlp_size(), slot->h.bytes);
+            TRIE_PATCH_DIGEST(rem.rlp_data(), rem.rlp_size(), slot->h.bytes);
             slot->valid = true;
             std::memcpy(ref + 1, slot->h.bytes, KECCAK256_SIZE);
             return true;
@@ -835,7 +846,7 @@ OffsetTrie::node_rlp_span OffsetTrie::child_ref_compute(
     }
     bytes32_t h;
     MONAD_KECCAK_SITE(TRIE_ENCODE, child_rlp_len);
-    monad_keccak256(child_rlp, child_rlp_len, h.bytes);
+    TRIE_PATCH_DIGEST(child_rlp, child_rlp_len, h.bytes);
     store_hash(id, h);
     return encode_rlp(h, dest);
 }

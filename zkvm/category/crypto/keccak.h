@@ -50,6 +50,14 @@ extern "C" void monad_zkvm_keccak256_fast_memo_prefix(
     void const *in, size_t len, size_t memo_blocks,
     uint8_t out[KECCAK256_SIZE]);
 
+// A trie node's digest, the pre-state check's and the post-state's: the memo
+// files all of the former's permutations but the last and none of the latter's
+// (zkvm/guest/keccak_accel.cpp, Filing).
+extern "C" void monad_zkvm_keccak256_trie_prime(
+    void const *in, size_t len, uint8_t out[KECCAK256_SIZE]);
+extern "C" void monad_zkvm_keccak256_trie_patch(
+    void const *in, size_t len, uint8_t out[KECCAK256_SIZE]);
+
 [[gnu::always_inline]] static inline void monad_keccak256(
     void const *const in, size_t const len, uint8_t out[KECCAK256_SIZE])
 {

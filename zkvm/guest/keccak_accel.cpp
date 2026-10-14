@@ -365,6 +365,43 @@ keccakf_memo_permute(uint64_t *const pre, uint64_t &used)
     return slot_out;
 }
 
+// One permutation of the pre-state standing in the scratch slot that files
+// nothing: a hit (with `Lookup`) names an earlier entry's `out`, as
+// keccakf_memo_permute's does; otherwise the scratch is permuted in place and
+// returned, and stays unpublished for the next digest to overwrite. Without
+// `fcall_set_keccakf_index` the executor may file this permutation under a
+// stale index, which the compare rejects: a lost hint, never a wrong digest
+// (see monad_zkvm_keccak256_fast_nomemo).
+template <bool Lookup>
+static inline uint64_t const *
+keccakf_unfiled_permute(uint64_t *const pre, uint64_t const used, bool &hit)
+{
+    if constexpr (Lookup) {
+        uint64_t const index = fcall_get_keccakf_index(pre);
+        if (index < used && keccakf_state_eq(keccakf_memo[index].in, pre)) {
+            hit = true;
+            return keccakf_memo[index].out;
+        }
+    }
+    hit = false;
+    zisk_keccakf(reinterpret_cast<uint64_t(*)[KECCAKF_LANES]>(pre));
+    return pre;
+}
+
+// Which permutations of a digest of a rate block or more the memo files.
+// `All`: every one. `NotFinal`: all but the last, for an input whose whole
+// repeats are rare but whose leading blocks a later digest may share -- a
+// trie node, which the post-state hashes again with some children changed;
+// the last permutation's output is the digest itself. `None`: none, for that
+// later digest: the requests hit until the first change, and nothing after
+// will be asked for again.
+enum class Filing
+{
+    All,
+    NotFinal,
+    None
+};
+
 // A digest of a rate block or more, built the way keccak256_one_block builds
 // one: each block's pre-state goes straight into the scratch slot the memo
 // would file it under, made from the previous post-state where that already
@@ -394,7 +431,7 @@ enum class MemoFrom
 
 constexpr size_t MEMO_STAGED_BYTES = 8 * 136;
 
-template <MemoFrom From>
+template <MemoFrom From, Filing F = Filing::All>
 static void keccak256_memo_sponge(void const *const in, size_t len, uint8_t out[32])
 {
     constexpr size_t RATE = 136;
@@ -414,7 +451,15 @@ static void keccak256_memo_sponge(void const *const in, size_t len, uint8_t out[
     std::memcpy(pre, p, RATE);
     p += RATE;
     len -= RATE;
-    uint64_t const *post = keccakf_memo_permute<true>(pre, used);
+    uint64_t const *post;
+    bool look;
+    if constexpr (F == Filing::None) {
+        post = keccakf_unfiled_permute<true>(pre, used, look);
+    }
+    else {
+        post = keccakf_memo_permute<true>(pre, used);
+        look = post != pre + KECCAKF_LANES;
+    }
 
     // From the first miss, every later pre-state of this input is new as well:
     // a block xors into the rate alone, so one of them could be filed only if an
@@ -422,7 +467,6 @@ static void keccak256_memo_sponge(void const *const in, size_t len, uint8_t out[
     // was never filed. The blocks after a miss are filed without the hint
     // request, three steps and a priced range test each: two in three of the
     // sponge's requests.
-    bool look = post != pre + KECCAKF_LANES;
     while (look && len >= RATE) {
         pre = keccakf_memo[used].in;
         // Opaque, so that the lanes are reached at offsets from it: seen
@@ -433,8 +477,13 @@ static void keccak256_memo_sponge(void const *const in, size_t len, uint8_t out[
             pre[i] = post[i] ^ load64(p + 8 * i);
         }
         std::memcpy(pre + WORDS, post + WORDS, (KECCAKF_LANES - WORDS) * 8);
-        post = keccakf_memo_permute<false>(pre, used);
-        look = post != pre + KECCAKF_LANES;
+        if constexpr (F == Filing::None) {
+            post = keccakf_unfiled_permute<true>(pre, used, look);
+        }
+        else {
+            post = keccakf_memo_permute<false>(pre, used);
+            look = post != pre + KECCAKF_LANES;
+        }
         p += RATE;
         len -= RATE;
     }
@@ -444,8 +493,16 @@ static void keccak256_memo_sponge(void const *const in, size_t len, uint8_t out[
         for (size_t i = 0; i < WORDS; ++i) {
             pre[i] = post[i] ^ load64(p + 8 * i);
         }
-        std::memcpy(pre + WORDS, post + WORDS, (KECCAKF_LANES - WORDS) * 8);
-        post = keccakf_memo_permute<false, false>(pre, used);
+        if constexpr (F == Filing::None) {
+            // The scratch was permuted in place: the capacity is already there.
+            bool hit;
+            post = keccakf_unfiled_permute<false>(pre, used, hit);
+        }
+        else {
+            std::memcpy(
+                pre + WORDS, post + WORDS, (KECCAKF_LANES - WORDS) * 8);
+            post = keccakf_memo_permute<false, false>(pre, used);
+        }
         p += RATE;
         len -= RATE;
     }
@@ -516,11 +573,24 @@ lanes0:
         }
     }
     pre[whole] = post[whole] ^ lane;
-    std::memcpy(
-        pre + whole + 1, post + whole + 1, (KECCAKF_LANES - 1 - whole) * 8);
+    if (F != Filing::None || post != pre) {
+        std::memcpy(
+            pre + whole + 1, post + whole + 1, (KECCAKF_LANES - 1 - whole) * 8);
+    }
     pre[16] ^= uint64_t{0x80} << 56;
-    post = look ? keccakf_memo_permute<false>(pre, used)
-                : keccakf_memo_permute<false, false>(pre, used);
+    if constexpr (F == Filing::All) {
+        post = look ? keccakf_memo_permute<false>(pre, used)
+                    : keccakf_memo_permute<false, false>(pre, used);
+    }
+    else if constexpr (F == Filing::NotFinal) {
+        bool hit;
+        post = keccakf_unfiled_permute<false>(pre, used, hit);
+    }
+    else {
+        bool hit;
+        post = look ? keccakf_unfiled_permute<true>(pre, used, hit)
+                    : keccakf_unfiled_permute<false>(pre, used, hit);
+    }
     std::memcpy(out, post, 32);
 
     if (pre == keccakf_memo[used].in) {
@@ -815,6 +885,25 @@ static void keccak256_sponge(
     std::memcpy(out, st, 32);
 }
 
+#if defined(MONAD_ZKVM_ZISK) && MONAD_ZKVM_KECCAKF_MEMO
+template <Filing F>
+static void keccak256_trie(void const *const in, size_t len, uint8_t out[32])
+{
+    if (len < 136) {
+        keccak256_one_block(in, len, out);
+    }
+    else if ((reinterpret_cast<uintptr_t>(in) & 7) == 0) {
+        keccak256_memo_sponge<MemoFrom::Aligned, F>(in, len, out);
+    }
+    else if (len <= MEMO_STAGED_BYTES) {
+        keccak256_memo_sponge<MemoFrom::Staged, F>(in, len, out);
+    }
+    else {
+        keccak256_memo_sponge<MemoFrom::Misaligned, F>(in, len, out);
+    }
+}
+#endif
+
 extern "C"
 {
 
@@ -826,6 +915,35 @@ void monad_zkvm_keccak256_fast(void const *const in, size_t len, uint8_t out[32]
     }
     keccak256_sponge<true>(in, len, out);
 }
+
+// A trie node's digest as the pre-state check takes it, and as the post-state
+// takes it again (Filing). An input of one rate block keeps the memo's usual
+// path: a leaf may repeat whole, in two contracts' storage alike.
+#if defined(MONAD_ZKVM_ZISK) && MONAD_ZKVM_KECCAKF_MEMO
+void monad_zkvm_keccak256_trie_prime(
+    void const *const in, size_t len, uint8_t out[32])
+{
+    keccak256_trie<Filing::NotFinal>(in, len, out);
+}
+
+void monad_zkvm_keccak256_trie_patch(
+    void const *const in, size_t len, uint8_t out[32])
+{
+    keccak256_trie<Filing::None>(in, len, out);
+}
+#else
+void monad_zkvm_keccak256_trie_prime(
+    void const *const in, size_t len, uint8_t out[32])
+{
+    keccak256_sponge<true>(in, len, out);
+}
+
+void monad_zkvm_keccak256_trie_patch(
+    void const *const in, size_t len, uint8_t out[32])
+{
+    keccak256_sponge<true>(in, len, out);
+}
+#endif
 
 // The same sponge with the Keccak-f memo compiled out of it, for inputs whose
 // permutations are known in advance never to repeat.

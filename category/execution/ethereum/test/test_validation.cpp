@@ -591,7 +591,7 @@ TYPED_TEST(TraitsTest, invalid_nonce)
 
     auto const result =
         static_validate_header<typename TestFixture::Trait>(header);
-    if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_PARIS) {
+    if constexpr (TestFixture::Trait::eip_3675_active()) {
         ASSERT_TRUE(result.has_error());
         EXPECT_EQ(result.error(), BlockError::InvalidNonce);
     }

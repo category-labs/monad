@@ -140,8 +140,7 @@ Result<void> static_validate_header(BlockHeader const &header)
         return BlockError::MissingField;
     }
 
-    // EIP-3675
-    if constexpr (traits::evm_rev() >= MONAD_ETH_PARIS) {
+    if constexpr (traits::eip_3675_active()) {
         if (MONAD_UNLIKELY(header.difficulty != 0)) {
             return BlockError::PowBlockAfterMerge;
         }
@@ -186,8 +185,7 @@ Result<void> static_validate_ommers(Chain const &chain, Block const &block)
         return BlockError::WrongOmmersHash;
     }
 
-    // EIP-3675
-    if constexpr (traits::evm_rev() >= MONAD_ETH_PARIS) {
+    if constexpr (traits::eip_3675_active()) {
         if (MONAD_UNLIKELY(!block.ommers.empty())) {
             return BlockError::TooManyOmmers;
         }

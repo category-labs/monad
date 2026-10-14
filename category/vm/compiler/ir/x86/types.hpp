@@ -21,7 +21,7 @@
 #include <category/vm/runtime/bin.hpp>
 #include <category/vm/runtime/types.hpp>
 
-#include <asmjit/core/jitruntime.h>
+#include <asmjit/core/jit_runtime.h>
 
 #include <cstddef>
 #include <cstdint>

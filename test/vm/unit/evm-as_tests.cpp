@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include "asmjit/core/jitruntime.h"
+#include "asmjit/core/jit_runtime.h"
 #include "category/core/bytes.hpp"
 #include "category/core/runtime/uint256.hpp"
 #include "category/vm/compiler/ir/x86/types.hpp"

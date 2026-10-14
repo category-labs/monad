@@ -450,7 +450,7 @@ State::selfdestruct(Address const &address, Address const &beneficiary)
     auto &account_state = current_account_state(address);
     uint256_t const balance = get_balance(address);
 
-    if constexpr (traits::evm_rev() < MONAD_ETH_CANCUN) {
+    if constexpr (!traits::eip_6780_active()) {
         if (address != beneficiary) {
             add_to_balance(beneficiary, balance);
         }
@@ -486,7 +486,7 @@ void State::destruct_suicides()
         auto &account_state = stack.current(0);
         if (account_state.is_destructed()) {
             auto &account = account_state.account_;
-            if constexpr (traits::evm_rev() < MONAD_ETH_CANCUN) {
+            if constexpr (!traits::eip_6780_active()) {
                 account.reset();
             }
             else {

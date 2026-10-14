@@ -33,8 +33,8 @@
 
 #include "test_params.hpp"
 
-#include <asmjit/core/globals.h>
-#include <asmjit/core/jitruntime.h>
+#include <asmjit/core/error.h>
+#include <asmjit/core/jit_runtime.h>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
@@ -914,7 +914,8 @@ TEST(Emitter, fail_with_error)
     asmjit::JitRuntime const rt;
     TestEmitter emit{rt, bin<1>};
     // Test that asmjit error handler is in place:
-    EXPECT_THROW(emit.fail_with_error(asmjit::kErrorOk), Emitter::Error);
+    EXPECT_THROW(
+        emit.fail_with_error(asmjit::Error::kInvalidState), Emitter::Error);
 }
 
 TEST(Emitter, invalid_instruction)
@@ -4397,6 +4398,22 @@ TEST(Emitter, jump_bad_jumpdest)
     entry(&*ctx, stack_memory.get());
 
     ASSERT_EQ(ret.status, runtime::StatusCode::Error);
+}
+
+TEST(Emitter, jump_unbound_jumpdest)
+{
+    auto ir =
+        basic_blocks::BasicBlocksIR::unsafe_from({PUSH1, 3, JUMP, JUMPDEST});
+
+    asmjit::JitRuntime rt;
+    TestEmitter emit{rt, ir.codesize};
+    emit.add_jump_dest(3);
+    (void)emit.begin_new_block(ir.blocks()[0]);
+    emit.push(3);
+    emit.jump();
+
+    EXPECT_THROW(emit.finish_contract(rt), Emitter::Error);
+    EXPECT_EQ(rt.allocator().statistics().allocation_count(), 0u);
 }
 
 TEST(Emitter, jumpi)

@@ -27,7 +27,7 @@
 #include <category/vm/runtime/types.hpp>
 
 #include <asmjit/x86.h>
-#include <asmjit/x86/x86assembler.h>
+#include <asmjit/x86/x86_assembler.h>
 
 #include <format>
 #include <memory>
@@ -46,7 +46,7 @@ namespace monad::vm::compiler::native
 
         struct EmitErrorHandler : asmjit::ErrorHandler
         {
-            void handleError(
+            void handle_error(
                 asmjit::Error, char const *message,
                 asmjit::BaseEmitter *) override;
         };
@@ -126,12 +126,12 @@ namespace monad::vm::compiler::native
             RoSubdata<96> sub96_;
         };
 
-        using Gpq256 = std::array<asmjit::x86::Gpq, 4>;
+        using Gpq256 = std::array<asmjit::x86::Gp, 4>;
         using Mem256 = std::array<asmjit::x86::Mem, 4>;
         using Imm256 = std::array<asmjit::Imm, 4>;
 
         using Operand =
-            std::variant<Gpq256, Imm256, asmjit::x86::Ymm, asmjit::x86::Mem>;
+            std::variant<Gpq256, Imm256, asmjit::x86::Vec, asmjit::x86::Mem>;
 
         template <typename L, typename R>
         using GeneralBinInstr = std::array<
@@ -175,10 +175,10 @@ namespace monad::vm::compiler::native
 
         protected:
             using RuntimeArg =
-                std::variant<asmjit::x86::Gpq, asmjit::Imm, asmjit::x86::Mem>;
+                std::variant<asmjit::x86::Gp, asmjit::Imm, asmjit::x86::Mem>;
 
             void mov_arg(size_t arg_index, RuntimeArg &&arg);
-            void mov_reg_arg(asmjit::x86::Gpq const &, RuntimeArg &&arg);
+            void mov_reg_arg(asmjit::x86::Gp const &, RuntimeArg &&arg);
             void mov_stack_arg(int32_t sp_offset, RuntimeArg &&arg);
 
             Emitter *em_;
@@ -632,7 +632,7 @@ namespace monad::vm::compiler::native
         bool is_live(GeneralReg, std::tuple<LiveSet...> const &);
 
         void gas_decrement_no_check(int64_t);
-        void gas_decrement_no_check(asmjit::x86::Gpq);
+        void gas_decrement_no_check(asmjit::x86::Gp);
 
         bool accumulate_static_work(int64_t work_cost);
 
@@ -649,7 +649,7 @@ namespace monad::vm::compiler::native
         unsigned get_stack_elem_general_order_index(
             StackElemRef, std::tuple<LiveSet...> const &);
 
-        template <asmjit::x86::Gpq gpq>
+        template <asmjit::x86::Gp gpq>
         uint8_t volatile_gpq_index();
 
         ////////// Private move functionality //////////
@@ -673,13 +673,13 @@ namespace monad::vm::compiler::native
         template <bool remember_intermediate>
         void mov_stack_elem_to_gpq256(StackElemRef, Gpq256 const &);
 
-        void mov_stack_elem_low64_to_gpq(StackElemRef, asmjit::x86::Gpq);
+        void mov_stack_elem_low64_to_gpq(StackElemRef, asmjit::x86::Gp);
 
-        void mov_literal_to_ymm(Literal const &, asmjit::x86::Ymm const &);
+        void mov_literal_to_ymm(Literal const &, asmjit::x86::Vec const &);
         template <typename Word>
         void mov_words_to_ymm(
-            std::array<Word, 4> const &, asmjit::x86::Ymm const &,
-            asmjit::x86::Xmm const &);
+            std::array<Word, 4> const &, asmjit::x86::Vec const &,
+            asmjit::x86::Vec const &);
 
         void mov_stack_elem_to_avx_reg(StackElemRef);
         void mov_stack_elem_to_general_reg(StackElemRef);
@@ -714,8 +714,8 @@ namespace monad::vm::compiler::native
         StackElem *revertible_mov_stack_offset_to_general_reg(StackElemRef);
 
         void bswap_to_ymm(
-            std::variant<asmjit::x86::Ymm, asmjit::x86::Mem> src,
-            asmjit::x86::Ymm dst);
+            std::variant<asmjit::x86::Vec, asmjit::x86::Mem> src,
+            asmjit::x86::Vec dst);
         void mov_mem_be_to_avx_reg(asmjit::x86::Mem, StackElemRef);
         void mov_mem_be_to_general_reg(asmjit::x86::Mem, StackElemRef);
         StackElemRef read_mem_be(asmjit::x86::Mem);
@@ -770,7 +770,7 @@ namespace monad::vm::compiler::native
         void test_high_bits192(StackElemRef, std::tuple<LiveSet...> const &);
 
         template <uint8_t bits, typename... LiveSet>
-        std::variant<std::monostate, asmjit::x86::Gpq, uint64_t>
+        std::variant<std::monostate, asmjit::x86::Gp, uint64_t>
         is_bounded_by_bits(
             StackElemRef, asmjit::Label const &skip_label,
             std::tuple<LiveSet...> const &);
@@ -799,19 +799,19 @@ namespace monad::vm::compiler::native
 
             MulEmitter(
                 size_t bit_size, Emitter &em, Operand const &left,
-                RightMulArg const &right, asmjit::x86::Gpq const *dst,
-                asmjit::x86::Gpq const *tmp);
+                RightMulArg const &right, asmjit::x86::Gp const *dst,
+                asmjit::x86::Gp const *tmp);
 
             void emit();
 
         private:
-            void init_mul_dst(size_t sub_size, asmjit::x86::Gpq *);
+            void init_mul_dst(size_t sub_size, asmjit::x86::Gp *);
             template <bool Has32Bit>
-            void mul_sequence(size_t sub_size, asmjit::x86::Gpq const *);
+            void mul_sequence(size_t sub_size, asmjit::x86::Gp const *);
             template <bool Has32Bit>
-            void update_dst(size_t sub_size, asmjit::x86::Gpq const *);
+            void update_dst(size_t sub_size, asmjit::x86::Gp const *);
             template <bool Has32Bit>
-            void compose(size_t sub_size, asmjit::x86::Gpq *);
+            void compose(size_t sub_size, asmjit::x86::Gp *);
             template <bool Has32Bit>
             void emit_loop();
 
@@ -819,8 +819,8 @@ namespace monad::vm::compiler::native
             Emitter &em_;
             Operand const &left_;
             RightMulArg const &right_;
-            asmjit::x86::Gpq const *dst_;
-            asmjit::x86::Gpq const *tmp_;
+            asmjit::x86::Gp const *dst_;
+            asmjit::x86::Gp const *tmp_;
             bool is_dst_initialized_;
         };
 
@@ -828,29 +828,29 @@ namespace monad::vm::compiler::native
 
         template <typename LeftOpType>
         void mulx(
-            asmjit::x86::Gpq dst1, asmjit::x86::Gpq dst2, LeftOpType left,
-            asmjit::x86::Gpq right);
+            asmjit::x86::Gp dst1, asmjit::x86::Gp dst2, LeftOpType left,
+            asmjit::x86::Gp right);
         template <bool Is32Bit, typename LeftOpType>
         void gpr_mul_by_gpq(
-            asmjit::x86::Gpq dst, LeftOpType left, asmjit::x86::Gpq right);
+            asmjit::x86::Gp dst, LeftOpType left, asmjit::x86::Gp right);
         template <bool Is32Bit, typename LeftOpType>
         void gpr_mul_by_uint64_via_shl(
-            asmjit::x86::Gpq dst, LeftOpType left, uint64_t right);
+            asmjit::x86::Gp dst, LeftOpType left, uint64_t right);
         template <bool Is32Bit, typename LeftOpType>
         void gpr_mul_by_int32_via_imul(
-            asmjit::x86::Gpq dst, LeftOpType left, int32_t right);
+            asmjit::x86::Gp dst, LeftOpType left, int32_t right);
         template <bool Is32Bit, typename LeftOpType>
-        void gpr_mul_by_uint64(
-            asmjit::x86::Gpq dst, LeftOpType left, uint64_t right);
+        void
+        gpr_mul_by_uint64(asmjit::x86::Gp dst, LeftOpType left, uint64_t right);
         template <bool Is32Bit, typename LeftOpType>
         void gpr_mul_by_rax_or_uint64(
-            asmjit::x86::Gpq dst, LeftOpType left, std::optional<uint64_t>);
+            asmjit::x86::Gp dst, LeftOpType left, std::optional<uint64_t>);
         void mul_with_bit_size_by_rax(
-            size_t bit_size, asmjit::x86::Gpq const *dst, Operand const &left,
+            size_t bit_size, asmjit::x86::Gp const *dst, Operand const &left,
             std::optional<uint64_t> value_of_rax);
         template <bool Has32Bit>
         void mul_with_bit_size_and_has_32_bit_by_rax(
-            size_t bit_size, asmjit::x86::Gpq const *dst, Operand const &left,
+            size_t bit_size, asmjit::x86::Gp const *dst, Operand const &left,
             std::optional<uint64_t> value_of_rax);
         template <typename... LiveSet>
         StackElemRef mul_with_bit_size(

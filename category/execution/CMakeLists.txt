@@ -362,7 +362,7 @@ target_link_libraries(
   PUBLIC monad_crypto
   PUBLIC blst::blst
   PUBLIC c-kzg-4844
-  PRIVATE PkgConfig::crypto++
+  PRIVATE aws_lc::crypto
   PUBLIC ethash::keccak
   PUBLIC evmc
   PUBLIC immer

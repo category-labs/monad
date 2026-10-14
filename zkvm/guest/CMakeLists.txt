@@ -382,7 +382,6 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         Boost::json
         c-kzg-4844
         PkgConfig::brotli
-        PkgConfig::crypto++
         PkgConfig::secp256k1
         intx::intx
         quill::quill
@@ -430,7 +429,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         monad_crypto
         c-kzg-4844
         ethash::keccak
-        PkgConfig::crypto++
+        aws_lc::crypto
         intx::intx
         silkpre)
     target_link_libraries(monad_precompiles

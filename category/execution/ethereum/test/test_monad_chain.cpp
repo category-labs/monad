@@ -336,7 +336,7 @@ TYPED_TEST(
 TYPED_TEST(MonadTraitsTest, revert_transaction_no_dip_gas_fee_with_value_true)
 {
     constexpr auto should_revert = [] {
-        if (TestFixture::Trait::monad_rev() >= MONAD_FOUR) {
+        if (TestFixture::Trait::reserve_balance_active()) {
             return true;
         }
         else {
@@ -376,10 +376,9 @@ TYPED_TEST(MonadTraitsTest, revert_transaction_no_dip_gas_fee_with_value_false)
 
 TYPED_TEST(MonadTraitsTest, reserve_balance_checks_disabled_before_monad_four)
 {
-    if constexpr (TestFixture::Trait::monad_rev() < MONAD_FOUR) {
-        // For revisions before MONAD_FOUR, reserve-balance tracking must stay
-        // disabled. If it is accidentally enabled, this case hits
-        // sender_gas_fees > reserve for a non-dipping sender and throws.
+    if constexpr (!TestFixture::Trait::reserve_balance_active()) {
+        // If reserve-balance tracking were enabled here, this case would hit
+        // sender_gas_fees > reserve for a non-dipping sender and throw.
         run_revert_transaction_test<typename TestFixture::Trait>(
             (1 << IsDelegated), // not allowed to dip into reserve
             20, // initial balance (MON)
@@ -395,7 +394,7 @@ TYPED_TEST(
     sender_gas_fee_above_reserve_stays_failed_after_large_credit)
 {
     using traits = typename TestFixture::Trait;
-    if constexpr (traits::monad_rev() < MONAD_FOUR) {
+    if constexpr (!traits::reserve_balance_active()) {
         GTEST_SKIP() << "reserve-balance checks are disabled before MONAD_FOUR";
     }
 
@@ -466,7 +465,7 @@ TYPED_TEST(
 
 TYPED_TEST(MonadTraitsTest, staking_contract_balance_drop_does_not_revert)
 {
-    if constexpr (TestFixture::Trait::monad_rev() < MONAD_FOUR) {
+    if constexpr (!TestFixture::Trait::reserve_balance_active()) {
         GTEST_SKIP() << "reserve-balance checks are disabled before MONAD_FOUR";
     }
 
@@ -664,7 +663,7 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_code_hash)
         SENDER, tx, BASE_FEE_PER_GAS, 0, state, noop_state_tracer, context);
     bool const should_revert_cached = revert_transaction_cached<traits>(state);
 
-    if constexpr (traits::monad_rev() < MONAD_FOUR) {
+    if constexpr (!traits::reserve_balance_active()) {
         EXPECT_FALSE(should_revert);
         EXPECT_FALSE(should_revert_cached);
     }
@@ -735,7 +734,7 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_empty_code_hash)
         SENDER, tx, BASE_FEE_PER_GAS, 0, state, noop_state_tracer, context);
     bool const should_revert_cached = revert_transaction_cached<traits>(state);
 
-    if constexpr (traits::monad_rev() < MONAD_FOUR) {
+    if constexpr (!traits::reserve_balance_active()) {
         EXPECT_FALSE(should_revert);
         EXPECT_FALSE(should_revert_cached);
     }
@@ -812,7 +811,7 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_prefunded_init_selfdestruct)
         SENDER, tx, BASE_FEE_PER_GAS, 0, state, noop_state_tracer, context);
     bool const should_revert_cached = revert_transaction_cached<traits>(state);
 
-    if constexpr (traits::monad_rev() < MONAD_FOUR) {
+    if constexpr (!traits::reserve_balance_active()) {
         EXPECT_FALSE(should_revert);
         EXPECT_FALSE(should_revert_cached);
     }
@@ -838,7 +837,7 @@ TYPED_TEST(MonadTraitsTest, system_transaction_sender_is_authority)
     trace::StateTracer noop_state_tracer = std::monostate{};
     auto const res = validate_transaction<typename TestFixture::Trait>(
         {}, {}, state, 0, authorities, noop_state_tracer);
-    if constexpr (TestFixture::Trait::monad_rev() < MONAD_FOUR) {
+    if constexpr (!TestFixture::Trait::staking_active()) {
         EXPECT_TRUE(res.has_value());
     }
     else {

@@ -32,7 +32,7 @@ Result<Receipt> dispatch_transaction(
     trace::StateTracer &state_tracer, ChainContext<traits> const &chain_ctx,
     ExecutionEventRecorder *const exec_recorder, bool const trace_transfers)
 {
-    if (traits::monad_rev() >= MONAD_FOUR && sender == SYSTEM_SENDER) {
+    if (traits::staking_active() && sender == SYSTEM_SENDER) {
         // System transactions is a concept used in Monad for consensus to
         // communicate state changes to execution this code handles these in a
         // separate executor.

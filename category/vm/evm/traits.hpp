@@ -434,6 +434,11 @@ namespace monad
             return 0;
         }
 
+        static consteval bool reserve_balance_uses_recent_code_hash() noexcept
+        {
+            return Rev >= MONAD_EIGHT;
+        }
+
         static consteval int64_t base_sstore_cost() noexcept
         {
             return 100;

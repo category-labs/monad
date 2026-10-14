@@ -663,7 +663,7 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_code_hash)
         EXPECT_FALSE(should_revert);
         EXPECT_FALSE(should_revert_cached);
     }
-    else if constexpr (traits::monad_rev() >= MONAD_EIGHT) {
+    else if constexpr (traits::reserve_balance_uses_recent_code_hash()) {
         EXPECT_FALSE(should_revert);
         EXPECT_FALSE(should_revert_cached);
     }

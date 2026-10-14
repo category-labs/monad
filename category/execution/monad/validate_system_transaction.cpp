@@ -40,7 +40,7 @@ template <Traits traits>
 Result<void>
 static_validate_system_transaction(Transaction const &tx, Address const &sender)
 {
-    if constexpr (traits::monad_rev() < MONAD_FOUR) {
+    if constexpr (!traits::staking_active()) {
         return SystemTransactionError::SystemTxnBeforeFork;
     }
 

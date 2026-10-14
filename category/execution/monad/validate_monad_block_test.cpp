@@ -67,7 +67,7 @@ TYPED_TEST(MonadTraitsTest, system_txn_comes_after_user_txn)
     };
     std::vector<Transaction> txns(senders.size());
     auto const res = static_validate_monad_body<Trait>(senders, txns);
-    if constexpr (Trait::monad_rev() < MONAD_FOUR) {
+    if constexpr (!Trait::staking_active()) {
         EXPECT_FALSE(res.has_error());
     }
     else {
@@ -135,7 +135,7 @@ TYPED_TEST(MonadTraitsTest, invalid_syscall_ordering)
         auto const senders = system_senders(order.size());
         auto const txns = system_txns(order);
         auto const res = static_validate_monad_body<Trait>(senders, txns);
-        if constexpr (Trait::monad_rev() < MONAD_FOUR) {
+        if constexpr (!Trait::staking_active()) {
             EXPECT_FALSE(res.has_error());
         }
         else {
@@ -164,7 +164,7 @@ TYPED_TEST(MonadTraitsTest, duplicate_syscalls_error)
         auto const senders = system_senders(order.size());
         auto const txns = system_txns(order);
         auto const res = static_validate_monad_body<Trait>(senders, txns);
-        if constexpr (Trait::monad_rev() < MONAD_FOUR) {
+        if constexpr (!Trait::staking_active()) {
             EXPECT_FALSE(res.has_error());
         }
         else {
@@ -189,7 +189,7 @@ TYPED_TEST(MonadTraitsTest, unknown_syscall_error)
         std::vector<Transaction> txns(1);
         txns[0].data = data;
         auto const res = static_validate_monad_body<Trait>(senders, txns);
-        if constexpr (Trait::monad_rev() < MONAD_FOUR) {
+        if constexpr (!Trait::staking_active()) {
             EXPECT_FALSE(res.has_error());
         }
         else {
@@ -211,7 +211,7 @@ TYPED_TEST(MonadTraitsTest, reward_txn_exceeds_maximum)
     txns[0].data = syscall_calldata(REWARD);
     txns[0].value = 26 * staking::MON;
     auto const res = static_validate_monad_body<Trait>(senders, txns);
-    if constexpr (Trait::monad_rev() < MONAD_FOUR) {
+    if constexpr (!Trait::staking_active()) {
         EXPECT_FALSE(res.has_error());
     }
     else {

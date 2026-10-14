@@ -33,6 +33,7 @@ namespace monad::zkvm
     {
         uint32_t size;
         uint32_t offset; // bytes into known_code_words
+        uint32_t jumpdests; // words into known_code_jumpdests
         uint64_t key;
         unsigned char hash[32];
     };
@@ -78,22 +79,21 @@ namespace monad::zkvm
         return differ == 0;
     }
 
-    // The keccak of the size bytes at code, 8-aligned, when they are a known
-    // code. The key reads the first word and the middle one, both whole for a
-    // code of 16 bytes or more; the table holds no shorter code.
-    inline bool known_code_hash(
-        unsigned char const *const code, size_t const size,
-        bytes32_t &hash) noexcept
+    // The entry the size bytes at code, 8-aligned, are a copy of, or null.
+    // The key reads the first word and the middle one, both whole for a code
+    // of 16 bytes or more; the table holds no shorter code.
+    inline KnownCode const *
+    known_code_find(unsigned char const *const code, size_t const size) noexcept
     {
         if (size < 16) {
-            return false;
+            return nullptr;
         }
         uint64_t const key = known_code_key(code, size);
         unsigned slot = known_code_slot(key, size);
         for (;;) {
             unsigned const n = known_code_index[slot];
             if (n == 0) {
-                return false;
+                return nullptr;
             }
             KnownCode const &e = known_codes[n - 1];
             if (e.size == size && e.key == key &&
@@ -102,11 +102,33 @@ namespace monad::zkvm
                     reinterpret_cast<unsigned char const *>(known_code_words) +
                         e.offset,
                     size)) {
-                __builtin_memcpy(hash.bytes, e.hash, 32);
-                return true;
+                return &e;
             }
             slot = (slot + 1) & ((1u << KNOWN_CODE_SLOTS_LOG2) - 1);
         }
+    }
+
+    // The lookup the JUMPDEST analysis of an Intercode made for its copy of a
+    // code (monad_zkvm_known_jumpdests), kept for known_code_hash on the same
+    // copy: one compare per code, not two. A copy is never freed or written
+    // again on this guest, so its address names its bytes.
+    inline unsigned char const *known_code_last_copy = nullptr;
+    inline KnownCode const *known_code_last = nullptr;
+
+    // The keccak of the size bytes at code, 8-aligned, when they are a known
+    // code.
+    inline bool known_code_hash(
+        unsigned char const *const code, size_t const size,
+        bytes32_t &hash) noexcept
+    {
+        KnownCode const *const e = code == known_code_last_copy
+                                       ? known_code_last
+                                       : known_code_find(code, size);
+        if (e == nullptr) {
+            return false;
+        }
+        __builtin_memcpy(hash.bytes, e->hash, 32);
+        return true;
     }
 #endif
 }

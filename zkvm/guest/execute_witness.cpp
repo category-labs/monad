@@ -168,6 +168,21 @@ namespace
 }
 #endif
 
+#if defined(MONAD_ZKVM_ZISK)
+// The JUMPDEST map of a known code, for Intercode's analysis (its weak default
+// in intercode.cpp returns null): computed with the table, so the copy is all
+// the analysis costs.
+extern "C" uint64_t const *
+monad_zkvm_known_jumpdests(uint8_t const *const code, size_t const size) noexcept
+{
+    auto const *const e = monad::zkvm::known_code_find(code, size);
+    monad::zkvm::known_code_last_copy = code;
+    monad::zkvm::known_code_last = e;
+    return e != nullptr ? monad::zkvm::known_code_jumpdests + e->jumpdests
+                        : nullptr;
+}
+#endif
+
 extern "C" void monad_zkvm_execute_witness(void)
 {
 #ifdef MONAD_ZKVM_SELFTEST

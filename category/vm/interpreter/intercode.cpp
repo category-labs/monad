@@ -21,6 +21,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <span>
 
 using namespace monad::vm::compiler;
@@ -74,6 +75,21 @@ namespace monad::vm::interpreter
         }();
     }
 
+#ifdef MONAD_ZKVM_ZISK
+}
+
+// The JUMPDEST map of a code the guest knows in advance, whose words a known
+// code's analysis copies instead of running; null for any other code. The
+// guest's table defines it; this default knows none.
+extern "C" [[gnu::weak]] uint64_t const *
+monad_zkvm_known_jumpdests(uint8_t const *, size_t) noexcept
+{
+    return nullptr;
+}
+
+namespace monad::vm::interpreter
+{
+#endif
     auto Intercode::find_jumpdests(std::span<uint8_t const> const code)
         -> JumpdestMap
     {
@@ -92,6 +108,11 @@ namespace monad::vm::interpreter
             uint64_t *const dst = jumpdests.words();
             uint8_t const *const src = code.data();
             size_t const size = code.size();
+            if (uint64_t const *const known =
+                    monad_zkvm_known_jumpdests(src, size)) {
+                std::memcpy(dst, known, (size + 63) / 64 * sizeof(uint64_t));
+                return jumpdests;
+            }
             // zicsr is part of the official ZisK target architecture.
             asm volatile("csrs 0x81c, %0\n\t"
                          "add x0, %1, %2\n\t"

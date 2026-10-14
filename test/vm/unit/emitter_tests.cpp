@@ -33,8 +33,8 @@
 
 #include "test_params.hpp"
 
-#include <asmjit/core/globals.h>
-#include <asmjit/core/jitruntime.h>
+#include <asmjit/core/error.h>
+#include <asmjit/core/jit_runtime.h>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
@@ -914,7 +914,8 @@ TEST(Emitter, fail_with_error)
     asmjit::JitRuntime const rt;
     TestEmitter emit{rt, bin<1>};
     // Test that asmjit error handler is in place:
-    EXPECT_THROW(emit.fail_with_error(asmjit::kErrorOk), Emitter::Error);
+    EXPECT_THROW(
+        emit.fail_with_error(asmjit::Error::kInvalidState), Emitter::Error);
 }
 
 TEST(Emitter, invalid_instruction)

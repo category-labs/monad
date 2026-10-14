@@ -49,6 +49,7 @@ REQUIRED_FLAGS = (
     "-mabi=lp64",
     "-fno-pic",
     "-mzisk-dma",
+    "-mzisk-clean-byte-stores",
     "-funroll-loops",
     "--param=max-inline-insns-single=1600",
     "--param=max-inline-insns-auto=533",
@@ -171,7 +172,7 @@ def main() -> int:
     if profile.get("runtime_revision") != RUNTIME_REVISION:
         fail("generated profile has the wrong runtime revision")
     features = str(profile.get("features_csv", "")).split(",")
-    if features != ["baseline", "zisk-dma"]:
+    if features != ["baseline", "zisk-dma", "zisk-clean-byte-stores"]:
         fail(f"unexpected feature set: {features!r}")
 
     cache = build_dir / "CMakeCache.txt"

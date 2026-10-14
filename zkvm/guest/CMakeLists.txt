@@ -57,7 +57,8 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # and ELF hash already identify them.
     option(MONAD_ZKVM_OFFICIAL_PROFILE
            "require the reference ZisK compiler and build options" OFF)
-    set(_monad_zkvm_official_features "baseline" "zisk-dma")
+    set(_monad_zkvm_official_features
+        "baseline" "zisk-dma" "zisk-clean-byte-stores")
     set(_monad_zkvm_runtime_version "1.3.1-alpha")
     set(_monad_zkvm_runtime_revision
         "306a9c934ba4947b1d586d69b67120f8b4c41466")
@@ -69,7 +70,8 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
 
     # Enable required CMake boolean options; reject explicit OFF values.
     # Add each new required option here and its feature to the list above.
-    set(_monad_zkvm_required_options MONAD_ZKVM_ZISK_DMA)
+    set(_monad_zkvm_required_options
+        MONAD_ZKVM_ZISK_DMA MONAD_ZKVM_ZISK_CLEAN_BYTE_STORES)
     if(MONAD_ZKVM_OFFICIAL_PROFILE)
         foreach(_option ${_monad_zkvm_required_options})
             if(DEFINED ${_option} AND NOT ${_option})
@@ -144,6 +146,15 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
             string(APPEND CMAKE_C_FLAGS " -mzisk-dma")
             string(APPEND CMAKE_CXX_FLAGS " -mzisk-dma")
         endif()
+
+        # Prefer zero-extended byte constants and addition immediates to reduce
+        # ZisK byte-store costs. Requires the patched GCC.
+        option(MONAD_ZKVM_ZISK_CLEAN_BYTE_STORES
+               "zero-extend the sources of byte stores for ZisK" OFF)
+        if(MONAD_ZKVM_ZISK_CLEAN_BYTE_STORES)
+            string(APPEND CMAKE_C_FLAGS " -mzisk-clean-byte-stores")
+            string(APPEND CMAKE_CXX_FLAGS " -mzisk-clean-byte-stores")
+        endif()
     endif()
 
     if(MONAD_ZKVM_OFFICIAL_PROFILE)
@@ -175,6 +186,8 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
                 "void sink(void *);\n"
                 "void p(char *d, char const *s) { memcpy(d, s, 512); sink(d); }\n")
             separate_arguments(_dma_probe_flags UNIX_COMMAND "${CMAKE_C_FLAGS}")
+            # Probe each ZisK option alone, so a failure names its own flag.
+            list(REMOVE_ITEM _dma_probe_flags -mzisk-clean-byte-stores)
             execute_process(
                 COMMAND ${CMAKE_C_COMPILER} ${_dma_probe_flags} -O2 -S -o -
                         "${_dma_probe}"
@@ -190,6 +203,34 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
                     "${CMAKE_C_COMPILER} accepts -mzisk-dma but emits no DMA "
                     "marker, so block mem* would still be thunk calls. Build it "
                     "with zkvm/toolchain/zisk-dma-gcc/build-gcc15.sh")
+            endif()
+        endif()
+
+        # Require nonnegative immediates: 184 for 0xb8, and 128 for 0x80 + n.
+        if(CMAKE_CXX_FLAGS MATCHES "-mzisk-clean-byte-stores" OR
+           CMAKE_C_FLAGS MATCHES "-mzisk-clean-byte-stores")
+            set(_byte_probe "${CMAKE_CURRENT_BINARY_DIR}/zisk-byte-probe.c")
+            file(WRITE "${_byte_probe}"
+                "void f(unsigned char *p) { *p = 0xb8; }\n"
+                "void g(unsigned char *p, unsigned char n) { *p = 0x80 + n; }\n")
+            separate_arguments(_byte_probe_flags UNIX_COMMAND "${CMAKE_C_FLAGS}")
+            list(REMOVE_ITEM _byte_probe_flags -mzisk-dma)
+            execute_process(
+                COMMAND ${CMAKE_C_COMPILER} ${_byte_probe_flags} -O2 -S -o -
+                        "${_byte_probe}"
+                RESULT_VARIABLE _byte_rc OUTPUT_VARIABLE _byte_asm ERROR_QUIET)
+            if(NOT _byte_rc EQUAL 0)
+                message(FATAL_ERROR
+                    "-mzisk-clean-byte-stores is in the flags but "
+                    "${CMAKE_C_COMPILER} cannot compile with it; build the "
+                    "compiler with zkvm/toolchain/zisk-dma-gcc/build-gcc15.sh")
+            endif()
+            if(NOT _byte_asm MATCHES "li[ \t]+[a-z0-9]+,184\n" OR
+               NOT _byte_asm MATCHES "addi[ \t]+[a-z0-9]+,[a-z0-9]+,128\n")
+                message(FATAL_ERROR
+                    "${CMAKE_C_COMPILER} accepts -mzisk-clean-byte-stores but "
+                    "stores a sign-extended byte. Build it with "
+                    "zkvm/toolchain/zisk-dma-gcc/build-gcc15.sh")
             endif()
         endif()
     endif()
@@ -400,7 +441,8 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         set(_dma_patch_dir "${CMAKE_CURRENT_SOURCE_DIR}/../toolchain/zisk-dma-gcc")
         set(_dma_patch_sha "")
         foreach(_p 0001-riscv-zisk-dma-lowering-14.3.0.patch
-                   0002-riscv.md-forward-port-15.2.0.diff)
+                   0002-riscv.md-forward-port-15.2.0.diff
+                   0003-riscv-zisk-clean-byte-stores-15.2.0.diff)
             if(NOT EXISTS "${_dma_patch_dir}/${_p}")
                 message(FATAL_ERROR
                     "official ZisK profile: missing ${_p} in zkvm/toolchain/zisk-dma-gcc")

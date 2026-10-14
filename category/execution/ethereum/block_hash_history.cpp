@@ -66,7 +66,7 @@ void deploy_block_hash_history_contract(State &state)
 
     // cleanup: overwrite bad code from MONAD_FOUR
     if constexpr (is_monad_trait_v<traits>) {
-        if constexpr (traits::monad_rev() >= MONAD_SIX) {
+        if constexpr (traits::eip_2935_active()) {
             if (MONAD_UNLIKELY(
                     state.get_code_hash(BLOCK_HISTORY_ADDRESS) !=
                     BLOCK_HISTORY_CODE_HASH)) {
@@ -81,15 +81,8 @@ EXPLICIT_TRAITS(deploy_block_hash_history_contract);
 template <Traits traits>
 void set_block_hash_history(State &state, BlockHeader const &header)
 {
-    if constexpr (traits::evm_rev() < MONAD_ETH_PRAGUE) {
+    if constexpr (!traits::eip_2935_active()) {
         return;
-    }
-
-    // before MONAD_SIX, nothing was being written.
-    if constexpr (is_monad_trait_v<traits>) {
-        if constexpr (traits::monad_rev() < MONAD_SIX) {
-            return;
-        }
     }
 
     if (MONAD_UNLIKELY(!header.number)) {

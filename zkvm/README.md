@@ -52,7 +52,7 @@ for its runtime, I/O, and accelerators.
   Cargo reads this configuration when invoked from either backend directory.
 - For ZisK, install `cargo-zisk` and `ziskemu` using
   [ziskup](https://github.com/0xPolygonHermez/zisk). The guest pins `ziskos`
-  to **v1.3.1-alpha** in [Cargo.toml](zisk/Cargo.toml); use matching tools.
+  to **v1.3.2-alpha** in [Cargo.toml](zisk/Cargo.toml); use matching tools.
 - For SP1, install the `succinct` Rust toolchain using
   [sp1up](https://docs.succinct.xyz/getting-started/install.html), and provide
   `ld.lld` on `PATH` or through that toolchain. The host SDK is **6.8.1**;
@@ -75,7 +75,7 @@ zkvm/zisk/build.sh --official
 ```
 
 This enables `MONAD_ZKVM_OFFICIAL_PROFILE`, requires a clean worktree, and
-builds with ZisK 1.3.1-alpha, patched GCC 15.2.0, DMA lowering and the required
+builds with ZisK 1.3.2-alpha, patched GCC 15.2.0, DMA lowering and the required
 codegen flags. The ELF embeds the commit and build identity.
 
 Without `--official`, `build.sh` uses the development profile and passes

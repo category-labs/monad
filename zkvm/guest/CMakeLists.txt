@@ -59,9 +59,9 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
            "require the reference ZisK compiler and build options" OFF)
     set(_monad_zkvm_official_features
         "baseline" "zisk-dma" "zisk-clean-byte-stores")
-    set(_monad_zkvm_runtime_version "1.3.1-alpha")
+    set(_monad_zkvm_runtime_version "1.3.2-alpha")
     set(_monad_zkvm_runtime_revision
-        "306a9c934ba4947b1d586d69b67120f8b4c41466")
+        "1e22630bb7e143c30705a1603ed87cfd3da8c6ec")
     if(MONAD_ZKVM_OFFICIAL_PROFILE AND
        NOT MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
         message(FATAL_ERROR

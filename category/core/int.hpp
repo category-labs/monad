@@ -140,6 +140,20 @@ template <typename T, FixedBytes Src>
 template <typename T, FixedBytes Src>
 [[nodiscard, gnu::always_inline]] constexpr T load_be(Src const &src) noexcept
 {
+#if defined(MONAD_ZKVM_ZISK)
+    // A uint256_t word by word: through load_le, gcc stages the bytes in a
+    // stack temporary with a DMA copy before reading the words back to swap
+    // them.
+    if constexpr (std::same_as<T, uint256_t>) {
+        if !consteval {
+            return T{
+                load_be_unsafe<uint64_t>(src.bytes + 24),
+                load_be_unsafe<uint64_t>(src.bytes + 16),
+                load_be_unsafe<uint64_t>(src.bytes + 8),
+                load_be_unsafe<uint64_t>(src.bytes)};
+        }
+    }
+#endif
     return bswap(load_le<T>(src));
 }
 
@@ -190,6 +204,20 @@ store_be_as(SrcT const x) noexcept
 {
     static_assert(sizeof(DstT::bytes) == sizeof(SrcT));
     static_assert(std::is_trivially_copyable_v<DstT>);
+#if defined(MONAD_ZKVM_ZISK)
+    // A uint256_t word by word, for the reason load_be gives: through
+    // bit_cast, the swapped value is staged and copied into the result.
+    if constexpr (std::same_as<SrcT, uint256_t>) {
+        if !consteval {
+            DstT r;
+            store_be(r.bytes, x[3]);
+            store_be(r.bytes + 8, x[2]);
+            store_be(r.bytes + 16, x[1]);
+            store_be(r.bytes + 24, x[0]);
+            return r;
+        }
+    }
+#endif
     return std::bit_cast<DstT>(bswap(x));
 }
 

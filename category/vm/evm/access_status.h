@@ -40,8 +40,14 @@ enum monad_access_status
 };
 
 // Convert monad_access_status to evmc's evmc_access_status. Needed only at the
-// remaining evmc host interface boundary (see the note above).
-enum evmc_access_status to_evmc_access_status(enum monad_access_status status);
+// remaining evmc host interface boundary (see the note above). A
+// value-preserving cast, by the static_asserts in access_status.cpp; defined
+// here, so that the host's overrides make no call for it.
+static inline enum evmc_access_status
+to_evmc_access_status(enum monad_access_status const status)
+{
+    return (enum evmc_access_status)status;
+}
 
 #ifdef __cplusplus
 } // extern "C"

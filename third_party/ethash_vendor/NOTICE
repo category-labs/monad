@@ -14,7 +14,7 @@ The vendored copy is reduced to the sponge alone:
     monad_keccakf1600() and left for the consumer to define, so that a
     target with a hardware or proof-system Keccak primitive can supply
     it. The zkVM guest does exactly that in
-    zkvm/category/crypto/keccak.h.
+    zkvm/category/crypto/keccakf1600.h.
   - keccak() is specialised to a 256-bit digest; the bit-width parameter
     and the 512-bit and fixed-size-input entry points are dropped.
   - The sponge is exposed as monad_keccak256(), matching the signature

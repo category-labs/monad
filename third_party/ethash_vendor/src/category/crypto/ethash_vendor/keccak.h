@@ -4,9 +4,8 @@
 //
 // Vendored from ethash's lib/keccak/keccak.c, reduced to the sponge and
 // specialised to a 256-bit digest. The Keccak-f[1600] permutation is not
-// included; monad_keccakf1600() is supplied by the consumer. See the 
-// NOTICE file at the ethash_vendor root for the full list of divergences 
-// from upstream.
+// included; monad_keccakf1600() is supplied by the consumer. See ../NOTICE
+// for the full list of divergences from upstream.
 
 #pragma once
 
@@ -27,9 +26,10 @@ extern "C"
 /// this header, so that a target with a native Keccak primitive can use it
 /// instead of a software round function, and can supply it inline rather than
 /// as a link-time symbol. The zkVM guest routes it to the backend's Keccak
-/// precompile in zkvm/category/crypto/keccak.h.
+/// precompile in zkvm/category/crypto/keccakf1600.h.
 
-[[gnu::always_inline]] static inline uint64_t monad_keccak_to_le64(uint64_t const word)
+[[gnu::always_inline]] static inline uint64_t
+monad_keccak_to_le64(uint64_t const word)
 {
 #if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
     return __builtin_bswap64(word);
@@ -39,7 +39,8 @@ extern "C"
 }
 
 /// Loads 64-bit integer from given memory location as little-endian number.
-[[gnu::always_inline]] static inline uint64_t monad_keccak_load_le(uint8_t const *const data)
+[[gnu::always_inline]] static inline uint64_t
+monad_keccak_load_le(uint8_t const *const data)
 {
     /* memcpy is the best way of expressing the intention. Every compiler will
        optimize is to single load instruction if the target architecture
@@ -59,8 +60,8 @@ extern "C"
 /// loop, the word loop and the byte tail all fold away at those call sites.
 ///
 /// @param out  The 32-byte digest. Has no alignment requirement.
-[[gnu::always_inline]] static inline void monad_keccak256(
-    void const *const in, size_t size, uint8_t out[32])
+[[gnu::always_inline]] static inline void
+monad_keccak256(void const *const in, size_t size, uint8_t out[32])
 {
     static size_t const word_size = sizeof(uint64_t);
     static size_t const block_size = (1600 - 256 * 2) / 8;

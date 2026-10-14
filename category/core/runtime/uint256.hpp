@@ -201,9 +201,14 @@ public:
         return result;
     }
 
+    // On ZisK, stop at the first nonzero word instead of combining all four.
     [[gnu::always_inline]]
     constexpr explicit operator bool() const noexcept
     {
+#if defined(MONAD_ZKVM_ZISK)
+        return words_[0] != 0 || words_[1] != 0 || words_[2] != 0 ||
+               words_[3] != 0;
+#else
         using namespace monad::uint256::intrinsics;
 
         auto const w0 = force(words_[0]);
@@ -211,6 +216,7 @@ public:
         auto const w2 = force(words_[2]);
         auto const w3 = force(words_[3]);
         return force(w0 | w1) | force(w2 | w3);
+#endif
     }
 
     template <typename Int>
@@ -288,11 +294,30 @@ public:
         return subb(lhs, rhs).value;
     }
 
+    // On ZisK, compare from the most significant word and stop at the first
+    // difference, avoiding a full subtraction and borrow chain. The high words
+    // of the values EVM code compares are nearly always equal, so the low word
+    // decides: unlikely on the others lays that path out straight, where gcc
+    // would fall into the first difference and send the common case back to
+    // the result with a jump.
     [[gnu::always_inline]]
     friend constexpr bool
     operator<(uint256_t const &lhs, uint256_t const &rhs) noexcept
     {
+#if defined(MONAD_ZKVM_ZISK)
+        if (MONAD_UNLIKELY(lhs[3] != rhs[3])) {
+            return lhs[3] < rhs[3];
+        }
+        if (MONAD_UNLIKELY(lhs[2] != rhs[2])) {
+            return lhs[2] < rhs[2];
+        }
+        if (MONAD_UNLIKELY(lhs[1] != rhs[1])) {
+            return lhs[1] < rhs[1];
+        }
+        return lhs[0] < rhs[0];
+#else
         return subb(lhs, rhs).carry;
+#endif
     }
 
     [[gnu::always_inline]]
@@ -335,9 +360,23 @@ public:
 
     // NOLINTEND(bugprone-macro-parentheses)
 
+    // On ZisK, stop at the first difference. Check the low word first because
+    // small integers differ there.
     [[gnu::always_inline]] friend constexpr bool
     operator==(uint256_t const &x, uint256_t const &y) noexcept
     {
+#if defined(MONAD_ZKVM_ZISK)
+        if (x[0] != y[0]) {
+            return false;
+        }
+        if (x[1] != y[1]) {
+            return false;
+        }
+        if (x[2] != y[2]) {
+            return false;
+        }
+        return x[3] == y[3];
+#else
         using namespace monad::uint256::intrinsics;
 
         auto const e0 = force(x[0] ^ y[0]);
@@ -345,6 +384,7 @@ public:
         auto const e2 = force(x[2] ^ y[2]);
         auto const e3 = force(x[3] ^ y[3]);
         return !(force(e0 | e1) | force(e2 | e3));
+#endif
     }
 
     [[gnu::always_inline]] constexpr uint256_t operator-() const noexcept
@@ -507,12 +547,14 @@ public:
 
 static_assert(std::is_trivially_copyable_v<uint256_t>);
 
+// signextend written into x itself. On a copy, the stores below, at an index
+// known only at run time, make gcc keep the copy in a stack temporary, with a
+// DMA copy in and another out.
 [[gnu::always_inline]]
-inline uint256_t signextend(uint256_t const &byte_index_256, uint256_t const &x)
+inline void signextend_to(uint256_t const &byte_index_256, uint256_t &x)
 {
-    uint256_t ret = x;
     if (byte_index_256 >= 31) {
-        return ret;
+        return;
     }
 
     uint64_t const byte_index = byte_index_256[0];
@@ -528,10 +570,17 @@ inline uint256_t signextend(uint256_t const &byte_index_256, uint256_t const &x)
         ~(std::numeric_limits<int64_t>::min() >> (63 - bit_index));
     uint64_t const lower = static_cast<uint64_t>(signed_lower);
     uint64_t const sign_bits = static_cast<uint64_t>(signed_byte >> 63);
-    ret[word_index] = upper | lower;
+    x[word_index] = upper | lower;
     for (uint64_t j = word_index + 1; j < 4; ++j) {
-        ret[j] = sign_bits;
+        x[j] = sign_bits;
     }
+}
+
+[[gnu::always_inline]]
+inline uint256_t signextend(uint256_t const &byte_index_256, uint256_t const &x)
+{
+    uint256_t ret = x;
+    signextend_to(byte_index_256, ret);
     return ret;
 }
 
@@ -629,11 +678,106 @@ truncating_mul(uint256_t const &x, uint256_t const &y) noexcept
         truncating_mul<uint256_t::num_words>(x.as_words(), y.as_words())};
 }
 
+#ifdef MONAD_ZKVM_ZISK
+// ZisK exposes its 256-bit modular-arithmetic precompile as a no_mangle extern
+// "C" syscall (ziskos::syscalls::arith256_mod): d = (a * b + c) mod module.
+// The guest already links and executes it through zisklib's bn254 field code,
+// so this adds no dependency -- it routes the EVM's MULMOD/ADDMOD, whose
+// software cost is dominated by the 512/256 divmod, through the same door.
+// Layout: four little-endian 64-bit limbs, [0] = least significant -- the same
+// convention as words_. Callers guard module != 0 (math.hpp does; EVM returns 0
+// there), and the fallback below keeps the guard anyway.
+struct ZiskArith256ModParams
+{
+    uint64_t const *a;
+    uint64_t const *b;
+    uint64_t const *c;
+    uint64_t const *module;
+    uint64_t *d;
+};
+
+extern "C" void syscall_arith256_mod(ZiskArith256ModParams *params);
+
+[[gnu::noinline]] inline uint256_t zisk_arith256_mod(
+    uint256_t const &a, uint256_t const &b, uint256_t const &c,
+    uint256_t const &mod) noexcept
+{
+    // The operands are read where they lie. A uint256_t is at least 8-aligned
+    // and its words are the little-endian limb order the syscall wants, so
+    // staging the four of them into locals buys nothing and costs sixteen
+    // loads and sixteen stores a call.
+    static_assert(alignof(uint256_t) >= 8);
+    static_assert(sizeof(uint256_t) == 4 * sizeof(uint64_t));
+    alignas(8) uint64_t D[4];
+    ZiskArith256ModParams p{
+        reinterpret_cast<uint64_t const *>(&a),
+        reinterpret_cast<uint64_t const *>(&b),
+        reinterpret_cast<uint64_t const *>(&c),
+        reinterpret_cast<uint64_t const *>(&mod),
+        D};
+    syscall_arith256_mod(&p);
+    // Through a local and not straight into the return slot: the precompile's
+    // write order is not ours to assume, and a caller may pass an operand it
+    // also assigns to.
+    return uint256_t{D[0], D[1], D[2], D[3]};
+}
+
+// ZisK add256 parameters (CSR 0x811): c = a + b + cin.
+// Operands and result use four little-endian 64-bit limbs;
+// the instruction returns the carry-out.
+struct ZiskAdd256Params
+{
+    uint64_t const *a;
+    uint64_t const *b;
+    uint64_t cin;
+    uint64_t *c;
+};
+
+// Reuse caller-owned parameters to avoid a local stack frame.
+// The caller sets p.cin, and p.a before the call: a handler that stores p.a
+// first frees a's register for its new top. dst may alias a or b: opc_add256
+// and the memory trace (MemBusHelpers) read both operands before writing c.
+[[gnu::always_inline]] inline void
+zisk_add256(ZiskAdd256Params &p, uint256_t const &b, uint256_t &dst) noexcept
+{
+    static_assert(alignof(uint256_t) >= 8);
+    static_assert(sizeof(uint256_t) == 4 * sizeof(uint64_t));
+    p.b = reinterpret_cast<uint64_t const *>(&b);
+    p.c = reinterpret_cast<uint64_t *>(&dst);
+    // ZisK requires a nonzero destination register distinct from the input.
+    // `=&r` prevents overlap; `csrs` (rd = x0) is not a valid add256 marker.
+    // Discard carry-out: EVM ADD keeps only the low 256 bits.
+    uint64_t cout;
+    asm volatile(".option push\n\t"
+                 ".option arch, +zicsr\n\t"
+                 "csrrs %0, 0x811, %1\n\t"
+                 ".option pop"
+                 : "=&r"(cout)
+                 : "r"(&p)
+                 : "memory");
+    (void)cout;
+}
+#endif
+
 MONAD_NO_VECTORIZE
 [[gnu::noinline]]
 constexpr uint256_t
 operator*(uint256_t const &lhs, uint256_t const &rhs) noexcept
 {
+#if defined(MONAD_ZKVM_ZISK)
+    if !consteval {
+        // The guest multiplies here outside the EVM's MUL: gas amounts by
+        // prices, and the blob fee's exponential. Both usually fit in a word,
+        // and their product in two -- one mul and one mulhu, where the four
+        // words take ten and six.
+        if ((lhs[1] | lhs[2] | lhs[3] | rhs[1] | rhs[2] | rhs[3]) == 0) {
+            uint64_t hi;
+            uint64_t lo;
+            mulx(lhs[0], rhs[0], hi, lo);
+            return uint256_t{lo, hi, 0, 0};
+        }
+    }
+#endif
     return truncating_mul(lhs, rhs);
 }
 
@@ -865,9 +1009,108 @@ udivrem(words_t<M> const &u, words_t<N> const &v) noexcept
     return result;
 }
 
+#ifdef MONAD_ZKVM_ZISK
+// ZisK's 256-bit multiply-add (CSR 0x801): dh·2^256 + dl = a·b + c, four
+// little-endian 64-bit limbs each.
+struct ZiskArith256Params
+{
+    uint64_t const *a;
+    uint64_t const *b;
+    uint64_t const *c;
+    uint64_t *dl;
+    uint64_t *dh;
+};
+
+// The quotient and remainder of u / v, v != 0, hinted by the executor (fcall
+// 19, FCALL_UINT256_DIV_ID) and checked as zisklib's div_rem256 checks them:
+// q·v + r == u in 512 bits and r < v, which only the true pair satisfies.
+// Issued here rather than through div_rem256_c, which copies the hint, zeroes
+// both halves of the product and compares them word by word from the stack:
+// 85 steps around the one precompile.
+[[gnu::always_inline]] inline div_result<uint256_t>
+zisk_udivrem(uint256_t const &u, uint256_t const &v) noexcept
+{
+    static_assert(alignof(uint256_t) >= 8);
+    static_assert(sizeof(uint256_t) == 4 * sizeof(uint64_t));
+    alignas(8) uint64_t qr[8]; // the quotient, then the remainder
+    alignas(8) uint64_t d[8]; // q·v + r, low half then high half
+    asm volatile(".option push\n\t"
+                 ".option arch, +zicsr\n\t"
+                 "csrs 0x8F2, %[u]\n\t" // a parameter: the four words at u
+                 "csrs 0x8F2, %[v]\n\t"
+                 "csrwi 0x8C0, 19\n\t" // FCALL_UINT256_DIV_ID
+                 "csrs 0x815, %[qr]\n\t" // inputcpy: the eight result words
+                 "addi x0, %[qr], 64\n\t"
+                 ".option pop"
+                 :
+                 : [u] "r"(&u), [v] "r"(&v), [qr] "r"(qr)
+                 : "memory");
+    ZiskArith256Params p{
+        qr, reinterpret_cast<uint64_t const *>(&v), qr + 4, d, d + 4};
+    asm volatile(".option push\n\t"
+                 ".option arch, +zicsr\n\t"
+                 "csrs 0x801, %0\n\t"
+                 ".option pop"
+                 :
+                 : "r"(&p)
+                 : "memory");
+    uint256_t const q{qr[0], qr[1], qr[2], qr[3]};
+    uint256_t const r{qr[4], qr[5], qr[6], qr[7]};
+    MONAD_ASSERT(
+        std::memcmp(d, &u, sizeof(u)) == 0 && (d[4] | d[5] | d[6] | d[7]) == 0);
+    MONAD_ASSERT(r < v);
+    return {.quot = q, .rem = r};
+}
+#endif
+
 [[gnu::always_inline]] constexpr div_result<uint256_t>
 udivrem(uint256_t const &u, uint256_t const &v) noexcept
 {
+#ifdef MONAD_ZKVM_ZISK
+    if !consteval {
+        uint64_t const v_high = v[1] | v[2] | v[3];
+        // Keep division by zero on the existing assertion path.
+        if (v[0] | v_high) {
+            // For v = 2^k, a shift and mask replace the division hint and its
+            // verification. Check the low word first to quickly reject common
+            // divisors with multiple set bits (e.g. decimal scales).
+            if ((v[0] & (v[0] - 1)) == 0) {
+                unsigned k = 256; // no single bit found
+                if (v[0] != 0) {
+                    if (v_high == 0) {
+                        k = static_cast<unsigned>(std::countr_zero(v[0]));
+                    }
+                }
+                else if (v[1] != 0) {
+                    if ((v[1] & (v[1] - 1)) == 0 && (v[2] | v[3]) == 0) {
+                        k = 64 + static_cast<unsigned>(std::countr_zero(v[1]));
+                    }
+                }
+                else if (v[2] != 0) {
+                    if ((v[2] & (v[2] - 1)) == 0 && v[3] == 0) {
+                        k = 128 + static_cast<unsigned>(std::countr_zero(v[2]));
+                    }
+                }
+                else if ((v[3] & (v[3] - 1)) == 0) {
+                    k = 192 + static_cast<unsigned>(std::countr_zero(v[3]));
+                }
+                if (k < 256) {
+                    return {.quot = u >> uint256_t{k}, .rem = u & (v - 1)};
+                }
+            }
+            // For 64-bit operands, use native division instead of the hint.
+            if ((u[1] | u[2] | u[3] | v_high) == 0) {
+                return {
+                    .quot = uint256_t{u[0] / v[0]},
+                    .rem = uint256_t{u[0] % v[0]}};
+            }
+            // Dividend and divisor are read where they lie; the quotient and
+            // remainder come back through locals, because a caller may divide
+            // a value into itself.
+            return zisk_udivrem(u, v);
+        }
+    }
+#endif
     auto const r = udivrem(u.as_words(), v.as_words());
     return {.quot = uint256_t{r.quot}, .rem = uint256_t{r.rem}};
 }
@@ -897,6 +1140,17 @@ addmod(uint256_t const &x, uint256_t const &y, uint256_t const &mod) noexcept
             return xy_sum;
         }
     }
+#ifdef MONAD_ZKVM_ZISK
+    // Slow path only: the branch above (mod >= 2^192, the common EVM case) is
+    // a handful of subb/addc and stays. What follows in software is a 320/256
+    // udivrem; the precompile does (x*1 + y) mod m in one call.
+    if (!std::is_constant_evaluated()) {
+        if (mod == 0) {
+            return 0;
+        }
+        return zisk_arith256_mod(x, 1, y, mod);
+    }
+#endif
     words_t<uint256_t::num_words + 1> sum;
     uint64_t carry = 0;
 #pragma GCC unroll(4)
@@ -915,6 +1169,14 @@ MONAD_NO_VECTORIZE
 constexpr uint256_t
 mulmod(uint256_t const &u, uint256_t const &v, uint256_t const &mod) noexcept
 {
+#ifdef MONAD_ZKVM_ZISK
+    if (!std::is_constant_evaluated()) {
+        if (mod == 0) {
+            return 0;
+        }
+        return zisk_arith256_mod(u, v, 0, mod);
+    }
+#endif
     auto const prod =
         truncating_mul<2 * uint256_t::num_words>(u.as_words(), v.as_words());
     return uint256_t{udivrem(prod, mod.as_words()).rem};
@@ -957,11 +1219,21 @@ constexpr bool slt(uint256_t const &x, uint256_t const &y) noexcept
 {
     auto const x_neg = x[uint256_t::num_words - 1] >> 63;
     auto const y_neg = y[uint256_t::num_words - 1] >> 63;
+#if defined(MONAD_ZKVM_ZISK)
+    // Signs differ: the negative operand is the smaller one and `x < y` need
+    // not be computed at all. Same inversion as operator< above -- the
+    // branchless form below is for a machine that mispredicts.
+    if (x_neg != y_neg) {
+        return x_neg != 0;
+    }
+    return x < y;
+#else
     auto const diff = x_neg ^ y_neg;
     // branching on the sign bit will be mispredicted on
     // random data ~50% of the time. The branchless version does not add
     // much overhead so it is probably worth it
     return (~diff & (x < y)) | (x_neg & ~y_neg);
+#endif
 }
 
 MONAD_NO_VECTORIZE
@@ -969,8 +1241,22 @@ MONAD_NO_VECTORIZE
 exp(uint256_t base, uint256_t const &exponent) noexcept
 {
     uint256_t result{1};
-    if (base == 2) {
-        return result << exponent;
+    // For a 64-bit base = 2^s, use 1 << (s * exponent).
+    // For s >= 1, exponent >= 256 gives zero modulo 2^256.
+    // Check this bound before multiplying to avoid overflow.
+    if ((base[1] | base[2] | base[3]) == 0 && base[0] != 0 &&
+        (base[0] & (base[0] - 1)) == 0) {
+        uint64_t const s = static_cast<uint64_t>(std::countr_zero(base[0]));
+        if (s == 0) {
+            return result;
+        }
+        if ((exponent[1] | exponent[2] | exponent[3]) != 0 ||
+            exponent[0] >= 256) {
+            // base = 2^s with s >= 1: the result is a multiple of 2^256,
+            // so its low 256 bits are zero.
+            return 0;
+        }
+        return result << uint256_t{s * exponent[0]};
     }
 
     size_t const sig_words = count_significant_words(exponent.as_words());

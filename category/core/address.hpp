@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/bit_primitives.hpp>
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
 #include <category/core/hex.hpp>
@@ -27,6 +28,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <functional>
 #include <type_traits>
 
@@ -76,6 +78,37 @@ struct Address : evmc_address
     friend constexpr bool
     operator==(Address const &a, Address const &b) noexcept
     {
+#if defined(MONAD_ZKVM_ZISK)
+        if !consteval {
+            // Read as gcc expands the comparison, two 8-byte words then four
+            // bytes, but the four through lwu: gcc's lw sign-extends both
+            // sides of an equality the extension cannot change, and ZisK
+            // charges a signextend_w for each.
+            uint64_t a0;
+            uint64_t b0;
+            std::memcpy(&a0, a.bytes, sizeof(a0));
+            std::memcpy(&b0, b.bytes, sizeof(b0));
+            if (a0 != b0) {
+                return false;
+            }
+            uint64_t a1;
+            uint64_t b1;
+            std::memcpy(&a1, a.bytes + 8, sizeof(a1));
+            std::memcpy(&b1, b.bytes + 8, sizeof(b1));
+            if (a1 != b1) {
+                return false;
+            }
+            uint64_t a2;
+            uint64_t b2;
+            asm("lwu %0, %1"
+                : "=r"(a2)
+                : "m"(*reinterpret_cast<uint8_t const(*)[4]>(a.bytes + 16)));
+            asm("lwu %0, %1"
+                : "=r"(b2)
+                : "m"(*reinterpret_cast<uint8_t const(*)[4]>(b.bytes + 16)));
+            return a2 == b2;
+        }
+#endif
         return std::equal(a.bytes, a.bytes + 20, b.bytes);
     }
 
@@ -117,9 +150,19 @@ MONAD_NAMESPACE_END
 template <>
 struct std::hash<monad::Address>
 {
-    size_t operator()(monad::Address const &x) const noexcept
+    [[gnu::always_inline]] inline size_t
+    operator()(monad::Address const &x) const noexcept
     {
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_SP1)
+        // zkVM guest: fold, and a multiply only where it pays
+        // (category/core/bit_primitives.hpp). Measured on the guest, where
+        // komihash-class byte-wise hashing is step-priced; no entropy source
+        // exists there anyway, so the seed would be constant.
+        return monad::bits::hash_bytes20(x.bytes);
+#else
+        // Node: seeded komihash -- HashDoS protection, seeded at startup.
         return monad::seeded_fast_hash(x.bytes, sizeof(x.bytes));
+#endif
     }
 };
 
@@ -128,7 +171,8 @@ struct ankerl::unordered_dense::hash<monad::Address>
 {
     using is_avalanching = void;
 
-    uint64_t operator()(monad::Address const &x) const noexcept
+    [[gnu::always_inline]] inline uint64_t
+    operator()(monad::Address const &x) const noexcept
     {
         return std::hash<monad::Address>{}(x);
     }

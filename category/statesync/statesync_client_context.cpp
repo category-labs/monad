@@ -18,7 +18,7 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/bytes_hash_compare.hpp>
-#include <category/core/keccak.hpp>
+#include <category/core/trie_hash.hpp>
 #include <category/crypto/hash256.h>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
@@ -171,7 +171,7 @@ void monad_statesync_client_context::commit()
             bool const is_empty = page.is_empty();
             storage.push_front(alloc.emplace_back(Update{
                 .key = hash_alloc.emplace_back(
-                    keccak256({page_key.bytes, sizeof(page_key.bytes)})),
+                    trie_hash({page_key.bytes, sizeof(page_key.bytes)})),
                 .value = is_empty
                              ? std::nullopt
                              : std::make_optional<byte_string_view>(
@@ -194,7 +194,7 @@ void monad_statesync_client_context::commit()
             storage = build_page_storage(addr, slot_deltas);
         }
         accounts.push_front(alloc.emplace_back(Update{
-            .key = hash_alloc.emplace_back(keccak256(addr.bytes)),
+            .key = hash_alloc.emplace_back(trie_hash(addr.bytes)),
             .value = value,
             .incarnation = false,
             .next = std::move(storage),

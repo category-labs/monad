@@ -101,10 +101,24 @@ std::optional<evmc::Result> check_call_precompile(
     }                                                                          \
     while (false);
 
+#if defined(MONAD_ZKVM_L2)
+    // A domain has no validators, so the staking contract is not deployed on
+    // one. Refuse the call rather than fall through: falling through would
+    // execute it as a plain call to an account with no code, and publish a
+    // proof of a state the chain never reached. On a domain the branch is
+    // unreachable; the refusal is what makes that a statement rather than an
+    // assumption. The L1 guest carries the contract and dispatches to it.
+    if (MONAD_UNLIKELY(
+            traits::monad_rev() >= MONAD_FOUR &&
+            msg.code_address == staking::STAKING_CA)) {
+        MONAD_ABORT("the zkVM guest does not execute the staking precompile");
+    }
+#else
     CASE(
         traits::monad_rev() >= MONAD_FOUR,
         staking::StakingContract,
         staking::STAKING_CA);
+#endif
 
     CASE(
         traits::monad_rev() >= MONAD_NINE,

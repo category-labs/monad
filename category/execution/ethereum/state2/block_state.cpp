@@ -53,6 +53,12 @@ BlockState::BlockState(Db &db, vm::VM &monad_vm, Db *const secondary_db)
     , vm_{monad_vm}
     , state_(std::make_unique<StateDeltas>())
 {
+#ifdef MONAD_ZKVM_ZISK
+    // Reserve initial capacity to avoid early rehashes.
+    // Host TBB maps have no reserve().
+    state_->reserve(1024);
+    code_.reserve(256);
+#endif
 }
 
 std::optional<Account> BlockState::read_account(Address const &address)
@@ -81,11 +87,22 @@ bytes32_t BlockState::read_storage(
     Address const &address, Incarnation const incarnation, bytes32_t const &key)
 {
     bool read_storage = false;
+#ifdef MONAD_ZKVM_ZISK
+    // Reuse the accessor across the database read: the guest is
+    // single-threaded, map insertions preserve elements, and the read does not
+    // modify state_. The host releases its TBB lock before reading the
+    // database.
+    StateDeltas::accessor it{};
+    MONAD_ASSERT(state_);
+    MONAD_ASSERT(state_->find(it, address));
+#endif
     // block state
     {
+#ifndef MONAD_ZKVM_ZISK
         StateDeltas::const_accessor it{};
         MONAD_ASSERT(state_);
         MONAD_ASSERT(state_->find(it, address));
+#endif
         auto const &account = it->second.account.second;
         if (!account || incarnation != account->incarnation) {
             return {};
@@ -111,8 +128,11 @@ bytes32_t BlockState::read_storage(
                 !secondary_db_ || secondary_db_->read_storage(
                                       address, incarnation, key) == result);
         }
+#ifndef MONAD_ZKVM_ZISK
         StateDeltas::accessor it{};
         MONAD_ASSERT(state_->find(it, address));
+#endif
+        // Keep the post-read account check on both host and guest.
         auto const &account = it->second.account.second;
         if (!account || incarnation != account->incarnation) {
             return result;
@@ -161,7 +181,9 @@ bool BlockState::can_merge(State &state) const
         Address const &address = kv.first;
         OriginalAccountState const &account_state = kv.second;
         auto const &account = account_state.account_;
-        auto const &storage = account_state.storage_;
+        // Validate cached original slot values; the inherited storage_ is
+        // empty.
+        auto const &storage = account_state.prestate_storage_;
         StateDeltas::const_accessor it{};
         MONAD_ASSERT(state_->find(it, address));
         if (account != it->second.account.second) {
@@ -193,31 +215,24 @@ bool BlockState::can_merge(State &state) const
 
 void BlockState::merge(State const &state)
 {
-    ankerl::unordered_dense::segmented_set<bytes32_t> code_hashes;
-
+    // Merge code directly: code_.emplace ignores duplicate keys, avoiding
+    // a separate set of distinct code hashes for each transaction.
     auto const &current = state.current();
-    for (auto const &[address, stack] : current) {
-        MONAD_ASSERT(stack.size() == 1);
-        MONAD_ASSERT(stack.version() == 0);
-        auto const &account_state = stack.recent();
+    auto const &code = state.code();
+    for (auto const &[address, account_state] : current) {
         auto const &account = account_state.account_;
         if (account.has_value()) {
-            code_hashes.insert(account.value().code_hash);
+            auto const it = code.find(account.value().code_hash);
+            if (it != code.end()) {
+                code_.emplace(
+                    account.value().code_hash,
+                    it->second->intercode()); // TODO try_emplace
+            }
         }
-    }
-
-    auto const &code = state.code();
-    for (auto const &code_hash : code_hashes) {
-        auto const it = code.find(code_hash);
-        if (it == code.end()) {
-            continue;
-        }
-        code_.emplace(code_hash, it->second->intercode()); // TODO try_emplace
     }
 
     MONAD_ASSERT(state_);
-    for (auto const &[address, stack] : current) {
-        auto const &account_state = stack.recent();
+    for (auto const &[address, account_state] : current) {
         auto const &account = account_state.account_;
         auto const &storage = account_state.storage_;
         StateDeltas::accessor it{};
@@ -230,6 +245,13 @@ void BlockState::merge(State const &state)
                     it2->second.second = value;
                 }
                 else {
+#ifdef MONAD_ZKVM_ZISK
+                    // Reserve on first insertion to avoid early rehashes.
+                    // Host TBB maps have no reserve().
+                    if (MONAD_UNLIKELY(it->second.storage.empty())) {
+                        it->second.storage.reserve(8);
+                    }
+#endif
                     it->second.storage.emplace(
                         key, std::make_pair(bytes32_t{}, value));
                 }

@@ -19,12 +19,12 @@
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/core/fiber/priority_pool.hpp>
-#include <category/core/keccak.hpp>
 #include <category/core/log.hpp>
 #include <category/core/procfs/statm.h>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/block.hpp>
+#include <category/execution/ethereum/core/chain_hash.hpp>
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/block_db.hpp>
@@ -225,7 +225,7 @@ Result<void> process_ethereum_block(
     db.finalize(block.header.number, block_id);
     db.update_verified_block(block.header.number);
     exec_output.eth_block_hash =
-        to_bytes(keccak256(rlp::encode_block_header(exec_output.eth_header)));
+        to_bytes(header_hash(rlp::encode_block_header(exec_output.eth_header)));
     block_hash_buffer.set(
         exec_output.eth_header.number, exec_output.eth_block_hash);
     (void)record_block_result(exec_recorder, exec_output);

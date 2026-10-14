@@ -23,6 +23,7 @@
 #include <category/core/likely.h>
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
+#include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/event/record_txn_events.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
@@ -92,7 +93,8 @@ Result<Receipt> ExecuteSystemTransaction<traits>::operator()()
             std::nullopt /* 0 base fee to pass validation */,
             std::nullopt /* 0 blob fee to pass validation */,
             chain_.get_chain_id(),
-            chain_.get_blob_schedule(header_.timestamp));
+            chain_.get_blob_schedule(header_.timestamp),
+            tokens_in_calldata(tx));
         if (tx_validation_result.has_error()) {
             prev_.get_future().wait();
             return std::move(tx_validation_result).as_failure();
@@ -119,7 +121,7 @@ Result<Receipt> ExecuteSystemTransaction<traits>::operator()()
             if (result.has_error()) {
                 return std::move(result.error());
             }
-            auto const receipt = execute_final(state);
+            auto receipt = execute_final(state);
             block_state_.merge(state);
             return receipt;
         }
@@ -139,7 +141,7 @@ Result<Receipt> ExecuteSystemTransaction<traits>::operator()()
         if (result.has_error()) {
             return std::move(result.error());
         }
-        auto const receipt = execute_final(state);
+        auto receipt = execute_final(state);
         block_state_.merge(state);
         return receipt;
     }
@@ -191,8 +193,11 @@ Receipt ExecuteSystemTransaction<traits>::execute_final(State &state)
 {
     // always return success because these transactions can't revert.
     Receipt receipt{.status = 1u, .gas_used = 0, .type = tx_.type};
-    for (auto const &log : state.logs()) {
-        receipt.add_log(std::move(log));
+    // Taken, not copied: a copy allocates and fills every log's data and
+    // topics again, for a State that is about to be merged and dropped.
+    receipt.logs = state.take_logs();
+    for (auto const &log : receipt.logs) {
+        populate_bloom(receipt.bloom, log);
     }
     call_tracer_.on_finish(receipt.gas_used);
     trace::run_tracer<traits>(state_tracer_, state);

@@ -26,6 +26,13 @@
 
 MONAD_NAMESPACE_BEGIN
 
+#ifdef MONAD_ZKVM_L2
+/// Gas forwarded to the spoke access check, charged to the caller. Calls
+/// without this budget are denied, including transfers to accounts with no
+/// code.
+inline constexpr int64_t DOMAIN_ACCESS_GAS_STIPEND = 30'000;
+#endif
+
 template <Traits traits>
 struct EvmcHost;
 

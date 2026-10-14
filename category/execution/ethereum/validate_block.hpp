@@ -59,7 +59,22 @@ enum class BlockError
     SystemCallMissingCode,
     SystemCallFailed,
     InvalidRequestsHash,
-    InvalidDepositLog
+    InvalidDepositLog,
+    /// A log at the namespace spoke carrying the message topic that does not
+    /// decode: the deployed contract no longer matches domain_anchor.cpp.
+    InvalidNamespaceLog,
+    /// An L2 block carrying a withdrawal. There is no authenticated path by
+    /// which value enters this chain, so a withdrawal list is unauthorised
+    /// balance creation -- see decode_domain_body.
+    WithdrawalsNotSupported,
+    /// An L2 block carrying an ommer. Another prover-supplied list with no
+    /// purpose on this chain, and one that feeds apply_block_reward's ommer
+    /// credits on any pre-Merge revision -- see decode_domain_body.
+    OmmersNotSupported,
+    /// An L2 block header claiming a requests hash. EIP-7685's machinery is
+    /// for a beacon chain this one does not have, and the guest computes no
+    /// requests hash to check it against -- see decode_domain_body.
+    RequestsNotSupported
 };
 
 struct Chain;

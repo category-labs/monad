@@ -27,6 +27,9 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
+#if defined(MONAD_ZKVM_ZISK)
+    #include <category/vm/evm/delegation.hpp>
+#endif
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
@@ -55,7 +58,23 @@ evmc::bytes32 EvmcHostBase::get_storage(
 {
     MONAD_TRY
     {
-        return state_.get_storage(address, key);
+        return state_.get_storage(as_monad(address), as_monad(key));
+    }
+    MONAD_CATCH(...)
+    {
+        capture_current_exception();
+    }
+    stack_unwind();
+}
+
+void EvmcHostBase::get_storage_into(
+    evmc::address const &address, evmc::bytes32 const &key,
+    evmc_bytes32 &value) const noexcept
+{
+    MONAD_TRY
+    {
+        state_.get_storage_into(as_monad(address), as_monad(key), value);
+        return;
     }
     MONAD_CATCH(...)
     {
@@ -70,7 +89,8 @@ evmc_storage_status EvmcHostBase::set_storage(
 {
     MONAD_TRY
     {
-        return to_evmc_storage_status(state_.set_storage(address, key, value));
+        return to_evmc_storage_status(state_.set_storage(
+            as_monad(address), as_monad(key), as_monad(value)));
     }
     MONAD_CATCH(...)
     {
@@ -84,7 +104,8 @@ EvmcHostBase::get_balance(evmc::address const &address) const noexcept
 {
     MONAD_TRY
     {
-        return store_be_as<evmc::uint256be>(state_.get_balance(address));
+        return store_be_as<evmc::uint256be>(
+            state_.get_balance(as_monad(address)));
     }
     MONAD_CATCH(...)
     {
@@ -98,7 +119,7 @@ size_t EvmcHostBase::get_code_size(evmc::address const &address) const noexcept
     MONAD_TRY
     {
         if (MONAD_UNLIKELY(trace::is_code_tracer(state_tracer_))) {
-            bytes32_t const hash = state_.get_code_hash(address);
+            bytes32_t const hash = state_.get_code_hash(as_monad(address));
             if (hash == NULL_HASH) {
                 return 0;
             }
@@ -107,7 +128,7 @@ size_t EvmcHostBase::get_code_size(evmc::address const &address) const noexcept
             trace::on_read_code(state_tracer_, hash, vcode->intercode());
             return vcode->intercode()->size();
         }
-        return state_.get_code_size(address);
+        return state_.get_code_size(as_monad(address));
     }
     MONAD_CATCH(...)
     {
@@ -121,10 +142,10 @@ EvmcHostBase::get_code_hash(evmc::address const &address) const noexcept
 {
     MONAD_TRY
     {
-        if (state_.account_is_dead(address)) {
+        if (state_.account_is_dead(as_monad(address))) {
             return bytes32_t{};
         }
-        return state_.get_code_hash(address);
+        return state_.get_code_hash(as_monad(address));
     }
     MONAD_CATCH(...)
     {
@@ -135,12 +156,12 @@ EvmcHostBase::get_code_hash(evmc::address const &address) const noexcept
 
 size_t EvmcHostBase::copy_code(
     evmc::address const &address, size_t const offset, uint8_t *const data,
-    size_t const size) const
+    size_t const size) const noexcept
 {
     MONAD_TRY
     {
         if (MONAD_UNLIKELY(trace::is_code_tracer(state_tracer_))) {
-            bytes32_t const hash = state_.get_code_hash(address);
+            bytes32_t const hash = state_.get_code_hash(as_monad(address));
             if (hash != NULL_HASH) {
                 auto const vcode = state_.read_code(hash);
                 MONAD_ASSERT(vcode);
@@ -149,7 +170,7 @@ size_t EvmcHostBase::copy_code(
             }
             return 0;
         }
-        return state_.copy_code(address, offset, data, size);
+        return state_.copy_code(as_monad(address), offset, data, size);
     }
     MONAD_CATCH(...)
     {
@@ -157,6 +178,33 @@ size_t EvmcHostBase::copy_code(
     }
     stack_unwind();
 }
+
+#if defined(MONAD_ZKVM_ZISK)
+std::optional<Address>
+EvmcHostBase::delegate_of(evmc::address const &address) const noexcept
+{
+    MONAD_TRY
+    {
+        if (MONAD_UNLIKELY(trace::is_code_tracer(state_tracer_))) {
+            // As copy_code: the tracer is told of the code read.
+            bytes32_t const hash = state_.get_code_hash(as_monad(address));
+            if (hash == NULL_HASH) {
+                return std::nullopt;
+            }
+            auto const vcode = state_.read_code(hash);
+            MONAD_ASSERT(vcode);
+            trace::on_read_code(state_tracer_, hash, vcode->intercode());
+            return vm::evm::designation_of(vcode->intercode()->code_span());
+        }
+        return state_.delegate_of(as_monad(address));
+    }
+    MONAD_CATCH(...)
+    {
+        capture_current_exception();
+    }
+    stack_unwind();
+}
+#endif
 
 evmc_tx_context const *EvmcHostBase::get_tx_context() const noexcept
 {
@@ -197,11 +245,21 @@ void EvmcHostBase::emit_log(
     MONAD_TRY
     {
         Receipt::Log log{.data = {data, data_size}, .address = address};
+        // Reserved: a LOG4 pushes four topics into an empty vector, which
+        // reallocates at one, two and four and copies the run forward each
+        // time -- 3 allocations and 7 topic copies vs 1 allocation and 4
+        // copies with the reserve.
+        log.topics.reserve(num_topics);
         for (auto i = 0u; i < num_topics; ++i) {
-            log.topics.push_back({topics[i]});
+            // Copy directly into the vector, avoiding a conversion temporary.
+            log.topics.emplace_back(as_monad(topics[i]));
         }
-        state_.store_log(log);
-        call_tracer_.on_log(std::move(log));
+        // The tracer first, so the state can take the log rather than copy
+        // it. Both are pure sinks and the order between them is free; one of
+        // the two has to own its own copy and the other does not, and the
+        // guest's tracer is the one that wants nothing.
+        call_tracer_.on_log(log);
+        state_.store_log(std::move(log));
         return;
     }
     MONAD_CATCH(...)
@@ -216,7 +274,7 @@ evmc::bytes32 EvmcHostBase::get_transient_storage(
 {
     MONAD_TRY
     {
-        return state_.get_transient_storage(address, key);
+        return state_.get_transient_storage(as_monad(address), as_monad(key));
     }
     MONAD_CATCH(...)
     {
@@ -231,7 +289,8 @@ void EvmcHostBase::set_transient_storage(
 {
     MONAD_TRY
     {
-        return state_.set_transient_storage(address, key, value);
+        return state_.set_transient_storage(
+            as_monad(address), as_monad(key), as_monad(value));
     }
     MONAD_CATCH(...)
     {

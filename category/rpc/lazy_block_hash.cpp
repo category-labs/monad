@@ -16,9 +16,9 @@
 #include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
-#include <category/core/keccak.hpp>
 #include <category/core/lru/static_lru_cache.hpp>
 #include <category/core/monad_exception.hpp>
+#include <category/execution/ethereum/core/chain_hash.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/nibbles_view.hpp>
@@ -52,7 +52,7 @@ bytes32_t const &LazyBlockHash::get(uint64_t const n) const
         n);
     MONAD_ASSERT_THROW(!cursor_res.has_error(), "blockhash: error querying DB");
     bytes32_t const blockhash =
-        to_bytes(keccak256(cursor_res.value().node->value()));
+        to_bytes(header_hash(cursor_res.value().node->value()));
     auto const res = blockhash_cache_.insert(n, blockhash);
     return res.first->second->val;
 }

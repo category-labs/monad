@@ -15,9 +15,15 @@
 
 #include <category/crypto/silkpre_vendor/ecdsa.h>
 #include <category/execution/ethereum/core/ecrecover/impl.hpp>
+#ifdef MONAD_L2_SIGNATURE_HASH_POSEIDON2
+    #include <category/execution/ethereum/core/signature_hash.hpp>
+
+    #include <secp256k1_recovery.h>
+#endif
 
 #include <secp256k1.h>
 
+#include <cstddef>
 #include <memory>
 
 MONAD_NAMESPACE_BEGIN
@@ -33,8 +39,29 @@ bool recover_address(
                 secp256k1_context_create(MONAD_SECP256K1_CONTEXT_FLAGS),
                 &secp256k1_context_destroy);
 
+#ifdef MONAD_L2_SIGNATURE_HASH_POSEIDON2
+    // silkpre's monad_recover_address hashes the key with keccak256, and this
+    // chain derives addresses with its own hash: recover the key here and
+    // derive the address the guest derives.
+    secp256k1_ecdsa_recoverable_signature parsed;
+    if (!secp256k1_ecdsa_recoverable_signature_parse_compact(
+            context.get(), &parsed, sig.data(), recid)) {
+        return false;
+    }
+    secp256k1_pubkey key;
+    if (!secp256k1_ecdsa_recover(context.get(), &key, &parsed, msg.data())) {
+        return false;
+    }
+    uint8_t serialized[65];
+    size_t len = sizeof(serialized);
+    secp256k1_ec_pubkey_serialize(
+        context.get(), serialized, &len, &key, SECP256K1_EC_UNCOMPRESSED);
+    pubkey_address(std::span<uint8_t const, 64>{serialized + 1, 64}, out);
+    return true;
+#else
     return monad_recover_address(
         out.data(), msg.data(), sig.data(), recid, context.get());
+#endif
 }
 
 MONAD_NAMESPACE_END

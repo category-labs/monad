@@ -68,12 +68,12 @@ bool dipped_into_reserve(
         uint256_t{tx.gas_limit} * gas_price<traits>(tx, base_fee_per_gas);
     auto const &orig = state.original();
     for (auto const &[addr, cur_account] : state.current()) {
-        MONAD_ASSERT(orig.contains(addr));
-        bytes32_t const orig_code_hash = orig.at(addr).get_code_hash();
+        auto const orig_it = orig.find(addr);
+        MONAD_ASSERT(orig_it != orig.end());
+        bytes32_t const orig_code_hash = orig_it->second.get_code_hash();
         bytes32_t const effective_code_hash =
-            (traits::monad_rev() >= MONAD_EIGHT)
-                ? cur_account.recent().get_code_hash()
-                : orig_code_hash;
+            (traits::monad_rev() >= MONAD_EIGHT) ? cur_account.get_code_hash()
+                                                 : orig_code_hash;
         bool effective_is_delegated = false;
 
         // the balance of the staking contract address can decrease but that
@@ -169,11 +169,6 @@ MONAD_NAMESPACE_BEGIN
 ReserveBalance::ReserveBalance(State *const state)
     : state_{state}
 {
-}
-
-bool ReserveBalance::tracking_enabled() const
-{
-    return tracking_enabled_;
 }
 
 bool ReserveBalance::has_violation() const
@@ -290,7 +285,7 @@ void ReserveBalance::on_debit(Address const &address)
     update_violation_status(address);
 }
 
-void ReserveBalance::on_pop_reject(FailedSet const &accounts)
+void ReserveBalance::on_pop_reject(std::span<Address const> const accounts)
 {
     if (!tracking_enabled_) {
         return;
@@ -435,11 +430,14 @@ bool can_sender_dip_into_reserve(
 
     // check current block
     if (ctx.senders_and_authorities.contains(sender)) {
+        // i indexes this block's transactions, so both runs reach it.
+        MONAD_ASSERT(i < ctx.senders.size());
+        MONAD_ASSERT(i < ctx.authorities.size());
         for (size_t j = 0; j <= i; ++j) {
-            if (j < i && sender == ctx.senders.at(j)) {
+            if (j < i && sender == ctx.senders[j]) {
                 return false;
             }
-            if (std::ranges::contains(ctx.authorities.at(j), sender)) {
+            if (std::ranges::contains(ctx.authorities[j], sender)) {
                 return false;
             }
         }

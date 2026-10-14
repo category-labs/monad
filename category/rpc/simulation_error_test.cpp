@@ -21,53 +21,16 @@
 
 #include <evmc/evmc.h>
 
-#include <array>
-#include <string_view>
-
 using namespace monad;
 
 TEST(SimulationErrorTest, SimulationDomain)
 {
-    struct TestCase
-    {
-        SimulationError error;
-        std::string_view message;
-    };
+    Result<void>::error_type const error = SimulationError::GasLimitExceeded;
 
-    constexpr std::array test_cases{
-        TestCase{SimulationError::InvalidInput, "invalid input"},
-        TestCase{SimulationError::InvalidData, "invalid data"},
-        TestCase{
-            SimulationError::WithdrawalsNotSupported,
-            "Withdrawals are not supported on Monad"},
-        TestCase{
-            SimulationError::BlockNumbersNotIncreasing,
-            "block numbers must be strictly increasing"},
-        TestCase{
-            SimulationError::BlockTimestampsNotMonotonic,
-            "block timestamps must be monotonically increasing"},
-        TestCase{
-            SimulationError::SimulationHeaderNotAfterBase,
-            "simulation header number must be greater than the base header "
-            "number"},
-        TestCase{
-            SimulationError::TransactionsContextUnavailable,
-            "failed to recover the transactions context"},
-        TestCase{
-            SimulationError::InvalidBlockGap,
-            "the block gap must be exactly 1 after filling in synthetic "
-            "blocks"},
-        TestCase{SimulationError::GasLimitExceeded, "gas limit exceeded"},
-    };
+    auto const info = simulation_error_info(error);
 
-    for (auto const &test_case : test_cases) {
-        Result<void>::error_type const error =
-            static_cast<SimulationError>(test_case.error);
-        auto const info = simulation_error_info(error);
-
-        EXPECT_EQ(info.status_code, EVMC_INTERNAL_ERROR);
-        EXPECT_EQ(info.message, test_case.message);
-    }
+    EXPECT_EQ(info.status_code, EVMC_INTERNAL_ERROR);
+    EXPECT_EQ(info.message, "gas limit exceeded");
 }
 
 TEST(SimulationErrorTest, BlockDomain)

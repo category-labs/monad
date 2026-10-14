@@ -1085,7 +1085,8 @@ TEST(Rlp_Block, DecodeBlockRawTransactions)
         .to = 0x3535353535353535353535353535353535353535_address,
         .type = TransactionType::eip1559,
         .max_priority_fee_per_gas = 1};
-    Block const block{.transactions = {legacy, typed}};
+    Block block;
+    block.transactions = {legacy, typed};
     auto const encoded_block = rlp::encode_block(block);
 
     byte_string_view enc{encoded_block};

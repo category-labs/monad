@@ -24,6 +24,7 @@
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/block.hpp>
+#include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/event/record_txn_events.hpp>
 #include <category/execution/ethereum/evmc_host.hpp>
@@ -73,15 +74,20 @@ constexpr void irrevocable_change(
         state.set_nonce(sender, nonce + 1);
     }
 
-    uint256_t blob_gas = 0;
-    if constexpr (traits::evm_rev() >= MONAD_ETH_CANCUN) {
-        blob_gas = (tx.type == TransactionType::eip4844)
-                       ? calc_blob_fee(tx, excess_blob_gas, blob_schedule)
-                       : 0;
+    // The only place gas_limit * gas_price leaves the sender's balance, and
+    // the whole of it goes when gas is metered but not priced. What is left of
+    // this function is the nonce bump above -- which is not about gas.
+    if constexpr (gas_is_priced()) {
+        uint256_t blob_gas = 0;
+        if constexpr (traits::evm_rev() >= MONAD_ETH_CANCUN) {
+            blob_gas = (tx.type == TransactionType::eip4844)
+                           ? calc_blob_fee(tx, excess_blob_gas, blob_schedule)
+                           : 0;
+        }
+        auto const upfront_cost =
+            tx.gas_limit * gas_price<traits>(tx, base_fee_per_gas);
+        state.subtract_from_balance(sender, upfront_cost + blob_gas);
     }
-    auto const upfront_cost =
-        tx.gas_limit * gas_price<traits>(tx, base_fee_per_gas);
-    state.subtract_from_balance(sender, upfront_cost + blob_gas);
 }
 
 MONAD_ANONYMOUS_NAMESPACE_END
@@ -98,6 +104,7 @@ ExecuteTransactionNoValidation<traits>::ExecuteTransactionNoValidation(
     , sender_{sender}
     , authorities_{authorities}
     , header_{header}
+    , tokens_{tokens_in_calldata(tx)}
 {
 }
 
@@ -213,7 +220,8 @@ evmc_message ExecuteTransactionNoValidation<traits>::to_message(
         .kind = to_address.first,
         .flags = 0,
         .depth = 0,
-        .gas = static_cast<int64_t>(tx_.gas_limit - intrinsic_gas<traits>(tx_)),
+        .gas = static_cast<int64_t>(
+            tx_.gas_limit - intrinsic_gas_counted<traits>(tx_, tokens_)),
         .recipient = to_address.second,
         .sender = sender_,
         .input_data = tx_.data.data(),
@@ -384,30 +392,42 @@ Receipt ExecuteTransaction<traits>::execute_final(
         tx_,
         static_cast<uint64_t>(result.gas_left),
         static_cast<uint64_t>(result.gas_refund));
-    auto const gas_cost =
-        gas_price<traits>(tx_, header_.base_fee_per_gas.value_or(0));
-    state.add_to_balance(sender_, gas_cost * gas_refund);
+    if constexpr (gas_is_priced()) {
+        auto const gas_cost =
+            gas_price<traits>(tx_, header_.base_fee_per_gas.value_or(0));
+        state.add_to_balance(sender_, gas_cost * gas_refund);
+    }
 
+    // The number the receipt and the header commit to, and the one thing in
+    // this function that must not move: with the interpreter still metering,
+    // this is the gas genuinely consumed.
     auto gas_used = tx_.gas_limit - gas_refund;
 
-    // EIP-7623
+    // EIP-7623 raises gas_used to the calldata floor even on an unpriced
+    // chain, matching the client. Only the balance debit is conditional.
+    // Validation must retain the corresponding gas_limit check.
     if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
-        auto const floor_gas = floor_data_gas<traits>(tx_);
+        auto const floor_gas = floor_data_gas_counted<traits>(tx_, tokens_);
         if (gas_used < floor_gas) {
-            auto const delta = floor_gas - gas_used;
-            state.subtract_from_balance(sender_, gas_cost * delta);
-
+            if constexpr (gas_is_priced()) {
+                auto const gas_cost = gas_price<traits>(
+                    tx_, header_.base_fee_per_gas.value_or(0));
+                auto const delta = floor_gas - gas_used;
+                state.subtract_from_balance(sender_, gas_cost * delta);
+            }
             gas_used = floor_gas;
         }
     }
 
-    uint256_t const reward = calculate_txn_award<traits>(
-        tx_, header_.base_fee_per_gas.value_or(0), gas_used);
-    if constexpr (traits::mip_11_active()) {
-        staking::collect_priority_fee(state, reward);
-    }
-    else {
-        state.add_to_balance(header_.beneficiary, reward);
+    if constexpr (gas_is_priced()) {
+        uint256_t const reward = calculate_txn_award<traits>(
+            tx_, header_.base_fee_per_gas.value_or(0), gas_used);
+        if constexpr (traits::mip_11_active()) {
+            staking::collect_priority_fee(state, reward);
+        }
+        else {
+            state.add_to_balance(header_.beneficiary, reward);
+        }
     }
 
     // finalize state, Eqn. 77-79
@@ -418,8 +438,11 @@ Receipt ExecuteTransaction<traits>::execute_final(
         .status = result.status_code == EVMC_SUCCESS ? 1u : 0u,
         .gas_used = gas_used,
         .type = tx_.type};
-    for (auto const &log : state.logs()) {
-        receipt.add_log(std::move(log));
+    // Taken, not copied: a copy allocates and fills every log's data and
+    // topics again, for a State that is about to be merged and dropped.
+    receipt.logs = state.take_logs();
+    for (auto const &log : receipt.logs) {
+        populate_bloom(receipt.bloom, log);
     }
 
     call_tracer_.on_finish(receipt.gas_used);
@@ -445,7 +468,8 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
             header_.base_fee_per_gas,
             header_.excess_blob_gas,
             chain_.get_chain_id(),
-            chain_.get_blob_schedule(header_.timestamp));
+            chain_.get_blob_schedule(header_.timestamp),
+            tokens_);
         if (validation_result.has_error()) {
             prev_.get_future().wait();
             return std::move(validation_result).as_failure();
@@ -472,7 +496,7 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
             if (result.has_error()) {
                 return std::move(result.error());
             }
-            auto const receipt = execute_final(state, result.value());
+            auto receipt = execute_final(state, result.value());
             block_state_.merge(state);
             return receipt;
         }
@@ -493,10 +517,57 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
         if (result.has_error()) {
             return std::move(result.error());
         }
-        auto const receipt = execute_final(state, result.value());
+        auto receipt = execute_final(state, result.value());
         block_state_.merge(state);
         return receipt;
     }
+}
+
+template <Traits traits>
+Result<Receipt> ExecuteTransaction<traits>::execute(SequentialExecutionToken)
+{
+    // The same check operator() opens with, in the same place. The token says
+    // nothing about a transaction's own validity -- only that no other writer
+    // can intervene between this one's reads and its merge -- so it licenses
+    // dropping the wait and can_merge, and nothing else. Without it,
+    // to_message computes gas_limit minus intrinsic gas on a uint64_t, and
+    // IntrinsicGasGreaterThanLimit is what stops that from wrapping.
+    {
+        auto validation_result = static_validate_transaction<traits>(
+            tx_,
+            header_.base_fee_per_gas,
+            header_.excess_blob_gas,
+            chain_.get_chain_id(),
+            chain_.get_blob_schedule(header_.timestamp),
+            tokens_);
+        if (validation_result.has_error()) {
+            return std::move(validation_result).as_failure();
+        }
+    }
+
+    TRACE_TXN_EVENT(StartExecution);
+
+    State state{block_state_, Incarnation{header_.number, i_ + 1}};
+    state.set_original_nonce(sender_, tx_.nonce);
+
+    call_tracer_.reset();
+    trace::reset(state_tracer_);
+
+    auto result = execute_impl2(state);
+
+#ifdef MONAD_ZKVM_CHECK_SEQUENTIAL_MERGE
+    // Diagnostic check of the sequential-merge invariant. Run before the
+    // error return so failed transactions are covered, as in operator().
+    MONAD_ASSERT(block_state_.can_merge(state));
+#endif
+
+    if (result.has_error()) {
+        return std::move(result.error());
+    }
+    // Non-const lets return move the receipt into Result<Receipt>.
+    auto receipt = execute_final(state, result.value());
+    block_state_.merge(state);
+    return receipt;
 }
 
 EXPLICIT_TRAITS_CLASS(ExecuteTransaction);

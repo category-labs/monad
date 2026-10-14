@@ -42,12 +42,35 @@
 #include <evmc/evmc.hpp>
 
 #include <functional>
+#include <type_traits>
 #include <utility>
 
 MONAD_NAMESPACE_BEGIN
 
 static_assert(sizeof(vm::Host) == 24);
 static_assert(alignof(vm::Host) == 8);
+
+// Pass EVMC arguments as Monad references at the host boundary to avoid
+// temporary copies from converting constructors.
+[[gnu::always_inline]] inline Address const &
+as_monad(evmc::address const &a) noexcept
+{
+    static_assert(sizeof(Address) == sizeof(evmc::address));
+    static_assert(std::is_standard_layout_v<Address>);
+    static_assert(std::is_standard_layout_v<evmc::address>);
+    return reinterpret_cast<Address const &>(
+        static_cast<evmc_address const &>(a));
+}
+
+[[gnu::always_inline]] inline bytes32_t const &
+as_monad(evmc::bytes32 const &b) noexcept
+{
+    static_assert(sizeof(bytes32_t) == sizeof(evmc::bytes32));
+    static_assert(std::is_standard_layout_v<bytes32_t>);
+    static_assert(std::is_standard_layout_v<evmc::bytes32>);
+    return reinterpret_cast<bytes32_t const &>(
+        static_cast<evmc_bytes32 const &>(b));
+}
 
 class BlockHashBuffer;
 
@@ -74,6 +97,10 @@ public:
         evmc::address const &,
         evmc::bytes32 const &key) const noexcept override;
 
+    virtual void get_storage_into(
+        evmc::address const &, evmc::bytes32 const &key,
+        evmc_bytes32 &value) const noexcept override;
+
     virtual evmc_storage_status set_storage(
         evmc::address const &, evmc::bytes32 const &key,
         evmc::bytes32 const &value) noexcept override;
@@ -88,7 +115,12 @@ public:
 
     virtual size_t copy_code(
         evmc::address const &, size_t offset, uint8_t *data,
-        size_t size) const override;
+        size_t size) const noexcept override;
+
+#if defined(MONAD_ZKVM_ZISK)
+    virtual std::optional<Address>
+    delegate_of(evmc::address const &) const noexcept override;
+#endif
 
     virtual evmc_tx_context const *get_tx_context() const noexcept override;
 
@@ -117,6 +149,16 @@ struct EvmcHost final : public EvmcHostBase
     std::optional<uint256_t> base_fee_per_gas_;
     uint64_t i_;
     ChainContext<traits> const &chain_ctx_;
+#ifdef MONAD_ZKVM_L2
+    /// Sticky for the whole transaction once set, which is the point: a frame
+    /// that catches the revert a denial produces must not be able to bury it.
+    /// finalize_domain_access turns it into a revert at depth 0 regardless.
+    bool domain_access_denied_{false};
+    /// The synthetic canCall frame's depth, or -1 outside an access check.
+    /// What it is for is the depth rule: the check's own callees may run, but
+    /// only as leaves.
+    int16_t domain_access_check_depth_{-1};
+#endif
 
     EvmcHost(
         CallTracerBase &call_tracer, trace::StateTracer &state_tracer,
@@ -140,7 +182,7 @@ struct EvmcHost final : public EvmcHostBase
 
         MONAD_TRY
         {
-            return !state_.account_is_dead(address);
+            return !state_.account_is_dead(as_monad(address));
         }
         MONAD_CATCH(...)
         {
@@ -156,7 +198,8 @@ struct EvmcHost final : public EvmcHostBase
         MONAD_TRY
         {
             auto const [result, transferred_balance] =
-                state_.selfdestruct<traits>(address, beneficiary);
+                state_.selfdestruct<traits>(
+                    as_monad(address), as_monad(beneficiary));
 
             call_tracer_.on_self_destruct(
                 address, beneficiary, transferred_balance);
@@ -203,14 +246,15 @@ struct EvmcHost final : public EvmcHostBase
     }
 
     virtual evmc_access_status
-    access_account(evmc::address const &address) override
+    access_account(evmc::address const &address) noexcept override
     {
         MONAD_TRY
         {
             if (is_precompile<traits>(address)) {
                 return EVMC_ACCESS_WARM;
             }
-            return to_evmc_access_status(state_.access_account(address));
+            return to_evmc_access_status(
+                state_.access_account(as_monad(address)));
         }
         MONAD_CATCH(...)
         {
@@ -225,8 +269,8 @@ struct EvmcHost final : public EvmcHostBase
     {
         MONAD_TRY
         {
-            return to_evmc_access_status(
-                state_.access_storage<traits>(address, key));
+            return to_evmc_access_status(state_.access_storage<traits>(
+                as_monad(address), as_monad(key)));
         }
         MONAD_CATCH(...)
         {
@@ -234,6 +278,24 @@ struct EvmcHost final : public EvmcHostBase
         }
         stack_unwind();
     }
+
+#if defined(MONAD_ZKVM_ZISK)
+    virtual evmc_access_status sload_into(
+        evmc::address const &address, evmc::bytes32 const &key,
+        bool const read_cold, evmc_bytes32 &value) noexcept override
+    {
+        MONAD_TRY
+        {
+            return to_evmc_access_status(state_.sload_into<traits>(
+                as_monad(address), as_monad(key), read_cold, value));
+        }
+        MONAD_CATCH(...)
+        {
+            capture_current_exception();
+        }
+        stack_unwind();
+    }
+#endif
 
     virtual evmc_page_storage_status update_page(
         evmc::address const &address, evmc::bytes32 const &key,
@@ -243,7 +305,9 @@ struct EvmcHost final : public EvmcHostBase
             MONAD_TRY
             {
                 return to_evmc_page_storage_status(state_.update_page(
-                    address, key, from_evmc_storage_status(status)));
+                    as_monad(address),
+                    as_monad(key),
+                    from_evmc_storage_status(status)));
             }
             MONAD_CATCH(...)
             {
@@ -282,17 +346,25 @@ struct EvmcHost final : public EvmcHostBase
                              .add_data(abi_encode_uint(u256_be{value}))
                              .build();
 
-            state_.store_log(event);
-            call_tracer_.on_log(std::move(event));
+            call_tracer_.on_log(event);
+            state_.store_log(std::move(event));
         }
     }
 };
 
+// Pinned so that growth is deliberate. The domain arm's two access-check
+// fields are that growth: a bool and an int16_t, one word once padded.
+#ifdef MONAD_ZKVM_L2
+inline constexpr std::size_t EVMC_HOST_SIZE = 144;
+#else
+inline constexpr std::size_t EVMC_HOST_SIZE = 136;
+#endif
 static_assert(
-    sizeof(EvmcHost<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>) == 136);
+    sizeof(EvmcHost<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>) ==
+    EVMC_HOST_SIZE);
 static_assert(
     alignof(EvmcHost<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>) == 8);
-static_assert(sizeof(EvmcHost<MonadTraits<MONAD_NEXT>>) == 136);
+static_assert(sizeof(EvmcHost<MonadTraits<MONAD_NEXT>>) == EVMC_HOST_SIZE);
 static_assert(alignof(EvmcHost<MonadTraits<MONAD_NEXT>>) == 8);
 
 MONAD_NAMESPACE_END

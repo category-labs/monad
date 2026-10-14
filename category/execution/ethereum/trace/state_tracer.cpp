@@ -81,7 +81,7 @@ namespace trace
         }
 
         OriginalAccountState const &original_state = orig_it->second;
-        AccountState const &current_state = curr_it->second.recent();
+        AccountState const &current_state = curr_it->second;
 
         // If the original state has no account, then the beneficiary was
         // created during the block and if the current state has an account,
@@ -107,8 +107,7 @@ namespace trace
 
         Account const &original =
             get_account_for_trace(orig_it->second).value();
-        Account const &current =
-            get_account_for_trace(curr_it->second.recent()).value();
+        Account const &current = get_account_for_trace(curr_it->second).value();
 
         // If `original` and `current` are the same and *have* empty storages,
         // then it must be that the beneficiary did not participate in the block
@@ -118,7 +117,8 @@ namespace trace
             // NOTE(dhil): We piggyback on the fact that the `storage_`
             // is lazily populated, i.e. a slot binding appears only if
             // the slot has been read or written to during execution.
-            original_state.storage_.empty() && current_state.storage_.empty()) {
+            original_state.prestate_storage_.empty() &&
+            current_state.storage_.empty()) {
             return false;
         }
 
@@ -138,7 +138,7 @@ namespace trace
     }
 
     StorageDeltas StateDiffTracer::generate_storage_deltas(
-        AccountState::StorageMap const &original,
+        PrestateStorage const &original,
         AccountState::StorageMap const &current)
     {
         StorageDeltas deltas{};
@@ -164,14 +164,15 @@ namespace trace
             MONAD_ASSERT(it != original.end());
 
             // Possible diff.
-            auto const &current_account_state = current_stack.recent();
+            auto const &current_account_state = current_stack;
             auto const &current_account =
                 get_account_for_trace(current_account_state);
             auto const &current_storage = current_account_state.storage_;
             auto const &original_account_state = it->second;
             auto const &original_account =
                 get_account_for_trace(original_account_state);
-            auto const &original_storage = original_account_state.storage_;
+            auto const &original_storage =
+                original_account_state.prestate_storage_;
 
             // Nothing to do if the account has been created and destructed
             // during the same tx.
@@ -225,7 +226,7 @@ namespace trace
     void AccessListTracer::capture_accesses(State const &state)
     {
         for (auto const &[address, current_stack] : state.current()) {
-            capture_accesses(address, current_stack.recent());
+            capture_accesses(address, current_stack);
         }
     }
 
@@ -235,7 +236,7 @@ namespace trace
         for (auto const &address : state.current_frame_dirty_accounts()) {
             auto const it = current.find(address);
             MONAD_ASSERT(it != current.end());
-            capture_accesses(address, it->second.recent());
+            capture_accesses(address, it->second);
         }
     }
 
@@ -351,7 +352,11 @@ namespace trace
     EXPLICIT_TRAITS(run_tracer);
 
     // Json serialization
-    json storage_to_json(AccountState::StorageMap const &storage)
+    // Templated on the container: an original row's slots live in the
+    // append-only PrestateStorage, a current row's in the overlay type. Both
+    // iterate as key/value pairs, which is all this needs.
+    template <typename StorageMapT>
+    json storage_to_json(StorageMapT const &storage)
     {
         json res = json::object();
         for (auto const &[key, value] : storage) {
@@ -390,7 +395,7 @@ namespace trace
         OriginalAccountState const &as, State &state)
     {
         auto const &account = get_account_for_trace(as);
-        auto const &storage = as.storage_;
+        auto const &storage = as.prestate_storage_;
         json res = account_to_json(account, state);
         if (!storage.empty() && account.has_value()) {
             json storage_result = storage_to_json(storage);

@@ -114,7 +114,7 @@ TYPED_TEST(TraitsTest, Genesis)
             // slot_number in the header, predating this header
             EXPECT_TRUE(result.has_error());
         }
-        else if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_PRAGUE) {
+        else if constexpr (TestFixture::Trait::eip_7685_header_active()) {
             EXPECT_TRUE(result.has_value());
         }
         else {

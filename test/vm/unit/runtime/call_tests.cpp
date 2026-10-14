@@ -382,7 +382,7 @@ TYPED_TEST(RuntimeTraitsTest, DelegatedCallPrecompile)
         EVMC_ACCESS_WARM);
     ASSERT_EQ(this->host_.recorded_calls.size(), 1);
 
-    if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_PRAGUE) {
+    if constexpr (TestFixture::Trait::eip_7702_active()) {
         ASSERT_EQ(
             this->host_.recorded_calls[0].flags &
                 static_cast<uint32_t>(EVMC_DELEGATED),

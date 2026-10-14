@@ -99,8 +99,7 @@ TYPED_TEST(TraitsTest, validate_floor_gas)
             1,
             default_blob_schedule<typename TestFixture::Trait>());
 
-    if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_PRAGUE) {
-        // Floor gas only introduced since Prague
+    if constexpr (TestFixture::Trait::eip_7623_active()) {
         ASSERT_TRUE(result.has_error());
         EXPECT_EQ(
             result.error(), TransactionError::IntrinsicGasGreaterThanLimit);
@@ -137,7 +136,7 @@ TYPED_TEST(InMemoryStateTraitsTest, validate_deployed_code_delegated)
     auto const result =
         validate_ethereum_transaction<typename TestFixture::Trait>(
             tx, sender, this->state, noop_state_tracer);
-    if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_PRAGUE) {
+    if constexpr (TestFixture::Trait::eip_7702_active()) {
         EXPECT_TRUE(result.has_value());
     }
     else {
@@ -496,9 +495,8 @@ TYPED_TEST(TraitsTest, validate_excess_blob_gas_against_parent)
     }
     else {
         static constexpr uint64_t timestamp =
-            TestFixture::Trait::evm_rev() >= MONAD_ETH_PRAGUE
-                ? uint64_t{1746612311}
-                : uint64_t{1710338135};
+            TestFixture::Trait::eip_7691_active() ? uint64_t{1746612311}
+                                                  : uint64_t{1710338135};
 
         EthereumMainnet const chain;
         auto const blob_schedule = chain.get_blob_schedule(timestamp);
@@ -520,7 +518,7 @@ TYPED_TEST(TraitsTest, validate_excess_blob_gas_against_parent)
             .blob_gas_used = uint64_t{0},
             .excess_blob_gas = expected_excess_blob_gas,
             .parent_beacon_block_root = bytes32_t{}};
-        if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_PRAGUE) {
+        if constexpr (TestFixture::Trait::eip_7685_header_active()) {
             header.requests_hash = bytes32_t{};
         }
         if constexpr (TestFixture::Trait::eip_7843_active()) {

@@ -55,7 +55,7 @@ namespace monad::vm::runtime
         }
 
         if constexpr (
-            traits::evm_rev() >= MONAD_ETH_PRAGUE &&
+            traits::eip_7702_active() &&
             !traits::can_create_inside_delegated()) {
             if (evm::resolve_delegation(
                     ctx->host, ctx->context, ctx->env.recipient)) {

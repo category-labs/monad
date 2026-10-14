@@ -131,8 +131,8 @@ uint64_t intrinsic_gas(Transaction const &tx) noexcept
     if constexpr (traits::eip_3860_active()) {
         gas += g_extra_cost_init(tx);
     }
-    // EIP-7702: authorization-list cost (Prague)
-    if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
+    // EIP-7702: authorization-list cost
+    if constexpr (traits::eip_7702_active()) {
         gas += g_authorization(tx);
     }
     // EIP-7981: increase access-list cost (Amsterdam)

@@ -551,7 +551,7 @@ TYPED_TEST(TraitsTest, point_evaluation)
 
 TYPED_TEST(TraitsTest, blsg1add)
 {
-    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_PRAGUE) {
+    if constexpr (!TestFixture::Trait::eip_2537_active()) {
         EXPECT_FALSE(is_precompile<typename TestFixture::Trait>(0x0b_address));
     }
     else {
@@ -565,7 +565,7 @@ TYPED_TEST(TraitsTest, blsg1add)
 
 TYPED_TEST(TraitsTest, blsg1mul)
 {
-    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_PRAGUE) {
+    if constexpr (!TestFixture::Trait::eip_2537_active()) {
         EXPECT_FALSE(is_precompile<typename TestFixture::Trait>(0x0c_address));
     }
     else {
@@ -585,7 +585,7 @@ TYPED_TEST(TraitsTest, blsg1mul)
 
 TYPED_TEST(TraitsTest, blsg2add)
 {
-    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_PRAGUE) {
+    if constexpr (!TestFixture::Trait::eip_2537_active()) {
         EXPECT_FALSE(is_precompile<typename TestFixture::Trait>(0x0d_address));
     }
     else {
@@ -598,7 +598,7 @@ TYPED_TEST(TraitsTest, blsg2add)
 
 TYPED_TEST(TraitsTest, blsg2mul)
 {
-    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_PRAGUE) {
+    if constexpr (!TestFixture::Trait::eip_2537_active()) {
         EXPECT_FALSE(is_precompile<typename TestFixture::Trait>(0x0e_address));
     }
     else {
@@ -615,7 +615,7 @@ TYPED_TEST(TraitsTest, blsg2mul)
 
 TYPED_TEST(TraitsTest, bls_pairing_check)
 {
-    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_PRAGUE) {
+    if constexpr (!TestFixture::Trait::eip_2537_active()) {
         EXPECT_FALSE(is_precompile<typename TestFixture::Trait>(0x0f_address));
     }
     else {
@@ -630,7 +630,7 @@ TYPED_TEST(TraitsTest, bls_pairing_check)
 
 TYPED_TEST(TraitsTest, bls_map_g1)
 {
-    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_PRAGUE) {
+    if constexpr (!TestFixture::Trait::eip_2537_active()) {
         EXPECT_FALSE(is_precompile<typename TestFixture::Trait>(0x10_address));
     }
     else {
@@ -643,7 +643,7 @@ TYPED_TEST(TraitsTest, bls_map_g1)
 
 TYPED_TEST(TraitsTest, bls_map_g2)
 {
-    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_PRAGUE) {
+    if constexpr (!TestFixture::Trait::eip_2537_active()) {
         EXPECT_FALSE(is_precompile<typename TestFixture::Trait>(0x11_address));
     }
     else {

@@ -397,7 +397,7 @@ bool revert_transaction(
         return dipped_into_reserve<traits>(
             sender, tx, base_fee_per_gas, i, state_tracer, ctx, state);
     }
-    else if constexpr (traits::monad_rev() >= MONAD_ZERO) {
+    else {
         return false;
     }
 }
@@ -410,7 +410,7 @@ bool revert_transaction_cached(State &state)
     if constexpr (traits::monad_rev() >= MONAD_FOUR) {
         return dipped_into_reserve_cached(state.rb_);
     }
-    else if constexpr (traits::monad_rev() >= MONAD_ZERO) {
+    else {
         return false;
     }
 }

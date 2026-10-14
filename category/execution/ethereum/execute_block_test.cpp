@@ -679,8 +679,7 @@ TYPED_TEST(TraitsTest, call_frames_refund)
             }
         }
         else {
-            if constexpr (TestFixture::Trait::monad_rev() > MONAD_ZERO) {
-                // full gas_limit is charged since >=MONAD_ONE
+            if constexpr (TestFixture::Trait::charges_gas_limit()) {
                 return 0x186a0;
             }
             else {

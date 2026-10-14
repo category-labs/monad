@@ -55,14 +55,21 @@
 
 #include <test_resource_data.h>
 
+#include <boost/fiber/future/promise.hpp>
+
 #include <algorithm>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
+#include <future>
 #include <iterator>
 #include <limits>
 #include <memory>
 #include <numeric>
 #include <optional>
+#include <span>
+#include <stdexcept>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -75,6 +82,40 @@ using db_t = TrieDb;
 namespace
 {
     using monad::literals::operator""_bytes;
+
+    class ResetCallTracer final : public CallTracerBase
+    {
+        std::move_only_function<void()> reset_;
+
+    public:
+        explicit ResetCallTracer(std::move_only_function<void()> reset)
+            : reset_{std::move(reset)}
+        {
+        }
+
+        void on_enter(evmc_message const &) override {}
+
+        void on_exit(evmc::Result const &) override {}
+
+        void on_log(Receipt::Log) override {}
+
+        void on_self_destruct(
+            Address const &, Address const &, uint256_t const &) override
+        {
+        }
+
+        void on_finish(uint64_t const) override {}
+
+        void reset() override
+        {
+            reset_();
+        }
+
+        std::span<CallFrame const> get_call_frames() const override
+        {
+            return {};
+        }
+    };
 
     auto const STRESS_TEST_CODE =
         0x5b614e206080511015603f5760006000614e206000600173aaaf5374fce5edbc8e2a8697c15331677e6ebf0b610640f16000556001608051016080526000565b60805160015500_bytes;
@@ -491,6 +532,88 @@ TYPED_TEST(TraitsTest, assertion_exception)
     else {
         EXPECT_THROW({ execute(EthereumMainnet{}); }, MonadException);
     }
+}
+
+TYPED_TEST(TraitsTest, fibers_join_exception)
+{
+    // This test checks that fibers join before returning from
+    // `execute_block_transactions`, even when the last transaction throws an
+    // exception.
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
+    db_t tdb{db};
+    vm::VM vm;
+    BlockState block_state{tdb, vm};
+    BlockMetrics block_metrics;
+    BlockHeader const header{.number = 1, .gas_limit = 42'000};
+    BlockHashBufferFinalized const block_hash_buffer;
+    auto const chain = [] {
+        if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
+            return MonadMainnet{};
+        }
+        else {
+            return EthereumMainnet{};
+        }
+    }();
+    auto const chain_ctx =
+        ChainContext<typename TestFixture::Trait>::debug_empty();
+
+    Transaction const transaction{
+        .sc = {.signature = {.r = 1, .s = 2}},
+        .gas_limit = 21'000,
+        .to = 0xbbbf5374fce5edbc8e2a8697c15331677e6ebf0b_address};
+    std::vector<Transaction> transactions(2, transaction);
+    transactions[1].nonce = 1;
+    std::vector<Address> const senders(
+        2, 0xa94f5374fce5edbc8e2a8697c15331677e6ebf0b_address);
+    std::vector<std::vector<std::optional<Address>>> const authorities(2);
+
+    // We abuse the call tracer to control the execution order of fibers. We do
+    // so by making the first transaction wait until the second transaction has
+    // failed.
+    boost::fibers::promise<void> unblock_first;
+    boost::fibers::promise<void> last_transaction_failed;
+    auto last_transaction_failed_future = last_transaction_failed.get_future();
+    std::vector<std::unique_ptr<CallTracerBase>> call_tracers;
+    call_tracers.emplace_back(std::make_unique<ResetCallTracer>(
+        [future = unblock_first.get_future()] mutable { future.wait(); }));
+    call_tracers.emplace_back(std::make_unique<ResetCallTracer>([&] {
+        last_transaction_failed.set_value();
+        throw std::runtime_error{"tracer reset failed"};
+    }));
+    std::vector<std::unique_ptr<trace::StateTracer>> state_tracers(2);
+    for (auto &tracer : state_tracers) {
+        tracer = std::make_unique<trace::StateTracer>(std::monostate{});
+    }
+
+    fiber::PriorityPool pool{1, 2};
+    // Run execute_block_transactions in a non-blocking context such that we can
+    // control the order of execution and test the behavior of fibers joining.
+    auto result = std::async(std::launch::async, [&] {
+        return execute_block_transactions<typename TestFixture::Trait>(
+            chain,
+            header,
+            transactions,
+            senders,
+            authorities,
+            block_state,
+            block_hash_buffer,
+            pool.fiber_group(),
+            block_metrics,
+            call_tracers,
+            state_tracers,
+            chain_ctx,
+            nullptr);
+    });
+
+    // Wait on the second transaction to fail.
+    last_transaction_failed_future.wait();
+    // Check that execute_block_transactions is still running.
+    EXPECT_EQ(
+        result.wait_for(std::chrono::milliseconds{100}),
+        std::future_status::timeout);
+    // Now unblock the first transaction so that it can complete.
+    unblock_first.set_value();
+    EXPECT_THROW((void)result.get(), std::runtime_error);
 }
 
 // test referenced from :

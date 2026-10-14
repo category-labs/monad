@@ -34,141 +34,28 @@
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
-#include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/execution/monad/chain/monad_testnet.hpp>
 #include <category/vm/evm/monad/revision.h>
-#include <category/vm/evm/status_code.h>
 #include <category/vm/vm.hpp>
 #include <monad/test/traits_test.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
-#include <boost/fiber/fiber.hpp>
+#include <boost/fiber/future/future.hpp>
 #include <boost/fiber/future/promise.hpp>
 
 #include <gtest/gtest.h>
 
 #include <cstdint>
-#include <exception>
 #include <limits>
 #include <optional>
 #include <variant>
-#include <vector>
 
 using namespace monad;
 
 using db_t = TrieDb;
-
-TYPED_TEST(TraitsTest, speculative_call_trace_size_limit_is_discarded_on_retry)
-{
-    static constexpr auto sender =
-        0x5353535353535353535353535353535353535353_address;
-    static constexpr auto contract =
-        0xbebebebebebebebebebebebebebebebebebebebe_address;
-    static constexpr auto predecessor_sender =
-        0xcccccccccccccccccccccccccccccccccccccccc_address;
-
-    mpt::Db db{std::make_unique<InMemoryMachine>()};
-    db_t tdb{db};
-    vm::VM vm;
-    BlockState block_state{tdb, vm};
-    bytes32_t const slot{};
-    auto const large_output_size = store_be_as<bytes32_t>(uint256_t{4'096});
-    auto const small_output_size = store_be_as<bytes32_t>(uint256_t{32});
-
-    {
-        State initial_state{block_state, Incarnation{0, 0}};
-        initial_state.add_to_balance(sender, 1'000'000);
-        initial_state.create_contract(contract);
-        initial_state.set_code(contract, from_hex("6000546000f3").value());
-        initial_state.set_storage(contract, slot, large_output_size);
-        block_state.merge(initial_state);
-    }
-
-    Transaction const transaction{
-        .sc = {.signature = {.r = 1, .s = 1}},
-        .max_fee_per_gas = 1,
-        .gas_limit = 100'000,
-        .to = contract,
-    };
-    EthereumMainnet const chain;
-    BlockHeader const header{.number = 1};
-    BlockHashBufferFinalized const block_hash_buffer;
-    BlockMetrics metrics{};
-    std::vector<CallFrame> call_frames;
-    CallTracer call_tracer{transaction, call_frames, sizeof(CallFrame) + 32};
-    trace::StateTracer state_tracer{std::monostate{}};
-    std::vector<Address> const senders{predecessor_sender, sender};
-    std::vector<std::vector<std::optional<Address>>> const authorities(2);
-    auto const senders_and_authorities =
-        combine_senders_and_authorities(senders, authorities);
-    ankerl::unordered_dense::segmented_set<Address> const ancestor_senders;
-    auto const chain_context = [&] {
-        if constexpr (TestFixture::is_monad_trait()) {
-            return ChainContext<typename TestFixture::Trait>{
-                .grandparent_senders_and_authorities = ancestor_senders,
-                .parent_senders_and_authorities = ancestor_senders,
-                .senders_and_authorities = senders_and_authorities,
-                .senders = senders,
-                .authorities = authorities,
-            };
-        }
-        else {
-            return ChainContext<typename TestFixture::Trait>{};
-        }
-    }();
-    boost::fibers::promise<void> predecessor;
-    boost::fibers::promise<Result<Receipt>> result_promise;
-    auto result_future = result_promise.get_future();
-    bool execution_finished = false;
-
-    boost::fibers::fiber execution{
-        boost::fibers::launch::dispatch, [&] {
-            try {
-                result_promise.set_value(
-                    ExecuteTransaction<typename TestFixture::Trait>{
-                        chain,
-                        1,
-                        transaction,
-                        sender,
-                        {},
-                        header,
-                        block_hash_buffer,
-                        block_state,
-                        metrics,
-                        predecessor,
-                        call_tracer,
-                        state_tracer,
-                        chain_context,
-                        nullptr}());
-            }
-            catch (...) {
-                result_promise.set_exception(std::current_exception());
-            }
-            execution_finished = true;
-        }};
-
-    EXPECT_FALSE(execution_finished);
-    EXPECT_EQ(call_frames.size(), 1);
-    {
-        State predecessor_state{block_state, Incarnation{header.number, 1}};
-        predecessor_state.set_storage(contract, slot, small_output_size);
-        EXPECT_TRUE(block_state.can_merge(predecessor_state));
-        block_state.merge(predecessor_state);
-    }
-    predecessor.set_value();
-    execution.join();
-
-    auto const result = result_future.get();
-    ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(result.value().status, 1u);
-    EXPECT_EQ(metrics.num_retries, 1);
-    ASSERT_EQ(call_frames.size(), 1);
-    EXPECT_EQ(call_frames.front().status, MONAD_STATUS_SUCCESS);
-    EXPECT_EQ(call_frames.front().output.size(), 32);
-}
 
 TYPED_TEST(TraitsTest, irrevocable_gas_and_refund_new_contract)
 {
@@ -218,8 +105,9 @@ TYPED_TEST(TraitsTest, irrevocable_gas_and_refund_new_contract)
         .beneficiary = bene};
     BlockHashBufferFinalized const block_hash_buffer;
 
-    boost::fibers::promise<void> prev{};
-    prev.set_value();
+    boost::fibers::promise<void> prev_promise{};
+    boost::fibers::future<void> prev = prev_promise.get_future();
+    prev_promise.set_value();
 
     NoopCallTracer noop_call_tracer;
     trace::StateTracer noop_state_tracer = std::monostate{};
@@ -251,9 +139,18 @@ TYPED_TEST(TraitsTest, irrevocable_gas_and_refund_new_contract)
         ASSERT_TRUE(
             final_balance_uint256 < std::numeric_limits<uint64_t>::max());
         auto const final_balance = static_cast<uint64_t>(final_balance_uint256);
-        if constexpr (TestFixture::Trait::charges_gas_limit()) {
-            EXPECT_EQ(
-                final_balance, initial_balance - gas_limit * max_fee_per_gas);
+        if constexpr (TestFixture::is_monad_trait()) {
+            if constexpr (TestFixture::Trait::monad_rev() == MONAD_ZERO) {
+                EXPECT_EQ(
+                    final_balance,
+
+                    initial_balance - actual_gas_cost * max_fee_per_gas);
+            }
+            else {
+                EXPECT_EQ(
+                    final_balance,
+                    initial_balance - gas_limit * max_fee_per_gas);
+            }
         }
         else {
             EXPECT_EQ(
@@ -264,8 +161,13 @@ TYPED_TEST(TraitsTest, irrevocable_gas_and_refund_new_contract)
         EXPECT_EQ(state.get_nonce(from), 26); // EVMC will inc for creation
     }
     // check if miner gets the right reward
-    if constexpr (TestFixture::Trait::charges_gas_limit()) {
-        EXPECT_EQ(receipt.value().gas_used, gas_limit);
+    if constexpr (TestFixture::is_monad_trait()) {
+        if constexpr (TestFixture::Trait::monad_rev() == MONAD_ZERO) {
+            EXPECT_EQ(receipt.value().gas_used, actual_gas_cost);
+        }
+        else {
+            EXPECT_EQ(receipt.value().gas_used, gas_limit);
+        }
     }
     else {
         EXPECT_EQ(receipt.value().gas_used, actual_gas_cost);
@@ -320,8 +222,9 @@ TYPED_TEST(TraitsTest, TopLevelCreate)
     NoopCallTracer noop_call_tracer;
     trace::StateTracer noop_state_tracer = std::monostate{};
 
-    boost::fibers::promise<void> prev{};
-    prev.set_value();
+    boost::fibers::promise<void> prev_promise{};
+    boost::fibers::future<void> prev = prev_promise.get_future();
+    prev_promise.set_value();
 
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
@@ -377,8 +280,11 @@ TYPED_TEST(TraitsTest, refunds_delete)
     static constexpr auto gas_limit_tx2 = 50'000;
 
     static constexpr auto gas_charged_tx1 = [] {
-        if constexpr (TestFixture::Trait::charges_gas_limit()) {
-            return gas_limit_tx1;
+        if constexpr (TestFixture::is_monad_trait()) {
+            if constexpr (TestFixture::Trait::monad_rev() > MONAD_ZERO) {
+                // Since MONAD_ONE full gas_limit is charged
+                return gas_limit_tx1;
+            }
         }
 
         // Gas increased due to storage repricing in Berlin
@@ -386,8 +292,11 @@ TYPED_TEST(TraitsTest, refunds_delete)
     }();
 
     static constexpr auto gas_charged_tx2 = [] {
-        if constexpr (TestFixture::Trait::charges_gas_limit()) {
-            return gas_limit_tx2;
+        if constexpr (TestFixture::is_monad_trait()) {
+            if constexpr (TestFixture::Trait::monad_rev() > MONAD_ZERO) {
+                // Since MONAD_ONE full gas_limit is charged
+                return gas_limit_tx2;
+            }
         }
         return 26'025;
     }();
@@ -402,8 +311,10 @@ TYPED_TEST(TraitsTest, refunds_delete)
         }
     }();
     static constexpr auto storage_refund_tx2 = [=] {
-        if constexpr (TestFixture::Trait::charges_gas_limit()) {
-            return 0;
+        if constexpr (TestFixture::is_monad_trait()) {
+            if constexpr (TestFixture::Trait::monad_rev() > MONAD_ZERO) {
+                return 0;
+            }
         }
         if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_LONDON) {
             // due to EIP-3529 introduced in London revision
@@ -461,8 +372,9 @@ TYPED_TEST(TraitsTest, refunds_delete)
         BlockHeader const header{.beneficiary = bene};
         BlockHashBufferFinalized const block_hash_buffer;
 
-        boost::fibers::promise<void> prev{};
-        prev.set_value();
+        boost::fibers::promise<void> prev_promise{};
+        boost::fibers::future<void> prev = prev_promise.get_future();
+        prev_promise.set_value();
 
         NoopCallTracer noop_call_tracer;
         trace::StateTracer noop_state_tracer = std::monostate{};
@@ -525,8 +437,9 @@ TYPED_TEST(TraitsTest, refunds_delete)
         BlockHeader const header{.beneficiary = bene};
         BlockHashBufferFinalized const block_hash_buffer;
 
-        boost::fibers::promise<void> prev{};
-        prev.set_value();
+        boost::fibers::promise<void> prev_promise{};
+        boost::fibers::future<void> prev = prev_promise.get_future();
+        prev_promise.set_value();
 
         NoopCallTracer noop_call_tracer;
         trace::StateTracer noop_state_tracer = std::monostate{};
@@ -635,8 +548,9 @@ TYPED_TEST(TraitsTest, refunds_delete_then_set)
         BlockHeader const header{.beneficiary = bene};
         BlockHashBufferFinalized const block_hash_buffer;
 
-        boost::fibers::promise<void> prev{};
-        prev.set_value();
+        boost::fibers::promise<void> prev_promise{};
+        boost::fibers::future<void> prev = prev_promise.get_future();
+        prev_promise.set_value();
 
         NoopCallTracer noop_call_tracer;
         trace::StateTracer noop_state_tracer = std::monostate{};
@@ -672,8 +586,12 @@ TYPED_TEST(TraitsTest, refunds_delete_then_set)
                 static_cast<uint64_t>(final_balance_uint256);
 
             static constexpr auto gas_charged = [] {
-                if constexpr (TestFixture::Trait::charges_gas_limit()) {
-                    return gas_limit_tx;
+                if constexpr (TestFixture::is_monad_trait()) {
+                    if constexpr (
+                        TestFixture::Trait::monad_rev() > MONAD_ZERO) {
+                        // Since MONAD_ONE full gas_limit is charged
+                        return gas_limit_tx;
+                    }
                 }
 
                 return 26'112;
@@ -683,8 +601,11 @@ TYPED_TEST(TraitsTest, refunds_delete_then_set)
                 return 2800;
             }();
             static constexpr auto storage_refund = [=] {
-                if constexpr (TestFixture::Trait::charges_gas_limit()) {
-                    return 0;
+                if constexpr (TestFixture::is_monad_trait()) {
+                    if constexpr (
+                        TestFixture::Trait::monad_rev() > MONAD_ZERO) {
+                        return 0;
+                    }
                 }
                 if constexpr (
                     TestFixture::Trait::evm_rev() >= MONAD_ETH_LONDON) {
@@ -716,8 +637,9 @@ TYPED_TEST(TraitsTest, static_validate_transaction_failure)
     BlockState bs{tdb, vm};
     BlockMetrics metrics;
 
-    boost::fibers::promise<void> prev{};
-    prev.set_value();
+    boost::fibers::promise<void> prev_promise{};
+    boost::fibers::future<void> prev = prev_promise.get_future();
+    prev_promise.set_value();
 
     NoopCallTracer noop_call_tracer;
     trace::StateTracer noop_state_tracer = std::monostate{};
@@ -805,8 +727,9 @@ TYPED_TEST(TraitsTest, selfdestructed_beneficiary_keeps_award)
     NoopCallTracer noop_call_tracer;
     trace::StateTracer noop_state_tracer = std::monostate{};
 
-    boost::fibers::promise<void> prev{};
-    prev.set_value();
+    boost::fibers::promise<void> prev_promise{};
+    auto prev = prev_promise.get_future();
+    prev_promise.set_value();
 
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();

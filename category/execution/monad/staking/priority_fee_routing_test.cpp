@@ -73,8 +73,9 @@ TYPED_TEST(MonadTraitsTest, mip11_fork)
     BlockHeader const header{.beneficiary = beneficiary};
     BlockHashBufferFinalized const block_hash_buffer;
 
-    boost::fibers::promise<void> prev{};
-    prev.set_value();
+    boost::fibers::promise<void> prev_promise{};
+    auto prev = prev_promise.get_future();
+    prev_promise.set_value();
 
     NoopCallTracer call_tracer;
     trace::StateTracer state_tracer = std::monostate{};

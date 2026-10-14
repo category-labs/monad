@@ -1225,8 +1225,9 @@ TYPED_TEST(TraitsTest, statediff_selfdestruct_same_tx_preserved)
     nlohmann::json diff;
     StateTracer state_tracer = StateDiffTracer{diff};
 
-    boost::fibers::promise<void> prev{};
-    prev.set_value();
+    boost::fibers::promise<void> prev_promise{};
+    auto prev = prev_promise.get_future();
+    prev_promise.set_value();
 
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();

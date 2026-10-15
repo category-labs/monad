@@ -1,0 +1,22 @@
+[package]
+name = "monad-airbender-runner"
+version = "0.1.0"
+edition = "2021"
+description = "Runs the Monad guest in Airbender's transpiler VM with a host that answers its oracle queries"
+
+[workspace]
+
+[dependencies]
+airbender-host = { path = "../../../../stack/airbender-platform/crates/airbender-host", default-features = false }
+num-bigint = "0.4"
+
+# As in airbender-platform: these packages overflow the default stack when built
+# with debug information.
+[profile.dev.package.keccak_special5]
+debug = 0
+[profile.dev.package.setups]
+debug = 0
+[profile.release.package.keccak_special5]
+debug = 0
+[profile.release.package.setups]
+debug = 0

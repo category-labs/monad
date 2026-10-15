@@ -893,6 +893,87 @@ namespace airbender_bigint
     {
         return (reinterpret_cast<uintptr_t>(p) & 31) == 0;
     }
+
+    // Aligned room for a value the circuit or the host writes. A uint256_t
+    // local would zero its eight words first.
+    union alignas(32) slot
+    {
+        uint256_t v;
+
+        [[gnu::always_inline]] slot() noexcept {}
+    };
+
+    // x where the circuit can read it: in place when aligned, else copied
+    // into the scratch.
+    [[gnu::always_inline]] inline uint256_t const &
+    operand(uint256_t const &x, slot &scratch) noexcept
+    {
+        if (aligned(&x)) {
+            return x;
+        }
+        scratch.v = x;
+        return scratch.v;
+    }
+
+    // dst = src, in one call when src is aligned.
+    [[gnu::always_inline]] inline void
+    copy(slot &dst, uint256_t const &src) noexcept
+    {
+        if (aligned(&src)) {
+            op(dst.v, src, MEMCOPY);
+        }
+        else {
+            dst.v = src;
+        }
+    }
+
+    alignas(32) inline constexpr uint256_t zero{};
+}
+
+// Questions for the host (zkvm/airbender/runner) through the non-determinism
+// CSR, 0x7c0: the guest writes a tag naming the question, then the address of
+// each operand; the host reads the operands from RAM when the last address
+// arrives and queues its answer, which the guest reads back a word at a time
+// and checks. A wrong answer fails the check, so the host can stop the guest
+// but not change its result -- ZKsync OS asks its oracle for quotients the
+// same way (basic_system u256_advice.rs). The tags are not 0xffffffff, which
+// would open a UART message, and the stock source ignores every other write:
+// the words read, in order, replay the run in `cargo airbender prove`.
+namespace airbender_oracle
+{
+    inline constexpr uint32_t DIV = 0x4d445601; // (u, v): u / v, 8 words
+    inline constexpr uint32_t WIDE_DIV =
+        0x4d445602; // (lo, hi, d): (hi·2^256 + lo) / d, 16 words
+
+    // The clobber stores the operands before the host reads them.
+    [[gnu::always_inline]] inline void write(uint32_t const w) noexcept
+    {
+        __asm__ volatile("csrrw x0, 0x7c0, %0" : : "r"(w) : "memory");
+    }
+
+    [[gnu::always_inline]] inline void write(void const *const p) noexcept
+    {
+        write(static_cast<uint32_t>(reinterpret_cast<uintptr_t>(p)));
+    }
+
+    [[gnu::always_inline]] inline uint32_t read() noexcept
+    {
+        uint32_t w;
+        __asm__ volatile("csrrw %0, 0x7c0, x0" : "=r"(w));
+        return w;
+    }
+
+    // Eight words, least significant first.
+    [[gnu::always_inline]] inline uint256_t read256() noexcept
+    {
+        uint64_t w[uint256_t::num_words];
+#pragma GCC unroll 4
+        for (size_t i = 0; i < uint256_t::num_words; ++i) {
+            uint64_t const lo = read();
+            w[i] = lo | (uint64_t{read()} << 32);
+        }
+        return uint256_t{w[0], w[1], w[2], w[3]};
+    }
 }
 #endif
 
@@ -1300,6 +1381,67 @@ zisk_udivrem(uint256_t const &u, uint256_t const &v) noexcept
 }
 #endif
 
+#if defined(MONAD_ZKVM_AIRBENDER)
+// u / v and u % v, v != 0, from the host's quotient q, checked on the bigint
+// circuit: q·v must not overflow, u - q·v must not borrow, and the remainder
+// must be below v -- which only the true quotient passes. Four circuit calls
+// and eleven words through the CSR, where the 32-bit Knuth division takes
+// hundreds of cycles.
+[[gnu::noinline]] inline div_result<uint256_t>
+airbender_udivrem(uint256_t const &u, uint256_t const &v) noexcept
+{
+    using namespace airbender_bigint;
+    slot scratch_u;
+    slot scratch_v;
+    slot r; // q·v, then u - q·v
+    uint256_t const &a = operand(u, scratch_u);
+    uint256_t const &d = operand(v, scratch_v);
+    airbender_oracle::write(airbender_oracle::DIV);
+    airbender_oracle::write(&a);
+    airbender_oracle::write(&d);
+    uint256_t const q = airbender_oracle::read256();
+    r.v = q;
+    bool ok = op(r.v, d, MUL_LOW) == 0;
+    ok &= op(r.v, a, SUB_AND_NEGATE) == 0;
+    ok &= op(r.v, d, SUB) == 1; // borrows: r < v
+    op(r.v, d, ADD); // and back to r
+    MONAD_ASSERT(ok);
+    return {.quot = q, .rem = r.v};
+}
+
+// (hi·2^256 + lo) mod d, d != 0, from the host's 512-bit quotient q: q·d must
+// fit in 512 bits, the dividend less q·d must neither borrow nor reach 2^256,
+// and the remainder must be below d. lo, hi and d are the caller's aligned
+// values; lo is left holding the remainder and hi is used up.
+[[gnu::always_inline]] inline void airbender_wide_rem(
+    uint256_t &lo, uint256_t &hi, uint256_t const &d) noexcept
+{
+    using namespace airbender_bigint;
+    slot q_lo;
+    slot q_hi;
+    slot mid;
+    airbender_oracle::write(airbender_oracle::WIDE_DIV);
+    airbender_oracle::write(&lo);
+    airbender_oracle::write(&hi);
+    airbender_oracle::write(&d);
+    q_lo.v = airbender_oracle::read256();
+    q_hi.v = airbender_oracle::read256();
+    // q·d = q_lo·d + q_hi·d·2^256 = (q_lo, mid)
+    op(mid.v, q_lo.v, MEMCOPY);
+    op(q_lo.v, d, MUL_LOW);
+    op(mid.v, d, MUL_HIGH);
+    bool ok = op(q_hi.v, d, MUL_LOW) == 0;
+    ok &= op(mid.v, q_hi.v, ADD) == 0;
+    // (lo, hi) -= (q_lo, mid)
+    uint32_t const borrow = op(lo, q_lo.v, SUB);
+    ok &= op(hi, mid.v, SUB | (borrow ? CARRY : 0u)) == 0;
+    ok &= op(hi, zero, EQ) == 1;
+    ok &= op(lo, d, SUB) == 1; // borrows: the remainder is below d
+    op(lo, d, ADD); // and back to it
+    MONAD_ASSERT(ok);
+}
+#endif
+
 [[gnu::always_inline]] constexpr div_result<uint256_t>
 udivrem(uint256_t const &u, uint256_t const &v) noexcept
 {
@@ -1351,6 +1493,15 @@ udivrem(uint256_t const &u, uint256_t const &v) noexcept
             return zisk_udivrem(u, v);
         }
     }
+#elif defined(MONAD_ZKVM_AIRBENDER)
+    if !consteval {
+        // Keep division by zero on the existing assertion path. No shortcut
+        // for small or power-of-two divisors: testing for one costs about
+        // what the host's quotient does.
+        if (v[0] | v[1] | v[2] | v[3]) {
+            return airbender_udivrem(u, v);
+        }
+    }
 #endif
     auto const r = udivrem(u.as_words(), v.as_words());
     return {.quot = uint256_t{r.quot}, .rem = uint256_t{r.rem}};
@@ -1370,6 +1521,40 @@ addmod(uint256_t const &x, uint256_t const &y, uint256_t const &mod) noexcept
             return 0;
         }
         return zisk_arith256_mod(x, 1, y, mod);
+    }
+#elif defined(MONAD_ZKVM_AIRBENDER)
+    // The sum on the circuit, then one subtraction of the modulus when that
+    // reduces it, else the host's quotient of the 257-bit sum.
+    if (!std::is_constant_evaluated()) {
+        using namespace airbender_bigint;
+        if (mod == 0) {
+            return 0;
+        }
+        slot scratch_y;
+        slot scratch_m;
+        slot s;
+        slot t;
+        uint256_t const &b = operand(y, scratch_y);
+        uint256_t const &m = operand(mod, scratch_m);
+        copy(s, x);
+        uint32_t const carry = op(s.v, b, ADD);
+        op(t.v, s.v, MEMCOPY);
+        uint32_t const borrow = op(t.v, m, SUB);
+        if (!carry && borrow) {
+            return s.v; // the sum is below the modulus
+        }
+        if (carry == borrow) {
+            // t is the sum less the modulus, exactly: the result if below it
+            bool const reduced = op(t.v, m, SUB);
+            op(t.v, m, ADD);
+            if (reduced) {
+                return t.v;
+            }
+        }
+        slot hi;
+        hi.v = uint256_t{carry};
+        airbender_wide_rem(s.v, hi.v, m);
+        return s.v;
     }
 #endif
     // Fast path when mod >= 2^192 and x, y < 2*mod
@@ -1420,15 +1605,24 @@ mulmod(uint256_t const &u, uint256_t const &v, uint256_t const &mod) noexcept
         return zisk_arith256_mod(u, v, 0, mod);
     }
 #elif defined(MONAD_ZKVM_AIRBENDER)
+    // The 512-bit product on the circuit, reduced with the host's quotient.
     if (!std::is_constant_evaluated()) {
-        alignas(32) uint256_t lo = u;
-        alignas(32) uint256_t hi = u;
-        alignas(32) uint256_t const w = v;
-        airbender_bigint::op(lo, w, airbender_bigint::MUL_LOW);
-        airbender_bigint::op(hi, w, airbender_bigint::MUL_HIGH);
-        words_t<2 * uint256_t::num_words> const prod{
-            lo[0], lo[1], lo[2], lo[3], hi[0], hi[1], hi[2], hi[3]};
-        return uint256_t{udivrem(prod, mod.as_words()).rem};
+        using namespace airbender_bigint;
+        if (mod == 0) {
+            return 0;
+        }
+        slot scratch_v;
+        slot scratch_m;
+        slot lo;
+        slot hi;
+        uint256_t const &w = operand(v, scratch_v);
+        uint256_t const &m = operand(mod, scratch_m);
+        copy(lo, u);
+        op(hi.v, lo.v, MEMCOPY);
+        op(lo.v, w, MUL_LOW);
+        op(hi.v, w, MUL_HIGH);
+        airbender_wide_rem(lo.v, hi.v, m);
+        return lo.v;
     }
 #endif
     auto const prod =

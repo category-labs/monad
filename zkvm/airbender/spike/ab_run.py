@@ -75,6 +75,11 @@ W = os.environ.get("MONAD_ZKVM_WORK") or os.path.abspath(
 TC = os.path.join(os.environ.get("TC_DIR") or os.path.expanduser("~/.local/xPacks/xpack-riscv-none-elf-gcc-15.2.0-1"),
                   "bin/riscv-none-elf")
 CARGO_AIRBENDER = f"{W}/airbender/stack/airbender-platform/target/release/cargo-airbender"
+# zkvm/airbender/runner: `cargo airbender run`/`flamegraph` plus the host's
+# answers to the guest's quotient queries. STOCK=1 runs cargo-airbender.
+RUNNER = f"{W}/airbender/stack/airbender-platform/target/release/monad-airbender-runner"
+def runner_cmd(mode):
+    return [CARGO_AIRBENDER, "airbender", mode] if os.environ.get("STOCK") else [RUNNER, mode]
 
 def main():
     elf, block = sys.argv[1], sys.argv[2]
@@ -91,8 +96,7 @@ def main():
         f.write("".join(f"{w:08x}" for w in words))
     f0 = rlp_list(open(f"{W}/run/w/rpc_{block}.witness", "rb").read())
     expected = keccak256(rlp_list(rlp_payload(f0[0])[1])[0]).hex()
-    cmd = [CARGO_AIRBENDER, "airbender", "flamegraph" if flame else "run", out + ".bin",
-           "--input", hex_path]
+    cmd = runner_cmd("flamegraph" if flame else "run") + [out + ".bin", "--input", hex_path]
     if flame:  # the text path is derived from app.bin's (out.text)
         cmd += ["--output", flame, "--elf-path", elf]
     else:

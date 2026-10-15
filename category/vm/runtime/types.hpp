@@ -312,6 +312,10 @@ namespace monad::vm::runtime
         uint8_t const *code_base = nullptr;
         size_t code_bound = 0;
         uint64_t const *jumpdest_words = nullptr;
+
+        // Saved by core_loop so handlers can reload their biased lower bound
+        // after runtime calls, alongside stack_limit.
+        uint256_t const *frame_stack_lower_bound = nullptr;
 #endif
 
         [[gnu::always_inline]]

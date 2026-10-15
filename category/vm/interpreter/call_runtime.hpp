@@ -20,10 +20,21 @@
 #include <category/vm/runtime/types.hpp>
 
 #include <cstddef>
+#include <type_traits>
 #include <utility>
 
 namespace monad::vm::interpreter
 {
+    // Inspect the runtime signature at compile time to select bounds reloads.
+    template <typename Function>
+    struct runtime_function_uses_context;
+
+    template <typename... Args, bool IsNoexcept>
+    struct runtime_function_uses_context<void (*)(Args...) noexcept(IsNoexcept)>
+        : std::bool_constant<runtime::detail::uses_context_v<Args...>>
+    {
+    };
+
     template <typename... FnArgs>
     [[gnu::always_inline]]
     inline void call_runtime(

@@ -1052,38 +1052,25 @@ public:
             }
         }
 
-        // Sort chunks into correct order, fast list by insertion count,
-        // then slow list by insertion count, with all cnv chunks to the end
-        std::sort(
-            todecompress.begin(),
-            todecompress.end(),
-            [fast_list_base_insertion_count, slow_list_base_insertion_count](
-                chunk_info_restore_t const &a, chunk_info_restore_t const &b) {
-                if (a.type > b.type) {
-                    return true;
-                }
-                if (a.type == b.type) {
-                    if (a.metadata.in_fast_list && !b.metadata.in_fast_list) {
-                        return true;
-                    }
-                    if (a.metadata.in_fast_list == b.metadata.in_fast_list ||
-                        a.metadata.in_slow_list == b.metadata.in_slow_list) {
-                        if (a.metadata.in_fast_list) {
-                            return (a.metadata.insertion_count() -
-                                    fast_list_base_insertion_count) <
-                                   (b.metadata.insertion_count() -
-                                    fast_list_base_insertion_count);
-                        }
-                        else {
-                            return (a.metadata.insertion_count() -
-                                    slow_list_base_insertion_count) <
-                                   (b.metadata.insertion_count() -
-                                    slow_list_base_insertion_count);
-                        }
-                    }
-                }
-                return false;
-            });
+        // Sort chunks into correct order: the fast list, then the slow list,
+        // each by rank from its archived head, with all cnv chunks to the end
+        monad::mpt::chunk_list_order const fast_order{
+            uint32_t(fast_list_base_insertion_count)};
+        monad::mpt::chunk_list_order const slow_order{
+            uint32_t(slow_list_base_insertion_count)};
+        auto const sort_key = [&fast_order,
+                               &slow_order](chunk_info_restore_t const &c) {
+            if (c.type != monad::async::storage_pool::seq) {
+                return std::pair{2U, 0U};
+            }
+            uint32_t const count = uint32_t(c.metadata.insertion_count());
+            if (c.metadata.in_fast_list) {
+                return std::pair{0U, fast_order.rank(count)};
+            }
+            MONAD_ASSERT(c.metadata.in_slow_list);
+            return std::pair{1U, slow_order.rank(count)};
+        };
+        std::ranges::sort(todecompress, {}, sort_key);
 
         if (debug_printing) {
             std::cerr << "Fast list:";

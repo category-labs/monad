@@ -21,9 +21,21 @@
 
 #include <cstddef>
 #include <utility>
+#include <type_traits>
 
 namespace monad::vm::interpreter
 {
+    // Whether a runtime function takes the Context: one that can reach the
+    // host, where a call is a real call; the others are arithmetic, inlined.
+    template <typename F>
+    struct runtime_fn_uses_context;
+
+    template <typename... FnArgs, bool NoExcept>
+    struct runtime_fn_uses_context<void (*)(FnArgs...) noexcept(NoExcept)>
+        : std::bool_constant<runtime::detail::uses_context_v<FnArgs...>>
+    {
+    };
+
     template <typename... FnArgs>
     [[gnu::always_inline]]
     inline void call_runtime(

@@ -532,12 +532,29 @@ namespace monad::vm::interpreter
 
 // Keep checks in the handler so failures can tail-call Context::exit.
 // Variadic to accept runtime functions with multiple template arguments.
-#define MONAD_VM_CHECKED_RUNTIME_CALL(OP, ...)                                 \
-    do {                                                                       \
-        MONAD_VM_CHECK(OP);                                                    \
-        call_runtime(__VA_ARGS__, ctx, stack_top, gas_remaining);              \
-    }                                                                          \
-    while (false)
+#if defined(MONAD_ZKVM_ZISK)
+// After a runtime function that takes the Context, a real call, the stack's
+// bounds are read back from ctx: kept across it, each takes a saved register,
+// stored, moved in and out and reloaded. The arithmetic ones are inlined.
+    #define MONAD_VM_CHECKED_RUNTIME_CALL(OP, ...)                             \
+        do {                                                                   \
+            MONAD_VM_CHECK(OP);                                                \
+            call_runtime(__VA_ARGS__, ctx, stack_top, gas_remaining);          \
+            if constexpr (::monad::vm::interpreter::runtime_fn_uses_context<   \
+                              std::decay_t<decltype(__VA_ARGS__)>>::value) {   \
+                stack_lower_bound = ctx.frame_stack_bottom;                         \
+                stack_limit = ctx.stack_limit;                                 \
+            }                                                                  \
+        }                                                                      \
+        while (false)
+#else
+    #define MONAD_VM_CHECKED_RUNTIME_CALL(OP, ...)                             \
+        do {                                                                   \
+            MONAD_VM_CHECK(OP);                                                \
+            call_runtime(__VA_ARGS__, ctx, stack_top, gas_remaining);          \
+        }                                                                      \
+        while (false)
+#endif
 
 // Check OP after a net stack change of SHIFT from earlier fused opcodes.
 #define MONAD_VM_CHECK_AT(OP, SHIFT)                                           \
@@ -1841,8 +1858,8 @@ namespace monad::vm::interpreter
     // holds takes no frame. The checks have run; do not repeat them.
     template <Traits traits>
     [[gnu::noinline]] MONAD_VM_TWIN_CALL void sha3_hash(
-        runtime::Context &ctx, MONAD_VM_ANALYSIS_PARAM,
-        uint256_t const *stack_bottom, uint256_t *stack_top,
+        runtime::Context &ctx, MONAD_VM_DISPATCH_STATE_PARAM,
+        uint256_t const *stack_lower_bound, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_TWIN_ENTRY();
@@ -1856,8 +1873,8 @@ namespace monad::vm::interpreter
     // hashed and kept, their gas charged.
     template <Traits traits>
     [[gnu::noinline]] MONAD_VM_TWIN_CALL void sha3_fill(
-        runtime::Context &ctx, MONAD_VM_ANALYSIS_PARAM,
-        uint256_t const *stack_bottom, uint256_t *stack_top,
+        runtime::Context &ctx, MONAD_VM_DISPATCH_STATE_PARAM,
+        uint256_t const *stack_lower_bound, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_TWIN_ENTRY();
@@ -1901,8 +1918,8 @@ namespace monad::vm::interpreter
                 o >= end || o + 32 >= end || gas_remaining < gas)) {
             MONAD_VM_MUST_TAIL return sha3_hash<quiet_traits<traits>>(
                 ctx,
-                MONAD_VM_ANALYSIS_ARG,
-                stack_bottom,
+                MONAD_VM_DISPATCH_STATE_ARG,
+                stack_lower_bound,
                 stack_top,
                 gas_remaining,
                 MONAD_VM_AS_CALLED(instr_ptr) MONAD_VM_TBL_ARG);
@@ -1921,8 +1938,8 @@ namespace monad::vm::interpreter
         if (MONAD_UNLIKELY(word == nullptr)) {
             MONAD_VM_MUST_TAIL return sha3_fill<quiet_traits<traits>>(
                 ctx,
-                MONAD_VM_ANALYSIS_ARG,
-                stack_bottom,
+                MONAD_VM_DISPATCH_STATE_ARG,
+                stack_lower_bound,
                 stack_top,
                 gas_remaining,
                 MONAD_VM_AS_CALLED(instr_ptr) MONAD_VM_TBL_ARG);

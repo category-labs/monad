@@ -1327,6 +1327,9 @@ namespace monad::vm::interpreter
             StackTop const stack_top{stack_ptr};
             auto const *const stack_lower_bound =
                 stack_ptr + MONAD_VM_STACK_LOWER_BOUND_BIAS;
+#if defined(MONAD_ZKVM_ZISK)
+            ctx->frame_stack_bottom = stack_lower_bound;
+#endif
             auto const *const instr_ptr = analysis->code();
             auto const gas_remaining = ctx->gas_remaining;
 

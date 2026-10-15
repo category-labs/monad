@@ -1,0 +1,51 @@
+# Copyright (C) 2025 Category Labs, Inc.
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+set(CMAKE_SYSTEM_NAME Generic)
+set(CMAKE_SYSTEM_PROCESSOR riscv32)
+set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+
+# Configurable toolchain directory — pass -DRISCV_TOOLCHAIN_DIR=<path> to cmake.
+set(RISCV_TOOLCHAIN_DIR "/opt/riscv" CACHE PATH "RISC-V toolchain directory")
+list(APPEND CMAKE_TRY_COMPILE_PLATFORM_VARIABLES RISCV_TOOLCHAIN_DIR)
+
+# xPack ships one multilib riscv-none-elf- for both XLENs; the riscv64-* names
+# are tried first so nix and riscv-gnu-toolchain installs keep working.
+foreach(_candidate
+        "riscv64-none-elf-" "riscv64-unknown-elf-" "riscv-none-elf-")
+    if(EXISTS "${RISCV_TOOLCHAIN_DIR}/bin/${_candidate}gcc")
+        set(RISCV_PREFIX "${_candidate}")
+        break()
+    endif()
+endforeach()
+
+if(NOT DEFINED RISCV_PREFIX)
+    message(FATAL_ERROR "No RISC-V gcc found in ${RISCV_TOOLCHAIN_DIR}/bin/")
+endif()
+
+set(CMAKE_C_COMPILER "${RISCV_TOOLCHAIN_DIR}/bin/${RISCV_PREFIX}gcc")
+set(CMAKE_CXX_COMPILER "${RISCV_TOOLCHAIN_DIR}/bin/${RISCV_PREFIX}g++")
+set(CMAKE_AR "${RISCV_TOOLCHAIN_DIR}/bin/${RISCV_PREFIX}ar")
+set(CMAKE_RANLIB "${RISCV_TOOLCHAIN_DIR}/bin/${RISCV_PREFIX}ranlib")
+
+set(CMAKE_C_FLAGS_INIT
+    "-march=rv32im_zicsr -mabi=ilp32 -mstrict-align -mcmodel=medany -nostartfiles -nostdlib -ffunction-sections -fdata-sections")
+set(CMAKE_CXX_FLAGS_INIT
+    "-march=rv32im_zicsr -mabi=ilp32 -mstrict-align -mcmodel=medany -nostartfiles -nostdlib++ -fno-exceptions -fno-rtti -ffunction-sections -fdata-sections")
+set(CMAKE_ASM_FLAGS_INIT "-march=rv32im_zicsr -mabi=ilp32 -mstrict-align")
+
+set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
+set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)

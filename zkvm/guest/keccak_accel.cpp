@@ -32,7 +32,8 @@
 // precompile), absorbing byte by byte -- measured at 19.5 % of the SP1 guest's
 // attributed work, because the pre-state binding hashes the whole witness trie.
 
-#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_SP1)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_SP1) ||                    \
+    defined(MONAD_ZKVM_AIRBENDER)
 
 #include <cstddef>
 #include <cstdint>
@@ -656,6 +657,17 @@ static inline void keccak_permute(uint64_t (*state)[25])
     zisk_keccakf(state);
 #endif
 }
+#elif defined(MONAD_ZKVM_AIRBENDER)
+// Airbender reaches Keccak-f through a delegation circuit driven by a run of
+// CSR writes over a state block with its own layout; the runtime owns that
+// sequence (zkvm/airbender/runtime.c) and permutes the 25 lanes in place.
+extern "C" void monad_zkvm_airbender_keccak_f1600(uint64_t (*state)[25]);
+
+template <bool>
+static inline void keccak_permute(uint64_t (*state)[25])
+{
+    monad_zkvm_airbender_keccak_f1600(state);
+}
 #else
 // SP1's syscall_keccak_permute symbol is LTO-internalised inside libzkevm.a,
 // so emit the ecall the SDK itself emits: t0 = KECCAK_PERMUTE (0x00_01_01_09),
@@ -988,4 +1000,4 @@ void monad_zkvm_keccak256_fast_memo_prefix(
 
 } // extern "C"
 
-#endif // MONAD_ZKVM_ZISK || MONAD_ZKVM_SP1
+#endif // MONAD_ZKVM_ZISK || MONAD_ZKVM_SP1 || MONAD_ZKVM_AIRBENDER

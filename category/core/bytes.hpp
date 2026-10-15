@@ -184,7 +184,8 @@ struct std::hash<monad::bytes32_t>
     [[gnu::always_inline]] inline
     size_t operator()(monad::bytes32_t const &x) const noexcept
     {
-        #if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_SP1)
+        #if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_SP1) || \
+            defined(MONAD_ZKVM_AIRBENDER)
         // zkVM guest: fold, and a multiply only where it pays
         // (category/core/bit_primitives.hpp). Measured on the guest, where
         // komihash-class byte-wise hashing is step-priced; no entropy source

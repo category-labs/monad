@@ -38,9 +38,9 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
 
     project(monad-zkvm-guest LANGUAGES C CXX ASM)
 
-    if(NOT MONAD_ZKVM_GUEST_TARGET MATCHES "^(zisk|sp1)$")
+    if(NOT MONAD_ZKVM_GUEST_TARGET MATCHES "^(zisk|sp1|airbender)$")
         message(FATAL_ERROR
-            "MONAD_ZKVM_GUEST_TARGET must be 'zisk' or 'sp1', got "
+            "MONAD_ZKVM_GUEST_TARGET must be 'zisk', 'sp1' or 'airbender', got "
             "'${MONAD_ZKVM_GUEST_TARGET}'")
     endif()
     if(MONAD_COMPILER_TESTING)
@@ -134,6 +134,18 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         string(APPEND CMAKE_C_FLAGS " ${_zisk_march} -fno-pic")
         string(APPEND CMAKE_CXX_FLAGS " ${_zisk_march} -fno-pic")
         string(APPEND CMAKE_ASM_FLAGS " ${_zisk_march}")
+    endif()
+
+    # Airbender proves RV32IM only, in machine mode: no A, C or Zb* (the
+    # transpiler rejects rotates), and an unaligned access is unprovable, so
+    # the compiler must never emit one on its own. Its machine profile also
+    # leaves out signed MULH, MULHSU, DIV and REM, which no flag removes; the
+    # link has to be audited for them.
+    if(MONAD_ZKVM_GUEST_TARGET STREQUAL "airbender")
+        set(_airbender_march "-march=rv32im_zicsr -mabi=ilp32 -mstrict-align")
+        string(APPEND CMAKE_C_FLAGS " ${_airbender_march} -fno-pic")
+        string(APPEND CMAKE_CXX_FLAGS " ${_airbender_march} -fno-pic")
+        string(APPEND CMAKE_ASM_FLAGS " ${_airbender_march}")
     endif()
 
     # Let the inliner grow the program. GCC's -O3 defaults are tuned for a binary that has to fit a
@@ -247,6 +259,8 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
 
     if(MONAD_ZKVM_GUEST_TARGET STREQUAL "sp1")
         add_compile_definitions(MONAD_ZKVM_SP1)
+    elseif(MONAD_ZKVM_GUEST_TARGET STREQUAL "airbender")
+        add_compile_definitions(MONAD_ZKVM_AIRBENDER)
     elseif(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
         add_compile_definitions(MONAD_ZKVM_ZISK)
 

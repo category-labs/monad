@@ -857,6 +857,45 @@ struct ZiskAdd256Params
 }
 #endif
 
+#if defined(MONAD_ZKVM_AIRBENDER)
+// Airbender's bigint delegation (CSR 0x7ca; zksync-airbender common_constants
+// delegation_types/bigint_with_control.rs): a = a op b over eight little-endian
+// 32-bit words, which is words_ as laid out on rv32, for one CPU cycle and one
+// row of the bigint circuit. x10 holds a, read and written; x11 holds b; x12
+// the op with an optional carry-in bit, and on return the carry, the borrow
+// or the equality. Both operands 32-byte aligned, in RAM and distinct: the
+// EVM stack's slots are (EvmStackAllocatorMeta::alignment), and every other
+// caller passes alignas(32) locals.
+namespace airbender_bigint
+{
+    inline constexpr uint32_t ADD = 1u << 0;
+    inline constexpr uint32_t SUB = 1u << 1;
+    inline constexpr uint32_t SUB_AND_NEGATE = 1u << 2; // a = b - a
+    inline constexpr uint32_t MUL_LOW = 1u << 3;
+    inline constexpr uint32_t MUL_HIGH = 1u << 4;
+    inline constexpr uint32_t EQ = 1u << 5;
+    inline constexpr uint32_t CARRY = 1u << 6;
+    inline constexpr uint32_t MEMCOPY = 1u << 7;
+
+    [[gnu::always_inline]] inline uint32_t
+    op(uint256_t &a, uint256_t const &b, uint32_t const mask) noexcept
+    {
+        register uintptr_t x10 __asm__("a0") = reinterpret_cast<uintptr_t>(&a);
+        register uintptr_t x11 __asm__("a1") = reinterpret_cast<uintptr_t>(&b);
+        register uint32_t x12 __asm__("a2") = mask;
+        __asm__ volatile("csrrw x0, 0x7ca, x0"
+                         : "+r"(x12), "+m"(a)
+                         : "r"(x10), "r"(x11), "m"(b));
+        return x12;
+    }
+
+    [[gnu::always_inline]] inline bool aligned(void const *const p) noexcept
+    {
+        return (reinterpret_cast<uintptr_t>(p) & 31) == 0;
+    }
+}
+#endif
+
 MONAD_NO_VECTORIZE
 [[gnu::noinline]]
 constexpr uint256_t
@@ -874,6 +913,13 @@ operator*(uint256_t const &lhs, uint256_t const &rhs) noexcept
             mulx(lhs[0], rhs[0], hi, lo);
             return uint256_t{lo, hi, 0, 0};
         }
+    }
+#elif defined(MONAD_ZKVM_AIRBENDER)
+    if !consteval {
+        alignas(32) uint256_t t = lhs;
+        alignas(32) uint256_t const u = rhs;
+        airbender_bigint::op(t, u, airbender_bigint::MUL_LOW);
+        return t;
     }
 #endif
     return truncating_mul(lhs, rhs);
@@ -1373,6 +1419,17 @@ mulmod(uint256_t const &u, uint256_t const &v, uint256_t const &mod) noexcept
         }
         return zisk_arith256_mod(u, v, 0, mod);
     }
+#elif defined(MONAD_ZKVM_AIRBENDER)
+    if (!std::is_constant_evaluated()) {
+        alignas(32) uint256_t lo = u;
+        alignas(32) uint256_t hi = u;
+        alignas(32) uint256_t const w = v;
+        airbender_bigint::op(lo, w, airbender_bigint::MUL_LOW);
+        airbender_bigint::op(hi, w, airbender_bigint::MUL_HIGH);
+        words_t<2 * uint256_t::num_words> const prod{
+            lo[0], lo[1], lo[2], lo[3], hi[0], hi[1], hi[2], hi[3]};
+        return uint256_t{udivrem(prod, mod.as_words()).rem};
+    }
 #endif
     auto const prod =
         truncating_mul<2 * uint256_t::num_words>(u.as_words(), v.as_words());
@@ -1456,6 +1513,30 @@ exp(uint256_t base, uint256_t const &exponent) noexcept
     }
 
     size_t const sig_words = count_significant_words(exponent.as_words());
+#if defined(MONAD_ZKVM_AIRBENDER)
+    if !consteval {
+        // The same square-and-multiply, each product one delegation. A square
+        // needs a second copy: the circuit's operands must be distinct.
+        alignas(32) uint256_t acc{1};
+        alignas(32) uint256_t sq = base;
+        alignas(32) uint256_t copy;
+        for (size_t w = 0; w < sig_words; w++) {
+            uint64_t word_exp = exponent[w];
+            int32_t significant_bits =
+                w + 1 == sig_words ? 64 - std::countl_zero(word_exp) : 64;
+            while (significant_bits) {
+                if (word_exp & 1) {
+                    airbender_bigint::op(acc, sq, airbender_bigint::MUL_LOW);
+                }
+                copy = sq;
+                airbender_bigint::op(sq, copy, airbender_bigint::MUL_LOW);
+                word_exp >>= 1;
+                significant_bits -= 1;
+            }
+        }
+        return acc;
+    }
+#endif
     for (size_t w = 0; w < sig_words; w++) {
         uint64_t word_exp = exponent[w];
         int32_t significant_bits =

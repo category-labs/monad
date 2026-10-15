@@ -1222,6 +1222,12 @@ namespace monad::vm::interpreter
         zisk_add256(ctx.add256_params, *stack_top, *stack_top);
 
         MONAD_VM_DISPATCH(1, 0, *instr_ptr);
+#elif defined(MONAD_ZKVM_AIRBENDER)
+        // The sum by the bigint circuit, in place in the result's slot.
+        auto &&[a, b] = top_two(stack_top);
+        airbender_bigint::op(b, a, airbender_bigint::ADD);
+
+        MONAD_VM_NEXT(ADD);
 #else
         auto &&[a, b] = top_two(stack_top);
         b = a + b;
@@ -1256,6 +1262,12 @@ namespace monad::vm::interpreter
         zisk_sub256_into(ctx, a, *stack_top);
 
         MONAD_VM_DISPATCH(1, 0, *instr_ptr);
+#elif defined(MONAD_ZKVM_AIRBENDER)
+        // b = a - b in b's slot: the circuit's subtract-and-negate.
+        auto &&[a, b] = top_two(stack_top);
+        airbender_bigint::op(b, a, airbender_bigint::SUB_AND_NEGATE);
+
+        MONAD_VM_NEXT(SUB);
 #else
         auto &&[a, b] = top_two(stack_top);
         b = a - b;
@@ -1440,6 +1452,15 @@ namespace monad::vm::interpreter
         *stack_top = *(stack_top + 1) < *stack_top;
 
         MONAD_VM_DISPATCH(1, 0, *instr_ptr);
+#elif defined(MONAD_ZKVM_AIRBENDER)
+        // a < b is the borrow of a - b, computed into b's slot, which the
+        // result then overwrites.
+        auto &&[a, b] = top_two(stack_top);
+        uint32_t const borrow =
+            airbender_bigint::op(b, a, airbender_bigint::SUB_AND_NEGATE);
+        b = uint256_t{borrow};
+
+        MONAD_VM_NEXT(LT);
 #else
         auto &&[a, b] = top_two(stack_top);
         b = a < b;
@@ -1472,6 +1493,14 @@ namespace monad::vm::interpreter
         *stack_top = *(stack_top + 1) > *stack_top;
 
         MONAD_VM_DISPATCH(1, 0, *instr_ptr);
+#elif defined(MONAD_ZKVM_AIRBENDER)
+        // a > b is the borrow of b - a, as LT's.
+        auto &&[a, b] = top_two(stack_top);
+        uint32_t const borrow =
+            airbender_bigint::op(b, a, airbender_bigint::SUB);
+        b = uint256_t{borrow};
+
+        MONAD_VM_NEXT(GT);
 #else
         auto &&[a, b] = top_two(stack_top);
         b = a > b;
@@ -1605,7 +1634,12 @@ namespace monad::vm::interpreter
         }
 #endif
         auto &&[a, b] = top_two(stack_top);
+#if defined(MONAD_ZKVM_AIRBENDER)
+        // The circuit's compare leaves b as it was and returns the equality.
+        b = uint256_t{airbender_bigint::op(b, a, airbender_bigint::EQ)};
+#else
         b = (a == b);
+#endif
 
 #if defined(MONAD_ZKVM_ZISK)
         MONAD_VM_NEXT_OP(EQ, monad_vm_op2);

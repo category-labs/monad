@@ -90,6 +90,23 @@ namespace monad::vm::runtime
                      :
                      : "r"(&p)
                      : "memory");
+#elif defined(MONAD_ZKVM_AIRBENDER)
+        // The interpreter's MUL writes over one operand's stack slot: the
+        // product by the bigint circuit in place there. Anything else, or a
+        // slot not 32-byte aligned, through operator*'s aligned copies.
+        if (result_ptr == b_ptr && result_ptr != a_ptr &&
+            airbender_bigint::aligned(result_ptr) &&
+            airbender_bigint::aligned(a_ptr)) {
+            airbender_bigint::op(*result_ptr, *a_ptr, airbender_bigint::MUL_LOW);
+            return;
+        }
+        if (result_ptr == a_ptr && result_ptr != b_ptr &&
+            airbender_bigint::aligned(result_ptr) &&
+            airbender_bigint::aligned(b_ptr)) {
+            airbender_bigint::op(*result_ptr, *b_ptr, airbender_bigint::MUL_LOW);
+            return;
+        }
+        *result_ptr = *a_ptr * *b_ptr;
 #else
         *result_ptr = *a_ptr * *b_ptr;
 #endif

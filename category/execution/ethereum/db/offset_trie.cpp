@@ -1715,6 +1715,70 @@ OffsetTrie::upsert_node(NodeId id, NibblesView key)
         key.nibble_size() == MAX_PATH_NIBBLES && !key.begin_nibble()
             ? key.data()
             : nullptr;
+    // As in find_original, branches two levels a turn, a key byte's two
+    // nibbles: the loop below keeps the view's parity, a test and two arms a
+    // level, and reads its members again after each store. Only a branch the
+    // block has not rewritten, whose child on the key exists, is passed here,
+    // its hash dropped and that child's bit marked dirty as the loop below
+    // does; any other node is left to it, at the rest reached.
+    if (whole_key != nullptr) {
+        CachedHash *const *const hash_slots = blob_hash_slots_;
+        unsigned char *const *const overlay_slots = blob_overlay_slots_;
+        // A branch passed through: its hash is dropped, child `bit` dirty.
+        auto const descend =
+            [hash_slots](uint64_t const v, unsigned const bit) {
+                if (CachedHash *const e = hash_slots[v >> 2]) {
+                    e->valid = false;
+                    e->dirty |= uint64_t{1} << bit;
+                }
+            };
+        // n's bytes if n is a branch the block has not rewritten, or nullptr.
+        // get_original's bound, held: the stores above would reload it and
+        // the blob's address each level. An id it rejects -- NULL_ID, a
+        // fresh id, a bad one -- goes to the loop below, which asserts it.
+        unsigned char const *const blob = blob_.data();
+        uint64_t const span = blob_span_;
+        auto const original_branch =
+            [&](NodeId const n) -> unsigned char const * {
+            uint64_t const v = static_cast<uint64_t>(n);
+            if (v - HEADER_LEN >= span || overlay_slots[v >> 2] != nullptr) {
+                return nullptr;
+            }
+            return blob[v] == BRANCH ? blob + v : nullptr;
+        };
+        unsigned char const *k = whole_key;
+        unsigned odd = 0;
+        while (k != whole_key + MAX_PATH_NIBBLES / 2) {
+            unsigned char const *const high = original_branch(id);
+            if (high == nullptr) {
+                break;
+            }
+            unsigned const b = *k;
+            NodeId const hc = BranchView{NodeViewBase{high}}.child(b >> 4);
+            if (hc == NULL_ID) {
+                break;
+            }
+            descend(static_cast<uint64_t>(id), b >> 4);
+            id = hc;
+            odd = 1;
+            unsigned char const *const low = original_branch(id);
+            if (low == nullptr) {
+                break;
+            }
+            NodeId const lc = BranchView{NodeViewBase{low}}.child(b & 0xf);
+            if (lc == NULL_ID) {
+                break;
+            }
+            descend(static_cast<uint64_t>(id), b & 0xf);
+            id = lc;
+            odd = 0;
+            ++k;
+        }
+        key = NibblesView{
+            2 * static_cast<unsigned>(k - whole_key) + odd,
+            MAX_PATH_NIBBLES,
+            whole_key};
+    }
 #endif
     // A descent to an existing child -- through a branch, or through an
     // extension whose whole path the key starts with -- is the next turn with

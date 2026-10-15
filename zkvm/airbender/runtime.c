@@ -228,7 +228,22 @@ void read_input(uint8_t const **const buf_ptr, size_t *const buf_size)
 {
     size_t const len = csr_read_word();
     uint32_t *const words = sys_alloc_aligned((len + 3) & ~(size_t)3, 4);
-    for (size_t i = 0; i < (len + 3) / 4; ++i) {
+    // Eight words a turn: a turn per word also steps and tests, which on a
+    // 7.5 MB witness (1.9M words) was half the loop's cycles.
+    size_t const n = (len + 3) / 4;
+    size_t i = 0;
+    for (; i + 8 <= n; i += 8) {
+        uint32_t *const w = words + i;
+        w[0] = csr_read_word();
+        w[1] = csr_read_word();
+        w[2] = csr_read_word();
+        w[3] = csr_read_word();
+        w[4] = csr_read_word();
+        w[5] = csr_read_word();
+        w[6] = csr_read_word();
+        w[7] = csr_read_word();
+    }
+    for (; i < n; ++i) {
         words[i] = csr_read_word();
     }
     *buf_ptr = (uint8_t const *)words;
@@ -403,7 +418,19 @@ static inline void store32(uint8_t *const p, uint32_t const v)
 
 // Different offsets in a word: bytes up to the destination's word boundary,
 // then each destination word shifted together from two aligned source words
-// (each holds at least one byte that is copied), then the bytes left.
+// (each holds at least one byte that is copied), then the bytes left. A step
+// loads one word and stores one: the barrier after it keeps gcc from loading
+// a run of words ahead, which takes more registers than the steps need (it
+// saved and restored five s-registers a call).
+#define MONAD_COPY_STEP(K)                                                     \
+    do {                                                                       \
+        uint32_t const h = load32(w + 4 * (K) + 4);                            \
+        store32(d + 4 * (K), (lo >> rs) | (h << ls));                          \
+        lo = h;                                                                \
+        __asm__ volatile("" ::: "memory");                                     \
+    }                                                                          \
+    while (0)
+
 __attribute__((noinline)) static void *
 copy_shifted(void *const dst, uint8_t *d, uint8_t const *s, size_t n)
 {
@@ -423,25 +450,30 @@ copy_shifted(void *const dst, uint8_t *d, uint8_t const *s, size_t n)
     uint8_t const *w = s - off;
     uint32_t lo = load32(w);
     for (; n >= 16; n -= 16, d += 16, w += 16) {
-        uint32_t const h0 = load32(w + 4), h1 = load32(w + 8), h2 = load32(w + 12),
-                       h3 = load32(w + 16);
-        store32(d, (lo >> rs) | (h0 << ls));
-        store32(d + 4, (h0 >> rs) | (h1 << ls));
-        store32(d + 8, (h1 >> rs) | (h2 << ls));
-        store32(d + 12, (h2 >> rs) | (h3 << ls));
-        lo = h3;
+        MONAD_COPY_STEP(0);
+        MONAD_COPY_STEP(1);
+        MONAD_COPY_STEP(2);
+        MONAD_COPY_STEP(3);
     }
-    for (; n >= 4; n -= 4, d += 4, w += 4) {
-        uint32_t const h = load32(w + 4);
-        store32(d, (lo >> rs) | (h << ls));
-        lo = h;
+    if (n & 8) {
+        MONAD_COPY_STEP(0);
+        MONAD_COPY_STEP(1);
+        d += 8;
+        w += 8;
+    }
+    if (n & 4) {
+        MONAD_COPY_STEP(0);
+        d += 4;
+        w += 4;
     }
     s = w + off;
-    while (n--) {
+    for (n &= 3; n; --n) {
         *d++ = *s++;
     }
     return dst;
 }
+
+#undef MONAD_COPY_STEP
 
 // Both word-aligned: eight words at a time, then what is left by its bits.
 __attribute__((noinline)) static void *

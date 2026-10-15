@@ -15,6 +15,7 @@
 
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 
+#include <category/core/assert.h>
 #include <category/core/config.hpp>
 #include <category/core/hex.hpp>
 #include <category/core/int.hpp>
@@ -88,6 +89,13 @@ BlobSchedule EthereumMainnet::get_blob_schedule(uint64_t const timestamp) const
 
 GenesisState EthereumMainnet::get_genesis_state() const
 {
+#if defined(MONAD_ZKVM_ZISK)
+    // The guest proves blocks over a witnessed pre-state and never builds the
+    // genesis. Referenced from the vtable all the same, the allocation's JSON
+    // would stay in .rodata, whose every word the ZisK ROM initialises on
+    // every proof (~950 KB).
+    MONAD_ABORT("the guest has no genesis state");
+#else
     BlockHeader header;
     header.difficulty = 17179869184;
     header.gas_limit = 5000;
@@ -96,6 +104,7 @@ GenesisState EthereumMainnet::get_genesis_state() const
                                  "db3db69cbdb7a38e1e50b1b82fa")
                             .value();
     return {header, ETHEREUM_MAINNET_ALLOC};
+#endif
 }
 
 MONAD_NAMESPACE_END

@@ -53,11 +53,16 @@ namespace monad::zkvm
             return v;
         }
 
-        [[gnu::always_inline]] inline unsigned
+        // Read, not built: the guest forms a 64-bit constant in five
+        // instructions, and loads it in two.
+        inline uint64_t const volatile golden = 0x9E3779B97F4A7C15ull;
+
+        // Slots as 64-bit values: a 32-bit one is re-extended at every step
+        // of the probe.
+        [[gnu::always_inline]] inline size_t
         place(uint64_t const fold, unsigned const bits) noexcept
         {
-            return static_cast<unsigned>(
-                (fold * 0x9E3779B97F4A7C15ull) >> (64 - bits));
+            return static_cast<size_t>((fold * golden) >> (64 - bits));
         }
 
         [[gnu::always_inline]] inline void
@@ -77,10 +82,10 @@ namespace monad::zkvm
         if (len == 32) {
             uint64_t const w0 = word(in), w1 = word(in + 8),
                            w2 = word(in + 16), w3 = word(in + 24);
-            unsigned const mask = (1u << KNOWN_32_BITS) - 1;
-            for (unsigned s = place(w0 ^ w1 ^ w2 ^ w3, KNOWN_32_BITS);;
+            size_t const mask = (size_t{1} << KNOWN_32_BITS) - 1;
+            for (size_t s = place(w0 ^ w1 ^ w2 ^ w3, KNOWN_32_BITS);;
                  s = (s + 1) & mask) {
-                unsigned const n = known_32_index[s];
+                size_t const n = known_32_index[s];
                 if (n == 0) {
                     return false;
                 }
@@ -95,10 +100,10 @@ namespace monad::zkvm
         if (len == 64) {
             uint64_t const w1 = word(in + 8), w2 = word(in + 16),
                            w3 = word(in + 24), w7 = word(in + 56);
-            unsigned const mask = (1u << KNOWN_64_BITS) - 1;
-            for (unsigned s = place(w1 ^ w2 ^ w3 ^ w7, KNOWN_64_BITS);;
+            size_t const mask = (size_t{1} << KNOWN_64_BITS) - 1;
+            for (size_t s = place(w1 ^ w2 ^ w3 ^ w7, KNOWN_64_BITS);;
                  s = (s + 1) & mask) {
-                unsigned const n = known_64_index[s];
+                size_t const n = known_64_index[s];
                 if (n == 0) {
                     return false;
                 }
@@ -117,10 +122,10 @@ namespace monad::zkvm
         if (len == 20) {
             uint64_t const w0 = word(in), w1 = word(in + 8),
                            w2 = half(in + 16);
-            unsigned const mask = (1u << KNOWN_20_BITS) - 1;
-            for (unsigned s = place(w0 ^ w1 ^ w2, KNOWN_20_BITS);;
+            size_t const mask = (size_t{1} << KNOWN_20_BITS) - 1;
+            for (size_t s = place(w0 ^ w1 ^ w2, KNOWN_20_BITS);;
                  s = (s + 1) & mask) {
-                unsigned const n = known_20_index[s];
+                size_t const n = known_20_index[s];
                 if (n == 0) {
                     return false;
                 }

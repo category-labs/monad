@@ -1329,7 +1329,16 @@ namespace monad::vm::interpreter
             auto const *const stack_bottom =
                 stack_top + MONAD_VM_STACK_BOTTOM_BIAS;
             auto const *const instr_ptr = analysis->code();
+#if defined(MONAD_ZKVM_AIRBENDER)
+            // A frame's gas is at most its transaction's limit, under the
+            // block's (tens of millions): within gas_t's 31 bits, with room.
+            MONAD_ASSERT(
+                ctx->gas_remaining >= 0 &&
+                ctx->gas_remaining <= (int64_t{1} << 30));
+            gas_t const gas_remaining = static_cast<gas_t>(ctx->gas_remaining);
+#else
             auto const gas_remaining = ctx->gas_remaining;
+#endif
 
             if constexpr (debug_enabled) {
                 trace(*analysis, gas_remaining, instr_ptr);
@@ -1347,6 +1356,9 @@ namespace monad::vm::interpreter
                 itbl = instruction_table<traits>.data();
             }
             InstrEval const first = dispatch_table<traits>(itbl)[*instr_ptr];
+#elif defined(MONAD_ZKVM_AIRBENDER)
+            void const *const itbl = instruction_table<traits>.data();
+            InstrEval const first = instruction_table<traits>[*instr_ptr];
 #else
             InstrEval const first = instruction_table<traits>[*instr_ptr];
 #endif

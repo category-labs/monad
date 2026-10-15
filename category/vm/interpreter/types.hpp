@@ -125,6 +125,15 @@
     #define MONAD_VM_TBL_PARAM , void const *itbl
     #define MONAD_VM_TBL_ARG , itbl
     #define MONAD_VM_TABLE_REF (dispatch_table<traits>(itbl))
+#elif defined(MONAD_ZKVM_AIRBENDER)
+    // The table travels in a7, the last argument register rv32 has left: a
+    // dispatch then indexes it there, where it otherwise forms the table's
+    // address anew (auipc, addi) -- two of the some 40 cycles an opcode takes.
+    #define MONAD_VM_TBL_TYPE , void const *
+    #define MONAD_VM_TBL_PARAM , void const *itbl
+    #define MONAD_VM_TBL_ARG , itbl
+    #define MONAD_VM_TABLE_REF                                                  \
+        (static_cast<::monad::vm::interpreter::InstrEval const *>(itbl))
 #else
     #define MONAD_VM_TBL_TYPE
     #define MONAD_VM_TBL_PARAM
@@ -134,11 +143,25 @@
 
 namespace monad::vm::interpreter
 {
+    // The gas a handler holds. A 64-bit count takes two registers on rv32
+    // and five instructions a charge -- the low word's subtract, its borrow
+    // into the high word, and the high word's sign -- against two for a
+    // 32-bit one; and the register it frees is one the handlers, all eight
+    // argument registers in use, otherwise spill for. A frame's gas fits 31
+    // bits with room to spare: core_loop asserts it at most 2^30, and the
+    // only charge that can pass 2^31, a memory expansion's, is made in 64
+    // bits (mstore_grow); the runtime keeps Context's count in 64 bits.
+#if defined(MONAD_ZKVM_AIRBENDER)
+    using gas_t = int32_t;
+#else
+    using gas_t = int64_t;
+#endif
+
     // Use void const * to avoid a recursive InstrEval type; dispatch casts it
     // back to a pointer to table entries.
     using InstrEval = void MONAD_VM_POINTER_CALL (*)(
         runtime::Context &, MONAD_VM_ANALYSIS_TYPE, uint256_t const *,
-        uint256_t *, int64_t, uint8_t const *MONAD_VM_TBL_TYPE);
+        uint256_t *, gas_t, uint8_t const *MONAD_VM_TBL_TYPE);
 
     using InstrTable = std::array<InstrEval, 256>;
 

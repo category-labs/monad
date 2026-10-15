@@ -25,7 +25,7 @@ namespace monad::vm::interpreter
     [[gnu::always_inline]]
     inline void call_runtime(
         void (*f)(FnArgs...), runtime::Context &ctx, uint256_t *const stack_top,
-        int64_t &gas_remaining)
+        gas_t &gas_remaining)
     {
         constexpr auto use_context = runtime::detail::uses_context_v<FnArgs...>;
         constexpr auto use_result = runtime::detail::uses_result_v<FnArgs...>;
@@ -85,7 +85,17 @@ namespace monad::vm::interpreter
         std::apply(f, all_args);
 
         if constexpr (use_context) {
+#if defined(MONAD_ZKVM_AIRBENDER)
+            // Into gas_t's 31 bits, a count the function left negative
+            // negative: it is never above what the frame started with
+            // (core_loop), a call's stipend coming back to a caller that paid
+            // more for the call.
+            int64_t const monad_vm_left = ctx.gas_remaining;
+            gas_remaining =
+                monad_vm_left < 0 ? gas_t{-1} : static_cast<gas_t>(monad_vm_left);
+#else
             gas_remaining = ctx.gas_remaining;
+#endif
         }
     }
 }

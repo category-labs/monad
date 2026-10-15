@@ -110,6 +110,34 @@ namespace monad::vm::interpreter
         [[gnu::always_inline]] inline void
         generic_push(uint256_t *const stack_top, uint8_t const *const instr_ptr)
         {
+#if defined(MONAD_ZKVM_AIRBENDER)
+            // PUSH1 to PUSH4, nine pushes in ten: the value is one 32-bit
+            // word, stored with seven zero ones from x0. As a uint256_t gcc
+            // forms the zero halves in registers first, and takes the bytes
+            // for one big-endian load, which without unaligned access it
+            // rebuilds as bytes and a swap -- nine instructions for PUSH2's
+            // two bytes where the shift and the or take four. Each byte goes
+            // through an empty asm to keep the pattern out of its sight.
+            if constexpr (N <= 4) {
+                typedef uint32_t __attribute__((__may_alias__)) word_t;
+                uint32_t v = 0;
+                for (size_t i = 0; i < N; ++i) {
+                    uint32_t b = instr_ptr[1 + i];
+                    asm("" : "+r"(b));
+                    v = (v << 8) | b;
+                }
+                word_t *const w = reinterpret_cast<word_t *>(stack_top + 1);
+                w[0] = v;
+                w[1] = 0;
+                w[2] = 0;
+                w[3] = 0;
+                w[4] = 0;
+                w[5] = 0;
+                w[6] = 0;
+                w[7] = 0;
+                return;
+            }
+#endif
             static constexpr auto whole_words = N / 8;
             static constexpr auto leading_part = N % 8;
 

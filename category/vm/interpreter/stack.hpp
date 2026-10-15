@@ -188,7 +188,7 @@ namespace monad::vm::interpreter
     [[gnu::always_inline]] inline void check_requirements(
         runtime::Context &ctx, Intercode const &,
         uint256_t const *const stack_bottom, uint256_t *const stack_top,
-        int64_t &gas_remaining)
+        gas_t &gas_remaining)
     {
 #if defined(MONAD_ZKVM_ZISK)
         // The handlers hold the limit in their second argument; this caller

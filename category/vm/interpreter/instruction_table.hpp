@@ -540,11 +540,17 @@ namespace monad::vm::interpreter
     #define MONAD_VM_CHECKED_RUNTIME_CALL(OP, ...)                             \
         do {                                                                   \
             MONAD_VM_CHECK(OP);                                                \
+            constexpr bool monad_vm_real_call =                                \
+                ::monad::vm::interpreter::runtime_fn_uses_context<             \
+                    std::decay_t<decltype(__VA_ARGS__)>>::value;               \
+            if constexpr (monad_vm_real_call) {                                \
+                ctx.frame_stack_top = stack_top;                               \
+            }                                                                  \
             call_runtime(__VA_ARGS__, ctx, stack_top, gas_remaining);          \
-            if constexpr (::monad::vm::interpreter::runtime_fn_uses_context<   \
-                              std::decay_t<decltype(__VA_ARGS__)>>::value) {   \
+            if constexpr (monad_vm_real_call) {                                \
                 stack_bottom = ctx.frame_stack_bottom;                         \
                 stack_limit = ctx.stack_limit;                                 \
+                stack_top = ctx.frame_stack_top;                               \
             }                                                                  \
         }                                                                      \
         while (false)

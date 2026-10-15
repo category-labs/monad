@@ -698,18 +698,17 @@ size_t OffsetTrie::patch_rlp(CachedHash const &e, NodeViewBase const node)
         BranchView const b{node};
         // Each dirty child's ref starts where the priming encode recorded it,
         // in the window's head. A dirty child is never a digest or empty, so
-        // its offset is recorded: zero would be a slot never written.
-        unsigned char *const window = e.rlp + len - MAX_NODE_RLP;
-        uint64_t const *const starts =
-            reinterpret_cast<uint64_t const *>(window);
+        // its address is recorded: zero would be a slot never written.
+        uintptr_t const *const starts =
+            reinterpret_cast<uintptr_t const *>(e.rlp + len - MAX_NODE_RLP);
         while (mask != 0) {
             unsigned const k = static_cast<unsigned>(std::countr_zero(mask));
             mask &= mask - 1;
-            size_t const at = starts[k];
+            uintptr_t const at = starts[k];
             if (at == 0) {
                 return 0;
             }
-            unsigned char *const ref = window + at;
+            auto *const ref = reinterpret_cast<unsigned char *>(at);
             if (!patch_ref(b.child(k), ref, rlp_ref_len(*ref))) {
                 return 0;
             }
@@ -1118,14 +1117,16 @@ OffsetTrie::encode_rlp(
 #if defined(MONAD_ZKVM_ZISK)
                         if constexpr (priming_pass) {
                             // Where the ref of a child that can become dirty
-                            // starts, for patch_rlp: at child index * 8 in the
-                            // buffer's head, which a branch's RLP never reaches.
-                            // A digest or an empty child never becomes dirty.
+                            // starts, for patch_rlp: its address, at child
+                            // index * 8 in the buffer's head, which a branch's
+                            // RLP never reaches. A kept RLP never moves. A
+                            // digest or an empty child never becomes dirty.
                             static_assert(
                                 MAX_NODE_RLP - (3 + 16 * HASH_RLP_LEN + 1) >=
-                                16 * sizeof(uint64_t));
-                            reinterpret_cast<uint64_t *>(
-                                dest.base())[c - first] = dest.size();
+                                16 * sizeof(uintptr_t));
+                            reinterpret_cast<uintptr_t *>(
+                                dest.base())[c - first] =
+                                reinterpret_cast<uintptr_t>(dest.rlp_data());
                         }
 #endif
                         continue;

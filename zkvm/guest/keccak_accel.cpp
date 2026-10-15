@@ -39,7 +39,11 @@
 #include <cstdint>
 #include <cstring>
 
-#include <zkvm/guest/known_inputs.hpp>
+// Airbender's ROM is 4 MB in all, code included; the 4.8 MB table cannot be
+// placed there, so that guest hashes every input.
+#if !defined(MONAD_ZKVM_AIRBENDER)
+    #include <zkvm/guest/known_inputs.hpp>
+#endif
 
 // An unaligned 8-byte load. The memcpy is the portable spelling of one; gcc
 // folds it into a single instruction.
@@ -927,10 +931,12 @@ extern "C"
 
 void monad_zkvm_keccak256_fast(void const *const in, size_t len, uint8_t out[32])
 {
+#if !defined(MONAD_ZKVM_AIRBENDER)
     if (monad::zkvm::known_input_hash(
             static_cast<unsigned char const *>(in), len, out)) {
         return;
     }
+#endif
     keccak256_sponge<true>(in, len, out);
 }
 

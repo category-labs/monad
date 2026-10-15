@@ -267,6 +267,14 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         add_compile_definitions(MONAD_ZKVM_KECCAK_SITES)
     endif()
 
+    # One EVM fork, e.g. MONAD_ETH_OSAKA: the guest then rejects blocks of
+    # any other, and its ROM holds one fork's execution code instead of eight.
+    set(MONAD_ZKVM_EVM_REV "" CACHE STRING
+        "build the guest for this one EVM revision (empty: all)")
+    if(MONAD_ZKVM_EVM_REV)
+        add_compile_definitions(MONAD_ZKVM_EVM_REV=${MONAD_ZKVM_EVM_REV})
+    endif()
+
     if(MONAD_ZKVM_GUEST_TARGET STREQUAL "sp1")
         add_compile_definitions(MONAD_ZKVM_SP1)
     elseif(MONAD_ZKVM_GUEST_TARGET STREQUAL "airbender")

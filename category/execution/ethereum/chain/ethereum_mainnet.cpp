@@ -89,11 +89,12 @@ BlobSchedule EthereumMainnet::get_blob_schedule(uint64_t const timestamp) const
 
 GenesisState EthereumMainnet::get_genesis_state() const
 {
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     // The guest proves blocks over a witnessed pre-state and never builds the
     // genesis. Referenced from the vtable all the same, the allocation's JSON
     // would stay in .rodata, whose every word the ZisK ROM initialises on
-    // every proof (~950 KB).
+    // every proof (~950 KB), and which would take a quarter of Airbender's
+    // 4 MB ROM.
     MONAD_ABORT("the guest has no genesis state");
 #else
     BlockHeader header;

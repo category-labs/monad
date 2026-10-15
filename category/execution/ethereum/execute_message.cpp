@@ -164,7 +164,10 @@ evmc::Result deploy_contract_code(
         return evmc::Result{EVMC_OUT_OF_GAS};
     }
 
-    auto const deploy_cost = static_cast<int64_t>(result.output_size) * 200;
+    // Multiplied unsigned: knowing output_size is small, gcc otherwise widens
+    // the signed product with MULH, which Airbender cannot prove.
+    auto const deploy_cost = static_cast<int64_t>(
+        static_cast<uint64_t>(result.output_size) * 200);
 
     if (result.gas_left < deploy_cost) {
         // EIP-2: If contract creation does not have enough gas to

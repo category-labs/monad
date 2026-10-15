@@ -21,6 +21,17 @@
 
 #include <evmc/evmc.h>
 
+#if defined(MONAD_ZKVM_EVM_REV)
+// A zkVM guest built for one fork: every other revision takes the caller's
+// unsupported-revision path, and the link drops its instantiations.
+    #define SWITCH_EVM_TRAITS(f, ...)                                          \
+        switch (rev) {                                                         \
+        case MONAD_ZKVM_EVM_REV:                                               \
+            return f<::monad::EvmTraits<MONAD_ZKVM_EVM_REV>>(__VA_ARGS__);     \
+        default:                                                               \
+            break;                                                             \
+        }
+#else
 #define SWITCH_EVM_TRAITS(f, ...)                                              \
     switch (rev) {                                                             \
     case MONAD_ETH_AMSTERDAM:                                                  \
@@ -42,6 +53,7 @@
     default:                                                                   \
         break;                                                                 \
     }
+#endif
 
 #define SWITCH_MONAD_TRAITS(f, ...)                                            \
     switch (rev) {                                                             \

@@ -241,7 +241,8 @@ namespace monad::vm::compiler
         MONAD_ASSERT(
             opcode() == OpCode::Push || opcode() == OpCode::Swap ||
             opcode() == OpCode::Dup || opcode() == OpCode::Log ||
-            opcode() == OpCode::DupN || opcode() == OpCode::SwapN);
+            opcode() == OpCode::DupN || opcode() == OpCode::SwapN ||
+            opcode() == OpCode::Extension);
         return indices_.first;
     }
 
@@ -499,6 +500,11 @@ struct std::formatter<monad::vm::compiler::Instruction>
                 inst.opcode(),
                 inst.index(),
                 inst.immediate_value());
+        }
+
+        if (inst.opcode() == Extension) {
+            return std::format_to(
+                ctx.out(), "{} {:#04x}", inst.opcode(), inst.index());
         }
 
         if (inst.opcode() == DupN || inst.opcode() == SwapN) {

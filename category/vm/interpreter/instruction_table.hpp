@@ -2032,6 +2032,47 @@ namespace monad::vm::interpreter
         return static_cast<size_t>(r - q) + 10;
     }
 
+    // Whether the N bytes at p are those of pattern, by the DMA comparator
+    // (CSR 0x814, the length in the flag after it): one compare where a byte
+    // at a time takes a read, a constant and a branch each.
+    template <size_t N, size_t M>
+    [[gnu::always_inline]] inline bool code_matches(
+        uint8_t const *const p, unsigned char const (&pattern)[M]) noexcept
+    {
+        static_assert(N <= M);
+        uint64_t differ;
+        asm(".option push\n\t"
+            ".option arch, +zicsr\n\t"
+            "csrrs %0, 0x814, %1\n\t"
+            "addi x0, %2, %5\n\t"
+            ".option pop"
+            : "=&r"(differ)
+            : "r"(p),
+              "r"(pattern),
+              "m"(*reinterpret_cast<uint8_t const(*)[N]>(p)),
+              "m"(pattern),
+              "i"(N));
+        return differ == 0;
+    }
+
+    // The non-payable test's bytes from its JUMPI to its POP, after PUSH0 or
+    // PUSH1 0, for code_matches.
+    alignas(8) inline constexpr unsigned char nonpayable_tail_push0[8] = {
+        static_cast<unsigned char>(JUMPI),
+        static_cast<unsigned char>(PUSH0),
+        static_cast<unsigned char>(DUP1),
+        static_cast<unsigned char>(REVERT),
+        static_cast<unsigned char>(JUMPDEST),
+        static_cast<unsigned char>(POP)};
+    alignas(8) inline constexpr unsigned char nonpayable_tail_push1[8] = {
+        static_cast<unsigned char>(JUMPI),
+        static_cast<unsigned char>(PUSH1),
+        0,
+        static_cast<unsigned char>(DUP1),
+        static_cast<unsigned char>(REVERT),
+        static_cast<unsigned char>(JUMPDEST),
+        static_cast<unsigned char>(POP)};
+
     // The non-payable test of Solidity's legacy code generator,
     //
     //     CALLVALUE DUP1 ISZERO PUSH2 <ok> JUMPI PUSH1 0 DUP1 REVERT
@@ -2057,14 +2098,11 @@ namespace monad::vm::interpreter
         bool monad_vm_tail;
         if (monad_vm_is(7, PUSH0)) {
             monad_vm_ok = 10;
-            monad_vm_tail = monad_vm_is(8, DUP1) && monad_vm_is(9, REVERT) &&
-                            monad_vm_is(10, JUMPDEST) && monad_vm_is(11, POP);
+            monad_vm_tail = code_matches<6>(p + 6, nonpayable_tail_push0);
         }
         else {
             monad_vm_ok = 11;
-            monad_vm_tail = monad_vm_is(7, PUSH1) && p[8] == 0 &&
-                            monad_vm_is(9, DUP1) && monad_vm_is(10, REVERT) &&
-                            monad_vm_is(11, JUMPDEST) && monad_vm_is(12, POP);
+            monad_vm_tail = code_matches<7>(p + 6, nonpayable_tail_push1);
         }
         size_t const monad_vm_dst = detail::load_be_k<2>(p + 4);
         size_t const monad_vm_pos =
@@ -2073,7 +2111,7 @@ namespace monad::vm::interpreter
         // byte, read from this CALLVALUE on, so no map is needed.
         if (MONAD_UNLIKELY(
                 !(monad_vm_tail && monad_vm_is(2, ISZERO) &&
-                  monad_vm_is(3, PUSH2) && monad_vm_is(6, JUMPI) &&
+                  monad_vm_is(3, PUSH2) &&
                   monad_vm_dst == monad_vm_pos + monad_vm_ok &&
                   stack_top + 3 <= MONAD_VM_STACK_LIMIT &&
                   call_value_is_zero(ctx)))) {
@@ -2279,29 +2317,6 @@ namespace monad::vm::interpreter
         0xff,
         0xff,
         static_cast<unsigned char>(AND)};
-
-    // Whether the N bytes at p are those of pattern, by the DMA comparator
-    // (CSR 0x814, the length in the flag after it): one compare where a byte
-    // at a time takes a read, a constant and a branch each.
-    template <size_t N, size_t M>
-    [[gnu::always_inline]] inline bool code_matches(
-        uint8_t const *const p, unsigned char const (&pattern)[M]) noexcept
-    {
-        static_assert(N <= M);
-        uint64_t differ;
-        asm(".option push\n\t"
-            ".option arch, +zicsr\n\t"
-            "csrrs %0, 0x814, %1\n\t"
-            "addi x0, %2, %5\n\t"
-            ".option pop"
-            : "=&r"(differ)
-            : "r"(p),
-              "r"(pattern),
-              "m"(*reinterpret_cast<uint8_t const(*)[N]>(p)),
-              "m"(pattern),
-              "i"(N));
-        return differ == 0;
-    }
 
     template <Traits traits>
     [[gnu::always_inline]] inline size_t push_selector(
@@ -3521,6 +3536,27 @@ namespace monad::vm::interpreter
         }
     }
 
+    // The copy loop's constant bytes after its DUP4 DUP2 (LT ISZERO PUSH2) and
+    // after the end's destination (JUMPI ... ADD PUSH2), for code_matches.
+    alignas(8) inline constexpr unsigned char copy_loop_test[8] = {
+        static_cast<unsigned char>(LT),
+        static_cast<unsigned char>(ISZERO),
+        static_cast<unsigned char>(PUSH2)};
+    alignas(8) inline constexpr unsigned char copy_loop_body[16] = {
+        static_cast<unsigned char>(JUMPI),
+        static_cast<unsigned char>(DUP2),
+        static_cast<unsigned char>(DUP2),
+        static_cast<unsigned char>(ADD),
+        static_cast<unsigned char>(MLOAD),
+        static_cast<unsigned char>(DUP4),
+        static_cast<unsigned char>(DUP3),
+        static_cast<unsigned char>(ADD),
+        static_cast<unsigned char>(MSTORE),
+        static_cast<unsigned char>(PUSH1),
+        0x20,
+        static_cast<unsigned char>(ADD),
+        static_cast<unsigned char>(PUSH2)};
+
     // The word-by-word memory copy older Solidity compilers emit,
     //
     //     h: JUMPDEST DUP4 DUP2 LT ISZERO PUSH2 <end> JUMPI
@@ -3557,14 +3593,9 @@ namespace monad::vm::interpreter
         uint256_t const &monad_vm_dst = stack_top[-2];
         uint256_t const &monad_vm_len = stack_top[-3];
         // The JUMPDEST before p is h, a JUMPDEST by its own dispatch.
-        if (!(monad_vm_is(2, LT) && monad_vm_is(3, ISZERO) &&
-              monad_vm_is(4, PUSH2) && monad_vm_is(7, JUMPI) &&
-              monad_vm_is(8, DUP2) && monad_vm_is(9, DUP2) &&
-              monad_vm_is(10, ADD) && monad_vm_is(11, MLOAD) &&
-              monad_vm_is(12, DUP4) && monad_vm_is(13, DUP3) &&
-              monad_vm_is(14, ADD) && monad_vm_is(15, MSTORE) &&
-              monad_vm_is(16, PUSH1) && p[17] == 0x20 && monad_vm_is(18, ADD) &&
-              monad_vm_is(19, PUSH2) && monad_vm_is(22, JUMP) &&
+        if (!(code_matches<3>(p + 2, copy_loop_test) &&
+              code_matches<13>(p + 7, copy_loop_body) &&
+              monad_vm_is(22, JUMP) &&
               monad_vm_head ==
                   static_cast<size_t>(p - 1 - MONAD_VM_ANALYSIS.code()) &&
               stack_top - 3 >= stack_bottom &&

@@ -23,6 +23,7 @@
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/core/account.hpp>
+#include <category/execution/ethereum/core/contract/abi_encode.hpp>
 #include <category/execution/ethereum/create_contract_address.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
@@ -1486,6 +1487,137 @@ TYPED_TEST(TraitsTest, defensive_delegation_check)
         &h.get_interface(), h.to_context(), correctly_delegated);
     EXPECT_TRUE(d4.has_value());
     EXPECT_EQ(d4.value(), falsely_delegated_3);
+}
+
+TYPED_TEST(TraitsTest, call_stack_introspection)
+{
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
+    db_t tdb{db};
+    vm::VM vm;
+    BlockState bs{tdb, vm};
+    State s{bs, Incarnation{0, 0}};
+
+    // `from` calls `a`, which delegatecalls `b` (which calls `d`), creates `e`
+    // and calls `c`. `c`, `d` and `e` store CALLSTACKDEPTH, then CALLERN(n)
+    // for increasing n, in storage slots 0, 1, 2, ...
+    static constexpr auto from{
+        0x00000000000000000000000000000000bbbbbbbb_address};
+    static constexpr auto a{0x00000000000000000000000000000000000000a1_address};
+    static constexpr auto b{0x00000000000000000000000000000000000000b1_address};
+    static constexpr auto c{0x00000000000000000000000000000000000000c1_address};
+    static constexpr auto d{0x00000000000000000000000000000000000000d1_address};
+
+    auto const a_code = from_hex("6000600060006000"
+                                 "7300000000000000000000000000000000000000b1"
+                                 "620f4240f450"
+                                 "7aae006000556000ae016001556001ae01600255"
+                                 "6002ae0160035500"
+                                 "600052601b60056000f050"
+                                 "60006000600060006000"
+                                 "7300000000000000000000000000000000000000c1"
+                                 "620f4240f15000")
+                            .value();
+    auto const b_code = from_hex("60006000600060006000"
+                                 "7300000000000000000000000000000000000000d1"
+                                 "5af15000")
+                            .value();
+    auto const recorder_code = from_hex("ae00600055"
+                                        "6000ae01600155"
+                                        "6001ae01600255"
+                                        "6002ae01600355"
+                                        "6003ae01600455"
+                                        "00")
+                                   .value();
+
+    auto const a_code_hash = to_bytes(keccak256(a_code));
+    auto const b_code_hash = to_bytes(keccak256(b_code));
+    auto const recorder_code_hash = to_bytes(keccak256(recorder_code));
+
+    auto const account = [](bytes32_t const &code_hash) {
+        return StateDelta{
+            .account = {
+                std::nullopt,
+                Account{.balance = 10'000'000'000, .code_hash = code_hash}}};
+    };
+
+    commit_sequential(
+        tdb,
+        StateDeltas(
+            {{from, account(NULL_HASH)},
+             {a, account(a_code_hash)},
+             {b, account(b_code_hash)},
+             {c, account(recorder_code_hash)},
+             {d, account(recorder_code_hash)}}),
+        Code{
+            {a_code_hash, vm::make_shared_intercode(a_code)},
+            {b_code_hash, vm::make_shared_intercode(b_code)},
+            {recorder_code_hash, vm::make_shared_intercode(recorder_code)},
+        },
+        BlockHeader{});
+
+    BlockHashBufferFinalized const block_hash_buffer;
+    NoopCallTracer call_tracer;
+    Transaction tx{};
+    auto const chain_ctx =
+        ChainContext<typename TestFixture::Trait>::debug_empty();
+    uint256_t base_fee{0};
+    trace::StateTracer noop_state_tracer = std::monostate{};
+    EvmcHost<typename TestFixture::Trait> h{
+        call_tracer,
+        noop_state_tracer,
+        EMPTY_TX_CONTEXT,
+        block_hash_buffer,
+        s,
+        tx,
+        base_fee,
+        0,
+        chain_ctx};
+    init_rb_for_test<typename TestFixture::Trait>(s, h, from);
+
+    auto msg_memory = vm.message_memory_ref();
+    evmc_message const m{
+        .kind = EVMC_CALL,
+        .gas = 10'000'000,
+        .recipient = a,
+        .sender = from,
+        .code_address = a,
+        .memory_handle = msg_memory.get(),
+        .memory = msg_memory.get(),
+        .memory_capacity = vm.message_memory_capacity(),
+    };
+    auto const result = h.call(m);
+    ASSERT_EQ(result.status_code, EVMC_SUCCESS);
+
+    auto const e = create_contract_address(a, 0);
+    auto const slots = [&](Address const &addr) {
+        std::vector<bytes32_t> values;
+        for (uint64_t i = 0; i < 5; ++i) {
+            values.push_back(s.get_storage(addr, bytes32_t{i}));
+        }
+        return values;
+    };
+
+    if constexpr (TestFixture::Trait::mip_18_active()) {
+        auto const a_word = abi_encode_address(a);
+        auto const from_word = abi_encode_address(from);
+        EXPECT_EQ(
+            slots(d),
+            (std::vector<bytes32_t>{
+                bytes32_t{2}, a_word, from_word, from_word, bytes32_t{}}));
+        EXPECT_EQ(
+            slots(c),
+            (std::vector<bytes32_t>{
+                bytes32_t{1}, a_word, from_word, bytes32_t{}, bytes32_t{}}));
+        EXPECT_EQ(
+            slots(e),
+            (std::vector<bytes32_t>{
+                bytes32_t{1}, a_word, from_word, bytes32_t{}, bytes32_t{}}));
+    }
+    else {
+        EXPECT_EQ(slots(d), std::vector<bytes32_t>(5));
+        EXPECT_EQ(slots(c), std::vector<bytes32_t>(5));
+        EXPECT_FALSE(s.account_exists(e));
+    }
 }
 
 #undef PUSH3

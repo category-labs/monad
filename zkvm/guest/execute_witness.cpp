@@ -169,12 +169,34 @@ namespace
 #endif
 
 #if defined(MONAD_ZKVM_ZISK)
+namespace
+{
+    // Set while a witness code the table has answered for is made an
+    // Intercode: no entry has its size and key, or none is equal to it.
+    // Intercode's analysis would ask the table again and compare the code
+    // with the same entries, a template's clone with each of its siblings.
+    bool table_answered = false;
+
+    monad::vm::SharedIntercode
+    unknown_intercode(monad::byte_string_view const bytes)
+    {
+        table_answered = true;
+        monad::vm::SharedIntercode code =
+            monad::vm::make_shared_intercode(bytes);
+        table_answered = false;
+        return code;
+    }
+}
+
 // The JUMPDEST map of a known code, for Intercode's analysis (its weak default
 // in intercode.cpp returns null), for a code that reaches it: one built by the
 // block, a known code from the witness taking the table's Intercode whole.
 extern "C" uint64_t const *
 monad_zkvm_known_jumpdests(uint8_t const *const code, size_t const size) noexcept
 {
+    if (table_answered) {
+        return nullptr;
+    }
     auto const *const e = monad::zkvm::known_code_find(code, size);
     return e != nullptr ? monad::zkvm::known_code_jumpdests + e->jumpdests
                         : nullptr;
@@ -213,7 +235,7 @@ namespace monad
                     continue;
                 }
                 MONAD_KECCAK_SITE(CODE_INDEX, bytes.size());
-                vm::SharedIntercode code = vm::make_shared_intercode(bytes);
+                vm::SharedIntercode code = unknown_intercode(bytes);
                 bytes32_t code_hash;
                 monad_zkvm_keccak256_fast_nomemo(
                     code->code(), bytes.size(), code_hash.bytes);
@@ -271,7 +293,11 @@ extern "C" void monad_zkvm_execute_witness(void)
         // copy exists either way.
         auto const intercode_of = [](monad::byte_string_view const bytes) {
             MONAD_KECCAK_SITE(CODE_INDEX, bytes.size());
+#if defined(MONAD_ZKVM_ZISK)
+            auto code = unknown_intercode(bytes);
+#else
             auto code = monad::vm::make_shared_intercode(bytes);
+#endif
             // The two properties this depends on, checked rather than
             // trusted: the copy is 8-aligned, and it is the witness bytes
             // unchanged. Intercode pads around the code, never inside it, so

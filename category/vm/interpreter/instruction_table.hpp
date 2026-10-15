@@ -1198,6 +1198,35 @@ namespace monad::vm::interpreter
 #endif
 
     // Arithmetic
+#if defined(MONAD_ZKVM_ZISK)
+    // b = a - b, b's slot not a's. A subtrahend under 2^64 that a's low word
+    // covers changes that word alone, the others a's own (3 SUBs in 4 on
+    // 25815159); any other is complemented in place, from the words the test
+    // loaded, and added to a by add256 with a carry-in of 1.
+    [[gnu::always_inline]] inline void zisk_sub256_into(
+        runtime::Context &ctx, uint64_t const *const a, uint256_t &b)
+    {
+        uint64_t const b0 = b[0];
+        uint64_t const b1 = b[1];
+        uint64_t const b2 = b[2];
+        uint64_t const b3 = b[3];
+        if ((b1 | b2 | b3) == 0 && a[0] >= b0) {
+            uint64_t const lo = a[0] - b0;
+            b[1] = a[1];
+            b[2] = a[2];
+            b[3] = a[3];
+            b[0] = lo;
+            return;
+        }
+        ctx.sub256_params.a = a;
+        b[0] = ~b0;
+        b[1] = ~b1;
+        b[2] = ~b2;
+        b[3] = ~b3;
+        zisk_add256(ctx.sub256_params, b, b);
+    }
+#endif
+
     template <Traits traits>
     MONAD_VM_INSTRUCTION_CALL void
     add(runtime::Context &ctx, MONAD_VM_DISPATCH_STATE_PARAM,
@@ -1243,19 +1272,13 @@ namespace monad::vm::interpreter
     {
         MONAD_VM_CHECK(SUB);
 #if defined(MONAD_ZKVM_ZISK)
-        // Save a's address before moving to b. Keep this store ahead of b's
-        // loads to avoid extending a's register lifetime.
-        ctx.sub256_params.a = reinterpret_cast<uint64_t const *>(&*stack_top);
-        asm volatile("" ::: "memory");
-        auto *next = stack_top.next_slot() - 1;
-        MONAD_VM_LAUNDER(next);
-        stack_top = StackTop{next};
-        // Compute a - b as a + ~b + 1 modulo 2^256, in place.
-        auto &b = *stack_top;
-        for (size_t i = 0; i < 4; ++i) {
-            b[i] = ~b[i];
-        }
-        zisk_add256(ctx.sub256_params, b, b);
+        // Name a, then step to the new top, as ADD does.
+        uint64_t const *const a = reinterpret_cast<uint64_t const *>(&*stack_top);
+        --stack_top;
+        auto *next_slot = stack_top.next_slot();
+        MONAD_VM_LAUNDER(next_slot);
+        stack_top = StackTop{next_slot};
+        zisk_sub256_into(ctx, a, *stack_top);
 
         MONAD_VM_DISPATCH(1, 0, *instr_ptr);
 #else
@@ -4826,13 +4849,8 @@ namespace monad::vm::interpreter
             }
             else if constexpr (OP == SUB) {
                 // As SUB: the copied word less the top, into the top.
-                ctx.sub256_params.a = reinterpret_cast<uint64_t const *>(src);
-                asm volatile("" ::: "memory");
-                auto &b = *stack_top;
-                for (size_t i = 0; i < 4; ++i) {
-                    b[i] = ~b[i];
-                }
-                zisk_add256(ctx.sub256_params, b, b);
+                zisk_sub256_into(
+                    ctx, reinterpret_cast<uint64_t const *>(src), *stack_top);
             }
             else if constexpr (OP == LT || OP == GT) {
                 // The result goes on to the follower's head in a7.

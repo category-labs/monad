@@ -56,7 +56,7 @@ class FlatStorage
 {
     std::vector<std::pair<bytes32_t, bytes32_t>> v_{};
 
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     // Small rows use linear scans; erase invalidates indexed positions.
     SlotIndex idx_{};
 #endif
@@ -65,7 +65,7 @@ public:
     [[nodiscard]] bytes32_t const *find(bytes32_t const &key) const
     {
         std::uint64_t const tail = key_tail(key);
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         if (idx_) {
             std::uint32_t const p = idx_.lookup(key, tail, v_);
             return p ? &v_[p - 1].second : nullptr;
@@ -83,7 +83,7 @@ public:
     void upsert(bytes32_t const &key, bytes32_t const &value)
     {
         std::uint64_t const tail = key_tail(key);
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         if (idx_) {
             if (std::uint32_t const p = idx_.lookup(key, tail, v_); p != 0) {
                 v_[p - 1].second = value;
@@ -105,7 +105,7 @@ public:
         // allocating for unused storage. The indexed path already has
         // sufficient capacity.
         if (MONAD_UNLIKELY(v_.capacity() == 0)) {
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
             // Thirty-two on the guest, whose bump allocator charges the same
             // for any size: a row past eight would copy itself as it doubled.
             v_.reserve(32);
@@ -114,7 +114,7 @@ public:
 #endif
         }
         v_.emplace_back(key, value);
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         idx_.on_insert(v_);
 #endif
     }
@@ -129,7 +129,7 @@ public:
             if (key_equals(key, tail, e.first)) {
                 e = v_.back();
                 v_.pop_back();
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
                 idx_.reset();
 #endif
                 return;
@@ -306,7 +306,7 @@ class PrestateStorage
     // [(slot identifier, original value)]
     std::vector<std::pair<bytes32_t, bytes32_t>> v_{};
 
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     // Append-only entries keep indexed positions stable.
     SlotIndex idx_{};
 #endif
@@ -315,7 +315,7 @@ public:
     bytes32_t const *find(bytes32_t const &k) const
     {
         std::uint64_t const tail = key_tail(k);
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         if (idx_) {
             std::uint32_t const p = idx_.lookup(k, tail, v_);
             return p ? &v_[p - 1].second : nullptr;
@@ -333,7 +333,7 @@ public:
     void insert(bytes32_t const &k, bytes32_t const &v)
     {
         if (MONAD_UNLIKELY(v_.capacity() == 0)) {
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
             // Thirty-two on the guest, whose bump allocator charges the same
             // for any size: a row past eight would copy itself as it doubled.
             v_.reserve(32);

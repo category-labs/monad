@@ -21,10 +21,41 @@
 
 namespace monad::bit
 {
+#if defined(MONAD_ZKVM_AIRBENDER)
+    // Airbender implements Zbb's rev8 alone (riscv_common::byte_swap), so the
+    // guest is not built with Zbb and names the instruction locally.
+    [[nodiscard, gnu::always_inline]] inline uint32_t
+    airbender_rev8(uint32_t const x) noexcept
+    {
+        uint32_t r;
+        __asm__(".option push\n\t"
+                ".option arch, +zbb\n\t"
+                "rev8 %0, %1\n\t"
+                ".option pop"
+                : "=r"(r)
+                : "r"(x));
+        return r;
+    }
+#endif
+
     template <std::integral T>
     [[nodiscard, gnu::always_inline]] inline constexpr T
     byteswap(T const x) noexcept
     {
+#if defined(MONAD_ZKVM_AIRBENDER)
+        if !consteval {
+            if constexpr (sizeof(T) == 8) {
+                auto const v = static_cast<uint64_t>(x);
+                return static_cast<T>(
+                    (uint64_t{airbender_rev8(static_cast<uint32_t>(v))} << 32) |
+                    airbender_rev8(static_cast<uint32_t>(v >> 32)));
+            }
+            else if constexpr (sizeof(T) == 4) {
+                return static_cast<T>(
+                    airbender_rev8(static_cast<uint32_t>(x)));
+            }
+        }
+#endif
         if constexpr (sizeof(T) == 8) {
             auto v = static_cast<uint64_t>(x);
             v = ((v & 0x00FF00FF00FF00FFull) << 8) |

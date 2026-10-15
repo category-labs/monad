@@ -26,7 +26,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
+// The mem* loops below must stay loops: gcc would otherwise recognise them as
+// memcpy/memset and call the function being defined.
+#pragma GCC optimize("no-tree-loop-distribute-patterns")
+
 extern void monad_zkvm_execute_witness(void);
+void monad_zkvm_airbender_memstats_print(void);
 
 // Linker script symbols (link.x).
 extern uint32_t _srodata[];
@@ -153,6 +158,9 @@ __attribute__((noreturn)) void monad_zkvm_airbender_start(void)
         (*f)();
     }
     monad_zkvm_execute_witness();
+#ifdef MONAD_ZKVM_AIRBENDER_MEMSTATS
+    monad_zkvm_airbender_memstats_print();
+#endif
     finish_success();
 }
 
@@ -206,20 +214,132 @@ void write_output(uint8_t const *const output, size_t const size)
     }
 }
 
-// ---- mem*: the compiler calls these; byte loops widened to aligned words ----
+// ---- mem*: the compiler calls these ----
+// No unaligned access is provable, so every word access is aligned: a copy
+// aligns its destination, then moves words, shift-combining two aligned
+// source words when the source sits at another offset (each aligned word read
+// holds at least one byte that is copied). Measured on block 25993213 before:
+// 430K memcpy calls, 72% of them 9-32 bytes and aligned, and ~80K at
+// different alignments, the multi-kilobyte ones bytewise.
+
+#ifdef MONAD_ZKVM_AIRBENDER_MEMSTATS
+// Diagnostic: calls by function, size class and alignment class, printed over
+// the quasi-UART when the run ends.
+static uint32_t memstats[3][8][3];
+static inline void
+memstat(int const fn, size_t const n, uintptr_t const a, uintptr_t const b)
+{
+    int const sc = n == 0      ? 0
+                   : n <= 8    ? 1
+                   : n <= 20   ? 2
+                   : n <= 32   ? 3
+                   : n <= 64   ? 4
+                   : n <= 256  ? 5
+                   : n <= 4096 ? 6
+                               : 7;
+    int const al = ((a | b) & 3) == 0 ? 0 : ((a ^ b) & 3) == 0 ? 1 : 2;
+    ++memstats[fn][sc][al];
+}
+
+void monad_zkvm_airbender_memstats_print(void)
+{
+    char buf[200];
+    static char const *const fns[3] = {"memcpy", "memset", "memcmp"};
+    for (int f = 0; f < 3; ++f) {
+        for (int sc = 0; sc < 8; ++sc) {
+            size_t n = 0;
+            for (char const *c = fns[f]; *c; ++c) {
+                buf[n++] = *c;
+            }
+            buf[n++] = ' ';
+            buf[n++] = (char)('0' + sc);
+            for (int al = 0; al < 3; ++al) {
+                uint32_t v = memstats[f][sc][al];
+                char tmp[12];
+                int k = 0;
+                buf[n++] = ' ';
+                do {
+                    tmp[k++] = (char)('0' + v % 10);
+                    v /= 10;
+                } while (v);
+                while (k) {
+                    buf[n++] = tmp[--k];
+                }
+            }
+            monad_zkvm_airbender_print(buf, n);
+        }
+    }
+}
+    #define MEMSTAT(fn, n, a, b)                                               \
+        memstat(fn, n, (uintptr_t)(a), (uintptr_t)(b))
+#else
+    #define MEMSTAT(fn, n, a, b) ((void)0)
+#endif
+
+static inline uint32_t load32(uint8_t const *const p)
+{
+    return *(uint32_t const *)(void const *)p;
+}
+
+static inline void store32(uint8_t *const p, uint32_t const v)
+{
+    *(uint32_t *)(void *)p = v;
+}
 
 void *memcpy(void *const dst, void const *const src, size_t n)
 {
+    MEMSTAT(0, n, dst, src);
     uint8_t *d = dst;
     uint8_t const *s = src;
-    if ((((uintptr_t)d ^ (uintptr_t)s) & 3) == 0) {
-        while (n && ((uintptr_t)d & 3)) {
+    if (n < 8) {
+        while (n--) {
             *d++ = *s++;
-            --n;
+        }
+        return dst;
+    }
+    while ((uintptr_t)d & 3) {
+        *d++ = *s++;
+        --n;
+    }
+    unsigned const off = (uintptr_t)s & 3;
+    if (off == 0) {
+        for (; n >= 32; n -= 32, d += 32, s += 32) {
+            uint32_t const w0 = load32(s), w1 = load32(s + 4), w2 = load32(s + 8),
+                           w3 = load32(s + 12), w4 = load32(s + 16), w5 = load32(s + 20),
+                           w6 = load32(s + 24), w7 = load32(s + 28);
+            store32(d, w0);
+            store32(d + 4, w1);
+            store32(d + 8, w2);
+            store32(d + 12, w3);
+            store32(d + 16, w4);
+            store32(d + 20, w5);
+            store32(d + 24, w6);
+            store32(d + 28, w7);
         }
         for (; n >= 4; n -= 4, d += 4, s += 4) {
-            *(uint32_t *)d = *(uint32_t const *)s;
+            store32(d, load32(s));
         }
+    }
+    else {
+        unsigned const rs = 8 * off;
+        unsigned const ls = 32 - rs;
+        uint8_t const *w = s - off;
+        uint32_t lo = load32(w);
+        for (; n >= 16; n -= 16, d += 16, w += 16) {
+            uint32_t const h0 = load32(w + 4), h1 = load32(w + 8), h2 = load32(w + 12),
+                           h3 = load32(w + 16);
+            store32(d, (lo >> rs) | (h0 << ls));
+            store32(d + 4, (h0 >> rs) | (h1 << ls));
+            store32(d + 8, (h1 >> rs) | (h2 << ls));
+            store32(d + 12, (h2 >> rs) | (h3 << ls));
+            lo = h3;
+        }
+        for (; n >= 4; n -= 4, d += 4, w += 4) {
+            uint32_t const h = load32(w + 4);
+            store32(d, (lo >> rs) | (h << ls));
+            lo = h;
+        }
+        s = w + off;
     }
     while (n--) {
         *d++ = *s++;
@@ -237,36 +357,78 @@ void *memmove(void *const dst, void const *const src, size_t n)
     if (d < s || d >= s + n) {
         return memcpy(dst, src, n);
     }
+    // Backwards, by words when both ends share an alignment.
+    d += n;
+    s += n;
+    if ((((uintptr_t)d ^ (uintptr_t)s) & 3) == 0) {
+        while (n && ((uintptr_t)d & 3)) {
+            *--d = *--s;
+            --n;
+        }
+        for (; n >= 4; n -= 4) {
+            d -= 4;
+            s -= 4;
+            store32(d, load32(s));
+        }
+    }
     while (n--) {
-        d[n] = s[n];
+        *--d = *--s;
     }
     return dst;
 }
 
 void *memset(void *const dst, int const c, size_t n)
 {
+    MEMSTAT(1, n, dst, dst);
     uint8_t *d = dst;
-    uint32_t const w = 0x01010101u * (uint8_t)c;
-    while (n && ((uintptr_t)d & 3)) {
-        *d++ = (uint8_t)c;
+    uint8_t const b = (uint8_t)c;
+    if (n < 8) {
+        while (n--) {
+            *d++ = b;
+        }
+        return dst;
+    }
+    uint32_t const w = 0x01010101u * b;
+    while ((uintptr_t)d & 3) {
+        *d++ = b;
         --n;
     }
+    for (; n >= 32; n -= 32, d += 32) {
+        store32(d, w);
+        store32(d + 4, w);
+        store32(d + 8, w);
+        store32(d + 12, w);
+        store32(d + 16, w);
+        store32(d + 20, w);
+        store32(d + 24, w);
+        store32(d + 28, w);
+    }
     for (; n >= 4; n -= 4, d += 4) {
-        *(uint32_t *)d = w;
+        store32(d, w);
     }
     while (n--) {
-        *d++ = (uint8_t)c;
+        *d++ = b;
     }
     return dst;
 }
 
-int memcmp(void const *const a, void const *const b, size_t const n)
+int memcmp(void const *const a, void const *const b, size_t n)
 {
+    MEMSTAT(2, n, a, b);
     uint8_t const *x = a;
     uint8_t const *y = b;
-    for (size_t i = 0; i < n; ++i) {
-        if (x[i] != y[i]) {
-            return x[i] < y[i] ? -1 : 1;
+    // Nearly every call compares a 20- or 32-byte key at word-aligned
+    // addresses; compare those by words and let the bytes order a mismatch.
+    if ((((uintptr_t)x | (uintptr_t)y) & 3) == 0) {
+        for (; n >= 4; n -= 4, x += 4, y += 4) {
+            if (load32(x) != load32(y)) {
+                break;
+            }
+        }
+    }
+    for (; n; --n, ++x, ++y) {
+        if (*x != *y) {
+            return *x < *y ? -1 : 1;
         }
     }
     return 0;
@@ -307,17 +469,32 @@ static uint64_t keccak_block[32] __attribute__((aligned(256)));
     KECCAK_4_ROUNDS KECCAK_4_ROUNDS KECCAK_4_ROUNDS KECCAK_4_ROUNDS            \
         KECCAK_4_ROUNDS KECCAK_4_ROUNDS
 
-void monad_zkvm_airbender_keccak_f1600(uint64_t (*const state)[25])
+// The block itself, for a sponge that keeps its state there (keccak_accel.cpp).
+uint64_t (*monad_zkvm_airbender_keccak_state(void))[25]
 {
-    uint64_t *const st = *state;
-    for (unsigned i = 0; i < 25; ++i) {
-        keccak_block[i] = st[i];
-    }
+    return (uint64_t (*)[25])keccak_block;
+}
+
+static inline void keccak_block_permute(void)
+{
     __asm__ volatile("mv x11, %0\n\t"
                      "add x10, x0, x0\n\t" KECCAK_24_ROUNDS KECCAK_CALL(0x7cd)
                      :
                      : "r"(keccak_block)
                      : "x10", "x11", "memory");
+}
+
+void monad_zkvm_airbender_keccak_f1600(uint64_t (*const state)[25])
+{
+    uint64_t *const st = *state;
+    if (st == keccak_block) {
+        keccak_block_permute();
+        return;
+    }
+    for (unsigned i = 0; i < 25; ++i) {
+        keccak_block[i] = st[i];
+    }
+    keccak_block_permute();
     for (unsigned i = 0; i < 25; ++i) {
         st[i] = keccak_block[i];
     }

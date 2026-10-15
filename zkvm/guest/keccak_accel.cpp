@@ -666,6 +666,7 @@ static inline void keccak_permute(uint64_t (*state)[25])
 // CSR writes over a state block with its own layout; the runtime owns that
 // sequence (zkvm/airbender/runtime.c) and permutes the 25 lanes in place.
 extern "C" void monad_zkvm_airbender_keccak_f1600(uint64_t (*state)[25]);
+extern "C" uint64_t (*monad_zkvm_airbender_keccak_state())[25];
 
 template <bool>
 static inline void keccak_permute(uint64_t (*state)[25])
@@ -727,6 +728,12 @@ static void keccak256_sponge(
     if (len < RATE) {
         std::memset(st, 0, RATE);
     }
+#elif defined(MONAD_ZKVM_AIRBENDER)
+    // The delegation's own 256-byte-aligned block (runtime.c): absorbed into
+    // where Keccak-f runs, so a permutation copies no lanes in or out. Its
+    // slots 25..31 are the circuit's scratch.
+    uint64_t(&st)[25] = *monad_zkvm_airbender_keccak_state();
+    std::memset(st, 0, sizeof(st));
 #else
     uint64_t st[25] = {};
 #endif

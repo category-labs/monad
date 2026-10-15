@@ -65,6 +65,45 @@ namespace monad::uint256::portable
         return (low >> shift) | ((high << 1) << (63 - shift));
     }
 
+#ifndef __SIZEOF_INT128__
+    // 64-by-32-bit division with a 32-bit quotient, u1 < v: Hacker's Delight's
+    // divlu on 16-bit half digits, all in 32-bit arithmetic (two divu).
+    [[gnu::always_inline]] constexpr uint32_t divlu32(
+        uint32_t const u1, uint32_t const u0, uint32_t v, uint32_t &rem) noexcept
+    {
+        constexpr uint32_t b = uint32_t{1} << 16;
+        auto const s = static_cast<unsigned>(std::countl_zero(v));
+        v <<= s;
+        uint32_t const vn1 = v >> 16;
+        uint32_t const vn0 = v & 0xffff;
+        uint32_t const un32 = s == 0 ? u1 : (u1 << s) | (u0 >> (32 - s));
+        uint32_t const un10 = u0 << s;
+        uint32_t const un1 = un10 >> 16;
+        uint32_t const un0 = un10 & 0xffff;
+        uint32_t q1 = un32 / vn1;
+        uint32_t rhat = un32 - q1 * vn1;
+        while (q1 >= b || q1 * vn0 > b * rhat + un1) {
+            --q1;
+            rhat += vn1;
+            if (rhat >= b) {
+                break;
+            }
+        }
+        uint32_t const un21 = un32 * b + un1 - q1 * v;
+        uint32_t q0 = un21 / vn1;
+        rhat = un21 - q0 * vn1;
+        while (q0 >= b || q0 * vn0 > b * rhat + un0) {
+            --q0;
+            rhat += vn1;
+            if (rhat >= b) {
+                break;
+            }
+        }
+        rem = (un21 * b + un0 - q0 * v) >> s;
+        return q1 * b + q0;
+    }
+#endif
+
     [[gnu::always_inline]]
     constexpr div_result<uint64_t>
     div(uint64_t u_hi, uint64_t u_lo, uint64_t const v) noexcept
@@ -76,41 +115,74 @@ namespace monad::uint256::portable
         auto const rem = static_cast<uint64_t>(u % v);
         return {.quot = quot, .rem = rem};
 #else
-        // No 128-bit integer type (rv32): Hacker's Delight's divlu, two
-        // 64-by-32-bit digit steps on the normalized divisor. Requires
-        // u_hi < v, which every caller guarantees.
-        constexpr uint64_t b = uint64_t{1} << 32;
+        // No 128-bit integer type (rv32): Knuth's algorithm D on 32-bit
+        // digits, two quotient digits of a normalized two-digit divisor. Each
+        // digit's estimate is one 64-by-32-bit division done with two 32-bit
+        // divu (divlu32), so nothing calls the runtime's 64-bit division.
+        // Requires u_hi < v, which every caller guarantees.
         auto const s = static_cast<unsigned>(std::countl_zero(v));
         uint64_t const vn = v << s;
-        uint64_t const vn1 = vn >> 32;
-        uint64_t const vn0 = vn & 0xffffffff;
-        uint64_t const un32 =
-            s == 0 ? u_hi : (u_hi << s) | (u_lo >> (64 - s));
-        uint64_t const un10 = u_lo << s;
-        uint64_t const un1 = un10 >> 32;
-        uint64_t const un0 = un10 & 0xffffffff;
-
-        uint64_t q1 = un32 / vn1;
-        uint64_t rhat = un32 - q1 * vn1;
-        while (q1 >= b || q1 * vn0 > b * rhat + un1) {
-            --q1;
-            rhat += vn1;
-            if (rhat >= b) {
-                break;
+        uint64_t const un_hi = s == 0 ? u_hi : (u_hi << s) | (u_lo >> (64 - s));
+        uint64_t const un_lo = u_lo << s;
+        uint32_t const v1 = static_cast<uint32_t>(vn >> 32);
+        uint32_t const v0 = static_cast<uint32_t>(vn);
+        uint32_t u[4] = {
+            static_cast<uint32_t>(un_lo),
+            static_cast<uint32_t>(un_lo >> 32),
+            static_cast<uint32_t>(un_hi),
+            static_cast<uint32_t>(un_hi >> 32)};
+        uint32_t q[2] = {0, 0};
+        for (int j = 1; j >= 0; --j) {
+            auto const jx = static_cast<size_t>(j);
+            uint32_t qhat;
+            uint32_t rhat;
+            bool rhat_overflow = false; // rhat >= 2^32: no refinement needed
+            if (u[jx + 2] >= v1) {
+                // Only u[j+2] == v1 is possible; qhat = 2^32 - 1 and
+                // rhat = u[j+1] + v1.
+                qhat = ~uint32_t{0};
+                uint64_t const r = uint64_t{u[jx + 1]} + v1;
+                rhat_overflow = (r >> 32) != 0;
+                rhat = static_cast<uint32_t>(r);
             }
-        }
-        uint64_t const un21 = un32 * b + un1 - q1 * vn;
-        uint64_t q0 = un21 / vn1;
-        rhat = un21 - q0 * vn1;
-        while (q0 >= b || q0 * vn0 > b * rhat + un0) {
-            --q0;
-            rhat += vn1;
-            if (rhat >= b) {
-                break;
+            else {
+                qhat = divlu32(u[jx + 2], u[jx + 1], v1, rhat);
             }
+            while (!rhat_overflow &&
+                   uint64_t{qhat} * v0 > ((uint64_t{rhat} << 32) | u[jx])) {
+                --qhat;
+                uint64_t const r = uint64_t{rhat} + v1;
+                rhat_overflow = (r >> 32) != 0;
+                rhat = static_cast<uint32_t>(r);
+            }
+            // u[j+2 .. j] -= qhat * (v1 : v0)
+            uint64_t const p0 = uint64_t{qhat} * v0;
+            uint64_t const p1 = uint64_t{qhat} * v1 + (p0 >> 32);
+            uint32_t const p0_lo = static_cast<uint32_t>(p0);
+            uint32_t const p1_lo = static_cast<uint32_t>(p1);
+            uint32_t const p1_hi = static_cast<uint32_t>(p1 >> 32);
+            uint32_t const b0 = u[jx] < p0_lo;
+            u[jx] -= p0_lo;
+            uint32_t const d1 = u[jx + 1] - p1_lo;
+            uint32_t const b1 = (u[jx + 1] < p1_lo) | (d1 < b0);
+            u[jx + 1] = d1 - b0;
+            uint32_t const d2 = u[jx + 2] - p1_hi;
+            uint32_t const b2 = (u[jx + 2] < p1_hi) | (d2 < b1);
+            u[jx + 2] = d2 - b1;
+            if (b2) {
+                // qhat was one too large: add the divisor back.
+                --qhat;
+                uint64_t const s0 = uint64_t{u[jx]} + v0;
+                u[jx] = static_cast<uint32_t>(s0);
+                uint64_t const s1 = uint64_t{u[jx + 1]} + v1 + (s0 >> 32);
+                u[jx + 1] = static_cast<uint32_t>(s1);
+                u[jx + 2] += static_cast<uint32_t>(s1 >> 32);
+            }
+            q[jx] = qhat;
         }
         return {
-            .quot = q1 * b + q0, .rem = (un21 * b + un0 - q0 * vn) >> s};
+            .quot = (uint64_t{q[1]} << 32) | q[0],
+            .rem = ((uint64_t{u[1]} << 32) | u[0]) >> s};
 #endif
     }
 

@@ -10,7 +10,7 @@ FLAGS=(-march=rv32im_zicsr -mabi=ilp32 -mstrict-align -mcmodel=medany -O2 -ffunc
        "-D__INT32_TYPE__=int" "-D__UINT32_TYPE__=unsigned int" "-D__INT_LEAST32_TYPE__=int" "-D__UINT_LEAST32_TYPE__=unsigned int")
 mkdir -p $W/out
 $TC-gcc "${FLAGS[@]}" -w -c $RT/start.S -o $W/out/start.o
-$TC-gcc "${FLAGS[@]}" -ffreestanding -fno-builtin -w -c $RT/runtime.c -o $W/out/runtime.o
+$TC-gcc "${FLAGS[@]}" -ffreestanding -fno-builtin -w ${RT_CFLAGS:-} -c $RT/runtime.c -o $W/out/runtime.o
 $TC-gcc -march=rv32im_zicsr -mabi=ilp32 -nostdlib -nostartfiles -static \
   -T ${LINKX:-$RT/link.x} -Wl,--gc-sections -Wl,-Map=${OUT:-$W/out/guest.elf}.map \
   -o ${OUT:-$W/out/guest.elf} $W/out/start.o $W/out/runtime.o "$@" \

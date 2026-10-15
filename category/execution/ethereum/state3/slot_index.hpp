@@ -28,8 +28,8 @@
 // A linear scan visits a few entries. With the ZisK guest's -funroll-loops,
 // gcc enters the eight-way unrolled copy through a chain of compares on the
 // trip count's remainder, two steps a case: dearer than the loop tests the
-// unrolling saves.
-#ifdef MONAD_ZKVM_ZISK
+// unrolling saves. The Airbender guest is built the same way.
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     #define MONAD_SLOT_SCAN _Pragma("GCC unroll 1")
 #else
     #define MONAD_SLOT_SCAN
@@ -78,6 +78,27 @@ key_equals(bytes32_t const &k, std::uint64_t const tail, bytes32_t const &e)
               "m"(*reinterpret_cast<unsigned char const(*)[24]>(k.bytes)));
     (void)b;
     return differ == 0;
+#elif defined(MONAD_ZKVM_AIRBENDER)
+    // No unaligned access on rv32: 32-bit words when both keys are
+    // word-aligned, as the vector entries and nearly every search key are.
+    (void)b;
+    if (((reinterpret_cast<std::uintptr_t>(k.bytes) |
+          reinterpret_cast<std::uintptr_t>(e.bytes)) &
+         3) == 0) {
+        auto const *const x = static_cast<unsigned char const *>(
+            __builtin_assume_aligned(k.bytes, 4));
+        auto const *const y = static_cast<unsigned char const *>(
+            __builtin_assume_aligned(e.bytes, 4));
+        std::uint32_t diff = 0;
+        for (std::size_t i = 0; i < 24; i += 4) {
+            std::uint32_t u, v;
+            __builtin_memcpy(&u, x + i, 4);
+            __builtin_memcpy(&v, y + i, 4);
+            diff |= u ^ v;
+        }
+        return diff == 0;
+    }
+    return __builtin_memcmp(k.bytes, e.bytes, 24) == 0;
 #else
     __builtin_memcpy(&a, e.bytes, 8);
     __builtin_memcpy(&b, k.bytes, 8);
@@ -95,7 +116,7 @@ key_equals(bytes32_t const &k, std::uint64_t const tail, bytes32_t const &e)
 #endif
 }
 
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
 // Optional index for vectors of slot keys or (key, value) pairs.
 // Copies omit this derived cache; moves transfer it with the owning vector.
 class SlotIndex

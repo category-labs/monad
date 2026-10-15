@@ -37,7 +37,7 @@ class AccountSubstate
     bool accessed_{false}; // A_a
     Set accessed_storage_{}; // A_K
 
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     // Undoing a warm slot invalidates the index.
     SlotIndex aidx_{};
 #endif
@@ -98,7 +98,7 @@ public:
     monad_access_status access_storage(bytes32_t const &key)
     {
         std::uint64_t const tail = key_tail(key);
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         if (aidx_) {
             if (aidx_.lookup(key, tail, accessed_storage_) != 0) {
                 return MONAD_ACCESS_WARM;
@@ -118,7 +118,7 @@ public:
         // allocating for unused storage. The indexed path already has
         // sufficient capacity.
         if (MONAD_UNLIKELY(accessed_storage_.capacity() == 0)) {
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
             // Thirty-two on the guest, whose bump allocator charges the same
             // for any size: a row past eight would copy itself as it doubled.
             accessed_storage_.reserve(32);
@@ -127,7 +127,7 @@ public:
 #endif
         }
         accessed_storage_.push_back(key);
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         aidx_.on_insert(accessed_storage_);
 #endif
         return MONAD_ACCESS_COLD;
@@ -187,7 +187,7 @@ public:
                 accessed_storage_.back().bytes, key.bytes, sizeof(key.bytes)) ==
             0);
         accessed_storage_.pop_back();
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         aidx_.reset();
 #endif
     }

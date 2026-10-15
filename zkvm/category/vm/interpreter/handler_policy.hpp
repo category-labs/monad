@@ -42,7 +42,7 @@
 // ZisK passes the stack limit instead of the code analysis to avoid loading
 // it from ctx on each overflow check. Code metadata is read through FrameCode.
     #define MONAD_VM_DISPATCH_STATE_TYPE uint256_t const *
-    #define MONAD_VM_DISPATCH_STATE_PARAM uint256_t const *const stack_limit
+    #define MONAD_VM_DISPATCH_STATE_PARAM uint256_t const *stack_limit
     #define MONAD_VM_DISPATCH_STATE_ARG stack_limit
     #define MONAD_VM_CODE_VIEW (::monad::vm::interpreter::FrameCode{ctx})
     #define MONAD_VM_STACK_LIMIT stack_limit

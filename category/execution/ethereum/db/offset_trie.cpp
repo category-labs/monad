@@ -1974,6 +1974,17 @@ OffsetTrie::erase_node(NodeId const id, NibblesView const key)
                 if (erase_child == OffsetTrie::EraseResult::Unmodified) {
                     return OffsetTrie::EraseResult::Unmodified;
                 }
+#if defined(MONAD_ZKVM_ZISK)
+                // A child that survived keeps its id: the children are the
+                // same, at least two as in any branch of a trie whose root
+                // was checked, so the branch is only its child's ref dirty,
+                // as an upsert leaves it. Rewritten, it would lose its
+                // priming RLP and be encoded again whole.
+                if (erase_child == OffsetTrie::EraseResult::Modified) {
+                    mark_dirty(drop_hash(id), branch);
+                    return OffsetTrie::EraseResult::Modified;
+                }
+#endif
                 drop_hash(id);
                 if (erase_child == OffsetTrie::EraseResult::Erased) {
                     children[branch] = to_node_id_wire_t(NULL_ID);

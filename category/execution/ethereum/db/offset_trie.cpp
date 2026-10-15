@@ -127,6 +127,13 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
             ::operator new(blob_.size() * sizeof(uint64_t))),
         blob_.size()};
     claim_marks_ = node_offsets.data();
+#elif defined(MONAD_ZKVM_AIRBENDER)
+    // Fresh arena memory, which reads zero on Airbender's prover as on ZisK's
+    // (vm/memory_pool.cpp): the blob-sized zeroing is redundant there, four
+    // MB a block. Nothing frees it, which this guest never does anyway.
+    std::span<unsigned char> const node_offsets{
+        static_cast<unsigned char *>(::operator new(blob_.size())),
+        blob_.size()};
 #else
     std::vector<unsigned char> node_offsets(blob_.size(), 0);
 #endif

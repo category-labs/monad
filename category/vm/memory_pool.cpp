@@ -55,9 +55,9 @@ namespace monad::vm
         if (old_head == &empty_head_) {
             void *const p = std::aligned_alloc(32, alloc_capacity_);
             MONAD_ASSERT(p);
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
             // A freshly allocated buffer already reads as zero on ZisK's
-            // prover, so the fill is redundant there.
+            // prover, and on Airbender's, so the fill is redundant there.
             //  1. `aligned_alloc` in the guest is `sys_alloc_aligned`, a bump
             //     allocator whose `free` is a no-op (zkvm/core/libc.cpp), so an
             //     address it returns has never been handed out before and
@@ -67,7 +67,12 @@ namespace monad::vm
             //     `addr_changes * (1 - sel) * value[i] === 0` in
             //     state-machines/mem/pil/mem.pil. It is a constraint on the
             //     proof, not a convenience of the emulator, so a prover cannot
-            //     answer such a read with anything else.
+            //     answer such a read with anything else. Airbender's RAM
+            //     argument does the same by its inits: every address enters
+            //     with value 0 at timestamp 0, fixed by the circuit, not the
+            //     prover (zksync-airbender cs/src/gkr_compiler/
+            //     inits_and_teardowns.rs, InitsOrTeardownsTimestampAndValue::
+            //     Init), and every access comes after INITIAL_TIMESTAMP.
             //
             // The RECYCLE path below is a different matter and still clears:
             // the buffer it returns has been written, and what makes it zero

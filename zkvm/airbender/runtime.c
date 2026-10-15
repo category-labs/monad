@@ -27,8 +27,9 @@
 #include <stdint.h>
 
 // The mem* loops below must stay loops: gcc would otherwise recognise them as
-// memcpy/memset and call the function being defined.
-#pragma GCC optimize("no-tree-loop-distribute-patterns")
+// memcpy/memset and call the function being defined. And memcpy stays whole:
+// split, its fast paths would call the rest with a frame.
+#pragma GCC optimize("no-tree-loop-distribute-patterns", "no-partial-inlining")
 
 extern void monad_zkvm_execute_witness(void);
 extern void monad_zkvm_run_precompile_tests(void);
@@ -85,8 +86,15 @@ __attribute__((noreturn, noinline)) static void finish_success(void)
 
 __attribute__((noreturn, noinline)) static void finish_error(void)
 {
+#ifdef MONAD_ZKVM_AIRBENDER_SOFT_HALT
+    // Diagnostic: a failed run ends in the success loop instead, its outputs
+    // 0xdead, so that the runner's profiles and transcript are still written.
+    output_words[0] = 0xdead;
+    finish_success();
+#else
     __asm__ volatile("csrrw x0, cycle, x0" ::: "memory");
     __builtin_unreachable();
+#endif
 }
 
 // ---- Debug output over the quasi-UART ----
@@ -254,6 +262,7 @@ void write_output(uint8_t const *const output, size_t const size)
 // Diagnostic: calls by function, size class and alignment class, printed over
 // the quasi-UART when the run ends.
 static uint32_t memstats[3][8][3];
+static uint32_t memstat_bytes[3][8][3];
 static inline void
 memstat(int const fn, size_t const n, uintptr_t const a, uintptr_t const b)
 {
@@ -267,10 +276,81 @@ memstat(int const fn, size_t const n, uintptr_t const a, uintptr_t const b)
                                : 7;
     int const al = ((a | b) & 3) == 0 ? 0 : ((a ^ b) & 3) == 0 ? 1 : 2;
     ++memstats[fn][sc][al];
+    memstat_bytes[fn][sc][al] += n;
+}
+
+// Calls and bytes by call site (return address) and alignment class, in an
+// open-addressed table; sites past its size are dropped.
+#define MEMSITES 4096
+static struct
+{
+    uintptr_t site;
+    uint32_t fn;
+    uint32_t calls[3];
+    uint32_t bytes[3];
+} memsites[MEMSITES];
+
+static inline void memsite(
+    int const fn, uintptr_t const site, size_t const n, uintptr_t const a,
+    uintptr_t const b)
+{
+    int const al = ((a | b) & 3) == 0 ? 0 : ((a ^ b) & 3) == 0 ? 1 : 2;
+    uint32_t h = (uint32_t)(site * 2654435761u) % MEMSITES;
+    for (int probe = 0; probe < MEMSITES; ++probe, h = (h + 1) % MEMSITES) {
+        if (memsites[h].site == site || memsites[h].site == 0) {
+            memsites[h].site = site;
+            memsites[h].fn = (uint32_t)fn;
+            ++memsites[h].calls[al];
+            memsites[h].bytes[al] += (uint32_t)n;
+            return;
+        }
+    }
+}
+
+static void print_u32(char *const buf, size_t *const n, uint32_t v, int const base)
+{
+    char tmp[12];
+    int k = 0;
+    do {
+        uint32_t const d = v % (uint32_t)base;
+        tmp[k++] = (char)(d < 10 ? '0' + d : 'a' + d - 10);
+        v /= (uint32_t)base;
+    } while (v);
+    while (k) {
+        buf[(*n)++] = tmp[--k];
+    }
+}
+
+static void memsites_print(void)
+{
+    char buf[160];
+    for (int i = 0; i < MEMSITES; ++i) {
+        if (memsites[i].site == 0) {
+            continue;
+        }
+        size_t n = 0;
+        static char const head[] = "memsite ";
+        for (char const *c = head; *c; ++c) {
+            buf[n++] = *c;
+        }
+        print_u32(buf, &n, memsites[i].fn, 10);
+        buf[n++] = ' ';
+        print_u32(buf, &n, (uint32_t)memsites[i].site, 16);
+        for (int al = 0; al < 3; ++al) {
+            buf[n++] = ' ';
+            print_u32(buf, &n, memsites[i].calls[al], 10);
+        }
+        for (int al = 0; al < 3; ++al) {
+            buf[n++] = ' ';
+            print_u32(buf, &n, memsites[i].bytes[al], 10);
+        }
+        monad_zkvm_airbender_print(buf, n);
+    }
 }
 
 void monad_zkvm_airbender_memstats_print(void)
 {
+    memsites_print();
     char buf[200];
     static char const *const fns[3] = {"memcpy", "memset", "memcmp"};
     for (int f = 0; f < 3; ++f) {
@@ -281,8 +361,9 @@ void monad_zkvm_airbender_memstats_print(void)
             }
             buf[n++] = ' ';
             buf[n++] = (char)('0' + sc);
-            for (int al = 0; al < 3; ++al) {
-                uint32_t v = memstats[f][sc][al];
+            for (int al = 0; al < 6; ++al) {
+                uint32_t v = al < 3 ? memstats[f][sc][al]
+                                    : memstat_bytes[f][sc][al - 3];
                 char tmp[12];
                 int k = 0;
                 buf[n++] = ' ';
@@ -299,7 +380,13 @@ void monad_zkvm_airbender_memstats_print(void)
     }
 }
     #define MEMSTAT(fn, n, a, b)                                               \
-        memstat(fn, n, (uintptr_t)(a), (uintptr_t)(b))
+        (memstat(fn, n, (uintptr_t)(a), (uintptr_t)(b)),                       \
+         memsite(                                                              \
+             fn,                                                               \
+             (uintptr_t)__builtin_return_address(0),                           \
+             n,                                                                \
+             (uintptr_t)(a),                                                   \
+             (uintptr_t)(b)))
 #else
     #define MEMSTAT(fn, n, a, b) ((void)0)
 #endif
@@ -314,11 +401,12 @@ static inline void store32(uint8_t *const p, uint32_t const v)
     *(uint32_t *)(void *)p = v;
 }
 
-void *memcpy(void *const dst, void const *const src, size_t n)
+// Different offsets in a word: bytes up to the destination's word boundary,
+// then each destination word shifted together from two aligned source words
+// (each holds at least one byte that is copied), then the bytes left.
+__attribute__((noinline)) static void *
+copy_shifted(void *const dst, uint8_t *d, uint8_t const *s, size_t n)
 {
-    MEMSTAT(0, n, dst, src);
-    uint8_t *d = dst;
-    uint8_t const *s = src;
     if (n < 8) {
         while (n--) {
             *d++ = *s++;
@@ -330,8 +418,94 @@ void *memcpy(void *const dst, void const *const src, size_t n)
         --n;
     }
     unsigned const off = (uintptr_t)s & 3;
-    if (off == 0) {
-        for (; n >= 32; n -= 32, d += 32, s += 32) {
+    unsigned const rs = 8 * off;
+    unsigned const ls = 32 - rs;
+    uint8_t const *w = s - off;
+    uint32_t lo = load32(w);
+    for (; n >= 16; n -= 16, d += 16, w += 16) {
+        uint32_t const h0 = load32(w + 4), h1 = load32(w + 8), h2 = load32(w + 12),
+                       h3 = load32(w + 16);
+        store32(d, (lo >> rs) | (h0 << ls));
+        store32(d + 4, (h0 >> rs) | (h1 << ls));
+        store32(d + 8, (h1 >> rs) | (h2 << ls));
+        store32(d + 12, (h2 >> rs) | (h3 << ls));
+        lo = h3;
+    }
+    for (; n >= 4; n -= 4, d += 4, w += 4) {
+        uint32_t const h = load32(w + 4);
+        store32(d, (lo >> rs) | (h << ls));
+        lo = h;
+    }
+    s = w + off;
+    while (n--) {
+        *d++ = *s++;
+    }
+    return dst;
+}
+
+// Both word-aligned: eight words at a time, then what is left by its bits.
+__attribute__((noinline)) static void *
+copy_aligned(void *const dst, uint8_t *d, uint8_t const *s, size_t n)
+{
+    for (; n >= 32; n -= 32, d += 32, s += 32) {
+        uint32_t const w0 = load32(s), w1 = load32(s + 4), w2 = load32(s + 8),
+                       w3 = load32(s + 12), w4 = load32(s + 16), w5 = load32(s + 20),
+                       w6 = load32(s + 24), w7 = load32(s + 28);
+        store32(d, w0);
+        store32(d + 4, w1);
+        store32(d + 8, w2);
+        store32(d + 12, w3);
+        store32(d + 16, w4);
+        store32(d + 20, w5);
+        store32(d + 24, w6);
+        store32(d + 28, w7);
+    }
+    if (n & 16) {
+        uint32_t const w0 = load32(s), w1 = load32(s + 4), w2 = load32(s + 8),
+                       w3 = load32(s + 12);
+        store32(d, w0);
+        store32(d + 4, w1);
+        store32(d + 8, w2);
+        store32(d + 12, w3);
+        d += 16;
+        s += 16;
+    }
+    if (n & 8) {
+        uint32_t const w0 = load32(s), w1 = load32(s + 4);
+        store32(d, w0);
+        store32(d + 4, w1);
+        d += 8;
+        s += 8;
+    }
+    if (n & 4) {
+        store32(d, load32(s));
+        d += 4;
+        s += 4;
+    }
+    if (n & 2) {
+        *(uint16_t *)(void *)d = *(uint16_t const *)(void const *)s;
+        d += 2;
+        s += 2;
+    }
+    if (n & 1) {
+        *d = *s;
+    }
+    return dst;
+}
+
+// A copy's fixed cost is most of it: on block 25993213, 230K of the 427K calls
+// copy 32 aligned bytes (a word or a hash) and 71K copy 20 (an address), where
+// the bytes the bulk copies move cost a cycle or two each whatever is done.
+// Both sizes go straight through, with no frame; the rest tail-call a copy by
+// words, after the bytes up to a word boundary when source and destination
+// share an offset in a word, or by shifted words when they do not.
+void *memcpy(void *const dst, void const *const src, size_t n)
+{
+    MEMSTAT(0, n, dst, src);
+    uint8_t *d = dst;
+    uint8_t const *s = src;
+    if ((((uintptr_t)d | (uintptr_t)s) & 3) == 0) {
+        if (n == 32) {
             uint32_t const w0 = load32(s), w1 = load32(s + 4), w2 = load32(s + 8),
                            w3 = load32(s + 12), w4 = load32(s + 16), w5 = load32(s + 20),
                            w6 = load32(s + 24), w7 = load32(s + 28);
@@ -343,36 +517,31 @@ void *memcpy(void *const dst, void const *const src, size_t n)
             store32(d + 20, w5);
             store32(d + 24, w6);
             store32(d + 28, w7);
+            return dst;
         }
-        for (; n >= 4; n -= 4, d += 4, s += 4) {
-            store32(d, load32(s));
+        if (n == 20) {
+            uint32_t const w0 = load32(s), w1 = load32(s + 4), w2 = load32(s + 8),
+                           w3 = load32(s + 12), w4 = load32(s + 16);
+            store32(d, w0);
+            store32(d + 4, w1);
+            store32(d + 8, w2);
+            store32(d + 12, w3);
+            store32(d + 16, w4);
+            return dst;
         }
+        return copy_aligned(dst, d, s, n);
     }
-    else {
-        unsigned const rs = 8 * off;
-        unsigned const ls = 32 - rs;
-        uint8_t const *w = s - off;
-        uint32_t lo = load32(w);
-        for (; n >= 16; n -= 16, d += 16, w += 16) {
-            uint32_t const h0 = load32(w + 4), h1 = load32(w + 8), h2 = load32(w + 12),
-                           h3 = load32(w + 16);
-            store32(d, (lo >> rs) | (h0 << ls));
-            store32(d + 4, (h0 >> rs) | (h1 << ls));
-            store32(d + 8, (h1 >> rs) | (h2 << ls));
-            store32(d + 12, (h2 >> rs) | (h3 << ls));
-            lo = h3;
-        }
-        for (; n >= 4; n -= 4, d += 4, w += 4) {
-            uint32_t const h = load32(w + 4);
-            store32(d, (lo >> rs) | (h << ls));
-            lo = h;
-        }
-        s = w + off;
+    if ((((uintptr_t)d ^ (uintptr_t)s) & 3) != 0) {
+        return copy_shifted(dst, d, s, n);
     }
-    while (n--) {
+    while ((uintptr_t)d & 3) {
+        if (n == 0) {
+            return dst;
+        }
         *d++ = *s++;
+        --n;
     }
-    return dst;
+    return copy_aligned(dst, d, s, n);
 }
 
 void *memmove(void *const dst, void const *const src, size_t n)
@@ -446,8 +615,33 @@ int memcmp(void const *const a, void const *const b, size_t n)
     uint8_t const *x = a;
     uint8_t const *y = b;
     // Nearly every call compares a 20- or 32-byte key at word-aligned
-    // addresses; compare those by words and let the bytes order a mismatch.
+    // addresses, after its hash matched: equal, which the OR of the words'
+    // differences tells with no branch a word. A difference goes on to the
+    // word loop, and the bytes order it.
     if ((((uintptr_t)x | (uintptr_t)y) & 3) == 0) {
+        if (n == 20) {
+            uint32_t const diff = (load32(x) ^ load32(y)) |
+                                  (load32(x + 4) ^ load32(y + 4)) |
+                                  (load32(x + 8) ^ load32(y + 8)) |
+                                  (load32(x + 12) ^ load32(y + 12)) |
+                                  (load32(x + 16) ^ load32(y + 16));
+            if (diff == 0) {
+                return 0;
+            }
+        }
+        else if (n == 32) {
+            uint32_t const diff = (load32(x) ^ load32(y)) |
+                                  (load32(x + 4) ^ load32(y + 4)) |
+                                  (load32(x + 8) ^ load32(y + 8)) |
+                                  (load32(x + 12) ^ load32(y + 12)) |
+                                  (load32(x + 16) ^ load32(y + 16)) |
+                                  (load32(x + 20) ^ load32(y + 20)) |
+                                  (load32(x + 24) ^ load32(y + 24)) |
+                                  (load32(x + 28) ^ load32(y + 28));
+            if (diff == 0) {
+                return 0;
+            }
+        }
         for (; n >= 4; n -= 4, x += 4, y += 4) {
             if (load32(x) != load32(y)) {
                 break;

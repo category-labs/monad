@@ -505,6 +505,10 @@ NodeViewBase OffsetTrie::find_original(NodeId id, NibblesView key) const
             : nullptr;
 #endif
     NodeViewBase found = empty();
+    // The entry id is bounded here, once: a root after a commit may be an
+    // overlay id. Every id below it is a blob node's child, which the
+    // constructor bounded.
+    NodeViewBase node = get_original(id);
 #if defined(MONAD_ZKVM_ZISK)
     // Branches two levels a turn, a key byte's two nibbles, where the loop
     // below reads the byte again for each and keeps the view's parity, a test
@@ -514,24 +518,24 @@ NodeViewBase OffsetTrie::find_original(NodeId id, NibblesView key) const
         unsigned char const *k = whole_key;
         unsigned odd = 0;
         while (id != NULL_ID) {
-            NodeViewBase const high = get_original(id);
-            if (high.tag() != BRANCH) {
+            if (node.tag() != BRANCH) {
                 break;
             }
             if (k == whole_key + MAX_PATH_NIBBLES / 2) { // no value at a branch
                 return found;
             }
             unsigned const b = *k;
-            id = BranchView{high}.child(b >> 4);
+            id = BranchView{node}.child(b >> 4);
             if (id == NULL_ID) {
                 return found;
             }
-            NodeViewBase const low = get_original(id);
-            if (low.tag() != BRANCH) {
+            node = original_child(id);
+            if (node.tag() != BRANCH) {
                 odd = 1;
                 break;
             }
-            id = BranchView{low}.child(b & 0xf);
+            id = BranchView{node}.child(b & 0xf);
+            node = original_child(id);
             ++k;
         }
         key = NibblesView{
@@ -541,7 +545,6 @@ NodeViewBase OffsetTrie::find_original(NodeId id, NibblesView key) const
     }
 #endif
     while (id != NULL_ID) {
-        NodeViewBase const node = get_original(id);
         // Most levels are branches: tested first, where the match's compare
         // tree reaches them third.
         if (MONAD_LIKELY(node.tag() == BRANCH)) {
@@ -555,6 +558,7 @@ NodeViewBase OffsetTrie::find_original(NodeId id, NibblesView key) const
             unsigned const i = key.get(0);
             key.drop_front1();
             id = BranchView{node}.child(i);
+            node = original_child(id);
             continue;
         }
         id = match(
@@ -599,6 +603,7 @@ NodeViewBase OffsetTrie::find_original(NodeId id, NibblesView key) const
                     MONAD_ABORT("malformed trie: node not found");
                 },
             });
+        node = original_child(id);
     }
     return found;
 }

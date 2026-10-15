@@ -40,6 +40,8 @@ namespace monad::zkvm
     };
 
 #include <zkvm/guest/known_codes.inc>
+#include <zkvm/guest/known_codes_ambiguous.inc>
+#include <zkvm/guest/known_codes_hash.inc>
 
     // The key a code is filed under: its first word and its middle one, both
     // whole and 8-aligned in a copy of 16 bytes or more.
@@ -59,6 +61,17 @@ namespace monad::zkvm
         return static_cast<unsigned>(
             ((key ^ size) * 0x9E3779B97F4A7C15ull) >>
             (64 - KNOWN_CODE_SLOTS_LOG2));
+    }
+
+    // The slot of known_code_hash_index a keccak is probed from: its first
+    // word, read little-endian.
+    [[gnu::always_inline]] inline unsigned
+    known_code_hash_slot(unsigned char const *const hash) noexcept
+    {
+        uint64_t w0;
+        __builtin_memcpy(&w0, hash, 8);
+        return static_cast<unsigned>(
+            (w0 * 0x9E3779B97F4A7C15ull) >> (64 - KNOWN_CODE_HASH_SLOTS_LOG2));
     }
 
 #if defined(MONAD_ZKVM_ZISK)
@@ -107,6 +120,57 @@ namespace monad::zkvm
                 return &e;
             }
             slot = (slot + 1) & ((1u << KNOWN_CODE_SLOTS_LOG2) - 1);
+        }
+    }
+
+    // The first entry with the size and key of the size bytes at code, or
+    // null: a code that may be its copy, not compared.
+    inline KnownCode const *known_code_probable(
+        unsigned char const *const code, size_t const size) noexcept
+    {
+        if (size < 16) {
+            return nullptr;
+        }
+        uint64_t const key = known_code_key(code, size);
+        unsigned slot = known_code_slot(key, size);
+        for (;;) {
+            unsigned const n = known_code_index[slot];
+            if (n == 0) {
+                return nullptr;
+            }
+            KnownCode const &e = known_codes[n - 1];
+            if (e.size == size && e.key == key) {
+                return &e;
+            }
+            slot = (slot + 1) & ((1u << KNOWN_CODE_SLOTS_LOG2) - 1);
+        }
+    }
+
+    // Whether another code with e's size and key was seen when the table was
+    // learnt: a witness code with them is then compared, not set aside.
+    [[gnu::always_inline]] inline bool
+    known_code_is_ambiguous(KnownCode const &e) noexcept
+    {
+        size_t const n = static_cast<size_t>(&e - known_codes);
+        return ((known_code_ambiguous[n / 64] >> (n % 64)) & 1) != 0;
+    }
+
+    // The entry whose keccak is hash, or null, probed from its first word.
+    inline KnownCode const *
+    known_code_by_hash(unsigned char const *const hash) noexcept
+    {
+        constexpr unsigned mask = (1u << KNOWN_CODE_HASH_SLOTS_LOG2) - 1;
+        unsigned slot = known_code_hash_slot(hash);
+        for (;;) {
+            unsigned const n = known_code_hash_index[slot];
+            if (n == 0) {
+                return nullptr;
+            }
+            KnownCode const &e = known_codes[n - 1];
+            if (__builtin_memcmp(e.hash, hash, 32) == 0) {
+                return &e;
+            }
+            slot = (slot + 1) & mask;
         }
     }
 

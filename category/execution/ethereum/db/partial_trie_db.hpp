@@ -20,6 +20,7 @@
 #include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
+#include <category/core/likely.h>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/db/db.hpp>
@@ -36,6 +37,13 @@
 MONAD_NAMESPACE_BEGIN
 
 using CodeIndex = ankerl::unordered_dense::map<bytes32_t, vm::SharedIntercode>;
+
+#if defined(MONAD_ZKVM_ZISK)
+// The code whose keccak is h when the witness's hashed codes lack it: the
+// guest's table, or a witness code it has not hashed yet
+// (zkvm/guest/execute_witness.cpp), filed into codes; null for none.
+vm::SharedIntercode zkvm_code_by_hash(bytes32_t const &h, CodeIndex &codes);
+#endif
 
 class PartialTrieDb final : public Db
 {
@@ -100,7 +108,15 @@ public:
     vm::SharedIntercode read_code(bytes32_t const &code_hash) override
     {
         auto const it = codes_.find(code_hash);
+#if defined(MONAD_ZKVM_ZISK)
+        if (MONAD_UNLIKELY(it == codes_.end())) {
+            vm::SharedIntercode code = zkvm_code_by_hash(code_hash, codes_);
+            return code ? code : vm::make_shared_intercode({});
+        }
+        return it->second;
+#else
         return it == codes_.end() ? vm::make_shared_intercode({}) : it->second;
+#endif
     }
 
     BlockHeader read_eth_header() override

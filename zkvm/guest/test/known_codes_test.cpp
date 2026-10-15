@@ -52,7 +52,8 @@ int main()
         unsigned char const *const code = base + e.offset;
         require(e.size >= 16, "shorter than 16 bytes", n);
         require(
-            e.offset >= 32 && e.offset + e.size + 33 <= sizeof(known_code_words),
+            e.offset >= 32 &&
+                e.offset + e.size + 33 <= sizeof(known_code_words),
             "padding past the words",
             n);
         for (size_t i = 1; i <= 32; ++i) {
@@ -91,8 +92,15 @@ int main()
             require(known_code_index[slot] != 0, "not in the index", n);
             slot = (slot + 1) & ((1u << KNOWN_CODE_SLOTS_LOG2) - 1);
         }
+        unsigned hslot = known_code_hash_slot(e.hash);
+        while (known_code_hash_index[hslot] != n + 1) {
+            require(
+                known_code_hash_index[hslot] != 0, "not in the hash index", n);
+            hslot = (hslot + 1) & ((1u << KNOWN_CODE_HASH_SLOTS_LOG2) - 1);
+        }
     }
     std::printf(
-        "Known codes: %zu hashes, JUMPDEST maps and index entries checked\n",
+        "Known codes: %zu hashes, JUMPDEST maps and index entries (by key and "
+        "by keccak) checked\n",
         count);
 }

@@ -179,6 +179,54 @@ monad_zkvm_known_jumpdests(uint8_t const *const code, size_t const size) noexcep
     return e != nullptr ? monad::zkvm::known_code_jumpdests + e->jumpdests
                         : nullptr;
 }
+
+namespace
+{
+    // The witness codes with an entry's size and key, neither compared nor
+    // hashed: a code execution asks for is found by its keccak, in the
+    // witness's hashed codes or in the table. These are hashed only when a
+    // keccak is in neither, for bytes that share an entry's size and key and
+    // differ from it -- a template's clone.
+    std::vector<monad::byte_string_view> deferred_codes;
+    size_t next_deferred = 0;
+}
+
+namespace monad
+{
+    vm::SharedIntercode zkvm_code_by_hash(bytes32_t const &h, CodeIndex &codes)
+    {
+        if (auto const *const e = zkvm::known_code_by_hash(h.bytes)) {
+            vm::SharedIntercode code = zkvm::known_code_intercode(*e);
+            codes.emplace(h, code);
+            return code;
+        }
+        // The empty code's keccak, which every account without code reads,
+        // is in neither: the set-aside codes would not give it. They are
+        // taken in turn up to the one that hashes to h; the rest stay aside.
+        if (h != NULL_HASH) {
+            while (next_deferred != deferred_codes.size()) {
+                byte_string_view const bytes = deferred_codes[next_deferred++];
+                // An entry's copy has the entry's keccak, which is not h: the
+                // table lacks h. Compared, as it was before it was set aside;
+                // a clone fails the compare early.
+                if (zkvm::known_code_find(bytes.data(), bytes.size())) {
+                    continue;
+                }
+                MONAD_KECCAK_SITE(CODE_INDEX, bytes.size());
+                vm::SharedIntercode code = vm::make_shared_intercode(bytes);
+                bytes32_t code_hash;
+                monad_zkvm_keccak256_fast_nomemo(
+                    code->code(), bytes.size(), code_hash.bytes);
+                auto const [it, inserted] =
+                    codes.emplace(code_hash, std::move(code));
+                if (code_hash == h) {
+                    return it->second;
+                }
+            }
+        }
+        return nullptr;
+    }
+}
 #endif
 
 extern "C" void monad_zkvm_execute_witness(void)
@@ -254,16 +302,24 @@ extern "C" void monad_zkvm_execute_witness(void)
             static FirstBlocks first_blocks;
             std::vector<Pending> pending;
             pending.reserve(512);
+            deferred_codes.reserve(512);
             while (!codes.empty()) {
                 auto const bytes = monad::rlp::parse_string_metadata(codes);
                 MONAD_ASSERT(bytes.has_value());
-                if (auto const *const e = monad::zkvm::known_code_find(
+                if (auto const *const p = monad::zkvm::known_code_probable(
                         bytes.value().data(), bytes.value().size())) {
-                    monad::bytes32_t known_hash;
-                    std::memcpy(known_hash.bytes, e->hash, 32);
-                    code_index.emplace(
-                        known_hash, monad::zkvm::known_code_intercode(*e));
-                    continue;
+                    if (!monad::zkvm::known_code_is_ambiguous(*p)) {
+                        deferred_codes.push_back(bytes.value());
+                        continue;
+                    }
+                    if (auto const *const e = monad::zkvm::known_code_find(
+                            bytes.value().data(), bytes.value().size())) {
+                        monad::bytes32_t known_hash;
+                        std::memcpy(known_hash.bytes, e->hash, 32);
+                        code_index.emplace(
+                            known_hash, monad::zkvm::known_code_intercode(*e));
+                        continue;
+                    }
                 }
                 auto code = intercode_of(bytes.value());
                 uintptr_t const tag =
@@ -290,12 +346,19 @@ extern "C" void monad_zkvm_execute_witness(void)
             MONAD_ASSERT(bytes.has_value());
             monad::bytes32_t code_hash;
 #if defined(MONAD_ZKVM_ZISK)
-            if (auto const *const e = monad::zkvm::known_code_find(
+            if (auto const *const p = monad::zkvm::known_code_probable(
                     bytes.value().data(), bytes.value().size())) {
-                std::memcpy(code_hash.bytes, e->hash, 32);
-                code_index.emplace(
-                    code_hash, monad::zkvm::known_code_intercode(*e));
-                continue;
+                if (!monad::zkvm::known_code_is_ambiguous(*p)) {
+                    deferred_codes.push_back(bytes.value());
+                    continue;
+                }
+                if (auto const *const e = monad::zkvm::known_code_find(
+                        bytes.value().data(), bytes.value().size())) {
+                    std::memcpy(code_hash.bytes, e->hash, 32);
+                    code_index.emplace(
+                        code_hash, monad::zkvm::known_code_intercode(*e));
+                    continue;
+                }
             }
 #endif
             auto const code = intercode_of(bytes.value());

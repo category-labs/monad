@@ -25,4 +25,6 @@ namespace monad::vm::runtime
     void selfbalance(Context *ctx, uint256_t *result_ptr);
 
     void blobhash(Context *ctx, uint256_t *result_ptr, uint256_t const *index);
+
+    void callern(Context *ctx, uint256_t *result_ptr, uint256_t const *n_ptr);
 }

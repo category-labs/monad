@@ -65,4 +65,17 @@ namespace monad::vm::runtime
                 ? load_be<uint256_t>(c.blob_hashes[static_cast<size_t>(*index)])
                 : 0;
     }
+
+    void callern(
+        Context *const ctx, uint256_t *const result_ptr,
+        uint256_t const *const n_ptr)
+    {
+        auto const depth = static_cast<uint64_t>(ctx->env.depth);
+        if (*n_ptr > depth) {
+            *result_ptr = 0;
+            return;
+        }
+        *result_ptr = uint256_from_address(ctx->host->call_frame_sender(
+            depth - static_cast<uint64_t>(*n_ptr)));
+    }
 }

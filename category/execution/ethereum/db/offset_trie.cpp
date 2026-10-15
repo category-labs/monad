@@ -766,9 +766,12 @@ bool OffsetTrie::patch_ref(
         // RLP is its patched priming RLP -- what encode_current would build
         // after reading the same slots again. A patch that falls back to the
         // full encode leaves it to the general path below.
+        //
+        // patch_rlp's only node is a blob node without an overlay entry, so
+        // the child is one the constructor bounded.
         uint64_t const v = static_cast<uint64_t>(child);
         if (v < OVERLAY_BASE) {
-            NodeViewBase const original = get_original(child);
+            NodeViewBase const original = original_child(child);
             Tag const tag = original.tag();
             CachedHash *const e = blob_hash_slots_[v >> 2];
             if (blob_overlay_slots_[v >> 2] == nullptr &&

@@ -10,7 +10,7 @@
 extern crate alloc;
 
 use airbender_crypto::ripemd160::{Digest as _, Ripemd160};
-use airbender_crypto::secp256k1::{hooks::DefaultSecp256k1Hooks, recover_from_bytes_with_hooks};
+use airbender_crypto::secp256k1::recover_from_bytes_with_hooks;
 use airbender_crypto::sha256::Sha256;
 use core::alloc::{GlobalAlloc, Layout};
 
@@ -46,6 +46,366 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
     }
 }
 
+/// secp256k1 field hints from the host (zkvm/airbender/runner), each checked
+/// with one multiplication, as ZKsync OS's `Secp256k1HooksWithOracle` takes
+/// them from its oracle (basic_system field_ops.rs). With division cheap,
+/// recovery runs in affine coordinates (airbender-crypto recover_affine.rs):
+/// a group operation is a hinted slope and two or three multiplications,
+/// where the Jacobian formulas take 7 to 11.
+mod hints {
+    use airbender_crypto::secp256k1::{
+        field::FieldElement, hooks::Secp256k1Hooks, scalars::Scalar,
+    };
+    use airbender_crypto::{bigint_op_delegation_raw, BigIntOps};
+    use core::mem::MaybeUninit;
+
+    // A query is its tag, then the operand's address, through the
+    // non-determinism CSR (the division queries' protocol, uint256.hpp); the
+    // host reads the operand there and answers in the same representation:
+    // Montgomery words, least significant first.
+    /// The numerator and the denominator, adjacent: their quotient.
+    const DIVIDE: u32 = 0x4d44_5610;
+    /// x: x^((p+1)/4), then a word, non-zero if x is not a square.
+    const SQRT: u32 = 0x4d44_5611;
+    /// x: 1/x.
+    const INVERT: u32 = 0x4d44_5612;
+    /// s: 1/s modulo the group order.
+    const SCALAR_INVERT: u32 = 0x4d44_5613;
+
+    /// `2^256 mod p` and `2^256 mod n`: the words of one.
+    const R_MOD_P: [u32; 8] = [0x3d1, 0x1, 0, 0, 0, 0, 0, 0];
+    const R_MOD_N: [u32; 8] = [
+        0x2fc9bebf, 0x402da173, 0x50b75fc4, 0x45512319, 0x1, 0, 0, 0,
+    ];
+
+    const fn words_of<T>(value: &T) -> [u32; 8] {
+        // SAFETY: T is 32 bytes (checked below); const evaluation refuses
+        // padding
+        unsafe { core::ptr::read(core::ptr::from_ref(value).cast::<[u32; 8]>()) }
+    }
+
+    const fn words_eq(a: &[u32; 8], b: &[u32; 8]) -> bool {
+        let mut i = 0;
+        while i < 8 {
+            if a[i] != b[i] {
+                return false;
+            }
+            i += 1;
+        }
+        true
+    }
+
+    // The host reads and answers Montgomery words: a change of airbender-
+    // crypto's representation must stop the build here.
+    const _: () = {
+        assert!(core::mem::size_of::<FieldElement>() == 32);
+        assert!(core::mem::align_of::<FieldElement>() >= 32);
+        assert!(core::mem::size_of::<Scalar>() == 32);
+        assert!(core::mem::align_of::<Scalar>() >= 32);
+        assert!(words_eq(&words_of(&FieldElement::ONE), &R_MOD_P));
+        assert!(words_eq(&words_of(&FieldElement::ZERO), &[0; 8]));
+        assert!(words_eq(&words_of(&Scalar::ONE), &R_MOD_N));
+        assert!(words_eq(&words_of(&Scalar::ZERO), &[0; 8]));
+    };
+
+    /// A delegation operand: 32-byte aligned, and in RAM as .rodata is.
+    #[repr(C, align(32))]
+    struct Operand([u32; 8]);
+
+    static P: Operand = Operand([
+        0xfffffc2f, 0xfffffffe, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
+        0xffffffff,
+    ]);
+    static N: Operand = Operand([
+        0xd0364141, 0xbfd25e8c, 0xaf48a03b, 0xbaaedce6, 0xfffffffe, 0xffffffff, 0xffffffff,
+        0xffffffff,
+    ]);
+
+    #[inline(always)]
+    fn write(w: u32) {
+        // asm! may touch memory: the operand is stored before the host reads it
+        unsafe { core::arch::asm!("csrrw x0, 0x7c0, {0}", in(reg) w, options(nostack)) }
+    }
+
+    #[inline(always)]
+    fn read() -> u32 {
+        let w: u32;
+        unsafe { core::arch::asm!("csrrw {0}, 0x7c0, x0", out(reg) w, options(nostack)) }
+        w
+    }
+
+    /// Asks for `tag` on the value at `operand` and reads the eight answer
+    /// words into `dst`, which may be the operand: the host has read it by
+    /// then.
+    #[inline(always)]
+    unsafe fn query<T: ?Sized>(tag: u32, operand: *const T, dst: *mut [u32; 8]) {
+        write(tag);
+        write(operand.cast::<u8>() as usize as u32);
+        let dst = dst.cast::<u32>();
+        for i in 0..8 {
+            dst.add(i).write(read());
+        }
+    }
+
+    /// Whether the words at `x` are below `modulus`: subtracting it borrows
+    /// exactly then, and adding it back restores them.
+    #[inline(always)]
+    unsafe fn below(x: *mut [u32; 8], modulus: &'static Operand) -> bool {
+        let m = core::ptr::from_ref(modulus).cast::<()>();
+        let borrow = bigint_op_delegation_raw(x.cast(), m, BigIntOps::Sub) != 0;
+        bigint_op_delegation_raw(x.cast(), m, BigIntOps::Add);
+        borrow
+    }
+
+    pub struct HostHints;
+
+    impl Secp256k1Hooks for HostHints {
+        const FE_INVERT_IS_CHEAP: bool = true;
+        const FE_DIVIDE_IS_CHEAP: bool = true;
+
+        /// The quotient as the host gives it: any 256-bit representative is
+        /// the element, since the check is modulo p.
+        fn fe_divide<'q>(
+            &mut self,
+            fraction: &mut [FieldElement; 2],
+            quotient: &'q mut MaybeUninit<FieldElement>,
+        ) -> &'q mut FieldElement {
+            // SAFETY: the element is its eight words (checked above), any
+            // value of which is an element
+            let quotient = unsafe {
+                query(DIVIDE, fraction, quotient.as_mut_ptr().cast());
+                quotient.assume_init_mut()
+            };
+            // quotient · denominator = numerator; the denominator is not zero
+            // (the caller's obligation), so only the quotient passes
+            let [numerator, denominator] = fraction;
+            denominator.mul_in_place(quotient);
+            denominator.sub_in_place(numerator);
+            assert!(denominator.is_zero());
+            quotient
+        }
+
+        fn fe_sqrt_and_assign(&mut self, x: &mut FieldElement) -> bool {
+            // as the default hook: the root of 0 is 0
+            if x.is_zero() {
+                return true;
+            }
+            let operand = *x;
+            let x_words = core::ptr::from_mut(x).cast::<[u32; 8]>();
+            // SAFETY: as in fe_divide; x is 32-byte aligned
+            let not_square = unsafe {
+                query(SQRT, x_words, x_words);
+                let not_square = read() != 0;
+                assert!(below(x_words, &P));
+                not_square
+            };
+            // p = 3 mod 4: x^((p+1)/4) squared is x for a square, else -x
+            let mut squared = *x;
+            squared.square_in_place();
+            if not_square {
+                squared.add_in_place(&operand);
+            } else {
+                squared.sub_in_place(&operand);
+            }
+            assert!(squared.is_zero());
+            !not_square
+        }
+
+        fn fe_invert_and_assign(&mut self, x: &mut FieldElement) {
+            // as the default hook: the inverse of 0 is 0
+            if x.is_zero() {
+                return;
+            }
+            let mut product = *x;
+            let x_words = core::ptr::from_mut(x).cast::<[u32; 8]>();
+            // SAFETY: as in fe_sqrt_and_assign
+            unsafe {
+                query(INVERT, x_words, x_words);
+                assert!(below(x_words, &P));
+            }
+            product.mul_in_place(x);
+            assert!(product.is_one());
+        }
+
+        fn scalar_invert_and_assign(&mut self, x: &mut Scalar) {
+            if x.is_zero() {
+                return;
+            }
+            let mut product = *x;
+            let x_words = core::ptr::from_mut(x).cast::<[u32; 8]>();
+            // SAFETY: as in fe_sqrt_and_assign
+            unsafe {
+                query(SCALAR_INVERT, x_words, x_words);
+                assert!(below(x_words, &N));
+            }
+            product *= &*x;
+            assert!(product.is_one());
+        }
+    }
+}
+
+/// The hinted recovery against the default hooks' (inversions and square roots
+/// by exponentiation, Jacobian coordinates), as ZKsync OS's
+/// `test_advice_matches_no_advice` checks its oracle's: random inputs (about
+/// half have an `r` on the curve and recover some key), the edge values of
+/// `r` and `s`, the generator's `x` as `r` (the affine formulas' doubling and
+/// infinity cases) and ZKsync OS's regression inputs. The output words are
+/// the cases, the disagreements, the keys recovered and the first
+/// disagreement.
+#[cfg(feature = "ecrecover-selftest")]
+mod selftest {
+    use super::hints::HostHints;
+    use airbender_crypto::secp256k1::hooks::DefaultSecp256k1Hooks;
+    use airbender_crypto::secp256k1::recover_from_bytes_with_hooks;
+
+    extern "C" {
+        fn write_output(output: *const u8, size: usize);
+    }
+
+    const GX: [u8; 32] = [
+        0x79, 0xbe, 0x66, 0x7e, 0xf9, 0xdc, 0xbb, 0xac, 0x55, 0xa0, 0x62, 0x95, 0xce, 0x87, 0x0b,
+        0x07, 0x02, 0x9b, 0xfc, 0xdb, 0x2d, 0xce, 0x28, 0xd9, 0x59, 0xf2, 0x81, 0x5b, 0x16, 0xf8,
+        0x17, 0x98,
+    ];
+    const N: [u8; 32] = [
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        0xfe, 0xba, 0xae, 0xdc, 0xe6, 0xaf, 0x48, 0xa0, 0x3b, 0xbf, 0xd2, 0x5e, 0x8c, 0xd0, 0x36,
+        0x41, 0x41,
+    ];
+
+    fn hex32(s: &str) -> [u8; 32] {
+        let mut out = [0u8; 32];
+        for (i, byte) in out.iter_mut().enumerate() {
+            *byte = u8::from_str_radix(&s[2 * i..2 * i + 2], 16).unwrap();
+        }
+        out
+    }
+
+    /// digest, v, r, s of ZKsync OS's ecrecover tests (basic_system ecrecover.rs)
+    const REGRESSIONS: [[&str; 4]; 4] = [
+        [
+            "38d18acb67d25c8bb9942764b62f18e17054f66a817bd4295423adf9ed98873e",
+            "1b",
+            "38d18acb67d25c8bb9942764b62f18e17054f66a817bd4295423adf9ed98873e",
+            "789d1dd423d25f0772d2748d60f7e4b81bb14d086eba8e8e8efb6dcff8a4ae02",
+        ],
+        [
+            "6b8d2c81b11b2d699528dde488dbdf2f94293d0d33c32e347f255fa4a6c1f0a9",
+            "1b",
+            "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "6b8d2c81b11b2d699528dde488dbdf2f94293d0d33c32e347f255fa4a6c1f0a9",
+        ],
+        [
+            "00c547e4f7b0f325ad1e56f57e26c745b09a3e503d86e00e5255ff7f715d3d1c",
+            "1c",
+            "00b1693892219d736caba55bdb67216e485557ea6b6af75f37096c9aa6a5a75f",
+            "00b940b1d03b21e36b0e47e79769f095fe2ab855bd91e3a38756b7d75a9c4549",
+        ],
+        [
+            "22bd0731d4bffa88402625b5ba39e04ee9add6534c31da6c119d825a39822b29",
+            "1c",
+            "66667463d40ac441662188ed3e66329c21aca165133392cc1a14b84485600a87",
+            "5087ffc16905cc6ceaef174630ce9dd0c40b3f4e94ff00ee3658a6a67fec2613",
+        ],
+    ];
+
+    struct Rng(u64);
+
+    impl Rng {
+        fn next(&mut self) -> u64 {
+            self.0 ^= self.0 << 13;
+            self.0 ^= self.0 >> 7;
+            self.0 ^= self.0 << 17;
+            self.0
+        }
+
+        fn bytes(&mut self) -> [u8; 32] {
+            let mut out = [0u8; 32];
+            for chunk in out.chunks_mut(8) {
+                chunk.copy_from_slice(&self.next().to_be_bytes());
+            }
+            out
+        }
+
+        /// Random, or one of the edges: 0, 1, n - 1, n, 2^256 - 1, Gx
+        fn value(&mut self) -> [u8; 32] {
+            let pick = self.next() % 16;
+            let mut x = self.bytes();
+            match pick {
+                0 => x = [0; 32],
+                1 => x = [0; 32].tap_last(1),
+                2 => x = N.tap_last(N[31] - 1),
+                3 => x = N,
+                4 => x = [0xff; 32],
+                5 => x = GX,
+                6 => x[..16].fill(0), // small
+                _ => {}
+            }
+            x
+        }
+    }
+
+    trait TapLast {
+        fn tap_last(self, last: u8) -> Self;
+    }
+
+    impl TapLast for [u8; 32] {
+        fn tap_last(mut self, last: u8) -> Self {
+            self[31] = last;
+            self
+        }
+    }
+
+    fn recover(
+        digest: &[u8; 32],
+        r: &[u8; 32],
+        s: &[u8; 32],
+        odd: bool,
+        hinted: bool,
+    ) -> Option<[u8; 64]> {
+        let result = if hinted {
+            recover_from_bytes_with_hooks(digest, r, s, odd, &mut HostHints)
+        } else {
+            recover_from_bytes_with_hooks(digest, r, s, odd, &mut DefaultSecp256k1Hooks)
+        };
+        result.ok().map(|point| {
+            let mut out = [0u8; 64];
+            let (x, y) = out.split_at_mut(32);
+            point.write_coordinates(x.try_into().unwrap(), y.try_into().unwrap());
+            out
+        })
+    }
+
+    #[no_mangle]
+    pub extern "C" fn monad_zkvm_execute_witness() {
+        let mut rng = Rng(0x243f_6a88_85a3_08d3);
+        let (mut cases, mut failures, mut recovered, mut first) = (0u32, 0u32, 0u32, u32::MAX);
+        let mut check = |digest: &[u8; 32], r: &[u8; 32], s: &[u8; 32], odd: bool| {
+            let hinted = recover(digest, r, s, odd, true);
+            if hinted != recover(digest, r, s, odd, false) {
+                if failures == 0 {
+                    first = cases;
+                }
+                failures += 1;
+            }
+            recovered += u32::from(hinted.is_some());
+            cases += 1;
+        };
+        for [digest, v, r, s] in REGRESSIONS {
+            check(&hex32(digest), &hex32(r), &hex32(s), v == "1c");
+        }
+        for i in 0..1200u32 {
+            let (digest, s) = (rng.value(), rng.value());
+            // a third with the generator's x as r: R = G or -G
+            let r = if i % 3 == 0 { GX } else { rng.value() };
+            let odd = rng.next() & 1 == 1;
+            check(&digest, &r, &s, odd);
+        }
+        let out = [cases, failures, recovered, first];
+        unsafe { write_output(out.as_ptr().cast(), core::mem::size_of_val(&out)) };
+    }
+}
+
 /// ecrecover's public key, x || y big-endian. `recid` is the parity of y;
 /// Ethereum never recovers from an `r` reduced past the group order.
 #[no_mangle]
@@ -61,7 +421,7 @@ pub unsafe extern "C" fn zkvm_secp256k1_ecrecover(
     let sig = &*sig;
     let (r, s) = sig.split_at(32);
     let (r, s): (&[u8; 32], &[u8; 32]) = (r.try_into().unwrap(), s.try_into().unwrap());
-    match recover_from_bytes_with_hooks(&*msg, r, s, recid == 1, &mut DefaultSecp256k1Hooks) {
+    match recover_from_bytes_with_hooks(&*msg, r, s, recid == 1, &mut hints::HostHints) {
         Ok(point) => {
             let (x, y) = (*output).split_at_mut(32);
             point.write_coordinates(x.try_into().unwrap(), y.try_into().unwrap());

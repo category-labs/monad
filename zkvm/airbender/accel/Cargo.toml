@@ -24,6 +24,11 @@ riscv_common = { path = "../../../../stack/zksync-airbender/riscv_common", featu
 num-bigint = { version = "0.4", default-features = false }
 num-traits = { version = "0.2", default-features = false }
 
+[features]
+# A guest entry (monad_zkvm_execute_witness) that checks the hinted ecrecover
+# against the default hooks instead of running a block: spike/ecrecover_hint_test.sh.
+ecrecover-selftest = []
+
 [profile.release]
 opt-level = 3
 lto = true

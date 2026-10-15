@@ -312,6 +312,8 @@ namespace monad::vm::runtime
         // with stack_limit above: a handler that calls the runtime reads both
         // back after the call instead of keeping them in saved registers.
         uint256_t const *frame_stack_bottom = nullptr;
+        // The stack top across such a call, stored before it and read back.
+        uint256_t *frame_stack_top = nullptr;
 #endif
 
         [[gnu::always_inline]]

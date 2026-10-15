@@ -484,6 +484,8 @@ name = "monad-zkvm-airbender-accel"
 version = "0.1.0"
 dependencies = [
  "airbender-crypto",
+ "num-bigint",
+ "num-traits",
  "riscv_common",
 ]
 

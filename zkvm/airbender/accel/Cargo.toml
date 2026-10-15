@@ -20,6 +20,9 @@ path = "src/lib.rs"
 airbender-crypto = { path = "../../../../stack/airbender-platform/crates/airbender-crypto", default-features = false, features = ["proving"] }
 # Our runtime owns panics and allocation; turn off riscv_common's placeholders.
 riscv_common = { path = "../../../../stack/zksync-airbender/riscv_common", features = ["custom_allocator", "custom_panic"] }
+# modexp, until a delegation-backed one is ported (ZKsync OS's needs its oracle)
+num-bigint = { version = "0.4", default-features = false }
+num-traits = { version = "0.2", default-features = false }
 
 [profile.release]
 opt-level = 3

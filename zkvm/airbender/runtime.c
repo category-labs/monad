@@ -31,6 +31,7 @@
 #pragma GCC optimize("no-tree-loop-distribute-patterns")
 
 extern void monad_zkvm_execute_witness(void);
+extern void monad_zkvm_run_precompile_tests(void);
 void monad_zkvm_airbender_memstats_print(void);
 
 // Linker script symbols (link.x).
@@ -49,6 +50,10 @@ extern void (*__init_array_end[])(void);
 
 static uint32_t output_words[16];
 static size_t output_size;
+#ifdef MONAD_ZKVM_AIRBENDER_PRECOMPILE_TESTS
+static uint8_t report[512];
+static size_t report_size;
+#endif
 
 __attribute__((noreturn, noinline)) static void finish_success(void)
 {
@@ -157,7 +162,25 @@ __attribute__((noreturn)) void monad_zkvm_airbender_start(void)
     for (void (**f)(void) = __init_array_start; f != __init_array_end; ++f) {
         (*f)();
     }
+#ifdef MONAD_ZKVM_AIRBENDER_PRECOMPILE_TESTS
+    // The golden-vector guest (zkvm/test/precompile_tests); its report, longer
+    // than the 64 output bytes, also goes over the quasi-UART as hex.
+    monad_zkvm_run_precompile_tests();
+    {
+        static char const hex[] = "0123456789abcdef";
+        char line[2 * 64];
+        for (size_t i = 0; i < report_size; i += 64) {
+            size_t n = 0;
+            for (size_t j = i; j < report_size && j < i + 64; ++j) {
+                line[n++] = hex[report[j] >> 4];
+                line[n++] = hex[report[j] & 15];
+            }
+            monad_zkvm_airbender_print(line, n);
+        }
+    }
+#else
     monad_zkvm_execute_witness();
+#endif
 #ifdef MONAD_ZKVM_AIRBENDER_MEMSTATS
     monad_zkvm_airbender_memstats_print();
 #endif
@@ -208,6 +231,11 @@ void read_input(uint8_t const **const buf_ptr, size_t *const buf_size)
 // dropped.
 void write_output(uint8_t const *const output, size_t const size)
 {
+#ifdef MONAD_ZKVM_AIRBENDER_PRECOMPILE_TESTS
+    for (size_t i = 0; i < size && report_size < sizeof(report); ++i) {
+        report[report_size++] = output[i];
+    }
+#endif
     uint8_t *const out = (uint8_t *)output_words;
     for (size_t i = 0; i < size && output_size < sizeof(output_words); ++i) {
         out[output_size++] = output[i];

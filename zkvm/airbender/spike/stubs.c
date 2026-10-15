@@ -1,7 +1,12 @@
 /* Spike-only stand-ins: every accelerator the guest links, each failing the
  * run (abort -> unprovable). Real ones come from airbender-crypto or C libs. */
 void abort(void) __attribute__((noreturn));
+#ifdef STUB_FAIL
+/* Test builds: a missing accelerator reports failure (ZKVM_EFAIL). */
+#define STUB(name) __attribute__((weak)) int name(void) { return -1; }
+#else
 #define STUB(name) __attribute__((weak)) void name(void) { abort(); }
+#endif
 STUB(zkvm_secp256r1_verify)
 STUB(zkvm_modexp) STUB(zkvm_kzg_point_eval)
 STUB(zkvm_bn254_pairing) STUB(zkvm_bn254_g1_mul) STUB(zkvm_bn254_g1_add)

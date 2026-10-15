@@ -2074,25 +2074,19 @@ namespace monad::vm::interpreter
     {
         MONAD_VM_TWIN_ENTRY();
         auto const *const instructions = instr_ptr;
+        alignas(8) static constexpr uint8_t push0_tail[8] = {JUMPI, PUSH0, DUP1, REVERT, JUMPDEST, POP};
+        alignas(8) static constexpr uint8_t push1_tail[8] = {JUMPI, PUSH1, 0, DUP1, REVERT, JUMPDEST, POP};
         // PUSH0 occupies one byte less than PUSH1 0, shifting the success
         // label.
         size_t success_offset;
         bool matches_revert_tail;
         if (opcode_at_is(instructions, 7, PUSH0)) {
             success_offset = 10;
-            matches_revert_tail = opcode_at_is(instructions, 8, DUP1) &&
-                                  opcode_at_is(instructions, 9, REVERT) &&
-                                  opcode_at_is(instructions, 10, JUMPDEST) &&
-                                  opcode_at_is(instructions, 11, POP);
+            matches_revert_tail = code_matches<6>(instructions + 6, push0_tail);
         }
         else {
             success_offset = 11;
-            matches_revert_tail = opcode_at_is(instructions, 7, PUSH1) &&
-                                  instructions[8] == 0 &&
-                                  opcode_at_is(instructions, 9, DUP1) &&
-                                  opcode_at_is(instructions, 10, REVERT) &&
-                                  opcode_at_is(instructions, 11, JUMPDEST) &&
-                                  opcode_at_is(instructions, 12, POP);
+            matches_revert_tail = code_matches<7>(instructions + 6, push1_tail);
         }
         size_t const jump_destination = detail::load_be_k<2>(instructions + 4);
         size_t const instruction_offset =
@@ -2102,7 +2096,6 @@ namespace monad::vm::interpreter
         if (MONAD_UNLIKELY(!(
                 matches_revert_tail && opcode_at_is(instructions, 2, ISZERO) &&
                 opcode_at_is(instructions, 3, PUSH2) &&
-                opcode_at_is(instructions, 6, JUMPI) &&
                 jump_destination == instruction_offset + success_offset &&
                 stack_top.next_slot() <= MONAD_VM_STACK_LIMIT - 3 &&
                 call_value_is_zero(ctx)))) {

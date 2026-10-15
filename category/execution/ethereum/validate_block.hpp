@@ -59,7 +59,9 @@ enum class BlockError
     SystemCallMissingCode,
     SystemCallFailed,
     InvalidRequestsHash,
-    InvalidDepositLog
+    InvalidDepositLog,
+    InvalidBaseFeePerGas,
+    InvalidTimestamp
 };
 
 struct Chain;
@@ -76,7 +78,21 @@ Result<void> static_validate_header(BlockHeader const &);
 template <Traits traits>
 Result<void> static_validate_block(Chain const &chain, Block const &);
 
+// Check timestamp, gas limit and base fee against the parent.
+// Kept separate for ommers, whose parents are unavailable.
 template <Traits traits>
+    requires is_evm_trait_v<traits>
+Result<void> static_validate_ethereum_header_with_parent(
+    BlockHeader const &header, BlockHeader const &parent);
+
+// Validate the block and apply the parent checks for its chain.
+template <Traits traits>
+    requires is_evm_trait_v<traits>
+Result<void> static_validate_block_with_parent(
+    Chain const &chain, Block const &, BlockHeader const &parent_header);
+
+template <Traits traits>
+    requires is_monad_trait_v<traits>
 Result<void> static_validate_block_with_parent(
     Chain const &chain, Block const &, BlockHeader const &parent_header);
 

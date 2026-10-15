@@ -15,6 +15,7 @@
 
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 
+#include <category/core/assert.h>
 #include <category/core/config.hpp>
 #include <category/core/hex.hpp>
 #include <category/core/int.hpp>
@@ -88,6 +89,12 @@ BlobSchedule EthereumMainnet::get_blob_schedule(uint64_t const timestamp) const
 
 GenesisState EthereumMainnet::get_genesis_state() const
 {
+#if defined(MONAD_ZKVM_ZISK)
+    // The guest uses a witnessed pre-state, not the genesis allocation.
+    // This virtual method stays reachable through the vtable; abort here
+    // to keep its unused allocation JSON out of the guest ROM.
+    MONAD_ABORT("the guest has no genesis state");
+#else
     BlockHeader header;
     header.difficulty = 17179869184;
     header.gas_limit = 5000;
@@ -96,6 +103,7 @@ GenesisState EthereumMainnet::get_genesis_state() const
                                  "db3db69cbdb7a38e1e50b1b82fa")
                             .value();
     return {header, ETHEREUM_MAINNET_ALLOC};
+#endif
 }
 
 MONAD_NAMESPACE_END

@@ -28,19 +28,24 @@ namespace corpus
         WitnessStats st{};
         st.witness_bytes = witness.size();
 
+        // The two shapes name three of these fields differently -- a body
+        // rather than a block, L1 hashes rather than ancestor headers -- so
+        // the columns are filled per shape and mean the same thing in both.
 #ifdef MONAD_ZKVM_L2
         auto const parsed = parse_execution_witness_l2(witness);
         MONAD_ASSERT(!parsed.has_error());
-        auto const &w = parsed.value().base;
+        auto const &w = parsed.value();
+        st.block_bytes = w.domain_body.size();
+        st.ancestor_bytes = w.encoded_ancestor_hashes.size();
 #else
         auto const parsed = parse_execution_witness(witness);
         MONAD_ASSERT(!parsed.has_error());
         auto const &w = parsed.value();
-#endif
         st.block_bytes = w.block_rlp.size();
+        st.ancestor_bytes = w.encoded_headers.size();
+#endif
         st.blob_bytes = w.encoded_nodes.size();
         st.code_bytes = w.encoded_codes.size();
-        st.ancestor_bytes = w.encoded_headers.size();
 
         // Walk nodes by their encoded tag lengths. checked_end and exact
         // final position reject grammar mismatches instead of reporting

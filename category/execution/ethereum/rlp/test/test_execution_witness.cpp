@@ -136,8 +136,10 @@ TEST(EncodeExecutionWitness, AllFieldsRoundtrip)
             rlp::encode_string2(to_byte_string_view(ADDR_Z.bytes))});
 }
 
-// L2 adds [6] sk and [7] salt_secret. Strict field and trailing-byte checks
-// make the six- and eight-field envelopes reject each other.
+// A domain's witness is its own six fields, not the node's with two appended:
+// a body rather than a block, L1 block hashes rather than ancestor headers,
+// and no sender sets. Both shapes are six fields, so what tells them apart is
+// field [4] -- a list of addresses for the node, a string for a domain.
 
 namespace
 {
@@ -155,17 +157,21 @@ TEST(ParseExecutionWitnessL2, ValidMinimalWitness)
     auto const w = make_minimal_l2_witness();
     auto const result = parse_execution_witness_l2(w);
     ASSERT_FALSE(result.has_error());
-    EXPECT_TRUE(result.value().base.block_rlp.empty());
+    EXPECT_TRUE(result.value().domain_body.empty());
+    EXPECT_TRUE(result.value().encoded_ancestor_hashes.empty());
     EXPECT_EQ(result.value().sk, byte_string_view{SK});
     EXPECT_EQ(result.value().salt_secret, byte_string_view{SALT});
 }
 
-TEST(ParseExecutionWitnessL2, RejectsSixFieldWitness)
+// Each parser refuses the other's shape. Neither can be read as the other by
+// accident: at [4] one finds a list where it wants a string, the other the
+// reverse, and RLP marks the two differently.
+TEST(ParseExecutionWitnessL2, RefusesTheNodeShape)
 {
     EXPECT_TRUE(parse_execution_witness_l2(make_minimal_witness()).has_error());
 }
 
-TEST(ParseExecutionWitness, RejectsSevenFieldWitness)
+TEST(ParseExecutionWitness, RefusesTheDomainShape)
 {
     EXPECT_TRUE(parse_execution_witness(make_minimal_l2_witness()).has_error());
 }
@@ -190,21 +196,20 @@ TEST(ParseExecutionWitnessL2, RejectsTruncated)
 TEST(ParseExecutionWitnessL2, RejectsWrongSecretLength)
 {
     // Which of the two secrets is short, so neither check stands in for the
-    // other -- [6] being validated would otherwise hide [7] not being.
-    for (int which : {6, 7}) {
+    // other -- [4] being validated would otherwise hide [5] not being.
+    for (int which : {4, 5}) {
         for (size_t len : {size_t{0}, size_t{31}, size_t{33}}) {
             // encode_execution_witness_l2 asserts 32 on both, so the short one
-            // is built by hand: an outer list of six empty fields and two
-            // strings.
+            // is built by hand: a string, three lists, then the two secrets.
             byte_string inner;
             inner += rlp::encode_string2(byte_string_view{}); // [0]
-            for (int i = 0; i < 5; ++i) {
-                inner += rlp::encode_list2(); // [1]..[5]
+            for (int i = 0; i < 3; ++i) {
+                inner += rlp::encode_list2(); // [1]..[3]
             }
             inner += rlp::encode_string2(
-                byte_string(which == 6 ? len : 32, 0x11)); // [6]
+                byte_string(which == 4 ? len : 32, 0x11)); // [4]
             inner += rlp::encode_string2(
-                byte_string(which == 7 ? len : 32, 0x22)); // [7]
+                byte_string(which == 5 ? len : 32, 0x22)); // [5]
             auto const w = rlp::encode_list2(inner);
             EXPECT_TRUE(parse_execution_witness_l2(w).has_error())
                 << "field " << which << " len " << len;
@@ -212,43 +217,42 @@ TEST(ParseExecutionWitnessL2, RejectsWrongSecretLength)
     }
 }
 
-// The seven-field shape is now as wrong as the six-field one. Worth a case of
-// its own: it is the shape this branch used before the blinder, so a stale
-// witness is a thing that exists rather than a hypothetical.
-TEST(ParseExecutionWitnessL2, RejectsTheSevenFieldShape)
+// The eight-field shape this branch carried before the split is now as wrong
+// as any other. Worth a case of its own: a stale witness is a thing that
+// exists rather than a hypothetical.
+TEST(ParseExecutionWitnessL2, RejectsTheEightFieldShape)
 {
     byte_string inner;
     inner += rlp::encode_string2(byte_string_view{}); // [0]
     for (int i = 0; i < 5; ++i) {
-        inner += rlp::encode_list2(); // [1]..[5]
+        inner += rlp::encode_list2(); // [1]..[5], sender sets included
     }
-    inner += rlp::encode_string2(byte_string(32, 0x11)); // [6], and no [7]
+    inner += rlp::encode_string2(byte_string(32, 0x11)); // [6]
+    inner += rlp::encode_string2(byte_string(32, 0x22)); // [7]
     auto const w = rlp::encode_list2(inner);
     EXPECT_TRUE(parse_execution_witness_l2(w).has_error());
 }
 
-TEST(EncodeExecutionWitnessL2, SixFieldPrefixIsUnchanged)
+// The three fields the two shapes still share must round-trip the same way,
+// so that a change to one encoder cannot quietly diverge from the other.
+TEST(EncodeExecutionWitnessL2, TheSharedFieldsAgree)
 {
-    byte_string const block_rlp{0x01, 0x02};
+    byte_string const body{0x01, 0x02};
     byte_string const nodes{0xaa, 0xbb};
     std::vector<byte_string> const codes{byte_string{0x60, 0x00}};
+    std::vector<byte_string> const hashes{byte_string(32, 0xde)};
     std::vector<byte_string> const headers{byte_string{0xde, 0xad}};
 
-    auto const plain =
-        encode_execution_witness(block_rlp, nodes, codes, headers);
+    auto const plain = encode_execution_witness(body, nodes, codes, headers);
     auto const l2 =
-        encode_execution_witness_l2(block_rlp, nodes, codes, headers, SK, SALT);
+        encode_execution_witness_l2(body, nodes, codes, hashes, SK, SALT);
 
-    // Both are one encoder with one optional field, so the six fields must
-    // agree. They do not share a prefix -- the outer length differs -- so the
-    // check is on what the parser hands back.
     auto const a = parse_execution_witness(plain);
     auto const b = parse_execution_witness_l2(l2);
     ASSERT_FALSE(a.has_error());
     ASSERT_FALSE(b.has_error());
-    EXPECT_EQ(a.value().block_rlp, b.value().base.block_rlp);
-    EXPECT_EQ(a.value().encoded_nodes, b.value().base.encoded_nodes);
-    EXPECT_EQ(a.value().encoded_codes, b.value().base.encoded_codes);
-    EXPECT_EQ(a.value().encoded_headers, b.value().base.encoded_headers);
+    EXPECT_EQ(a.value().block_rlp, b.value().domain_body);
+    EXPECT_EQ(a.value().encoded_nodes, b.value().encoded_nodes);
+    EXPECT_EQ(a.value().encoded_codes, b.value().encoded_codes);
     EXPECT_EQ(b.value().sk, byte_string_view{SK});
 }

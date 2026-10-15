@@ -108,13 +108,12 @@ extern "C" void monad_zkvm_execute_witness(void)
     read_input(&input, &input_len);
 
 #ifdef MONAD_ZKVM_L2
-    // L2 adds decryption and blinding secrets. Strict field counts reject
-    // six-field witnesses here and eight-field witnesses in the Ethereum
-    // parser.
+    // Parse the six-field domain envelope. Field [4] is a secret encoded as
+    // an RLP string; the mainnet format uses a list, so it is rejected here.
     auto const witness = monad::parse_execution_witness_l2(
         monad::byte_string_view{input, input_len});
     MONAD_ASSERT(witness.has_value());
-    auto const &witness_data = witness.value().base;
+    auto const &witness_data = witness.value();
 #else
     auto const witness = monad::parse_execution_witness(
         monad::byte_string_view{input, input_len});
@@ -148,9 +147,8 @@ MONAD_ANONYMOUS_NAMESPACE_BEGIN
 void execute_domain_witness(
     ExecutionWitnessL2 const &witness, PartialTrieDb &state_db)
 {
-    auto const &witness_data = witness.base;
     // Decode the domain body, bind the secrets, then decrypt and filter.
-    monad::byte_string_view encoded_body = witness_data.block_rlp;
+    monad::byte_string_view encoded_body = witness.domain_body;
     // All sequenced ciphertexts, including rejected entries, enter the anchor.
     std::vector<monad::byte_string_view> sequenced_ciphertexts;
     // Own accepted plaintexts for signature checks during block execution.
@@ -215,7 +213,7 @@ void execute_domain_witness(
     // The L1 verifier must authenticate them and the pre-state commitment.
     {
         std::vector<monad::bytes32_t> hashes;
-        monad::byte_string_view run = witness_data.encoded_headers;
+        monad::byte_string_view run = witness.encoded_ancestor_hashes;
         while (!run.empty()) {
             auto const h = monad::rlp::parse_string_metadata(run);
             MONAD_ASSERT(h.has_value());

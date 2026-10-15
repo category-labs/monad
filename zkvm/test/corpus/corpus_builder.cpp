@@ -570,6 +570,9 @@ namespace corpus
             block_rlp = rlp::encode_list2(body);
         }
 
+        // `ancestors` are 32-byte L1 block hashes on this path, not headers:
+        // BLOCKHASH is served from the L1, so a domain's witness carries the
+        // hashes themselves.
         witness = encode_execution_witness_l2(
             block_rlp,
             wd.nodes,

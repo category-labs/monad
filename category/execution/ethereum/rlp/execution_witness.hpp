@@ -39,9 +39,6 @@ MONAD_NAMESPACE_BEGIN
 /// [5] [address...]: grandparent sender/authority set
 ///
 /// Fields 4-5 may be empty when reserve-balance rules are inactive.
-/// ExecutionWitnessL2 adds two fields. Strict length checks distinguish the
-/// six- and eight-field shapes; MONAD_ZKVM_L2 selects the parser at build
-/// time.
 struct ExecutionWitness
 {
     byte_string_view block_rlp;
@@ -52,17 +49,31 @@ struct ExecutionWitness
     byte_string_view encoded_grandparent_senders_and_authorities;
 };
 
-/// L2 adds two private fields:
-/// [6] sk: 32-byte big-endian secp256k1 decryption scalar
-/// [7] salt_secret: 32 bytes used to derive per-block state blinders
+/// Six-field domain witness. Views borrow the input buffer, which must outlive
+/// this struct.
 ///
-/// The guest binds sk to the operator key to prevent arbitrary decryption. It
-/// binds salt_secret to a compiled commitment to prevent arbitrary,
-/// predictable blinders. This second check protects confidentiality, not
-/// state-transition soundness; the seed must still be generated securely.
+/// [0] domain_body: RLP-encoded [L1 header, [ciphertexts...],
+///     [outer gas limits...], previous domain block number]
+/// [1] nodes: offset-format trie node blob in a list envelope
+/// [2] [code...]: contract bytecodes
+/// [3] [hash...]: 32-byte L1 block hashes used by BLOCKHASH
+/// [4] sk: 32-byte big-endian secp256k1 decryption scalar
+/// [5] salt_secret: 32-byte seed for per-block state blinders
+///
+/// MONAD_ZKVM_L2 selects this parser. Field [4] distinguishes the formats:
+/// an RLP string here, an address list in the mainnet witness.
+/// The domain uses empty parent/grandparent sender and authority sets,
+/// matching the client; these sets are not supplied in the witness.
+///
+/// The guest binds sk to the configured operator key and salt_secret to its
+/// configured commitment. Seed generation must still provide secret entropy;
+/// the commitment check does not establish it.
 struct ExecutionWitnessL2
 {
-    ExecutionWitness base;
+    byte_string_view domain_body;
+    byte_string_view encoded_nodes;
+    byte_string_view encoded_codes;
+    byte_string_view encoded_ancestor_hashes;
     byte_string_view sk;
     byte_string_view salt_secret;
 };
@@ -81,14 +92,12 @@ byte_string encode_execution_witness(
     ankerl::unordered_dense::segmented_set<Address> const
         *const grandparent_senders_and_authorities = nullptr);
 
-/// The same, plus field [6]. `sk` must be exactly 32 bytes.
+/// Encode the six fields of ExecutionWitnessL2. Each ancestor hash, sk and
+/// salt_secret must be exactly 32 bytes.
 byte_string encode_execution_witness_l2(
-    byte_string_view block_rlp, byte_string_view nodes,
-    std::span<byte_string const> codes, std::span<byte_string const> headers,
-    byte_string_view sk, byte_string_view salt_secret,
-    ankerl::unordered_dense::segmented_set<Address> const
-        *const parent_senders_and_authorities = nullptr,
-    ankerl::unordered_dense::segmented_set<Address> const
-        *const grandparent_senders_and_authorities = nullptr);
+    byte_string_view domain_body, byte_string_view nodes,
+    std::span<byte_string const> codes,
+    std::span<byte_string const> ancestor_hashes, byte_string_view sk,
+    byte_string_view salt_secret);
 
 MONAD_NAMESPACE_END

@@ -27,9 +27,8 @@
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
-/// The outer envelope, with no emptiness check: whether anything may follow the
-/// six fields is what distinguishes the two shapes, so each entry point decides
-/// it for itself.
+/// The outer envelope. Each entry point checks for trailing bytes itself,
+/// after reading the six fields its own shape defines.
 Result<byte_string_view> strip_envelope(byte_string_view const witness_bytes)
 {
     byte_string_view view{witness_bytes.data(), witness_bytes.size()};
@@ -41,8 +40,7 @@ Result<byte_string_view> strip_envelope(byte_string_view const witness_bytes)
     return outer;
 }
 
-/// Fields [0] through [5], advancing `outer`. Shared so the node's shape and
-/// the L2 shape cannot drift in the six they have in common.
+/// The node's six fields, advancing `outer`.
 Result<ExecutionWitness> parse_base_fields(byte_string_view &outer)
 {
     ExecutionWitness w{};
@@ -83,7 +81,14 @@ parse_execution_witness_l2(byte_string_view witness_bytes)
     BOOST_OUTCOME_TRY(auto outer, strip_envelope(witness_bytes));
 
     ExecutionWitnessL2 w{};
-    BOOST_OUTCOME_TRY(w.base, parse_base_fields(outer));
+    BOOST_OUTCOME_TRY(w.domain_body, rlp::parse_string_metadata(outer));
+    BOOST_OUTCOME_TRY(w.encoded_nodes, rlp::parse_list_metadata(outer));
+    BOOST_OUTCOME_TRY(w.encoded_codes, rlp::parse_list_metadata(outer));
+    BOOST_OUTCOME_TRY(
+        w.encoded_ancestor_hashes, rlp::parse_list_metadata(outer));
+    // Field [4] is where the two shapes part: a string here, a list of
+    // addresses in the node's witness. Reading one as the other stops at this
+    // line rather than deeper in, where a misparse would be subtler.
     BOOST_OUTCOME_TRY(w.sk, rlp::parse_string_metadata(outer));
     BOOST_OUTCOME_TRY(w.salt_secret, rlp::parse_string_metadata(outer));
 
@@ -110,25 +115,47 @@ MONAD_NAMESPACE_END
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
-/// Shared encoder: both secrets present select the eight-field L2 envelope;
-/// otherwise emit the six-field Ethereum envelope.
-byte_string encode_witness_impl(
+/// The offset-format blob, emitted raw inside a list envelope.
+std::span<unsigned char>
+encode_raw_list(std::span<unsigned char> d, byte_string_view const blob)
+{
+    d = rlp::encode_list_prefix(d, blob.size());
+    if (!blob.empty()) {
+        std::memcpy(d.data(), blob.data(), blob.size());
+        d = d.subspan(blob.size());
+    }
+    return d;
+}
+
+/// A list of pre-encoded strings, each wrapped.
+std::span<unsigned char> encode_string_list(
+    std::span<unsigned char> d, std::span<byte_string const> const items,
+    size_t const payload)
+{
+    d = rlp::encode_list_prefix(d, payload);
+    for (auto const &i : items) {
+        d = rlp::encode_string(d, i);
+    }
+    return d;
+}
+
+MONAD_ANONYMOUS_NAMESPACE_END
+
+MONAD_NAMESPACE_BEGIN
+
+byte_string encode_execution_witness(
     byte_string_view const block_rlp, byte_string_view const nodes,
     std::span<byte_string const> const codes,
     std::span<byte_string const> const headers,
-    std::optional<byte_string_view> const sk,
-    std::optional<byte_string_view> const salt_secret,
     ankerl::unordered_dense::segmented_set<Address> const
         *const parent_senders_and_authorities,
     ankerl::unordered_dense::segmented_set<Address> const
         *const grandparent_senders_and_authorities)
 {
-    // 20-byte address → 1-byte length prefix (0x94) + 20 payload bytes.
+    // 20-byte address -> 1-byte length prefix (0x94) + 20 payload bytes.
     static_assert(sizeof(Address) == 20);
     constexpr size_t addr_string_size = 1 + sizeof(Address);
 
-    // Pre-calc: payload size of every nested list, then total output size.
-    size_t const nodes_payload = nodes.size();
     size_t codes_payload = 0;
     for (auto const &c : codes) {
         codes_payload += rlp::string_length(c);
@@ -147,12 +174,10 @@ byte_string encode_witness_impl(
             : 0;
 
     size_t const outer_payload =
-        rlp::string_length(block_rlp) + rlp::list_length(nodes_payload) +
+        rlp::string_length(block_rlp) + rlp::list_length(nodes.size()) +
         rlp::list_length(codes_payload) + rlp::list_length(headers_payload) +
         rlp::list_length(parent_payload) +
-        rlp::list_length(grandparent_payload) +
-        (sk.has_value() ? rlp::string_length(*sk) : 0) +
-        (salt_secret.has_value() ? rlp::string_length(*salt_secret) : 0);
+        rlp::list_length(grandparent_payload);
 
     byte_string result;
     result.resize_and_overwrite(
@@ -160,33 +185,14 @@ byte_string encode_witness_impl(
         [](auto *, size_t const count) { return count; });
     std::span<unsigned char> d{result};
 
-    // Outer list: six fields, or seven for an L2 witness
     d = rlp::encode_list_prefix(d, outer_payload);
-
-    // [0] block_rlp wrapped as RLP string
     d = rlp::encode_string(d, block_rlp);
+    d = encode_raw_list(d, nodes);
+    d = encode_string_list(d, codes, codes_payload);
+    d = encode_string_list(d, headers, headers_payload);
 
-    // [1] nodes — the offset-format blob emitted raw inside a list envelope
-    d = rlp::encode_list_prefix(d, nodes_payload);
-    if (!nodes.empty()) {
-        std::memcpy(d.data(), nodes.data(), nodes.size());
-        d = d.subspan(nodes.size());
-    }
-
-    // [2] codes — each raw bytecode wrapped as RLP string
-    d = rlp::encode_list_prefix(d, codes_payload);
-    for (auto const &c : codes) {
-        d = rlp::encode_string(d, c);
-    }
-
-    // [3] headers — each pre-encoded header wrapped as RLP string
-    d = rlp::encode_list_prefix(d, headers_payload);
-    for (auto const &h : headers) {
-        d = rlp::encode_string(d, h);
-    }
-
-    // segmented_set has no defined iteration order, so emit addresses in
-    // sorted order to keep the encoding deterministic across runs.
+    // segmented_set has no defined iteration order, so emit addresses sorted
+    // to keep the encoding deterministic across runs.
     auto const encode_addresses =
         [](std::span<unsigned char> d,
            ankerl::unordered_dense::segmented_set<Address> const *const set) {
@@ -201,73 +207,55 @@ byte_string encode_witness_impl(
             return d;
         };
 
-    // [4] parent senders and authorities — list of address strings
     d = rlp::encode_list_prefix(d, parent_payload);
     d = encode_addresses(d, parent_senders_and_authorities);
-
-    // [5] grandparent senders and authorities
     d = rlp::encode_list_prefix(d, grandparent_payload);
     d = encode_addresses(d, grandparent_senders_and_authorities);
-
-    // [6] sk — the L2's transaction-decryption secret
-    if (sk.has_value()) {
-        d = rlp::encode_string(d, *sk);
-    }
-
-    // [7] salt_secret — what the per-block state blinder is derived from
-    if (salt_secret.has_value()) {
-        d = rlp::encode_string(d, *salt_secret);
-    }
 
     MONAD_ASSERT(d.empty());
     return result;
 }
 
-MONAD_ANONYMOUS_NAMESPACE_END
-
-MONAD_NAMESPACE_BEGIN
-
-byte_string encode_execution_witness(
-    byte_string_view const block_rlp, byte_string_view const nodes,
-    std::span<byte_string const> const codes,
-    std::span<byte_string const> const headers,
-    ankerl::unordered_dense::segmented_set<Address> const
-        *const parent_senders_and_authorities,
-    ankerl::unordered_dense::segmented_set<Address> const
-        *const grandparent_senders_and_authorities)
-{
-    return encode_witness_impl(
-        block_rlp,
-        nodes,
-        codes,
-        headers,
-        std::nullopt,
-        std::nullopt,
-        parent_senders_and_authorities,
-        grandparent_senders_and_authorities);
-}
-
 byte_string encode_execution_witness_l2(
-    byte_string_view const block_rlp, byte_string_view const nodes,
+    byte_string_view const domain_body, byte_string_view const nodes,
     std::span<byte_string const> const codes,
-    std::span<byte_string const> const headers, byte_string_view const sk,
-    byte_string_view const salt_secret,
-    ankerl::unordered_dense::segmented_set<Address> const
-        *const parent_senders_and_authorities,
-    ankerl::unordered_dense::segmented_set<Address> const
-        *const grandparent_senders_and_authorities)
+    std::span<byte_string const> const ancestor_hashes,
+    byte_string_view const sk, byte_string_view const salt_secret)
 {
     MONAD_ASSERT(sk.size() == 32);
     MONAD_ASSERT(salt_secret.size() == 32);
-    return encode_witness_impl(
-        block_rlp,
-        nodes,
-        codes,
-        headers,
-        sk,
-        salt_secret,
-        parent_senders_and_authorities,
-        grandparent_senders_and_authorities);
+
+    size_t codes_payload = 0;
+    for (auto const &c : codes) {
+        codes_payload += rlp::string_length(c);
+    }
+    size_t hashes_payload = 0;
+    for (auto const &h : ancestor_hashes) {
+        MONAD_ASSERT(h.size() == sizeof(bytes32_t));
+        hashes_payload += rlp::string_length(h);
+    }
+
+    size_t const outer_payload =
+        rlp::string_length(domain_body) + rlp::list_length(nodes.size()) +
+        rlp::list_length(codes_payload) + rlp::list_length(hashes_payload) +
+        rlp::string_length(sk) + rlp::string_length(salt_secret);
+
+    byte_string result;
+    result.resize_and_overwrite(
+        rlp::list_length(outer_payload),
+        [](auto *, size_t const count) { return count; });
+    std::span<unsigned char> d{result};
+
+    d = rlp::encode_list_prefix(d, outer_payload);
+    d = rlp::encode_string(d, domain_body);
+    d = encode_raw_list(d, nodes);
+    d = encode_string_list(d, codes, codes_payload);
+    d = encode_string_list(d, ancestor_hashes, hashes_payload);
+    d = rlp::encode_string(d, sk);
+    d = rlp::encode_string(d, salt_secret);
+
+    MONAD_ASSERT(d.empty());
+    return result;
 }
 
 MONAD_NAMESPACE_END

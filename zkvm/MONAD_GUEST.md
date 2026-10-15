@@ -70,11 +70,13 @@ the right one of the two was not checked.
 ### 1. Run the L1 arm
 
 The domain arm runs. The L1 arm does not, for want of a corpus: the generator
-builds Monad blocks only under `MONAD_ZKVM_L2`, and it leaves both ancestor
-sender sets empty -- which is right for a domain, whose blocks are not pending
-blocks of the chain that carries them, and wrong for an L1 block, where the
-node fills them from its block cache. Until an L1 corpus exists, the reserve
-rule that reads those sets is unexercised on the arm that needs it.
+builds Monad blocks only under `MONAD_ZKVM_L2`. A domain's witness has no field
+for the two ancestor sender sets at all -- its blocks are not pending blocks of
+the chain that carries them, so the node builds its domain ChainContext with
+both empty. The node's witness does have the fields, and the generator leaves
+them empty, which is wrong for an L1 block: there the node fills them from its
+block cache. Until an L1 corpus exists, the reserve rule that reads those sets
+is unexercised on the arm that needs it.
 
 ### 2. `read_valset.cpp`
 

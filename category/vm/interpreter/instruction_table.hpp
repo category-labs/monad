@@ -1080,6 +1080,32 @@ namespace monad::vm::interpreter
 #endif
 
     // Arithmetic
+#if defined(MONAD_ZKVM_ZISK)
+    // Store left - right in right's slot. With a 64-bit right operand and no
+    // borrow, only the low word needs arithmetic; copy the other words.
+    [[gnu::always_inline]] inline void zisk_sub256_into(
+        runtime::Context &ctx, uint64_t const *const left_words,
+        uint256_t &right_and_result)
+    {
+        if ((right_and_result[1] | right_and_result[2] | right_and_result[3]) ==
+                0 &&
+            left_words[0] >= right_and_result[0]) {
+            uint64_t const low_difference = left_words[0] - right_and_result[0];
+            right_and_result[1] = left_words[1];
+            right_and_result[2] = left_words[2];
+            right_and_result[3] = left_words[3];
+            right_and_result[0] = low_difference;
+            return;
+        }
+        // General case: left + ~right + 1, modulo 2^256.
+        ctx.sub256_params.a = left_words;
+        right_and_result[0] = ~right_and_result[0];
+        right_and_result[1] = ~right_and_result[1];
+        right_and_result[2] = ~right_and_result[2];
+        right_and_result[3] = ~right_and_result[3];
+        zisk_add256(ctx.sub256_params, right_and_result, right_and_result);
+    }
+#endif
     template <Traits traits>
     MONAD_VM_INSTRUCTION_CALL void
     add(runtime::Context &ctx, MONAD_VM_DISPATCH_STATE_PARAM,
@@ -1125,19 +1151,13 @@ namespace monad::vm::interpreter
     {
         MONAD_VM_CHECK(SUB);
 #if defined(MONAD_ZKVM_ZISK)
-        // Save a's address before moving to b. Keep this store ahead of b's
-        // loads to avoid extending a's register lifetime.
-        ctx.sub256_params.a = reinterpret_cast<uint64_t const *>(&*stack_top);
-        asm volatile("" ::: "memory");
+        // Keep the left operand's address before moving to the result slot.
+        uint64_t const *const left_words =
+            reinterpret_cast<uint64_t const *>(&*stack_top);
         auto *next = stack_top.next_slot() - 1;
         MONAD_VM_LAUNDER(next);
         stack_top = StackTop{next};
-        // Compute a - b as a + ~b + 1 modulo 2^256, in place.
-        auto &b = *stack_top;
-        for (size_t i = 0; i < 4; ++i) {
-            b[i] = ~b[i];
-        }
-        zisk_add256(ctx.sub256_params, b, b);
+        zisk_sub256_into(ctx, left_words, *stack_top);
 
         MONAD_VM_DISPATCH(1, 0, *instr_ptr);
 #else
@@ -4463,14 +4483,10 @@ namespace monad::vm::interpreter
             }
             else if constexpr (OP == SUB) {
                 // SUB computes the duplicated value minus the original top.
-                ctx.sub256_params.a =
-                    reinterpret_cast<uint64_t const *>(dup_source);
-                asm volatile("" ::: "memory");
-                auto &top_word = *stack_top;
-                for (size_t i = 0; i < 4; ++i) {
-                    top_word[i] = ~top_word[i];
-                }
-                zisk_add256(ctx.sub256_params, top_word, top_word);
+                zisk_sub256_into(
+                    ctx,
+                    reinterpret_cast<uint64_t const *>(dup_source),
+                    *stack_top);
             }
             else if constexpr (OP == LT) {
                 *stack_top = *dup_source < *stack_top;

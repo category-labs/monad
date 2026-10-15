@@ -75,6 +75,8 @@ namespace monad::vm
 
         auto rt_ctx = runtime::Context::from(host, msg, icode->code_span());
 
+        host.enter_call_frame<traits>(rt_ctx);
+
         // Install new runtime context:
         auto *const prev_rt_ctx = host.set_runtime_context(&rt_ctx);
 
@@ -104,6 +106,8 @@ namespace monad::vm
         }
 
         auto rt_ctx = runtime::Context::from(host, msg, code);
+
+        host.enter_call_frame<traits>(rt_ctx);
 
         // Install new runtime context:
         auto *const prev_rt_ctx = host.set_runtime_context(&rt_ctx);

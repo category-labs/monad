@@ -588,11 +588,28 @@ namespace monad::vm::compiler
         return is_unknown_opcode_info<traits>(opcode_table<traits>[opcode]);
     }
 
+    /**
+     * `EXTENSION` selectors assigned by MIP-18.
+     */
+    enum ExtensionSelector : uint8_t
+    {
+        CALLSTACKDEPTH = 0x00,
+        CALLERN = 0x01,
+    };
+
     template <Traits traits>
     consteval std::array<OpCodeInfo, 256> make_extension_opcode_table()
     {
+        static_assert(traits::mip_7_active() || !traits::mip_18_active());
+
         std::array<OpCodeInfo, 256> table{};
         table.fill(unknown_opcode_info);
+
+        // clang-format off
+        table[CALLSTACKDEPTH] = when(traits::mip_18_active(), {"CALLSTACKDEPTH", 0, 0, 1, false, 2, 0});
+        table[CALLERN] = when(traits::mip_18_active(), {"CALLERN", 0, 1, 1, false, 2, 0});
+        // clang-format on
+
         return table;
     }
 

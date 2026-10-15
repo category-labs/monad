@@ -24,6 +24,7 @@
 
 #include <evmc/evmc.h>
 
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 
@@ -31,14 +32,24 @@ namespace monad::vm::interpreter
 {
     using enum runtime::StatusCode;
 
-    template <uint8_t Instr, Traits traits>
+    template <auto Instr, Traits traits>
     [[gnu::always_inline]] inline void check_requirements(
         runtime::Context &ctx, Intercode const &,
         uint256_t const *const stack_bottom, StackTop const stack_top,
         int64_t &gas_remaining)
     {
-        static_assert(!compiler::has_operand_dependent_stack_effect(Instr));
-        static constexpr auto info = compiler::opcode_table<traits>[Instr];
+        static constexpr auto info = [] {
+            if constexpr (std::same_as<
+                              decltype(Instr),
+                              compiler::ExtensionSelector>) {
+                return compiler::extension_opcode_table<traits>[Instr];
+            }
+            else {
+                static_assert(
+                    !compiler::has_operand_dependent_stack_effect(Instr));
+                return compiler::opcode_table<traits>[Instr];
+            }
+        }();
 
         if constexpr (info.min_gas > 0) {
             gas_remaining -= info.min_gas;

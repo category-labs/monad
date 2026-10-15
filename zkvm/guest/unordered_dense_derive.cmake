@@ -146,8 +146,19 @@ function(monad_zkvm_unordered_dense_derive target third_party_dir out_dir)
     set(_to_fill [==[    void clear_and_fill_buckets_from_values() {
         for (value_idx_type value_idx = 0,]==])
 
+    # The widened bucket is for 64-bit guests only. On rv32 (Airbender) a word is
+    # four bytes, so nothing is gained, and a 64-bit value_idx_type sends
+    # max_size() down its `size_t{1} << 64` branch: undefined, folded to 0, and
+    # every map's first insert then reports a bucket overflow.
+    set(_bucket_pair "")
+    if(NOT CMAKE_SIZEOF_VOID_P EQUAL 4)
+        set(_bucket_pair "_from_bucket;_to_bucket")
+    endif()
     foreach(_pair "_from_shifts;_to_shifts" "_from_capacity;_to_capacity"
-                  "_from_bucket;_to_bucket" "_from_fill;_to_fill")
+                  "${_bucket_pair}" "_from_fill;_to_fill")
+        if(_pair STREQUAL "")
+            continue()
+        endif()
         list(GET _pair 0 _from_var)
         list(GET _pair 1 _to_var)
         string(FIND "${_text}" "${${_from_var}}" _found)

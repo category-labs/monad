@@ -29,9 +29,12 @@
 extern void monad_zkvm_execute_witness(void);
 
 // Linker script symbols (link.x).
-extern uint8_t _sdata[];
-extern uint8_t _edata[];
-extern uint8_t const _sidata[];
+extern uint32_t _srodata[];
+extern uint32_t _erodata[];
+extern uint32_t const _sirodata[];
+extern uint32_t _sdata[];
+extern uint32_t _edata[];
+extern uint32_t const _sidata[];
 extern uint8_t _sheap[];
 extern uint8_t _eheap[];
 extern void (*__init_array_start[])(void);
@@ -44,26 +47,28 @@ static size_t output_size;
 
 __attribute__((noreturn, noinline)) static void finish_success(void)
 {
-    uint32_t const *const p = output_words;
-    __asm__ volatile("lw x10, 0(%0)\n\t"
-                     "lw x11, 4(%0)\n\t"
-                     "lw x12, 8(%0)\n\t"
-                     "lw x13, 12(%0)\n\t"
-                     "lw x14, 16(%0)\n\t"
-                     "lw x15, 20(%0)\n\t"
-                     "lw x16, 24(%0)\n\t"
-                     "lw x17, 28(%0)\n\t"
-                     "lw x18, 32(%0)\n\t"
-                     "lw x19, 36(%0)\n\t"
-                     "lw x20, 40(%0)\n\t"
-                     "lw x21, 44(%0)\n\t"
-                     "lw x22, 48(%0)\n\t"
-                     "lw x23, 52(%0)\n\t"
-                     "lw x24, 56(%0)\n\t"
-                     "lw x25, 60(%0)\n\t"
+    // The base moves to x26 first: x10..x25 are the outputs the loads fill,
+    // as in Airbender's own runtime.
+    __asm__ volatile("mv x26, %0\n\t"
+                     "lw x10, 0(x26)\n\t"
+                     "lw x11, 4(x26)\n\t"
+                     "lw x12, 8(x26)\n\t"
+                     "lw x13, 12(x26)\n\t"
+                     "lw x14, 16(x26)\n\t"
+                     "lw x15, 20(x26)\n\t"
+                     "lw x16, 24(x26)\n\t"
+                     "lw x17, 28(x26)\n\t"
+                     "lw x18, 32(x26)\n\t"
+                     "lw x19, 36(x26)\n\t"
+                     "lw x20, 40(x26)\n\t"
+                     "lw x21, 44(x26)\n\t"
+                     "lw x22, 48(x26)\n\t"
+                     "lw x23, 52(x26)\n\t"
+                     "lw x24, 56(x26)\n\t"
+                     "lw x25, 60(x26)\n\t"
                      "1: j 1b"
                      :
-                     : "r"(p)
+                     : "r"(output_words)
                      : "memory");
     __builtin_unreachable();
 }
@@ -74,16 +79,61 @@ __attribute__((noreturn, noinline)) static void finish_error(void)
     __builtin_unreachable();
 }
 
+// ---- Debug output over the quasi-UART ----
+// A CSR write is a query to the host's oracle; the transpiler's source prints
+// a run of them -- 0xffffffff, the word count, the byte length, the bytes as
+// little-endian words -- as one `UART:` line.
+
+static inline void uart_write_word(uint32_t const w)
+{
+    __asm__ volatile("csrrw x0, 0x7c0, %0" ::"r"(w));
+}
+
+void monad_zkvm_airbender_print(char const *const s, size_t const len)
+{
+    uart_write_word(0xffffffffu);
+    uart_write_word((uint32_t)(1 + (len + 3) / 4));
+    uart_write_word((uint32_t)len);
+    for (size_t i = 0; i < len; i += 4) {
+        uint32_t w = 0;
+        for (size_t j = 0; j < 4 && i + j < len; ++j) {
+            w |= (uint32_t)(uint8_t)s[i + j] << (8 * j);
+        }
+        uart_write_word(w);
+    }
+}
+
+static void print_with_hex(char const *const what, uint32_t const v)
+{
+    char buf[64];
+    size_t n = 0;
+    while (what[n] && n < 40) {
+        buf[n] = what[n];
+        ++n;
+    }
+    buf[n++] = '0';
+    buf[n++] = 'x';
+    for (int k = 28; k >= 0; k -= 4) {
+        buf[n++] = "0123456789abcdef"[(v >> k) & 0xf];
+    }
+    monad_zkvm_airbender_print(buf, n);
+}
+
 __attribute__((noreturn)) void zkvm_halt(int const status)
 {
     if (status == 0) {
         finish_success();
     }
+    print_with_hex("zkvm_halt status ", (uint32_t)status);
+    print_with_hex("zkvm_halt called from ",
+                   (uint32_t)(uintptr_t)__builtin_return_address(0));
     finish_error();
 }
 
 __attribute__((noreturn)) void abort(void)
 {
+    print_with_hex("abort called from ",
+                   (uint32_t)(uintptr_t)__builtin_return_address(0));
     finish_error();
 }
 
@@ -91,8 +141,12 @@ __attribute__((noreturn)) void abort(void)
 
 __attribute__((noreturn)) void monad_zkvm_airbender_start(void)
 {
-    // .data and the RELRO sections live in RAM, their image in ROM.
-    for (uint8_t *d = _sdata; d != _edata; ++d) {
+    // .rodata, .data and the RELRO sections live in RAM, their images in ROM;
+    // link.x aligns each to 16 bytes, so whole words copy them.
+    for (uint32_t *d = _srodata; d != _erodata; ++d) {
+        *d = _sirodata[d - _srodata];
+    }
+    for (uint32_t *d = _sdata; d != _edata; ++d) {
         *d = _sidata[d - _sdata];
     }
     for (void (**f)(void) = __init_array_start; f != __init_array_end; ++f) {
@@ -113,6 +167,7 @@ void *sys_alloc_aligned(size_t const size, size_t const align)
     }
     uintptr_t const p = (heap_next + align - 1) & ~(uintptr_t)(align - 1);
     if (p + size < p || p + size > (uintptr_t)_eheap) {
+        print_with_hex("out of heap, request ", (uint32_t)size);
         finish_error();
     }
     heap_next = p + size;

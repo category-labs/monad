@@ -1,0 +1,31 @@
+# Airbender accelerators for the C++ guest: the eth-act zkvm_* C ABI
+# (zkvm_accelerators.h) over airbender-crypto, the delegation-backed crypto
+# ZKsync OS uses, built as a static library for rv32im.
+#
+#   cargo +nightly-2026-08-09 build --release --target riscv32im-unknown-none-elf
+#
+# The paths assume the pinned Airbender stack checked out beside this worktree
+# (work/airbender/stack/{airbender-platform,zksync-airbender}).
+[package]
+name = "monad-zkvm-airbender-accel"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["staticlib"]
+path = "src/lib.rs"
+
+[dependencies]
+airbender-crypto = { path = "../../../../stack/airbender-platform/crates/airbender-crypto", default-features = false, features = ["proving"] }
+# Our runtime owns panics and allocation; turn off riscv_common's placeholders.
+riscv_common = { path = "../../../../stack/zksync-airbender/riscv_common", features = ["custom_allocator", "custom_panic"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+debug = 1
+
+[workspace]

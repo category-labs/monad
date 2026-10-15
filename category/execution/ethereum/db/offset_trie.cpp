@@ -1181,24 +1181,31 @@ OffsetTrie::encode_rlp(
                         --lo;
                     }
 #if defined(MONAD_ZKVM_ZISK)
-                    if constexpr (claims) {
-                        // The run's digests under w, one claim each.
-                        claimed += (w - below) - HASH_RLP_LEN;
-                    }
+                    // Laundered once the run ends: otherwise gcc forms the
+                    // copy's source from the value `below` had before the
+                    // turn that ended it, and keeps both, a register copy
+                    // on every turn that does not.
+                    asm("" : "+r"(below));
 #endif
                     // From the run's lowest digest, at below + HASH_RLP_LEN,
                     // to the end of the one at w: `below` has counted the
-                    // length already.
-                    size_t const digests_length = w - below;
+                    // length already. Not const: laundered below on ZisK.
+                    // NOLINTNEXTLINE(misc-const-correctness)
+                    size_t digests_length = w - below;
+#if defined(MONAD_ZKVM_ZISK)
+                    // One subtraction for its three uses: gcc would form the
+                    // claim and the span's new end from `below` and `w` apart.
+                    asm("" : "+r"(digests_length));
+                    if constexpr (claims) {
+                        // The run's digests under w, one claim each.
+                        claimed += digests_length - HASH_RLP_LEN;
+                    }
+#endif
 
-                    unsigned char *const digests =
-                        dest.last(digests_length).data();
-                    std::memcpy(
-                        digests,
-                        blob + (below + HASH_RLP_LEN),
-                        digests_length);
-
-                    dest = dest.shrink(digests_length);
+                    // Without a room test, as the arm's other writes: a
+                    // branch's RLP is 532 bytes at most.
+                    dest = dest.prepend_unchecked(
+                        blob + (below + HASH_RLP_LEN), digests_length);
                     c = lo; // the next turn's decrement steps past the run
                 }
 #if defined(MONAD_ZKVM_ZISK)

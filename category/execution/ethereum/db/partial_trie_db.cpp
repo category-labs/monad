@@ -221,6 +221,19 @@ void PartialTrieDb::commit(
             }
         }
 
+#if defined(MONAD_ZKVM_ZISK)
+        // Fields as the pre-state's, which the leaf holds, and the same
+        // storage edge: written again it would be the same bytes, and lose
+        // its priming RLP, where only the storage root is rewritten.
+        if (auto const &old = delta.account.first;
+            old.has_value() && old->nonce == new_account->nonce &&
+            old->balance == new_account->balance &&
+            old->code_hash == new_account->code_hash &&
+            trie_.keep_account_leaf(leaf, storage)) {
+            continue;
+        }
+#endif
+
         // The leaf records only the storage edge; state_root() derives the
         // root from the subtree itself, so there is nothing to bake in and no
         // reason to hash the subtree before it is asked for.

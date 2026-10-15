@@ -1037,6 +1037,14 @@ public:
     NodeId put_ext(NodeId, NibblesView, NodeId);
     NodeId put_storage(NodeId, NibblesView, bytes32_t const &);
     NodeId put_acct(NodeId, NibblesView, Account const &, NodeId);
+#if defined(MONAD_ZKVM_ZISK)
+    // For an account the block changed through its storage alone: keeps
+    // `leaf`, a primed account leaf the block has not rewritten whose storage
+    // edge is `storage`, and marks its storage root dirty, which patch_rlp
+    // rewrites in its priming RLP. False, touching nothing, for any other
+    // leaf, which put_acct then writes.
+    bool keep_account_leaf(NodeId leaf, NodeId storage);
+#endif
     // Copies account data verbatim but appends a new path
     NodeId clone_acct(NodeId id, AccountLeafView acc, NibblesView new_path);
     std::pair<NodeId, NibblesView>

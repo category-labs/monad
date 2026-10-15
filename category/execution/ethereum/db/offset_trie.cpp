@@ -710,6 +710,15 @@ size_t OffsetTrie::patch_rlp(CachedHash const &e, NodeViewBase const node)
             }
         }
     }
+    else if (node.tag() == LEAF_ACCT) {
+        // The storage root is the account's third field, a 32-byte string
+        // just before the code hash's: the RLP's last 66 bytes are the two.
+        if ((mask & 1) != 0) {
+            bytes32_t const h = hash(AccountLeafView{node}.storage());
+            std::memcpy(
+                out + len - 2 * HASH_RLP_LEN + 1, h.bytes, KECCAK256_SIZE);
+        }
+    }
     else {
         MONAD_ASSERT(node.tag() == EXT);
         p += rlp_path_len(*p);
@@ -718,6 +727,25 @@ size_t OffsetTrie::patch_rlp(CachedHash const &e, NodeViewBase const node)
         }
     }
     return len;
+}
+
+bool OffsetTrie::keep_account_leaf(NodeId const leaf, NodeId const storage)
+{
+    uint64_t const v = static_cast<uint64_t>(leaf);
+    if (v >= OVERLAY_BASE || blob_overlay_slots_[v >> 2] != nullptr) {
+        return false;
+    }
+    NodeViewBase const node = get_original(leaf);
+    if (node.tag() != LEAF_ACCT || AccountLeafView{node}.storage() != storage) {
+        return false;
+    }
+    CachedHash *const e = blob_hash_slots_[v >> 2];
+    if (e == nullptr || e->rlp == nullptr) {
+        return false;
+    }
+    e->valid = false;
+    mark_dirty(e, 0);
+    return true;
 }
 
 bool OffsetTrie::patch_ref(
@@ -739,8 +767,8 @@ bool OffsetTrie::patch_ref(
             Tag const tag = original.tag();
             CachedHash *const e = blob_hash_slots_[v >> 2];
             if (blob_overlay_slots_[v >> 2] == nullptr &&
-                (tag == BRANCH || tag == EXT) && e != nullptr &&
-                e->rlp != nullptr) {
+                (tag == BRANCH || tag == EXT || tag == LEAF_ACCT) &&
+                e != nullptr && e->rlp != nullptr) {
                 auto const patched = [&] {
                     size_t const len = patch_rlp(*e, original);
                     if (len == 0) {
@@ -801,7 +829,8 @@ OffsetTrie::node_rlp_span OffsetTrie::encode_current(
     // produced `node`. Only branches and extensions have children to patch.
     uint64_t const v = static_cast<uint64_t>(id);
     if (v < OVERLAY_BASE && blob_overlay_slots_[v >> 2] == nullptr &&
-        (node.tag() == BRANCH || node.tag() == EXT)) {
+        (node.tag() == BRANCH || node.tag() == EXT ||
+         node.tag() == LEAF_ACCT)) {
         CachedHash const *const e = blob_hash_slots_[v >> 2];
         if (e != nullptr && e->rlp != nullptr) {
             if (size_t const len = patch_rlp(*e, node); len != 0) {

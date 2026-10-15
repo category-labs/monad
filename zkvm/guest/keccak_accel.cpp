@@ -167,6 +167,13 @@ constexpr size_t KECCAKF_MEMO_ENTRIES = size_t{1} << 18;
 static KeccakfEntry keccakf_memo[KECCAKF_MEMO_ENTRIES + 1];
 static uint64_t keccakf_memo_used = 0;
 
+// The state a digest's unfiled permutations run in, apart from the scratch
+// slot: a trie node's last one under Filing::NotFinal, and all of them under
+// Filing::None. Every lane is written before each permutation but the first
+// block's capacity, which None clears first, so nothing is cleared after it,
+// where the scratch would be cleared whole.
+alignas(8) static uint64_t keccakf_apart[KECCAKF_LANES];
+
 // A 200-byte block op that reaches the DMA port instead of being expanded
 // inline. gcc turns a constant-size copy into 25 ld/sd pairs — 50
 // instructions AND the same 50 memory accesses the port pays — where the
@@ -414,6 +421,9 @@ enum class Filing
 // capacity; every later block writes all 25 lanes. When the last permutation
 // leaves the scratch where it was -- a hit, or the spare of a full table -- it
 // is cleared before the call returns, so the next digest finds it zero too.
+// The permutations no entry is filed for run in keccakf_apart instead, which
+// is never assumed zero: Filing::None's whole chain, its capacity cleared
+// first, and NotFinal's last block whenever the scratch was left clean.
 //
 // `From` is where the blocks are read from, which the caller decides: the
 // input itself when it is 8-byte aligned; an aligned copy of it when it is not
@@ -448,6 +458,10 @@ static void keccak256_memo_sponge(void const *const in, size_t len, uint8_t out[
     }
 
     uint64_t *pre = keccakf_memo[used].in;
+    if constexpr (F == Filing::None) {
+        pre = keccakf_apart;
+        std::memset(pre + WORDS, 0, (KECCAKF_LANES - WORDS) * 8);
+    }
     std::memcpy(pre, p, RATE);
     p += RATE;
     len -= RATE;
@@ -468,7 +482,7 @@ static void keccak256_memo_sponge(void const *const in, size_t len, uint8_t out[
     // request, three steps and a priced range test each: two in three of the
     // sponge's requests.
     while (look && len >= RATE) {
-        pre = keccakf_memo[used].in;
+        pre = F == Filing::None ? keccakf_apart : keccakf_memo[used].in;
         // Opaque, so that the lanes are reached at offsets from it: seen
         // through, gcc forms each lane's address from the table's base in a
         // register of its own, ten of them saved and restored on entry.
@@ -488,7 +502,7 @@ static void keccak256_memo_sponge(void const *const in, size_t len, uint8_t out[
         len -= RATE;
     }
     while (len >= RATE) {
-        pre = keccakf_memo[used].in;
+        pre = F == Filing::None ? keccakf_apart : keccakf_memo[used].in;
         asm("" : "+r"(pre));
         for (size_t i = 0; i < WORDS; ++i) {
             pre[i] = post[i] ^ load64(p + 8 * i);
@@ -516,7 +530,23 @@ static void keccak256_memo_sponge(void const *const in, size_t len, uint8_t out[
     // record is padded to eight bytes. Read misaligned, it is the eight bytes
     // that END at the input's end, shifted down, in bounds since a whole block
     // came before -- a boundary-crossing load, like every lane of such an input.
-    pre = keccakf_memo[used].in;
+    //
+    // A node's last block, which NotFinal does not file, is built and permuted
+    // apart when the filed blocks left the scratch clean -- the last of them a
+    // miss, which published its slot -- so nothing is cleared after it. A hit
+    // left its pre-state in the scratch, and a full table permutes the spare
+    // where it lies: those build the last block there and clear it, as before.
+    // None ran every block apart.
+    if constexpr (F == Filing::NotFinal) {
+        pre = !look && used != KECCAKF_MEMO_ENTRIES ? keccakf_apart
+                                                    : keccakf_memo[used].in;
+    }
+    else if constexpr (F == Filing::None) {
+        pre = keccakf_apart;
+    }
+    else {
+        pre = keccakf_memo[used].in;
+    }
     size_t const whole = len / 8;
     unsigned const rem = static_cast<unsigned>(len % 8);
     // Entered through a table of the cases' addresses, not a switch: gcc's

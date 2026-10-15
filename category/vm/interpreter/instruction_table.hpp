@@ -3679,6 +3679,29 @@ namespace monad::vm::interpreter
             instr_ptr MONAD_VM_TBL_ARG);
     }
 
+    // The constant bytes of finalize_allocation's tail after its PUSH8 (the
+    // eight ones, DUP3 GT OR PUSH2) and after the panic's destination (JUMPI
+    // PUSH1 0x40 MSTORE JUMP), for code_matches.
+    alignas(8) inline constexpr unsigned char finalize_head[16] = {
+        0xff,
+        0xff,
+        0xff,
+        0xff,
+        0xff,
+        0xff,
+        0xff,
+        0xff,
+        static_cast<unsigned char>(DUP3),
+        static_cast<unsigned char>(GT),
+        static_cast<unsigned char>(OR),
+        static_cast<unsigned char>(PUSH2)};
+    alignas(8) inline constexpr unsigned char finalize_tail[8] = {
+        static_cast<unsigned char>(JUMPI),
+        static_cast<unsigned char>(PUSH1),
+        0x40,
+        static_cast<unsigned char>(MSTORE),
+        static_cast<unsigned char>(JUMP)};
+
     // The end of Solidity's finalize_allocation,
     //
     //     PUSH8 0xffffffffffffffff DUP3 GT OR PUSH2 <panic> JUMPI
@@ -3697,20 +3720,16 @@ namespace monad::vm::interpreter
     {
         MONAD_VM_TWIN_ENTRY();
         auto const *const p = instr_ptr;
-        auto const monad_vm_is = [p](size_t const k, auto const op) {
-            return p[k] == static_cast<std::uint8_t>(op);
-        };
         uint256_t const &monad_vm_wrapped = stack_top[0];
         uint256_t const &monad_vm_ptr = stack_top[-1];
         uint256_t const &monad_vm_ret = stack_top[-2];
-        uint64_t monad_vm_imm;
-        std::memcpy(&monad_vm_imm, p + 1, sizeof(monad_vm_imm));
         auto const monad_vm_dst = static_cast<size_t>(monad_vm_ret[0]);
-        if (!(monad_vm_imm == ~uint64_t{0} && monad_vm_is(10, GT) &&
-              monad_vm_is(11, OR) && monad_vm_is(12, PUSH2) &&
-              monad_vm_is(15, JUMPI) && monad_vm_is(16, PUSH1) &&
-              p[17] == 0x40 && monad_vm_is(18, MSTORE) &&
-              monad_vm_is(19, JUMP) && stack_top - 2 >= stack_bottom &&
+        // The pattern's constant bytes by two DMA compares, where a byte at a
+        // time took a read, a constant and a branch, and the ones an 8-byte
+        // read across a word.
+        if (!(code_matches<12>(p + 1, finalize_head) &&
+              code_matches<5>(p + 15, finalize_tail) &&
+              stack_top - 2 >= stack_bottom &&
               stack_top + 2 <= MONAD_VM_STACK_LIMIT &&
               (monad_vm_wrapped[0] | monad_vm_wrapped[1] | monad_vm_wrapped[2] |
                monad_vm_wrapped[3]) == 0 &&

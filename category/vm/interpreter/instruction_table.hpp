@@ -533,12 +533,29 @@ namespace monad::vm::interpreter
 
 // Keep checks in the handler so failures can tail-call Context::exit.
 // Variadic to accept runtime functions with multiple template arguments.
-#define MONAD_VM_CHECKED_RUNTIME_CALL(OP, ...)                                 \
-    do {                                                                       \
-        MONAD_VM_CHECK(OP);                                                    \
-        call_runtime(__VA_ARGS__, ctx, stack_top, gas_remaining);              \
-    }                                                                          \
-    while (false)
+#if defined(MONAD_ZKVM_ZISK)
+// After a runtime function that takes the Context, a real call, the stack's
+// bounds are read back from ctx: kept across it, each takes a saved register,
+// stored, moved in and out and reloaded. The arithmetic ones are inlined.
+    #define MONAD_VM_CHECKED_RUNTIME_CALL(OP, ...)                             \
+        do {                                                                   \
+            MONAD_VM_CHECK(OP);                                                \
+            call_runtime(__VA_ARGS__, ctx, stack_top, gas_remaining);          \
+            if constexpr (::monad::vm::interpreter::runtime_fn_uses_context<   \
+                              std::decay_t<decltype(__VA_ARGS__)>>::value) {   \
+                stack_bottom = ctx.frame_stack_bottom;                         \
+                stack_limit = ctx.stack_limit;                                 \
+            }                                                                  \
+        }                                                                      \
+        while (false)
+#else
+    #define MONAD_VM_CHECKED_RUNTIME_CALL(OP, ...)                             \
+        do {                                                                   \
+            MONAD_VM_CHECK(OP);                                                \
+            call_runtime(__VA_ARGS__, ctx, stack_top, gas_remaining);          \
+        }                                                                      \
+        while (false)
+#endif
 
 // Check OP after a net stack change of SHIFT from earlier fused opcodes.
 #define MONAD_VM_CHECK_AT(OP, SHIFT)                                           \

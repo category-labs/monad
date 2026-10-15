@@ -327,6 +327,11 @@ namespace monad::vm::runtime
         // test an offset's low word once, where get_memory_offset's 28-bit
         // bound and the size test took four instructions.
         uint64_t memory_access32_end = 0;
+
+        // The handlers' third argument, stack_bottom, kept here by core_loop
+        // with stack_limit above: a handler that calls the runtime reads both
+        // back after the call instead of keeping them in saved registers.
+        uint256_t const *frame_stack_bottom = nullptr;
 #endif
 
         [[gnu::always_inline]]

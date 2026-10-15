@@ -103,7 +103,7 @@
 // puts it there. MONAD_VM_STACK_LIMIT is the slot, wherever it is.
 #if defined(MONAD_ZKVM_ZISK)
     #define MONAD_VM_ANALYSIS_TYPE uint256_t const *
-    #define MONAD_VM_ANALYSIS_PARAM uint256_t const *const stack_limit
+    #define MONAD_VM_ANALYSIS_PARAM uint256_t const *stack_limit
     #define MONAD_VM_ANALYSIS_ARG stack_limit
     #define MONAD_VM_ANALYSIS (::monad::vm::interpreter::FrameCode{ctx})
     #define MONAD_VM_STACK_LIMIT stack_limit

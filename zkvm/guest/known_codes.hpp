@@ -42,6 +42,10 @@ namespace monad::zkvm
 #include <zkvm/guest/known_codes.inc>
 #include <zkvm/guest/known_codes_ambiguous.inc>
 #include <zkvm/guest/known_codes_hash.inc>
+#include <zkvm/guest/known_codes_sibling.inc>
+
+    // known_code_sibling_word's value for an entry without one.
+    inline constexpr uint32_t NO_SIBLING_WORD = 0xffffffff;
 
     // The key a code is filed under: its first word and its middle one, both
     // whole and 8-aligned in a copy of 16 bytes or more.
@@ -96,7 +100,10 @@ namespace monad::zkvm
     // The entry the size bytes at code are a copy of, or null. The key reads
     // the first word and the middle one, both whole for a code of 16 bytes or
     // more; the table holds no shorter code. The compare is by DMA, aligned or
-    // not.
+    // not, and runs to the first difference: an entry that shares its size and
+    // key with other codes, a template's, first has the word that tells it
+    // from them read, where a clone differs, and is compared only if the code
+    // has that word.
     inline KnownCode const *
     known_code_find(unsigned char const *const code, size_t const size) noexcept
     {
@@ -111,13 +118,20 @@ namespace monad::zkvm
                 return nullptr;
             }
             KnownCode const &e = known_codes[n - 1];
-            if (e.size == size && e.key == key &&
-                dma_bytes_equal(
-                    code,
+            if (e.size == size && e.key == key) {
+                unsigned char const *const words =
                     reinterpret_cast<unsigned char const *>(known_code_words) +
-                        e.offset,
-                    size)) {
-                return &e;
+                    e.offset;
+                uint32_t const j = known_code_sibling_word[n - 1];
+                uint64_t a = 0;
+                uint64_t b = 0;
+                if (j != NO_SIBLING_WORD) {
+                    __builtin_memcpy(&a, code + 8 * size_t{j}, 8);
+                    __builtin_memcpy(&b, words + 8 * size_t{j}, 8);
+                }
+                if (a == b && dma_bytes_equal(code, words, size)) {
+                    return &e;
+                }
             }
             slot = (slot + 1) & ((1u << KNOWN_CODE_SLOTS_LOG2) - 1);
         }

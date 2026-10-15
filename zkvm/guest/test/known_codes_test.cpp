@@ -16,8 +16,8 @@
 // The guest trusts each known code's hash, JUMPDEST map and padding: check
 // that the hash is the keccak of the entry's bytes, that the map is the
 // interpreter's analysis of them, that the bytes stand between Intercode's
-// padding (32 zero bytes before, 33 after), and that the index finds every
-// entry under its key.
+// padding (32 zero bytes before, 33 after), that the index finds every
+// entry under its key, and that an entry's sibling word lies inside it.
 
 #include <zkvm/guest/known_codes.hpp>
 
@@ -47,6 +47,9 @@ int main()
     auto const *const base =
         reinterpret_cast<unsigned char const *>(known_code_words);
     size_t const count = sizeof(known_codes) / sizeof(known_codes[0]);
+    static_assert(
+        sizeof(known_code_sibling_word) / sizeof(known_code_sibling_word[0]) ==
+        sizeof(known_codes) / sizeof(known_codes[0]));
     for (size_t n = 0; n < count; ++n) {
         KnownCode const &e = known_codes[n];
         unsigned char const *const code = base + e.offset;
@@ -70,6 +73,11 @@ int main()
             "hash is not the keccak of its bytes",
             n);
         require(known_code_key(code, e.size) == e.key, "wrong key", n);
+        uint32_t const j = known_code_sibling_word[n];
+        require(
+            j == NO_SIBLING_WORD || 8 * size_t{j} + 8 <= e.size,
+            "sibling word past the code",
+            n);
         // Intercode::find_jumpdests' software analysis: a JUMPDEST byte
         // outside any PUSH's immediate data.
         std::vector<uint64_t> map((e.size + 63) / 64, 0);

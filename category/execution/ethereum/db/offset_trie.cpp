@@ -901,7 +901,7 @@ namespace
                 8;
 #else
             unsigned const lz =
-                static_cast<unsigned>(bits::clz64(bits::bswap64(word))) / 8;
+                static_cast<unsigned>(std::countl_zero(std::byteswap(word))) / 8;
 #endif
             return {p + w + lz, 32 - w - lz};
         }

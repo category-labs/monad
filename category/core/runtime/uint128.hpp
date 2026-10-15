@@ -59,11 +59,14 @@ struct uint128_t
         return lo;
     }
 
+#ifdef __SIZEOF_INT128__
     constexpr explicit operator unsigned __int128() const noexcept
     {
         return (static_cast<unsigned __int128>(hi) << 64) | lo;
     }
+#endif
 
+#ifdef __SIZEOF_INT128__
     [[nodiscard]] static constexpr uint128_t from_string(char const *const s)
     {
         MONAD_ASSERT(s != nullptr);
@@ -136,8 +139,71 @@ struct uint128_t
         }
         return result;
     }
+#else
+    [[nodiscard]] static constexpr uint128_t from_string(char const *const s)
+    {
+        // Without a 128-bit integer type (rv32) the digits accumulate in the
+        // two words directly, with the same errors as the version above.
+        MONAD_ASSERT(s != nullptr);
+        uint64_t lo = 0;
+        uint64_t hi = 0;
+        char const *p = s;
+        if (p[0] == '0' && (p[1] == 'x' || p[1] == 'X')) {
+            p += 2;
+            constexpr size_t max_hex_digits = sizeof(uint128_t) * 2;
+            size_t num_digits = 0;
+            if (*p == '\0') {
+                MONAD_THROW(std::invalid_argument, s);
+            }
+            while (*p != '\0') {
+                uint8_t d;
+                if (*p >= '0' && *p <= '9') {
+                    d = static_cast<uint8_t>(*p - '0');
+                }
+                else if (*p >= 'a' && *p <= 'f') {
+                    d = static_cast<uint8_t>(*p - 'a' + 10);
+                }
+                else if (*p >= 'A' && *p <= 'F') {
+                    d = static_cast<uint8_t>(*p - 'A' + 10);
+                }
+                else {
+                    MONAD_THROW(std::invalid_argument, s);
+                }
+                if (++num_digits > max_hex_digits) {
+                    MONAD_THROW(std::out_of_range, s);
+                }
+                hi = (hi << 4) | (lo >> 60);
+                lo = (lo << 4) | d;
+                ++p;
+            }
+        }
+        else {
+            if (*p == '\0') {
+                MONAD_THROW(std::invalid_argument, s);
+            }
+            while (*p != '\0') {
+                if (*p < '0' || *p > '9') {
+                    MONAD_THROW(std::invalid_argument, s);
+                }
+                auto const digit = static_cast<uint8_t>(*p - '0');
+                // (hi, lo) * 10 + digit, from 32-bit pieces of lo.
+                uint64_t const lo_lo = (lo & 0xffffffff) * 10 + digit;
+                uint64_t const lo_hi = (lo >> 32) * 10 + (lo_lo >> 32);
+                uint64_t const carry = lo_hi >> 32;
+                if (hi > (std::numeric_limits<uint64_t>::max() - carry) / 10) {
+                    MONAD_THROW(std::out_of_range, s);
+                }
+                hi = hi * 10 + carry;
+                lo = (lo_hi << 32) | (lo_lo & 0xffffffff);
+                ++p;
+            }
+        }
+        return {lo, hi};
+    }
+#endif
 };
 
+#ifdef __SIZEOF_INT128__
 // The following five asserts together guarantee that std::bit_cast between
 // uint128_t and unsigned __int128 is a lossless round-trip in both
 // directions, and that lo maps to the low 64 bits and hi to the high 64
@@ -158,6 +224,9 @@ static_assert(
         return s.lo == 1 && s.hi == 2;
     }(),
     "uint128_t lo/hi fields must match the layout of unsigned __int128");
+#else
+static_assert(alignof(uint128_t) == 8);
+#endif
 
 // Only the operations required by current callers are provided.
 
@@ -184,9 +253,26 @@ operator<=>(uint128_t const a, uint128_t const b) noexcept
 [[nodiscard]] constexpr uint128_t
 operator*(uint128_t const a, uint128_t const b) noexcept
 {
+#ifdef __SIZEOF_INT128__
     auto const r =
         static_cast<unsigned __int128>(a) * static_cast<unsigned __int128>(b);
     return {static_cast<uint64_t>(r), static_cast<uint64_t>(r >> 64)};
+#else
+    // The low words' full product, plus the cross terms' low words.
+    uint64_t const a0 = a.lo & 0xffffffff;
+    uint64_t const a1 = a.lo >> 32;
+    uint64_t const b0 = b.lo & 0xffffffff;
+    uint64_t const b1 = b.lo >> 32;
+    uint64_t const p00 = a0 * b0;
+    uint64_t const p01 = a0 * b1;
+    uint64_t const p10 = a1 * b0;
+    uint64_t const mid =
+        (p00 >> 32) + (p01 & 0xffffffff) + (p10 & 0xffffffff);
+    uint64_t const lo = (mid << 32) | (p00 & 0xffffffff);
+    uint64_t const hi = a1 * b1 + (p01 >> 32) + (p10 >> 32) + (mid >> 32) +
+                        a.lo * b.hi + a.hi * b.lo;
+    return {lo, hi};
+#endif
 }
 
 [[nodiscard]] constexpr uint128_t
@@ -196,16 +282,45 @@ operator/(uint128_t const a, uint64_t const b) noexcept
     // sufficient here (a perf-oriented asm using hardware div was removed as
     // unnecessary for a cold path).
     MONAD_ASSERT(b != 0);
+#ifdef __SIZEOF_INT128__
     auto const r = static_cast<unsigned __int128>(a) / b;
     return {static_cast<uint64_t>(r), static_cast<uint64_t>(r >> 64)};
+#else
+    // Restoring division, a bit at a time: cold, as above.
+    uint64_t q_hi = 0;
+    uint64_t q_lo = 0;
+    uint64_t rem = 0;
+    for (int i = 127; i >= 0; --i) {
+        uint64_t const bit = i >= 64 ? (a.hi >> (i - 64)) & 1 : (a.lo >> i) & 1;
+        bool const overflow = rem >> 63;
+        rem = (rem << 1) | bit;
+        q_hi = (q_hi << 1) | (q_lo >> 63);
+        q_lo <<= 1;
+        if (overflow || rem >= b) {
+            rem -= b;
+            q_lo |= 1;
+        }
+    }
+    return {q_lo, q_hi};
+#endif
 }
 
 [[nodiscard]] constexpr uint128_t
 operator>>(uint128_t const x, uint64_t const shift) noexcept
 {
     MONAD_ASSERT(shift < 128);
+#ifdef __SIZEOF_INT128__
     auto const r = static_cast<unsigned __int128>(x) >> shift;
     return {static_cast<uint64_t>(r), static_cast<uint64_t>(r >> 64)};
+#else
+    if (shift == 0) {
+        return x;
+    }
+    if (shift >= 64) {
+        return {x.hi >> (shift - 64), 0};
+    }
+    return {(x.lo >> shift) | (x.hi << (64 - shift)), x.hi >> shift};
+#endif
 }
 
 [[nodiscard]] constexpr uint128_t byteswap(uint128_t const x) noexcept
@@ -218,6 +333,7 @@ to_string(uint128_t const v, int const base = 10)
 {
     MONAD_ASSERT(base >= 2 && base <= 16);
     static constexpr char digits[] = "0123456789abcdef";
+#ifdef __SIZEOF_INT128__
     auto r = static_cast<unsigned __int128>(v);
     if (r == 0) {
         return "0";
@@ -227,6 +343,19 @@ to_string(uint128_t const v, int const base = 10)
         result += digits[r % static_cast<unsigned>(base)];
         r /= static_cast<unsigned>(base);
     }
+#else
+    auto r = v;
+    if (r == uint128_t{0}) {
+        return "0";
+    }
+    std::string result;
+    auto const b = static_cast<uint64_t>(base);
+    while (r != uint128_t{0}) {
+        auto const q = r / b;
+        result += digits[r.lo - (q * uint128_t{b}).lo];
+        r = q;
+    }
+#endif
     std::reverse(result.begin(), result.end());
     return result;
 }

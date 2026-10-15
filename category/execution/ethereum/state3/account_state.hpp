@@ -292,7 +292,7 @@ public:
 // Two FlatStorage index pointers and A_K's add 24 bytes in the ZisK guest.
 static_assert(sizeof(AccountState) == 216);
 #else
-static_assert(sizeof(AccountState) == 192);
+static_assert(sizeof(void *) != 8 || sizeof(AccountState) == 192);
 #endif
 
 // RELAXED MERGE

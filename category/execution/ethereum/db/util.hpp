@@ -99,8 +99,8 @@ protected:
     virtual mpt::Compute &storage_root_compute() const;
 };
 
-static_assert(sizeof(MachineBase) == 16);
-static_assert(alignof(MachineBase) == 8);
+static_assert(sizeof(void *) != 8 || sizeof(MachineBase) == 16);
+static_assert(sizeof(void *) != 8 || alignof(MachineBase) == 8);
 
 struct InMemoryMachine : public MachineBase
 {

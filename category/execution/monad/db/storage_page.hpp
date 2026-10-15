@@ -43,7 +43,97 @@ struct storage_page_t
     static constexpr size_t NUM_PAIRS = SLOTS / 2;
     static constexpr uint8_t SLOT_OFFSET_MASK = (1 << PAGE_KEY_SHIFT) - 1;
 
+#ifdef __SIZEOF_INT128__
     using bitmap_t = unsigned __int128;
+#else
+    // rv32 has no 128-bit integer: the operations the page uses, on two words.
+    struct bitmap_t
+    {
+        uint64_t lo{};
+        uint64_t hi{};
+
+        constexpr bitmap_t() noexcept = default;
+
+        constexpr explicit(false) bitmap_t(uint64_t const v) noexcept
+            : lo(v)
+        {
+        }
+
+        constexpr bitmap_t(uint64_t const l, uint64_t const h) noexcept
+            : lo(l)
+            , hi(h)
+        {
+        }
+
+        constexpr explicit operator uint64_t() const noexcept
+        {
+            return lo;
+        }
+
+        friend constexpr bool
+        operator==(bitmap_t const a, bitmap_t const b) noexcept
+        {
+            return a.lo == b.lo && a.hi == b.hi;
+        }
+
+        friend constexpr bitmap_t
+        operator&(bitmap_t const a, bitmap_t const b) noexcept
+        {
+            return {a.lo & b.lo, a.hi & b.hi};
+        }
+
+        friend constexpr bitmap_t
+        operator|(bitmap_t const a, bitmap_t const b) noexcept
+        {
+            return {a.lo | b.lo, a.hi | b.hi};
+        }
+
+        friend constexpr bitmap_t operator~(bitmap_t const a) noexcept
+        {
+            return {~a.lo, ~a.hi};
+        }
+
+        friend constexpr bitmap_t
+        operator-(bitmap_t const a, bitmap_t const b) noexcept
+        {
+            return {a.lo - b.lo, a.hi - b.hi - (a.lo < b.lo)};
+        }
+
+        friend constexpr bitmap_t
+        operator<<(bitmap_t const a, unsigned const n) noexcept
+        {
+            if (n == 0) {
+                return a;
+            }
+            if (n >= 64) {
+                return {0, a.lo << (n - 64)};
+            }
+            return {a.lo << n, (a.hi << n) | (a.lo >> (64 - n))};
+        }
+
+        friend constexpr bitmap_t
+        operator>>(bitmap_t const a, unsigned const n) noexcept
+        {
+            if (n == 0) {
+                return a;
+            }
+            if (n >= 64) {
+                return {a.hi >> (n - 64), 0};
+            }
+            return {(a.lo >> n) | (a.hi << (64 - n)), a.hi >> n};
+        }
+
+        constexpr bitmap_t &operator&=(bitmap_t const b) noexcept
+        {
+            return *this = *this & b;
+        }
+
+        constexpr bitmap_t &operator|=(bitmap_t const b) noexcept
+        {
+            return *this = *this | b;
+        }
+    };
+#endif
 
     storage_page_t() noexcept = default;
 
@@ -138,7 +228,7 @@ struct storage_page_t
 private:
     bool has_bit_(uint8_t const i) const
     {
-        return (bitmap_ >> i) & static_cast<bitmap_t>(1);
+        return ((bitmap_ >> i) & static_cast<bitmap_t>(1)) != 0;
     }
 
     void set_bit_(uint8_t const i)

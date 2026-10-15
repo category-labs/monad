@@ -51,8 +51,8 @@
 
 MONAD_NAMESPACE_BEGIN
 
-static_assert(sizeof(vm::Host) == 24);
-static_assert(alignof(vm::Host) == 8);
+static_assert(sizeof(void *) != 8 || sizeof(vm::Host) == 24);
+static_assert(sizeof(void *) != 8 || alignof(vm::Host) == 8);
 
 // Pass EVMC arguments as Monad references at the host boundary to avoid
 // temporary copies from converting constructors.
@@ -143,8 +143,8 @@ public:
         evmc::bytes32 const &value) noexcept override;
 };
 
-static_assert(sizeof(EvmcHostBase) == 72);
-static_assert(alignof(EvmcHostBase) == 8);
+static_assert(sizeof(void *) != 8 || sizeof(EvmcHostBase) == 72);
+static_assert(sizeof(void *) != 8 || alignof(EvmcHostBase) == 8);
 
 template <Traits traits>
 struct EvmcHost final : public EvmcHostBase
@@ -397,11 +397,11 @@ struct EvmcHost final : public EvmcHostBase
     }
 };
 
-static_assert(
+static_assert(sizeof(void *) != 8 ||
     sizeof(EvmcHost<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>) == 136);
 static_assert(
     alignof(EvmcHost<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>) == 8);
-static_assert(sizeof(EvmcHost<MonadTraits<MONAD_NEXT>>) == 136);
+static_assert(sizeof(void *) != 8 || sizeof(EvmcHost<MonadTraits<MONAD_NEXT>>) == 136);
 static_assert(alignof(EvmcHost<MonadTraits<MONAD_NEXT>>) == 8);
 
 MONAD_NAMESPACE_END

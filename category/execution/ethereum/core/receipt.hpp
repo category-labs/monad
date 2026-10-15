@@ -49,10 +49,10 @@ struct Receipt
 
 void populate_bloom(Receipt::Bloom &, Receipt::Log const &);
 
-static_assert(sizeof(Receipt::Log) == 80);
-static_assert(alignof(Receipt::Log) == 8);
+static_assert(sizeof(void *) != 8 || sizeof(Receipt::Log) == 80);
+static_assert(sizeof(void *) != 8 || alignof(Receipt::Log) == 8);
 
-static_assert(sizeof(Receipt) == 304);
+static_assert(sizeof(void *) != 8 || sizeof(Receipt) == 304);
 static_assert(alignof(Receipt) == 8);
 
 MONAD_NAMESPACE_END

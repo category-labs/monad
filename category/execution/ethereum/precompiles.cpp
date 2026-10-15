@@ -324,7 +324,7 @@ PrecompileResult expmod_execute(byte_string_view const input)
 {
     std::basic_string<uint8_t> header(96, '\0');
     if (input.size() != 0) {
-        std::memcpy(header.data(), input.data(), std::min(input.size(), 96ul));
+        std::memcpy(header.data(), input.data(), std::min(input.size(), size_t{96}));
     }
 
     uint64_t const mod_len = load_be_unsafe<uint64_t>(&header[88]);

@@ -360,7 +360,7 @@ struct ChildData
     void copy_old_child(Node *old, unsigned i);
 };
 
-static_assert(sizeof(ChildData) == 80);
+static_assert(sizeof(void *) != 8 || sizeof(ChildData) == 80);
 static_assert(alignof(ChildData) == 8);
 
 constexpr size_t calculate_node_size(

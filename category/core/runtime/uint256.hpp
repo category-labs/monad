@@ -943,6 +943,7 @@ long_div(size_t m, uint64_t const *u, uint64_t v, uint64_t *quot)
     return r.rem;
 }
 
+#ifdef __SIZEOF_INT128__
 constexpr void
 knuth_div(size_t m, uint64_t *u, size_t n, uint64_t const *v, uint64_t *quot)
 {
@@ -1044,6 +1045,76 @@ knuth_div(size_t m, uint64_t *u, size_t n, uint64_t const *v, uint64_t *quot)
         quot[ix] = static_cast<uint64_t>(q_hat);
     }
 }
+#else
+constexpr void
+knuth_div(size_t m, uint64_t *u, size_t n, uint64_t const *v, uint64_t *quot)
+{
+    // The same algorithm without a 128-bit integer type (rv32): the double-word
+    // products and the signed borrow of the version above become explicit
+    // carry chains over 64-bit words.
+    MONAD_DEBUG_ASSERT(m >= n);
+    MONAD_DEBUG_ASSERT(n > 1);
+    MONAD_DEBUG_ASSERT(v[n - 1] & (uint64_t{1} << 63));
+
+    for (int i = static_cast<int>(m - n); i >= 0; i--) {
+        auto const ix = static_cast<size_t>(i);
+        uint64_t q_hat;
+        MONAD_DEBUG_ASSERT(u[ix + n] <= v[n - 1]);
+        if (MONAD_UNLIKELY(u[ix + n] == v[n - 1])) {
+            // q_hat = BASE - 1; the version above shows that at most one
+            // correction follows.
+            q_hat = ~uint64_t{0};
+        }
+        else {
+            auto [q_hat0, r_hat0] = div(u[ix + n], u[ix + n - 1], v[n - 1]);
+            if (q_hat0 == 0) {
+                continue;
+            }
+
+            q_hat = q_hat0;
+            // q_hat * v[n-2] > r_hat * BASE + u[ix+n-2], as double words.
+            uint64_t p_hi;
+            uint64_t p_lo;
+            mulx(q_hat, v[n - 2], p_hi, p_lo);
+            if (p_hi > r_hat0 || (p_hi == r_hat0 && p_lo > u[ix + n - 2])) {
+                q_hat--;
+            }
+        }
+
+        // u[ix+n .. ix] -= q_hat * v[n .. 0]
+        uint64_t mul_carry = 0;
+        bool borrow = false;
+        for (size_t j = 0; j < n; j++) {
+            uint64_t p_hi;
+            uint64_t p_lo;
+            mulx(q_hat, v[j], p_hi, p_lo);
+            p_lo += mul_carry;
+            p_hi += p_lo < mul_carry;
+            mul_carry = p_hi;
+            auto const d = subb(u[j + ix], p_lo, borrow);
+            u[j + ix] = d.value;
+            borrow = d.carry;
+        }
+        auto const top = subb(u[ix + n], mul_carry, borrow);
+        u[ix + n] = top.value;
+
+        // Our estimate for q_hat was one too high
+        // u[ix+n .. ix] += v[n .. 0]
+        // q_hat -= 1
+        if (top.carry) {
+            q_hat -= 1;
+            bool carry = false;
+            for (size_t j = 0; j < n; j++) {
+                auto const sum = addc(u[ix + j], v[j], carry);
+                u[ix + j] = sum.value;
+                carry = sum.carry;
+            }
+            u[ix + n] += static_cast<uint64_t>(carry);
+        }
+        quot[ix] = q_hat;
+    }
+}
+#endif
 
 template <size_t M, size_t N>
 constexpr div_result<words_t<M>, words_t<N>>

@@ -19,6 +19,7 @@
 #include <category/core/runtime/uint128.hpp>
 #include <category/core/runtime/uint256/types.hpp>
 
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 
@@ -68,11 +69,49 @@ namespace monad::uint256::portable
     constexpr div_result<uint64_t>
     div(uint64_t u_hi, uint64_t u_lo, uint64_t const v) noexcept
     {
+#ifdef __SIZEOF_INT128__
         using u128 = unsigned __int128;
         auto const u = static_cast<u128>(uint128_t{u_lo, u_hi});
         auto const quot = static_cast<uint64_t>(u / v);
         auto const rem = static_cast<uint64_t>(u % v);
         return {.quot = quot, .rem = rem};
+#else
+        // No 128-bit integer type (rv32): Hacker's Delight's divlu, two
+        // 64-by-32-bit digit steps on the normalized divisor. Requires
+        // u_hi < v, which every caller guarantees.
+        constexpr uint64_t b = uint64_t{1} << 32;
+        auto const s = static_cast<unsigned>(std::countl_zero(v));
+        uint64_t const vn = v << s;
+        uint64_t const vn1 = vn >> 32;
+        uint64_t const vn0 = vn & 0xffffffff;
+        uint64_t const un32 =
+            s == 0 ? u_hi : (u_hi << s) | (u_lo >> (64 - s));
+        uint64_t const un10 = u_lo << s;
+        uint64_t const un1 = un10 >> 32;
+        uint64_t const un0 = un10 & 0xffffffff;
+
+        uint64_t q1 = un32 / vn1;
+        uint64_t rhat = un32 - q1 * vn1;
+        while (q1 >= b || q1 * vn0 > b * rhat + un1) {
+            --q1;
+            rhat += vn1;
+            if (rhat >= b) {
+                break;
+            }
+        }
+        uint64_t const un21 = un32 * b + un1 - q1 * vn;
+        uint64_t q0 = un21 / vn1;
+        rhat = un21 - q0 * vn1;
+        while (q0 >= b || q0 * vn0 > b * rhat + un0) {
+            --q0;
+            rhat += vn1;
+            if (rhat >= b) {
+                break;
+            }
+        }
+        return {
+            .quot = q1 * b + q0, .rem = (un21 * b + un0 - q0 * vn) >> s};
+#endif
     }
 
     [[gnu::always_inline]]
@@ -80,10 +119,27 @@ namespace monad::uint256::portable
         uint64_t const x, uint64_t const y, uint64_t &r_hi,
         uint64_t &r_lo) noexcept
     {
+#ifdef __SIZEOF_INT128__
         using u128 = unsigned __int128;
         u128 const prod = static_cast<u128>(x) * static_cast<u128>(y);
         r_hi = static_cast<uint64_t>(prod >> u128{64});
         r_lo = static_cast<uint64_t>(prod);
+#else
+        // Schoolbook on 32-bit halves; each partial product is one
+        // 32x32->64 multiply (mul + mulhu on rv32).
+        uint64_t const x_lo = x & 0xffffffff;
+        uint64_t const x_hi = x >> 32;
+        uint64_t const y_lo = y & 0xffffffff;
+        uint64_t const y_hi = y >> 32;
+        uint64_t const p0 = x_lo * y_lo;
+        uint64_t const p1 = x_lo * y_hi;
+        uint64_t const p2 = x_hi * y_lo;
+        uint64_t const p3 = x_hi * y_hi;
+        uint64_t const mid =
+            (p0 >> 32) + (p1 & 0xffffffff) + (p2 & 0xffffffff);
+        r_lo = (mid << 32) | (p0 & 0xffffffff);
+        r_hi = p3 + (p1 >> 32) + (p2 >> 32) + (mid >> 32);
+#endif
     }
 
     template <size_t R, size_t M, size_t N>

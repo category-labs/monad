@@ -108,7 +108,11 @@ struct monad_exec_block_start
         block_tag;                    ///< Proposal is for this block
     uint64_t round;                   ///< Round when block was proposed
     uint64_t epoch;                   ///< Epoch when block was proposed
+#ifdef __SIZEOF_INT128__
     __uint128_t proposal_epoch_nanos; ///< UNIX epoch nanosecond timestamp
+#else
+    uint64_t proposal_epoch_nanos[2]; ///< As above, low word first (rv32)
+#endif
     monad_c_uint256_ne chain_id;      ///< Blockchain we're associated with
     struct monad_c_secp256k1_pubkey
         author;                       ///< Public key of block author

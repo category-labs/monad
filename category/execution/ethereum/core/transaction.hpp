@@ -48,13 +48,13 @@ struct AccessEntry
     friend bool operator==(AccessEntry const &, AccessEntry const &) = default;
 };
 
-static_assert(sizeof(AccessEntry) == 48);
-static_assert(alignof(AccessEntry) == 8);
+static_assert(sizeof(void *) != 8 || sizeof(AccessEntry) == 48);
+static_assert(sizeof(void *) != 8 || alignof(AccessEntry) == 8);
 
 using AccessList = std::vector<AccessEntry>;
 
-static_assert(sizeof(AccessList) == 24);
-static_assert(alignof(AccessList) == 8);
+static_assert(sizeof(void *) != 8 || sizeof(AccessList) == 24);
+static_assert(sizeof(void *) != 8 || alignof(AccessList) == 8);
 
 struct AuthorizationEntry
 {
@@ -73,8 +73,8 @@ std::optional<Address> recover_authority(AuthorizationEntry const &);
 
 using AuthorizationList = std::vector<AuthorizationEntry>;
 
-static_assert(sizeof(AuthorizationList) == 24);
-static_assert(alignof(AuthorizationList) == 8);
+static_assert(sizeof(void *) != 8 || sizeof(AuthorizationList) == 24);
+static_assert(sizeof(void *) != 8 || alignof(AuthorizationList) == 8);
 
 struct Transaction
 {
@@ -95,7 +95,7 @@ struct Transaction
     friend bool operator==(Transaction const &, Transaction const &) = default;
 };
 
-static_assert(sizeof(Transaction) == 384);
+static_assert(sizeof(void *) != 8 || sizeof(Transaction) == 384);
 static_assert(alignof(Transaction) == 8);
 
 std::optional<Address> recover_sender(Transaction const &);

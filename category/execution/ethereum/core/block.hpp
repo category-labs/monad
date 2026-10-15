@@ -83,10 +83,10 @@ struct Block
     friend bool operator==(Block const &, Block const &) = default;
 };
 
-static_assert(sizeof(BlockHeader) == 776);
+static_assert(sizeof(void *) != 8 || sizeof(BlockHeader) == 776);
 static_assert(alignof(BlockHeader) == 8);
 
-static_assert(sizeof(Block) == 856);
+static_assert(sizeof(void *) != 8 || sizeof(Block) == 856);
 static_assert(alignof(Block) == 8);
 
 MONAD_NAMESPACE_END

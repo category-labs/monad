@@ -828,6 +828,12 @@ static void keccak256_sponge(
     }
 #endif
 
+#ifndef MONAD_ZKVM_ZISK
+    // Every absorbed block advanced `p`, so none was absorbed iff it has not
+    // moved: the condition the ZisK loop above tracks as `first`.
+    bool const first = p == static_cast<unsigned char const *>(in);
+#endif
+
     // Final block: remainder plus pad10*1 with the 0x01 domain byte.
     if (first) {
         // Nothing absorbed yet, so the padded block can be built in the state

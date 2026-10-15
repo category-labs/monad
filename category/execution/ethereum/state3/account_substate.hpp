@@ -197,7 +197,7 @@ public:
 #ifdef MONAD_ZKVM_ZISK
 static_assert(sizeof(AccountSubstate) == 40);
 #else
-static_assert(sizeof(AccountSubstate) == 32);
+static_assert(sizeof(void *) != 8 || sizeof(AccountSubstate) == 32);
 #endif
 
 MONAD_NAMESPACE_END

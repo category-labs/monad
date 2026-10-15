@@ -237,7 +237,7 @@ class State
 #endif
     };
 
-    static_assert(sizeof(UndoMark) == 64);
+    static_assert(sizeof(void *) != 8 || sizeof(UndoMark) == 64);
 
     std::vector<UndoMark> undo_marks_{};
 

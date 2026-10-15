@@ -141,10 +141,20 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # the compiler must never emit one on its own. Its machine profile also
     # leaves out signed MULH, MULHSU, DIV and REM, which no flag removes; the
     # link has to be audited for them.
+    #
+    # newlib's ILP32 makes uint32_t an unsigned long while size_t is an
+    # unsigned int, which code written for LP64 (immer's node sizing, say)
+    # mixes in std::min/max. Give the 32-bit types the int spelling glibc's
+    # ILP32 uses; every object in the guest is built with it.
     if(MONAD_ZKVM_GUEST_TARGET STREQUAL "airbender")
         set(_airbender_march "-march=rv32im_zicsr -mabi=ilp32 -mstrict-align")
-        string(APPEND CMAKE_C_FLAGS " ${_airbender_march} -fno-pic")
-        string(APPEND CMAKE_CXX_FLAGS " ${_airbender_march} -fno-pic")
+        set(_airbender_int32 "-D__INT32_TYPE__=int"
+                             "-D__UINT32_TYPE__=unsigned\\ int"
+                             "-D__INT_LEAST32_TYPE__=int"
+                             "-D__UINT_LEAST32_TYPE__=unsigned\\ int")
+        list(JOIN _airbender_int32 " " _airbender_int32)
+        string(APPEND CMAKE_C_FLAGS " ${_airbender_march} -fno-pic ${_airbender_int32}")
+        string(APPEND CMAKE_CXX_FLAGS " ${_airbender_march} -fno-pic ${_airbender_int32}")
         string(APPEND CMAKE_ASM_FLAGS " ${_airbender_march}")
     endif()
 

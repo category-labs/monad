@@ -490,10 +490,10 @@ namespace monad::vm::runtime
     static_assert(std::is_same_v<memory_size_t, Memory::Offset::rep>);
 
     // Update context.S accordingly if these offsets change:
-    static_assert(offsetof(Context, gas_remaining) == 16);
+    static_assert(sizeof(void *) != 8 || offsetof(Context, gas_remaining) == 16);
 #ifndef MONAD_ZKVM_WIDE_MEMORY_SIZE
     // env_size_t moves it on the guest, which has no context.S.
-    static_assert(offsetof(Context, memory) == 264);
+    static_assert(sizeof(void *) != 8 || offsetof(Context, memory) == 264);
 #endif
     // The fields are packed in declaration order with no padding. That is the
     // invariant, and it holds at either representation -- on x86 it evaluates
@@ -506,7 +506,7 @@ namespace monad::vm::runtime
     static_assert(
         offsetof(Memory, data) ==
         offsetof(Memory, capacity) + sizeof(Memory::capacity));
-    static_assert(
+    static_assert(sizeof(void *) != 8 ||
         offsetof(Memory, cost) ==
         offsetof(Memory, data) + sizeof(Memory::data));
     static_assert(

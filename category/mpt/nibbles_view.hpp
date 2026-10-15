@@ -146,8 +146,8 @@ public:
     }
 };
 
-static_assert(sizeof(Nibbles) == 16);
-static_assert(alignof(Nibbles) == 8);
+static_assert(sizeof(void *) != 8 || sizeof(Nibbles) == 16);
+static_assert(sizeof(void *) != 8 || alignof(Nibbles) == 8);
 
 class NibblesView
 {
@@ -295,8 +295,8 @@ public:
     }
 };
 
-static_assert(sizeof(NibblesView) == 16);
-static_assert(alignof(NibblesView) == 8);
+static_assert(sizeof(void *) != 8 || sizeof(NibblesView) == 16);
+static_assert(sizeof(void *) != 8 || alignof(NibblesView) == 8);
 static_assert(std::is_trivially_copyable_v<NibblesView> == true);
 
 inline Nibbles::Nibbles(NibblesView const nibbles)

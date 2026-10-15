@@ -21,7 +21,7 @@
 
 #include <evmc/evmc.h>
 
-static_assert(sizeof(evmc_tx_context) == 264);
+static_assert(sizeof(void *) != 8 || sizeof(evmc_tx_context) == 264);
 static_assert(alignof(evmc_tx_context) == 8);
 
 MONAD_NAMESPACE_BEGIN

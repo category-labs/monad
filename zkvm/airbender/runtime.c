@@ -282,10 +282,48 @@ size_t strlen(char const *const s)
 }
 
 // ---- Keccak-f[1600] ----
-// Software for now: the spike measures size and instruction mix, and a run in
-// the transpiler only needs the right digest. The production path is
-// Airbender's keccak delegation (649 keccak_special5 CSR writes per
-// permutation, or the newer 361-call keccak_f1600 family).
+// Airbender's Keccak-f delegation (zksync-airbender common_constants
+// delegation_types/keccak_f1600.rs): 361 CSR writes over a 256-byte-aligned
+// block whose slots 0..24 hold the lanes in the standard x + 5y order and
+// 25..29 the column parities. Per round, five column-parity (0x7cd), five
+// theta/rho (0x7cc) and five chi (0x7ce) calls; a last column-parity call
+// applies the delayed final iota. x10 starts at zero and the circuit steps
+// it; x11 points at the block. The run must be one uninterrupted sequence,
+// which the transpiler recognises by its first CSR and its length.
+//
+// MONAD_ZKVM_AIRBENDER_SOFT_KECCAK selects a software permutation instead.
+
+#ifndef MONAD_ZKVM_AIRBENDER_SOFT_KECCAK
+
+static uint64_t keccak_block[32] __attribute__((aligned(256)));
+
+#define KECCAK_CALL(csr) "csrrw x0, " #csr ", x0\n\t"
+#define KECCAK_5(csr)                                                          \
+    KECCAK_CALL(csr) KECCAK_CALL(csr) KECCAK_CALL(csr) KECCAK_CALL(csr)       \
+        KECCAK_CALL(csr)
+#define KECCAK_ROUND KECCAK_5(0x7cd) KECCAK_5(0x7cc) KECCAK_5(0x7ce)
+#define KECCAK_4_ROUNDS KECCAK_ROUND KECCAK_ROUND KECCAK_ROUND KECCAK_ROUND
+#define KECCAK_24_ROUNDS                                                       \
+    KECCAK_4_ROUNDS KECCAK_4_ROUNDS KECCAK_4_ROUNDS KECCAK_4_ROUNDS            \
+        KECCAK_4_ROUNDS KECCAK_4_ROUNDS
+
+void monad_zkvm_airbender_keccak_f1600(uint64_t (*const state)[25])
+{
+    uint64_t *const st = *state;
+    for (unsigned i = 0; i < 25; ++i) {
+        keccak_block[i] = st[i];
+    }
+    __asm__ volatile("mv x11, %0\n\t"
+                     "add x10, x0, x0\n\t" KECCAK_24_ROUNDS KECCAK_CALL(0x7cd)
+                     :
+                     : "r"(keccak_block)
+                     : "x10", "x11", "memory");
+    for (unsigned i = 0; i < 25; ++i) {
+        st[i] = keccak_block[i];
+    }
+}
+
+#else
 
 #define ROTL64(x, y) (((x) << (y)) | ((x) >> (64 - (y))))
 
@@ -338,3 +376,5 @@ void monad_zkvm_airbender_keccak_f1600(uint64_t (*const state)[25])
         st[0] ^= keccak_rc[r];
     }
 }
+
+#endif // MONAD_ZKVM_AIRBENDER_SOFT_KECCAK

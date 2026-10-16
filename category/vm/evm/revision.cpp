@@ -67,7 +67,7 @@ MONAD_ASSERT_REVISION_EQ(OSAKA);
 // TODO(amsterdam): convert AMSTERDAM to its evmc revision once one exists.
 evmc_revision to_evmc_revision(monad_eth_revision const rev)
 {
-    MONAD_ASSERT(rev <= MONAD_ETH_OSAKA);
+    MONAD_ASSERT(std::to_underlying(rev) <= std::to_underlying(EVMC_OSAKA));
     return static_cast<evmc_revision>(std::to_underlying(rev));
 }
 

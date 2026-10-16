@@ -917,8 +917,12 @@ static void keccak256_sponge(
 
 #if defined(MONAD_ZKVM_ZISK) && MONAD_ZKVM_KECCAKF_MEMO
 template <Filing F>
-static void keccak256_trie(void const *const in, size_t len, uint8_t out[32])
+static void keccak256_trie(void const *in, size_t len, uint8_t out[32])
 {
+    // Tied to their argument registers: gcc otherwise takes a0 and a1 for the
+    // one-block arm's temporaries and moves the arguments out on every call,
+    // the two thirds that only pass them on included.
+    asm("" : "+r"(in), "+r"(len), "+r"(out));
     if (len < 136) {
         keccak256_one_block(in, len, out);
     }
@@ -937,8 +941,13 @@ static void keccak256_trie(void const *const in, size_t len, uint8_t out[32])
 extern "C"
 {
 
-void monad_zkvm_keccak256_fast(void const *const in, size_t len, uint8_t out[32])
+void monad_zkvm_keccak256_fast(void const *in, size_t len, uint8_t out[32])
 {
+#if defined(MONAD_ZKVM_ZISK)
+    // Tied to their argument registers: gcc otherwise takes a0 to a2 for the
+    // table lookup's temporaries and moves the arguments out on every call.
+    asm("" : "+r"(in), "+r"(len), "+r"(out));
+#endif
     if (monad::zkvm::known_input_hash(
             static_cast<unsigned char const *>(in), len, out)) {
         return;

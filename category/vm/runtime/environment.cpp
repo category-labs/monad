@@ -13,7 +13,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/core/bytes.hpp>
 #include <category/core/int.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/host.hpp>
@@ -62,9 +61,9 @@ namespace monad::vm::runtime
         uint256_t const *const index)
     {
         auto const &c = *ctx->env.tx_context;
-        *result_ptr = (*index < c.blob_hashes_count)
-                          ? load_be<uint256_t>(static_cast<bytes32_t>(
-                                c.blob_hashes[static_cast<size_t>(*index)]))
-                          : 0;
+        *result_ptr =
+            (*index < c.blob_hashes_count)
+                ? load_be<uint256_t>(c.blob_hashes[static_cast<size_t>(*index)])
+                : 0;
     }
 }

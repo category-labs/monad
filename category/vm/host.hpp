@@ -21,6 +21,7 @@
 #include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/page_storage_status.h>
 #include <category/vm/evm/storage_status.h>
+#include <category/vm/evm/tx_context.hpp>
 #include <category/vm/runtime/types.hpp>
 
 #include <evmc/evmc.hpp>
@@ -66,7 +67,7 @@ namespace monad::vm
 
         virtual evmc::Result call(evmc_message const &) = 0;
 
-        virtual evmc_tx_context const *get_tx_context() const = 0;
+        virtual TxContext const *get_tx_context() const = 0;
 
         virtual bytes32_t get_block_hash(int64_t block_number) const = 0;
 

@@ -467,7 +467,7 @@ TYPED_TEST(TraitsTest, execute_success)
     auto const &sender = ADDR_A;
     auto const &beneficiary = ADDR_A;
 
-    evmc_tx_context const tx_context{};
+    vm::TxContext const tx_context{};
     BlockHashBufferFinalized buffer{};
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
@@ -552,7 +552,7 @@ TYPED_TEST(TraitsTest, execute_reverted_insufficient_balance)
     auto const &sender = ADDR_A;
     auto const &beneficiary = ADDR_A;
 
-    evmc_tx_context const tx_context{};
+    vm::TxContext const tx_context{};
     BlockHashBufferFinalized buffer{};
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
@@ -642,7 +642,7 @@ TYPED_TEST(TraitsTest, create_call_trace)
     auto const &sender = ADDR_A;
     auto const &beneficiary = ADDR_A;
 
-    evmc_tx_context const tx_context{};
+    vm::TxContext const tx_context{};
     BlockHashBufferFinalized buffer{};
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
@@ -766,7 +766,7 @@ TYPED_TEST(TraitsTest, selfdestruct_logs)
     auto const &sender = ADDR_A;
     auto const &beneficiary = ADDR_A;
 
-    evmc_tx_context const tx_context{};
+    vm::TxContext const tx_context{};
     BlockHashBufferFinalized buffer{};
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
@@ -854,7 +854,7 @@ TYPED_TEST(TraitsTest, selfdestruct_logs_value)
     auto const &sender = ADDR_C;
     auto const &beneficiary = ADDR_C;
 
-    evmc_tx_context const tx_context{};
+    vm::TxContext const tx_context{};
     BlockHashBufferFinalized buffer{};
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
@@ -952,7 +952,7 @@ TYPED_TEST(TraitsTest, selfdestruct_depth)
     auto const &sender = ADDR_A;
     auto const &beneficiary = ADDR_A;
 
-    evmc_tx_context const tx_context{};
+    vm::TxContext const tx_context{};
     BlockHashBufferFinalized buffer{};
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
@@ -1032,7 +1032,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace)
     auto const &sender = ADDR_A;
     auto const &beneficiary = ADDR_A;
 
-    evmc_tx_context const tx_context{};
+    vm::TxContext const tx_context{};
     BlockHashBufferFinalized buffer{};
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
@@ -1142,7 +1142,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct)
     auto const &sender = ADDR_C;
     auto const &beneficiary = ADDR_C;
 
-    evmc_tx_context const tx_context{};
+    vm::TxContext const tx_context{};
     BlockHashBufferFinalized buffer{};
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
@@ -1247,7 +1247,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct_zero_balance)
     auto const &sender = ADDR_C;
     auto const &beneficiary = ADDR_C;
 
-    evmc_tx_context const tx_context{};
+    vm::TxContext const tx_context{};
     BlockHashBufferFinalized buffer{};
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
@@ -1391,7 +1391,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs)
         .to = INTERMEDIARY_CONTRACT_ADDR,
     };
 
-    evmc_tx_context const tx_context{};
+    vm::TxContext const tx_context{};
     BlockHashBufferFinalized buffer{};
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
@@ -1607,7 +1607,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs_recursive)
         .value = 0,
         .to = SELFDESTRUCT_CONTRACT_ADDR};
 
-    evmc_tx_context const tx_context{};
+    vm::TxContext const tx_context{};
     BlockHashBufferFinalized buffer{};
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
@@ -1769,7 +1769,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_transfers)
             .to = ADDR_A,
             .data = calldata};
 
-        evmc_tx_context const tx_context{};
+        vm::TxContext const tx_context{};
         BlockHashBufferFinalized buffer{};
         std::vector<CallFrame> call_frames;
         CallTracer call_tracer{tx, call_frames};

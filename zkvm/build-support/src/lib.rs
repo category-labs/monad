@@ -24,6 +24,9 @@ use std::{
 #[cfg(feature = "sp1")]
 use std::process::Command;
 
+/// Environment variables forwarded to the guest's CMake configuration.
+const GUEST_SETTINGS: &[&str] = &["MONAD_ZKVM_GIT_COMMIT"];
+
 #[derive(Clone, Copy, Debug)]
 pub enum Backend {
     Zisk,
@@ -76,6 +79,15 @@ impl Backend {
         // Allow discovery of the host's header-only Boost.Outcome package.
         let prefix_path = env::var("CMAKE_PREFIX_PATH").unwrap_or_else(|_| "/usr".to_string());
         cfg.define("CMAKE_PREFIX_PATH", &prefix_path);
+
+        // Guest settings reach CMake from the environment, by name rather
+        // than as arbitrary definitions. The commit comes from the caller:
+        // a reference build runs from a source archive without Git metadata.
+        for name in GUEST_SETTINGS {
+            if let Ok(value) = env::var(name) {
+                cfg.define(name, value);
+            }
+        }
 
         cfg.build().join("build")
     }
@@ -224,6 +236,9 @@ fn locate_repo_root(manifest: &Path) -> PathBuf {
 }
 
 fn emit_rerun_directives(repo_root: &Path) {
+    for name in GUEST_SETTINGS {
+        println!("cargo:rerun-if-env-changed={name}");
+    }
     // Everything the guest cmake build reads. Emitting any rerun-if-changed
     // disables Cargo's rerun-on-any-change default, so an input missing here
     // leaves a stale guest marked fresh. Cargo scans each directory

@@ -48,6 +48,25 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
             "MONAD_COMPILER_TESTING is not supported in zkVM builds")
     endif()
 
+    # Stamp the ELF with the source commit when the build supplies one, so a
+    # build's origin is never ambiguous. Only execute_witness.cpp reads it, so
+    # a new commit recompiles that file alone.
+    if(DEFINED MONAD_ZKVM_GIT_COMMIT)
+        string(LENGTH "${MONAD_ZKVM_GIT_COMMIT}" _git_commit_length)
+        if(NOT _git_commit_length EQUAL 40 OR
+           NOT MONAD_ZKVM_GIT_COMMIT MATCHES "^[0-9a-f]+$")
+            message(FATAL_ERROR
+                "MONAD_ZKVM_GIT_COMMIT must be a full lowercase Git SHA")
+        endif()
+        set(_monad_zkvm_build_commit "${MONAD_ZKVM_GIT_COMMIT}")
+    else()
+        set(_monad_zkvm_build_commit "none")
+    endif()
+    set_source_files_properties(
+        "${CMAKE_CURRENT_SOURCE_DIR}/execute_witness.cpp"
+        PROPERTIES COMPILE_DEFINITIONS
+        "MONAD_ZKVM_BUILD_COMMIT=\"${_monad_zkvm_build_commit}\"")
+
     # The riscv64-elf toolchain file specifies these as CMAKE_*_FLAGS_INIT,
     # but cmake-rs (driving this cmake invocation from build.rs) overrides
     # CMAKE_*_FLAGS with cc-rs's target-arch flags only — dropping the

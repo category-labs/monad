@@ -22,11 +22,13 @@
 #include <category/execution/monad/staking/util/constants.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/message.hpp>
+#include <category/vm/evm/result.hpp>
+#include <category/vm/evm/status_code.h>
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
 template <Traits traits, typename Contract, Address contract_address>
-std::optional<evmc::Result> check_call_monad_precompile(
+std::optional<vm::Result> check_call_monad_precompile(
     State &state, CallTracerBase &call_tracer, vm::Message const &msg)
 {
 
@@ -35,14 +37,14 @@ std::optional<evmc::Result> check_call_monad_precompile(
     }
 
     if (MONAD_UNLIKELY(msg.kind != vm::CallKind::Call) || (msg.flags != 0)) {
-        return evmc::Result{evmc_status_code::EVMC_REJECTED};
+        return vm::Result{MONAD_STATUS_REJECTED};
     }
 
     byte_string_view input{msg.input_data, msg.input_size};
     auto const [method, cost] =
         Contract::template precompile_dispatch<traits>(input);
     if (MONAD_UNLIKELY(std::cmp_less(msg.gas, cost))) {
-        return evmc::Result{evmc_status_code::EVMC_OUT_OF_GAS};
+        return vm::Result{MONAD_STATUS_OUT_OF_GAS};
     }
 
     Contract contract = Contract{state, call_tracer};
@@ -50,15 +52,15 @@ std::optional<evmc::Result> check_call_monad_precompile(
     if (MONAD_LIKELY(res.has_value())) {
         int64_t const gas_left = msg.gas - static_cast<int64_t>(cost);
         int64_t const gas_refund = 0;
-        return evmc::Result(
-            EVMC_SUCCESS,
+        return vm::Result(
+            MONAD_STATUS_SUCCESS,
             gas_left,
             gas_refund,
             res.value().data(),
             res.value().size());
     }
-    return evmc::Result(
-        EVMC_REVERT,
+    return vm::Result(
+        MONAD_STATUS_REVERT,
         0 /* gas left */,
         0 /* gas refund */,
         reinterpret_cast<uint8_t const *>(res.error().message().data()),
@@ -83,7 +85,7 @@ bool is_precompile(Address const &address)
 EXPLICIT_MONAD_TRAITS(is_precompile);
 
 template <Traits traits>
-std::optional<evmc::Result> check_call_precompile(
+std::optional<vm::Result> check_call_precompile(
     State &state, CallTracerBase &call_tracer, vm::Message const &msg)
 {
     if (auto maybe_result = check_call_eth_precompile<traits>(msg)) {

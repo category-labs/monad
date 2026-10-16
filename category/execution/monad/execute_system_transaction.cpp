@@ -39,8 +39,9 @@
 #include <category/execution/monad/validate_system_transaction.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/message.hpp>
+#include <category/vm/evm/result.hpp>
+#include <category/vm/evm/status_code.h>
 #include <category/vm/evm/traits.hpp>
-#include <evmc/evmc.h>
 
 #include <cstdint>
 
@@ -181,7 +182,7 @@ Result<void> ExecuteSystemTransaction<traits>::execute(State &state)
     state.push();
     call_tracer_.on_enter(to_message());
     BOOST_OUTCOME_TRY(execute_staking_syscall(state, tx_.data, tx_.value));
-    call_tracer_.on_exit(evmc::Result{EVMC_SUCCESS});
+    call_tracer_.on_exit(vm::Result{MONAD_STATUS_SUCCESS});
     state.pop_accept();
 
     return success();

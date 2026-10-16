@@ -23,6 +23,7 @@
 #include <category/vm/compiler.hpp>
 #include <category/vm/evm/message.hpp>
 #include <category/vm/evm/revision.h>
+#include <category/vm/evm/status_code.h>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/vm.hpp>
@@ -35,9 +36,6 @@
 #include <test/vm/utils/test_memory.hpp>
 
 #include "benchmarktest.hpp"
-
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 
 #include <benchmark/benchmark.h>
 
@@ -212,7 +210,7 @@ namespace
             auto const result = monad_vm.execute<MonadTraits<rev>>(
                 test_host.get_evmc_host(), &msg, code_hash, vcode);
 
-            MONAD_ASSERT(result.status_code == EVMC_SUCCESS);
+            MONAD_ASSERT(result.status_code == MONAD_STATUS_SUCCESS);
         }
     }
 
@@ -277,10 +275,10 @@ namespace
                           test_host.get_evmc_host(), &msg, code_hash, vcode);
 
             if (assert_success) {
-                MONAD_ASSERT(result.status_code == EVMC_SUCCESS);
+                MONAD_ASSERT(result.status_code == MONAD_STATUS_SUCCESS);
             }
             else {
-                MONAD_ASSERT(result.status_code != EVMC_SUCCESS);
+                MONAD_ASSERT(result.status_code != MONAD_STATUS_SUCCESS);
             }
         }
     }

@@ -22,14 +22,13 @@
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/message.hpp>
+#include <category/vm/evm/result.hpp>
+#include <category/vm/evm/status_code.h>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/host.hpp>
 #include <category/vm/runtime/bin.hpp>
 #include <category/vm/runtime/transmute.hpp>
 #include <category/vm/runtime/types.hpp>
-
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 
 #include <bit>
 #include <cstdint>
@@ -79,15 +78,6 @@ extern "C" void monad_vm_runtime_increase_capacity(
 
 namespace monad::vm::runtime
 {
-    namespace
-    {
-        void release_result(evmc_result const *const result)
-        {
-            MONAD_DEBUG_ASSERT(result);
-            std::free(const_cast<uint8_t *>(result->output_data));
-        }
-    }
-
     Context Context::from(
         Host &host, Message const *const msg,
         std::span<uint8_t const> const code) noexcept
@@ -152,31 +142,17 @@ namespace monad::vm::runtime
         monad_vm_runtime_increase_capacity(this, old_size, new_size);
     }
 
-    static evmc::Result evmc_error_result(evmc_status_code const code) noexcept
-    {
-        return evmc::Result{evmc_result{
-            .status_code = code,
-            .gas_left = 0,
-            .gas_refund = 0,
-            .output_data = nullptr,
-            .output_size = 0,
-            .release = nullptr,
-            .create_address = {},
-            .padding = {},
-        }};
-    }
-
     template <Traits traits>
-    std::variant<std::span<uint8_t const>, evmc_status_code>
+    std::variant<std::span<uint8_t const>, monad_status_code>
     Context::copy_result_data()
     {
         if (gas_remaining < 0) {
-            return EVMC_OUT_OF_GAS;
+            return MONAD_STATUS_OUT_OF_GAS;
         }
 
         auto const size_word = std::bit_cast<uint256_t>(result.size);
         if (!is_bounded_by_bits<Memory::offset_bits>(size_word)) {
-            return EVMC_OUT_OF_GAS;
+            return MONAD_STATUS_OUT_OF_GAS;
         }
 
         auto const size =
@@ -187,7 +163,7 @@ namespace monad::vm::runtime
 
         auto const offset_word = std::bit_cast<uint256_t>(result.offset);
         if (!is_bounded_by_bits<Memory::offset_bits>(offset_word)) {
-            return EVMC_OUT_OF_GAS;
+            return MONAD_STATUS_OUT_OF_GAS;
         }
 
         auto const offset =
@@ -215,7 +191,7 @@ namespace monad::vm::runtime
             if (MONAD_UNLIKELY(!is_memory_size_in_bound<traits>(memory_end))) {
                 // Return out-of-gas error code, similar to when an
                 // `is_bounded_by_bits` check fails.
-                return EVMC_OUT_OF_GAS;
+                return MONAD_STATUS_OUT_OF_GAS;
             }
 
             auto const memory_cost =
@@ -224,7 +200,7 @@ namespace monad::vm::runtime
             gas_remaining -= memory_cost - memory.cost;
 
             if (gas_remaining < 0) {
-                return EVMC_OUT_OF_GAS;
+                return MONAD_STATUS_OUT_OF_GAS;
             }
 
             output_buf = allocate_output_buf();
@@ -245,37 +221,36 @@ namespace monad::vm::runtime
     EXPLICIT_TRAITS_MEMBER(Context::copy_result_data);
 
     template <Traits traits>
-    evmc::Result Context::copy_to_evmc_result()
+    vm::Result Context::copy_to_result()
     {
         using enum StatusCode;
 
         if (MONAD_UNLIKELY(result.status == Error)) {
-            return evmc_error_result(EVMC_FAILURE);
+            return vm::Result{MONAD_STATUS_FAILURE};
         }
         if (MONAD_UNLIKELY(result.status == OutOfGas)) {
-            return evmc_error_result(EVMC_OUT_OF_GAS);
+            return vm::Result{MONAD_STATUS_OUT_OF_GAS};
         }
 
         MONAD_DEBUG_ASSERT(result.status == Success || result.status == Revert);
 
         return std::visit(
             Cases{
-                [](evmc_status_code ec) { return evmc_error_result(ec); },
+                [](monad_status_code ec) { return vm::Result{ec}; },
                 [this](std::span<uint8_t const> output) {
-                    return evmc::Result{evmc_result{
-                        .status_code = result.status == Success ? EVMC_SUCCESS
-                                                                : EVMC_REVERT,
+                    return vm::Result{vm::RawResult{
+                        .status_code = result.status == Success
+                                           ? MONAD_STATUS_SUCCESS
+                                           : MONAD_STATUS_REVERT,
                         .gas_left = gas_remaining,
                         .gas_refund = result.status == Success ? gas_refund : 0,
                         .output_data = output.data(),
                         .output_size = output.size(),
-                        .release = release_result,
                         .create_address = {},
-                        .padding = {},
                     }};
                 }},
             copy_result_data<traits>());
     }
 
-    EXPLICIT_TRAITS_MEMBER(Context::copy_to_evmc_result);
+    EXPLICIT_TRAITS_MEMBER(Context::copy_to_result);
 }

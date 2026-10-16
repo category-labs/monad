@@ -57,44 +57,15 @@ Result<void> static_validate_transaction(
         }
     }
 
-    // EIP-4844
-    if constexpr (!traits::eip_4844_active()) {
-        if (MONAD_UNLIKELY(tx.type == TransactionType::eip4844)) {
-            return TransactionError::TypeNotSupported;
-        }
-    }
-
-    // TODO: remove the below logic once we fully migrate over to traits
-    if constexpr (!traits::eip_1559_header_active()) {
-        if (MONAD_UNLIKELY(
-                tx.type != TransactionType::legacy &&
-                tx.type != TransactionType::eip2930)) {
-            return TransactionError::TypeNotSupported;
-        }
-    }
-    else if constexpr (traits::evm_rev() < MONAD_ETH_CANCUN) {
-        if (MONAD_UNLIKELY(
-                tx.type != TransactionType::legacy &&
-                tx.type != TransactionType::eip2930 &&
-                tx.type != TransactionType::eip1559)) {
-            return TransactionError::TypeNotSupported;
-        }
-    }
-    else if constexpr (!traits::eip_7702_active()) {
-        if (MONAD_UNLIKELY(
-                tx.type != TransactionType::legacy &&
-                tx.type != TransactionType::eip2930 &&
-                tx.type != TransactionType::eip1559 &&
-                tx.type != TransactionType::eip4844)) {
-            return TransactionError::TypeNotSupported;
-        }
-    }
-    else if (MONAD_UNLIKELY(
-                 tx.type != TransactionType::legacy &&
-                 tx.type != TransactionType::eip2930 &&
-                 tx.type != TransactionType::eip1559 &&
-                 tx.type != TransactionType::eip4844 &&
-                 tx.type != TransactionType::eip7702)) {
+    // EIP-2718
+    bool const type_supported =
+        tx.type == TransactionType::legacy ||
+        tx.type == TransactionType::eip2930 ||
+        (tx.type == TransactionType::eip1559 &&
+         traits::eip_1559_header_active()) ||
+        (tx.type == TransactionType::eip4844 && traits::eip_4844_active()) ||
+        (tx.type == TransactionType::eip7702 && traits::eip_7702_active());
+    if (MONAD_UNLIKELY(!type_supported)) {
         return TransactionError::TypeNotSupported;
     }
 
@@ -160,7 +131,7 @@ Result<void> static_validate_transaction(
         return TransactionError::InvalidSignature;
     }
 
-    if constexpr (traits::evm_rev() >= MONAD_ETH_CANCUN) {
+    if constexpr (traits::eip_4844_active()) {
         if (tx.type == TransactionType::eip4844) {
             if (MONAD_UNLIKELY(tx.blob_versioned_hashes.empty())) {
                 return TransactionError::InvalidBlobHash;

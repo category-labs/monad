@@ -342,7 +342,8 @@ public:
 #endif
         }
         v_.emplace_back(k, v);
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
+        // find() consults the index on both guests, so both must keep it
         idx_.on_insert(v_);
 #endif
     }

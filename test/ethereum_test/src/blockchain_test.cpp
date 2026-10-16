@@ -784,7 +784,8 @@ MONAD_TEST_NAMESPACE_BEGIN
 void BlockchainTest::SetUpTestSuite()
 {
     pool_ = new fiber::PriorityPool{1, 1};
-    ASSERT_TRUE(monad::init_trusted_setup());
+    monad::init_trusted_setup();
+    ASSERT_TRUE(monad::check_trusted_setup());
 }
 
 void BlockchainTest::TearDownTestSuite()

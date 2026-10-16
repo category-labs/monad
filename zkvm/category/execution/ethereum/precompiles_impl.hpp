@@ -151,7 +151,9 @@ namespace
 
 MONAD_NAMESPACE_BEGIN
 
-inline bool init_trusted_setup()
+inline void init_trusted_setup() {}
+
+inline bool check_trusted_setup()
 {
     return true;
 }

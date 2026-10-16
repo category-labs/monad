@@ -33,6 +33,11 @@
 #include <variant>
 #include <vector>
 
+namespace monad::vm
+{
+    class Host;
+}
+
 namespace monad::vm::runtime
 {
     enum class StatusCode : uint64_t
@@ -227,14 +232,13 @@ namespace monad::vm::runtime
     struct Context
     {
         static Context from(
-            evmc_host_interface const *host, evmc_host_context *context,
-            evmc_message const *msg, std::span<uint8_t const> code) noexcept;
+            Host &host, evmc_message const *msg,
+            std::span<uint8_t const> code) noexcept;
 
         static Context
         empty(uint8_t *memory_handle, uint32_t memory_capacity) noexcept;
 
-        evmc_host_interface const *host;
-        evmc_host_context *context;
+        Host *host;
 
         int64_t gas_remaining;
         int64_t gas_refund;
@@ -399,8 +403,8 @@ namespace monad::vm::runtime
     };
 
     // Update context.S accordingly if these offsets change:
-    static_assert(offsetof(Context, gas_remaining) == 16);
-    static_assert(offsetof(Context, memory) == 264);
+    static_assert(offsetof(Context, gas_remaining) == 8);
+    static_assert(offsetof(Context, memory) == 256);
     static_assert(offsetof(Memory, size) == 0);
     static_assert(offsetof(Memory, capacity) == 4);
     static_assert(offsetof(Memory, data) == 8);

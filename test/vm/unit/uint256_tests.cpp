@@ -150,9 +150,9 @@ TEST(uint256, sar)
 
 TEST(uint256, countl_zero)
 {
-    ASSERT_EQ(countl_zero(uint256_t{0}), 256);
-    for (size_t n = 0; n < 256; ++n) {
-        ASSERT_EQ(countl_zero(uint256_t{1} << n), 255 - n);
+    ASSERT_EQ(countl_zero(uint256_t{0}), uint256_t::num_bits);
+    for (size_t n = 0; n < uint256_t::num_bits; ++n) {
+        ASSERT_EQ(countl_zero(uint256_t{1} << n), uint256_t::num_bits - 1 - n);
         ASSERT_EQ(countl_zero(~uint256_t{0} >> n), n);
     }
 }
@@ -168,6 +168,9 @@ void test_bit_width()
 
 TEST(uint256, bit_width)
 {
+    constexpr uint256_t zero{0};
+    ASSERT_EQ(bit_width(zero), 0);
+    ASSERT_EQ(bit_width(zero.as_words()), 0);
     test_bit_width<255>();
 }
 
@@ -589,6 +592,22 @@ TEST(uint256, multiplication)
             check_truncating_mul<8>(x, y, intx_product);
         }
     }
+}
+
+TEST(uint256, division_zero_extends_short_dividend)
+{
+    constexpr words_t<2> dividend{0x0123456789abcdef, 1};
+    constexpr words_t<4> divisor{0, 0, 1, 0};
+    constexpr words_t<2> expected_quotient{0, 0};
+    constexpr words_t<4> expected_remainder{dividend[0], dividend[1], 0, 0};
+
+    constexpr auto consteval_result = udivrem(dividend, divisor);
+    static_assert(consteval_result.quot == expected_quotient);
+    static_assert(consteval_result.rem == expected_remainder);
+
+    auto const runtime_result = udivrem(dividend, divisor);
+    EXPECT_EQ(runtime_result.quot, expected_quotient);
+    EXPECT_EQ(runtime_result.rem, expected_remainder);
 }
 
 TEST(uint256, division)

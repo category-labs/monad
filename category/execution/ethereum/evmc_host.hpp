@@ -32,6 +32,7 @@
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/vm/evm/access_status.h>
 #include <category/vm/evm/delegation.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/page_storage_status.h>
 #include <category/vm/evm/storage_status.h>
 #include <category/vm/evm/traits.hpp>
@@ -165,11 +166,12 @@ struct EvmcHost final : public EvmcHostBase
         stack_unwind();
     }
 
-    virtual evmc::Result call(evmc_message const &msg) override
+    virtual evmc::Result call(vm::Message const &msg) override
     {
         MONAD_TRY
         {
-            if (msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2) {
+            if (msg.kind == vm::CallKind::Create ||
+                msg.kind == vm::CallKind::Create2) {
                 auto result =
                     ::monad::execute_create_message<traits>(this, state_, msg);
 

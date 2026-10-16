@@ -19,6 +19,7 @@
 #include <category/core/likely.h>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/revision.h>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/host.hpp>
@@ -31,6 +32,7 @@
 #include <evmc/evmc.hpp>
 
 #include <cstdint>
+#include <utility>
 
 namespace monad::vm::runtime
 {
@@ -48,11 +50,12 @@ namespace monad::vm::runtime
     uint256_t create_impl(
         Context *ctx, uint256_t const &value, uint256_t const &offset_word,
         uint256_t const &size_word, uint256_t const &salt_word,
-        evmc_call_kind const kind, int64_t const remaining_block_base_gas)
+        CallKind const kind, int64_t const remaining_block_base_gas)
     {
         static_assert(traits::evm_rev() >= MONAD_ETH_TANGERINE_WHISTLE);
 
-        if (MONAD_UNLIKELY(ctx->env.evmc_flags & EVMC_STATIC)) {
+        if (MONAD_UNLIKELY(
+                ctx->env.flags & std::to_underlying(CallFlags::Static))) {
             ctx->exit(StatusCode::Error);
         }
 
@@ -81,7 +84,7 @@ namespace monad::vm::runtime
         }
 
         auto const min_words = shr_ceil<5>(size);
-        auto const word_cost = (kind == EVMC_CREATE2)
+        auto const word_cost = (kind == CallKind::Create2)
                                    ? create2_code_word_cost(traits::evm_rev())
                                    : create_code_word_cost(traits::evm_rev());
 
@@ -94,7 +97,7 @@ namespace monad::vm::runtime
         auto gas = ctx->gas_remaining + remaining_block_base_gas;
         gas = gas - (gas / 64);
 
-        auto const message = evmc_message{
+        auto const message = Message{
             .kind = kind,
             .flags = 0,
             .depth = ctx->env.depth + 1,
@@ -103,9 +106,8 @@ namespace monad::vm::runtime
             .sender = ctx->env.recipient,
             .input_data = (*size > 0) ? ctx->memory.data + *offset : nullptr,
             .input_size = *size,
-            .value = static_cast<evmc::bytes32>(store_be_as<bytes32_t>(value)),
-            .create2_salt =
-                static_cast<evmc::bytes32>(store_be_as<bytes32_t>(salt_word)),
+            .value = store_be_as<bytes32_t>(value),
+            .create2_salt = store_be_as<bytes32_t>(salt_word),
             .code_address = {},
             .memory_handle = ctx->memory.data_handle,
             .memory = ctx->memory.data + ctx->memory.size,
@@ -142,7 +144,7 @@ namespace monad::vm::runtime
             *offset_ptr,
             *size_ptr,
             0,
-            EVMC_CREATE,
+            CallKind::Create,
             remaining_block_base_gas);
     }
 
@@ -160,7 +162,7 @@ namespace monad::vm::runtime
             *offset_ptr,
             *size_ptr,
             *salt_ptr,
-            EVMC_CREATE2,
+            CallKind::Create2,
             remaining_block_base_gas);
     }
 

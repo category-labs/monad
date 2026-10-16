@@ -63,6 +63,4 @@ jobs:
           target: code_quality
           setup: true
           submodules: true
-          cache-from: |
-            type=gha,scope=base_vm_test
-            type=gha,scope=base
+          cache-from: type=gha,scope=base_vm_test

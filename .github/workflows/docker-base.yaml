@@ -45,7 +45,6 @@ jobs:
           cache-to: type=gha,scope=test_fixtures
 
   cache-rust:
-    needs: build-base
     runs-on: ubuntu-26.04-32
     timeout-minutes: 90
 
@@ -57,13 +56,10 @@ jobs:
         with:
           target: base_rust
           setup: true
-          cache-from: |
-            type=gha,scope=base_rust
-            type=gha,scope=base
+          cache-from: type=gha,scope=base_rust
           cache-to: type=gha,scope=base_rust
 
   cache-ocaml:
-    needs: build-base
     runs-on: ubuntu-26.04-32
     timeout-minutes: 90
 
@@ -78,13 +74,10 @@ jobs:
         with:
           target: base_vm_test
           setup: true
-          cache-from: |
-            type=gha,scope=base_vm_test
-            type=gha,scope=base
+          cache-from: type=gha,scope=base_vm_test
           cache-to: type=gha,scope=base_vm_test
 
   cache-riscv:
-    needs: build-base
     runs-on: ubuntu-26.04-32
     timeout-minutes: 90
 
@@ -96,7 +89,5 @@ jobs:
         with:
           target: base_riscv_toolchain
           setup: true
-          cache-from: |
-            type=gha,scope=riscv-toolchain
-            type=gha,scope=base
+          cache-from: type=gha,scope=riscv-toolchain
           cache-to: type=gha,mode=max,scope=riscv-toolchain

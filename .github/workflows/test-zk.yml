@@ -29,6 +29,4 @@ jobs:
           target: build_zk
           setup: true
           submodules: true
-          cache-from: |
-            type=gha,scope=riscv-toolchain
-            type=gha,scope=base
+          cache-from: type=gha,scope=riscv-toolchain

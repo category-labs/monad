@@ -373,8 +373,26 @@ DirtyAccounts const &State::current_frame_dirty_accounts() const
 }
 #endif
 
+#if defined(MONAD_ZKVM_ZISK)
+void State::push_after_growing()
+{
+    undo_marks_.reserve(2 * undo_marks_.capacity() + 1);
+    log_marks_.reserve(2 * log_marks_.capacity() + 1);
+    push();
+}
+#endif
+
 void State::push()
 {
+#if defined(MONAD_ZKVM_ZISK)
+    // Keep vector growth out of the common path so it can avoid the call's
+    // register saves when both mark vectors have room.
+    if (MONAD_UNLIKELY(
+            undo_marks_.size() == undo_marks_.capacity() ||
+            log_marks_.size() == log_marks_.capacity())) {
+        return push_after_growing();
+    }
+#endif
 #if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
     MONAD_ASSERT(dirty_.size() == version_);
 #else

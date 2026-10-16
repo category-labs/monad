@@ -399,6 +399,10 @@ public:
     Map<bytes32_t, vm::SharedVarcode> const &code() const;
 
     void push();
+#if defined(MONAD_ZKVM_ZISK)
+    // Grow both mark vectors, then retry push with enough capacity.
+    [[gnu::noinline, gnu::cold]] void push_after_growing();
+#endif
 
     void pop_accept();
 

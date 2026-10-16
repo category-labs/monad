@@ -48,6 +48,41 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
             "MONAD_COMPILER_TESTING is not supported in zkVM builds")
     endif()
 
+    # Reference configuration for ZisK benchmarks and releases: the options
+    # it requires are forced on, and the ELF is stamped with the source
+    # commit. OFF allows development builds with other compilers or options.
+    option(MONAD_ZKVM_OFFICIAL_PROFILE
+           "require the reference ZisK build options" OFF)
+    if(MONAD_ZKVM_OFFICIAL_PROFILE AND
+       NOT MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
+        message(FATAL_ERROR
+            "MONAD_ZKVM_OFFICIAL_PROFILE is a ZisK-only build profile")
+    endif()
+
+    # Stamp official builds with the commit and development builds with an
+    # explicit marker, so an ELF's origin is never ambiguous. Only
+    # execute_witness.cpp reads the commit, so a new commit recompiles that
+    # file alone.
+    if(MONAD_ZKVM_OFFICIAL_PROFILE)
+        if(NOT DEFINED MONAD_ZKVM_GIT_COMMIT)
+            message(FATAL_ERROR
+                "official ZisK profile requires MONAD_ZKVM_GIT_COMMIT")
+        endif()
+        string(LENGTH "${MONAD_ZKVM_GIT_COMMIT}" _git_commit_length)
+        if(NOT _git_commit_length EQUAL 40 OR
+           NOT MONAD_ZKVM_GIT_COMMIT MATCHES "^[0-9a-f]+$")
+            message(FATAL_ERROR
+                "MONAD_ZKVM_GIT_COMMIT must be a full lowercase Git SHA")
+        endif()
+        add_compile_definitions(MONAD_ZKVM_OFFICIAL_PROFILE=1)
+        set_source_files_properties(
+            "${CMAKE_CURRENT_SOURCE_DIR}/execute_witness.cpp"
+            PROPERTIES COMPILE_DEFINITIONS
+            "MONAD_ZKVM_BUILD_COMMIT=\"${MONAD_ZKVM_GIT_COMMIT}\"")
+    else()
+        add_compile_definitions(MONAD_ZKVM_DEV_PROFILE=1)
+    endif()
+
     # The riscv64-elf toolchain file specifies these as CMAKE_*_FLAGS_INIT,
     # but cmake-rs (driving this cmake invocation from build.rs) overrides
     # CMAKE_*_FLAGS with cc-rs's target-arch flags only — dropping the

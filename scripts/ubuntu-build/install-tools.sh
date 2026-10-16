@@ -1,22 +1,24 @@
 #!/bin/bash
 
+source "$(dirname "$0")/toolchain.env"
+
 packages=(
   apt-utils
   ca-certificates
-  clang-19
-  clang-tools-19
-  clang-tidy-19
+  clang-${LLVM_VERSION}
+  clang-tools-${LLVM_VERSION}
+  clang-tidy-${LLVM_VERSION}
   cmake
   curl
   dialog
-  g++-15
-  gcc-15
+  g++-${GCC_VERSION}
+  gcc-${GCC_VERSION}
   gdb
   git
   gnupg
-  libclang-common-19-dev
-  libclang-rt-19-dev
-  llvm-19-dev
+  libclang-common-${LLVM_VERSION}-dev
+  libclang-rt-${LLVM_VERSION}-dev
+  llvm-${LLVM_VERSION}-dev
   make
   ninja-build
   pkg-config

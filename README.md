@@ -123,10 +123,10 @@ CTEST_PARALLEL_LEVEL=$(nproc) ctest
 To compile monad as a guest program for various zkVMs, such as ZisK or SP1, we need to use a riscv64 cross-compiler that includes newlib. The cmake build extracts only the needed libc objects (setjmp/longjmp) from the unmodified newlib; malloc and syscalls are weakly linked by the zkVM frameworks.
 
 The toolchain is provided by nix, which is what CI uses. Flakes must be
-enabled; see [nix/README.md](nix/README.md).
+enabled; see [nix/zisk/README.md](nix/zisk/README.md).
 
 ```shell
-nix build ./nix#toolchainEnv
+nix build .#riscv64-none-elf-toolchain
 ```
 
 A [riscv-gnu-toolchain](https://github.com/riscv-collab/riscv-gnu-toolchain) build also works if you already have one; pass whichever prefix you have as `RISCV_TOOLCHAIN_DIR`.

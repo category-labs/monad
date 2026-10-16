@@ -58,27 +58,13 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     string(APPEND CMAKE_CXX_FLAGS
         " -mcmodel=medany -nostartfiles -nostdlib++ -fno-exceptions -fno-rtti")
 
-    # ZisK-only codegen tuning, duplicated from Polygon's ziskethone guest
-    # (github.com/0xPolygonHermez/ziskethone, cpp-guest/zisk/toolchain.cmake +
-    # cpp-guest/zisk/CMakeLists.txt).
-    #  - -march adds Zbb/Zbs/Zbkb, transpiled natively by ZisK >= v1.2.0-alpha.
-    #  - -mtune=size was ziskethone's dominant single win (-13% block cost);
-    #    -funroll-loops + the widened inliner --params cut call/loop overhead
-    #    on hot paths; -fno-schedule-insns* drops scheduling that only helps
-    #    real pipelines; -fno-jump-tables avoids indirect jumps. Combined
-    #    measurement upstream: -16% block cost / -21.6% steps. -flto was
-    #    rejected there (marginal gain, overran the ZisK RAM ceiling).
-    #  - -fno-pic: cmake-rs injects cc-rs's -fPIC, but the guest is a
-    #    statically linked fixed-address ELF, so PIC only buys GOT
-    #    indirections on global accesses.
-    #
-    # These are appended (not set via CMAKE_*_FLAGS_INIT) because cmake-rs
-    # overrides CMAKE_*_FLAGS, and the -march must land after cc-rs's
-    # -march=rv64ima — the last flag wins.
+    # Match the guest ISA and keep the inherited compiler tuning here.
+    # Override Nix's frame-pointer default for consistency with local GCC.
     if(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
-        set(_zisk_march "-march=rv64ima_zicsr_zbb_zbs_zbkb -mabi=lp64")
+        set(_zisk_march "-march=rv64ima_zicsr_zba_zbb_zbs_zbkb -mabi=lp64")
         string(JOIN " " _zisk_opt
             "-fno-pic"
+            "-fomit-frame-pointer"
             "-mtune=size"
             "-funroll-loops"
             "--param=max-inline-insns-single=1600"
@@ -105,7 +91,39 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         add_compile_definitions(MONAD_ZKVM_SP1)
     elseif(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
         add_compile_definitions(MONAD_ZKVM_ZISK)
+
+        # Lower eligible block memory operations, including struct copies,
+        # directly to ZisK DMA. Requires Zicsr and the patched GCC.
+        # Nix checks the emitted markers when building the toolchain.
+        option(MONAD_ZKVM_ZISK_DMA
+               "lower block mem* to the ZisK DMA precompile" OFF)
+        if(MONAD_ZKVM_ZISK_DMA)
+            string(APPEND CMAKE_C_FLAGS " -mzisk-dma")
+            string(APPEND CMAKE_CXX_FLAGS " -mzisk-dma")
+        endif()
+
     endif()
+
+    if(DEFINED MONAD_ZKVM_GIT_COMMIT AND NOT MONAD_ZKVM_GIT_COMMIT STREQUAL "")
+        string(LENGTH "${MONAD_ZKVM_GIT_COMMIT}" _git_commit_length)
+        if(NOT _git_commit_length EQUAL 40 OR
+           NOT MONAD_ZKVM_GIT_COMMIT MATCHES "^[0-9a-f]+$")
+            message(FATAL_ERROR
+                "MONAD_ZKVM_GIT_COMMIT must be a full lowercase Git SHA")
+        endif()
+        set(_monad_zkvm_build_commit "${MONAD_ZKVM_GIT_COMMIT}")
+    else()
+        set(_monad_zkvm_build_commit "none")
+    endif()
+    # Free-form build ID; Nix supplies the output store path's basename.
+    if(DEFINED MONAD_ZKVM_BUILD_ID)
+        set(_monad_zkvm_build_id "${MONAD_ZKVM_BUILD_ID}")
+    else()
+        set(_monad_zkvm_build_id "none")
+    endif()
+    set(_monad_zkvm_stamp_defs
+        "MONAD_ZKVM_BUILD_COMMIT=\"${_monad_zkvm_build_commit}\""
+        "MONAD_ZKVM_BUILD_ID=\"${_monad_zkvm_build_id}\"")
 
     # Repo + third-party paths.
     set(MONAD_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")
@@ -231,8 +249,12 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
 
     # ---- Extract setjmp/longjmp from the compiler's newlib libc.a ----
 
+    # Match the guest's -march/-mabi when selecting multilib libraries.
+    # The compiler default may otherwise select incompatible RV32 objects.
+    separate_arguments(_arch_query UNIX_COMMAND "${CMAKE_C_FLAGS}")
+
     execute_process(
-        COMMAND ${CMAKE_C_COMPILER} -print-file-name=libc.a
+        COMMAND ${CMAKE_C_COMPILER} ${_arch_query} -print-file-name=libc.a
         OUTPUT_VARIABLE _libc_a
         OUTPUT_STRIP_TRAILING_WHITESPACE
     )
@@ -266,33 +288,42 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
             "libc.a not found via compiler query")
     endif()
 
-    # ---- Extract __popcountdi2 from the compiler's libgcc.a ----
-    # immer's HAMT bit math needs __popcountdi2
-    # the symbol lives in _popcountsi2.o because libgcc names units
-    # by word count (SI = single word = historically 32 bits)
-    # and symbols by machine mode si = 32, di = 64, ti = 128 bits
-    # where risvc64 word is 64 bits, hence __popcount*di*2
-    execute_process(
-        COMMAND ${CMAKE_C_COMPILER} -print-libgcc-file-name
-        OUTPUT_VARIABLE _libgcc_a
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
-    set(_libgcc_dir "${CMAKE_CURRENT_BINARY_DIR}/_libgcc_objs")
-    file(MAKE_DIRECTORY "${_libgcc_dir}")
-    if(EXISTS "${_libgcc_a}")
+    # ZisK uses Zbb's cpop instruction. Other guests use libgcc's
+    # __popcountdi2 from _popcountsi2.o. Give it a separate section so
+    # --gc-sections can discard it when unused.
+    set(_libgcc_objs "")
+    if(NOT MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
+        execute_process(
+            COMMAND ${CMAKE_C_COMPILER} ${_arch_query} -print-libgcc-file-name
+            OUTPUT_VARIABLE _libgcc_a
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+        )
+        set(_libgcc_dir "${CMAKE_CURRENT_BINARY_DIR}/_libgcc_objs")
+        file(MAKE_DIRECTORY "${_libgcc_dir}")
+        if(NOT EXISTS "${_libgcc_a}")
+            message(FATAL_ERROR
+                "libgcc.a not found via compiler query")
+        endif()
         execute_process(
             COMMAND ${CMAKE_AR} x "${_libgcc_a}" "_popcountsi2.o"
             WORKING_DIRECTORY "${_libgcc_dir}"
         )
-        file(GLOB _libgcc_objs "${_libgcc_dir}/*.o")
-        if(NOT _libgcc_objs)
+        if(NOT EXISTS "${_libgcc_dir}/_popcountsi2.o")
             message(FATAL_ERROR
                 "Failed to extract __popcountdi2 from ${_libgcc_a}")
         endif()
-    else()
-        message(FATAL_ERROR
-            "libgcc.a not found via compiler query")
+        execute_process(
+            COMMAND ${CMAKE_OBJCOPY} --rename-section .text=.text.libgcc_popcount
+                    "${_libgcc_dir}/_popcountsi2.o"
+            RESULT_VARIABLE _objcopy_rc
+        )
+        if(NOT _objcopy_rc EQUAL 0)
+            message(FATAL_ERROR
+                "Failed to give __popcountdi2 a section of its own")
+        endif()
+        set(_libgcc_objs "${_libgcc_dir}/_popcountsi2.o")
     endif()
+
 
     # ---- Bare-metal libc / libstdc++ stubs ----
 
@@ -384,6 +415,12 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
 
     # validate_block.cpp carries the validators and the BlockError
     # value_mappings() the shadow used to provide alone.
+
+    # Keep changing build stamps isolated from the other guest objects.
+    if(_monad_zkvm_stamp_defs)
+        set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/build_identity.cpp"
+            PROPERTIES COMPILE_DEFINITIONS "${_monad_zkvm_stamp_defs}")
+    endif()
 
     # Reduced guest deps not present in the inherited host link list.
     target_link_libraries(monad_execution_ethereum
@@ -484,6 +521,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     monad_compile_options(${_guest_target})
     monad_riscv_compile_options(${_guest_target})
 
+
 else()
     # ---- Host x86 mode ----
     # Reached via add_subdirectory(zkvm/guest) from the root host CMakeLists.
@@ -500,10 +538,7 @@ else()
 endif()
 
 # ---- Guest sources, shared by both modes ----
-# The witness pipeline itself. Defined once, after the mode split: the two
-# modes differ only in what these sources compile against — the adapted
-# bare-metal targets on RISC-V, the host's monad_execution on x86 — so only
-# the dependency edge is conditional, never the target or its file list.
+# Both modes share the witness pipeline; only guests carry an ELF build stamp.
 add_library(monad-zkvm-guest OBJECT
     "${CMAKE_CURRENT_SOURCE_DIR}/execute_block.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/execute_witness.cpp"
@@ -512,6 +547,8 @@ add_library(monad-zkvm-guest OBJECT
 monad_compile_options(monad-zkvm-guest)
 target_link_libraries(monad-zkvm-guest PRIVATE zkevm-standards)
 if(DEFINED MONAD_ZKVM_GUEST_TARGET)
+    target_sources(monad-zkvm-guest PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/build_identity.cpp")
     monad_riscv_compile_options(monad-zkvm-guest)
     target_link_libraries(monad-zkvm-guest
         PRIVATE monad-core monad_execution_ethereum)

@@ -207,6 +207,20 @@ def check_runtime(repo: pathlib.Path) -> dict[str, str]:
     return {"version": RUNTIME_VERSION, "revision": RUNTIME_REVISION}
 
 
+def source_commit(repo: pathlib.Path, snapshot_commit: str | None) -> str:
+    if snapshot_commit is not None:
+        if (repo / ".git").exists():
+            fail("--source-commit is only for exported sources without .git")
+        if re.fullmatch(r"[0-9a-f]{40}", snapshot_commit) is None:
+            fail("--source-commit must be a full lowercase Git SHA")
+        # Nix supplies the revision of its immutable input. This audit checks
+        # the ELF against that label; it cannot authenticate it without Git.
+        return snapshot_commit
+    if run("git", "-C", str(repo), "status", "--porcelain", "--untracked-files=normal"):
+        fail("worktree changed after the official build")
+    return run("git", "-C", str(repo), "rev-parse", "HEAD")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--elf", required=True, type=pathlib.Path)
@@ -214,15 +228,17 @@ def main() -> int:
     parser.add_argument("--repo", required=True, type=pathlib.Path)
     parser.add_argument("--cargo-zisk", required=True, type=pathlib.Path)
     parser.add_argument("--manifest", required=True, type=pathlib.Path)
+    parser.add_argument(
+        "--source-commit",
+        help="revision supplied by the builder for exported sources without .git",
+    )
     args = parser.parse_args()
 
     repo = args.repo.resolve()
     elf = args.elf.resolve()
     if not elf.is_file():
         fail("ELF is missing")
-    if run("git", "-C", str(repo), "status", "--porcelain", "--untracked-files=normal"):
-        fail("worktree changed after the official build")
-    commit = run("git", "-C", str(repo), "rev-parse", "HEAD")
+    commit = source_commit(repo, args.source_commit)
     runtime = check_runtime(repo)
     cargo_zisk_version = run(str(args.cargo_zisk), "--version")
     if not cargo_zisk_version.startswith(f"cargo-zisk {RUNTIME_VERSION} "):
@@ -367,6 +383,7 @@ def main() -> int:
         "schema": 2,
         "profile": PROFILE,
         "commit": commit,
+        "source_verification": "builder-snapshot" if args.source_commit else "git-worktree",
         "elf": str(elf),
         "elf_sha256": sha256(elf),
         "compiler": str(compiler),

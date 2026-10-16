@@ -3,7 +3,7 @@
 # Produces a riscv64-none-elf toolchain targeting rv64ima / lp64 (no FPU).
 # Newlib is shipped unmodified; zkvm/guest/CMakeLists.txt extracts only the
 # objects it needs (setjmp/longjmp) by querying -print-file-name=libc.a.
-{ nixpkgs, system }:
+{ nixpkgs, system, zisk ? false }:
 
 let
   # The stock pkgsCross.riscv64-embedded target is lp64d (double-float),
@@ -26,17 +26,27 @@ let
   # compiler itself. gcc15 is the wrapped compiler, which knows where the
   # target's newlib headers and libc.a live; gcc15.cc is the bare one,
   # which does not.
-  cc = pkgs.buildPackages.gcc15;
+  stockCc = pkgs.buildPackages.gcc15;
+  cc = if zisk then stockCc.override {
+    cc = stockCc.cc.overrideAttrs (old: {
+      patches = (old.patches or [ ]) ++ [
+        (import ./zisk-dma-gcc15.nix { inherit (pkgs) lib; })
+        ../zkvm/toolchain/zisk-dma-gcc/0002-riscv.md-forward-port-15.2.0.diff
+        ../zkvm/toolchain/zisk-dma-gcc/0003-riscv-zisk-clean-byte-stores-15.2.0.diff
+      ];
+    });
+  } else stockCc;
   bintools = pkgs.buildPackages.binutils;
 
   # Symlink farm providing a stable <prefix>/bin layout, so the tree can be
   # handed to cmake as -DRISCV_TOOLCHAIN_DIR without callers having to know
   # the hash-named store paths.
   toolchainEnv = pkgs.buildPackages.buildEnv {
-    name = "riscv64-none-elf-toolchain";
+    name = if zisk then "zisk-gcc-toolchain" else "riscv64-none-elf-toolchain";
     paths = [ cc bintools ];
   };
 in
+assert !zisk || cc.version == "15.2.0";
 {
   inherit cc bintools toolchainEnv;
 }

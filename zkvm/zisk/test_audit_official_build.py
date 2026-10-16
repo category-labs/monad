@@ -104,6 +104,32 @@ class FlagTests(unittest.TestCase):
                 audit.check_flags(valid_flags() + " " + tail, "test")
 
 
+class SourceTests(unittest.TestCase):
+    def test_exported_source_needs_a_full_revision(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            self.assertEqual(audit.source_commit(repo, "a" * 40), "a" * 40)
+            for commit in ["", "abc", "A" * 40, "x" * 40]:
+                with self.subTest(commit=commit), self.assertRaises(SystemExit):
+                    audit.source_commit(repo, commit)
+
+    def test_snapshot_label_cannot_bypass_worktree_check(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            # Both Git's directory and a worktree's .git file count.
+            for directory in [False, True]:
+                marker = repo / ".git"
+                marker.mkdir() if directory else marker.touch()
+                with self.assertRaises(SystemExit):
+                    audit.source_commit(repo, "a" * 40)
+                marker.rmdir() if directory else marker.unlink()
+
+    def test_dirty_worktree_still_fails(self):
+        with patch.object(audit, "run", return_value=" M source.cpp"):
+            with self.assertRaises(SystemExit):
+                audit.source_commit(Path("."), None)
+
+
 class ProfileTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -193,11 +219,12 @@ class ProfileTests(unittest.TestCase):
             return "rv64ima_zicsr_zba_zbb_zbs_zbkb"
         raise AssertionError(args)
 
-    def run_audit(self):
+    def run_audit(self, *extra):
         argv = [
             "audit", "--elf", str(self.elf), "--build-root", str(self.build_root),
             "--repo", str(self.repo), "--cargo-zisk", str(self.cargo),
             "--manifest", str(self.manifest),
+            *extra,
         ]
         with patch.object(sys, "argv", argv), \
                 patch.object(audit, "run", side_effect=self.run_tool), \
@@ -209,10 +236,20 @@ class ProfileTests(unittest.TestCase):
         self.run_audit()
         manifest = json.loads(self.manifest.read_text())
         self.assertEqual(manifest["commit"], self.commit)
+        self.assertEqual(manifest["source_verification"], "git-worktree")
         self.assertEqual(
             manifest["evidence"]["cmake_profile_sha256"],
             audit.sha256(self.profile_path),
         )
+
+    def test_snapshot_revision_is_recorded_and_matched_to_elf(self):
+        self.run_audit("--source-commit", self.commit)
+        manifest = json.loads(self.manifest.read_text())
+        self.assertEqual(manifest["source_verification"], "builder-snapshot")
+        self.manifest.unlink()
+        with self.assertRaisesRegex(SystemExit, "no generated CMake profile"):
+            self.run_audit("--source-commit", "d" * 40)
+        self.assertFalse(self.manifest.exists())
 
     def test_newer_profile_with_different_identity_is_ignored(self):
         stale = dict(self.profile, build_signature="c" * 64)

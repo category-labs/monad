@@ -67,8 +67,13 @@ Start each section's commands from the repository root unless stated otherwise.
 ZisK input is an 8-byte little-endian payload length followed by the witness,
 zero-padded to an 8-byte boundary.
 
-`zkvm/zisk/build.sh` builds the guest. Published benchmark and release
-artifacts must use the reference ("official") configuration:
+For a complete build with pinned dependencies on Linux x86_64, use the
+[Nix recipe](../nix/README.md#complete-zisk-guest). It builds the ELF and runs
+the same post-link audit. "Audited" means compliant with the script's checks,
+not demonstrated bit-for-bit reproducibility.
+
+`zkvm/zisk/build.sh` builds the guest with locally installed tools. Published
+benchmark and release artifacts must use the reference ("official") configuration:
 
 ```sh
 zkvm/zisk/build.sh --official

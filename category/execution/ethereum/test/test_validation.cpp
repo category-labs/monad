@@ -336,8 +336,7 @@ TYPED_TEST(TraitsTest, init_code_exceed_limit)
             std::nullopt,
             1,
             default_blob_schedule<typename TestFixture::Trait>());
-    // init codesize validation since EIP-3860
-    if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_SHANGHAI) {
+    if constexpr (TestFixture::Trait::eip_3860_active()) {
         ASSERT_TRUE(result.has_error());
         EXPECT_EQ(result.error(), TransactionError::InitCodeLimitExceeded);
     }

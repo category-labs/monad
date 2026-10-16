@@ -56,8 +56,7 @@ TYPED_TEST(VMTraitsTest, Stop)
 TYPED_TEST(VMTraitsTest, Push0)
 {
     TestFixture::execute(2, {PUSH0});
-    // PUSH0 supported since EIP-3855
-    if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_SHANGHAI) {
+    if constexpr (TestFixture::Trait::eip_3855_active()) {
         ASSERT_EQ(this->result_.status_code, EVMC_SUCCESS);
     }
     else {
@@ -68,7 +67,7 @@ TYPED_TEST(VMTraitsTest, Push0)
 
 TYPED_TEST(VMTraitsTest, PushSeveral)
 {
-    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_SHANGHAI) {
+    if constexpr (!TestFixture::Trait::eip_3855_active()) {
         TestFixture::execute(11, {PUSH1, 0x01, PUSH2, 0x20, 0x20, PUSH1, 0x0});
     }
     else {
@@ -739,8 +738,8 @@ TYPED_TEST(VMTraitsTest, EthCallOutOfGas)
 
     TestFixture::execute(
         30'000'000, code, data, TestFixture::Implementation::Interpreter);
-    // code contains PUSH0, so will terminate with a failure pre Shanghai
-    if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_SHANGHAI) {
+    // code contains PUSH0
+    if constexpr (TestFixture::Trait::eip_3855_active()) {
         ASSERT_EQ(this->result_.status_code, EVMC_OUT_OF_GAS);
     }
     else {

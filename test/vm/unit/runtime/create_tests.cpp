@@ -50,7 +50,7 @@ TYPED_TEST(RuntimeTraitsTest, Create)
     ASSERT_EQ(addr, uint256_from_address(result_addr));
     ASSERT_EQ(this->ctx_.result.status, StatusCode::Success);
     constexpr auto gas_remaining = [] {
-        if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_SHANGHAI) {
+        if constexpr (!TestFixture::Trait::eip_3860_active()) {
             return 915'625;
         }
         else {
@@ -134,8 +134,7 @@ TYPED_TEST(RuntimeTraitsTest, CreateAtMaxCodeSize)
 
 TYPED_TEST(RuntimeTraitsTest, CreateAboveMaxCodeSize)
 {
-    // init code size was unbounded before Shanghai
-    if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_SHANGHAI) {
+    if constexpr (TestFixture::Trait::eip_3860_active()) {
 
         constexpr std::size_t max_initcode_size =
             TestFixture::Trait::max_initcode_size();
@@ -175,8 +174,7 @@ TYPED_TEST(RuntimeTraitsTest, Create2AtMaxCodeSize)
 
 TYPED_TEST(RuntimeTraitsTest, Create2AboveMaxCodeSize)
 {
-    // init code size was unbounded before Shanghai
-    if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_SHANGHAI) {
+    if constexpr (TestFixture::Trait::eip_3860_active()) {
 
         constexpr std::size_t max_initcode_size =
             TestFixture::Trait::max_initcode_size();

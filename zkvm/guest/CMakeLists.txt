@@ -61,7 +61,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # ZisK-only codegen tuning, duplicated from Polygon's ziskethone guest
     # (github.com/0xPolygonHermez/ziskethone, cpp-guest/zisk/toolchain.cmake +
     # cpp-guest/zisk/CMakeLists.txt).
-    #  - -march adds Zbb/Zbs/Zbkb, transpiled natively by ZisK >= v1.2.0-alpha.
+    #  - -march adds Zba/Zbb/Zbs/Zbkb, transpiled natively by ZisK >= v1.3.0-alpha.
     #  - -mtune=size was ziskethone's dominant single win (-13% block cost);
     #    -funroll-loops + the widened inliner --params cut call/loop overhead
     #    on hot paths; -fno-schedule-insns* drops scheduling that only helps
@@ -76,7 +76,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # overrides CMAKE_*_FLAGS, and the -march must land after cc-rs's
     # -march=rv64ima — the last flag wins.
     if(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
-        set(_zisk_march "-march=rv64ima_zicsr_zbb_zbs_zbkb -mabi=lp64")
+        set(_zisk_march "-march=rv64ima_zicsr_zba_zbb_zbs_zbkb -mabi=lp64")
         string(JOIN " " _zisk_opt
             "-fno-pic"
             "-mtune=size"

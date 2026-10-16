@@ -308,8 +308,25 @@ DirtyAccounts const &State::current_frame_dirty_accounts() const
     return dirty_.back();
 }
 
+#if defined(MONAD_ZKVM_ZISK)
+void State::push_after_growing()
+{
+    undo_marks_.reserve(2 * undo_marks_.capacity() + 1);
+    log_marks_.reserve(2 * log_marks_.capacity() + 1);
+    push();
+}
+#endif
+
 void State::push()
 {
+#if defined(MONAD_ZKVM_ZISK)
+    // Keep growth calls and their register saves out of the usual push path.
+    if (MONAD_UNLIKELY(
+            undo_marks_.size() == undo_marks_.capacity() ||
+            log_marks_.size() == log_marks_.capacity())) {
+        return push_after_growing();
+    }
+#endif
     MONAD_ASSERT(dirty_.size() == version_);
 
     ++frame_epoch_;

@@ -61,6 +61,8 @@ namespace monad::vm::interpreter
     {
         auto jumpdests = JumpdestMap(code.size(), false);
 
+        // No EIP-8024 case: an allowed immediate is never JUMPDEST or
+        // PUSH1-32, and a disallowed one is not an immediate.
         for (size_t i = 0; i < code.size(); ++i) {
             auto const op = code[i];
 

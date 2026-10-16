@@ -137,9 +137,10 @@ static inline void keccakf_state_copy(uint64_t *dst, uint64_t const *src)
     std::memcpy(dst, src, MONAD_KECCAKF_LEN(KECCAKF_STATE_BYTES));
 }
 
-// Pass parameters via 0x8F0 (value) or 0x8F8 (25-word state), invoke the
-// fcall via 0x8C0, and read its result at 0xFFE. Pin parameters to a0:
-// ZisK treats a parameter push using x0 as a no-op.
+// Push a value via 0x8F0 or a 25-word state via 0x8F8, invoke the fcall
+// via 0x8C0, then read its result at 0xFFE. Let the compiler choose the
+// register to avoid unnecessary moves. The "r" constraint keeps even
+// zero values out of x0, which ZisK treats as a no-op instead of a push.
 constexpr uint64_t KECCAKF_INDEX_NOT_FOUND = ~uint64_t{0};
 
 // Associate `index` with the next permutation's input.
@@ -147,11 +148,10 @@ constexpr uint64_t KECCAKF_INDEX_NOT_FOUND = ~uint64_t{0};
 static inline void fcall_set_keccakf_index(uint64_t const index)
 {
         #ifdef MONAD_ZKVM_ZISK
-    register unsigned long a0 asm("a0") = static_cast<unsigned long>(index);
     asm volatile("csrs 0x8F0, %0\n\t" // one parameter, by value
                  "csrwi 0x8C0, 24" // FCALL_SET_KECCAKF_CACHE_INDEX_ID
                  :
-                 : "r"(a0)
+                 : "r"(index)
                  : "memory");
         #else
     test_set_keccakf_index(index);
@@ -162,14 +162,12 @@ static inline void fcall_set_keccakf_index(uint64_t const index)
 static inline uint64_t fcall_get_keccakf_index(uint64_t const *const state)
 {
         #ifdef MONAD_ZKVM_ZISK
-    register unsigned long a0 asm("a0") =
-        reinterpret_cast<unsigned long>(state);
     uint64_t index;
-    asm volatile("csrs 0x8F8, %[st]\n\t" // one parameter: 25 words at [st]
+    asm volatile("csrs 0x8F8, %[state]\n\t" // one parameter: 25 words at state
                  "csrwi 0x8C0, 25\n\t" // FCALL_GET_KECCAKF_CACHE_INDEX_ID
-                 "csrr %[idx], 0xFFE" // fcall_get: the index
-                 : [idx] "=&r"(index)
-                 : [st] "r"(a0)
+                 "csrr %[index], 0xFFE" // fcall_get: the index
+                 : [index] "=&r"(index)
+                 : [state] "r"(state)
                  : "memory");
     return index;
         #else

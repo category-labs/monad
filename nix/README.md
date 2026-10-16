@@ -1,8 +1,9 @@
 # RISC-V cross toolchain
 
 Builds the `riscv64-none-elf` GCC used to cross-compile the zkVM guest
-(`zkvm/guest`). CI consumes this from `docker/Dockerfile`; the same output
-works locally.
+(`zkvm/guest`), with the ZisK backend patches from
+`zkvm/toolchain/zisk-dma-gcc` applied. CI consumes this from
+`docker/Dockerfile`; the same output works locally.
 
 Flakes are not enabled in a stock Nix install. Either add
 
@@ -15,12 +16,31 @@ to `~/.config/nix/nix.conf`, or pass
 below, as `docker/Dockerfile` does.
 
 ```shell
-nix build ./nix#toolchainEnv
+nix build ./nix#riscv64-none-elf-toolchain
 cmake -B build-zkvm -S zkvm/guest \
     -DCMAKE_TOOLCHAIN_FILE=$PWD/category/core/toolchains/riscv64-elf.cmake \
     -DRISCV_TOOLCHAIN_DIR=$PWD/result \
     -DCMAKE_BUILD_TYPE=Release
 ```
+
+The toolchain is an ordinary package added by `overlay.nix`, which the
+flake exports as `overlays.default` for other package sets to apply.
+
+The flake lives in `nix/` but reads the GCC patches from
+`zkvm/toolchain/zisk-dma-gcc`, so it must be evaluated from a tree that
+holds both: the repository itself, or a copy of the two directories built
+as `path:<copy>?dir=nix#riscv64-none-elf-toolchain`, as `docker/Dockerfile` does.
+
+## ZisK patches
+
+The ZisK guest is compiled with `-mzisk-dma` and
+`-mzisk-clean-byte-stores`, options added by the patches. After the symlink
+farm is assembled, `riscv64-none-elf-toolchain.nix` runs `check-probes.sh` from the
+patch directory, which compiles two probes and requires the assembly each
+one documents (`csrs 0x813` for a block `memcpy`; `li ...,184` and
+`addi ...,...,128` for a byte constant and a byte addition), so an
+unpatched or mis-patched compiler fails to build rather than quietly
+building a slower guest.
 
 ## Why nix
 
@@ -30,11 +50,11 @@ outright. nixpkgs fetches hash-pinned source tarballs from its own CDN
 instead, so a cold build depends only on `cache.nixos.org`.
 
 A cold build takes roughly 8 minutes on 16 cores. Only stage-1 GCC, newlib
-and the final GCC are compiled; everything else, cross binutils included, is
-substituted from `cache.nixos.org`. That is cheap enough that no additional
-binary cache is needed — the docker layer cache absorbs the common case, and
-a miss costs minutes rather than the tens of minutes a full
-`riscv-gnu-toolchain` bootstrap would.
+and the final (patched) GCC are compiled; everything else, cross binutils
+included, is substituted from `cache.nixos.org`. That is cheap enough that
+no additional binary cache is needed — the docker layer cache absorbs the
+common case, and a miss costs minutes rather than the tens of minutes a
+full `riscv-gnu-toolchain` bootstrap would.
 
 ## Pinning
 
@@ -44,7 +64,7 @@ both the Ubuntu host `gcc-15` and the GCC that `riscv-gnu-toolchain`
 deliberate; check it after bumping:
 
 ```shell
-nix build ./nix#toolchainEnv
+nix build ./nix#riscv64-none-elf-toolchain
 ./result/bin/riscv64-none-elf-gcc -dumpfullversion   # must match gcc-15 -dumpfullversion
 nix flake update --flake ./nix                       # to bump
 ```
@@ -52,7 +72,7 @@ nix flake update --flake ./nix                       # to bump
 ## Soft float
 
 The stock `pkgsCross.riscv64-embedded` target is `lp64d` (hard float), which
-the zkVM's no-FPU environment cannot use. `riscv64-toolchain.nix` declares
+the zkVM's no-FPU environment cannot use. `riscv64-none-elf-toolchain.nix` declares
 `rv64ima` / `lp64` explicitly so newlib is rebuilt for that ABI too. Verify
 with:
 

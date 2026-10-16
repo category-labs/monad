@@ -173,9 +173,11 @@ public:
         return static_cast<bool>(table_);
     }
 
-    // Call after appending one entry to the vector.
+    // Call after appending one entry to the vector. Inlined: a row under
+    // index_from entries, nearly every row, has nothing to do here.
     template <typename Entry>
-    void on_insert(std::vector<Entry> const &entries)
+    [[gnu::always_inline]] inline void
+    on_insert(std::vector<Entry> const &entries)
     {
         std::size_t const size = entries.size();
         if (table_) {

@@ -330,6 +330,11 @@ public:
         return nullptr;
     }
 
+#ifdef MONAD_ZKVM_ZISK
+    // Inlined: out of line, the cold SLOAD that inserts every slot it reads
+    // paid a call and gcc's spills around it, ~12 steps.
+    [[gnu::always_inline]]
+#endif
     void insert(bytes32_t const &k, bytes32_t const &v)
     {
         if (MONAD_UNLIKELY(v_.capacity() == 0)) {

@@ -406,6 +406,10 @@ public:
     Map<bytes32_t, vm::SharedVarcode> const &code() const;
 
     void push();
+#if defined(MONAD_ZKVM_ZISK)
+    // push with a mark row full: both grown, then push.
+    [[gnu::noinline, gnu::cold]] void push_after_growing();
+#endif
 
     void pop_accept();
 

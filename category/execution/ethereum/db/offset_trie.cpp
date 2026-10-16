@@ -1788,26 +1788,27 @@ OffsetTrie::upsert_node(NodeId id, NibblesView key)
                 }
             };
         // n's bytes if n is a branch the block has not rewritten, or nullptr.
-        // get_original's bound, held: the stores above would reload it and
-        // the blob's address each level. An id it rejects -- NULL_ID, a
+        // The blob's address and get_original's bound, held: the stores
+        // above would reload them each level. Only the entry id takes the
+        // bound: every later one is a child of a blob branch the block has
+        // not rewritten, and not NULL_ID, which the constructor bounded
+        // (is_valid_offset). An entry id the bound rejects -- NULL_ID, a
         // fresh id, a bad one -- goes to the loop below, which asserts it.
         unsigned char const *const blob = blob_.data();
         uint64_t const span = blob_span_;
-        auto const original_branch =
-            [&](NodeId const n) -> unsigned char const * {
+        auto const child_branch = [&](NodeId const n) -> unsigned char const * {
             uint64_t const v = static_cast<uint64_t>(n);
-            if (v - HEADER_LEN >= span || overlay_slots[v >> 2] != nullptr) {
+            if (overlay_slots[v >> 2] != nullptr) {
                 return nullptr;
             }
             return blob[v] == BRANCH ? blob + v : nullptr;
         };
         unsigned char const *k = whole_key;
         unsigned odd = 0;
-        while (k != whole_key + MAX_PATH_NIBBLES / 2) {
-            unsigned char const *const high = original_branch(id);
-            if (high == nullptr) {
-                break;
-            }
+        unsigned char const *high =
+            static_cast<uint64_t>(id) - HEADER_LEN < span ? child_branch(id)
+                                                          : nullptr;
+        while (high != nullptr) {
             unsigned const b = *k;
             NodeId const hc = BranchView{NodeViewBase{high}}.child(b >> 4);
             if (hc == NULL_ID) {
@@ -1816,7 +1817,7 @@ OffsetTrie::upsert_node(NodeId id, NibblesView key)
             descend(static_cast<uint64_t>(id), b >> 4);
             id = hc;
             odd = 1;
-            unsigned char const *const low = original_branch(id);
+            unsigned char const *const low = child_branch(id);
             if (low == nullptr) {
                 break;
             }
@@ -1828,6 +1829,10 @@ OffsetTrie::upsert_node(NodeId id, NibblesView key)
             id = lc;
             odd = 0;
             ++k;
+            if (k == whole_key + MAX_PATH_NIBBLES / 2) {
+                break;
+            }
+            high = child_branch(id);
         }
         key = NibblesView{
             2 * static_cast<unsigned>(k - whole_key) + odd,

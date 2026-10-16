@@ -2549,10 +2549,19 @@ namespace monad::vm::interpreter
     // Slot wrappers also provide the normal handler for a direct fallback.
     template <uint8_t OP, Traits traits, InstrEval fallback_handler = nullptr>
     MONAD_VM_INSTRUCTION_CALL void push1_then(
-        runtime::Context &ctx, MONAD_VM_DISPATCH_STATE_PARAM,
+        runtime::Context &entry_ctx, MONAD_VM_DISPATCH_STATE_PARAM,
         uint256_t const *stack_lower_bound, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
+        // Keep MSTORE's context in its argument register for the fallback.
+        runtime::Context &ctx = [&]() -> runtime::Context & {
+            if constexpr (OP == MSTORE) {
+                return held_in_a0(entry_ctx);
+            }
+            else {
+                return entry_ctx;
+            }
+        }();
         if constexpr (OP == PUSH1 && has_slots<traits>) {
             // [PUSH1][a][PUSH1][b][OP]: push a, then enter OP's prefix with
             // instr_ptr on the second PUSH1. This lets PUSH1 b fuse with OP.
@@ -2645,6 +2654,14 @@ namespace monad::vm::interpreter
                 instr_ptr MONAD_VM_TBL_ARG);
         }
         else if constexpr (OP == MLOAD || OP == MSTORE) {
+            if constexpr (OP == MSTORE) {
+                // Encourage GCC to retain the fallback arguments in place.
+                // Memory growth resumes the normal MSTORE handler; avoid
+                // moving these arguments away and back around the fast path.
+                MONAD_VM_LAUNDER(MONAD_VM_DISPATCH_STATE_ARG);
+                MONAD_VM_LAUNDER(stack_lower_bound);
+                MONAD_VM_LAUNDER(table_base);
+            }
             // [PUSH1][offset][MLOAD/MSTORE]: read the byte offset directly,
             // without pushing and rereading a 256-bit address. It is <= 255.
             // MLOAD pushes the loaded value; MSTORE consumes the existing top.
@@ -3330,12 +3347,27 @@ namespace monad::vm::interpreter
     // A fused follower's prefix enters here with instr_ptr on PUSH2.
     template <uint8_t OP, Traits traits>
     MONAD_VM_INSTRUCTION_CALL void push2_then(
-        runtime::Context &ctx, MONAD_VM_DISPATCH_STATE_PARAM,
+        runtime::Context &entry_ctx, MONAD_VM_DISPATCH_STATE_PARAM,
         uint256_t const *stack_lower_bound, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         static_assert(OP == JUMP || OP == JUMPI || OP == MLOAD || OP == MSTORE);
+        // Keep MSTORE's context in its argument register, as for PUSH1.
+        runtime::Context &ctx = [&]() -> runtime::Context & {
+            if constexpr (OP == MSTORE) {
+                return held_in_a0(entry_ctx);
+            }
+            else {
+                return entry_ctx;
+            }
+        }();
         if constexpr (OP == MLOAD || OP == MSTORE) {
+            if constexpr (OP == MSTORE) {
+                // Retain the arguments needed by the normal MSTORE fallback.
+                MONAD_VM_LAUNDER(MONAD_VM_DISPATCH_STATE_ARG);
+                MONAD_VM_LAUNDER(stack_lower_bound);
+                MONAD_VM_LAUNDER(table_base);
+            }
             // Decode the byte offset directly, without pushing it. Both pairs
             // still need temporary stack space for PUSH2, even MSTORE.
             // Memory expansion and missing values use the normal handler.

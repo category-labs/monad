@@ -4,13 +4,8 @@
 #
 #   zkvm/zisk/build.sh [--official] [--archive] [-DNAME=VALUE ...]
 #
-# --official  the reference configuration for published benchmarks and
-#             releases: MONAD_ZKVM_OFFICIAL_PROFILE, a clean worktree, the
-#             HEAD commit and patched GCC 15.2.0.
-#             Takes no -D arguments: the profile fixes its configuration.
-# (default)   the development profile, for A/B experiments. -DNAME=VALUE
-#             arguments reach the guest's CMake configuration, e.g.
-#             -DMONAD_ZKVM_ZISK_DMA=OFF.
+# --official  delegate to nix#zisk-elf (Linux x86_64); no -D or --archive.
+# (default)   development build; -DNAME=VALUE arguments reach CMake.
 # --archive   build libmonad-zkvm-guest-zisk.a without Rust or cargo-zisk,
 #             using the same build_archive.py helper as Cargo.
 #             test-build-archive.sh compares the two archives.
@@ -35,9 +30,14 @@ for arg in "$@"; do
         *) echo "unknown argument: $arg (see --help)" >&2; exit 2 ;;
     esac
 done
-if [ "$OFFICIAL" = 1 ] && [ ${#DEFS[@]} -gt 0 ]; then
-    echo "--official takes no -D arguments: the profile fixes its configuration" >&2
-    exit 2
+if [ "$OFFICIAL" = 1 ]; then
+    if [ ${#DEFS[@]} -gt 0 ] || [ "$ARCHIVE" = 1 ]; then
+        echo "--official uses Nix and takes no -D or --archive arguments" >&2
+        exit 2
+    fi
+    exec nix --extra-experimental-features 'nix-command flakes' build \
+        --option sandbox true --option sandbox-fallback false \
+        "git+file://$REPO?dir=nix&submodules=1#zisk-elf"
 fi
 
 TC=${RISCV_TOOLCHAIN_DIR:-$HOME/.local/xPacks/zisk-dma-gcc-15.2.0}
@@ -52,28 +52,13 @@ else
     exit 1
 fi
 
-if [ "$OFFICIAL" = 1 ]; then
-    test -z "$(git -C "$REPO" status --porcelain --untracked-files=normal)" || {
-        echo "official build requires a clean worktree, including untracked files" >&2
-        exit 1
-    }
-    COMMIT=$(git -C "$REPO" rev-parse HEAD)
-fi
-
 export RISCV_TOOLCHAIN_DIR=$TC
 export CC_riscv64ima_zisk_zkvm_elf=$TC/bin/${PREFIX}gcc
 export CXX_riscv64ima_zisk_zkvm_elf=$TC/bin/${PREFIX}g++
-if [ "$OFFICIAL" = 1 ]; then
-    export MONAD_ZKVM_OFFICIAL_PROFILE=ON
-    export MONAD_ZKVM_GIT_COMMIT=$COMMIT
-    unset MONAD_ZKVM_CMAKE_ARGS
-else
-    unset MONAD_ZKVM_OFFICIAL_PROFILE
-    # Preserve argument boundaries, including spaces and quotes in values.
-    MONAD_ZKVM_CMAKE_ARGS=$(python3 -c \
-        'import shlex, sys; print(shlex.join(sys.argv[1:]))' ${DEFS[@]+"${DEFS[@]}"})
-    export MONAD_ZKVM_CMAKE_ARGS
-fi
+# Preserve argument boundaries, including spaces and quotes in values.
+MONAD_ZKVM_CMAKE_ARGS=$(python3 -c \
+    'import shlex, sys; print(shlex.join(sys.argv[1:]))' ${DEFS[@]+"${DEFS[@]}"})
+export MONAD_ZKVM_CMAKE_ARGS
 if [ "$ARCHIVE" = 1 ]; then
     exec python3 "$REPO/zkvm/build-support/build_archive.py"
 fi
@@ -90,5 +75,4 @@ test -f "$ELF" || {
     echo "ELF not found: $ELF" >&2
     exit 1
 }
-
 echo "$ELF"

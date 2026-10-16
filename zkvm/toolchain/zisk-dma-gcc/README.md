@@ -9,9 +9,9 @@ These patches add two options to GCC's RISC-V backend:
   immediates to reduce ZisK's arithmetic and byte-store costs.
 
 Both are off by default (`MONAD_ZKVM_ZISK_DMA=OFF`,
-`MONAD_ZKVM_ZISK_CLEAN_BYTE_STORES=OFF`). The official ZisK profile requires
-them: it forces both options on, rejects an explicit `OFF`, and checks that a
-probe compiles to the expected code for each.
+`MONAD_ZKVM_ZISK_CLEAN_BYTE_STORES=OFF`). The reference Nix build enables
+both explicitly. Its toolchain runs `check-probes.sh` to verify the expected
+assembly for each option.
 
 ## Why the guest wants DMA lowering
 
@@ -74,8 +74,13 @@ binutils, headers and RV64 libraries. Assembly probes require `csrs 0x813`
 for a 32-byte copy, `li ...,184` for a byte constant, and `addi ...,...,128`
 for a byte addition.
 
+The reference Nix toolchain runs equivalent probes when packaging GCC. Its
+store path identifies the compiler inputs, including all three patches.
 
 ## Upstreaming
 
 These patches belong beside ZisK's LLVM implementation. They are kept here so
 the guest's compiler can be rebuilt from GCC sources and the matching xPack.
+
+The Nix build runs `check-probes.sh` with `probe-dma.c` and
+`probe-byte-stores.c`. These probes can also check a local compiler.

@@ -68,16 +68,31 @@ Start each section's commands from the repository root unless stated otherwise.
 ZisK input is an 8-byte little-endian payload length followed by the witness,
 zero-padded to an 8-byte boundary.
 
-`zkvm/zisk/b
-`zkvm/zisk/build.sh` builds the guest using locally installed tools.
-`--official` requires a clean worktree and the reference compiler settings,
-and embeds the source commit in the ELF. Development builds carry a
-`monad-zkvm-dev` marker.
+Published benchmarks and releases use the [reference Nix build](../nix/README.md#zisk-guest-elf):
 
-`--archive` builds only the C++ archive through the shared build helper.
-Development builds accept `-DNAME=VALUE` for CMake experiments.
+```sh
+nix build --option sandbox true --option sandbox-fallback false './nix?submodules=1#zisk-elf'
+# result/monad-zkvm-zisk and result/monad-zkvm-zisk.build.json
+```
 
-ild the guest ELF.
+It pins the source and toolchains and checks the allocator assumptions and
+linked ELF. Keep the manifest with the artifact. `zkvm/zisk/build.sh --official`
+is a shortcut to this Nix build; it requires an x86_64 Linux builder.
+Reproducibility must still be checked by independent rebuilds.
+
+For development with locally installed tools, `zkvm/zisk/build.sh` accepts
+`-DNAME=VALUE` CMake options, such as `-DMONAD_ZKVM_ZISK_DMA=ON`. DMA and clean byte stores are
+off by default outside Nix; enable them with their CMake options or the
+`MONAD_ZKVM_ZISK_DMA` and `MONAD_ZKVM_ZISK_CLEAN_BYTE_STORES` environment variables.
+With `--archive`, it builds only `libmonad-zkvm-guest-zisk.a`, using CMake and
+Python 3 without Rust or `cargo-zisk`. Both paths share
+`build-support/build_archive.py`; `test-build-archive.sh` compares their archives.
+Without explicit stamps, development ELFs carry
+`monad-zkvm;commit=none;build=none`. Initialize submodules recursively before
+using the Nix build.
+
+```sh
+# 1. Build the guest ELF.
 zkvm/zisk/build.sh
 cd zkvm/zisk
 #  → target/elf/riscv64ima-zisk-zkvm-elf/release/monad-zkvm-zisk

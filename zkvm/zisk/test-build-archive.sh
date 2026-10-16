@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Check that `build.sh --archive` builds the objects the ELF links.
 #
-#   zkvm/zisk/test-build-archive.sh [--official] [-DNAME=VALUE ...]
+#   zkvm/zisk/test-build-archive.sh [-DNAME=VALUE ...]
 #
 # Both entry points use build_archive.py. Compare the archive Cargo actually
 # links with a standalone build to catch differences in their environments.

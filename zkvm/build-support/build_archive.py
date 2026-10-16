@@ -55,10 +55,8 @@ def compiler_flags(name, env):
     return flags
 
 
-def definitions(value, official):
+def definitions(value):
     words = shlex.split(value)
-    if official and words:
-        raise ValueError("MONAD_ZKVM_CMAKE_ARGS is refused by the official profile")
     result = []
     for word in words:
         if not word.startswith("-D") or "=" not in word[2:]:
@@ -72,37 +70,8 @@ def definitions(value, official):
     return result
 
 
-def official_commit(repo, supplied):
-    def git(*args):
-        try:
-            return subprocess.check_output(
-                ["git", "-C", str(repo), *args],
-                stderr=subprocess.DEVNULL, text=True,
-            ).strip()
-        except (OSError, subprocess.CalledProcessError):
-            return None
-
-    head = git("rev-parse", "HEAD")
-    if head is None or len(head) != 40:
-        if supplied is None:
-            raise ValueError("official profile requires MONAD_ZKVM_GIT_COMMIT without Git HEAD")
-        return supplied
-    if git("status", "--porcelain", "--untracked-files=no"):
-        raise ValueError("official profile requires a clean tracked worktree")
-    if supplied is not None and supplied != head:
-        raise ValueError("MONAD_ZKVM_GIT_COMMIT does not match the tree being built")
-    return head
-
-
 def build(repo, env, cargo=False):
-    profile = env.get("MONAD_ZKVM_OFFICIAL_PROFILE")
-    if profile not in (None, "ON"):
-        raise ValueError("MONAD_ZKVM_OFFICIAL_PROFILE must be ON or unset")
-    official = profile == "ON"
-    extra = definitions(env.get("MONAD_ZKVM_CMAKE_ARGS", ""), official)
-    commit = env.get("MONAD_ZKVM_GIT_COMMIT")
-    if official:
-        commit = official_commit(repo, commit)
+    extra = definitions(env.get("MONAD_ZKVM_CMAKE_ARGS", ""))
 
     if not env.get("RISCV_TOOLCHAIN_DIR"):
         raise ValueError("RISCV_TOOLCHAIN_DIR is not set")
@@ -124,7 +93,8 @@ def build(repo, env, cargo=False):
         "CMAKE_C_FLAGS": cflags,
         "CMAKE_CXX_FLAGS": cxxflags,
         "CMAKE_ASM_FLAGS": cflags,
-        "MONAD_ZKVM_OFFICIAL_PROFILE": "ON" if official else "OFF",
+        "MONAD_ZKVM_ZISK_DMA": env.get("MONAD_ZKVM_ZISK_DMA", "OFF"),
+        "MONAD_ZKVM_ZISK_CLEAN_BYTE_STORES": env.get("MONAD_ZKVM_ZISK_CLEAN_BYTE_STORES", "OFF"),
     }
     config.update(extra)
     generator = env.get("CMAKE_GENERATOR")
@@ -138,8 +108,9 @@ def build(repo, env, cargo=False):
     root = repo / "zkvm/zisk/target" / cache / f"zisk-{toolchain_key}-{key}"
     directory = root / "build"
     directory.mkdir(parents=True, exist_ok=True)
-    if commit is not None:
-        config.setdefault("MONAD_ZKVM_GIT_COMMIT", commit)
+    # Always supply both stamps so an omitted value cannot survive in CMakeCache.
+    config.setdefault("MONAD_ZKVM_GIT_COMMIT", env.get("MONAD_ZKVM_GIT_COMMIT", ""))
+    config.setdefault("MONAD_ZKVM_BUILD_ID", env.get("MONAD_ZKVM_BUILD_ID", "none"))
     config.setdefault("CMAKE_INSTALL_PREFIX", str(root))
     cmake = next(
         (env[name] for name in reversed(env_names("CMAKE")) if name in env), "cmake"
@@ -164,7 +135,8 @@ def build(repo, env, cargo=False):
 
 # These inputs were previously observed by cmake-rs/cc-rs or toolchain.rs.
 WATCH_ENV = [
-    "RISCV_TOOLCHAIN_DIR", "MONAD_ZKVM_OFFICIAL_PROFILE", "MONAD_ZKVM_GIT_COMMIT",
+    "RISCV_TOOLCHAIN_DIR", "MONAD_ZKVM_GIT_COMMIT", "MONAD_ZKVM_BUILD_ID",
+    "MONAD_ZKVM_ZISK_DMA", "MONAD_ZKVM_ZISK_CLEAN_BYTE_STORES",
     "MONAD_ZKVM_CMAKE_ARGS", "CMAKE_PREFIX_PATH", "CMAKE_GENERATOR",
     "PATH", "GCC_EXEC_PREFIX", "COMPILER_PATH", "CRATE_CC_NO_DEFAULTS",
     "CC_SHELL_ESCAPED_FLAGS", *env_names("CMAKE"),

@@ -52,7 +52,9 @@ class BuildTests(unittest.TestCase):
         self.bin = self.root / "bin"
         self.bin.mkdir()
         self.env = dict(os.environ, PATH=f"{self.bin}:{os.environ['PATH']}")
-        self.env.pop("MONAD_ZKVM_OFFICIAL_PROFILE", None)
+        for name in ("MONAD_ZKVM_GIT_COMMIT", "MONAD_ZKVM_BUILD_ID",
+                     "MONAD_ZKVM_ZISK_DMA", "MONAD_ZKVM_ZISK_CLEAN_BYTE_STORES"):
+            self.env.pop(name, None)
         self.env.pop("MONAD_ZKVM_CMAKE_ARGS", None)
         self.env["RISCV_TOOLCHAIN_DIR"] = str(self.root / "toolchain")
         tc = self.root / "toolchain/bin"
@@ -114,13 +116,21 @@ if "MONAD_ZKVM_ARCHIVE_PATH_FILE" in os.environ:
         return result.stdout.strip().splitlines()[-1]
 
     def test_archive_cache_tracks_compiler_frontends(self):
-        for args in ((), ("--official",)):
-            with self.subTest(args=args):
-                first = self.archive_path(*args)
-                self.assertEqual(first, self.archive_path(*args))
-                with (self.root / "toolchain/bin/cc1plus").open("a") as frontend:
-                    frontend.write("rebuild")
-                self.assertNotEqual(first, self.archive_path(*args))
+        first = self.archive_path()
+        self.assertEqual(first, self.archive_path())
+        with (self.root / "toolchain/bin/cc1plus").open("a") as frontend:
+            frontend.write("rebuild")
+        self.assertNotEqual(first, self.archive_path())
+
+    def test_official_delegates_to_nix(self):
+        self.script(self.bin / "nix", '#!/usr/bin/env python3\nimport json,sys\nprint(json.dumps(sys.argv[1:]))\n')
+        result = self.run_script("build.sh", "--official")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        args = json.loads(result.stdout)
+        self.assertEqual(args[-1], f"git+file://{self.root}?dir=nix&submodules=1#zisk-elf")
+        self.assertIn("sandbox-fallback", args)
+        for extra in ("--archive", "-DFOO=ON"):
+            self.assertNotEqual(self.run_script("build.sh", "--official", extra).returncode, 0)
 
     def test_elf_options_preserve_spaces_quotes_and_newlines(self):
         args = [
@@ -182,24 +192,29 @@ if "MONAD_ZKVM_ARCHIVE_PATH_FILE" in os.environ:
         self.env["CMAKE_PREFIX_PATH"] = "/a different Boost"
         self.assertNotEqual(after, self.archive_path())
 
-    def test_official_checks_apply_to_direct_cargo_calls(self):
-        for variables in (
-            {"MONAD_ZKVM_OFFICIAL_PROFILE": "OFF"},
-            {"MONAD_ZKVM_OFFICIAL_PROFILE": "ON", "MONAD_ZKVM_CMAKE_ARGS": "-DFOO=ON"},
-            {"MONAD_ZKVM_OFFICIAL_PROFILE": "ON", "MONAD_ZKVM_GIT_COMMIT": "f" * 40},
-        ):
-            with self.subTest(variables=variables):
-                result = self.run_helper(**variables)
-                self.assertNotEqual(result.returncode, 0)
-        self.script(
-            self.bin / "git",
-            '#!/bin/sh\ncase "$*" in\n'
-            ' *rev-parse*) printf "%040d\\n" 1;;\n'
-            ' *status*) echo " M changed.cpp";;\nesac\n',
-        )
-        result = self.run_helper(MONAD_ZKVM_OFFICIAL_PROFILE="ON")
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("clean tracked worktree", result.stderr)
+    def test_build_stamps_do_not_invalidate_objects(self):
+        first = self.run_helper(MONAD_ZKVM_GIT_COMMIT="a" * 40, MONAD_ZKVM_BUILD_ID="build-a")
+        second = self.run_helper(MONAD_ZKVM_GIT_COMMIT="b" * 40, MONAD_ZKVM_BUILD_ID="build-b")
+        self.assertEqual(first.returncode, 0, first.stderr)
+        self.assertEqual(second.returncode, 0, second.stderr)
+        path = second.stdout.splitlines()[0]
+        self.assertEqual(first.stdout.splitlines()[0], path)
+        self.assertEqual(self.configuration(path)["MONAD_ZKVM_BUILD_ID"], "build-b")
+        third = self.run_helper()
+        self.assertEqual(third.returncode, 0, third.stderr)
+        self.assertEqual(third.stdout.splitlines()[0], path)
+        self.assertEqual(self.configuration(path)["MONAD_ZKVM_GIT_COMMIT"], "")
+        self.assertEqual(self.configuration(path)["MONAD_ZKVM_BUILD_ID"], "none")
+
+    def test_guest_options_invalidate_cache(self):
+        base = self.run_helper().stdout.splitlines()[0]
+        for name in ("MONAD_ZKVM_ZISK_DMA", "MONAD_ZKVM_ZISK_CLEAN_BYTE_STORES"):
+            result = self.run_helper(**{name: "ON"})
+            self.assertEqual(result.returncode, 0, result.stderr)
+            path = result.stdout.splitlines()[0]
+            self.assertNotEqual(base, path)
+            self.assertEqual(self.configuration(path)[name], "ON")
+            self.assertIn("cargo:rerun-if-env-changed=" + name, result.stdout)
 
     def test_comparison_uses_reported_archive_not_newest(self):
         a = self.here / "target/guest-build/A/build/libmonad-zkvm-guest-zisk.a"

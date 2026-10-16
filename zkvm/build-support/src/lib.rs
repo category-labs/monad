@@ -42,8 +42,8 @@ impl Backend {
     fn guest_target(self) -> &'static str {
         match self {
             Self::Zisk => "monad-zkvm-guest-zisk",
-            Self::Sp1  => "monad-zkvm-guest-sp1",
-       }
+            Self::Sp1 => "monad-zkvm-guest-sp1",
+        }
     }
 
     fn guest_triple(self) -> &'static str {
@@ -76,9 +76,6 @@ impl Backend {
             self.name(),
             toolchain::fingerprint(&riscv_gcc(&toolchain_dir))
         );
-        if env::var_os("MONAD_ZKVM_OFFICIAL_PROFILE").is_some() {
-            key.push_str("-official");
-        }
         // Each set of extra definitions configures a cache of its own: a
         // definition dropped from the set would otherwise stay in CMakeCache.
         let extra = extra_cmake_definitions();
@@ -108,24 +105,14 @@ impl Backend {
         let prefix_path = env::var("CMAKE_PREFIX_PATH").unwrap_or_else(|_| "/usr".to_string());
         cfg.define("CMAKE_PREFIX_PATH", &prefix_path);
 
-        // Keep official-profile settings explicit instead of forwarding
-        // arbitrary CMake definitions.
-        match env::var("MONAD_ZKVM_OFFICIAL_PROFILE") {
-            Ok(profile) => {
-                assert_eq!(
-                    profile, "ON",
-                    "MONAD_ZKVM_OFFICIAL_PROFILE must be ON or unset"
-                );
-                cfg.define("MONAD_ZKVM_OFFICIAL_PROFILE", "ON")
-                    .define("MONAD_ZKVM_GIT_COMMIT", official_build_commit(&repo_root));
-            }
-            // Outside the official profile, keep the caller's commit label.
-            Err(_) => {
-                if let Ok(commit) = env::var("MONAD_ZKVM_GIT_COMMIT") {
-                    cfg.define("MONAD_ZKVM_GIT_COMMIT", commit);
-                }
-            }
-        }
+        cfg.define(
+            "MONAD_ZKVM_GIT_COMMIT",
+            env::var("MONAD_ZKVM_GIT_COMMIT").unwrap_or_default(),
+        )
+        .define(
+            "MONAD_ZKVM_BUILD_ID",
+            env::var("MONAD_ZKVM_BUILD_ID").unwrap_or_else(|_| "none".into()),
+        );
 
         for (name, value) in &extra {
             cfg.define(name, value);
@@ -294,47 +281,6 @@ fn build_zisk_archive(repo_root: &Path) -> PathBuf {
         .to_path_buf()
 }
 
-/// Use Git HEAD, rejecting a mismatched supplied SHA or reported tracked changes.
-/// Without a usable HEAD, require MONAD_ZKVM_GIT_COMMIT (e.g. source archives).
-fn official_build_commit(repo_root: &Path) -> String {
-    let git = |args: &[&str]| -> Option<String> {
-        let out = Command::new("git")
-            .arg("-C")
-            .arg(repo_root)
-            .args(args)
-            .output()
-            .ok()?;
-        out.status
-            .success()
-            .then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
-    };
-    let supplied = env::var("MONAD_ZKVM_GIT_COMMIT").ok();
-    let head = match git(&["rev-parse", "HEAD"]) {
-        Some(h) if h.len() == 40 => h,
-        _ => {
-            return supplied.expect(
-                "official ZisK profile: no git in the build tree, so \
-                 MONAD_ZKVM_GIT_COMMIT must supply the commit",
-            );
-        }
-    };
-    // Check tracked changes; untracked files are excluded here.
-    if let Some(dirty) = git(&["status", "--porcelain", "--untracked-files=no"]) {
-        assert!(
-            dirty.is_empty(),
-            "official ZisK profile: the worktree is dirty, so no commit \
-             describes what would be built:\n{dirty}"
-        );
-    }
-    if let Some(supplied) = supplied {
-        assert_eq!(
-            supplied, head,
-            "MONAD_ZKVM_GIT_COMMIT does not match the tree being built"
-        );
-    }
-    head
-}
-
 fn manifest_dir() -> PathBuf {
     PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR unset"))
 }
@@ -349,21 +295,17 @@ fn locate_repo_root(manifest: &Path) -> PathBuf {
 
 /// Further CMake definitions for a development build, from
 /// MONAD_ZKVM_CMAKE_ARGS as shell-quoted `-DNAME=VALUE` words (build.sh passes
-/// its own -D arguments there). The official profile fixes its configuration
+/// its own -D arguments there). The reference Nix build fixes its configuration
 /// and refuses them.
 fn extra_cmake_definitions() -> Vec<(String, String)> {
     let Ok(args) = env::var("MONAD_ZKVM_CMAKE_ARGS") else {
         return Vec::new();
     };
-    parse_cmake_definitions(&args, env::var_os("MONAD_ZKVM_OFFICIAL_PROFILE").is_some())
+    parse_cmake_definitions(&args)
 }
 
-fn parse_cmake_definitions(args: &str, official: bool) -> Vec<(String, String)> {
+fn parse_cmake_definitions(args: &str) -> Vec<(String, String)> {
     let words = shlex::split(args).expect("invalid quoting in MONAD_ZKVM_CMAKE_ARGS");
-    assert!(
-        words.is_empty() || !official,
-        "MONAD_ZKVM_CMAKE_ARGS is refused by the official profile"
-    );
     words
         .iter()
         .map(|word| {
@@ -385,7 +327,7 @@ fn emit_rerun_directives(repo_root: &Path) {
     println!("cargo:rerun-if-env-changed=MONAD_ZKVM_CMAKE_ARGS");
     println!("cargo:rerun-if-env-changed=MONAD_ZKVM_ARCHIVE_PATH_FILE");
     println!("cargo:rerun-if-env-changed=RISCV_TOOLCHAIN_DIR");
-    println!("cargo:rerun-if-env-changed=MONAD_ZKVM_OFFICIAL_PROFILE");
+    println!("cargo:rerun-if-env-changed=MONAD_ZKVM_BUILD_ID");
     println!("cargo:rerun-if-env-changed=MONAD_ZKVM_GIT_COMMIT");
     // Watch Git metadata to refresh the build stamp when only the commit changes. Git names the
     // paths: in a linked worktree `.git` is a file, HEAD lives in the worktree's own git
@@ -464,7 +406,11 @@ fn riscv_toolchain_dir() -> String {
 // Match the compiler prefixes accepted by riscv64-elf.cmake.
 fn riscv_gcc(toolchain_dir: &str) -> PathBuf {
     let bin = Path::new(toolchain_dir).join("bin");
-    for prefix in ["riscv64-none-elf-", "riscv64-unknown-elf-", "riscv-none-elf-"] {
+    for prefix in [
+        "riscv64-none-elf-",
+        "riscv64-unknown-elf-",
+        "riscv-none-elf-",
+    ] {
         let gcc = bin.join(format!("{prefix}gcc"));
         if gcc.exists() {
             return gcc;
@@ -485,7 +431,7 @@ mod tests {
     fn cmake_definitions_preserve_argument_boundaries() {
         let args = r#"'-DCMAKE_CXX_FLAGS=-O2 -g' '-DPATH:PATH=/tmp/with spaces' '-DNOTE=it'"'"'s \"quoted\"' '-DEMPTY=' '-DLIST=a;b'"#;
         assert_eq!(
-            parse_cmake_definitions(args, false),
+            parse_cmake_definitions(args),
             vec![
                 ("CMAKE_CXX_FLAGS".into(), "-O2 -g".into()),
                 ("PATH".into(), "/tmp/with spaces".into()),
@@ -494,9 +440,9 @@ mod tests {
                 ("LIST".into(), "a;b".into()),
             ]
         );
-        assert!(parse_cmake_definitions("  ", true).is_empty());
+        assert!(parse_cmake_definitions("  ").is_empty());
         assert_eq!(
-            parse_cmake_definitions("-DFOO=ON", false),
+            parse_cmake_definitions("-DFOO=ON"),
             vec![("FOO".into(), "ON".into())]
         );
     }
@@ -504,13 +450,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "invalid quoting")]
     fn cmake_definitions_reject_unclosed_quotes() {
-        parse_cmake_definitions("'-DFOO=ON", false);
-    }
-
-    #[test]
-    #[should_panic(expected = "refused by the official profile")]
-    fn official_profile_rejects_cmake_definitions() {
-        parse_cmake_definitions("'-DFOO=ON'", true);
+        parse_cmake_definitions("'-DFOO=ON");
     }
 
     #[test]
@@ -525,7 +465,11 @@ mod tests {
         ));
         let bin = dir.join("bin");
         fs::create_dir_all(&bin).unwrap();
-        let prefixes = ["riscv64-none-elf-", "riscv64-unknown-elf-", "riscv-none-elf-"];
+        let prefixes = [
+            "riscv64-none-elf-",
+            "riscv64-unknown-elf-",
+            "riscv-none-elf-",
+        ];
         for prefix in prefixes {
             fs::write(bin.join(format!("{prefix}gcc")), "").unwrap();
         }

@@ -47,33 +47,32 @@ may still remove a mask such as `n & 0xff` before a byte store.
 
 | File | Purpose |
 |---|---|
-| `0001-riscv-zisk-dma-lowering-14.3.0.patch` | the upstream patch, against GCC 14.3.0 |
+| `0001-riscv-zisk-dma-lowering.patch` | the upstream patch, written against GCC 14.3.0, with its context refreshed so it applies to 15.2.0 unchanged |
 | `0002-riscv.md-forward-port-15.2.0.diff` | adapts the memory patterns to GCC 15.2.0 |
 | `0003-riscv-zisk-clean-byte-stores-15.2.0.diff` | adds `-mzisk-clean-byte-stores`, on top of the two above |
-| `build-gcc15.sh` | builds the compiler and verifies both options |
-
-The interpreter needs GCC 15's `__attribute__((musttail))`. Keeping the original
-14.3.0 patch separate from its 15.2.0 adaptation preserves its provenance.
+| `probe-dma.c` | must compile to a `csrs 0x813` DMA marker with `-mzisk-dma` |
+| `probe-byte-stores.c` | must compile to `li ...,184` and `addi ...,...,128` with `-mzisk-clean-byte-stores` |
+| `check-probes.sh` | compiles both probes with a given GCC and checks the assembly |
 
 ## Building the compiler
 
-Requires GCC 15.2.0 sources, the matching xPack, and host `gcc-13`/`g++-13`.
-Apply the three patches to GCC in order, then run the build script:
+`nix/riscv64-none-elf-toolchain.nix` applies the three patches, in order, to the GCC
+15.2.0 that nixpkgs builds for `riscv64-none-elf`, then runs
+`check-probes.sh` on the result, so the toolchain is unusable unless both
+options change generated code. The script takes any RISC-V GCC, so it also
+answers whether some other compiler carries the patches:
 
 ```bash
-cd gcc-15.2.0
-patch -p1 < .../0001-riscv-zisk-dma-lowering-14.3.0.patch   # applies with fuzz
-patch -p1 < .../0002-riscv.md-forward-port-15.2.0.diff
-patch -p1 < .../0003-riscv-zisk-clean-byte-stores-15.2.0.diff
-ZISK_DMA_GCC_SRC=$PWD .../build-gcc15.sh
+zkvm/toolchain/zisk-dma-gcc/check-probes.sh /path/to/riscv64-unknown-elf-gcc
 ```
 
-The script expects patched sources. It builds only GCC and reuses xPack's
-binutils, headers and RV64 libraries. Assembly probes require `csrs 0x813`
-for a 32-byte copy, `li ...,184` for a byte constant, and `addi ...,...,128`
-for a byte addition.
+See `nix/README.md` for building and using the toolchain.
+
+The interpreter needs GCC 15's `__attribute__((musttail))`. Keeping the
+original patch separate from its 15.2.0 adaptation preserves its provenance:
+only the context lines of the first file differ from the upstream patch.
 
 ## Upstreaming
 
 These patches belong beside ZisK's LLVM implementation. They are kept here so
-the guest's compiler can be rebuilt from GCC sources and the matching xPack.
+the guest's compiler can be rebuilt from GCC sources.

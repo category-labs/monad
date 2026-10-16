@@ -1,7 +1,7 @@
-diff -urN pristine/gcc/config/riscv/riscv.h gcc-14.3.0/gcc/config/riscv/riscv.h
---- a/gcc/config/riscv/riscv.h	2025-05-23 13:02:04.444199918 +0200
-+++ b/gcc/config/riscv/riscv.h	2026-08-07 08:26:48.740875210 +0200
-@@ -1114,27 +1114,34 @@
+diff -urN pristine/gcc/config/riscv/riscv.h step1/gcc/config/riscv/riscv.h
+--- a/gcc/config/riscv/riscv.h	2026-10-16 06:43:10.204954828 -0400
++++ b/gcc/config/riscv/riscv.h	2026-10-16 06:44:22.799643586 -0400
+@@ -1162,27 +1162,34 @@
  
  #define RISCV_MAX_MOVE_BYTES_STRAIGHT (RISCV_MAX_MOVE_BYTES_PER_LOOP_ITER * 3)
  
@@ -40,9 +40,9 @@ diff -urN pristine/gcc/config/riscv/riscv.h gcc-14.3.0/gcc/config/riscv/riscv.h
  
  #ifndef USED_FOR_TARGET
  extern const enum reg_class riscv_regno_to_class[];
-diff -urN pristine/gcc/config/riscv/riscv.md gcc-14.3.0/gcc/config/riscv/riscv.md
---- a/gcc/config/riscv/riscv.md	2025-05-23 13:02:04.444199918 +0200
-+++ b/gcc/config/riscv/riscv.md	2026-08-07 08:26:48.741140965 +0200
+diff -urN pristine/gcc/config/riscv/riscv.md step1/gcc/config/riscv/riscv.md
+--- a/gcc/config/riscv/riscv.md	2026-10-16 06:43:10.206161375 -0400
++++ b/gcc/config/riscv/riscv.md	2026-10-16 06:44:22.802592737 -0400
 @@ -36,6 +36,9 @@
  
  (define_c_enum "unspec" [
@@ -53,7 +53,7 @@ diff -urN pristine/gcc/config/riscv/riscv.md gcc-14.3.0/gcc/config/riscv/riscv.m
    UNSPEC_EH_RETURN
  
    ;; Symbolic accesses.  The order of this list must match that of
-@@ -2396,12 +2399,127 @@
+@@ -2784,12 +2787,127 @@
  	      (use (match_operand:SI 3 "const_int_operand"))])]
    ""
  {
@@ -61,11 +61,11 @@ diff -urN pristine/gcc/config/riscv/riscv.md gcc-14.3.0/gcc/config/riscv/riscv.m
 +  if (riscv_zisk_expand_cpymem (operands[0], operands[1], operands[2]))
 +    DONE;
 +  else if (riscv_expand_block_move (operands[0], operands[1], operands[2]))
-+    DONE;
-+  else
-+    FAIL;
-+})
-+
+     DONE;
+   else
+     FAIL;
+ })
+ 
 +;; memmove.  The ZisK memcpy precompile honours overlapping ranges, so it
 +;; satisfies the memmove contract and the same insns serve both.
 +(define_expand "movmem<mode>"
@@ -91,11 +91,11 @@ diff -urN pristine/gcc/config/riscv/riscv.md gcc-14.3.0/gcc/config/riscv/riscv.m
 +  "TARGET_ZISK_DMA"
 +{
 +  if (riscv_zisk_expand_setmem (operands[0], operands[1], operands[2]))
-     DONE;
-   else
-     FAIL;
- })
- 
++    DONE;
++  else
++    FAIL;
++})
++
 +(define_expand "cmpmemsi"
 +  [(set (match_operand:SI 0 "register_operand")
 +	(compare:SI (match_operand:BLK 1 "memory_operand")
@@ -179,39 +179,39 @@ diff -urN pristine/gcc/config/riscv/riscv.md gcc-14.3.0/gcc/config/riscv/riscv.m
 +  [(set_attr "type" "multi")
 +   (set_attr "length" "8")])
 +
- ;; Expand in-line code to clear the instruction cache between operand[0] and
- ;; operand[1].
- (define_expand "clear_cache"
-diff -urN pristine/gcc/config/riscv/riscv.opt gcc-14.3.0/gcc/config/riscv/riscv.opt
---- a/gcc/config/riscv/riscv.opt	2025-05-23 13:02:04.444199918 +0200
-+++ b/gcc/config/riscv/riscv.opt	2026-08-07 08:01:11.999423901 +0200
-@@ -620,3 +620,7 @@
- mtls-dialect=
- Target RejectNegative Joined Enum(tls_type) Var(riscv_tls_dialect) Init(TLS_TRADITIONAL) Save
- Specify TLS dialect.
+ ;; Fill memory with constant byte.
+ ;; Argument 0 is the destination
+ ;; Argument 1 is the constant byte
+diff -urN pristine/gcc/config/riscv/riscv.opt step1/gcc/config/riscv/riscv.opt
+--- a/gcc/config/riscv/riscv.opt	2026-10-16 06:43:10.204033968 -0400
++++ b/gcc/config/riscv/riscv.opt	2026-10-16 06:44:22.801014055 -0400
+@@ -681,3 +681,7 @@
+ mautovec-segment
+ Target Integer Var(riscv_mautovec_segment) Init(1)
+ Enable (default) or disable generation of vector segment load/store instructions.
 +
 +mzisk-dma
 +Target Var(TARGET_ZISK_DMA) Init(0)
 +Lower block memory operations to ZisK zkVM DMA precompile markers.
-diff -urN pristine/gcc/config/riscv/riscv-protos.h gcc-14.3.0/gcc/config/riscv/riscv-protos.h
---- a/gcc/config/riscv/riscv-protos.h	2025-05-23 13:02:04.440199854 +0200
-+++ b/gcc/config/riscv/riscv-protos.h	2026-08-07 08:26:48.740963822 +0200
-@@ -189,6 +189,9 @@
- 
- /* Routines implemented in riscv-string.c.  */
+diff -urN pristine/gcc/config/riscv/riscv-protos.h step1/gcc/config/riscv/riscv-protos.h
+--- a/gcc/config/riscv/riscv-protos.h	2026-10-16 06:43:10.204428824 -0400
++++ b/gcc/config/riscv/riscv-protos.h	2026-10-16 06:44:22.797885190 -0400
+@@ -206,6 +206,9 @@
+ extern bool riscv_expand_block_compare (rtx, rtx, rtx, rtx);
  extern bool riscv_expand_block_move (rtx, rtx, rtx);
+ extern bool riscv_expand_block_clear (rtx, rtx);
 +extern bool riscv_zisk_expand_cpymem (rtx, rtx, rtx);
 +extern bool riscv_zisk_expand_setmem (rtx, rtx, rtx);
 +extern bool riscv_zisk_expand_cmpmem (rtx, rtx, rtx, rtx);
  
  /* Information about one CPU we know about.  */
  struct riscv_cpu_info {
-diff -urN pristine/gcc/config/riscv/riscv-string.cc gcc-14.3.0/gcc/config/riscv/riscv-string.cc
---- a/gcc/config/riscv/riscv-string.cc	2025-05-23 13:02:04.440199854 +0200
-+++ b/gcc/config/riscv/riscv-string.cc	2026-08-07 08:26:48.741004543 +0200
-@@ -1249,3 +1249,154 @@
+diff -urN pristine/gcc/config/riscv/riscv-string.cc step1/gcc/config/riscv/riscv-string.cc
+--- a/gcc/config/riscv/riscv-string.cc	2026-10-16 06:43:10.204390804 -0400
++++ b/gcc/config/riscv/riscv-string.cc	2026-10-16 06:44:22.799678676 -0400
+@@ -1747,3 +1747,154 @@
+   return true;
  }
- 
  }
 +
 +/* ZisK zkVM DMA lowering ---------------------------------------------------

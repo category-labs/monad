@@ -167,7 +167,10 @@ RUN cd src/rust && cargo test --release --doc --all-features
 # nixos/nix:2.35.1 — pinned by digest; keep the tag in this comment in sync
 FROM nixos/nix@sha256:377d4887aca98f0dfa12971c1ea6d6a625a435d8b610d4c95a436843da6fbfd1 AS riscv_toolchain_nix
 
-COPY nix /nix-src
+# The flake reads the ZisK GCC patches from beside their documentation, so
+# copy both directories and evaluate the flake from the common root.
+COPY nix /nix-src/nix
+COPY zkvm/toolchain/zisk-dma-gcc /nix-src/zkvm/toolchain/zisk-dma-gcc
 
 # Garbage-collect the build-time closure (GCC sources, stdenv, the stage-1
 # compiler) in the same RUN: a later RUN cannot reclaim it, because the bytes
@@ -179,7 +182,7 @@ COPY nix /nix-src
 # --print-out-paths, which prints one line per derivation output and would
 # leave /toolchain-path unusable if the toolchain ever grew a second output.
 RUN nix --extra-experimental-features "nix-command flakes" \
-        build /nix-src#toolchainEnv --out-link /toolchain && \
+        build 'path:/nix-src?dir=nix#riscv64-none-elf-toolchain' --out-link /toolchain && \
     readlink -f /toolchain > /toolchain-path && \
     nix-collect-garbage > /dev/null
 

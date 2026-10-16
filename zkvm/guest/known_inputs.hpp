@@ -70,6 +70,29 @@ namespace monad::zkvm
         {
             __builtin_memcpy(out, hash, 32);
         }
+
+        // Whether the 64 bytes at a and b are equal: on ZisK by the DMA
+        // comparator (CSR 0x814, the length in the register after it), one
+        // step, where eight word compares kept eight words live and the
+        // lookup's frame on every call.
+        [[gnu::always_inline]] inline bool equal64(
+            unsigned char const *const a, unsigned char const *const b) noexcept
+        {
+#if defined(MONAD_ZKVM_ZISK)
+            uint64_t differ;
+            asm volatile(".option push\n\t"
+                         ".option arch, +zicsr\n\t"
+                         "csrrs %0, 0x814, %1\n\t"
+                         "add x0, %2, %3\n\t"
+                         ".option pop"
+                         : "=&r"(differ)
+                         : "r"(a), "r"(b), "r"(size_t{64})
+                         : "memory");
+            return differ == 0;
+#else
+            return __builtin_memcmp(a, b, 64) == 0;
+#endif
+        }
     }
 
     // The keccak of the len bytes at in into out, when they are a known
@@ -108,12 +131,7 @@ namespace monad::zkvm
                     return false;
                 }
                 KnownInput<64> const &e = known_64[n - 1];
-                if (word(e.in + 56) == w7 && word(e.in + 24) == w3 &&
-                    word(e.in + 16) == w2 && word(e.in + 8) == w1 &&
-                    word(e.in) == word(in) &&
-                    word(e.in + 32) == word(in + 32) &&
-                    word(e.in + 40) == word(in + 40) &&
-                    word(e.in + 48) == word(in + 48)) {
+                if (word(e.in + 56) == w7 && equal64(e.in, in)) {
                     take(e.hash, out);
                     return true;
                 }

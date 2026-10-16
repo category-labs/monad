@@ -1047,6 +1047,14 @@ OffsetTrie::encode_rlp(
                 [[maybe_unused]] size_t const blob_size = blob_.size();
                 [[maybe_unused]] size_t claimed = 0;
                 static_assert(DIGEST_NODE_LEN == HASH_RLP_LEN);
+                // DIGEST, the mark a claim tests for, is also a hash ref's
+                // first byte, 0xa0. Held in a register of its own for the
+                // loop: as a constant, gcc formed it again on every child,
+                // the register it chose being taken for a temporary on the
+                // hashed children's path.
+                [[maybe_unused]] uint64_t digest_tag = DIGEST;
+                asm("" : "+r"(digest_tag));
+                static_assert(DIGEST == 0xa0);
 #endif
                 // Walked by pointer: an index costs a shift and an add to
                 // reach each slot, and a copy at the end of every turn.
@@ -1081,7 +1089,7 @@ OffsetTrie::encode_rlp(
                         // claimed by another parent (see is_valid_offset). The
                         // mark is DIGEST for a digest and only for a digest.
                         MONAD_ASSERT(w < blob_size && marks[w] != 0);
-                        digest = marks[w] == DIGEST;
+                        digest = marks[w] == digest_tag;
                         marks[w] = 0;
                         claimed += DIGEST_NODE_LEN;
                     }
@@ -1102,7 +1110,9 @@ OffsetTrie::encode_rlp(
                                     blob_hash_slots_[w >> 2]) {
                                 dest = dest.prepend_unchecked(
                                                e->h.bytes, KECCAK256_SIZE)
-                                           .prepend_unchecked(zx(0xa0));
+                                           .prepend_unchecked(
+                                               static_cast<unsigned char>(
+                                                   digest_tag));
                             }
                             else {
                                 dest = child_ref_compute<true>(
@@ -1159,7 +1169,7 @@ OffsetTrie::encode_rlp(
                             // has claimed. Any other slot ends the run, and
                             // the main loop's claim rejects it if it is not a
                             // node start or is claimed already.
-                            if (marks[prev] != DIGEST) {
+                            if (marks[prev] != digest_tag) {
                                 break;
                             }
                             marks[prev] = 0;

@@ -3189,10 +3189,19 @@ namespace monad::vm::interpreter
     // tests the follower and calls this on the others.
     template <uint8_t OP, Traits traits, InstrEval HANDLER = nullptr>
     MONAD_VM_INSTRUCTION_CALL void push1_then(
-        runtime::Context &ctx, MONAD_VM_ANALYSIS_PARAM,
+        runtime::Context &entry_ctx, MONAD_VM_ANALYSIS_PARAM,
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
+        // MSTORE's pairs keep ctx in a0: see their arm.
+        runtime::Context &ctx = [&]() -> runtime::Context & {
+            if constexpr (OP == MSTORE) {
+                return held_in_a0(entry_ctx);
+            }
+            else {
+                return entry_ctx;
+            }
+        }();
         if constexpr (OP == PUSH1 && has_slots<traits>) {
             // PUSH1 1 PUSH1 1 PUSH1 <k> SHL SUB builds the mask 2^k - 1,
             // which push1_mask finishes from the two ones pushed. Any other
@@ -3278,6 +3287,17 @@ namespace monad::vm::interpreter
                 instr_ptr MONAD_VM_TBL_ARG);
         }
         else if constexpr (OP == MLOAD || OP == MSTORE) {
+            if constexpr (OP == MSTORE) {
+                // The arguments laundered where they came, ctx at the top:
+                // the fallback, most of the calls (the preamble's PUSH1 0x80
+                // PUSH1 0x40 MSTORE grows the memory), passes them on, and
+                // gcc otherwise frees a0, a1, a2, a5 and a6 for the fast arm
+                // with a copy of each at entry and copies them back before
+                // the jump. Not MLOAD's, which falls back far less.
+                MONAD_VM_LAUNDER(MONAD_VM_ANALYSIS_ARG);
+                MONAD_VM_LAUNDER(stack_bottom);
+                MONAD_VM_LAUNDER(itbl);
+            }
             // The offset is the immediate: no word to read and bound, and
             // inside the memory MLOAD and MSTORE charge only their static
             // gas, which neither tests (stack.hpp). Outside, the push and

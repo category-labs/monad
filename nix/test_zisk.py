@@ -18,6 +18,10 @@
 import importlib.util
 from pathlib import Path
 import shutil
+import os
+import subprocess
+import json
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -81,7 +85,9 @@ class ZiskChecks(unittest.TestCase):
     def test_elf_checks_identity_isa_and_surviving_functions(self):
         elf = self.repo / "guest"
         commit = "a" * 40
-        elf.write_bytes(b"monad-zkvm-official;commit=" + commit.encode() + b"\0")
+        elf.write_bytes(b"monad-zkvm;commit=" + commit.encode() + b";build=none\0")
+        with self.assertRaises(ValueError):
+            check.check_elf(elf, commit, "riscv-", "another-build")
         attrs = 'Tag_RISCV_arch: "rv64i2p1_m2p0_a2p1_zba1p0_zbb1p0_zbs1p0_zbkb1p0"'
         nm = "80000000 00000004 T free\n"
         with patch.object(check.subprocess, "check_output", side_effect=[attrs, nm, "80000000: 00008067 ret\n"]):
@@ -92,6 +98,21 @@ class ZiskChecks(unittest.TestCase):
             check.check_elf(elf, commit, "riscv-")
         with patch.object(check.subprocess, "check_output", side_effect=[attrs, nm, "80000000: 00100073 ebreak\n"]), self.assertRaises(ValueError):
             check.check_elf(elf, commit, "riscv-")
+
+
+class RustWrapperChecks(unittest.TestCase):
+    def test_normalizes_root_metadata_and_build_paths(self):
+        wrapper = REPO / "nix/zisk-rustc-wrapper.sh"
+        def run(crate):
+            args = ["sh", str(wrapper), sys.executable, "-c",
+                    "import json,sys; print(json.dumps(sys.argv[1:]))",
+                    "--crate-name", crate, "-C", "metadata=random"]
+            env = dict(os.environ, ZISK_ROOT_CRATE="monad_zkvm_zisk", NIX_BUILD_TOP="/tmp/random-build")
+            return json.loads(subprocess.check_output(args, env=env, text=True))
+        root = run("monad_zkvm_zisk")
+        self.assertIn("metadata=monad_zkvm_zisk", root)
+        self.assertIn("--remap-path-prefix=/tmp/random-build=/build", root)
+        self.assertIn("metadata=random", run("dependency"))
 
 
 if __name__ == "__main__":

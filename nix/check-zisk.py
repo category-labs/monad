@@ -133,8 +133,8 @@ def check_return(disassembly):
         fail("expected a single RISC-V ret instruction")
 
 
-def check_elf(elf, commit, prefix):
-    marker = b"monad-zkvm-official;commit=" + commit.encode() + b"\0"
+def check_elf(elf, commit, prefix, build_id="none"):
+    marker = b"monad-zkvm;commit=" + commit.encode() + b";build=" + build_id.encode() + b"\0"
     if not re.fullmatch(r"[0-9a-f]{40}", commit) or marker not in elf.read_bytes():
         fail("ELF does not contain the expected commit marker")
 
@@ -167,6 +167,7 @@ def main():
     parser.add_argument("--binutils-prefix")
     parser.add_argument("--inputs", type=Path)
     parser.add_argument("--manifest", type=Path)
+    parser.add_argument("--build-id", default="none")
     args = parser.parse_args()
     if any((args.elf, args.binutils_prefix, args.inputs, args.manifest)) and not all(
         (args.elf, args.binutils_prefix, args.inputs, args.manifest)
@@ -176,7 +177,8 @@ def main():
         check_allocator(args.repo)
         if args.elf:
             inputs = json.loads(args.inputs.read_text())
-            check_elf(args.elf, inputs["commit"], args.binutils_prefix)
+            check_elf(args.elf, inputs["commit"], args.binutils_prefix, args.build_id)
+            inputs["build"] = args.build_id
             inputs["elf_sha256"] = hashlib.sha256(args.elf.read_bytes()).hexdigest()
             args.manifest.write_text(json.dumps(inputs, indent=2, sort_keys=True) + "\n")
     except ValueError as error:

@@ -66,6 +66,22 @@ Start each section's commands from the repository root unless stated otherwise.
 ZisK input is an 8-byte little-endian payload length followed by the witness,
 zero-padded to an 8-byte boundary.
 
+Published benchmark and release artifacts must come from the reference
+("official") build, which nix produces from a clean commit with the patched
+compiler and the pinned ZisK toolchain (see [nix/README.md](../nix/README.md)):
+
+```sh
+nix build ./nix#zisk-elf
+#  → result/monad-zkvm-zisk, result/monad-zkvm-zisk.build.json
+```
+
+The ELF embeds its commit, and `build.json` records the ELF hash with the
+toolchain store paths; keep it with published benchmarks. Direct
+`cargo-zisk build`, as below, produces development builds, marked
+`monad-zkvm-dev` in the ELF, for A/B experiments with other compilers or
+options. Setting `MONAD_ZKVM_OFFICIAL_PROFILE=ON` and `MONAD_ZKVM_GIT_COMMIT`
+in the environment builds the official profile by hand.
+
 ```sh
 # 1. Build the guest ELF.
 cd zkvm/zisk

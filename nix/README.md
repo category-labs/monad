@@ -1,10 +1,10 @@
-# zkVM toolchains
+# zkVM toolchains and guest
 
 Builds the `riscv64-none-elf` GCC used to cross-compile the zkVM guest
 (`zkvm/guest`), with the ZisK backend patches from
-`zkvm/toolchain/zisk-dma-gcc` applied, and the Rust toolchain that links
-the ZisK guest. CI consumes the GCC from `docker/Dockerfile`; the same
-outputs work locally.
+`zkvm/toolchain/zisk-dma-gcc` applied, the Rust toolchain that links the
+ZisK guest, and the reference ZisK guest ELF itself. CI consumes the GCC
+from `docker/Dockerfile`; the same outputs work locally.
 
 Flakes are not enabled in a stock Nix install. Either add
 
@@ -54,6 +54,49 @@ and replace the hash with the one the first build reports.
 nix build ./nix#zisk-rust-toolchain
 ./result/bin/rustc --version
 ```
+
+## ZisK guest ELF
+
+`zisk-elf` builds the reference ("official") guest, the ELF that published
+benchmarks and releases must come from. Its inputs are all fixed by this
+flake: the patched cross GCC above, the ZisK Rust toolchain
+(`zisk-rust-toolchain`, the prebuilt `zisk-4.0.0` release of
+0xPolygonHermez/rust, relinked for nix), the ZisK revision that
+`zkvm/zisk/Cargo.lock` pins, the source commit, and the submodules the
+guest reads at the revisions the commit pins. Build it from a clean
+checkout:
+
+```shell
+nix build ./nix#zisk-elf
+ls result/   # monad-zkvm-zisk, monad-zkvm-zisk.build.json
+```
+
+The ELF embeds `monad-zkvm-official;commit=<sha>`; `build.json` records
+the ELF hash with the store paths of both toolchains, the ZisK revision and
+the submodule revisions. Keep it with published benchmarks. A dirty tree
+has no commit to record, so the build refuses it.
+
+nix exports a git tree without its submodules, and asking for them would
+pull in every nested test-vector repository. `guest-submodules.json`
+therefore pins the URL and revision of each submodule the guest reads, and
+`zisk-elf.nix` fetches those itself. `guest-submodules.py` regenerates the
+file from `.gitmodules` and the gitlinks of `HEAD`; run it after bumping
+one of those submodules. CI runs it with `--check`, so a stale file fails
+the ZK workflow rather than building the wrong sources.
+
+Before the ELF is kept, the derivation checks what the guest's official
+profile assumes about it: the commit marker, the Zba/Zbb/Zbs/Zbkb ISA
+attributes, and that every `operator delete` or `free` symbol that survived
+linking is the bare return `nodelete.hpp` promises GCC.
+
+`nix build --rebuild ./nix#zisk-elf` builds the ELF again and fails if the
+result differs, so reproducibility is checked rather than assumed.
+
+Development builds keep using `cargo-zisk build` with
+`RISCV_TOOLCHAIN_DIR` pointing at `result` of `toolchainEnv`; they carry a
+`monad-zkvm-dev` marker instead of a commit. To bump the Rust toolchain,
+change `tag` in `zisk-rust-toolchain.nix` and replace the hash with the one
+the first build reports.
 
 ## Why nix
 

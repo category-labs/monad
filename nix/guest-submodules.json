@@ -1,0 +1,34 @@
+{
+  "third_party/blst": {
+    "url": "https://github.com/supranational/blst.git",
+    "rev": "52cc60d78591a56abb2f3d0bd1cdafc6ba242997"
+  },
+  "third_party/cthash": {
+    "url": "https://github.com/hanickadot/cthash.git",
+    "rev": "6a78c89ce736ca96dbafad69d30a1a9e05e47a53"
+  },
+  "third_party/evmc": {
+    "url": "https://github.com/category-labs/evmc.git",
+    "rev": "f6b7c57e071d4eb0020d2cda3aee51e05ad8c726"
+  },
+  "third_party/immer": {
+    "url": "https://github.com/arximboldi/immer.git",
+    "rev": "5875f7739a6c642ad58cbedadb509c86d421217e"
+  },
+  "third_party/komihash": {
+    "url": "https://github.com/avaneev/komihash.git",
+    "rev": "c4e03a39b146e8411a1c166b47758d4b250d7878"
+  },
+  "third_party/nlohmann_json": {
+    "url": "https://github.com/nlohmann/json.git",
+    "rev": "9cca280a4d0ccf0c08f47a99aa71d1b0e52f8d03"
+  },
+  "third_party/unordered_dense": {
+    "url": "https://github.com/martinus/unordered_dense.git",
+    "rev": "a570a0e87f95027e8544c72295236df5d84c3dcc"
+  },
+  "third_party/zkevm-standards": {
+    "url": "https://github.com/eth-act/zkevm-standards.git",
+    "rev": "941aeb413d8f17715742fa06d1d0c60d81551eb3"
+  }
+}

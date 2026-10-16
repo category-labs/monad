@@ -27,7 +27,7 @@
 #include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/runtime/types.hpp>
 
-#include <asmjit/core/jitruntime.h>
+#include <asmjit/core/jit_runtime.h>
 
 #include <cstddef>
 #include <cstdint>

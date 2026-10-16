@@ -1661,6 +1661,119 @@ TEST_F(EthCallFixture, static_precompile_OOG_with_call_trace)
     monad_executor_destroy(executor);
 }
 
+// The point evaluation precompile needs the KZG trusted setup, which the
+// executor must load itself: nothing on the RPC path calls into the daemon's
+// startup code.
+TEST_F(EthCallFixture, point_evaluation_precompile_with_call_trace)
+{
+    static constexpr auto precompile_address{
+        0x000000000000000000000000000000000000000a_address};
+
+    // go-ethereum core/vm/testdata/precompiles/pointEvaluation.json
+    static auto const input =
+        from_hex(
+            std::string_view{
+                "014edfed8547661f6cb416eba53061a2f6dce872c0497e6dd485a876fe2567"
+                "f156"
+                "4c0a11a0f704f4fc3e8acfe0f8245f0ad1347b378fbf96e206da11a5d36306"
+                "6d92"
+                "8e13fe443e957d82e3e71d48cb65d51028eb4483e719bf8efcdf12f7c321a4"
+                "21e2"
+                "29565952cfff4ef3517100a97da1d4fe57956fa50a442f92af03b1bf37adac"
+                "c8ad"
+                "4ed209b31287ea5bb94d9d06a444d6bb5aadc3ceb615b50d6606bd54bfe529"
+                "f592"
+                "47987cd1ab848d19de599a9052f1835fb0d0d44cf70183e19a68c9"})
+            .value();
+    static auto const expected_output =
+        from_hex(std::string_view{"00000000000000000000000000000000000000"
+                                  "0000000000000000000000100073"
+                                  "eda753299d7d483339d80809a1d80553bda402"
+                                  "fffe5bfeffffffff00000001"})
+            .value();
+
+    for (uint64_t i = 0; i < 256; ++i) {
+        commit_sequential(tdb, StateDeltas({}), {}, BlockHeader{.number = i});
+    }
+
+    BlockHeader const header{.number = 256};
+
+    commit_sequential(
+        tdb,
+        StateDeltas(
+            {{ADDR_A,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .balance = 1'000'000,
+                           .code_hash = NULL_HASH,
+                           .nonce = 0x0}}}}}),
+        Code{},
+        header);
+
+    Transaction const tx{
+        .max_fee_per_gas = 1,
+        .gas_limit = 1'000'000,
+        .value = 0,
+        .to = precompile_address,
+        .data = input,
+    };
+    auto const &from = ADDR_A;
+
+    auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_sender =
+        to_vec(rlp::encode_address(std::make_optional(from)));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    auto *executor = create_executor(dbname.string());
+    auto *state_override = monad_state_override_create();
+
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+
+    monad_executor_eth_call_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_tx.data(),
+        rlp_tx.size(),
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_sender.data(),
+        rlp_sender.size(),
+        header.number,
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        state_override,
+        complete_callback,
+        (void *)&ctx,
+        CALL_TRACER,
+        call_tracer_max_size,
+        true);
+    f.get();
+
+    ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS)
+        << (ctx.result->message ? ctx.result->message : "");
+    EXPECT_EQ(
+        byte_string(ctx.result->output_data, ctx.result->output_data_len),
+        expected_output);
+
+    byte_string const rlp_call_frames(
+        ctx.result->encoded_trace, ctx.result->encoded_trace_len);
+    byte_string_view view(rlp_call_frames);
+    auto const call_frames = rlp::decode_call_frames(view);
+
+    ASSERT_TRUE(call_frames.has_value());
+    ASSERT_EQ(call_frames.value().size(), 1);
+    EXPECT_EQ(call_frames.value()[0].to, precompile_address);
+    EXPECT_EQ(call_frames.value()[0].status, MONAD_STATUS_SUCCESS);
+    EXPECT_EQ(call_frames.value()[0].output, expected_output);
+
+    monad_state_override_destroy(state_override);
+    monad_executor_destroy(executor);
+}
+
 // Same setup as transfer_success_with_call_trace, include both prestate &
 // statedelta trace checks
 TEST_F(EthCallFixture, transfer_success_with_state_trace)

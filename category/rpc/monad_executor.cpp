@@ -49,6 +49,7 @@
 #include <category/execution/ethereum/execute_block.hpp>
 #include <category/execution/ethereum/execute_block_header.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
+#include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/rlp/decode.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
@@ -2139,6 +2140,9 @@ monad_executor *monad_executor_create(
 
     MONAD_ASSERT(dbpath);
     std::string const triedb_path{dbpath};
+
+    init_trusted_setup();
+    MONAD_ASSERT(check_trusted_setup());
 
     monad_executor *const e = new monad_executor(
         low_pool_conf,

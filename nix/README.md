@@ -1,9 +1,10 @@
-# RISC-V cross toolchain
+# zkVM toolchains
 
 Builds the `riscv64-none-elf` GCC used to cross-compile the zkVM guest
 (`zkvm/guest`), with the ZisK backend patches from
-`zkvm/toolchain/zisk-dma-gcc` applied. CI consumes this from
-`docker/Dockerfile`; the same output works locally.
+`zkvm/toolchain/zisk-dma-gcc` applied, and the Rust toolchain that links
+the ZisK guest. CI consumes the GCC from `docker/Dockerfile`; the same
+outputs work locally.
 
 Flakes are not enabled in a stock Nix install. Either add
 
@@ -23,7 +24,7 @@ cmake -B build-zkvm -S zkvm/guest \
     -DCMAKE_BUILD_TYPE=Release
 ```
 
-The toolchain is an ordinary package added by `overlay.nix`, which the
+Both toolchains are ordinary packages added by `overlay.nix`, which the
 flake exports as `overlays.default` for other package sets to apply.
 
 The flake lives in `nix/` but reads the GCC patches from
@@ -41,6 +42,28 @@ one documents (`csrs 0x813` for a block `memcpy`; `li ...,184` and
 `addi ...,...,128` for a byte constant and a byte addition), so an
 unpatched or mis-patched compiler fails to build rather than quietly
 building a slower guest.
+
+## ZisK Rust toolchain
+
+`zisk-rust-toolchain` is the compiler that builds `ziskos` and the guest's
+Rust entry point: 0xPolygonHermez's rustc fork with the
+`riscv64ima-zisk-zkvm-elf` target. `cargo-zisk toolchain install` fetches
+the same prebuilt archive but takes the newest `zisk-4.x.y` release at
+install time, so two machines can hold different compilers without any
+record of it. The ZisK source names only the major of the toolchain it
+wants, so `zisk-rust-toolchain.nix` pins the release tag and the archive
+hash itself and relinks the binaries for nix. To bump it, change `tag`
+and replace the hash with the one the first build reports.
+
+```shell
+nix build ./nix#zisk-rust-toolchain
+./result/bin/rustc --version
+```
+
+The toolchain also installs `zisk-rustc-wrapper`, a `RUSTC_WRAPPER` for
+builds that must not depend on their build directory, and its setup hook
+exports `RUSTC_WRAPPER` into every build that lists the toolchain among
+its native build inputs; the script explains what it rewrites and why.
 
 ## Why nix
 

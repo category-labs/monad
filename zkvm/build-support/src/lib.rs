@@ -82,28 +82,10 @@ impl Backend {
                 println!("cargo:rerun-if-env-changed={option}");
                 defines.push((
                     option.into(),
-                    env::var(option).unwrap_or_else(|_| {
-                        if env::var("MONAD_ZKVM_OFFICIAL_PROFILE").as_deref() == Ok("ON") {
-                            "ON".into()
-                        } else {
-                            "OFF".into()
-                        }
-                    }),
+                    env::var(option).unwrap_or_else(|_| "OFF".into()),
                 ));
             }
         }
-        let official = env::var("MONAD_ZKVM_OFFICIAL_PROFILE").ok();
-        println!("cargo:rerun-if-env-changed=MONAD_ZKVM_OFFICIAL_PROFILE");
-        if let Some(profile) = &official {
-            assert_eq!(
-                profile, "ON",
-                "MONAD_ZKVM_OFFICIAL_PROFILE must be ON or unset"
-            );
-        }
-        defines.push((
-            "MONAD_ZKVM_OFFICIAL_PROFILE".into(),
-            official.clone().unwrap_or_else(|| "OFF".into()),
-        ));
         defines.extend(extra_cmake_definitions());
 
         // Reuse objects across commits, but not after a compiler rebuild, and
@@ -159,11 +141,7 @@ impl Backend {
 
         cfg.define(
             "MONAD_ZKVM_GIT_COMMIT",
-            if official.is_some() {
-                official_build_commit(&repo_root)
-            } else {
-                env::var("MONAD_ZKVM_GIT_COMMIT").unwrap_or_default()
-            },
+            env::var("MONAD_ZKVM_GIT_COMMIT").unwrap_or_default(),
         )
         .define(
             "MONAD_ZKVM_BUILD_ID",
@@ -305,7 +283,7 @@ fn sp1_zkevm_dir() -> PathBuf {
 }
 
 /// The ZisK compiler options, read from the environment and OFF by default.
-/// Enable them explicitly for development builds.
+/// The reference Nix build turns both on.
 const ZISK_OPTIONS: [&str; 2] = ["MONAD_ZKVM_ZISK_DMA", "MONAD_ZKVM_ZISK_CLEAN_BYTE_STORES"];
 
 /// Environment inputs used by cc-rs and cmake-rs, including target overrides.
@@ -331,47 +309,6 @@ fn build_env_names(triple: &str) -> Vec<String> {
     names
 }
 
-/// Use Git HEAD, rejecting a mismatched supplied SHA or reported tracked changes.
-/// Without a usable HEAD, require MONAD_ZKVM_GIT_COMMIT (e.g. source archives).
-fn official_build_commit(repo_root: &Path) -> String {
-    let git = |args: &[&str]| -> Option<String> {
-        let out = Command::new("git")
-            .arg("-C")
-            .arg(repo_root)
-            .args(args)
-            .output()
-            .ok()?;
-        out.status
-            .success()
-            .then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
-    };
-    let supplied = env::var("MONAD_ZKVM_GIT_COMMIT").ok();
-    let head = match git(&["rev-parse", "HEAD"]) {
-        Some(h) if h.len() == 40 => h,
-        _ => {
-            return supplied.expect(
-                "official ZisK profile: no git in the build tree, so \
-                 MONAD_ZKVM_GIT_COMMIT must supply the commit",
-            );
-        }
-    };
-    // Check tracked changes; untracked files are excluded here.
-    if let Some(dirty) = git(&["status", "--porcelain", "--untracked-files=no"]) {
-        assert!(
-            dirty.is_empty(),
-            "official ZisK profile: the worktree is dirty, so no commit \
-             describes what would be built:\n{dirty}"
-        );
-    }
-    if let Some(supplied) = supplied {
-        assert_eq!(
-            supplied, head,
-            "MONAD_ZKVM_GIT_COMMIT does not match the tree being built"
-        );
-    }
-    head
-}
-
 fn manifest_dir() -> PathBuf {
     PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR unset"))
 }
@@ -385,16 +322,12 @@ fn locate_repo_root(manifest: &Path) -> PathBuf {
 }
 
 /// Further CMake definitions for a development build, from
-/// MONAD_ZKVM_CMAKE_ARGS as shell-quoted `-DNAME=VALUE` words. The official
-/// profile rejects overrides.
+/// MONAD_ZKVM_CMAKE_ARGS as shell-quoted `-DNAME=VALUE` words. The reference
+/// Nix build sets none.
 fn extra_cmake_definitions() -> Vec<(String, String)> {
     let Ok(args) = env::var("MONAD_ZKVM_CMAKE_ARGS") else {
         return Vec::new();
     };
-    assert!(
-        args.trim().is_empty() || env::var_os("MONAD_ZKVM_OFFICIAL_PROFILE").is_none(),
-        "MONAD_ZKVM_CMAKE_ARGS is refused by the official profile"
-    );
     parse_cmake_definitions(&args)
 }
 

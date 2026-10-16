@@ -68,11 +68,40 @@ Start each section's commands from the repository root unless stated otherwise.
 ZisK input is an 8-byte little-endian payload length followed by the witness,
 zero-padded to an 8-byte boundary.
 
-`zkvm/zisk/build.sh --official` checks the reference compiler settings and
-embeds the source commit. Development builds can use Cargo directly.
-Select the toolchain with `RISCV_TOOLCHAIN_DIR`; pass development CMake
-options through `MONAD_ZKVM_CMAKE_ARGS` as shell-quoted `-DNAME=VALUE` words.
-Each compiler and configuration keeps its own cache under Cargo's `OUT_DIR`.
+Published benchmarks and releases use the [reference Nix build](../nix/README.md#zisk-guest-elf):
+
+```sh
+nix build --option sandbox true --option sandbox-fallback false './nix?submodules=1#zisk-elf'
+# result/monad-zkvm-zisk and result/monad-zkvm-zisk.build.json
+```
+
+It pins the source and toolchains and checks the allocator assumptions and
+linked ELF. Keep the manifest with the artifact. It requires an x86_64 Linux
+builder. Reproducibility must still be checked by independent rebuilds.
+
+For incremental development on x86_64 Linux, use the [Nix development shell](../nix/README.md#development-shell):
+
+```sh
+nix develop ./nix#zisk
+cd zkvm/zisk
+cargo build --release --locked --target riscv64ima-zisk-zkvm-elf --target-dir target/elf --bin monad-zkvm-zisk
+```
+
+It supplies the pinned compilers and linker configuration, enables DMA and clean
+byte stores, and builds local edits without `cargo-zisk`.
+
+Select locally installed compiler tools with the `RISCV_TOOLCHAIN_DIR` environment
+variable. Toolchain-selection `-D` overrides are rejected so the cache fingerprint
+and Cargo watch list always describe the tools actually used.
+
+DMA and clean byte stores are off by default outside Nix; enable them with the
+`MONAD_ZKVM_ZISK_DMA=ON` and `MONAD_ZKVM_ZISK_CLEAN_BYTE_STORES=ON` environment
+variables. Further CMake options go in `MONAD_ZKVM_CMAKE_ARGS` as shell-quoted
+`-DNAME=VALUE` words. Each compiler and configuration keeps its own CMake build
+under Cargo's `OUT_DIR`, so switching between them reuses their objects.
+Without explicit stamps, development ELFs carry
+`monad-zkvm;commit=none;build=none`. Initialize submodules recursively before
+using the Nix build.
 
 ```sh
 # 1. Build the guest ELF.

@@ -3988,12 +3988,27 @@ namespace monad::vm::interpreter
     // here, instr_ptr on the PUSH2.
     template <uint8_t OP, Traits traits>
     MONAD_VM_INSTRUCTION_CALL void push2_then(
-        runtime::Context &ctx, MONAD_VM_DISPATCH_STATE_PARAM,
+        runtime::Context &entry_ctx, MONAD_VM_DISPATCH_STATE_PARAM,
         uint256_t const *stack_lower_bound, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         static_assert(OP == JUMP || OP == JUMPI || OP == MLOAD || OP == MSTORE);
+        // MSTORE's pairs keep ctx in a0, as push1_then's.
+        runtime::Context &ctx = [&]() -> runtime::Context & {
+            if constexpr (OP == MSTORE) {
+                return held_in_a0(entry_ctx);
+            }
+            else {
+                return entry_ctx;
+            }
+        }();
         if constexpr (OP == MLOAD || OP == MSTORE) {
+            if constexpr (OP == MSTORE) {
+                // As push1_then's: the arguments where they came.
+                MONAD_VM_LAUNDER(MONAD_VM_DISPATCH_STATE_ARG);
+                MONAD_VM_LAUNDER(stack_lower_bound);
+                MONAD_VM_LAUNDER(itbl);
+            }
             // As push1_then's, the offset two bytes: PUSH2's stack test,
             // then the memory's size alone; outside it, the push and the
             // follower's handler.

@@ -309,7 +309,8 @@ try {
     event_tracer = create_event_tracer(trace_log);
 #endif
 
-    MONAD_ASSERT(init_trusted_setup());
+    init_trusted_setup();
+    MONAD_ASSERT(check_trusted_setup());
 
     auto const db_in_memory = dbname_path.empty();
     [[maybe_unused]] auto const load_start_time =

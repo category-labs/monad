@@ -56,12 +56,14 @@
 #include <cstring>
 #include <gmp.h>
 #include <limits>
+#include <mutex>
 #include <optional>
 #include <string_view>
 
 namespace
 {
     std::optional<KZGSettings> g_trustedSetup;
+    std::mutex g_trustedSetupMutex;
 
     monad::bytes32_t kzg_to_version_hashed(KZGCommitment const &commitment)
     {
@@ -94,19 +96,25 @@ namespace
 
 MONAD_NAMESPACE_BEGIN
 
-bool init_trusted_setup()
+void init_trusted_setup()
 {
-    if (!g_trustedSetup.has_value()) {
-        auto const setup = c_kzg_4844::trusted_setup_data();
-        KZGSettings settings;
-        FILE *fp = fmemopen((void *)(setup.data()), setup.size(), "r");
-        if (fp) {
-            if (load_trusted_setup_file(&settings, fp, 0) == C_KZG_OK) {
-                g_trustedSetup.emplace(settings);
-            }
-            fclose(fp);
-        }
+    std::lock_guard const lock{g_trustedSetupMutex};
+    if (g_trustedSetup.has_value()) {
+        return;
     }
+    auto const setup = c_kzg_4844::trusted_setup_data();
+    KZGSettings settings;
+    FILE *fp = fmemopen((void *)(setup.data()), setup.size(), "r");
+    if (fp) {
+        if (load_trusted_setup_file(&settings, fp, 0) == C_KZG_OK) {
+            g_trustedSetup.emplace(settings);
+        }
+        fclose(fp);
+    }
+}
+
+bool check_trusted_setup()
+{
     return g_trustedSetup.has_value();
 }
 

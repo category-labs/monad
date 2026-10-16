@@ -17,7 +17,7 @@
 
 // These operator delete overloads are empty in zkvm/core/libstdcxx.cpp.
 // Mark them const so GCC can remove calls and argument preparation.
-// CMake injects this header into every ZisK C++ file. check-zisk.py checks
+// CMake injects this header into every ZisK C++ file. The Nix build checks
 // the empty definitions, including those eliminated from the ELF.
 // Keep declarations here: replaceable operator delete cannot be inline.
 

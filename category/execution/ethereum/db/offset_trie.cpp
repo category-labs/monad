@@ -221,7 +221,9 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
         unclaimed -= DIGEST_NODE_LEN;
     };
 #if !defined(MONAD_ZKVM_ZISK)
-    unsigned char rlp_buf[MAX_NODE_RLP];
+    // Aligned, so that the RLP written back from its end starts from a word
+    // boundary: the offsets a padded blob matches its copies to.
+    alignas(8) unsigned char rlp_buf[MAX_NODE_RLP];
 #endif
 #if defined(MONAD_ZKVM_ZISK)
     // The windows and the hash slots, held for the walk: the hash that ends a
@@ -307,6 +309,16 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
             node = NodeViewBase{p};
             continue;
         }
+#if !defined(MONAD_ZKVM_ZISK)
+        if (node.tag() == PAD) {
+            // A filler byte: no node, so no mark and no claim -- the count
+            // started at the region's length, and this byte is no node's.
+            ++seen;
+            --unclaimed;
+            node = NodeViewBase{node.bytes() + 1};
+            continue;
+        }
+#endif
         // Wanted from here down -- by the hash key and by the marking below
         // -- and nowhere in the arm above.
         node_offset = static_cast<uint64_t>(node.bytes() - base);
@@ -341,14 +353,33 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
                         16 * sizeof(node_id_wire_t));
 #else
                     unsigned char const *const p = b.payload();
-                    uint64_t pair;
+    #if defined(MONAD_ZKVM_AIRBENDER)
+                    // A payload the blob aligned (Tag::PAD): the ids as
+                    // words, where from another offset each is four byte
+                    // loads put together -- no unaligned access on rv32.
+                    if ((reinterpret_cast<uintptr_t>(p) & 3) == 0) {
+                        typedef node_id_wire_t
+                            __attribute__((__may_alias__)) word_t;
+                        auto const *const w =
+                            reinterpret_cast<word_t const *>(p);
+        #pragma GCC unroll 16
+                        for (unsigned i = 0; i < 16; ++i) {
+                            is_valid_offset(NodeId{w[i]});
+                        }
+                    }
+                    else
+    #endif
+                    {
+                        uint64_t pair;
 #pragma GCC unroll 8
-                    for (unsigned i = 0; i < 8; ++i) {
-                        std::memcpy(&pair, p + i * sizeof(pair), sizeof(pair));
-                        is_valid_offset(
-                            NodeId{static_cast<node_id_wire_t>(pair)});
-                        is_valid_offset(
-                            NodeId{static_cast<node_id_wire_t>(pair >> 32)});
+                        for (unsigned i = 0; i < 8; ++i) {
+                            std::memcpy(
+                                &pair, p + i * sizeof(pair), sizeof(pair));
+                            is_valid_offset(
+                                NodeId{static_cast<node_id_wire_t>(pair)});
+                            is_valid_offset(NodeId{
+                                static_cast<node_id_wire_t>(pair >> 32)});
+                        }
                     }
 #endif
                 },
@@ -816,7 +847,7 @@ bool OffsetTrie::patch_ref(
             return true;
         }
     }
-    unsigned char tmp[MAX_NODE_RLP];
+    alignas(8) unsigned char tmp[MAX_NODE_RLP];
     node_rlp_span const rem = child_ref<false>(child, node_rlp_span{tmp});
     if (rem.rlp_size() != ref_len) {
         return false;

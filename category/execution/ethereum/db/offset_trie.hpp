@@ -56,6 +56,13 @@ enum Tag : uint8_t
     // read_root asserts the magic, which is what guarantees the byte is
     // there.
     EMPTY = 'M',
+    // A filler byte before a node, which the constructor's walk steps over
+    // (not on ZisK): it lets a blob put a node, or a run of digests, at the
+    // offset in a word that its copy lands at, so that the copy moves whole
+    // words (zkvm/airbender/spike/mk_ab_input.py). Never a node: the walk
+    // marks none, so no child or root can claim one, and match and
+    // checked_end reject the tag.
+    PAD = 'P',
 };
 
 inline constexpr uint32_t HEADER_LEN = 8; // magic(4) root_offset(4)

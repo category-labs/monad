@@ -103,8 +103,7 @@ Result<void> static_validate_header(BlockHeader const &header)
         return BlockError::MissingField;
     }
 
-    // EIP-7685
-    if constexpr (traits::evm_rev() < MONAD_ETH_PRAGUE) {
+    if constexpr (!traits::eip_7685_header_active()) {
         if (MONAD_UNLIKELY(header.requests_hash.has_value())) {
             return BlockError::FieldBeforeFork;
         }

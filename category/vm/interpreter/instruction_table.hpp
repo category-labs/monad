@@ -4725,14 +4725,17 @@ namespace monad::vm::interpreter
         auto const monad_vm_dst =
             static_cast<size_t>(detail::load_be_k<2>(instr_ptr + 1));
         if (MONAD_UNLIKELY(stack_top >= MONAD_VM_STACK_LIMIT)) {
-            MONAD_VM_MUST_TAIL return ctx.exit(Error);
+            // An exit of its own: merged with the jump's equal one below,
+            // the exit block took a copy of ctx on every execution.
+            MONAD_VM_MUST_TAIL return exit_stack_overflow(ctx);
         }
         gas_remaining -= static_gas<traits, PUSH2, JUMPI>();
         MONAD_VM_LAUNDER(gas_remaining);
         if (bit) {
             if (MONAD_UNLIKELY(
                     !MONAD_VM_ANALYSIS.is_jumpdest16(monad_vm_dst))) {
-                ctx.exit(Error);
+                // A tail call: a call would keep a frame for ra.
+                MONAD_VM_MUST_TAIL return ctx.exit(Error);
             }
             auto const *monad_vm_ip = MONAD_VM_ANALYSIS.code() + monad_vm_dst;
             monad_vm_ip = swallow_jumpdest(ctx, monad_vm_ip, gas_remaining);

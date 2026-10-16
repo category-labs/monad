@@ -26,11 +26,10 @@ jobs:
 
       - name: Install clang-format-${{ env.LLVM_VERSION }}
         run: |
-          sudo apt install -y clang-format-${{ env.LLVM_VERSION }}
+          sudo apt install -y clang-format-${{ env.LLVM_VERSION }} ripgrep
 
       - name: Run clang-format check
-        run: |
-          find category cmd test -regex '.*\.\(cpp\|hpp\|c\|h\)' -exec clang-format-${{ env.LLVM_VERSION }} -style=file --dry-run --Werror {} +
+        run: scripts/apply-clang-format.sh --check
 
   traits-check:
     name: Trait instantiation check

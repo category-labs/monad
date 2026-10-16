@@ -8,10 +8,12 @@ BUILD_DIR=build
 RUN_CLANG_TIDY="run-clang-tidy-$LLVM_VERSION"
 
 usage() {
-  echo "Usage: $0 [options...] [-- CLANG_TIDY_ARGS...]" 1>&2
-  echo "Options:"
-  echo "  -p|--build-dir BUILD_DIR"
-  echo "  -d|--driver RUN_CLANG_TIDY"
+  cat >&2 <<EOF
+Usage: $0 [options...] [-- CLANG_TIDY_ARGS...]
+Options:
+  -p|--build-dir BUILD_DIR
+  -d|--driver RUN_CLANG_TIDY
+EOF
   exit 1
 }
 
@@ -31,22 +33,20 @@ while [[ "$#" -gt 0 ]]; do
       shift
       break
       ;;
-    -*)
+    *)
       usage
       ;;
   esac
 done
 
-
-CUSTOM_PASS_OPTIONS=( )
+CUSTOM_PASS_OPTIONS=()
 
 CONST_CORRECTNESS_PLUGIN="${BUILD_DIR}/utils/clang-tidy-auto-const/libConstCorrectnessChecks.so"
 
-if [ -f $CONST_CORRECTNESS_PLUGIN ]; then
-  CUSTOM_PASS_OPTIONS=( -load $CONST_CORRECTNESS_PLUGIN \
-                        -checks='-misc-const-correctness,misc-auto-const-correctness' )
+if [ -f "$CONST_CORRECTNESS_PLUGIN" ]; then
+  CUSTOM_PASS_OPTIONS=(-load "$CONST_CORRECTNESS_PLUGIN"
+                       -checks='-misc-const-correctness,misc-auto-const-correctness')
 fi
-
 
 # Restrict linting to files that aren't in a .gitignore.
 mapfile -d '' -t inputs < <(\

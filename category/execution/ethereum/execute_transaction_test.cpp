@@ -22,9 +22,11 @@
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/core/units.hpp>
+#include <category/execution/ethereum/create_contract_address.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
+#include <category/execution/ethereum/execution_modalities.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
@@ -166,6 +168,78 @@ TYPED_TEST(TraitsTest, speculative_call_trace_size_limit_is_discarded_on_retry)
     ASSERT_EQ(call_frames.size(), 1);
     EXPECT_EQ(call_frames.front().status, MONAD_STATUS_SUCCESS);
     EXPECT_EQ(call_frames.front().output.size(), 32);
+}
+
+TYPED_TEST(MonadTraitsTest, live_execution_requires_matching_nonce)
+{
+    static constexpr auto sender =
+        0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address;
+    static constexpr uint64_t state_nonce = 24;
+    auto const contract = create_contract_address(sender, state_nonce);
+
+    for (uint64_t const nonce :
+         {state_nonce - 1, state_nonce, state_nonce + 1}) {
+        SCOPED_TRACE(nonce);
+        mpt::Db db{std::make_unique<InMemoryMachine>()};
+        db_t tdb{db};
+        vm::VM vm;
+        BlockState block_state{tdb, vm};
+        BlockMetrics metrics;
+        {
+            State state{block_state, Incarnation{0, 0}};
+            state.add_to_balance(sender, 20_ether);
+            state.set_nonce(sender, state_nonce);
+            block_state.merge(state);
+        }
+
+        Transaction const tx{
+            .sc = {.signature = {.r = 1, .s = 1}},
+            .nonce = nonce,
+            .gas_limit = 100'000,
+        };
+        BlockHeader const header{
+            .number = constants::EARLIEST_SUPPORTED_ETH_BLOCK_NUMBER};
+        BlockHashBufferFinalized const block_hash_buffer;
+        boost::fibers::promise<void> prev;
+        prev.set_value();
+        NoopCallTracer call_tracer;
+        trace::StateTracer state_tracer = std::monostate{};
+        auto const chain_ctx =
+            ChainContext<typename TestFixture::Trait>::debug_empty();
+        ASSERT_TRUE(std::holds_alternative<LiveExecution>(chain_ctx.mode));
+
+        auto const receipt = ExecuteTransaction<typename TestFixture::Trait>(
+            MonadDevnet{},
+            0,
+            tx,
+            sender,
+            {},
+            header,
+            block_hash_buffer,
+            block_state,
+            metrics,
+            prev,
+            call_tracer,
+            state_tracer,
+            chain_ctx,
+            nullptr)();
+
+        State state{block_state, Incarnation{0, 0}};
+        if (nonce == state_nonce) {
+            ASSERT_TRUE(receipt.has_value());
+            EXPECT_EQ(receipt.value().status, 1u);
+            EXPECT_EQ(metrics.num_retries, 0u);
+            EXPECT_EQ(state.get_nonce(sender), state_nonce + 1);
+            EXPECT_TRUE(state.account_exists(contract));
+            EXPECT_EQ(state.get_nonce(contract), 1u);
+        }
+        else {
+            ASSERT_TRUE(receipt.has_error());
+            EXPECT_EQ(receipt.error(), TransactionError::BadNonce);
+            EXPECT_EQ(state.get_nonce(sender), state_nonce);
+            EXPECT_FALSE(state.account_exists(contract));
+        }
+    }
 }
 
 TYPED_TEST(TraitsTest, irrevocable_gas_and_refund_new_contract)

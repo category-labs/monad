@@ -216,35 +216,35 @@ static inline void keccakf_state_copy(uint64_t *dst, uint64_t const *src)
 //   csrwi 0x8C0, id      run fcall `id` over the parameters pushed
 //   csrr  rd,  0xFFE     read the next result word
 //
-// The parameter register is pinned rather than left to a plain "r": the
-// transpiler reads `csrrs x0, csr, x0` as a nop instead of a parameter push,
-// so a constraint the compiler may satisfy with x0 pushes nothing and the
-// fcall silently sees no arguments. `_zicsr` is already in the guest's
-// -march, which is what lets these assemble at all.
+// The parameter is any register, as ziskos' fcall macros take it (`in(reg)`).
+// It must not be x0 -- the transpiler reads `csrrs x0, csr, x0` as a nop
+// instead of a parameter push, and the fcall would silently see no arguments
+// -- and a plain "r" never is: x0 is a fixed register, which gcc prints only
+// for a "J" constant under %z; a constant zero is loaded into a register
+// first. Pinned to a0, the parameter cost a move into a0 before most pushes.
+// `_zicsr` is already in the guest's -march, which is what lets these
+// assemble at all.
 constexpr uint64_t KECCAKF_INDEX_NOT_FOUND = ~uint64_t{0};
 
 // File the input state of the NEXT permutation under `index`.
 static inline void fcall_set_keccakf_index(uint64_t const index)
 {
-    register unsigned long a0 asm("a0") = static_cast<unsigned long>(index);
     asm volatile("csrs 0x8F0, %0\n\t" // one parameter, by value
                  "csrwi 0x8C0, 24" // FCALL_SET_KECCAKF_CACHE_INDEX_ID
                  :
-                 : "r"(a0)
+                 : "r"(index)
                  : "memory");
 }
 
 // The index `state` was filed under, or KECCAKF_INDEX_NOT_FOUND.
 static inline uint64_t fcall_get_keccakf_index(uint64_t const *const state)
 {
-    register unsigned long a0 asm("a0") =
-        reinterpret_cast<unsigned long>(state);
     uint64_t index;
     asm volatile("csrs 0x8F8, %[st]\n\t" // one parameter: 25 words at [st]
                  "csrwi 0x8C0, 25\n\t" // FCALL_GET_KECCAKF_CACHE_INDEX_ID
                  "csrr %[idx], 0xFFE" // fcall_get: the index
                  : [idx] "=&r"(index)
-                 : [st] "r"(a0)
+                 : [st] "r"(state)
                  : "memory");
     return index;
 }

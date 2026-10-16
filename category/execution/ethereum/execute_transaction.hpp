@@ -24,7 +24,7 @@
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
 
-#include <boost/fiber/future/promise.hpp>
+#include <boost/fiber/future/future.hpp>
 #include <evmc/evmc.hpp>
 
 #include <cstdint>
@@ -81,7 +81,7 @@ class ExecuteTransaction : public ExecuteTransactionNoValidation<traits>
     BlockHashBuffer const &block_hash_buffer_;
     BlockState &block_state_;
     BlockMetrics &block_metrics_;
-    boost::fibers::promise<void> &prev_;
+    boost::fibers::future<void> &prev_;
     CallTracerBase &call_tracer_;
     trace::StateTracer &state_tracer_;
     ExecutionEventRecorder *exec_recorder_;
@@ -95,7 +95,7 @@ public:
         Chain const &, uint64_t i, Transaction const &, Address const &,
         std::span<std::optional<Address> const>, BlockHeader const &,
         BlockHashBuffer const &, BlockState &, BlockMetrics &,
-        boost::fibers::promise<void> &prev, CallTracerBase &,
+        boost::fibers::future<void> &prev, CallTracerBase &,
         trace::StateTracer &, ChainContext<traits> const &chain_ctx,
         ExecutionEventRecorder *exec_recorder, bool trace_transfers = false);
     ~ExecuteTransaction() = default;

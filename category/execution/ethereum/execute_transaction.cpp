@@ -48,7 +48,7 @@
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
-#include <boost/fiber/future/promise.hpp>
+#include <boost/fiber/future/future.hpp>
 #include <boost/outcome/try.hpp>
 
 #include <algorithm>
@@ -306,7 +306,7 @@ ExecuteTransaction<traits>::ExecuteTransaction(
     std::span<std::optional<Address> const> const authorities,
     BlockHeader const &header, BlockHashBuffer const &block_hash_buffer,
     BlockState &block_state, BlockMetrics &block_metrics,
-    boost::fibers::promise<void> &prev, CallTracerBase &call_tracer,
+    boost::fibers::future<void> &prev, CallTracerBase &call_tracer,
     trace::StateTracer &state_tracer, ChainContext<traits> const &chain_ctx,
     ExecutionEventRecorder *const exec_recorder, bool const trace_transfers)
     : ExecuteTransactionNoValidation<
@@ -447,7 +447,7 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
             chain_.get_chain_id(),
             chain_.get_blob_schedule(header_.timestamp));
         if (validation_result.has_error()) {
-            prev_.get_future().wait();
+            prev_.wait();
             return std::move(validation_result).as_failure();
         }
     }
@@ -465,7 +465,7 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
 
         {
             TRACE_TXN_EVENT(StartStall);
-            prev_.get_future().wait();
+            prev_.wait();
         }
 
         if (block_state_.can_merge(state)) {

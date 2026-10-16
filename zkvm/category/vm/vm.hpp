@@ -80,6 +80,13 @@ namespace monad::vm
             : stack_allocator_{}
             , memory_pool_{8 * 1024 * 1024}
         {
+#if defined(MONAD_ZKVM_VARCODE_CACHE)
+            // A block's contracts, a few hundred: from empty the map rehashed
+            // its whole doubling chain, the last a refill of ~400 entries.
+            // Reserved buckets cost nothing until used (the derived header's
+            // reserve does not clear them).
+            varcode_.reserve(1024);
+#endif
         }
 
 #if defined(MONAD_ZKVM_VARCODE_CACHE)

@@ -73,7 +73,7 @@ BlockState::BlockState(Db &db, vm::VM &monad_vm, Db *const secondary_db)
     // Reserve initial capacity to avoid early rehashes.
     // Host TBB maps have no reserve().
     state_->reserve(1024);
-    code_.reserve(256);
+    code_.reserve(1024);
 #endif
 }
 

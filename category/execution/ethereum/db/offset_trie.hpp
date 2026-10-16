@@ -753,7 +753,14 @@ class OffsetTrie
         // written on every insert, and ZisK charges a 1-byte read 41 cells and
         // a 1-byte write 66, against 16 and 18 for an aligned word. The width
         // is free: the padding below fixes the pair at 64 bytes either way.
+#if defined(MONAD_ZKVM_ZISK)
+        // Down while the hash is the node's: an entry comes from the pool's
+        // untouched memory, which reads zero on ZisK, so the priming sweep's
+        // entries, one a hashed node, are current without a store.
+        uint64_t stale;
+#else
         uint64_t valid;
+#endif
 #if defined(MONAD_ZKVM_ZISK)
         // A primed node's RLP, in the window the priming sweep encoded it in,
         // and the children whose refs have changed since: bit k for a
@@ -858,7 +865,7 @@ class OffsetTrie
     {
 #if defined(MONAD_ZKVM_ZISK)
         CachedHash const *const e = hash_slot(id);
-        return (e != nullptr && e->valid) ? &e->h : nullptr;
+        return (e != nullptr && e->stale == 0) ? &e->h : nullptr;
 #else
         auto const it = hashes_.find(id);
         return (it != hashes_.end() && it->second.valid) ? &it->second.h
@@ -872,7 +879,7 @@ class OffsetTrie
 #if defined(MONAD_ZKVM_ZISK)
         CachedHash *const e = hash_slot(id);
         if (e != nullptr) {
-            e->valid = false;
+            e->stale = 1;
         }
         return e;
 #else
@@ -893,7 +900,7 @@ class OffsetTrie
             slot = new_hash_entry();
         }
         slot->h = h;
-        slot->valid = true;
+        slot->stale = 0;
 #else
         hashes_.insert_or_assign(id, CachedHash{h, true});
 #endif

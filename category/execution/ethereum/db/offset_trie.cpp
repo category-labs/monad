@@ -385,11 +385,11 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
             MONAD_KECCAK_SITE(TRIE_PRIME, rem.rlp_size());
 #if defined(MONAD_ZKVM_ZISK)
             // The sweep reaches each node once, so its slot is empty: the
-            // digest goes straight into a new entry. Filled before the hash,
-            // which comes last: nothing then lives across the call, where the
-            // entry and the RLP's length were saved and reloaded around it.
+            // digest goes straight into a new entry, current as it comes (see
+            // CachedHash::stale). Filled before the hash, which comes last:
+            // nothing then lives across the call, where the entry and the
+            // RLP's length were saved and reloaded around it.
             CachedHash *const e = new_hash_entry();
-            e->valid = true;
             e->rlp = rem.base() + rem.size();
             e->rlp_len = rem.rlp_size();
             walk_hash_slots[node_offset >> 2] = e;
@@ -747,7 +747,7 @@ bool OffsetTrie::keep_account_leaf(NodeId const leaf, NodeId const storage)
     if (e == nullptr || e->rlp == nullptr) {
         return false;
     }
-    e->valid = false;
+    e->stale = 1;
     mark_dirty(e, 0);
     return true;
 }
@@ -783,10 +783,10 @@ bool OffsetTrie::patch_ref(
                     }
                     MONAD_KECCAK_SITE(TRIE_ENCODE, len);
                     TRIE_PATCH_DIGEST(e->rlp, len, e->h.bytes);
-                    e->valid = true;
+                    e->stale = 0;
                     return true;
                 };
-                if (e->valid || patched()) {
+                if (e->stale == 0 || patched()) {
                     std::memcpy(ref + 1, e->h.bytes, KECCAK256_SIZE);
                     return true;
                 }
@@ -811,7 +811,7 @@ bool OffsetTrie::patch_ref(
             }
             MONAD_KECCAK_SITE(TRIE_ENCODE, rem.rlp_size());
             TRIE_PATCH_DIGEST(rem.rlp_data(), rem.rlp_size(), slot->h.bytes);
-            slot->valid = true;
+            slot->stale = 0;
             std::memcpy(ref + 1, slot->h.bytes, KECCAK256_SIZE);
             return true;
         }
@@ -1783,7 +1783,7 @@ OffsetTrie::upsert_node(NodeId id, NibblesView key)
         auto const descend =
             [hash_slots](uint64_t const v, unsigned const bit) {
                 if (CachedHash *const e = hash_slots[v >> 2]) {
-                    e->valid = false;
+                    e->stale = 1;
                     e->dirty |= uint64_t{1} << bit;
                 }
             };

@@ -43,6 +43,15 @@
 #include <utility>
 #include <vector>
 
+// Retained by align.ld so an ELF can be matched to its source commit and
+// build, or recognised as a build that supplied neither. Guest builds
+// always define the macros; the x86 test build of this file does not.
+#ifdef MONAD_ZKVM_BUILD_COMMIT
+extern "C" [[gnu::used, gnu::section(".monad_zkvm_commit")]]
+unsigned char const monad_zkvm_build_commit[] =
+    "monad-zkvm;commit=" MONAD_ZKVM_BUILD_COMMIT ";build=" MONAD_ZKVM_BUILD_ID;
+#endif
+
 extern "C" void monad_zkvm_execute_witness(void)
 {
     std::uint8_t const *input = nullptr;

@@ -280,7 +280,7 @@ struct NodeIdHash
 
     uint64_t operator()(NodeId const id) const noexcept
     {
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         // Fibonacci, not wyhash. An id is a byte offset into the blob, so ids
         // are ascending and at least a node apart -- they need spreading, but
         // they need it in one direction only, and multiplying by an odd

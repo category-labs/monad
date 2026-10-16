@@ -205,7 +205,14 @@ struct ankerl::unordered_dense::hash<monad::bytes32_t>
 
     [[gnu::always_inline]] inline uint64_t operator()(monad::bytes32_t const &x) const noexcept
     {
+#if defined(MONAD_ZKVM_AIRBENDER)
+        // Not through std::hash on Airbender: its size_t is 32 bits on rv32,
+        // and unordered_dense takes the bucket from the high bits of this
+        // 64-bit value, which would all be zero -- every key in bucket 0.
+        return monad::bits::hash_bytes32(x.bytes);
+#else
         return std::hash<monad::bytes32_t>{}(x);
+#endif
     }
 };
 

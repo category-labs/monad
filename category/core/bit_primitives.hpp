@@ -163,7 +163,7 @@ namespace monad::bits
     [[gnu::always_inline]] inline uint64_t hash_bytes20(unsigned char const *const p) noexcept
     {
         uint64_t const fold = load64(p) ^ load64(p + 8) ^ load64(p + 12);
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         return fold;
 #else
         return fmix64(fold);
@@ -184,7 +184,7 @@ namespace monad::bits
     {
         uint64_t const fold =
             load64(p) ^ load64(p + 8) ^ load64(p + 16) ^ load64(p + 24);
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         alignas(8) static constexpr uint64_t GOLDEN = 0x9E3779B97F4A7C15ull;
         uint64_t const h = fold * imm64(GOLDEN);
         return h ^ (h >> 29);

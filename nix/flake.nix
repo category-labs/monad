@@ -1,5 +1,5 @@
 {
-  description = "RISC-V cross toolchain, with the ZisK GCC patches, for the monad zkVM guest build";
+  description = "Toolchains for the monad zkVM guest build";
 
   # Pinned to a release branch: nixos-26.05 ships GCC 15.2.0, matching both
   # the Ubuntu host gcc-15 and the GCC that riscv-gnu-toolchain 2026.05.06
@@ -15,11 +15,13 @@
     {
       packages = forAllSystems (system:
         let
+          pkgs = import nixpkgs { inherit system; };
           toolchain = import ./riscv64-toolchain.nix { inherit nixpkgs system; };
         in
         {
           inherit (toolchain) cc bintools toolchainEnv;
           default = toolchain.toolchainEnv;
+          zisk-rust-toolchain = import ./zisk-rust-toolchain.nix { inherit pkgs; };
         });
     };
 }

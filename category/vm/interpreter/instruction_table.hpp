@@ -1873,10 +1873,13 @@ namespace monad::vm::interpreter
 #endif
     template <Traits traits>
     MONAD_VM_INSTRUCTION_CALL void sha3(
-        runtime::Context &ctx, MONAD_VM_ANALYSIS_PARAM,
+        runtime::Context &entry_ctx, MONAD_VM_ANALYSIS_PARAM,
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
+        // Held in a0: gcc took it for the operands' words and copied ctx away
+        // at entry and back before every dispatch.
+        runtime::Context &ctx = held_in_a0(entry_ctx);
 #if defined(MONAD_ZKVM_ZISK)
         MONAD_VM_CHECK(SHA3);
         // 32 or 64 bytes at an 8-aligned offset inside the memory, with their

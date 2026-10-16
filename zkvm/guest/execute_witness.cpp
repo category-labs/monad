@@ -367,6 +367,67 @@ extern "C" void monad_zkvm_execute_witness(void)
             }
         }
 #endif
+#if defined(MONAD_ZKVM_AIRBENDER)
+        // Codes the input holds in place (zkvm/airbender/spike/mk_ab_input.py):
+        // "MZC\x01", the count and the lengths as little-endian u32s, then
+        // each code at the first 8-byte boundary at least 33 bytes past the
+        // previous code's end (or the lengths), and 33 bytes after the last.
+        // Every byte between is checked zero: past a code's end and before
+        // its start the interpreter reads the padding Intercode::pad would
+        // have written. Then each is analysed and hashed where it lies -- no
+        // copy, and the sponge's lanes aligned. An RLP list of codes, the
+        // other guests' input, takes the loop below.
+        if (codes.size() >= 8 && codes[0] == 'M' && codes[1] == 'Z' &&
+            codes[2] == 'C' && codes[3] == 0x01) {
+            unsigned char const *const base = codes.data();
+            unsigned char const *const end = base + codes.size();
+            uint32_t count;
+            std::memcpy(&count, base + 4, sizeof count);
+            MONAD_ASSERT(count <= (codes.size() - 8) / 4);
+            // Zero from `from` to `to`: bytes to a word boundary, then words.
+            auto const zero_between = [end](
+                                          unsigned char const *from,
+                                          unsigned char const *const to) {
+                MONAD_ASSERT(from <= to && to <= end);
+                uint32_t any = 0;
+                for (; from < to && (reinterpret_cast<uintptr_t>(from) & 3);
+                     ++from) {
+                    any |= *from;
+                }
+                for (; to - from >= 4; from += 4) {
+                    uint32_t w;
+                    std::memcpy(&w, from, sizeof w);
+                    any |= w;
+                }
+                for (; from < to; ++from) {
+                    any |= *from;
+                }
+                MONAD_ASSERT(any == 0);
+            };
+            auto const next_start = [](unsigned char const *const after) {
+                return reinterpret_cast<unsigned char const *>(
+                    (reinterpret_cast<uintptr_t>(after) + 33 + 7) &
+                    ~uintptr_t{7});
+            };
+            unsigned char const *pos = base + 8 + 4 * size_t{count};
+            for (uint32_t i = 0; i < count; ++i) {
+                uint32_t len;
+                std::memcpy(&len, base + 8 + 4 * size_t{i}, sizeof len);
+                unsigned char const *const start = next_start(pos);
+                zero_between(pos, start);
+                MONAD_ASSERT(len <= static_cast<size_t>(end - start));
+                auto code = monad::vm::make_shared_intercode(
+                    start, len, monad::vm::interpreter::Intercode::in_place_t{});
+                monad::bytes32_t code_hash;
+                monad_zkvm_keccak256_fast_nomemo(start, len, code_hash.bytes);
+                code_index.emplace(code_hash, std::move(code));
+                pos = start + len;
+            }
+            MONAD_ASSERT(static_cast<size_t>(end - pos) >= 33);
+            zero_between(pos, pos + 33);
+            codes = {};
+        }
+#endif
         while (!codes.empty()) {
             auto const bytes = monad::rlp::parse_string_metadata(codes);
             MONAD_ASSERT(bytes.has_value());

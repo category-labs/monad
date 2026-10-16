@@ -138,6 +138,19 @@ namespace monad::vm::interpreter
 
         explicit Intercode(std::span<uint8_t const> const);
 
+#if defined(MONAD_ZKVM_AIRBENDER)
+        struct in_place_t
+        {
+        };
+
+        // A code the guest's input already holds padded -- zero for
+        // start_padding_size bytes before it and end_padding_size after,
+        // which the caller has checked: analysed where it lies, with no
+        // copy. The guest's operator delete does nothing, so the
+        // destructor's delete of a buffer this does not own does nothing.
+        Intercode(uint8_t const *padded_code, size_t code_size, in_place_t);
+#endif
+
 #ifdef MONAD_ZKVM_ZISK
         // A code the guest holds already padded, with its JUMPDEST map: no
         // copy and no analysis. The guest's operator delete does nothing, so

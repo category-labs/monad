@@ -37,6 +37,25 @@ namespace monad::vm::interpreter
     {
     }
 
+#if defined(MONAD_ZKVM_AIRBENDER)
+    namespace
+    {
+        uint32_t in_place_size(size_t const code_size)
+        {
+            MONAD_ASSERT(code_size <= *code_size_t::max());
+            return static_cast<uint32_t>(code_size);
+        }
+    }
+
+    Intercode::Intercode(
+        uint8_t const *const padded_code, size_t const code_size, in_place_t)
+        : padded_code_(padded_code)
+        , code_size_(code_size_t::unsafe_from(in_place_size(code_size)))
+        , jumpdest_map_(find_jumpdests(code_span()))
+    {
+    }
+#endif
+
 #ifdef MONAD_ZKVM_ZISK
     Intercode::Intercode(
         uint8_t const *const padded_code, size_t const code_size,

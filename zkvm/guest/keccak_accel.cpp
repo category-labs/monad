@@ -687,6 +687,92 @@ static inline void keccak_permute(uint64_t (*state)[25])
 }
 #endif
 
+#if defined(MONAD_ZKVM_AIRBENDER)
+// Airbender's sponge, by 32-bit words. rv32 loads a word at any 4-byte
+// boundary, so an input at a word-aligned address is absorbed with plain loads
+// (the 8-byte test below took half of them for misaligned), and one at another
+// offset with each word shifted together from two aligned ones -- 32-bit
+// shifts, where a 64-bit one by a variable count is a branch and a dozen
+// instructions on rv32. The state is the delegation's own block (runtime.c):
+// a hash's first block is written over it rather than xored into its zeroed
+// rate, and only the capacity is cleared up front. The last word of the input
+// is read whole and masked; the bytes past the input it holds are any RAM,
+// which on this machine every address is.
+typedef uint32_t __attribute__((__may_alias__)) keccak_word_t;
+
+template <bool Aligned>
+[[gnu::always_inline]] static inline uint32_t keccak_input_word(
+    keccak_word_t const *const w, size_t const k, unsigned const rs)
+{
+    if constexpr (Aligned) {
+        return w[k];
+    }
+    else {
+        return (w[k] >> rs) | (w[k + 1] << (32 - rs));
+    }
+}
+
+template <bool Aligned>
+static void keccak256_sponge_rv32(
+    keccak_word_t const *w, unsigned const rs, size_t len, uint8_t out[32])
+{
+    constexpr size_t RATE = 136;
+    constexpr size_t RATE_WORDS = RATE / 4; // 34
+    uint64_t(&st)[25] = *monad_zkvm_airbender_keccak_state();
+    keccak_word_t *const s = reinterpret_cast<keccak_word_t *>(st);
+    #pragma GCC unroll 16
+    for (size_t i = RATE_WORDS; i < 50; ++i) {
+        s[i] = 0;
+    }
+    bool first = true;
+    while (len >= RATE) {
+        if (first) {
+    #pragma GCC unroll 34
+            for (size_t i = 0; i < RATE_WORDS; ++i) {
+                s[i] = keccak_input_word<Aligned>(w, i, rs);
+            }
+            first = false;
+        }
+        else {
+    #pragma GCC unroll 34
+            for (size_t i = 0; i < RATE_WORDS; ++i) {
+                s[i] ^= keccak_input_word<Aligned>(w, i, rs);
+            }
+        }
+        monad_zkvm_airbender_keccak_f1600(&st);
+        w += RATE_WORDS;
+        len -= RATE;
+    }
+    // The last block: q whole words, r bytes, the 0x01 domain byte after
+    // them and the 0x80 one at byte 135, the last of the rate.
+    size_t const q = len / 4;
+    unsigned const r = static_cast<unsigned>(len % 4);
+    uint32_t tail = uint32_t{0x01} << (8 * r);
+    if (r != 0) {
+        tail |= keccak_input_word<Aligned>(w, q, rs) &
+                ((uint32_t{1} << (8 * r)) - 1);
+    }
+    if (first) {
+        for (size_t i = 0; i < q; ++i) {
+            s[i] = keccak_input_word<Aligned>(w, i, rs);
+        }
+        s[q] = tail;
+        for (size_t i = q + 1; i < RATE_WORDS; ++i) {
+            s[i] = 0;
+        }
+    }
+    else {
+        for (size_t i = 0; i < q; ++i) {
+            s[i] ^= keccak_input_word<Aligned>(w, i, rs);
+        }
+        s[q] ^= tail;
+    }
+    s[RATE_WORDS - 1] ^= uint32_t{0x80} << 24;
+    monad_zkvm_airbender_keccak_f1600(&st);
+    std::memcpy(out, st, 32);
+}
+#endif
+
 // `Prefix` sends only the first `memo_blocks` rate blocks through the memo and
 // the rest past it, for an input that shares a prefix with another: the stack
 // sponge's memo, which copies the state in and out, on those blocks only.
@@ -695,6 +781,20 @@ static void keccak256_sponge(
     void const *const in, size_t len, uint8_t out[32],
     [[maybe_unused]] size_t memo_blocks = 0)
 {
+#if defined(MONAD_ZKVM_AIRBENDER)
+    {
+        uintptr_t const a = reinterpret_cast<uintptr_t>(in);
+        unsigned const mis = static_cast<unsigned>(a & 3);
+        auto const *const w = reinterpret_cast<keccak_word_t const *>(a - mis);
+        if (mis == 0) {
+            keccak256_sponge_rv32<true>(w, 0, len, out);
+        }
+        else {
+            keccak256_sponge_rv32<false>(w, 8 * mis, len, out);
+        }
+        return;
+    }
+#endif
     constexpr size_t RATE = 136;
     constexpr size_t WORDS = RATE / 8; // 17
 

@@ -227,7 +227,9 @@ static inline uint32_t csr_read_word(void)
 void read_input(uint8_t const **const buf_ptr, size_t *const buf_size)
 {
     size_t const len = csr_read_word();
-    uint32_t *const words = sys_alloc_aligned((len + 3) & ~(size_t)3, 4);
+    // 8-aligned: an input lays codes out in place for the 8-byte boundaries
+    // of their addresses (execute_witness.cpp), which then are the input's.
+    uint32_t *const words = sys_alloc_aligned((len + 3) & ~(size_t)3, 8);
     // Eight words a turn: a turn per word also steps and tests, which on a
     // 7.5 MB witness (1.9M words) was half the loop's cycles.
     size_t const n = (len + 3) / 4;

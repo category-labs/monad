@@ -16,9 +16,16 @@ copy move whole words on rv32, which has no unaligned access:
 - before each branch node: its sixteen child ids, read by words when aligned.
 - before an extension's digest child: copied to the end of its RLP less 33.
 
-The blob's own offset in the guest's input buffer (word-aligned) is the
-envelope's lead, which depends on the blob's length: built twice when the
-first guess is off.
+The codes, an RLP list of strings for the other guests, become a raw field
+the Airbender guest uses in place (execute_witness.cpp): "MZC\x01", the count
+and the lengths as u32s, then each code at the first 8-byte boundary at least
+33 bytes past what precedes it, zeros between and 33 after the last -- the
+padding Intercode would copy each code into, so the guest analyses and hashes
+it where it lies.
+
+The blob's and the codes' offsets in the guest's input buffer (8-aligned)
+follow from the envelope's lead, which depends on their lengths: built again
+until they settle.
 
 usage: mk_ab_input.py <block>... [--plain]   -> out/abin/rpc_<b>.in
   --plain: no filler; the output must equal run/w/rpc_<b>.in"""
@@ -197,6 +204,18 @@ class Builder:
                          + bytes([len(nb)]) + nb + path_bytes(nibs))
 
 
+def codes_field(codes, at):
+    """The in-place codes field's payload, for a payload starting at `at`
+    mod 8 in the guest's input."""
+    out = bytearray(b"MZC\x01" + struct.pack("<I", len(codes)))
+    out += b"".join(struct.pack("<I", len(c)) for c in codes)
+    for c in codes:
+        start = (at + len(out) + 33 + 7) & ~7
+        out += b"\0" * (start - at - len(out)) + c
+    out += b"\0" * 33
+    return bytes(out)
+
+
 def build(witness_path, plain):
     fields = rlp_list(open(witness_path, "rb").read())
     assert len(fields) == 6, len(fields)
@@ -205,24 +224,35 @@ def build(witness_path, plain):
     by_hash = {keccak256(n): n for n in nodes}
     headers = [rlp_payload(h)[1] for h in rlp_list(fields[3])]
     state_root = rlp_payload(rlp_list(headers[-1])[3])[1]
-    rest = fields[2] + fields[3] + fields[4] + fields[5]
+    tail = fields[3] + fields[4] + fields[5]
+    codes = [rlp_payload(c)[1] for c in rlp_list(fields[2])]
 
-    def envelope(blob):
+    def envelope(blob, codes_at):
+        """(blob's lead, codes payload's lead, bytes)"""
         inner = rlp_str(block_rlp) + rlp_len_prefix(len(blob), 0xC0)
-        body_len = len(inner) + len(blob) + len(rest)
-        lead = len(rlp_len_prefix(body_len, 0xC0)) + len(inner)
-        return lead, rlp_len_prefix(body_len, 0xC0) + inner + blob + rest
+        if plain:
+            cf = fields[2]
+            cf_head = 0
+        else:
+            payload = codes_field(codes, codes_at)
+            cf_head = len(rlp_len_prefix(len(payload), 0xC0))
+            cf = rlp_len_prefix(len(payload), 0xC0) + payload
+        body_len = len(inner) + len(blob) + len(cf) + len(tail)
+        head = len(rlp_len_prefix(body_len, 0xC0))
+        lead = head + len(inner)
+        return lead, lead + len(blob) + cf_head, (
+            rlp_len_prefix(body_len, 0xC0) + inner + blob + cf + tail)
 
-    base = None if plain else 0
-    for _ in range(3):
+    base, codes_at = (None, 0) if plain else (0, 0)
+    for _ in range(4):
         b = Builder(by_hash, base)
         root_off = b.root(state_root, False)
         struct.pack_into("<I", b.buf, 4, root_off)
-        lead, out = envelope(bytes(b.buf))
-        if base is None or lead % 4 == base:
+        lead, cat, out = envelope(bytes(b.buf), codes_at)
+        if plain or (lead % 4 == base and cat % 8 == codes_at):
             return out, b
-        base = lead % 4
-    raise RuntimeError("blob offset did not settle")
+        base, codes_at = lead % 4, cat % 8
+    raise RuntimeError("field offsets did not settle")
 
 
 def main():

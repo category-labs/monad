@@ -244,6 +244,86 @@ namespace
     }
 }
 
+#if defined(MONAD_ZKVM_AIRBENDER)
+namespace
+{
+    // n <= 32 big-endian bytes as a number
+    inline monad::uint256_t airbender_be256(uint8_t const *const p, size_t const n)
+    {
+        alignas(8) uint8_t buf[32] = {};
+        std::memcpy(buf + 32 - n, p, n);
+        return monad::uint256_t{
+            monad::load_be_unsafe<uint64_t>(buf + 24),
+            monad::load_be_unsafe<uint64_t>(buf + 16),
+            monad::load_be_unsafe<uint64_t>(buf + 8),
+            monad::load_be_unsafe<uint64_t>(buf)};
+    }
+
+    // base^exp mod m when m < 2^256 -- ZKsync OS's single-digit case
+    // (basic_system modexp/advice/single_digit.rs): square and multiply with
+    // mulmod, each product on the bigint circuit and reduced by the host's
+    // quotient. The accelerator's num-bigint Montgomery loop took ~700K
+    // cycles a call. False for a wider modulus, which the accelerator keeps.
+    inline bool airbender_modexp256(
+        std::span<uint8_t> const base, std::span<uint8_t> const exp,
+        std::span<uint8_t> const modulus, std::span<uint8_t> const out)
+    {
+        size_t lead = 0;
+        while (lead < modulus.size() && modulus[lead] == 0) {
+            ++lead;
+        }
+        size_t const mlen = modulus.size() - lead;
+        if (mlen > 32) {
+            return false;
+        }
+        std::memset(out.data(), 0, out.size());
+        alignas(32) monad::uint256_t const m =
+            airbender_be256(modulus.data() + lead, mlen);
+        if (m == 0 || m == 1) {
+            return true; // everything is 0 modulo 0 (EIP-198) or 1
+        }
+        // The base from its most significant end, 32 bytes at a time:
+        // b = (b·2^256 + chunk) mod m.
+        alignas(32) monad::uint256_t b{0};
+        size_t pos = 0;
+        size_t n = base.size() % 32;
+        if (n == 0) {
+            n = 32;
+        }
+        while (pos < base.size()) {
+            alignas(32) monad::uint256_t lo = airbender_be256(base.data() + pos, n);
+            monad::airbender_wide_rem(lo, b, m);
+            b = lo;
+            pos += n;
+            n = 32;
+        }
+        // The exponent's bits from the most significant: x^0 is 1, 0^0 too.
+        alignas(32) monad::uint256_t r{1};
+        bool started = false;
+        for (uint8_t const byte : exp) {
+            for (int bit = 7; bit >= 0; --bit) {
+                if (started) {
+                    r = monad::mulmod(r, r, m);
+                }
+                if ((byte >> bit) & 1) {
+                    r = started ? monad::mulmod(r, b, m) : b;
+                    started = true;
+                }
+            }
+        }
+        // r < m < 2^(8·mlen), and out has mod_len >= mlen bytes
+        alignas(8) uint8_t be[32];
+        for (size_t i = 0; i < 4; ++i) {
+            uint64_t const w = monad::bswap(r[3 - i]);
+            std::memcpy(be + 8 * i, &w, sizeof(w));
+        }
+        size_t const k = std::min(out.size(), size_t{32});
+        std::memcpy(out.data() + out.size() - k, be + 32 - k, k);
+        return true;
+    }
+}
+#endif
+
 MONAD_NAMESPACE_BEGIN
 
 // Non-inline to match the host header: precompiles.cpp is the single TU
@@ -312,6 +392,11 @@ identity_impl(byte_string_view const input, std::span<uint8_t> const out)
     std::span<uint8_t> const base, std::span<uint8_t> const exp,
     std::span<uint8_t> const modulus, std::span<uint8_t> out)
 {
+#if defined(MONAD_ZKVM_AIRBENDER)
+    if (airbender_modexp256(base, exp, modulus, out)) {
+        return {out.data(), out.size()};
+    }
+#endif
     if (zkvm_modexp(
             base.data(),
             base.size(),

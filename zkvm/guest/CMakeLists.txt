@@ -48,6 +48,41 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
             "MONAD_COMPILER_TESTING is not supported in zkVM builds")
     endif()
 
+    # Reference configuration for ZisK benchmarks and releases.
+    # zkvm/zisk/build.sh --official checks the compiler, flags, runtime and
+    # ELF identity.
+    # OFF allows development builds with different compilers or options.
+    # Build-dependent optimisations must extend both the feature list and
+    # post-link audit. Source-only changes need no feature bit: the commit
+    # and ELF hash already identify them.
+    option(MONAD_ZKVM_OFFICIAL_PROFILE
+           "require the reference ZisK compiler and build options" OFF)
+    set(_monad_zkvm_official_features
+        "baseline" "zisk-dma" "zisk-clean-byte-stores")
+    set(_monad_zkvm_runtime_version "1.3.2-alpha")
+    set(_monad_zkvm_runtime_revision
+        "1e22630bb7e143c30705a1603ed87cfd3da8c6ec")
+    if(MONAD_ZKVM_OFFICIAL_PROFILE AND
+       NOT MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
+        message(FATAL_ERROR
+            "MONAD_ZKVM_OFFICIAL_PROFILE is a ZisK-only build profile")
+    endif()
+
+    # Enable required CMake boolean options; reject explicit OFF values.
+    # Add each new required option here and its feature to the list above.
+    set(_monad_zkvm_required_options
+        MONAD_ZKVM_ZISK_DMA MONAD_ZKVM_ZISK_CLEAN_BYTE_STORES)
+    if(MONAD_ZKVM_OFFICIAL_PROFILE)
+        foreach(_option ${_monad_zkvm_required_options})
+            if(DEFINED ${_option} AND NOT ${_option})
+                message(FATAL_ERROR
+                    "${_option}=OFF contradicts MONAD_ZKVM_OFFICIAL_PROFILE=ON")
+            endif()
+            set(${_option} ON CACHE BOOL
+                "required by the official ZisK profile" FORCE)
+        endforeach()
+    endif()
+
     # The riscv64-elf toolchain file specifies these as CMAKE_*_FLAGS_INIT,
     # but cmake-rs (driving this cmake invocation from build.rs) overrides
     # CMAKE_*_FLAGS with cc-rs's target-arch flags only — dropping the
@@ -58,43 +93,33 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     string(APPEND CMAKE_CXX_FLAGS
         " -mcmodel=medany -nostartfiles -nostdlib++ -fno-exceptions -fno-rtti")
 
-    # ZisK-only codegen tuning, duplicated from Polygon's ziskethone guest
-    # (github.com/0xPolygonHermez/ziskethone, cpp-guest/zisk/toolchain.cmake +
-    # cpp-guest/zisk/CMakeLists.txt).
-    #  - -march adds Zbb/Zbs/Zbkb, transpiled natively by ZisK >= v1.2.0-alpha.
-    #  - -mtune=size was ziskethone's dominant single win (-13% block cost);
-    #    -funroll-loops + the widened inliner --params cut call/loop overhead
-    #    on hot paths; -fno-schedule-insns* drops scheduling that only helps
-    #    real pipelines; -fno-jump-tables avoids indirect jumps. Combined
-    #    measurement upstream: -16% block cost / -21.6% steps. -flto was
-    #    rejected there (marginal gain, overran the ZisK RAM ceiling).
-    #  - -fno-pic: cmake-rs injects cc-rs's -fPIC, but the guest is a
-    #    statically linked fixed-address ELF, so PIC only buys GOT
-    #    indirections on global accesses.
+    # ZisK supports Zba/Zbb/Zbs/Zbkb since v1.3.0-alpha.
+    # The fixed-address guest needs no PIC/GOT indirections.
+    # -mtune=size favors direct unaligned word accesses over byte-wise loads.
+    # The interpreter keeps -mtune=generic-ooo, which runs fewer steps in its
+    # PUSH and DIV handlers.
     #
-    # These are appended (not set via CMAKE_*_FLAGS_INIT) because cmake-rs
-    # overrides CMAKE_*_FLAGS, and the -march must land after cc-rs's
-    # -march=rv64ima — the last flag wins.
+    # Append after cmake-rs's flags: the last -march wins.
     if(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
-        set(_zisk_march "-march=rv64ima_zicsr_zbb_zbs_zbkb -mabi=lp64")
-        string(JOIN " " _zisk_opt
-            "-fno-pic"
-            "-mtune=size"
-            "-funroll-loops"
-            "--param=max-inline-insns-single=1600"
-            "--param=max-inline-insns-auto=533"
-            "--param=inline-unit-growth=266"
-            "--param=max-inline-recursive-depth=6"
-            "--param=max-completely-peeled-insns=400"
-            "--param=large-function-growth=280"
-            "--param=large-unit-insns=30000"
-            "-fno-schedule-insns"
-            "-fno-schedule-insns2"
-            "-fno-jump-tables")
-        string(APPEND CMAKE_C_FLAGS " ${_zisk_march} ${_zisk_opt}")
-        string(APPEND CMAKE_CXX_FLAGS " ${_zisk_march} ${_zisk_opt}")
+        set(_zisk_march "-march=rv64ima_zicsr_zba_zbb_zbs_zbkb -mabi=lp64")
+        string(APPEND CMAKE_C_FLAGS " ${_zisk_march} -fno-pic -mtune=size")
+        string(APPEND CMAKE_CXX_FLAGS " ${_zisk_march} -fno-pic -mtune=size")
         string(APPEND CMAKE_ASM_FLAGS " ${_zisk_march}")
+        set(_monad_zkvm_interpreter_tune "-mtune=generic-ooo")
     endif()
+
+    # Tune C++ inlining for both guests to reduce call overhead.
+    # Allow more overall growth while limiting individual inlining candidates.
+    # Unroll eligible loops to reduce comparisons and branches.
+    # Keep these options in CMAKE_CXX_FLAGS so the official profile hashes them.
+    string(APPEND CMAKE_CXX_FLAGS
+        " --param inline-unit-growth=800"
+        " --param large-function-growth=1500"
+        " --param max-inline-insns-auto=200"
+        " --param max-inline-insns-single=800"
+        " --param inline-min-speedup=1"
+        " -finline-functions"
+        " -funroll-loops")
 
     set(_guest_target "monad-zkvm-guest-${MONAD_ZKVM_GUEST_TARGET}")
 
@@ -105,6 +130,107 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         add_compile_definitions(MONAD_ZKVM_SP1)
     elseif(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
         add_compile_definitions(MONAD_ZKVM_ZISK)
+        # Expose the no-op operator delete declarations to every ZisK C++ file.
+        string(APPEND CMAKE_CXX_FLAGS
+               " -include \"${CMAKE_CURRENT_SOURCE_DIR}/nodelete.hpp\"")
+
+        # Lower eligible block memory operations, including struct copies,
+        # directly to ZisK DMA. Requires Zicsr and the patched compiler built by
+        # zkvm/toolchain/zisk-dma-gcc/build-gcc15.sh.
+        # The official profile also probes the emitted code for a DMA marker.
+        option(MONAD_ZKVM_ZISK_DMA
+               "lower block mem* to the ZisK DMA precompile" OFF)
+        if(MONAD_ZKVM_ZISK_DMA)
+            string(APPEND CMAKE_C_FLAGS " -mzisk-dma")
+            string(APPEND CMAKE_CXX_FLAGS " -mzisk-dma")
+        endif()
+
+        # Prefer zero-extended byte constants and addition immediates to reduce
+        # ZisK byte-store costs. Requires the patched GCC.
+        option(MONAD_ZKVM_ZISK_CLEAN_BYTE_STORES
+               "zero-extend the sources of byte stores for ZisK" OFF)
+        if(MONAD_ZKVM_ZISK_CLEAN_BYTE_STORES)
+            string(APPEND CMAKE_C_FLAGS " -mzisk-clean-byte-stores")
+            string(APPEND CMAKE_CXX_FLAGS " -mzisk-clean-byte-stores")
+        endif()
+    endif()
+
+    if(MONAD_ZKVM_OFFICIAL_PROFILE)
+        if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR
+           NOT CMAKE_CXX_COMPILER_VERSION VERSION_EQUAL "15.2.0")
+            message(FATAL_ERROR
+                "the official ZisK ${_monad_zkvm_runtime_version} profile requires GCC 15.2.0; got "
+                "${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
+        endif()
+        if(NOT DEFINED MONAD_ZKVM_GIT_COMMIT)
+            message(FATAL_ERROR
+                "official ZisK profile requires MONAD_ZKVM_GIT_COMMIT")
+        endif()
+        string(LENGTH "${MONAD_ZKVM_GIT_COMMIT}" _official_git_commit_length)
+        if(NOT _official_git_commit_length EQUAL 40 OR
+           NOT MONAD_ZKVM_GIT_COMMIT MATCHES "^[0-9a-f]+$")
+            message(FATAL_ERROR
+                "MONAD_ZKVM_GIT_COMMIT must be a full lowercase Git SHA")
+        endif()
+
+        # When DMA is requested, verify emitted code, not just flag acceptance.
+        # A compiler hash identifies the binary but does not prove DMA support.
+        if(CMAKE_CXX_FLAGS MATCHES "-mzisk-dma" OR CMAKE_C_FLAGS MATCHES "-mzisk-dma")
+            # Use the guest's C flags, including Zicsr. sink exposes the copied
+            # bytes to an external call.
+            set(_dma_probe "${CMAKE_CURRENT_BINARY_DIR}/zisk-dma-probe.c")
+            file(WRITE "${_dma_probe}"
+                "void *memcpy(void *, void const *, unsigned long);\n"
+                "void sink(void *);\n"
+                "void p(char *d, char const *s) { memcpy(d, s, 512); sink(d); }\n")
+            separate_arguments(_dma_probe_flags UNIX_COMMAND "${CMAKE_C_FLAGS}")
+            # Probe each ZisK option alone, so a failure names its own flag.
+            list(REMOVE_ITEM _dma_probe_flags -mzisk-clean-byte-stores)
+            execute_process(
+                COMMAND ${CMAKE_C_COMPILER} ${_dma_probe_flags} -O2 -S -o -
+                        "${_dma_probe}"
+                RESULT_VARIABLE _dma_rc OUTPUT_VARIABLE _dma_asm ERROR_QUIET)
+            if(NOT _dma_rc EQUAL 0)
+                message(FATAL_ERROR
+                    "-mzisk-dma is in the flags but ${CMAKE_C_COMPILER} cannot "
+                    "compile with it; build the compiler with "
+                    "zkvm/toolchain/zisk-dma-gcc/build-gcc15.sh")
+            endif()
+            if(NOT _dma_asm MATCHES "csrs?[ \t]+[^\n]*0x813")
+                message(FATAL_ERROR
+                    "${CMAKE_C_COMPILER} accepts -mzisk-dma but emits no DMA "
+                    "marker, so block mem* would still be thunk calls. Build it "
+                    "with zkvm/toolchain/zisk-dma-gcc/build-gcc15.sh")
+            endif()
+        endif()
+
+        # Require nonnegative immediates: 184 for 0xb8, and 128 for 0x80 + n.
+        if(CMAKE_CXX_FLAGS MATCHES "-mzisk-clean-byte-stores" OR
+           CMAKE_C_FLAGS MATCHES "-mzisk-clean-byte-stores")
+            set(_byte_probe "${CMAKE_CURRENT_BINARY_DIR}/zisk-byte-probe.c")
+            file(WRITE "${_byte_probe}"
+                "void f(unsigned char *p) { *p = 0xb8; }\n"
+                "void g(unsigned char *p, unsigned char n) { *p = 0x80 + n; }\n")
+            separate_arguments(_byte_probe_flags UNIX_COMMAND "${CMAKE_C_FLAGS}")
+            list(REMOVE_ITEM _byte_probe_flags -mzisk-dma)
+            execute_process(
+                COMMAND ${CMAKE_C_COMPILER} ${_byte_probe_flags} -O2 -S -o -
+                        "${_byte_probe}"
+                RESULT_VARIABLE _byte_rc OUTPUT_VARIABLE _byte_asm ERROR_QUIET)
+            if(NOT _byte_rc EQUAL 0)
+                message(FATAL_ERROR
+                    "-mzisk-clean-byte-stores is in the flags but "
+                    "${CMAKE_C_COMPILER} cannot compile with it; build the "
+                    "compiler with zkvm/toolchain/zisk-dma-gcc/build-gcc15.sh")
+            endif()
+            if(NOT _byte_asm MATCHES "li[ \t]+[a-z0-9]+,184\n" OR
+               NOT _byte_asm MATCHES "addi[ \t]+[a-z0-9]+,[a-z0-9]+,128\n")
+                message(FATAL_ERROR
+                    "${CMAKE_C_COMPILER} accepts -mzisk-clean-byte-stores but "
+                    "stores a sign-extended byte. Build it with "
+                    "zkvm/toolchain/zisk-dma-gcc/build-gcc15.sh")
+            endif()
+        endif()
     endif()
 
     # Repo + third-party paths.
@@ -150,6 +276,10 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     get_target_property(_boost_inc Boost::headers INTERFACE_INCLUDE_DIRECTORIES)
 
     add_subdirectory("${THIRD_PARTY_DIR}/unordered_dense" unordered_dense)
+
+    # Use the fork's fixed 4/5 load factor to avoid soft-float capacity calculations.
+    target_compile_definitions(unordered_dense INTERFACE
+        ANKERL_UNORDERED_DENSE_FIXED_LOAD_FACTOR=1)
 
     # cthash — header-only constexpr hashing, used by abi_signatures.hpp
     # for compile-time ABI selector derivation. Has its own add_subdirectory
@@ -215,6 +345,10 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     add_subdirectory("${MONAD_ROOT}/category/vm/evm" evm)
     add_subdirectory("${MONAD_ROOT}/category/vm/runtime" runtime)
     add_subdirectory("${MONAD_ROOT}/category/vm/interpreter" interpreter)
+    if(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
+        target_compile_options(monad-vm-interpreter PRIVATE
+                               ${_monad_zkvm_interpreter_tune})
+    endif()
 
     # Strip x86-only assembly from the otherwise shared targets.
     monad_zkvm_drop_sources(monad-vm-runtime
@@ -237,8 +371,12 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
 
     # ---- Extract setjmp/longjmp from the compiler's newlib libc.a ----
 
+    # Match the guest's -march/-mabi when selecting multilib libraries.
+    # The compiler default may otherwise select incompatible RV32 objects.
+    separate_arguments(_arch_query UNIX_COMMAND "${CMAKE_C_FLAGS}")
+
     execute_process(
-        COMMAND ${CMAKE_C_COMPILER} -print-file-name=libc.a
+        COMMAND ${CMAKE_C_COMPILER} ${_arch_query} -print-file-name=libc.a
         OUTPUT_VARIABLE _libc_a
         OUTPUT_STRIP_TRAILING_WHITESPACE
     )
@@ -279,7 +417,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # and symbols by machine mode si = 32, di = 64, ti = 128 bits
     # where risvc64 word is 64 bits, hence __popcount*di*2
     execute_process(
-        COMMAND ${CMAKE_C_COMPILER} -print-libgcc-file-name
+        COMMAND ${CMAKE_C_COMPILER} ${_arch_query} -print-libgcc-file-name
         OUTPUT_VARIABLE _libgcc_a
         OUTPUT_STRIP_TRAILING_WHITESPACE
     )
@@ -298,6 +436,54 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     else()
         message(FATAL_ERROR
             "libgcc.a not found via compiler query")
+    endif()
+
+    # Compute the build identity after all guest flags are set.
+    # Add new flags above this block so the signature includes them.
+    include("${CMAKE_CURRENT_SOURCE_DIR}/configure_json.cmake")
+    if(MONAD_ZKVM_OFFICIAL_PROFILE)
+        file(SHA256 "${CMAKE_CXX_COMPILER}" _official_cxx_sha256)
+        # Hash the patch set separately from host-dependent compiler binaries.
+        set(_dma_patch_dir "${CMAKE_CURRENT_SOURCE_DIR}/../toolchain/zisk-dma-gcc")
+        set(_dma_patch_sha "")
+        foreach(_p 0001-riscv-zisk-dma-lowering-14.3.0.patch
+                   0002-riscv.md-forward-port-15.2.0.diff
+                   0003-riscv-zisk-clean-byte-stores-15.2.0.diff)
+            if(NOT EXISTS "${_dma_patch_dir}/${_p}")
+                message(FATAL_ERROR
+                    "official ZisK profile: missing ${_p} in zkvm/toolchain/zisk-dma-gcc")
+            endif()
+            file(SHA256 "${_dma_patch_dir}/${_p}" _one)
+            string(APPEND _dma_patch_sha "${_one}")
+        endforeach()
+        string(SHA256 _dma_patch_sha "${_dma_patch_sha}")
+        list(JOIN _monad_zkvm_official_features "," _official_features_csv)
+        # Normalise the guest source path (e.g. in -include nodelete.hpp) so
+        # build signatures do not depend on the checkout location.
+        # Compilation still uses the original flags and paths.
+        set(_official_signed_inputs
+            "${_official_cxx_sha256}\n${CMAKE_C_FLAGS}\n${CMAKE_C_FLAGS_RELEASE}\n${CMAKE_CXX_FLAGS}\n${CMAKE_CXX_FLAGS_RELEASE}\n${CMAKE_ASM_FLAGS}\n${CMAKE_ASM_FLAGS_RELEASE}\n${_monad_zkvm_interpreter_tune}\n${_monad_zkvm_runtime_revision}\n${_official_features_csv}\n${_dma_patch_sha}")
+        string(REPLACE "${CMAKE_CURRENT_SOURCE_DIR}" "<guest>"
+               _official_signed_inputs "${_official_signed_inputs}")
+        string(SHA256 _official_build_signature "${_official_signed_inputs}")
+        # Keep the feature switch global, but attach build identity only to
+        # execute_witness.cpp, its sole reader. A new commit then recompiles
+        # that file without invalidating every object.
+        add_compile_definitions(MONAD_ZKVM_OFFICIAL_PROFILE=1)
+        set(_monad_zkvm_stamp_defs
+            "MONAD_ZKVM_BUILD_COMMIT=\"${MONAD_ZKVM_GIT_COMMIT}\""
+            "MONAD_ZKVM_BUILD_SIGNATURE=\"${_official_build_signature}\""
+            "MONAD_ZKVM_BUILD_FEATURES=\"${_official_features_csv}\""
+            "MONAD_ZKVM_RUNTIME_VERSION=\"${_monad_zkvm_runtime_version}\"")
+        monad_zkvm_configure_json(
+            "${CMAKE_CURRENT_SOURCE_DIR}/official-profile.json.in"
+            "${CMAKE_BINARY_DIR}/monad-zkvm-official-profile.json")
+    else()
+        # Mark development builds explicitly in both the ELF and JSON profile.
+        add_compile_definitions(MONAD_ZKVM_DEV_PROFILE=1)
+        monad_zkvm_configure_json(
+            "${CMAKE_CURRENT_SOURCE_DIR}/dev-profile.json.in"
+            "${CMAKE_BINARY_DIR}/monad-zkvm-official-profile.json")
     endif()
 
     # ---- Bare-metal libc / libstdc++ stubs ----
@@ -391,6 +577,12 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
 
     # validate_block.cpp carries the validators and the BlockError
     # value_mappings() the shadow used to provide alone.
+
+    # Only the official profile supplies these build stamps.
+    if(_monad_zkvm_stamp_defs)
+        set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/execute_witness.cpp"
+            PROPERTIES COMPILE_DEFINITIONS "${_monad_zkvm_stamp_defs}")
+    endif()
 
     # Reduced guest deps not present in the inherited host link list.
     target_link_libraries(monad_execution_ethereum

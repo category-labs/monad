@@ -18,19 +18,19 @@ jobs:
   formatting-check:
     name: Check clang-format
     runs-on: ubuntu-26.04
-    env:
-      LLVM_VERSION: '19'
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install clang-format-${{ env.LLVM_VERSION }}
+      - name: Install clang-format
         run: |
-          sudo apt install -y clang-format-${{ env.LLVM_VERSION }}
+          source scripts/ubuntu-build/toolchain.env
+          sudo apt install -y clang-format-${LLVM_VERSION}
 
       - name: Run clang-format check
         run: |
-          find category cmd test -regex '.*\.\(cpp\|hpp\|c\|h\)' -exec clang-format-${{ env.LLVM_VERSION }} -style=file --dry-run --Werror {} +
+          source scripts/ubuntu-build/toolchain.env
+          find category cmd test -regex '.*\.\(cpp\|hpp\|c\|h\)' -exec clang-format-${LLVM_VERSION} -style=file --dry-run --Werror {} +
 
   traits-check:
     name: Trait instantiation check

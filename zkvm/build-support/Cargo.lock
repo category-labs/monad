@@ -556,6 +556,7 @@ name = "monad-zkvm-build-support"
 version = "0.1.0"
 dependencies = [
  "cargo_metadata",
+ "cc",
  "cmake",
  "sp1-build",
 ]

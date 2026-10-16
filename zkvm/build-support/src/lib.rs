@@ -41,8 +41,8 @@ impl Backend {
     fn guest_target(self) -> &'static str {
         match self {
             Self::Zisk => "monad-zkvm-guest-zisk",
-            Self::Sp1  => "monad-zkvm-guest-sp1",
-       }
+            Self::Sp1 => "monad-zkvm-guest-sp1",
+        }
     }
 
     fn guest_triple(self) -> &'static str {
@@ -56,26 +56,95 @@ impl Backend {
     fn build_guest_archive(self) -> PathBuf {
         let manifest = manifest_dir();
         let repo_root = locate_repo_root(&manifest);
-        let zkvm_dir = repo_root.join("zkvm");
-        let guest_dir = zkvm_dir.join("guest");
-        let toolchain = repo_root.join("category/core/toolchains/riscv64-elf.cmake");
-
         emit_rerun_directives(&repo_root);
 
+        let guest_dir = repo_root.join("zkvm/guest");
+        let toolchain = repo_root.join("category/core/toolchains/riscv64-elf.cmake");
+        let toolchain_dir = riscv_toolchain_dir();
+        // Allow discovery of the host's header-only Boost.Outcome package.
+        let prefix_path = env::var("CMAKE_PREFIX_PATH").unwrap_or_else(|_| "/usr".to_string());
+
+        let mut defines = vec![
+            (
+                "MONAD_ZKVM_GUEST_TARGET".to_string(),
+                self.name().to_string(),
+            ),
+            (
+                "CMAKE_TOOLCHAIN_FILE".into(),
+                toolchain.display().to_string(),
+            ),
+            ("RISCV_TOOLCHAIN_DIR".into(), toolchain_dir.clone()),
+            ("CMAKE_PREFIX_PATH".into(), prefix_path),
+        ];
+        if let Self::Zisk = self {
+            for option in ZISK_OPTIONS {
+                println!("cargo:rerun-if-env-changed={option}");
+                defines.push((
+                    option.into(),
+                    env::var(option).unwrap_or_else(|_| "OFF".into()),
+                ));
+            }
+        }
+
+        // Isolate configurations in Cargo's OUT_DIR; the commit stamp stays
+        // out of the key so objects can be reused across commits. Immutable Nix
+        // toolchain paths identify the compilers without hashing their contents.
+        let mut config = std::collections::hash_map::DefaultHasher::new();
+        std::hash::Hash::hash(&defines, &mut config);
+        // cmake-rs reads these without a rerun directive; a generator change
+        // cannot reuse an existing build directory.
+        for name in CMAKE_ENV {
+            println!("cargo:rerun-if-env-changed={name}");
+            std::hash::Hash::hash(&(name, env::var_os(name)), &mut config);
+        }
+        let gcc = riscv_gcc(&toolchain_dir);
+        std::hash::Hash::hash(&gcc, &mut config);
+        let key = format!(
+            "{}-{:016x}",
+            self.name(),
+            std::hash::Hasher::finish(&config)
+        );
+
+        // Match CMake's compiler selection so ambient CC/CXX cannot change
+        // the flags cmake-rs derives from the compiler family.
+        let cxx = gcc.with_file_name(
+            gcc.file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .trim_end_matches("gcc")
+                .to_owned()
+                + "g++",
+        );
+        let mut c_cfg = cc::Build::new();
+        c_cfg.compiler(&gcc);
+        let mut cxx_cfg = cc::Build::new();
+        cxx_cfg.compiler(cxx);
         let mut cfg = cmake::Config::new(&guest_dir);
+        cfg.init_c_cfg(c_cfg).init_cxx_cfg(cxx_cfg);
+        cfg.out_dir(
+            PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR unset"))
+                .join("guest-build")
+                .join(&key),
+        );
         // SP1's caller targets the host. Set the guest triple explicitly so
         // cmake-rs selects RISC-V flags instead of host flags such as -m64.
         // The guest CMakeLists.txt supplies the remaining bare-metal flags.
         cfg.target(self.guest_triple())
-            .define("MONAD_ZKVM_GUEST_TARGET", self.name())
-            .define("CMAKE_TOOLCHAIN_FILE", &toolchain)
-            .define("RISCV_TOOLCHAIN_DIR", riscv_toolchain_dir())
             .profile("Release")
             .build_target(&self.guest_target());
+        for (name, value) in &defines {
+            cfg.define(name, value);
+        }
 
-        // Allow discovery of the host's header-only Boost.Outcome package.
-        let prefix_path = env::var("CMAKE_PREFIX_PATH").unwrap_or_else(|_| "/usr".to_string());
-        cfg.define("CMAKE_PREFIX_PATH", &prefix_path);
+        cfg.define(
+            "MONAD_ZKVM_GIT_COMMIT",
+            env::var("MONAD_ZKVM_GIT_COMMIT").unwrap_or_default(),
+        )
+        .define(
+            "MONAD_ZKVM_BUILD_ID",
+            env::var("MONAD_ZKVM_BUILD_ID").unwrap_or_else(|_| "none".into()),
+        );
 
         cfg.build().join("build")
     }
@@ -211,6 +280,13 @@ fn sp1_zkevm_dir() -> PathBuf {
     zkevm
 }
 
+/// The ZisK compiler options, read from the environment and OFF by default.
+/// The reference Nix build enables DMA.
+const ZISK_OPTIONS: [&str; 1] = ["MONAD_ZKVM_ZISK_DMA"];
+
+/// Environment variables cmake-rs reads for the guest build.
+const CMAKE_ENV: [&str; 3] = ["CMAKE", "CMAKE_GENERATOR", "CMAKE_PREFIX_PATH"];
+
 fn manifest_dir() -> PathBuf {
     PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR unset"))
 }
@@ -224,6 +300,10 @@ fn locate_repo_root(manifest: &Path) -> PathBuf {
 }
 
 fn emit_rerun_directives(repo_root: &Path) {
+    println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-env-changed=RISCV_TOOLCHAIN_DIR");
+    println!("cargo:rerun-if-env-changed=MONAD_ZKVM_BUILD_ID");
+    println!("cargo:rerun-if-env-changed=MONAD_ZKVM_GIT_COMMIT");
     // Everything the guest cmake build reads. Emitting any rerun-if-changed
     // disables Cargo's rerun-on-any-change default, so an input missing here
     // leaves a stale guest marked fresh. Cargo scans each directory
@@ -238,7 +318,6 @@ fn emit_rerun_directives(repo_root: &Path) {
         "zkvm/category",
         "zkvm/boost",
         "zkvm/quill",
-        "zkvm/test",
         "category",
         "cmake",
         // Vendored sources on the guest include path. third_party/ as a whole
@@ -269,17 +348,20 @@ fn riscv_toolchain_dir() -> String {
 }
 
 // Match the compiler prefixes accepted by riscv64-elf.cmake.
-#[cfg(feature = "sp1")]
 fn riscv_gcc(toolchain_dir: &str) -> PathBuf {
     let bin = Path::new(toolchain_dir).join("bin");
-    for prefix in ["riscv64-none-elf-", "riscv64-unknown-elf-"] {
+    for prefix in [
+        "riscv64-none-elf-",
+        "riscv64-unknown-elf-",
+        "riscv-none-elf-",
+    ] {
         let gcc = bin.join(format!("{prefix}gcc"));
         if gcc.exists() {
             return gcc;
         }
     }
     panic!(
-        "no riscv64 gcc (riscv64-none-elf-gcc or riscv64-unknown-elf-gcc) found in {}",
+        "no RISC-V gcc (riscv64-none-elf-gcc, riscv64-unknown-elf-gcc or riscv-none-elf-gcc) found in {}",
         bin.display()
     );
 }

@@ -11,6 +11,7 @@ edition = "2021"
 path = "src/lib.rs"
 
 [dependencies]
+cc = "1"
 cmake = "0.1"
 
 # SP1-only dependencies, behind the `sp1` feature so the ZisK guest crate does

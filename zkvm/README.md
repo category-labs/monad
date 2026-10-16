@@ -15,6 +15,7 @@ zkvm/
 ├── boost/, quill/        # replacements for host-only library headers
 ├── guest/                # shared C++ witness executor
 │   ├── execute_witness.cpp
+│   ├── build_identity.cpp  # the ELF's commit marker
 │   ├── execute_block.cpp
 │   ├── x86_test_runner.cpp
 │   └── CMakeLists.txt
@@ -36,8 +37,8 @@ for its runtime, I/O, and accelerators.
 
 - Initialize the repository's submodules with
   `git submodule update --init --recursive`.
-- Install CMake, a build tool such as Make or Ninja, and Boost headers with
-  their CMake package configuration.
+- Install CMake, Python 3.9 or later, a build tool such as Make or Ninja,
+  and Boost headers with their CMake package configuration.
 - Use a `riscv64-unknown-elf` or `riscv64-none-elf` GCC toolchain with newlib
   and C++23 support. Set `RISCV_TOOLCHAIN_DIR` in the environment or in a
   local, gitignored `zkvm/.cargo/config.toml`:
@@ -66,10 +67,32 @@ Start each section's commands from the repository root unless stated otherwise.
 ZisK input is an 8-byte little-endian payload length followed by the witness,
 zero-padded to an 8-byte boundary.
 
+Published benchmarks and releases use the [reference Nix build](../nix/zisk/README.md#zisk-guest-elf):
+
 ```sh
-# 1. Build the guest ELF.
+nix build --option sandbox true --option sandbox-fallback false '.?submodules=1#zisk-elf'
+# result/monad-zkvm-zisk and result/monad-zkvm-zisk.build.json
+```
+
+It pins the source and toolchains, records the build inputs and ELF hash in a
+manifest, and verifies the identity embedded in the ELF. Keep the manifest
+with the artifact. An x86_64 Linux builder is required. Check reproducibility
+with independent rebuilds.
+
+For local edits, use the [Nix development shell](../nix/zisk/README.md#development-shell).
+It supplies the compilers and linker configuration and enables DMA.
+No `cargo-zisk` is needed. Build-tool selection is fixed by the shell;
+override `MONAD_ZKVM_ZISK_DMA` to compare options.
+
+Cargo caches CMake builds by compiler path and configuration under
+`OUT_DIR`. Nix's immutable compiler paths identify the toolchains.
+Development builds default to `monad-zkvm;commit=none;build=none`.
+
+```sh
+# 1. Build the guest ELF in the development shell.
+nix develop .#zisk
 cd zkvm/zisk
-cargo-zisk build --release --bin monad-zkvm-zisk
+cargo build --release --locked --target riscv64ima-zisk-zkvm-elf --target-dir target/elf --bin monad-zkvm-zisk
 #  → target/elf/riscv64ima-zisk-zkvm-elf/release/monad-zkvm-zisk
 
 # 2. Wrap the witness with the 8-byte length prefix the emulator expects,

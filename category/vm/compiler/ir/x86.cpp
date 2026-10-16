@@ -283,6 +283,8 @@ namespace
                 MONAD_ABORT();
             }
             break;
+        case Extension:
+            MONAD_ABORT();
         case Create:
             emit.create<traits>(remaining_base_gas);
             break;

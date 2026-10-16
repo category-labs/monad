@@ -289,7 +289,7 @@ namespace monad::vm::interpreter
             invalid, //
             invalid, //
             invalid, //
-            invalid, //
+            avail(EXTENSION, extension<traits>), // 0xAE
             invalid, //
 
             invalid, //
@@ -381,6 +381,26 @@ namespace monad::vm::interpreter
 
     template <Traits traits>
     constexpr InstrTable instruction_table = make_instruction_table<traits>();
+
+    template <Traits traits>
+    consteval InstrTable make_extension_instruction_table()
+    {
+        InstrTable table{};
+        table.fill(invalid);
+        return table;
+    }
+
+    template <Traits traits>
+    constexpr InstrTable extension_instruction_table = [] {
+        auto const table = make_extension_instruction_table<traits>();
+        for (size_t i = 0; i < table.size(); ++i) {
+            MONAD_ASSERT(
+                (table[i] == invalid) ==
+                compiler::is_unknown_opcode_info<traits>(
+                    compiler::extension_opcode_table<traits>[i]));
+        }
+        return table;
+    }();
 
     // Instruction implementations
     template <uint8_t Opcode, Traits traits, typename... FnArgs>
@@ -1605,6 +1625,21 @@ namespace monad::vm::interpreter
             instr_ptr);
 
         MONAD_VM_NEXT(LOG0 + N);
+    }
+
+    // Extension
+    template <Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void extension(
+        runtime::Context &ctx, Intercode const &analysis,
+        uint256_t const *const stack_bottom, StackTop const stack_top,
+        int64_t const gas_remaining, uint8_t const *const instr_ptr)
+    {
+        auto const impl =
+            instr_ptr + 1 < analysis.code() + analysis.size()
+                ? extension_instruction_table<traits>[instr_ptr[1]]
+                : invalid;
+        MONAD_VM_MUST_TAIL return impl(
+            ctx, analysis, stack_bottom, stack_top, gas_remaining, instr_ptr);
     }
 
     // Call & Create

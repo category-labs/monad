@@ -102,6 +102,7 @@ namespace monad::vm::compiler
         Dup = 0x80,
         Swap = 0x90,
         Log = 0xA0,
+        Extension = 0xAE,
         Create = 0xF0,
         Call = 0xF1,
         CallCode = 0xF2,
@@ -210,7 +211,8 @@ namespace monad::vm::compiler
     {
         MONAD_ASSERT(
             opcode() == OpCode::Push || opcode() == OpCode::Swap ||
-            opcode() == OpCode::Dup || opcode() == OpCode::Log);
+            opcode() == OpCode::Dup || opcode() == OpCode::Log ||
+            opcode() == OpCode::Extension);
         return index_;
     }
 
@@ -393,6 +395,8 @@ namespace monad::vm::compiler
             return "SWAP";
         case Log:
             return "LOG";
+        case Extension:
+            return "EXTENSION";
         case Create:
             return "CREATE";
         case Call:
@@ -451,6 +455,11 @@ struct std::formatter<monad::vm::compiler::Instruction>
                 inst.opcode(),
                 inst.index(),
                 inst.immediate_value());
+        }
+
+        if (inst.opcode() == Extension) {
+            return std::format_to(
+                ctx.out(), "{} {:#04x}", inst.opcode(), inst.index());
         }
 
         if (inst.opcode() == Push || inst.opcode() == Dup ||

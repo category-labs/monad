@@ -22,6 +22,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check the submodule pins of the nix guest build
+        run: python3 nix/guest-submodules.py --check
+
       - name: Build `build_zk` stage
         uses: ./.github/actions/docker-stage
         with:

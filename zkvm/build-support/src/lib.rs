@@ -77,6 +77,20 @@ impl Backend {
         let prefix_path = env::var("CMAKE_PREFIX_PATH").unwrap_or_else(|_| "/usr".to_string());
         cfg.define("CMAKE_PREFIX_PATH", &prefix_path);
 
+        // Keep official-profile settings explicit instead of forwarding
+        // arbitrary CMake definitions. The commit comes from the caller: the
+        // official build runs from a source archive without Git metadata.
+        if let Ok(profile) = env::var("MONAD_ZKVM_OFFICIAL_PROFILE") {
+            assert_eq!(
+                profile, "ON",
+                "MONAD_ZKVM_OFFICIAL_PROFILE must be ON or unset"
+            );
+            let commit = env::var("MONAD_ZKVM_GIT_COMMIT")
+                .expect("official ZisK profile: MONAD_ZKVM_GIT_COMMIT must supply the commit");
+            cfg.define("MONAD_ZKVM_OFFICIAL_PROFILE", "ON")
+                .define("MONAD_ZKVM_GIT_COMMIT", commit);
+        }
+
         cfg.build().join("build")
     }
 
@@ -224,6 +238,8 @@ fn locate_repo_root(manifest: &Path) -> PathBuf {
 }
 
 fn emit_rerun_directives(repo_root: &Path) {
+    println!("cargo:rerun-if-env-changed=MONAD_ZKVM_OFFICIAL_PROFILE");
+    println!("cargo:rerun-if-env-changed=MONAD_ZKVM_GIT_COMMIT");
     // Everything the guest cmake build reads. Emitting any rerun-if-changed
     // disables Cargo's rerun-on-any-change default, so an input missing here
     // leaves a stale guest marked fresh. Cargo scans each directory

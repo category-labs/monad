@@ -43,6 +43,17 @@
 #include <utility>
 #include <vector>
 
+#ifdef MONAD_ZKVM_OFFICIAL_PROFILE
+// Retained by align.ld so an ELF can be matched to its source commit.
+extern "C" [[gnu::used, gnu::section(".monad_zkvm_profile")]]
+unsigned char const monad_zkvm_official_profile[] =
+    "monad-zkvm-official;commit=" MONAD_ZKVM_BUILD_COMMIT;
+#elif defined(MONAD_ZKVM_DEV_PROFILE)
+// Identify development builds explicitly; a missing marker is ambiguous.
+extern "C" [[gnu::used, gnu::section(".monad_zkvm_profile")]]
+unsigned char const monad_zkvm_official_profile[] = "monad-zkvm-dev";
+#endif
+
 extern "C" void monad_zkvm_execute_witness(void)
 {
     std::uint8_t const *input = nullptr;

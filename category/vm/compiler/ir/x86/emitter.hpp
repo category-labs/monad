@@ -1086,6 +1086,9 @@ namespace monad::vm::compiler::native
         std::vector<std::pair<asmjit::Label, std::string>> debug_messages_;
         uint32_t exponential_constant_fold_counter_;
         int64_t accumulated_static_work_;
+        // Largest memory end `touch_memory` has checked on every path to the
+        // current instruction.
+        int32_t touched_memory_end_;
         std::unique_ptr<int32_t[]> final_stack_dep_counts_;
     };
 }

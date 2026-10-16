@@ -641,6 +641,7 @@ namespace monad::vm::compiler::native
         , rodata_{as_.newNamedLabel("ROD")}
         , exponential_constant_fold_counter_{0}
         , accumulated_static_work_{0}
+        , touched_memory_end_{0}
         , final_stack_dep_counts_{
               std::make_unique_for_overwrite<int32_t[]>(1024)}
     {
@@ -1043,10 +1044,15 @@ namespace monad::vm::compiler::native
     {
         checked_debug_comment("  0x{:02x}:", b.offset);
         if (keep_stack_in_next_block_) {
+            // `touched_memory_end_` is only valid if this block has no
+            // other entry.
+            MONAD_DEBUG_ASSERT(
+                !jump_dests_.contains(static_cast<byte_offset>(b.offset)));
             stack_.continue_block(b);
         }
         else {
             stack_.begin_new_block(b);
+            touched_memory_end_ = 0;
         }
         return block_prologue(b);
     }
@@ -6321,11 +6327,20 @@ namespace monad::vm::compiler::native
         }
 
         if (std::holds_alternative<uint64_t>(offset_op)) {
+            auto const lit = std::get<uint64_t>(offset_op);
+            auto const read_end = static_cast<int32_t>(lit) + read_size;
+            if (read_end <= touched_memory_end_) {
+                as_.mov(
+                    x86::rax,
+                    x86::qword_ptr(
+                        reg_context, runtime::context_offset_memory_data));
+                return x86::qword_ptr(x86::rax, static_cast<int32_t>(lit));
+            }
+            touched_memory_end_ = read_end;
+
             release_volatile_general_reg(live);
             spill_avx_reg_range(5);
 
-            auto const lit = std::get<uint64_t>(offset_op);
-            auto const read_end = static_cast<int32_t>(lit) + read_size;
             static_assert(sizeof(runtime::Memory::size) == sizeof(uint32_t));
             as_.cmp(
                 x86::dword_ptr(

@@ -921,8 +921,7 @@ TYPED_TEST(TraitsTest, deploy_contract_code_validation)
         EVMC_SUCCESS, 1'000, 0, illegal_code.data(), illegal_code.size()};
     auto const r2 =
         deploy_contract_code<typename TestFixture::Trait>(s, a, std::move(r));
-    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_LONDON) {
-        // Contract starting with 0xef was valid before the London revision
+    if constexpr (!TestFixture::Trait::eip_3541_active()) {
         EXPECT_EQ(r2.status_code, EVMC_SUCCESS);
         EXPECT_EQ(r2.create_address, a);
     }

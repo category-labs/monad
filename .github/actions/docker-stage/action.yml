@@ -11,7 +11,9 @@ inputs:
     description: Extra build arguments, one per line.
     default: ''
   cache-from:
-    description: Layer caches to read, one per line.
+    description: >-
+      Layer caches to read, one per line. Never list two caches that hold the
+      same layers: BuildKit then misses the later stages at random.
     default: ''
   cache-to:
     description: Layer cache to write.

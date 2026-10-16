@@ -46,6 +46,28 @@ namespace monad::vm::runtime
             (*result_ptr)[2] = monad_w2;
             (*result_ptr)[3] = monad_w3;
         }
+#elif defined(MONAD_ZKVM_AIRBENDER)
+        // A 4-aligned word (nearly every MLOAD) by eight loads and rev8s,
+        // where load_be_unsafe stages it through a 32-byte memcpy call and
+        // swaps it after. Everything is read before anything is written.
+        auto const *const monad_s = ctx->memory.data + *offset;
+        if ((reinterpret_cast<std::uintptr_t>(monad_s) & 3) == 0) {
+            auto const *const monad_a = static_cast<uint8_t const *>(
+                __builtin_assume_aligned(monad_s, 4));
+            uint32_t monad_v[8];
+            for (std::size_t i = 0; i < 8; ++i) {
+                uint32_t w;
+                __builtin_memcpy(&w, monad_a + 4 * i, 4);
+                monad_v[i] = ::monad::bit::byteswap(w);
+            }
+            for (std::size_t k = 0; k < 4; ++k) {
+                (*result_ptr)[k] = (uint64_t{monad_v[6 - 2 * k]} << 32) |
+                                   monad_v[7 - 2 * k];
+            }
+        }
+        else {
+            *result_ptr = load_be_unsafe<uint256_t>(monad_s);
+        }
 #else
         *result_ptr = load_be_unsafe<uint256_t>(ctx->memory.data + *offset);
 #endif
@@ -77,6 +99,27 @@ namespace monad::vm::runtime
             store_le(monad_d + 8, monad_be[1]);
             store_le(monad_d + 16, monad_be[2]);
             store_le(monad_d + 24, monad_be[3]);
+        }
+#elif defined(MONAD_ZKVM_AIRBENDER)
+        // The same for MSTORE: rev8s and eight stores to a 4-aligned word.
+        auto *const monad_d = ctx->memory.data + *offset;
+        if ((reinterpret_cast<std::uintptr_t>(monad_d) & 3) == 0) {
+            auto *const monad_a =
+                static_cast<uint8_t *>(__builtin_assume_aligned(monad_d, 4));
+            uint32_t monad_v[8];
+            for (std::size_t k = 0; k < 4; ++k) {
+                uint64_t const limb = (*value_ptr)[k];
+                monad_v[7 - 2 * k] =
+                    ::monad::bit::byteswap(static_cast<uint32_t>(limb));
+                monad_v[6 - 2 * k] =
+                    ::monad::bit::byteswap(static_cast<uint32_t>(limb >> 32));
+            }
+            for (std::size_t i = 0; i < 8; ++i) {
+                __builtin_memcpy(monad_a + 4 * i, &monad_v[i], 4);
+            }
+        }
+        else {
+            store_be(monad_d, *value_ptr);
         }
 #else
         store_be(ctx->memory.data + *offset, *value_ptr);

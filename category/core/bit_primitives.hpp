@@ -101,7 +101,16 @@ namespace monad::bits
     [[gnu::always_inline]] inline constexpr unsigned
     count_zero_bytes(uint64_t const x) noexcept
     {
+#if defined(MONAD_ZKVM_AIRBENDER)
+        // At most one bit a byte, so a multiply sums each 32-bit half's
+        // bytes: rv32im has no popcount, and libgcc's __popcountdi2 is a call.
+        uint64_t const m = zero_byte_mask(x) >> 7;
+        uint32_t const lo = static_cast<uint32_t>(m);
+        uint32_t const hi = static_cast<uint32_t>(m >> 32);
+        return ((lo * 0x01010101u) >> 24) + ((hi * 0x01010101u) >> 24);
+#else
         return static_cast<unsigned>(std::popcount(zero_byte_mask(x) >> 7));
+#endif
     }
 
     // Returns eight times the number of nonzero bytes, allowing callers to

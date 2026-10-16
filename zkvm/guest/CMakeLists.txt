@@ -48,29 +48,6 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
             "MONAD_COMPILER_TESTING is not supported in zkVM builds")
     endif()
 
-    # Reference builds require fixed compiler settings; development builds allow overrides.
-    option(MONAD_ZKVM_OFFICIAL_PROFILE
-           "require the reference ZisK compiler and build options" OFF)
-    if(MONAD_ZKVM_OFFICIAL_PROFILE AND
-       NOT MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
-        message(FATAL_ERROR
-            "MONAD_ZKVM_OFFICIAL_PROFILE is a ZisK-only build profile")
-    endif()
-
-    # Enable required CMake boolean options; reject explicit OFF values.
-    set(_monad_zkvm_required_options
-        MONAD_ZKVM_ZISK_DMA MONAD_ZKVM_ZISK_CLEAN_BYTE_STORES)
-    if(MONAD_ZKVM_OFFICIAL_PROFILE)
-        foreach(_option ${_monad_zkvm_required_options})
-            if(DEFINED ${_option} AND NOT ${_option})
-                message(FATAL_ERROR
-                    "${_option}=OFF contradicts MONAD_ZKVM_OFFICIAL_PROFILE=ON")
-            endif()
-            set(${_option} ON CACHE BOOL
-                "required by the official ZisK profile" FORCE)
-        endforeach()
-    endif()
-
     # The riscv64-elf toolchain file specifies these as CMAKE_*_FLAGS_INIT,
     # but cmake-rs (driving this cmake invocation from build.rs) overrides
     # CMAKE_*_FLAGS with cc-rs's target-arch flags only — dropping the
@@ -88,8 +65,9 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # Append after cmake-rs's flags: the last -march wins.
     if(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
         set(_zisk_march "-march=rv64ima_zicsr_zba_zbb_zbs_zbkb -mabi=lp64")
-        string(APPEND CMAKE_C_FLAGS " ${_zisk_march} -fno-pic -mtune=size")
-        string(APPEND CMAKE_CXX_FLAGS " ${_zisk_march} -fno-pic -mtune=size")
+        # Override the Nix GCC wrapper's default frame pointers on both build paths.
+        string(APPEND CMAKE_C_FLAGS " ${_zisk_march} -fno-pic -mtune=size -fomit-frame-pointer")
+        string(APPEND CMAKE_CXX_FLAGS " ${_zisk_march} -fno-pic -mtune=size -fomit-frame-pointer")
         string(APPEND CMAKE_ASM_FLAGS " ${_zisk_march}")
     endif()
 
@@ -120,8 +98,8 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
             "$<$<COMPILE_LANGUAGE:CXX>:-include${CMAKE_CURRENT_SOURCE_DIR}/nodelete.hpp>")
 
         # Lower eligible block memory operations, including struct copies,
-        # directly to ZisK DMA. Requires Zicsr and the patched compiler built by
-        # zkvm/toolchain/zisk-dma-gcc/build-gcc15.sh.
+        # directly to ZisK DMA. Requires Zicsr and the patched GCC.
+        # Nix checks the emitted markers when building the toolchain.
         option(MONAD_ZKVM_ZISK_DMA
                "lower block mem* to the ZisK DMA precompile" OFF)
         if(MONAD_ZKVM_ZISK_DMA)
@@ -139,27 +117,27 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         endif()
     endif()
 
-    if(MONAD_ZKVM_OFFICIAL_PROFILE)
-        if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR
-           NOT CMAKE_CXX_COMPILER_VERSION VERSION_EQUAL "15.2.0")
-            message(FATAL_ERROR
-                "the reference ZisK profile requires GCC 15.2.0; got "
-                "${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
-        endif()
-        if(NOT DEFINED MONAD_ZKVM_GIT_COMMIT)
-            message(FATAL_ERROR
-                "official ZisK profile requires MONAD_ZKVM_GIT_COMMIT")
-        endif()
-        string(LENGTH "${MONAD_ZKVM_GIT_COMMIT}" _official_git_commit_length)
-        if(NOT _official_git_commit_length EQUAL 40 OR
+    if(DEFINED MONAD_ZKVM_GIT_COMMIT AND NOT MONAD_ZKVM_GIT_COMMIT STREQUAL "")
+        string(LENGTH "${MONAD_ZKVM_GIT_COMMIT}" _git_commit_length)
+        if(NOT _git_commit_length EQUAL 40 OR
            NOT MONAD_ZKVM_GIT_COMMIT MATCHES "^[0-9a-f]+$")
             message(FATAL_ERROR
                 "MONAD_ZKVM_GIT_COMMIT must be a full lowercase Git SHA")
         endif()
-
-        set(_monad_zkvm_stamp_defs
-            "MONAD_ZKVM_BUILD_COMMIT=\"${MONAD_ZKVM_GIT_COMMIT}\"")
+        set(_monad_zkvm_build_commit "${MONAD_ZKVM_GIT_COMMIT}")
+    else()
+        set(_monad_zkvm_build_commit "none")
     endif()
+    # Free-form: the reference build passes its nix store path, which names
+    # every input the ELF was built from.
+    if(DEFINED MONAD_ZKVM_BUILD_ID)
+        set(_monad_zkvm_build_id "${MONAD_ZKVM_BUILD_ID}")
+    else()
+        set(_monad_zkvm_build_id "none")
+    endif()
+    set(_monad_zkvm_stamp_defs
+        "MONAD_ZKVM_BUILD_COMMIT=\"${_monad_zkvm_build_commit}\""
+        "MONAD_ZKVM_BUILD_ID=\"${_monad_zkvm_build_id}\"")
 
     # Repo + third-party paths.
     set(MONAD_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")
@@ -358,11 +336,6 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
             "libgcc.a not found via compiler query")
     endif()
 
-    if(MONAD_ZKVM_OFFICIAL_PROFILE)
-        add_compile_definitions(MONAD_ZKVM_OFFICIAL_PROFILE=1)
-    else()
-        add_compile_definitions(MONAD_ZKVM_DEV_PROFILE=1)
-    endif()
 
     # ---- Bare-metal libc / libstdc++ stubs ----
 
@@ -455,7 +428,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # validate_block.cpp carries the validators and the BlockError
     # value_mappings() the shadow used to provide alone.
 
-    # Only the official profile supplies these build stamps.
+    # Keep changing build stamps isolated from the other guest objects.
     if(_monad_zkvm_stamp_defs)
         set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/build_identity.cpp"
             PROPERTIES COMPILE_DEFINITIONS "${_monad_zkvm_stamp_defs}")
@@ -577,19 +550,17 @@ else()
 endif()
 
 # ---- Guest sources, shared by both modes ----
-# The witness pipeline itself. Defined once, after the mode split: the two
-# modes differ only in what these sources compile against — the adapted
-# bare-metal targets on RISC-V, the host's monad_execution on x86 — so only
-# the dependency edge is conditional, never the target or its file list.
+# Both modes share the witness pipeline; only guests carry an ELF build stamp.
 add_library(monad-zkvm-guest OBJECT
     "${CMAKE_CURRENT_SOURCE_DIR}/execute_block.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/build_identity.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/execute_witness.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/witness_block_hash_buffer.cpp"
 )
 monad_compile_options(monad-zkvm-guest)
 target_link_libraries(monad-zkvm-guest PRIVATE zkevm-standards)
 if(DEFINED MONAD_ZKVM_GUEST_TARGET)
+    target_sources(monad-zkvm-guest PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/build_identity.cpp")
     monad_riscv_compile_options(monad-zkvm-guest)
     target_link_libraries(monad-zkvm-guest
         PRIVATE monad-core monad_execution_ethereum)

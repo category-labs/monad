@@ -9,9 +9,9 @@ These patches add two options to GCC's RISC-V backend:
   immediates to reduce ZisK's arithmetic and byte-store costs.
 
 Both are off by default (`MONAD_ZKVM_ZISK_DMA=OFF`,
-`MONAD_ZKVM_ZISK_CLEAN_BYTE_STORES=OFF`). The official ZisK profile requires
-them: it forces both options on, rejects an explicit `OFF`, and checks that a
-probe compiles to the expected code for each.
+`MONAD_ZKVM_ZISK_CLEAN_BYTE_STORES=OFF`). The reference Nix build enables
+both explicitly. Its toolchain runs `check-probes.sh` to verify the expected
+assembly for each option.
 
 ## Why the guest wants DMA lowering
 
@@ -50,7 +50,7 @@ may still remove a mask such as `n & 0xff` before a byte store.
 |---|---|
 | `0001-riscv-zisk-dma-lowering-15.2.0.patch` | DMA lowering directly against GCC 15.2.0 |
 | `0002-riscv-zisk-clean-byte-stores-15.2.0.diff` | adds `-mzisk-clean-byte-stores`, on top of the DMA patch |
-| `build-gcc15.sh` | builds the compiler and verifies both options |
+| `check-probes.sh` | verifies DMA and clean byte-store code generation |
 
 The interpreter needs GCC 15's `__attribute__((musttail))`. The DMA patch
 combines the original GCC 14.3.0 implementation and its GCC 15.2.0 port;
@@ -58,23 +58,22 @@ the separate patches remain available in Git history.
 
 ## Building the compiler
 
-Requires GCC 15.2.0 sources, the matching xPack, and host `gcc-13`/`g++-13`.
-Apply the two patches to GCC in order, then run the build script:
+On x86_64 Linux, run from the repository root:
 
 ```bash
-cd gcc-15.2.0
-patch -p1 < .../0001-riscv-zisk-dma-lowering-15.2.0.patch
-patch -p1 < .../0002-riscv-zisk-clean-byte-stores-15.2.0.diff
-ZISK_DMA_GCC_SRC=$PWD .../build-gcc15.sh
+nix build ./nix#riscv64-none-elf-toolchain
+./result/bin/riscv64-none-elf-gcc --version
 ```
 
-The script expects patched sources. It builds only GCC and reuses xPack's
-binutils, headers and RV64 libraries. Assembly probes require `csrs 0x813`
-for a 32-byte copy, `li ...,184` for a byte constant, and `addi ...,...,128`
-for a byte addition.
-
+Nix pins GCC 15.2.0, applies both patches, and provides binutils and soft-float
+newlib. It runs `check-probes.sh` before exposing the toolchain through `result`.
+The store path identifies the compiler inputs, including both patches.
+See [the Nix guide](../../../nix/README.md) for setup and development commands.
 
 ## Upstreaming
 
 These patches belong beside ZisK's LLVM implementation. They are kept here so
-the guest's compiler can be rebuilt from GCC sources and the matching xPack.
+the guest's compiler can be rebuilt from pinned GCC sources with Nix.
+
+The Nix build runs `check-probes.sh` with `probe-dma.c` and
+`probe-byte-stores.c`. These probes can also check a local compiler.

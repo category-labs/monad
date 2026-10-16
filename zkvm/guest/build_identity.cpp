@@ -14,11 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // Keep the commit stamp separate so a rebase rebuilds only this small object.
-#ifdef MONAD_ZKVM_OFFICIAL_PROFILE
-extern "C" [[gnu::used, gnu::section(".monad_zkvm_profile")]]
-unsigned char const monad_zkvm_official_profile[] =
-    "monad-zkvm-official;commit=" MONAD_ZKVM_BUILD_COMMIT;
-#elif defined(MONAD_ZKVM_DEV_PROFILE)
-extern "C" [[gnu::used, gnu::section(".monad_zkvm_profile")]]
-unsigned char const monad_zkvm_official_profile[] = "monad-zkvm-dev";
-#endif
+// Retained by align.ld; build identity names the Nix inputs when supplied.
+extern "C" [[gnu::used, gnu::section(".monad_zkvm_commit")]]
+unsigned char const monad_zkvm_build_commit[] =
+    "monad-zkvm;commit=" MONAD_ZKVM_BUILD_COMMIT ";build=" MONAD_ZKVM_BUILD_ID;

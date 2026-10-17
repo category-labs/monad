@@ -46,17 +46,18 @@ namespace monad::vm::test
         init_host(MockedHost &host, std::array<evmc_bytes32, 2> &blob_hashes_)
         {
             host.tx_context = evmc_tx_context{
-                .tx_gas_price = store_be_as<bytes32_t>(uint256_t{56762}),
+                .tx_gas_price = store_be_as<evmc_bytes32>(uint256_t{56762}),
                 .tx_origin = 0x000000000000000000000000000000005CA1AB1E_address,
                 .block_coinbase =
                     0x00000000000000000000000000000000BA5EBA11_address,
                 .block_number = 23784,
                 .block_timestamp = 1733494490,
                 .block_gas_limit = 30000000,
-                .block_prev_randao = store_be_as<bytes32_t>(uint256_t{89273}),
-                .chain_id = store_be_as<bytes32_t>(uint256_t{2342}),
-                .block_base_fee = store_be_as<bytes32_t>(uint256_t{389}),
-                .blob_base_fee = store_be_as<bytes32_t>(uint256_t{98988}),
+                .block_prev_randao =
+                    store_be_as<evmc_bytes32>(uint256_t{89273}),
+                .chain_id = store_be_as<evmc_bytes32>(uint256_t{2342}),
+                .block_base_fee = store_be_as<evmc_bytes32>(uint256_t{389}),
+                .blob_base_fee = store_be_as<evmc_bytes32>(uint256_t{98988}),
                 .blob_hashes = blob_hashes_.data(),
                 .blob_hashes_count = blob_hashes_.size(),
                 .initcodes = nullptr,
@@ -70,7 +71,7 @@ namespace monad::vm::test
     }
 
     RuntimeTestBase::RuntimeTestBase()
-        : blob_hashes_{store_be_as<bytes32_t>(uint256_t{1}), store_be_as<bytes32_t>(uint256_t{2})}
+        : blob_hashes_{store_be_as<evmc_bytes32>(uint256_t{1}), store_be_as<evmc_bytes32>(uint256_t{2})}
         , host_{}
         , test_ctx_{[&](auto &x) {
             x.host = &host_.get_interface(), x.context = host_.to_context(),

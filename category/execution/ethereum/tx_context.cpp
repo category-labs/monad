@@ -17,6 +17,7 @@
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
+#include <category/core/runtime/uint256.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
@@ -30,13 +31,18 @@
 
 MONAD_NAMESPACE_BEGIN
 
+// The reinterpret_cast of blob_hashes is permitted because the following holds
+static_assert(
+    sizeof(bytes32_t) == sizeof(evmc_bytes32) &&
+    alignof(bytes32_t) == alignof(evmc_bytes32));
+
 template <Traits traits>
 evmc_tx_context get_tx_context(
     Transaction const &tx, Address const &sender, BlockHeader const &hdr,
     uint256_t const &chain_id, BlobSchedule const &blob_schedule)
 {
     return {
-        .tx_gas_price = store_be_as<bytes32_t>(
+        .tx_gas_price = store_be_as<evmc_bytes32>(
             gas_price<traits>(tx, hdr.base_fee_per_gas.value_or(0))),
         .tx_origin = sender,
         .block_coinbase = hdr.beneficiary,
@@ -44,14 +50,15 @@ evmc_tx_context get_tx_context(
         .block_timestamp = static_cast<int64_t>(hdr.timestamp),
         .block_gas_limit = static_cast<int64_t>(hdr.gas_limit),
         .block_prev_randao = hdr.difficulty
-                                 ? store_be_as<bytes32_t>(hdr.difficulty)
-                                 : hdr.prev_randao,
-        .chain_id = store_be_as<bytes32_t>(chain_id),
+                                 ? store_be_as<evmc_bytes32>(hdr.difficulty)
+                                 : to_evmc(hdr.prev_randao),
+        .chain_id = store_be_as<evmc_bytes32>(chain_id),
         .block_base_fee =
-            store_be_as<bytes32_t>(hdr.base_fee_per_gas.value_or(0)),
-        .blob_base_fee = store_be_as<bytes32_t>(get_base_fee_per_blob_gas(
+            store_be_as<evmc_bytes32>(hdr.base_fee_per_gas.value_or(0)),
+        .blob_base_fee = store_be_as<evmc_bytes32>(get_base_fee_per_blob_gas(
             hdr.excess_blob_gas.value_or(0), blob_schedule)),
-        .blob_hashes = tx.blob_versioned_hashes.data(),
+        .blob_hashes = reinterpret_cast<evmc_bytes32 const *>(
+            tx.blob_versioned_hashes.data()),
         .blob_hashes_count = tx.blob_versioned_hashes.size(),
         .initcodes = nullptr, // TODO
         .initcodes_count = 0, // TODO

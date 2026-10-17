@@ -28,6 +28,7 @@
  * Definitions of event payloads used with the EXEC event ring
  */
 
+#include <category/core/bytes32.h>
 #include <category/core/event/event_metadata.h>
 #include <category/execution/ethereum/core/eth_ctypes.h>
 #include <category/execution/monad/core/monad_ctypes.h>
@@ -97,7 +98,7 @@ enum monad_exec_flow_type : uint8_t
 /// details
 struct monad_exec_block_tag
 {
-    monad_c_bytes32 id;    ///< Monad consensus unique ID for block
+    monad_bytes32 id;      ///< Monad consensus unique ID for block
     uint64_t block_number; ///< Proposal is to become this block
 };
 
@@ -112,7 +113,7 @@ struct monad_exec_block_start
     monad_c_uint256_ne chain_id;      ///< Blockchain we're associated with
     struct monad_c_secp256k1_pubkey
         author;                       ///< Public key of block author
-    monad_c_bytes32 parent_eth_hash;  ///< Hash of Ethereum parent block
+    monad_bytes32 parent_eth_hash;    ///< Hash of Ethereum parent block
     struct monad_c_eth_block_input
         eth_block_input;              ///< Ethereum execution inputs
     struct monad_c_native_block_input
@@ -128,7 +129,7 @@ typedef uint32_t monad_exec_block_reject;
 /// Event recorded upon successful block execution
 struct monad_exec_block_end
 {
-    monad_c_bytes32 eth_block_hash;      ///< Hash of Ethereum block
+    monad_bytes32 eth_block_hash;        ///< Hash of Ethereum block
     struct monad_c_eth_block_exec_output
         exec_output;                     ///< Ethereum execution outputs
 };
@@ -154,7 +155,7 @@ struct monad_exec_block_verified
 /// First event recorded when transaction processing starts
 struct monad_exec_txn_header_start
 {
-    monad_c_bytes32 txn_hash;     ///< Keccak hash of transaction RLP
+    monad_bytes32 txn_hash;       ///< Keccak hash of transaction RLP
     monad_c_address sender;       ///< Recovered sender address
     struct monad_c_eth_txn_header
         txn_header;               ///< Transaction header
@@ -279,9 +280,9 @@ struct monad_exec_storage_access
         access_context;                    ///< Context of account access
     bool modified;                         ///< True -> new_value meaningful
     bool transient;                        ///< True -> is transient storage
-    monad_c_bytes32 key;                   ///< Storage key accessed / modified
-    monad_c_bytes32 start_value;           ///< Read (or original) value
-    monad_c_bytes32 end_value;             ///< New value, if modified
+    monad_bytes32 key;                     ///< Storage key accessed / modified
+    monad_bytes32 start_value;             ///< Read (or original) value
+    monad_bytes32 end_value;               ///< New value, if modified
 };
 
 /// Error occurred in execution process (not a validation error)

@@ -59,13 +59,13 @@ TEST(MockedHost, StorageStatus)
     };
 
     auto const addr = 0x00000000000000000000000000000000000000AA_address;
-    auto const key = bytes32_t{7};
+    auto const key = to_evmc(bytes32_t{7});
 
     for (auto const &t : transitions) {
         MockedHost host;
         host.accounts[addr].storage[key] = {
             .current = t.current, .original = t.original};
-        EXPECT_EQ(host.set_storage(addr, key, t.value), t.status);
-        EXPECT_EQ(host.get_storage(addr, key), evmc::bytes32{t.value});
+        EXPECT_EQ(host.set_storage(addr, key, to_evmc(t.value)), t.status);
+        EXPECT_EQ(host.get_storage(addr, key), to_evmc(t.value));
     }
 }

@@ -84,7 +84,7 @@ TYPED_TEST(RuntimeTraitsTest, StorageLoadWarm)
     auto load = TestFixture::wrap(sload<traits>);
 
     this->host_.access_storage(
-        this->ctx_.env.recipient, store_be_as<bytes32_t>(key));
+        this->ctx_.env.recipient, store_be_as<evmc_bytes32>(key));
 
     this->ctx_.gas_remaining = 0;
     ASSERT_EQ(load(key), 0);

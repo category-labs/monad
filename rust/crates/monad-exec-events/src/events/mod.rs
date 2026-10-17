@@ -362,7 +362,7 @@ impl EventDecoder for ExecEventDecoder {
                                     txn_header_start.txn_header.blob_versioned_hash_length,
                                 )
                                 .unwrap()
-                                .checked_mul(size_of::<ffi::monad_c_bytes32>())
+                                .checked_mul(size_of::<ffi::monad_bytes32>())
                                 .unwrap(),
                             ]
                         },
@@ -388,7 +388,7 @@ impl EventDecoder for ExecEventDecoder {
                                 txn_access_list_entry.entry.storage_key_count,
                             )
                             .unwrap()
-                            .checked_mul(size_of::<ffi::monad_c_bytes32>())
+                            .checked_mul(size_of::<ffi::monad_bytes32>())
                             .unwrap()]
                         },
                     )
@@ -441,7 +441,7 @@ impl EventDecoder for ExecEventDecoder {
                     ref_from_bytes_with_trailing::<monad_exec_txn_log, 2>(bytes, |txn_log| {
                         [
                             Into::<usize>::into(txn_log.topic_count)
-                                .checked_mul(size_of::<ffi::monad_c_bytes32>())
+                                .checked_mul(size_of::<ffi::monad_bytes32>())
                                 .unwrap(),
                             txn_log.data_length.try_into().unwrap(),
                         ]

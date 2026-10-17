@@ -87,10 +87,10 @@
 #endif
 
 // How many slots above the stack's bottom the stack_bottom argument points:
-// on ZisK one, at the first element, so that the underflow tests for one and
-// for two operands both compare with it directly (stack.hpp); the tests for
-// two are the commoner.
-#if defined(MONAD_ZKVM_ZISK)
+// on the zkVMs one, at the first element, so that the underflow tests for one
+// and for two operands both compare with it directly (stack.hpp); the tests
+// for two are the commoner.
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     #define MONAD_VM_STACK_BOTTOM_BIAS 1
 #else
     #define MONAD_VM_STACK_BOTTOM_BIAS 0

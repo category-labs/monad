@@ -771,7 +771,7 @@ namespace monad::vm::interpreter
     }
 #endif
 
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     // The static gas of a sequence, a dynamic-cost opcode's at its minimum:
     // for a caller that charges the dynamic part itself.
     template <Traits traits, compiler::EvmOpCode... Ops>
@@ -792,7 +792,9 @@ namespace monad::vm::interpreter
         MONAD_VM_LAUNDER(gas_remaining);
         return gas_remaining >= 0;
     }
+#endif
 
+#if defined(MONAD_ZKVM_ZISK)
     // x >> k and x << k in place, for k under 256: one arm per whole words
     // of the shift, whose few temporaries leave the handler without the frame
     // the general shift needs for its run-time word index. A word's bits that
@@ -913,6 +915,9 @@ namespace monad::vm::interpreter
         }
     }
 
+#endif
+
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     // After validating the destination, charge JUMPDEST's gas and skip it.
     // Invalid jumps must exit before this charge.
     [[gnu::always_inline]] inline uint8_t const *swallow_jumpdest(
@@ -931,19 +936,20 @@ namespace monad::vm::interpreter
 
     // Complete <test> PUSH2 JUMPI using the test result directly.
     // Jump to the validated destination encoded at p[2..3], or skip five bytes.
+    template <typename Analysis>
     [[gnu::always_inline]] inline uint8_t const *fused_branch(
-        runtime::Context &ctx, uint8_t const *p, bool taken,
-        gas_t &gas_remaining)
+        runtime::Context &ctx, Analysis const &analysis, uint8_t const *p,
+        bool taken, gas_t &gas_remaining)
     {
         // Condition is false; continue after the sequence.
         if (!taken) {
             return p + 5;
         }
         auto const dst = static_cast<size_t>(detail::load_be_k<2>(p + 2));
-        if (MONAD_UNLIKELY(!MONAD_VM_ANALYSIS.is_jumpdest16(dst))) {
+        if (MONAD_UNLIKELY(!analysis.is_jumpdest16(dst))) {
             ctx.exit(Error);
         }
-        auto const *ip = MONAD_VM_ANALYSIS.code() + dst;
+        auto const *ip = analysis.code() + dst;
         ip = swallow_jumpdest(ctx, ip, gas_remaining);
         return ip;
     }
@@ -1695,7 +1701,7 @@ namespace monad::vm::interpreter
        uint256_t const *stack_bottom, uint256_t *stack_top,
        gas_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         // Fuse EQ PUSH2 <dst16> JUMPI. EQ frees a stack slot, so PUSH2
         // cannot overflow once EQ's operands are validated.
         uint8_t const monad_vm_op2 = *(instr_ptr + 1);
@@ -1716,14 +1722,22 @@ namespace monad::vm::interpreter
                 // PUSH2 adds one value, restoring the original stack height.
                 MONAD_VM_CHECK_AT(JUMPI, 0);
             }
+#if defined(MONAD_ZKVM_ZISK)
             // Keep EQ's result in a C++ bool instead of the EVM stack, the
             // words compared by DMA (zisk_equal32): one step where gcc's
             // compare is three a word, and half of EQ's run all four.
             bool const monad_vm_taken = zisk_equal32(
                 reinterpret_cast<uint64_t const *>(stack_top),
                 reinterpret_cast<uint64_t const *>(stack_top - 1));
+#else
+            // Keep EQ's result in a C++ bool instead of the EVM stack, the
+            // words compared by the circuit, which leaves both as they were.
+            bool const monad_vm_taken =
+                airbender_bigint::op(
+                    *(stack_top - 1), *stack_top, airbender_bigint::EQ) != 0;
+#endif
             instr_ptr =
-                fused_branch(ctx, instr_ptr, monad_vm_taken, gas_remaining);
+                fused_branch(ctx, MONAD_VM_ANALYSIS, instr_ptr, monad_vm_taken, gas_remaining);
             MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
                 ctx,
                 MONAD_VM_ANALYSIS_ARG,
@@ -1757,7 +1771,7 @@ namespace monad::vm::interpreter
         b = (a == b);
 #endif
 
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         MONAD_VM_NEXT_OP(EQ, monad_vm_op2);
 #else
         MONAD_VM_NEXT(EQ);
@@ -1770,7 +1784,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         gas_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         // Fuse ISZERO PUSH2 <dst16> JUMPI without storing the test result.
         uint8_t const monad_vm_op2 = *(instr_ptr + 1);
         if (monad_vm_op2 == static_cast<std::uint8_t>(PUSH2) &&
@@ -1785,7 +1799,7 @@ namespace monad::vm::interpreter
             }
             bool const monad_vm_taken = !*stack_top;
             instr_ptr =
-                fused_branch(ctx, instr_ptr, monad_vm_taken, gas_remaining);
+                fused_branch(ctx, MONAD_VM_ANALYSIS, instr_ptr, monad_vm_taken, gas_remaining);
             MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
                 ctx,
                 MONAD_VM_ANALYSIS_ARG,
@@ -1811,7 +1825,7 @@ namespace monad::vm::interpreter
         auto &a = *stack_top;
         a = !a;
 
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         MONAD_VM_NEXT_OP(ISZERO, monad_vm_op2);
 #else
         MONAD_VM_NEXT(ISZERO);
@@ -2552,7 +2566,7 @@ namespace monad::vm::interpreter
         else {
             gas_remaining -=
                 static_gas<traits, CALLDATASIZE, LT, ISZERO, PUSH2, JUMPI>();
-            monad_vm_q = fused_branch(ctx, p + 2, true, gas_remaining);
+            monad_vm_q = fused_branch(ctx, MONAD_VM_ANALYSIS, p + 2, true, gas_remaining);
         }
         size_t const monad_vm_n = push_selector<traits>(
             ctx, monad_vm_q, stack_top - 1, gas_remaining);
@@ -2619,7 +2633,7 @@ namespace monad::vm::interpreter
         uint64_t const monad_vm_len = monad_vm_size - monad_vm_b[0];
         monad_vm_b = uint256_t{monad_vm_len};
         instr_ptr =
-            fused_branch(ctx, p + 6, monad_vm_len >= p[3], gas_remaining);
+            fused_branch(ctx, MONAD_VM_ANALYSIS, p + 6, monad_vm_len >= p[3], gas_remaining);
         MONAD_VM_LAUNDER(instr_ptr);
         MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
             ctx,
@@ -3989,6 +4003,9 @@ namespace monad::vm::interpreter
         MONAD_VM_FUSED_NEXT(N + 2, 0);
     }
 
+#endif
+
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     // PUSH2 <dst> JUMP and PUSH2 <dst> JUMPI, one twin each: use the immediate
     // directly as the destination. Check gas and stack in opcode order, then
     // validate taken jumps. push<2> tail-calls the one its follower names.
@@ -4079,6 +4096,9 @@ namespace monad::vm::interpreter
         MONAD_VM_FUSED_NEXT(4, -1);
     }
 
+#endif
+
+#if defined(MONAD_ZKVM_ZISK)
     // PUSH2 and the opcode after its immediate, OP, as one: where the slots
     // compile it into JUMP's and JUMPI's (execute.cpp), PUSH2's head jumps
     // here, instr_ptr on the PUSH2.
@@ -4148,6 +4168,9 @@ namespace monad::vm::interpreter
         }
     }
 
+#endif
+
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     // The two as functions of their own, for push<2> where the slots do not
     // compile them into JUMP's and JUMPI's.
     template <Traits traits>
@@ -4356,12 +4379,44 @@ namespace monad::vm::interpreter
                     MONAD_VM_AS_CALLED(instr_ptr) MONAD_VM_TBL_ARG);
             }
         }
+#elif defined(MONAD_ZKVM_AIRBENDER)
+        // PUSH2 JUMP and PUSH2 JUMPI in their twins, as on ZisK: JUMP and
+        // JUMPI are consecutive, so one range test matches both, and the
+        // follower read here is the one the push's own dispatch reads.
+        [[maybe_unused]] uint8_t monad_vm_op2 = 0;
+        if constexpr (N == 2) {
+            monad_vm_op2 = *(instr_ptr + 3);
+            auto const monad_vm_jump =
+                static_cast<size_t>(monad_vm_op2) - static_cast<size_t>(JUMP);
+            if (monad_vm_jump <= 1u) {
+                if (monad_vm_jump == 0) {
+                    MONAD_VM_MUST_TAIL return push2_jump<traits>(
+                        ctx,
+                        MONAD_VM_ANALYSIS_ARG,
+                        stack_bottom,
+                        stack_top,
+                        gas_remaining,
+                        instr_ptr MONAD_VM_TBL_ARG);
+                }
+                MONAD_VM_MUST_TAIL return push2_jumpi<traits>(
+                    ctx,
+                    MONAD_VM_ANALYSIS_ARG,
+                    stack_bottom,
+                    stack_top,
+                    gas_remaining,
+                    instr_ptr MONAD_VM_TBL_ARG);
+            }
+        }
 #endif
         MONAD_VM_CHECK(PUSH0 + N);
         push_impl<N, traits>::push(stack_top, instr_ptr);
 
 #if defined(MONAD_ZKVM_ZISK)
         if constexpr (N == 1 || N == 2 || N == 4 || N == 8 || N == 20) {
+            MONAD_VM_NEXT_PUSH_OP(PUSH0 + N, monad_vm_op2);
+        }
+#elif defined(MONAD_ZKVM_AIRBENDER)
+        if constexpr (N == 2) {
             MONAD_VM_NEXT_PUSH_OP(PUSH0 + N, monad_vm_op2);
         }
 #endif
@@ -4494,7 +4549,11 @@ namespace monad::vm::interpreter
                 // fused_branch expects a pointer to EQ or GT, followed by
                 // PUSH2 <dst> JUMPI.
                 instr_ptr = fused_branch(
-                    ctx, instr_ptr + 6, monad_vm_taken, gas_remaining);
+                    ctx,
+                    MONAD_VM_ANALYSIS,
+                    instr_ptr + 6,
+                    monad_vm_taken,
+                    gas_remaining);
                 MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
                     ctx,
                     MONAD_VM_ANALYSIS_ARG,
@@ -4629,10 +4688,16 @@ namespace monad::vm::interpreter
             runtime::Context &ctx, Analysis const &analysis,
             uint256_t const &target)
         {
-            // Our bytecode offsets use 64-bit size_t; EVM targets are 256-bit.
+            // Our bytecode offsets use size_t; EVM targets are 256-bit.
             // Reject nonzero upper words before narrowing, avoiding a full
             // uint256_t comparison. is_jumpdest checks bounds and JUMPDEST.
-            if (MONAD_UNLIKELY((target[1] | target[2] | target[3]) != 0)) {
+            auto upper = target[1] | target[2] | target[3];
+            if constexpr (sizeof(size_t) < sizeof(uint64_t)) {
+                // A 32-bit size_t (rv32) would drop word 0's high half, and
+                // a jump to 2^32 + d would land on d.
+                upper |= target[0] >> 32;
+            }
+            if (MONAD_UNLIKELY(upper != 0)) {
                 ctx.exit(Error);
             }
 
@@ -4651,7 +4716,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         gas_t gas_remaining, uint8_t const *MONAD_VM_TBL_PARAM)
     {
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         // With the JUMPDEST that a valid destination is.
         static constexpr auto monad_vm_req =
             fused_requirements<traits, JUMP, JUMPDEST>();
@@ -4977,7 +5042,7 @@ namespace monad::vm::interpreter
 
         if (cond) {
             auto const *new_ip = jump_impl(ctx, MONAD_VM_ANALYSIS, target);
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
             new_ip = swallow_jumpdest(ctx, new_ip, gas_remaining);
 #endif
             if constexpr (debug_enabled) {

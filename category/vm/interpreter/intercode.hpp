@@ -43,7 +43,7 @@ namespace monad::vm::interpreter
         // precompile access, unlike std::vector<bool>'s opaque storage.
         class JumpdestMap
         {
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
             // At least 2^16 bits, so a PUSH2's destination needs no bound test
             // (is_jumpdest16). Bump memory, never reused, reads zero until the
             // analysis writes it, and the analysis sets no bit past the code:
@@ -55,10 +55,17 @@ namespace monad::vm::interpreter
             std::vector<uint64_t> words_;
 #endif
 
+#if defined(MONAD_ZKVM_AIRBENDER)
+            // The words as rv32 tests and sets them, 32 bits at a time: the
+            // same bits on a little-endian machine, where a 64-bit shift by a
+            // variable count is a branch and a dozen instructions.
+            using word32_t = uint32_t __attribute__((__may_alias__));
+#endif
+
         public:
             JumpdestMap() = default;
 
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
             explicit JumpdestMap(size_t const bits)
                 : words_{static_cast<uint64_t *>(::operator new(
                       std::max((bits + 63) / 64, min_words) *
@@ -75,8 +82,13 @@ namespace monad::vm::interpreter
 
             void set(size_t const i) noexcept
             {
+#if defined(MONAD_ZKVM_AIRBENDER)
+                reinterpret_cast<word32_t *>(words_)[i >> 5] |= uint32_t{1}
+                                                                << (i & 31);
+#else
                 // Set bit i % 64 in word i / 64.
                 words_[i >> 6] |= uint64_t{1} << (i & 63);
+#endif
             }
 
 #ifdef MONAD_ZKVM_ZISK
@@ -104,6 +116,10 @@ namespace monad::vm::interpreter
             {
 #ifdef MONAD_ZKVM_ZISK
                 return test(words_, i);
+#elif defined(MONAD_ZKVM_AIRBENDER)
+                return (reinterpret_cast<word32_t const *>(words_)[i >> 5] >>
+                        (i & 31)) &
+                       1;
 #else
                 // Read bit i % 64 from word i / 64.
                 return (words_[i >> 6] >> (i & 63)) & 1;
@@ -112,7 +128,7 @@ namespace monad::vm::interpreter
 
             size_t word_count() const noexcept
             {
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
                 return word_count_;
 #else
                 return words_.size();
@@ -121,7 +137,7 @@ namespace monad::vm::interpreter
 
             uint64_t *words() noexcept
             {
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
                 return words_;
 #else
                 return words_.data();
@@ -199,13 +215,13 @@ namespace monad::vm::interpreter
         }
 #endif
 
-        // The same for a PUSH2's destination, under 2^16: on ZisK the map
+        // The same for a PUSH2's destination, under 2^16: on the zkVMs the map
         // covers every such position and holds no bit past the code, so the
         // bound is the map's own. Taken as a size_t: a uint16_t parameter
         // makes gcc zero-extend a value the decode already built in 16 bits.
         bool is_jumpdest16(size_t const pc) const noexcept
         {
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
             return jumpdest_map_.test(pc);
 #else
             return is_jumpdest(pc);

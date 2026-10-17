@@ -162,6 +162,26 @@ namespace monad::vm::interpreter
         // Skip PUSH data: its bytes cannot be jump destinations.
         uint8_t const *p = code.data();
         uint8_t const *const end = p + code.size();
+#if defined(MONAD_ZKVM_AIRBENDER)
+        // Two opcodes a turn and one end test, which every opcode of every
+        // code the block runs otherwise pays. The second needs none of its
+        // own: from below the end an opcode advances at most 33 bytes, into
+        // the end padding, whose zero bytes are STOPs -- no JUMPDEST, and the
+        // next turn's test ends the scan.
+        static_assert(end_padding_size >= PUSH32 - PUSH0 + 1);
+        while (p < end) {
+            auto op = *p;
+            if (op == EvmOpCode::JUMPDEST) {
+                jumpdests.set(static_cast<size_t>(p - code.data()));
+            }
+            p += advance[op];
+            op = *p;
+            if (op == EvmOpCode::JUMPDEST) {
+                jumpdests.set(static_cast<size_t>(p - code.data()));
+            }
+            p += advance[op];
+        }
+#else
         while (p < end) {
             auto const op = *p;
             if (op == EvmOpCode::JUMPDEST) {
@@ -169,6 +189,7 @@ namespace monad::vm::interpreter
             }
             p += advance[op];
         }
+#endif
 
         return jumpdests;
     }

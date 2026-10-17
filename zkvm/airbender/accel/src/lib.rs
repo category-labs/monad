@@ -793,8 +793,37 @@ mod bls {
         ) else {
             return ZKVM_EFAIL;
         };
-        *verified = airbender_crypto::bls12_381::verify_kzg_proof(c, p, z, y);
+        *verified = verify_kzg_fixed_g2(c, p, z, y);
         ZKVM_EOK
+    }
+
+    /// e(y·G - commitment - z·proof, G2) · e(proof, τ·G2) == 1, ZKsync OS's
+    /// form of EIP-4844's check (basic_system point_evaluation.rs, without its
+    /// oracle): z moves to G1, so both G2 points are fixed and their Miller-loop
+    /// lines are constants, where airbender-crypto's verify_kzg_proof multiplies
+    /// a G2 point by z and prepares it on every call. The two G1 scalar
+    /// multiplications share their doublings.
+    fn verify_kzg_fixed_g2(
+        commitment: G1Affine,
+        proof: G1Affine,
+        z: <Fr as PrimeField>::BigInt,
+        y: <Fr as PrimeField>::BigInt,
+    ) -> bool {
+        use airbender_crypto::bls12_381::{consts, g1};
+        // both checked below the group order by the caller
+        let z = Fr::from_bigint(z).expect("z is canonical");
+        let y = Fr::from_bigint(y).expect("y is canonical");
+        let mut left = g1::mul_two(&G1Affine::generator().into_group(), y, &proof.into_group(), -z);
+        left -= &commitment;
+        let g1s = [left.into_affine(), proof];
+        let g2s = [&consts::PREPARED_G2_GENERATOR, &consts::PREPARED_G2_BY_TAU];
+        // a G1 point at infinity contributes nothing to the loop
+        let mut f = Bls12_381::multi_miller_loop_shared(None, g1s.iter().zip(g2s));
+        // conjugated for the negative seed, as multi_miller_loop does
+        f.conjugate_in_place();
+        Bls12_381::final_exponentiation_with_inverse(&f, |x| x.inverse())
+            .expect("the Miller loop of curve points is invertible")
+            == <Bls12_381 as Pairing>::TargetField::ONE
     }
 }
 

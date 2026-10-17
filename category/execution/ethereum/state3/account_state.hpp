@@ -30,13 +30,13 @@
 #include <utility>
 #include <vector>
 
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     #include <category/core/address.hpp>
 #endif
 
 MONAD_NAMESPACE_BEGIN
 
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
 struct StateDelta;
 #endif
 
@@ -370,7 +370,7 @@ public:
     // Original slot values; replaces the inherited storage_, left unused here.
     PrestateStorage prestate_storage_{};
 
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     // The block's entry for the account, which the row was read from: the
     // slot reads and the merge reach it without looking the address up.
     // The block state never erases an entry or moves one.
@@ -387,7 +387,7 @@ public:
     {
     }
 
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     // The row the block's entry for the account gives, keeping the entry.
     explicit OriginalAccountState(std::pair<Address, StateDelta> &entry);
 #endif

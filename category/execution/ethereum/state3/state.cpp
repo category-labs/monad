@@ -68,7 +68,7 @@ namespace
     }
 }
 
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
 OriginalAccountState::OriginalAccountState(StateDeltas::value_type &entry)
     : AccountState{entry.second.account.second}
     , delta_{&entry}
@@ -78,7 +78,7 @@ OriginalAccountState::OriginalAccountState(StateDeltas::value_type &entry)
 
 OriginalAccountState &State::original_account_state(Address const &address)
 {
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     if (orig_memo_ != nullptr && address == orig_memo_addr_) {
         return *orig_memo_;
     }
@@ -157,7 +157,7 @@ AccountState &State::current_account_state(Address const &address)
         MONAD_GUEST_SITE(ACCT_FIND_MISS);
         // original
         auto &account_state = original_account_state(address);
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         // Built from the account alone: an original row keeps nothing else
         // in its AccountState part, its original slots being in
         // prestate_storage_, and a copy of its empty containers tested and
@@ -743,7 +743,7 @@ inline void State::current_storage_into(
         out = *it3;
     }
     else {
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         bytes32_t const &value = block_state_.read_storage(
             *original_account_state.delta_,
             address,
@@ -816,7 +816,7 @@ void State::get_storage_into(
             out = *it3;
         }
         else {
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
             bytes32_t const &value = block_state_.read_storage(
                 *account_state.delta_,
                 address,
@@ -914,7 +914,7 @@ void State::subtract_from_balance(
 monad_storage_status State::set_storage(
     Address const &address, bytes32_t const &key, bytes32_t const &value)
 {
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     return set_storage_of(current_account_state(address), address, key, value);
 }
 
@@ -939,7 +939,7 @@ inline monad_storage_status State::set_storage_of(
         auto &orig_account_state = *account_state.orig_;
         auto &storage = orig_account_state.prestate_storage_;
         if (auto const *const it = storage.find(key); it) {
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
             original_value = it;
 #else
             original_value = *it;
@@ -947,7 +947,7 @@ inline monad_storage_status State::set_storage_of(
         }
         else {
             Incarnation const incarnation = account_state.account_->incarnation;
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
             bytes32_t const &value = block_state_.read_storage(
                 *orig_account_state.delta_, address, incarnation, key);
             storage.insert(key, value);
@@ -963,7 +963,7 @@ inline monad_storage_status State::set_storage_of(
     // state
     {
         journal_slot(address, key, prev);
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         auto const result =
             account_state.set_storage(key, value, *original_value, prev);
 #else

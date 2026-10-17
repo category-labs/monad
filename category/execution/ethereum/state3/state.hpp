@@ -288,7 +288,7 @@ class State
     std::uint64_t frame_epoch_{1};
 #endif
 
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     // The same for original_account_state: original_ never erases, so its
     // rows never move. A transaction's sender is looked up there several
     // times running.
@@ -345,7 +345,7 @@ private:
     [[gnu::always_inline]] inline void current_storage_into(
         AccountState const &, Address const &, bytes32_t const &key,
         evmc_bytes32 &out);
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
 
     // The memoised account, where current_account_state would return it and
     // do nothing else.

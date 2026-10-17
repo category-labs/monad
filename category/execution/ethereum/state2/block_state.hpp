@@ -73,7 +73,7 @@ public:
 
     bytes32_t read_storage(Address const &, Incarnation, bytes32_t const &key);
 
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     // The account's entry, read from the database if the block has none. Its
     // address stays valid for the block: state_ never erases, and its values
     // never move (a segmented map's).

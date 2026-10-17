@@ -26,7 +26,7 @@
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/execution/ethereum/db/db.hpp>
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     #include <category/execution/ethereum/db/partial_trie_db.hpp>
 #endif
 #include <category/execution/ethereum/state2/block_state.hpp>
@@ -49,7 +49,7 @@
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
 
 namespace
 {
@@ -69,7 +69,7 @@ BlockState::BlockState(Db &db, vm::VM &monad_vm, Db *const secondary_db)
     , vm_{monad_vm}
     , state_(std::make_unique<StateDeltas>())
 {
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     // Reserve initial capacity to avoid early rehashes.
     // Host TBB maps have no reserve().
     state_->reserve(1024);
@@ -77,7 +77,7 @@ BlockState::BlockState(Db &db, vm::VM &monad_vm, Db *const secondary_db)
 #endif
 }
 
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
 static_assert(
     std::is_same_v<StateDeltas::value_type, std::pair<Address, StateDelta>>);
 
@@ -104,7 +104,7 @@ StateDeltas::value_type &BlockState::read_account_delta(Address const &address)
 
 std::optional<Account> BlockState::read_account(Address const &address)
 {
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     return read_account_delta(address).second.account.second;
 #else
     // block state
@@ -117,7 +117,7 @@ std::optional<Account> BlockState::read_account(Address const &address)
     }
     // database
     {
-    #if defined(MONAD_ZKVM_ZISK)
+    #if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         auto const result = guest_db(db_).read_account(address);
     #else
         auto const result = db_.read_account(address);
@@ -132,7 +132,7 @@ std::optional<Account> BlockState::read_account(Address const &address)
 #endif
 }
 
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
 bytes32_t const &BlockState::read_storage(
     StateDeltas::value_type &entry, Address const &address,
     Incarnation const incarnation, bytes32_t const &key)
@@ -175,7 +175,7 @@ bytes32_t const &BlockState::read_storage(
             if (!in_db) {
                 return {};
             }
-    #if defined(MONAD_ZKVM_ZISK)
+    #if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
             bytes32_t const result =
                 guest_db(self.db_).read_storage(address, incarnation, key);
     #else
@@ -206,7 +206,7 @@ bytes32_t const &BlockState::read_storage(
 bytes32_t BlockState::read_storage(
     Address const &address, Incarnation const incarnation, bytes32_t const &key)
 {
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     StateDeltas::accessor it{};
     MONAD_ASSERT(state_);
     MONAD_ASSERT(state_->find(it, address));
@@ -238,7 +238,7 @@ bytes32_t BlockState::read_storage(
     {
         bytes32_t result{};
         if (read_storage) {
-    #if defined(MONAD_ZKVM_ZISK)
+    #if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
             result = guest_db(db_).read_storage(address, incarnation, key);
     #else
             result = db_.read_storage(address, incarnation, key);
@@ -280,7 +280,7 @@ vm::SharedVarcode const &BlockState::read_code_ref(bytes32_t const &code_hash)
     }
     // database
     {
-    #if defined(MONAD_ZKVM_ZISK)
+    #if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         auto const result = guest_db(db_).read_code(code_hash);
     #else
         auto const result = db_.read_code(code_hash);
@@ -315,7 +315,7 @@ vm::SharedVarcode BlockState::read_code(bytes32_t const &code_hash)
     }
     // database
     {
-    #if defined(MONAD_ZKVM_ZISK)
+    #if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         auto const result = guest_db(db_).read_code(code_hash);
     #else
         auto const result = db_.read_code(code_hash);
@@ -379,7 +379,7 @@ void BlockState::merge(State const &state)
     auto const &current = state.current();
     auto const &code = state.code();
     for (auto const &[address, account_state] : current) {
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         // A transaction that deploys nothing leaves the State's code empty.
         // gcc tests that for every account: as far as it knows, code_'s
         // insertions could change the State's map.
@@ -402,7 +402,7 @@ void BlockState::merge(State const &state)
     for (auto const &[address, account_state] : current) {
         auto const &account = account_state.account_;
         auto const &storage = account_state.storage_;
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         // The entry the account's original row was read from.
         MONAD_ASSERT(account_state.orig_ != nullptr);
         StateDeltas::value_type *const it = account_state.orig_->delta_;
@@ -419,7 +419,7 @@ void BlockState::merge(State const &state)
                     it2->second.second = value;
                 }
                 else {
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
                     // Reserve on first insertion to avoid early rehashes,
                     // for as many slots as read_storage reserves. Host TBB
                     // maps have no reserve().

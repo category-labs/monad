@@ -688,85 +688,84 @@ namespace monad::vm::interpreter
     // or every bit set for a negative value's arithmetic shift.
     namespace airbender_shift
     {
+        using word_t = uint32_t __attribute__((__may_alias__));
+
+        // x >> (32 * C + b) over the words at p, in place: each output word
+        // is formed from the two it straddles and stored before the next is
+        // read, one word carried between turns. With all eight read first,
+        // the words and the handler's arguments outran rv32's temporaries
+        // and the handler saved seven registers to a frame.
         template <unsigned C>
         [[gnu::always_inline]] inline void
-        shr_c(uint32_t (&o)[8], uint32_t const (&w)[8], unsigned const b,
-              uint32_t const fill) noexcept
+        shr_c(word_t *const p, unsigned const b, uint32_t const fill) noexcept
         {
-#pragma GCC unroll 8
-            for (unsigned i = 0; i < 8; ++i) {
-                if (i + C < 7) {
-                    o[i] = (w[i + C] >> b) | ((w[i + C + 1] << 1) << (31 - b));
-                }
-                else if (i + C == 7) {
-                    o[i] = (w[7] >> b) | ((fill << 1) << (31 - b));
-                }
-                else {
-                    o[i] = fill;
-                }
+            uint32_t lo = p[C];
+    #pragma GCC unroll 8
+            for (unsigned i = 0; i + C < 7; ++i) {
+                uint32_t const hi = p[i + C + 1];
+                p[i] = (lo >> b) | ((hi << 1) << (31 - b));
+                lo = hi;
+            }
+            p[7 - C] = (lo >> b) | ((fill << 1) << (31 - b));
+    #pragma GCC unroll 8
+            for (unsigned i = 8 - C; i < 8; ++i) {
+                p[i] = fill;
             }
         }
 
+        // x << (32 * C + b), in place, from the top word down.
         template <unsigned C>
         [[gnu::always_inline]] inline void
-        shl_c(uint32_t (&o)[8], uint32_t const (&w)[8], unsigned const b) noexcept
+        shl_c(word_t *const p, unsigned const b) noexcept
         {
-#pragma GCC unroll 8
-            for (unsigned i = 0; i < 8; ++i) {
-                if (i < C) {
-                    o[i] = 0;
-                }
-                else if (i == C) {
-                    o[i] = w[0] << b;
-                }
-                else {
-                    o[i] = (w[i - C] << b) | ((w[i - C - 1] >> 1) >> (31 - b));
-                }
+            uint32_t hi = p[7 - C];
+    #pragma GCC unroll 8
+            for (unsigned i = 7; i > C; --i) {
+                uint32_t const lo = p[i - C - 1];
+                p[i] = (hi << b) | ((lo >> 1) >> (31 - b));
+                hi = lo;
+            }
+            p[C] = hi << b;
+    #pragma GCC unroll 8
+            for (unsigned i = 0; i < C; ++i) {
+                p[i] = 0;
             }
         }
 
         [[gnu::always_inline]] inline void
         shr_in_place(uint256_t &x, unsigned const k, uint32_t const fill) noexcept
         {
-            auto *const p = static_cast<unsigned char *>(
+            auto *const p = static_cast<word_t *>(
                 __builtin_assume_aligned(static_cast<void *>(&x), 8));
-            uint32_t w[8];
-            uint32_t o[8];
-            __builtin_memcpy(w, p, sizeof(w));
             unsigned const b = k & 31;
             switch (k >> 5) {
-            case 0: shr_c<0>(o, w, b, fill); break;
-            case 1: shr_c<1>(o, w, b, fill); break;
-            case 2: shr_c<2>(o, w, b, fill); break;
-            case 3: shr_c<3>(o, w, b, fill); break;
-            case 4: shr_c<4>(o, w, b, fill); break;
-            case 5: shr_c<5>(o, w, b, fill); break;
-            case 6: shr_c<6>(o, w, b, fill); break;
-            default: shr_c<7>(o, w, b, fill); break;
+            case 0: shr_c<0>(p, b, fill); break;
+            case 1: shr_c<1>(p, b, fill); break;
+            case 2: shr_c<2>(p, b, fill); break;
+            case 3: shr_c<3>(p, b, fill); break;
+            case 4: shr_c<4>(p, b, fill); break;
+            case 5: shr_c<5>(p, b, fill); break;
+            case 6: shr_c<6>(p, b, fill); break;
+            default: shr_c<7>(p, b, fill); break;
             }
-            __builtin_memcpy(p, o, sizeof(o));
         }
 
         [[gnu::always_inline]] inline void
         shl_in_place(uint256_t &x, unsigned const k) noexcept
         {
-            auto *const p = static_cast<unsigned char *>(
+            auto *const p = static_cast<word_t *>(
                 __builtin_assume_aligned(static_cast<void *>(&x), 8));
-            uint32_t w[8];
-            uint32_t o[8];
-            __builtin_memcpy(w, p, sizeof(w));
             unsigned const b = k & 31;
             switch (k >> 5) {
-            case 0: shl_c<0>(o, w, b); break;
-            case 1: shl_c<1>(o, w, b); break;
-            case 2: shl_c<2>(o, w, b); break;
-            case 3: shl_c<3>(o, w, b); break;
-            case 4: shl_c<4>(o, w, b); break;
-            case 5: shl_c<5>(o, w, b); break;
-            case 6: shl_c<6>(o, w, b); break;
-            default: shl_c<7>(o, w, b); break;
+            case 0: shl_c<0>(p, b); break;
+            case 1: shl_c<1>(p, b); break;
+            case 2: shl_c<2>(p, b); break;
+            case 3: shl_c<3>(p, b); break;
+            case 4: shl_c<4>(p, b); break;
+            case 5: shl_c<5>(p, b); break;
+            case 6: shl_c<6>(p, b); break;
+            default: shl_c<7>(p, b); break;
             }
-            __builtin_memcpy(p, o, sizeof(o));
         }
     }
 #endif
@@ -1340,7 +1339,16 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         gas_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
+#if defined(MONAD_ZKVM_AIRBENDER)
+        // The product's low half by the bigint circuit, in place in the
+        // result's slot as ADD's: the runtime's operator* copies both
+        // operands to aligned locals and the product out, behind a call.
+        MONAD_VM_CHECK(MUL);
+        auto &&[a, b] = top_two(stack_top);
+        airbender_bigint::op(b, a, airbender_bigint::MUL_LOW);
+#else
         MONAD_VM_CHECKED_RUNTIME_CALL(MUL, runtime::mul);
+#endif
 
         MONAD_VM_NEXT(MUL);
     }

@@ -15,6 +15,7 @@ FATAL_HOOK=${FATAL_HOOK:-$REPO/../../fatal_hook.h}
 BUILD=$OUT/build
 CFLAGS="-w" CXXFLAGS="-w -include $FATAL_HOOK" cmake -G Ninja -S "$REPO/zkvm/guest" -B "$BUILD" \
   -DMONAD_ZKVM_GUEST_TARGET=airbender ${REV:+-DMONAD_ZKVM_EVM_REV=$REV} \
+  -DMONAD_ZKVM_VARCODE_CACHE=ON -DMONAD_ZKVM_NO_DIRTY_ACCOUNTS=ON -DMONAD_ZKVM_NO_MERGE_CONSTRAINTS=ON \
   -DCMAKE_TOOLCHAIN_FILE="$REPO/category/core/toolchains/riscv32-elf.cmake" \
   -DRISCV_TOOLCHAIN_DIR="$TC_DIR" -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH:-/opt/homebrew} > "$OUT/configure.log"

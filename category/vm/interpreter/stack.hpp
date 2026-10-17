@@ -25,7 +25,7 @@
 
 #include <cstdint>
 
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     #define MONAD_VM_GAS_TESTED(Instr, DYNAMIC)                                \
         ::monad::vm::interpreter::gas_tested((Instr), (DYNAMIC))
 #else
@@ -124,7 +124,7 @@ namespace monad::vm::interpreter
 {
     using enum runtime::StatusCode;
 
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     // Whether an opcode tests at once the gas its charge leaves. On ZisK only
     // the opcodes after which the gas could be observed or a loop run do: the
     // jumps, GAS, TSTORE, SELFDESTRUCT and every opcode with a dynamic cost,
@@ -141,6 +141,14 @@ namespace monad::vm::interpreter
         if (op == MLOAD || op == MSTORE || op == MSTORE8) {
             return false;
         }
+    #if defined(MONAD_ZKVM_AIRBENDER)
+        // And BLOCKHASH, the one fixed-cost opcode that reads the witness: it
+        // holds the hashes the block's execution asked for, and a frame that
+        // ran out of gas before a BLOCKHASH never asked.
+        if (op == BLOCKHASH) {
+            return true;
+        }
+    #endif
         return dynamic_gas || op == JUMP || op == JUMPI || op == GAS ||
                op == TSTORE || op == SELFDESTRUCT;
     }

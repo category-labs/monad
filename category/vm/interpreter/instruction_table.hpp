@@ -606,7 +606,7 @@ namespace monad::vm::interpreter
 // pure opcodes and a JUMPI: on ZisK its charge leaves the sign of the count to
 // the next checkpoint, which for a taken JUMPI is the JUMPDEST it lands on
 // (swallow_jumpdest), and otherwise the straight line after it.
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     #define MONAD_VM_FUSED_CHARGE_PURE(REQ)                                    \
         ((gas_remaining -= (REQ).gas, true) &&                                 \
          ::monad::vm::interpreter::stack_holds<(REQ).min_required>(            \
@@ -4433,6 +4433,87 @@ namespace monad::vm::interpreter
         MONAD_VM_NEXT(POP);
     }
 
+#if defined(MONAD_ZKVM_AIRBENDER)
+    // The test a Solidity function dispatch makes for each selector, DUP1
+    // PUSH4 <selector> EQ PUSH2 <dst> JUMPI, or with GT for its binary search,
+    // as one; dup<1> tail-calls it on the pattern, instr_ptr on the DUP1. A
+    // test leaves the stack as it found it, so a test not taken goes on to
+    // the next one without a dispatch or the stack's tests, and a chain of
+    // them runs here whole. A stack without the word DUP1 copies, or without
+    // the room for the two the test pushes, halts as DUP1 or PUSH4 would; the
+    // charge leaves the gas to JUMPI's checkpoint (MONAD_VM_FUSED_CHARGE_PURE),
+    // and every exceptional halt is the same to the block.
+    template <Traits traits>
+    [[gnu::noinline]] MONAD_VM_TWIN_CALL void dup1_select(
+        runtime::Context &ctx, MONAD_VM_ANALYSIS_PARAM,
+        uint256_t const *stack_bottom, uint256_t *stack_top,
+        gas_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+    {
+        static constexpr auto monad_vm_req =
+            fused_requirements<traits, DUP1, PUSH4, EQ, PUSH2, JUMPI>();
+        static_assert(
+            monad_vm_req ==
+            fused_requirements<traits, DUP1, PUSH4, GT, PUSH2, JUMPI>());
+        if (MONAD_UNLIKELY(!MONAD_VM_FUSED_CHARGE_PURE(monad_vm_req))) {
+            MONAD_VM_MUST_TAIL return ctx.exit(Error);
+        }
+        // The selector, as the 32-bit word a test's immediate is compared
+        // with; one past 32 bits matches no EQ and is above every GT's pivot.
+        uint256_t const &monad_vm_sel = *stack_top;
+        bool const monad_vm_fits = ((monad_vm_sel[0] >> 32) | monad_vm_sel[1] |
+                                    monad_vm_sel[2] | monad_vm_sel[3]) == 0;
+        auto const monad_vm_want = static_cast<uint32_t>(monad_vm_sel[0]);
+        // The selector's first byte, which rejects all but one test in 256 at
+        // one compare; out of a byte's range when no immediate can match.
+        uint32_t const monad_vm_first =
+            monad_vm_fits ? monad_vm_want >> 24 : 0x100;
+        bool monad_vm_taken;
+        for (;;) {
+            if (instr_ptr[6] == static_cast<std::uint8_t>(EQ)) {
+                if (instr_ptr[2] == monad_vm_first &&
+                    detail::load_be_k<4>(instr_ptr + 2) == monad_vm_want) {
+                    monad_vm_taken = true;
+                    break;
+                }
+            }
+            else {
+                monad_vm_taken =
+                    monad_vm_fits &&
+                    static_cast<uint32_t>(detail::load_be_k<4>(
+                        instr_ptr + 2)) > monad_vm_want;
+                break;
+            }
+            // Not taken: on to the next test, if one follows. Its bytes are
+            // inside the code or its zero end padding: the JUMPI just passed
+            // is no padding byte.
+            instr_ptr += 11;
+            if (instr_ptr[0] != static_cast<std::uint8_t>(DUP1) ||
+                instr_ptr[1] != static_cast<std::uint8_t>(PUSH4) ||
+                instr_ptr[6] != static_cast<std::uint8_t>(EQ) ||
+                instr_ptr[7] != static_cast<std::uint8_t>(PUSH2) ||
+                instr_ptr[10] != static_cast<std::uint8_t>(JUMPI)) {
+                MONAD_VM_DISPATCH(0, 0, *instr_ptr);
+            }
+            gas_remaining -= monad_vm_req.gas;
+        }
+        // fused_branch takes a pointer to the EQ or GT, PUSH2 <dst> JUMPI
+        // after it.
+        instr_ptr = fused_branch(
+            ctx,
+            MONAD_VM_ANALYSIS,
+            instr_ptr + 6,
+            monad_vm_taken,
+            gas_remaining);
+        MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
+            ctx,
+            MONAD_VM_ANALYSIS_ARG,
+            stack_bottom,
+            stack_top,
+            gas_remaining,
+            instr_ptr MONAD_VM_TBL_ARG);
+    }
+#endif
+
     template <size_t N, Traits traits>
         requires(N >= 1)
     MONAD_VM_INSTRUCTION_CALL void
@@ -4555,6 +4636,26 @@ namespace monad::vm::interpreter
                     monad_vm_taken,
                     gas_remaining);
                 MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
+                    ctx,
+                    MONAD_VM_ANALYSIS_ARG,
+                    stack_bottom,
+                    stack_top,
+                    gas_remaining,
+                    instr_ptr MONAD_VM_TBL_ARG);
+            }
+        }
+#endif
+#if defined(MONAD_ZKVM_AIRBENDER)
+        if constexpr (N == 1) {
+            // A selector test, with EQ or GT: its twin. Lookahead through
+            // instr_ptr[10] stays in the code's tail padding.
+            uint8_t const monad_vm_op6 = *(instr_ptr + 6);
+            if (*(instr_ptr + 1) == static_cast<std::uint8_t>(PUSH4) &&
+                *(instr_ptr + 7) == static_cast<std::uint8_t>(PUSH2) &&
+                *(instr_ptr + 10) == static_cast<std::uint8_t>(JUMPI) &&
+                (monad_vm_op6 == static_cast<std::uint8_t>(EQ) ||
+                 monad_vm_op6 == static_cast<std::uint8_t>(GT))) {
+                MONAD_VM_MUST_TAIL return dup1_select<traits>(
                     ctx,
                     MONAD_VM_ANALYSIS_ARG,
                     stack_bottom,
@@ -5221,7 +5322,7 @@ namespace monad::vm::interpreter
             runtime::StatusCode const code, runtime::Context &ctx,
             uint256_t *stack_top, gas_t const gas_remaining)
         {
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
             // The frame ends here: the count an earlier opcode left
             // negative is tested here (gas_tested).
             if (MONAD_UNLIKELY(gas_remaining < 0)) {
@@ -5283,7 +5384,7 @@ namespace monad::vm::interpreter
     {
         fuzz_tstore_stack(
             ctx, stack_bottom, stack_top, MONAD_VM_ANALYSIS.size());
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         // As in return_impl.
         if (MONAD_UNLIKELY(gas_remaining < 0)) {
             ctx.exit(OutOfGas);

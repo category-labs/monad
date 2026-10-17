@@ -1357,8 +1357,9 @@ namespace monad::vm::interpreter
             }
             InstrEval const first = dispatch_table<traits>(itbl)[*instr_ptr];
 #elif defined(MONAD_ZKVM_AIRBENDER)
-            void const *const itbl = instruction_table<traits>.data();
-            InstrEval const first = instruction_table<traits>[*instr_ptr];
+            // The table with push<1>'s second half (instruction_table.hpp).
+            void const *const itbl = airbender_dispatch_table<traits>.data();
+            InstrEval const first = airbender_dispatch_table<traits>[*instr_ptr];
 #else
             InstrEval const first = instruction_table<traits>[*instr_ptr];
 #endif

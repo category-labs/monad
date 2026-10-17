@@ -4608,6 +4608,11 @@ namespace monad::vm::interpreter
         if constexpr (N == 2) {
             MONAD_VM_NEXT_PUSH_OP(PUSH0 + N, monad_vm_op2);
         }
+        // PUSH1's follower through the dispatch table's second half, whose
+        // handlers know the top is the byte before them (after_push1).
+        if constexpr (N == 1) {
+            MONAD_VM_DISPATCH(2, 1, 256 + *instr_ptr);
+        }
 #endif
         MONAD_VM_NEXT_PUSH(PUSH0 + N);
     }
@@ -5594,6 +5599,165 @@ namespace monad::vm::interpreter
         ctx.gas_remaining = gas_remaining;
         ctx.exit(Error);
     }
+
+#if defined(MONAD_ZKVM_AIRBENDER)
+    // The opcodes a PUSH1 before them makes cheaper, reached only through the
+    // dispatch table's second half, which push<1> dispatches its follower
+    // through (airbender_dispatch_table): instr_ptr on the opcode, whose
+    // operand on top is the PUSH1's, the byte before it -- under 256, read
+    // from the code rather than from its eight words on the stack.
+    namespace after_push1
+    {
+        using word_t = uint32_t __attribute__((__may_alias__));
+
+        // ADD of a byte: one word's add, and a carry onwards only past
+        // 2^32, where the general ADD is a call of the bigint circuit and
+        // the moves of its three argument registers around it.
+        template <Traits traits>
+        MONAD_VM_INSTRUCTION_CALL void
+        add(runtime::Context &ctx, MONAD_VM_ANALYSIS_PARAM,
+            uint256_t const *stack_bottom, uint256_t *stack_top,
+            gas_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+        {
+            MONAD_VM_CHECK(ADD);
+            uint32_t const imm = *(instr_ptr - 1);
+            auto *const w = reinterpret_cast<word_t *>(stack_top - 1);
+            uint32_t const sum = w[0] + imm;
+            w[0] = sum;
+            if (MONAD_UNLIKELY(sum < imm)) {
+                for (unsigned i = 1; i < 8; ++i) {
+                    if (++w[i] != 0) {
+                        break;
+                    }
+                }
+            }
+            MONAD_VM_NEXT(ADD);
+        }
+
+        // The shifts by a byte: no test of the shift's other 31 bytes.
+        template <Traits traits>
+        MONAD_VM_INSTRUCTION_CALL void
+        shl(runtime::Context &ctx, MONAD_VM_ANALYSIS_PARAM,
+            uint256_t const *stack_bottom, uint256_t *stack_top,
+            gas_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+        {
+            MONAD_VM_CHECK(SHL);
+            airbender_shift::shl_in_place(*(stack_top - 1), *(instr_ptr - 1));
+            MONAD_VM_NEXT(SHL);
+        }
+
+        template <Traits traits>
+        MONAD_VM_INSTRUCTION_CALL void
+        shr(runtime::Context &ctx, MONAD_VM_ANALYSIS_PARAM,
+            uint256_t const *stack_bottom, uint256_t *stack_top,
+            gas_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+        {
+            MONAD_VM_CHECK(SHR);
+            airbender_shift::shr_in_place(
+                *(stack_top - 1), *(instr_ptr - 1), 0);
+            MONAD_VM_NEXT(SHR);
+        }
+
+        template <Traits traits>
+        MONAD_VM_INSTRUCTION_CALL void
+        sar(runtime::Context &ctx, MONAD_VM_ANALYSIS_PARAM,
+            uint256_t const *stack_bottom, uint256_t *stack_top,
+            gas_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+        {
+            MONAD_VM_CHECK(SAR);
+            uint256_t &value = *(stack_top - 1);
+            uint32_t const fill =
+                static_cast<uint32_t>(-static_cast<int32_t>(value[3] >> 63));
+            airbender_shift::shr_in_place(value, *(instr_ptr - 1), fill);
+            MONAD_VM_NEXT(SAR);
+        }
+
+        // MLOAD and MSTORE at a byte's offset: no test of the offset's other
+        // 31 bytes. Growth, and a word off a 4-byte boundary, as in mload
+        // and mstore, which read the offset from the stack.
+        template <Traits traits>
+        MONAD_VM_INSTRUCTION_CALL void
+        mload(runtime::Context &ctx, MONAD_VM_ANALYSIS_PARAM,
+              uint256_t const *stack_bottom, uint256_t *stack_top,
+              gas_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+        {
+            MONAD_VM_CHECK_OWN_GAS(MLOAD);
+            uint32_t const lo = *(instr_ptr - 1);
+            auto const *const s = ctx.memory.data + lo;
+            if (MONAD_UNLIKELY(
+                    lo >= ctx.memory_access32_end ||
+                    (reinterpret_cast<std::uintptr_t>(s) & 3) != 0)) {
+                MONAD_VM_MUST_TAIL return interpreter::mload_grow<
+                    quiet_traits<traits>>(
+                    ctx,
+                    MONAD_VM_ANALYSIS_ARG,
+                    stack_bottom,
+                    stack_top,
+                    gas_remaining,
+                    instr_ptr MONAD_VM_TBL_ARG);
+            }
+            runtime::load_be32_aligned4(stack_top, s);
+            MONAD_VM_NEXT(MLOAD);
+        }
+
+        template <Traits traits>
+        MONAD_VM_INSTRUCTION_CALL void
+        mstore(runtime::Context &ctx, MONAD_VM_ANALYSIS_PARAM,
+               uint256_t const *stack_bottom, uint256_t *stack_top,
+               gas_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+        {
+            MONAD_VM_CHECK_OWN_GAS(MSTORE);
+            uint32_t const lo = *(instr_ptr - 1);
+            if (MONAD_UNLIKELY(lo >= ctx.memory_access32_end)) {
+                MONAD_VM_MUST_TAIL return interpreter::mstore_grow<traits>(
+                    ctx,
+                    MONAD_VM_ANALYSIS_ARG,
+                    stack_bottom,
+                    stack_top,
+                    gas_remaining,
+                    instr_ptr MONAD_VM_TBL_ARG);
+            }
+            auto *const d = ctx.memory.data + lo;
+            if (MONAD_UNLIKELY((reinterpret_cast<std::uintptr_t>(d) & 3) != 0)) {
+                MONAD_VM_MUST_TAIL return interpreter::mstore_slow<
+                    quiet_traits<traits>>(
+                    ctx,
+                    MONAD_VM_ANALYSIS_ARG,
+                    stack_bottom,
+                    stack_top,
+                    gas_remaining,
+                    instr_ptr MONAD_VM_TBL_ARG);
+            }
+            runtime::store_be32_aligned4(d, stack_top - 1);
+            MONAD_VM_NEXT(MSTORE);
+        }
+    }
+
+    // The dispatch table, and after it the one push<1> dispatches its
+    // follower through: the same handlers but for after_push1's. A handler
+    // indexes the second half only from push<1>, so after_push1's run only
+    // after a PUSH1; jumps and every other handler index the first.
+    template <Traits traits>
+    consteval std::array<InstrEval, 512> make_airbender_dispatch_table()
+    {
+        std::array<InstrEval, 512> t{};
+        for (std::size_t i = 0; i < 256; ++i) {
+            t[i] = instruction_table<traits>[i];
+            t[256 + i] = instruction_table<traits>[i];
+        }
+        t[256 + ADD] = after_push1::add<traits>;
+        t[256 + SHL] = after_push1::shl<traits>;
+        t[256 + SHR] = after_push1::shr<traits>;
+        t[256 + SAR] = after_push1::sar<traits>;
+        t[256 + MLOAD] = after_push1::mload<traits>;
+        t[256 + MSTORE] = after_push1::mstore<traits>;
+        return t;
+    }
+
+    template <Traits traits>
+    constexpr std::array<InstrEval, 512> airbender_dispatch_table =
+        make_airbender_dispatch_table<traits>();
+#endif
 }
 
 #undef MONAD_VM_MUST_TAIL

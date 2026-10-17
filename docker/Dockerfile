@@ -213,8 +213,6 @@ RUN cd src && cmake --build build-zkvm --target monad-zkvm-guest-zisk --parallel
 
 FROM base_vm_test AS vm_fuzz
 
-RUN apt-get update && apt-get install -y tmux
-
 COPY . src
 
 RUN cd src && CMAKE_TOOLCHAIN_FILE=category/core/toolchains/gcc-avx2.cmake cmake -S . -B build \
@@ -227,7 +225,7 @@ RUN cd src && CMAKE_TOOLCHAIN_FILE=category/core/toolchains/gcc-avx2.cmake cmake
 RUN cd src && cmake --build build -t monad-compiler-fuzzer
 ARG FUZZER_BASE_SEED
 ARG FUZZER_SECONDS
-RUN cd src && ./scripts/vm/ci-fuzzer.sh
+RUN cd src && ./scripts/vm/fuzz.sh -c 26 -i 5 -s "${FUZZER_BASE_SEED:-143}" -t "${FUZZER_SECONDS:-420}"
 
 FROM base AS runner
 COPY --from=build_and_test /src/build/category/mpt/monad-mpt /usr/local/bin/

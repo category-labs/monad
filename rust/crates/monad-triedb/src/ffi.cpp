@@ -15,8 +15,10 @@
 
 #include "ffi.h"
 
+#include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/log.hpp>
+#include <category/core/lru/cache_stats.hpp>
 #include <category/core/nibble.h>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
@@ -309,6 +311,64 @@ void triedb_storage_stats_read(
     auto const stats = db->db.get_storage_stats();
     out->disk_capacity_bytes = stats.disk_capacity_bytes;
     out->disk_used_bytes = stats.disk_used_bytes;
+}
+
+struct triedb_node_cache_stats_handle
+{
+    std::shared_ptr<monad::CacheStats const> stats;
+};
+
+// The Rust side declares this handle Send and Sync on the grounds that sharing
+// it across threads only touches relaxed atomics and a reference count. The
+// reference count is only atomic when libstdc++ was built with threads.
+#ifdef __GLIBCXX__
+static_assert(__gnu_cxx::__default_lock_policy == __gnu_cxx::_S_atomic);
+#endif
+
+triedb_node_cache_stats_handle *
+triedb_node_cache_stats_open(TriedbRoInner *const db)
+{
+    if (db == nullptr) {
+        return nullptr;
+    }
+    // Nothing may unwind into Rust across this extern "C" boundary.
+    try {
+        return new triedb_node_cache_stats_handle{
+            db->async_ctx.node_cache.stats_handle()};
+    }
+    catch (...) {
+        return nullptr;
+    }
+}
+
+void triedb_node_cache_stats_close(triedb_node_cache_stats_handle *const handle)
+{
+    delete handle;
+}
+
+void triedb_node_cache_stats_read(
+    triedb_node_cache_stats_handle *const handle,
+    triedb_node_cache_stats *const out)
+{
+    if (out == nullptr) {
+        return;
+    }
+    *out = {};
+    if (handle == nullptr) {
+        return;
+    }
+    // Never null: static_lru_cache make_shared's the block in its member
+    // initializer and is neither copyable nor movable, so there is no
+    // moved-from state that could leave it empty.
+    MONAD_DEBUG_ASSERT(handle->stats != nullptr);
+    auto const stats = handle->stats->snapshot();
+    out->hits = stats.hits;
+    out->misses = stats.misses;
+    out->evictions = stats.evictions;
+    out->used_bytes = stats.used_bytes;
+    out->entries = stats.entries;
+    out->max_bytes = stats.max_bytes;
+    out->max_entries = stats.max_entries;
 }
 
 void triedb_compute_page_key(

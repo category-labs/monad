@@ -338,6 +338,10 @@ PrecompileResult expmod_execute(byte_string_view const input)
 
     uint64_t const padded_size_64 =
         saturating_add64(base_len, saturating_add64(exp_len, mod_len));
+    // The gas charged before bounds every length far below 2^32 (EIP-2565,
+    // EIP-7823); asserted for a 32-bit size_t (the rv32 guests), where the
+    // spans below would otherwise narrow them.
+    MONAD_ASSERT(padded_size_64 <= std::numeric_limits<size_t>::max());
     size_t const padded_size =
         padded_size_64 > std::numeric_limits<size_t>::max()
             ? std::numeric_limits<size_t>::max()

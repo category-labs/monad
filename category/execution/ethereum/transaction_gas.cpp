@@ -60,12 +60,13 @@ constexpr auto g_txn_create(Transaction const &tx) noexcept
     return 0u;
 }
 
-// EIP-2930
+// EIP-2930. The counts widened first: with a 32-bit size_t (the rv32
+// guests) the products would wrap before reaching g.
 constexpr auto g_access_and_storage(Transaction const &tx) noexcept
 {
-    uint64_t g = tx.access_list.size() * 2'400u;
+    uint64_t g = uint64_t{tx.access_list.size()} * 2'400u;
     for (auto const &i : tx.access_list) {
-        g += i.keys.size() * 1'900u;
+        g += uint64_t{i.keys.size()} * 1'900u;
     }
     return g;
 }
@@ -74,9 +75,9 @@ constexpr auto g_access_and_storage(Transaction const &tx) noexcept
 // Without EIP-7976, the 64 per-byte cost specified by EIP-7981 is 40 per-byte
 constexpr uint64_t g_access_list_data(Transaction const &tx) noexcept
 {
-    uint64_t g = tx.access_list.size() * 20u;
+    uint64_t g = uint64_t{tx.access_list.size()} * 20u;
     for (auto const &i : tx.access_list) {
-        g += i.keys.size() * 32u;
+        g += uint64_t{i.keys.size()} * 32u;
     }
     return g * 40u;
 }

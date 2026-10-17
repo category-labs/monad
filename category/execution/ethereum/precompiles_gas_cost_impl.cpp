@@ -26,10 +26,12 @@
 
 namespace
 {
-    constexpr size_t num_words(size_t const length)
+    // In 64 bits, as are the costs below: a 32-bit size_t (the rv32 guests)
+    // would make every product of a count wrap before it is widened.
+    constexpr uint64_t num_words(size_t const length)
     {
-        constexpr size_t WORD_SIZE = 32;
-        return (length + WORD_SIZE - 1) / WORD_SIZE;
+        constexpr uint64_t WORD_SIZE = 32;
+        return (uint64_t{length} + WORD_SIZE - 1) / WORD_SIZE;
     }
 }
 
@@ -253,7 +255,9 @@ uint64_t bls12_g1_msm_gas_cost(byte_string_view const input)
 {
     static constexpr auto pair_size = bls12::G1::encoded_size + 32;
 
-    auto const k = input.size() / pair_size;
+    // 64 bits: k * 12'000 * 519 passes 2^32 from k = 690, a 110,400-byte
+    // input, which a 32-bit size_t would charge as 2,352 gas.
+    uint64_t const k = input.size() / pair_size;
 
     if (k == 0) {
         return 0;
@@ -271,7 +275,8 @@ uint64_t bls12_g2_msm_gas_cost(byte_string_view const input)
 {
     static constexpr auto pair_size = bls12::G2::encoded_size + 32;
 
-    auto const k = input.size() / pair_size;
+    // 64 bits, as in bls12_g1_msm_gas_cost.
+    uint64_t const k = input.size() / pair_size;
 
     if (k == 0) {
         return 0;
@@ -285,7 +290,8 @@ uint64_t bls12_pairing_check_gas_cost(byte_string_view const input)
     static constexpr auto pair_size =
         bls12::G1::encoded_size + bls12::G2::encoded_size;
 
-    auto const k = input.size() / pair_size;
+    // 64 bits, as in bls12_g1_msm_gas_cost.
+    uint64_t const k = input.size() / pair_size;
     return 32'600 * k + 37'700;
 }
 

@@ -227,6 +227,12 @@ static inline uint32_t csr_read_word(void)
 void read_input(uint8_t const **const buf_ptr, size_t *const buf_size)
 {
     size_t const len = csr_read_word();
+    // A length within three of 2^32 would round to an empty allocation and
+    // claim gigabytes past it.
+    if (len > (size_t)-4) {
+        print_with_hex("input too long: ", (uint32_t)len);
+        finish_error();
+    }
     // 8-aligned: an input lays codes out in place for the 8-byte boundaries
     // of their addresses (execute_witness.cpp), which then are the input's.
     uint32_t *const words = sys_alloc_aligned((len + 3) & ~(size_t)3, 8);

@@ -287,6 +287,61 @@ void write_output(uint8_t const *const output, size_t const size)
     }
 }
 
+// ---- libgcc's bit routines, for rv32im ----
+// The guest is built without Zbb, so gcc lowers __builtin_bswap64 and
+// __builtin_clz/clzll to these calls; libgcc's own are branch-free searches
+// of 21, 30 and 70 instructions. Airbender implements Zbb's rev8 alone
+// (riscv_common::byte_swap), which a swap of two words is; a count of
+// leading zeros takes the top nonzero byte's place in two compares, then a
+// table. Linked ahead of libgcc, these are the ones the calls reach.
+
+static inline uint32_t rev8(uint32_t const x)
+{
+    uint32_t r;
+    __asm__(".option push\n\t"
+            ".option arch, +zbb\n\t"
+            "rev8 %0, %1\n\t"
+            ".option pop"
+            : "=r"(r)
+            : "r"(x));
+    return r;
+}
+
+uint64_t __bswapdi2(uint64_t const x)
+{
+    return ((uint64_t)rev8((uint32_t)x) << 32) | rev8((uint32_t)(x >> 32));
+}
+
+// Leading zeros of a byte, 8 for zero.
+static uint8_t const clz8[256] = {
+    8, 7, 6, 6, 5, 5, 5, 5, 4, 4, 4, 4, 4, 4, 4, 4, 3, 3, 3, 3, 3, 3, 3, 3,
+    3, 3, 3, 3, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1};
+
+// Leading zeros of x, 32 for zero (libgcc's answer, which the builtins
+// leave undefined).
+static inline int clz32(uint32_t const x)
+{
+    if (x >> 16) {
+        return (x >> 24) ? clz8[x >> 24] : 8 + clz8[x >> 16];
+    }
+    return (x >> 8) ? 16 + clz8[x >> 8] : 24 + clz8[x];
+}
+
+int __clzsi2(uint32_t const x)
+{
+    return clz32(x);
+}
+
+int __clzdi2(uint64_t const x)
+{
+    uint32_t const hi = (uint32_t)(x >> 32);
+    return hi ? clz32(hi) : 32 + clz32((uint32_t)x);
+}
+
 // ---- mem*: the compiler calls these ----
 // No unaligned access is provable, so every word access is aligned: a copy
 // aligns its destination, then moves words, shift-combining two aligned
@@ -720,59 +775,32 @@ size_t strlen(char const *const s)
 }
 
 // ---- Keccak-f[1600] ----
-// Airbender's Keccak-f delegation (zksync-airbender common_constants
-// delegation_types/keccak_f1600.rs): 361 CSR writes over a 256-byte-aligned
-// block whose slots 0..24 hold the lanes in the standard x + 5y order and
-// 25..29 the column parities. Per round, five column-parity (0x7cd), five
-// theta/rho (0x7cc) and five chi (0x7ce) calls; a last column-parity call
-// applies the delayed final iota. x10 starts at zero and the circuit steps
-// it; x11 points at the block. The run must be one uninterrupted sequence,
-// which the transpiler recognises by its first CSR and its length.
+// The delegation and its block: keccak_delegation.h. The sponge
+// (keccak_accel.cpp) absorbs into the block and runs the sequence inline;
+// this entry permutes any other state.
 //
-// MONAD_ZKVM_AIRBENDER_SOFT_KECCAK selects a software permutation instead.
+// MONAD_ZKVM_AIRBENDER_SOFT_KECCAK selects a software permutation for this
+// entry instead.
+
+#include "keccak_delegation.h"
+
+uint64_t monad_zkvm_airbender_keccak_block[32] __attribute__((aligned(256)));
 
 #ifndef MONAD_ZKVM_AIRBENDER_SOFT_KECCAK
-
-static uint64_t keccak_block[32] __attribute__((aligned(256)));
-
-#define KECCAK_CALL(csr) "csrrw x0, " #csr ", x0\n\t"
-#define KECCAK_5(csr)                                                          \
-    KECCAK_CALL(csr) KECCAK_CALL(csr) KECCAK_CALL(csr) KECCAK_CALL(csr)       \
-        KECCAK_CALL(csr)
-#define KECCAK_ROUND KECCAK_5(0x7cd) KECCAK_5(0x7cc) KECCAK_5(0x7ce)
-#define KECCAK_4_ROUNDS KECCAK_ROUND KECCAK_ROUND KECCAK_ROUND KECCAK_ROUND
-#define KECCAK_24_ROUNDS                                                       \
-    KECCAK_4_ROUNDS KECCAK_4_ROUNDS KECCAK_4_ROUNDS KECCAK_4_ROUNDS            \
-        KECCAK_4_ROUNDS KECCAK_4_ROUNDS
-
-// The block itself, for a sponge that keeps its state there (keccak_accel.cpp).
-uint64_t (*monad_zkvm_airbender_keccak_state(void))[25]
-{
-    return (uint64_t (*)[25])keccak_block;
-}
-
-static inline void keccak_block_permute(void)
-{
-    __asm__ volatile("mv x11, %0\n\t"
-                     "add x10, x0, x0\n\t" KECCAK_24_ROUNDS KECCAK_CALL(0x7cd)
-                     :
-                     : "r"(keccak_block)
-                     : "x10", "x11", "memory");
-}
 
 void monad_zkvm_airbender_keccak_f1600(uint64_t (*const state)[25])
 {
     uint64_t *const st = *state;
-    if (st == keccak_block) {
-        keccak_block_permute();
+    if (st == monad_zkvm_airbender_keccak_block) {
+        monad_zkvm_airbender_keccak_block_permute();
         return;
     }
     for (unsigned i = 0; i < 25; ++i) {
-        keccak_block[i] = st[i];
+        monad_zkvm_airbender_keccak_block[i] = st[i];
     }
-    keccak_block_permute();
+    monad_zkvm_airbender_keccak_block_permute();
     for (unsigned i = 0; i < 25; ++i) {
-        st[i] = keccak_block[i];
+        st[i] = monad_zkvm_airbender_keccak_block[i];
     }
 }
 

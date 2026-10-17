@@ -663,10 +663,12 @@ static inline void keccak_permute(uint64_t (*state)[25])
 }
 #elif defined(MONAD_ZKVM_AIRBENDER)
 // Airbender reaches Keccak-f through a delegation circuit driven by a run of
-// CSR writes over a state block with its own layout; the runtime owns that
-// sequence (zkvm/airbender/runtime.c) and permutes the 25 lanes in place.
+// CSR writes over a state block with its own layout (keccak_delegation.h):
+// the sponge below absorbs into the block and runs the sequence inline, and
+// the runtime (zkvm/airbender/runtime.c) permutes any other state.
+#include <zkvm/airbender/keccak_delegation.h>
+
 extern "C" void monad_zkvm_airbender_keccak_f1600(uint64_t (*state)[25]);
-extern "C" uint64_t (*monad_zkvm_airbender_keccak_state())[25];
 
 template <bool>
 static inline void keccak_permute(uint64_t (*state)[25])
@@ -712,14 +714,16 @@ template <bool Aligned>
     }
 }
 
+// Not inlined into its callers: each copy holds the 361-instruction
+// sequence twice.
 template <bool Aligned>
-static void keccak256_sponge_rv32(
+[[gnu::noinline]] static void keccak256_sponge_rv32(
     keccak_word_t const *w, unsigned const rs, size_t len, uint8_t out[32])
 {
     constexpr size_t RATE = 136;
     constexpr size_t RATE_WORDS = RATE / 4; // 34
-    uint64_t(&st)[25] = *monad_zkvm_airbender_keccak_state();
-    keccak_word_t *const s = reinterpret_cast<keccak_word_t *>(st);
+    auto *const s =
+        reinterpret_cast<keccak_word_t *>(monad_zkvm_airbender_keccak_block);
     #pragma GCC unroll 16
     for (size_t i = RATE_WORDS; i < 50; ++i) {
         s[i] = 0;
@@ -739,7 +743,7 @@ static void keccak256_sponge_rv32(
                 s[i] ^= keccak_input_word<Aligned>(w, i, rs);
             }
         }
-        monad_zkvm_airbender_keccak_f1600(&st);
+        monad_zkvm_airbender_keccak_block_permute();
         w += RATE_WORDS;
         len -= RATE;
     }
@@ -757,8 +761,51 @@ static void keccak256_sponge_rv32(
             s[i] = keccak_input_word<Aligned>(w, i, rs);
         }
         s[q] = tail;
-        for (size_t i = q + 1; i < RATE_WORDS; ++i) {
-            s[i] = 0;
+        // The rest of the rate cleared by a jump into a run of stores: as a
+        // loop gcc makes it a memset call, three times the cycles for the
+        // 25 words a 32-byte input leaves.
+        static_assert(RATE_WORDS == 34);
+        switch (RATE_WORDS - 1 - q) {
+    #define MONAD_KECCAK_CLEAR(n)                                              \
+    case n:                                                                    \
+        s[RATE_WORDS - (n)] = 0;                                               \
+        [[fallthrough]];
+            MONAD_KECCAK_CLEAR(33)
+            MONAD_KECCAK_CLEAR(32)
+            MONAD_KECCAK_CLEAR(31)
+            MONAD_KECCAK_CLEAR(30)
+            MONAD_KECCAK_CLEAR(29)
+            MONAD_KECCAK_CLEAR(28)
+            MONAD_KECCAK_CLEAR(27)
+            MONAD_KECCAK_CLEAR(26)
+            MONAD_KECCAK_CLEAR(25)
+            MONAD_KECCAK_CLEAR(24)
+            MONAD_KECCAK_CLEAR(23)
+            MONAD_KECCAK_CLEAR(22)
+            MONAD_KECCAK_CLEAR(21)
+            MONAD_KECCAK_CLEAR(20)
+            MONAD_KECCAK_CLEAR(19)
+            MONAD_KECCAK_CLEAR(18)
+            MONAD_KECCAK_CLEAR(17)
+            MONAD_KECCAK_CLEAR(16)
+            MONAD_KECCAK_CLEAR(15)
+            MONAD_KECCAK_CLEAR(14)
+            MONAD_KECCAK_CLEAR(13)
+            MONAD_KECCAK_CLEAR(12)
+            MONAD_KECCAK_CLEAR(11)
+            MONAD_KECCAK_CLEAR(10)
+            MONAD_KECCAK_CLEAR(9)
+            MONAD_KECCAK_CLEAR(8)
+            MONAD_KECCAK_CLEAR(7)
+            MONAD_KECCAK_CLEAR(6)
+            MONAD_KECCAK_CLEAR(5)
+            MONAD_KECCAK_CLEAR(4)
+            MONAD_KECCAK_CLEAR(3)
+            MONAD_KECCAK_CLEAR(2)
+            MONAD_KECCAK_CLEAR(1)
+    #undef MONAD_KECCAK_CLEAR
+        default:
+            break;
         }
     }
     else {
@@ -768,8 +815,8 @@ static void keccak256_sponge_rv32(
         s[q] ^= tail;
     }
     s[RATE_WORDS - 1] ^= uint32_t{0x80} << 24;
-    monad_zkvm_airbender_keccak_f1600(&st);
-    std::memcpy(out, st, 32);
+    monad_zkvm_airbender_keccak_block_permute();
+    std::memcpy(out, monad_zkvm_airbender_keccak_block, 32);
 }
 #endif
 
@@ -832,7 +879,8 @@ static void keccak256_sponge(
     // The delegation's own 256-byte-aligned block (runtime.c): absorbed into
     // where Keccak-f runs, so a permutation copies no lanes in or out. Its
     // slots 25..31 are the circuit's scratch.
-    uint64_t(&st)[25] = *monad_zkvm_airbender_keccak_state();
+    uint64_t(&st)[25] =
+        *reinterpret_cast<uint64_t(*)[25]>(monad_zkvm_airbender_keccak_block);
     std::memset(st, 0, sizeof(st));
 #else
     uint64_t st[25] = {};

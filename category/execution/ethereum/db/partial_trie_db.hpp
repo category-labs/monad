@@ -61,7 +61,7 @@ class PartialTrieDb final : public Db
     // sroot_valid_ separates "nothing cached" from "cached the zero address",
     // which is a real address.
     mutable bool sroot_valid_{false};
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     // Every account read_account found, with its storage root (NULL_ID when
     // absent): read_storage takes a root from here when the entry above holds
     // another account's, rather than hashing the address and descending the
@@ -77,7 +77,7 @@ public:
         : trie_(std::move(trie))
         , codes_(std::move(codes))
     {
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         // One account per 4 KiB of node blob (25815159 reads 638 from
         // 3.5 MB): a block reads more accounts the larger its witness, so the
         // table is not rehashed in a large block.

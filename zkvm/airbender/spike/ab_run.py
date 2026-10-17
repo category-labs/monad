@@ -89,7 +89,7 @@ def main():
     subprocess.run([f"{TC}-objcopy", "-O", "binary", "--only-section=.text", elf, out + ".text"], check=True)
     # ABIN=1: the input with the trie blob laid out for word copies
     # (mk_ab_input.py), which only a guest with Tag::PAD reads
-    src = f"{W}/airbender/out/abin/rpc_{block}.in" if os.environ.get("ABIN") else f"{W}/run/w/rpc_{block}.in"
+    src = (os.environ.get("ABIN_DIR", f"{W}/airbender/out/abin") + f"/rpc_{block}.in") if os.environ.get("ABIN") else f"{W}/run/w/rpc_{block}.in"
     raw = open(src, "rb").read()
     n = struct.unpack("<Q", raw[:8])[0]
     payload = raw[8:8 + n] + b"\0" * (-n % 4)

@@ -84,7 +84,7 @@ std::optional<Account> PartialTrieDb::read_account(Address const &addr)
                 sroot_addr_ = addr;
                 sroot_id_ = mpt::NULL_ID;
                 sroot_valid_ = true;
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
                 sroots_.try_emplace(addr, mpt::NULL_ID);
 #endif
                 return std::nullopt;
@@ -93,7 +93,7 @@ std::optional<Account> PartialTrieDb::read_account(Address const &addr)
                 sroot_addr_ = addr;
                 sroot_id_ = l.storage();
                 sroot_valid_ = true;
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
                 sroots_.try_emplace(addr, sroot_id_);
 #endif
                 return l.account();
@@ -110,7 +110,7 @@ bytes32_t PartialTrieDb::read_storage(
     if (sroot_valid_ && sroot_addr_ == addr) {
         sroot = sroot_id_;
     }
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     else if (auto const it = sroots_.find(addr); it != sroots_.end()) {
         sroot = it->second;
         sroot_addr_ = addr;
@@ -132,7 +132,7 @@ bytes32_t PartialTrieDb::read_storage(
         sroot_addr_ = addr;
         sroot_id_ = sroot;
         sroot_valid_ = true;
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         sroots_.try_emplace(addr, sroot);
 #endif
     }

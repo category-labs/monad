@@ -261,6 +261,26 @@ void write_output(uint8_t const *const output, size_t const size)
         report[report_size++] = output[i];
     }
 #endif
+#ifdef MONAD_ZKVM_AIRBENDER_DUMP_OUTPUT
+    // Diagnostic: every output byte over the quasi-UART as hex, for outputs
+    // past the registers' 64 bytes (e.g. MONAD_ZKVM_KECCAK_SITES counters).
+    {
+        static char const hex[] = "0123456789abcdef";
+        char line[136];
+        for (size_t at = 0; at < size; at += 64) {
+            size_t n = 0;
+            line[n++] = 'o';
+            line[n++] = 'u';
+            line[n++] = 't';
+            line[n++] = ' ';
+            for (size_t i = at; i < size && i < at + 64; ++i) {
+                line[n++] = hex[output[i] >> 4];
+                line[n++] = hex[output[i] & 15];
+            }
+            monad_zkvm_airbender_print(line, n);
+        }
+    }
+#endif
     uint8_t *const out = (uint8_t *)output_words;
     for (size_t i = 0; i < size && output_size < sizeof(output_words); ++i) {
         out[output_size++] = output[i];

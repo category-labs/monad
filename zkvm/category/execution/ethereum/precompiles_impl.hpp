@@ -259,6 +259,39 @@ namespace
             monad::load_be_unsafe<uint64_t>(buf)};
     }
 
+    // out = a·b·2^-256 mod m, for odd m, a, b < m and np = -m^-1 mod 2^256:
+    // Montgomery's REDC on the bigint circuit, no host round trip. With
+    // t = a·b and u = t mod 2^256 · np mod 2^256, t + u·m is a multiple of
+    // 2^256 below 2m·2^256; its high half, less m once if it reaches m.
+    inline void airbender_mont_mul(
+        monad::uint256_t &out, monad::uint256_t const &a,
+        monad::uint256_t const &b, monad::uint256_t const &m,
+        monad::uint256_t const &np) noexcept
+    {
+        using namespace monad::airbender_bigint;
+        slot tl;
+        slot th;
+        slot u;
+        slot vh;
+        op(tl.v, a, MEMCOPY);
+        op(th.v, a, MEMCOPY);
+        op(tl.v, b, MUL_LOW);
+        op(th.v, b, MUL_HIGH);
+        op(u.v, tl.v, MEMCOPY);
+        op(u.v, np, MUL_LOW);
+        op(vh.v, u.v, MEMCOPY);
+        op(u.v, m, MUL_LOW); // u·m mod 2^256
+        op(vh.v, m, MUL_HIGH);
+        // the low halves sum to 0 mod 2^256: carry unless both are zero
+        uint32_t const c = op(tl.v, u.v, ADD);
+        uint32_t const hi = op(th.v, vh.v, ADD | (c ? CARRY : 0u));
+        op(out, th.v, MEMCOPY);
+        uint32_t const borrow = op(out, m, SUB);
+        if (!hi && borrow) {
+            op(out, m, ADD); // it was below m already
+        }
+    }
+
     // base^exp mod m when m < 2^256 -- ZKsync OS's single-digit case
     // (basic_system modexp/advice/single_digit.rs): square and multiply with
     // mulmod, each product on the bigint circuit and reduced by the host's
@@ -296,6 +329,67 @@ namespace
             b = lo;
             pos += n;
             n = 32;
+        }
+        if (m[0] & 1) {
+            // An odd modulus (a field prime, nearly always): every square
+            // and multiply in Montgomery form on the circuit alone.
+            using namespace monad::airbender_bigint;
+            // np = -m^-1 mod 2^256 by Newton: m·m = 1 mod 8, and each step
+            // doubles the bits that are right (3, 6, ..., 384).
+            slot x;
+            slot t;
+            slot two;
+            two.v = monad::uint256_t{2};
+            op(x.v, m, MEMCOPY);
+            for (int i = 0; i < 7; ++i) {
+                op(t.v, m, MEMCOPY);
+                op(t.v, x.v, MUL_LOW);
+                op(t.v, two.v, SUB_AND_NEGATE); // 2 - m·x
+                op(x.v, t.v, MUL_LOW);
+            }
+            op(x.v, zero, SUB_AND_NEGATE); // -x
+            op(t.v, m, MEMCOPY);
+            op(t.v, x.v, MUL_LOW);
+            op(t.v, two.v, ADD); // m·np + 2 = 1 mod 2^256
+            slot one;
+            one.v = monad::uint256_t{1};
+            MONAD_ASSERT(op(t.v, one.v, EQ) == 1);
+            // R = 2^256 mod m from the host's checked quotient, R^2 mod m by
+            // mulmod; the base into Montgomery form, b·R mod m.
+            slot rm;
+            slot rhi;
+            rm.v = monad::uint256_t{0};
+            rhi.v = monad::uint256_t{1};
+            monad::airbender_wide_rem(rm.v, rhi.v, m);
+            slot r2;
+            r2.v = monad::mulmod(rm.v, rm.v, m);
+            slot bm;
+            airbender_mont_mul(bm.v, b, r2.v, m, x.v);
+            // 1 in Montgomery form is R mod m
+            slot acc;
+            slot sq;
+            op(acc.v, rm.v, MEMCOPY);
+            for (uint8_t const byte : exp) {
+                for (int bit = 7; bit >= 0; --bit) {
+                    airbender_mont_mul(sq.v, acc.v, acc.v, m, x.v);
+                    if ((byte >> bit) & 1) {
+                        airbender_mont_mul(acc.v, sq.v, bm.v, m, x.v);
+                    }
+                    else {
+                        op(acc.v, sq.v, MEMCOPY);
+                    }
+                }
+            }
+            // out of Montgomery form: acc·1·R^-1
+            airbender_mont_mul(sq.v, acc.v, one.v, m, x.v);
+            alignas(8) uint8_t be[32];
+            for (size_t i = 0; i < 4; ++i) {
+                uint64_t const w = monad::bswap(sq.v[3 - i]);
+                std::memcpy(be + 8 * i, &w, sizeof(w));
+            }
+            size_t const k = std::min(out.size(), size_t{32});
+            std::memcpy(out.data() + out.size() - k, be + 32 - k, k);
+            return true;
         }
         // The exponent's bits from the most significant: x^0 is 1, 0^0 too.
         alignas(32) monad::uint256_t r{1};

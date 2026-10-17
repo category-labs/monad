@@ -960,7 +960,7 @@ public:
     // hash cache (see prime()). Aborts if the blob is malformed.
     explicit OffsetTrie(byte_string_view blob);
 
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     // The node blob's size in bytes, which sizes a reader's per-account
     // tables.
     [[nodiscard]] size_t blob_size() const noexcept

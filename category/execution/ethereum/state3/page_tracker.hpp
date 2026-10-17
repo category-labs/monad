@@ -62,10 +62,9 @@ class PageTracker
         [[gnu::always_inline]] inline std::size_t
         operator()(bytes32_t const &x) const noexcept
         {
-            uint64_t const fold = bits::load64(x.bytes) ^
-                                  bits::load64(x.bytes + 8) ^
-                                  bits::load64(x.bytes + 16) ^
-                                  bits::load64(x.bytes + 24);
+            uint64_t const fold =
+                bits::load64(x.bytes) ^ bits::load64(x.bytes + 8) ^
+                bits::load64(x.bytes + 16) ^ bits::load64(x.bytes + 24);
             return static_cast<std::size_t>(bits::fmix64(fold));
         }
     };

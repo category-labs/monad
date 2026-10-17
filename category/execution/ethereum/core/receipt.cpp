@@ -83,14 +83,14 @@ namespace
 void populate_bloom(Receipt::Bloom &bloom, Receipt::Log const &log)
 {
     // YP Eqn 28
-#if defined(MONAD_ZKVM_AIRBENDER)
+    #if defined(MONAD_ZKVM_AIRBENDER)
     // rv32 reads a 64-bit word as two 32-bit ones: four-byte alignment does
     static_assert(offsetof(Receipt, bloom) % 4 == 0);
     static_assert(offsetof(Receipt::Log, address) % 4 == 0);
-#else
+    #else
     static_assert(offsetof(Receipt, bloom) % 8 == 0);
     static_assert(offsetof(Receipt::Log, address) % 8 == 0);
-#endif
+    #endif
     auto *const words = reinterpret_cast<word_alias *>(bloom.data());
     {
         auto const *const a =
@@ -113,12 +113,12 @@ void populate_bloom(Receipt::Bloom &bloom, Receipt::Log const &log)
     for (auto const &topic : log.topics) {
         auto const *const t = reinterpret_cast<word_alias const *>(topic.bytes);
         uint64_t const t3 = t[3];
-#if defined(MONAD_ZKVM_AIRBENDER)
+    #if defined(MONAD_ZKVM_AIRBENDER)
         // rev8 on Airbender, where __builtin_bswap64 is a libgcc call
         BloomMemo &e = topic_memo[(t3 ^ ::monad::bit::byteswap(t3)) & 511u];
-#else
+    #else
         BloomMemo &e = topic_memo[(t3 ^ __builtin_bswap64(t3)) & 511u];
-#endif
+    #endif
         uint64_t chunks = e.chunks;
         if (MONAD_UNLIKELY(
                 e.key[3] != t3 || e.key[0] != t[0] || e.key[1] != t[1] ||

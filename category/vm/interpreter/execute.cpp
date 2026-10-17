@@ -1359,21 +1359,28 @@ namespace monad::vm::interpreter
 #elif defined(MONAD_ZKVM_AIRBENDER)
             // The table with push<1>'s second half (instruction_table.hpp).
             void const *const itbl = airbender_dispatch_table<traits>.data();
-            InstrEval const first = airbender_dispatch_table<traits>[*instr_ptr];
+            InstrEval const first =
+                airbender_dispatch_table<traits>[*instr_ptr];
 #else
             InstrEval const first = instruction_table<traits>[*instr_ptr];
 #endif
+#if defined(MONAD_ZKVM_ZISK)
             first(
                 *ctx,
-#if defined(MONAD_ZKVM_ZISK)
                 ctx->stack_limit,
-#else
-                *analysis,
-#endif
                 stack_bottom,
                 stack_top,
                 gas_remaining,
                 instr_ptr MONAD_VM_TBL_ARG);
+#else
+            {
+                // The analysis by the name MONAD_VM_HANDLER_ARGS passes.
+                Intercode const &monad_vm_analysis = *analysis;
+                [[maybe_unused]] Intercode const &analysis = monad_vm_analysis;
+                first(MONAD_VM_HANDLER_ARGS(
+                    *ctx, stack_top, gas_remaining, instr_ptr));
+            }
+#endif
         }
     }
 

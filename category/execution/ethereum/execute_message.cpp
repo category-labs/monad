@@ -35,9 +35,9 @@
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
+#include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <cstddef>
 #include <optional>
 #include <utility>
 
@@ -206,7 +206,7 @@ pre_call(EvmcHost<traits> &host, evmc_message const &msg, State &state)
     bool const static_call = msg.flags & EVMC_STATIC;
 
     if (msg.kind != EVMC_DELEGATECALL) {
-#if (defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)) && \
+#if (defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)) &&             \
     defined(MONAD_ZKVM_NO_MERGE_CONSTRAINTS)
         // Without merge constraints a debit of zero, which most calls are,
         // is covered by any balance and records nothing: the call is left

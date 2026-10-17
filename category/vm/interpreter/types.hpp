@@ -141,6 +141,38 @@
     #define MONAD_VM_TABLE_REF instruction_table<traits>
 #endif
 
+// A handler's parameters, a call's arguments and their types, in the order
+// the target's argument registers take them. On Airbender stack_top, the gas
+// and instr_ptr come first, in a0 to a2, where the bigint circuit wants its
+// operands' addresses and its mask (airbender_bigint::op): a circuit call
+// then moves no argument out of its way but the gas and instr_ptr, which the
+// handler steps anyway, where with ctx, the analysis and stack_bottom there
+// it moved all three out and back. Elsewhere the order is unchanged: ZisK's
+// slot heads (execute.cpp) name their registers.
+#if defined(MONAD_ZKVM_AIRBENDER)
+    #define MONAD_VM_HANDLER_PARAMS(CTX)                                       \
+        uint256_t *stack_top, gas_t gas_remaining, uint8_t const *instr_ptr,   \
+            runtime::Context &CTX, MONAD_VM_ANALYSIS_PARAM,                    \
+            uint256_t const *stack_bottom MONAD_VM_TBL_PARAM
+    #define MONAD_VM_HANDLER_ARGS(CTX, TOP, GAS, IP)                           \
+        (TOP), (GAS), (IP), CTX, MONAD_VM_ANALYSIS_ARG,                        \
+            stack_bottom MONAD_VM_TBL_ARG
+    #define MONAD_VM_HANDLER_TYPES                                             \
+        uint256_t *, gas_t, uint8_t const *, runtime::Context &,               \
+            MONAD_VM_ANALYSIS_TYPE, uint256_t const *MONAD_VM_TBL_TYPE
+#else
+    #define MONAD_VM_HANDLER_PARAMS(CTX)                                       \
+        runtime::Context &CTX, MONAD_VM_ANALYSIS_PARAM,                        \
+            uint256_t const *stack_bottom, uint256_t *stack_top,               \
+            gas_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM
+    #define MONAD_VM_HANDLER_ARGS(CTX, TOP, GAS, IP)                           \
+        CTX, MONAD_VM_ANALYSIS_ARG, stack_bottom, (TOP), (GAS),                \
+            (IP)MONAD_VM_TBL_ARG
+    #define MONAD_VM_HANDLER_TYPES                                             \
+        runtime::Context &, MONAD_VM_ANALYSIS_TYPE, uint256_t const *,         \
+            uint256_t *, gas_t, uint8_t const *MONAD_VM_TBL_TYPE
+#endif
+
 namespace monad::vm::interpreter
 {
     // The gas a handler holds. A 64-bit count takes two registers on rv32
@@ -159,9 +191,7 @@ namespace monad::vm::interpreter
 
     // Use void const * to avoid a recursive InstrEval type; dispatch casts it
     // back to a pointer to table entries.
-    using InstrEval = void MONAD_VM_POINTER_CALL (*)(
-        runtime::Context &, MONAD_VM_ANALYSIS_TYPE, uint256_t const *,
-        uint256_t *, gas_t, uint8_t const *MONAD_VM_TBL_TYPE);
+    using InstrEval = void MONAD_VM_POINTER_CALL (*)(MONAD_VM_HANDLER_TYPES);
 
     using InstrTable = std::array<InstrEval, 256>;
 

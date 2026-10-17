@@ -662,11 +662,12 @@ static inline void keccak_permute(uint64_t (*state)[25])
 #endif
 }
 #elif defined(MONAD_ZKVM_AIRBENDER)
-// Airbender reaches Keccak-f through a delegation circuit driven by a run of
-// CSR writes over a state block with its own layout (keccak_delegation.h):
-// the sponge below absorbs into the block and runs the sequence inline, and
-// the runtime (zkvm/airbender/runtime.c) permutes any other state.
-#include <zkvm/airbender/keccak_delegation.h>
+        // Airbender reaches Keccak-f through a delegation circuit driven by a
+        // run of CSR writes over a state block with its own layout
+        // (keccak_delegation.h): the sponge below absorbs into the block and
+        // runs the sequence inline, and the runtime (zkvm/airbender/runtime.c)
+        // permutes any other state.
+        #include <zkvm/airbender/keccak_delegation.h>
 
 extern "C" void monad_zkvm_airbender_keccak_f1600(uint64_t (*state)[25]);
 
@@ -724,7 +725,7 @@ template <bool Aligned>
     constexpr size_t RATE_WORDS = RATE / 4; // 34
     auto *const s =
         reinterpret_cast<keccak_word_t *>(monad_zkvm_airbender_keccak_block);
-    #pragma GCC unroll 16
+        #pragma GCC unroll 16
     for (size_t i = RATE_WORDS; i < 50; ++i) {
         s[i] = 0;
     }
@@ -766,10 +767,10 @@ template <bool Aligned>
         // 25 words a 32-byte input leaves.
         static_assert(RATE_WORDS == 34);
         switch (RATE_WORDS - 1 - q) {
-    #define MONAD_KECCAK_CLEAR(n)                                              \
-    case n:                                                                    \
-        s[RATE_WORDS - (n)] = 0;                                               \
-        [[fallthrough]];
+        #define MONAD_KECCAK_CLEAR(n)                                          \
+        case n:                                                                \
+            s[RATE_WORDS - (n)] = 0;                                           \
+            [[fallthrough]];
             MONAD_KECCAK_CLEAR(33)
             MONAD_KECCAK_CLEAR(32)
             MONAD_KECCAK_CLEAR(31)
@@ -803,7 +804,7 @@ template <bool Aligned>
             MONAD_KECCAK_CLEAR(3)
             MONAD_KECCAK_CLEAR(2)
             MONAD_KECCAK_CLEAR(1)
-    #undef MONAD_KECCAK_CLEAR
+        #undef MONAD_KECCAK_CLEAR
         default:
             break;
         }
@@ -820,7 +821,7 @@ template <bool Aligned>
     // bytes32_t in a struct -- where a memcpy call costs more than the copy.
     if ((reinterpret_cast<uintptr_t>(out) & 3) == 0) {
         auto *const o = reinterpret_cast<keccak_word_t *>(out);
-    #pragma GCC unroll 8
+        #pragma GCC unroll 8
         for (size_t i = 0; i < 8; ++i) {
             o[i] = s[i];
         }

@@ -248,7 +248,8 @@ namespace
 namespace
 {
     // n <= 32 big-endian bytes as a number
-    inline monad::uint256_t airbender_be256(uint8_t const *const p, size_t const n)
+    inline monad::uint256_t
+    airbender_be256(uint8_t const *const p, size_t const n)
     {
         alignas(8) uint8_t buf[32] = {};
         std::memcpy(buf + 32 - n, p, n);
@@ -324,7 +325,8 @@ namespace
             n = 32;
         }
         while (pos < base.size()) {
-            alignas(32) monad::uint256_t lo = airbender_be256(base.data() + pos, n);
+            alignas(32) monad::uint256_t lo =
+                airbender_be256(base.data() + pos, n);
             monad::airbender_wide_rem(lo, b, m);
             b = lo;
             pos += n;

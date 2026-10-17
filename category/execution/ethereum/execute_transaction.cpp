@@ -23,7 +23,7 @@
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #endif
 #include <category/execution/ethereum/core/block.hpp>
@@ -113,7 +113,7 @@ constexpr void irrevocable_change(
 MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
 
 namespace
 {
@@ -299,7 +299,7 @@ evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
         sender_,
         header_.base_fee_per_gas.value_or(0),
         header_.excess_blob_gas.value_or(0),
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         guest_blob_schedule(chain_, header_.timestamp));
 #else
         chain_.get_blob_schedule(header_.timestamp));
@@ -405,7 +405,7 @@ Result<evmc::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
         tx_,
         sender_,
         header_,
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         guest_chain_id(chain_),
         guest_blob_schedule(chain_, header_.timestamp));
 #else
@@ -514,7 +514,7 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
             tx_,
             header_.base_fee_per_gas,
             header_.excess_blob_gas,
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
             guest_chain_id(chain_),
             guest_blob_schedule(chain_, header_.timestamp),
 #else
@@ -589,7 +589,7 @@ Result<Receipt> ExecuteTransaction<traits>::execute(SequentialExecutionToken)
             tx_,
             header_.base_fee_per_gas,
             header_.excess_blob_gas,
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
             guest_chain_id(chain_),
             guest_blob_schedule(chain_, header_.timestamp),
 #else

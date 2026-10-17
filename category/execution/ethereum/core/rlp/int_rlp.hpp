@@ -65,7 +65,7 @@ inline Result<T> decode_unsigned(byte_string_view &enc)
     BOOST_OUTCOME_TRY(auto const payload, parse_string_metadata(enc));
     return decode_raw_num<T>(payload);
 }
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
 
 // decode_unsigned into `out`, where it lies: a Result<T> stages the value,
 // zeroed then copied out field by field. The forms decode_unsigned accepts

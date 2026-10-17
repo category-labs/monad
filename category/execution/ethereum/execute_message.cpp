@@ -37,6 +37,7 @@
 
 #include <cstdint>
 #include <limits>
+#include <cstddef>
 #include <optional>
 #include <utility>
 
@@ -44,7 +45,7 @@ MONAD_NAMESPACE_BEGIN
 
 namespace
 {
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     // A message's address bound as an Address, which adds no data member to
     // evmc_address. Passed as it is, it converts into a temporary: a 20-byte
     // copy each use.
@@ -65,10 +66,20 @@ namespace
         uint64_t w1;
         uint64_t w2;
         uint64_t w3;
-        __builtin_memcpy(&w0, v.bytes, sizeof(w0));
-        __builtin_memcpy(&w1, v.bytes + 8, sizeof(w1));
-        __builtin_memcpy(&w2, v.bytes + 16, sizeof(w2));
-        __builtin_memcpy(&w3, v.bytes + 24, sizeof(w3));
+    #if defined(MONAD_ZKVM_AIRBENDER)
+        // Word loads, not byte ones, on rv32's strict alignment: the value is
+        // at offset 72 of an evmc_message, 8-aligned by its int64_t gas.
+        static_assert(offsetof(evmc_message, value) % 8 == 0);
+        static_assert(alignof(evmc_message) >= 8);
+        auto const *const b = static_cast<unsigned char const *>(
+            __builtin_assume_aligned(v.bytes, 8));
+    #else
+        auto const *const b = v.bytes;
+    #endif
+        __builtin_memcpy(&w0, b, sizeof(w0));
+        __builtin_memcpy(&w1, b + 8, sizeof(w1));
+        __builtin_memcpy(&w2, b + 16, sizeof(w2));
+        __builtin_memcpy(&w3, b + 24, sizeof(w3));
         return (w0 | w1 | w2 | w3) == 0;
     }
 
@@ -82,7 +93,7 @@ namespace
         // for optimistic execution, we do NOT require the original balance to
         // match exactly, just add a lower bound constraint to suffice for this
         // debit
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         return state.record_balance_constraint_for_debit(
             msg_address(msg.sender), value);
 #else
@@ -90,7 +101,7 @@ namespace
 #endif
     }
 
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     // The two with the value converted once: across the State call between
     // them gcc cannot keep the message's value, and converted it twice.
     bool sender_has_balance(
@@ -131,7 +142,7 @@ namespace
         Address const &to)
     {
         uint256_t const value = load_be<uint256_t>(msg.value);
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         Address const &from = msg_address(msg.sender);
         state.subtract_from_balance(from, value);
         state.add_to_balance(to, value);
@@ -195,7 +206,8 @@ pre_call(EvmcHost<traits> &host, evmc_message const &msg, State &state)
     bool const static_call = msg.flags & EVMC_STATIC;
 
     if (msg.kind != EVMC_DELEGATECALL) {
-#if defined(MONAD_ZKVM_ZISK) && defined(MONAD_ZKVM_NO_MERGE_CONSTRAINTS)
+#if (defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)) && \
+    defined(MONAD_ZKVM_NO_MERGE_CONSTRAINTS)
         // Without merge constraints a debit of zero, which most calls are,
         // is covered by any balance and records nothing: the call is left
         // out. Only a value that is not zero is converted, and staged for
@@ -216,7 +228,7 @@ pre_call(EvmcHost<traits> &host, evmc_message const &msg, State &state)
                 state, host, msg, msg_address(msg.recipient), value);
         }
 #else
-    #if defined(MONAD_ZKVM_ZISK)
+    #if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         uint256_t const value = load_be<uint256_t>(msg.value);
         if (MONAD_UNLIKELY(!sender_has_balance(state, msg, value))) {
     #else
@@ -228,7 +240,7 @@ pre_call(EvmcHost<traits> &host, evmc_message const &msg, State &state)
             return evmc::Result{EVMC_INSUFFICIENT_BALANCE, msg.gas};
         }
         else if (!static_call) {
-    #if defined(MONAD_ZKVM_ZISK)
+    #if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
             transfer_balances<traits>(
                 state, host, msg, msg_address(msg.recipient), value);
     #else
@@ -246,7 +258,7 @@ pre_call(EvmcHost<traits> &host, evmc_message const &msg, State &state)
 
     if (msg.kind == EVMC_CALL && static_call) {
         // eip-161
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         state.touch(msg_address(msg.recipient));
 #else
         state.touch(msg.recipient);

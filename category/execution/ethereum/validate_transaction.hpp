@@ -108,7 +108,7 @@ template <Traits traits>
     bool sender_is_eoa = code_hash == NULL_HASH;
     if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
         // EIP-7702
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         // An externally owned sender's code is the empty one, which the
         // guest's tracer does not record: only a sender with code is read,
         // where the State keeps it, without copying the varcode and its

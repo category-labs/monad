@@ -264,7 +264,7 @@ void State::journal_slot(
         return;
     }
     undo_.emplace_back(address, Undo::Kind::Slot, undo_slots_.size());
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     // The prior value where it lies, or a zero that does: the conditional
     // built a 32-byte temporary.
     static constexpr bytes32_t zero{};
@@ -282,7 +282,7 @@ void State::journal_transient(
     }
     bytes32_t const *const prev = row.transient_storage_.find(key);
     undo_.emplace_back(address, Undo::Kind::Transient, undo_slots_.size());
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     // As journal_slot.
     static constexpr bytes32_t zero{};
     undo_slots_.emplace_back(key, prev ? *prev : zero, prev != nullptr);
@@ -309,7 +309,7 @@ State::State(
     BlockState &block_state, Incarnation const incarnation,
     bool const relaxed_validation)
     : block_state_{block_state}
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     , vm_{block_state.vm()}
 #endif
     , incarnation_{incarnation}
@@ -322,7 +322,7 @@ State::State(
     constexpr size_t FLOOR = 16;
     original_.reserve(FLOOR);
     current_.reserve(FLOOR);
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     // Every slot a transaction warms or writes is journalled here, and one
     // that touches more than sixteen copied these as they doubled. The
     // guest's bump allocator charges the same for any size and touches no
@@ -390,7 +390,7 @@ void State::push()
 #endif
     // Built in the vector: a pushed UndoMark is built on the stack and then
     // copied in, 64 bytes a frame.
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     // All six in bytes, as the accounts' already are: a count is the bytes
     // shifted down, a step a vector on every frame, and only a rejected frame
     // reads them back.
@@ -483,7 +483,7 @@ void State::pop_reject()
     // Replay backwards to restore the earliest values last.
     UndoMark const mark = undo_marks_.back();
     undo_marks_.pop_back();
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     while (bytes_of(undo_) > mark.log) {
 #else
     while (undo_.size() > mark.log) {
@@ -572,7 +572,7 @@ void State::pop_reject()
         undo_.pop_back();
     }
     undo_accts_.resize(mark.accts / sizeof(std::optional<Account>));
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     undo_words_.resize(mark.words / sizeof(bytes32_t));
     undo_u64_.resize(mark.u64 / sizeof(std::uint64_t));
     undo_slots_.resize(mark.slots / sizeof(SlotUndo));
@@ -599,7 +599,7 @@ void State::pop_reject()
     --version_;
 }
 
-#if !defined(MONAD_ZKVM_ZISK)
+#if !defined(MONAD_ZKVM_ZISK) && !defined(MONAD_ZKVM_AIRBENDER)
 vm::VM &State::vm()
 {
     return block_state_.vm();

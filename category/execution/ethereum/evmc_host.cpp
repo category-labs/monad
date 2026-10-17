@@ -246,7 +246,7 @@ void EvmcHostBase::emit_log(
 {
     MONAD_TRY
     {
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         // A topic's bytes are a bytes32_t's, so the topics are taken as one
         // range: one allocation and one copy, where a loop of emplace_back
         // tested the capacity and widened an unsigned index for each topic.

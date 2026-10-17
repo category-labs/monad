@@ -87,7 +87,7 @@ class State
     using Set = ankerl::unordered_dense::segmented_set<K>;
 
     BlockState &block_state_;
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     // The block's VM, kept here so vm() is inline: a message call asked
     // another translation unit for it.
     vm::VM &vm_;
@@ -154,7 +154,7 @@ class State
         // would incorrectly include it in the commit set.
         bool had_value;
         // Power-of-two size for cheaper vector::size(), as in Undo.
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         // Left as it is: built as an aggregate, the record was zeroed whole,
         // a 128-byte memset before its fields were written.
         unsigned char pad_[63];
@@ -216,7 +216,7 @@ class State
         size_t slots;
         size_t pages;
         // Power-of-two size for cheaper vector::size(), as in Undo.
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         // Left as it is, as SlotUndo's: built as an aggregate, the mark was
         // zeroed whole, a 64-byte memset on every frame.
         size_t pad_[2];
@@ -421,7 +421,7 @@ public:
 
     ////////////////////////////////////////
 
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     vm::VM &vm()
     {
         return vm_;
@@ -543,6 +543,16 @@ public:
     size_t copy_code(
         Address const &, size_t offset, uint8_t *buffer, size_t buffer_size);
 
+#if defined(MONAD_ZKVM_AIRBENDER)
+    // Whether the account has code, as its recent row says: false for one
+    // that does not exist. (ZisK's sits with its code lookups below.)
+    bool has_code(Address const &address)
+    {
+        auto const &account = recent_account(address);
+        return account.has_value() && account->code_hash != NULL_HASH;
+    }
+#endif
+
 #if defined(MONAD_ZKVM_ZISK)
     // The account's code hash and code, as code_hash_ref and read_code_ref
     // give them. The block's entry for the account keeps the code it was
@@ -614,7 +624,7 @@ public:
 
     void store_log(Receipt::Log const &);
     void store_log(Receipt::Log &&);
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     // A log made in place at the end of the list, from what makes one.
     template <typename Maker>
     Receipt::Log const &emplace_log(Maker const &maker)

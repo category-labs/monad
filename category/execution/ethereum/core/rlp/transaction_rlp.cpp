@@ -383,7 +383,7 @@ decode_transaction_legacy_into(Transaction &txn, byte_string_view &enc)
     BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
 
     txn.type = TransactionType::legacy;
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     // The integers decoded where the transaction keeps them.
     BOOST_OUTCOME_TRY(decode_unsigned_into(payload, txn.nonce));
     BOOST_OUTCOME_TRY(decode_unsigned_into(payload, txn.max_fee_per_gas));
@@ -433,7 +433,7 @@ decode_transaction_eip2718_into(Transaction &txn, byte_string_view &enc)
     BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
 
     txn.sc.chain_id = uint256_t{};
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     // The integers decoded where the transaction keeps them.
     BOOST_OUTCOME_TRY(decode_unsigned_into(payload, *txn.sc.chain_id));
     BOOST_OUTCOME_TRY(decode_unsigned_into(payload, txn.nonce));
@@ -490,7 +490,7 @@ decode_transaction_eip2718_into(Transaction &txn, byte_string_view &enc)
             txn.authorization_list, decode_authorization_list(payload));
     }
 
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     BOOST_OUTCOME_TRY(decode_unsigned_into(payload, txn.sc.signature.y_parity));
     BOOST_OUTCOME_TRY(decode_unsigned_into(payload, txn.sc.signature.r));
     BOOST_OUTCOME_TRY(decode_unsigned_into(payload, txn.sc.signature.s));

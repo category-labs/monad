@@ -105,6 +105,33 @@ struct Address : evmc_address
                   "m"(*reinterpret_cast<uint8_t const(*)[12]>(b.bytes + 8)));
             return differ == 0;
         }
+#elif defined(MONAD_ZKVM_AIRBENDER)
+        if !consteval {
+            // As bytes32_t's: five word compares when both are 4-aligned,
+            // the first word first, which tells most addresses apart.
+            if (((reinterpret_cast<std::uintptr_t>(a.bytes) |
+                  reinterpret_cast<std::uintptr_t>(b.bytes)) &
+                 3) == 0) {
+                auto const *const x = static_cast<unsigned char const *>(
+                    __builtin_assume_aligned(a.bytes, 4));
+                auto const *const y = static_cast<unsigned char const *>(
+                    __builtin_assume_aligned(b.bytes, 4));
+                uint32_t u;
+                uint32_t v;
+                __builtin_memcpy(&u, x, 4);
+                __builtin_memcpy(&v, y, 4);
+                if (u != v) {
+                    return false;
+                }
+                uint32_t diff = 0;
+                for (std::size_t i = 4; i < 20; i += 4) {
+                    __builtin_memcpy(&u, x + i, 4);
+                    __builtin_memcpy(&v, y + i, 4);
+                    diff |= u ^ v;
+                }
+                return diff == 0;
+            }
+        }
 #endif
         return std::equal(a.bytes, a.bytes + 20, b.bytes);
     }

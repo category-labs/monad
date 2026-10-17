@@ -109,6 +109,34 @@ struct bytes32_t : evmc_bytes32
                   "m"(*reinterpret_cast<uint8_t const(*)[24]>(b.bytes)));
             return differ == 0;
         }
+#elif defined(MONAD_ZKVM_AIRBENDER)
+        if !consteval {
+            // Word compares when both are 4-aligned, as heap, stack and map
+            // entries are: with an alignment of 1, gcc calls memcmp. The last
+            // word first, which tells most values apart (as on ZisK).
+            if (((reinterpret_cast<std::uintptr_t>(a.bytes) |
+                  reinterpret_cast<std::uintptr_t>(b.bytes)) &
+                 3) == 0) {
+                auto const *const x = static_cast<unsigned char const *>(
+                    __builtin_assume_aligned(a.bytes, 4));
+                auto const *const y = static_cast<unsigned char const *>(
+                    __builtin_assume_aligned(b.bytes, 4));
+                uint32_t u;
+                uint32_t v;
+                __builtin_memcpy(&u, x + 28, 4);
+                __builtin_memcpy(&v, y + 28, 4);
+                if (u != v) {
+                    return false;
+                }
+                uint32_t diff = 0;
+                for (std::size_t i = 0; i < 28; i += 4) {
+                    __builtin_memcpy(&u, x + i, 4);
+                    __builtin_memcpy(&v, y + i, 4);
+                    diff |= u ^ v;
+                }
+                return diff == 0;
+            }
+        }
 #endif
         return std::equal(a.bytes, a.bytes + 32, b.bytes);
     }

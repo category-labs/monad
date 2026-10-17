@@ -25,6 +25,46 @@
 
 namespace monad::vm::runtime
 {
+#if defined(MONAD_ZKVM_AIRBENDER)
+    // A big-endian 32-byte word at a 4-aligned address, by eight loads and
+    // rev8s, where load_be_unsafe stages it through a 32-byte memcpy call and
+    // swaps it after. A limb at a time, each stored before the next is read:
+    // the source is never the stack, and with eight words live at once a
+    // handler runs out of registers and saves some to a frame.
+    [[gnu::always_inline]] inline void
+    load_be32_aligned4(uint256_t *const result_ptr, uint8_t const *const p)
+    {
+        auto const *const a =
+            static_cast<uint8_t const *>(__builtin_assume_aligned(p, 4));
+    #pragma GCC unroll 4
+        for (std::size_t k = 0; k < 4; ++k) {
+            uint32_t hi;
+            uint32_t lo;
+            __builtin_memcpy(&hi, a + 24 - 8 * k, 4);
+            __builtin_memcpy(&lo, a + 28 - 8 * k, 4);
+            (*result_ptr)[k] = (uint64_t{::monad::bit::byteswap(hi)} << 32) |
+                               ::monad::bit::byteswap(lo);
+        }
+    }
+
+    // The same store, the destination never the stack.
+    [[gnu::always_inline]] inline void
+    store_be32_aligned4(uint8_t *const p, uint256_t const *const value_ptr)
+    {
+        auto *const a = static_cast<uint8_t *>(__builtin_assume_aligned(p, 4));
+    #pragma GCC unroll 4
+        for (std::size_t k = 0; k < 4; ++k) {
+            uint64_t const limb = (*value_ptr)[k];
+            uint32_t const lo =
+                ::monad::bit::byteswap(static_cast<uint32_t>(limb));
+            uint32_t const hi =
+                ::monad::bit::byteswap(static_cast<uint32_t>(limb >> 32));
+            __builtin_memcpy(a + 28 - 8 * k, &lo, 4);
+            __builtin_memcpy(a + 24 - 8 * k, &hi, 4);
+        }
+    }
+#endif
+
     // Load 32 bytes at a validated offset; [offset, offset + 32) must already
     // be within memory.size.
     template <Traits traits>
@@ -47,23 +87,10 @@ namespace monad::vm::runtime
             (*result_ptr)[3] = monad_w3;
         }
 #elif defined(MONAD_ZKVM_AIRBENDER)
-        // A 4-aligned word (nearly every MLOAD) by eight loads and rev8s,
-        // where load_be_unsafe stages it through a 32-byte memcpy call and
-        // swaps it after. Everything is read before anything is written.
+        // A 4-aligned word, nearly every MLOAD, without the memcpy call.
         auto const *const monad_s = ctx->memory.data + *offset;
         if ((reinterpret_cast<std::uintptr_t>(monad_s) & 3) == 0) {
-            auto const *const monad_a = static_cast<uint8_t const *>(
-                __builtin_assume_aligned(monad_s, 4));
-            uint32_t monad_v[8];
-            for (std::size_t i = 0; i < 8; ++i) {
-                uint32_t w;
-                __builtin_memcpy(&w, monad_a + 4 * i, 4);
-                monad_v[i] = ::monad::bit::byteswap(w);
-            }
-            for (std::size_t k = 0; k < 4; ++k) {
-                (*result_ptr)[k] = (uint64_t{monad_v[6 - 2 * k]} << 32) |
-                                   monad_v[7 - 2 * k];
-            }
+            load_be32_aligned4(result_ptr, monad_s);
         }
         else {
             *result_ptr = load_be_unsafe<uint256_t>(monad_s);
@@ -101,22 +128,10 @@ namespace monad::vm::runtime
             store_le(monad_d + 24, monad_be[3]);
         }
 #elif defined(MONAD_ZKVM_AIRBENDER)
-        // The same for MSTORE: rev8s and eight stores to a 4-aligned word.
+        // The same for MSTORE.
         auto *const monad_d = ctx->memory.data + *offset;
         if ((reinterpret_cast<std::uintptr_t>(monad_d) & 3) == 0) {
-            auto *const monad_a =
-                static_cast<uint8_t *>(__builtin_assume_aligned(monad_d, 4));
-            uint32_t monad_v[8];
-            for (std::size_t k = 0; k < 4; ++k) {
-                uint64_t const limb = (*value_ptr)[k];
-                monad_v[7 - 2 * k] =
-                    ::monad::bit::byteswap(static_cast<uint32_t>(limb));
-                monad_v[6 - 2 * k] =
-                    ::monad::bit::byteswap(static_cast<uint32_t>(limb >> 32));
-            }
-            for (std::size_t i = 0; i < 8; ++i) {
-                __builtin_memcpy(monad_a + 4 * i, &monad_v[i], 4);
-            }
+            store_be32_aligned4(monad_d, value_ptr);
         }
         else {
             store_be(monad_d, *value_ptr);

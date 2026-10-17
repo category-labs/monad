@@ -48,7 +48,7 @@
     #error "No compiler support for __has_attribute"
 #endif
 
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
 // Hide P's new value from the optimiser, so that what follows reads through
 // it rather than through the old one. The old value then dies here and its
 // register can take the new one; otherwise both stay live, and gcc keeps a
@@ -545,7 +545,7 @@ namespace monad::vm::interpreter
     MONAD_VM_CHECK_REQUIREMENTS_AT(                                            \
         OP, SHIFT, MONAD_VM_MUST_TAIL return ctx.exit)
 
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
 // MONAD_VM_CHECK with one test leaving through an exit of its own, for a
 // handler whose other exits include an equal call: DUP's two stack tests both
 // leave with Error, and MLOAD's and MSTORE's gas and offset tests both with
@@ -2368,6 +2368,22 @@ namespace monad::vm::interpreter
         MONAD_VM_NEXT(CALLVALUE);
     }
 
+#if defined(MONAD_ZKVM_AIRBENDER)
+    // What calldataload's fast path does not take: an index past 32 bits, a
+    // word that reaches past the calldata, or one off a 4-byte boundary. Its
+    // checks are made.
+    template <Traits traits>
+    [[gnu::noinline, gnu::cold]] MONAD_VM_TWIN_CALL void calldataload_slow(
+        runtime::Context &ctx, MONAD_VM_ANALYSIS_PARAM,
+        uint256_t const *stack_bottom, uint256_t *stack_top,
+        gas_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+    {
+        runtime::calldataload(&ctx, stack_top, stack_top);
+
+        MONAD_VM_NEXT(CALLDATALOAD);
+    }
+#endif
+
     template <Traits traits>
     MONAD_VM_INSTRUCTION_CALL void calldataload(
         runtime::Context &entry_ctx, MONAD_VM_ANALYSIS_PARAM,
@@ -2376,6 +2392,37 @@ namespace monad::vm::interpreter
     {
         runtime::Context &ctx = held_in_a0(entry_ctx);
         MONAD_VM_CHECK(CALLDATALOAD);
+#if defined(MONAD_ZKVM_AIRBENDER)
+        // A whole word at a 4-byte boundary -- an ABI argument, at 4 + 32k of
+        // word-aligned calldata -- by eight loads and rev8s; anything else in
+        // calldataload_slow, whose bounded load is a memcpy call.
+        {
+            uint256_t const &monad_vm_i = *stack_top;
+            auto const monad_vm_lo = static_cast<uint32_t>(monad_vm_i[0]);
+            uint32_t const monad_vm_size = ctx.env.input_data_size;
+            if (MONAD_LIKELY(
+                    ((monad_vm_i[0] >> 32) | monad_vm_i[1] | monad_vm_i[2] |
+                     monad_vm_i[3]) == 0 &&
+                    monad_vm_lo < monad_vm_size &&
+                    monad_vm_size - monad_vm_lo >= 32)) {
+                auto const *const monad_vm_p =
+                    ctx.env.input_data + monad_vm_lo;
+                if (MONAD_LIKELY(
+                        (reinterpret_cast<std::uintptr_t>(monad_vm_p) & 3) ==
+                        0)) {
+                    runtime::load_be32_aligned4(stack_top, monad_vm_p);
+                    MONAD_VM_NEXT(CALLDATALOAD);
+                }
+            }
+            MONAD_VM_MUST_TAIL return calldataload_slow<traits>(
+                ctx,
+                MONAD_VM_ANALYSIS_ARG,
+                stack_bottom,
+                stack_top,
+                gas_remaining,
+                instr_ptr MONAD_VM_TBL_ARG);
+        }
+#endif
         // Called directly: it reads the environment and never gas, so
         // call_runtime's sync would be a store and a reload for nothing.
         runtime::calldataload(&ctx, stack_top, stack_top);
@@ -2972,6 +3019,40 @@ namespace monad::vm::interpreter
         }
         auto const offset = runtime::Memory::Offset::unsafe_from(
             static_cast<runtime::Memory::Offset::rep>(monad_vm_x[0]));
+#elif defined(MONAD_ZKVM_AIRBENDER)
+        // As on ZisK, in 32 bits: the high words and the low word's high half
+        // zero, and its low half under memory_access32_end.
+        uint256_t const &monad_vm_x = *stack_top;
+        if (MONAD_UNLIKELY(
+                ((monad_vm_x[0] >> 32) | monad_vm_x[1] | monad_vm_x[2] |
+                 monad_vm_x[3]) != 0)) {
+            MONAD_VM_MUST_TAIL return ctx.exit(OutOfGas);
+        }
+        auto const monad_vm_lo = static_cast<uint32_t>(monad_vm_x[0]);
+        if (MONAD_UNLIKELY(monad_vm_lo >= ctx.memory_access32_end)) {
+            MONAD_VM_MUST_TAIL return mload_grow<quiet_traits<traits>>(
+                ctx,
+                MONAD_VM_ANALYSIS_ARG,
+                stack_bottom,
+                stack_top,
+                gas_remaining,
+                MONAD_VM_AS_CALLED(instr_ptr) MONAD_VM_TBL_ARG);
+        }
+        // A word off a 4-byte boundary, rare, through the generic path too,
+        // so that no call is left here to make the handler keep a frame.
+        auto const *const monad_vm_s = ctx.memory.data + monad_vm_lo;
+        if (MONAD_UNLIKELY(
+                (reinterpret_cast<std::uintptr_t>(monad_vm_s) & 3) != 0)) {
+            MONAD_VM_MUST_TAIL return mload_grow<quiet_traits<traits>>(
+                ctx,
+                MONAD_VM_ANALYSIS_ARG,
+                stack_bottom,
+                stack_top,
+                gas_remaining,
+                MONAD_VM_AS_CALLED(instr_ptr) MONAD_VM_TBL_ARG);
+        }
+        runtime::load_be32_aligned4(stack_top, monad_vm_s);
+        MONAD_VM_NEXT(MLOAD);
 #else
         auto const offset = ctx.get_memory_offset(*stack_top);
         if (MONAD_UNLIKELY(ctx.memory.size < *offset + 32)) {
@@ -2984,9 +3065,11 @@ namespace monad::vm::interpreter
                 MONAD_VM_AS_CALLED(instr_ptr) MONAD_VM_TBL_ARG);
         }
 #endif
+#if !defined(MONAD_ZKVM_AIRBENDER)
         runtime::mload_at<base_traits<traits>>(&ctx, stack_top, offset);
 
         MONAD_VM_NEXT(MLOAD);
+#endif
     }
 
     // What mstore_grow does not take, through the generic path: capacity
@@ -3021,6 +3104,22 @@ namespace monad::vm::interpreter
         // mstore validated the offset, so its low word is all of it.
         auto const offset = runtime::Memory::Offset::unsafe_from(
             static_cast<runtime::Memory::Offset::rep>((*stack_top)[0]));
+#if defined(MONAD_ZKVM_AIRBENDER)
+        // A word off a 4-byte boundary grows through the generic path: the
+        // store below is then the aligned one, and no call is left here.
+        if (MONAD_UNLIKELY(
+                (reinterpret_cast<std::uintptr_t>(
+                     ctx.memory.data + *offset) &
+                 3) != 0)) {
+            MONAD_VM_MUST_TAIL return mstore_slow<quiet_traits<traits>>(
+                ctx,
+                MONAD_VM_ANALYSIS_ARG,
+                stack_bottom,
+                stack_top,
+                gas_remaining,
+                MONAD_VM_AS_CALLED(instr_ptr) MONAD_VM_TBL_ARG);
+        }
+#endif
         auto const word_count = runtime::Context::memory_size_to_word_count(
             offset + runtime::bin<32>);
         auto const new_size =
@@ -3048,11 +3147,15 @@ namespace monad::vm::interpreter
         }
         gas_remaining = static_cast<gas_t>(monad_vm_left);
         ctx.memory.size = *new_size;
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         ctx.memory_access32_end = *new_size - 31;
 #endif
         ctx.memory.cost = new_cost;
+#if defined(MONAD_ZKVM_AIRBENDER)
+        runtime::store_be32_aligned4(ctx.memory.data + *offset, stack_top - 1);
+#else
         runtime::mstore_at<base_traits<traits>>(&ctx, offset, stack_top - 1);
+#endif
 
         MONAD_VM_NEXT(MSTORE);
     }
@@ -3102,6 +3205,51 @@ namespace monad::vm::interpreter
         }
         auto const offset = runtime::Memory::Offset::unsafe_from(
             static_cast<runtime::Memory::Offset::rep>(monad_vm_x[0]));
+#elif defined(MONAD_ZKVM_AIRBENDER)
+        // As in mload, in 32 bits. A low word from memory_access32_end up
+        // grows the memory: mstore_grow under 2^28, the generic path from
+        // there, which runs out of gas.
+        uint256_t const &monad_vm_x = *stack_top;
+        if (MONAD_UNLIKELY(
+                ((monad_vm_x[0] >> 32) | monad_vm_x[1] | monad_vm_x[2] |
+                 monad_vm_x[3]) != 0)) {
+            MONAD_VM_MUST_TAIL return ctx.exit(OutOfGas);
+        }
+        auto const monad_vm_lo = static_cast<uint32_t>(monad_vm_x[0]);
+        if (MONAD_UNLIKELY(monad_vm_lo >= ctx.memory_access32_end)) {
+            if (MONAD_UNLIKELY(
+                    (monad_vm_lo >> runtime::Memory::offset_bits) != 0)) {
+                MONAD_VM_MUST_TAIL return mstore_slow<quiet_traits<traits>>(
+                    ctx,
+                    MONAD_VM_ANALYSIS_ARG,
+                    stack_bottom,
+                    stack_top,
+                    gas_remaining,
+                    MONAD_VM_AS_CALLED(instr_ptr) MONAD_VM_TBL_ARG);
+            }
+            MONAD_VM_MUST_TAIL return mstore_grow<traits>(
+                ctx,
+                MONAD_VM_ANALYSIS_ARG,
+                stack_bottom,
+                stack_top,
+                gas_remaining,
+                MONAD_VM_AS_CALLED(instr_ptr) MONAD_VM_TBL_ARG);
+        }
+        // A word off a 4-byte boundary, rare, through the generic path, as
+        // in mload.
+        auto *const monad_vm_d = ctx.memory.data + monad_vm_lo;
+        if (MONAD_UNLIKELY(
+                (reinterpret_cast<std::uintptr_t>(monad_vm_d) & 3) != 0)) {
+            MONAD_VM_MUST_TAIL return mstore_slow<quiet_traits<traits>>(
+                ctx,
+                MONAD_VM_ANALYSIS_ARG,
+                stack_bottom,
+                stack_top,
+                gas_remaining,
+                MONAD_VM_AS_CALLED(instr_ptr) MONAD_VM_TBL_ARG);
+        }
+        runtime::store_be32_aligned4(monad_vm_d, stack_top - 1);
+        MONAD_VM_NEXT(MSTORE);
 #else
         auto const offset = ctx.get_memory_offset(*stack_top);
         if (MONAD_UNLIKELY(ctx.memory.size < *offset + 32)) {
@@ -3114,9 +3262,11 @@ namespace monad::vm::interpreter
                 MONAD_VM_AS_CALLED(instr_ptr) MONAD_VM_TBL_ARG);
         }
 #endif
+#if !defined(MONAD_ZKVM_AIRBENDER)
         runtime::mstore_at<base_traits<traits>>(&ctx, offset, stack_top - 1);
 
         MONAD_VM_NEXT(MSTORE);
+#endif
     }
 
     template <Traits traits>
@@ -4702,7 +4852,10 @@ namespace monad::vm::interpreter
             MONAD_VM_DISPATCH(1, 0, *instr_ptr);
         }
 #else
-        MONAD_VM_CHECK(DUP1 + (N - 1));
+        // The overflow test through an exit of its own, as on ZisK: equal to
+        // the underflow test's, gcc would merge the two, and the merged block
+        // cost a copy of ctx on every DUP.
+        MONAD_VM_CHECK_OWN_OVERFLOW(DUP1 + (N - 1));
 
         auto *const old_top = stack_top;
         push(stack_top, *(old_top - (N - 1)));

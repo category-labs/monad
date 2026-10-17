@@ -154,7 +154,7 @@ namespace monad::vm::interpreter
     }
 #endif
 
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     // ctx.exit(OutOfGas) and ctx.exit(Error) from symbols of their own, for
     // the handlers that pass them to MONAD_VM_CHECK_REQUIREMENTS_AT_EXITS.
     [[noreturn, gnu::noinline, gnu::cold]] inline void

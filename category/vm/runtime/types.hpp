@@ -327,6 +327,10 @@ namespace monad::vm::runtime
         // test an offset's low word once, where get_memory_offset's 28-bit
         // bound and the size test took four instructions.
         uint64_t memory_access32_end = 0;
+#elif defined(MONAD_ZKVM_AIRBENDER)
+        // The same bound, in the 32 bits an rv32 register holds: an offset's
+        // high words and low word's high half zero, its low half under this.
+        uint32_t memory_access32_end = 0;
 #endif
 
         [[gnu::always_inline]]
@@ -418,7 +422,7 @@ namespace monad::vm::runtime
                 deduct_gas(expansion_cost);
                 uint32_t const old_size = memory.size;
                 memory.size = *new_size;
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
                 memory_access32_end = *new_size - 31;
 #endif
                 memory.cost = new_cost;

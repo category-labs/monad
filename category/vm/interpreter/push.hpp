@@ -89,6 +89,15 @@ namespace monad::vm::interpreter
                     : "m"(*reinterpret_cast<uint8_t const(*)[4]>(p)));
                 return v;
             }
+#elif defined(MONAD_ZKVM_AIRBENDER)
+            // Two byte loads and a shift-or. Written plainly, gcc's bswap pass
+            // reads the pair as a little-endian halfword and, with no rev8 it
+            // may use, swaps it back in five more shifts and adds.
+            if constexpr (K == 2) {
+                uint32_t lo = p[1];
+                asm("" : "+r"(lo));
+                return (uint32_t{p[0]} << 8) | lo;
+            }
 #endif
             return [p]<size_t... Is>(std::index_sequence<Is...>) {
                 return (

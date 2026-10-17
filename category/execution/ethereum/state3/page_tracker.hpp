@@ -52,9 +52,36 @@ class PageTracker
     using PageMemoryPolicy = immer::default_memory_policy;
 #endif
 
+#if defined(MONAD_ZKVM_AIRBENDER)
+    // immer hashes to a size_t, 32 bits on rv32, where the unordered_dense
+    // hasher returns 64: the champ's lookups would index with bits its
+    // inserts dropped. A size_t hash, mixed in the low bits the champ takes
+    // its levels from (the fold alone leaves a small page key's there zero).
+    struct PageKeyHash
+    {
+        [[gnu::always_inline]] inline std::size_t
+        operator()(bytes32_t const &x) const noexcept
+        {
+            uint64_t const fold = bits::load64(x.bytes) ^
+                                  bits::load64(x.bytes + 8) ^
+                                  bits::load64(x.bytes + 16) ^
+                                  bits::load64(x.bytes + 24);
+            return static_cast<std::size_t>(bits::fmix64(fold));
+        }
+    };
+
+    static_assert(std::is_same_v<
+                  decltype(PageKeyHash{}(std::declval<bytes32_t const &>())),
+                  std::size_t>);
+
+    using PageMap = immer::map<
+        bytes32_t, PageState, PageKeyHash, std::equal_to<bytes32_t>,
+        PageMemoryPolicy>;
+#else
     using PageMap = immer::map<
         bytes32_t, PageState, ankerl::unordered_dense::hash<monad::bytes32_t>,
         std::equal_to<bytes32_t>, PageMemoryPolicy>;
+#endif
 
     PageMap pages_{};
 

@@ -18,6 +18,7 @@
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/core/result.hpp>
+#include <category/execution/ethereum/chain/chain_config.h>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/vm/evm/traits.hpp>
 
@@ -72,6 +73,9 @@ bytes32_t compute_ommers_hash(std::vector<BlockHeader> const &);
 
 template <Traits traits>
 Result<void> static_validate_header(BlockHeader const &);
+
+template <Traits traits>
+monad_eth_header_layout eth_header_layout();
 
 template <Traits traits>
 Result<void> static_validate_block(Chain const &chain, Block const &);

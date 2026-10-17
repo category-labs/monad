@@ -35,6 +35,12 @@ pub struct ExecutedBlock {
 #[cfg(feature = "alloy")]
 impl ExecutedBlock {
     /// Creates an alloy consensus header.
+    ///
+    /// The stream carries no explicit revision, so every optional field through
+    /// Prague is set except `withdrawals_root`, which is omitted when zero. The
+    /// header may therefore carry fields the block's fork does not encode and
+    /// not hash to the block hash; the `hash` on [`Self::to_alloy_rpc_header`]
+    /// is authoritative.
     pub fn to_alloy_header(&self) -> alloy_consensus::Header {
         alloy_consensus::Header {
             parent_hash: alloy_primitives::B256::from(self.start.parent_eth_hash.bytes),

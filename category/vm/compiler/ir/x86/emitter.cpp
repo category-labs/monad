@@ -1031,6 +1031,10 @@ namespace monad::vm::compiler::native
 
     void Emitter::add_jump_dest(byte_offset const d)
     {
+        if (MONAD_LIKELY(!debug_logger_.file())) {
+            jump_dests_.emplace(d, as_.newLabel());
+            return;
+        }
         char name[2 * sizeof(byte_offset) + 2];
         static_assert(sizeof(byte_offset) <= sizeof(long));
         auto const isize = snprintf(name, sizeof(name), "B%lx", d);

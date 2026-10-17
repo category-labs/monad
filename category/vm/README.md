@@ -118,24 +118,32 @@ Use the helper script `scripts/vm/fuzzer.sh` to run the fuzzer.
 
 Execute
 ```
-scripts/fuzzer.sh --help
+scripts/vm/fuzzer.sh --help
 ```
 for more information.
 
-The script `scripts/tmux-fuzzer.sh` can be used to start concurrent fuzzer
-instances in Tmux sessions. Use
+The script `scripts/vm/fuzz.sh` runs concurrent fuzzer instances with
+consecutive seeds and stops at the first failure, printing the log of the
+failing seed. Execute
 ```
-scripts/tmux-fuzzer.sh start
+scripts/vm/fuzz.sh -h
 ```
-to start the concurrent fuzzer Tmux sessions. Then command
+for its options; CI runs `scripts/vm/fuzz.sh -c 26 -i 5 -t 420`.
+
+The script `scripts/vm/tmux-fuzzer.sh` starts concurrent fuzzer instances in
+Tmux sessions that keep running until you stop them. Use
 ```
-scripts/tmux-fuzzer.sh status
+scripts/vm/tmux-fuzzer.sh start
 ```
-can be used to query status of the Tmux sessions. Use
+to start the sessions,
 ```
-scripts/tmux-fuzzer.sh kill
+scripts/vm/tmux-fuzzer.sh status
 ```
-to kill all the fuzzer Tmux sessions.
+to query their status, and
+```
+scripts/vm/tmux-fuzzer.sh kill
+```
+to kill them.
 
 ## Benchmarks
 

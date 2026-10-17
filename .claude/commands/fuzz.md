@@ -6,7 +6,7 @@ The user may pass arguments like:
 - `compiler` — run the compiler fuzzer (default)
 - `staking` — run the staking contract fuzzer
 - `--seed <N>` — set the random seed
-- `--multi` — run multiple fuzzer sessions via tmux
+- `--multi` — run parallel fuzzer sessions with `scripts/vm/fuzz.sh`
 - `status` — check tmux fuzzer session status
 - `kill` — stop all tmux fuzzer sessions
 
@@ -48,9 +48,17 @@ scripts/vm/fuzzer.sh --implementation compiler --seed 143
 build/category/execution/monad_staking_contract_fuzzer
 ```
 
-### Multi-process run via tmux
+### Multi-process run
 
-`scripts/vm/tmux-fuzzer.sh` manages multiple fuzzer sessions (11 compiler + 2 interpreter by default):
+`scripts/vm/fuzz.sh` runs parallel fuzzer sessions (11 compiler + 2 interpreter by default, consecutive seeds) and stops at the first failure, printing the failing seed's log:
+```bash
+scripts/vm/fuzz.sh -s 143              # run until a session fails
+scripts/vm/fuzz.sh -c 26 -i 5 -t 420   # what CI runs: 31 sessions for 7 minutes
+tmux new -d -s fuzz scripts/vm/fuzz.sh # run in the background
+```
+Logs go to `fuzzer-log/`.
+
+`scripts/vm/tmux-fuzzer.sh` manages long-running sessions by hand (11 compiler + 2 interpreter by default):
 ```bash
 scripts/vm/tmux-fuzzer.sh start --base-seed=143   # start all sessions
 scripts/vm/tmux-fuzzer.sh status                   # check which are running

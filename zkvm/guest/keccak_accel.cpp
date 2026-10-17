@@ -816,7 +816,18 @@ template <bool Aligned>
     }
     s[RATE_WORDS - 1] ^= uint32_t{0x80} << 24;
     monad_zkvm_airbender_keccak_block_permute();
-    std::memcpy(out, monad_zkvm_airbender_keccak_block, 32);
+    // The digest by words into a word-aligned output -- nearly every one, a
+    // bytes32_t in a struct -- where a memcpy call costs more than the copy.
+    if ((reinterpret_cast<uintptr_t>(out) & 3) == 0) {
+        auto *const o = reinterpret_cast<keccak_word_t *>(out);
+    #pragma GCC unroll 8
+        for (size_t i = 0; i < 8; ++i) {
+            o[i] = s[i];
+        }
+    }
+    else {
+        std::memcpy(out, monad_zkvm_airbender_keccak_block, 32);
+    }
 }
 #endif
 

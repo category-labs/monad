@@ -954,6 +954,49 @@ namespace monad::vm::interpreter
     }
 #endif
 
+#if defined(MONAD_ZKVM_AIRBENDER)
+// The tail of a comparison at instr_ptr whose result R, 0 or 1, belongs at
+// stack_top - D (D = 1: two operands popped and the result pushed): an ISZERO
+// after it is folded into R, and a PUSH2 <dst> JUMPI after that branches on R
+// without storing it -- Solidity's `if (a < b)` and `require(x > y)` and
+// their negations, four dispatches as one. The folded opcodes' gas is charged
+// with no test of its own (MONAD_VM_FUSED_CHARGE_PURE): ISZERO and PUSH2 are
+// pure, and a taken JUMPI tests at the JUMPDEST it lands on. Nor a stack
+// test: the comparison freed the slot PUSH2 takes, and JUMPI's operands are
+// PUSH2's and the result. The lookahead stays in the code's tail padding.
+    #define MONAD_VM_COMPARE_TAIL(R, D)                                        \
+        do {                                                                   \
+            uint32_t monad_vm_r = (R);                                         \
+            uint8_t const *monad_vm_p = instr_ptr;                             \
+            if (monad_vm_p[1] == static_cast<std::uint8_t>(ISZERO)) {          \
+                monad_vm_r ^= 1;                                               \
+                gas_remaining -= static_gas<traits, ISZERO>();                 \
+                ++monad_vm_p;                                                  \
+            }                                                                  \
+            if (monad_vm_p[1] == static_cast<std::uint8_t>(PUSH2) &&           \
+                monad_vm_p[4] == static_cast<std::uint8_t>(JUMPI)) {           \
+                gas_remaining -= static_gas<traits, PUSH2, JUMPI>();           \
+                instr_ptr = fused_branch(                                      \
+                    ctx,                                                       \
+                    MONAD_VM_ANALYSIS,                                         \
+                    monad_vm_p,                                                \
+                    monad_vm_r != 0,                                           \
+                    gas_remaining);                                            \
+                MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](      \
+                    ctx,                                                       \
+                    MONAD_VM_ANALYSIS_ARG,                                     \
+                    stack_bottom,                                              \
+                    stack_top - (D) - 1,                                       \
+                    gas_remaining,                                             \
+                    instr_ptr MONAD_VM_TBL_ARG);                               \
+            }                                                                  \
+            *(stack_top - (D)) = uint256_t{monad_vm_r};                        \
+            instr_ptr = monad_vm_p;                                            \
+            MONAD_VM_DISPATCH(1, -(D), *instr_ptr);                            \
+        }                                                                      \
+        while (false)
+#endif
+
     template <Traits traits>
     consteval InstrTable make_instruction_table()
     {
@@ -1564,9 +1607,7 @@ namespace monad::vm::interpreter
         auto &&[a, b] = top_two(stack_top);
         uint32_t const borrow =
             airbender_bigint::op(b, a, airbender_bigint::SUB_AND_NEGATE);
-        b = uint256_t{borrow};
-
-        MONAD_VM_NEXT(LT);
+        MONAD_VM_COMPARE_TAIL(borrow, 1);
 #else
         auto &&[a, b] = top_two(stack_top);
         b = a < b;
@@ -1604,9 +1645,7 @@ namespace monad::vm::interpreter
         auto &&[a, b] = top_two(stack_top);
         uint32_t const borrow =
             airbender_bigint::op(b, a, airbender_bigint::SUB);
-        b = uint256_t{borrow};
-
-        MONAD_VM_NEXT(GT);
+        MONAD_VM_COMPARE_TAIL(borrow, 1);
 #else
         auto &&[a, b] = top_two(stack_top);
         b = a > b;
@@ -1648,9 +1687,7 @@ namespace monad::vm::interpreter
         b[3] ^= uint64_t{1} << 63;
         uint32_t const borrow =
             airbender_bigint::op(b, a, airbender_bigint::SUB_AND_NEGATE);
-        b = uint256_t{borrow};
-
-        MONAD_VM_NEXT(SLT);
+        MONAD_VM_COMPARE_TAIL(borrow, 1);
 #else
         auto &&[a, b] = top_two(stack_top);
         b = slt(a, b);
@@ -1692,9 +1729,7 @@ namespace monad::vm::interpreter
         b[3] ^= uint64_t{1} << 63;
         uint32_t const borrow =
             airbender_bigint::op(b, a, airbender_bigint::SUB);
-        b = uint256_t{borrow};
-
-        MONAD_VM_NEXT(SGT);
+        MONAD_VM_COMPARE_TAIL(borrow, 1);
 #else
         auto &&[a, b] = top_two(stack_top);
         b = slt(b, a); // note swapped arguments
@@ -1709,7 +1744,7 @@ namespace monad::vm::interpreter
        uint256_t const *stack_bottom, uint256_t *stack_top,
        gas_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
+#if defined(MONAD_ZKVM_ZISK)
         // Fuse EQ PUSH2 <dst16> JUMPI. EQ frees a stack slot, so PUSH2
         // cannot overflow once EQ's operands are validated.
         uint8_t const monad_vm_op2 = *(instr_ptr + 1);
@@ -1730,22 +1765,14 @@ namespace monad::vm::interpreter
                 // PUSH2 adds one value, restoring the original stack height.
                 MONAD_VM_CHECK_AT(JUMPI, 0);
             }
-#if defined(MONAD_ZKVM_ZISK)
             // Keep EQ's result in a C++ bool instead of the EVM stack, the
             // words compared by DMA (zisk_equal32): one step where gcc's
             // compare is three a word, and half of EQ's run all four.
             bool const monad_vm_taken = zisk_equal32(
                 reinterpret_cast<uint64_t const *>(stack_top),
                 reinterpret_cast<uint64_t const *>(stack_top - 1));
-#else
-            // Keep EQ's result in a C++ bool instead of the EVM stack, the
-            // words compared by the circuit, which leaves both as they were.
-            bool const monad_vm_taken =
-                airbender_bigint::op(
-                    *(stack_top - 1), *stack_top, airbender_bigint::EQ) != 0;
-#endif
-            instr_ptr =
-                fused_branch(ctx, MONAD_VM_ANALYSIS, instr_ptr, monad_vm_taken, gas_remaining);
+            instr_ptr = fused_branch(
+                ctx, MONAD_VM_ANALYSIS, instr_ptr, monad_vm_taken, gas_remaining);
             MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
                 ctx,
                 MONAD_VM_ANALYSIS_ARG,
@@ -1773,15 +1800,19 @@ namespace monad::vm::interpreter
 #endif
         auto &&[a, b] = top_two(stack_top);
 #if defined(MONAD_ZKVM_AIRBENDER)
-        // The circuit's compare leaves b as it was and returns the equality.
-        b = uint256_t{airbender_bigint::op(b, a, airbender_bigint::EQ)};
+        // The circuit's compare leaves b as it was and returns the equality,
+        // for the comparisons' tail: an ISZERO and a PUSH2 JUMPI after it
+        // folded in.
+        uint32_t const monad_vm_eq =
+            airbender_bigint::op(b, a, airbender_bigint::EQ);
+        MONAD_VM_COMPARE_TAIL(monad_vm_eq, 1);
 #else
         b = (a == b);
 #endif
 
-#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
+#if defined(MONAD_ZKVM_ZISK)
         MONAD_VM_NEXT_OP(EQ, monad_vm_op2);
-#else
+#elif !defined(MONAD_ZKVM_AIRBENDER)
         MONAD_VM_NEXT(EQ);
 #endif
     }

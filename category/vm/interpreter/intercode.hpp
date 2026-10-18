@@ -274,6 +274,7 @@ namespace monad::vm::interpreter
         uint8_t *chunk_ends_;
 
         void analyse_chunk(size_t k) noexcept;
+        void scan_chunk(size_t k, uint8_t const *p) noexcept;
 
         // lazy_is_jumpdest through a trampoline that saves every register
         // it does not return in (intercode.cpp): a call gcc sees would make

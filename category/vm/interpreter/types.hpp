@@ -131,9 +131,10 @@
     #define MONAD_VM_TBL_ARG , itbl
     #define MONAD_VM_TABLE_REF (dispatch_table<traits>(itbl))
 #elif defined(MONAD_ZKVM_AIRBENDER)
-    // The table travels in a7, the last argument register rv32 has left: a
-    // dispatch then indexes it there, where it otherwise forms the table's
-    // address anew (auipc, addi) -- two of the some 40 cycles an opcode takes.
+    // The table travels in a6, an argument register of its own (a7 holds the
+    // stack limit, MONAD_VM_HANDLER_PARAMS): a dispatch then indexes it there,
+    // where it otherwise forms the table's address anew (auipc, addi) -- two
+    // of the some 40 cycles an opcode takes.
     #define MONAD_VM_TBL_TYPE , void const *
     #define MONAD_VM_TBL_PARAM , void const *itbl
     #define MONAD_VM_TBL_ARG , itbl

@@ -236,6 +236,32 @@ namespace monad::vm::interpreter
     // stops, and the chunks below are analysed in order from the highest
     // analysed one (or the code's start), so a code whose bytes all look
     // like PUSH32s costs its whole length once, not once per chunk.
+    // Chunk k's scan from p, an instruction boundary at or below its start.
+    // As find_jumpdests scans, two opcodes a turn. The second may pass the
+    // chunk's end: then it is the next chunk's first, a boundary the scan
+    // reached, and its bit is as exact; at the code's end it is in the zero
+    // padding. The scan stops at most 2 * 33 bytes past the end.
+    [[gnu::always_inline]] inline void
+    Intercode::scan_chunk(size_t const k, uint8_t const *p) noexcept
+    {
+        uint8_t const *const code = padded_code_;
+        uint8_t const *const end =
+            code + std::min(size(), (k + 1) << lazy_chunk_shift);
+        while (p < end) {
+            auto op = *p;
+            if (op == EvmOpCode::JUMPDEST) {
+                jumpdest_map_.set(static_cast<size_t>(p - code));
+            }
+            p += advance[op];
+            op = *p;
+            if (op == EvmOpCode::JUMPDEST) {
+                jumpdest_map_.set(static_cast<size_t>(p - code));
+            }
+            p += advance[op];
+        }
+        chunk_ends_[k] = static_cast<uint8_t>(p - end + 1);
+    }
+
     void Intercode::analyse_chunk(size_t const k) noexcept
     {
         uint8_t const *const code = padded_code_;
@@ -271,12 +297,19 @@ namespace monad::vm::interpreter
                 }
             }
             if (MONAD_UNLIKELY(b < low)) {
+                // The run of unanalysed chunks below k, in order from the
+                // first, whose predecessor is analysed (or which is chunk
+                // 0): each starts where the one before it stopped.
                 size_t j = k - 1;
                 while (j != 0 && chunk_ends_[j - 1] == 0) {
                     --j;
                 }
                 for (; j < k; ++j) {
-                    analyse_chunk(j);
+                    scan_chunk(
+                        j,
+                        j == 0 ? code
+                               : code + (j << lazy_chunk_shift) +
+                                     chunk_ends_[j - 1] - 1);
                 }
                 p = code + start + chunk_ends_[k - 1] - 1;
             }
@@ -284,25 +317,7 @@ namespace monad::vm::interpreter
                 p = b;
             }
         }
-        // As find_jumpdests scans, two opcodes a turn. The second may pass
-        // the chunk's end: then it is the next chunk's first, a boundary the
-        // scan reached, and its bit is as exact; at the code's end it is in
-        // the zero padding. The scan stops at most 2 * 33 bytes past the end.
-        uint8_t const *const end =
-            code + std::min(size(), start + (size_t{1} << lazy_chunk_shift));
-        while (p < end) {
-            auto op = *p;
-            if (op == EvmOpCode::JUMPDEST) {
-                jumpdest_map_.set(static_cast<size_t>(p - code));
-            }
-            p += advance[op];
-            op = *p;
-            if (op == EvmOpCode::JUMPDEST) {
-                jumpdest_map_.set(static_cast<size_t>(p - code));
-            }
-            p += advance[op];
-        }
-        chunk_ends_[k] = static_cast<uint8_t>(p - end + 1);
+        scan_chunk(k, p);
     }
 
     bool Intercode::lazy_is_jumpdest(size_t const pc) noexcept
@@ -323,7 +338,8 @@ namespace monad::vm::interpreter
 // Intercode::lazy_test's callee: the analysis in t1, the position in t2, the
 // answer back in t1, the return address in t0. Every other register the
 // handler may hold is saved around the C++ call.
-extern "C" uintptr_t
+// Referenced from asm only: used, so that no link-time pass drops it.
+extern "C" [[gnu::used]] uintptr_t
 monad_vm_lazy_jumpdest(uintptr_t const analysis, size_t const pc) noexcept
 {
     auto *const ic = reinterpret_cast<monad::vm::interpreter::Intercode *>(

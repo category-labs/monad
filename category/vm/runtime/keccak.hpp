@@ -30,7 +30,7 @@
 
 namespace monad::vm::runtime
 {
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     // A contract hashes the same 64 bytes again and again -- a mapping
     // entry's slot is keccak256(key . position), computed by every read and
     // write of the entry -- and the same 32 -- a dynamic array's data starts
@@ -59,6 +59,20 @@ namespace monad::vm::runtime
     [[gnu::always_inline]] inline Sha3Memo<N> &
     sha3_memo_entry(uint64_t const *const in) noexcept
     {
+    #if defined(MONAD_ZKVM_AIRBENDER)
+        // From the last 32-bit words of the key and of the slot number, on
+        // rv32, where a 64-bit byte swap is a call.
+        auto const *const w = reinterpret_cast<uint32_t const *>(in);
+        if constexpr (N == 64) {
+            uint32_t const h = w[7] ^ w[15] ^ w[6];
+            return sha3_memo64[(h ^ (h >> 11) ^ (h >> 22)) & 2047u];
+        }
+        else {
+            static_assert(N == 32);
+            uint32_t const h = w[7] ^ w[6];
+            return sha3_memo32[(h ^ (h >> 10) ^ (h >> 20)) & 1023u];
+        }
+    #else
         if constexpr (N == 64) {
             uint64_t const h = in[3] ^ in[7];
             return sha3_memo64[(h ^ __builtin_bswap64(h)) & 2047u];
@@ -68,6 +82,7 @@ namespace monad::vm::runtime
             uint64_t const h = in[3];
             return sha3_memo32[(h ^ __builtin_bswap64(h)) & 1023u];
         }
+    #endif
     }
 
     // Whether e holds the N bytes at in, 8-aligned: the input by the DMA
@@ -76,6 +91,21 @@ namespace monad::vm::runtime
     [[gnu::always_inline]] inline bool
     sha3_memo_holds(Sha3Memo<N> const &e, uint64_t const *const in) noexcept
     {
+    #if defined(MONAD_ZKVM_AIRBENDER)
+        // By 32-bit words, both sides word-aligned: the last first, which
+        // tells most inputs apart.
+        auto const *const a = reinterpret_cast<uint32_t const *>(e.in);
+        auto const *const b = reinterpret_cast<uint32_t const *>(in);
+        if (a[N / 4 - 1] != b[N / 4 - 1] || e.filled == 0) {
+            return false;
+        }
+        uint32_t differ = 0;
+        #pragma GCC unroll 16
+        for (size_t i = 0; i < N / 4 - 1; ++i) {
+            differ |= a[i] ^ b[i];
+        }
+        return differ == 0;
+    #else
         uint64_t differ;
         asm(".option push\n\t"
             ".option arch, +zicsr\n\t"
@@ -89,6 +119,7 @@ namespace monad::vm::runtime
               "m"(*reinterpret_cast<uint64_t const(*)[N / 8]>(in)),
               "i"(N));
         return differ == 0 && e.filled != 0;
+    #endif
     }
 
     // Hashes the N bytes at in, 8-aligned, into result and the memo.
@@ -124,7 +155,7 @@ namespace monad::vm::runtime
         }
 
         MONAD_KECCAK_SITE(SHA3_OPCODE, *size);
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         if ((*size == 64 || *size == 32) && (*offset & 7) == 0) {
             auto const *const in =
                 reinterpret_cast<uint64_t const *>(ctx->memory.data + *offset);

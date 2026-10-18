@@ -2007,7 +2007,7 @@ namespace monad::vm::interpreter
     }
 
     // Data
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     // SHA3 past runtime::sha3_memo, out of line so that a hash the memo
     // holds takes no frame. The checks have run; do not repeat them.
     template <Traits traits>
@@ -2046,7 +2046,7 @@ namespace monad::vm::interpreter
     template <Traits traits>
     MONAD_VM_INSTRUCTION_CALL void sha3(MONAD_VM_HANDLER_PARAMS(ctx))
     {
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         MONAD_VM_CHECK(SHA3);
         // 32 or 64 bytes at an 8-aligned offset inside the memory, with their
         // words of gas: the memo's word if it holds them, else sha3_fill.

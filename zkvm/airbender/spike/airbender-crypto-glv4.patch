@@ -1,0 +1,417 @@
+diff --git a/crates/airbender-crypto/src/secp256k1/context.rs b/crates/airbender-crypto/src/secp256k1/context.rs
+index b772ceb..2461d8b 100644
+--- a/crates/airbender-crypto/src/secp256k1/context.rs
++++ b/crates/airbender-crypto/src/secp256k1/context.rs
+@@ -36,7 +36,7 @@ impl ECMultContext {
+         context
+     }
+ 
+-    const fn compute_table(table: &mut [AffineStorage; ECMULT_TABLE_SIZE_G], gen: &JacobianConst) {
++    pub(super) const fn compute_table(table: &mut [AffineStorage; ECMULT_TABLE_SIZE_G], gen: &JacobianConst) {
+         use const_for::const_for;
+ 
+         let mut gj = *gen;
+diff --git a/crates/airbender-crypto/src/secp256k1/hooks.rs b/crates/airbender-crypto/src/secp256k1/hooks.rs
+index fdfe98c..e8a4de9 100644
+--- a/crates/airbender-crypto/src/secp256k1/hooks.rs
++++ b/crates/airbender-crypto/src/secp256k1/hooks.rs
+@@ -3,6 +3,16 @@
+ //! See the [Secp256k1 Hooks](https://matter-labs.github.io/airbender-platform/latest/04-crypto-on-guest-and-host.html#secp256k1-hooks)
+ //! section of the book for usage details and examples.
+ 
++/// A recovery's key and a short multiple from a host, for the check of `recover_glv4`: the
++/// point `q` and `(k0, k1, m0, m1)` as magnitudes and signs (true: negative), with
++/// `(k0 + k1·λ)·na = m0 + m1·λ` modulo the order.
++pub struct RecoverHint {
++    pub qx: super::field::FieldElement,
++    pub qy: super::field::FieldElement,
++    pub magnitude: [u128; 4],
++    pub negative: [bool; 4],
++}
++
+ pub trait Secp256k1Hooks {
+     /// Tells that `fe_invert_and_assign` costs about as much as a few field multiplications
+     /// (e.g. it takes the inverse as a hint and checks it), so the algorithms can use inversions
+@@ -16,6 +26,17 @@ pub trait Secp256k1Hooks {
+     /// the Jacobian formulas.
+     const FE_DIVIDE_IS_CHEAP: bool = false;
+ 
++    /// For the recovery `na·R + ng·G` of the point `r = (R.x, R.y)` and the scalars
++    /// `[na, ng]`: the host's key and short multiple, which `recover_glv4` checks, or `None`
++    /// to compute the key. Only with a cheap division (the check runs in affine coordinates).
++    fn recover_hint(
++        &mut self,
++        _r: &[super::field::FieldElement; 2],
++        _scalars: &[super::scalars::Scalar; 2],
++    ) -> Option<RecoverHint> {
++        None
++    }
++
+     fn fe_sqrt_and_assign(&mut self, fe: &mut super::field::FieldElement) -> bool;
+     fn fe_invert_and_assign(&mut self, fe: &mut super::field::FieldElement);
+     fn scalar_invert_and_assign(&mut self, scalar: &mut super::scalars::Scalar);
+diff --git a/crates/airbender-crypto/src/secp256k1/mod.rs b/crates/airbender-crypto/src/secp256k1/mod.rs
+index c8ff255..ca6e2d3 100644
+--- a/crates/airbender-crypto/src/secp256k1/mod.rs
++++ b/crates/airbender-crypto/src/secp256k1/mod.rs
+@@ -7,6 +7,8 @@ pub mod hooks;
+ mod points;
+ mod recover;
+ mod recover_affine;
++#[cfg(feature = "secp256k1-static-context")]
++mod recover_glv4;
+ #[cfg(all(feature = "secp256k1-shamir-msm", feature = "bigint_ops"))]
+ mod recover_shamir;
+ pub mod scalars;
+diff --git a/crates/airbender-crypto/src/secp256k1/recover.rs b/crates/airbender-crypto/src/secp256k1/recover.rs
+index b067fcf..d9b2732 100644
+--- a/crates/airbender-crypto/src/secp256k1/recover.rs
++++ b/crates/airbender-crypto/src/secp256k1/recover.rs
+@@ -132,6 +132,16 @@ fn recover_from_point<H: super::hooks::Secp256k1Hooks>(
+     sigr *= message;
+     sigr.negate_in_place();
+ 
++    // A host's key, checked by one equation of 64-bit scalars (recover_glv4.rs)
++    #[cfg(feature = "secp256k1-static-context")]
++    if H::FE_DIVIDE_IS_CHEAP {
++        if let Some(hint) = hooks.recover_hint(&[x.x, x.y], &[sigs, sigr]) {
++            let mut pk = super::recover_glv4::checked_key(x, &sigs, &sigr, &hint, hooks);
++            pk.normalize_in_place();
++            return Ok(pk);
++        }
++    }
++
+     let mut pk = if H::FE_DIVIDE_IS_CHEAP {
+         super::recover_affine::ecmult_affine(x, &sigs, &sigr, context, hooks)
+     } else {
+diff --git a/crates/airbender-crypto/src/secp256k1/recover_affine.rs b/crates/airbender-crypto/src/secp256k1/recover_affine.rs
+index 6f4f366..568c34f 100644
+--- a/crates/airbender-crypto/src/secp256k1/recover_affine.rs
++++ b/crates/airbender-crypto/src/secp256k1/recover_affine.rs
+@@ -158,7 +158,7 @@ fn apply_slope(r: &mut Affine, slope: &FieldElement, x2: Option<&FieldElement>)
+ }
+ 
+ /// `r = 2 r`
+-fn double<H: Secp256k1Hooks>(r: &mut Affine, hooks: &mut H) {
++pub(super) fn double<H: Secp256k1Hooks>(r: &mut Affine, hooks: &mut H) {
+     if r.infinity {
+         return;
+     }
+@@ -227,7 +227,7 @@ fn set(r: &mut Affine, x: &FieldElement, y: &FieldElement, negate: bool) {
+ }
+ 
+ /// `r = r + p`, or `r - p` if `negate`, for the point `p = (x, y)`
+-fn add<H: Secp256k1Hooks>(
++pub(super) fn add<H: Secp256k1Hooks>(
+     r: &mut Affine,
+     x: &FieldElement,
+     y: &FieldElement,
+@@ -257,7 +257,7 @@ fn add<H: Secp256k1Hooks>(
+ /// `r = 2 r + p`, or `2 r - p` if `negate`, for the point `p = (x, y)`: `(r + p) + r` without the
+ /// `y` coordinate of `r + p` (see the module documentation). The cases it does not cover (`p`
+ /// is `r` or `-r`, or `r + p` is `r` or `-r`) are a doubling and an addition.
+-fn double_and_add<H: Secp256k1Hooks>(
++pub(super) fn double_and_add<H: Secp256k1Hooks>(
+     r: &mut Affine,
+     x: &FieldElement,
+     y: &FieldElement,
+@@ -451,7 +451,7 @@ pub(super) fn ecmult_affine<H: Secp256k1Hooks>(
+ /// The coordinates of a stored multiple of the generator: read in place with the delegated
+ /// field, converted otherwise
+ #[inline(always)]
+-fn with_stored(stored: &AffineStorage, f: impl FnOnce(&FieldElement, &FieldElement)) {
++pub(super) fn with_stored(stored: &AffineStorage, f: impl FnOnce(&FieldElement, &FieldElement)) {
+     #[cfg(feature = "bigint_ops")]
+     {
+         let (x, y) = stored.coordinates();
+diff --git a/crates/airbender-crypto/src/secp256k1/recover_glv4.rs b/crates/airbender-crypto/src/secp256k1/recover_glv4.rs
+new file mode 100644
+index 0000000..ee66b27
+--- /dev/null
++++ b/crates/airbender-crypto/src/secp256k1/recover_glv4.rs
+@@ -0,0 +1,285 @@
++//! ecrecover with the key a host computed, checked by one equation of 64-bit scalars.
++//!
++//! The recovery is `Q = na·R + ng·G` (`na = s/r`, `ng = -z/r`). For any `k` invertible modulo
++//! the order, `Q` is that point exactly when `k·Q - (k·na)·R - (k·ng)·G = O`. The host gives
++//! `Q` and a `k = k0 + k1·λ` whose `k·na = m0 + m1·λ` is short too: `(k0, k1, m0, m1)` is a
++//! short vector of a 4-dimensional lattice of determinant `n`, about 64 bits a coordinate (the
++//! runner's glv4.rs, by LLL). With the endomorphism `λ·(x, y) = (β·x, y)` the equation is
++//!
++//! `k0·Q + k1·φ(Q) - m0·R - m1·φ(R) - c0·G - c1·2^64·G - c2·2^128·G - c3·2^192·G = O`
++//!
++//! for the 64-bit words `c_j` of `k·ng`: eight multiples of 64-bit scalars, so one run of about
++//! 65 doublings where the recovery's own multiplication has 128 (its scalars are split in
++//! halves of 128 bits), and about as many additions. The steps are recover_affine's, in affine
++//! coordinates with hinted divisions.
++//!
++//! What is checked: `Q` on the curve; `k ≠ 0`, `k·na = m0 + m1·λ`; and the sum, the point at
++//! infinity. Then `Q - na·R - ng·G` is a point that `k` sends to infinity in a group of prime
++//! order, so it is infinity itself: `Q` is the key. A host that lies fails an assertion, which
++//! halts the guest. A recovery with no key (the point at infinity) has no hint, and goes the
++//! recovery's own way.
++
++use super::{
++    context::{ECMultContext, ECMULT_TABLE_SIZE_G, ECRECOVER_CONTEXT, WINDOW_G},
++    field::FieldElement,
++    hooks::{RecoverHint, Secp256k1Hooks},
++    points::{Affine, AffineStorage, JacobianConst},
++    recover::{table_index, WnafDigit},
++    recover_affine::{add, double, double_and_add, with_stored},
++    scalars::Scalar,
++};
++use core::mem::MaybeUninit;
++
++/// The variable points' window: eight odd multiples of `Q` and of `R`
++const WINDOW_V: usize = 5;
++const TABLE_V: usize = 1 << (WINDOW_V - 2);
++/// The host's magnitudes are below 2^64 in practice; a bound the digits below hold
++const MAX_BITS: u32 = 66;
++/// wNAF digit positions for MAX_BITS-bit scalars: a last digit's carry lands up to a window
++/// (10 bits, the generator's) past the top bit
++const DIGITS: usize = 80;
++// A digit past DIGITS would be dropped and the check would test another sum: the last digit
++// sits at most WINDOW_G past bit MAX_BITS - 1, and wnaf_words reads a word past `bit >> 5`
++// (four words cover 128 bits).
++const _: () = assert!(MAX_BITS as usize + WINDOW_G <= DIGITS && WINDOW_V <= WINDOW_G);
++const _: () = assert!((DIGITS - 1) / 32 + 1 < 4);
++
++/// `λ`, big-endian: `λ·(x, y) = (β·x, y)` for `FieldElement::BETA`
++const LAMBDA_BE: [u8; 32] = [
++    0x53, 0x63, 0xad, 0x4c, 0xc0, 0x5c, 0x30, 0xe0, 0xa5, 0x26, 0x1c, 0x02, 0x88, 0x12, 0x64, 0x5a,
++    0x12, 0x2e, 0x22, 0xea, 0x20, 0x81, 0x66, 0x78, 0xdf, 0x02, 0x96, 0x7c, 0x1b, 0x23, 0xbd, 0x72,
++];
++
++/// The odd multiples of `2^64·G` and `2^192·G`, as `ECRECOVER_CONTEXT` holds those of `G` and
++/// `2^128·G`
++struct Glv4Tables {
++    pre_g_64: [AffineStorage; ECMULT_TABLE_SIZE_G],
++    pre_g_192: [AffineStorage; ECMULT_TABLE_SIZE_G],
++}
++
++impl Glv4Tables {
++    const fn const_new() -> Self {
++        use const_for::const_for;
++        let mut t = Self {
++            pre_g_64: [AffineStorage::DEFAULT; ECMULT_TABLE_SIZE_G],
++            pre_g_192: [AffineStorage::DEFAULT; ECMULT_TABLE_SIZE_G],
++        };
++        let mut gj = JacobianConst::GENERATOR;
++        const_for!(_ in 0..64 => {
++            gj = gj.double(None);
++        });
++        ECMultContext::compute_table(&mut t.pre_g_64, &gj);
++        const_for!(_ in 0..128 => {
++            gj = gj.double(None);
++        });
++        ECMultContext::compute_table(&mut t.pre_g_192, &gj);
++        t
++    }
++}
++
++static GLV4_TABLES: Glv4Tables = Glv4Tables::const_new();
++
++/// The scalar of a signed 128-bit magnitude
++fn scalar_of(magnitude: u128, negative: bool) -> Scalar {
++    let mut bytes = [0u8; 32];
++    bytes[16..].copy_from_slice(&magnitude.to_be_bytes());
++    let s = Scalar::from_be_bytes_reduced(&bytes);
++    if negative {
++        -s
++    } else {
++        s
++    }
++}
++
++/// The width-`w` non-adjacent form of `k`, below 2^MAX_BITS, into `digits` (zero elsewhere):
++/// the number of digit positions it takes. As recover.rs's `wnaf`, on 32-bit words, where a
++/// 128-bit shift a bit costs a dozen instructions on this target.
++fn wnaf_words(digits: &mut [WnafDigit; DIGITS], k: u128, w: usize) -> usize {
++    let words = [k as u32, (k >> 32) as u32, (k >> 64) as u32, 0u32];
++    let mut top = 0;
++    let mut bit = 0;
++    let mut carry = 0i32;
++    while bit < DIGITS {
++        if ((words[bit >> 5] >> (bit & 31)) & 1) as i32 == carry {
++            bit += 1;
++            continue;
++        }
++        // the w bits from `bit` on, which may straddle two words
++        let pair = words[bit >> 5] as u64 | ((words[(bit >> 5) + 1] as u64) << 32);
++        let mut word = (((pair >> (bit & 31)) as u32) & ((1 << w) - 1)) as i32 + carry;
++        carry = (word >> (w - 1)) & 1;
++        word -= carry << w;
++        digits[bit] = word as WnafDigit;
++        top = bit + 1;
++        bit += w;
++    }
++    debug_assert_eq!(carry, 0);
++    top
++}
++
++/// The odd multiples `p, 3p, ..., 15p` and the `β·x` of each
++fn odd_multiples<H: Secp256k1Hooks>(
++    p: &Affine,
++    multiples: &mut [MaybeUninit<Affine>; TABLE_V],
++    images: &mut [MaybeUninit<FieldElement>; TABLE_V],
++    hooks: &mut H,
++) {
++    let mut doubled = *p;
++    doubled.infinity = false;
++    double(&mut doubled, hooks);
++    let mut multiple = *p;
++    multiple.infinity = false;
++    for i in 0..TABLE_V {
++        if i > 0 && !doubled.infinity {
++            add(&mut multiple, &doubled.x, &doubled.y, false, hooks);
++        }
++        let mut image = FieldElement::BETA;
++        image.mul_in_place(&multiple.x);
++        images[i].write(image);
++        multiples[i].write(multiple);
++    }
++}
++
++/// `Q`, after the checks of the module documentation; an assertion fails on a wrong hint
++pub(super) fn checked_key<H: Secp256k1Hooks>(
++    r_point: &Affine,
++    na: &Scalar,
++    ng: &Scalar,
++    hint: &RecoverHint,
++    hooks: &mut H,
++) -> Affine {
++    let [k0, k1, m0, m1] = hint.magnitude;
++    let [n0, n1, n2, n3] = hint.negative;
++    assert!(hint.magnitude.iter().all(|&m| m >> MAX_BITS == 0), "recover hint: scalar too long");
++    assert!(k0 != 0 || k1 != 0, "recover hint: k = 0");
++
++    // k·na = m, modulo the order, with k invertible
++    let lambda = Scalar::from_be_bytes_reduced(&LAMBDA_BE);
++    let mut k = scalar_of(k1, n1);
++    k *= &lambda;
++    k += scalar_of(k0, n0);
++    assert!(!k.is_zero(), "recover hint: k = 0 mod n");
++    let mut m = scalar_of(m1, n3);
++    m *= &lambda;
++    m += scalar_of(m0, n2);
++    let mut k_na = k;
++    k_na *= na;
++    assert!((k_na - m).is_zero(), "recover hint: k·na != m");
++
++    // Q on the curve: y^2 = x^3 + 7
++    let mut lhs = hint.qy;
++    lhs.square_in_place();
++    let mut rhs = hint.qx;
++    rhs.square_in_place();
++    rhs.mul_in_place(&hint.qx);
++    rhs += 7;
++    lhs.sub_in_place(&rhs);
++    assert!(lhs.is_zero(), "recover hint: Q off the curve");
++    let q = Affine { x: hint.qx, y: hint.qy, infinity: false };
++
++    // c = k·ng, its 64-bit words
++    let mut c = k;
++    c *= ng;
++    let c_bytes: [u8; 32] = c.to_repr().into();
++    let c_word = |j: usize| -> u128 {
++        let mut w = [0u8; 8];
++        w.copy_from_slice(&c_bytes[24 - 8 * j..32 - 8 * j]);
++        u64::from_be_bytes(w) as u128
++    };
++
++    let mut q_multiples: [MaybeUninit<Affine>; TABLE_V] = [const { MaybeUninit::uninit() }; TABLE_V];
++    let mut q_images: [MaybeUninit<FieldElement>; TABLE_V] = [const { MaybeUninit::uninit() }; TABLE_V];
++    let mut r_multiples: [MaybeUninit<Affine>; TABLE_V] = [const { MaybeUninit::uninit() }; TABLE_V];
++    let mut r_images: [MaybeUninit<FieldElement>; TABLE_V] = [const { MaybeUninit::uninit() }; TABLE_V];
++    odd_multiples(&q, &mut q_multiples, &mut q_images, hooks);
++    odd_multiples(r_point, &mut r_multiples, &mut r_images, hooks);
++
++    // The digits: Q's and φ(Q)'s, R's and φ(R)'s (negated: -m·R), and the generator's four
++    // (negated: -c·G)
++    let mut digits = [[0 as WnafDigit; DIGITS]; 8];
++    let mut bits = 0;
++    for (i, (magnitude, w)) in [
++        (k0, WINDOW_V),
++        (k1, WINDOW_V),
++        (m0, WINDOW_V),
++        (m1, WINDOW_V),
++        (c_word(0), WINDOW_G),
++        (c_word(1), WINDOW_G),
++        (c_word(2), WINDOW_G),
++        (c_word(3), WINDOW_G),
++    ]
++    .into_iter()
++    .enumerate()
++    {
++        bits = bits.max(wnaf_words(&mut digits[i], magnitude, w));
++    }
++    let flips = [n0, n1, !n2, !n3, true, true, true, true];
++
++    let mut acc = Affine::INFINITY;
++    // the first addition after a doubling goes together with it
++    let step = |acc: &mut Affine,
++                doubled: &mut bool,
++                x: &FieldElement,
++                y: &FieldElement,
++                negate: bool,
++                hooks: &mut H| {
++        if *doubled {
++            add(acc, x, y, negate, hooks);
++        } else {
++            double_and_add(acc, x, y, negate, hooks);
++            *doubled = true;
++        }
++    };
++    // The static context's tables, whatever context the recovery was given: the guest has
++    // only that one.
++    let tables: [&[AffineStorage; ECMULT_TABLE_SIZE_G]; 4] = [
++        &ECRECOVER_CONTEXT.pre_g,
++        &GLV4_TABLES.pre_g_64,
++        &ECRECOVER_CONTEXT.pre_g_128,
++        &GLV4_TABLES.pre_g_192,
++    ];
++    // A stream's digit at a position: unrolled, as a loop over the streams costs its
++    // counter and its tests at every position
++    macro_rules! variable {
++        ($s:expr, $i:expr, $doubled:expr, $multiples:expr, $images:expr, $image:expr) => {
++            let n = digits[$s][$i];
++            if n != 0 {
++                let (idx, negate) = table_index(n, WINDOW_V);
++                // SAFETY: odd_multiples wrote every entry
++                let (point, image) =
++                    unsafe { ($multiples[idx].assume_init_ref(), $images[idx].assume_init_ref()) };
++                if !point.infinity {
++                    let x = if $image { image } else { &point.x };
++                    step(&mut acc, &mut $doubled, x, &point.y, negate ^ flips[$s], hooks);
++                }
++            }
++        };
++    }
++    macro_rules! fixed {
++        ($s:expr, $i:expr, $doubled:expr) => {
++            let n = digits[$s][$i];
++            if n != 0 {
++                let (idx, negate) = table_index(n, WINDOW_G);
++                with_stored(&tables[$s - 4][idx], |x, y| {
++                    step(&mut acc, &mut $doubled, x, y, negate ^ flips[$s], hooks)
++                });
++            }
++        };
++    }
++    for i in (0..bits).rev() {
++        let mut doubled = false;
++        variable!(0, i, doubled, q_multiples, q_images, false);
++        variable!(1, i, doubled, q_multiples, q_images, true);
++        variable!(2, i, doubled, r_multiples, r_images, false);
++        variable!(3, i, doubled, r_multiples, r_images, true);
++        fixed!(4, i, doubled);
++        fixed!(5, i, doubled);
++        fixed!(6, i, doubled);
++        fixed!(7, i, doubled);
++        if !doubled {
++            double(&mut acc, hooks);
++        }
++    }
++    assert!(acc.infinity, "recover hint: the key does not check");
++    q
++}

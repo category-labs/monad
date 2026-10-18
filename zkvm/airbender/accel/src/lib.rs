@@ -54,7 +54,9 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
 /// where the Jacobian formulas take 7 to 11.
 mod hints {
     use airbender_crypto::secp256k1::{
-        field::FieldElement, hooks::Secp256k1Hooks, scalars::Scalar,
+        field::FieldElement,
+        hooks::{RecoverHint, Secp256k1Hooks},
+        scalars::Scalar,
     };
     use airbender_crypto::{bigint_op_delegation_raw, BigIntOps};
     use core::mem::MaybeUninit;
@@ -71,6 +73,10 @@ mod hints {
     const INVERT: u32 = 0x4d44_5612;
     /// s: 1/s modulo the group order.
     const SCALAR_INVERT: u32 = 0x4d44_5613;
+    /// R.x, R.y, na, ng (adjacent): a word, non-zero if the key na·R + ng·G
+    /// exists, then the key (x, y) and a short (k0, k1, m0, m1), each a sign
+    /// word and four magnitude words (runner glv4.rs).
+    const RECOVER: u32 = 0x4d44_5614;
 
     /// `2^256 mod p` and `2^256 mod n`: the words of one.
     const R_MOD_P: [u32; 8] = [0x3d1, 0x1, 0, 0, 0, 0, 0, 0];
@@ -183,6 +189,46 @@ mod hints {
             denominator.sub_in_place(numerator);
             assert!(denominator.is_zero());
             quotient
+        }
+
+        /// The key and the short multiple, which airbender-crypto's
+        /// recover_glv4 checks: none of it is trusted.
+        fn recover_hint(
+            &mut self,
+            r: &[FieldElement; 2],
+            scalars: &[Scalar; 2],
+        ) -> Option<RecoverHint> {
+            #[repr(C, align(32))]
+            struct Operands([FieldElement; 2], [Scalar; 2]);
+            let operands = Operands(*r, *scalars);
+            write(RECOVER);
+            write(core::ptr::from_ref(&operands).cast::<u8>() as usize as u32);
+            if read() == 0 {
+                return None;
+            }
+            let element = || {
+                let mut e = MaybeUninit::<FieldElement>::uninit();
+                let words = e.as_mut_ptr().cast::<u32>();
+                // SAFETY: the element is its eight words (checked above), any
+                // value of which is an element
+                unsafe {
+                    for i in 0..8 {
+                        words.add(i).write(read());
+                    }
+                    e.assume_init()
+                }
+            };
+            let qx = element();
+            let qy = element();
+            let mut magnitude = [0u128; 4];
+            let mut negative = [false; 4];
+            for i in 0..4 {
+                negative[i] = read() != 0;
+                for j in 0..4 {
+                    magnitude[i] |= (read() as u128) << (32 * j);
+                }
+            }
+            Some(RecoverHint { qx, qy, magnitude, negative })
         }
 
         fn fe_sqrt_and_assign(&mut self, x: &mut FieldElement) -> bool {

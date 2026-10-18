@@ -44,21 +44,29 @@ const SECP_SQRT: u32 = TAG | 0x11;
 const SECP_INVERT: u32 = TAG | 0x12;
 /// s: 1/s modulo the group order.
 const SECP_SCALAR_INVERT: u32 = TAG | 0x13;
+/// ecrecover's point R, na and ng (R.x, R.y, na, ng, adjacent): a word, 1 if
+/// na·R + ng·G is not the point at infinity, and then that point Q (x, y) and
+/// a short (k0, k1, m0, m1) with (k0 + k1·λ)·na = m0 + m1·λ mod n, each a
+/// sign word and four magnitude words (glv4.rs).
+const SECP_RECOVER: u32 = TAG | 0x14;
 
-const QUERIES: [(u32, &str); 6] = [
+mod glv4;
+
+const QUERIES: [(u32, &str); 7] = [
     (DIV, "div"),
     (WIDE_DIV, "wide_div"),
     (SECP_DIVIDE, "secp_divide"),
     (SECP_SQRT, "secp_sqrt"),
     (SECP_INVERT, "secp_invert"),
     (SECP_SCALAR_INVERT, "secp_scalar_invert"),
+    (SECP_RECOVER, "secp_recover"),
 ];
 
 fn operand_count(tag: u32) -> usize {
     match tag {
         DIV => 2,
         WIDE_DIV => 3,
-        SECP_DIVIDE | SECP_SQRT | SECP_INVERT | SECP_SCALAR_INVERT => 1,
+        SECP_DIVIDE | SECP_SQRT | SECP_INVERT | SECP_SCALAR_INVERT | SECP_RECOVER => 1,
         _ => 0,
     }
 }
@@ -153,8 +161,15 @@ struct Oracle {
     /// `--corrupt <n>:<how>`: a wrong answer to the n-th query, to check
     /// that the guest refuses it.
     corrupt: Option<(u64, String)>,
+    /// `--corrupt-recover <n>:<how>`: a lie in the n-th recovery hint
+    /// (glv4.rs): negq (the key's negation, on the curve), k0 (k0 + 1),
+    /// swap (k and m exchanged), scale (all four doubled: still true),
+    /// negall (all four negated: still true), nokey (no key: the guest
+    /// computes it).
+    corrupt_recover: Option<(u64, String)>,
     secp_p: Field,
     secp_n: Field,
+    curve: glv4::Curve,
 }
 
 impl Oracle {
@@ -167,8 +182,10 @@ impl Oracle {
             transcript: Vec::new(),
             counts: [0; QUERIES.len()],
             corrupt: None,
+            corrupt_recover: None,
             secp_p: Field::new("fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f"),
             secp_n: Field::new("fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141"),
+            curve: glv4::Curve::secp256k1(),
         }
     }
 
@@ -199,8 +216,9 @@ impl Oracle {
         let index = QUERIES.iter().position(|(t, _)| *t == tag).unwrap();
         self.counts[index] += 1;
         // The answer: a value of `words` words, then for a square root its
-        // flag. A zero divisor is never queried; it gets a zero, which fails
-        // the guest's check.
+        // flag (a recovery's goes first). A zero divisor is never queried;
+        // it gets a zero, which fails the guest's check.
+        let mut lead: Option<u32> = None;
         let (mut value, words, mut flag) = match tag {
             DIV => {
                 let u = read_u256(ram, addresses[0]);
@@ -237,6 +255,52 @@ impl Oracle {
                 let x = f.element(read_u256(ram, addresses[0]));
                 (f.words(&f.inverse(&x)), 8, None)
             }
+            SECP_RECOVER => {
+                let (fp, fq) = (&self.secp_p, &self.secp_n);
+                let a = addresses[0];
+                let r = (fp.element(read_u256(ram, a)), fp.element(read_u256(ram, a + 32)));
+                let na = fq.element(read_u256(ram, a + 64));
+                let ng = fq.element(read_u256(ram, a + 96));
+                let lie = self
+                    .corrupt_recover
+                    .as_ref()
+                    .filter(|(n, _)| *n == self.counts[index])
+                    .map(|(_, how)| how.clone());
+                if let Some(how) = &lie {
+                    eprintln!("corrupted recovery hint {} ({how})", self.counts[index]);
+                }
+                let key = if lie.as_deref() == Some("nokey") { None } else { self.curve.recover(&r, &na, &ng) };
+                match key {
+                    None => {
+                        lead = Some(0);
+                        (BigUint::default(), 0, None)
+                    }
+                    Some((qx, qy)) => {
+                        lead = Some(1);
+                        let mut v = self.curve.short_multiple(&na);
+                        let qy = if lie.as_deref() == Some("negq") { (&fp.m - &qy) % &fp.m } else { qy };
+                        match lie.as_deref() {
+                            Some("k0") => v[0] += 1,
+                            Some("swap") => v.swap(0, 2),
+                            Some("scale") => v.iter_mut().for_each(|e| *e *= 2),
+                            Some("negall") => v.iter_mut().for_each(|e| *e = -e.clone()),
+                            _ => {}
+                        }
+                        // 8 + 8 words of Q, then per scalar a sign word and four
+                        // magnitude words, least significant first
+                        let mut all = fp.words(&qy) << 256u32 | fp.words(&qx);
+                        let mut shift = 512u32;
+                        for e in &v {
+                            let neg = BigUint::from(u32::from(e.sign() == num_bigint::Sign::Minus));
+                            let mag = e.magnitude().clone();
+                            assert!(mag.bits() <= 128);
+                            all |= (neg | mag << 32u32) << shift;
+                            shift += 160;
+                        }
+                        (all, 36, None)
+                    }
+                }
+            }
             _ => unreachable!(),
         };
         if let Some((n, how)) = &self.corrupt {
@@ -257,6 +321,7 @@ impl Oracle {
         }
         let mut digits = value.to_u32_digits();
         digits.resize(words, 0);
+        self.answers.extend(lead);
         self.answers.extend(digits);
         self.answers.extend(flag);
     }
@@ -348,6 +413,10 @@ fn main() {
     oracle.corrupt = option("--corrupt").map(|c| {
         let (n, how) = c.split_once(':').expect("--corrupt <n>:<how>");
         (n.parse().expect("--corrupt <n>"), how.to_string())
+    });
+    oracle.corrupt_recover = option("--corrupt-recover").map(|c| {
+        let (n, how) = c.split_once(':').expect("--corrupt-recover <n>:<how>");
+        (n.parse().expect("--corrupt-recover <n>"), how.to_string())
     });
     let outcome = runner.run_with_source(Source(&mut oracle)).expect("transpiler execution");
 

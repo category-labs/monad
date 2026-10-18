@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/likely.h>
 #include <category/vm/runtime/bin.hpp>
 
 #include <algorithm>
@@ -205,7 +206,11 @@ namespace monad::vm::interpreter
 
         bool is_jumpdest(size_t const pc) const noexcept
         {
+#if defined(MONAD_ZKVM_AIRBENDER)
+            return pc < *code_size_ && is_jumpdest16(pc);
+#else
             return pc < *code_size_ && jumpdest_map_.test(pc);
+#endif
         }
 
 #if defined(MONAD_ZKVM_ZISK)
@@ -221,12 +226,28 @@ namespace monad::vm::interpreter
         // makes gcc zero-extend a value the decode already built in 16 bits.
         bool is_jumpdest16(size_t const pc) const noexcept
         {
-#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
+#if defined(MONAD_ZKVM_AIRBENDER)
+            // A set bit is a JUMPDEST; a clear one is not, once its chunk is
+            // analysed (lazy_is_jumpdest).
+            return MONAD_LIKELY(jumpdest_map_.test(pc)) || lazy_test(pc);
+#elif defined(MONAD_ZKVM_ZISK)
             return jumpdest_map_.test(pc);
 #else
             return is_jumpdest(pc);
 #endif
         }
+
+#if defined(MONAD_ZKVM_AIRBENDER)
+        // The code is analysed by chunks of 2^lazy_chunk_shift bytes, each
+        // when a jump first tests a position in it: a block runs about four
+        // in ten of the chunks of the codes it analysed. A chunk's bits are
+        // exact once it is analysed, and a set bit anywhere is a JUMPDEST.
+        static constexpr size_t lazy_chunk_shift = 7;
+
+        // Whether pc is a JUMPDEST, its chunk analysed first if it was not:
+        // the test of a position whose bit is clear.
+        bool lazy_is_jumpdest(size_t pc) noexcept;
+#endif
 
         [[gnu::always_inline]]
         size_t copy_code(
@@ -246,6 +267,30 @@ namespace monad::vm::interpreter
         uint8_t const *padded_code_;
         code_size_t code_size_;
         JumpdestMap jumpdest_map_;
+#if defined(MONAD_ZKVM_AIRBENDER)
+        // Per chunk, 0 until it is analysed, then 1 + how far past the
+        // chunk's end the instruction boundary its scan stopped at lies --
+        // where the next chunk's scan starts. Fresh memory, zero.
+        uint8_t *chunk_ends_;
+
+        void analyse_chunk(size_t k) noexcept;
+
+        // lazy_is_jumpdest through a trampoline that saves every register
+        // it does not return in (intercode.cpp): a call gcc sees would make
+        // each jump handler save its arguments in a frame, on every jump.
+        [[gnu::always_inline]] bool lazy_test(size_t const pc) const noexcept
+        {
+            register uintptr_t r asm("t1") = reinterpret_cast<uintptr_t>(this);
+            register uintptr_t const p asm("t2") = pc;
+            asm volatile("1: auipc t0, %%pcrel_hi(monad_vm_lazy_jumpdest_"
+                         "trampoline)\n\t"
+                         "jalr t0, %%pcrel_lo(1b)(t0)"
+                         : "+r"(r)
+                         : "r"(p)
+                         : "t0", "memory");
+            return r != 0;
+        }
+#endif
 
         static uint8_t const *pad(std::span<uint8_t const> code);
 

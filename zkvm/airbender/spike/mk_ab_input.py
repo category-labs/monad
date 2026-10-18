@@ -16,6 +16,15 @@ copy move whole words on rv32, which has no unaligned access:
 - before each branch node: its sixteen child ids, read by words when aligned.
 - before an extension's digest child: copied to the end of its RLP less 33.
 
+A branch with a digest child instead gets a frame (Tag::BRANCH_FRAMED): its
+expanded children's subtrees first, then, from a word boundary, its RLP's
+bytes as they lie -- PAD bytes for the list header, each empty child's 0x80
+and the empty value's, a SLOT (b"S" + 32 bytes) for each hash reference to a
+child the blob holds, PAD bytes for an inlined child's RLP, and each digest
+child's node where its reference goes -- then PAD bytes to the branch node,
+tag 4, its payload on a word. The guest writes the bytes the frame leaves to
+it and hashes the RLP in place (OffsetTrie::frame_branch): no digest copied.
+
 The codes, an RLP list of strings for the other guests, become a raw field
 the Airbender guest uses in place (execute_witness.cpp): "MZC\x01", the count
 and the lengths as u32s, then each code at the first 8-byte boundary at least
@@ -38,7 +47,7 @@ import sys
 # argv[0]: the scripts that exec this file's helpers sit beside it).
 W = os.environ.get("MONAD_ZKVM_WORK") or os.path.abspath(
     os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), *[".."] * 5))
-OUT = f"{W}/airbender/out/abin"
+OUT = os.environ.get("ABIN_OUT", f"{W}/airbender/out/abin")
 PAD = ord("P")
 
 
@@ -126,6 +135,7 @@ class Builder:
         self.buf = bytearray(b"MZW\x01\x00\x00\x00\x00")
         self.digests = 0
         self.pads = 0
+        self.frames = 0
 
     def emit(self, data):
         off = len(self.buf)
@@ -168,6 +178,35 @@ class Builder:
 
     def node(self, rlp, storage):
         items = rlp_list(rlp)
+        if len(items) == 17 and self.base is not None and any(self.is_digest(x) for x in items[:16]):
+            assert items[16] == b"\x80", "branch with value"
+            kids = [0] * 16
+            for i in range(16):
+                if items[i] != b"\x80" and not self.is_digest(items[i]):
+                    kids[i] = self.child(items[i], storage)
+            self.pad_to(0)
+            start = len(self.buf)
+            head = len(rlp) - sum(len(x) for x in items)
+            self.buf += bytes([PAD]) * head
+            for i in range(16):
+                x = items[i]
+                if x == b"\x80":
+                    self.buf.append(PAD)
+                elif self.is_digest(x):
+                    self.digests += 1
+                    kids[i] = self.emit(x)  # 0xa0 + hash: the digest node and its reference
+                elif len(x) == 33 and not rlp_payload(x)[0]:
+                    self.buf += b"S" + bytes(32)
+                else:
+                    assert len(x) < 32
+                    self.buf += bytes([PAD]) * len(x)
+            self.buf.append(PAD)  # the empty value
+            assert len(self.buf) - start == len(rlp)
+            gap = len(self.buf)
+            self.pad_to(3)  # the payload, after the tag byte, on a word
+            gap = len(self.buf) - gap
+            self.frames += 1
+            return self.emit(bytes([4 + gap]) + struct.pack("<16I", *kids))
         if len(items) == 17:
             assert rlp_payload(items[16])[1] == b"", "branch with value"
             # The guest writes the branch's RLP back from a word-aligned end:
@@ -267,7 +306,7 @@ def main():
         same = ""
         if plain:
             same = " same as run/w" if data == open(f"{W}/run/w/rpc_{arg}.in", "rb").read() else " DIFFERS from run/w"
-        print(f"{arg}: blob {len(b.buf)} B, {b.digests} digests, {b.pads} pad bytes{same}")
+        print(f"{arg}: blob {len(b.buf)} B, {b.digests} digests, {b.pads} pad bytes, {b.frames} framed branches{same}")
 
 
 if __name__ == "__main__":

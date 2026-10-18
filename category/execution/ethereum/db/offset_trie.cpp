@@ -215,8 +215,15 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
             return;
         }
         uint64_t child_offset = static_cast<uint64_t>(c);
+#if defined(MONAD_ZKVM_AIRBENDER)
+        // A PAD byte's or a SLOT's mark is no node's.
+        MONAD_ASSERT(
+            child_offset < blob_size &&
+            (node_offsets[child_offset] & CLAIMABLE) != 0);
+#else
         MONAD_ASSERT(
             child_offset < blob_size && node_offsets[child_offset] != 0);
+#endif
         node_offsets[child_offset] = 0;
         unclaimed -= DIGEST_NODE_LEN;
     };
@@ -311,12 +318,35 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
         }
 #if !defined(MONAD_ZKVM_ZISK)
         if (node.tag() == PAD) {
-            // A filler byte: no node, so no mark and no claim -- the count
-            // started at the region's length, and this byte is no node's.
+            // A filler byte: no node, so no claim -- the count started at
+            // the region's length, and this byte is no node's. Marked on
+            // Airbender, where a framed branch may write it.
+    #if defined(MONAD_ZKVM_AIRBENDER)
+            *seen = PAD_MARK;
+    #endif
             ++seen;
             --unclaimed;
             node = NodeViewBase{node.bytes() + 1};
             continue;
+        }
+#endif
+#if defined(MONAD_ZKVM_AIRBENDER)
+        if (node.tag() == SLOT) {
+            // A framed branch's place for a reference: as PAD bytes, 33 of
+            // them, one mark. A SLOT past the region's end leaves the walk
+            // past it, which the tiling assert after the loop rejects.
+            *seen = SLOT_MARK;
+            seen += HASH_RLP_LEN;
+            unclaimed -= HASH_RLP_LEN;
+            node = NodeViewBase{node.bytes() + HASH_RLP_LEN};
+            continue;
+        }
+        // A framed branch is a branch to every reader after the walk.
+        unsigned const frame_gap = static_cast<unsigned>(node.tag()) -
+                                   static_cast<unsigned>(BRANCH_FRAMED);
+        bool const framed = frame_gap <= BRANCH_FRAMED_LAST - BRANCH_FRAMED;
+        if (framed) {
+            const_cast<unsigned char *>(node.bytes())[0] = BRANCH;
         }
 #endif
         // Wanted from here down -- by the hash key and by the marking below
@@ -387,6 +417,27 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
                 [&](AccountLeafView a) { is_valid_offset(a.storage()); },
                 [](auto) {}});
 
+#if defined(MONAD_ZKVM_AIRBENDER)
+        if (framed) {
+            size_t rlp_len;
+            unsigned char const *const rlp =
+                frame_branch(node_offsets.data(), node, frame_gap, rlp_len);
+            node_offsets[node_offset] = NODE_MARK;
+            unclaimed =
+                unclaimed + DIGEST_NODE_LEN - (next_offset - node_offset);
+            node = NodeViewBase{base + next_offset};
+            seen = node_offsets.data() + next_offset;
+            // As below: only a reference of 32 bytes or more is a hash. A
+            // frame holds a digest, so this is one, but nothing here needs
+            // the blob to have framed only such branches.
+            if (rlp_len >= 32) {
+                MONAD_KECCAK_SITE(TRIE_PRIME, rlp_len);
+                TRIE_PRIME_DIGEST(rlp, rlp_len, ch.h.bytes);
+                hashes_.insert_or_assign(NodeId{node_offset}, ch);
+            }
+            continue;
+        }
+#endif
         // checked_end has rejected every other tag and the arm above takes the
         // digests: the node is a branch, an extension or a leaf, and primed.
 #if defined(MONAD_ZKVM_ZISK)
@@ -529,6 +580,103 @@ namespace
                 (MAX_PATH_NIBBLES - 1 - n) / 2,
             n);
     }
+}
+#endif
+
+#if defined(MONAD_ZKVM_AIRBENDER)
+// The RLP is written back from the frame's end, `gap` bytes before the node,
+// as encode_rlp writes a branch into its buffer: the empty value's 0x80, each
+// child's reference from child 15's down -- 0x80 for none, a digest's 33
+// bytes where its node lies, 0xa0 and the hash of a child the walk primed
+// with an RLP of 32 bytes or more over a SLOT, the RLP of a smaller one over
+// PAD bytes -- and the list header. A child is a digest when its node is
+// one: then it must lie where its reference goes. A SLOT or a run of PAD
+// bytes is the blob's word that the reference is a hash or the RLP: either
+// way the other is rejected, a hash being cached only for a primed RLP of 32
+// bytes or more.
+//
+// Every byte written was walked as a PAD byte or inside a SLOT, so it is no
+// node's, and its mark is cleared as it is taken: no other frame takes it
+// again. With each digest where its reference goes and claimed by this
+// branch alone, the frame holds the branch's RLP and nothing else's.
+unsigned char const *OffsetTrie::frame_branch(
+    unsigned char *const marks, NodeViewBase const node, unsigned const gap,
+    size_t &rlp_len)
+{
+    auto *const blob = const_cast<unsigned char *>(blob_.data());
+    unsigned char const *const payload = node.bytes() + 1;
+    size_t const end = static_cast<size_t>(node.bytes() - blob) - gap;
+    size_t pos = end;
+    // Room below pos for n bytes, all past the blob's header.
+    auto const room = [&pos](size_t const n) {
+        MONAD_ASSERT(pos >= HEADER_LEN + n);
+        pos -= n;
+    };
+    auto const take = [marks, blob, &pos, &room](unsigned char const b) {
+        room(1);
+        MONAD_ASSERT(marks[pos] == PAD_MARK);
+        marks[pos] = 0;
+        blob[pos] = b;
+    };
+    // The ids by words from a payload the blob aligned, as the walk claims
+    // them.
+    node_id_wire_t ids[16];
+    if ((reinterpret_cast<uintptr_t>(payload) & 3) == 0) {
+        typedef node_id_wire_t __attribute__((__may_alias__)) word_t;
+        auto const *const words = reinterpret_cast<word_t const *>(payload);
+    #pragma GCC unroll 16
+        for (unsigned i = 0; i < 16; ++i) {
+            ids[i] = words[i];
+        }
+    }
+    else {
+        std::memcpy(ids, payload, sizeof(ids));
+    }
+    take(0x80);
+    for (unsigned i = 16; i-- != 0;) {
+        uint64_t const w = ids[i];
+        if (w == 0) {
+            take(0x80);
+            continue;
+        }
+        if (blob[w] == DIGEST) {
+            room(HASH_RLP_LEN);
+            MONAD_ASSERT(w == pos);
+            continue;
+        }
+        if (pos >= HEADER_LEN + HASH_RLP_LEN &&
+            marks[pos - HASH_RLP_LEN] == SLOT_MARK) {
+            bytes32_t const *const h = cached_hash(NodeId{w});
+            MONAD_ASSERT(h != nullptr);
+            pos -= HASH_RLP_LEN;
+            marks[pos] = 0;
+            blob[pos] = 0xa0;
+            std::memcpy(blob + pos + 1, h->bytes, KECCAK256_SIZE);
+            continue;
+        }
+        alignas(8) unsigned char buf[MAX_NODE_RLP];
+        node_rlp_span const r = child_ref<true>(NodeId{w}, node_rlp_span{buf});
+        size_t const n = r.rlp_size();
+        MONAD_ASSERT(n < 32);
+        for (size_t k = n; k-- != 0;) {
+            take(r.rlp_data()[k]);
+        }
+    }
+    size_t const payload_len = end - pos;
+    if (payload_len <= 55) {
+        take(static_cast<unsigned char>(0xc0 + payload_len));
+    }
+    else if (payload_len <= 0xff) {
+        take(static_cast<unsigned char>(payload_len));
+        take(0xf8);
+    }
+    else {
+        take(static_cast<unsigned char>(payload_len & 0xff));
+        take(static_cast<unsigned char>(payload_len >> 8));
+        take(0xf9);
+    }
+    rlp_len = end - pos;
+    return blob + pos;
 }
 #endif
 

@@ -48,6 +48,14 @@ enum Tag : uint8_t
     EXT = 1,
     LEAF_ACCT = 2,
     LEAF_STORAGE = 3,
+    // A branch whose canonical RLP the blob holds just before it (not on
+    // ZisK; zkvm/airbender/spike/mk_ab_input.py): its RLP's frame, a run of
+    // PAD bytes, SLOTs and its digest children in place, then tag - 4 PAD
+    // bytes to the branch. The constructor's walk writes the bytes the frame
+    // leaves to it, hashes the RLP where it lies and makes the node a BRANCH
+    // (OffsetTrie::frame_branch). Never seen past the walk.
+    BRANCH_FRAMED = 4,
+    BRANCH_FRAMED_LAST = 7,
     // By using 0xa0 as the digest tag, the digest aligns with its RLP encoding
     DIGEST = 0xa0,
     // NULL_ID addresses the blob's first magic byte, so the magic's leading
@@ -63,6 +71,10 @@ enum Tag : uint8_t
     // marks none, so no child or root can claim one, and match and
     // checked_end reject the tag.
     PAD = 'P',
+    // Where a framed branch's RLP has a child's 33-byte hash reference: a
+    // tag and 32 bytes the walk steps over (not on ZisK), which the branch
+    // writes the reference over. Never a node, as PAD.
+    SLOT = 'S',
 };
 
 inline constexpr uint32_t HEADER_LEN = 8; // magic(4) root_offset(4)
@@ -449,6 +461,12 @@ NodeViewBase::checked_end(unsigned char const *const region_end) const
 
     switch (tag()) {
     case BRANCH: // tag + 16 child offsets
+#if defined(MONAD_ZKVM_AIRBENDER)
+    case BRANCH_FRAMED:
+    case BRANCH_FRAMED + 1:
+    case BRANCH_FRAMED + 2:
+    case BRANCH_FRAMED_LAST:
+#endif
         end_off = fits(PAYLOAD_OFF + 16 * sizeof(node_id_wire_t));
         break;
     case EXT: // child offset + path
@@ -1084,9 +1102,31 @@ public:
     bytes32_t hash(NodeId id);
     bytes32_t state_root();
 
+#if defined(MONAD_ZKVM_AIRBENDER)
+    // The constructor's walk marks, per blob offset: a node's start, a
+    // digest's (DIGEST), a PAD byte and a SLOT. A child claims a node or a
+    // digest, which `mark & CLAIMABLE` tells from the rest.
+    static constexpr unsigned char NODE_MARK = 1;
+    static constexpr unsigned char PAD_MARK = 0x40;
+    static constexpr unsigned char SLOT_MARK = 0x42;
+    static constexpr unsigned char CLAIMABLE = 0xa1;
+    static_assert((NODE_MARK & CLAIMABLE) != 0 && (DIGEST & CLAIMABLE) != 0);
+    static_assert((PAD_MARK & CLAIMABLE) == 0 && (SLOT_MARK & CLAIMABLE) == 0);
+#endif
+
     using node_rlp_span = mpt::node_rlp_span<MAX_NODE_RLP>;
 
 private:
+#if defined(MONAD_ZKVM_AIRBENDER)
+    // The canonical RLP of the walk's framed branch at `node`, whose
+    // children it has claimed, written in its frame, which ends `gap` bytes
+    // before the node: its address, and its length in `rlp_len`. `marks`
+    // are the walk's.
+    unsigned char const *frame_branch(
+        unsigned char *marks, NodeViewBase node, unsigned gap,
+        size_t &rlp_len);
+#endif
+
     template <bool priming_pass>
     node_rlp_span child_ref_compute(
         NodeId const id, NodeViewBase const node, node_rlp_span dest);

@@ -16,7 +16,7 @@
 #include <category/core/bytes.hpp>
 #include <category/core/int.hpp>
 #include <category/core/runtime/uint256.hpp>
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     #include <category/vm/host.hpp>
 #endif
 #include <category/vm/runtime/environment.hpp>
@@ -56,7 +56,7 @@ namespace monad::vm::runtime
 
     void selfbalance(Context *const ctx, uint256_t *const result_ptr)
     {
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         // The guest's host by name, as SLOAD's (vm/host.hpp).
         auto const balance = static_cast<bytes32_t>(guest_get_balance(
             host_of(*ctx), host_shim::addr(&ctx->env.recipient)));

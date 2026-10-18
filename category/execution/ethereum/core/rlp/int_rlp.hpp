@@ -46,7 +46,7 @@ encode_unsigned(std::span<unsigned char> dest, unsigned_integral auto const &n)
         dest, zeroless_view({as_bytes(big_endian), sizeof(big_endian)}));
 }
 
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
 // to_big_compact's 64-bit form: the leading zero bytes from the leading zero
 // bits, not walked off one at a time.
 inline std::span<unsigned char>

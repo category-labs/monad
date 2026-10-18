@@ -16,7 +16,7 @@
 #pragma once
 
 #include <category/core/address.hpp>
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     #include <category/vm/evm/access_status.h>
     #include <category/vm/evm/storage_status.h>
     #include <category/vm/evm/traits.hpp>
@@ -44,7 +44,7 @@ namespace monad::vm
         /// Write the storage value where the caller wants it. Returned by
         /// value, it is copied again at each change of word type on its way
         /// back through the C interface.
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         /// Pure in the guest, whose one host defines it: a body here is the
         /// target gcc guesses for the runtime's direct call, and it tests the
         /// guess on every call.
@@ -60,7 +60,7 @@ namespace monad::vm
         }
 #endif
 
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         /// SLOAD's access_storage and get_storage_into, with one lookup of
         /// the account. The value is read when the slot is warm, or when
         /// `read_cold` says the caller can pay for a cold access: one that
@@ -289,7 +289,7 @@ namespace monad::vm
     }
 }
 
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
 namespace monad::vm::runtime
 {
     // The guest's VM builds every Context from a vm::Host and its interface,

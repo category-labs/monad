@@ -272,6 +272,31 @@ public:
             return zero_out_key(key, original_value, current_value);
         }
         return set_current_value(key, value, original_value, current_value);
+#elif defined(MONAD_ZKVM_AIRBENDER)
+        // As on ZisK, the current value bound where it lies; the zero test
+        // by words where the value is word-aligned, as nearly every one is
+        // (rv32 has no unaligned access, and ZisK's 8-byte reads of an
+        // unaligned value would be byte loads).
+        bytes32_t const &current_value = prev ? *prev : original_value;
+        bool zero;
+        if ((reinterpret_cast<std::uintptr_t>(value.bytes) & 3) == 0) {
+            auto const *const v = static_cast<unsigned char const *>(
+                __builtin_assume_aligned(value.bytes, 4));
+            std::uint32_t any = 0;
+            for (std::size_t i = 0; i < 32; i += 4) {
+                std::uint32_t w;
+                __builtin_memcpy(&w, v + i, 4);
+                any |= w;
+            }
+            zero = any == 0;
+        }
+        else {
+            zero = value == bytes32_t{};
+        }
+        if (zero) {
+            return zero_out_key(key, original_value, current_value);
+        }
+        return set_current_value(key, value, original_value, current_value);
 #else
         bytes32_t const current_value = prev ? *prev : original_value;
         if (value == bytes32_t{}) {

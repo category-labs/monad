@@ -46,7 +46,7 @@ inline byte_string to_big_compact(unsigned_integral auto n)
         zeroless_view({reinterpret_cast<unsigned char *>(&n), sizeof(n)}));
 }
 
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
 // The same for a 64-bit value, from its leading zero bits: the form above walks
 // the zero bytes off one at a time, three steps each, and a receipt's status
 // and gas, or a nonce or a gas limit, carries five to seven.

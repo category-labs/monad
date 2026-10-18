@@ -44,7 +44,7 @@
 #include <functional>
 #include <type_traits>
 #include <utility>
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     #include <cstdint>
     #include <cstring>
 #endif
@@ -121,7 +121,7 @@ public:
         evmc::address const &, size_t offset, uint8_t *data,
         size_t size) const noexcept override;
 
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     virtual Address const *
     delegate_of(evmc::address const &) const noexcept override;
 #endif
@@ -244,7 +244,7 @@ struct EvmcHost final : public EvmcHostBase
     {
         MONAD_TRY
         {
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
             // A precompile's address starts with eight zero bytes: without
             // them the test is skipped, and with it the call that kept this
             // method a frame.
@@ -285,7 +285,7 @@ struct EvmcHost final : public EvmcHostBase
         stack_unwind();
     }
 
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     virtual evmc_access_status sload_into(
         evmc::address const &address, evmc::bytes32 const &key,
         bool const read_cold, uint256_t &value) noexcept override

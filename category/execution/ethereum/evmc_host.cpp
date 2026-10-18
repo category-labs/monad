@@ -27,7 +27,7 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     #include <category/vm/evm/delegation.hpp>
     #include <category/vm/evm/explicit_traits.hpp>
 #endif
@@ -180,7 +180,7 @@ size_t EvmcHostBase::copy_code(
     stack_unwind();
 }
 
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
 Address const *
 EvmcHostBase::delegate_of(evmc::address const &address) const noexcept
 {
@@ -335,7 +335,7 @@ void EvmcHostBase::set_transient_storage(
 }
 
 MONAD_NAMESPACE_END
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
 
 // The runtime's direct calls to the guest's one host (vm/host.hpp): each
 // method named, so no vtable is read, and inlined here.

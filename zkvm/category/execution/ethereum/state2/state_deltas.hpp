@@ -97,7 +97,7 @@ struct StateDelta
 {
     AccountDelta account;
     StorageDeltas storage{};
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     // The account's code where the block's VM keeps it, with the hash it was
     // read under: a call takes its callee's code from here instead of
     // searching the VM's cache. The VM keeps every varcode for the block, and

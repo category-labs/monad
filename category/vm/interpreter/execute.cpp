@@ -1377,6 +1377,9 @@ namespace monad::vm::interpreter
                 // The analysis by the name MONAD_VM_HANDLER_ARGS passes.
                 Intercode const &monad_vm_analysis = *analysis;
                 [[maybe_unused]] Intercode const &analysis = monad_vm_analysis;
+    #if defined(MONAD_ZKVM_AIRBENDER)
+                uint256_t const *const stack_limit = ctx->stack_limit;
+    #endif
                 first(MONAD_VM_HANDLER_ARGS(
                     *ctx, stack_top, gas_remaining, instr_ptr));
             }

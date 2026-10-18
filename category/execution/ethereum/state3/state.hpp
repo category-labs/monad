@@ -449,7 +449,7 @@ public:
 
     bytes32_t get_code_hash(Address const &);
 
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     // get_code_hash's hash where the account keeps it: a returned copy is
     // 32 bytes written through the caller's stack.
     bytes32_t const &code_hash_ref(Address const &);
@@ -496,7 +496,7 @@ public:
     template <Traits traits>
     monad_access_status access_storage(Address const &, bytes32_t const &key);
 
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     // SLOAD's access_storage and get_storage_into, with one lookup of the
     // account: see vm::Host::sload_into.
     template <Traits traits>
@@ -543,17 +543,7 @@ public:
     size_t copy_code(
         Address const &, size_t offset, uint8_t *buffer, size_t buffer_size);
 
-#if defined(MONAD_ZKVM_AIRBENDER)
-    // Whether the account has code, as its recent row says: false for one
-    // that does not exist. (ZisK's sits with its code lookups below.)
-    bool has_code(Address const &address)
-    {
-        auto const &account = recent_account(address);
-        return account.has_value() && account->code_hash != NULL_HASH;
-    }
-#endif
-
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     // The account's code hash and code, as code_hash_ref and read_code_ref
     // give them. The block's entry for the account keeps the code it was
     // last read with, and the hash it was read under.

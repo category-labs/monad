@@ -129,7 +129,11 @@ class SlotIndex
     };
 
     std::unique_ptr<Table> table_{};
+#if defined(MONAD_ZKVM_AIRBENDER)
+    static constexpr std::size_t index_from = 4;
+#else
     static constexpr std::size_t index_from = 16;
+#endif
 
     static bytes32_t const &key_of(bytes32_t const &entry)
     {

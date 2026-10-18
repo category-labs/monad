@@ -20,7 +20,7 @@
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/revision.h>
 #include <category/vm/evm/traits.hpp>
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     #include <category/vm/host.hpp>
 #endif
 #include <category/vm/runtime/storage.hpp>
@@ -36,7 +36,7 @@
 #endif
 namespace monad::vm::runtime
 {
-#if !defined(MONAD_ZKVM_ZISK)
+#if !defined(MONAD_ZKVM_ZISK) && !defined(MONAD_ZKVM_AIRBENDER)
     template <Traits traits>
     void sload(Context *ctx, uint256_t *result_ptr, uint256_t const *key_ptr)
     {
@@ -59,7 +59,7 @@ namespace monad::vm::runtime
     EXPLICIT_TRAITS(sload);
 #endif
 
-#if !defined(MONAD_ZKVM_ZISK)
+#if !defined(MONAD_ZKVM_ZISK) && !defined(MONAD_ZKVM_AIRBENDER)
     template <Traits traits>
     void sstore(
         Context *ctx, uint256_t const *key_ptr, uint256_t const *value_ptr,
@@ -106,7 +106,7 @@ namespace monad::vm::runtime
             ctx->deduct_gas(gas_used);
         }
         else {
-    #if defined(MONAD_ZKVM_ZISK)
+    #if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
             Host &host = host_of(*ctx);
             auto const &recipient = host_shim::addr(&ctx->env.recipient);
             auto const &slot = host_shim::word(&key);

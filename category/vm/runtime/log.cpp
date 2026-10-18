@@ -19,7 +19,7 @@
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     #include <category/vm/host.hpp>
 #endif
 #include <category/vm/runtime/bin.hpp>
@@ -51,7 +51,7 @@ namespace monad::vm::runtime
             ctx->deduct_gas(size * bin<8>);
         }
 
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         // The guest's host by name, as SLOAD's (vm/host.hpp): through the C
         // interface, the table's adapter and then the vtable.
         guest_emit_log(

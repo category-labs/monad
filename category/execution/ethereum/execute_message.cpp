@@ -461,7 +461,7 @@ evmc::Result execute_call_message(
                 return std::move(maybe_result.value());
             }
         }
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         // The account's own hash and code, by reference, from one search
         // for its row: the block's entry for the account keeps the code,
         // the guest's VM does not keep the hash, and the VM takes the
@@ -471,7 +471,7 @@ evmc::Result execute_call_message(
 #else
         auto const hash = state.get_code_hash(msg.code_address);
 #endif
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         // The code came with the hash.
 #elif defined(MONAD_ZKVM_VARCODE_CACHE)
         // The guest's VM keeps every varcode for the block and takes the

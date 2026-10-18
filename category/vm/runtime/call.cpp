@@ -22,7 +22,7 @@
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/revision.h>
 #include <category/vm/evm/traits.hpp>
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     #include <category/vm/host.hpp>
 #endif
 #include <category/vm/runtime/bin.hpp>
@@ -57,7 +57,7 @@ namespace monad::vm::runtime
         return env_flags;
     }
 
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     // Inlined into each caller: out of line, a call saves twelve registers,
     // passes five arguments on the stack and copies its result out of a
     // temporary, and the callers' constant call_kind, static_call and
@@ -94,7 +94,7 @@ namespace monad::vm::runtime
 
         auto const dest_address = address_from_uint256(address);
 
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         // The message's addresses bound where they lie, not copied into
         // locals of their own before being copied into the message: a
         // 20-byte copy each. EIP-7702: if the code address starts with
@@ -130,7 +130,7 @@ namespace monad::vm::runtime
         }
 #endif
 
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         Address const *code_address_p = &dest_address;
         if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
             if (delegate_address) {
@@ -234,7 +234,7 @@ namespace monad::vm::runtime
             .input_data =
                 (*args_size > 0) ? ctx->memory.data + *args_offset : nullptr,
             .input_size = *args_size,
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
             // Sliced into the message's words as they lie: converted through
             // evmc::bytes32, each was copied twice more on the way.
             .value = value,
@@ -249,7 +249,7 @@ namespace monad::vm::runtime
             .memory_capacity = ctx->memory.capacity - ctx->memory.size,
         };
 
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         // What the C adapter does, without its frame, and read where it was
         // returned: release_raw copied the 72 bytes out first. The output
         // passes to the return data below, so the result releases nothing.

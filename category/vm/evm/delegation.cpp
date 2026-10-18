@@ -15,7 +15,7 @@
 
 #include <category/core/address.hpp>
 #include <category/vm/evm/delegation.hpp>
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     #include <category/vm/host.hpp>
 #endif
 
@@ -72,7 +72,7 @@ namespace monad::vm::evm
         return designation;
     }
 
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     Address const *delegate_in(std::span<uint8_t const> const code)
     {
         if (!is_delegated(code)) {

@@ -30,7 +30,7 @@
 #include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/vm/code.hpp>
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     #include <category/vm/evm/delegation.hpp>
 #endif
 #include <category/vm/evm/explicit_traits.hpp>
@@ -693,7 +693,7 @@ bytes32_t State::get_code_hash(Address const &address)
     return NULL_HASH;
 }
 
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
 bytes32_t const &State::code_hash_ref(Address const &address)
 {
     auto const &account = recent_account(address);
@@ -758,7 +758,7 @@ inline void State::current_storage_into(
     }
 }
 
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
 inline void State::current_storage_load(
     AccountState const &account_state, Address const &address,
     bytes32_t const &key, uint256_t &out)
@@ -1025,7 +1025,7 @@ State::access_storage(Address const &address, bytes32_t const &key)
 
 EXPLICIT_TRAITS_MEMBER(State::access_storage);
 
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
 // access_storage leaves the account in current_, where get_storage_into
 // would find it again: the value is read from the row just looked up.
 template <Traits traits>
@@ -1263,7 +1263,7 @@ vm::SharedVarcode State::get_code(Address const &address)
 
 size_t State::get_code_size(Address const &address)
 {
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     // Without an account, NULL_HASH's code, whose size is zero.
     vm::SharedVarcode const &vcode = code_ref_of(address).code;
 #else
@@ -1281,7 +1281,7 @@ size_t State::copy_code(
     Address const &address, size_t const offset, uint8_t *const buffer,
     size_t const buffer_size)
 {
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     // Without an account, NULL_HASH's code, which copies nothing.
     vm::SharedVarcode const &vcode = code_ref_of(address).code;
 #else
@@ -1295,7 +1295,7 @@ size_t State::copy_code(
     return vcode->intercode()->copy_code(offset, buffer, buffer_size);
 }
 
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
 // One search for the account's row, then its code from the block's entry
 // for the account when the entry read it under the account's hash. A search
 // of the VM's cache is 80 steps, and the State's one remembered code misses

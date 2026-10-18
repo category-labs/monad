@@ -132,7 +132,7 @@ public:
 #endif
         return MONAD_ACCESS_COLD;
     }
-#ifdef MONAD_ZKVM_ZISK
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
 
     // access_storage in two parts, for State::sload_into: the test, which
     // changes nothing, then the insertion of a key the test found cold.

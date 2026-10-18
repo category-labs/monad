@@ -18,7 +18,7 @@
 #include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/core/int.hpp>
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     #include <category/vm/host.hpp>
     #include <category/vm/runtime/storage_costs.hpp>
 #endif
@@ -28,7 +28,7 @@
 
 namespace monad::vm::runtime
 {
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     // Inline on ZisK, as tload is: called from SLOAD's handler, it was a
     // call and a frame of its own on every SLOAD, inside the handler's.
     // Both host calls in one. A cold access that the gas left cannot pay
@@ -138,7 +138,7 @@ namespace monad::vm::runtime
     {
         auto key = store_be_as<bytes32_t>(*key_ptr);
 
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         // As SLOAD: the host's method, not its C adapter.
         auto const value = guest_get_transient_storage(
             host_of(*ctx),
@@ -163,7 +163,7 @@ namespace monad::vm::runtime
         auto key = store_be_as<bytes32_t>(*key_ptr);
         auto val = store_be_as<bytes32_t>(*val_ptr);
 
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         guest_set_transient_storage(
             host_of(*ctx),
             host_shim::addr(&ctx->env.recipient),

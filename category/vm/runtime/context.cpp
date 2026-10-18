@@ -22,7 +22,7 @@
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     #include <category/vm/host.hpp>
 #endif
 #include <category/vm/runtime/bin.hpp>
@@ -111,7 +111,7 @@ namespace monad::vm::runtime
             evmc_host_interface const *const host,
             evmc_host_context *const context) noexcept
         {
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
             // The guest's VM hands monad's host: its method, not the C
             // adapter.
             (void)host;
@@ -211,7 +211,7 @@ namespace monad::vm::runtime
             return EVMC_OUT_OF_GAS;
         }
 
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         // The words read where they lie: a bit_cast to uint256_t stages the
         // 32 bytes on the stack, a DMA copy, and reads them back from there.
         auto const word = [](uint8_t const *const p, unsigned const i) {
@@ -329,7 +329,7 @@ namespace monad::vm::runtime
             Cases{
                 [](evmc_status_code ec) { return evmc_error_result(ec); },
                 [this](std::span<uint8_t const> output) {
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
                     // Built where it is returned: an evmc_result handed to
                     // evmc::Result is staged in the frame and copied, 72
                     // bytes a call.

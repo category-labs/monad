@@ -20,7 +20,7 @@
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/revision.h>
 #include <category/vm/evm/traits.hpp>
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
     #include <category/vm/host.hpp>
 #endif
 #include <category/vm/runtime/bin.hpp>
@@ -43,7 +43,7 @@ namespace monad::vm::runtime
 
         auto address = address_from_uint256(*address_ptr);
 
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         // The guest's host by name, as SLOAD's (vm/host.hpp): each of these
         // went through the C interface's table and then the vtable.
         auto const access_status = guest_access_account<traits>(
@@ -56,7 +56,7 @@ namespace monad::vm::runtime
             ctx->deduct_gas(traits::cold_account_cost());
         }
 
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         auto const balance = static_cast<bytes32_t>(
             guest_get_balance(host_of(*ctx), host_shim::addr(&address)));
 #else
@@ -239,7 +239,7 @@ namespace monad::vm::runtime
 
         auto address = address_from_uint256(*address_ptr);
 
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         // As BALANCE's.
         auto const access_status = guest_access_account<traits>(
             host_of(*ctx), host_shim::addr(&address));
@@ -251,7 +251,7 @@ namespace monad::vm::runtime
             ctx->deduct_gas(traits::cold_account_cost());
         }
 
-#if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_AIRBENDER)
         *result_ptr =
             guest_get_code_size(host_of(*ctx), host_shim::addr(&address));
 #else

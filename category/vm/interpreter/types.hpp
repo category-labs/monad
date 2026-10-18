@@ -112,7 +112,12 @@
     #define MONAD_VM_ANALYSIS_PARAM Intercode const &analysis
     #define MONAD_VM_ANALYSIS_ARG analysis
     #define MONAD_VM_ANALYSIS analysis
-    #define MONAD_VM_STACK_LIMIT ctx.stack_limit
+    #if defined(MONAD_ZKVM_AIRBENDER)
+        // In the handlers' eighth argument register (MONAD_VM_HANDLER_PARAMS).
+        #define MONAD_VM_STACK_LIMIT stack_limit
+    #else
+        #define MONAD_VM_STACK_LIMIT ctx.stack_limit
+    #endif
 #endif
 
 // On ZisK, pass the table base in a seventh register argument to avoid
@@ -148,18 +153,22 @@
 // then moves no argument out of its way but the gas and instr_ptr, which the
 // handler steps anyway, where with ctx, the analysis and stack_bottom there
 // it moved all three out and back. Elsewhere the order is unchanged: ZisK's
-// slot heads (execute.cpp) name their registers.
+// slot heads (execute.cpp) name their registers. Airbender's last, in a7, is
+// the stack's last valid slot, which every handler that pushes compares with
+// and otherwise loads from ctx (interpreter::execute caches it there).
 #if defined(MONAD_ZKVM_AIRBENDER)
     #define MONAD_VM_HANDLER_PARAMS(CTX)                                       \
         uint256_t *stack_top, gas_t gas_remaining, uint8_t const *instr_ptr,   \
             runtime::Context &CTX, MONAD_VM_ANALYSIS_PARAM,                    \
-            uint256_t const *stack_bottom MONAD_VM_TBL_PARAM
+            uint256_t const *stack_bottom MONAD_VM_TBL_PARAM,                  \
+            uint256_t const *stack_limit
     #define MONAD_VM_HANDLER_ARGS(CTX, TOP, GAS, IP)                           \
         (TOP), (GAS), (IP), CTX, MONAD_VM_ANALYSIS_ARG,                        \
-            stack_bottom MONAD_VM_TBL_ARG
+            stack_bottom MONAD_VM_TBL_ARG, stack_limit
     #define MONAD_VM_HANDLER_TYPES                                             \
         uint256_t *, gas_t, uint8_t const *, runtime::Context &,               \
-            MONAD_VM_ANALYSIS_TYPE, uint256_t const *MONAD_VM_TBL_TYPE
+            MONAD_VM_ANALYSIS_TYPE, uint256_t const *MONAD_VM_TBL_TYPE,        \
+            uint256_t const *
 #else
     #define MONAD_VM_HANDLER_PARAMS(CTX)                                       \
         runtime::Context &CTX, MONAD_VM_ANALYSIS_PARAM,                        \

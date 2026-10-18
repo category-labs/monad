@@ -788,6 +788,13 @@ class OffsetTrie
         unsigned char *rlp;
         uint64_t rlp_len;
         uint64_t dirty;
+#elif defined(MONAD_ZKVM_AIRBENDER)
+        // A framed branch's RLP, in its frame in the blob, and its children
+        // whose refs have changed since, as on ZisK (patch_frame); null for
+        // any other node. In what pads the pair to 64 bytes elsewhere.
+        unsigned char *rlp;
+        uint32_t rlp_len;
+        uint64_t dirty;
 #else
         // Pad std::pair<NodeId, CachedHash> to 64 bytes so unordered_dense can
         // convert between entry indices and addresses using shifts instead of
@@ -909,6 +916,17 @@ class OffsetTrie
 #endif
     }
 
+#if defined(MONAD_ZKVM_AIRBENDER)
+    // A descent through `e`'s node that leaves the node's bytes alone: the
+    // ref of its child `bit` changes (bit 0 for an extension's child).
+    static void mark_dirty(CachedHash *const e, unsigned const bit)
+    {
+        if (e != nullptr) {
+            e->dirty |= uint64_t{1} << bit;
+        }
+    }
+#endif
+
     // Cache `h` as the hash of `id`.
     void store_hash(NodeId const id, bytes32_t const &h)
     {
@@ -919,6 +937,11 @@ class OffsetTrie
         }
         slot->h = h;
         slot->valid = true;
+#elif defined(MONAD_ZKVM_AIRBENDER)
+        // An entry's frame and dirty children stay.
+        auto const [it, inserted] = hashes_.try_emplace(id);
+        it->second.h = h;
+        it->second.valid = true;
 #else
         hashes_.insert_or_assign(id, CachedHash{h, true});
 #endif
@@ -1118,6 +1141,11 @@ public:
 
 private:
 #if defined(MONAD_ZKVM_AIRBENDER)
+    // A framed branch's RLP with each dirty child's ref recomputed and
+    // written over it in the frame: its length, or 0 when a ref's length
+    // changes, which leaves the full encode to the caller.
+    size_t patch_frame(CachedHash const &e, NodeViewBase node);
+
     // The canonical RLP of the walk's framed branch at `node`, whose
     // children it has claimed, written in its frame, which ends `gap` bytes
     // before the node: its address, and its length in `rlp_len`. `marks`

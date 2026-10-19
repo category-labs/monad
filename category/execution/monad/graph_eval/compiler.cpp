@@ -39,6 +39,7 @@
 #include <mlir-c/Dialect/Linalg.h>
 #include <mlir-c/IR.h>
 #include <mlir-c/Support.h>
+#include <mutex>
 
 MONAD_GRAPH_EVAL_ANONYMOUS_NAMESPACE_BEGIN
 
@@ -60,6 +61,16 @@ void check_iree(iree_compiler_error_t *const error)
         std::cerr << ireeCompilerErrorGetMessage(error) << std::endl;
         MONAD_ASSERT(false);
     }
+}
+
+// A new compiler session. The compiler's process-wide state is set up before
+// the first one, and never shut down: the last ireeCompilerGlobalShutdown
+// disables the compiler for the rest of the process
+iree_compiler_session_t *create_session()
+{
+    static std::once_flag initialized;
+    std::call_once(initialized, ireeCompilerGlobalInitialize);
+    return ireeCompilerSessionCreate();
 }
 
 MlirDialect mlir_nonnull(MlirDialect dialect)
@@ -531,13 +542,26 @@ Result<CompiledGraph> Compiler::compile()
             }));
     }
 
+    // The function returns the graph's outputs, which have the types of
+    // func_type's results
+    std::vector<MlirValue> results;
+    results.reserve(gc_.outputs().size());
+    for (auto const &output_id : gc_.outputs()) {
+        results.push_back(mlir_tensors[output_id]);
+    }
+    MlirOperationState func_return =
+        mlirOperationStateGet(mlir_string("func.return"), loc);
+    mlirOperationStateAddOperands(
+        &func_return, static_cast<intptr_t>(results.size()), results.data());
+    mlir_append(body, &func_return);
+
     return CompiledGraph{};
 }
 
 Compiler::Compiler(Graphcode const &gc)
     : gc_(gc)
     , code_(gc.code_span())
-    , session_(ireeCompilerSessionCreate())
+    , session_(create_session())
 {
     check_iree(ireeCompilerSessionSetFlags(
         session_,
@@ -548,6 +572,13 @@ Compiler::Compiler(Graphcode const &gc)
     mlir_nonnull(mlirContextGetOrLoadDialect(ctx_, mlir_string("arith")));
     mlir_nonnull(mlirContextGetOrLoadDialect(ctx_, mlir_string("tensor")));
     mlir_nonnull(mlirContextGetOrLoadDialect(ctx_, mlir_string("linalg")));
+}
+
+// Also destroys the session's context, so every module built in it must be
+// destroyed first
+Compiler::~Compiler()
+{
+    ireeCompilerSessionDestroy(session_);
 }
 
 MONAD_GRAPH_EVAL_NAMESPACE_END

@@ -279,6 +279,52 @@ int monad_event_ring_init_simple(
         error_name);
 }
 
+int monad_event_ring_create_ephemeral(
+    struct monad_event_ring_simple_config const *const ring_config,
+    char const *const error_name, unsigned const memfd_create_flags,
+    int const mmap_extra_flags, int *const ring_fd,
+    struct monad_event_ring *const ring)
+{
+    struct monad_event_ring_size ring_size;
+    *ring_fd = -1;
+    int rc = monad_event_ring_init_size(
+        ring_config->descriptors_shift,
+        ring_config->payload_buf_shift,
+        ring_config->context_large_pages,
+        &ring_size);
+    if (rc != 0) {
+        return rc;
+    }
+    size_t const ring_bytes = monad_event_ring_calc_storage(&ring_size);
+    *ring_fd = memfd_create(error_name, memfd_create_flags);
+    if (*ring_fd == -1) {
+        return FORMAT_ERRC(
+            errno,
+            "memfd_create failed for ephemeral event ring `%s`, size %lu",
+            error_name,
+            ring_bytes);
+    }
+    rc = monad_event_ring_init_simple(ring_config, *ring_fd, 0, error_name);
+    if (rc != 0) {
+        goto Error;
+    }
+    rc = monad_event_ring_mmap(
+        ring,
+        PROT_READ | PROT_WRITE,
+        mmap_extra_flags,
+        *ring_fd,
+        0,
+        error_name);
+    if (rc != 0) {
+        goto Error;
+    }
+    return 0;
+Error:
+    (void)close(*ring_fd);
+    *ring_fd = -1;
+    return rc;
+}
+
 int monad_event_ring_check_content_type(
     struct monad_event_ring const *const event_ring,
     enum monad_event_content_type const content_type,

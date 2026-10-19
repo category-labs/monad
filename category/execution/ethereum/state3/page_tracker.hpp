@@ -22,6 +22,8 @@
 #include <category/vm/evm/page_storage_status.h>
 #include <category/vm/evm/storage_status.h>
 
+#include <utility>
+
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Warray-bounds"
 #include <immer/map.hpp>
@@ -59,7 +61,7 @@ public:
             return MONAD_ACCESS_WARM;
         }
         s.accessed = true;
-        pages_ = pages_.set(pkey, s);
+        pages_ = std::move(pages_).set(pkey, s);
         return MONAD_ACCESS_COLD;
     }
 
@@ -96,7 +98,7 @@ public:
             ps.peak_growth = ps.current_growth;
         }
         if (value_changed) {
-            pages_ = pages_.set(pkey, ps);
+            pages_ = std::move(pages_).set(pkey, ps);
         }
 
         return {first_page_write, grew_state};

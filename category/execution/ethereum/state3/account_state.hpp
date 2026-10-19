@@ -150,7 +150,7 @@ public:
 
     void set_transient_storage(bytes32_t const &key, bytes32_t const &value)
     {
-        transient_storage_ = transient_storage_.insert({key, value});
+        transient_storage_ = std::move(transient_storage_).insert({key, value});
     }
 };
 

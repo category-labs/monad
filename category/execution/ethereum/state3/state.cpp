@@ -74,12 +74,15 @@ AccountState &State::current_account_state(Address const &address)
 {
     // current
     auto it = current_.find(address);
-    if (MONAD_UNLIKELY(it == current_.end())) {
+    bool const inserted = it == current_.end();
+    if (MONAD_UNLIKELY(inserted)) {
         // original
         auto const &account_state = original_account_state(address);
         it = current_.try_emplace(address, account_state, version_).first;
     }
-    if (!dirty_.empty()) {
+    // A snapshot at this exact version proves that the account was already
+    // recorded in the active frame. A new stack must still be recorded.
+    if (!dirty_.empty() && (inserted || it->second.version() != version_)) {
         dirty_.back().emplace(address);
     }
     return it->second.current(version_);
@@ -285,7 +288,7 @@ bytes32_t State::get_storage(Address const &address, bytes32_t const &key)
         else {
             bytes32_t const value = block_state_.read_storage(
                 address, account.value().incarnation, key);
-            storage = storage.insert({key, value});
+            storage = std::move(storage).insert({key, value});
             return value;
         }
     }
@@ -313,7 +316,7 @@ bytes32_t State::get_storage(Address const &address, bytes32_t const &key)
         else {
             bytes32_t const value = block_state_.read_storage(
                 address, account.value().incarnation, key);
-            original_storage = original_storage.insert({key, value});
+            original_storage = std::move(original_storage).insert({key, value});
             return value;
         }
     }
@@ -391,7 +394,7 @@ monad_storage_status State::set_storage(
             Incarnation const incarnation = account_state.account_->incarnation;
             bytes32_t const value =
                 block_state_.read_storage(address, incarnation, key);
-            storage = storage.insert({key, value});
+            storage = std::move(storage).insert({key, value});
             original_value = value;
         }
     }
@@ -632,7 +635,7 @@ immer::vector<Receipt::Log> const &State::logs()
 void State::store_log(Receipt::Log const &log)
 {
     auto &logs = logs_.current(version_);
-    logs = logs.push_back(log);
+    logs = std::move(logs).push_back(log);
 }
 
 void State::set_to_state_incarnation(Address const &address)

@@ -650,6 +650,55 @@ TYPED_TEST(TraitsTest, access_list_empty)
     EXPECT_EQ(storage, nlohmann::json::parse("[]"));
 }
 
+TEST(StateDirtyAccounts, VersionWitnessPreservesNestedFrameMembership)
+{
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
+    TrieDb tdb{db};
+    vm::VM vm;
+    commit_sequential(tdb, StateDeltas({}), Code{}, BlockHeader{.number = 0});
+    BlockState bs(tdb, vm);
+    State state(bs, Incarnation{0, 0});
+
+    state.push();
+    state.access_account(addr1);
+    state.access_account(addr1);
+    state.access_account(addr2);
+    auto const &frame_one = state.current_frame_dirty_accounts();
+    EXPECT_EQ(frame_one.size(), 2);
+    EXPECT_EQ(frame_one.count(addr1), 1);
+    EXPECT_EQ(frame_one.count(addr2), 1);
+
+    state.push();
+    state.access_account(addr1);
+    state.access_account(addr3);
+    auto const &frame_two = state.current_frame_dirty_accounts();
+    EXPECT_EQ(frame_two.size(), 2);
+    EXPECT_EQ(frame_two.count(addr1), 1);
+    EXPECT_EQ(frame_two.count(addr3), 1);
+    state.pop_accept();
+
+    auto const &accepted_parent = state.current_frame_dirty_accounts();
+    EXPECT_EQ(accepted_parent.size(), 3);
+    EXPECT_EQ(accepted_parent.count(addr1), 1);
+    EXPECT_EQ(accepted_parent.count(addr2), 1);
+    EXPECT_EQ(accepted_parent.count(addr3), 1);
+
+    state.push();
+    state.access_account(addr3);
+    state.access_account(addr4);
+    auto const &rejected_child = state.current_frame_dirty_accounts();
+    EXPECT_EQ(rejected_child.size(), 2);
+    EXPECT_EQ(rejected_child.count(addr3), 1);
+    EXPECT_EQ(rejected_child.count(addr4), 1);
+    state.pop_reject();
+
+    auto const &parent_after_reject = state.current_frame_dirty_accounts();
+    EXPECT_EQ(parent_after_reject.size(), 3);
+    EXPECT_EQ(parent_after_reject.count(addr1), 1);
+    EXPECT_EQ(parent_after_reject.count(addr2), 1);
+    EXPECT_EQ(parent_after_reject.count(addr3), 1);
+}
+
 TYPED_TEST(TraitsTest, access_list_state_view_excludes_rejected_frame)
 {
     mpt::Db db{std::make_unique<InMemoryMachine>()};

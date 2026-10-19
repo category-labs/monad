@@ -19,6 +19,8 @@
 #include <category/core/config.hpp>
 #include <category/vm/evm/access_status.h>
 
+#include <utility>
+
 // TODO immer known to trigger incorrect warning
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Warray-bounds"
@@ -92,7 +94,7 @@ public:
     monad_access_status access_storage(bytes32_t const &key)
     {
         if (accessed_storage_.count(key) == 0) {
-            accessed_storage_ = accessed_storage_.insert(key);
+            accessed_storage_ = std::move(accessed_storage_).insert(key);
             return MONAD_ACCESS_COLD;
         }
         return MONAD_ACCESS_WARM;

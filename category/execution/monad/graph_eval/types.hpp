@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <array>
 #include <category/core/assert.h>
 #include <category/execution/monad/graph_eval/config.hpp>
 #include <category/execution/monad/graph_eval/types.hpp>
@@ -37,6 +38,8 @@ enum class Dtype : uint8_t
     uint64,
     Last_valid_dtype = uint64,
 };
+
+constexpr size_t N_DTYPES = static_cast<size_t>(Dtype::Last_valid_dtype) + 1;
 
 // Size in bytes of one element
 [[gnu::always_inline]]

@@ -415,7 +415,7 @@ Result<byte_string> GraphEvalContract::precompile_eval_graph_into(
         (abi_decode_dynamic_array_tail<TensorOutput, MAX_OUTPUTS>(
             input, abi_decode_tensor_output)));
 
-    // Two stored outputs can't start at the same slot
+    // Stored outputs must not start at the same position
     for (size_t i = 0; i < outputs.size(); i++) {
         for (size_t j = 0; j < i; j++) {
             if (outputs[i].destination && outputs[j].destination &&
@@ -442,17 +442,17 @@ Result<byte_string> GraphEvalContract::precompile_eval_graph_into(
             std::move(inputs),
             call.delegatecall ? &caller_storage : nullptr,
             outputs.size()));
-    // Nor can their slots overlap, which takes their sizes, so it's checked
-    // only now, before any is written
+    // Stored outputs must not overlap
     for (size_t i = 0; i < outputs.size(); i++) {
         for (size_t j = 0; j < i; j++) {
-            if (outputs[i].destination && outputs[j].destination &&
-                storage_ranges_overlap(
-                    *outputs[i].destination,
-                    results[i].type().size_bytes(),
-                    *outputs[j].destination,
-                    results[j].type().size_bytes())) {
-                return GraphEvalError::InvalidInput;
+            if (outputs[i].destination && outputs[j].destination) {
+                if (storage_ranges_overlap(
+                        *outputs[i].destination,
+                        results[i].type().size_bytes(),
+                        *outputs[j].destination,
+                        results[j].type().size_bytes())) {
+                    return GraphEvalError::InvalidInput;
+                }
             }
         }
     }

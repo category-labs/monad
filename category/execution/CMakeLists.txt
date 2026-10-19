@@ -429,14 +429,17 @@ target_link_libraries(
   PUBLIC quill::quill)
 monad_compile_options(monad_execution_native)
 
-# graph_eval's IREE kernels, compiled ahead of time and embedded in kernel.cpp.
-# The interpreter doesn't use them, so they're only built with
+# graph_eval's IREE kernels, compiled ahead of time and embedded in kernel.cpp,
+# and its compiler, which builds graphs as MLIR, compiles them with IREE and
+# runs them. The interpreter doesn't use either, so they're only built with
 # MONAD_GRAPH_EVAL_IREE
 if(MONAD_GRAPH_EVAL_IREE)
   target_sources(
     monad_execution_native
-    PRIVATE "monad/graph_eval/kernel.cpp" "monad/graph_eval/kernel.hpp")
-  target_link_libraries(monad_execution_native PRIVATE iree::runtime::unified)
+    PRIVATE "monad/graph_eval/compiler.cpp" "monad/graph_eval/compiler.hpp"
+            "monad/graph_eval/kernel.cpp" "monad/graph_eval/kernel.hpp")
+  target_link_libraries(monad_execution_native PRIVATE iree_compiler
+                                                       iree::runtime::unified)
 
   set(GRAPH_EVAL_KERNELS_MLIR
       "${CMAKE_CURRENT_SOURCE_DIR}/monad/graph_eval/kernels.mlir")

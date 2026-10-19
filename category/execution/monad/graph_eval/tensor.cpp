@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include "category/execution/monad/graph_eval/constants.hpp"
 #include <category/core/math.hpp>
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
 #include <category/execution/monad/graph_eval/config.hpp>
@@ -94,54 +95,6 @@ MONAD_GRAPH_EVAL_ANONYMOUS_NAMESPACE_END
 
 MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
 
-Result<uint64_t> tensor_size_bytes(Dtype const dtype, Shape const &shape)
-{
-    uint64_t size = dtype_size(dtype);
-    for (size_t i = 0; i < shape.rank; i++) {
-        if (MONAD_UNLIKELY(
-                __builtin_mul_overflow(size, shape.dimensions[i], &size))) {
-            return GraphEvalError::ShapeError;
-        }
-    }
-    return size;
-}
-
-// A loop rather than std::equal, which GCC makes a call to memcmp
-bool same_shape(Shape const &a, Shape const &b)
-{
-    if (a.rank != b.rank) {
-        return false;
-    }
-    for (size_t d = 0; d < a.rank; d++) {
-        if (a.dimensions[d] != b.dimensions[d]) {
-            return false;
-        }
-    }
-    return true;
-}
-
-Result<Shape> broadcast_shape(std::span<Shape const> const shapes)
-{
-    Shape result{};
-    for (Shape const &shape : shapes) {
-        result.rank = std::max(result.rank, shape.rank);
-    }
-    std::fill_n(result.dimensions.begin(), result.rank, uint16_t{1});
-    for (Shape const &shape : shapes) {
-        for (size_t i = 0; i < shape.rank; i++) {
-            size_t const d = result.rank - shape.rank + i;
-            uint16_t const size = shape.dimensions[i];
-            if (size != 1) {
-                if (result.dimensions[d] != 1 && result.dimensions[d] != size) {
-                    return GraphEvalError::ShapeError;
-                }
-                result.dimensions[d] = size;
-            }
-        }
-    }
-    return result;
-}
-
 Result<TensorInput> abi_decode_tensor_input(byte_string_view &enc)
 {
     // Static: uint8 dtype
@@ -167,7 +120,7 @@ Result<TensorInput> abi_decode_tensor_input(byte_string_view &enc)
     BOOST_OUTCOME_TRY(auto const rank_be, abi_decode_fixed<u256_be>(enc));
     uint256_t const rank_256 = rank_be.native();
     if (rank_256.as_words()[1] || rank_256.as_words()[2] ||
-        rank_256.as_words()[3] || rank_256.as_words()[0] > 8) {
+        rank_256.as_words()[3] || rank_256.as_words()[0] > MAX_RANK) {
         return GraphEvalError::RankError;
     }
     auto const rank = static_cast<uint8_t>(rank_256.as_words()[0]);
@@ -203,7 +156,8 @@ Result<TensorInput> abi_decode_tensor_input(byte_string_view &enc)
     BOOST_OUTCOME_TRY(
         auto const payload, abi_decode_padded_bytes(enc, payload_size));
 
-    TensorType const type{dtype, Shape{rank, dimensions}};
+    BOOST_OUTCOME_TRY(Shape const shape, Shape::checked(rank, dimensions));
+    BOOST_OUTCOME_TRY(TensorType const type, TensorType::checked(dtype, shape));
     switch (location) {
     case Location::Literal:
         return TensorInput{type, byte_order, payload};
@@ -304,8 +258,8 @@ void abi_append_tensor(
     uint64_t const encoded_tensor_head_size =
         32 /* dtype (uint8) */ + 32 /* head(uint16[]) */ + 32 /* head(bytes) */;
     uint64_t const encoded_dimensions_tail_size =
-        32 /* size */ + 32 * tensor.type().shape.rank /* dimensions */;
-    uint64_t const size_bytes = tensor.type().size_bytes();
+        32 /* size */ + 32 * tensor.type().shape().rank() /* dimensions */;
+    auto const size_bytes = tensor.type().size_bytes();
     uint64_t const padded_size_bytes = 32 * ((size_bytes + 31) / 32);
     uint64_t const encoded_data_tail_size =
         32 /* size */ + padded_size_bytes /* data */;
@@ -321,16 +275,16 @@ void abi_append_tensor(
         encoded_tensor_head_size + encoded_dimensions_tail_size;
 
     // Encode head
-    out += abi_encode_uint(u64_be{static_cast<uint8_t>(tensor.type().dtype)});
+    out += abi_encode_uint(u64_be{static_cast<uint8_t>(tensor.type().dtype())});
     out += abi_encode_uint(u64_be{dimensions_start});
     out += abi_encode_uint(u64_be{data_start});
 
-    auto const &shape = tensor.type().shape;
+    auto const &shape = tensor.type().shape();
     // Encode dimensions
-    out += abi_encode_uint(u64_be{shape.rank});
-    for (auto i = 0; i < shape.rank; i++) {
+    out += abi_encode_uint(u64_be{shape.rank()});
+    for (auto i = 0; i < shape.rank(); i++) {
         out +=
-            abi_encode_uint(u64_be{shape.dimensions[static_cast<size_t>(i)]});
+            abi_encode_uint(u64_be{shape.dimensions()[static_cast<size_t>(i)]});
     }
 
     // Encode data, converting it from host order to `order` and padding it
@@ -342,7 +296,7 @@ void abi_append_tensor(
         data_offset + padded_size_bytes, [&](uint8_t *buffer, size_t n) {
             uint8_t *const dst = buffer + data_offset;
             copy_elements(
-                tensor.type().dtype,
+                tensor.type().dtype(),
                 order,
                 {tensor.data(), static_cast<size_t>(size_bytes)},
                 dst);

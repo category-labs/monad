@@ -76,14 +76,13 @@ Result<void> load_code_tensor(
         return GraphEvalError::InvalidTensorRef;
     }
     auto const &[type, data] = tensor.value();
-    if (type.dtype != out.type().dtype ||
-        !same_shape(type.shape, out.type().shape)) {
+    if (type != out.type()) {
         return GraphEvalError::InvalidTensorRef;
     }
     // TODO: `order` applies to the elements only. Their header, before them,
     // is always little-endian, like the rest of the graphcode, which is a bit
     // of a quirk
-    copy_elements(type.dtype, order, data, out.data());
+    copy_elements(type.dtype(), order, data, out.data());
     return outcome::success();
 }
 
@@ -91,7 +90,7 @@ Result<void> load_storage_tensor(
     CallerStorage &storage, StorageRef const &ref, ByteOrder const order,
     Tensor &out)
 {
-    Dtype const dtype = out.type().dtype;
+    Dtype const dtype = out.type().dtype();
     uint64_t const size = out.type().size_bytes();
     uint256_t const first = to_uint256(ref.slot);
     for (uint64_t i = 0; i < slots_for(size); i++) {
@@ -109,7 +108,7 @@ void store_storage_tensor(
     CallerStorage &storage, StorageRef const &ref, ByteOrder const order,
     Tensor const &tensor)
 {
-    Dtype const dtype = tensor.type().dtype;
+    Dtype const dtype = tensor.type().dtype();
     uint64_t const size = tensor.type().size_bytes();
     std::span<uint8_t const> const elements{
         tensor.data(), static_cast<size_t>(size)};

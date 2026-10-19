@@ -28,7 +28,6 @@
 #include <boost/outcome/try.hpp>
 
 #include <algorithm>
-#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
@@ -36,7 +35,6 @@
 #include <map>
 #include <set>
 #include <span>
-#include <utility>
 #include <vector>
 
 MONAD_GRAPH_EVAL_ANONYMOUS_NAMESPACE_BEGIN
@@ -70,83 +68,6 @@ struct Lifetime
     uint64_t first; // When it's computed
     uint64_t last; // When its memory is last read, if it's its own
 };
-
-// The type of the tensor an op computes, as the op's check() works it out,
-// with `input_ids` replaced by the node ids of the op's inputs
-Result<TensorType> check_op(
-    Op const op, std::span<uint8_t const> &graphcode,
-    std::vector<TensorType> const &types, std::vector<uint16_t> &input_ids)
-{
-    switch (op) {
-    case Op::Literal:
-        return LiteralOp{}.check(graphcode, types, input_ids);
-    case Op::Add:
-        return AddOp{}.check(graphcode, types, input_ids);
-    case Op::Sub:
-        return SubOp{}.check(graphcode, types, input_ids);
-    case Op::Mul:
-        return MulOp{}.check(graphcode, types, input_ids);
-    case Op::Max:
-        return MaxOp{}.check(graphcode, types, input_ids);
-    case Op::Min:
-        return MinOp{}.check(graphcode, types, input_ids);
-    case Op::Greater:
-        return GreaterOp{}.check(graphcode, types, input_ids);
-    case Op::Ge:
-        return GeOp{}.check(graphcode, types, input_ids);
-    case Op::Equal:
-        return EqualOp{}.check(graphcode, types, input_ids);
-    case Op::Reshape:
-        return ReshapeOp{}.check(graphcode, types, input_ids);
-    case Op::Where:
-        return WhereOp{}.check(graphcode, types, input_ids);
-    case Op::Saturate:
-        return SaturateOp{}.check(graphcode, types, input_ids);
-    case Op::Expand:
-        return ExpandOp{}.check(graphcode, types, input_ids);
-    case Op::Div:
-        return DivOp{}.check(graphcode, types, input_ids);
-    case Op::MatMul:
-        return MatMulOp{}.check(graphcode, types, input_ids);
-    case Op::ArgMax:
-        return ArgMaxOp{}.check(graphcode, types, input_ids);
-    case Op::CumSum:
-        return CumSumOp{}.check(graphcode, types, input_ids);
-    case Op::QMul:
-        return QMulOp{}.check(graphcode, types, input_ids);
-    case Op::QDiv:
-        return QDivOp{}.check(graphcode, types, input_ids);
-    case Op::QMatMul:
-        return QMatMulOp{}.check(graphcode, types, input_ids);
-    case Op::ReduceSum:
-        return ReduceSumOp{}.check(graphcode, types, input_ids);
-    case Op::ReduceMax:
-        return ReduceMaxOp{}.check(graphcode, types, input_ids);
-    case Op::QExp:
-        return QExpOp{}.check(graphcode, types, input_ids);
-    case Op::QInvSqrt:
-        return QInvSqrtOp{}.check(graphcode, types, input_ids);
-    case Op::Gather:
-        return GatherOp{}.check(graphcode, types, input_ids);
-    case Op::Concat:
-        return ConcatOp{}.check(graphcode, types, input_ids);
-    case Op::TensorRef: {
-        // TODO: perhaps make TensorRef a GraphOp. interpreter.cpp's
-        // evaluate_tensor_ref says why it isn't one
-        BOOST_OUTCOME_TRY(
-            auto const params,
-            read_next<std::tuple<Dtype, Shape, Address, uint32_t>>(graphcode));
-        input_ids.clear();
-        return TensorType{std::get<0>(params), std::get<1>(params)};
-    }
-    case Op::ArgMin:
-    case Op::Clip:
-    case Op::Cast:
-        // Not implemented yet; the interpreter fails on them
-        return GraphEvalError::InternalError;
-    }
-    MONAD_ABORT();
-}
 
 // The free memory below the top of the memory placed so far, as blocks keyed by
 // offset, to merge neighbors, and by size, to find the best fit
@@ -236,7 +157,7 @@ Graphcode::Graphcode(std::span<uint8_t const> code)
     : code_(code.data())
     , code_size_(code.size())
 {
-    validation_result_ = as_graph_eval_error(compute_tensor_allocations());
+    validation_result_ = as_graph_eval_error(validate_graph());
 }
 
 // Works out every tensor's type and when it's live, by reading through the
@@ -246,10 +167,9 @@ Graphcode::Graphcode(std::span<uint8_t const> code)
 // tensor's memory is freed after the last op that reads it, once that op's own
 // tensor is placed, so that an op's output never overlaps its inputs. Each
 // placement and release takes O(log n).
-Result<void> Graphcode::compute_tensor_allocations()
+Result<void> Graphcode::validate_graph()
 {
     std::span<uint8_t const> code = code_span();
-    std::vector<TensorType> types;
     std::vector<Lifetime> lifetimes;
 
     // Each tensor's type and lifetime, in id order
@@ -257,15 +177,13 @@ Result<void> Graphcode::compute_tensor_allocations()
     // The magic number, which the interpreter checks
     BOOST_OUTCOME_TRY(read_next<uint16_t>(code));
 
-    BOOST_OUTCOME_TRY(auto const n_inputs, read_next<uint8_t>(code));
-    if (n_inputs > MAX_GRAPH_INPUTS) {
+    BOOST_OUTCOME_TRY(n_inputs_, read_next<uint8_t>(code));
+    if (n_inputs_ > MAX_GRAPH_INPUTS) {
         return GraphEvalError::GraphValidationError;
     }
-    for (size_t id = 0; id < n_inputs; id++) {
-        BOOST_OUTCOME_TRY(auto const dtype, read_next<Dtype>(code));
-        BOOST_OUTCOME_TRY(auto const shape, read_next<Shape>(code));
-        BOOST_OUTCOME_TRY(tensor_size_bytes(dtype, shape));
-        types.push_back(TensorType{dtype, shape});
+    for (size_t id = 0; id < n_inputs_; id++) {
+        BOOST_OUTCOME_TRY(auto const type, read_next<TensorType>(code));
+        tensor_types_.push_back(type);
         lifetimes.push_back(Lifetime{id, 0, 0});
     }
 
@@ -273,58 +191,54 @@ Result<void> Graphcode::compute_tensor_allocations()
     if (n_outputs > MAX_GRAPH_OUTPUTS) {
         return GraphEvalError::GraphValidationError;
     }
-    std::array<uint16_t, MAX_GRAPH_OUTPUTS> outputs{};
     for (size_t i = 0; i < n_outputs; i++) {
-        BOOST_OUTCOME_TRY(outputs[i], read_next<uint16_t>(code));
+        BOOST_OUTCOME_TRY(auto const output_id, read_next<uint16_t>(code));
+        outputs_.push_back(output_id);
     }
 
     BOOST_OUTCOME_TRY(auto const n_ops, read_next<uint16_t>(code));
-    std::vector<uint16_t> input_ids;
     for (uint64_t time = 1; time <= n_ops; time++) {
-        BOOST_OUTCOME_TRY(auto const opcode, read_next<uint16_t>(code));
-        if (opcode > static_cast<uint16_t>(Op::Last_valid_op)) {
-            return GraphEvalError::GraphValidationError;
-        }
-        auto const op = static_cast<Op>(opcode);
         BOOST_OUTCOME_TRY(
-            auto const type, check_op(op, code, types, input_ids));
-        BOOST_OUTCOME_TRY(tensor_size_bytes(type.dtype, type.shape));
-
-        for (uint16_t const input : input_ids) {
-            Lifetime &buffer = lifetimes[lifetimes[input].buffer];
-            buffer.last = std::max(buffer.last, time);
-        }
-        size_t const id = types.size();
-        size_t const buffer =
-            op == Op::Reshape ? lifetimes[input_ids[0]].buffer : id;
-        types.push_back(type);
-        lifetimes.push_back(Lifetime{buffer, time, time});
+            visit_next(code, [&]<typename OpT>(OpT const &op) -> Result<void> {
+                BOOST_OUTCOME_TRY(auto const type, op.check(tensor_types_));
+                for (size_t const input : op.input_ids) {
+                    Lifetime &buffer = lifetimes[lifetimes[input].buffer];
+                    buffer.last = std::max(buffer.last, time);
+                }
+                size_t const id = tensor_types_.size();
+                size_t const buffer = std::same_as<OpT, ReshapeOp>
+                                          ? lifetimes[op.input_ids[0]].buffer
+                                          : id;
+                tensor_types_.push_back(type);
+                lifetimes.push_back(Lifetime{buffer, time, time});
+                return outcome::success();
+            }));
     }
 
     // The outputs are read after the last op, when they're encoded
     for (size_t i = 0; i < n_outputs; i++) {
-        if (outputs[i] >= types.size()) {
+        if (outputs_[i] >= tensor_types_.size()) {
             return GraphEvalError::GraphValidationError;
         }
-        lifetimes[lifetimes[outputs[i]].buffer].last = END;
+        lifetimes[lifetimes[outputs_[i]].buffer].last = END;
     }
 
     // Each tensor's offset, in the order the tensors are computed. A tensor
     // bigger than the arena could never fit, and keeping sizes within it keeps
     // the offsets from overflowing.
-    std::vector<uint64_t> offsets(types.size(), 0);
+    std::vector<uint64_t> offsets(tensor_types_.size(), 0);
     // The tensors whose memory is freed after each time
     std::vector<std::vector<size_t>> freed_after(n_ops + 1);
     FreeBlocks blocks;
     size_t id = 0;
     for (uint64_t time = 0; time <= n_ops; time++) {
-        for (; id < types.size() && lifetimes[id].first == time; id++) {
-            Lifetime const &lifetime = lifetimes[id];
+        for (; id < tensor_types_.size() && lifetimes[id].first == time; id++) {
+            auto const &lifetime = lifetimes[id];
             if (lifetime.buffer != id) {
                 offsets[id] = offsets[lifetime.buffer];
                 continue;
             }
-            uint64_t const size = types[id].size_bytes();
+            auto const size = tensor_types_[id].size_bytes();
             if (size > ARENA_SIZE) {
                 return GraphEvalError::OutOfMemory;
             }
@@ -340,7 +254,8 @@ Result<void> Graphcode::compute_tensor_allocations()
         for (size_t const freed : freed_after[time]) {
             blocks.release(
                 offsets[freed],
-                round_up(types[freed].size_bytes(), TENSOR_DATA_ALIGNMENT));
+                round_up(
+                    tensor_types_[freed].size_bytes(), TENSOR_DATA_ALIGNMENT));
         }
     }
     // TODO: charge gas for the arena size
@@ -349,10 +264,10 @@ Result<void> Graphcode::compute_tensor_allocations()
     }
 
     arena_size_ = blocks.peak();
-    tensor_allocation_records_.reserve(types.size());
-    for (size_t i = 0; i < types.size(); i++) {
+    tensor_allocation_records_.reserve(tensor_types_.size());
+    for (size_t i = 0; i < tensor_types_.size(); i++) {
         tensor_allocation_records_.push_back(
-            TensorAllocationRecord{offsets[i], types[i]});
+            TensorAllocationRecord{offsets[i], tensor_types_[i]});
     }
     return outcome::success();
 }

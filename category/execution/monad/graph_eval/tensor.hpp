@@ -37,35 +37,122 @@ MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
 
 struct Shape
 {
-    uint8_t rank;
-    std::array<uint16_t, 8> dimensions; // Indices are valid up to rank_-1
-
-    Shape() = default;
-
-    Shape(uint8_t rank, std::array<uint16_t, 8> const &dimensions)
-        : rank(rank)
-        , dimensions(dimensions)
+    constexpr Shape() noexcept
+        : rank_(0)
+        , dimensions_{}
+        , size_(1)
     {
     }
 
-    constexpr uint64_t size() const noexcept
+    constexpr uint8_t rank() const noexcept
     {
-        uint64_t size = 1;
-        for (size_t i = 0; i < rank; ++i) {
-            size *= dimensions[i];
+        return rank_;
+    }
+
+    constexpr std::array<uint16_t, MAX_RANK> const &dimensions() const noexcept
+    {
+        return dimensions_;
+    }
+
+    constexpr size_t size() const noexcept
+    {
+        return size_;
+    }
+
+    constexpr bool operator==(Shape const &other) const noexcept
+    {
+        if (rank() != other.rank()) {
+            return false;
         }
-        return size;
+        return std::memcmp(
+                   dimensions().data(),
+                   other.dimensions().data(),
+                   sizeof(dimensions()[0]) * rank()) == 0;
+    }
+
+    constexpr bool operator!=(Shape const &other) const noexcept = default;
+
+    static constexpr Result<Shape> checked(
+        uint8_t rank, std::array<uint16_t, MAX_RANK> const &dimensions) noexcept
+    {
+        if (rank > MAX_RANK) {
+            return GraphEvalError::RankError;
+        }
+        size_t size = 1;
+        for (size_t i = 0; i < rank; ++i) {
+            if (MONAD_UNLIKELY(
+                    __builtin_mul_overflow(size, dimensions[i], &size))) {
+                return GraphEvalError::ShapeError;
+            }
+        }
+        return Shape(rank, dimensions, size);
+    }
+
+private:
+    uint8_t rank_;
+    std::array<uint16_t, MAX_RANK>
+        dimensions_; // Indices are valid up to rank_-1
+    size_t size_;
+
+    constexpr Shape(
+        uint8_t rank, std::array<uint16_t, 8> const &dimensions,
+        size_t size) noexcept
+        : rank_(rank)
+        , dimensions_(dimensions)
+        , size_(size)
+    {
     }
 };
 
 struct TensorType
 {
-    Dtype dtype;
-    Shape shape;
+    constexpr TensorType() noexcept
+        : TensorType(Dtype::int8, Shape(), 1)
+    {
+    }
+
+    constexpr Dtype dtype() const noexcept
+    {
+        return dtype_;
+    }
+
+    constexpr Shape const &shape() const noexcept
+    {
+        return shape_;
+    }
 
     constexpr size_t size_bytes() const noexcept
     {
-        return shape.size() * dtype_size(dtype);
+        return size_bytes_;
+    }
+
+    static constexpr Result<TensorType>
+    checked(Dtype dtype, Shape shape) noexcept
+    {
+        auto size_bytes = shape.size();
+        if (MONAD_UNLIKELY(__builtin_mul_overflow(
+                size_bytes, dtype_size(dtype), &size_bytes))) {
+            return GraphEvalError::ShapeError;
+        }
+        return TensorType(dtype, shape, size_bytes);
+    }
+
+    constexpr bool operator==(TensorType const &other) const noexcept
+    {
+        return dtype() == other.dtype() && shape() == other.shape();
+    }
+    constexpr bool operator!=(TensorType const &other) const noexcept = default;
+
+private:
+    Dtype dtype_;
+    Shape shape_;
+    size_t size_bytes_;
+
+    constexpr TensorType(Dtype dtype, Shape shape, size_t size_bytes) noexcept
+        : dtype_(dtype)
+        , shape_(shape)
+        , size_bytes_(size_bytes)
+    {
     }
 };
 
@@ -89,19 +176,21 @@ public:
     {
     }
 
-    constexpr TensorType const & type() const noexcept { return type_; }
+    constexpr TensorType const &type() const noexcept
+    {
+        return type_;
+    }
 
     constexpr uint8_t *data() const noexcept
     {
         return data_;
     }
 
-    // Return a view of this tensor's elements, as the C++ type matching its dtype
     template <typename T>
     constexpr std::span<T> elements() const
     {
-        MONAD_DEBUG_ASSERT(type().dtype == dtype_of<std::remove_const_t<T>>());
-        return {reinterpret_cast<T *>(data()), type().shape.size()};
+        MONAD_DEBUG_ASSERT(type().dtype() == dtype_of<std::remove_const_t<T>>());
+        return {reinterpret_cast<T *>(data()), type().shape().size()};
     }
 };
 
@@ -171,11 +260,6 @@ struct TensorOutput
     // Where the output is stored, or none if it's returned
     std::optional<StorageRef> destination;
 };
-
-// The size in bytes of a tensor's data, or ShapeError if that overflows
-Result<uint64_t> tensor_size_bytes(Dtype dtype, Shape const &shape);
-
-bool same_shape(Shape const &a, Shape const &b);
 
 // The shape numpy broadcasts `shapes` to: they're matched from their last
 // dimensions, and each of the result's dimensions is their common size along

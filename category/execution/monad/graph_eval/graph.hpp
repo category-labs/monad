@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include "category/execution/monad/graph_eval/constants.hpp"
 #include <category/core/address.hpp>
 #include <category/core/assert.h>
 #include <category/core/likely.h>
@@ -163,22 +164,31 @@ inline Result<T> read_next(std::span<uint8_t const> &input)
     return result;
 }
 
-// Rejects bytes that don't name a Dtype, so the result is always safe to pass
-// to dtype_size, which aborts on anything else
 template <>
 [[gnu::always_inline]]
 inline Result<Dtype> read_next<Dtype>(std::span<uint8_t const> &input)
 {
     BOOST_OUTCOME_TRY(
-        auto const id, read_next<std::underlying_type_t<Dtype>>(input));
-    if (id >
+        auto const ty_id, read_next<std::underlying_type_t<Dtype>>(input));
+    if (ty_id >
         static_cast<std::underlying_type_t<Dtype>>(Dtype::Last_valid_dtype)) {
         return GraphEvalError::TypeError;
     }
-    return static_cast<Dtype>(id);
+    return static_cast<Dtype>(ty_id);
 }
 
-// Parameters of an op that takes none, encoded as zero bytes
+template <>
+[[gnu::always_inline]]
+inline Result<Op> read_next<Op>(std::span<uint8_t const> &input)
+{
+    BOOST_OUTCOME_TRY(
+        auto const op_id, read_next<std::underlying_type_t<Op>>(input));
+    if (op_id > static_cast<std::underlying_type_t<Op>>(Op::Last_valid_op)) {
+        return GraphEvalError::InvalidOp;
+    }
+    return static_cast<Op>(op_id);
+}
+
 template <>
 [[gnu::always_inline]]
 inline Result<std::monostate>
@@ -193,24 +203,28 @@ template <>
 [[gnu::always_inline]]
 inline Result<Shape> read_next<Shape>(std::span<uint8_t const> &input)
 {
-    Shape shape{};
-    BOOST_OUTCOME_TRY(shape.rank, read_next<uint8_t>(input));
-    if (shape.rank > shape.dimensions.size()) {
+    BOOST_OUTCOME_TRY(auto const rank, read_next<uint8_t>(input));
+    if (rank > MAX_RANK) {
         return GraphEvalError::RankError;
     }
 
-    uint64_t size = 1;
-    for (size_t i = 0; i < shape.rank; i++) {
-        BOOST_OUTCOME_TRY(shape.dimensions[i], read_next<uint16_t>(input));
-        if (MONAD_UNLIKELY(
-                __builtin_mul_overflow(size, shape.dimensions[i], &size))) {
-            return GraphEvalError::ShapeError;
-        }
+    std::array<uint16_t, MAX_RANK> dimensions;
+    for (size_t i = 0; i < rank; i++) {
+        BOOST_OUTCOME_TRY(dimensions[i], read_next<uint16_t>(input));
     }
-    return shape;
+
+    return Shape::checked(rank, dimensions);
 }
 
-// An account's address: its 20 bytes, in order
+template <>
+[[gnu::always_inline]]
+inline Result<TensorType> read_next<TensorType>(std::span<uint8_t const> &input)
+{
+    BOOST_OUTCOME_TRY(auto const dtype, read_next<Dtype>(input));
+    BOOST_OUTCOME_TRY(auto const shape, read_next<Shape>(input));
+    return TensorType::checked(dtype, shape);
+}
+
 template <>
 [[gnu::always_inline]]
 inline Result<Address> read_next<Address>(std::span<uint8_t const> &input)
@@ -267,12 +281,9 @@ inline Result<std::tuple<TensorType, std::span<uint8_t const>>>
 read_next<std::tuple<TensorType, std::span<uint8_t const>>>(
     std::span<uint8_t const> &input)
 {
-    BOOST_OUTCOME_TRY(
-        auto const header, read_next<std::tuple<Dtype, Shape>>(input));
-    auto const &[dtype, shape] = header;
-    BOOST_OUTCOME_TRY(auto const size, tensor_size_bytes(dtype, shape));
-    BOOST_OUTCOME_TRY(auto const data, read_bytes(input, size));
-    return std::tuple{TensorType{dtype, shape}, data};
+    BOOST_OUTCOME_TRY(auto const type, read_next<TensorType>(input));
+    BOOST_OUTCOME_TRY(auto const data, read_bytes(input, type.size_bytes()));
+    return std::tuple{type, data};
 }
 
 MONAD_GRAPH_EVAL_NAMESPACE_END

@@ -224,16 +224,16 @@ import_tensor(iree_runtime_session_t *const session, Tensor const &tensor)
 
     iree_hal_buffer_view_t *view = nullptr;
     std::array<iree_hal_dim_t, 8> shape;
-    for (auto i = 0; i < tensor.type().shape.rank; i++) {
+    for (auto i = 0; i < tensor.type().shape().rank(); i++) {
         // TODO: this would not be necessary if Tensor stored dimensions as
         // unsigned long
         shape[static_cast<size_t>(i)] =
-            tensor.type().shape.dimensions[static_cast<size_t>(i)];
+            tensor.type().shape().dimensions()[static_cast<size_t>(i)];
     }
-    iree_hal_element_type_t dtype = dtype_to_iree(tensor.type().dtype);
+    iree_hal_element_type_t dtype = dtype_to_iree(tensor.type().dtype());
     iree_status_t status = iree_hal_buffer_view_create(
         buffer,
-        tensor.type().shape.rank,
+        tensor.type().shape().rank(),
         shape.data(),
         dtype,
         IREE_HAL_ENCODING_TYPE_DENSE_ROW_MAJOR,

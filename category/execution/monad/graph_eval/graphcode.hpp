@@ -61,6 +61,21 @@ public:
         return tensor_allocation_records_;
     }
 
+    constexpr std::vector<TensorType> const &tensor_types() const noexcept
+    {
+        return tensor_types_;
+    }
+
+    constexpr size_t const &n_inputs() const noexcept
+    {
+        return n_inputs_;
+    }
+
+    constexpr std::vector<size_t> const &outputs() const noexcept
+    {
+        return outputs_;
+    }
+
     constexpr std::span<uint8_t const> code_span() const noexcept
     {
         return {code(), code_size()};
@@ -68,12 +83,15 @@ public:
 
 private:
     uint8_t const *code_;
-    size_t code_size_;
+    size_t code_size_ = 0;
     size_t arena_size_ = 0;
     GraphEvalError validation_result_ = GraphEvalError::Success;
     std::vector<TensorAllocationRecord> tensor_allocation_records_;
+    std::vector<TensorType> tensor_types_;
+    size_t n_inputs_ = 0;
+    std::vector<size_t> outputs_;
 
-    Result<void> compute_tensor_allocations();
+    Result<void> validate_graph();
 };
 
 MONAD_GRAPH_EVAL_NAMESPACE_END

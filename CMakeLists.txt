@@ -46,7 +46,7 @@ option(MONAD_COMPILER_DUMP_ASM "Dump assembly files into build/asm" OFF)
 option(MONAD_COMPILER_STATS "Print statistics about the compiler" OFF)
 option(MONAD_COMPILER_HOT_PATH_STATS "Print statistics about the vm" OFF)
 option(MONAD_GRAPH_EVAL_IREE
-       "Build the IREE runtime and graph_eval's IREE kernels (needs scripts/build_iree.sh)"
+       "Build the IREE runtime, graph_eval's IREE kernels and its graph compiler (needs scripts/build_iree.sh)"
        OFF)
 
 include(cmake/test.cmake)
@@ -185,10 +185,11 @@ find_package(TBB REQUIRED)
 # unordered_dense
 add_subdirectory("third_party/unordered_dense")
 
-# iree runtime, for graph_eval's IREE kernels, which the interpreter doesn't
-# use, so it's only built with MONAD_GRAPH_EVAL_IREE. The compiler (LLVM/MLIR)
-# is built out of tree by scripts/build_iree.sh and only used at build time to
-# AOT-compile kernels.
+# iree, for graph_eval's IREE kernels and compiled graphs, which the interpreter
+# doesn't use, so it's only built with MONAD_GRAPH_EVAL_IREE. The runtime is
+# built here. The compiler (LLVM/MLIR) is built out of tree by
+# scripts/build_iree.sh, used at build time to AOT-compile kernels and linked
+# to compile graphs at run time.
 if(MONAD_GRAPH_EVAL_IREE)
   set(IREE_BUILD_COMPILER OFF)
   set(IREE_BUILD_TESTS OFF)
@@ -218,6 +219,23 @@ if(MONAD_GRAPH_EVAL_IREE)
   # The kernels run on every node, so this must not be the build machine's CPU
   set(MONAD_IREE_TARGET_CPU "znver4" CACHE STRING
       "LLVM CPU that graph_eval kernels are compiled for")
+
+  # The same compiler as a library, for graph_eval's compiler. It exports the
+  # embedding API (iree/compiler/*.h) and the MLIR C API (mlir-c/*.h), which
+  # builds graphs. Linked directly: the loader stub
+  # (compiler/bindings/c/iree/compiler/loader) dlopens it, but only forwards
+  # the ireeCompiler* functions
+  add_library(iree_compiler SHARED IMPORTED)
+  set_target_properties(
+    iree_compiler PROPERTIES IMPORTED_LOCATION
+                             "${MONAD_IREE_BUILD_DIR}/lib/libIREECompiler.so")
+  target_include_directories(
+    iree_compiler SYSTEM
+    INTERFACE "${THIRD_PARTY_DIR}/iree/compiler/bindings/c"
+              "${THIRD_PARTY_DIR}/iree/third_party/llvm-project/mlir/include"
+              # Generated: mlir-c/Dialect/Linalg.h includes
+              # mlir/Dialect/Linalg/Passes.capi.h.inc
+              "${MONAD_IREE_BUILD_DIR}/llvm-project/tools/mlir/include")
 endif()
 
 # ##############################################################################

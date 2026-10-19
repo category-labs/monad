@@ -18,10 +18,10 @@
 #include "category/execution/monad/graph_eval/graph.hpp"
 #include "category/execution/monad/graph_eval/graph_eval_error.hpp"
 #include "category/execution/monad/graph_eval/ops.hpp"
+#include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/monad/graph_eval/interpreter.hpp>
 #include <category/execution/monad/graph_eval/references.hpp>
 #include <category/execution/monad/graph_eval/tensor.hpp>
-#include <category/execution/ethereum/state3/state.hpp>
 
 #include <x86intrin.h>
 
@@ -110,14 +110,12 @@ char const *dtype_name(Dtype const dtype)
 // ad hoc, here and in the planner, because it would be the only op that reads
 // the state, which GraphOp::evaluate has no access to. TODO: charge gas for
 // reading the account and copying its code, as EXTCODECOPY does
-Result<void> evaluate_tensor_ref(
-    State &state, std::span<uint8_t const> &graphcode, Tensor &output)
+Result<void>
+evaluate_tensor_ref(State &state, TensorRefOp const &op, Tensor &output)
 {
-    BOOST_OUTCOME_TRY(
-        auto const params,
-        read_next<std::tuple<Dtype, Shape, Address, uint32_t>>(graphcode));
+    auto const [type, address, offset] = op.params;
     // The planner gave the output the type in the parameters
-    CodeRef const ref{std::get<2>(params), std::get<3>(params)};
+    CodeRef const ref{address, offset};
     return load_code_tensor(state, ref, ByteOrder::LittleEndian, output);
 }
 
@@ -148,18 +146,18 @@ Result<void> Interpreter::check_inputs()
         auto const &input = inputs_[static_cast<size_t>(i)];
 
         BOOST_OUTCOME_TRY(auto const dtype, read_next<uint8_t>(code_span_));
-        if (dtype != static_cast<uint8_t>(input.type.dtype)) {
+        if (dtype != static_cast<uint8_t>(input.type.dtype())) {
             return GraphEvalError::TypeError;
         }
 
         BOOST_OUTCOME_TRY(auto const rank, read_next<uint8_t>(code_span_));
-        if (rank != input.type.shape.rank) {
+        if (rank != input.type.shape().rank()) {
             return GraphEvalError::RankError;
         }
 
         for (auto j = 0; j < rank; j++) {
             BOOST_OUTCOME_TRY(auto const d_j, read_next<uint16_t>(code_span_));
-            if (d_j != input.type.shape.dimensions[static_cast<size_t>(j)]) {
+            if (d_j != input.type.shape().dimensions()[static_cast<size_t>(j)]) {
                 return GraphEvalError::ShapeError;
             }
         }
@@ -181,7 +179,7 @@ Result<void> Interpreter::load_inputs()
         if (auto const *const data =
                 std::get_if<byte_string_view>(&input.source)) {
             copy_elements(
-                input.type.dtype, input.byte_order, *data, tensor.data());
+                input.type.dtype(), input.byte_order, *data, tensor.data());
         }
         else if (auto const *const ref = std::get_if<CodeRef>(&input.source)) {
             BOOST_OUTCOME_TRY(
@@ -202,10 +200,8 @@ Result<void> Interpreter::load_inputs()
 
 Result<void> Interpreter::prepare_node_placement()
 {
-    // Making this const means it can't be cast to Result<void> for some reason
-    auto validation_result = graphcode_.validation_result();
-    if (validation_result != GraphEvalError::Success) {
-        return validation_result;
+    if (graphcode_.validation_result() != GraphEvalError::Success) {
+        return graphcode_.validation_result();
     }
     auto const &allocs = graphcode_.tensor_allocation_records();
     node_values_.reserve(allocs.size());
@@ -248,137 +244,21 @@ Result<std::vector<Tensor>> Interpreter::run()
         times->start = __rdtsc();
     }
     for (size_t i = 0; i < n_ops; i++) {
-        BOOST_OUTCOME_TRY(
-            auto const opcode_id, read_next<uint16_t>(code_span_));
-        if (opcode_id > static_cast<uint16_t>(Op::Last_valid_op)) {
-            return GraphEvalError::GraphValidationError;
-        }
-        auto const opcode = static_cast<Op>(opcode_id);
         // OutputAllocator const output{allocator_, node_values_.size()};
-
         Tensor &result = node_values_[n_inputs + i];
-        switch (opcode) {
-        case Op::Literal: {
-            BOOST_OUTCOME_TRY(LiteralOp{}.evaluate(code_span_, result, node_values_));
-            break;
-        }
-        case Op::TensorRef: {
-            BOOST_OUTCOME_TRY(evaluate_tensor_ref(state_, code_span_, result));
-            break;
-        }
-        case Op::Add: {
-            BOOST_OUTCOME_TRY(AddOp{}.evaluate(code_span_, result, node_values_));
-            break;
-        }
-        case Op::Sub: {
-            BOOST_OUTCOME_TRY(SubOp{}.evaluate(code_span_, result, node_values_));
-            break;
-        }
-        case Op::Greater: {
-            BOOST_OUTCOME_TRY(GreaterOp{}.evaluate(code_span_, result, node_values_));
-            break;
-        }
-        case Op::Ge: {
-            BOOST_OUTCOME_TRY(GeOp{}.evaluate(code_span_, result, node_values_));
-            break;
-        }
-        case Op::Equal: {
-            BOOST_OUTCOME_TRY(EqualOp{}.evaluate(code_span_, result, node_values_));
-            break;
-        }
-        case Op::Reshape: {
-            BOOST_OUTCOME_TRY(ReshapeOp{}.evaluate(code_span_, result, node_values_));
-            break;
-        }
-        case Op::Where: {
-            BOOST_OUTCOME_TRY(WhereOp{}.evaluate(code_span_, result, node_values_));
-            break;
-        }
-        case Op::CumSum: {
-            BOOST_OUTCOME_TRY(CumSumOp{}.evaluate(code_span_, result, node_values_));
-            break;
-        }
-        case Op::Saturate: {
-            BOOST_OUTCOME_TRY(SaturateOp{}.evaluate(code_span_, result, node_values_));
-            break;
-        }
-        case Op::MatMul: {
-            BOOST_OUTCOME_TRY(MatMulOp{}.evaluate(code_span_, result, node_values_));
-            break;
-        }
-        case Op::ArgMax: {
-            BOOST_OUTCOME_TRY(ArgMaxOp{}.evaluate(code_span_, result, node_values_));
-            break;
-        }
-        case Op::ArgMin: {
-            return GraphEvalError::InternalError;
-            break;
-        }
-        case Op::Clip: {
-            return GraphEvalError::InternalError;
-            break;
-        }
-        case Op::Max: {
-            BOOST_OUTCOME_TRY(MaxOp{}.evaluate(code_span_, result, node_values_));
-            break;
-        }
-        case Op::Min: {
-            BOOST_OUTCOME_TRY(MinOp{}.evaluate(code_span_, result, node_values_));
-            break;
-        }
-        case Op::Mul: {
-            BOOST_OUTCOME_TRY(MulOp{}.evaluate(code_span_, result, node_values_));
-            break;
-        }
-        case Op::Div: {
-            BOOST_OUTCOME_TRY(DivOp{}.evaluate(code_span_, result, node_values_));
-            break;
-        }
-        case Op::Cast: {
-            return GraphEvalError::InternalError;
-            break;
-        }
-        case Op::Expand: {
-            BOOST_OUTCOME_TRY(ExpandOp{}.evaluate(code_span_, result, node_values_));
-            break;
-        }
-        case Op::QMul: {
-            BOOST_OUTCOME_TRY(QMulOp{}.evaluate(code_span_, result, node_values_));
-            break;
-        }
-        case Op::QDiv: {
-            BOOST_OUTCOME_TRY(QDivOp{}.evaluate(code_span_, result, node_values_));
-            break;
-        }
-        case Op::QMatMul: {
-            BOOST_OUTCOME_TRY(QMatMulOp{}.evaluate(code_span_, result, node_values_));
-            break;
-        }
-        case Op::ReduceSum: {
-            BOOST_OUTCOME_TRY(ReduceSumOp{}.evaluate(code_span_, result, node_values_));
-            break;
-        }
-        case Op::ReduceMax: {
-            BOOST_OUTCOME_TRY(ReduceMaxOp{}.evaluate(code_span_, result, node_values_));
-            break;
-        }
-        case Op::QExp: {
-            BOOST_OUTCOME_TRY(QExpOp{}.evaluate(code_span_, result, node_values_));
-            break;
-        }
-        case Op::QInvSqrt: {
-            BOOST_OUTCOME_TRY(QInvSqrtOp{}.evaluate(code_span_, result, node_values_));
-            break;
-        }
-        case Op::Gather: {
-            BOOST_OUTCOME_TRY(GatherOp{}.evaluate(code_span_, result, node_values_));
-            break;
-        }
-        case Op::Concat: {
-            BOOST_OUTCOME_TRY(ConcatOp{}.evaluate(code_span_, result, node_values_));
-            break;
-        }
-        }
+        Op opcode{};
+        BOOST_OUTCOME_TRY(
+            visit_next(code_span_, [&]<typename OpT>(OpT const &op) {
+                opcode = OpT::OPCODE;
+                if constexpr (std::same_as<OpT, TensorRefOp>) {
+                    // TODO: fold this into normal evaluation
+                    return evaluate_tensor_ref(state_, op, result);
+                }
+                else {
+                    return op.evaluate(result, node_values_);
+                }
+            }));
+
         if constexpr (TIME_NODES) {
             times->nodes[times->count++] =
                 NodeTime{__rdtsc(), opcode, result.type()};
@@ -427,15 +307,15 @@ void print_node_times()
     std::string type;
     for (size_t i = 0; i < times.count; i++) {
         NodeTime const &node = times.nodes[i];
-        Shape const &shape = node.type.shape;
-        type = dtype_name(node.type.dtype);
+        Shape const &shape = node.type.shape();
+        type = dtype_name(node.type.dtype());
         type += '[';
-        for (size_t d = 0; d < shape.rank; d++) {
+        for (size_t d = 0; d < shape.rank(); d++) {
             std::format_to(
                 std::back_inserter(type),
                 "{}{}",
                 d == 0 ? "" : ", ",
-                shape.dimensions[d]);
+                shape.dimensions()[d]);
         }
         type += ']';
         std::format_to(

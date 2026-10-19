@@ -33,6 +33,8 @@ constexpr uint64_t ARENA_SIZE = uint64_t{64} * 1024 * 1024;
 constexpr std::size_t MAX_GRAPH_INPUTS = 8;
 constexpr std::size_t MAX_GRAPH_OUTPUTS = 8;
 
+constexpr std::size_t MAX_RANK = 8;
+
 constexpr uint16_t GRAPH_MAGIC = 0x7ffe;
 
 // The most fractional bits a fixed-point op's parameter can give

@@ -263,16 +263,16 @@ MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
 
 void matmul_i8(Tensor const &x, Tensor const &y, Tensor &out)
 {
-    size_t const m = x.type().shape.dimensions[0];
-    size_t const k = x.type().shape.dimensions[1];
-    size_t const n = y.type().shape.dimensions[1];
+    size_t const m = x.type().shape().dimensions()[0];
+    size_t const k = x.type().shape().dimensions()[1];
+    size_t const n = y.type().shape().dimensions()[1];
     MONAD_DEBUG_ASSERT(
-        x.type().shape.rank == 2 && y.type().shape.rank == 2 &&
-        out.type().shape.rank == 2);
-    MONAD_DEBUG_ASSERT(y.type().shape.dimensions[0] == k);
+        x.type().shape().rank() == 2 && y.type().shape().rank() == 2 &&
+        out.type().shape().rank() == 2);
+    MONAD_DEBUG_ASSERT(y.type().shape().dimensions()[0] == k);
     MONAD_DEBUG_ASSERT(
-        out.type().shape.dimensions[0] == m &&
-        out.type().shape.dimensions[1] == n);
+        out.type().shape().dimensions()[0] == m &&
+        out.type().shape().dimensions()[1] == n);
 
     int8_t const *const x_data = x.elements<int8_t const>().data();
     int8_t const *const y_data = y.elements<int8_t const>().data();
@@ -297,19 +297,19 @@ void matmul_i8(Tensor const &x, Tensor const &y, Tensor &out)
 
 void matmul(Tensor const &x, Tensor const &y, unsigned const bits, Tensor &out)
 {
-    size_t const m = x.type().shape.dimensions[0];
-    size_t const k = x.type().shape.dimensions[1];
-    size_t const n = y.type().shape.dimensions[1];
+    size_t const m = x.type().shape().dimensions()[0];
+    size_t const k = x.type().shape().dimensions()[1];
+    size_t const n = y.type().shape().dimensions()[1];
     MONAD_DEBUG_ASSERT(
-        x.type().shape.rank == 2 && y.type().shape.rank == 2 &&
-        out.type().shape.rank == 2);
-    MONAD_DEBUG_ASSERT(y.type().shape.dimensions[0] == k);
+        x.type().shape().rank() == 2 && y.type().shape().rank() == 2 &&
+        out.type().shape().rank() == 2);
+    MONAD_DEBUG_ASSERT(y.type().shape().dimensions()[0] == k);
     MONAD_DEBUG_ASSERT(
-        out.type().shape.dimensions[0] == m &&
-        out.type().shape.dimensions[1] == n);
+        out.type().shape().dimensions()[0] == m &&
+        out.type().shape().dimensions()[1] == n);
 
-    visit_dtype(x.type().dtype, [&]<typename T>() {
-        visit_dtype(out.type().dtype, [&]<typename Out>() {
+    visit_dtype(x.type().dtype(), [&]<typename T>() {
+        visit_dtype(out.type().dtype(), [&]<typename Out>() {
             matmul_generic(
                 x.elements<T const>().data(),
                 y.elements<T const>().data(),

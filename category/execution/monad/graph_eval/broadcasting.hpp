@@ -20,6 +20,30 @@
 
 MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
 
+inline Result<Shape> broadcast_shape(std::span<Shape const> const shapes)
+{
+    uint8_t rank = 0;
+    std::array<uint16_t, MAX_RANK> dimensions;
+    for (Shape const &shape : shapes) {
+        rank = std::max(rank, shape.rank());
+    }
+    std::fill_n(dimensions.begin(), rank, uint16_t{1});
+    for (Shape const &shape : shapes) {
+        for (size_t i = 0; i < shape.rank(); i++) {
+            size_t const d = rank - shape.rank() + i;
+            uint16_t const size = shape.dimensions()[i];
+            if (size != 1) {
+                if (dimensions[d] != 1 && dimensions[d] != size) {
+                    return GraphEvalError::ShapeError;
+                }
+                dimensions[d] = size;
+            }
+        }
+    }
+    return Shape::checked(rank, dimensions);
+}
+
+
 // The loops of an element-wise op over N operands broadcast together, as
 // broadcast_shape broadcasts them
 template <size_t N>
@@ -54,17 +78,17 @@ Result<BroadcastLoops<N>> broadcast(std::array<Shape, N> const &shapes)
     for (size_t k = 0; k < N; k++) {
         Shape const &operand = shapes[k];
         uint64_t stride = 1;
-        for (size_t i = operand.rank; i-- > 0;) {
-            uint16_t const size = operand.dimensions[i];
+        for (size_t i = operand.rank(); i-- > 0;) {
+            uint16_t const size = operand.dimensions()[i];
             if (size != 1) {
-                strides[k][shape.rank - operand.rank + i] = stride;
+                strides[k][shape.rank() - operand.rank() + i] = stride;
             }
             stride *= size;
         }
     }
 
-    for (size_t d = shape.rank; d-- > 0;) {
-        uint64_t const length = shape.dimensions[d];
+    for (size_t d = shape.rank(); d-- > 0;) {
+        uint64_t const length = shape.dimensions()[d];
         if (length == 1) {
             continue;
         }

@@ -7613,6 +7613,859 @@ TEST_F(EthCallFixture, eth_simulate_v1_trace_transfers_across_amsterdam)
         "");
 }
 
+TEST_F(EthCallFixture, eth_simulate_v1_logs_bloom_across_amsterdam)
+{
+    using namespace monad::vm::utils;
+
+    static constexpr uint64_t fork_timestamp = 100;
+    static constexpr Address sender =
+        0x00000000000000000000000000000000deadbeef_address;
+    static constexpr Address emitter =
+        0x00000000000000000000000000000000feedface_address;
+    static constexpr Address logger =
+        0x00000000000000000000000000000000000010a0_address;
+    static constexpr uint256_t topic = 0x1234;
+
+    auto const emitter_eb = evm_as::latest().log1(0, 0, topic).stop();
+    std::vector<uint8_t> emitter_bytecode{};
+    ASSERT_TRUE(evm_as::validate(emitter_eb));
+    evm_as::compile(emitter_eb, emitter_bytecode);
+    byte_string_view const emitter_code{
+        emitter_bytecode.data(), emitter_bytecode.size()};
+    auto const emitter_code_hash = to_bytes(keccak256(emitter_code));
+    auto const emitter_icode = vm::make_shared_intercode(emitter_code);
+
+    auto const logger_eb = evm_as::latest().log0(0, 0).stop();
+    std::vector<uint8_t> logger_bytecode{};
+    ASSERT_TRUE(evm_as::validate(logger_eb));
+    evm_as::compile(logger_eb, logger_bytecode);
+    byte_string_view const logger_code{
+        logger_bytecode.data(), logger_bytecode.size()};
+    auto const logger_code_hash = to_bytes(keccak256(logger_code));
+    auto const logger_icode = vm::make_shared_intercode(logger_code);
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {sender,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.balance = 100_ether, .nonce = 0}}}},
+            {emitter,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0,
+                          .code_hash = emitter_code_hash,
+                          .nonce = 0}}}},
+            {logger,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0,
+                          .code_hash = logger_code_hash,
+                          .nonce = 0}}}}},
+        Code{
+            {emitter_code_hash, emitter_icode},
+            {logger_code_hash, logger_icode},
+        },
+        BlockHeader{.number = 0});
+
+    for (uint64_t i = 1; i < 256; ++i) {
+        commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
+    }
+
+    Transaction const call_emitter{
+        .gas_limit = 1'000'000,
+        .value = 1_ether,
+        .to = emitter,
+    };
+    Transaction const call_logger{
+        .gas_limit = 1'000'000,
+        .to = logger,
+    };
+
+    auto const enc_sender = rlp::encode_address(std::make_optional(sender));
+    auto const rlp_senders = to_vec(rlp::encode_list2(
+        rlp::encode_list2(enc_sender, enc_sender, enc_sender),
+        rlp::encode_list2(enc_sender, enc_sender)));
+
+    auto const enc_emitter =
+        rlp::encode_string2(rlp::encode_transaction(call_emitter));
+    auto const enc_logger =
+        rlp::encode_string2(rlp::encode_transaction(call_logger));
+    auto const rlp_calls = to_vec(rlp::encode_list2(
+        rlp::encode_list2(enc_emitter, enc_emitter, enc_logger),
+        rlp::encode_list2(enc_emitter, enc_emitter)));
+
+    BlockHeader const header{
+        .number = 255,
+        .gas_limit = 200'000'000,
+        .timestamp = fork_timestamp - 2};
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    auto const hex = [](auto const &bytes) {
+        return std::format("0x{}", to_hex(bytes));
+    };
+
+    Receipt::Bloom pre_fork_bloom{};
+    populate_bloom(
+        pre_fork_bloom,
+        Receipt::Log{
+            .topics = {store_be_as<bytes32_t>(topic)}, .address = emitter});
+    populate_bloom(pre_fork_bloom, Receipt::Log{.address = logger});
+
+    Receipt::Bloom fork_bloom{};
+    populate_bloom(
+        fork_bloom,
+        Receipt::Log{
+            .topics =
+                {transfer_sig,
+                 abi_encode_address(sender),
+                 abi_encode_address(emitter)},
+            .address = ETH_SYSTEM_ADDRESS});
+    populate_bloom(
+        fork_bloom,
+        Receipt::Log{
+            .topics = {store_be_as<bytes32_t>(topic)}, .address = emitter});
+
+    auto const simulate = [&]() -> int {
+        if (::setenv(
+                "MONAD_DEVNET_FORK_TS",
+                std::to_string(fork_timestamp).c_str(),
+                1) != 0) {
+            return 1;
+        }
+        MonadDevnet const devnet;
+        if (devnet.get_monad_revision(fork_timestamp - 1) != MONAD_NINE ||
+            devnet.get_monad_revision(fork_timestamp) != MONAD_NEXT) {
+            return 2;
+        }
+
+        auto *executor = create_executor(dbname.string());
+        auto *const so = monad_state_override_vec_create(2);
+        auto *const bo = monad_block_override_vec_create(2);
+
+        struct callback_context ctx;
+        boost::fibers::future<void> f = ctx.promise.get_future();
+
+        monad_executor_eth_simulate_submit(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_senders.data(),
+            rlp_senders.size(),
+            rlp_calls.data(),
+            rlp_calls.size(),
+            255,
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            rlp_finalized_id.data(),
+            rlp_finalized_id.size(),
+            simulate_gas_limit,
+            simulate_max_calls,
+            simulate_max_output_size,
+            so,
+            bo,
+            true, // emit_native_transfer_logs
+            complete_callback,
+            (void *)&ctx);
+        f.get();
+
+        int const code = [&] {
+            if (ctx.result->status_code != EVMC_SUCCESS ||
+                ctx.result->encoded_trace_len == 0) {
+                return 3;
+            }
+            nlohmann::json const output = nlohmann::json::from_cbor(
+                ctx.result->encoded_trace,
+                ctx.result->encoded_trace + ctx.result->encoded_trace_len);
+
+            if (output.size() != 2 ||
+                output[0]["timestamp"] !=
+                    std::format("0x{:x}", fork_timestamp - 1) ||
+                output[1]["timestamp"] !=
+                    std::format("0x{:x}", fork_timestamp)) {
+                return 4;
+            }
+
+            // Before the fork: the ERC-7528 synthetics.
+            auto const &pre_fork_calls = output[0]["calls"];
+            if (pre_fork_calls.size() != 3 ||
+                pre_fork_calls[0]["status"] != "0x1" ||
+                pre_fork_calls[1]["status"] != "0x1" ||
+                pre_fork_calls[2]["status"] != "0x1") {
+                return 5;
+            }
+            auto const &pre_fork_logs_0 = pre_fork_calls[0]["logs"];
+            if (pre_fork_logs_0.size() != 2) {
+                return 6;
+            }
+            if (pre_fork_logs_0[0]["address"] !=
+                    hex(SIMULATE_NATIVE_TOKEN_LOG_ADDRESS) ||
+                pre_fork_logs_0[0]["logIndex"] != "0x0") {
+                return 7;
+            }
+            if (pre_fork_logs_0[1]["address"] != hex(emitter) ||
+                pre_fork_logs_0[1]["logIndex"] != "0x1") {
+                return 8;
+            }
+            auto const &pre_fork_logs_1 = pre_fork_calls[1]["logs"];
+            if (pre_fork_logs_1.size() != 2) {
+                return 9;
+            }
+            if (pre_fork_logs_1[0]["address"] !=
+                    hex(SIMULATE_NATIVE_TOKEN_LOG_ADDRESS) ||
+                pre_fork_logs_1[0]["logIndex"] != "0x2") {
+                return 10;
+            }
+            if (pre_fork_logs_1[1]["address"] != hex(emitter) ||
+                pre_fork_logs_1[1]["logIndex"] != "0x3") {
+                return 11;
+            }
+            auto const &pre_fork_logs_2 = pre_fork_calls[2]["logs"];
+            if (pre_fork_logs_2.size() != 1) {
+                return 12;
+            }
+            if (pre_fork_logs_2[0]["address"] != hex(logger) ||
+                pre_fork_logs_2[0]["logIndex"] != "0x4") {
+                return 13;
+            }
+            if (output[0]["logsBloom"] !=
+                hex(byte_string_view{
+                    pre_fork_bloom.data(), pre_fork_bloom.size()})) {
+                return 14;
+            }
+
+            // At the fork: the consensus logs.
+            auto const &fork_calls = output[1]["calls"];
+            if (fork_calls.size() != 2 || fork_calls[0]["status"] != "0x1" ||
+                fork_calls[1]["status"] != "0x1") {
+                return 15;
+            }
+            auto const &fork_logs_0 = fork_calls[0]["logs"];
+            if (fork_logs_0.size() != 2) {
+                return 16;
+            }
+            if (fork_logs_0[0]["address"] != hex(ETH_SYSTEM_ADDRESS) ||
+                fork_logs_0[0]["logIndex"] != "0x0") {
+                return 17;
+            }
+            if (fork_logs_0[1]["address"] != hex(emitter) ||
+                fork_logs_0[1]["logIndex"] != "0x1") {
+                return 18;
+            }
+            auto const &fork_logs_1 = fork_calls[1]["logs"];
+            if (fork_logs_1.size() != 2) {
+                return 19;
+            }
+            if (fork_logs_1[0]["address"] != hex(ETH_SYSTEM_ADDRESS) ||
+                fork_logs_1[0]["logIndex"] != "0x2") {
+                return 20;
+            }
+            if (fork_logs_1[1]["address"] != hex(emitter) ||
+                fork_logs_1[1]["logIndex"] != "0x3") {
+                return 21;
+            }
+            if (output[1]["logsBloom"] !=
+                hex(byte_string_view{fork_bloom.data(), fork_bloom.size()})) {
+                return 22;
+            }
+            return 0;
+        }();
+
+        monad_block_override_vec_destroy(bo);
+        monad_state_override_vec_destroy(so);
+        monad_executor_destroy(executor);
+        return code;
+    };
+
+    GTEST_FLAG_SET(death_test_style, "threadsafe");
+    EXPECT_EXIT(
+        ({
+            int const code = simulate();
+            std::filesystem::remove(dbname);
+            ::_exit(code);
+        }),
+        ::testing::ExitedWithCode(0),
+        "");
+}
+
+TEST_F(
+    EthCallFixture,
+    eth_simulate_v1_logs_bloom_keeps_0xeeee_with_trace_transfers)
+{
+    using namespace monad::vm::utils;
+
+    static constexpr uint64_t fork_timestamp = 100;
+    static constexpr Address sender =
+        0x00000000000000000000000000000000deadbeef_address;
+
+    auto const emitter_eb =
+        evm_as::latest().callvalue().push0().push0().log1().stop();
+    std::vector<uint8_t> emitter_bytecode{};
+    ASSERT_TRUE(evm_as::validate(emitter_eb));
+    evm_as::compile(emitter_eb, emitter_bytecode);
+    byte_string_view const emitter_code{
+        emitter_bytecode.data(), emitter_bytecode.size()};
+    auto const emitter_code_hash = to_bytes(keccak256(emitter_code));
+    auto const emitter_icode = vm::make_shared_intercode(emitter_code);
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {sender,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.balance = 100_ether, .nonce = 0}}}},
+            {SIMULATE_NATIVE_TOKEN_LOG_ADDRESS,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0,
+                          .code_hash = emitter_code_hash,
+                          .nonce = 0}}}}},
+        Code{{emitter_code_hash, emitter_icode}},
+        BlockHeader{.number = 0});
+
+    for (uint64_t i = 1; i < 256; ++i) {
+        commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
+    }
+
+    Transaction const zero_value_call{
+        .gas_limit = 1'000'000,
+        .to = SIMULATE_NATIVE_TOKEN_LOG_ADDRESS,
+    };
+    Transaction const value_call{
+        .gas_limit = 1'000'000,
+        .value = 1_ether,
+        .to = SIMULATE_NATIVE_TOKEN_LOG_ADDRESS,
+    };
+
+    auto const enc_sender = rlp::encode_address(std::make_optional(sender));
+    auto const rlp_senders =
+        to_vec(rlp::encode_list2(rlp::encode_list2(enc_sender, enc_sender)));
+
+    auto const enc_zero_value_call =
+        rlp::encode_string2(rlp::encode_transaction(zero_value_call));
+    auto const enc_value_call =
+        rlp::encode_string2(rlp::encode_transaction(value_call));
+    auto const rlp_calls = to_vec(rlp::encode_list2(
+        rlp::encode_list2(enc_zero_value_call, enc_value_call)));
+
+    BlockHeader const header{
+        .number = 255,
+        .gas_limit = 200'000'000,
+        .timestamp = fork_timestamp - 2};
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    auto const hex = [](auto const &bytes) {
+        return std::format("0x{}", to_hex(bytes));
+    };
+    nlohmann::json const zero_value_topics =
+        nlohmann::json::array({hex(bytes32_t{})});
+    nlohmann::json const value_topics =
+        nlohmann::json::array({hex(store_be_as<bytes32_t>(1_ether))});
+    nlohmann::json const transfer_topics = nlohmann::json::array(
+        {hex(transfer_sig),
+         hex(abi_encode_address(sender)),
+         hex(abi_encode_address(SIMULATE_NATIVE_TOKEN_LOG_ADDRESS))});
+
+    Receipt::Bloom bloom{};
+    populate_bloom(
+        bloom,
+        Receipt::Log{
+            .topics = {bytes32_t{}},
+            .address = SIMULATE_NATIVE_TOKEN_LOG_ADDRESS});
+    populate_bloom(
+        bloom,
+        Receipt::Log{
+            .topics = {store_be_as<bytes32_t>(1_ether)},
+            .address = SIMULATE_NATIVE_TOKEN_LOG_ADDRESS});
+
+    auto const simulate = [&]() -> int {
+        if (::setenv(
+                "MONAD_DEVNET_FORK_TS",
+                std::to_string(fork_timestamp).c_str(),
+                1) != 0) {
+            return 1;
+        }
+        MonadDevnet const devnet;
+        if (devnet.get_monad_revision(fork_timestamp - 1) != MONAD_NINE) {
+            return 2;
+        }
+
+        auto *executor = create_executor(dbname.string());
+        auto *const so = monad_state_override_vec_create(1);
+        auto *const bo = monad_block_override_vec_create(1);
+
+        struct callback_context ctx;
+        boost::fibers::future<void> f = ctx.promise.get_future();
+
+        monad_executor_eth_simulate_submit(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_senders.data(),
+            rlp_senders.size(),
+            rlp_calls.data(),
+            rlp_calls.size(),
+            255,
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            rlp_finalized_id.data(),
+            rlp_finalized_id.size(),
+            simulate_gas_limit,
+            simulate_max_calls,
+            simulate_max_output_size,
+            so,
+            bo,
+            true, // emit_native_transfer_logs
+            complete_callback,
+            (void *)&ctx);
+        f.get();
+
+        int const code = [&] {
+            if (ctx.result->status_code != EVMC_SUCCESS ||
+                ctx.result->encoded_trace_len == 0) {
+                return 3;
+            }
+            nlohmann::json const output = nlohmann::json::from_cbor(
+                ctx.result->encoded_trace,
+                ctx.result->encoded_trace + ctx.result->encoded_trace_len);
+
+            if (output.size() != 1 ||
+                output[0]["timestamp"] !=
+                    std::format("0x{:x}", fork_timestamp - 1)) {
+                return 4;
+            }
+            auto const &calls = output[0]["calls"];
+            if (calls.size() != 2 || calls[0]["status"] != "0x1" ||
+                calls[1]["status"] != "0x1") {
+                return 5;
+            }
+            auto const &logs_0 = calls[0]["logs"];
+            if (logs_0.size() != 1) {
+                return 6;
+            }
+            if (logs_0[0]["address"] !=
+                    hex(SIMULATE_NATIVE_TOKEN_LOG_ADDRESS) ||
+                logs_0[0]["topics"] != zero_value_topics ||
+                logs_0[0]["logIndex"] != "0x0") {
+                return 7;
+            }
+            auto const &logs_1 = calls[1]["logs"];
+            if (logs_1.size() != 2) {
+                return 8;
+            }
+            if (logs_1[0]["address"] !=
+                    hex(SIMULATE_NATIVE_TOKEN_LOG_ADDRESS) ||
+                logs_1[0]["topics"] != transfer_topics ||
+                logs_1[0]["logIndex"] != "0x1") {
+                return 9;
+            }
+            if (logs_1[1]["address"] !=
+                    hex(SIMULATE_NATIVE_TOKEN_LOG_ADDRESS) ||
+                logs_1[1]["topics"] != value_topics ||
+                logs_1[1]["logIndex"] != "0x2") {
+                return 10;
+            }
+            if (output[0]["logsBloom"] !=
+                hex(byte_string_view{bloom.data(), bloom.size()})) {
+                return 11;
+            }
+            return 0;
+        }();
+
+        monad_block_override_vec_destroy(bo);
+        monad_state_override_vec_destroy(so);
+        monad_executor_destroy(executor);
+        return code;
+    };
+
+    GTEST_FLAG_SET(death_test_style, "threadsafe");
+    EXPECT_EXIT(
+        ({
+            int const code = simulate();
+            std::filesystem::remove(dbname);
+            ::_exit(code);
+        }),
+        ::testing::ExitedWithCode(0),
+        "");
+}
+
+TEST_F(
+    EthCallFixture,
+    eth_simulate_v1_trace_transfers_drops_reverted_inner_synthetic)
+{
+    using namespace monad::vm::utils;
+
+    static constexpr uint64_t fork_timestamp = 100;
+    static constexpr Address sender =
+        0x00000000000000000000000000000000deadbeef_address;
+    static constexpr Address forwarder =
+        0x00000000000000000000000000000000feedface_address;
+    static constexpr Address reverter =
+        0x00000000000000000000000000000000000010a1_address;
+
+    auto const reverter_eb = evm_as::latest().log0(0, 0).revert(0, 1);
+    std::vector<uint8_t> reverter_bytecode{};
+    ASSERT_TRUE(evm_as::validate(reverter_eb));
+    evm_as::compile(reverter_eb, reverter_bytecode);
+    byte_string_view const reverter_code{
+        reverter_bytecode.data(), reverter_bytecode.size()};
+    auto const reverter_code_hash = to_bytes(keccak256(reverter_code));
+    auto const reverter_icode = vm::make_shared_intercode(reverter_code);
+
+    // A one-byte log shows the CALL reached the reverter.
+    auto const forwarder_eb =
+        evm_as::latest()
+            .call({.gas = 100'000, .address = reverter, .value = 1_ether})
+            .pop()
+            .returndatasize()
+            .push0()
+            .log0()
+            .stop();
+    std::vector<uint8_t> forwarder_bytecode{};
+    ASSERT_TRUE(evm_as::validate(forwarder_eb));
+    evm_as::compile(forwarder_eb, forwarder_bytecode);
+    byte_string_view const forwarder_code{
+        forwarder_bytecode.data(), forwarder_bytecode.size()};
+    auto const forwarder_code_hash = to_bytes(keccak256(forwarder_code));
+    auto const forwarder_icode = vm::make_shared_intercode(forwarder_code);
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {sender,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.balance = 100_ether, .nonce = 0}}}},
+            {reverter,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0,
+                          .code_hash = reverter_code_hash,
+                          .nonce = 0}}}},
+            {forwarder,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0,
+                          .code_hash = forwarder_code_hash,
+                          .nonce = 0}}}}},
+        Code{
+            {reverter_code_hash, reverter_icode},
+            {forwarder_code_hash, forwarder_icode},
+        },
+        BlockHeader{.number = 0});
+
+    for (uint64_t i = 1; i < 256; ++i) {
+        commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
+    }
+
+    Transaction const tx{
+        .gas_limit = 1'000'000,
+        .value = 1_ether,
+        .to = forwarder,
+    };
+
+    auto const enc_sender = rlp::encode_address(std::make_optional(sender));
+    auto const rlp_senders =
+        to_vec(rlp::encode_list2(rlp::encode_list2(enc_sender)));
+
+    auto const enc_tx = rlp::encode_string2(rlp::encode_transaction(tx));
+    auto const rlp_calls = to_vec(rlp::encode_list2(rlp::encode_list2(enc_tx)));
+
+    BlockHeader const header{
+        .number = 255,
+        .gas_limit = 200'000'000,
+        .timestamp = fork_timestamp - 2};
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    auto const hex = [](auto const &bytes) {
+        return std::format("0x{}", to_hex(bytes));
+    };
+    nlohmann::json const transfer_topics = nlohmann::json::array(
+        {hex(transfer_sig),
+         hex(abi_encode_address(sender)),
+         hex(abi_encode_address(forwarder))});
+
+    Receipt::Bloom bloom{};
+    populate_bloom(bloom, Receipt::Log{.address = forwarder});
+
+    auto const simulate = [&]() -> int {
+        if (::setenv(
+                "MONAD_DEVNET_FORK_TS",
+                std::to_string(fork_timestamp).c_str(),
+                1) != 0) {
+            return 1;
+        }
+        MonadDevnet const devnet;
+        if (devnet.get_monad_revision(fork_timestamp - 1) != MONAD_NINE) {
+            return 2;
+        }
+
+        auto *executor = create_executor(dbname.string());
+        auto *const so = monad_state_override_vec_create(1);
+        auto *const bo = monad_block_override_vec_create(1);
+
+        struct callback_context ctx;
+        boost::fibers::future<void> f = ctx.promise.get_future();
+
+        monad_executor_eth_simulate_submit(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_senders.data(),
+            rlp_senders.size(),
+            rlp_calls.data(),
+            rlp_calls.size(),
+            255,
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            rlp_finalized_id.data(),
+            rlp_finalized_id.size(),
+            simulate_gas_limit,
+            simulate_max_calls,
+            simulate_max_output_size,
+            so,
+            bo,
+            true, // emit_native_transfer_logs
+            complete_callback,
+            (void *)&ctx);
+        f.get();
+
+        int const code = [&] {
+            if (ctx.result->status_code != EVMC_SUCCESS ||
+                ctx.result->encoded_trace_len == 0) {
+                return 3;
+            }
+            nlohmann::json const output = nlohmann::json::from_cbor(
+                ctx.result->encoded_trace,
+                ctx.result->encoded_trace + ctx.result->encoded_trace_len);
+
+            if (output.size() != 1 ||
+                output[0]["timestamp"] !=
+                    std::format("0x{:x}", fork_timestamp - 1)) {
+                return 4;
+            }
+            auto const &calls = output[0]["calls"];
+            if (calls.size() != 1 || calls[0]["status"] != "0x1") {
+                return 5;
+            }
+            auto const &logs = calls[0]["logs"];
+            if (logs.size() != 2) {
+                return 6;
+            }
+            if (logs[0]["address"] != hex(SIMULATE_NATIVE_TOKEN_LOG_ADDRESS) ||
+                logs[0]["topics"] != transfer_topics ||
+                logs[0]["logIndex"] != "0x0") {
+                return 7;
+            }
+            if (logs[1]["address"] != hex(forwarder) ||
+                logs[1]["data"] != "0x00" || logs[1]["logIndex"] != "0x1") {
+                return 8;
+            }
+            if (output[0]["logsBloom"] !=
+                hex(byte_string_view{bloom.data(), bloom.size()})) {
+                return 9;
+            }
+            return 0;
+        }();
+
+        monad_block_override_vec_destroy(bo);
+        monad_state_override_vec_destroy(so);
+        monad_executor_destroy(executor);
+        return code;
+    };
+
+    GTEST_FLAG_SET(death_test_style, "threadsafe");
+    EXPECT_EXIT(
+        ({
+            int const code = simulate();
+            std::filesystem::remove(dbname);
+            ::_exit(code);
+        }),
+        ::testing::ExitedWithCode(0),
+        "");
+}
+
+TEST_F(EthCallFixture, eth_simulate_v1_log_index_across_calls)
+{
+    using namespace monad::vm::utils;
+
+    static constexpr Address sender =
+        0x00000000000000000000000000000000deadbeef_address;
+    static constexpr Address logger =
+        0x00000000000000000000000000000000000010a0_address;
+    static constexpr Address reverter =
+        0x00000000000000000000000000000000000010a1_address;
+
+    auto const logger_eb = evm_as::latest().log0(0, 0).stop();
+    std::vector<uint8_t> logger_bytecode{};
+    ASSERT_TRUE(evm_as::validate(logger_eb));
+    evm_as::compile(logger_eb, logger_bytecode);
+    byte_string_view const logger_code{
+        logger_bytecode.data(), logger_bytecode.size()};
+    auto const logger_code_hash = to_bytes(keccak256(logger_code));
+    auto const logger_icode = vm::make_shared_intercode(logger_code);
+
+    auto const reverter_eb = evm_as::latest().log0(0, 0).revert(0, 0);
+    std::vector<uint8_t> reverter_bytecode{};
+    ASSERT_TRUE(evm_as::validate(reverter_eb));
+    evm_as::compile(reverter_eb, reverter_bytecode);
+    byte_string_view const reverter_code{
+        reverter_bytecode.data(), reverter_bytecode.size()};
+    auto const reverter_code_hash = to_bytes(keccak256(reverter_code));
+    auto const reverter_icode = vm::make_shared_intercode(reverter_code);
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {sender,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.balance = 100_ether, .nonce = 0}}}},
+            {logger,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0,
+                          .code_hash = logger_code_hash,
+                          .nonce = 0}}}},
+            {reverter,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{
+                          .balance = 0,
+                          .code_hash = reverter_code_hash,
+                          .nonce = 0}}}}},
+        Code{
+            {logger_code_hash, logger_icode},
+            {reverter_code_hash, reverter_icode},
+        },
+        BlockHeader{.number = 0});
+
+    for (uint64_t i = 1; i < 256; ++i) {
+        commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
+    }
+
+    auto *executor = create_executor(dbname.string());
+
+    Transaction const call_logger{
+        .gas_limit = 1'000'000,
+        .to = logger,
+    };
+    Transaction const call_reverter{
+        .gas_limit = 1'000'000,
+        .to = reverter,
+    };
+
+    auto const enc_sender = rlp::encode_address(std::make_optional(sender));
+    auto const rlp_senders = to_vec(rlp::encode_list2(
+        rlp::encode_list2(enc_sender, enc_sender, enc_sender),
+        rlp::encode_list2(enc_sender)));
+
+    auto const enc_logger =
+        rlp::encode_string2(rlp::encode_transaction(call_logger));
+    auto const enc_reverter =
+        rlp::encode_string2(rlp::encode_transaction(call_reverter));
+    auto const rlp_calls = to_vec(rlp::encode_list2(
+        rlp::encode_list2(enc_logger, enc_reverter, enc_logger),
+        rlp::encode_list2(enc_logger)));
+
+    BlockHeader const header{.number = 1, .gas_limit = 200'000'000};
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    auto *const so = monad_state_override_vec_create(2);
+    auto *const bo = monad_block_override_vec_create(2);
+
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+
+    monad_executor_eth_simulate_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_senders.data(),
+        rlp_senders.size(),
+        rlp_calls.data(),
+        rlp_calls.size(),
+        1,
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        rlp_finalized_id.data(),
+        rlp_finalized_id.size(),
+        simulate_gas_limit,
+        simulate_max_calls,
+        simulate_max_output_size,
+        so,
+        bo,
+        false,
+        complete_callback,
+        (void *)&ctx);
+    f.get();
+
+    ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    ASSERT_TRUE(ctx.result->encoded_trace_len > 0);
+
+    nlohmann::json output = nlohmann::json::from_cbor(
+        ctx.result->encoded_trace,
+        ctx.result->encoded_trace + ctx.result->encoded_trace_len);
+
+    ASSERT_EQ(output.size(), 2);
+    ASSERT_EQ(output[0]["calls"].size(), 3);
+
+    EXPECT_EQ(output[0]["calls"][0]["status"], "0x1");
+    ASSERT_EQ(output[0]["calls"][0]["logs"].size(), 1);
+    EXPECT_EQ(output[0]["calls"][0]["logs"][0]["logIndex"], "0x0");
+
+    EXPECT_EQ(output[0]["calls"][1]["status"], "0x0");
+    EXPECT_EQ(output[0]["calls"][1]["error"]["message"], "execution reverted");
+    EXPECT_FALSE(output[0]["calls"][1].contains("logs"));
+
+    EXPECT_EQ(output[0]["calls"][2]["status"], "0x1");
+    ASSERT_EQ(output[0]["calls"][2]["logs"].size(), 1);
+    EXPECT_EQ(output[0]["calls"][2]["logs"][0]["logIndex"], "0x1");
+
+    Receipt::Bloom bloom{};
+    populate_bloom(bloom, Receipt::Log{.address = logger});
+    EXPECT_EQ(
+        output[0]["logsBloom"],
+        std::format(
+            "0x{}", to_hex(byte_string_view{bloom.data(), bloom.size()})));
+
+    ASSERT_EQ(output[1]["calls"].size(), 1);
+    EXPECT_EQ(output[1]["calls"][0]["status"], "0x1");
+    ASSERT_EQ(output[1]["calls"][0]["logs"].size(), 1);
+    EXPECT_EQ(output[1]["calls"][0]["logs"][0]["logIndex"], "0x0");
+
+    monad_block_override_vec_destroy(bo);
+    monad_state_override_vec_destroy(so);
+    monad_executor_destroy(executor);
+}
+
 // Test time travelling
 TYPED_TEST(EthCallEncodingFixture, eth_simulate_v1_time_travel)
 {

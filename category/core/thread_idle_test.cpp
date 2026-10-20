@@ -146,7 +146,9 @@ TEST(ThreadIdleCounter, concurrent_samples_never_exceed_elapsed_time)
     bool exceeded = false;
     while (!done.load(std::memory_order_acquire) && !exceeded) {
         uint64_t const now = monotonic_ns();
-        exceeded = c.idle_ns(now) > now - start;
+        uint64_t const idle = c.idle_ns(now);
+        uint64_t const after = monotonic_ns();
+        exceeded = idle > after - start;
     }
     owner.join();
     EXPECT_FALSE(exceeded) << "a sample double-counted an idle span";

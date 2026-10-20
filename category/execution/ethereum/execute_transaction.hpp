@@ -98,6 +98,13 @@ public:
         boost::fibers::future<void> &prev, CallTracerBase &,
         trace::StateTracer &, ChainContext<traits> const &chain_ctx,
         ExecutionEventRecorder *exec_recorder, bool trace_transfers = false);
+    ExecuteTransaction(
+        Chain const &, uint64_t, Transaction const &, Address const &,
+        std::span<std::optional<Address> const>, BlockHeader const &,
+        BlockHashBuffer const &, BlockState &, BlockMetrics &,
+        boost::fibers::future<void> &, CallTracerBase &, trace::StateTracer &,
+        ChainContext<traits> const &&, ExecutionEventRecorder *,
+        bool = false) = delete;
     ~ExecuteTransaction() = default;
 
     Result<Receipt> operator()();

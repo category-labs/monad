@@ -67,14 +67,15 @@ BlobSchedule MonadChain::get_blob_schedule(uint64_t /*timestamp*/) const
 
 template <typename T>
     requires is_monad_trait_v<T>
-ChainContext<T> ChainContext<T>::debug_empty()
+ChainContext<T> const &ChainContext<T>::debug_empty()
 {
-    return ChainContext<T>{
+    static ChainContext<T> const ctx{
         .grandparent_senders_and_authorities = empty_senders_and_authorities,
         .parent_senders_and_authorities = empty_senders_and_authorities,
         .senders_and_authorities = empty_senders_and_authorities,
         .senders = empty_senders,
         .authorities = empty_authorities};
+    return ctx;
 }
 
 EXPLICIT_MONAD_TRAITS_STRUCT(ChainContext);

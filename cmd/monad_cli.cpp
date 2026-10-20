@@ -838,7 +838,7 @@ int main(int const argc, char *argv[])
     bool use_secondary = false;
     uint64_t total_shards = 1;
     uint64_t shard_number = 0;
-    monad_snapshot_format snapshot_format = MONAD_SNAPSHOT_FORMAT_V0;
+    monad_snapshot_format snapshot_format = MONAD_SNAPSHOT_FORMAT_V1;
     std::unordered_map<std::string, monad_snapshot_format> const
         snapshot_format_map{
             {"v0", MONAD_SNAPSHOT_FORMAT_V0},
@@ -901,9 +901,9 @@ int main(int const argc, char *argv[])
         ->add_option(
             "--snapshot-format,--snapshot_format",
             snapshot_format,
-            "Stream layout to write: v0 (default) omits the per-stream "
-            "header, so the dump also restores on binaries that predate it; "
-            "v1 writes a versioned header per stream and restores only on "
+            "Stream layout to write: v0 omits the per-stream header, so the "
+            "dump also restores on binaries that predate it; v1 (default) "
+            "writes a versioned header per stream and restores only on "
             "binaries that know it; v2 also groups a storage stream by source "
             "leaf, which lets a page-encoded target restore it without "
             "holding a whole shard, and restores only on binaries that know "

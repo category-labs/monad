@@ -20,14 +20,17 @@
 #include <category/core/bytes.hpp>
 #include <category/core/runtime/non_temporal_memory.hpp>
 #include <category/core/runtime/uint256.hpp>
+#include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/runtime/bin.hpp>
+#include <category/vm/runtime/engine_timer.hpp>
 #include <category/vm/runtime/exit.hpp>
 #include <category/vm/runtime/transmute.hpp>
 
 #include <evmc/evmc.hpp>
 
 #include <cstddef>
+#include <optional>
 #include <span>
 #include <type_traits>
 #include <variant>
@@ -247,6 +250,155 @@ namespace monad::vm::runtime
 
         exit_stack_ptr_t exit_stack_ptr = nullptr;
         bool is_stack_unwinding_active = false;
+
+        mutable EngineTimer engine_timer{};
+
+        [[nodiscard, gnu::always_inline]]
+        EngineTimer::Scope time_host() const noexcept
+        {
+            return {engine_timer, EngineTimer::Host};
+        }
+
+        [[gnu::always_inline]]
+        bool account_exists(evmc_address const *const address) const
+        {
+            auto const timer = time_host();
+            return host->account_exists(context, address);
+        }
+
+        [[gnu::always_inline]]
+        evmc_bytes32 get_storage(
+            evmc_address const *const address,
+            evmc_bytes32 const *const key) const
+        {
+            auto const timer = time_host();
+            return host->get_storage(context, address, key);
+        }
+
+        [[gnu::always_inline]]
+        evmc_storage_status set_storage(
+            evmc_address const *const address, evmc_bytes32 const *const key,
+            evmc_bytes32 const *const value) const
+        {
+            auto const timer = time_host();
+            return host->set_storage(context, address, key, value);
+        }
+
+        [[gnu::always_inline]]
+        evmc_page_storage_status update_page(
+            evmc_address const *const address, evmc_bytes32 const *const key,
+            evmc_storage_status const status) const
+        {
+            auto const timer = time_host();
+            return host->update_page(context, address, key, status);
+        }
+
+        [[gnu::always_inline]]
+        evmc_bytes32 get_transient_storage(
+            evmc_address const *const address,
+            evmc_bytes32 const *const key) const
+        {
+            auto const timer = time_host();
+            return host->get_transient_storage(context, address, key);
+        }
+
+        [[gnu::always_inline]]
+        void set_transient_storage(
+            evmc_address const *const address, evmc_bytes32 const *const key,
+            evmc_bytes32 const *const value) const
+        {
+            auto const timer = time_host();
+            host->set_transient_storage(context, address, key, value);
+        }
+
+        [[gnu::always_inline]]
+        evmc_uint256be get_balance(evmc_address const *const address) const
+        {
+            auto const timer = time_host();
+            return host->get_balance(context, address);
+        }
+
+        [[gnu::always_inline]]
+        size_t get_code_size(evmc_address const *const address) const
+        {
+            auto const timer = time_host();
+            return host->get_code_size(context, address);
+        }
+
+        [[gnu::always_inline]]
+        evmc_bytes32 get_code_hash(evmc_address const *const address) const
+        {
+            auto const timer = time_host();
+            return host->get_code_hash(context, address);
+        }
+
+        [[gnu::always_inline]]
+        size_t copy_code(
+            evmc_address const *const address, size_t const code_offset,
+            uint8_t *const buffer_data, size_t const buffer_size) const
+        {
+            auto const timer = time_host();
+            return host->copy_code(
+                context, address, code_offset, buffer_data, buffer_size);
+        }
+
+        [[gnu::always_inline]]
+        bool selfdestruct(
+            evmc_address const *const address,
+            evmc_address const *const beneficiary) const
+        {
+            auto const timer = time_host();
+            return host->selfdestruct(context, address, beneficiary);
+        }
+
+        [[gnu::always_inline]]
+        evmc_result call(evmc_message const *const msg) const
+        {
+            auto const timer = time_host();
+            return host->call(context, msg);
+        }
+
+        [[gnu::always_inline]]
+        evmc_bytes32 get_block_hash(int64_t const number) const
+        {
+            auto const timer = time_host();
+            return host->get_block_hash(context, number);
+        }
+
+        [[gnu::always_inline]]
+        void emit_log(
+            evmc_address const *const address, uint8_t const *const data,
+            size_t const data_size, evmc_bytes32 const topics[],
+            size_t const topics_count) const
+        {
+            auto const timer = time_host();
+            host->emit_log(
+                context, address, data, data_size, topics, topics_count);
+        }
+
+        [[gnu::always_inline]]
+        evmc_access_status
+        access_account(evmc_address const *const address) const
+        {
+            auto const timer = time_host();
+            return host->access_account(context, address);
+        }
+
+        [[gnu::always_inline]]
+        evmc_access_status access_storage(
+            evmc_address const *const address,
+            evmc_bytes32 const *const key) const
+        {
+            auto const timer = time_host();
+            return host->access_storage(context, address, key);
+        }
+
+        [[gnu::always_inline]]
+        std::optional<Address> resolve_delegation(Address const &address) const
+        {
+            auto const timer = time_host();
+            return evm::resolve_delegation(host, context, address);
+        }
 
         [[gnu::always_inline]]
         constexpr void deduct_gas(int64_t const gas) noexcept

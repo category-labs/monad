@@ -102,7 +102,7 @@ pub struct EthCallRequest<'a> {
     pub gas_specified: bool,
 }
 
-impl MonadExecutor {
+impl MonadExecutor<'_> {
     pub async fn eth_call(
         &self,
         request: EthCallRequest<'_>,

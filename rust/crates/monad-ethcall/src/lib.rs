@@ -18,6 +18,7 @@ pub use self::executor::*;
 mod executor;
 pub mod ffi;
 pub mod overrides;
+pub mod store;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ChainId {

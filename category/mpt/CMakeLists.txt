@@ -54,6 +54,11 @@ add_library(
   "find.cpp"
   "find_notify_fiber.cpp"
   "find_request_sender.hpp"
+  "lbt/commit.cpp"
+  "lbt/commit.hpp"
+  "lbt/compute.cpp"
+  "lbt/compute.hpp"
+  "lbt/key_path.hpp"
   "nibbles_view.hpp"
   "nibbles_view_fmt.hpp"
   "node.cpp"
@@ -80,6 +85,7 @@ target_link_libraries(monad_trie PRIVATE Boost::boost)
 target_link_libraries(monad_trie PUBLIC concurrentqueue)
 target_link_libraries(monad_trie PUBLIC monad_async)
 target_link_libraries(monad_trie PUBLIC quill::quill) # TODO: remove
+target_link_libraries(monad_trie PUBLIC blake3)
 add_executable(monad-mpt "cli_tool_main.cpp" "cli_tool_impl.cpp")
 monad_compile_options(monad-mpt)
 target_link_libraries(monad-mpt PUBLIC monad_execution PkgConfig::zstd

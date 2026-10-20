@@ -47,6 +47,7 @@ Node::SharedPtr create_node_add_new_branch(
             auto &child = children[j];
             child.branch = (unsigned char)i;
             child.ptr = std::move(new_child);
+            child.has_value = child.ptr->has_value();
             child.subtrie_min_version = calc_min_version(*child.ptr);
             child.offset = async_write_node_set_spare(aux, *child.ptr, true);
             child.min_offsets = calc_min_offsets(
@@ -57,6 +58,7 @@ Node::SharedPtr create_node_add_new_branch(
             auto &child = children[j];
             child.branch = (unsigned char)i;
             child.ptr = node->move_next(old_j);
+            child.has_value = (node->child_value_mask & bit) != 0;
             child.subtrie_min_version = node->subtrie_min_version(old_j);
             child.min_offsets = node->min_offsets(old_j);
             child.offset = node->fnext(old_j);
@@ -88,6 +90,7 @@ Node::SharedPtr create_node_with_two_children(
     {
         auto &child = children[!zero_comes_first];
         child.ptr = std::move(child0);
+        child.has_value = child.ptr->has_value();
         child.subtrie_min_version = calc_min_version(*child.ptr);
         child.branch = branch0;
         child.offset = async_write_node_set_spare(aux, *child.ptr, true);
@@ -96,6 +99,7 @@ Node::SharedPtr create_node_with_two_children(
     {
         auto &child = children[zero_comes_first];
         child.ptr = std::move(child1);
+        child.has_value = child.ptr->has_value();
         child.subtrie_min_version = calc_min_version(*child.ptr);
         child.branch = branch1;
         child.offset = async_write_node_set_spare(aux, *child.ptr, true);
@@ -133,6 +137,7 @@ Node::SharedPtr copy_trie_impl(
             static_cast<int64_t>(dest_version));
         ChildData child{
             .ptr = std::move(new_node), .branch = dest_prefix.get(0)};
+        child.has_value = child.ptr->has_value();
         child.subtrie_min_version = calc_min_version(*child.ptr);
         child.offset = async_write_node_set_spare(aux, *child.ptr, true);
         child.min_offsets =
@@ -256,6 +261,7 @@ Node::SharedPtr copy_trie_impl(
         MONAD_ASSERT(parent != nullptr);
         auto const child_index = parent->to_child_index(branch);
         // reset child at `branch` to the new_node
+        set_child_has_value(*parent, branch, new_node->has_value());
         parent->set_next(child_index, std::move(new_node));
         parents_and_indexes.emplace(parent, child_index);
         // serialize nodes of insert path up until root (excludes root)

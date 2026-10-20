@@ -70,7 +70,7 @@ namespace detail
     // For the memory map of the first conventional chunk
     struct db_metadata
     {
-        static constexpr char const *MAGIC = "MONAD008";
+        static constexpr char const *MAGIC = "MONAD009";
         static constexpr unsigned MAGIC_STRING_LEN = 8;
 
         friend class MONAD_MPT_NAMESPACE::DbMetadataContext;

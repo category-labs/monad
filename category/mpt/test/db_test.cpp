@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include "child_value_mask_checker.hpp"
 #include "test_fixtures_base.hpp"
 
 #include <category/async/concepts.hpp>
@@ -2134,6 +2135,9 @@ TEST(DbTest, auto_expire_large_set)
                     << ") at block " << block_id;
             }
         }
+        if (block_id % 100 == 99) {
+            expect_child_value_masks(db, root, block_id);
+        }
     }
 }
 
@@ -2218,6 +2222,7 @@ TEST(DbTest, auto_expire)
             EXPECT_EQ(res.value(), keys[i]);
         }
     }
+    expect_child_value_masks(db, root, latest_block_id);
 }
 
 TEST_F(OnDiskDbFixture, metadata)
@@ -2287,6 +2292,7 @@ TEST_F(OnDiskDbFixture, copy_trie_from_to_same_version)
     root = db.copy_trie(root, src_prefix, root, dest_prefix, version);
     verify_dest_state(db, src_prefix);
     verify_dest_state(db, dest_prefix);
+    expect_child_value_masks(db, root, version);
 
     root = db.copy_trie(root, src_prefix, root, dest_prefix2, version);
     verify_dest_state(db, src_prefix);
@@ -2303,6 +2309,7 @@ TEST_F(OnDiskDbFixture, copy_trie_from_to_same_version)
     verify_dest_state(db, src_prefix);
     verify_dest_state(db, dest_prefix2);
     verify_dest_state(db, long_dest_prefix);
+    expect_child_value_masks(db, root, version);
 }
 
 TEST_F(OnDiskDbFixture, copy_trie_to_dest_with_ancestor_prefix)
@@ -2340,6 +2347,7 @@ TEST_F(OnDiskDbFixture, copy_trie_to_dest_with_ancestor_prefix)
     EXPECT_EQ(root->value(), dest_root->value());
     EXPECT_TRUE(db.find(prefix, dest_version).has_value());
     EXPECT_TRUE(db.find(key, dest_version).has_value());
+    expect_child_value_masks(db, dest_root, dest_version);
 }
 
 TEST_F(OnDiskDbWithFileFixture, copy_trie_to_different_version_modify_state)

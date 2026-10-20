@@ -486,6 +486,7 @@ std::pair<bool, Node::SharedPtr> create_node_with_expired_branches(
         (size_t)orig->bitpacked.data_len,
         orig->path_nibble_view(),
         orig->version);
+    node->child_value_mask = orig->child_value_mask & mask;
 
     std::copy_n(
         (byte_string_view::pointer)child_data_offsets.data(),
@@ -1207,6 +1208,7 @@ void fillin_parent_after_expiration(
             MONAD_ASSERT(!child.ptr); // been transferred to tnode
             child.offset = new_offset;
             MONAD_ASSERT(cache_node);
+            child.has_value = new_node->has_value();
             child.ptr = std::move(new_node);
             child.min_offsets = min_offsets;
             child.subtrie_min_version = min_version;
@@ -1217,6 +1219,8 @@ void fillin_parent_after_expiration(
             if (cache_node) {
                 expire_parent->cache_mask |= static_cast<uint16_t>(1u << index);
             }
+            set_child_has_value(
+                *expire_parent->node, branch, new_node->has_value());
             expire_parent->node->set_next(index, std::move(new_node));
             expire_parent->node->set_subtrie_min_version(index, min_version);
             expire_parent->node->set_min_offsets(index, min_offsets);

@@ -65,10 +65,16 @@ add_trie_test(TARGET node_writer_test SOURCES "node_writer_test.cpp")
 add_trie_test(TARGET plain_trie_test SOURCES "plain_trie_test.cpp")
 add_trie_test(TARGET rewind_test SOURCES "rewind_test.cpp")
 add_trie_test(TARGET state_machine_test SOURCES "state_machine_test.cpp")
+add_trie_test(TARGET child_value_mask_test SOURCES "child_value_mask_test.cpp")
 add_trie_test(TARGET state_machine_kind_test SOURCES
               "state_machine_kind_test.cpp")
 add_trie_test(TARGET db_state_machine_kind_open_test SOURCES
               "db_state_machine_kind_open_test.cpp")
+add_trie_test(TARGET lbt_commit_test SOURCES "lbt_commit_test.cpp")
+add_trie_test(TARGET lbt_key_path_test SOURCES "lbt_key_path_test.cpp")
+add_trie_test(TARGET lbt_oracle_test SOURCES "lbt_oracle_test.cpp")
+add_trie_test(TARGET lbt_reference_trie_test SOURCES
+              "lbt_reference_trie_test.cpp")
 add_trie_test(TARGET subtrie_version_test SOURCES "subtrie_version_test.cpp")
 add_trie_test(TARGET unsigned_20_test SOURCES "unsigned_20_test.cpp")
 add_trie_test(TARGET virtual_offset_test SOURCES "virtual_offset_test.cpp")

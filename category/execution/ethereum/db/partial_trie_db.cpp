@@ -107,6 +107,38 @@ bytes32_t PartialTrieDb::read_storage(
             }});
 }
 
+bool PartialTrieDb::account_in_partial_state(Address const &addr)
+{
+    auto const key = keccak256(addr.bytes);
+    return trie_.try_find_original(trie_.root, mpt::NibblesView{key})
+        .has_value();
+}
+
+bool PartialTrieDb::storage_in_partial_state(
+    Address const &addr, bytes32_t const &slot)
+{
+    auto const akey = keccak256(addr.bytes);
+    auto const acct =
+        trie_.try_find_original(trie_.root, mpt::NibblesView{akey});
+    if (!acct) {
+        return false;
+    }
+    auto const sroot = match(
+        *acct,
+        Cases{
+            [](mpt::NullView) { return mpt::NULL_ID; },
+            [](mpt::AccountLeafView l) { return l.storage(); },
+            [](auto) -> mpt::NodeId {
+                MONAD_ABORT(
+                    "incorrect node type returned in storage_in_partial_state");
+            }});
+    if (sroot == mpt::NULL_ID) {
+        return true;
+    }
+    auto const skey = keccak256(slot.bytes);
+    return trie_.try_find_original(sroot, mpt::NibblesView{skey}).has_value();
+}
+
 void PartialTrieDb::commit(
     bytes32_t const &, CommitBuilder &, BlockHeader const &header,
     StateDeltas const &deltas,

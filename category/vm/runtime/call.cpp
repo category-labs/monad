@@ -86,6 +86,24 @@ namespace monad::vm::runtime
             ctx->deduct_gas(traits::cold_account_cost());
         }
 
+        // Charge the value-transfer cost before the EIP-7702 delegation
+        // lookup below, which reads the callee's code. revm charges it first
+        // and does not load a cold callee the frame cannot pay for, so a
+        // witness built from revm has no proof for that account.
+        if (has_value) {
+            ctx->gas_remaining -= 9000;
+            if (MONAD_UNLIKELY(
+                    ctx->gas_remaining + remaining_block_base_gas < 0)) {
+                ctx->exit(StatusCode::OutOfGas);
+            }
+        }
+
+        if (MONAD_UNLIKELY(
+                call_kind == EVMC_CALL && has_value &&
+                (ctx->env.evmc_flags & EVMC_STATIC))) {
+            ctx->exit(StatusCode::Error);
+        }
+
         auto const code_address = [&]() -> Address {
             if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
                 // EIP-7702: if the code address starts with 0xEF0100, then
@@ -113,24 +131,9 @@ namespace monad::vm::runtime
                                 ? ctx->env.sender
                                 : ctx->env.recipient;
 
-        if (has_value) {
-            ctx->gas_remaining -= 9000;
-        }
-
-        if (call_kind == EVMC_CALL) {
-            if (MONAD_UNLIKELY(
-                    has_value && (ctx->env.evmc_flags & EVMC_STATIC))) {
-                auto const error_code =
-                    ctx->gas_remaining + remaining_block_base_gas < 0
-                        ? StatusCode::OutOfGas
-                        : StatusCode::Error;
-                ctx->exit(error_code);
-            }
-
-            if (has_value &&
-                !ctx->host->account_exists(ctx->context, &dest_address)) {
-                ctx->gas_remaining -= 25000;
-            }
+        if (call_kind == EVMC_CALL && has_value &&
+            !ctx->host->account_exists(ctx->context, &dest_address)) {
+            ctx->gas_remaining -= 25000;
         }
 
         auto const gas_left_here =

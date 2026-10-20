@@ -179,6 +179,7 @@ add_library(
   "ethereum/validate_transaction.hpp"
   "ethereum/validate_transaction_error.cpp"
   "ethereum/validate_transaction_error.hpp"
+  "ethereum/visible_state.hpp"
   # ethereum/metrics
   "ethereum/metrics/block_metrics.hpp"
   # ethereum/rlp

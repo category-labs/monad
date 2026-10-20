@@ -61,6 +61,19 @@ TYPED_TEST(MonadTraitsTest, compute_gas_refund)
     }
 }
 
+TYPED_TEST(MonadTraitsTest, get_revision)
+{
+    struct : MonadMainnet
+    {
+        monad_revision get_monad_revision(uint64_t) const override
+        {
+            return TestFixture::REV;
+        }
+    } const chain{};
+
+    EXPECT_EQ(chain.get_revision(0, 0), TestFixture::Trait::evm_rev());
+}
+
 TEST(HiveNet, ChainConfig)
 {
     HiveNet const chain;

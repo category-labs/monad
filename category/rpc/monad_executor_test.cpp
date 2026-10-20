@@ -111,6 +111,44 @@ using namespace monad::test;
 using namespace monad::trace;
 using namespace monad::literals;
 
+TEST(MonadExecutorResult, clear_preserves_outer_storage)
+{
+    monad_executor_result result{};
+    result.status_code = 3;
+    result.gas_used = 42;
+    result.gas_refund = 7;
+    result.output_data = new uint8_t[2]{1, 2};
+    result.output_data_len = 2;
+    result.message = strdup("execution failed");
+    ASSERT_NE(result.message, nullptr);
+    result.encoded_trace = new uint8_t[1]{3};
+    result.encoded_trace_len = 1;
+
+    monad_executor_result_clear(&result);
+    EXPECT_EQ(result.status_code, 0);
+    EXPECT_EQ(result.gas_used, 0);
+    EXPECT_EQ(result.gas_refund, 0);
+    EXPECT_EQ(result.output_data, nullptr);
+    EXPECT_EQ(result.output_data_len, 0);
+    EXPECT_EQ(result.message, nullptr);
+    EXPECT_EQ(result.encoded_trace, nullptr);
+    EXPECT_EQ(result.encoded_trace_len, 0);
+
+    monad_executor_result_clear(&result);
+}
+
+TEST(MonadExecutorResult, release_clears_heap_allocated_result)
+{
+    auto *const result = new monad_executor_result{};
+    result->output_data = new uint8_t[1]{1};
+    result->output_data_len = 1;
+    result->message = strdup("execution failed");
+    ASSERT_NE(result->message, nullptr);
+    result->encoded_trace = new uint8_t[1]{2};
+    result->encoded_trace_len = 1;
+    monad_executor_result_release(result);
+}
+
 namespace
 {
     constexpr uint64_t node_lru_max_mem =

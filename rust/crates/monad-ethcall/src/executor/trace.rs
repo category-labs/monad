@@ -54,7 +54,7 @@ pub unsafe extern "C" fn eth_trace_block_or_transaction_submit_callback(
     }
 }
 
-impl MonadExecutor {
+impl MonadExecutor<'_> {
     #[allow(clippy::too_many_arguments)]
     pub async fn eth_trace_block_or_transaction(
         &self,

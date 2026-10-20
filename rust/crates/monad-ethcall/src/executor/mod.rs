@@ -26,7 +26,7 @@ pub use self::{
     simulate::{EthSimulateError, EthSimulateSuccess},
     trace::{EthTraceError, EthTraceSuccess},
 };
-use crate::ffi;
+use crate::{ffi, store::RpcStore};
 
 mod call;
 mod simulate;
@@ -45,15 +45,26 @@ pub enum MessageError {
     InvalidUtf8Error,
 }
 
+/// Runs RPC executions on the C++ executor, borrowing the result store that
+/// the RPC stack constructs.
+///
+/// Dropping the executor destroys the C++ executor, which runs every queued
+/// request to completion and joins its fibers. The borrow therefore keeps the
+/// store alive until no executor callback can present a result handle.
 #[derive(Debug)]
-pub struct MonadExecutor {
+pub struct MonadExecutor<'store> {
     eth_call_executor: *mut ffi::monad_executor,
+    #[expect(
+        dead_code,
+        reason = "executor submissions do not lend store results yet"
+    )]
+    results: &'store RpcStore,
 }
 
-unsafe impl Send for MonadExecutor {}
-unsafe impl Sync for MonadExecutor {}
+unsafe impl Send for MonadExecutor<'_> {}
+unsafe impl Sync for MonadExecutor<'_> {}
 
-impl MonadExecutor {
+impl<'store> MonadExecutor<'store> {
     pub fn new(
         low_pool_config: ffi::PoolConfig,
         high_pool_config: ffi::PoolConfig,
@@ -61,6 +72,7 @@ impl MonadExecutor {
         tx_exec_num_fibers: u32,
         node_lru_max_mem: u64,
         triedb_path: &Path,
+        results: &'store RpcStore,
     ) -> Self {
         monad_cxx::init_cxx_logging(tracing::Level::WARN);
 
@@ -78,11 +90,14 @@ impl MonadExecutor {
             )
         };
 
-        Self { eth_call_executor }
+        Self {
+            eth_call_executor,
+            results,
+        }
     }
 }
 
-impl Drop for MonadExecutor {
+impl Drop for MonadExecutor<'_> {
     fn drop(&mut self) {
         info!("dropping eth_call_executor");
         unsafe {
@@ -193,6 +208,12 @@ mod tests {
     use alloy_primitives::hex;
 
     use super::*;
+
+    #[test]
+    fn executor_borrowing_a_static_store_is_send_sync() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<MonadExecutor<'static>>();
+    }
 
     #[test]
     fn test_decode_revert_message() {

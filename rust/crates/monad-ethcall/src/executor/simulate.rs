@@ -74,7 +74,7 @@ pub enum EthSimulateError {
     Other(String),
 }
 
-impl MonadExecutor {
+impl MonadExecutor<'_> {
     #[allow(clippy::too_many_arguments)]
     pub async fn eth_simulate_v1(
         &self,

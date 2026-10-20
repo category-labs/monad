@@ -47,6 +47,12 @@ typedef struct monad_executor_result
     size_t encoded_trace_len;
 } monad_executor_result;
 
+// Frees nested allocations and resets fields, preserving caller-owned storage.
+// output_data and encoded_trace must be owned new[] allocations; message must
+// be an owned malloc-compatible allocation. Null buffer pointers are allowed.
+void monad_executor_result_clear(monad_executor_result *);
+
+// Clears the result and deletes its C++-allocated outer object.
 void monad_executor_result_release(monad_executor_result *);
 
 struct monad_executor_pool_config

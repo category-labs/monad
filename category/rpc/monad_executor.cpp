@@ -1263,7 +1263,7 @@ namespace monad
     quill::Logger *tracer = nullptr;
 }
 
-void monad_executor_result_release(monad_executor_result *const result)
+void monad_executor_result_clear(monad_executor_result *const result)
 {
     MONAD_ASSERT(result);
     if (result->output_data) {
@@ -1278,6 +1278,12 @@ void monad_executor_result_release(monad_executor_result *const result)
         delete[] result->encoded_trace;
     }
 
+    *result = {};
+}
+
+void monad_executor_result_release(monad_executor_result *const result)
+{
+    monad_executor_result_clear(result);
     delete result;
 }
 

@@ -135,7 +135,7 @@ TEST(async_compile_test, disable)
     Compiler compiler{false};
 
     for (auto i = 0u; i < 32; ++i) {
-        auto const code = test_code(i);
+        auto code = test_code(i);
         auto const hash = test_hash(i);
         auto const icode = make_shared_intercode(std::move(code));
 

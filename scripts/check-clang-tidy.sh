@@ -69,3 +69,36 @@ mapfile -d '' -t inputs < <(\
   -p "${BUILD_DIR}" "$@"                          \
   -extra-arg='-Wno-unknown-warning-option'        \
   -quiet
+
+# These directories are not yet clean under the full set of checks, so lint
+# them for bugs only.
+mapfile -d '' -t bug_inputs < <(\
+    rg --files -0 \
+    -g '*.cpp' -g '*.c' \
+    category/crypto    \
+    category/execution \
+    cmd                \
+    test)
+
+BUG_CHECKS=-*,bugprone-*,performance-move-const-arg
+BUG_CHECKS+=,-bugprone-branch-clone
+BUG_CHECKS+=,-bugprone-easily-swappable-parameters
+BUG_CHECKS+=,-bugprone-implicit-widening-of-multiplication-result
+BUG_CHECKS+=,-bugprone-unchecked-optional-access
+BUG_CHECKS+=,-bugprone-unhandled-self-assignment
+BUG_CHECKS+=,-bugprone-assignment-in-if-condition
+BUG_CHECKS+=,-bugprone-exception-escape
+BUG_CHECKS+=,-bugprone-macro-parentheses
+BUG_CHECKS+=,-bugprone-suspicious-stringview-data-usage
+BUG_CHECKS+=,-bugprone-switch-missing-default-case
+BUG_CHECKS+=,-bugprone-too-small-loop-variable
+BUG_CHECKS+=,-bugprone-use-after-move
+
+"${RUN_CLANG_TIDY}"                               \
+  "${bug_inputs[@]}"                              \
+  -checks="${BUG_CHECKS}"                         \
+  -header-filter "category/.*"                    \
+  -j "$(nproc)"                                   \
+  -p "${BUILD_DIR}" "$@"                          \
+  -extra-arg='-Wno-unknown-warning-option'        \
+  -quiet

@@ -261,7 +261,7 @@ TEST(EvmcHostTest, host_methods_rethrow_pruned_read)
                      std::nullopt, Account{.balance = 1, .nonce = 0}}}}};
 
         monad::test::commit_sequential(
-            write_db, std::move(initial_state), {}, BlockHeader{.number = 0});
+            write_db, initial_state, {}, BlockHeader{.number = 0});
         for (uint64_t block = 1; block < mpt::MIN_HISTORY_LENGTH; ++block) {
             monad::test::commit_sequential(
                 write_db, {}, {}, BlockHeader{.number = block});

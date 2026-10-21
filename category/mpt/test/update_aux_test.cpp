@@ -19,17 +19,23 @@
 #include <category/async/storage_pool.hpp>
 #include <category/async/util.hpp>
 #include <category/core/assert.h>
+#include <category/core/detail/start_lifetime_as_polyfill.hpp>
 #include <category/core/io/buffers.hpp>
 #include <category/core/io/ring.hpp>
+#include <category/mpt/db_metadata_context.hpp>
 #include <category/mpt/detail/db_metadata.hpp>
 #include <category/mpt/detail/timeline.hpp>
 #include <category/mpt/state_machine_kind.hpp>
 #include <category/mpt/test/db_metadata_test_access.hpp>
+#include <category/mpt/test/grow_database_test_util.hpp>
+#include <category/mpt/test/legacy_metadata.hpp>
 #include <category/mpt/trie.hpp>
 #include <category/mpt/util.hpp>
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <array>
 #include <atomic>
 #include <csignal>
 #include <cstddef>
@@ -37,9 +43,11 @@
 #include <cstring>
 #include <filesystem>
 #include <memory>
+#include <ostream>
 #include <stop_token>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include <stdlib.h>
 #include <unistd.h>
@@ -1848,4 +1856,700 @@ TEST(update_aux_test, clear_ondisk_db_clears_populated_secondary)
         mctx.db_history_max_version(timeline_id::secondary), INVALID_BLOCK_NUM);
 
     aux.deactivate_secondary_timeline();
+}
+
+namespace
+{
+    using detail::db_metadata;
+    using test::edit_metadata_copies;
+    using test::provision_monad008_metadata;
+    using test::provision_monad008_pool;
+
+    // The first count MONAD008's 20-bit field cannot hold.
+    constexpr uint64_t NARROW_LIMIT = uint64_t{1} << 20;
+
+    monad::async::storage_pool make_upgrade_pool(bool const allow_migration)
+    {
+        monad::async::storage_pool::creation_flags flags;
+        flags.chunk_capacity = 24;
+        flags.allow_migration = allow_migration;
+        return monad::async::storage_pool{
+            monad::async::use_anonymous_sized_inode_tag{},
+            (off_t{1} << 30) + 24576,
+            flags};
+    }
+
+    // Opens `pool` writable through UpdateAux, as a node does.
+    template <class Fn>
+    void with_aux(monad::async::storage_pool &pool, Fn &&fn)
+    {
+        monad::io::Ring ring1;
+        monad::io::Ring ring2;
+        monad::io::Buffers buffers =
+            monad::io::make_buffers_for_segregated_read_write(
+                ring1,
+                ring2,
+                2,
+                4,
+                monad::async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE,
+                monad::async::AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE);
+        monad::async::AsyncIO io(pool, buffers);
+        UpdateAux aux{io};
+        fn(aux);
+    }
+
+    uint32_t move_free_tail_to(
+        DbMetadataContext &ctx, DbMetadataContext::chunk_list const list)
+    {
+        uint32_t const idx = ctx.main()->free_list.end;
+        ctx.remove(idx);
+        ctx.append(list, idx);
+        return idx;
+    }
+
+    // Several chunks in each list, with counts reaching just below MONAD008's
+    // 20-bit limit, and three primary versions. The write offsets sit at the
+    // list tails, so that a writable reopen keeps every list as it is.
+    void populate(UpdateAux &aux)
+    {
+        using chunk_list = DbMetadataContext::chunk_list;
+        auto &ctx = aux.metadata_ctx();
+        ctx.restart_insertion_counts(chunk_list::fast, NARROW_LIMIT - 3);
+        ctx.restart_insertion_counts(chunk_list::slow, NARROW_LIMIT - 2);
+        move_free_tail_to(ctx, chunk_list::fast);
+        uint32_t const fast_tail = move_free_tail_to(ctx, chunk_list::fast);
+        uint32_t const slow_tail = move_free_tail_to(ctx, chunk_list::slow);
+        ctx.advance_db_offsets_to(
+            chunk_offset_t{fast_tail, 0}, chunk_offset_t{slow_tail, 0});
+        for (int v = 0; v < 3; ++v) {
+            ctx.append_root_offset(
+                chunk_offset_t{ctx.main()->fast_list.begin, 0},
+                timeline_id::primary);
+        }
+    }
+
+    struct identity
+    {
+        uint64_t count;
+        bool in_fast_list;
+        bool in_slow_list;
+
+        bool operator==(identity const &) const = default;
+    };
+
+    std::ostream &operator<<(std::ostream &os, identity const &i)
+    {
+        return os << "{" << i.count << ", fast=" << i.in_fast_list
+                  << ", slow=" << i.in_slow_list << "}";
+    }
+
+    std::vector<uint32_t>
+    list_ids(db_metadata const *const m, db_metadata::chunk_info_t const *i)
+    {
+        std::vector<uint32_t> ret;
+        for (; i != nullptr; i = i->next(m)) {
+            ret.push_back(i->index(m));
+        }
+        return ret;
+    }
+
+    // What the upgrade must carry over from one metadata copy.
+    struct carried_state
+    {
+        std::vector<identity> identities;
+        std::vector<uint32_t> fast;
+        std::vector<uint32_t> slow;
+        std::vector<uint32_t> free;
+        std::vector<uint64_t> record_words; // chunk_records[], two per record
+    };
+
+    carried_state carried_state_of(db_metadata const *const m)
+    {
+        carried_state s;
+        for (uint32_t i = 0; i < m->chunk_info_count; ++i) {
+            auto const id =
+                m->atomic_load_chunk_identity(i, std::memory_order_acquire);
+            s.identities.push_back(
+                {id.count, bool(id.in_fast_list), bool(id.in_slow_list)});
+        }
+        s.fast = list_ids(m, m->fast_list_begin());
+        s.slow = list_ids(m, m->slow_list_begin());
+        s.free = list_ids(m, m->free_list_begin());
+        s.record_words.resize(
+            size_t(m->chunk_info_count) * sizeof(db_metadata::chunk_record_t) /
+            sizeof(uint64_t));
+        std::memcpy(
+            s.record_words.data(),
+            m->chunk_records,
+            s.record_words.size() * sizeof(uint64_t));
+        return s;
+    }
+
+    std::array<carried_state, 2> carried_states_of(UpdateAux const &aux)
+    {
+        return {
+            carried_state_of(aux.metadata_ctx().main(0)),
+            carried_state_of(aux.metadata_ctx().main(1))};
+    }
+
+    void expect_upgraded(
+        UpdateAux const &aux, std::array<carried_state, 2> const &before)
+    {
+        for (unsigned which = 0; which < 2; ++which) {
+            auto const *const m = aux.metadata_ctx().main(which);
+            EXPECT_EQ(
+                0,
+                std::memcmp(
+                    m->magic,
+                    db_metadata::MAGIC,
+                    db_metadata::MAGIC_STRING_LEN))
+                << "copy " << which;
+            auto const after = carried_state_of(m);
+            EXPECT_EQ(after.identities, before[which].identities)
+                << "copy " << which;
+            EXPECT_EQ(after.fast, before[which].fast) << "copy " << which;
+            EXPECT_EQ(after.slow, before[which].slow) << "copy " << which;
+            EXPECT_EQ(after.free, before[which].free) << "copy " << which;
+            EXPECT_EQ(after.record_words, before[which].record_words)
+                << "copy " << which;
+        }
+    }
+
+    // What a crash leaves partway through migrate_monad008_to_monad009: the
+    // records from index `k` up converted, the bytes below them still in the
+    // MONAD008 layout, the old magic, and the dirty bit set.
+    void interrupt_migration_at(db_metadata *const m, size_t const k)
+    {
+        size_t const bytes =
+            sizeof(db_metadata) +
+            size_t(m->chunk_info_count) * sizeof(db_metadata::chunk_record_t);
+        std::vector<uint64_t> scratch(bytes / sizeof(uint64_t));
+        std::memcpy(scratch.data(), m, bytes);
+        detail::migrate_monad008_to_monad009(
+            monad::start_lifetime_as<db_metadata>(scratch.data()));
+        size_t const from =
+            sizeof(db_metadata) + k * sizeof(db_metadata::chunk_record_t);
+        std::memcpy(
+            reinterpret_cast<std::byte *>(m) + from,
+            reinterpret_cast<std::byte const *>(scratch.data()) + from,
+            bytes - from);
+        m->is_dirty().store(1, std::memory_order_release);
+    }
+
+    struct ring_state
+    {
+        uint64_t min_valid_version;
+        uint64_t max_version;
+        std::vector<chunk_offset_t> roots;
+    };
+
+    ring_state ring_state_of(UpdateAux const &aux, timeline_id const tid)
+    {
+        auto const &ctx = aux.metadata_ctx();
+        ring_state s{
+            ctx.db_history_min_valid_version(tid),
+            ctx.db_history_max_version(tid),
+            {}};
+        auto const ro = ctx.root_offsets(tid);
+        for (uint64_t v = s.min_valid_version; v <= s.max_version; ++v) {
+            s.roots.push_back(ro[v]);
+        }
+        return s;
+    }
+
+    void expect_same_ring(ring_state const &after, ring_state const &before)
+    {
+        EXPECT_EQ(after.min_valid_version, before.min_valid_version);
+        EXPECT_EQ(after.max_version, before.max_version);
+        EXPECT_EQ(after.roots, before.roots);
+    }
+}
+
+TEST(MetadataUpgrade, carries_every_count_and_list_bit)
+{
+    auto pool = make_upgrade_pool(true);
+    std::array<carried_state, 2> before;
+    uint64_t min_version = 0;
+    uint64_t max_version = 0;
+    with_aux(pool, [&](UpdateAux &aux) {
+        populate(aux);
+        before = carried_states_of(aux);
+        min_version = aux.metadata_ctx().db_history_min_valid_version();
+        max_version = aux.metadata_ctx().db_history_max_version();
+    });
+    std::vector<uint64_t> fast_counts;
+    for (uint32_t const idx : before[0].fast) {
+        fast_counts.push_back(before[0].identities[idx].count);
+    }
+    ASSERT_EQ(
+        fast_counts,
+        (std::vector<uint64_t>{
+            NARROW_LIMIT - 3, NARROW_LIMIT - 2, NARROW_LIMIT - 1}));
+    ASSERT_EQ(max_version, 2u);
+
+    provision_monad008_pool(pool);
+    with_aux(pool, [&](UpdateAux &aux) {
+        expect_upgraded(aux, before);
+        EXPECT_EQ(
+            aux.metadata_ctx().db_history_min_valid_version(), min_version);
+        EXPECT_EQ(aux.metadata_ctx().db_history_max_version(), max_version);
+    });
+}
+
+TEST(MetadataUpgrade, carries_a_secondary_timeline_over)
+{
+    auto pool = make_upgrade_pool(true);
+    std::array<carried_state, 2> before;
+    ring_state primary_before{};
+    ring_state secondary_before{};
+    with_aux(pool, [&](UpdateAux &aux) {
+        populate(aux);
+        aux.activate_secondary_timeline();
+        auto &ctx = aux.metadata_ctx();
+        for (int v = 0; v < 2; ++v) {
+            ctx.append_root_offset(
+                chunk_offset_t{ctx.main()->slow_list.begin, 0},
+                timeline_id::secondary);
+        }
+        before = carried_states_of(aux);
+        primary_before = ring_state_of(aux, timeline_id::primary);
+        secondary_before = ring_state_of(aux, timeline_id::secondary);
+    });
+    ASSERT_EQ(primary_before.roots.size(), 3u);
+    ASSERT_EQ(secondary_before.roots.size(), 2u);
+
+    provision_monad008_pool(pool);
+    with_aux(pool, [&](UpdateAux &aux) {
+        expect_upgraded(aux, before);
+        EXPECT_TRUE(aux.metadata_ctx().timeline_active(timeline_id::secondary));
+        expect_same_ring(
+            ring_state_of(aux, timeline_id::primary), primary_before);
+        expect_same_ring(
+            ring_state_of(aux, timeline_id::secondary), secondary_before);
+    });
+}
+
+TEST(MetadataUpgrade, heals_a_dirty_copy_first)
+{
+    auto pool = make_upgrade_pool(true);
+    std::array<carried_state, 2> before;
+    with_aux(pool, [&](UpdateAux &aux) {
+        populate(aux);
+        before = carried_states_of(aux);
+    });
+
+    uint64_t clean_history_length = 0;
+    edit_metadata_copies(pool, [&](db_metadata *const m, unsigned const which) {
+        provision_monad008_metadata(m);
+        if (which == 0) {
+            m->is_dirty().store(1, std::memory_order_release);
+            m->history_length = ~m->history_length;
+        }
+        else {
+            clean_history_length = m->history_length;
+        }
+    });
+    with_aux(pool, [&](UpdateAux &aux) {
+        expect_upgraded(aux, before);
+        for (unsigned which = 0; which < 2; ++which) {
+            auto const *const m = aux.metadata_ctx().main(which);
+            EXPECT_EQ(m->history_length, clean_history_length)
+                << "copy " << which;
+            EXPECT_FALSE(const_cast<db_metadata *>(m)->is_dirty().load(
+                std::memory_order_acquire))
+                << "copy " << which;
+        }
+    });
+}
+
+// The damaged copy's clean dirty bit, pending grow and chunk count are all
+// garbage, and each would abort the upgrade if it were believed.
+TEST(MetadataUpgrade, heals_a_copy_with_neither_magic_from_a_monad008_copy)
+{
+    for (unsigned damaged = 0; damaged < 2; ++damaged) {
+        auto pool = make_upgrade_pool(true);
+        std::array<carried_state, 2> before;
+        with_aux(pool, [&](UpdateAux &aux) {
+            populate(aux);
+            before = carried_states_of(aux);
+        });
+        edit_metadata_copies(
+            pool, [&](db_metadata *const m, unsigned const which) {
+                provision_monad008_metadata(m);
+                if (which == damaged) {
+                    std::memset(m->magic, 0xa5, db_metadata::MAGIC_STRING_LEN);
+                    m->pending_shrink_grow = {
+                        db_metadata::PENDING_OP_GROW, ~uint32_t{0}};
+                    m->chunk_info_count = (uint64_t{1} << 20) - 1;
+                }
+            });
+        with_aux(pool, [&](UpdateAux &aux) { expect_upgraded(aux, before); });
+    }
+}
+
+namespace
+{
+    // What one copy looked like when the upgrade synced it.
+    struct upgrade_sync
+    {
+        unsigned which;
+        bool dirty;
+        std::string magic;
+        bool sibling_dirty;
+
+        bool operator==(upgrade_sync const &) const = default;
+    };
+
+    std::vector<upgrade_sync> upgrade_syncs;
+
+    void record_upgrade_sync(DbMetadataContext const &ctx, unsigned const which)
+    {
+        auto *const m = const_cast<db_metadata *>(ctx.main(which));
+        auto *const sibling = const_cast<db_metadata *>(ctx.main(1 - which));
+        upgrade_syncs.push_back(
+            {.which = which,
+             .dirty = m->is_dirty().load(std::memory_order_acquire) != 0,
+             .magic = std::string(m->magic, db_metadata::MAGIC_STRING_LEN),
+             .sibling_dirty =
+                 sibling->is_dirty().load(std::memory_order_acquire) != 0});
+    }
+}
+
+// Each copy reaches disk marked dirty before it changes and clean only after
+// its new contents, while its sibling stays clean.
+TEST(MetadataUpgrade, syncs_each_copy_dirty_rewritten_then_clean_in_turn)
+{
+    auto pool = make_upgrade_pool(true);
+    with_aux(pool, [](UpdateAux &aux) { populate(aux); });
+    provision_monad008_pool(pool);
+
+    upgrade_syncs.clear();
+    DbMetadataContext::on_upgrade_sync_unit_testing_only = record_upgrade_sync;
+    auto const unhook = monad::make_scope_exit([]() noexcept {
+        DbMetadataContext::on_upgrade_sync_unit_testing_only = nullptr;
+    });
+    with_aux(pool, [](UpdateAux &) {});
+
+    std::string const previous{
+        db_metadata::PREVIOUS_MAGIC, db_metadata::MAGIC_STRING_LEN};
+    std::string const current{
+        db_metadata::MAGIC, db_metadata::MAGIC_STRING_LEN};
+    std::vector<upgrade_sync> expected;
+    for (unsigned which = 0; which < 2; ++which) {
+        expected.push_back({which, true, previous, false});
+        expected.push_back({which, true, current, false});
+        expected.push_back({which, false, current, false});
+    }
+    EXPECT_EQ(upgrade_syncs, expected);
+}
+
+TEST(MetadataUpgrade, resumes_after_a_crash_between_copies)
+{
+    auto pool = make_upgrade_pool(true);
+    std::array<carried_state, 2> before;
+    with_aux(pool, [&](UpdateAux &aux) {
+        populate(aux);
+        before = carried_states_of(aux);
+    });
+
+    edit_metadata_copies(pool, [](db_metadata *const m, unsigned const which) {
+        provision_monad008_metadata(m);
+        if (which == 0) {
+            auto const g = m->hold_dirty();
+            detail::migrate_monad008_to_monad009(m);
+        }
+    });
+    with_aux(pool, [&](UpdateAux &aux) {
+        expect_upgraded(aux, before);
+        auto const *const m0 = aux.metadata_ctx().main(0);
+        auto const *const m1 = aux.metadata_ctx().main(1);
+        size_t const bytes =
+            sizeof(db_metadata) +
+            size_t(m0->chunk_info_count) * sizeof(db_metadata::chunk_record_t);
+        EXPECT_EQ(0, std::memcmp(m0, m1, bytes));
+    });
+}
+
+// Copy 0 upgraded, copy 1 interrupted partway through its re-layout: copy 1
+// is healed from copy 0 across the two layouts.
+TEST(MetadataUpgrade, heals_an_interrupted_second_copy_from_the_first)
+{
+    auto pool = make_upgrade_pool(true);
+    std::array<carried_state, 2> before;
+    with_aux(pool, [&](UpdateAux &aux) {
+        populate(aux);
+        before = carried_states_of(aux);
+    });
+
+    edit_metadata_copies(pool, [](db_metadata *const m, unsigned const which) {
+        provision_monad008_metadata(m);
+        if (which == 0) {
+            auto const g = m->hold_dirty();
+            detail::migrate_monad008_to_monad009(m);
+        }
+        else {
+            interrupt_migration_at(m, m->chunk_info_count / 2);
+        }
+    });
+    with_aux(pool, [&](UpdateAux &aux) { expect_upgraded(aux, before); });
+}
+
+// Copy 0 carries MONAD009 but is dirty, as a crash after its magic landed
+// leaves it, and copy 1 is still MONAD008: copy 0 is reverted from copy 1
+// across the two layouts, then both are upgraded.
+TEST(MetadataUpgrade, reverts_a_dirty_first_copy_then_upgrades_both)
+{
+    auto pool = make_upgrade_pool(true);
+    std::array<carried_state, 2> before;
+    with_aux(pool, [&](UpdateAux &aux) {
+        populate(aux);
+        before = carried_states_of(aux);
+    });
+
+    edit_metadata_copies(pool, [](db_metadata *const m, unsigned const which) {
+        provision_monad008_metadata(m);
+        if (which == 0) {
+            detail::migrate_monad008_to_monad009(m);
+            m->is_dirty().store(1, std::memory_order_release);
+            // A dirty copy can hold anything, so its records must come from
+            // copy 1.
+            reinterpret_cast<std::byte *>(&m->chunk_records[1].identity)[0] ^=
+                std::byte{0x5a};
+        }
+    });
+    with_aux(pool, [&](UpdateAux &aux) { expect_upgraded(aux, before); });
+}
+
+TEST(MetadataUpgrade, refuses_without_allow_migration)
+{
+    testing::FLAGS_gtest_death_test_style = "threadsafe";
+
+    auto pool = make_upgrade_pool(false);
+    with_aux(pool, [](UpdateAux &) {});
+    provision_monad008_pool(pool);
+    ASSERT_DEATH(
+        with_aux(pool, [](UpdateAux &) {}),
+        "Run 'monad-mpt --upgrade --storage <path>'");
+}
+
+TEST(MetadataUpgrade, refuses_a_read_only_open_of_monad008)
+{
+    testing::FLAGS_gtest_death_test_style = "threadsafe";
+
+    auto pool = make_upgrade_pool(false);
+    with_aux(pool, [](UpdateAux &) {});
+    provision_monad008_pool(pool);
+    auto ro_pool = pool.clone_as_read_only();
+    monad::io::Ring ring;
+    monad::io::Buffers buffers = monad::io::make_buffers_for_read_only(
+        ring, 2, monad::async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE);
+    monad::async::AsyncIO io(ro_pool, buffers);
+    ASSERT_DEATH({ UpdateAux const aux{io}; }, "Run 'monad-mpt --upgrade");
+}
+
+// A read-only mapping cannot persist the upgrade, so it is refused even where
+// the pool allows migration. clone_as_read_only() never allows migration, so
+// the read-only pool is opened from a file with the flag set.
+TEST(MetadataUpgrade, refuses_a_read_only_mapping_even_when_allowed)
+{
+    testing::FLAGS_gtest_death_test_style = "threadsafe";
+
+    using monad::async::storage_pool;
+    auto const dev = grow_test::create_temp_file(20 * grow_test::BLKSIZE);
+    auto const undev = monad::make_scope_exit(
+        [&]() noexcept { std::filesystem::remove(dev); });
+    {
+        grow_test::opened_db const db{
+            dev, storage_pool::mode::create_if_needed};
+    }
+    {
+        storage_pool pool{
+            dev,
+            storage_pool::mode::open_existing,
+            grow_test::small_chunk_flags()};
+        provision_monad008_pool(pool);
+    }
+
+    auto flags = grow_test::small_chunk_flags();
+    flags.open_read_only = true;
+    flags.allow_migration = true;
+    storage_pool pool{dev, storage_pool::mode::open_existing, flags};
+    // The death-test child re-runs this body and dies without running scope
+    // guards; unlinking the file while the pool holds it open leaves the
+    // child nothing to clean up.
+    std::filesystem::remove(dev);
+    monad::io::Ring ring;
+    monad::io::Buffers buffers = monad::io::make_buffers_for_read_only(
+        ring, 2, monad::async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE);
+    monad::async::AsyncIO io(pool, buffers);
+    ASSERT_DEATH(
+        { UpdateAux const aux{io}; },
+        "Detected a MONAD008 DB, which requires a writable mapping to upgrade "
+        "to MONAD009");
+}
+
+TEST(MetadataUpgrade, refuses_while_a_grow_is_pending)
+{
+    testing::FLAGS_gtest_death_test_style = "threadsafe";
+
+    auto pool = make_upgrade_pool(true);
+    with_aux(pool, [](UpdateAux &) {});
+    edit_metadata_copies(pool, [](db_metadata *const m, unsigned) {
+        provision_monad008_metadata(m);
+        m->pending_shrink_grow = {
+            db_metadata::PENDING_OP_GROW,
+            static_cast<uint32_t>(m->chunk_info_count)};
+    });
+    ASSERT_DEATH(
+        with_aux(pool, [](UpdateAux &) {}), "A device grow is pending");
+}
+
+// 8 MiB chunks, the smallest AsyncIO accepts, leave each metadata copy 4 MiB:
+// room for 523728 8-byte entries but only 261864 16-byte records. A MONAD009
+// pool that size cannot be made, so its MONAD008 header is written by hand.
+TEST(MetadataUpgrade, refuses_when_records_outgrow_the_metadata_copy)
+{
+    testing::FLAGS_gtest_death_test_style = "threadsafe";
+
+    constexpr uint32_t seq_chunks = 300000;
+    monad::async::storage_pool::creation_flags flags;
+    flags.chunk_capacity = 23;
+    flags.allow_migration = true;
+    // Each chunk also costs 4 bytes of pool metadata at the device's end.
+    off_t const chunks = off_t{flags.num_cnv_chunks} + seq_chunks;
+    monad::async::storage_pool pool{
+        monad::async::use_anonymous_sized_inode_tag{},
+        chunks * ((off_t{1} << 23) + 4) + 8192,
+        flags};
+    ASSERT_EQ(pool.chunks(monad::async::storage_pool::seq), seq_chunks);
+    edit_metadata_copies(pool, [](db_metadata *const m, unsigned) {
+        std::memcpy(
+            m->magic,
+            db_metadata::PREVIOUS_MAGIC,
+            db_metadata::MAGIC_STRING_LEN);
+        m->chunk_info_count = seq_chunks & 0xfffffU;
+    });
+    ASSERT_DEATH(
+        with_aux(pool, [](UpdateAux &) {}),
+        "16-byte chunk records need 4804480 bytes of metadata but only "
+        "4194304 are available");
+}
+
+// The records fit, but the pool has more chunks than they describe, as an
+// old-binary grow interrupted before it stamped PENDING_OP_GROW leaves it. The
+// upgrade's own refusal has to fire, before either copy is migrated, rather
+// than the generic fit check after it.
+TEST(MetadataUpgrade, refuses_when_the_pool_outgrows_the_metadata_copy)
+{
+    testing::FLAGS_gtest_death_test_style = "threadsafe";
+
+    constexpr uint32_t seq_chunks = 300000;
+    constexpr uint32_t described_chunks = 200000;
+    monad::async::storage_pool::creation_flags flags;
+    flags.chunk_capacity = 23;
+    flags.allow_migration = true;
+    off_t const chunks = off_t{flags.num_cnv_chunks} + seq_chunks;
+    monad::async::storage_pool pool{
+        monad::async::use_anonymous_sized_inode_tag{},
+        chunks * ((off_t{1} << 23) + 4) + 8192,
+        flags};
+    ASSERT_EQ(pool.chunks(monad::async::storage_pool::seq), seq_chunks);
+    edit_metadata_copies(pool, [](db_metadata *const m, unsigned) {
+        std::memcpy(
+            m->magic,
+            db_metadata::PREVIOUS_MAGIC,
+            db_metadata::MAGIC_STRING_LEN);
+        m->chunk_info_count = described_chunks & 0xfffffU;
+    });
+    ASSERT_DEATH(
+        with_aux(pool, [](UpdateAux &) {}),
+        "16-byte chunk records need 4804480 bytes of metadata but only "
+        "4194304 are available");
+}
+
+TEST(MetadataUpgrade, is_a_no_op_on_monad009)
+{
+    auto pool = make_upgrade_pool(true);
+    std::array<carried_state, 2> before;
+    with_aux(pool, [&](UpdateAux &aux) {
+        populate(aux);
+        before = carried_states_of(aux);
+    });
+    with_aux(pool, [&](UpdateAux &aux) { expect_upgraded(aux, before); });
+}
+
+TEST(MetadataUpgrade, grow_extends_records_after_upgrade)
+{
+    using monad::async::storage_pool;
+    auto const dev = grow_test::create_temp_file(20 * grow_test::BLKSIZE);
+    auto const undev = monad::make_scope_exit(
+        [&]() noexcept { std::filesystem::remove(dev); });
+    {
+        grow_test::opened_db db{dev, storage_pool::mode::create_if_needed};
+        populate(db.aux);
+    }
+    {
+        storage_pool pool{
+            dev,
+            storage_pool::mode::open_existing,
+            grow_test::small_chunk_flags()};
+        provision_monad008_pool(pool);
+    }
+
+    monad::async::file_offset_t recorded = 0;
+    uint32_t chunks_before = 0;
+    std::vector<uint32_t> free_before;
+    {
+        auto flags = grow_test::small_chunk_flags();
+        flags.allow_migration = true;
+        grow_test::opened_db const db{
+            dev, storage_pool::mode::open_existing, flags};
+        auto const *const m = db.aux.metadata_ctx().main();
+        ASSERT_EQ(
+            0,
+            std::memcmp(
+                m->magic, db_metadata::MAGIC, db_metadata::MAGIC_STRING_LEN));
+        recorded = m->recorded_device_size;
+        chunks_before = static_cast<uint32_t>(m->chunk_info_count);
+        free_before = grow_test::free_list_ids(m);
+    }
+    grow_test::extend_in_place(dev, 30 * grow_test::BLKSIZE + 16384);
+
+    grow_test::opened_db db{
+        dev, storage_pool::mode::grow, grow_test::grow_flags(recorded)};
+    auto &ctx = db.aux.metadata_ctx();
+    auto const chunks_after =
+        static_cast<uint32_t>(ctx.main()->chunk_info_count);
+    ASSERT_GT(chunks_after, chunks_before);
+    for (unsigned which = 0; which < 2; ++which) {
+        auto const *const m = ctx.main(which);
+        auto const free_after = grow_test::free_list_ids(m);
+        ASSERT_EQ(
+            free_after.size(),
+            free_before.size() + (chunks_after - chunks_before));
+        EXPECT_TRUE(std::equal(
+            free_before.begin(), free_before.end(), free_after.begin()))
+            << "copy " << which;
+        for (uint32_t n = chunks_before; n < chunks_after; ++n) {
+            EXPECT_EQ(free_after[free_before.size() + (n - chunks_before)], n)
+                << "copy " << which;
+        }
+        for (size_t n = 1; n < free_after.size(); ++n) {
+            EXPECT_EQ(
+                m->insertion_count(free_after[n]),
+                m->insertion_count(free_after[n - 1]) + 1)
+                << "copy " << which << " free slot " << n;
+        }
+    }
+
+    uint32_t const appended =
+        move_free_tail_to(ctx, DbMetadataContext::chunk_list::fast);
+    EXPECT_GE(appended, chunks_before);
+    for (unsigned which = 0; which < 2; ++which) {
+        auto const id = ctx.main(which)->atomic_load_chunk_identity(
+            appended, std::memory_order_acquire);
+        EXPECT_EQ(uint64_t(id.count), NARROW_LIMIT) << "copy " << which;
+        EXPECT_TRUE(id.in_fast_list) << "copy " << which;
+        EXPECT_FALSE(id.in_slow_list) << "copy " << which;
+    }
 }

@@ -106,8 +106,8 @@ TEST_F(OnDiskMerkleTrieGTest, min_truncated_offsets)
     ensure_total_bytes_written(0, eightMB, 0, eightMB);
 
     auto const trie_min_offsets = calc_min_offsets(*this->root);
-    EXPECT_EQ(trie_min_offsets.fast, 0);
-    EXPECT_EQ(trie_min_offsets.slow, 0);
+    EXPECT_EQ(trie_min_offsets.fast, MIN_COMPACT_VIRTUAL_OFFSET);
+    EXPECT_EQ(trie_min_offsets.slow, MIN_COMPACT_VIRTUAL_OFFSET);
 
     struct TraverseCalculateAndVerifyMinTruncatedOffsets
         : public TraverseMachine

@@ -80,6 +80,25 @@ public:
         return nullptr;
     }
 
+#ifdef MONAD_ZKVM_ZISK
+    // find's row, writable: a caller that reads a value and then sets it
+    // searches once.
+    [[nodiscard]] bytes32_t *find(bytes32_t const &key)
+    {
+        return const_cast<bytes32_t *>(std::as_const(*this).find(key));
+    }
+
+    // upsert of a key that find has just not found.
+    void insert_absent(bytes32_t const &key, bytes32_t const &value)
+    {
+        if (!idx_ && MONAD_UNLIKELY(v_.capacity() == 0)) {
+            v_.reserve(32); // as upsert
+        }
+        v_.emplace_back(key, value);
+        idx_.on_insert(v_);
+    }
+#endif
+
     void upsert(bytes32_t const &key, bytes32_t const &value)
     {
         std::uint64_t const tail = key_tail(key);

@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/int.hpp>
 #include <category/core/runtime/uint256.hpp>
@@ -54,8 +55,8 @@ namespace monad::vm::runtime
 
     void selfbalance(Context *const ctx, uint256_t *const result_ptr)
     {
-        auto const balance =
-            static_cast<bytes32_t>(ctx->host->get_balance(ctx->env.recipient));
+        auto const balance = static_cast<bytes32_t>(
+            ctx->host->get_balance(to_evmc(ctx->env.recipient)));
         *result_ptr = load_be<uint256_t>(balance);
     }
 

@@ -2007,7 +2007,7 @@ TYPED_TEST(TraitsTest, code_tracer_records_extcodesize)
         0,
         chain_ctx};
 
-    EXPECT_EQ(host.get_code_size(ADDR_A), A_ICODE->size());
+    EXPECT_EQ(host.get_code_size(to_evmc(ADDR_A)), A_ICODE->size());
 
     auto const &codes = std::get<trace::CodeTracer>(state_tracer).codes;
     EXPECT_EQ(codes.size(), 1u);
@@ -2057,7 +2057,7 @@ TYPED_TEST(TraitsTest, code_tracer_records_extcodecopy)
         chain_ctx};
 
     std::vector<uint8_t> buf(A_ICODE->size(), 0);
-    auto const n = host.copy_code(ADDR_A, 0, buf.data(), buf.size());
+    auto const n = host.copy_code(to_evmc(ADDR_A), 0, buf.data(), buf.size());
     EXPECT_EQ(n, A_ICODE->size());
     EXPECT_TRUE(std::equal(
         buf.begin(),
@@ -2122,9 +2122,9 @@ TYPED_TEST(TraitsTest, code_tracer_records_called_contract_code)
         .kind = EVMC_CALL,
         .depth = 1,
         .gas = 1'000'000,
-        .recipient = ADDR_B,
-        .sender = ADDR_A,
-        .code_address = ADDR_B,
+        .recipient = to_evmc(ADDR_B),
+        .sender = to_evmc(ADDR_A),
+        .code_address = to_evmc(ADDR_B),
         .memory_handle = msg_memory.get(),
         .memory = msg_memory.get(),
         .memory_capacity = vm.message_memory_capacity(),

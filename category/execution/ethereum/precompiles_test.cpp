@@ -332,7 +332,7 @@ namespace
                     .gas = test_case.gas + gas_offset,
                     .input_data = test_case.input.data(),
                     .input_size = test_case.input.size(),
-                    .code_address = code_address};
+                    .code_address = to_evmc(code_address)};
 
                 NoopCallTracer call_tracer{};
                 evmc::Result const result =

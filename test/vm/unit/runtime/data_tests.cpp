@@ -64,7 +64,7 @@ TYPED_TEST(RuntimeTraitsTest, BalanceWarm)
 {
     auto f = TestFixture::wrap(balance<typename TestFixture::Trait>);
     TestFixture::set_balance(addr, wei);
-    this->host_.access_account(address_from_uint256(addr));
+    this->host_.access_account(to_evmc(address_from_uint256(addr)));
 
     this->ctx_.gas_remaining = 0;
     ASSERT_EQ(f(addr), wei);

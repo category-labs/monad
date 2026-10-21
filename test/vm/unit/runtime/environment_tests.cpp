@@ -15,6 +15,7 @@
 
 #include "fixture.hpp"
 
+#include <category/core/address.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/runtime/environment.hpp>
 

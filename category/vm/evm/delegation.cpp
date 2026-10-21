@@ -73,16 +73,6 @@ namespace monad::vm::evm
     }
 
 #if defined(MONAD_ZKVM_ZISK)
-    Address const *delegate_in(std::span<uint8_t const> const code)
-    {
-        if (!is_delegated(code)) {
-            return nullptr;
-        }
-        static_assert(sizeof(Address) == sizeof(evmc_address));
-        return reinterpret_cast<Address const *>(
-            code.data() + delegation_indicator_prefix_bytes.size());
-    }
-
     Address const *resolve_delegation(
         evmc_host_interface const *const host, evmc_host_context *const ctx,
         Address const &addr)

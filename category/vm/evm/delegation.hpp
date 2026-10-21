@@ -36,8 +36,18 @@ namespace monad::vm::evm
 #if defined(MONAD_ZKVM_ZISK)
     // designation_of's address where it lies in the code, or null: no
     // optional to fill and return through memory, so the methods that pass
-    // the delegate on are jumps.
-    Address const *delegate_in(std::span<uint8_t const> code);
+    // the delegate on are jumps. Defined here, where its callers see it: its
+    // body, a size test nearly always, is shorter than the call.
+    [[gnu::always_inline]] inline Address const *
+    delegate_in(std::span<uint8_t const> const code)
+    {
+        static_assert(sizeof(Address) == sizeof(evmc_address));
+        if (code.size() != 3 + sizeof(Address) || code[0] != 0xef ||
+            code[1] != 0x01 || code[2] != 0x00) {
+            return nullptr;
+        }
+        return reinterpret_cast<Address const *>(code.data() + 3);
+    }
 
     Address const *resolve_delegation(
         evmc_host_interface const *, evmc_host_context *, Address const &);

@@ -276,11 +276,77 @@ Result<void> static_validate_block(Chain const &chain, Block const &block)
 
 EXPLICIT_TRAITS(static_validate_block);
 
+// The header fields fixed by the parent (execution-specs validate_header):
+// number, timestamp, gas limit and the EIP-1559 base fee.
+template <Traits traits>
+Result<void> static_validate_header_parent(
+    BlockHeader const &header, BlockHeader const &parent_header)
+{
+    if (MONAD_UNLIKELY(header.number != parent_header.number + 1)) {
+        return BlockError::WrongBlockNumber;
+    }
+
+    if (MONAD_UNLIKELY(header.timestamp <= parent_header.timestamp)) {
+        return BlockError::InvalidTimestamp;
+    }
+
+    // EIP-1559: the fork block's parent target is its whole gas limit
+    bool const london_fork_block = traits::evm_rev() >= MONAD_ETH_LONDON &&
+                                   !parent_header.base_fee_per_gas.has_value();
+    uint64_t const parent_gas_limit =
+        london_fork_block ? parent_header.gas_limit * 2
+                          : parent_header.gas_limit;
+
+    // YP eq. 56
+    uint64_t const max_delta = parent_gas_limit / 1024;
+    if (MONAD_UNLIKELY(
+            header.gas_limit >= parent_gas_limit + max_delta ||
+            header.gas_limit <= parent_gas_limit - max_delta)) {
+        return BlockError::InvalidGasLimit;
+    }
+
+    // EIP-1559
+    if constexpr (traits::evm_rev() >= MONAD_ETH_LONDON) {
+        uint256_t expected;
+        if (london_fork_block) {
+            expected = 1'000'000'000;
+        }
+        else {
+            uint256_t const &parent_base_fee =
+                parent_header.base_fee_per_gas.value();
+            uint64_t const parent_gas_target = parent_gas_limit / 2;
+            uint64_t const parent_gas_used = parent_header.gas_used;
+            if (parent_gas_used == parent_gas_target) {
+                expected = parent_base_fee;
+            }
+            else if (parent_gas_used > parent_gas_target) {
+                uint256_t const delta =
+                    parent_base_fee * (parent_gas_used - parent_gas_target) /
+                    parent_gas_target / 8;
+                expected = parent_base_fee + (delta == 0 ? 1 : delta);
+            }
+            else {
+                uint256_t const delta =
+                    parent_base_fee * (parent_gas_target - parent_gas_used) /
+                    parent_gas_target / 8;
+                expected = parent_base_fee - delta;
+            }
+        }
+        if (MONAD_UNLIKELY(header.base_fee_per_gas.value() != expected)) {
+            return BlockError::InvalidBaseFee;
+        }
+    }
+
+    return success();
+}
+
 template <Traits traits>
 Result<void> static_validate_block_with_parent(
     Chain const &chain, Block const &block, BlockHeader const &parent_header)
 {
     BOOST_OUTCOME_TRY(static_validate_block<traits>(chain, block));
+    BOOST_OUTCOME_TRY(
+        static_validate_header_parent<traits>(block.header, parent_header));
     BOOST_OUTCOME_TRY(
         static_validate_4844_parent<traits>(chain, block, parent_header));
 
@@ -368,7 +434,10 @@ quick_status_code_from_enum<monad::BlockError>::value_mappings()
          {}},
         {BlockError::SystemCallFailed, "system call failed", {}},
         {BlockError::InvalidRequestsHash, "invalid requests hash", {}},
-        {BlockError::InvalidDepositLog, "invalid deposit log", {}}};
+        {BlockError::InvalidDepositLog, "invalid deposit log", {}},
+        {BlockError::WrongBlockNumber, "wrong block number", {}},
+        {BlockError::InvalidTimestamp, "invalid timestamp", {}},
+        {BlockError::InvalidBaseFee, "invalid base fee", {}}};
 
     return v;
 }

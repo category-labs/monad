@@ -59,7 +59,10 @@ enum class BlockError
     SystemCallMissingCode,
     SystemCallFailed,
     InvalidRequestsHash,
-    InvalidDepositLog
+    InvalidDepositLog,
+    WrongBlockNumber,
+    InvalidTimestamp,
+    InvalidBaseFee
 };
 
 struct Chain;

@@ -887,8 +887,26 @@ void State::set_transient_storage(
     Address const &address, bytes32_t const &key, bytes32_t const &value)
 {
     auto &account_state = current_account_state(address);
+#ifdef MONAD_ZKVM_ZISK
+    // Find once, save the old value for rollback, then update the same slot.
+    auto &transient_storage = account_state.transient_storage_;
+    bytes32_t *const stored_value = transient_storage.find_mut(key);
+    if (journalling()) {
+        static constexpr bytes32_t zero{};
+        undo_.emplace_back(address, Undo::Kind::Transient, undo_slots_.size());
+        undo_slots_.emplace_back(
+            key, stored_value ? *stored_value : zero, stored_value != nullptr);
+    }
+    if (stored_value != nullptr) {
+        *stored_value = value;
+    }
+    else {
+        transient_storage.insert_absent(key, value);
+    }
+#else
     journal_transient(address, account_state, key);
     account_state.set_transient_storage(key, value);
+#endif
 }
 
 void State::touch(Address const &address)

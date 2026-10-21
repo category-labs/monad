@@ -946,8 +946,26 @@ void State::set_transient_storage(
     evmc_address const &address, bytes32_t const &key, bytes32_t const &value)
 {
     auto &account_state = current_account_state(address);
+#ifdef MONAD_ZKVM_ZISK
+    // One search of the account's transient rows: the value the journal keeps
+    // and the place the new one goes are the same row.
+    auto &rows = account_state.transient_storage_;
+    bytes32_t *const prev = rows.find(key);
+    if (journalling()) {
+        static constexpr bytes32_t zero{};
+        undo_.emplace_back(address, Undo::Kind::Transient, undo_slots_.size());
+        undo_slots_.emplace_back(key, prev ? *prev : zero, prev != nullptr);
+    }
+    if (prev != nullptr) {
+        *prev = value;
+    }
+    else {
+        rows.insert_absent(key, value);
+    }
+#else
     journal_transient(address, account_state, key);
     account_state.set_transient_storage(key, value);
+#endif
 }
 
 void State::touch(evmc_address const &address)

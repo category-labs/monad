@@ -15,6 +15,7 @@
 
 #include "fixture.hpp"
 
+#include <category/core/address.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/runtime/environment.hpp>
 
@@ -26,7 +27,7 @@ using namespace monad::vm::test;
 
 TEST_F(RuntimeTest, SelfBalance)
 {
-    host_.accounts[0x0000000000000000000000000000000000000001_address]
+    host_.accounts[to_evmc(0x0000000000000000000000000000000000000001_address)]
         .set_balance(100);
 
     ASSERT_EQ(call(selfbalance), 100);

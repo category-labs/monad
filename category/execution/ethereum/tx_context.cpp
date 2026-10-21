@@ -44,8 +44,8 @@ evmc_tx_context get_tx_context(
     return {
         .tx_gas_price = store_be_as<evmc_bytes32>(
             gas_price<traits>(tx, hdr.base_fee_per_gas.value_or(0))),
-        .tx_origin = sender,
-        .block_coinbase = hdr.beneficiary,
+        .tx_origin = to_evmc(sender),
+        .block_coinbase = to_evmc(hdr.beneficiary),
         .block_number = static_cast<int64_t>(hdr.number),
         .block_timestamp = static_cast<int64_t>(hdr.timestamp),
         .block_gas_limit = static_cast<int64_t>(hdr.gas_limit),

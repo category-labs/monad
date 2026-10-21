@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/likely.h>
 #include <category/core/runtime/uint256.hpp>
@@ -36,7 +37,9 @@ namespace monad::vm::runtime
             ctx->exit(StatusCode::Error);
         }
 
-        auto address = address_from_uint256(*address_ptr);
+        evmc_address const address =
+            to_evmc(address_from_uint256(*address_ptr));
+        evmc_address const recipient = to_evmc(ctx->env.recipient);
 
         auto const access_status =
             ctx->host->access_account(ctx->context, &address);
@@ -45,9 +48,9 @@ namespace monad::vm::runtime
             ctx->deduct_gas(traits::cold_account_cost() + 100);
         }
 
-        auto const non_zero_transfer = [ctx] {
+        auto const non_zero_transfer = [ctx, &recipient] {
             auto const balance = static_cast<bytes32_t>(
-                ctx->host->get_balance(ctx->context, &ctx->env.recipient));
+                ctx->host->get_balance(ctx->context, &recipient));
             return balance != bytes32_t{};
         }();
 
@@ -60,8 +63,8 @@ namespace monad::vm::runtime
             }
         }
 
-        auto const result = ctx->host->selfdestruct(
-            ctx->context, &ctx->env.recipient, &address);
+        auto const result =
+            ctx->host->selfdestruct(ctx->context, &recipient, &address);
 
         if constexpr (!traits::eip_3529_active()) {
             if (result) {

@@ -16,7 +16,7 @@
 //! This module contains low-level bindings to the monad execution client event types.
 
 pub use self::bindings::{
-    g_monad_exec_event_metadata, monad_bytes32, monad_c_access_list_entry, monad_c_address,
+    g_monad_exec_event_metadata, monad_address, monad_bytes32, monad_c_access_list_entry,
     monad_c_auth_list_entry, monad_c_eth_txn_header, monad_c_eth_txn_receipt, monad_c_uint256_ne,
     monad_exec_account_access, monad_exec_account_access_context,
     monad_exec_account_access_list_header, monad_exec_block_end, monad_exec_block_finalized,

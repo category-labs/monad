@@ -63,8 +63,9 @@ namespace monad::vm::evm
         // then drop these three bytes and interpret the remainder as
         // the delegate address.
         uint8_t code_buffer[delegation_indicator_size + 1];
+        evmc_address const evmc_addr = to_evmc(addr);
         size_t const actual_code_size = host->copy_code(
-            ctx, &addr, 0, code_buffer, delegation_indicator_size + 1);
+            ctx, &evmc_addr, 0, code_buffer, delegation_indicator_size + 1);
 
         std::span const code{code_buffer, actual_code_size};
 

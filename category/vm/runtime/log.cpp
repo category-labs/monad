@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
 #include <category/core/runtime/uint256.hpp>
@@ -47,9 +48,10 @@ namespace monad::vm::runtime
             ctx->deduct_gas(size * bin<8>);
         }
 
+        evmc_address const recipient = to_evmc(ctx->env.recipient);
         ctx->host->emit_log(
             ctx->context,
-            &ctx->env.recipient,
+            &recipient,
             ctx->memory.data + *offset,
             *size,
             topics.data(),

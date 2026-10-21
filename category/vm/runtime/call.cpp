@@ -79,9 +79,10 @@ namespace monad::vm::runtime
             max(args_offset + args_size, ret_offset + ret_size));
 
         auto const dest_address = address_from_uint256(address);
+        evmc_address const evmc_dest_address = to_evmc(dest_address);
 
         auto const access_status =
-            ctx->host->access_account(ctx->context, &dest_address);
+            ctx->host->access_account(ctx->context, &evmc_dest_address);
         if (access_status == EVMC_ACCESS_COLD) {
             ctx->deduct_gas(traits::cold_account_cost());
         }
@@ -93,8 +94,10 @@ namespace monad::vm::runtime
                 // current authority.
                 if (auto delegate_address = evm::resolve_delegation(
                         ctx->host, ctx->context, dest_address)) {
+                    evmc_address const evmc_delegate_address =
+                        to_evmc(*delegate_address);
                     auto const access_status = ctx->host->access_account(
-                        ctx->context, &*delegate_address);
+                        ctx->context, &evmc_delegate_address);
                     ctx->gas_remaining -= (access_status == EVMC_ACCESS_COLD
                                                ? traits::cold_account_cost()
                                                : 0) +
@@ -128,7 +131,7 @@ namespace monad::vm::runtime
             }
 
             if (has_value &&
-                !ctx->host->account_exists(ctx->context, &dest_address)) {
+                !ctx->host->account_exists(ctx->context, &evmc_dest_address)) {
                 ctx->gas_remaining -= 25000;
             }
         }
@@ -159,14 +162,14 @@ namespace monad::vm::runtime
                 ctx->env.evmc_flags, static_call, dest_address != code_address),
             .depth = ctx->env.depth + 1,
             .gas = gas,
-            .recipient = recipient,
-            .sender = sender,
+            .recipient = to_evmc(recipient),
+            .sender = to_evmc(sender),
             .input_data =
                 (*args_size > 0) ? ctx->memory.data + *args_offset : nullptr,
             .input_size = *args_size,
             .value = to_evmc(value),
             .create2_salt = to_evmc(ctx->env.create2_salt),
-            .code_address = code_address,
+            .code_address = to_evmc(code_address),
             .memory_handle = ctx->memory.data_handle,
             .memory = ctx->memory.data + ctx->memory.size,
             .memory_capacity = ctx->memory.capacity - ctx->memory.size,

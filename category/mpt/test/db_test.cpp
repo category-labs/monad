@@ -26,10 +26,12 @@
 #include <category/core/bytes.hpp>
 #include <category/core/fiber/priority_pool.hpp>
 #include <category/core/hex.hpp>
+#include <category/core/io/ring.hpp>
 #include <category/core/result.hpp>
 #include <category/core/runtime/unaligned.hpp>
 #include <category/core/small_prng.hpp>
 #include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
+#include <category/core/thread_idle.hpp>
 #include <category/crypto/keccak.h>
 #include <category/mpt/compute.hpp>
 #include <category/mpt/db.hpp>
@@ -3276,48 +3278,138 @@ TEST(OnDiskDb, opens_when_the_stats_sidecar_cannot_be_created)
                      .has_value());
 }
 
-TEST(OnDiskDb, thread_idle_is_published_without_any_upserts)
+namespace
 {
-    auto const path = MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
-                      ("monad_db_stats_idle_" + std::to_string(::getpid()));
-    std::filesystem::remove(path);
-    auto const remove_sidecar = monad::make_scope_exit(
-        [&]() noexcept { std::filesystem::remove(path); });
-
-    Db const db{
-        std::make_unique<StateMachineAlwaysMerkle>(),
-        OnDiskDbConfig{
-            .fixed_history_length = MPT_TEST_HISTORY_LENGTH,
-            .stats_file_path = path}};
-    auto const reader = DbStatsReader::open(path);
-    ASSERT_TRUE(reader.has_value());
-
-    auto const triedb_idle = [&]() -> std::optional<uint64_t> {
-        auto const section = reader->read_thread_idle();
+    std::optional<monad::mpt::detail::ThreadIdleSlot>
+    thread_idle_slot(DbStatsReader const &reader, char const *const name)
+    {
+        auto const section = reader.read_thread_idle();
         if (!section.has_value()) {
             return std::nullopt;
         }
         for (uint32_t i = 0; i < section->count; ++i) {
-            if (std::strcmp(section->slots[i].name, "triedb rw") == 0) {
-                return section->slots[i].idle_ns;
+            if (std::strcmp(section->slots[i].name, name) == 0) {
+                return section->slots[i];
             }
         }
         return std::nullopt;
-    };
-
-    auto const deadline =
-        std::chrono::steady_clock::now() + std::chrono::seconds(3);
-    std::optional<uint64_t> first = triedb_idle();
-    while (!first.has_value() && std::chrono::steady_clock::now() < deadline) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        first = triedb_idle();
     }
-    ASSERT_TRUE(first.has_value()) << "no thread idle publish within 3 s";
 
-    // Blocks stop arriving exactly when the node is idlest; a value frozen
-    // until the next upsert would read as fully busy.
-    std::this_thread::sleep_for(std::chrono::milliseconds(2200));
-    auto const second = triedb_idle();
-    ASSERT_TRUE(second.has_value());
-    EXPECT_GE(*second - *first, 1'000'000'000u);
+    std::optional<monad::mpt::detail::ThreadIdleSlot>
+    await_thread_idle_slot(DbStatsReader const &reader, char const *const name)
+    {
+        auto const deadline =
+            std::chrono::steady_clock::now() + std::chrono::seconds(3);
+        auto slot = thread_idle_slot(reader, name);
+        while (!slot.has_value() &&
+               std::chrono::steady_clock::now() < deadline) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            slot = thread_idle_slot(reader, name);
+        }
+        return slot;
+    }
+
+    // The writer creates the section empty before its first publish.
+    std::optional<monad::mpt::detail::ThreadIdleSection>
+    await_thread_idle_publish(DbStatsReader const &reader)
+    {
+        auto const deadline =
+            std::chrono::steady_clock::now() + std::chrono::seconds(3);
+        auto section = reader.read_thread_idle();
+        while ((!section.has_value() || section->count == 0) &&
+               std::chrono::steady_clock::now() < deadline) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            section = reader.read_thread_idle();
+        }
+        return section;
+    }
+
+    std::filesystem::path stats_sidecar_path()
+    {
+        auto path = MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
+                    ("monad_db_stats_idle_" + std::to_string(::getpid()));
+        std::filesystem::remove(path);
+        return path;
+    }
+
+    OnDiskDbConfig
+    sqpoll_db_config(std::filesystem::path const &stats_file_path)
+    {
+        return OnDiskDbConfig{
+            .sq_thread_cpu = 0,
+            .fixed_history_length = MPT_TEST_HISTORY_LENGTH,
+            .stats_file_path = stats_file_path};
+    }
+
+    bool kernel_reports_sqpoll_times()
+    {
+        return monad::io::Ring{monad::io::RingConfig{2, 0}}
+            .sqpoll_times()
+            .has_value();
+    }
+
+    void expect_idle_advances_while_db_is_idle(char const *const slot_name)
+    {
+        auto const path = stats_sidecar_path();
+        auto const remove_sidecar = monad::make_scope_exit(
+            [&]() noexcept { std::filesystem::remove(path); });
+        Db const db{
+            std::make_unique<StateMachineAlwaysMerkle>(),
+            sqpoll_db_config(path)};
+        auto const reader = DbStatsReader::open(path);
+        ASSERT_TRUE(reader.has_value());
+
+        auto const first = await_thread_idle_slot(*reader, slot_name);
+        ASSERT_TRUE(first.has_value())
+            << "no " << slot_name << " publish within 3 s";
+
+        // Blocks stop arriving exactly when the node is idlest; a value frozen
+        // until the next upsert would read as fully busy.
+        std::this_thread::sleep_for(std::chrono::milliseconds(2200));
+        auto const second = thread_idle_slot(*reader, slot_name);
+        ASSERT_TRUE(second.has_value());
+        EXPECT_EQ(second->registered_at_ns, first->registered_at_ns);
+        EXPECT_GE(second->idle_ns - first->idle_ns, 1'000'000'000u);
+    }
+}
+
+TEST(OnDiskDb, thread_idle_is_published_without_any_upserts)
+{
+    expect_idle_advances_while_db_is_idle("triedb rw");
+}
+
+TEST(OnDiskDb, sqpoll_thread_idle_is_published)
+{
+    if (!kernel_reports_sqpoll_times()) {
+        GTEST_SKIP() << "kernel does not report SQPOLL thread times";
+    }
+    expect_idle_advances_while_db_is_idle("triedb sqpoll");
+}
+
+TEST(OnDiskDb, sqpoll_thread_idle_is_left_out_of_a_full_section)
+{
+    if (!kernel_reports_sqpoll_times()) {
+        GTEST_SKIP() << "kernel does not report SQPOLL thread times";
+    }
+    std::vector<monad::ThreadIdleRegistry::Registration> fillers;
+    while (true) {
+        auto reg = monad::ThreadIdleRegistry::global().claim("filler");
+        if (reg.counter() == nullptr) {
+            break;
+        }
+        fillers.push_back(std::move(reg));
+    }
+
+    auto const path = stats_sidecar_path();
+    auto const remove_sidecar = monad::make_scope_exit(
+        [&]() noexcept { std::filesystem::remove(path); });
+    Db const db{
+        std::make_unique<StateMachineAlwaysMerkle>(), sqpoll_db_config(path)};
+    auto const reader = DbStatsReader::open(path);
+    ASSERT_TRUE(reader.has_value());
+
+    auto const section = await_thread_idle_publish(*reader);
+    ASSERT_TRUE(section.has_value()) << "no thread idle publish within 3 s";
+    EXPECT_EQ(section->count, monad::ThreadIdleRegistry::MAX_THREADS);
+    EXPECT_FALSE(thread_idle_slot(*reader, "triedb sqpoll").has_value());
 }

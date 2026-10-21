@@ -144,7 +144,7 @@ mod hints {
     /// words into `dst`, which may be the operand: the host has read it by
     /// then.
     #[inline(always)]
-    unsafe fn query<T: ?Sized>(tag: u32, operand: *const T, dst: *mut [u32; 8]) {
+    pub(crate) unsafe fn query<T: ?Sized>(tag: u32, operand: *const T, dst: *mut [u32; 8]) {
         write(tag);
         write(operand.cast::<u8>() as usize as u32);
         let dst = dst.cast::<u32>();
@@ -503,7 +503,7 @@ pub unsafe extern "C" fn zkvm_ripemd160(data: *const u8, len: usize, output: *mu
 mod bn254 {
     use super::{ZKVM_EFAIL, ZKVM_EOK};
     use airbender_crypto::ark_ec::pairing::Pairing;
-    use airbender_crypto::ark_ec::{AffineRepr, CurveGroup};
+    use airbender_crypto::ark_ec::AffineRepr;
     use airbender_crypto::ark_ff::{One, PrimeField, Zero};
     use airbender_crypto::ark_serialize::Valid;
     use airbender_crypto::bn254::curves::Bn254;
@@ -551,6 +551,55 @@ mod bn254 {
         }
     }
 
+    // Field divisions from the host, checked with one multiplication, as
+    // ZKsync OS's Bn254FqDivider: the query protocol of `hints` (the runner's
+    // BN254_DIVIDE), Montgomery words in and out.
+    const DIVIDE: u32 = 0x4d44_5620;
+    /// `2^256 mod p`: the words of one.
+    const R_MOD_P: [u32; 8] = [
+        0xc58f0d9d, 0xd35d438d, 0xf5c70b3d, 0x0a78eb28, 0x7879462c, 0x666ea36f, 0x9a07df2f, 0x0e0a77c1,
+    ];
+
+    // The host reads and answers Montgomery words: a change of airbender-
+    // crypto's representation must stop the build here.
+    const _: () = {
+        assert!(core::mem::size_of::<Fq>() == 32);
+        assert!(core::mem::size_of::<[Fq; 2]>() == 64);
+        // SAFETY: Fq is 32 bytes (above); const evaluation refuses padding
+        let one: [u32; 8] = unsafe { core::mem::transmute(<Fq as airbender_crypto::ark_ff::Field>::ONE) };
+        let zero: [u32; 8] = unsafe { core::mem::transmute(<Fq as airbender_crypto::ark_ff::AdditiveGroup>::ZERO) };
+        let mut i = 0;
+        while i < 8 {
+            assert!(one[i] == R_MOD_P[i] && zero[i] == 0);
+            i += 1;
+        }
+    };
+
+    struct HostDivider;
+
+    impl airbender_crypto::affine_glv::Divider<Fq> for HostDivider {
+        #[inline(always)]
+        fn divide<'q>(
+            &mut self,
+            fraction: &mut [Fq; 2],
+            quotient: &'q mut core::mem::MaybeUninit<Fq>,
+        ) -> &'q mut Fq {
+            // SAFETY: the element is its eight words (checked above), any
+            // value of which is an element of the redundant representation
+            let quotient = unsafe {
+                super::hints::query(DIVIDE, fraction, quotient.as_mut_ptr().cast());
+                quotient.assume_init_mut()
+            };
+            // quotient · denominator = numerator; the denominator is not zero
+            // (the caller's obligation), so only the quotient passes
+            let [numerator, denominator] = fraction;
+            *denominator *= &*quotient;
+            *denominator -= &*numerator;
+            assert!(denominator.is_zero(), "the bn254 division hint is wrong");
+            quotient
+        }
+    }
+
     #[no_mangle]
     pub unsafe extern "C" fn zkvm_bn254_g1_add(
         p1: *const [u8; 64],
@@ -560,7 +609,8 @@ mod bn254 {
         let (Some(a), Some(b)) = (parse_g1(&*p1), parse_g1(&*p2)) else {
             return ZKVM_EFAIL;
         };
-        let sum = airbender_crypto::bn254::g1::add_affine(&a, &b).into_affine();
+        // affine, with the slope's division a checked hint
+        let sum = airbender_crypto::bn254::g1::add_affine_with_divider(&a, &b, &mut HostDivider);
         write_g1(&sum, &mut *result);
         ZKVM_EOK
     }
@@ -578,8 +628,13 @@ mod bn254 {
             (*result).fill(0);
             return ZKVM_EOK;
         }
-        // any 256-bit integer multiplies; no reduction
-        let product = p.mul_bigint(bigint_from_be(&*scalar)).into_affine();
+        // GLV in affine coordinates, divisions from the host; any 256-bit
+        // integer (reduced modulo the group order inside)
+        let product = airbender_crypto::bn254::g1::mul_affine_with_divider(
+            &p,
+            &bigint_from_be(&*scalar).0,
+            &mut HostDivider,
+        );
         write_g1(&product, &mut *result);
         ZKVM_EOK
     }

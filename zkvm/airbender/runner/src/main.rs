@@ -49,10 +49,14 @@ const SECP_SCALAR_INVERT: u32 = TAG | 0x13;
 /// a short (k0, k1, m0, m1) with (k0 + k1·λ)·na = m0 + m1·λ mod n, each a
 /// sign word and four magnitude words (glv4.rs).
 const SECP_RECOVER: u32 = TAG | 0x14;
+/// bn254 base field, as SECP_DIVIDE: the numerator and the denominator,
+/// adjacent, Montgomery words: their quotient (ZKsync OS's
+/// Bn254BaseFieldDivision).
+const BN254_DIVIDE: u32 = TAG | 0x20;
 
 mod glv4;
 
-const QUERIES: [(u32, &str); 7] = [
+const QUERIES: [(u32, &str); 8] = [
     (DIV, "div"),
     (WIDE_DIV, "wide_div"),
     (SECP_DIVIDE, "secp_divide"),
@@ -60,13 +64,14 @@ const QUERIES: [(u32, &str); 7] = [
     (SECP_INVERT, "secp_invert"),
     (SECP_SCALAR_INVERT, "secp_scalar_invert"),
     (SECP_RECOVER, "secp_recover"),
+    (BN254_DIVIDE, "bn254_divide"),
 ];
 
 fn operand_count(tag: u32) -> usize {
     match tag {
         DIV => 2,
         WIDE_DIV => 3,
-        SECP_DIVIDE | SECP_SQRT | SECP_INVERT | SECP_SCALAR_INVERT | SECP_RECOVER => 1,
+        SECP_DIVIDE | SECP_SQRT | SECP_INVERT | SECP_SCALAR_INVERT | SECP_RECOVER | BN254_DIVIDE => 1,
         _ => 0,
     }
 }
@@ -158,9 +163,10 @@ struct Oracle {
     transcript: Vec<u32>,
     /// Queries answered, by tag (QUERIES' order).
     counts: [u64; QUERIES.len()],
-    /// `--corrupt <n>:<how>`: a wrong answer to the n-th query, to check
+    /// `--corrupt <n>:<how>[:<query>]`: a wrong answer to the n-th query
+    /// (the n-th of that kind, QUERIES' names, when one is named), to check
     /// that the guest refuses it.
-    corrupt: Option<(u64, String)>,
+    corrupt: Option<(u64, String, Option<u32>)>,
     /// `--corrupt-recover <n>:<how>`: a lie in the n-th recovery hint
     /// (glv4.rs): negq (the key's negation, on the curve), k0 (k0 + 1),
     /// swap (k and m exchanged), scale (all four doubled: still true),
@@ -169,6 +175,7 @@ struct Oracle {
     corrupt_recover: Option<(u64, String)>,
     secp_p: Field,
     secp_n: Field,
+    bn254_p: Field,
     curve: glv4::Curve,
 }
 
@@ -185,6 +192,7 @@ impl Oracle {
             corrupt_recover: None,
             secp_p: Field::new("fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f"),
             secp_n: Field::new("fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141"),
+            bn254_p: Field::new("30644e72e131a029b85045b68181585d97816a916871ca8d3c208c16d87cfd47"),
             curve: glv4::Curve::secp256k1(),
         }
     }
@@ -233,6 +241,13 @@ impl Oracle {
             }
             SECP_DIVIDE => {
                 let f = &self.secp_p;
+                let numerator = f.element(read_u256(ram, addresses[0]));
+                let denominator = f.element(read_u256(ram, addresses[0] + 32));
+                let quotient = numerator * f.inverse(&denominator) % &f.m;
+                (f.words(&quotient), 8, None)
+            }
+            BN254_DIVIDE => {
+                let f = &self.bn254_p;
                 let numerator = f.element(read_u256(ram, addresses[0]));
                 let denominator = f.element(read_u256(ram, addresses[0] + 32));
                 let quotient = numerator * f.inverse(&denominator) % &f.m;
@@ -303,8 +318,12 @@ impl Oracle {
             }
             _ => unreachable!(),
         };
-        if let Some((n, how)) = &self.corrupt {
-            if *n == self.counts.iter().sum::<u64>() {
+        if let Some((n, how, only)) = &self.corrupt {
+            let nth = match only {
+                Some(t) => (*t == tag).then(|| self.counts[index]),
+                None => Some(self.counts.iter().sum::<u64>()),
+            };
+            if nth == Some(*n) {
                 let top: BigUint = BigUint::from(1u32) << (32 * words - 1);
                 let all: BigUint = (BigUint::from(1u32) << (32 * words)) - 1u32;
                 match how.as_str() {
@@ -411,8 +430,13 @@ fn main() {
 
     let mut oracle = Oracle::new(input);
     oracle.corrupt = option("--corrupt").map(|c| {
-        let (n, how) = c.split_once(':').expect("--corrupt <n>:<how>");
-        (n.parse().expect("--corrupt <n>"), how.to_string())
+        let mut parts = c.splitn(3, ':');
+        let n = parts.next().unwrap().parse().expect("--corrupt <n>");
+        let how = parts.next().expect("--corrupt <n>:<how>").to_string();
+        let only = parts.next().map(|name| {
+            QUERIES.iter().find(|(_, q)| *q == name).expect("--corrupt <n>:<how>:<query name>").0
+        });
+        (n, how, only)
     });
     oracle.corrupt_recover = option("--corrupt-recover").map(|c| {
         let (n, how) = c.split_once(':').expect("--corrupt-recover <n>:<how>");

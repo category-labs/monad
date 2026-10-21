@@ -49,12 +49,17 @@ EvmcHostBase::EvmcHostBase(
     evmc_tx_context const &tx_context, BlockHashBuffer const &block_hash_buffer,
     State &state, bool const log_native_transfers) noexcept
     : block_hash_buffer_{block_hash_buffer}
+#if !defined(MONAD_ZKVM_ZISK)
     , tx_context_{tx_context}
+#endif
     , state_{state}
     , call_tracer_{call_tracer}
     , log_native_transfers_{log_native_transfers}
     , state_tracer_{state_tracer}
 {
+#if defined(MONAD_ZKVM_ZISK)
+    guest_tx_context_ = &tx_context;
+#endif
 }
 
 evmc::bytes32 EvmcHostBase::get_storage(
@@ -222,7 +227,11 @@ EvmcHostBase::delegate_of(evmc::address const &address) const noexcept
 
 evmc_tx_context const *EvmcHostBase::get_tx_context() const noexcept
 {
+#if defined(MONAD_ZKVM_ZISK)
+    return guest_tx_context_;
+#else
     return &tx_context_;
+#endif
 }
 
 // This attempts to read from the contract first before falling back to the
@@ -398,12 +407,6 @@ namespace monad::vm::runtime
     {
         static_cast<EvmcHostBase &>(host).EvmcHostBase::set_transient_storage(
             addr, key, value);
-    }
-
-    evmc_tx_context const *guest_get_tx_context(Host const &host) noexcept
-    {
-        return static_cast<EvmcHostBase const &>(host)
-            .EvmcHostBase::get_tx_context();
     }
 
     size_t

@@ -108,6 +108,21 @@ namespace monad::vm
             runtime_context_->stack_unwind();
         }
 
+#if defined(MONAD_ZKVM_ZISK)
+        /// The transaction's context, which every message call's Context
+        /// reads (guest_get_tx_context): held here, where the runtime reads
+        /// it in line, rather than behind a call into the host. EvmcHostBase
+        /// keeps it here instead of a reference of its own.
+        [[gnu::always_inline]] evmc_tx_context const *
+        guest_tx_context() const noexcept
+        {
+            return guest_tx_context_;
+        }
+
+    protected:
+        evmc_tx_context const *guest_tx_context_{nullptr};
+
+#endif
     private:
         [[gnu::always_inline]]
         void rethrow_on_active_exception()
@@ -343,7 +358,11 @@ namespace monad::vm::runtime
         Host &, evmc::address const &, evmc::bytes32 const &,
         evmc::bytes32 const &) noexcept;
 
-    evmc_tx_context const *guest_get_tx_context(Host const &) noexcept;
+    [[gnu::always_inline]] inline evmc_tx_context const *
+    guest_get_tx_context(Host const &host) noexcept
+    {
+        return host.guest_tx_context();
+    }
 
     size_t guest_get_code_size(Host const &, evmc::address const &) noexcept;
 

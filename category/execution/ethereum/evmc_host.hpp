@@ -51,7 +51,12 @@
 
 MONAD_NAMESPACE_BEGIN
 
+#if defined(MONAD_ZKVM_ZISK)
+// vm::Host holds the transaction's context pointer there (guest_tx_context_).
+static_assert(sizeof(vm::Host) == 32);
+#else
 static_assert(sizeof(vm::Host) == 24);
+#endif
 static_assert(alignof(vm::Host) == 8);
 
 // Pass EVMC arguments as Monad references at the host boundary to avoid
@@ -83,7 +88,9 @@ class EvmcHostBase : public vm::Host
     BlockHashBuffer const &block_hash_buffer_;
 
 protected:
+#if !defined(MONAD_ZKVM_ZISK)
     evmc_tx_context const &tx_context_;
+#endif
     State &state_;
     CallTracerBase &call_tracer_;
     bool const log_native_transfers_;

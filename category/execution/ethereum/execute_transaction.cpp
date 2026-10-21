@@ -604,8 +604,14 @@ Result<Receipt> ExecuteTransaction<traits>::execute(SequentialExecutionToken)
 
     TRACE_TXN_EVENT(StartExecution);
 
+    // Without operator()'s set_original_nonce. That call presumes the sender's
+    // nonce before the predecessors have merged, and can_merge is what rejects
+    // a wrong presumption (try_fix_account_mismatch refuses a nonce mismatch).
+    // Made here, with no can_merge after it, it would have validate_transaction
+    // compare tx.nonce with itself and admit any nonce: a replayed transaction,
+    // or a sender's nonce moved backwards. The State reads the sender's merged
+    // nonce instead, as operator()'s retry does.
     State state{block_state_, Incarnation{header_.number, i_ + 1}};
-    state.set_original_nonce(sender_, tx_.nonce);
 
     call_tracer_.reset();
     trace::reset(state_tracer_);

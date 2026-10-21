@@ -152,9 +152,12 @@ Result<bytes32_t> execute_block_zkvm(
     //    So the merge-conflict machinery ExecuteTransaction carries for the
     //    node's speculative scheduler -- the wait on `prev`, can_merge, the
     //    retry -- has nothing to detect here, and this loop says so by holding
-    //    SequentialExecutionToken. Measured on block 25815100: 231 of the
-    //    guest's 233 can_merge calls are that gate, the retry path runs zero
-    //    times, and the check costs ~1,836 steps a transaction.
+    //    SequentialExecutionToken. That holds only while nothing else writes
+    //    the State's original rows: the node's set_original_nonce does, and
+    //    can_merge is its only check, so the token's path leaves it out.
+    //    Measured on block 25815100: 231 of the guest's 233 can_merge calls
+    //    are that gate, the retry path runs zero times, and the check costs
+    //    ~1,836 steps a transaction.
     //
     //    `prev` is still constructed because the constructor takes one; it is
     //    satisfied immediately and the sequential path never waits on it.

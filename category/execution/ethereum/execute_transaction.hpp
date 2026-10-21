@@ -137,7 +137,8 @@ public:
     Result<Receipt> operator()();
 
     // For a caller holding SequentialExecutionToken. Waits on no predecessor and runs no
-    // merge-conflict check, because neither can have anything to say; everything else --
+    // merge-conflict check, because neither can have anything to say; nor does it presume the
+    // sender's nonce (set_original_nonce), a guess only that check verifies. Everything else --
     // execution, finalisation, the merge itself -- is the same work in the same order.
     //
     // MONAD_ZKVM_CHECK_SEQUENTIAL_MERGE restores the can_merge call as an assertion, so the

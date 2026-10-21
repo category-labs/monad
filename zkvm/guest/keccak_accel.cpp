@@ -716,9 +716,14 @@ template <bool Aligned>
 }
 
 // Not inlined into its callers: each copy holds the 361-instruction
-// sequence twice.
+// sequence twice. No jump tables: the switch below enters a run of stores,
+// and the prover's JIT fuses consecutive word stores into one access
+// assuming only a JAL or branch can land inside a run (riscv_transpiler
+// jit/impls.rs merged_word_run_g); a table's `jr` into a fused pair redoes
+// the pair's first store. As a branch tree every entry is a branch target.
 template <bool Aligned>
-[[gnu::noinline]] static void keccak256_sponge_rv32(
+[[gnu::noinline, gnu::optimize("no-jump-tables")]] static void
+keccak256_sponge_rv32(
     keccak_word_t const *w, unsigned const rs, size_t len, uint8_t out[32])
 {
     constexpr size_t RATE = 136;

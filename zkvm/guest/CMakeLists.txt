@@ -31,7 +31,7 @@
 #    x86_test_runner.cpp + monad-zkvm-guest, linked against the host's
 #    existing monad_execution target.
 
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.30)
 
 if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # ---- Cross-compile mode ----

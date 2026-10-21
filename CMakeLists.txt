@@ -13,9 +13,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-cmake_minimum_required(VERSION 3.27)
-
-cmake_policy(SET CMP0144 NEW) # find_package uses upper-case _ROOT variables
+cmake_minimum_required(VERSION 3.30)
 
 project(monad)
 

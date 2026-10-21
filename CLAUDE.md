@@ -220,7 +220,7 @@ Tests use Google Test. CMake helper functions are defined in root `CMakeLists.tx
 | `monad_add_test_folder(dir/)` | Auto-discovers `test_*.cpp` and `*_test.cpp` in a directory, creates one executable per file |
 | `monad_add_test_death(name FAIL_REGEX "..." SOURCES ...)` | Death test — passes if output matches regex |
 
-New library/executable targets should call `monad_compile_options(target)` to apply the standard C++23 flags, warnings, and compile definitions. Most targets link against `monad_execution` — the aggregate library that bundles all of `category/`.
+New library/executable targets should call `monad_compile_options(target)` to apply the standard C++26 flags, warnings, and compile definitions. Most targets link against `monad_execution` — the aggregate library that bundles all of `category/`.
 
 Test files live in two places:
 - **Alongside source** in `category/` subdirectories (e.g., `category/core/hex_test.cpp`, `category/execution/ethereum/evm_test.cpp`)

@@ -732,7 +732,11 @@ bool OnDiskMachine::cache() const
 
 bool OnDiskMachine::compact() const
 {
-    return depth >= prefix_len();
+    // Gate one level above the tables as well (the finalized node or the
+    // proposal block-id node), so a table that this commit does not update,
+    // e.g. the Domain* tables on an L1 block without domain activity, is
+    // still swept past the compaction head instead of being copied stale.
+    return depth + TABLE_PREFIX_LEN >= prefix_len();
 }
 
 bool OnDiskMachine::auto_expire() const

@@ -64,7 +64,7 @@ namespace monad::vm::interpreter
         ctx.add256_params.cin = 0;
         ctx.sub256_params.cin = 1;
 #endif
-        trampoline(ctx, analysis, stack_ptr, core_loop<traits>);
+        trampoline<core_loop<traits>>(ctx, analysis, stack_ptr);
     }
 
     EXPLICIT_TRAITS(execute);

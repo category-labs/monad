@@ -1384,7 +1384,7 @@ namespace monad::vm::interpreter
         ctx.code_bound = analysis.size();
         ctx.jumpdest_words = analysis.jumpdest_words();
 #endif
-        trampoline(ctx, analysis, stack_ptr, core_loop<traits>);
+        trampoline<core_loop<traits>>(ctx, analysis, stack_ptr);
     }
 
     EXPLICIT_TRAITS(execute);

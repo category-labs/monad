@@ -35,9 +35,13 @@ namespace monad::vm::interpreter
 
     // No [[gnu::always_inline]] here — GCC forbids inlining functions
     // that call setjmp. The optimizer may still inline opportunistically.
-    inline void trampoline(
+    // One per core loop: the loop is called directly, not through a pointer
+    // whose jump masks its low bit with a priced `and`, and it is not an
+    // argument kept across setjmp.
+    template <core_loop_fn_t core_loop_fn>
+    void trampoline(
         runtime::Context &ctx, Intercode const &analysis,
-        uint256_t *const stack_ptr, core_loop_fn_t core_loop_fn)
+        uint256_t *const stack_ptr)
     {
         std::jmp_buf jb;
         if (setjmp(jb) == 0) {

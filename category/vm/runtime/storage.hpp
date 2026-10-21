@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/address.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
@@ -39,7 +40,7 @@ namespace monad::vm::runtime
     {
         auto const key = store_be_as<evmc_bytes32>(*key_ptr);
         evmc_bytes32 const value =
-            ctx->host->get_transient_storage(ctx->env.recipient, key);
+            ctx->host->get_transient_storage(to_evmc(ctx->env.recipient), key);
 
         *result_ptr = load_be<uint256_t>(value);
     }
@@ -55,7 +56,7 @@ namespace monad::vm::runtime
         auto const key = store_be_as<evmc_bytes32>(*key_ptr);
         auto const val = store_be_as<evmc_bytes32>(*val_ptr);
 
-        ctx->host->set_transient_storage(ctx->env.recipient, key, val);
+        ctx->host->set_transient_storage(to_evmc(ctx->env.recipient), key, val);
     }
 
     bool debug_tstore_stack(

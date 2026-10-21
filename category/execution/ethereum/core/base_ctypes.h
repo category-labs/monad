@@ -37,16 +37,6 @@
 #include <array>
 #include <cstdint>
 
-#if MONAD_CXX_CTYPES_USE_EVMC_HPP
-    #include <evmc/evmc.hpp>
-    using monad_c_address = evmc::address;
-#elif MONAD_CXX_CTYPES_USE_EVMC
-    #include <evmc/evmc.h>
-    using monad_c_address = evmc_address;
-#else
-    using monad_c_address = std::array<std::uint8_t, 20>;
-#endif
-
 #if MONAD_CXX_CTYPES_USE_MONAD_INTS
     #include <category/core/int.hpp>
     using monad_c_uint256_ne = monad::uint256_t;
@@ -73,16 +63,6 @@ typedef struct monad_c_b64
 {
     uint8_t bytes[8];
 } monad_c_b64;
-
-#if MONAD_C_CTYPES_USE_EVMC
-    #include <evmc/evmc.h>
-    typedef evmc_address monad_c_address;
-#else
-    typedef struct monad_c_address
-    {
-        uint8_t bytes[20];
-    } monad_c_address;
-#endif
 
 // 256-bit integer stored in native endian byte order; the rationale for the
 // storage layout as `uint64_t[4]` instead of `uint8_t[32]` is that this ensures

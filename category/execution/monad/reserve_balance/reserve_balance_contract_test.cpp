@@ -339,8 +339,9 @@ void run_dipped_into_reserve_test(
 
         monad::vm::test::TestMessage test_msg_;
         evmc_message msg{*test_msg_};
-        msg.gas = int64_t{GAS_LIMIT}, msg.recipient = ENTRYPOINT;
-        msg.sender = BUNDLER;
+        msg.gas = int64_t{GAS_LIMIT};
+        msg.recipient = to_evmc(ENTRYPOINT);
+        msg.sender = to_evmc(BUNDLER);
 
         init_reserve_balance_context<traits>(
             state,
@@ -384,11 +385,11 @@ TEST_F(ReserveBalanceEvm, precompile_fallback)
 
         auto const m = evmc_message{
             .gas = 100,
-            .recipient = RESERVE_BALANCE_CA,
-            .sender = account_a,
+            .recipient = to_evmc(RESERVE_BALANCE_CA),
+            .sender = to_evmc(account_a),
             .input_data = input.data(),
             .input_size = input.size(),
-            .code_address = RESERVE_BALANCE_CA,
+            .code_address = to_evmc(RESERVE_BALANCE_CA),
         };
 
         init_reserve_balance_context<MonadTraits<MONAD_NEXT>>(
@@ -417,11 +418,11 @@ TEST_F(ReserveBalanceEvm, precompile_fallback)
 
         auto const m = evmc_message{
             .gas = 99,
-            .recipient = RESERVE_BALANCE_CA,
-            .sender = account_a,
+            .recipient = to_evmc(RESERVE_BALANCE_CA),
+            .sender = to_evmc(account_a),
             .input_data = input.data(),
             .input_size = input.size(),
-            .code_address = RESERVE_BALANCE_CA,
+            .code_address = to_evmc(RESERVE_BALANCE_CA),
         };
 
         init_reserve_balance_context<MonadTraits<MONAD_NEXT>>(
@@ -449,11 +450,11 @@ TEST_F(ReserveBalanceEvm, precompile_dipped_into_reserve_present)
 
     auto const m = evmc_message{
         .gas = 100,
-        .recipient = RESERVE_BALANCE_CA,
-        .sender = account_a,
+        .recipient = to_evmc(RESERVE_BALANCE_CA),
+        .sender = to_evmc(account_a),
         .input_data = input.data(),
         .input_size = input.size(),
-        .code_address = RESERVE_BALANCE_CA,
+        .code_address = to_evmc(RESERVE_BALANCE_CA),
     };
 
     init_reserve_balance_context<MonadTraits<MONAD_NEXT>>(
@@ -480,11 +481,11 @@ TEST_F(ReserveBalanceEvm, precompile_dipped_into_reserve_oog)
 
     auto const m = evmc_message{
         .gas = 99,
-        .recipient = RESERVE_BALANCE_CA,
-        .sender = account_a,
+        .recipient = to_evmc(RESERVE_BALANCE_CA),
+        .sender = to_evmc(account_a),
         .input_data = input.data(),
         .input_size = input.size(),
-        .code_address = RESERVE_BALANCE_CA,
+        .code_address = to_evmc(RESERVE_BALANCE_CA),
     };
 
     init_reserve_balance_context<MonadTraits<MONAD_NEXT>>(
@@ -511,11 +512,11 @@ TEST_F(ReserveBalanceEvm, precompile_dipped_into_reserve_with_argument)
 
     auto const m = evmc_message{
         .gas = 100,
-        .recipient = RESERVE_BALANCE_CA,
-        .sender = account_a,
+        .recipient = to_evmc(RESERVE_BALANCE_CA),
+        .sender = to_evmc(account_a),
         .input_data = input.data(),
         .input_size = input.size(),
-        .code_address = RESERVE_BALANCE_CA,
+        .code_address = to_evmc(RESERVE_BALANCE_CA),
     };
 
     init_reserve_balance_context<MonadTraits<MONAD_NEXT>>(
@@ -645,11 +646,11 @@ TYPED_TEST(
             .kind = EVMC_CALL,
             .flags = 0,
             .gas = 100,
-            .recipient = RESERVE_BALANCE_CA,
-            .sender = this->account_a,
+            .recipient = to_evmc(RESERVE_BALANCE_CA),
+            .sender = to_evmc(this->account_a),
             .input_data = calldata.data(),
             .input_size = calldata.size(),
-            .code_address = RESERVE_BALANCE_CA,
+            .code_address = to_evmc(RESERVE_BALANCE_CA),
         };
     };
 

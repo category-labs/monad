@@ -116,8 +116,8 @@ TYPED_TEST(TraitsTest, get_tx_context)
     auto const result = get_tx_context<typename TestFixture::Trait>(
         tx, from, hdr, 1, default_blob_schedule<typename TestFixture::Trait>());
     evmc_tx_context ctx{
-        .tx_origin = from,
-        .block_coinbase = bene,
+        .tx_origin = to_evmc(from),
+        .block_coinbase = to_evmc(bene),
         .block_number = 15'000'000,
         .block_timestamp = 1677616016,
         .block_gas_limit = 50'000,
@@ -186,7 +186,8 @@ TYPED_TEST(TraitsTest, emit_log)
         0,
         chain_ctx};
 
-    host.emit_log(from, data.data(), data.size(), topics, std::size(topics));
+    host.emit_log(
+        to_evmc(from), data.data(), data.size(), topics, std::size(topics));
 
     auto const logs = state.logs();
     EXPECT_EQ(logs.size(), 1);
@@ -223,10 +224,12 @@ TYPED_TEST(TraitsTest, access_precompile)
         chain_ctx};
 
     EXPECT_EQ(
-        host.access_account(0x0000000000000000000000000000000000000001_address),
+        host.access_account(
+            to_evmc(0x0000000000000000000000000000000000000001_address)),
         EVMC_ACCESS_WARM);
     EXPECT_EQ(
-        host.access_account(0x5353535353535353535353535353535353535353_address),
+        host.access_account(
+            to_evmc(0x5353535353535353535353535353535353535353_address)),
         EVMC_ACCESS_COLD);
 }
 
@@ -309,10 +312,12 @@ TEST(EvmcHostTest, host_methods_rethrow_pruned_read)
             }
         };
 
-        expect_pruned_read([&] { (void)host.access_account(beneficiary); });
+        expect_pruned_read(
+            [&] { (void)host.access_account(to_evmc(beneficiary)); });
         uint8_t buffer[1]{};
         expect_pruned_read([&] {
-            (void)host.copy_code(beneficiary, 0, buffer, sizeof(buffer));
+            (void)host.copy_code(
+                to_evmc(beneficiary), 0, buffer, sizeof(buffer));
         });
     }
 

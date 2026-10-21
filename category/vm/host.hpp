@@ -73,7 +73,10 @@ namespace monad::vm
             // the delegate address.
             uint8_t code_buffer[evm::delegation_indicator_size + 1];
             size_t const actual_code_size = copy_code(
-                addr, 0, code_buffer, evm::delegation_indicator_size + 1);
+                to_evmc(addr),
+                0,
+                code_buffer,
+                evm::delegation_indicator_size + 1);
 
             std::span const code{code_buffer, actual_code_size};
 

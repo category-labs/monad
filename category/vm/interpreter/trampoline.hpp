@@ -42,10 +42,11 @@ namespace monad::vm::interpreter
         "Interpreter core loop and trampoline signatures must be "
         "identical");
 
+    template <core_loop_fn_t core_loop_fn>
     [[gnu::always_inline]]
     inline void trampoline(
         runtime::Context &ctx, Intercode const &analysis,
-        uint256_t *const stack_ptr, core_loop_fn_t core_loop_fn)
+        uint256_t *const stack_ptr)
     {
         monad_vm_interpreter_trampoline(
             static_cast<void *>(&ctx.exit_stack_ptr),

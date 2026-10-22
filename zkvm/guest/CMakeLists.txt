@@ -58,7 +58,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     option(MONAD_ZKVM_OFFICIAL_PROFILE
            "require the reference ZisK compiler and build options" OFF)
     set(_monad_zkvm_official_features
-        "baseline" "zisk-dma" "zisk-clean-byte-stores")
+        "baseline" "zisk-dma" "zisk-clean-byte-stores" "keccakf-memo")
     set(_monad_zkvm_runtime_version "1.3.2-alpha")
     set(_monad_zkvm_runtime_revision
         "1e22630bb7e143c30705a1603ed87cfd3da8c6ec")
@@ -71,7 +71,8 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # Enable required CMake boolean options; reject explicit OFF values.
     # Add each new required option here and its feature to the list above.
     set(_monad_zkvm_required_options
-        MONAD_ZKVM_ZISK_DMA MONAD_ZKVM_ZISK_CLEAN_BYTE_STORES)
+        MONAD_ZKVM_ZISK_DMA MONAD_ZKVM_ZISK_CLEAN_BYTE_STORES
+        MONAD_ZKVM_KECCAKF_MEMO)
     if(MONAD_ZKVM_OFFICIAL_PROFILE)
         foreach(_option ${_monad_zkvm_required_options})
             if(DEFINED ${_option} AND NOT ${_option})
@@ -130,6 +131,13 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         add_compile_definitions(MONAD_ZKVM_SP1)
     elseif(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
         add_compile_definitions(MONAD_ZKVM_ZISK)
+
+        # Cache Keccak-f states using an executor-supplied index.
+        # Uses 128 MiB of .bss; OFF removes the table and lookup path.
+        option(MONAD_ZKVM_KECCAKF_MEMO "memoise Keccak-f via the ZisK executor index" ON)
+        if(NOT MONAD_ZKVM_KECCAKF_MEMO)
+            add_compile_definitions(MONAD_ZKVM_KECCAKF_MEMO=0)
+        endif()
         # Expose the no-op operator delete declarations to every ZisK C++ file.
         string(APPEND CMAKE_CXX_FLAGS
                " -include \"${CMAKE_CURRENT_SOURCE_DIR}/nodelete.hpp\"")
@@ -143,6 +151,9 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         if(MONAD_ZKVM_ZISK_DMA)
             string(APPEND CMAKE_C_FLAGS " -mzisk-dma")
             string(APPEND CMAKE_CXX_FLAGS " -mzisk-dma")
+            # Let the memo use constant-size operations when GCC can lower
+            # them directly to DMA.
+            add_compile_definitions(MONAD_ZKVM_ZISK_DMA_LOWERING)
         endif()
 
         # Prefer zero-extended byte constants and addition immediates to reduce
@@ -708,6 +719,17 @@ else()
     target_include_directories(monad-zkvm-keccak-test
         PRIVATE "${THIRD_PARTY_DIR}/ethash/include")
     add_test(NAME monad-zkvm-keccak-test COMMAND monad-zkvm-keccak-test)
+
+    add_executable(monad-zkvm-keccak-memo-test
+        test/keccak_memo_test.cpp
+        test/keccak_reference.c
+    )
+    monad_compile_options(monad-zkvm-keccak-memo-test)
+    target_compile_definitions(monad-zkvm-keccak-memo-test
+        PRIVATE MONAD_ZKVM_KECCAK_TEST MONAD_ZKVM_KECCAKF_MEMO=1)
+    target_include_directories(monad-zkvm-keccak-memo-test
+        PRIVATE "${THIRD_PARTY_DIR}/ethash/include")
+    add_test(NAME monad-zkvm-keccak-memo-test COMMAND monad-zkvm-keccak-memo-test)
 
 endif()
 

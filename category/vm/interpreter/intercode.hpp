@@ -33,7 +33,10 @@ namespace monad::vm::interpreter
         // PUSHN opcodes by reading data from _before_ the instruction
         // pointer with a single 32-byte read, then cleaning up any
         // over-read in the result value.
-        static constexpr size_t start_padding_size = 30;
+        //
+        // Round up to 32 to keep code() 8-byte aligned for guest Keccak
+        // word loads, preserving the allocation's alignment.
+        static constexpr size_t start_padding_size = 32;
 
         // 32 for a truncated PUSH32, 1 for a STOP so that we don't have to
         // worry about going off the end.

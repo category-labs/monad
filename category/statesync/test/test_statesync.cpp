@@ -21,17 +21,22 @@
 #include <category/core/bytes.hpp>
 #include <category/core/hex.hpp>
 #include <category/core/keccak.hpp>
+#include <category/execution/ethereum/chain/chain_config.h>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/chain/genesis_state.hpp>
 #include <category/execution/ethereum/core/account.hpp>
+#include <category/execution/ethereum/core/rlp/address_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/bytes_rlp.hpp>
+#include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
+#include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/db/state_machine_init.hpp>
 #include <category/execution/ethereum/db/test/commit_simple.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
+#include <category/execution/ethereum/trace/tracer_config.h>
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/monad/db/state_machine_init.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
@@ -39,10 +44,13 @@
 #include <category/mpt/db_metadata_context.hpp>
 #include <category/mpt/detail/timeline.hpp>
 #include <category/mpt/nibbles_view.hpp>
+#include <category/mpt/node_cache.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/mpt/state_machine_kind.hpp>
 #include <category/mpt/trie.hpp>
 #include <category/mpt/util.hpp>
+#include <category/rpc/monad_executor.h>
+#include <category/rpc/overrides.h>
 #include <category/statesync/statesync_client.h>
 #include <category/statesync/statesync_client_context.hpp>
 #include <category/statesync/statesync_messages.h>
@@ -53,6 +61,8 @@
 #include <category/vm/code.hpp>
 #include <test_resource_data.h>
 
+#include <evmc/evmc.h>
+
 #include <gtest/gtest.h>
 
 #include <cstddef>
@@ -60,6 +70,8 @@
 #include <cstring>
 #include <deque>
 #include <filesystem>
+#include <future>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <stdlib.h>
@@ -182,6 +194,75 @@ namespace
         if (done.success) {
             monad_statesync_client_handle_done(net->cctx, done);
         }
+    }
+
+    struct EthCallOutcome
+    {
+        int status_code;
+        byte_string output;
+    };
+
+    void
+    eth_call_complete(monad_executor_result *const result, void *const user)
+    {
+        static_cast<std::promise<monad_executor_result *> *>(user)->set_value(
+            result);
+    }
+
+    // The executor opens its own read-only view of dbname, as RPC does.
+    EthCallOutcome eth_call(
+        std::filesystem::path const &dbname, Address const &to,
+        uint64_t const block_number)
+    {
+        monad_executor_pool_config const conf = {
+            1, 2, std::numeric_limits<unsigned>::max(), 1000};
+        auto *const executor = monad_executor_create(
+            conf,
+            conf,
+            conf,
+            10,
+            10240 * mpt::NodeCache::AVERAGE_NODE_SIZE,
+            dbname.c_str());
+        auto *const state_override = monad_state_override_create();
+
+        auto const rlp_tx = rlp::encode_transaction(Transaction{
+            .gas_limit = 100'000, .to = to, .type = TransactionType::eip1559});
+        auto const rlp_header =
+            rlp::encode_block_header(BlockHeader{.number = block_number});
+        auto const rlp_sender = rlp::encode_address(std::make_optional(
+            0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address));
+        auto const rlp_finalized_id = rlp::encode_bytes32(bytes32_t{});
+
+        std::promise<monad_executor_result *> promise;
+        auto future = promise.get_future();
+        monad_executor_eth_call_submit(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_tx.data(),
+            rlp_tx.size(),
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_sender.data(),
+            rlp_sender.size(),
+            block_number,
+            rlp_finalized_id.data(),
+            rlp_finalized_id.size(),
+            state_override,
+            eth_call_complete,
+            &promise,
+            NOOP_TRACER,
+            0,
+            true);
+        auto *const result = future.get();
+
+        EthCallOutcome outcome{
+            .status_code = result->status_code,
+            .output =
+                byte_string{result->output_data, result->output_data_len}};
+        monad_executor_result_release(result);
+        monad_state_override_destroy(state_override);
+        monad_executor_destroy(executor);
+        return outcome;
     }
 
     // Page-encoded server and client, each a single timeline.
@@ -651,6 +732,65 @@ TEST_F(StateSyncFixture, sync_one_account)
             .number = N});
     run();
     EXPECT_TRUE(monad_statesync_client_finalize(cctx));
+}
+
+// Statesync to N leaves N-256..N-1 holding only their block headers. An
+// eth_call at one of them must fail, not run against an empty state.
+TEST_F(StateSyncFixture, eth_call_on_header_only_version_fails)
+{
+    constexpr auto N = 1'000'000;
+    constexpr auto CONTRACT =
+        0x5353535353535353535353535353535353535353_address;
+    // PUSH1 0x2a PUSH0 MSTORE PUSH1 0x20 PUSH0 RETURN
+    auto const code = from_hex("602a5f5260205ff3").value();
+    auto const code_hash = to_bytes(keccak256(code));
+    byte_string const forty_two{bytes32_t{0x2a}.bytes, sizeof(bytes32_t)};
+
+    bytes32_t parent_hash{NULL_HASH};
+    load_header(
+        sdb.load_root_for_version(N - 257),
+        sdb,
+        BlockHeader{.number = N - 257});
+    for (size_t i = N - 256; i < N; ++i) {
+        stdb.set_block_and_prefix(i - 1);
+        bool const deploy = i == N - 256;
+        commit_sequential(
+            stdb,
+            deploy ? StateDeltas(
+                         {{CONTRACT,
+                           StateDelta{
+                               .account =
+                                   {std::nullopt,
+                                    Account{.code_hash = code_hash}}}}})
+                   : StateDeltas({}),
+            deploy ? Code{{code_hash, vm::make_shared_intercode(code)}}
+                   : Code{},
+            BlockHeader{.parent_hash = parent_hash, .number = i});
+        parent_hash = to_bytes(
+            keccak256(rlp::encode_block_header(stdb.read_eth_header())));
+    }
+    commit_sequential(stdb, StateDeltas({}), Code{}, BlockHeader{.number = N});
+    init();
+    handle_target(
+        cctx,
+        BlockHeader{
+            .parent_hash = parent_hash,
+            .state_root = stdb.state_root(),
+            .number = N});
+    run();
+    ASSERT_TRUE(monad_statesync_client_finalize(cctx));
+
+    auto const on_server = eth_call(sdbname, CONTRACT, N - 1);
+    EXPECT_EQ(on_server.status_code, EVMC_SUCCESS);
+    EXPECT_EQ(on_server.output, forty_two);
+
+    auto const at_target = eth_call(cdbname, CONTRACT, N);
+    EXPECT_EQ(at_target.status_code, EVMC_SUCCESS);
+    EXPECT_EQ(at_target.output, forty_two);
+
+    auto const below_target = eth_call(cdbname, CONTRACT, N - 1);
+    EXPECT_NE(below_target.status_code, EVMC_SUCCESS)
+        << "output: 0x" << to_hex(below_target.output);
 }
 
 // Multi-slot pages: several slots share each server page leaf, and the client

@@ -32,9 +32,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <format>
-#include <iostream>
 #include <iterator>
-#include <memory>
 #include <span>
 #include <string>
 #include <tuple>
@@ -42,39 +40,6 @@
 #include <vector>
 
 MONAD_GRAPH_EVAL_ANONYMOUS_NAMESPACE_BEGIN
-
-// Benchmarking: set to time each node of each evaluation, for
-// print_node_times to report
-constexpr bool TIME_NODES = false;
-
-// A node of an evaluation: what it computed, and when it finished, as a
-// reading of the timestamp counter
-struct NodeTime
-{
-    uint64_t end;
-    Op op;
-    TensorType type;
-};
-
-// The nodes of the thread's last evaluation, until print_node_times reports
-// them. The loop over the nodes only reads the timestamp counter and stores
-// to this buffer, which has room for the most ops a graph can have. It's
-// allocated the first time the thread uses it, uninitialized, so only the
-// pages used are ever touched
-struct NodeTimes
-{
-    std::unique_ptr<NodeTime[]> nodes{new NodeTime[size_t{1} << 16]};
-    size_t count = 0;
-    size_t first_id = 0; // The node id of the first op, after the inputs'
-    uint64_t start = 0; // The timestamp counter before the first op
-    std::chrono::steady_clock::time_point start_time;
-};
-
-NodeTimes &node_times()
-{
-    thread_local NodeTimes times;
-    return times;
-}
 
 char const *dtype_name(Dtype const dtype)
 {
@@ -214,6 +179,7 @@ Result<void> Interpreter::prepare_node_placement()
 
 Result<std::vector<Tensor>> Interpreter::run()
 {
+    uint64_t const entry = node_times_ ? __rdtsc() : 0;
     BOOST_OUTCOME_TRY(check_magic_number());
     BOOST_OUTCOME_TRY(check_inputs());
     BOOST_OUTCOME_TRY(prepare_node_placement());
@@ -236,13 +202,8 @@ Result<std::vector<Tensor>> Interpreter::run()
     BOOST_OUTCOME_TRY(load_inputs());
 
     BOOST_OUTCOME_TRY(auto const n_ops, read_next<uint16_t>(code_span_));
-    NodeTimes *const times = TIME_NODES ? &node_times() : nullptr;
-    if constexpr (TIME_NODES) {
-        times->count = 0;
-        times->first_id = n_inputs;
-        times->start_time = std::chrono::steady_clock::now();
-        times->start = __rdtsc();
-    }
+    uint64_t op_start =
+        node_times_ ? node_times_->start_ops(entry, n_inputs, n_ops) : 0;
     for (size_t i = 0; i < n_ops; i++) {
         // OutputAllocator const output{allocator_, node_values_.size()};
         Tensor &result = node_values_[n_inputs + i];
@@ -259,9 +220,8 @@ Result<std::vector<Tensor>> Interpreter::run()
                 }
             }));
 
-        if constexpr (TIME_NODES) {
-            times->nodes[times->count++] =
-                NodeTime{__rdtsc(), opcode, result.type()};
+        if (node_times_) {
+            op_start = node_times_->end_op(i, opcode, result.type(), op_start);
         }
     }
 
@@ -275,38 +235,92 @@ Result<std::vector<Tensor>> Interpreter::run()
         }
         output_values.push_back(node_values_[outputs[i]]);
     }
+    if (node_times_) {
+        node_times_->end_run(entry, op_start);
+    }
     return output_values;
 }
 
-void print_node_times()
+// The counter after the setup, before the first op
+uint64_t NodeTimes::start_ops(
+    uint64_t const entry, size_t const first_id, size_t const n_ops)
 {
-    NodeTimes &times = node_times();
-    if (times.count == 0) {
-        return;
+    uint64_t const now = __rdtsc();
+    setup_ += now - entry;
+    first_id_ = first_id;
+    if (nodes_.size() != n_ops) {
+        nodes_.resize(n_ops);
     }
+    return now;
+}
 
-    // The timestamp counter's rate, over the time since the first op started
+// The counter after op i, which started at `start`. Its op and type are
+// recorded from the first run only, so that later runs only add its time
+uint64_t NodeTimes::end_op(
+    size_t const i, Op const op, TensorType const &type, uint64_t const start)
+{
+    uint64_t const now = __rdtsc();
+    Node &node = nodes_[i];
+    node.ticks += now - start;
+    if (runs_ == 0) {
+        node.op = op;
+        node.type = type;
+    }
+    return now;
+}
+
+void NodeTimes::end_run(uint64_t const entry, uint64_t const last_end)
+{
+    uint64_t const now = __rdtsc();
+    outputs_ += now - last_end;
+    total_ += now - entry;
+    if (runs_++ == 0) {
+        rate_start_time_ = std::chrono::steady_clock::now();
+        rate_start_ = __rdtsc();
+    }
+}
+
+std::string NodeTimes::report() const
+{
+    if (runs_ < 2) {
+        return "too few runs timed by node\n";
+    }
     uint64_t const now = __rdtsc();
     auto const now_time = std::chrono::steady_clock::now();
     double const ns_per_tick =
-        std::chrono::duration<double, std::nano>(now_time - times.start_time)
+        std::chrono::duration<double, std::nano>(now_time - rate_start_time_)
             .count() /
-        static_cast<double>(now - times.start);
-    auto const microseconds = [&](uint64_t const ticks) {
-        return static_cast<double>(ticks) * ns_per_tick / 1000;
+        static_cast<double>(now - rate_start_);
+    auto const average = [&](uint64_t const ticks) {
+        return static_cast<double>(ticks) * ns_per_tick /
+               static_cast<double>(runs_);
     };
+    // What a read of the counter, which each part includes one of, takes
+    constexpr uint64_t READS = 100000;
+    uint64_t read_ticks = 0;
+    for (uint64_t i = 0; i < READS; i++) {
+        uint64_t const before = __rdtsc();
+        read_ticks += __rdtsc() - before;
+    }
 
     std::string report;
     auto out = std::back_inserter(report);
     std::format_to(
         out,
-        "evalGraph: {} nodes in {:.3f} µs\n",
-        times.count,
-        microseconds(times.nodes[times.count - 1].end - times.start));
-    uint64_t previous = times.start;
+        "{:.1f} ns a run, over {} runs; each part includes a read of the "
+        "timestamp counter, which takes {:.1f} ns\n",
+        average(total_),
+        runs_,
+        static_cast<double>(read_ticks) * ns_per_tick /
+            static_cast<double>(READS));
+    std::format_to(
+        out,
+        "  {:<46} {:>9.1f} ns\n",
+        "setup, before the first op",
+        average(setup_));
     std::string type;
-    for (size_t i = 0; i < times.count; i++) {
-        NodeTime const &node = times.nodes[i];
+    for (size_t i = 0; i < nodes_.size(); i++) {
+        Node const &node = nodes_[i];
         Shape const &shape = node.type.shape();
         type = dtype_name(node.type.dtype());
         type += '[';
@@ -320,15 +334,18 @@ void print_node_times()
         type += ']';
         std::format_to(
             out,
-            "  node {:>5} {:<10} {:<24} {:>10.3f} µs\n",
-            times.first_id + i,
+            "  node {:>5} {:<10} {:<24} {:>9.1f} ns\n",
+            first_id_ + i,
             op_name(node.op),
             type,
-            microseconds(node.end - previous));
-        previous = node.end;
+            average(node.ticks));
     }
-    times.count = 0;
-    std::cout << report;
+    std::format_to(
+        out,
+        "  {:<46} {:>9.1f} ns\n",
+        "outputs, after the last op",
+        average(outputs_));
+    return report;
 }
 
 MONAD_GRAPH_EVAL_NAMESPACE_END

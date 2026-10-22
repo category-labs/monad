@@ -74,3 +74,9 @@
 [submodule "third_party/halide"]
 	path = third_party/halide
 	url = https://github.com/halide/Halide.git
+[submodule "third_party/tensorflow"]
+	path = third_party/tensorflow
+	url = git@github.com:tensorflow/tensorflow.git
+[submodule "third_party/xla"]
+	path = third_party/xla
+	url = git@github.com:openxla/xla

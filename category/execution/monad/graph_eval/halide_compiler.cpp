@@ -44,6 +44,7 @@
 #include <mutex>
 #include <set>
 #include <span>
+#include <sstream>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -1425,14 +1426,27 @@ void HalideCompiler::halide_schedule(HalidePipeline &pipeline)
 }
 
 // JIT-compiles the scheduled pipeline, which holds the graph's outputs with
-// elements, unless there are none
+// elements, unless there are none. If `ir` isn't null, it gets the pipeline
+// lowered again, as a module, printed: Halide's IR after its passes
 HalideCompiledGraph HalideCompiler::halide_compile(
-    HalidePipeline &pipeline, Halide::Pipeline &scheduled)
+    HalidePipeline &pipeline, Halide::Pipeline &scheduled,
+    std::string *const ir)
 {
     Halide::Callable callable;
     if (!pipeline.outputs.empty()) {
         callable = scheduled.compile_to_callable(
             pipeline.inputs, Halide::Target{HALIDE_TARGET});
+    }
+    if (ir) {
+        std::ostringstream lowered;
+        if (pipeline.outputs.empty()) {
+            lowered << "(every output is empty: nothing to compute)\n";
+        }
+        else {
+            lowered << scheduled.compile_to_module(
+                pipeline.inputs, "graph", Halide::Target{HALIDE_TARGET});
+        }
+        *ir = "== lowered Halide IR ==\n" + lowered.str();
     }
     return HalideCompiledGraph{
         std::move(callable),
@@ -1441,13 +1455,13 @@ HalideCompiledGraph HalideCompiler::halide_compile(
         pipeline.inputs.size()};
 }
 
-Result<HalideCompiledGraph> HalideCompiler::compile()
+Result<HalideCompiledGraph> HalideCompiler::compile(std::string *const ir)
 {
     try {
         BOOST_OUTCOME_TRY(auto pipeline, halide_pipeline());
         halide_schedule(pipeline);
         Halide::Pipeline scheduled{pipeline.outputs};
-        return halide_compile(pipeline, scheduled);
+        return halide_compile(pipeline, scheduled, ir);
     }
     catch (Halide::Error const &error) {
         std::cerr << "Halide: " << error.what() << std::endl;
@@ -1459,8 +1473,8 @@ Result<HalideCompiledGraph> HalideCompiler::compile()
 // options give one, and with 1 any parallel loops it still chooses, as Li2018
 // does, are made serial. Reads of the inputs and constants are clamped, as
 // Adams2019, for one, computes Funcs past their extents
-Result<HalideCompiledGraph>
-HalideCompiler::compile(Halide::AutoschedulerParams const &scheduler)
+Result<HalideCompiledGraph> HalideCompiler::compile(
+    Halide::AutoschedulerParams const &scheduler, std::string *const ir)
 {
     try {
         clamp_reads_ = true;
@@ -1476,7 +1490,7 @@ HalideCompiler::compile(Halide::AutoschedulerParams const &scheduler)
                 make_serial(pipeline.outputs);
             }
         }
-        return halide_compile(pipeline, scheduled);
+        return halide_compile(pipeline, scheduled, ir);
     }
     catch (Halide::Error const &error) {
         std::cerr << "Halide: " << error.what() << std::endl;

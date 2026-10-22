@@ -18,13 +18,16 @@
 #include "category/core/result.hpp"
 #include "category/execution/ethereum/state3/state.hpp"
 #include "category/execution/monad/graph_eval/config.hpp"
+#include "category/execution/monad/graph_eval/graph.hpp"
 #include "category/execution/monad/graph_eval/graphcode.hpp"
 #include "category/execution/monad/graph_eval/references.hpp"
 #include "category/execution/monad/graph_eval/tensor.hpp"
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -32,6 +35,43 @@ MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
 
 // Evaluates graphcode on inputs as read from the calldata: literals, or
 // references to tensors in accounts' code or in the caller's storage
+// Benchmarking: the time of each part of the runs of the Interpreters given
+// it with time_nodes, summed over them, as ticks of the timestamp counter:
+// from the start of run() to its first op, each op, and from its last op to
+// the end of run(). An op's time includes reading it from the graphcode. The
+// runs are expected to be of one graph
+class NodeTimes
+{
+    friend class Interpreter;
+
+    struct Node
+    {
+        Op op;
+        TensorType type;
+        uint64_t ticks;
+    };
+
+    uint64_t runs_ = 0;
+    uint64_t setup_ = 0;
+    uint64_t outputs_ = 0;
+    uint64_t total_ = 0;
+    // The node id of the first op, after the inputs'
+    size_t first_id_ = 0;
+    std::vector<Node> nodes_;
+    // When the first run ended, to measure the counter's rate from
+    uint64_t rate_start_ = 0;
+    std::chrono::steady_clock::time_point rate_start_time_;
+
+    uint64_t start_ops(uint64_t entry, size_t first_id, size_t n_ops);
+    uint64_t end_op(size_t i, Op op, TensorType const &type, uint64_t start);
+    void end_run(uint64_t entry, uint64_t last_end);
+
+public:
+    // The average time of each part of a run, in ns, a line each, at the
+    // counter's rate over the time since the first run ended
+    std::string report() const;
+};
+
 class Interpreter
 {
     Graphcode const &graphcode_;
@@ -46,6 +86,9 @@ class Interpreter
     std::vector<Tensor> node_values_;
 
     uint8_t *const arena_;
+
+    // Benchmarking: where run() adds the time of each part of it, if set
+    NodeTimes *node_times_ = nullptr;
 
     Result<void> check_magic_number();
     Result<void> check_inputs();
@@ -75,12 +118,14 @@ public:
     Interpreter(Interpreter &&other) = delete;
     Interpreter &operator=(Interpreter &&other) = delete;
 
+    // Benchmarking: has run() add the time of each part of it to `times`.
+    // Without it, run() only checks, once per node, that it isn't set
+    void time_nodes(NodeTimes *const times) noexcept
+    {
+        node_times_ = times;
+    }
+
     Result<std::vector<Tensor>> run();
 };
-
-// Benchmarking: prints how long each node of the thread's last evaluation took,
-// once, if interpreter.cpp's TIME_NODES is set. The evaluation only records
-// the times, so that the printing can be done after anything being timed
-void print_node_times();
 
 MONAD_GRAPH_EVAL_NAMESPACE_END

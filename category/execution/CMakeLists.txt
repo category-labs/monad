@@ -490,6 +490,17 @@ if(MONAD_GRAPH_EVAL_HALIDE)
       "MONAD_HALIDE_AUTOSCHEDULERS_DIR=\"${MONAD_HALIDE_BUILD_DIR}/src/autoschedulers\"")
 endif()
 
+# graph_eval's XLA compiler, which builds graphs as HLO modules and compiles
+# them in-process, with libmonad_xla.so. The interpreter doesn't use it, so
+# it's only built with MONAD_GRAPH_EVAL_XLA
+if(MONAD_GRAPH_EVAL_XLA)
+  target_sources(
+    monad_execution_native
+    PRIVATE "monad/graph_eval/xla_compiler.cpp"
+            "monad/graph_eval/xla_compiler.hpp")
+  target_link_libraries(monad_execution_native PRIVATE monad_xla)
+endif()
+
 # The matmul kernel uses AVX-512 with VNNI. Every validator's CPU is a Zen 4,
 # which has them, although the rest of the build targets an older CPU. This
 # comes after the toolchain's -march, so it takes precedence

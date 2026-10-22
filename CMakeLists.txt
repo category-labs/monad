@@ -51,6 +51,9 @@ option(MONAD_GRAPH_EVAL_IREE
 option(MONAD_GRAPH_EVAL_HALIDE
        "Build graph_eval's Halide graph compiler (needs scripts/build_halide.sh)"
        OFF)
+option(MONAD_GRAPH_EVAL_XLA
+       "Build graph_eval's XLA graph compiler (needs scripts/build_xla.sh)"
+       OFF)
 
 include(cmake/test.cmake)
 
@@ -261,6 +264,25 @@ if(MONAD_GRAPH_EVAL_HALIDE)
   # SYSTEM: Halide.h doesn't build with monad's warnings as errors
   target_include_directories(halide SYSTEM
                              INTERFACE "${MONAD_HALIDE_BUILD_DIR}/include")
+endif()
+
+# monad_xla, for graph_eval's XLA graph compiler, which the interpreter doesn't
+# use, so it's only built with MONAD_GRAPH_EVAL_XLA. libmonad_xla.so holds
+# XLA's CPU compiler and runtime behind a C API, whose header is in
+# category/execution/monad/graph_eval/xla/monad_xla, so nothing is built
+# here: scripts/build_xla.sh builds it out of tree, with Bazel
+if(MONAD_GRAPH_EVAL_XLA)
+  set(MONAD_XLA_BUILD_DIR "${PROJECT_SOURCE_DIR}/build-xla"
+      CACHE PATH "XLA build directory (see scripts/build_xla.sh)")
+  set(MONAD_XLA_LIBRARY "${MONAD_XLA_BUILD_DIR}/libmonad_xla.so")
+  if(NOT EXISTS "${MONAD_XLA_LIBRARY}")
+    message(FATAL_ERROR
+      "${MONAD_XLA_LIBRARY} does not exist; run scripts/build_xla.sh or set "
+      "MONAD_XLA_BUILD_DIR")
+  endif()
+  add_library(monad_xla SHARED IMPORTED)
+  set_target_properties(monad_xla PROPERTIES IMPORTED_LOCATION
+                                             "${MONAD_XLA_LIBRARY}")
 endif()
 
 # ##############################################################################

@@ -2439,12 +2439,24 @@ Result<void> CompiledGraph::run(
 
 // Compiles the module to IREE's VM bytecode, and makes a session that loads
 // it, with the call to its function. InternalError if IREE fails, or the
-// function's transients don't have a size known at compile time
+// function's transients don't have a size known at compile time. If `ir` isn't
+// null, it gets the module before and after IREE's pipeline, as text
 //
 // TODO: report IREE's diagnostics other than on stderr
-Result<CompiledGraph> Compiler::iree_compile(MlirModule const module)
+Result<CompiledGraph>
+Compiler::iree_compile(MlirModule const module, std::string *const ir)
 {
     MlirOperation const op = mlirModuleGetOperation(module);
+    if (ir) {
+        *ir = "== input MLIR ==\n";
+        mlirOperationPrint(
+            op,
+            [](MlirStringRef text, void *out) {
+                static_cast<std::string *>(out)->append(text.data, text.length);
+            },
+            ir);
+        *ir += "\n";
+    }
     if (!mlirOperationVerify(op)) {
         mlirModuleDestroy(module);
         return GraphEvalError::InternalError;
@@ -2474,6 +2486,18 @@ Result<CompiledGraph> Compiler::iree_compile(MlirModule const module)
         }
         if (output) {
             ireeCompilerOutputDestroy(output);
+        }
+        iree_compiler_output_t *ir_output = nullptr;
+        void *ir_contents = nullptr;
+        uint64_t ir_size = 0;
+        if (ir && compiled && !ireeCompilerOutputOpenMembuffer(&ir_output) &&
+            !ireeCompilerInvocationOutputIR(invocation, ir_output) &&
+            !ireeCompilerOutputMapMemory(ir_output, &ir_contents, &ir_size)) {
+            *ir += "== module after IREE's pipeline (VM dialect) ==\n";
+            ir->append(static_cast<char const *>(ir_contents), ir_size);
+        }
+        if (ir_output) {
+            ireeCompilerOutputDestroy(ir_output);
         }
         ireeCompilerInvocationDestroy(invocation);
         if (!written) {
@@ -2530,7 +2554,7 @@ Result<CompiledGraph> Compiler::iree_compile(MlirModule const module)
     return CompiledGraph{std::move(session)};
 }
 
-Result<CompiledGraph> Compiler::compile()
+Result<CompiledGraph> Compiler::compile(std::string *const ir)
 {
     if (gc_.validation_result() != GraphEvalError::Success) {
         return gc_.validation_result();
@@ -2664,7 +2688,7 @@ Result<CompiledGraph> Compiler::compile()
         &func_return, static_cast<intptr_t>(results.size()), results.data());
     mlir_append(body, &func_return);
 
-    return iree_compile(module);
+    return iree_compile(module, ir);
 }
 
 Compiler::Compiler(Graphcode const &gc, State &state)

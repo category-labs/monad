@@ -35,6 +35,7 @@
 #include <initializer_list>
 #include <memory>
 #include <span>
+#include <string>
 #include <string_view>
 #include <utility>
 
@@ -204,10 +205,13 @@ class Compiler
         ConcatOp const &, MlirLocation, MlirBlock,
         std::vector<MlirValue> const &);
 
-    Result<CompiledGraph> iree_compile(MlirModule);
+    Result<CompiledGraph> iree_compile(MlirModule, std::string *ir);
 
 public:
-    Result<CompiledGraph> compile();
+    // Compiles the graph. If `ir` isn't null, it gets the MLIR module as
+    // built, of linalg ops, and as IREE's pipeline leaves it, in its VM
+    // dialect, for inspecting the code
+    Result<CompiledGraph> compile(std::string *ir = nullptr);
     Compiler(Graphcode const &gc, State &state);
     ~Compiler();
     Compiler(Compiler const &) = delete;

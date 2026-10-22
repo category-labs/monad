@@ -30,6 +30,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -120,7 +121,8 @@ class HalideCompiler
 
     Result<HalidePipeline> halide_pipeline();
     void halide_schedule(HalidePipeline &);
-    HalideCompiledGraph halide_compile(HalidePipeline &, Halide::Pipeline &);
+    HalideCompiledGraph
+    halide_compile(HalidePipeline &, Halide::Pipeline &, std::string *ir);
 
     Halide::Type halide_type(Dtype);
     std::vector<Halide::Var> halide_vars(size_t rank);
@@ -179,14 +181,18 @@ class HalideCompiler
     Halide::Func halide_op(ConcatOp const &, std::vector<Halide::Func> const &);
 
 public:
-    // Compiles the graph with the hand-written schedule
-    Result<HalideCompiledGraph> compile();
+    // Compiles the graph with the hand-written schedule. If `ir` isn't null,
+    // it gets the pipeline as Halide lowers it, as text: its loop nests,
+    // vectorized and with the allocations of the Funcs computed at root, for
+    // inspecting the code
+    Result<HalideCompiledGraph> compile(std::string *ir = nullptr);
     // Compiles the graph with the schedule of `scheduler`, one of the
     // autoschedulers Halide's build has plugins for: Adams2019, Li2018 or
     // Mullapudi2016, with its options. The schedule is for a single thread
-    // unless the options give a parallelism above 1
-    Result<HalideCompiledGraph>
-    compile(Halide::AutoschedulerParams const &scheduler);
+    // unless the options give a parallelism above 1. `ir` is as for compile()
+    Result<HalideCompiledGraph> compile(
+        Halide::AutoschedulerParams const &scheduler,
+        std::string *ir = nullptr);
     HalideCompiler(Graphcode const &gc, State &state);
     HalideCompiler(HalideCompiler const &) = delete;
     HalideCompiler(HalideCompiler &&) = delete;

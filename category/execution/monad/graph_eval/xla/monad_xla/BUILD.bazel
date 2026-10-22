@@ -1,0 +1,40 @@
+# libmonad_xla.so, graph_eval's way into XLA (see monad_xla.h). This package
+# is built inside third_party/xla's Bazel workspace, which scripts/build_xla.sh
+# adds it to with --package_path, as //monad_xla. Like XLA's PJRT CPU plugin
+# (xla/pjrt/c/BUILD), it links XLA, with its LLVM, Abseil and protobuf, into
+# one shared library whose version script exports only the C API
+
+load("//xla:xla.default.bzl", "xla_cc_binary")
+
+xla_cc_binary(
+    name = "libmonad_xla.so",
+    srcs = [
+        "monad_xla.cc",
+        "monad_xla.h",
+    ],
+    additional_linker_inputs = [":monad_xla.lds"],
+    linkopts = [
+        "-Wl,--version-script,$(location :monad_xla.lds)",
+        "-Wl,--no-undefined",
+        "-Wl,-soname,libmonad_xla.so",
+    ],
+    linkshared = True,
+    deps = [
+        "//xla:debug_options_flags",
+        "//xla:shape_util",
+        "//xla:xla_proto_cc",
+        "//xla/backends/cpu:target_machine_options",
+        "//xla/backends/cpu/nanort:nanort_executable",
+        "//xla/hlo/ir:hlo",
+        "//xla/hlo/parser:hlo_parser",
+        "//xla/service:compiler",
+        "//xla/service:executable",
+        "//xla/service:hlo_module_config",
+        "//xla/service/cpu:cpu_compiler_pure",
+        "@com_google_absl//absl/container:inlined_vector",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:span",
+    ],
+)

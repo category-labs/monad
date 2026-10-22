@@ -169,11 +169,8 @@ std::optional<evmc::Result> check_call_monad_precompile(
         //           << std::chrono::duration_cast<std::chrono::microseconds>(
         //                  copy_end - end)
         //           << "\n";
-        // // Benchmarking: after the timings above, so as not to add to them
-        // graph_eval::print_node_times();
         return result;
     }
-    // graph_eval::print_node_times();
     return evmc::Result(
         EVMC_REVERT,
         0 /* gas left */,

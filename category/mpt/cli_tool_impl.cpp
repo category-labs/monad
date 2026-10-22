@@ -451,6 +451,64 @@ struct chunk_info_archive_t
     }
 };
 
+// A chunk list of an archived database. The archive holds no entry for an
+// empty seq chunk, which a list may begin or end with, so lists are rebuilt
+// from the archived db metadata rather than from the chunks archived.
+struct archived_list
+{
+    std::vector<uint32_t> ids;
+    monad::mpt::detail::unsigned_20 base_insertion_count{0};
+
+    bool contains(uint32_t const id) const
+    {
+        return std::ranges::find(ids, id) != ids.end();
+    }
+};
+
+static archived_list archived_chunk_list(
+    monad::mpt::detail::db_metadata const *const metadata,
+    monad::mpt::detail::db_metadata::id_pair const list, char const *const name,
+    uint32_t const seq_chunks)
+{
+    using monad::mpt::detail::db_metadata;
+    auto const error = [name](std::string_view const what) {
+        std::stringstream ss;
+        ss << "DB archive's " << name << " list " << what;
+        return std::runtime_error(ss.str());
+    };
+    archived_list ret;
+    for (uint32_t id = list.begin; id != db_metadata::NULL_CHUNK;) {
+        if (id >= metadata->chunk_info_count) {
+            throw error("references a chunk its db metadata does not have.");
+        }
+        if (id >= seq_chunks) {
+            std::stringstream ss;
+            ss << "holds seq chunk " << id
+               << ", but the destination pool's seq chunk count is "
+               << seq_chunks
+               << ". You will need to configure a destination pool with "
+                  "more seq chunks.";
+            throw error(ss.str());
+        }
+        // Every id is below seq_chunks, so a longer walk revisits one.
+        if (ret.ids.size() == seq_chunks) {
+            throw error("is cyclic.");
+        }
+        auto const &info = metadata->chunk_info[id];
+        if (ret.ids.empty()) {
+            ret.base_insertion_count = info.insertion_count();
+        }
+        ret.ids.push_back(id);
+        id = info.next_chunk_id == db_metadata::chunk_info_t::INVALID_CHUNK_ID
+                 ? db_metadata::NULL_CHUNK
+                 : uint32_t(info.next_chunk_id);
+    }
+    if (ret.ids.empty()) {
+        throw error("is empty.");
+    }
+    return ret;
+}
+
 struct impl_t
 {
     std::ostream &cout;
@@ -910,18 +968,8 @@ public:
         cout << std::endl;
 
         // Fix up triedb metadata to match archived
-        monad::mpt::detail::unsigned_20 fast_list_base_insertion_count(
-            UINT32_MAX);
-        monad::mpt::detail::unsigned_20 slow_list_base_insertion_count(
-            UINT32_MAX);
-        uint32_t fast_list_begin_index{
-            monad::mpt::detail::db_metadata::NULL_CHUNK};
-        uint32_t fast_list_end_index{
-            monad::mpt::detail::db_metadata::NULL_CHUNK};
-        uint32_t slow_list_begin_index{
-            monad::mpt::detail::db_metadata::NULL_CHUNK};
-        uint32_t slow_list_end_index{
-            monad::mpt::detail::db_metadata::NULL_CHUNK};
+        archived_list fast_list;
+        archived_list slow_list;
         for (auto &i : todecompress) {
             if (i.type == monad::async::storage_pool::cnv) {
                 if (i.chunk_id == 0) {
@@ -1019,84 +1067,49 @@ public:
                         // restored DB starts quiescent and does not replay an
                         // in-flight op against freshly-restored ring data.
                     });
-                    fast_list_base_insertion_count =
-                        old_metadata->fast_list_begin()->insertion_count();
-                    slow_list_base_insertion_count =
-                        old_metadata->slow_list_begin()->insertion_count();
-                    MONAD_ASSERT(
-                        old_metadata->fast_list.begin !=
-                        monad::mpt::detail::db_metadata::NULL_CHUNK);
-                    MONAD_ASSERT(
-                        old_metadata->slow_list.begin !=
-                        monad::mpt::detail::db_metadata::NULL_CHUNK);
-                    fast_list_begin_index = old_metadata->fast_list.begin;
-                    slow_list_begin_index = old_metadata->slow_list.begin;
-                    if (auto const max_seq_chunk = std::max(
-                            fast_list_begin_index, slow_list_begin_index);
-                        max_seq_chunk >=
-                        pool->chunks(monad::async::storage_pool::seq)) {
-                        std::stringstream ss;
-                        ss << "DB archive " << restore_database
-                           << " uses seq chunks up to " << max_seq_chunk
-                           << " in db metadata, but the destination pool's seq "
-                              "chunk count is "
-                           << pool->chunks(monad::async::storage_pool::seq)
-                           << ". You will need to configure a destination pool "
-                              "with more seq chunks.";
-                        throw std::runtime_error(ss.str());
-                    }
-                    fast_list_end_index = old_metadata->fast_list.end;
-                    slow_list_end_index = old_metadata->slow_list.end;
+                    auto const seq_chunks =
+                        uint32_t(pool->chunks(monad::async::storage_pool::seq));
+                    fast_list = archived_chunk_list(
+                        old_metadata,
+                        old_metadata->fast_list,
+                        "fast",
+                        seq_chunks);
+                    slow_list = archived_chunk_list(
+                        old_metadata,
+                        old_metadata->slow_list,
+                        "slow",
+                        seq_chunks);
                     break;
                 }
             }
         }
-
-        // Sort chunks into correct order, fast list by insertion count,
-        // then slow list by insertion count, with all cnv chunks to the end
-        std::sort(
-            todecompress.begin(),
-            todecompress.end(),
-            [fast_list_base_insertion_count, slow_list_base_insertion_count](
-                chunk_info_restore_t const &a, chunk_info_restore_t const &b) {
-                if (a.type > b.type) {
-                    return true;
-                }
-                if (a.type == b.type) {
-                    if (a.metadata.in_fast_list && !b.metadata.in_fast_list) {
-                        return true;
-                    }
-                    if (a.metadata.in_fast_list == b.metadata.in_fast_list ||
-                        a.metadata.in_slow_list == b.metadata.in_slow_list) {
-                        if (a.metadata.in_fast_list) {
-                            return (a.metadata.insertion_count() -
-                                    fast_list_base_insertion_count) <
-                                   (b.metadata.insertion_count() -
-                                    fast_list_base_insertion_count);
-                        }
-                        else {
-                            return (a.metadata.insertion_count() -
-                                    slow_list_base_insertion_count) <
-                                   (b.metadata.insertion_count() -
-                                    slow_list_base_insertion_count);
-                        }
-                    }
-                }
-                return false;
-            });
+        if (fast_list.ids.empty()) {
+            std::stringstream ss;
+            ss << "DB archive " << restore_database
+               << " holds no db metadata. Are you sure this archive was "
+                  "generated by monad-mpt?";
+            throw std::runtime_error(ss.str());
+        }
+        for (auto const &i : todecompress) {
+            if (i.type == monad::async::storage_pool::seq &&
+                !fast_list.contains(i.chunk_id) &&
+                !slow_list.contains(i.chunk_id)) {
+                std::stringstream ss;
+                ss << "DB archive " << restore_database << " holds seq chunk "
+                   << i.chunk_id
+                   << " which is in neither list of its db metadata.";
+                throw std::runtime_error(ss.str());
+            }
+        }
 
         if (debug_printing) {
             std::cerr << "Fast list:";
-            auto it = todecompress.begin();
-            for (; it != todecompress.end() && it->metadata.in_fast_list;
-                 ++it) {
-                std::cerr << " " << it->chunk_id;
+            for (auto const id : fast_list.ids) {
+                std::cerr << " " << id;
             }
             std::cerr << "\nSlow list:";
-            for (; it != todecompress.end() &&
-                   it->type == monad::async::storage_pool::seq;
-                 ++it) {
-                std::cerr << " " << it->chunk_id;
+            for (auto const id : slow_list.ids) {
+                std::cerr << " " << id;
             }
             std::cerr << std::endl;
         }
@@ -1109,8 +1122,6 @@ public:
             MONAD_ASYNC_NAMESPACE::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE);
         auto io = MONAD_ASYNC_NAMESPACE::AsyncIO{*pool, rwbuf};
         MONAD_MPT_NAMESPACE::UpdateAux aux(io);
-        size_t slow_chunks_inserted = 0;
-        size_t fast_chunks_inserted = 0;
         auto override_insertion_count =
             [](monad::mpt::detail::db_metadata *db,
                monad::mpt::UpdateAux::chunk_list type,
@@ -1127,77 +1138,28 @@ public:
                 i->insertion_count1_ =
                     uint32_t(initial_insertion_count >> 10) & 0x3ff;
             };
-        for (auto const &i : todecompress) {
-            if (i.type == monad::async::storage_pool::seq) {
-                if (i.metadata.in_fast_list) {
-                    aux.metadata_ctx().append(
-                        monad::mpt::UpdateAux::chunk_list::fast, i.chunk_id);
-                    if (0 == fast_chunks_inserted++) {
-                        aux.metadata_ctx().modify_metadata(
-                            override_insertion_count,
-                            monad::mpt::UpdateAux::chunk_list::fast,
-                            fast_list_base_insertion_count);
-                    }
+        auto restore_list = [&](monad::mpt::UpdateAux::chunk_list type,
+                                archived_list const &list) {
+            for (auto const id : list.ids) {
+                auto const it = std::ranges::find(chunks, id);
+                if (it == chunks.end()) {
+                    std::stringstream ss;
+                    ss << "DB archive " << restore_database << " lists seq "
+                       << "chunk " << id << " more than once.";
+                    throw std::runtime_error(ss.str());
                 }
-                else if (i.metadata.in_slow_list) {
-                    aux.metadata_ctx().append(
-                        monad::mpt::UpdateAux::chunk_list::slow, i.chunk_id);
-                    if (0 == slow_chunks_inserted++) {
-                        aux.metadata_ctx().modify_metadata(
-                            override_insertion_count,
-                            monad::mpt::UpdateAux::chunk_list::slow,
-                            slow_list_base_insertion_count);
-                    }
-                }
-                if (i.metadata.in_fast_list || i.metadata.in_slow_list) {
-                    auto const it =
-                        std::find(chunks.begin(), chunks.end(), i.chunk_id);
-                    MONAD_ASSERT(it != chunks.end());
-                    *it = monad::mpt::detail::db_metadata::NULL_CHUNK;
+                *it = monad::mpt::detail::db_metadata::NULL_CHUNK;
+                aux.metadata_ctx().append(type, id);
+                if (id == list.ids.front()) {
+                    aux.metadata_ctx().modify_metadata(
+                        override_insertion_count,
+                        type,
+                        list.base_insertion_count);
                 }
             }
-        }
-        MONAD_ASSERT(
-            slow_chunks_inserted + fast_chunks_inserted +
-                max_chunk_id[monad::async::storage_pool::cnv] ==
-            todecompress.size() - 1);
-        if (fast_chunks_inserted == 0) {
-            aux.metadata_ctx().append(
-                monad::mpt::UpdateAux::chunk_list::fast, fast_list_begin_index);
-            auto const it =
-                std::find(chunks.begin(), chunks.end(), fast_list_begin_index);
-            MONAD_ASSERT(it != chunks.end());
-            *it = monad::mpt::detail::db_metadata::NULL_CHUNK;
-            // override the first insertion count
-            aux.metadata_ctx().modify_metadata(
-                override_insertion_count,
-                monad::mpt::UpdateAux::chunk_list::fast,
-                fast_list_base_insertion_count);
-        }
-        MONAD_ASSERT(
-            aux.metadata_ctx().main()->fast_list.begin ==
-            fast_list_begin_index);
-        MONAD_ASSERT(
-            aux.metadata_ctx().main()->fast_list.end == fast_list_end_index);
-
-        if (slow_chunks_inserted == 0) {
-            aux.metadata_ctx().append(
-                monad::mpt::UpdateAux::chunk_list::slow, slow_list_begin_index);
-            auto const it =
-                std::find(chunks.begin(), chunks.end(), slow_list_begin_index);
-            MONAD_ASSERT(it != chunks.end());
-            *it = monad::mpt::detail::db_metadata::NULL_CHUNK;
-            // override the first insertion count
-            aux.metadata_ctx().modify_metadata(
-                override_insertion_count,
-                monad::mpt::UpdateAux::chunk_list::slow,
-                slow_list_base_insertion_count);
-        }
-        MONAD_ASSERT(
-            aux.metadata_ctx().main()->slow_list.begin ==
-            slow_list_begin_index);
-        MONAD_ASSERT(
-            aux.metadata_ctx().main()->slow_list.end == slow_list_end_index);
+        };
+        restore_list(monad::mpt::UpdateAux::chunk_list::fast, fast_list);
+        restore_list(monad::mpt::UpdateAux::chunk_list::slow, slow_list);
 
         for (unsigned int const &chunk : chunks) {
             if (chunk != monad::mpt::detail::db_metadata::NULL_CHUNK) {

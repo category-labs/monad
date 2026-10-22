@@ -51,7 +51,7 @@ for its runtime, I/O, and accelerators.
   Cargo reads this configuration when invoked from either backend directory.
 - For ZisK, install `cargo-zisk` and `ziskemu` using
   [ziskup](https://github.com/0xPolygonHermez/zisk). The guest pins `ziskos`
-  to **v1.3.1-alpha** in [Cargo.toml](zisk/Cargo.toml); use matching tools.
+  to **v1.3.2-alpha** in [Cargo.toml](zisk/Cargo.toml); use matching tools.
 - For SP1, install the `succinct` Rust toolchain using
   [sp1up](https://docs.succinct.xyz/getting-started/install.html), and provide
   `ld.lld` on `PATH` or through that toolchain. The host SDK is **6.8.1**;
@@ -65,6 +65,23 @@ Start each section's commands from the repository root unless stated otherwise.
 
 ZisK input is an 8-byte little-endian payload length followed by the witness,
 zero-padded to an 8-byte boundary.
+
+Published benchmark and release artifacts must come from the reference
+build, which nix produces from a clean commit with the patched compiler and
+the pinned ZisK toolchain (see [nix/README.md](../nix/README.md)):
+
+```sh
+nix build './nix?submodules=1#zisk-elf'
+#  → result/monad-zkvm-zisk, result/monad-zkvm-zisk.build.json
+```
+
+The ELF embeds its commit and its nix store path, and `build.json` records
+the ELF hash with the toolchain store paths; keep it with published
+benchmarks. Direct `cargo-zisk build`, as below, produces development
+builds for A/B experiments with other compilers or options. The settings
+the reference build enables, `MONAD_ZKVM_ZISK_DMA`,
+`MONAD_ZKVM_ZISK_CLEAN_BYTE_STORES`, `MONAD_ZKVM_GIT_COMMIT` and
+`MONAD_ZKVM_BUILD_ID`, are read from the environment.
 
 ```sh
 # 1. Build the guest ELF.

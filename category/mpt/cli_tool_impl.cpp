@@ -194,6 +194,26 @@ static size_t const total_physical_memory_bytes = [] {
     return size_t(v) * size_t(getpagesize());
 }();
 
+static void
+pwrite_fully(int const fd, std::span<std::byte const> buffer, uint64_t offset)
+{
+    while (!buffer.empty()) {
+        auto const written =
+            ::pwrite(fd, buffer.data(), buffer.size(), off_t(offset));
+        if (written < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            throw std::system_error(errno, std::system_category());
+        }
+        if (written == 0) {
+            throw std::runtime_error("pwrite made no progress");
+        }
+        buffer = buffer.subspan(size_t(written));
+        offset += uint64_t(written);
+    }
+}
+
 struct chunk_info_restore_t
 {
     monad::async::storage_pool::chunk_type const type;
@@ -311,26 +331,14 @@ struct chunk_info_restore_t
             }
             if (nonchunkstorage.empty()) {
                 auto [wfd, offset] = chunk->write_fd(written);
-                if (::pwrite(
-                        wfd,
-                        decompressed.data(),
-                        decompressed.size(),
-                        off_t(offset)) < 0) {
-                    throw std::system_error(errno, std::system_category());
-                }
+                pwrite_fully(wfd, decompressed, offset);
             }
             return written;
         }
         else {
             if (nonchunkstorage.empty()) {
                 auto [wfd, offset] = chunk->write_fd(compressed.size());
-                if (::pwrite(
-                        wfd,
-                        compressed.data(),
-                        compressed.size(),
-                        off_t(offset)) < 0) {
-                    throw std::system_error(errno, std::system_category());
-                }
+                pwrite_fully(wfd, compressed, offset);
             }
             else {
                 memcpy(

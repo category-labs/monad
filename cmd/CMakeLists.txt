@@ -35,6 +35,7 @@ target_compile_definitions(monad PRIVATE GIT_COMMIT_HASH="${GIT_COMMIT_HASH}")
 target_compile_definitions(monad-cli
                            PRIVATE GIT_COMMIT_HASH="${GIT_COMMIT_HASH}")
 
+add_subdirectory(bench)
 add_subdirectory(vm/parser)
 
 if(MONAD_COMPILER_BENCHMARKS)

@@ -48,6 +48,9 @@ option(MONAD_COMPILER_HOT_PATH_STATS "Print statistics about the vm" OFF)
 option(MONAD_GRAPH_EVAL_IREE
        "Build the IREE runtime, graph_eval's IREE kernels and its graph compiler (needs scripts/build_iree.sh)"
        OFF)
+option(MONAD_GRAPH_EVAL_HALIDE
+       "Build graph_eval's Halide graph compiler (needs scripts/build_halide.sh)"
+       OFF)
 
 include(cmake/test.cmake)
 
@@ -236,6 +239,28 @@ if(MONAD_GRAPH_EVAL_IREE)
               # Generated: mlir-c/Dialect/Linalg.h includes
               # mlir/Dialect/Linalg/Passes.capi.h.inc
               "${MONAD_IREE_BUILD_DIR}/llvm-project/tools/mlir/include")
+endif()
+
+# halide, for graph_eval's Halide graph compiler, which the interpreter doesn't
+# use, so it's only built with MONAD_GRAPH_EVAL_HALIDE. libHalide.so is both
+# the compiler and the runtime that compiled graphs link, so nothing is built
+# here: scripts/build_halide.sh builds it out of tree, against the system's
+# LLVM, whose libLLVM.so it also needs at run time
+if(MONAD_GRAPH_EVAL_HALIDE)
+  set(MONAD_HALIDE_BUILD_DIR "${PROJECT_SOURCE_DIR}/build-halide"
+      CACHE PATH "Halide build directory (see scripts/build_halide.sh)")
+  set(MONAD_HALIDE_LIBRARY "${MONAD_HALIDE_BUILD_DIR}/src/libHalide.so")
+  if(NOT EXISTS "${MONAD_HALIDE_LIBRARY}")
+    message(FATAL_ERROR
+      "${MONAD_HALIDE_LIBRARY} does not exist; run scripts/build_halide.sh or "
+      "set MONAD_HALIDE_BUILD_DIR")
+  endif()
+  add_library(halide SHARED IMPORTED)
+  set_target_properties(halide PROPERTIES IMPORTED_LOCATION
+                                          "${MONAD_HALIDE_LIBRARY}")
+  # SYSTEM: Halide.h doesn't build with monad's warnings as errors
+  target_include_directories(halide SYSTEM
+                             INTERFACE "${MONAD_HALIDE_BUILD_DIR}/include")
 endif()
 
 # ##############################################################################

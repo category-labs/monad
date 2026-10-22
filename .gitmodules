@@ -71,3 +71,6 @@
 [submodule "third_party/iree"]
 	path = third_party/iree
 	url = https://github.com/iree-org/iree.git
+[submodule "third_party/halide"]
+	path = third_party/halide
+	url = https://github.com/halide/Halide.git

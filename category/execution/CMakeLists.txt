@@ -472,6 +472,24 @@ if(MONAD_GRAPH_EVAL_IREE)
              "MONAD_GRAPH_EVAL_KERNELS_VMFB=\"${GRAPH_EVAL_KERNELS_VMFB}\"")
 endif()
 
+# graph_eval's Halide compiler, which builds graphs as Halide pipelines and
+# compiles them in-process. The interpreter doesn't use it, so it's only built
+# with MONAD_GRAPH_EVAL_HALIDE. It loads autoscheduler plugins from the Halide
+# build at run time
+if(MONAD_GRAPH_EVAL_HALIDE)
+  target_sources(
+    monad_execution_native
+    PRIVATE "monad/graph_eval/halide_compiler.cpp"
+            "monad/graph_eval/halide_compiler.hpp")
+  target_link_libraries(monad_execution_native PRIVATE halide)
+  set_property(
+    SOURCE "monad/graph_eval/halide_compiler.cpp"
+    APPEND
+    PROPERTY
+      COMPILE_DEFINITIONS
+      "MONAD_HALIDE_AUTOSCHEDULERS_DIR=\"${MONAD_HALIDE_BUILD_DIR}/src/autoschedulers\"")
+endif()
+
 # The matmul kernel uses AVX-512 with VNNI. Every validator's CPU is a Zen 4,
 # which has them, although the rest of the build targets an older CPU. This
 # comes after the toolchain's -march, so it takes precedence

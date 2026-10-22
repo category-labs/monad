@@ -31,17 +31,51 @@
 #include <mlir-c/BuiltinTypes.h>
 #include <mlir-c/IR.h>
 
+#include <cstdint>
+#include <initializer_list>
+#include <memory>
+#include <span>
+#include <string_view>
+#include <utility>
+
 MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
 
+// A graph Compiler compiled: an IREE module whose function takes the graph's
+// inputs, then its outputs, which it writes in place, then the memory for the
+// tensors it computes in between, called in an IREE session of its own on the
+// local-sync device, which runs it on the calling thread. A session isn't
+// thread-safe, so neither is run
 class CompiledGraph
 {
+    friend class Compiler;
+
+    struct Session; // compiler.cpp's
+    std::unique_ptr<Session> session_;
+
+    explicit CompiledGraph(std::unique_ptr<Session>);
+
 public:
+    CompiledGraph(CompiledGraph &&) noexcept;
+    CompiledGraph &operator=(CompiledGraph &&) noexcept;
+    ~CompiledGraph();
+
+    // Runs the graph on `inputs`, each a dense row-major tensor of its
+    // input's type, in host byte order, writing each output to the memory in
+    // `outputs`, as the same. The tensors computed in between are in
+    // `scratch`. Every input, output and scratch must be
+    // TENSOR_DATA_ALIGNMENT-aligned, as IREE only imports host memory aligned
+    // to IREE_HAL_HEAP_BUFFER_ALIGNMENT, the same 64 bytes. OutOfMemory if the
+    // tensors in between don't fit, and InternalError if IREE fails otherwise
+    Result<void>
+    run(std::span<uint8_t const *const> inputs,
+        std::span<uint8_t *const> outputs, std::span<uint8_t> scratch);
 };
 
 class Compiler
 {
     Graphcode const &gc_;
     std::span<uint8_t const> code_;
+    State &state_; // For the code that TensorRefs read
 
     iree_compiler_session_t *const session_;
 
@@ -54,10 +88,42 @@ class Compiler
 
     MlirNamedAttribute mlir_named(std::string_view const, MlirAttribute);
 
+    MlirValue mlir_empty(MlirLocation, MlirBlock, MlirType);
+    MlirValue mlir_constant(MlirLocation, MlirBlock, MlirType, __int128 value);
+    MlirValue mlir_value(
+        MlirLocation, MlirBlock, std::string_view name,
+        std::initializer_list<MlirValue> operands, MlirType);
+    MlirValue
+    mlir_cmpi(MlirLocation, MlirBlock, int64_t predicate, MlirValue, MlirValue);
+    std::pair<MlirValue, MlirValue> mlir_divide_narrow(
+        MlirLocation, MlirBlock, MlirValue high, MlirValue low,
+        MlirValue divisor);
+    MlirValue
+    mlir_isqrt(MlirLocation, MlirBlock, MlirValue high, MlirValue low);
+    MlirValue
+    mlir_fill(MlirLocation, MlirBlock, MlirValue value, MlirValue init);
+    template <typename Body>
+    MlirOperation mlir_generic(
+        MlirLocation, MlirBlock, std::span<MlirValue const> inputs,
+        std::span<MlirValue const> inits, std::span<MlirAttribute const> maps,
+        std::span<MlirAttribute const> iterator_types, Body const &body);
+    template <typename Body>
+    MlirValue mlir_elementwise(
+        MlirLocation, MlirBlock, std::span<size_t const> input_ids,
+        std::vector<MlirValue> const &values, Body const &body);
+    MlirValue mlir_compare(
+        MlirLocation, MlirBlock, std::span<size_t const> input_ids,
+        std::vector<MlirValue> const &values, int64_t signed_predicate,
+        int64_t unsigned_predicate);
+    MlirValue mlir_reduce(
+        MlirLocation, MlirBlock, size_t axis, size_t input_id,
+        std::vector<MlirValue> const &values, std::string_view combine,
+        __int128 initial);
+
     MlirValue mlir_op(
         LiteralOp const &, MlirLocation loc, MlirBlock block,
         std::vector<MlirValue> const &);
-    MlirValue mlir_op(
+    Result<MlirValue> mlir_op(
         TensorRefOp const &, MlirLocation, MlirBlock,
         std::vector<MlirValue> const &);
     MlirValue mlir_op(
@@ -138,9 +204,11 @@ class Compiler
         ConcatOp const &, MlirLocation, MlirBlock,
         std::vector<MlirValue> const &);
 
+    Result<CompiledGraph> iree_compile(MlirModule);
+
 public:
     Result<CompiledGraph> compile();
-    explicit Compiler(Graphcode const &gc);
+    Compiler(Graphcode const &gc, State &state);
     ~Compiler();
     Compiler(Compiler const &) = delete;
     Compiler(Compiler &&) = delete;

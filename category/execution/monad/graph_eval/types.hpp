@@ -43,7 +43,7 @@ constexpr size_t N_DTYPES = static_cast<size_t>(Dtype::Last_valid_dtype) + 1;
 
 // Size in bytes of one element
 [[gnu::always_inline]]
-inline uint64_t dtype_size(Dtype const dtype)
+constexpr uint64_t dtype_size(Dtype const dtype)
 {
     switch (dtype) {
     case Dtype::int8:
@@ -58,6 +58,24 @@ inline uint64_t dtype_size(Dtype const dtype)
     case Dtype::int64:
     case Dtype::uint64:
         return 8;
+    }
+    MONAD_ABORT();
+}
+
+[[gnu::always_inline]]
+constexpr bool dtype_signed(Dtype const dtype)
+{
+    switch (dtype) {
+    case Dtype::int8:
+    case Dtype::int16:
+    case Dtype::int32:
+    case Dtype::int64:
+        return true;
+    case Dtype::uint8:
+    case Dtype::uint16:
+    case Dtype::uint32:
+    case Dtype::uint64:
+        return false;
     }
     MONAD_ABORT();
 }

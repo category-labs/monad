@@ -196,30 +196,29 @@ void multiply_column_group(
     }
 }
 
-// The type matmul_generic multiplies T's in, in which every product is exact.
-// For types up to 16 bits wide, every sum of up to 65535 products is exact in
-// 64 bits too, so the result is the same as summing in 128 bits
-template <typename T>
-using matmul_wide_t = std::conditional_t<
-    sizeof(T) <= 2, std::conditional_t<std::is_signed_v<T>, int64_t, uint64_t>,
-    std::conditional_t<std::is_signed_v<T>, __int128, unsigned __int128>>;
-
-// The unsigned type of Wide's width, which matmul_generic sums in, so that
-// sums wrap without undefined behavior
-template <typename Wide>
-using matmul_sum_t =
-    std::conditional_t<sizeof(Wide) == 8, uint64_t, unsigned __int128>;
+// The signed counterpart of Sum, a uint64_t or unsigned __int128, for a signed
+// T, and Sum itself for an unsigned one: the type the sums are shifted in, so
+// that a signed one's shift rounds down
+template <typename Sum, typename T>
+using matmul_shift_t = std::conditional_t<
+    std::is_signed_v<T>,
+    std::conditional_t<sizeof(Sum) == 8, int64_t, __int128>, Sum>;
 
 // Elements j to j + C - 1 of a row of out: the dot products of the row `xi` of
 // x, k long, with C adjacent columns of y, which is n wide. Each is summed in
-// a variable of its own, then shifted right by `bits` and narrowed into out
-template <size_t C, typename T, typename Out>
+// a Sum of its own, wrapping, then shifted right by `bits` and narrowed into
+// out. A product is exact, in matmul_shift_t, when Sum is twice as wide as T
+// or more; otherwise, for 64-bit T's in 64-bit sums, it's its low 64 bits,
+// multiplied unsigned so that it wraps
+template <typename Sum, size_t C, typename T, typename Out>
 [[gnu::always_inline]] inline void dot_columns(
     T const *const xi, T const *const y, size_t const k, size_t const n,
     size_t const j, unsigned const bits, Out *const out)
 {
-    using Wide = matmul_wide_t<T>;
-    using Sum = matmul_sum_t<Wide>;
+    using Wide = std::conditional_t<
+        2 * sizeof(T) <= sizeof(Sum),
+        matmul_shift_t<Sum, T>,
+        Sum>;
     Sum sums[C] = {};
     for (size_t p = 0; p < k; p++) {
         auto const a = static_cast<Wide>(xi[p]);
@@ -231,16 +230,29 @@ template <size_t C, typename T, typename Out>
     }
 #pragma GCC unroll 4
     for (size_t c = 0; c < C; c++) {
-        out[j + c] = static_cast<Out>(static_cast<Wide>(sums[c]) >> bits);
+        out[j + c] = static_cast<Out>(
+            static_cast<matmul_shift_t<Sum, T>>(sums[c]) >> bits);
     }
 }
 
-// out = (x * y) >> bits, for an m x k matrix x and a k x n matrix y. Each
-// element of out is the dot product of a row of x with a column of y, 4
-// columns at a time: the 4 sums are independent, each element of x loaded
-// serves 4 products, and y is read 4 adjacent elements at a time
-template <typename T, typename Out>
-void matmul_generic(
+// out = (x * y) >> bits, for an m x k matrix x and a k x n matrix y, with
+// sums in Sum, as matmul() chooses it. Each element of out is the dot product
+// of a row of x with a column of y, 4 columns at a time: the 4 sums are
+// independent, each element of x loaded serves 4 products, and y is read 4
+// adjacent elements at a time. It isn't inlined, so that each instantiation
+// is compiled on its own: inlined together into matmul(), GCC kept 128-bit
+// sums in vector registers, shuffling them for every product, which made
+// stories.graph 30% slower.
+//
+// TODO: speed up the 128-bit sums. In stories.graph its products and 128-bit
+// sums take about 0.44 ns each, about 2.4 cycles on a Zen 4, which can issue
+// a 64 x 64 -> 128-bit multiply about once a cycle, so 1.5-2x may be left:
+// e.g. more independent sums, unrolling along k, and checking the generated
+// code for the multiply and add/adc. x86 has no vector 64 x 64 -> 128-bit
+// multiply, and splitting into narrower vector products comes out near the
+// same once a cycle, so this is about scalar code
+template <typename Sum, typename T, typename Out>
+[[gnu::noinline]] void matmul_generic(
     T const *const x, T const *const y, size_t const m, size_t const k,
     size_t const n, unsigned const bits, Out *const out)
 {
@@ -249,10 +261,10 @@ void matmul_generic(
         Out *const out_row = out + i * n;
         size_t j = 0;
         for (; j + 4 <= n; j += 4) {
-            dot_columns<4>(xi, y, k, n, j, bits, out_row);
+            dot_columns<Sum, 4>(xi, y, k, n, j, bits, out_row);
         }
         for (; j < n; j++) {
-            dot_columns<1>(xi, y, k, n, j, bits, out_row);
+            dot_columns<Sum, 1>(xi, y, k, n, j, bits, out_row);
         }
     }
 }
@@ -308,16 +320,28 @@ void matmul(Tensor const &x, Tensor const &y, unsigned const bits, Tensor &out)
         out.type().shape().dimensions()[0] == m &&
         out.type().shape().dimensions()[1] == n);
 
+    // QMatMul's sums wrap at 128 bits, but only their bits from `bits` to
+    // `bits` plus Out's width reach out. When those are all below bit 64,
+    // summing in 64 bits, wrapping, which keeps a sum's low 64 bits exactly,
+    // gives the same out, much faster. For types up to 16 bits wide, every
+    // sum of up to 65535 products is exact in 64 bits anyway
     visit_dtype(x.type().dtype(), [&]<typename T>() {
         visit_dtype(out.type().dtype(), [&]<typename Out>() {
-            matmul_generic(
-                x.elements<T const>().data(),
-                y.elements<T const>().data(),
-                m,
-                k,
-                n,
-                bits,
-                out.elements<Out>().data());
+            T const *const x_data = x.elements<T const>().data();
+            T const *const y_data = y.elements<T const>().data();
+            Out *const out_data = out.elements<Out>().data();
+            if constexpr (sizeof(T) <= 2) {
+                matmul_generic<uint64_t>(
+                    x_data, y_data, m, k, n, bits, out_data);
+            }
+            else if (bits + 8 * sizeof(Out) <= 64) {
+                matmul_generic<uint64_t>(
+                    x_data, y_data, m, k, n, bits, out_data);
+            }
+            else {
+                matmul_generic<unsigned __int128>(
+                    x_data, y_data, m, k, n, bits, out_data);
+            }
         });
     });
 }

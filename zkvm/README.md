@@ -36,8 +36,9 @@ for its runtime, I/O, and accelerators.
 
 - Initialize the repository's submodules with
   `git submodule update --init --recursive`.
-- Install CMake, a build tool such as Make or Ninja, and Boost headers with
-  their CMake package configuration.
+- Install CMake, Python 3.9 or later, a build tool such as Make or Ninja,
+  and Boost headers with their CMake package configuration. Python also
+  fingerprints the toolchain for direct Cargo builds.
 - Use a `riscv64-unknown-elf` or `riscv64-none-elf` GCC toolchain with newlib
   and C++23 support. Set `RISCV_TOOLCHAIN_DIR` in the environment or in a
   local, gitignored `zkvm/.cargo/config.toml`:
@@ -51,7 +52,7 @@ for its runtime, I/O, and accelerators.
   Cargo reads this configuration when invoked from either backend directory.
 - For ZisK, install `cargo-zisk` and `ziskemu` using
   [ziskup](https://github.com/0xPolygonHermez/zisk). The guest pins `ziskos`
-  to **v1.3.1-alpha** in [Cargo.toml](zisk/Cargo.toml); use matching tools.
+  to **v1.3.2-alpha** in [Cargo.toml](zisk/Cargo.toml); use matching tools.
 - For SP1, install the `succinct` Rust toolchain using
   [sp1up](https://docs.succinct.xyz/getting-started/install.html), and provide
   `ld.lld` on `PATH` or through that toolchain. The host SDK is **6.8.1**;
@@ -66,10 +67,51 @@ Start each section's commands from the repository root unless stated otherwise.
 ZisK input is an 8-byte little-endian payload length followed by the witness,
 zero-padded to an 8-byte boundary.
 
+For a complete build with pinned dependencies on Linux x86_64, use the
+[Nix recipe](../nix/README.md#complete-zisk-guest). It builds the ELF and runs
+the same post-link audit. "Audited" means compliant with the script's checks,
+not demonstrated bit-for-bit reproducibility.
+
+`zkvm/zisk/build.sh` builds the guest with locally installed tools. Published
+benchmark and release artifacts must use the reference ("official") configuration:
+
+```sh
+zkvm/zisk/build.sh --official
+```
+
+This enables `MONAD_ZKVM_OFFICIAL_PROFILE`, requires a clean worktree, and
+builds with ZisK 1.3.2-alpha, patched GCC 15.2.0, DMA lowering and the required
+codegen flags. The ELF embeds the commit and build identity.
+
+Without `--official`, `build.sh` uses the development profile and passes
+`-DNAME=VALUE` arguments to the guest's CMake configuration, for example
+`-DMONAD_ZKVM_ZISK_DMA=OFF`. With `--archive`, it builds only the guest archive
+`libmonad-zkvm-guest-zisk.a`, with CMake and Python 3, without Rust or `cargo-zisk`.
+Both paths use `build-support/build_archive.py` for the CMake configuration and
+cache. `test-build-archive.sh` compares the standalone archive with the one Cargo
+actually links.
+
+After linking, `audit-official-build.py` checks that identity against the local
+build records, compiler and runtime versions, effective flags and selected
+code assumptions (such as no-op `delete`/`free`). On success it writes
+`<elf>.build.json` with the ELF hash. Keep this manifest with published benchmarks
+to identify the build and detect configuration drift. These checks rely on the
+local toolchain and build records; they do not prove guest correctness or
+guarantee byte-identical rebuilds.
+
+`cargo-zisk build` run directly uses the development profile when the
+`MONAD_ZKVM_OFFICIAL_PROFILE` environment variable is unset (`OFF` in CMake),
+allowing different compilers and options for A/B experiments. Development builds
+can still use `--release`; they carry a `dev` marker and do not run the audit or
+produce its manifest automatically.
+
+Build-dependent optimisations must extend the feature list and audit in the
+same commit; source-only changes are identified by the commit and ELF hash.
+
 ```sh
 # 1. Build the guest ELF.
+zkvm/zisk/build.sh
 cd zkvm/zisk
-cargo-zisk build --release --bin monad-zkvm-zisk
 #  → target/elf/riscv64ima-zisk-zkvm-elf/release/monad-zkvm-zisk
 
 # 2. Wrap the witness with the 8-byte length prefix the emulator expects,

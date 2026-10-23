@@ -47,12 +47,10 @@
 #include <category/vm/code.hpp>
 #include <category/vm/evm/message.hpp>
 #include <category/vm/evm/monad/revision.h>
+#include <category/vm/evm/result.hpp>
 #include <category/vm/evm/status_code.h>
 #include <category/vm/vm.hpp>
 #include <monad/test/traits_test.hpp>
-
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 
 #include <test_resource_data.h>
 
@@ -96,7 +94,7 @@ namespace
 
         void on_enter(vm::Message const &) override {}
 
-        void on_exit(evmc::Result const &) override {}
+        void on_exit(vm::Result const &) override {}
 
         void on_log(Receipt::Log) override {}
 

@@ -26,11 +26,9 @@
 #include <category/vm/evm/access_status.h>
 #include <category/vm/evm/message.hpp>
 #include <category/vm/evm/page_storage_status.h>
+#include <category/vm/evm/result.hpp>
 #include <category/vm/evm/storage_status.h>
 #include <category/vm/host.hpp>
-
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 
 #include <algorithm>
 #include <cstddef>
@@ -125,7 +123,7 @@ namespace monad::vm::test
         std::unordered_map<Address, MockedAccount> accounts;
         TxContext tx_context{};
         bytes32_t block_hash;
-        evmc_result call_result{};
+        vm::RawResult call_result{};
         mutable std::vector<int64_t> recorded_blockhashes;
         mutable std::vector<Address> recorded_account_accesses;
         // Pointer fields are nulled on record; only scalars outlive the call.
@@ -245,7 +243,7 @@ namespace monad::vm::test
             return beneficiaries.size() == 1;
         }
 
-        evmc::Result call(Message const &msg) noexcept override
+        vm::Result call(Message const &msg) noexcept override
         {
             record_account_access(msg.recipient);
             auto &rec = recorded_calls.emplace_back(msg);
@@ -254,7 +252,10 @@ namespace monad::vm::test
             rec.memory_handle = nullptr;
             rec.memory = nullptr;
             rec.memory_capacity = 0;
-            return evmc::Result{call_result};
+            vm::Result result{call_result};
+            call_result.output_data = nullptr;
+            call_result.output_size = 0;
+            return result;
         }
 
         TxContext const *get_tx_context() const noexcept override

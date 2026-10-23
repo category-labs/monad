@@ -71,11 +71,6 @@ struct CallTracer
         (void)op;
     }
 
-    void operator()(monad::trace::CallReset const &op)
-    {
-        (void)op;
-    }
-
     void operator()(monad::trace::GetCallFrames const &op)
     {
         *op.call_frames = std::span<CallFrame const>{};
@@ -85,6 +80,8 @@ struct CallTracer
     {
         (void)op;
     }
+
+    void reset() {}
 };
 
 MONAD_NAMESPACE_END

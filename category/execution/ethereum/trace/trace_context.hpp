@@ -53,84 +53,108 @@ namespace trace
     // allowing us to store heterogeneous tracers in the same container.
     struct TypeErasedTracer
     {
-        using DispatchFn =
-            std::function<bool(std::type_index const &, void const *, void *)>;
-
         template <typename R>
             requires(Tracer<R> && !std::is_const_v<std::remove_reference_t<R>>)
         static TypeErasedTracer erase(R &r MONAD_LIFETIMEBOUND)
         {
-            using Signature =
-                typename std::remove_cvref_t<decltype(r)>::Signature;
-            TypeErasedTracer erased_tracer{};
-            erased_tracer.dispatch_ = [tracer = std::addressof(r)](
-                                          std::type_index const &op_type,
-                                          void const *raw_op,
-                                          void *result) mutable -> bool {
-                constexpr size_t num_ops = std::tuple_size_v<Signature>;
-
-                auto dispatch_case = [&]<size_t I>(auto &self) mutable -> bool {
-                    if constexpr (I == num_ops) {
-                        return false;
-                    }
-                    else {
-                        using Op = std::tuple_element_t<I, Signature>;
-                        if (op_type == std::type_index(typeid(Op))) {
-                            // TODO(dhil): This assertion is redundant if this
-                            // object was applied by the tracing context
-                            // object. It would be good to make this
-                            // abstraction tighter, so that we know invoking
-                            // this case is always well-defined.
-                            MONAD_ASSERT_THROW(
-                                raw_op, "Raw operation pointer is null");
-                            auto const &op = *static_cast<Op const *>(raw_op);
-
-                            if constexpr (std::same_as<
-                                              return_type_t<Op>,
-                                              void>) {
-                                std::invoke(*tracer, op);
-                            }
-                            else {
-                                // TODO(dhil): Similarly, this assertion is
-                                // redundant.
-                                MONAD_ASSERT_THROW(
-                                    result, "Result pointer is null");
-                                auto &answer =
-                                    *static_cast<answer_type_t<Op> *>(result);
-                                answer.emplace(std::invoke(*tracer, op));
-                            }
-                            return true;
-                        }
-
-                        return self.template operator()<I + 1>(self);
-                    }
-                };
-
-                return dispatch_case.template operator()<0>(dispatch_case);
-            };
-            return erased_tracer;
+            return TypeErasedTracer{
+                std::addressof(r), &vtable_for<std::remove_cvref_t<R>>};
         }
 
         bool dispatch(
-            std::type_index const &op_type, void const *op, void *result) const
+            std::type_index const &op_type, void const *const op,
+            void *const result) const
         {
-            MONAD_ASSERT(dispatch_);
-            return dispatch_(op_type, op, result);
+            return vtable_->dispatch(self_, op_type, op, result);
+        }
+
+        void reset() const
+        {
+            vtable_->reset(self_);
         }
 
     private:
-        TypeErasedTracer() = default;
+        struct VTable
+        {
+            bool (*dispatch)(
+                void *, std::type_index const &, void const *, void *);
+            void (*reset)(void *);
+        };
 
-        DispatchFn dispatch_;
+        template <typename R>
+        static bool dispatch_impl(
+            void *const self, std::type_index const &op_type,
+            void const *const raw_op, void *const result)
+        {
+            using Signature = typename R::Signature;
+            constexpr size_t num_ops = std::tuple_size_v<Signature>;
+            auto *const tracer = static_cast<R *>(self);
+
+            auto dispatch_case = [&]<size_t I>(auto &self_fn) -> bool {
+                if constexpr (I == num_ops) {
+                    return false;
+                }
+                else {
+                    using Op = std::tuple_element_t<I, Signature>;
+                    if (op_type == std::type_index(typeid(Op))) {
+                        // TODO(dhil): This assertion is redundant if this
+                        // object was applied by the tracing context
+                        // object. It would be good to make this
+                        // abstraction tighter, so that we know invoking
+                        // this case is always well-defined.
+                        MONAD_ASSERT_THROW(
+                            raw_op, "Raw operation pointer is null");
+                        auto const &op = *static_cast<Op const *>(raw_op);
+
+                        if constexpr (std::same_as<return_type_t<Op>, void>) {
+                            std::invoke(*tracer, op);
+                        }
+                        else {
+                            // TODO(dhil): Similarly, this assertion is
+                            // redundant.
+                            MONAD_ASSERT_THROW(
+                                result, "Result pointer is null");
+                            auto &answer =
+                                *static_cast<answer_type_t<Op> *>(result);
+                            answer.emplace(std::invoke(*tracer, op));
+                        }
+                        return true;
+                    }
+
+                    return self_fn.template operator()<I + 1>(self_fn);
+                }
+            };
+
+            return dispatch_case.template operator()<0>(dispatch_case);
+        }
+
+        template <typename R>
+        static void reset_impl(void *const self)
+        {
+            static_cast<R *>(self)->reset();
+        }
+
+        template <typename R>
+        static constexpr VTable vtable_for{&dispatch_impl<R>, &reset_impl<R>};
+
+        TypeErasedTracer(void *const self, VTable const *const vtable)
+            : self_{self}
+            , vtable_{vtable}
+        {
+        }
+
+        void *self_;
+        VTable const *vtable_;
     };
 
-    static_assert(sizeof(TypeErasedTracer) == 32);
+    static_assert(sizeof(TypeErasedTracer) == 16);
 }
 
 // The tracing context for a single transaction. Its interface offers one
 // parametrized method `run` for performing a trace operation, which is then
 // dispatched to the first suitable tracer in this context, returning the answer
-// if any.
+// if any, and a method `reset` which is broadcast to every tracer in this
+// context.
 class TxTraceContext
 {
 public:
@@ -178,6 +202,10 @@ public:
             return answer;
         }
     }
+
+    // Resets every tracer in this context, discarding any state accumulated by
+    // a prior execution attempt of the transaction.
+    void reset() const;
 
     // Returns the number of tracers in this context.
     size_t size() const;

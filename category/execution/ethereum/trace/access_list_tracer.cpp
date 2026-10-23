@@ -165,7 +165,7 @@ void AccessListTracer::operator()(trace::RejectFrame const &op)
     capture_rejected_frame_accesses(op.state);
 }
 
-void AccessListTracer::operator()(trace::StateReset const &)
+void AccessListTracer::reset()
 {
     accesses_.clear();
 }

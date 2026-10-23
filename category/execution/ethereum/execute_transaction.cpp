@@ -455,9 +455,7 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
         State state{block_state_, Incarnation{header_.number, i_ + 1}};
         state.set_original_nonce(sender_, tx_.nonce);
 
-        // TODO(dhil): Consider adding .reset() methdo on the trace context.
-        trace::emit<trace::CallReset>(tx_trace_context_);
-        trace::emit<trace::StateReset>(tx_trace_context_);
+        tx_trace_context_.reset();
 
         auto result = execute_impl2(state);
 
@@ -481,8 +479,7 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
 
         State state{block_state_, Incarnation{header_.number, i_ + 1}};
 
-        trace::emit<trace::CallReset>(tx_trace_context_);
-        trace::emit<trace::StateReset>(tx_trace_context_);
+        tx_trace_context_.reset();
 
         auto result = execute_impl2(state);
 

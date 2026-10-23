@@ -115,6 +115,27 @@ struct HandleOps
 };
 
 template <typename R>
-concept Tracer = HasSignature<R>::check() && HandleOps<R>::check();
+concept Resettable = requires(std::remove_cvref_t<R> &tracer) {
+    { tracer.reset() } -> std::same_as<void>;
+};
+
+template <typename R>
+struct HasReset
+{
+    static constexpr bool has_reset = Resettable<R>;
+
+    static consteval bool check()
+    {
+        static_assert(
+            has_reset,
+            "Tracer must implement 'void reset()', which discards any state "
+            "accumulated by a prior execution attempt of the transaction");
+        return has_reset;
+    }
+};
+
+template <typename R>
+concept Tracer =
+    HasSignature<R>::check() && HandleOps<R>::check() && HasReset<R>::check();
 
 MONAD_NAMESPACE_END

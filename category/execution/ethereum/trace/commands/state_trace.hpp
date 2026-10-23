@@ -47,10 +47,6 @@ namespace monad::trace
         }
     };
 
-    struct StateReset
-    {
-    };
-
     struct MaybeReadCode
     {
         using returns = bool;

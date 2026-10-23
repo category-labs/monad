@@ -351,10 +351,8 @@ void CallTracer::operator()(monad::trace::Finish const &op)
     frames_.front().gas_used = gas_used;
 }
 
-void CallTracer::operator()(monad::trace::CallReset const &op)
+void CallTracer::reset()
 {
-    (void)op;
-
     frames_.clear();
     frames_stack_.reset();
     size_.reset();

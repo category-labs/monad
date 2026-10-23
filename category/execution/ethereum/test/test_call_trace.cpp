@@ -196,7 +196,7 @@ TEST(CallTrace, size_limit_is_checked_explicitly)
     EXPECT_THROW(tracer.check_size_limit(), MonadException);
     EXPECT_THROW(tracer.to_json(), MonadException);
 
-    tracer(trace::CallReset{});
+    tracer.reset();
     EXPECT_NO_THROW(tracer.check_size_limit());
 }
 
@@ -323,7 +323,7 @@ TEST(CallTrace, reset_clears_size_limit_exceeded)
     EXPECT_NO_THROW(call_tracer(trace::Finish{1'000}));
     EXPECT_THROW(call_tracer.check_size_limit(), MonadException);
 
-    call_tracer(trace::CallReset{});
+    call_tracer.reset();
     EXPECT_TRUE(call_frames.empty());
     call_tracer(trace::Enter{msg});
     call_tracer(trace::Exit{res});

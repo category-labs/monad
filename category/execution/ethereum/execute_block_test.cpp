@@ -105,17 +105,17 @@ namespace
 
         void operator()(trace::Finish const &) {}
 
-        void operator()(trace::CallReset const &)
-        {
-            reset_();
-        }
-
         void operator()(trace::GetCallFrames const &op)
         {
             *op.call_frames = {};
         }
 
         void operator()(trace::NativeTransfer const &) {}
+
+        void reset()
+        {
+            reset_();
+        }
     };
 
     auto const STRESS_TEST_CODE =

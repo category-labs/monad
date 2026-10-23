@@ -2018,6 +2018,24 @@ TEST(CodeTracer, trace_context_deduplicates_code_preimages)
     EXPECT_EQ(code_tracer.codes.at(B_CODE_HASH), B_ICODE);
 }
 
+// Code may be recorded before the transaction trace context is reset (e.g.
+// during validation), so a reset must not drop recorded code preimages.
+TEST(CodeTracer, reset_retains_code_preimages)
+{
+    CodeTracer code_tracer{};
+    TypeErasedTracer const erased_tracer = TypeErasedTracer::erase(code_tracer);
+    std::span<TypeErasedTracer const> const tracers{&erased_tracer, 1};
+    TxTraceContext const trace_context{tracers};
+
+    trace::emit<trace::ReadCode>(trace_context, A_CODE_HASH, A_ICODE);
+    trace_context.reset();
+    trace::emit<trace::ReadCode>(trace_context, B_CODE_HASH, B_ICODE);
+
+    ASSERT_EQ(code_tracer.codes.size(), 2u);
+    EXPECT_EQ(code_tracer.codes.at(A_CODE_HASH), A_ICODE);
+    EXPECT_EQ(code_tracer.codes.at(B_CODE_HASH), B_ICODE);
+}
+
 TEST(CodeTracer, maybe_read_code_returns_typed_result)
 {
     mpt::Db db{std::make_unique<InMemoryMachine>()};

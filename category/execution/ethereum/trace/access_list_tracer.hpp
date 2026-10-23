@@ -38,8 +38,7 @@ class AccessListTracer
 public:
     using IsPrecompileFn = bool (*)(Address const &);
 
-    using Signature = monad::Signature<
-        trace::PostState, trace::RejectFrame, trace::StateReset>;
+    using Signature = monad::Signature<trace::PostState, trace::RejectFrame>;
 
     AccessListTracer(
         nlohmann::json &storage, Address const &sender,
@@ -53,7 +52,7 @@ public:
 
     void operator()(trace::PostState const &);
     void operator()(trace::RejectFrame const &);
-    void operator()(trace::StateReset const &);
+    void reset();
 
 private:
     template <typename Key, typename Elem>

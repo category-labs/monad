@@ -17,6 +17,7 @@
 #include <category/core/byte_string.hpp>
 #include <category/execution/ethereum/core/contract/big_endian.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/monad/core/monad_block.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
 #include <category/execution/monad/system_sender.hpp>
@@ -67,6 +68,15 @@ TEST(MonadConsensusHeader, slot_number_matches_block_round)
     auto const res = static_validate_consensus_header(header);
     ASSERT_TRUE(res.has_error());
     EXPECT_EQ(res.error(), MonadBlockError::SlotNumberMismatch);
+}
+
+TEST(MonadBlockError, domain_is_distinct_from_block_error)
+{
+    using BOOST_OUTCOME_SYSTEM_ERROR2_NAMESPACE::
+        quick_status_code_from_enum_domain;
+    EXPECT_NE(
+        quick_status_code_from_enum_domain<MonadBlockError>,
+        quick_status_code_from_enum_domain<BlockError>);
 }
 
 TYPED_TEST(MonadTraitsTest, system_txn_comes_after_user_txn)

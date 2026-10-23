@@ -179,6 +179,7 @@ TYPED_TEST(InMemoryStateTraitsTest, validate_nonce_relaxed)
     EXPECT_TRUE(validate_ethereum_transaction<typename TestFixture::Trait>(
                     tx, sender, this->state, noop_state_tracer, false)
                     .has_value());
+    EXPECT_TRUE(validate_relaxed_sender_nonce(sender, this->state).has_value());
     EXPECT_EQ(this->state.get_nonce(sender), 24);
 
     this->state.set_nonce(sender, std::numeric_limits<uint64_t>::max());
@@ -186,6 +187,10 @@ TYPED_TEST(InMemoryStateTraitsTest, validate_nonce_relaxed)
         validate_ethereum_transaction<typename TestFixture::Trait>(
             tx, sender, this->state, noop_state_tracer, false);
     ASSERT_TRUE(overflow_result.has_value());
+    auto const bound_result =
+        validate_relaxed_sender_nonce(sender, this->state);
+    ASSERT_TRUE(bound_result.has_error());
+    EXPECT_EQ(bound_result.error(), TransactionError::NonceExceedsMax);
 }
 
 TYPED_TEST(InMemoryStateTraitsTest, validate_nonce_optimistically)

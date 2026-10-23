@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Encodes a graph for the graph eval precompile as graphcode.
+"""Encodes a graph for the graph eval precompile as graphcode, and its calls as
+evalGraph calldata, for monad-bench.
 
 Graphs are written in a short text form, which this reads. Opcodes, dtype ids,
-the magic number and limits are read from the C++ sources rather than copied,
-so they can't drift.
+tags, the magic number and limits are read from the C++ sources rather than
+copied, so they can't drift.
 
 One statement per line. `#` starts a comment, and a statement with unclosed
 brackets, or ending in a comma, continues onto the next line.
@@ -11,8 +12,8 @@ brackets, or ending in a comma, continues onto the next line.
     input x: int8[2, 3]             a graph input; int8[] is a scalar
     y = add(x, x)                   an op, whose result is the node y
     output y, x                     the graph's outputs, in order
-    call example                    values for the graph's inputs, which
-                                    monad-bench runs it on, one per input:
+    call example                    values for the graph's inputs, for an
+                                    evalGraph call, one per input:
         x = [[1, 2, 3], [4, 5, 6]]  a nested list of the input's shape, or an
                                     integer for a scalar, of its dtype
     data 0xda7a: int8[2] [1, 2], int64[] 7
@@ -73,12 +74,21 @@ point, with the number of fractional bits given, at most 63.
                                     rank, and the same dimensions but that one
 
 Usage:
-    ./graphcode.py example.graph [-o example.hex]
+    ./graphcode.py example.graph [--dir DIR]
     ./graphcode.py --from-json mnist.json [-o mnist.graph]
 
-The first form prints the graph's graphcode in hex. The second converts a graph
-in the JSON form of mnist.json, with op names as in graph.hpp, to this format
-instead, naming node i t{i}.
+The first form writes, in hex, to DIR, by default the graph's own directory:
+
+    example.gc                      the graph's graphcode
+    example.accounts                if the graph has data statements, the
+                                    accounts, an address and its code a line
+    example.<call>.dat              for each call, evalGraph calldata with its
+                                    inputs as literals, big-endian
+
+which monad-bench reads: monad-bench example.gc example.<call>.dat
+[--accounts example.accounts]. The second form converts a graph in the JSON
+form of mnist.json, with op names as in graph.hpp, to this format instead,
+naming node i t{i}.
 """
 
 import argparse
@@ -126,7 +136,9 @@ def _enum(name, file_name):
 
 
 OP_IDS = _enum("Op", "graph.hpp")
-MAGIC = int(_find(r"GRAPH_MAGIC = (0x[0-9a-fA-F]+)", "constants.hpp")[1], 16)
+BIG_ENDIAN = _enum("ByteOrder", "tensor.hpp")["BigEndian"]
+LITERAL = _enum("Location", "tensor.hpp")["Literal"]
+MAGIC =int(_find(r"GRAPH_MAGIC = (0x[0-9a-fA-F]+)", "constants.hpp")[1], 16)
 MAX_GRAPH_INPUTS = int(_find(r"MAX_GRAPH_INPUTS = (\d+)", "constants.hpp")[1])
 MAX_GRAPH_OUTPUTS = int(
     _find(r"MAX_GRAPH_OUTPUTS = (\d+)", "constants.hpp")[1])
@@ -514,6 +526,64 @@ def graphcode(graph):
     return code
 
 #
+# evalGraph calldata and accounts
+#
+
+# The address the graphcode is deployed at, evalGraph's first argument;
+# monad-bench takes the graphcode from the .gc file instead
+GRAPH_ADDRESS = 0x6A40
+
+# The selector of evalGraph(address,(uint8,uint16[],uint8,uint8,bytes)[]): the
+# first 4 bytes of the signature's Keccak-256, as graph_eval.cpp computes it
+EVAL_GRAPH_SELECTOR = bytes.fromhex("d259ffd8")
+
+
+def _word(n):
+    return n.to_bytes(32, "big")
+
+
+def _pad32(data):
+    return data + b"\x00" * (-len(data) % 32)
+
+
+def _abi_tensor_input(tensor):
+    """abi.encode of a TensorInput tuple, (uint8 dtype, uint16[] dimensions,
+    uint8 byteOrder, uint8 location, bytes payload), for a literal with
+    big-endian elements"""
+    payload = tensor.dtype.encode(tensor.values, "big")
+    dims_offset = 5 * 32
+    payload_offset = dims_offset + 32 * (1 + len(tensor.dims))
+    return (_word(tensor.dtype.id) + _word(dims_offset)
+            + _word(BIG_ENDIAN) + _word(LITERAL)
+            + _word(payload_offset) + _word(len(tensor.dims))
+            + b"".join(_word(d) for d in tensor.dims)
+            + _word(len(payload)) + _pad32(payload))
+
+
+def _abi_array(tuples):
+    """The tail of an array of dynamic tuples, given their encodings: their
+    number, each one's offset from the end of the number, then each in turn"""
+    offsets, offset = b"", 32 * len(tuples)
+    for t in tuples:
+        offsets += _word(offset)
+        offset += len(t)
+    return _word(len(tuples)) + offsets + b"".join(tuples)
+
+
+def calldata(graph, call):
+    """evalGraph(GRAPH_ADDRESS, inputs), with the call's inputs"""
+    inputs = _abi_array([_abi_tensor_input(call.inputs[name])
+                         for name, _, _ in graph.inputs])
+    return EVAL_GRAPH_SELECTOR + _word(GRAPH_ADDRESS) + _word(0x40) + inputs
+
+
+def accounts(graph):
+    """The accounts file: each data statement's address and code, in hex, a
+    line"""
+    return "".join(f"{address.hex()} {code.hex()}\n"
+                   for address, code in graph.accounts.items())
+
+#
 # JSON graphs
 #
 
@@ -570,22 +640,42 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("graph", type=Path,
                         help="a graph, or a JSON graph with --from-json")
-    parser.add_argument("-o", "--output", type=Path,
-                        help="default: standard output")
+    parser.add_argument("--dir", type=Path,
+                        help="where to write a graph's files; default: the "
+                        "graph's directory")
     parser.add_argument("--from-json", action="store_true",
                         help="convert a JSON graph to this format instead")
+    parser.add_argument("-o", "--output", type=Path,
+                        help="with --from-json, the file to write; default: "
+                        "standard output")
     args = parser.parse_args()
 
     text = args.graph.read_text()
+    if args.from_json:
+        try:
+            dsl = json_to_dsl(text)
+        except (ValueError, KeyError) as e:
+            parser.exit(1, f"{args.graph}: {e}\n")
+        if args.output:
+            args.output.write_text(dsl)
+        else:
+            print(dsl, end="")
+        return
+
     try:
-        result = (json_to_dsl(text) if args.from_json
-                  else graphcode(parse(text)).hex() + "\n")
-    except (DslError, ValueError, KeyError) as e:
+        graph = parse(text)
+    except DslError as e:
         parser.exit(1, f"{args.graph}: {e}\n")
-    if args.output:
-        args.output.write_text(result)
-    else:
-        print(result, end="")
+    directory = args.dir or args.graph.parent
+    stem = args.graph.stem
+    files = {f"{stem}.gc": graphcode(graph).hex() + "\n"}
+    if graph.accounts:
+        files[f"{stem}.accounts"] = accounts(graph)
+    for call in graph.calls:
+        files[f"{stem}.{call.label}.dat"] = calldata(graph, call).hex() + "\n"
+    for name, content in files.items():
+        (directory / name).write_text(content)
+        print(f"Wrote {directory / name}")
 
 
 if __name__ == "__main__":

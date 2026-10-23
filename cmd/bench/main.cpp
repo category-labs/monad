@@ -16,19 +16,21 @@
 // monad-bench: benchmarks a graph for the graph-eval precompile, or EVM
 // bytecode, in each engine that can run it, on one thread.
 //
-//     monad-bench <file.graph | file.bc> [file.dat] <modes...> [options]
+//     monad-bench <file.gc | file.bc> [file.dat] <modes...> [options]
 //
-// A .bc file is EVM runtime bytecode, and a .dat file calldata, both in hex,
-// where whitespace and a leading 0x are ignored. Bytecode runs in the monad
+// A .gc file is a graph's graphcode, a .bc file EVM runtime bytecode, and a
+// .dat file calldata, all in hex, where whitespace and a leading 0x are
+// ignored. Bytecode runs in the monad
 // VM's interpreter (--interpreted) or its native compiler (--compiled), as the
 // code of an account, with the storage in --storage's file, that a sender
 // calls with the calldata, under a Monad revision (--revision). Each call
 // starts from the same state, in a State of its own. Calls the code makes to
 // other accounts are interpreted in both modes.
 //
-// A .graph file is the graph language scripts/graphcode.py reads, which
-// graph_inputs.py runs it through. Its inputs are those of one of its calls
-// (--call), or those in the evalGraph or evalGraphInto calldata in a .dat
+// A graph runs on the inputs in the evalGraph or evalGraphInto calldata in a
+// .dat file, which it needs, with the accounts in --accounts' file, an address
+// and its code in hex a line, for the code its TensorRefs and the calldata's
+// code references read. scripts/graphcode.py writes all three from a .graph
 // file. The graph runs in the interpreter (--interpreted), compiled with IREE
 // (--iree), compiled with XLA (--xla), or compiled with Halide, with the
 // hand-written schedule (--halide) or an autoscheduler (--halide-mullapudi2016,
@@ -351,97 +353,43 @@ namespace
     // Graphs
     //
 
-    // A graph, from graph_inputs.py: its graphcode, the code of the accounts
-    // its TensorRefs read, and a call's inputs, little-endian, dense, if it
-    // has calls
-    struct GraphCase
+    // The accounts in an --accounts file: an address and its code, in hex, a
+    // line, as scripts/graphcode.py writes them from a graph's data
+    // statements. `#` starts a comment, and an address alone has no code
+    std::vector<std::pair<Address, byte_string>>
+    read_accounts(std::filesystem::path const &path)
     {
-        byte_string graphcode;
+        auto const bytes = [&](std::string_view digits) {
+            if (digits.starts_with("0x") || digits.starts_with("0X")) {
+                digits.remove_prefix(2);
+            }
+            auto parsed = from_hex(digits);
+            if (!parsed) {
+                die(path.string() + " has an address or code that isn't hex");
+            }
+            return std::move(*parsed);
+        };
         std::vector<std::pair<Address, byte_string>> accounts;
-        std::vector<byte_string> inputs;
-    };
-
-    std::string shell_quote(std::string const &s)
-    {
-        std::string quoted = "'";
-        for (char const c : s) {
-            if (c == '\'') {
-                quoted += "'\\''";
-            }
-            else {
-                quoted.push_back(c);
-            }
-        }
-        return quoted + "'";
-    }
-
-    byte_string parse_hex(std::string_view const hex, std::string const &what)
-    {
-        auto bytes = from_hex(hex);
-        if (!bytes) {
-            die("graph_inputs.py gave bad hex for " + what);
-        }
-        return std::move(*bytes);
-    }
-
-    GraphCase read_graph(
-        std::filesystem::path const &graph, std::string const &graphcode_py,
-        int const call)
-    {
-        std::string const command =
-            "python3 " + shell_quote(MONAD_BENCH_GRAPH_INPUTS) + " " +
-            shell_quote(graphcode_py) + " " + shell_quote(graph.string()) +
-            " --call " + std::to_string(call);
-        FILE *const pipe = popen(command.c_str(), "r");
-        if (!pipe) {
-            die("can't run graph_inputs.py");
-        }
-        std::string output;
-        std::array<char, 1 << 16> buffer;
-        for (size_t n;
-             (n = std::fread(buffer.data(), 1, buffer.size(), pipe));) {
-            output.append(buffer.data(), n);
-        }
-        if (pclose(pipe) != 0) {
-            die("graph_inputs.py failed on " + graph.string());
-        }
-
-        GraphCase c;
-        bool has_graphcode = false;
-        std::istringstream lines{output};
+        std::istringstream lines{read_text(path)};
         for (std::string line; std::getline(lines, line);) {
+            line = line.substr(0, line.find('#'));
             std::istringstream fields{line};
-            std::string kind;
-            std::string hex;
-            fields >> kind;
-            if (kind == "graphcode") {
-                fields >> hex;
-                c.graphcode = parse_hex(hex, kind);
-                has_graphcode = true;
+            std::string address_hex;
+            std::string code_hex;
+            if (!(fields >> address_hex)) {
+                continue;
             }
-            else if (kind == "account") {
-                std::string address_hex;
-                fields >> address_hex >> hex;
-                byte_string const address_bytes =
-                    parse_hex(address_hex, "an address");
-                if (address_bytes.size() != sizeof(Address::bytes)) {
-                    die("graph_inputs.py gave a bad address");
-                }
-                Address address{};
-                std::memcpy(
-                    address.bytes, address_bytes.data(), sizeof address.bytes);
-                c.accounts.emplace_back(address, parse_hex(hex, kind));
+            fields >> code_hex;
+            byte_string const address_bytes = bytes(address_hex);
+            if (address_bytes.size() != sizeof(Address::bytes)) {
+                die(path.string() + " has an address that isn't 20 bytes");
             }
-            else if (kind == "input") {
-                // An empty tensor's hex is empty
-                fields >> hex;
-                c.inputs.push_back(parse_hex(hex, kind));
-            }
+            Address address{};
+            std::memcpy(
+                address.bytes, address_bytes.data(), sizeof address.bytes);
+            accounts.emplace_back(address, bytes(code_hex));
         }
-        if (!has_graphcode) {
-            die("graph_inputs.py gave no graphcode");
-        }
-        return c;
+        return accounts;
     }
 
     // The inputs in evalGraph or evalGraphInto calldata, in the canonical ABI
@@ -576,35 +524,34 @@ namespace
 
     void bench_graph(
         std::filesystem::path const &path,
-        std::optional<std::filesystem::path> const &calldata_path,
-        GraphModes const &modes, std::string const &graphcode_py,
-        int const call, std::optional<std::filesystem::path> const &dump_ir,
+        std::filesystem::path const &calldata_path,
+        std::optional<std::filesystem::path> const &accounts_path,
+        GraphModes const &modes,
+        std::optional<std::filesystem::path> const &dump_ir,
         Timing const &timing)
     {
-        GraphCase const c = read_graph(path, graphcode_py, call);
+        byte_string const graphcode = read_hex(path);
 
-        // A State whose accounts have the code the graph's TensorRefs read
+        // A State whose accounts have the code the graph's TensorRefs, and
+        // the calldata's code references, read
         mpt::Db db{std::make_unique<InMemoryMachine>()};
         TrieDb tdb{db};
         vm::VM vm{vm::VM::InterpreterOnly};
         BlockState block_state{tdb, vm};
         State state{block_state, Incarnation{0, 0}};
-        for (auto const &[address, code] : c.accounts) {
-            state.create_contract(address);
-            state.set_code(address, code);
+        if (accounts_path) {
+            for (auto const &[address, code] : read_accounts(*accounts_path)) {
+                state.create_contract(address);
+                state.set_code(address, code);
+            }
         }
 
-        Graphcode const gc{std::span<uint8_t const>{c.graphcode}};
+        Graphcode const gc{std::span<uint8_t const>{graphcode}};
         if (gc.validation_result() != GraphEvalError::Success) {
             die("the graph doesn't validate");
         }
         std::vector<byte_string> const inputs =
-            calldata_path
-                ? read_calldata_inputs(read_hex(*calldata_path), gc, state)
-                : c.inputs;
-        if (inputs.size() != gc.n_inputs()) {
-            die("the call doesn't have the graph's inputs");
-        }
+            read_calldata_inputs(read_hex(calldata_path), gc, state);
         auto const output_type = [&](size_t const i) -> TensorType const & {
             return gc.tensor_types()[gc.outputs()[i]];
         };
@@ -1135,10 +1082,10 @@ namespace
 int main(int argc, char **argv)
 {
     CLI::App app{
-        "Benchmarks a graph for the graph-eval precompile (.graph), or EVM "
-        "runtime bytecode (.bc, hex), with optional calldata (.dat, hex), in "
-        "the engines given, on one thread. See cmd/bench/main.cpp for how it "
-        "times them."};
+        "Benchmarks a graph for the graph-eval precompile (.gc, graphcode in "
+        "hex) with calldata (.dat, hex), or EVM runtime bytecode (.bc, hex) "
+        "with optional calldata, in the engines given, on one thread. See "
+        "cmd/bench/main.cpp for how it times them."};
 
     std::filesystem::path input;
     std::optional<std::filesystem::path> calldata;
@@ -1152,17 +1099,22 @@ int main(int argc, char **argv)
     Timing timing;
     std::string revision_name = monad_revision_to_string(MONAD_TEN);
     int64_t gas = 30'000'000;
-    int call = 0;
     std::optional<std::filesystem::path> expect;
     std::optional<std::filesystem::path> storage;
+    std::optional<std::filesystem::path> accounts;
     std::optional<std::filesystem::path> dump_ir;
-    std::string graphcode_py = MONAD_BENCH_GRAPHCODE_PY;
 
     app.add_option(
-           "input", input, "A .graph file, or a .bc file of bytecode in hex")
+           "input",
+           input,
+           "A .gc file of graphcode in hex, or a .bc file of bytecode in hex")
         ->required()
         ->check(CLI::ExistingFile);
-    app.add_option("calldata", calldata, "A .dat file of calldata in hex")
+    app.add_option(
+           "calldata",
+           calldata,
+           "A .dat file of calldata in hex; a graph's evalGraph or "
+           "evalGraphInto call")
         ->check(CLI::ExistingFile);
 
     app.add_flag("--interpreted", interpreted, "Run in the interpreter");
@@ -1211,8 +1163,6 @@ int main(int argc, char **argv)
            expect,
            "Bytecode: a file of the output the calls must return, in hex")
         ->check(CLI::ExistingFile);
-    app.add_option("--call", call, "Graph: the call whose inputs to use")
-        ->capture_default_str();
     app.add_flag(
         "--node-times",
         graph_modes.node_times,
@@ -1224,11 +1174,12 @@ int main(int argc, char **argv)
         "Graph: write each compiled mode's IR, as its compiler dumps it, to "
         "<dir>/<mode>.txt");
     app.add_option(
-           "--graphcode-py",
-           graphcode_py,
-           "Graph: graphcode.py, which reads .graph files, with the opcodes "
-           "and constants of the repository it's in")
-        ->capture_default_str();
+           "--accounts",
+           accounts,
+           "Graph: a file of the accounts whose code the graph's TensorRefs, "
+           "or the calldata's code references, read: an address and its code "
+           "a line, in hex")
+        ->check(CLI::ExistingFile);
 
     CLI11_PARSE(app, argc, argv);
 
@@ -1251,9 +1202,9 @@ int main(int argc, char **argv)
     if (extension == ".bc") {
         if (graph_modes.iree || graph_modes.xla || graph_modes.halide ||
             !graph_modes.halide_schedulers.empty() || graph_modes.node_times ||
-            dump_ir) {
-            die("--iree, --xla, --halide*, --node-times and --dump-ir are for "
-                ".graph files");
+            dump_ir || accounts) {
+            die("--iree, --xla, --halide*, --node-times, --dump-ir and "
+                "--accounts are for .gc files");
         }
         if (!interpreted && !compiled) {
             die("give --interpreted, --compiled, or both");
@@ -1282,7 +1233,10 @@ int main(int argc, char **argv)
             static_cast<long long>(gas));
         bench_evm_at(*rev, c, EvmModes{interpreted, compiled}, timing);
     }
-    else if (extension == ".graph") {
+    else if (extension == ".gc") {
+        if (!calldata) {
+            die("a .gc file needs a .dat file of calldata for its inputs");
+        }
         if (compiled) {
             die("--compiled is for .bc files; give --iree, --xla or --halide*");
         }
@@ -1294,11 +1248,10 @@ int main(int argc, char **argv)
             die("--node-times times the interpreter; give --interpreted");
         }
         print_environment(cpu);
-        bench_graph(
-            input, calldata, graph_modes, graphcode_py, call, dump_ir, timing);
+        bench_graph(input, *calldata, accounts, graph_modes, dump_ir, timing);
     }
     else {
-        die("the input must be a .graph or .bc file");
+        die("the input must be a .gc or .bc file");
     }
     return 0;
 }

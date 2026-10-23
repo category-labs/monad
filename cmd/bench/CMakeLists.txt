@@ -14,8 +14,8 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 # monad-bench, which benchmarks graphs for the graph-eval precompile and EVM
-# bytecode in each engine that can run them; see main.cpp. It reads .graph
-# files with scripts/graphcode.py, through graph_inputs.py
+# bytecode in each engine that can run them; see main.cpp. It reads graphs as
+# the graphcode, calldata and accounts files scripts/graphcode.py writes
 
 add_executable(monad-bench main.cpp)
 monad_compile_options(monad-bench)
@@ -23,10 +23,7 @@ target_link_libraries(
   monad-bench PRIVATE monad_execution monad-test-utils
                       monad-vm::monad-vm-test-utils CLI11::CLI11)
 target_compile_definitions(
-  monad-bench
-  PRIVATE MONAD_BENCH_GRAPH_INPUTS="${CMAKE_CURRENT_SOURCE_DIR}/graph_inputs.py"
-          MONAD_BENCH_GRAPHCODE_PY="${PROJECT_SOURCE_DIR}/scripts/graphcode.py"
-          MONAD_BENCH_BUILD_TYPE="${CMAKE_BUILD_TYPE}")
+  monad-bench PRIVATE MONAD_BENCH_BUILD_TYPE="${CMAKE_BUILD_TYPE}")
 
 # The compiled-graph modes, with the compilers built
 if(MONAD_GRAPH_EVAL_IREE)

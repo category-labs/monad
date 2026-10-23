@@ -116,7 +116,7 @@ mod hints {
 
     /// A delegation operand: 32-byte aligned, and in RAM as .rodata is.
     #[repr(C, align(32))]
-    struct Operand([u32; 8]);
+    pub(crate) struct Operand(pub(crate) [u32; 8]);
 
     static P: Operand = Operand([
         0xfffffc2f, 0xfffffffe, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
@@ -156,7 +156,7 @@ mod hints {
     /// Whether the words at `x` are below `modulus`: subtracting it borrows
     /// exactly then, and adding it back restores them.
     #[inline(always)]
-    unsafe fn below(x: *mut [u32; 8], modulus: &'static Operand) -> bool {
+    pub(crate) unsafe fn below(x: *mut [u32; 8], modulus: &'static Operand) -> bool {
         let m = core::ptr::from_ref(modulus).cast::<()>();
         let borrow = bigint_op_delegation_raw(x.cast(), m, BigIntOps::Sub) != 0;
         bigint_op_delegation_raw(x.cast(), m, BigIntOps::Add);
@@ -575,6 +575,22 @@ mod bn254 {
         }
     };
 
+    /// p, the bound a quotient from the host must be under.
+    static P: super::hints::Operand = super::hints::Operand([
+        0xd87cfd47, 0x3c208c16, 0x6871ca8d, 0x97816a91, 0x8181585d, 0xb85045b6, 0xe131a029, 0x30644e72,
+    ]);
+
+    const _: () = {
+        // the quotient is a delegation operand in place
+        assert!(core::mem::align_of::<Fq>() >= 32);
+        let m = <Fq as PrimeField>::MODULUS.0;
+        let mut i = 0;
+        while i < 4 {
+            assert!(m[i] == (P.0[2 * i] as u64 | (P.0[2 * i + 1] as u64) << 32));
+            i += 1;
+        }
+    };
+
     struct HostDivider;
 
     impl airbender_crypto::affine_glv::Divider<Fq> for HostDivider {
@@ -584,10 +600,17 @@ mod bn254 {
             fraction: &mut [Fq; 2],
             quotient: &'q mut core::mem::MaybeUninit<Fq>,
         ) -> &'q mut Fq {
-            // SAFETY: the element is its eight words (checked above), any
-            // value of which is an element of the redundant representation
+            // Below p, as ZKsync OS's read_prime_field requires: the field is
+            // kept in airbender-crypto's redundant representation, valid only
+            // below 2p, where a multiplication drops its carry. A residue's
+            // representative past it (the quotient plus 2p..5p) passes the
+            // check below and makes the arithmetic after it wrap.
+            // SAFETY: the element is its eight words (checked above), and
+            // canonical words are an element of the redundant representation
             let quotient = unsafe {
-                super::hints::query(DIVIDE, fraction, quotient.as_mut_ptr().cast());
+                let words = quotient.as_mut_ptr().cast::<[u32; 8]>();
+                super::hints::query(DIVIDE, fraction, words);
+                assert!(super::hints::below(words, &P), "the bn254 division hint is not canonical");
                 quotient.assume_init_mut()
             };
             // quotient · denominator = numerator; the denominator is not zero

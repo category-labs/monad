@@ -76,7 +76,7 @@ addresses, then the answer's words. Every answer is checked in the guest.
 | `0x4d445602` | 512-bit / 256-bit (mulmod, addmod) | as above, on both halves |
 | `0x4d445610`..`13` | secp256k1 divide, sqrt (+ non-residue flag), invert, scalar invert | one multiplication each |
 | `0x4d445614` | ecrecover key Q and short (k0, k1, m0, m1) | the relation, Q on the curve, one 8-stream MSM |
-| `0x4d445620` | bn254 base-field divide | one multiplication |
+| `0x4d445620` | bn254 base-field divide | quotient below p, then one multiplication |
 
 Runner options: `--transcript t.hex` records every word read, an input with
 which the stock `cargo airbender run`/`prove` replays the run;

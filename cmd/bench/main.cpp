@@ -26,7 +26,7 @@
 // starts from the same state, in a State of its own. Calls the code makes to
 // other accounts are interpreted in both modes.
 //
-// A .graph file is the graph language graph_fixture.py parses, which
+// A .graph file is the graph language scripts/graphcode.py reads, which
 // graph_inputs.py runs it through. Its inputs are those of one of its calls
 // (--call), or those in the evalGraph or evalGraphInto calldata in a .dat
 // file. The graph runs in the interpreter (--interpreted), compiled with IREE
@@ -43,8 +43,7 @@
 // MLIR before and after its pipeline.
 //
 // Each mode's results are checked before and after it's timed: a graph's
-// outputs against the reference evaluator's, or the interpreter's without it
-// (--no-reference, or a .dat file), and bytecode's status, gas and output
+// outputs against the interpreter's, and bytecode's status, gas and output
 // against the first call's, and its output against the one in --expect's
 // file, if given. Each mode is timed in batches of calls of about a
 // millisecond, after a warm-up, for a set time, and the time per call is
@@ -353,14 +352,13 @@ namespace
     //
 
     // A graph, from graph_inputs.py: its graphcode, the code of the accounts
-    // its TensorRefs read, a call's inputs, little-endian, dense, and the
-    // reference evaluator's outputs, the same, if there are any
+    // its TensorRefs read, and a call's inputs, little-endian, dense, if it
+    // has calls
     struct GraphCase
     {
         byte_string graphcode;
         std::vector<std::pair<Address, byte_string>> accounts;
         std::vector<byte_string> inputs;
-        std::vector<byte_string> expected;
     };
 
     std::string shell_quote(std::string const &s)
@@ -387,14 +385,13 @@ namespace
     }
 
     GraphCase read_graph(
-        std::filesystem::path const &graph, std::string const &graph_fixture,
-        int const call, bool const reference)
+        std::filesystem::path const &graph, std::string const &graphcode_py,
+        int const call)
     {
         std::string const command =
             "python3 " + shell_quote(MONAD_BENCH_GRAPH_INPUTS) + " " +
-            shell_quote(graph_fixture) + " " + shell_quote(graph.string()) +
-            " --call " + std::to_string(call) +
-            (reference ? "" : " --no-reference");
+            shell_quote(graphcode_py) + " " + shell_quote(graph.string()) +
+            " --call " + std::to_string(call);
         FILE *const pipe = popen(command.c_str(), "r");
         if (!pipe) {
             die("can't run graph_inputs.py");
@@ -435,11 +432,10 @@ namespace
                     address.bytes, address_bytes.data(), sizeof address.bytes);
                 c.accounts.emplace_back(address, parse_hex(hex, kind));
             }
-            else if (kind == "input" || kind == "expected") {
+            else if (kind == "input") {
                 // An empty tensor's hex is empty
                 fields >> hex;
-                (kind == "input" ? c.inputs : c.expected)
-                    .push_back(parse_hex(hex, kind));
+                c.inputs.push_back(parse_hex(hex, kind));
             }
         }
         if (!has_graphcode) {
@@ -581,15 +577,11 @@ namespace
     void bench_graph(
         std::filesystem::path const &path,
         std::optional<std::filesystem::path> const &calldata_path,
-        GraphModes const &modes, std::string const &graph_fixture,
-        int const call, bool const no_reference,
-        std::optional<std::filesystem::path> const &dump_ir,
+        GraphModes const &modes, std::string const &graphcode_py,
+        int const call, std::optional<std::filesystem::path> const &dump_ir,
         Timing const &timing)
     {
-        // The reference evaluator's outputs are for the call's inputs, not
-        // the calldata's
-        bool const reference = !no_reference && !calldata_path;
-        GraphCase const c = read_graph(path, graph_fixture, call, reference);
+        GraphCase const c = read_graph(path, graphcode_py, call);
 
         // A State whose accounts have the code the graph's TensorRefs read
         mpt::Db db{std::make_unique<InMemoryMachine>()};
@@ -648,25 +640,18 @@ namespace
             return std::move(result.value());
         };
 
-        // The outputs to check every mode's against
-        std::vector<byte_string> expected = c.expected;
-        if (expected.empty()) {
-            for (Tensor const &output : interpret()) {
-                expected.emplace_back(
-                    output.data(), output.type().size_bytes());
-            }
-        }
-        if (expected.size() != gc.outputs().size()) {
-            die("the reference evaluator gave the wrong number of outputs");
+        // The outputs to check every mode's against: the interpreter's
+        std::vector<byte_string> expected;
+        for (Tensor const &output : interpret()) {
+            expected.emplace_back(output.data(), output.type().size_bytes());
         }
         std::printf(
             "graph %s: %zu ops, %zu inputs, %zu outputs; outputs checked "
-            "against the %s\n\n",
+            "against the interpreter's\n\n",
             path.filename().c_str(),
             gc.tensor_types().size() - gc.n_inputs(),
             gc.n_inputs(),
-            gc.outputs().size(),
-            c.expected.empty() ? "interpreter's" : "reference evaluator's");
+            gc.outputs().size());
         if (dump_ir) {
             std::printf(
                 "compiled modes write their IR to %s; their compile times "
@@ -679,7 +664,7 @@ namespace
                 byte_string_view const output = outputs(i);
                 if (output != byte_string_view{expected[i]}) {
                     die(name + ": output " + std::to_string(i) +
-                        " doesn't match the reference");
+                        " doesn't match the interpreter's");
                 }
             }
         };
@@ -1168,11 +1153,10 @@ int main(int argc, char **argv)
     std::string revision_name = monad_revision_to_string(MONAD_TEN);
     int64_t gas = 30'000'000;
     int call = 0;
-    bool no_reference = false;
     std::optional<std::filesystem::path> expect;
     std::optional<std::filesystem::path> storage;
     std::optional<std::filesystem::path> dump_ir;
-    std::string graph_fixture = MONAD_BENCH_GRAPH_FIXTURE;
+    std::string graphcode_py = MONAD_BENCH_GRAPHCODE_PY;
 
     app.add_option(
            "input", input, "A .graph file, or a .bc file of bytecode in hex")
@@ -1239,16 +1223,11 @@ int main(int argc, char **argv)
         dump_ir,
         "Graph: write each compiled mode's IR, as its compiler dumps it, to "
         "<dir>/<mode>.txt");
-    app.add_flag(
-        "--no-reference",
-        no_reference,
-        "Graph: check outputs against the interpreter's rather than the "
-        "reference evaluator's, which is slow for large graphs");
     app.add_option(
-           "--graph-fixture",
-           graph_fixture,
-           "Graph: graph_fixture.py, which parses .graph files, with the "
-           "opcodes and constants of the repository it's in")
+           "--graphcode-py",
+           graphcode_py,
+           "Graph: graphcode.py, which reads .graph files, with the opcodes "
+           "and constants of the repository it's in")
         ->capture_default_str();
 
     CLI11_PARSE(app, argc, argv);
@@ -1316,14 +1295,7 @@ int main(int argc, char **argv)
         }
         print_environment(cpu);
         bench_graph(
-            input,
-            calldata,
-            graph_modes,
-            graph_fixture,
-            call,
-            no_reference,
-            dump_ir,
-            timing);
+            input, calldata, graph_modes, graphcode_py, call, dump_ir, timing);
     }
     else {
         die("the input must be a .graph or .bc file");

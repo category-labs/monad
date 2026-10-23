@@ -14,21 +14,19 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-"""Reads a .graph file for monad-bench with graph_fixture.py, which parses the
+"""Reads a .graph file for monad-bench with graphcode.py, which parses the
 graph language, and prints, one per line, in hex:
 
     graphcode <graphcode>
     account <address> <code>    per account whose code the graph's tensorrefs
                                 read
-    input <elements>            per input of the call, little-endian
-    expected <elements>         per output, the reference evaluator's,
-                                little-endian, unless --no-reference
+    input <elements>            per input of the call, little-endian; none if
+                                the graph has no calls
 
-graph_fixture.py reads the graph language's opcodes and constants from the
-C++ sources of the repository it's in.
+graphcode.py reads the graph language's opcodes and constants from the C++
+sources of the repository it's in.
 
-Usage: graph_inputs.py <graph_fixture.py> <file.graph> [--call N]
-                       [--no-reference]
+Usage: graph_inputs.py <graphcode.py> <file.graph> [--call N]
 """
 
 import argparse
@@ -39,33 +37,29 @@ from pathlib import Path
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("graph_fixture", type=Path)
+    parser.add_argument("graphcode", type=Path)
     parser.add_argument("graph", type=Path)
     parser.add_argument("--call", type=int, default=0)
-    parser.add_argument("--no-reference", action="store_true")
     args = parser.parse_args()
 
     # Imported from its own directory, as it's a script, not a package
-    sys.path.insert(0, str(args.graph_fixture.resolve().parent))
-    gf = importlib.import_module(args.graph_fixture.stem)
+    sys.path.insert(0, str(args.graphcode.resolve().parent))
+    gc = importlib.import_module(args.graphcode.stem)
 
-    graph = gf.parse(args.graph.read_text())
-    if not 0 <= args.call < len(graph.calls):
+    graph = gc.parse(args.graph.read_text())
+    if graph.calls and not 0 <= args.call < len(graph.calls):
         sys.exit(f"{args.graph} has {len(graph.calls)} calls, no call "
                  f"{args.call}")
-    call = graph.calls[args.call]
-    inputs = [call.inputs[name].tensor for name, _, _ in graph.inputs]
 
     out = sys.stdout
-    out.write(f"graphcode {gf.graphcode(graph).hex()}\n")
+    out.write(f"graphcode {gc.graphcode(graph).hex()}\n")
     for address, code in graph.accounts.items():
         out.write(f"account {address.hex()} {code.hex()}\n")
-    for tensor in inputs:
-        out.write(f"input {tensor.dtype.encode(tensor.values, 'little').hex()}"
-                  "\n")
-    if not args.no_reference:
-        for tensor in gf.evaluate(graph, inputs):
-            out.write("expected "
+    if graph.calls:
+        call = graph.calls[args.call]
+        for name, _, _ in graph.inputs:
+            tensor = call.inputs[name]
+            out.write("input "
                       f"{tensor.dtype.encode(tensor.values, 'little').hex()}\n")
 
 

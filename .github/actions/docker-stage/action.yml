@@ -43,6 +43,14 @@ runs:
       with:
         cleanup: false
 
+    - name: Read toolchain versions
+      id: toolchain
+      shell: bash
+      run: |
+        source scripts/ubuntu-build/toolchain.env
+        echo "gcc=$GCC_VERSION" >> "$GITHUB_OUTPUT"
+        echo "llvm=$LLVM_VERSION" >> "$GITHUB_OUTPUT"
+
     - name: Build `${{ inputs.target }}` stage
       uses: docker/build-push-action@v5
       with:
@@ -50,6 +58,8 @@ runs:
         file: docker/Dockerfile
         build-args: |-
           UBUNTU_MIRROR=http://azure.archive.ubuntu.com/ubuntu/
+          GCC_VERSION=${{ steps.toolchain.outputs.gcc }}
+          LLVM_VERSION=${{ steps.toolchain.outputs.llvm }}
           ${{ inputs.build-args }}
         allow: ${{ inputs.allow }}
         ulimit: "memlock=-1:-1"

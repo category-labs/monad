@@ -76,7 +76,7 @@ TEST(grow_death, growth_refused_without_grow_mode)
     extend_in_place(dev0, 30 * BLKSIZE + 16384);
     {
         // The pool takes up the new space, but only monad-mpt's own
-        // mode::grow open is allowed to grow the database's chunk_info[].
+        // mode::grow open is allowed to grow the database's chunk_records[].
         storage_pool const pool{
             dev0, storage_pool::mode::grow, grow_flags(recorded)};
     }

@@ -623,42 +623,28 @@ namespace monad::test
                 }
             }
 
-            std::vector<
-                std::pair<uint32_t, MONAD_MPT_NAMESPACE::detail::unsigned_20>>
-            fast_list_ids() const
+            std::vector<std::pair<uint32_t, uint64_t>> fast_list_ids() const
             {
-                std::vector<std::pair<
-                    uint32_t,
-                    MONAD_MPT_NAMESPACE::detail::unsigned_20>>
-                    ret;
+                std::vector<std::pair<uint32_t, uint64_t>> ret;
                 ret.reserve(4);
-                for (auto const *ci =
-                         aux.metadata_ctx().main()->fast_list_begin();
-                     ci != nullptr;
-                     ci = ci->next(aux.metadata_ctx().main())) {
-                    ret.emplace_back(
-                        ci->index(aux.metadata_ctx().main()),
-                        ci->insertion_count());
+                auto const *const m = aux.metadata_ctx().main();
+                for (auto const *ci = m->fast_list_begin(); ci != nullptr;
+                     ci = ci->next(m)) {
+                    auto const idx = ci->index(m);
+                    ret.emplace_back(idx, m->insertion_count(idx));
                 }
                 return ret;
             }
 
-            std::vector<
-                std::pair<uint32_t, MONAD_MPT_NAMESPACE::detail::unsigned_20>>
-            slow_list_ids() const
+            std::vector<std::pair<uint32_t, uint64_t>> slow_list_ids() const
             {
-                std::vector<std::pair<
-                    uint32_t,
-                    MONAD_MPT_NAMESPACE::detail::unsigned_20>>
-                    ret;
+                std::vector<std::pair<uint32_t, uint64_t>> ret;
                 ret.reserve(4);
-                for (auto const *ci =
-                         aux.metadata_ctx().main()->slow_list_begin();
-                     ci != nullptr;
-                     ci = ci->next(aux.metadata_ctx().main())) {
-                    ret.emplace_back(
-                        ci->index(aux.metadata_ctx().main()),
-                        ci->insertion_count());
+                auto const *const m = aux.metadata_ctx().main();
+                for (auto const *ci = m->slow_list_begin(); ci != nullptr;
+                     ci = ci->next(m)) {
+                    auto const idx = ci->index(m);
+                    ret.emplace_back(idx, m->insertion_count(idx));
                 }
                 return ret;
             }

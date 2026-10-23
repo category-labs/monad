@@ -22,7 +22,6 @@
 #include <category/core/rlp/encode.hpp>
 #include <category/core/runtime/unaligned.hpp>
 #include <category/crypto/keccak.h>
-#include <category/mpt/detail/unsigned_20.hpp>
 #include <category/mpt/util.hpp>
 
 #include <concepts>
@@ -360,7 +359,7 @@ struct ChildData
     void copy_old_child(Node *old, unsigned i);
 };
 
-static_assert(sizeof(ChildData) == 80);
+static_assert(sizeof(ChildData) == 88);
 static_assert(alignof(ChildData) == 8);
 
 constexpr size_t calculate_node_size(
@@ -407,9 +406,47 @@ Node::SharedPtr create_node_with_children(
     Compute &, uint16_t mask, std::span<ChildData> children, NibblesView path,
     std::optional<byte_string_view> value, int64_t version);
 
+// The top bits of a node's on-disk size word hold its layout version, which
+// sizes never reach.
+inline constexpr unsigned NODE_LAYOUT_VERSION_SHIFT = 29;
+static_assert(Node::max_disk_size < (size_t{1} << NODE_LAYOUT_VERSION_SHIFT));
+// Written by MONAD008 and earlier, whose size words carry no version.
+inline constexpr uint32_t NODE_LAYOUT_LEGACY = 0;
+inline constexpr uint32_t NODE_LAYOUT_CURRENT = 4;
+
+struct node_size_word
+{
+    uint32_t disk_size;
+    uint32_t layout_version;
+};
+
+constexpr node_size_word decode_node_size_word(uint32_t const word) noexcept
+{
+    return {
+        word & ((uint32_t{1} << NODE_LAYOUT_VERSION_SHIFT) - 1),
+        word >> NODE_LAYOUT_VERSION_SHIFT};
+}
+
+constexpr uint32_t encode_node_size_word(uint32_t const disk_size) noexcept
+{
+    MONAD_ASSERT(disk_size <= Node::max_disk_size);
+    return disk_size | (NODE_LAYOUT_CURRENT << NODE_LAYOUT_VERSION_SHIFT);
+}
+
 void serialize_node_to_buffer(
     unsigned char *write_pos, unsigned bytes_to_write, Node const &,
     uint32_t disk_size, unsigned offset = 0);
+
+// Disk size of the node in the layout whose min offsets are 4 bytes wide.
+uint32_t legacy_layout_disk_size(Node const &node) noexcept;
+
+void serialize_legacy_layout_node_to_buffer(
+    unsigned char *write_pos, unsigned bytes_to_append, Node const &node,
+    uint32_t legacy_disk_size, unsigned offset);
+
+// `read_pos` points just past the size word; `disk_size` includes it.
+Node::SharedPtr deserialize_legacy_layout_node(
+    unsigned char const *read_pos, uint32_t disk_size);
 
 inline Node::SharedPtr deserialize_node_from_buffer(
     unsigned char const *read_pos, size_t const max_bytes)
@@ -417,12 +454,20 @@ inline Node::SharedPtr deserialize_node_from_buffer(
     for (size_t n = 0; n < max_bytes; n += 64) {
         __builtin_prefetch(read_pos + n, 0, 0);
     }
-    // Load 32-bit node on-disk size
-    auto const disk_size = unaligned_load<uint32_t>(read_pos);
+    auto const word = decode_node_size_word(unaligned_load<uint32_t>(read_pos));
+    MONAD_ASSERT_PRINTF(
+        word.layout_version == NODE_LAYOUT_CURRENT ||
+            word.layout_version == NODE_LAYOUT_LEGACY,
+        "node layout version %u is not one this binary reads",
+        word.layout_version);
+    uint32_t const disk_size = word.disk_size;
     MONAD_ASSERT_PRINTF(
         disk_size <= max_bytes, "deserialized node disk size is %u", disk_size);
     MONAD_ASSERT(disk_size > 0 && disk_size <= Node::max_disk_size);
     read_pos += Node::disk_size_bytes;
+    if (word.layout_version == NODE_LAYOUT_LEGACY) {
+        return deserialize_legacy_layout_node(read_pos, disk_size);
+    }
     // Load the on disk node
     auto const mask = unaligned_load<uint16_t>(read_pos);
     auto const number_of_children = static_cast<unsigned>(std::popcount(mask));

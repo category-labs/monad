@@ -19,11 +19,12 @@
 #include <category/core/config.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
+#include <category/execution/ethereum/trace/commands/call_trace.hpp>
 
 #include <evmc/evmc.hpp>
 #include <nlohmann/json_fwd.hpp>
 
-#include <optional>
+#include <limits>
 #include <span>
 #include <stack>
 #include <vector>
@@ -32,35 +33,49 @@ MONAD_NAMESPACE_BEGIN
 
 struct Transaction;
 
-struct CallTracerBase
+class CallTracer
 {
-    virtual ~CallTracerBase() = default;
+public:
+    using Signature = monad::trace::CallTraceSignature;
 
-    virtual void on_enter(evmc_message const &) = 0;
-    virtual void on_exit(evmc::Result const &) = 0;
-    virtual void on_log(Receipt::Log) = 0;
-    virtual void on_self_destruct(
-        Address const &from, Address const &to,
-        uint256_t const &transferred_balance) = 0;
-    virtual void on_finish(uint64_t const) = 0;
-    virtual void reset() = 0;
-    virtual std::span<CallFrame const> get_call_frames() const = 0;
-};
+    CallTracer() = delete;
+    CallTracer(CallTracer const &) = default;
+    CallTracer(CallTracer &&) noexcept = default;
+    CallTracer &operator=(CallTracer const &) = delete;
+    CallTracer &operator=(CallTracer &&) noexcept = delete;
+    ~CallTracer() = default;
 
-struct NoopCallTracer final : public CallTracerBase
-{
-    virtual void on_enter(evmc_message const &) override;
-    virtual void on_exit(evmc::Result const &) override;
-    virtual void on_log(Receipt::Log) override;
-    virtual void on_self_destruct(
-        Address const &, Address const &, uint256_t const &) override;
-    virtual void on_finish(uint64_t const) override;
-    virtual void reset() override;
-    virtual std::span<CallFrame const> get_call_frames() const override;
-};
+    CallTracer(Transaction const &, std::vector<CallFrame> &);
+    CallTracer(
+        Transaction const &, std::vector<CallFrame> &, size_t max_size,
+        bool log_native_transfers = false);
 
-class CallTracer final : public CallTracerBase
-{
+    /// Checks if the accumulated call trace size exceeds the maximum allowed
+    /// size. Throws a MonadException if the size limit is exceeded.
+    ///
+    /// This function MUST be called by RPC methods before attempting to access
+    /// the call trace.
+    void check_size_limit() const;
+
+    nlohmann::json to_json() const;
+
+    void operator()(monad::trace::Enter const &op);
+
+    void operator()(monad::trace::Exit const &op);
+
+    void operator()(monad::trace::Log const &op);
+
+    void operator()(monad::trace::SelfDestruct const &op);
+
+    void operator()(monad::trace::Finish const &op);
+
+    void operator()(monad::trace::GetCallFrames const &op);
+
+    void operator()(monad::trace::NativeTransfer const &op);
+
+    void reset();
+
+private:
     struct CallFramesStack
     {
         std::vector<CallFrame> &frames_;
@@ -101,29 +116,7 @@ class CallTracer final : public CallTracerBase
     BoundedSize size_;
 
 public:
-    CallTracer() = delete;
-    CallTracer(CallTracer const &) = delete;
-    CallTracer(CallTracer &&) = delete;
-    CallTracer(Transaction const &, std::vector<CallFrame> &);
-    CallTracer(Transaction const &, std::vector<CallFrame> &, size_t max_size);
-
-    virtual void on_enter(evmc_message const &) override;
-    virtual void on_exit(evmc::Result const &) override;
-    virtual void on_log(Receipt::Log) override;
-    virtual void on_self_destruct(
-        Address const &from, Address const &to,
-        uint256_t const &transferred_balance) override;
-    virtual void on_finish(uint64_t const) override;
-    virtual void reset() override;
-    virtual std::span<CallFrame const> get_call_frames() const override;
-
-    /// Checks if the accumulated call trace size exceeds the maximum allowed
-    /// size. Throws a MonadException if the size limit is exceeded.
-    ///
-    /// This function MUST be called by RPC methods before attempting to access
-    /// the call trace.
-    void check_size_limit() const;
-    nlohmann::json to_json() const;
+    bool log_native_transfers{false};
 };
 
 MONAD_NAMESPACE_END

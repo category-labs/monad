@@ -24,6 +24,8 @@
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/native_transfer_log.hpp>
+#include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/vm/evm/status_code.h>
@@ -75,28 +77,8 @@ namespace
     }
 }
 
-void NoopCallTracer::on_enter(evmc_message const &) {}
-
-void NoopCallTracer::on_exit(evmc::Result const &) {}
-
-void NoopCallTracer::on_log(Receipt::Log) {}
-
-void NoopCallTracer::on_self_destruct(
-    Address const &, Address const &, uint256_t const &)
-{
-}
-
-void NoopCallTracer::on_finish(uint64_t const) {}
-
-void NoopCallTracer::reset() {}
-
-std::span<CallFrame const> NoopCallTracer::get_call_frames() const
-{
-    return {};
-}
-
 CallTracer::CallTracer(Transaction const &tx, std::vector<CallFrame> &frames)
-    : CallTracer(tx, frames, std::numeric_limits<size_t>::max())
+    : CallTracer(tx, frames, std::numeric_limits<size_t>::max(), false)
 {
 }
 
@@ -202,19 +184,22 @@ void CallTracer::BoundedSize::reset() noexcept
 
 CallTracer::CallTracer(
     Transaction const &tx, std::vector<CallFrame> &frames,
-    size_t const max_size)
+    size_t const max_size, bool const log_native_transfers)
     : frames_(frames)
     , frames_stack_(frames_)
     , tx_(tx)
     , size_(max_size)
+    , log_native_transfers(log_native_transfers)
 {
     size_t const initial_capacity =
         std::min<size_t>(128, max_size / sizeof(CallFrame));
     frames_.reserve(initial_capacity);
 }
 
-void CallTracer::on_enter(evmc_message const &msg)
+void CallTracer::operator()(monad::trace::Enter const &op)
 {
+    auto const &msg = op.message;
+
     if (!(size_ += sizeof(CallFrame)) || !(size_ += msg.input_size)) {
         return;
     }
@@ -270,8 +255,10 @@ void CallTracer::on_enter(evmc_message const &msg)
     });
 }
 
-void CallTracer::on_exit(evmc::Result const &res)
+void CallTracer::operator()(monad::trace::Exit const &op)
 {
+    auto const &res = op.result;
+
     size_t const output_size =
         res.status_code == EVMC_SUCCESS || res.status_code == EVMC_REVERT
             ? res.output_size
@@ -301,8 +288,10 @@ void CallTracer::on_exit(evmc::Result const &res)
     }
 }
 
-void CallTracer::on_log(Receipt::Log log)
+void CallTracer::operator()(monad::trace::Log const &op)
 {
+    Receipt::Log log = op.log;
+
     if (!(size_ += sizeof(CallFrame::Log)) || !(size_ += log.data.size())) {
         return;
     }
@@ -319,10 +308,12 @@ void CallTracer::on_log(Receipt::Log log)
     frame.logs->emplace_back(std::move(log), frames_stack_.position());
 }
 
-void CallTracer::on_self_destruct(
-    Address const &from, Address const &to,
-    uint256_t const &transferred_balance)
+void CallTracer::operator()(monad::trace::SelfDestruct const &op)
 {
+    auto const &from = op.from;
+    auto const &to = op.to;
+    auto const &transferred_balance = op.transferred_balance;
+
     if (!(size_ += sizeof(CallFrame))) {
         return;
     }
@@ -345,8 +336,10 @@ void CallTracer::on_self_destruct(
     });
 }
 
-void CallTracer::on_finish(uint64_t const gas_used)
+void CallTracer::operator()(monad::trace::Finish const &op)
 {
+    auto const gas_used = op.gas_used;
+
     if (!size_) {
         return;
     }
@@ -365,9 +358,9 @@ void CallTracer::reset()
     size_.reset();
 }
 
-std::span<CallFrame const> CallTracer::get_call_frames() const
+void CallTracer::operator()(monad::trace::GetCallFrames const &op)
 {
-    return frames_;
+    *op.call_frames = frames_;
 }
 
 void CallTracer::check_size_limit() const
@@ -394,6 +387,21 @@ nlohmann::json CallTracer::to_json() const
     res[key] = value;
 
     return res;
+}
+
+void CallTracer::operator()(monad::trace::NativeTransfer const &op)
+{
+    // Skip emitting native transfer events when no value is transferred or
+    // `from` and `to` are the same account (i.e. no net transfer of funds).
+    if (log_native_transfers && op.transferred_balance > 0 &&
+        op.from != op.to) {
+        auto event = detail::make_native_transfer_log(
+            op.system, op.from, op.to, op.transferred_balance);
+
+        op.state.store_log(event);
+        trace::Log log_op{std::move(event)};
+        (*this)(log_op);
+    }
 }
 
 MONAD_NAMESPACE_END

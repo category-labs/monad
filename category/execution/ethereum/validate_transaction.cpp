@@ -22,6 +22,7 @@
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/trace/trace_context.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/vm/evm/delegation.hpp>
@@ -194,11 +195,10 @@ Result<void> validate_transaction(
     Transaction const &tx, Address const &sender, State &state,
     uint256_t const & /*base_fee_per_gas*/,
     std::span<std::optional<Address> const> const /*authorities*/,
-    trace::StateTracer &state_tracer)
+    TxTraceContext const &trace_ctx)
 {
     static_assert(is_evm_trait_v<traits>);
-    return validate_ethereum_transaction<traits>(
-        tx, sender, state, state_tracer);
+    return validate_ethereum_transaction<traits>(tx, sender, state, trace_ctx);
 }
 
 EXPLICIT_EVM_TRAITS(validate_transaction);

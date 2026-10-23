@@ -23,8 +23,7 @@
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
-#include <category/execution/ethereum/trace/call_tracer.hpp>
-#include <category/execution/ethereum/trace/state_tracer.hpp>
+#include <category/execution/ethereum/trace/trace_context.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
@@ -77,9 +76,8 @@ TYPED_TEST(MonadTraitsTest, mip11_fork)
     auto prev = prev_promise.get_future();
     prev_promise.set_value();
 
-    NoopCallTracer call_tracer;
-    trace::StateTracer state_tracer = std::monostate{};
     auto const chain_ctx = ChainContext<Trait>::debug_empty();
+    TxTraceContext const trace_context{};
 
     MonadDevnet const chain;
     auto const receipt = ExecuteTransaction<Trait>(
@@ -93,10 +91,9 @@ TYPED_TEST(MonadTraitsTest, mip11_fork)
         bs,
         metrics,
         prev,
-        call_tracer,
-        state_tracer,
         chain_ctx,
-        /*exec_recorder*/ nullptr)();
+        /*exec_recorder*/ nullptr,
+        trace_context)();
 
     ASSERT_FALSE(receipt.has_error());
     EXPECT_EQ(receipt.value().status, 1u);

@@ -29,6 +29,9 @@
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/reserve_balance.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/trace/commands/call_trace.hpp>
+#include <category/execution/ethereum/trace/commands/state_trace.hpp>
+#include <category/execution/ethereum/trace/trace_context.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 
@@ -62,13 +65,9 @@ namespace
         uint256_t const value = load_be<uint256_t>(msg.value);
         state.subtract_from_balance(msg.sender, value);
         state.add_to_balance(to, value);
+        TxTraceContext const trace_context{host.get_tx_trace_context()};
         emit_native_transfer_logs<traits>(
-            state,
-            host.get_call_tracer(),
-            msg.sender,
-            to,
-            value,
-            host.log_native_transfers_);
+            state, trace_context, msg.sender, to, value);
     }
 
 } // anonymous namespace
@@ -148,10 +147,10 @@ pre_call(EvmcHost<traits> &host, evmc_message const &msg, State &state)
 template <Traits traits>
 void reject_frame(EvmcHost<traits> &host, State &state)
 {
-    // Successful frames remain in State and are captured when the state tracer
-    // is encoded. Failed frames are about to be rolled back, so the state
-    // tracer lifecycle hook runs before pop_reject().
-    trace::on_frame_reject(host.state_tracer_, state);
+    auto const &trace_ctx = host.get_tx_trace_context();
+
+    // Capture rejected-frame accesses before they are rolled back.
+    trace::emit<trace::RejectFrame>(trace_ctx, state);
 
     // In contrast to YP K.1, Deletion of an Account Despite Out-of-gas,
     // we revert a touch of the ripemd address here. This is irrelevant in
@@ -193,8 +192,8 @@ evmc::Result execute_create_message(
 
     MONAD_ASSERT(msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2);
 
-    auto &call_tracer = host->get_call_tracer();
-    call_tracer.on_enter(msg);
+    auto const trace_ctx = host->get_tx_trace_context();
+    trace::emit<trace::Enter>(trace_ctx, msg);
 
     if (MONAD_UNLIKELY(!sender_has_balance(state, msg))) {
         /**
@@ -214,7 +213,7 @@ evmc::Result execute_create_message(
             }
         }
         evmc::Result result{EVMC_INSUFFICIENT_BALANCE, msg.gas};
-        call_tracer.on_exit(result);
+        trace::emit<trace::Exit>(trace_ctx, result);
         return result;
     }
 
@@ -222,7 +221,7 @@ evmc::Result execute_create_message(
     if (nonce == UINT64_MAX) {
         // this overflow can only happen for msg.depth != 0
         evmc::Result result{EVMC_ARGUMENT_OUT_OF_RANGE, msg.gas};
-        call_tracer.on_exit(result);
+        trace::emit<trace::Exit>(trace_ctx, result);
         return result;
     }
     state.set_nonce(msg.sender, nonce + 1);
@@ -243,7 +242,7 @@ evmc::Result execute_create_message(
     // Prevent overwriting contracts - EIP-684
     if (state.account_has_code_or_nonce(contract_address)) {
         evmc::Result result{EVMC_INVALID_INSTRUCTION};
-        call_tracer.on_exit(result);
+        trace::emit<trace::Exit>(trace_ctx, result);
         return result;
     }
 
@@ -287,7 +286,7 @@ evmc::Result execute_create_message(
                 host->base_fee_per_gas_.value_or(0),
                 host->i_,
                 state,
-                host->state_tracer_,
+                trace_ctx,
                 host->chain_ctx_)) {
             result.status_code = EVMC_MONAD_RESERVE_BALANCE_VIOLATION;
         }
@@ -304,7 +303,7 @@ evmc::Result execute_create_message(
         reject_frame(*host, state);
     }
 
-    call_tracer.on_exit(result);
+    trace::emit<trace::Exit>(trace_ctx, result);
 
     return result;
 }
@@ -319,24 +318,24 @@ evmc::Result execute_call_message(
         msg.kind == EVMC_DELEGATECALL || msg.kind == EVMC_CALLCODE ||
         msg.kind == EVMC_CALL);
 
-    auto &call_tracer = host->get_call_tracer();
-    call_tracer.on_enter(msg);
+    auto const trace_ctx = host->get_tx_trace_context();
+    trace::emit<trace::Enter>(trace_ctx, msg);
 
     if (auto result = pre_call<traits>(*host, msg, state); result.has_value()) {
-        call_tracer.on_exit(result.value());
+        trace::emit<trace::Exit>(trace_ctx, result.value());
         return std::move(result.value());
     }
 
     evmc::Result result;
     if (auto maybe_result = check_call_precompile<traits>(
-            state, call_tracer, msg, host->log_native_transfers_);
+            state, msg, host->get_tx_trace_context());
         maybe_result.has_value()) {
         result = std::move(maybe_result.value());
     }
     else {
         auto const hash = state.get_code_hash(msg.code_address);
         auto const code = state.read_code(hash);
-        trace::on_read_code(host->state_tracer_, hash, code->intercode());
+        trace::emit<trace::ReadCode>(trace_ctx, hash, code->intercode());
         result = state.vm().execute<traits>(*host, &msg, hash, code);
     }
 
@@ -347,7 +346,7 @@ evmc::Result execute_call_message(
                 host->base_fee_per_gas_.value_or(0),
                 host->i_,
                 state,
-                host->state_tracer_,
+                trace_ctx,
                 host->chain_ctx_)) {
             result.status_code = EVMC_MONAD_RESERVE_BALANCE_VIOLATION;
             result.gas_refund = 0;
@@ -355,7 +354,7 @@ evmc::Result execute_call_message(
     }
 
     post_call(*host, state, result);
-    call_tracer.on_exit(result);
+    trace::emit<trace::Exit>(trace_ctx, result);
     return result;
 }
 

@@ -16,6 +16,7 @@
 #include <category/core/config.hpp>
 #include <category/core/likely.h>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/trace/trace_context.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/system_sender.hpp>
@@ -34,10 +35,10 @@ Result<void> validate_transaction(
     Transaction const &tx, Address const &sender, State &state,
     uint256_t const &base_fee_per_gas,
     std::span<std::optional<Address> const> const authorities,
-    trace::StateTracer &state_tracer)
+    TxTraceContext const &trace_ctx)
 {
     auto res =
-        validate_ethereum_transaction<traits>(tx, sender, state, state_tracer);
+        validate_ethereum_transaction<traits>(tx, sender, state, trace_ctx);
     if constexpr (traits::monad_rev() >= MONAD_FOUR) {
         if (res.has_error() &&
             res.error() != TransactionError::InsufficientBalance) {

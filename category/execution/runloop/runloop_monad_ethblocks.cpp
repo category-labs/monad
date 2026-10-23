@@ -38,6 +38,7 @@
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
+#include <category/execution/ethereum/trace/trace_context.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
@@ -181,20 +182,14 @@ Result<void> process_monad_block(
 
     // Call tracer initialization
     std::vector<std::vector<CallFrame>> call_frames{block.transactions.size()};
-    std::vector<std::unique_ptr<CallTracerBase>> call_tracers{
-        block.transactions.size()};
-    std::vector<std::unique_ptr<trace::StateTracer>> state_tracers(
-        block.transactions.size());
-    trace::StateTracer system_call_state_tracer{std::monostate{}};
-    for (unsigned i = 0; i < block.transactions.size(); ++i) {
-        call_tracers[i] =
-            enable_tracing
-                ? std::unique_ptr<CallTracerBase>{std::make_unique<CallTracer>(
-                      block.transactions[i], call_frames[i])}
-                : std::unique_ptr<CallTracerBase>{
-                      std::make_unique<NoopCallTracer>()};
-        state_tracers[i] =
-            std::make_unique<trace::StateTracer>(std::monostate{});
+    std::vector<CallTracer> call_tracers;
+    BlockTraceContext block_trace_context(block.transactions.size());
+    if (enable_tracing) {
+        call_tracers.reserve(block.transactions.size());
+        for (unsigned i = 0; i < block.transactions.size(); ++i) {
+            call_tracers.emplace_back(block.transactions[i], call_frames[i]);
+        }
+        block_trace_context.with_tracers(std::span<CallTracer>{call_tracers});
     }
 
     senders_and_authorities_out = senders_and_authorities;
@@ -229,11 +224,9 @@ Result<void> process_monad_block(
             block_hash_buffer,
             priority_pool.fiber_group(),
             block_metrics,
-            call_tracers,
-            state_tracers,
-            system_call_state_tracer,
             chain_context,
-            exec_recorder));
+            exec_recorder,
+            block_trace_context));
     record_block_marker_event(exec_recorder, MONAD_EXEC_BLOCK_PERF_EVM_EXIT);
 
     // Database commit of state changes (incl. Merkle root calculations)

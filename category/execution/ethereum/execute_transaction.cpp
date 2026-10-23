@@ -33,8 +33,8 @@
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
+#include <category/execution/ethereum/trace/commands/state_trace.hpp>
 #include <category/execution/ethereum/trace/event_trace.hpp>
-#include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
@@ -147,7 +147,10 @@ uint64_t ExecuteTransactionNoValidation<traits>::process_authorizations(
         // 5. Verify the code of authority is empty or already delegated.
         auto const code_hash = state.get_code_hash(*authority);
         auto const icode = state.read_code(code_hash)->intercode();
-        trace::on_read_code(host.state_tracer_, code_hash, icode);
+        if (code_hash != NULL_HASH) {
+            trace::emit<trace::ReadCode>(
+                host.get_tx_trace_context(), code_hash, icode);
+        }
         auto const code = std::span{icode->code(), *icode->code_size()};
         if (!(code.empty() || vm::evm::is_delegated(code))) {
             continue;
@@ -239,7 +242,7 @@ evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
             tx_,
             header_.base_fee_per_gas,
             host.i_,
-            host.state_tracer_,
+            host.get_tx_trace_context(),
             host.chain_ctx_);
     }
 
@@ -306,9 +309,9 @@ ExecuteTransaction<traits>::ExecuteTransaction(
     std::span<std::optional<Address> const> const authorities,
     BlockHeader const &header, BlockHashBuffer const &block_hash_buffer,
     BlockState &block_state, BlockMetrics &block_metrics,
-    boost::fibers::future<void> &prev, CallTracerBase &call_tracer,
-    trace::StateTracer &state_tracer, ChainContext<traits> const &chain_ctx,
-    ExecutionEventRecorder *const exec_recorder, bool const trace_transfers)
+    boost::fibers::future<void> &prev, ChainContext<traits> const &chain_ctx,
+    ExecutionEventRecorder *const exec_recorder,
+    TxTraceContext const &tx_trace_context)
     : ExecuteTransactionNoValidation<
           traits>{chain, tx, sender, authorities, header}
     , i_{i}
@@ -317,10 +320,8 @@ ExecuteTransaction<traits>::ExecuteTransaction(
     , block_state_{block_state}
     , block_metrics_{block_metrics}
     , prev_{prev}
-    , call_tracer_{call_tracer}
-    , state_tracer_{state_tracer}
     , exec_recorder_{exec_recorder}
-    , trace_transfers_{trace_transfers}
+    , tx_trace_context_{tx_trace_context}
 {
     record_txn_header_events(
         exec_recorder_, static_cast<uint32_t>(i), tx, sender, authorities);
@@ -336,7 +337,7 @@ Result<evmc::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
             state,
             header_.base_fee_per_gas.value_or(0),
             authorities_,
-            state_tracer_);
+            tx_trace_context_);
         if (!result) {
             // RELAXED MERGE
             // if `validate_transaction` fails using current values, require
@@ -354,8 +355,6 @@ Result<evmc::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
         chain_.get_chain_id(),
         chain_.get_blob_schedule(header_.timestamp));
     EvmcHost<traits> host{
-        call_tracer_,
-        state_tracer_,
         tx_context,
         block_hash_buffer_,
         state,
@@ -363,7 +362,7 @@ Result<evmc::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
         header_.base_fee_per_gas,
         i_,
         chain_ctx_,
-        trace_transfers_};
+        tx_trace_context_};
 
     return ExecuteTransactionNoValidation<traits>::operator()(state, host);
 }
@@ -422,13 +421,15 @@ Receipt ExecuteTransaction<traits>::execute_final(
         receipt.add_log(std::move(log));
     }
 
-    call_tracer_.on_finish(receipt.gas_used);
-    trace::run_tracer<traits>(state_tracer_, state);
+    trace::emit<trace::Finish>(tx_trace_context_, receipt.gas_used);
+    trace::emit<trace::PostState>(tx_trace_context_, state);
+    std::span<CallFrame const> call_frames{};
+    trace::emit<trace::GetCallFrames>(tx_trace_context_, &call_frames);
     record_txn_output_events(
         exec_recorder_,
         static_cast<uint32_t>(this->i_),
         receipt,
-        call_tracer_.get_call_frames(),
+        call_frames,
         state);
 
     return receipt;
@@ -458,8 +459,7 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
         State state{block_state_, Incarnation{header_.number, i_ + 1}};
         state.set_original_nonce(sender_, tx_.nonce);
 
-        call_tracer_.reset();
-        trace::reset(state_tracer_);
+        tx_trace_context_.reset();
 
         auto result = execute_impl2(state);
 
@@ -483,8 +483,7 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
 
         State state{block_state_, Incarnation{header_.number, i_ + 1}};
 
-        call_tracer_.reset();
-        trace::reset(state_tracer_);
+        tx_trace_context_.reset();
 
         auto result = execute_impl2(state);
 

@@ -50,8 +50,9 @@
 #include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
+#include <category/execution/ethereum/trace/prestate_tracer.hpp>
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
-#include <category/execution/ethereum/trace/state_tracer.hpp>
+#include <category/execution/ethereum/trace/statediff_tracer.hpp>
 #include <category/execution/ethereum/trace/tracer_config.h>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
@@ -101,7 +102,6 @@
 #include <stdlib.h>
 #include <string>
 #include <utility>
-#include <variant>
 #include <vector>
 
 #include <unistd.h>
@@ -1880,7 +1880,7 @@ TEST_F(EthCallFixture, transfer_success_with_state_trace)
         }
 
         EXPECT_EQ(
-            state_to_json(expected, s, header.beneficiary),
+            trace::state_to_json(expected, s, header.beneficiary),
             nlohmann::json::from_cbor(encoded_pre_state_trace));
     }
 
@@ -1932,7 +1932,7 @@ TEST_F(EthCallFixture, transfer_success_with_state_trace)
         };
 
         EXPECT_EQ(
-            state_deltas_to_json(expected, s),
+            trace::state_deltas_to_json(expected, s),
             nlohmann::json::from_cbor(encoded_state_delta_trace));
     }
 
@@ -2885,14 +2885,14 @@ TEST_F(EthCallFixture, monad_executor_run_reserve_balance)
         BlockState block_state{tdb, vm};
         State state{
             block_state, Incarnation{header.number - 1, Incarnation::LAST_TX}};
-        trace::StateTracer noop_state_tracer = std::monostate{};
+        TxTraceContext const empty_trace_ctx{};
         init_reserve_balance_context<monad::MonadTraits<MONAD_NEXT>>(
             state,
             sender,
             tx,
             header.base_fee_per_gas,
             0,
-            noop_state_tracer,
+            empty_trace_ctx,
             chain_context);
         state.subtract_from_balance(sender, gas_fee);
         state.subtract_from_balance(sender, value);
@@ -2904,7 +2904,7 @@ TEST_F(EthCallFixture, monad_executor_run_reserve_balance)
                 BASE_FEE_PER_GAS,
                 0, // transaction index
                 state,
-                noop_state_tracer,
+                empty_trace_ctx,
                 chain_context);
         EXPECT_TRUE(should_revert);
     }

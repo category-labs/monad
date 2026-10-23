@@ -40,12 +40,6 @@ MONAD_NAMESPACE_BEGIN
 class State;
 class BlockState;
 
-namespace trace
-{
-    struct PrestateTracer;
-    struct StateDiffTracer;
-}
-
 class AccountState : public AccountSubstate
 {
 public: // TODO

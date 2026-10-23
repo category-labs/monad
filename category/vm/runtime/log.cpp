@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
 #include <category/core/runtime/uint256.hpp>
@@ -49,7 +50,7 @@ namespace monad::vm::runtime
 
         ctx->host->emit_log(
             ctx->context,
-            &ctx->env.recipient,
+            to_evmc_ptr(&ctx->env.recipient),
             ctx->memory.data + *offset,
             *size,
             topics.data(),

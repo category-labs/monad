@@ -65,7 +65,8 @@ TEST(MockedHost, StorageStatus)
         MockedHost host;
         host.accounts[addr].storage[key] = {
             .current = t.current, .original = t.original};
-        EXPECT_EQ(host.set_storage(addr, key, to_evmc(t.value)), t.status);
-        EXPECT_EQ(host.get_storage(addr, key), to_evmc(t.value));
+        EXPECT_EQ(
+            host.set_storage(to_evmc(addr), key, to_evmc(t.value)), t.status);
+        EXPECT_EQ(host.get_storage(to_evmc(addr), key), to_evmc(t.value));
     }
 }

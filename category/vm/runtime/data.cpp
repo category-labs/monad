@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
@@ -41,13 +42,13 @@ namespace monad::vm::runtime
         auto address = address_from_uint256(*address_ptr);
 
         auto const access_status =
-            ctx->host->access_account(ctx->context, &address);
+            ctx->host->access_account(ctx->context, to_evmc_ptr(&address));
         if (access_status == EVMC_ACCESS_COLD) {
             ctx->deduct_gas(traits::cold_account_cost());
         }
 
         auto const balance = static_cast<bytes32_t>(
-            ctx->host->get_balance(ctx->context, &address));
+            ctx->host->get_balance(ctx->context, to_evmc_ptr(&address)));
         *result_ptr = load_be<uint256_t>(balance);
     }
 
@@ -139,7 +140,7 @@ namespace monad::vm::runtime
         auto address = address_from_uint256(*address_ptr);
 
         auto const access_status =
-            ctx->host->access_account(ctx->context, &address);
+            ctx->host->access_account(ctx->context, to_evmc_ptr(&address));
         if (access_status == EVMC_ACCESS_COLD) {
             ctx->deduct_gas(traits::cold_account_cost());
         }
@@ -149,7 +150,7 @@ namespace monad::vm::runtime
 
             auto *dest_ptr = ctx->memory.data + *dest_offset;
             auto const n = ctx->host->copy_code(
-                ctx->context, &address, offset, dest_ptr, *size);
+                ctx->context, to_evmc_ptr(&address), offset, dest_ptr, *size);
 
             auto *begin = dest_ptr + static_cast<uint32_t>(n);
             auto *end = dest_ptr + *size;
@@ -201,13 +202,13 @@ namespace monad::vm::runtime
         auto address = address_from_uint256(*address_ptr);
 
         auto const access_status =
-            ctx->host->access_account(ctx->context, &address);
+            ctx->host->access_account(ctx->context, to_evmc_ptr(&address));
         if (access_status == EVMC_ACCESS_COLD) {
             ctx->deduct_gas(traits::cold_account_cost());
         }
 
         auto const hash = static_cast<bytes32_t>(
-            ctx->host->get_code_hash(ctx->context, &address));
+            ctx->host->get_code_hash(ctx->context, to_evmc_ptr(&address)));
         *result_ptr = load_be<uint256_t>(hash);
     }
 
@@ -222,12 +223,13 @@ namespace monad::vm::runtime
         auto address = address_from_uint256(*address_ptr);
 
         auto const access_status =
-            ctx->host->access_account(ctx->context, &address);
+            ctx->host->access_account(ctx->context, to_evmc_ptr(&address));
         if (access_status == EVMC_ACCESS_COLD) {
             ctx->deduct_gas(traits::cold_account_cost());
         }
 
-        *result_ptr = ctx->host->get_code_size(ctx->context, &address);
+        *result_ptr =
+            ctx->host->get_code_size(ctx->context, to_evmc_ptr(&address));
     }
 
     EXPLICIT_TRAITS(extcodesize);

@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/address.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
 #include <category/core/hex.hpp>
@@ -25,6 +26,7 @@
 #include <ankerl/unordered_dense.h>
 
 #include <algorithm>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -32,23 +34,28 @@
 
 MONAD_NAMESPACE_BEGIN
 
-struct Address : evmc_address
+struct Address : monad_address
 {
     constexpr Address() noexcept
-        : evmc_address{}
+        : monad_address{}
     {
     }
 
     constexpr Address(Address const &) noexcept = default;
     constexpr Address &operator=(Address const &) noexcept = default;
 
-    explicit(false) constexpr Address(evmc_address const &other) noexcept
-        : evmc_address{other}
+    explicit(false) constexpr Address(evmc_address const &a) noexcept
+        : monad_address{std::bit_cast<monad_address>(a)}
+    {
+    }
+
+    explicit(false) constexpr Address(monad_address const &other) noexcept
+        : monad_address{other}
     {
     }
 
     explicit constexpr Address(uint64_t const v) noexcept
-        : evmc_address{}
+        : monad_address{}
     {
         for (int i = 0; i < 8; ++i) {
             bytes[19 - i] = static_cast<uint8_t>(v >> (i * 8));
@@ -58,7 +65,7 @@ struct Address : evmc_address
     template <std::same_as<uint8_t>... Bytes>
         requires(sizeof...(Bytes) >= 1 && sizeof...(Bytes) <= 20)
     explicit(false) constexpr Address(Bytes... bs) noexcept
-        : evmc_address{{bs...}}
+        : monad_address{{bs...}}
     {
     }
 
@@ -91,6 +98,19 @@ static_assert(sizeof(Address) == 20);
 static_assert(alignof(Address) == 1);
 static_assert(std::is_standard_layout_v<Address>);
 static_assert(std::is_trivially_copyable_v<Address>);
+
+constexpr evmc_address to_evmc(monad_address const &a)
+{
+    return std::bit_cast<evmc_address>(a);
+}
+
+inline evmc_address const *to_evmc_ptr(monad_address const *const a)
+{
+    static_assert(alignof(monad_address) == alignof(evmc_address));
+    // sizeof(monad_address) == sizeof(evmc_address) is implied by the
+    // std::bit_cast in to_evmc
+    return reinterpret_cast<evmc_address const *>(a);
+}
 
 constexpr bool is_zero(Address const &addr)
 {

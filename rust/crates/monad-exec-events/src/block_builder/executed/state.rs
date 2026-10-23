@@ -15,7 +15,7 @@
 
 use crate::{
     ffi::{
-        monad_bytes32, monad_c_address, monad_c_eth_txn_header, monad_c_eth_txn_receipt,
+        monad_address, monad_bytes32, monad_c_eth_txn_header, monad_c_eth_txn_receipt,
         monad_exec_block_start,
     },
     ExecutedTxnAccessListEntry, ExecutedTxnCallFrame, ExecutedTxnLog,
@@ -31,7 +31,7 @@ pub(super) struct BlockReassemblyState {
 #[derive(Debug)]
 pub(super) struct TxnReassemblyState {
     pub hash: monad_bytes32,
-    pub sender: monad_c_address,
+    pub sender: monad_address,
     pub header: monad_c_eth_txn_header,
     pub input: Box<[u8]>,
     pub access_list: Vec<ExecutedTxnAccessListEntry>,

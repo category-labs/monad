@@ -338,16 +338,13 @@ target_include_directories(
   PRIVATE ${Boost_INCLUDE_DIRS})
 
 target_compile_definitions(
-  monad_execution_ethereum PUBLIC MONAD_CXX_CTYPES_USE_EVMC_HPP
-                                  MONAD_CXX_CTYPES_USE_MONAD_INTS)
+  monad_execution_ethereum PUBLIC MONAD_CXX_CTYPES_USE_MONAD_INTS)
 
 target_compile_definitions(
-  monad_execution_native PUBLIC MONAD_CXX_CTYPES_USE_EVMC_HPP
-                                MONAD_CXX_CTYPES_USE_MONAD_INTS)
+  monad_execution_native PUBLIC MONAD_CXX_CTYPES_USE_MONAD_INTS)
 
 target_compile_definitions(
-  monad_execution_runloop PUBLIC MONAD_CXX_CTYPES_USE_EVMC_HPP
-                                 MONAD_CXX_CTYPES_USE_INTX)
+  monad_execution_runloop PUBLIC MONAD_CXX_CTYPES_USE_INTX)
 
 target_include_directories(
   monad_precompiles

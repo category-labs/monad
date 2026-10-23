@@ -102,7 +102,7 @@ evmc::Result deploy_contract_code(
         result.status_code = EVMC_OUT_OF_GAS;
     }
     else {
-        result.create_address = address;
+        result.create_address = to_evmc(address);
         result.gas_left -= deploy_cost;
         state.set_code(address, {result.output_data, result.output_size});
     }
@@ -260,13 +260,13 @@ evmc::Result execute_create_message(
         .flags = 0,
         .depth = msg.depth,
         .gas = msg.gas,
-        .recipient = contract_address,
+        .recipient = to_evmc(contract_address),
         .sender = msg.sender,
         .input_data = nullptr,
         .input_size = 0,
         .value = msg.value,
         .create2_salt = {},
-        .code_address = contract_address,
+        .code_address = to_evmc(contract_address),
         .memory_handle = msg.memory_handle,
         .memory = msg.memory,
         .memory_capacity = msg.memory_capacity,

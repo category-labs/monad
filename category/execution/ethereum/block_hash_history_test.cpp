@@ -118,11 +118,11 @@ namespace
             evmc_message const msg{
                 .kind = EVMC_CALL,
                 .gas = gas,
-                .recipient = code_addr,
-                .sender = sender,
+                .recipient = to_evmc(code_addr),
+                .sender = to_evmc(sender),
                 .input_data = input_data,
                 .input_size = input_size,
-                .code_address = code_addr,
+                .code_address = to_evmc(code_addr),
                 .memory_handle = msg_memory.get(),
                 .memory = msg_memory.get(),
                 .memory_capacity = state.vm().message_memory_capacity()};

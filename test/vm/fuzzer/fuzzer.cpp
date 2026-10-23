@@ -260,7 +260,7 @@ static Address deploy_contract(
     tstate.state.set_nonce(genesis_address, nonce + 1);
 
     auto const create_address = create_contract_address(genesis_address, nonce);
-    MONAD_ASSERT(!tstate.state.account_exists(create_address));
+    MONAD_ASSERT(!tstate.state.account_exists(to_evmc(create_address)));
 
     tstate.state.create_account_no_rollback(create_address);
     tstate.state.set_code(create_address, {code.data(), code.size()});
@@ -689,7 +689,7 @@ static void do_run(
                     contract_addresses,
                     {genesis_address},
                     [&](auto const &address) {
-                        return tstate.state.get_code(address);
+                        return tstate.state.get_code(to_evmc(address));
                     },
                     msg_memory.get(),
                     memory_pool.alloc_capacity());

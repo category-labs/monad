@@ -203,7 +203,8 @@ namespace monad::vm::test
 
             if constexpr (TraitsTest<T>::Trait::evm_rev() >= MONAD_ETH_PRAGUE) {
                 ASSERT_EQ(
-                    host_.access_account(delegate_addr), EVMC_ACCESS_WARM);
+                    host_.access_account(to_evmc(delegate_addr)),
+                    EVMC_ACCESS_WARM);
                 ASSERT_EQ(
                     host_.recorded_calls[0].flags &
                         static_cast<uint32_t>(EVMC_DELEGATED),
@@ -211,7 +212,8 @@ namespace monad::vm::test
             }
             else {
                 ASSERT_EQ(
-                    host_.access_account(delegate_addr), EVMC_ACCESS_COLD);
+                    host_.access_account(to_evmc(delegate_addr)),
+                    EVMC_ACCESS_COLD);
                 ASSERT_NE(
                     host_.recorded_calls[0].flags &
                         static_cast<uint32_t>(EVMC_DELEGATED),

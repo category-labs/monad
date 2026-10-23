@@ -35,6 +35,7 @@
 #include <openssl/ec_key.h>
 #include <openssl/ecdsa.h>
 #include <openssl/err.h>
+#include <openssl/nid.h>
 
 #include <c-kzg-4844/trusted_setup.hpp>
 
@@ -349,7 +350,8 @@ p256_verify_impl(byte_string_view const input, std::span<uint8_t, 32> const out)
     bssl::UniquePtr<BIGNUM> const qy{
         BN_bin2bn(input.data() + 128, 32, nullptr)};
     bssl::UniquePtr<EC_POINT> const q{EC_POINT_new(group)};
-    bssl::UniquePtr<EC_KEY> const key{EC_KEY_new()};
+    bssl::UniquePtr<EC_KEY> const key{
+        EC_KEY_new_by_curve_name(NID_X9_62_prime256v1)};
     bssl::UniquePtr<ECDSA_SIG> const sig{ECDSA_SIG_new()};
     MONAD_ASSERT(r && s && qx && qy && q && key && sig);
 
@@ -374,8 +376,6 @@ p256_verify_impl(byte_string_view const input, std::span<uint8_t, 32> const out)
         return PrecompileImplResult::failure();
     }
 
-    bool const group_ok = EC_KEY_set_group(key.get(), group) == 1;
-    MONAD_ASSERT(group_ok);
     bool const key_ok = EC_KEY_set_public_key(key.get(), q.get()) == 1;
     MONAD_ASSERT(key_ok);
     bool const sig_ok =

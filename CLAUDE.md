@@ -24,7 +24,7 @@ scripts/check-clang-tidy.sh -p build
 python3 scripts/check-trait-instantiations.py
 ```
 
-Use `/build`, `/test`, `/lint`, `/format`, `/fuzz` skills for full options (sanitizers, Clang, specific targets, etc.).
+Use `/build`, `/test`, `/lint`, `/format`, `/fuzz`, `/perf` skills for full options (sanitizers, Clang, specific targets, etc.).
 
 ### Toolchain files (`category/core/toolchains/`)
 

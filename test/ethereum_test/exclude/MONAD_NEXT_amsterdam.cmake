@@ -13,4 +13,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-set(MONAD_NEXT_amsterdam_excluded_tests "")
+set(MONAD_NEXT_amsterdam_excluded_tests
+  # Expects 0xAE 0x00 to be INVALID, which MIP-18 assigns to CALLSTACKDEPTH
+  "BlockchainTests.for_monad_next/frontier/opcodes/all_opcodes/all_opcodes.json"
+)

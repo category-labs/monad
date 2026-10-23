@@ -69,11 +69,11 @@ public:
 
     void operator()(monad::trace::Finish const &op);
 
-    void operator()(monad::trace::CallReset const &op);
-
     void operator()(monad::trace::GetCallFrames const &op);
 
     void operator()(monad::trace::NativeTransfer const &op);
+
+    void reset();
 
 private:
     struct CallFramesStack

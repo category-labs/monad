@@ -43,6 +43,13 @@ void TxTraceContext::dispatch(
     }
 }
 
+void TxTraceContext::reset() const
+{
+    for (auto const &tracer : tracers_) {
+        tracer.reset();
+    }
+}
+
 size_t TxTraceContext::size() const
 {
     return tracers_.size();

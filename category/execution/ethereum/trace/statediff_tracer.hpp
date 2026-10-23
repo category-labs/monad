@@ -42,6 +42,8 @@ public:
 
     void operator()(trace::PostState const &op);
 
+    void reset() {}
+
 private:
     StorageDeltas generate_storage_deltas(
         AccountState::StorageMap const &, AccountState::StorageMap const &);

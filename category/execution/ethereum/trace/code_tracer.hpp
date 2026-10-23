@@ -38,6 +38,11 @@ public:
 
     bool operator()(trace::MaybeReadCode const &);
     void operator()(trace::ReadCode const &);
+
+    // Code read by any execution attempt is retained, since code preimages are
+    // also recorded outside execution (e.g. during transaction validation),
+    // and therefore before the transaction trace context is reset.
+    void reset() {}
 };
 
 MONAD_NAMESPACE_END

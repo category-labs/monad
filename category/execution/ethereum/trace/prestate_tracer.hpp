@@ -55,6 +55,8 @@ public:
 
     void operator()(trace::PostState const &op);
 
+    void reset() {}
+
 private:
     bool retain_beneficiary(State const &) const;
 

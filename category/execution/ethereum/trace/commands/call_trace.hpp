@@ -85,11 +85,6 @@ namespace trace
         uint64_t const gas_used;
     };
 
-    struct CallReset
-    {
-        explicit CallReset() = default;
-    };
-
     struct GetCallFrames
     {
         explicit GetCallFrames(std::span<CallFrame const> *call_frames)
@@ -121,8 +116,7 @@ namespace trace
     };
 
     using CallTraceSignature = monad::Signature<
-        Enter, Exit, Log, SelfDestruct, Finish, CallReset, GetCallFrames,
-        NativeTransfer>;
+        Enter, Exit, Log, SelfDestruct, Finish, GetCallFrames, NativeTransfer>;
 }
 
 MONAD_NAMESPACE_END

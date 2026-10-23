@@ -25,11 +25,10 @@ graph language, and prints, one per line, in hex:
                                 little-endian, unless --no-reference
 
 graph_fixture.py reads the graph language's opcodes and constants from the
-C++ sources of the repository it's in; they're read from <repo root> instead,
-so that the graphcode matches the code that runs it.
+C++ sources of the repository it's in.
 
-Usage: graph_inputs.py <graph_fixture.py> <repo root> <file.graph>
-                       [--call N] [--no-reference]
+Usage: graph_inputs.py <graph_fixture.py> <file.graph> [--call N]
+                       [--no-reference]
 """
 
 import argparse
@@ -41,17 +40,13 @@ from pathlib import Path
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("graph_fixture", type=Path)
-    parser.add_argument("repo_root", type=Path)
     parser.add_argument("graph", type=Path)
     parser.add_argument("--call", type=int, default=0)
     parser.add_argument("--no-reference", action="store_true")
     args = parser.parse_args()
 
-    # graph_fixture.py imports matmul_fixture.py, from its own directory, and
-    # finds the C++ sources at matmul_fixture.REPO_ROOT when it's imported
+    # Imported from its own directory, as it's a script, not a package
     sys.path.insert(0, str(args.graph_fixture.resolve().parent))
-    mf = importlib.import_module("matmul_fixture")
-    mf.REPO_ROOT = args.repo_root.resolve()
     gf = importlib.import_module(args.graph_fixture.stem)
 
     graph = gf.parse(args.graph.read_text())

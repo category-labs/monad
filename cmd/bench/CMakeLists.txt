@@ -15,10 +15,7 @@
 
 # monad-bench, which benchmarks graphs for the graph-eval precompile and EVM
 # bytecode in each engine that can run them; see main.cpp. It reads .graph
-# files with graph_fixture.py, from the monad repository, which is untracked
-# there, through graph_inputs.py
-set(MONAD_GRAPH_FIXTURE "${PROJECT_SOURCE_DIR}/../monad/graph_fixture.py"
-    CACHE FILEPATH "graph_fixture.py, which monad-bench reads .graph files with")
+# files with scripts/graph_fixture.py, through graph_inputs.py
 
 add_executable(monad-bench main.cpp)
 monad_compile_options(monad-bench)
@@ -28,8 +25,7 @@ target_link_libraries(
 target_compile_definitions(
   monad-bench
   PRIVATE MONAD_BENCH_GRAPH_INPUTS="${CMAKE_CURRENT_SOURCE_DIR}/graph_inputs.py"
-          MONAD_BENCH_GRAPH_FIXTURE="${MONAD_GRAPH_FIXTURE}"
-          MONAD_BENCH_REPO_ROOT="${PROJECT_SOURCE_DIR}"
+          MONAD_BENCH_GRAPH_FIXTURE="${PROJECT_SOURCE_DIR}/scripts/graph_fixture.py"
           MONAD_BENCH_BUILD_TYPE="${CMAKE_BUILD_TYPE}")
 
 # The compiled-graph modes, with the compilers built

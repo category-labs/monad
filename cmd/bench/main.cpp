@@ -392,9 +392,8 @@ namespace
     {
         std::string const command =
             "python3 " + shell_quote(MONAD_BENCH_GRAPH_INPUTS) + " " +
-            shell_quote(graph_fixture) + " " +
-            shell_quote(MONAD_BENCH_REPO_ROOT) + " " +
-            shell_quote(graph.string()) + " --call " + std::to_string(call) +
+            shell_quote(graph_fixture) + " " + shell_quote(graph.string()) +
+            " --call " + std::to_string(call) +
             (reference ? "" : " --no-reference");
         FILE *const pipe = popen(command.c_str(), "r");
         if (!pipe) {
@@ -1248,7 +1247,8 @@ int main(int argc, char **argv)
     app.add_option(
            "--graph-fixture",
            graph_fixture,
-           "Graph: graph_fixture.py, which parses .graph files")
+           "Graph: graph_fixture.py, which parses .graph files, with the "
+           "opcodes and constants of the repository it's in")
         ->capture_default_str();
 
     CLI11_PARSE(app, argc, argv);

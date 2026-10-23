@@ -431,6 +431,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         c-kzg-4844
         ethash::keccak
         PkgConfig::crypto++
+        PkgConfig::gmp
         intx::intx
         silkpre)
     target_link_libraries(monad_precompiles

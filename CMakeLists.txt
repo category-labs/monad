@@ -58,6 +58,7 @@ find_package(Boost REQUIRED COMPONENTS context json CONFIG)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(brotli REQUIRED IMPORTED_TARGET libbrotlienc libbrotlidec)
 pkg_check_modules(crypto++ REQUIRED IMPORTED_TARGET libcrypto++)
+pkg_check_modules(gmp REQUIRED IMPORTED_TARGET gmp)
 pkg_check_modules(zstd REQUIRED IMPORTED_TARGET libzstd)
 
 # asmjit

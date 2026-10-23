@@ -261,7 +261,7 @@ TEST(uint256, constructors)
     ASSERT_EQ(to_intx(x), intx);
 
     x = -1;
-    intx = -1;
+    intx = static_cast<uint64_t>(-1);
     ASSERT_EQ(to_intx(x), intx);
 
     x = {0xabcd, -0x1234, 0xdcba, -0x4321};

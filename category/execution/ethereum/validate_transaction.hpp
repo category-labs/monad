@@ -135,4 +135,19 @@ template <Traits traits>
     return success();
 }
 
+// EIP-2681: the sender's state nonce must stay below 2^64 - 1. Strict
+// validation implies this, since it requires the state nonce to equal
+// `tx.nonce`, which `static_validate_transaction` bounds. Relaxed validation
+// skips that check, so it must bound the state nonce directly; otherwise
+// execution could increment it past 2^64 - 1.
+[[gnu::always_inline]] inline Result<void>
+validate_relaxed_sender_nonce(Address const &sender, State &state)
+{
+    if (MONAD_UNLIKELY(
+            state.get_nonce(sender) == std::numeric_limits<uint64_t>::max())) {
+        return TransactionError::NonceExceedsMax;
+    }
+    return BOOST_OUTCOME_V2_NAMESPACE::success();
+}
+
 MONAD_NAMESPACE_END

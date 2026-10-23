@@ -141,6 +141,8 @@ public:
 
     /* 16-bit mask for children */
     uint16_t mask{0};
+    /* children that have a value, a subset of mask */
+    uint16_t child_value_mask{0};
 
     struct bitpacked_storage_t
     {
@@ -154,8 +156,11 @@ public:
     static_assert(sizeof(bitpacked) == 1);
 
     uint8_t path_nibble_index_end{0};
+    // Explicit, zeroed padding: the header is written to disk as is.
+    uint16_t padding16_{0};
     /* size (in byte) of user-passed leaf data */
     uint32_t value_len{0};
+    uint32_t padding32_{0};
     /* A note on definition of node version:
     version(leaf node) corresponds to the block number when it was
     last updated.
@@ -337,7 +342,7 @@ public:
 
 static_assert(std::is_standard_layout_v<Node>, "required by offsetof");
 
-static_assert(sizeof(Node) == 16);
+static_assert(sizeof(Node) == 24);
 static_assert(alignof(Node) == 8);
 
 // ChildData is for temporarily holding a child's info, including child ptr,
@@ -353,6 +358,7 @@ struct ChildData
     uint8_t branch{INVALID_BRANCH};
     uint8_t len{0};
     bool cache_node{true}; // attach ptr to parent if cache, free otherwise
+    bool has_value{false}; // the child's bit in the parent's child_value_mask
 
     bool is_valid() const;
     void erase();
@@ -401,6 +407,16 @@ Node::SharedPtr make_node(
     uint16_t mask, std::span<ChildData>, NibblesView path,
     std::optional<byte_string_view> value, byte_string_view data,
     int64_t version);
+
+// For a child swapped into an existing node in place.
+inline void set_child_has_value(
+    Node &node, unsigned const branch, bool const has_value) noexcept
+{
+    auto const bit = static_cast<uint16_t>(1u << branch);
+    node.child_value_mask =
+        has_value ? static_cast<uint16_t>(node.child_value_mask | bit)
+                  : static_cast<uint16_t>(node.child_value_mask & ~bit);
+}
 
 // create node: either branch/extension, with or without leaf
 Node::SharedPtr create_node_with_children(

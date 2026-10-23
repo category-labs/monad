@@ -168,6 +168,8 @@ state_machine_kind_name(MONAD_MPT_NAMESPACE::state_machine_kind const kind)
         return "ethereum";
     case MONAD_MPT_NAMESPACE::state_machine_kind::monad:
         return "monad";
+    case MONAD_MPT_NAMESPACE::state_machine_kind::lbt_binary:
+        return "lbt_binary";
     }
     return "unknown";
 }
@@ -1682,7 +1684,8 @@ device has been extended in place.
                    "honored on --create, --create-empty, --truncate (stamps "
                    "the primary) and --activate-secondary (stamps the "
                    "secondary); ignored on other subcommands. Rejected with "
-                   "--restore, which carries the kind in the archive.")
+                   "--restore, which carries the kind in the archive. "
+                   "'lbt_binary' selects the binary-trie state commitment.")
                 ->transform(CLI::CheckedTransformer(
                     std::map<
                         std::string,
@@ -1690,7 +1693,9 @@ device has been extended in place.
                         {"ethereum",
                          MONAD_MPT_NAMESPACE::state_machine_kind::ethereum},
                         {"monad",
-                         MONAD_MPT_NAMESPACE::state_machine_kind::monad}},
+                         MONAD_MPT_NAMESPACE::state_machine_kind::monad},
+                        {"lbt_binary",
+                         MONAD_MPT_NAMESPACE::state_machine_kind::lbt_binary}},
                     CLI::ignore_case))
                 ->excludes(restore_opt);
             cli.add_option(

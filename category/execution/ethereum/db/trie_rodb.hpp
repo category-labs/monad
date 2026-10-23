@@ -17,12 +17,12 @@
 
 #include <category/core/config.hpp>
 #include <category/core/keccak.hpp>
+#include <category/core/monad_exception.hpp>
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/db_error.hpp>
-#include <category/mpt/state_machine_kind.hpp>
 #include <category/vm/vm.hpp>
 
 #include <category/core/hex.hpp>
@@ -44,8 +44,7 @@ public:
         : db_(db)
         , block_number_(mpt::INVALID_BLOCK_NUM)
         , prefix_cursor_()
-        , page_encoded_(
-              db_.state_machine_type() == mpt::state_machine_kind::monad)
+        , page_encoded_(is_page_encoded_kind(db_.state_machine_type()))
     {
     }
 

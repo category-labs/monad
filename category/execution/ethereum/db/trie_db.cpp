@@ -49,7 +49,6 @@
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/nibbles_view_fmt.hpp>
 #include <category/mpt/node.hpp>
-#include <category/mpt/state_machine_kind.hpp>
 #include <category/mpt/traverse.hpp>
 #include <category/mpt/update.hpp>
 #include <category/mpt/util.hpp>
@@ -84,7 +83,7 @@ TrieDb::TrieDb(mpt::Db &db, bool const enable_multiblock_cache)
     , prefix_{finalized_nibbles}
     , curr_root_{db.load_root_for_version(block_number_)}
     , cache_{enable_multiblock_cache ? std::make_unique<DbCache>() : nullptr}
-    , page_encoded_{db_.state_machine_type() == mpt::state_machine_kind::monad}
+    , page_encoded_{is_page_encoded_kind(db_.state_machine_type())}
 {
 }
 

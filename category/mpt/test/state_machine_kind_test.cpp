@@ -105,3 +105,10 @@ TEST(state_machine_kind, create_unregistered_aborts)
             static_cast<state_machine_kind>(NUM_STATE_MACHINE_KINDS - 1)),
         "");
 }
+
+TEST(state_machine_kind, persisted_values_are_stable)
+{
+    EXPECT_EQ(static_cast<unsigned>(state_machine_kind::ethereum), 0u);
+    EXPECT_EQ(static_cast<unsigned>(state_machine_kind::monad), 1u);
+    EXPECT_EQ(static_cast<unsigned>(state_machine_kind::lbt_binary), 2u);
+}

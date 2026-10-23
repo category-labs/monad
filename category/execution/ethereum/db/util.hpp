@@ -16,6 +16,7 @@
 #pragma once
 
 #include <category/core/address.hpp>
+#include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
 #include <category/core/result.hpp>
@@ -24,6 +25,7 @@
 #include <category/execution/monad/db/storage_page.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/state_machine.hpp>
+#include <category/mpt/state_machine_kind.hpp>
 
 #include <nlohmann/json_fwd.hpp>
 
@@ -86,7 +88,12 @@ struct MachineBase : public mpt::StateMachine
     virtual void down(mpt::NibblesView path) override;
     virtual void up(size_t n) override;
     virtual bool is_variable_length() const override;
-    constexpr uint8_t prefix_len() const;
+
+    constexpr uint8_t prefix_len() const
+    {
+        return trie_section == TrieType::Proposal ? PROPOSAL_PREFIX_LEN
+                                                  : FINALIZED_PREFIX_LEN;
+    }
 
     constexpr uint8_t max_depth(uint8_t const prefix_length) const
     {
@@ -177,6 +184,21 @@ inline constexpr unsigned char PROPOSAL_NIBBLE = 0;
 inline constexpr unsigned char FINALIZED_NIBBLE = 1;
 inline mpt::Nibbles const proposal_nibbles = mpt::concat(PROPOSAL_NIBBLE);
 inline mpt::Nibbles const finalized_nibbles = mpt::concat(FINALIZED_NIBBLE);
+
+// Kinds whose storage leaves are MIP-8 pages. Aborts on a kind this build
+// does not know, which a pool stamped by another build can carry.
+inline bool is_page_encoded_kind(mpt::state_machine_kind const kind)
+{
+    switch (kind) {
+    case mpt::state_machine_kind::ethereum:
+        return false;
+    case mpt::state_machine_kind::monad:
+    case mpt::state_machine_kind::lbt_binary:
+        return true;
+    }
+    MONAD_ABORT_PRINTF(
+        "unknown state_machine_kind %u", static_cast<unsigned>(kind));
+}
 
 byte_string encode_account_db(Address const &, Account const &);
 byte_string encode_storage_db(bytes32_t const &, bytes32_t const &);

@@ -21,6 +21,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <memory>
@@ -31,11 +32,13 @@ using namespace monad::literals;
 
 TEST(NodeCache, works)
 {
+    // A leaf with this value occupies exactly AVERAGE_NODE_SIZE.
+    constexpr size_t VALUE_SIZE = NodeCache::AVERAGE_NODE_SIZE - sizeof(Node);
     NodeCache node_cache(3 * NodeCache::AVERAGE_NODE_SIZE);
     NodeCache::ConstAccessor acc;
 
     auto make_node = [&](uint32_t v) {
-        monad::byte_string value(84, 0);
+        monad::byte_string value(VALUE_SIZE, 0);
         memcpy(value.data(), &v, 4);
         std::shared_ptr<Node> node =
             monad::mpt::make_node(0, {}, {}, std::move(value), 0, 0);
@@ -44,7 +47,7 @@ TEST(NodeCache, works)
     };
     auto get_acc_value = [&] -> uint32_t {
         auto const view(acc->second->val.first->value());
-        MONAD_ASSERT(84 == view.size());
+        MONAD_ASSERT(VALUE_SIZE == view.size());
         return *(uint32_t const *)view.data();
     };
     node_cache.insert(virtual_chunk_offset_t(1, 0, 1), make_node(0x123));
@@ -80,11 +83,11 @@ TEST(NodeCache, works)
     ASSERT_TRUE(node_cache.find(acc, virtual_chunk_offset_t(5, 0, 1)));
     EXPECT_EQ(get_acc_value(), 100);
 
-    monad::byte_string large_value(84 * 3, 0);
+    monad::byte_string large_value(VALUE_SIZE * 3, 0);
     memcpy(large_value.data(), "hihi", 4);
     auto const node =
         monad::mpt::make_node(0, {}, {}, std::move(large_value), 0, 0);
-    EXPECT_EQ(node->get_mem_size(), 272);
+    EXPECT_EQ(node->get_mem_size(), sizeof(Node) + 3 * VALUE_SIZE);
     node_cache.insert(virtual_chunk_offset_t(6, 0, 1), node);
     // Everything else should get evicted
     EXPECT_EQ(node_cache.size(), 1);

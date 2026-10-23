@@ -476,6 +476,7 @@ void ChildData::finalize(
     MONAD_ASSERT(length <= std::numeric_limits<uint8_t>::max());
     len = static_cast<uint8_t>(length);
     cache_node = cache;
+    has_value = ptr->has_value();
     subtrie_min_version = calc_min_version(*ptr);
 }
 
@@ -495,6 +496,7 @@ void ChildData::copy_old_child(Node *const old, unsigned const i)
     min_offsets = old->min_offsets(index);
     subtrie_min_version = old->subtrie_min_version(index);
     cache_node = ptr != nullptr;
+    has_value = ((old->child_value_mask >> i) & 1u) != 0;
 
     MONAD_ASSERT(is_valid());
 }
@@ -517,6 +519,7 @@ Node::SharedPtr make_node(
         from.data().size(),
         path,
         version);
+    node->child_value_mask = from.child_value_mask;
 
     // fnext, min_count, child_data_offset
     std::copy_n(
@@ -552,11 +555,15 @@ Node::SharedPtr make_node(
     std::vector<uint16_t> child_data_offsets;
     child_data_offsets.reserve(children.size());
     uint16_t total_child_data_size = 0;
+    uint16_t child_value_mask = 0;
     for (auto const &child : children) {
         if (child.is_valid()) {
             MONAD_ASSERT(mask & (1u << child.branch));
             total_child_data_size += child.len;
             child_data_offsets.push_back(total_child_data_size);
+            if (child.has_value) {
+                child_value_mask |= static_cast<uint16_t>(1u << child.branch);
+            }
         }
     }
 
@@ -572,6 +579,7 @@ Node::SharedPtr make_node(
         data_size,
         path,
         version);
+    node->child_value_mask = child_value_mask;
 
     std::copy_n(
         (byte_string_view::pointer)child_data_offsets.data(),

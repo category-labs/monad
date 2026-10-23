@@ -474,6 +474,30 @@ TEST(cli_tool, create_without_state_machine_on_existing_pool_accepted)
         monad::mpt::state_machine_kind::monad);
 }
 
+TEST(cli_tool, create_empty_stamps_lbt_binary)
+{
+    char temppath[] = "cli_tool_tmp_test_XXXXXX";
+    make_temp_pool(temppath);
+    auto const untempfile =
+        monad::make_scope_exit([&]() noexcept { unlink(temppath); });
+
+    std::stringstream cout;
+    std::stringstream cerr;
+    std::string_view args[] = {
+        "monad-mpt",
+        "--storage",
+        temppath,
+        "--create-empty",
+        "--state-machine",
+        "lbt_binary",
+        "--yes"};
+    ASSERT_EQ(0, main_impl(cout, cerr, args)) << cerr.str();
+    EXPECT_NE(std::string::npos, cout.str().find("lbt_binary"));
+    EXPECT_EQ(
+        read_kind(temppath, monad::mpt::timeline_id::primary),
+        monad::mpt::state_machine_kind::lbt_binary);
+}
+
 TEST(cli_tool, activate_secondary_stamps_secondary_kind)
 {
     char temppath[] = "cli_tool_tmp_test_XXXXXX";

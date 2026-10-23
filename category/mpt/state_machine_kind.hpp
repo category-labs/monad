@@ -37,6 +37,9 @@ enum class state_machine_kind : uint8_t
     // MonadOnDiskMachine: page-encoded storage for chains at MONAD_TEN or
     // later. Registered alongside ethereum.
     monad = 1,
+    // LbtOnDiskMachine: binary-trie state commitment over page-encoded
+    // storage. Registered by register_lbt_state_machines.
+    lbt_binary = 2,
     // Future kinds extend here. Never reorder or reuse values: they are
     // persisted on disk.
 };

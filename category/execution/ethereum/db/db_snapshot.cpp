@@ -24,6 +24,7 @@
 #include <category/execution/ethereum/db/db_snapshot.h>
 #include <category/execution/ethereum/db/state_machine_init.hpp>
 #include <category/execution/ethereum/db/util.hpp>
+#include <category/execution/monad/db/lbt_machine.hpp>
 #include <category/execution/monad/db/state_machine_init.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
 #include <category/mpt/db.hpp>
@@ -72,7 +73,7 @@ struct monad_db_snapshot_loader
 
     bool page_encoded() const
     {
-        return db.state_machine_type() == monad::mpt::state_machine_kind::monad;
+        return monad::is_page_encoded_kind(db.state_machine_type());
     }
 
 private:
@@ -669,7 +670,7 @@ bool monad_db_dump_snapshot(
         writer,
         total_shards,
         shard_number,
-        db.state_machine_type() == state_machine_kind::monad};
+        is_page_encoded_kind(db.state_machine_type())};
     bool const success =
         db.traverse(finalized_root, machine, block, dump_concurrency_limit);
     if (!success) {
@@ -690,9 +691,11 @@ monad_db_snapshot_loader *monad_db_snapshot_loader_create(
     unsigned const sq_thread_cpu, bool const load_to_secondary)
 {
     // The metadata-driven Db ctor and open_secondary_timeline() resolve the
-    // persisted kind through the registry, so both factories must be present.
+    // persisted kind through the registry, so every kind's factory must be
+    // present.
     monad::register_ethereum_state_machines();
     monad::register_monad_state_machines();
+    monad::register_lbt_state_machines();
     auto *loader = new monad_db_snapshot_loader(
         block, dbname_path, sq_thread_cpu, load_to_secondary);
     MONAD_ASSERT(

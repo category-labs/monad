@@ -16,6 +16,7 @@
 #include <category/async/util.hpp>
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
+#include <category/core/bytes.hpp>
 #include <category/core/runtime/unaligned.hpp>
 #include <category/crypto/keccak.h>
 #include <category/execution/ethereum/core/block.hpp>
@@ -25,11 +26,13 @@
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/monad/core/monad_block.hpp>
+#include <category/execution/monad/db/lbt_machine.hpp>
 #include <category/execution/monad/db/page_commit_builder.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/db_metadata_context.hpp>
 #include <category/mpt/detail/timeline.hpp>
+#include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/mpt/state_machine_kind.hpp>
 #include <category/mpt/traverse.hpp>
@@ -46,6 +49,7 @@
 #include <filesystem>
 #include <fstream>
 #include <ios>
+#include <memory>
 #include <set>
 #include <sstream>
 #include <string>
@@ -545,52 +549,52 @@ namespace
     };
 }
 
-TEST(DbBinarySnapshot, LoadPageModeOnSecondaryDb)
+namespace
 {
-    using namespace monad;
-    using namespace monad::mpt;
+    // Slots 0x00, 0x01, 0x7f share page_key 0; slots 0x80, 0x81 share
+    // page_key 1. With storage_page_t::SLOTS == 128, this exercises both
+    // grouping (multiple slots on one page) and separation (slots split across
+    // pages).
+    constexpr uint64_t SLOT_SOURCE_BLOCK = 1;
+    constexpr std::array<uint8_t, 5> SLOT_SOURCE_BYTES{
+        0x00, 0x01, 0x7f, 0x80, 0x81};
+    std::array<monad::Address, 2> const SLOT_SOURCE_ADDRS{
+        monad::Address{1}, monad::Address{2}};
 
-    // Slots 0x00, 0x01, 0x7f share page_key 0; slots 0x80, 0x81 share page_key
-    // 1. With storage_page_t::SLOTS == 128, this exercises both grouping
-    // (multiple slots on one page) and separation (slots split across pages).
-    constexpr uint64_t BLOCK = 1;
-    constexpr std::array<uint8_t, 5> SLOT_BYTES{0x00, 0x01, 0x7f, 0x80, 0x81};
-    std::array<Address, 2> const ADDRS{Address{1}, Address{2}};
-
-    auto make_slot = [](uint8_t b) {
-        bytes32_t k{};
+    monad::bytes32_t slot_source_key(uint8_t const b)
+    {
+        monad::bytes32_t k{};
         k.bytes[31] = b;
         return k;
-    };
-    auto make_val = [](Address const &a, uint8_t b) {
-        bytes32_t v{};
+    }
+
+    monad::bytes32_t slot_source_value(monad::Address const &a, uint8_t const b)
+    {
+        monad::bytes32_t v{};
         v.bytes[30] = a.bytes[19];
         v.bytes[31] = static_cast<uint8_t>(b ^ 0xa5);
         return v;
-    };
+    }
 
-    ASSERT_EQ(compute_page_key(make_slot(0x00)), bytes32_t{});
-    ASSERT_EQ(compute_page_key(make_slot(0x01)), bytes32_t{});
-    ASSERT_EQ(compute_page_key(make_slot(0x7f)), bytes32_t{});
-    ASSERT_EQ(compute_page_key(make_slot(0x80)), make_slot(0x01));
-    ASSERT_EQ(compute_page_key(make_slot(0x81)), make_slot(0x01));
-
-    TempDb const dbname;
-    TempDir const snapshot_dir;
-
-    // Build slot-encoded source db with two accounts.
+    // A slot-encoded primary holding SLOT_SOURCE_ADDRS, each with every slot
+    // in SLOT_SOURCE_BYTES.
+    void build_slot_source(std::filesystem::path const &dbname)
     {
+        using namespace monad;
+        using namespace monad::mpt;
+
         mpt::Db db{
             std::make_unique<OnDiskMachine>(),
-            OnDiskDbConfig{.dbname_path = {dbname.path}, .chunk_capacity = 24}};
+            OnDiskDbConfig{.dbname_path = {dbname}, .chunk_capacity = 24}};
         load_header({}, db, BlockHeader{.number = 0});
         db.update_finalized_version(0);
         StateDeltas deltas;
-        for (auto const &addr : ADDRS) {
+        for (auto const &addr : SLOT_SOURCE_ADDRS) {
             StorageDeltas storage;
-            for (auto const b : SLOT_BYTES) {
+            for (auto const b : SLOT_SOURCE_BYTES) {
                 storage.emplace(
-                    make_slot(b), StorageDelta{bytes32_t{}, make_val(addr, b)});
+                    slot_source_key(b),
+                    StorageDelta{bytes32_t{}, slot_source_value(addr, b)});
             }
             deltas.emplace(
                 addr,
@@ -603,21 +607,22 @@ TEST(DbBinarySnapshot, LoadPageModeOnSecondaryDb)
             tdb,
             deltas,
             Code{},
-            bytes32_t{BLOCK},
-            BlockHeader{.number = BLOCK});
-        tdb.finalize(BLOCK, bytes32_t{BLOCK});
+            bytes32_t{SLOT_SOURCE_BLOCK},
+            BlockHeader{.number = SLOT_SOURCE_BLOCK});
+        tdb.finalize(SLOT_SOURCE_BLOCK, bytes32_t{SLOT_SOURCE_BLOCK});
     }
 
-    // Dump slot-encoded snapshot, then load it into a page-encoded secondary.
+    void dump_slot_source(
+        std::filesystem::path const &dbname,
+        std::filesystem::path const &snapshot_dir)
     {
         auto *const context =
             monad_db_snapshot_filesystem_write_user_context_create(
-                snapshot_dir.path.c_str(), BLOCK);
-        char const *const dbpath = dbname.path.c_str();
+                snapshot_dir.c_str(), SLOT_SOURCE_BLOCK);
         EXPECT_TRUE(monad_db_dump_snapshot(
-            dbpath,
+            dbname.c_str(),
             static_cast<unsigned>(-1),
-            BLOCK,
+            SLOT_SOURCE_BLOCK,
             monad_db_snapshot_write_filesystem,
             context,
             2048,
@@ -626,6 +631,28 @@ TEST(DbBinarySnapshot, LoadPageModeOnSecondaryDb)
             /*dump_from_secondary=*/false,
             MONAD_SNAPSHOT_FORMAT_V1));
         monad_db_snapshot_filesystem_write_user_context_destroy(context);
+    }
+}
+
+TEST(DbBinarySnapshot, LoadPageModeOnSecondaryDb)
+{
+    using namespace monad;
+    using namespace monad::mpt;
+
+    ASSERT_EQ(compute_page_key(slot_source_key(0x00)), bytes32_t{});
+    ASSERT_EQ(compute_page_key(slot_source_key(0x01)), bytes32_t{});
+    ASSERT_EQ(compute_page_key(slot_source_key(0x7f)), bytes32_t{});
+    ASSERT_EQ(compute_page_key(slot_source_key(0x80)), slot_source_key(0x01));
+    ASSERT_EQ(compute_page_key(slot_source_key(0x81)), slot_source_key(0x01));
+
+    TempDb const dbname;
+    TempDir const snapshot_dir;
+    build_slot_source(dbname.path);
+
+    // Dump slot-encoded snapshot, then load it into a page-encoded secondary.
+    {
+        dump_slot_source(dbname.path, snapshot_dir.path);
+        char const *const dbpath = dbname.path.c_str();
 
         // The loader opens (does not activate) the secondary, so activate it
         // and stamp its kind (= monad) up front. Both handles are destroyed
@@ -649,7 +676,7 @@ TEST(DbBinarySnapshot, LoadPageModeOnSecondaryDb)
             dbpath,
             static_cast<unsigned>(-1),
             snapshot_dir.path.c_str(),
-            BLOCK,
+            SLOT_SOURCE_BLOCK,
             /*load_to_secondary=*/true);
     }
 
@@ -669,31 +696,31 @@ TEST(DbBinarySnapshot, LoadPageModeOnSecondaryDb)
         }
         TrieDb tdb{db};
         ASSERT_TRUE(tdb.is_page_encoded());
-        tdb.set_block_and_prefix(BLOCK);
+        tdb.set_block_and_prefix(SLOT_SOURCE_BLOCK);
         Incarnation const inc{0, 0};
 
-        for (auto const &addr : ADDRS) {
+        for (auto const &addr : SLOT_SOURCE_ADDRS) {
             ASSERT_TRUE(tdb.read_account(addr).has_value());
-            for (auto const b : SLOT_BYTES) {
+            for (auto const b : SLOT_SOURCE_BYTES) {
                 EXPECT_EQ(
-                    tdb.read_storage(addr, inc, make_slot(b)),
-                    make_val(addr, b))
+                    tdb.read_storage(addr, inc, slot_source_key(b)),
+                    slot_source_value(addr, b))
                     << "addr=" << static_cast<int>(addr.bytes[19]) << " slot=0x"
                     << std::hex << static_cast<int>(b);
             }
 
             auto const page0 = tdb.read_storage_page(addr, inc, bytes32_t{});
-            EXPECT_EQ(page0[0], make_val(addr, 0x00));
-            EXPECT_EQ(page0[1], make_val(addr, 0x01));
-            EXPECT_EQ(page0[0x7f], make_val(addr, 0x7f));
+            EXPECT_EQ(page0[0], slot_source_value(addr, 0x00));
+            EXPECT_EQ(page0[1], slot_source_value(addr, 0x01));
+            EXPECT_EQ(page0[0x7f], slot_source_value(addr, 0x7f));
             for (size_t i = 2; i < 0x7f; ++i) {
                 EXPECT_EQ(page0[static_cast<uint8_t>(i)], bytes32_t{});
             }
 
-            bytes32_t const pk1 = compute_page_key(make_slot(0x80));
+            bytes32_t const pk1 = compute_page_key(slot_source_key(0x80));
             auto const page1 = tdb.read_storage_page(addr, inc, pk1);
-            EXPECT_EQ(page1[0], make_val(addr, 0x80));
-            EXPECT_EQ(page1[1], make_val(addr, 0x81));
+            EXPECT_EQ(page1[0], slot_source_value(addr, 0x80));
+            EXPECT_EQ(page1[1], slot_source_value(addr, 0x81));
             for (size_t i = 2; i < storage_page_t::SLOTS; ++i) {
                 EXPECT_EQ(page1[static_cast<uint8_t>(i)], bytes32_t{});
             }
@@ -709,7 +736,7 @@ TEST(DbBinarySnapshot, LoadPageModeOnSecondaryDb)
                         NibblesView{account_path},
                         NibblesView{keccak256(
                             {page_key.bytes, sizeof(page_key.bytes)})}),
-                    BLOCK);
+                    SLOT_SOURCE_BLOCK);
                 ASSERT_TRUE(leaf_res.has_value());
                 auto enc = leaf_res.value().node->value();
                 auto const inner = decode_storage_db_ignore_key(enc);
@@ -724,16 +751,64 @@ TEST(DbBinarySnapshot, LoadPageModeOnSecondaryDb)
 
         // Confirm slot grouping happened during load: each account holds
         // exactly two storage pages (page_key 0 and page_key 1), so the
-        // state subtree should hold ADDRS.size() * 2 storage leaves total
-        // (the source had ADDRS.size() * 5 = 10 slot leaves before grouping).
+        // state subtree should hold SLOT_SOURCE_ADDRS.size() * 2 storage leaves
+        // total (the source had SLOT_SOURCE_ADDRS.size() * 5 = 10 slot leaves
+        // before grouping).
         auto const state_cursor =
-            db.find(concat(finalized_nibbles, STATE_NIBBLE), BLOCK);
+            db.find(concat(finalized_nibbles, STATE_NIBBLE), SLOT_SOURCE_BLOCK);
         ASSERT_TRUE(state_cursor.has_value());
         ASSERT_TRUE(state_cursor.value().is_valid());
         LeafCounter counter;
-        ASSERT_TRUE(db.traverse_blocking(state_cursor.value(), counter, BLOCK));
-        EXPECT_EQ(counter.count, ADDRS.size() * 2);
+        ASSERT_TRUE(db.traverse_blocking(
+            state_cursor.value(), counter, SLOT_SOURCE_BLOCK));
+        EXPECT_EQ(counter.count, SLOT_SOURCE_ADDRS.size() * 2);
     }
+}
+
+TEST(DbBinarySnapshot, LoadIntoLbtBinary)
+{
+    using namespace monad;
+    using namespace monad::literals;
+    using namespace monad::mpt;
+
+    // A change to this is a change of state commitment.
+    constexpr bytes32_t PIN_SNAPSHOT_LOAD{
+        0x042d0981bb446647c844910ed9da95571d0f7b2940f7edb8eafd95758d25d636_bytes32};
+
+    TempDb const dbname;
+    TempDir const snapshot_dir;
+    TempDb const target;
+    build_slot_source(dbname.path);
+    dump_slot_source(dbname.path, snapshot_dir.path);
+
+    // The loader takes the target's encoding from its stamped kind.
+    {
+        [[maybe_unused]] mpt::Db const stamp{
+            std::make_unique<LbtOnDiskMachine>(),
+            OnDiskDbConfig{.dbname_path = {target.path}, .chunk_capacity = 24}};
+    }
+    monad_db_snapshot_load_filesystem(
+        target.path.c_str(),
+        static_cast<unsigned>(-1),
+        snapshot_dir.path.c_str(),
+        SLOT_SOURCE_BLOCK,
+        /*load_to_secondary=*/false);
+
+    register_lbt_state_machines();
+    mpt::Db db{OnDiskDbConfig{
+        .append = true, .dbname_path = {target.path}, .chunk_capacity = 24}};
+    EXPECT_EQ(db.state_machine_type(), state_machine_kind::lbt_binary);
+    TrieDb tdb{db};
+    ASSERT_TRUE(tdb.is_page_encoded());
+    tdb.set_block_and_prefix(SLOT_SOURCE_BLOCK);
+    for (auto const &addr : SLOT_SOURCE_ADDRS) {
+        for (auto const b : SLOT_SOURCE_BYTES) {
+            EXPECT_EQ(
+                tdb.read_storage(addr, Incarnation{0, 0}, slot_source_key(b)),
+                slot_source_value(addr, b));
+        }
+    }
+    EXPECT_EQ(tdb.state_root(), PIN_SNAPSHOT_LOAD);
 }
 
 namespace
@@ -773,22 +848,15 @@ namespace
         return monad::byte_string(64, addr.bytes[19]);
     }
 
-    // Populate the page-encoded secondary timeline of `dbname` and return its
+    // Commits the page source block to a page-encoded `db` and returns its
     // state root.
-    monad::bytes32_t build_page_source(std::string const &dbname)
+    monad::bytes32_t commit_page_source(monad::mpt::Db &db)
     {
         using namespace monad;
         using namespace monad::mpt;
 
-        mpt::Db db1{
-            std::make_unique<OnDiskMachine>(),
-            OnDiskDbConfig{.dbname_path = {dbname}, .chunk_capacity = 24}};
-        // Activate before any TrieDb exists (requires worker_thread_use_count
-        // == 1).
-        mpt::Db db2 = db1.activate_secondary_timeline(
-            std::make_unique<monad::MonadOnDiskMachine>());
-        load_header({}, db2, BlockHeader{.number = 0});
-        db2.update_finalized_version(0);
+        load_header({}, db, BlockHeader{.number = 0});
+        db.update_finalized_version(0);
 
         StateDeltas deltas;
         Code code_delta;
@@ -810,7 +878,7 @@ namespace
                          Account{.balance = 1, .code_hash = code_hash}},
                     .storage = storage});
         }
-        TrieDb tdb2{db2};
+        TrieDb tdb2{db};
         MONAD_ASSERT(tdb2.is_page_encoded());
         PageCommitBuilder builder(PAGE_BLOCK, tdb2);
         builder.add_state_deltas(deltas).add_code(code_delta);
@@ -830,9 +898,26 @@ namespace
         return tdb2.state_root();
     }
 
+    // Populate the page-encoded secondary timeline of `dbname` and return its
+    // state root.
+    monad::bytes32_t build_page_source(std::string const &dbname)
+    {
+        using namespace monad;
+        using namespace monad::mpt;
+
+        mpt::Db db1{
+            std::make_unique<OnDiskMachine>(),
+            OnDiskDbConfig{.dbname_path = {dbname}, .chunk_capacity = 24}};
+        // Activate before any TrieDb exists (requires worker_thread_use_count
+        // == 1).
+        mpt::Db db2 = db1.activate_secondary_timeline(
+            std::make_unique<monad::MonadOnDiskMachine>());
+        return commit_page_source(db2);
+    }
+
     void dump_page_source(
         std::string const &dbname, std::filesystem::path const &root,
-        monad_snapshot_format const format)
+        monad_snapshot_format const format, bool const from_secondary = true)
     {
         auto *const context =
             monad_db_snapshot_filesystem_write_user_context_create(
@@ -847,7 +932,7 @@ namespace
             2048,
             1,
             0,
-            /*dump_from_secondary=*/true,
+            from_secondary,
             format));
         monad_db_snapshot_filesystem_write_user_context_destroy(context);
     }
@@ -865,22 +950,12 @@ namespace
         MONAD_ASSERT(primary.timeline_active(timeline_id::secondary));
     }
 
-    void verify_page_restore(
-        std::string const &dbname, monad::bytes32_t const &expected_root)
+    void verify_page_contents(
+        monad::mpt::Db &db, monad::bytes32_t const &expected_root)
     {
         using namespace monad;
         using namespace monad::mpt;
 
-        mpt::Db db{
-            std::make_unique<OnDiskMachine>(),
-            OnDiskDbConfig{
-                .append = true, .dbname_path = {dbname}, .chunk_capacity = 24}};
-        {
-            auto db2 = db.open_secondary_timeline(
-                std::make_unique<monad::MonadOnDiskMachine>());
-            ASSERT_TRUE(db2.has_value());
-            db = std::move(db2.value());
-        }
         TrieDb tdb{db};
         ASSERT_TRUE(tdb.is_page_encoded());
         tdb.set_block_and_prefix(PAGE_BLOCK);
@@ -906,6 +981,65 @@ namespace
             db.traverse_blocking(state_cursor.value(), counter, PAGE_BLOCK));
         EXPECT_EQ(counter.count, PAGE_ADDRS.size() * PAGES_PER_ACCOUNT);
     }
+
+    void verify_page_restore(
+        std::string const &dbname, monad::bytes32_t const &expected_root)
+    {
+        using namespace monad;
+        using namespace monad::mpt;
+
+        mpt::Db db{
+            std::make_unique<OnDiskMachine>(),
+            OnDiskDbConfig{
+                .append = true, .dbname_path = {dbname}, .chunk_capacity = 24}};
+        {
+            auto db2 = db.open_secondary_timeline(
+                std::make_unique<monad::MonadOnDiskMachine>());
+            ASSERT_TRUE(db2.has_value());
+            db = std::move(db2.value());
+        }
+        verify_page_contents(db, expected_root);
+    }
+}
+
+TEST(DbBinarySnapshot, DumpFromLbtBinaryRoundTrips)
+{
+    using namespace monad;
+    using namespace monad::mpt;
+
+    TempDb const src_db;
+    TempDb const dest_db;
+    TempDir const snapshot_dir;
+    bytes32_t source_root;
+    {
+        mpt::Db db{
+            std::make_unique<LbtOnDiskMachine>(),
+            OnDiskDbConfig{.dbname_path = {src_db.path}, .chunk_capacity = 24}};
+        source_root = commit_page_source(db);
+    }
+    dump_page_source(
+        src_db.path,
+        snapshot_dir.path,
+        MONAD_SNAPSHOT_FORMAT_V1,
+        /*from_secondary=*/false);
+    {
+        [[maybe_unused]] mpt::Db const stamp{
+            std::make_unique<LbtOnDiskMachine>(),
+            OnDiskDbConfig{
+                .dbname_path = {dest_db.path}, .chunk_capacity = 24}};
+    }
+    monad_db_snapshot_load_filesystem(
+        dest_db.path.c_str(),
+        static_cast<unsigned>(-1),
+        snapshot_dir.path.c_str(),
+        PAGE_BLOCK,
+        /*load_to_secondary=*/false);
+
+    register_lbt_state_machines();
+    mpt::Db db{OnDiskDbConfig{
+        .append = true, .dbname_path = {dest_db.path}, .chunk_capacity = 24}};
+    EXPECT_EQ(db.state_machine_type(), state_machine_kind::lbt_binary);
+    verify_page_contents(db, source_root);
 }
 
 // Under v1 every stream a shard writes opens with a header naming its version

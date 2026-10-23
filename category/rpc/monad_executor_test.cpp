@@ -102,7 +102,6 @@
 #include <stdlib.h>
 #include <string>
 #include <utility>
-#include <variant>
 #include <vector>
 
 #include <unistd.h>

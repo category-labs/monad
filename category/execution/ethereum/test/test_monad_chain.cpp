@@ -837,7 +837,7 @@ TYPED_TEST(MonadTraitsTest, system_transaction_sender_is_authority)
 
     trace::StateTracer noop_state_tracer = std::monostate{};
     auto const res = validate_transaction<typename TestFixture::Trait>(
-        {}, {}, state, 0, authorities, noop_state_tracer);
+        {}, {}, state, 0, authorities, noop_state_tracer, LiveExecution{});
     if constexpr (TestFixture::Trait::monad_rev() < MONAD_FOUR) {
         EXPECT_TRUE(res.has_value());
     }

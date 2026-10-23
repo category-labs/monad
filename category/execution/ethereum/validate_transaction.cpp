@@ -80,7 +80,7 @@ Result<void> static_validate_transaction(
             return TransactionError::TypeNotSupported;
         }
     }
-    else if constexpr (traits::evm_rev() < MONAD_ETH_PRAGUE) {
+    else if constexpr (!traits::eip_7702_active()) {
         if (MONAD_UNLIKELY(
                 tx.type != TransactionType::legacy &&
                 tx.type != TransactionType::eip2930 &&
@@ -131,13 +131,13 @@ Result<void> static_validate_transaction(
         return TransactionError::IntrinsicGasGreaterThanLimit;
     }
 
-    if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
-        // EIP-7623
+    if constexpr (traits::eip_7623_active()) {
         if (MONAD_UNLIKELY(floor_data_gas<traits>(tx) > tx.gas_limit)) {
             return TransactionError::IntrinsicGasGreaterThanLimit;
         }
+    }
 
-        // EIP-7702
+    if constexpr (traits::eip_7702_active()) {
         if (tx.type == TransactionType::eip7702) {
             if (MONAD_UNLIKELY(tx.authorization_list.empty())) {
                 return TransactionError::EmptyAuthorizationList;

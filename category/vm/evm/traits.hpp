@@ -76,6 +76,7 @@ namespace monad
 
         { T::eip_1153_active() } -> std::same_as<bool>;
         { T::eip_1559_header_active() } -> std::same_as<bool>;
+        { T::eip_2537_active() } -> std::same_as<bool>;
         { T::eip_2935_active() } -> std::same_as<bool>;
         { T::eip_3198_active() } -> std::same_as<bool>;
         { T::eip_3529_active() } -> std::same_as<bool>;
@@ -88,8 +89,11 @@ namespace monad
         { T::eip_4844_active() } -> std::same_as<bool>;
         { T::eip_4895_active() } -> std::same_as<bool>;
         { T::eip_5656_active() } -> std::same_as<bool>;
+        { T::eip_7623_active() } -> std::same_as<bool>;
         { T::eip_7685_active() } -> std::same_as<bool>;
+        { T::eip_7685_header_active() } -> std::same_as<bool>;
         { T::eip_7691_active() } -> std::same_as<bool>;
+        { T::eip_7702_active() } -> std::same_as<bool>;
         { T::eip_7708_active() } -> std::same_as<bool>;
         { T::eip_7823_active() } -> std::same_as<bool>;
         { T::eip_7843_active() } -> std::same_as<bool>;
@@ -111,6 +115,7 @@ namespace monad
         // stub data. Separate from eip_4844_active.
         { T::has_blob_opcodes() } -> std::same_as<bool>;
         { T::charges_gas_limit() } -> std::same_as<bool>;
+        { T::deploys_block_hash_history() } -> std::same_as<bool>;
         { T::bumps_nonce_on_unfunded_create() } -> std::same_as<bool>;
 
         // Constants
@@ -145,6 +150,11 @@ namespace monad
         static consteval bool eip_1559_header_active() noexcept
         {
             return Rev >= MONAD_ETH_LONDON;
+        }
+
+        static consteval bool eip_2537_active() noexcept
+        {
+            return Rev >= MONAD_ETH_PRAGUE;
         }
 
         static consteval bool eip_2935_active() noexcept
@@ -207,12 +217,27 @@ namespace monad
             return Rev >= MONAD_ETH_CANCUN;
         }
 
+        static consteval bool eip_7623_active() noexcept
+        {
+            return Rev >= MONAD_ETH_PRAGUE;
+        }
+
         static consteval bool eip_7685_active() noexcept
         {
             return Rev >= MONAD_ETH_PRAGUE;
         }
 
+        static consteval bool eip_7685_header_active() noexcept
+        {
+            return Rev >= MONAD_ETH_PRAGUE;
+        }
+
         static consteval bool eip_7691_active() noexcept
+        {
+            return Rev >= MONAD_ETH_PRAGUE;
+        }
+
+        static consteval bool eip_7702_active() noexcept
         {
             return Rev >= MONAD_ETH_PRAGUE;
         }
@@ -312,6 +337,11 @@ namespace monad
             return false;
         }
 
+        static consteval bool deploys_block_hash_history() noexcept
+        {
+            return Rev >= MONAD_ETH_PRAGUE;
+        }
+
         static consteval bool bumps_nonce_on_unfunded_create() noexcept
         {
             return false;
@@ -399,6 +429,11 @@ namespace monad
             return evm_rev() >= MONAD_ETH_LONDON;
         }
 
+        static consteval bool eip_2537_active() noexcept
+        {
+            return evm_rev() >= MONAD_ETH_PRAGUE;
+        }
+
         static consteval bool eip_2935_active() noexcept
         {
             return Rev >= MONAD_SIX;
@@ -462,6 +497,11 @@ namespace monad
             return evm_rev() >= MONAD_ETH_CANCUN;
         }
 
+        static consteval bool eip_7623_active() noexcept
+        {
+            return evm_rev() >= MONAD_ETH_PRAGUE;
+        }
+
         static consteval bool eip_7685_active() noexcept
         {
             // Monad Prague blocks carry a requests_hash header field, but
@@ -471,9 +511,19 @@ namespace monad
             return false;
         }
 
+        static consteval bool eip_7685_header_active() noexcept
+        {
+            return evm_rev() >= MONAD_ETH_PRAGUE;
+        }
+
         static consteval bool eip_7691_active() noexcept
         {
             return false;
+        }
+
+        static consteval bool eip_7702_active() noexcept
+        {
+            return evm_rev() >= MONAD_ETH_PRAGUE;
         }
 
         static consteval bool eip_7708_active() noexcept
@@ -561,6 +611,11 @@ namespace monad
         static consteval bool charges_gas_limit() noexcept
         {
             return Rev >= MONAD_ONE;
+        }
+
+        static consteval bool deploys_block_hash_history() noexcept
+        {
+            return evm_rev() >= MONAD_ETH_PRAGUE;
         }
 
         static consteval bool bumps_nonce_on_unfunded_create() noexcept

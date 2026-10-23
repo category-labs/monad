@@ -21,13 +21,13 @@
 #include <category/vm/compiler/ir/x86.hpp>
 #include <category/vm/compiler/ir/x86/types.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/host.hpp>
 #include <category/vm/runtime/allocator.hpp>
 #include <category/vm/runtime/types.hpp>
 #include <category/vm/vm.hpp>
 
-#include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
 #include <algorithm>
@@ -61,7 +61,7 @@ namespace monad::vm
 
     template <Traits traits>
     evmc::Result VM::execute(
-        Host &host, evmc_message const *msg, bytes32_t const &code_hash,
+        Host &host, Message const *msg, bytes32_t const &code_hash,
         SharedVarcode const &vcode)
     {
         auto const &icode = vcode->intercode();
@@ -94,7 +94,7 @@ namespace monad::vm
 
     template <Traits traits>
     evmc::Result VM::execute_bytecode(
-        Host &host, evmc_message const *msg, std::span<uint8_t const> code)
+        Host &host, Message const *msg, std::span<uint8_t const> code)
     {
         if constexpr (enable_execute_override) {
             if (execute_override_) {

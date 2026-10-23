@@ -109,3 +109,25 @@ TEST(Receipt, add_log)
     EXPECT_EQ(output, r.bloom);
     EXPECT_EQ(v, r.logs);
 }
+
+TEST(Receipt, add_log_trace_transfer)
+{
+    static constexpr auto addr{
+        0x3535353535353535353535353535353535353535_address};
+    static constexpr auto trace_transfer_addr{
+        0x3636363636363636363636363636363636363636_address};
+    Receipt::Log const log{.address = addr};
+    Receipt::Log const trace_transfer_log{
+        .address = trace_transfer_addr, .trace_transfer = true};
+
+    Receipt r{};
+    r.add_log(log);
+    r.add_log(trace_transfer_log);
+
+    Receipt::Bloom bloom{};
+    populate_bloom(bloom, log);
+    std::vector<Receipt::Log> const v{log, trace_transfer_log};
+
+    EXPECT_EQ(bloom, r.bloom);
+    EXPECT_EQ(v, r.logs);
+}

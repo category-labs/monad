@@ -98,10 +98,9 @@ impl<'ring> ExecEventReaderExt<'ring> for EventReader<'ring, ExecEventDecoder> {
         block_number: u64,
         filter: Option<ExecEventType>,
     ) -> Option<EventDescriptor<'ring, ExecEventDecoder>> {
-        self.with_raw(|c_event_ring, c_event_iterator| {
+        self.with_raw(|_, c_event_iterator| {
             monad_exec_iter_block_number_prev(
                 c_event_iterator,
-                c_event_ring,
                 block_number,
                 filter.map_or(MONAD_EXEC_NONE, ExecEventType::as_c_event_type),
             )
@@ -113,10 +112,9 @@ impl<'ring> ExecEventReaderExt<'ring> for EventReader<'ring, ExecEventDecoder> {
         block_id: &monad_bytes32,
         filter: Option<ExecEventType>,
     ) -> Option<EventDescriptor<'ring, ExecEventDecoder>> {
-        self.with_raw(|c_event_ring, c_event_iterator| {
+        self.with_raw(|_, c_event_iterator| {
             monad_exec_iter_block_id_prev(
                 c_event_iterator,
-                c_event_ring,
                 block_id,
                 filter.map_or(MONAD_EXEC_NONE, ExecEventType::as_c_event_type),
             )

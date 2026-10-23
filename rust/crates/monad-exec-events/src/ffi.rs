@@ -48,12 +48,14 @@ pub(crate) use self::bindings::{
     rustdoc::broken_intra_doc_links
 )]
 mod bindings {
-    use ::monad_event_ring::ffi::{monad_event_descriptor, monad_event_iterator, monad_event_ring};
+    use ::monad_event_ring::ffi::{
+        monad_event_descriptor, monad_event_ring, monad_event_ring_iter,
+    };
 
     include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 }
 
-use ::monad_event_ring::ffi::{monad_event_descriptor, monad_event_iterator, monad_event_ring};
+use ::monad_event_ring::ffi::{monad_event_descriptor, monad_event_ring, monad_event_ring_iter};
 
 pub(crate) fn monad_exec_ring_get_block_number(
     c_event_ring: &monad_event_ring,
@@ -83,7 +85,7 @@ pub(crate) fn monad_exec_ring_block_id_matches(
 }
 
 pub(crate) fn monad_exec_iter_consensus_prev(
-    c_event_iterator: &mut monad_event_iterator,
+    c_event_iterator: &mut monad_event_ring_iter,
     c_exec_event_filter: monad_exec_event_type,
 ) -> Option<monad_event_descriptor> {
     let mut c_event_descriptor: monad_event_descriptor = unsafe { std::mem::zeroed() };
@@ -100,8 +102,7 @@ pub(crate) fn monad_exec_iter_consensus_prev(
 }
 
 pub(crate) fn monad_exec_iter_block_number_prev(
-    c_event_iterator: &mut monad_event_iterator,
-    c_event_ring: &monad_event_ring,
+    c_event_iterator: &mut monad_event_ring_iter,
     block_number: u64,
     c_exec_event_filter: monad_exec_event_type,
 ) -> Option<monad_event_descriptor> {
@@ -110,7 +111,6 @@ pub(crate) fn monad_exec_iter_block_number_prev(
     let success = unsafe {
         self::bindings::monad_exec_iter_block_number_prev(
             c_event_iterator,
-            c_event_ring,
             block_number,
             c_exec_event_filter,
             &mut c_event_descriptor,
@@ -121,8 +121,7 @@ pub(crate) fn monad_exec_iter_block_number_prev(
 }
 
 pub(crate) fn monad_exec_iter_block_id_prev(
-    c_event_iterator: &mut monad_event_iterator,
-    c_event_ring: &monad_event_ring,
+    c_event_iterator: &mut monad_event_ring_iter,
     block_id: &monad_bytes32,
     c_exec_event_filter: monad_exec_event_type,
 ) -> Option<monad_event_descriptor> {
@@ -131,7 +130,6 @@ pub(crate) fn monad_exec_iter_block_id_prev(
     let success = unsafe {
         self::bindings::monad_exec_iter_block_id_prev(
             c_event_iterator,
-            c_event_ring,
             block_id,
             c_exec_event_filter,
             &mut c_event_descriptor,

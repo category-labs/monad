@@ -33,6 +33,8 @@ extern "C"
 #endif
 
 enum monad_event_content_type : uint16_t;
+typedef enum monad_event_content_type monad_event_content_type_t;
+
 struct monad_event_ring;
 
 /// Value passed to monad_event_resolve_ring_file's `default_path` parameter,
@@ -50,8 +52,8 @@ struct monad_event_ring_simple_config
     uint8_t descriptors_shift;
     uint8_t payload_buf_shift;
     uint16_t context_large_pages;
-    enum monad_event_content_type content_type;
-    uint8_t const *schema_hash;
+    monad_event_content_type_t content_type;
+    uint8_t const (*schema_hash)[32];
 };
 
 /// Output structure returned by `monad_event_ring_query_flocks`
@@ -72,8 +74,8 @@ int monad_event_ring_init_simple(
 /// Check that the event ring content type and schema hash match the assumed
 /// values
 int monad_event_ring_check_content_type(
-    struct monad_event_ring const *, enum monad_event_content_type,
-    uint8_t const *schema_hash);
+    struct monad_event_ring const *, monad_event_content_type_t,
+    uint8_t const (*schema_hash)[32]);
 
 /// Query information about every process that holds an flock on the file
 /// referred to by the given file descriptor; the flock(2) system call is used

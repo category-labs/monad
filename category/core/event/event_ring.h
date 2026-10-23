@@ -20,9 +20,8 @@
  *
  * This file contains:
  *
- *   1. Definitions of the event ring's shared memory structures
- *   2. Functions which initialize and mmap event rings
- *   3. Payload buffer access inline functions
+ *   - Definitions of the event ring's shared memory structures
+ *   - Functions which initialize and mmap event rings
  */
 
 #include <stddef.h>
@@ -31,20 +30,20 @@
 
 #include <sys/types.h>
 
-#include <category/core/likely.h>
-
 #ifdef __cplusplus
 extern "C"
 {
 #endif
 
 struct monad_event_descriptor;
-struct monad_event_iterator;
 struct monad_event_recorder;
 struct monad_event_ring_header;
+struct monad_event_ring_iter;
 
 enum monad_event_content_type : uint16_t;
 enum monad_event_record_error_type : uint16_t;
+
+typedef enum monad_event_content_type monad_event_content_type_t;
 
 // clang-format off
 
@@ -60,25 +59,6 @@ struct monad_event_ring
     uint64_t desc_capacity_mask;                ///< Descriptor capacity - 1
     uint64_t payload_buf_mask;                  ///< Payload buffer size - 1
 };
-
-/// Descriptor for an event; this fixed-size object describes the common
-/// attributes of an event, and is broadcast to other threads via a shared
-/// memory ring buffer (the threads are potentially in different processes).
-/// The variably-sized extra content of the event (specific to each event type)
-/// is called the "event payload"; it lives in a shared memory buffer called the
-/// "payload buffer"; it can be accessed using this descriptor (see event.md)
-struct monad_event_descriptor
-{
-    alignas(64) uint64_t seqno;  ///< Sequence number, for gap/liveness check
-    uint16_t event_type;         ///< What kind of event this is
-    uint16_t : 16;               ///< Unused tail padding
-    uint32_t payload_size;       ///< Size of event payload
-    uint64_t record_epoch_nanos; ///< Time event was recorded
-    uint64_t payload_buf_offset; ///< Unwrapped offset of payload in p. buf
-    uint64_t content_ext[4];     ///< Extensions for particular content types
-};
-
-static_assert(sizeof(struct monad_event_descriptor) == 64);
 
 /// Describes the size of an event ring's primary data structures
 struct monad_event_ring_size
@@ -102,24 +82,19 @@ struct monad_event_ring_control
 struct monad_event_ring_header
 {
     char magic[6];                           ///< 'RINGvv', vv = version number
-    enum monad_event_content_type
-        content_type;                        ///< Kind of events in this ring
+    monad_event_content_type_t content_type; ///< Kind of events in this ring
     uint8_t schema_hash[32];                 ///< Ensure event definitions match
     struct monad_event_ring_size size;       ///< Size of following structures
     struct monad_event_ring_control control; ///< Tracks ring's state/status
 };
 
-/// Describes what kind of event content is recorded in an event ring file;
-/// different categories of events have different binary schemas, and this
-/// identifies the integer namespace that the event descriptor's
-/// `uint16_t event_type` field is drawn from
-enum monad_event_content_type : uint16_t
+/// Result of trying to read an event descriptor from an event ring
+typedef enum monad_event_ring_result : uint16_t
 {
-    MONAD_EVENT_CONTENT_TYPE_NONE,  ///< An invalid value
-    MONAD_EVENT_CONTENT_TYPE_TEST,  ///< Used in simple automated tests
-    MONAD_EVENT_CONTENT_TYPE_EXEC,  ///< Core execution events
-    MONAD_EVENT_CONTENT_TYPE_COUNT  ///< Total number of content types
-};
+    MONAD_EVENT_RING_SUCCESS = 0,        ///< Event descriptor read successfully
+    MONAD_EVENT_RING_NOT_READY = 0x0100, ///< No event descriptor available yet
+    MONAD_EVENT_RING_GAP = 0x0101,       ///< Sequence number gap detected
+} monad_event_ring_result_t;
 
 // clang-format on
 
@@ -138,8 +113,8 @@ size_t monad_event_ring_calc_storage(struct monad_event_ring_size const *);
 /// processes later. Given an open file descriptor, this creates the event
 /// ring data structures at the given offset within that file
 int monad_event_ring_init_file(
-    struct monad_event_ring_size const *, enum monad_event_content_type,
-    uint8_t const *schema_hash, int ring_fd, off_t ring_offset,
+    struct monad_event_ring_size const *, monad_event_content_type_t,
+    uint8_t const (*schema_hash)[32], int ring_fd, off_t ring_offset,
     char const *error_name);
 
 /// Given an open file descriptor which contains an initialized event ring at
@@ -154,9 +129,9 @@ int monad_event_ring_mmap(
 void monad_event_ring_unmap(struct monad_event_ring *);
 
 /// Try to copy the event descriptor corresponding to a particular sequence
-/// number; returns true only if the descriptor was available and its contents
-/// were copied into the descriptor output buffer
-static bool monad_event_ring_try_copy(
+/// number; returns MONAD_EVENT_RING_SUCCESS only if the descriptor was
+/// available and its contents were copied into the output descriptor buffer
+static monad_event_ring_result_t monad_event_ring_try_copy(
     struct monad_event_ring const *, uint64_t seqno,
     struct monad_event_descriptor *);
 
@@ -177,10 +152,16 @@ static void *monad_event_ring_payload_memcpy(
     struct monad_event_ring const *, struct monad_event_descriptor const *,
     void *dst, size_t n);
 
+/// Return the sequence number of the last event that was written to the event
+/// ring; if sync_wait is true, wait until the event is fully written before
+/// returning (i.e., prevent us from seeing partial writes)
+static uint64_t monad_event_ring_get_last_written_seqno(
+    struct monad_event_ring const *, bool sync_wait);
+
 /// Initialize an iterator to point to the most recently produced event in the
 /// event ring
 int monad_event_ring_init_iterator(
-    struct monad_event_ring const *, struct monad_event_iterator *);
+    struct monad_event_ring const *, struct monad_event_ring_iter *);
 
 /// Initialize a recorder to write into an event ring
 int monad_event_ring_init_recorder(
@@ -194,10 +175,6 @@ char const *monad_event_ring_get_last_error();
 /// resident, e.g., `enum monad_event_content_type`)
 constexpr uint8_t MONAD_EVENT_RING_HEADER_VERSION[] = {
     'R', 'I', 'N', 'G', '0', '1'};
-
-/// Array of human-readable names for the event ring content types
-extern char const
-    *g_monad_event_content_type_names[MONAD_EVENT_CONTENT_TYPE_COUNT];
 
 /*
  * Event ring size limits
@@ -244,62 +221,10 @@ enum monad_event_record_error_type : uint16_t
 
 // clang-format on
 
-/*
- * Event ring inline function definitions
- */
-
-inline bool monad_event_ring_try_copy(
-    struct monad_event_ring const *const event_ring, uint64_t const seqno,
-    struct monad_event_descriptor *const event)
-{
-    if (MONAD_UNLIKELY(seqno == 0)) {
-        return false;
-    }
-    struct monad_event_descriptor const *const ring_event =
-        &event_ring->descriptors[(seqno - 1) & event_ring->desc_capacity_mask];
-    *event = *ring_event;
-    uint64_t const ring_seqno =
-        __atomic_load_n(&ring_event->seqno, __ATOMIC_ACQUIRE);
-    if (MONAD_UNLIKELY(ring_seqno != seqno)) {
-        return false;
-    }
-    return true;
-}
-
-inline void const *monad_event_ring_payload_peek(
-    struct monad_event_ring const *const event_ring,
-    struct monad_event_descriptor const *const event)
-{
-    return event_ring->payload_buf +
-           (event->payload_buf_offset & event_ring->payload_buf_mask);
-}
-
-inline bool monad_event_ring_payload_check(
-    struct monad_event_ring const *const event_ring,
-    struct monad_event_descriptor const *const event)
-{
-    return event->payload_buf_offset >=
-           __atomic_load_n(
-               &event_ring->header->control.buffer_window_start,
-               __ATOMIC_ACQUIRE);
-}
-
-inline void *monad_event_ring_payload_memcpy(
-    struct monad_event_ring const *const event_ring,
-    struct monad_event_descriptor const *const event, void *const dst,
-    size_t const n)
-{
-    if (MONAD_UNLIKELY(!monad_event_ring_payload_check(event_ring, event))) {
-        return nullptr;
-    }
-    void const *const src = monad_event_ring_payload_peek(event_ring, event);
-    memcpy(dst, src, n);
-    if (MONAD_UNLIKELY(!monad_event_ring_payload_check(event_ring, event))) {
-        return nullptr; // Payload expired
-    }
-    return dst;
-}
-
 #ifdef __cplusplus
 } // extern "C"
 #endif
+
+#define MONAD_EVENT_RING_INTERNAL
+#include "event_ring_inline.h"
+#undef MONAD_EVENT_RING_INTERNAL

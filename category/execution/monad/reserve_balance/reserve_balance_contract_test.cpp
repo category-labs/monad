@@ -568,8 +568,7 @@ void run_check_call_precompile_test(
     std::string_view expected_message = "")
 {
     TxTraceContext trace_ctx{};
-    auto const result =
-        check_call_precompile<traits>(state, msg, trace_ctx);
+    auto const result = check_call_precompile<traits>(state, msg, trace_ctx);
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result->status_code, expected_status);

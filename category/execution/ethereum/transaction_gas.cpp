@@ -182,10 +182,9 @@ template <Traits traits>
 uint256_t
 gas_price(Transaction const &tx, uint256_t const &base_fee_per_gas) noexcept
 {
-    if constexpr (traits::evm_rev() < MONAD_ETH_LONDON) {
+    if constexpr (!traits::eip_1559_header_active()) {
         return tx.max_fee_per_gas;
     }
-    // EIP-1559
     return priority_fee_per_gas(tx, base_fee_per_gas) + base_fee_per_gas;
 }
 
@@ -196,9 +195,7 @@ template <Traits traits>
 uint64_t g_star(
     Transaction const &tx, uint64_t const gas_remaining, uint64_t const refund)
 {
-    // EIP-3529
-    constexpr auto max_refund_quotient =
-        traits::evm_rev() >= MONAD_ETH_LONDON ? 5 : 2;
+    constexpr auto max_refund_quotient = traits::eip_3529_active() ? 5 : 2;
     auto const refund_allowance =
         (tx.gas_limit - gas_remaining) / max_refund_quotient;
     return gas_remaining + std::min(refund_allowance, refund);
@@ -220,7 +217,7 @@ uint256_t calculate_txn_award(
     Transaction const &tx, uint256_t const &base_fee_per_gas,
     uint64_t const gas_used) noexcept
 {
-    if constexpr (traits::evm_rev() < MONAD_ETH_LONDON) {
+    if constexpr (!traits::eip_1559_header_active()) {
         return gas_used * gas_price<traits>(tx, base_fee_per_gas);
     }
     return gas_used * priority_fee_per_gas(tx, base_fee_per_gas);

@@ -180,7 +180,7 @@ TYPED_TEST(RuntimeTraitsTest, StorageOriginalNonEmpty)
         if constexpr (traits::mip_8_active()) {
             ASSERT_EQ(ctx_.gas_refund, 0);
         }
-        else if constexpr (traits::evm_rev() <= MONAD_ETH_BERLIN) {
+        else if constexpr (!traits::eip_3529_active()) {
             ASSERT_EQ(ctx_.gas_refund, 15000);
         }
         else {

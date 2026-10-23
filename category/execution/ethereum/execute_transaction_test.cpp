@@ -303,7 +303,7 @@ TYPED_TEST(TraitsTest, refunds_delete)
 
     // X -> X -> 0
     static constexpr auto storage_refund_tx2_evm_uncapped = [] {
-        if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_LONDON) {
+        if constexpr (TestFixture::Trait::eip_3529_active()) {
             return 4'800;
         }
         else {
@@ -316,8 +316,7 @@ TYPED_TEST(TraitsTest, refunds_delete)
                 return 0;
             }
         }
-        if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_LONDON) {
-            // due to EIP-3529 introduced in London revision
+        if constexpr (TestFixture::Trait::eip_3529_active()) {
             return std::min(
                 gas_charged_tx2 / 5, storage_refund_tx2_evm_uncapped);
         }
@@ -607,9 +606,7 @@ TYPED_TEST(TraitsTest, refunds_delete_then_set)
                         return 0;
                     }
                 }
-                if constexpr (
-                    TestFixture::Trait::evm_rev() >= MONAD_ETH_LONDON) {
-                    // due to EIP-3529 introduced in London revision
+                if constexpr (TestFixture::Trait::eip_3529_active()) {
                     return std::min(
                         gas_charged / 5, storage_refund_evm_uncapped);
                 }

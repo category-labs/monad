@@ -811,7 +811,7 @@ TYPED_TEST(TraitsTest, call_frames_refund)
 
     static constexpr auto gas_used = [] {
         if constexpr (is_evm_trait_v<typename TestFixture::Trait>) {
-            if constexpr (TestFixture::Trait::evm_rev() <= MONAD_ETH_BERLIN) {
+            if constexpr (!TestFixture::Trait::eip_3529_active()) {
                 // value from
                 // https://github.com/ethereum/legacytests/blob/1f581b8ccdc4c63acf5f2c5c1b155c690c32a8eb/src/LegacyTests/Constantinople/BlockchainTestsFiller/GeneralStateTests/stRefundTest/refund50_1_d0g0v0Filler.json
                 // pre.0xa94f5374fce5edbc8e2a8697c15331677e6ebf0b.balance -

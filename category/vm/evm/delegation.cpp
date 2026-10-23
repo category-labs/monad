@@ -13,30 +13,15 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/core/address.hpp>
 #include <category/core/byte_string.hpp>
 #include <category/vm/evm/delegation.hpp>
 
-#include <evmc/evmc.h>
-
 #include <algorithm>
-#include <array>
-#include <cstddef>
 #include <cstdint>
-#include <optional>
 #include <span>
 
 namespace monad::vm::evm
 {
-    namespace
-    {
-        inline constexpr std::array<uint8_t, 3>
-            delegation_indicator_prefix_bytes{0xef, 0x01, 0x00};
-
-        inline constexpr size_t delegation_indicator_size =
-            delegation_indicator_prefix_bytes.size() + sizeof(evmc_address);
-    }
-
     byte_string_view delegation_indicator_prefix()
     {
         return {
@@ -52,32 +37,5 @@ namespace monad::vm::evm
 
         auto const prefix = delegation_indicator_prefix();
         return std::equal(prefix.begin(), prefix.end(), code.begin());
-    }
-
-    std::optional<Address> resolve_delegation(
-        evmc_host_interface const *const host, evmc_host_context *const ctx,
-        Address const &addr)
-    {
-        // Copy up to |code_size| bytes of the bytecode. Then test
-        // whether the code begins with the prefix 0xEF0100, if so,
-        // then drop these three bytes and interpret the remainder as
-        // the delegate address.
-        uint8_t code_buffer[delegation_indicator_size + 1];
-        size_t const actual_code_size = host->copy_code(
-            ctx, &addr, 0, code_buffer, delegation_indicator_size + 1);
-
-        std::span const code{code_buffer, actual_code_size};
-
-        if (!is_delegated(code)) {
-            return std::nullopt;
-        }
-
-        // Copy the delegate address from the code buffer.
-        Address designation;
-        std::ranges::copy(
-            code.subspan(
-                delegation_indicator_prefix_bytes.size(), sizeof(Address)),
-            designation.bytes);
-        return designation;
     }
 }

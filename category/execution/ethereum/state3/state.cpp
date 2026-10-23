@@ -447,7 +447,7 @@ monad_page_storage_status State::update_page(
 template <Traits traits>
 bool State::selfdestruct_to_self_burns([[maybe_unused]] Address const &address)
 {
-    if constexpr (traits::evm_rev() < MONAD_ETH_CANCUN) {
+    if constexpr (!traits::eip_6780_active()) {
         return true;
     }
     else if constexpr (traits::eip_8246_active()) {
@@ -514,7 +514,7 @@ void State::destruct_suicides()
         }
         auto &account = account_state.account_;
 
-        if constexpr (traits::evm_rev() < MONAD_ETH_CANCUN) {
+        if constexpr (!traits::eip_6780_active()) {
             account.reset();
             continue;
         }

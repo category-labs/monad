@@ -74,7 +74,7 @@ constexpr void irrevocable_change(
     }
 
     uint256_t blob_gas = 0;
-    if constexpr (traits::evm_rev() >= MONAD_ETH_CANCUN) {
+    if constexpr (traits::eip_4844_active()) {
         blob_gas = (tx.type == TransactionType::eip4844)
                        ? calc_blob_fee(tx, excess_blob_gas, blob_schedule)
                        : 0;

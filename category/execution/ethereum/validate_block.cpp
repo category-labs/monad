@@ -112,19 +112,25 @@ Result<void> static_validate_header(BlockHeader const &header)
         return BlockError::MissingField;
     }
 
-    // EIP-4844 and EIP-4788
-    if constexpr (traits::evm_rev() < MONAD_ETH_CANCUN) {
+    if constexpr (!traits::eip_4844_header_active()) {
         if (MONAD_UNLIKELY(
                 header.blob_gas_used.has_value() ||
-                header.excess_blob_gas.has_value() ||
-                header.parent_beacon_block_root.has_value())) {
+                header.excess_blob_gas.has_value())) {
             return BlockError::FieldBeforeFork;
         }
     }
     else if (MONAD_UNLIKELY(
                  !header.blob_gas_used.has_value() ||
-                 !header.excess_blob_gas.has_value() ||
-                 !header.parent_beacon_block_root.has_value())) {
+                 !header.excess_blob_gas.has_value())) {
+        return BlockError::MissingField;
+    }
+
+    if constexpr (!traits::eip_4788_active()) {
+        if (MONAD_UNLIKELY(header.parent_beacon_block_root.has_value())) {
+            return BlockError::FieldBeforeFork;
+        }
+    }
+    else if (MONAD_UNLIKELY(!header.parent_beacon_block_root.has_value())) {
         return BlockError::MissingField;
     }
 
@@ -215,7 +221,7 @@ Result<void> static_validate_ommers(Chain const &chain, Block const &block)
 template <Traits traits>
 Result<void> static_validate_4844(Chain const &chain, Block const &block)
 {
-    if constexpr (traits::evm_rev() >= MONAD_ETH_CANCUN) {
+    if constexpr (traits::eip_4844_header_active()) {
         uint64_t blob_gas_used = 0;
         for (auto const &tx : block.transactions) {
             if (tx.type == TransactionType::eip4844) {

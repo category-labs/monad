@@ -329,7 +329,7 @@ Result<std::vector<Receipt>> execute_block(
     State state{
         block_state, Incarnation{block.header.number, Incarnation::LAST_TX}};
 
-    if constexpr (traits::evm_rev() >= MONAD_ETH_SHANGHAI) {
+    if constexpr (traits::eip_4895_active()) {
         process_withdrawal(state, block.withdrawals);
     }
 

@@ -57,12 +57,28 @@ include(cmake/compile_options.cmake)
 find_package(Boost REQUIRED COMPONENTS context json CONFIG)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(brotli REQUIRED IMPORTED_TARGET libbrotlienc libbrotlidec)
-pkg_check_modules(crypto++ REQUIRED IMPORTED_TARGET libcrypto++)
 pkg_check_modules(zstd REQUIRED IMPORTED_TARGET libzstd)
 
 # asmjit
 set(ASMJIT_STATIC ON)
 add_subdirectory(third_party/asmjit)
+
+# AWS-LC, for P256VERIFY. Always static and never re-exported, so that its
+# OpenSSL-named API cannot clash with another libcrypto in the same process.
+block()
+  set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
+  set(BUILD_SHARED_LIBS OFF)
+  set(BUILD_TESTING OFF)
+  set(BUILD_LIBSSL OFF)
+  set(BUILD_TOOL OFF)
+  set(DISABLE_GO ON)
+  set(DISABLE_PERL ON)
+  set(ENABLE_SOURCE_MODIFICATION OFF)
+  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+  add_subdirectory(third_party/aws-lc EXCLUDE_FROM_ALL SYSTEM)
+endblock()
+add_library(aws_lc::crypto ALIAS crypto)
+target_link_options(crypto INTERFACE "LINKER:--exclude-libs,libcrypto.a")
 
 # BLAKE3
 add_subdirectory(third_party/BLAKE3/c)

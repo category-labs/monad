@@ -278,6 +278,7 @@ namespace
 
     // Writes a compiled mode's IR, as its compiler dumps it, to
     // <dir>/<name>.txt
+    [[maybe_unused]]
     void write_ir(
         std::filesystem::path const &dir, std::string const &name,
         std::string const &ir)
@@ -667,6 +668,7 @@ namespace
             return byte_string_view{outputs[i], output_type(i).size_bytes()};
         };
         // Times a compiled graph's `run`, given the copies made in the call
+        [[maybe_unused]]
         auto const bench_compiled = [&](std::string const &name, auto &&run) {
             auto const call_once = [&] {
                 for (size_t i = 0; i < inputs.size(); i++) {

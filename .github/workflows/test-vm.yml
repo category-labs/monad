@@ -67,9 +67,7 @@ jobs:
             CXX=${{ matrix.compiler.CXX }}
             CMAKE_BUILD_TYPE=${{ matrix.build.CMAKE_BUILD_TYPE }}
             TOOLCHAIN=${{ matrix.build.TOOLCHAIN }}
-          cache-from: |
-            type=gha,scope=base_vm_test
-            type=gha,scope=base
+          cache-from: type=gha,scope=base_vm_test
 
   fuzz:
     name: VM Fuzz Tests
@@ -84,9 +82,7 @@ jobs:
           target: vm_fuzz
           setup: true
           submodules: true
-          cache-from: |
-            type=gha,scope=base_vm_test
-            type=gha,scope=base
+          cache-from: type=gha,scope=base_vm_test
 
   python-code-quality:
     name: Python code quality checks

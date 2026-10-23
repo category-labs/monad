@@ -145,6 +145,17 @@ For anything that parses untrusted input (network messages, RLP decoders, EVM op
 - Recursion depth bounds (RLP, nested EVM calls, trie traversal).
 - Resource exhaustion (unbounded allocation driven by a network-controlled size).
 - Timing side channels in signature verification, key comparison, etc.
+- `MONAD_ASSERT` on anything derived from RPC parameters, state overrides, peer messages or block bytes is a remote crash. Return an error or use `MONAD_ASSERT_THROW` (#2565, #1273).
+- A function returning `Result` must not also `MONAD_ASSERT` on its input.
+- Safety invariants live in `MONAD_ASSERT` or `Result`, never only in `MONAD_DEBUG_ASSERT`.
+- Decoders check lengths before calling helpers like `to_bytes`, `unaligned_load` or `.at()`, and reject trailing bytes (#1273, #2370).
+- Accepted encodings are canonical: re-encoding gives the same bytes, and anything geth or alloy rejects is rejected here too (#2245, #1364).
+- State overrides can fabricate any storage, including that of system contracts and precompiles; don't assume anything about its contents (#2565).
+- Two checks of the same limit must agree, whether before and after rounding or in Rust and C++ (#2194).
+- Charge gas before doing work, and bound any work gas doesn't price (#2027).
+- Hash tables keyed by attacker-chosen data use the per-process seeded hash, `seeded_fast_hash` (#2462).
+- Lengths passed across `extern "C"` are checked against the buffer they describe (#2203).
+- High-s signatures are rejected everywhere except the `ecrecover` and P256 precompiles, whose specs accept them (#2026).
 
 `SECURITY.md` at the repo root has the disclosure policy; findings with security impact should also be flagged on the PR.
 

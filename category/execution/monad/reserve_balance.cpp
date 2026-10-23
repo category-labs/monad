@@ -333,7 +333,7 @@ void ReserveBalance::init_from_tx(
             return true;
         }
         else {
-            return traits::monad_rev() < MONAD_FOUR;
+            return !traits::reserve_balance_active();
         }
     }();
 
@@ -394,7 +394,7 @@ bool revert_transaction(
     uint256_t const &base_fee_per_gas, uint64_t const i, State &state,
     trace::StateTracer &state_tracer, ChainContext<traits> const &ctx)
 {
-    if constexpr (traits::monad_rev() >= MONAD_FOUR) {
+    if constexpr (traits::reserve_balance_active()) {
         return dipped_into_reserve<traits>(
             sender, tx, base_fee_per_gas, i, state_tracer, ctx, state);
     }
@@ -408,7 +408,7 @@ EXPLICIT_MONAD_TRAITS(revert_transaction);
 template <Traits traits>
 bool revert_transaction_cached(State &state)
 {
-    if constexpr (traits::monad_rev() >= MONAD_FOUR) {
+    if constexpr (traits::reserve_balance_active()) {
         return dipped_into_reserve_cached(state.rb_);
     }
     else {

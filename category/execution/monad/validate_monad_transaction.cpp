@@ -38,7 +38,7 @@ Result<void> validate_transaction(
 {
     auto res =
         validate_ethereum_transaction<traits>(tx, sender, state, state_tracer);
-    if constexpr (traits::monad_rev() >= MONAD_FOUR) {
+    if constexpr (traits::reserve_balance_active()) {
         if (res.has_error() &&
             res.error() != TransactionError::InsufficientBalance) {
             return res;
@@ -49,13 +49,15 @@ Result<void> validate_transaction(
         if (MONAD_UNLIKELY(state.get_balance(sender) < gas_fee)) {
             return MonadTransactionError::InsufficientBalanceForFee;
         }
+    }
+    else if (res.has_error()) {
+        return res;
+    }
 
+    if constexpr (traits::staking_active()) {
         if (MONAD_UNLIKELY(std::ranges::contains(authorities, SYSTEM_SENDER))) {
             return MonadTransactionError::SystemTransactionSenderIsAuthority;
         }
-    }
-    else {
-        return res;
     }
     return outcome::success();
 }

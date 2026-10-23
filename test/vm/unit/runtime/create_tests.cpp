@@ -114,11 +114,9 @@ TYPED_TEST(RuntimeTraitsTest, Create2)
 TYPED_TEST(RuntimeTraitsTest, CreateAtMaxCodeSize)
 {
 
-    constexpr std::size_t max_initcode_size = [] {
+    constexpr std::size_t max_initcode_size = [] -> std::size_t {
         if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_FOUR) {
-                return 2 * 128 * 1024;
-            }
+            return TestFixture::Trait::max_initcode_size();
         }
         return 2 * 24 * 1024; // max initcode size since EIP-3860
     }();
@@ -139,14 +137,8 @@ TYPED_TEST(RuntimeTraitsTest, CreateAboveMaxCodeSize)
     // init code size was unbounded before Shanghai
     if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_SHANGHAI) {
 
-        constexpr std::size_t max_initcode_size = [] {
-            if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-                if constexpr (TestFixture::Trait::monad_rev() >= MONAD_FOUR) {
-                    return 2 * 128 * 1024;
-                }
-            }
-            return 2 * 24 * 1024; // max initcode size since EIP-3860
-        }();
+        constexpr std::size_t max_initcode_size =
+            TestFixture::Trait::max_initcode_size();
 
         this->ctx_.gas_remaining = 1000000;
         this->host_.call_result =
@@ -164,11 +156,9 @@ TYPED_TEST(RuntimeTraitsTest, CreateAboveMaxCodeSize)
 
 TYPED_TEST(RuntimeTraitsTest, Create2AtMaxCodeSize)
 {
-    constexpr std::size_t max_initcode_size = [] {
+    constexpr std::size_t max_initcode_size = [] -> std::size_t {
         if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_FOUR) {
-                return 2 * 128 * 1024;
-            }
+            return TestFixture::Trait::max_initcode_size();
         }
         return 2 * 24 * 1024; // max initcode size since EIP-3860
     }();
@@ -188,14 +178,8 @@ TYPED_TEST(RuntimeTraitsTest, Create2AboveMaxCodeSize)
     // init code size was unbounded before Shanghai
     if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_SHANGHAI) {
 
-        constexpr std::size_t max_initcode_size = [] {
-            if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-                if constexpr (TestFixture::Trait::monad_rev() >= MONAD_FOUR) {
-                    return 2 * 128 * 1024;
-                }
-            }
-            return 2 * 24 * 1024; // max initcode size since EIP-3860
-        }();
+        constexpr std::size_t max_initcode_size =
+            TestFixture::Trait::max_initcode_size();
 
         this->ctx_.gas_remaining = 1000000;
         this->host_.call_result =

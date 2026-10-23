@@ -190,7 +190,16 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
     // already holds DIGEST_NODE_LEN for each DIGEST node's mark, and the
     // general arm trades its own node's length for the DIGEST_NODE_LEN of its
     // mark. A claim takes DIGEST_NODE_LEN away.
+#if defined(MONAD_ZKVM_ZISK)
+    // On ZisK a digest's claim only tests its mark, which stays set: a digest
+    // is never written and never descended into, so it may be shared by two
+    // parents or referenced by none, and the pre-state root still binds every
+    // hash a parent copies from it. `unclaimed` counts the other nodes alone,
+    // each of which is still claimed exactly once.
+    size_t unclaimed = 0;
+#else
     size_t unclaimed = static_cast<size_t>(region_end - node.bytes());
+#endif
 
 #if !defined(MONAD_ZKVM_ZISK)
     // Reuse one CachedHash for the sweep: Keccak overwrites the hash directly,
@@ -210,6 +219,11 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
         uint64_t child_offset = static_cast<uint64_t>(c);
         MONAD_ASSERT(
             child_offset < blob_size && node_offsets[child_offset] != 0);
+#if defined(MONAD_ZKVM_ZISK)
+        if (node_offsets[child_offset] == DIGEST) {
+            return;
+        }
+#endif
         node_offsets[child_offset] = 0;
         unclaimed -= DIGEST_NODE_LEN;
     };
@@ -375,7 +389,11 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
         // Marked and advanced before the hash, which ends the turn: the
         // offsets die before the call instead of living across it.
         node_offsets[node_offset] = 1;
+#if defined(MONAD_ZKVM_ZISK)
+        unclaimed += DIGEST_NODE_LEN;
+#else
         unclaimed = unclaimed + DIGEST_NODE_LEN - (next_offset - node_offset);
+#endif
         node = NodeViewBase{base + next_offset};
         seen = node_offsets.data() + next_offset;
         // Only hash-referenced nodes (canonical RLP >= 32 B) are cached;
@@ -1085,13 +1103,12 @@ OffsetTrie::encode_rlp(
 #if defined(MONAD_ZKVM_ZISK)
                     if constexpr (claims) {
                         // The constructor's claim, before anything of the
-                        // child is read: a node start the walk marked, not yet
-                        // claimed by another parent (see is_valid_offset). The
-                        // mark is DIGEST for a digest and only for a digest.
+                        // child is read: a node start the walk marked and,
+                        // unless it is a digest, not yet claimed by another
+                        // parent (see is_valid_offset). The mark is DIGEST for
+                        // a digest and only for a digest, and a digest's stays.
                         MONAD_ASSERT(w < blob_size && marks[w] != 0);
                         digest = marks[w] == digest_tag;
-                        marks[w] = 0;
-                        claimed += DIGEST_NODE_LEN;
                     }
                     else
 #endif
@@ -1103,9 +1120,13 @@ OffsetTrie::encode_rlp(
                         if constexpr (claims) {
                             // Marked 1: a branch, an extension or a leaf --
                             // checked_end rejects any other tag -- primed
-                            // before the walk marked it. Its slot holds its
-                            // entry if its RLP reached 32 bytes, and every
-                            // entry the constructor makes is valid.
+                            // before the walk marked it. Claimed here: cleared,
+                            // so that a second parent's claim fails, and
+                            // counted. Its slot holds its entry if its RLP
+                            // reached 32 bytes, and every entry the constructor
+                            // makes is valid.
+                            marks[w] = 0;
+                            claimed += DIGEST_NODE_LEN;
                             if (CachedHash const *const e =
                                     blob_hash_slots_[w >> 2]) {
                                 dest = dest.prepend_unchecked(
@@ -1165,14 +1186,13 @@ OffsetTrie::encode_rlp(
 #if defined(MONAD_ZKVM_ZISK)
                         if constexpr (claims) {
                             // Under w, so inside the blob. The mark alone
-                            // decides: a digest the walk marked and no parent
-                            // has claimed. Any other slot ends the run, and
-                            // the main loop's claim rejects it if it is not a
-                            // node start or is claimed already.
+                            // decides: a digest the walk marked, whose mark
+                            // stays. Any other slot ends the run, and the main
+                            // loop's claim rejects it if it is not a node start
+                            // or is claimed already.
                             if (marks[prev] != digest_tag) {
                                 break;
                             }
-                            marks[prev] = 0;
                         }
                         else
 #endif
@@ -1204,13 +1224,9 @@ OffsetTrie::encode_rlp(
                     // NOLINTNEXTLINE(misc-const-correctness)
                     size_t digests_length = w - below;
 #if defined(MONAD_ZKVM_ZISK)
-                    // One subtraction for its three uses: gcc would form the
-                    // claim and the span's new end from `below` and `w` apart.
+                    // One subtraction for its uses: gcc would form the copy's
+                    // length and the span's new end from `below` and `w` apart.
                     asm("" : "+r"(digests_length));
-                    if constexpr (claims) {
-                        // The run's digests under w, one claim each.
-                        claimed += digests_length - HASH_RLP_LEN;
-                    }
 #endif
 
                     // Without a room test, as the arm's other writes: a

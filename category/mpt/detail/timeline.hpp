@@ -40,10 +40,8 @@ struct timeline_compaction_state
 {
     compact_offset_pair compact_offsets{
         MIN_COMPACT_VIRTUAL_OFFSET, MIN_COMPACT_VIRTUAL_OFFSET};
-    compact_virtual_chunk_offset_t compact_offset_range_fast_{
-        MIN_COMPACT_VIRTUAL_OFFSET};
-    compact_virtual_chunk_offset_t compact_offset_range_slow_{
-        MIN_COMPACT_VIRTUAL_OFFSET};
+    compact_distance compact_offset_range_fast_{};
+    compact_distance compact_offset_range_slow_{};
     int64_t curr_upsert_auto_expire_version{0};
 };
 

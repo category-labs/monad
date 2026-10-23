@@ -455,6 +455,7 @@ namespace monad::test
         size_t updates_per_block{1000};
         bool alternate_slow_fast_writer{false};
         bool use_anonymous_inode{true};
+        uint32_t initial_insertion_count{0};
     };
 
     template <FillDBWithChunksConfig Config, class Base>
@@ -504,14 +505,16 @@ namespace monad::test
             MerkleCompute comp;
             Node::SharedPtr root;
             StateMachineAlwaysMerkle sm;
-            UpdateAux aux{
-                io, Config.history_len}; // trie section starts from account
+            UpdateAux aux{};
             monad::small_prng rand;
             std::vector<std::pair<monad::byte_string, size_t>> keys;
             uint64_t version{0};
 
             state_t()
             {
+                aux.set_initial_insertion_count_unit_testing_only(
+                    Config.initial_insertion_count);
+                aux.init(io, Config.history_len);
                 aux.alternate_slow_fast_node_writer_unit_testing_only(
                     Config.alternate_slow_fast_writer);
                 ensure_total_chunks(Config.chunks_to_fill);

@@ -22,6 +22,8 @@ monad_add_test_death(
   FAIL_REGEX
   ".*run 'monad-mpt --grow.*")
 add_trie_test(TARGET grow_database_test SOURCES "grow_database_test.cpp")
+add_trie_test(TARGET insertion_count_wrap_test SOURCES
+              "insertion_count_wrap_test.cpp")
 add_trie_test(TARGET append_test SOURCES "append_test.cpp")
 add_trie_test(TARGET big_endian_serialization_test SOURCES
               "big_endian_serialization_test.cpp")
@@ -36,6 +38,7 @@ add_trie_test(
   PkgConfig::archive)
 target_compile_definitions(cli_tool_test
                            PRIVATE GIT_COMMIT_HASH="${GIT_COMMIT_HASH}")
+add_trie_test(TARGET chunk_list_order_test SOURCES "chunk_list_order_test.cpp")
 add_trie_test(TARGET compact_encode_test SOURCES "compact_encode_test.cpp")
 add_trie_test(TARGET compaction_test SOURCES "compaction_test.cpp")
 add_trie_test(TARGET db_metadata_test SOURCES "db_metadata_test.cpp")

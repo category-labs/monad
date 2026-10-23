@@ -28,7 +28,6 @@
 #include <category/mpt/update.hpp>
 #include <category/mpt/util.hpp>
 
-#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -105,9 +104,9 @@ TEST_F(OnDiskMerkleTrieGTest, min_truncated_offsets)
     };
     ensure_total_bytes_written(0, eightMB, 0, eightMB);
 
-    auto const trie_min_offsets = calc_min_offsets(*this->root);
-    EXPECT_EQ(trie_min_offsets.fast, 0);
-    EXPECT_EQ(trie_min_offsets.slow, 0);
+    auto const trie_min_offsets = calc_min_offsets(aux, *this->root);
+    EXPECT_EQ(trie_min_offsets.fast, MIN_COMPACT_VIRTUAL_OFFSET);
+    EXPECT_EQ(trie_min_offsets.slow, MIN_COMPACT_VIRTUAL_OFFSET);
 
     struct TraverseCalculateAndVerifyMinTruncatedOffsets
         : public TraverseMachine
@@ -169,6 +168,7 @@ TEST_F(OnDiskMerkleTrieGTest, min_truncated_offsets)
             if (root_to_node_records.empty()) { // node is root
                 // verify that offset equals calculated one in traversal
                 auto const expected_min_offsets = calc_min_offsets(
+                    aux,
                     *const_cast<Node *>(&node),
                     aux.physical_to_virtual(
                         aux.metadata_ctx().get_latest_root_offset()));
@@ -184,12 +184,9 @@ TEST_F(OnDiskMerkleTrieGTest, min_truncated_offsets)
                 EXPECT_EQ(stored_min_offsets, node_record.test_min_offsets);
 
                 // update parent record.
-                parent_record.test_min_offsets.fast = std::min(
-                    parent_record.test_min_offsets.fast,
-                    node_record.test_min_offsets.fast);
-                parent_record.test_min_offsets.slow = std::min(
-                    parent_record.test_min_offsets.slow,
-                    node_record.test_min_offsets.slow);
+                parent_record.test_min_offsets = aux.current_offset_order().min(
+                    parent_record.test_min_offsets,
+                    node_record.test_min_offsets);
             }
         }
 

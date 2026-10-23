@@ -24,6 +24,7 @@
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
+#include <category/execution/ethereum/db/partitioned_layout.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
 #include <category/mpt/config.hpp>
 #include <category/mpt/node.hpp>
@@ -31,6 +32,7 @@
 
 #include <nlohmann/json_fwd.hpp>
 
+#include <algorithm>
 #include <filesystem>
 #include <functional>
 #include <istream>
@@ -94,9 +96,14 @@ struct MachineBase : public mpt::StateMachine
     virtual bool is_variable_length() const override;
     constexpr uint8_t prefix_len() const;
 
+    // Deepest leaf in the state table: account hash + storage hash in the
+    // nested layout, a storage zone key in the partitioned layout.
+    static constexpr uint64_t MAX_STATE_KEY_NIBBLES =
+        std::max<uint64_t>(2 * KEY_NIBBLES, partitioned::STORAGE_KEY_NIBBLES);
+
     constexpr uint8_t max_depth(uint8_t const prefix_length) const
     {
-        return static_cast<uint8_t>(prefix_length + 2 * KEY_NIBBLES);
+        return static_cast<uint8_t>(prefix_length + MAX_STATE_KEY_NIBBLES);
     }
 
 protected:
@@ -148,6 +155,25 @@ struct MonadOnDiskMachine final : public OnDiskMachine
 protected:
     virtual mpt::Compute &storage_compute() const override;
     virtual mpt::Compute &storage_root_compute() const override;
+};
+
+// Machines for the EIP-8297 partitioned layout (partitioned_layout.hpp): the
+// state table is one flat key space of zone keys. Stems (zone || H(addr)) are
+// nested roots with an empty value whose node data holds the subtrie hash, so
+// a single update erases or replaces an account's header or storage bucket.
+// Every leaf is a 32 byte value hashed as is.
+struct PartitionedInMemoryMachine final : public InMemoryMachine
+{
+    virtual mpt::state_machine_kind kind() const override;
+    virtual mpt::Compute &get_compute() const override;
+    virtual std::unique_ptr<StateMachine> clone() const override;
+};
+
+struct PartitionedOnDiskMachine final : public OnDiskMachine
+{
+    virtual mpt::state_machine_kind kind() const override;
+    virtual mpt::Compute &get_compute() const override;
+    virtual std::unique_ptr<StateMachine> clone() const override;
 };
 
 //////////////////////////////////////////////////////////

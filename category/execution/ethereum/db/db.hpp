@@ -16,6 +16,7 @@
 #pragma once
 
 #include <category/core/address.hpp>
+#include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
@@ -41,11 +42,43 @@ class CommitBuilder;
 struct Db
 {
     virtual bool is_page_encoded() const = 0;
+
+    // True iff this db stores state in the EIP-8297 partitioned layout
+    // (partitioned_layout.hpp).
+    virtual bool is_partitioned() const
+    {
+        return false;
+    }
+
+    // Partitioned layout only: whether the account has a storage stem in the
+    // state read by this db, i.e. a slot outside its header was ever written.
+    virtual bool storage_bucket_exists(Address const &)
+    {
+        MONAD_ABORT("storage_bucket_exists requires a partitioned db");
+    }
+
     virtual std::optional<Account> read_account(Address const &) = 0;
+
+    // The account and, on a partitioned db, its header slots 0..63 which
+    // share its leaf, so both come from one read. header_storage is nullopt
+    // for an absent account and on every other layout.
+    struct AccountRead
+    {
+        std::optional<Account> account;
+        std::optional<storage_page_t> header_storage;
+    };
+
+    virtual AccountRead read_account_and_header(Address const &address)
+    {
+        return {.account = read_account(address), .header_storage = {}};
+    }
 
     virtual bytes32_t
     read_storage(Address const &, Incarnation, bytes32_t const &key) = 0;
 
+    // Page-encoded db: the page at page_key. Partitioned db: page_key must
+    // be partitioned::HEADER_PAGE_KEY and the result holds the account's
+    // header slots 0..63 at offsets 0..63.
     virtual storage_page_t read_storage_page(
         Address const &, Incarnation, bytes32_t const &page_key) = 0;
 

@@ -31,6 +31,10 @@ void register_ethereum_state_machines()
     mpt::register_state_machine(mpt::state_machine_kind::ethereum, [] {
         return std::unique_ptr<mpt::StateMachine>(new OnDiskMachine{});
     });
+    mpt::register_state_machine(mpt::state_machine_kind::partitioned, [] {
+        return std::unique_ptr<mpt::StateMachine>(
+            new PartitionedOnDiskMachine{});
+    });
 }
 
 MONAD_NAMESPACE_END

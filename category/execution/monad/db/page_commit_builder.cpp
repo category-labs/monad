@@ -16,6 +16,7 @@
 #include <category/core/bytes_hash_compare.hpp>
 #include <category/core/keccak.hpp>
 #include <category/execution/ethereum/db/db.hpp>
+#include <category/execution/ethereum/db/partitioned_commit_builder.hpp>
 #include <category/execution/ethereum/db/storage_key.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/proposal_post_state.hpp>
@@ -42,6 +43,9 @@ make_commit_builder(uint64_t const block_number, monad::Db &db)
 {
     if (db.is_page_encoded()) {
         return std::make_unique<PageCommitBuilder>(block_number, db);
+    }
+    if (db.is_partitioned()) {
+        return std::make_unique<PartitionedCommitBuilder>(block_number, db);
     }
     return std::make_unique<CommitBuilder>(block_number);
 }

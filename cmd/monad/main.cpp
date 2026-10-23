@@ -143,6 +143,7 @@ try {
     unsigned nthreads = 4;
     unsigned nfibers = 256;
     bool no_compaction = false;
+    bool partitioned_state = false;
     bool trace_calls = false;
     bool as_eth_blocks = false;
     std::chrono::seconds block_db_timeout = std::chrono::seconds::zero();
@@ -178,6 +179,12 @@ try {
     cli.add_option("--nthreads", nthreads, "number of threads");
     cli.add_option("--nfibers", nfibers, "number of fibers");
     cli.add_flag("--no-compaction", no_compaction, "disable compaction");
+    cli.add_flag(
+        "--partitioned-state",
+        partitioned_state,
+        "in-memory db only: store state in the EIP-8297 partitioned layout. "
+        "An on-disk db uses the state machine kind stamped on it (see "
+        "monad-mpt --state-machine)");
     cli.add_option(
         "--sq-thread-cpu,--sq_thread_cpu",
         sq_thread_cpu,
@@ -354,7 +361,11 @@ try {
         if (monad_chain != nullptr &&
             mip_8_active(monad_chain->get_monad_revision(
                 genesis_state.header.timestamp))) {
+            MONAD_ASSERT(!partitioned_state);
             return mpt::Db{std::make_unique<MonadInMemoryMachine>()};
+        }
+        else if (partitioned_state) {
+            return mpt::Db{std::make_unique<PartitionedInMemoryMachine>()};
         }
         else {
             return mpt::Db{std::make_unique<InMemoryMachine>()};

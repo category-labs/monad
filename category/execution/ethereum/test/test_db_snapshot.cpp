@@ -340,6 +340,166 @@ TEST(DbBinarySnapshot, Basic)
     }
 }
 
+// A slot-layout snapshot loads into a db stamped partitioned: the loader
+// converts each account and slot into the EIP-8297 header and storage stems,
+// and the result is byte for byte the trie a direct commit of the same state
+// produces.
+TEST(DbBinarySnapshot, LoadIntoPartitionedDb)
+{
+    using namespace monad;
+    using namespace monad::mpt;
+
+    TempDb const src_db;
+    TempDb const dest_db;
+    TempDir const snapshot_dir;
+
+    constexpr uint64_t N_ACCOUNTS = 20'000;
+    auto const make_deltas = [] {
+        StateDeltas deltas;
+        for (uint64_t i = 0; i < N_ACCOUNTS; ++i) {
+            StorageDeltas storage;
+            if ((i % 50) == 0) {
+                // header slots, two storage groups, and a hashed slot
+                for (uint64_t j = 1; j < 5; ++j) {
+                    storage.emplace(
+                        bytes32_t{j}, StorageDelta{bytes32_t{}, bytes32_t{j}});
+                }
+                for (uint64_t j = 64; j < 70; ++j) {
+                    storage.emplace(
+                        bytes32_t{j}, StorageDelta{bytes32_t{}, bytes32_t{j}});
+                }
+                storage.emplace(
+                    bytes32_t{1000},
+                    StorageDelta{bytes32_t{}, bytes32_t{1000}});
+                storage.emplace(
+                    to_bytes(keccak256(to_byte_string_view(Address{i}.bytes))),
+                    StorageDelta{bytes32_t{}, bytes32_t{i + 1}});
+            }
+            deltas.emplace(
+                Address{i},
+                StateDelta{
+                    .account =
+                        {std::nullopt,
+                         Account{
+                             .balance = i,
+                             .nonce = i,
+                             .incarnation = Incarnation{i % 3, i % 2}}},
+                    .storage = storage});
+        }
+        return deltas;
+    };
+
+    Code code_delta;
+    for (uint64_t i = 0; i < 10; ++i) {
+        std::vector<uint64_t> const bytes(100, i);
+        byte_string_view const code{
+            reinterpret_cast<unsigned char const *>(bytes.data()),
+            bytes.size() * sizeof(uint64_t)};
+        code_delta.emplace(
+            to_bytes(keccak256(code)), vm::make_shared_intercode(code));
+    }
+
+    // the slot-layout source
+    {
+        mpt::Db db{
+            std::make_unique<OnDiskMachine>(),
+            OnDiskDbConfig{.dbname_path = {src_db.path}, .chunk_capacity = 24}};
+        Node::SharedPtr root{};
+        for (uint64_t i = 0; i < 100; ++i) {
+            root = load_header(std::move(root), db, BlockHeader{.number = i});
+        }
+        db.update_finalized_version(99);
+        TrieDb tdb{db};
+        monad::test::commit_simple(
+            tdb,
+            make_deltas(),
+            code_delta,
+            bytes32_t{100},
+            BlockHeader{.number = 100});
+        tdb.finalize(100, bytes32_t{100});
+    }
+
+    // the same state committed straight into a partitioned db
+    bytes32_t partitioned_root;
+    {
+        mpt::Db db{std::make_unique<PartitionedInMemoryMachine>()};
+        TrieDb tdb{db};
+        monad::test::commit_simple(
+            tdb,
+            make_deltas(),
+            code_delta,
+            bytes32_t{100},
+            BlockHeader{.number = 100});
+        tdb.finalize(100, bytes32_t{100});
+        partitioned_root = tdb.state_root();
+    }
+
+    {
+        auto *const context =
+            monad_db_snapshot_filesystem_write_user_context_create(
+                snapshot_dir.path.c_str(), 100);
+        EXPECT_TRUE(monad_db_dump_snapshot(
+            src_db.path.c_str(),
+            static_cast<unsigned>(-1),
+            100,
+            monad_db_snapshot_write_filesystem,
+            context,
+            2048,
+            1,
+            0,
+            /*dump_from_secondary=*/false,
+            MONAD_SNAPSHOT_FORMAT_V1));
+        monad_db_snapshot_filesystem_write_user_context_destroy(context);
+
+        {
+            mpt::Db dest_init{
+                std::make_unique<PartitionedOnDiskMachine>(),
+                OnDiskDbConfig{
+                    .dbname_path = {dest_db.path}, .chunk_capacity = 24}};
+            monad::mpt::test::DbAccessor::aux(dest_init)
+                .metadata_ctx()
+                .set_state_machine_kind(
+                    timeline_id::primary, state_machine_kind::partitioned);
+        }
+        monad_db_snapshot_load_filesystem(
+            dest_db.path.c_str(),
+            static_cast<unsigned>(-1),
+            snapshot_dir.path.c_str(),
+            100,
+            /*load_to_secondary=*/false);
+    }
+
+    {
+        AsyncIOContext io_context{
+            ReadOnlyOnDiskDbConfig{.dbname_path = {dest_db.path}}};
+        mpt::Db db{io_context};
+        ASSERT_EQ(db.state_machine_type(), state_machine_kind::partitioned);
+        TrieDb tdb{db};
+        EXPECT_TRUE(tdb.is_partitioned());
+        tdb.set_block_and_prefix(100);
+        EXPECT_EQ(tdb.state_root(), partitioned_root);
+        for (auto const &[addr, delta] : make_deltas()) {
+            auto const &account = delta.account.second;
+            ASSERT_EQ(tdb.read_account(addr), account);
+            for (auto const &[slot, sd] : delta.storage) {
+                EXPECT_EQ(
+                    tdb.read_storage(addr, account->incarnation, slot),
+                    sd.second);
+            }
+            EXPECT_EQ(
+                tdb.read_storage(addr, account->incarnation, bytes32_t{77}),
+                bytes32_t{});
+        }
+        for (auto const &[hash, icode] : code_delta) {
+            auto const from_db = tdb.read_code(hash);
+            ASSERT_TRUE(from_db);
+            EXPECT_EQ(
+                byte_string_view(from_db->code(), from_db->size()),
+                byte_string_view(icode->code(), icode->size()));
+        }
+    }
+}
+
 TEST(DbBinarySnapshot, MultipleShards)
 {
     using namespace monad;

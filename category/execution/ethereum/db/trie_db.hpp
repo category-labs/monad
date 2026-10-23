@@ -59,6 +59,9 @@ class TrieDb final : public ::monad::Db
     // True iff this trie reads / writes page-encoded storage (MIP-8).
     // Set at construction; immutable. Exposed via is_page_encoded().
     bool const page_encoded_;
+    // True iff this trie stores state in the EIP-8297 partitioned layout.
+    // Set at construction from the db's state machine kind; immutable.
+    bool const partitioned_;
 
 public:
     explicit TrieDb(mpt::Db &, bool enable_multiblock_cache = false);
@@ -69,10 +72,18 @@ public:
         return page_encoded_;
     }
 
+    bool is_partitioned() const override
+    {
+        return partitioned_;
+    }
+
+    virtual bool storage_bucket_exists(Address const &) override;
+
     void reset_root(::monad::mpt::Node::SharedPtr root, uint64_t block_number);
     ::monad::mpt::Node::SharedPtr const &get_root() const;
 
     virtual std::optional<Account> read_account(Address const &) override;
+    virtual AccountRead read_account_and_header(Address const &) override;
     virtual bytes32_t
     read_storage(Address const &, Incarnation, bytes32_t const &key) override;
     virtual storage_page_t read_storage_page(
@@ -141,6 +152,17 @@ private:
     // read the storage page from disk, inserting into the cache on a resolved
     // miss
     storage_page_t load_storage_page(
+        Address const &, Incarnation, bytes32_t const &lookup_key,
+        CacheReadStatus);
+
+    // Partitioned layout reads. The header leaf holds the account and its
+    // header slot page; reading either caches the page under HEADER_PAGE_KEY
+    // on a resolved miss. A storage zone slot is its own leaf.
+    std::optional<partitioned::AccountLeaf>
+    load_account_leaf_partitioned(Address const &);
+    std::optional<Account>
+    read_account_partitioned(Address const &, CacheReadStatus);
+    storage_page_t load_storage_partitioned(
         Address const &, Incarnation, bytes32_t const &lookup_key,
         CacheReadStatus);
 };

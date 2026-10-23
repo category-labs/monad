@@ -420,6 +420,46 @@ namespace
         }
     };
 
+    // Partitioned layout: a leaf's value is the 32 bytes hashed into the
+    // trie. A stem or table root also has a value (empty) and children, and
+    // its node data is its subtrie hash, which stands in for the value in the
+    // node's reference.
+    struct PartitionedLeafProcessor
+    {
+        static byte_string_view process(mpt::Node const &node)
+        {
+            MONAD_ASSERT(node.has_value());
+            if (node.number_of_children()) {
+                MONAD_ASSERT(node.data().size() == KECCAK256_SIZE);
+                return node.data();
+            }
+            return node.value();
+        }
+    };
+
+    using PartitionedMerkleCompute =
+        MerkleComputeBase<PartitionedLeafProcessor>;
+
+    struct PartitionedRootMerkleCompute : public PartitionedMerkleCompute
+    {
+        virtual unsigned compute(unsigned char *const, Node const &) override
+        {
+            return 0;
+        }
+    };
+
+    mpt::Compute &partitioned_state_compute(
+        MachineBase const &machine, mpt::Compute &fallback)
+    {
+        static PartitionedMerkleCompute compute;
+        static PartitionedRootMerkleCompute root_compute;
+        if (machine.table != MachineBase::TableType::State) {
+            return fallback;
+        }
+        MONAD_ASSERT(machine.depth >= machine.prefix_len());
+        return machine.depth == machine.prefix_len() ? root_compute : compute;
+    }
+
     Result<Account> decode_account_db_helper(byte_string_view &payload)
     {
         Account acct;
@@ -671,6 +711,36 @@ mpt::Compute &MonadOnDiskMachine::storage_root_compute() const
 {
     static PagedStorageRootMerkleCompute compute;
     return compute;
+}
+
+mpt::state_machine_kind PartitionedInMemoryMachine::kind() const
+{
+    return mpt::state_machine_kind::partitioned;
+}
+
+mpt::Compute &PartitionedInMemoryMachine::get_compute() const
+{
+    return partitioned_state_compute(*this, InMemoryMachine::get_compute());
+}
+
+std::unique_ptr<StateMachine> PartitionedInMemoryMachine::clone() const
+{
+    return std::make_unique<PartitionedInMemoryMachine>(*this);
+}
+
+mpt::state_machine_kind PartitionedOnDiskMachine::kind() const
+{
+    return mpt::state_machine_kind::partitioned;
+}
+
+mpt::Compute &PartitionedOnDiskMachine::get_compute() const
+{
+    return partitioned_state_compute(*this, OnDiskMachine::get_compute());
+}
+
+std::unique_ptr<StateMachine> PartitionedOnDiskMachine::clone() const
+{
+    return std::make_unique<PartitionedOnDiskMachine>(*this);
 }
 
 Result<std::pair<Receipt, size_t>> decode_receipt_db(byte_string_view &enc)

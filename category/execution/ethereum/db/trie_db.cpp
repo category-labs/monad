@@ -34,6 +34,8 @@
 #include <category/execution/ethereum/core/rlp/receipt_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/withdrawal_rlp.hpp>
+#include <category/execution/ethereum/db/partitioned_commit_builder.hpp>
+#include <category/execution/ethereum/db/partitioned_layout.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
@@ -85,6 +87,8 @@ TrieDb::TrieDb(mpt::Db &db, bool const enable_multiblock_cache)
     , curr_root_{db.load_root_for_version(block_number_)}
     , cache_{enable_multiblock_cache ? std::make_unique<DbCache>() : nullptr}
     , page_encoded_{db_.state_machine_type() == mpt::state_machine_kind::monad}
+    , partitioned_{
+          db_.state_machine_type() == mpt::state_machine_kind::partitioned}
 {
 }
 
@@ -109,21 +113,26 @@ std::optional<Account> TrieDb::read_account(Address const &addr)
     if (status == CacheReadStatus::Hit) {
         return result;
     }
-    auto const res = db_.find(
-        curr_root_,
-        concat(
-            prefix_,
-            STATE_NIBBLE,
-            NibblesView{state_key_hash({addr.bytes, sizeof(addr.bytes)})}),
-        block_number_);
-    // result stays nullopt if absent at the finalized baseline.
-    if (res.has_error()) {
-        stats_account_no_value();
+    if (partitioned_) {
+        result = read_account_partitioned(addr, status);
     }
     else {
-        stats_account_value();
-        auto encoded_account = res.value().node->value();
-        result = decode_account_db_ignore_address(encoded_account).value();
+        auto const res = db_.find(
+            curr_root_,
+            concat(
+                prefix_,
+                STATE_NIBBLE,
+                NibblesView{state_key_hash({addr.bytes, sizeof(addr.bytes)})}),
+            block_number_);
+        // result stays nullopt if absent at the finalized baseline.
+        if (res.has_error()) {
+            stats_account_no_value();
+        }
+        else {
+            stats_account_value();
+            auto encoded_account = res.value().node->value();
+            result = decode_account_db_ignore_address(encoded_account).value();
+        }
     }
     if (cache_ && status == CacheReadStatus::MissResolved) {
         cache_->insert_account(addr, result);
@@ -131,11 +140,114 @@ std::optional<Account> TrieDb::read_account(Address const &addr)
     return result;
 }
 
+::monad::Db::AccountRead TrieDb::read_account_and_header(Address const &addr)
+{
+    using namespace partitioned;
+    if (!partitioned_) {
+        return {.account = read_account(addr), .header_storage = {}};
+    }
+    std::optional<Account> account;
+    auto const status = cache_ ? cache_->try_read_account(addr, account)
+                               : CacheReadStatus::MissTruncated;
+    if (status == CacheReadStatus::Hit) {
+        if (!account.has_value()) {
+            return {.account = std::nullopt, .header_storage = {}};
+        }
+        storage_page_t page;
+        auto const page_status = cache_->try_read_storage_page(
+            addr, account->incarnation, HEADER_PAGE_KEY, page);
+        if (page_status != CacheReadStatus::Hit) {
+            page = load_storage_partitioned(
+                addr, account->incarnation, HEADER_PAGE_KEY, page_status);
+        }
+        return {.account = account, .header_storage = std::move(page)};
+    }
+    auto leaf = load_account_leaf_partitioned(addr);
+    if (!leaf.has_value()) {
+        stats_account_no_value();
+    }
+    else {
+        stats_account_value();
+        account = leaf->account;
+    }
+    if (cache_ && status == CacheReadStatus::MissResolved) {
+        cache_->insert_account(addr, account);
+        if (leaf.has_value()) {
+            cache_->insert_storage_page(
+                addr, leaf->account.incarnation, HEADER_PAGE_KEY, leaf->header);
+        }
+    }
+    if (!leaf.has_value()) {
+        return {.account = std::nullopt, .header_storage = {}};
+    }
+    return {.account = account, .header_storage = std::move(leaf->header)};
+}
+
+std::optional<partitioned::AccountLeaf>
+TrieDb::load_account_leaf_partitioned(Address const &addr)
+{
+    using namespace partitioned;
+    auto const res = db_.find(
+        curr_root_,
+        concat(prefix_, STATE_NIBBLE, NibblesView{header_stem_nibbles(addr)}),
+        block_number_);
+    if (res.has_error()) {
+        return std::nullopt;
+    }
+    auto leaf = decode_account_leaf(res.value().node->value());
+    MONAD_ASSERT_PRINTF(leaf.has_value(), "malformed account leaf");
+    return leaf;
+}
+
+// The account is the leaf at its header stem key; it exists iff the leaf
+// does. The leaf also carries the header slot page, cached alongside so the
+// slots cost no further read.
+std::optional<Account> TrieDb::read_account_partitioned(
+    Address const &addr, CacheReadStatus const status)
+{
+    auto leaf = load_account_leaf_partitioned(addr);
+    if (!leaf.has_value()) {
+        stats_account_no_value();
+        return std::nullopt;
+    }
+    stats_account_value();
+    if (cache_ && status == CacheReadStatus::MissResolved) {
+        cache_->insert_storage_page(
+            addr,
+            leaf->account.incarnation,
+            partitioned::HEADER_PAGE_KEY,
+            leaf->header);
+    }
+    return leaf->account;
+}
+
+bool TrieDb::storage_bucket_exists(Address const &addr)
+{
+    MONAD_ASSERT(partitioned_);
+    return db_
+        .find(
+            curr_root_,
+            concat(
+                prefix_,
+                STATE_NIBBLE,
+                NibblesView{partitioned::storage_stem_nibbles(addr)}),
+            block_number_)
+        .has_value();
+}
+
 bytes32_t TrieDb::read_storage(
     Address const &addr, Incarnation const incarnation, bytes32_t const &key)
 {
-    bytes32_t const lookup_key = storage_lookup_key(key);
-    uint8_t const lookup_offset = page_encoded_ ? compute_slot_offset(key) : 0;
+    // Lookup key and in-page offset: the page key and slot offset for the
+    // page layout, the header page and slot number for a partitioned header
+    // slot, the slot itself at offset 0 otherwise
+    bool const header_slot = partitioned_ && partitioned::is_header_slot(key);
+    bytes32_t const lookup_key =
+        header_slot ? partitioned::HEADER_PAGE_KEY : storage_lookup_key(key);
+    uint8_t const lookup_offset =
+        page_encoded_
+            ? compute_slot_offset(key)
+            : (header_slot ? partitioned::header_slot_offset(key) : 0);
     bytes32_t result{};
     auto const status =
         cache_ ? cache_->try_read_storage(
@@ -144,15 +256,64 @@ bytes32_t TrieDb::read_storage(
     if (status == CacheReadStatus::Hit) {
         return result;
     }
+    if (partitioned_) {
+        return load_storage_partitioned(
+            addr, incarnation, lookup_key, status)[lookup_offset];
+    }
     return load_storage_page(
         addr, incarnation, lookup_key, status)[lookup_offset];
+}
+
+storage_page_t TrieDb::load_storage_partitioned(
+    Address const &addr, Incarnation const incarnation,
+    bytes32_t const &lookup_key, CacheReadStatus const status)
+{
+    using namespace partitioned;
+    storage_page_t page;
+    if (lookup_key == HEADER_PAGE_KEY) {
+        auto leaf = load_account_leaf_partitioned(addr);
+        if (!leaf.has_value()) {
+            stats_storage_no_value();
+        }
+        else {
+            stats_storage_value();
+            page = std::move(leaf->header);
+        }
+    }
+    else {
+        auto const res = db_.find(
+            curr_root_,
+            concat(
+                prefix_,
+                STATE_NIBBLE,
+                NibblesView{storage_key_nibbles(addr, lookup_key)}),
+            block_number_);
+        if (res.has_error()) {
+            stats_storage_no_value();
+        }
+        else {
+            stats_storage_value();
+            auto const value = res.value().node->value();
+            MONAD_ASSERT(value.size() == sizeof(bytes32_t));
+            page = storage_page_t{to_bytes(value)};
+        }
+    }
+    if (cache_ && status == CacheReadStatus::MissResolved) {
+        cache_->insert_storage_page(addr, incarnation, lookup_key, page);
+    }
+    return page;
 }
 
 storage_page_t TrieDb::read_storage_page(
     Address const &addr, Incarnation const incarnation,
     bytes32_t const &page_key)
 {
-    if (!page_encoded_) {
+    if (partitioned_) {
+        MONAD_ASSERT_PRINTF(
+            page_key == partitioned::HEADER_PAGE_KEY,
+            "a partitioned TrieDb only pages the header slots");
+    }
+    else if (!page_encoded_) {
         MONAD_ABORT("read_storage_page is only valid on a page-encoded TrieDb");
     }
     storage_page_t result;
@@ -162,6 +323,9 @@ storage_page_t TrieDb::read_storage_page(
             : CacheReadStatus::MissTruncated;
     if (status == CacheReadStatus::Hit) {
         return result;
+    }
+    if (partitioned_) {
+        return load_storage_partitioned(addr, incarnation, page_key, status);
     }
     return load_storage_page(addr, incarnation, page_key, status);
 }
@@ -224,6 +388,13 @@ void TrieDb::commit(
         "builder is of wrong type",
         header.number,
         is_page_encoded());
+    MONAD_ASSERT_PRINTF(
+        (dynamic_cast<PartitionedCommitBuilder const *>(&builder) != nullptr) ==
+            is_partitioned(),
+        "layout mismatch at block %lu: TrieDb::is_partitioned=%d but commit "
+        "builder is of wrong type",
+        header.number,
+        is_partitioned());
 
     auto const block_number = header.number;
     MONAD_ASSERT(block_number <= std::numeric_limits<int64_t>::max());
@@ -590,6 +761,8 @@ nlohmann::json TrieDb::to_json(size_t const concurrency_limit)
         }
     };
 
+    MONAD_ASSERT_PRINTF(
+        !partitioned_, "to_json is not implemented for the partitioned layout");
     auto json = nlohmann::json::object();
     Traverse traverse(*this, json);
 

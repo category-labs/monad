@@ -168,6 +168,8 @@ state_machine_kind_name(MONAD_MPT_NAMESPACE::state_machine_kind const kind)
         return "ethereum";
     case MONAD_MPT_NAMESPACE::state_machine_kind::monad:
         return "monad";
+    case MONAD_MPT_NAMESPACE::state_machine_kind::partitioned:
+        return "partitioned";
     }
     return "unknown";
 }
@@ -1708,7 +1710,9 @@ device has been extended in place.
                         {"ethereum",
                          MONAD_MPT_NAMESPACE::state_machine_kind::ethereum},
                         {"monad",
-                         MONAD_MPT_NAMESPACE::state_machine_kind::monad}},
+                         MONAD_MPT_NAMESPACE::state_machine_kind::monad},
+                        {"partitioned",
+                         MONAD_MPT_NAMESPACE::state_machine_kind::partitioned}},
                     CLI::ignore_case))
                 ->excludes(restore_opt);
             cli.add_option(

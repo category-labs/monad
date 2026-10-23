@@ -22,6 +22,7 @@
 #include <category/core/runtime/unaligned.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/db_snapshot.h>
+#include <category/execution/ethereum/db/partitioned_layout.hpp>
 #include <category/execution/ethereum/db/state_machine_init.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/monad/db/state_machine_init.hpp>
@@ -50,7 +51,21 @@ struct monad_db_snapshot_loader
         ankerl::unordered_dense::segmented_map<uint64_t, monad::mpt::Update>,
         MONAD_SNAPSHOT_SHARDS>
         account_offset_to_update;
-    // Per-shard page accumulator used only when page_encoded. Maps
+    // Partitioned layout only: the account's storage stem update, created
+    // when its first storage zone slot is read. account_offset_to_update
+    // then holds the header stem update.
+    std::array<
+        ankerl::unordered_dense::segmented_map<uint64_t, monad::mpt::Update>,
+        MONAD_SNAPSHOT_SHARDS>
+        account_offset_to_storage_update;
+    std::array<
+        ankerl::unordered_dense::segmented_map<uint64_t, monad::Address>,
+        MONAD_SNAPSHOT_SHARDS>
+        account_offset_to_address;
+    std::deque<monad::mpt::Nibbles> nibbles_alloc;
+    std::deque<monad::bytes32_t> value_alloc;
+    // Per-shard page accumulator used when page_encoded, and for the header
+    // slot page (under partitioned::HEADER_PAGE_KEY) when partitioned. Maps
     // account_offset -> (page_key -> assembled storage_page_t).
     std::array<
         ankerl::unordered_dense::segmented_map<
@@ -74,6 +89,46 @@ struct monad_db_snapshot_loader
     bool page_encoded() const
     {
         return db.state_machine_type() == monad::mpt::state_machine_kind::monad;
+    }
+
+    bool partitioned() const
+    {
+        return db.state_machine_type() ==
+               monad::mpt::state_machine_kind::partitioned;
+    }
+
+    // Whether a shard's storage must stay in RAM until the final flush: the
+    // page layout and the partitioned header page both fold many slots into
+    // one update, which a mid-load flush would split and overwrite.
+    bool defers_storage_flush() const
+    {
+        return page_encoded() || partitioned();
+    }
+
+    // A 32 byte leaf update at `key`, relative to its stem
+    monad::mpt::Update &
+    leaf_update(monad::mpt::Nibbles key, monad::bytes32_t const &value)
+    {
+        auto const &v = value_alloc.emplace_back(value);
+        return update_alloc.emplace_back(monad::mpt::Update{
+            .key = monad::mpt::NibblesView{nibbles_alloc.emplace_back(
+                std::move(key))},
+            .value = monad::to_byte_string_view(v.bytes),
+            .incarnation = false,
+            .next = monad::mpt::UpdateList{},
+            .version = static_cast<int64_t>(block)});
+    }
+
+    // An empty-valued stem update at `key`, relative to the state table
+    monad::mpt::Update stem_update(monad::mpt::Nibbles key)
+    {
+        return monad::mpt::Update{
+            .key = monad::mpt::NibblesView{nibbles_alloc.emplace_back(
+                std::move(key))},
+            .value = monad::byte_string_view{},
+            .incarnation = false,
+            .next = monad::mpt::UpdateList{},
+            .version = static_cast<int64_t>(block)};
     }
 
 private:
@@ -156,6 +211,25 @@ void monad_db_snapshot_loader_finalize_pages(
 {
     using namespace monad;
     using namespace monad::mpt;
+    if (loader->partitioned()) {
+        // Re-encode each account leaf with its header slot page
+        for (size_t shard = 0; shard < MONAD_SNAPSHOT_SHARDS; ++shard) {
+            auto &shard_pages = loader->page_accumulator.at(shard);
+            auto &shard_accounts = loader->account_offset_to_update.at(shard);
+            for (auto &[account_offset, pages] : shard_pages) {
+                MONAD_ASSERT(pages.size() == 1);
+                auto const &page = pages.at(partitioned::HEADER_PAGE_KEY);
+                Update &leaf = shard_accounts.at(account_offset);
+                auto const decoded =
+                    partitioned::decode_account_leaf(leaf.value.value());
+                MONAD_ASSERT(decoded.has_value());
+                leaf.value = loader->bytes_alloc.emplace_back(
+                    partitioned::encode_account_leaf(decoded->account, page));
+            }
+            shard_pages.clear();
+        }
+        return;
+    }
     if (!loader->page_encoded()) {
         return;
     }
@@ -233,6 +307,14 @@ void monad_db_snapshot_loader_flush(monad_db_snapshot_loader *const loader)
     for (auto &map : loader->account_offset_to_update) {
         map.clear();
     }
+    for (auto &map : loader->account_offset_to_storage_update) {
+        map.clear();
+    }
+    for (auto &map : loader->account_offset_to_address) {
+        map.clear();
+    }
+    loader->nibbles_alloc.clear();
+    loader->value_alloc.clear();
     for (auto &map : loader->page_accumulator) {
         map.clear();
     }
@@ -254,6 +336,33 @@ uint64_t monad_db_snapshot_loader_read_account(
     auto const [address, account] = res.value();
     MONAD_ASSERT(address.size() == sizeof(Address));
     uint64_t const bytes_consumed = before.size() - bytes.size();
+    if (loader->partitioned()) {
+        // The account leaf at its header stem key; header slots are folded
+        // in at flush, zone slots hang off the storage stem.
+        using namespace monad::partitioned;
+        byte_string_view encoded{before.substr(0, bytes_consumed)};
+        auto const decoded = decode_account_db(encoded);
+        MONAD_ASSERT(decoded.has_value());
+        auto const &[addr, acct] = decoded.value();
+        auto const [it, success] =
+            loader->account_offset_to_update.at(shard).emplace(
+                account_offset,
+                Update{
+                    .key = NibblesView{loader->nibbles_alloc.emplace_back(
+                        header_stem_nibbles(addr))},
+                    .value = loader->bytes_alloc.emplace_back(
+                        encode_account_leaf(acct)),
+                    .incarnation = false,
+                    .next = UpdateList{},
+                    .version = static_cast<int64_t>(loader->block)});
+        MONAD_ASSERT(success);
+        loader->account_offset_to_address.at(shard).emplace(
+            account_offset, addr);
+        Update &leaf = it->second;
+        loader->state_updates.push_front(leaf);
+        loader->bytes_read += bytes_consumed;
+        return bytes_consumed;
+    }
     auto const [it, success] =
         loader->account_offset_to_update.at(shard).emplace(
             account_offset,
@@ -267,6 +376,47 @@ uint64_t monad_db_snapshot_loader_read_account(
     loader->state_updates.push_front(it->second);
     loader->bytes_read += bytes_consumed;
     return bytes_consumed;
+}
+
+// Partitioned layout: a slot leaf goes under the account's header stem or
+// its storage stem, the latter created on first use.
+void monad_db_snapshot_loader_add_partitioned_slot(
+    monad_db_snapshot_loader *const loader, uint64_t const shard,
+    uint64_t const account_offset, monad::bytes32_t const &slot_key,
+    monad::bytes32_t const &slot_val)
+{
+    using namespace monad;
+    using namespace monad::mpt;
+    using namespace monad::partitioned;
+    if (slot_val == bytes32_t{}) {
+        return;
+    }
+    if (is_header_slot(slot_key)) {
+        // folded into the account leaf by
+        // monad_db_snapshot_loader_finalize_pages
+        loader->page_accumulator.at(shard)[account_offset][HEADER_PAGE_KEY].set(
+            header_slot_offset(slot_key), slot_val);
+        return;
+    }
+    Address const &addr =
+        loader->account_offset_to_address.at(shard).at(account_offset);
+    auto const loc = locate_storage(addr, slot_key);
+    MONAD_ASSERT(!loc.in_header);
+    auto &storage_map = loader->account_offset_to_storage_update.at(shard);
+    auto it = storage_map.find(account_offset);
+    if (it == storage_map.end()) {
+        it = storage_map
+                 .emplace(
+                     account_offset,
+                     loader->stem_update(storage_stem_nibbles(addr)))
+                 .first;
+        loader->state_updates.push_front(it->second);
+    }
+    it->second.next.push_front(loader->leaf_update(
+        concat(
+            NibblesView{hash_nibbles(loc.group_position)},
+            NibblesView{sub_index_nibbles(loc.sub_index)}),
+        slot_val));
 }
 
 // Consume the stream header if there is one, leaving `stream` at its first
@@ -677,6 +827,9 @@ bool monad_db_dump_snapshot(
         return false;
     }
 
+    MONAD_ASSERT_PRINTF(
+        db.state_machine_type() != state_machine_kind::partitioned,
+        "dumping a snapshot from a partitioned db is not supported");
     MonadSnapshotTraverseMachine machine{
         writer,
         total_shards,
@@ -758,7 +911,18 @@ void monad_db_snapshot_loader_load(
             storage_view.remove_prefix(sizeof(account_offset));
             byte_string_view const before{storage_view};
             uint64_t consumed;
-            if (loader->page_encoded()) {
+            if (loader->partitioned()) {
+                auto const res = decode_storage_db_raw(storage_view);
+                MONAD_ASSERT(res.has_value());
+                consumed = before.size() - storage_view.size();
+                monad_db_snapshot_loader_add_partitioned_slot(
+                    loader,
+                    shard,
+                    account_offset,
+                    to_bytes(res.value().first),
+                    to_bytes(res.value().second));
+            }
+            else if (loader->page_encoded()) {
                 // The storage byte stream concatenates multiple
                 // [account_offset, leaf.value()] entries, so we use
                 // decode_storage_db_raw which advances the view in place
@@ -799,7 +963,7 @@ void monad_db_snapshot_loader_load(
             // in RAM before that final flush. With the current state size this
             // is not a problem. There will be a follow up to bound the memory
             // usage.
-            if (!loader->page_encoded() &&
+            if (!loader->defers_storage_flush() &&
                 loader->bytes_read >= BYTES_READ_BEFORE_FLUSH) {
                 monad_db_snapshot_loader_flush(loader);
             }

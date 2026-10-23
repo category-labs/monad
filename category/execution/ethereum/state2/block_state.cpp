@@ -26,6 +26,7 @@
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/execution/ethereum/db/db.hpp>
+#include <category/execution/ethereum/db/partitioned_layout.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state2/fmt/state_deltas_fmt.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
@@ -67,12 +68,17 @@ std::optional<Account> BlockState::read_account(Address const &address)
     }
     // database
     {
-        auto const result = db_.read_account(address);
+        // A partitioned db reads the account's header slots in the same
+        // leaf; they stay with the account for the block
+        auto [result, header_storage] = db_.read_account_and_header(address);
         StateDeltas::const_accessor it{};
         state_->emplace(
             it,
             address,
-            StateDelta{.account = {result, result}, .storage = {}});
+            StateDelta{
+                .account = {result, result},
+                .storage = {},
+                .header_storage = std::move(header_storage)});
         return it->second.account.second;
     }
 }
@@ -81,6 +87,7 @@ bytes32_t BlockState::read_storage(
     Address const &address, Incarnation const incarnation, bytes32_t const &key)
 {
     bool read_storage = false;
+    std::optional<bytes32_t> header_value;
     // block state
     {
         StateDeltas::const_accessor it{};
@@ -100,13 +107,25 @@ bytes32_t BlockState::read_storage(
         auto const &orig_account = it->second.account.first;
         if (orig_account && incarnation == orig_account->incarnation) {
             read_storage = true;
+            // A header slot of a partitioned db came with the account
+            if (it->second.header_storage.has_value() &&
+                partitioned::is_header_slot(key)) {
+                header_value =
+                    (*it->second
+                          .header_storage)[partitioned::header_slot_offset(
+                        key)];
+            }
         }
     }
-    // database
+    // database. The db read may suspend the fiber on IO, so no accessor is
+    // held across it: another fiber spinning on the bucket lock would never
+    // let this one resume.
     {
         bytes32_t result{};
         if (read_storage) {
-            result = db_.read_storage(address, incarnation, key);
+            result = header_value.has_value()
+                         ? *header_value
+                         : db_.read_storage(address, incarnation, key);
             MONAD_ASSERT(
                 !secondary_db_ || secondary_db_->read_storage(
                                       address, incarnation, key) == result);

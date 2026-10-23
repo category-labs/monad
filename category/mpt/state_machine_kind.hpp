@@ -37,6 +37,10 @@ enum class state_machine_kind : uint8_t
     // MonadOnDiskMachine: page-encoded storage for chains at MONAD_TEN or
     // later. Registered alongside ethereum.
     monad = 1,
+    // PartitionedOnDiskMachine: EIP-8297 partitioned account and storage
+    // layout in one flat state table (benchmark). Registered alongside
+    // ethereum.
+    partitioned = 2,
     // Future kinds extend here. Never reorder or reuse values: they are
     // persisted on disk.
 };

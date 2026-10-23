@@ -22,6 +22,7 @@
 #include <category/core/bytes.hpp>
 #include <category/core/bytes_hash_compare.hpp>
 #include <category/execution/ethereum/core/account.hpp>
+#include <category/execution/monad/db/storage_page.hpp>
 #include <category/vm/code.hpp>
 
 #pragma GCC diagnostic push
@@ -58,10 +59,13 @@ struct StateDelta
 {
     AccountDelta account;
     StorageDeltas storage{};
+    // Partitioned db only: the pre-state header slots 0..63 of the account,
+    // read with it in one leaf (partitioned_layout.hpp). BlockState serves
+    // header slot reads from it instead of going back to the db.
+    std::optional<storage_page_t> header_storage{};
 };
 
-static_assert(sizeof(StateDelta) == 752);
-static_assert(alignof(StateDelta) == 8);
+static_assert(alignof(StateDelta) == 16);
 
 using StateDeltas = oneapi::tbb::concurrent_hash_map<
     Address, StateDelta, BytesHashCompare<Address>>;

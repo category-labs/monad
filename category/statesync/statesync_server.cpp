@@ -136,7 +136,7 @@ bool send_deletion(
                      num_upserts,
                      upsert_bytes](Deletion const &deletion) {
         auto const &[addr, key] = deletion;
-        auto const hash = keccak256(addr.bytes);
+        auto const hash = state_key_hash(addr.bytes);
         byte_string_view const view{hash.bytes, sizeof(hash.bytes)};
         if (!view.starts_with(prefix)) {
             return;

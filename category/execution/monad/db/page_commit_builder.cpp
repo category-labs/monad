@@ -97,8 +97,8 @@ PageCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
                 StorageKey const sk{addr, inc, page_key};
                 proposal_post_state_.storage[sk] = page;
                 storage_updates.push_front(update_alloc_.emplace_back(Update{
-                    .key = hash_alloc_.emplace_back(
-                        keccak256({page_key.bytes, sizeof(page_key.bytes)})),
+                    .key = hash_alloc_.emplace_back(state_key_hash(
+                        {page_key.bytes, sizeof(page_key.bytes)})),
                     .value = is_empty ? std::nullopt
                                       : std::make_optional<byte_string_view>(
                                             bytes_alloc_.emplace_back(
@@ -115,7 +115,7 @@ PageCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
         if (!storage_updates.empty() || delta.account.first != account) {
             account_updates.push_front(update_alloc_.emplace_back(Update{
                 .key = hash_alloc_.emplace_back(
-                    keccak256({addr.bytes, sizeof(addr.bytes)})),
+                    state_key_hash({addr.bytes, sizeof(addr.bytes)})),
                 .value = value,
                 .incarnation = reincarnated,
                 .next = std::move(storage_updates),

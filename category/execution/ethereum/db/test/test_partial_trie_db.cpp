@@ -26,6 +26,7 @@
 #include <category/execution/ethereum/db/commit_builder.hpp>
 #include <category/execution/ethereum/db/offset_trie.hpp>
 #include <category/execution/ethereum/db/partial_trie_db.hpp>
+#include <category/execution/ethereum/db/util.hpp>
 #include <category/mpt/nibbles_view.hpp>
 
 #include <gtest/gtest.h>
@@ -57,7 +58,7 @@ namespace
         byte_string buf = empty_blob();
         uint32_t const root_off = static_cast<uint32_t>(buf.size());
 
-        auto const key = keccak256(addr.bytes);
+        auto const key = state_key_hash(addr.bytes);
         mpt::append_acct(buf, mpt::NULL_ID, acct, mpt::NibblesView{key});
 
         // LE, matching read_node_id (both sides assert a little-endian host)

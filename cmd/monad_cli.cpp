@@ -132,9 +132,14 @@ template <class T>
              std::same_as<T, std::string_view>
 auto to_triedb_key(T input, bool already_hashed = false)
 {
-    using res = std::invoke_result_t<monad_hash256 (*)(T), T>;
-    return already_hashed ? byte_string{input.data(), input.size()}
-                          : byte_string{keccak256(input).bytes, sizeof(res)};
+    if (already_hashed) {
+        return byte_string{
+            reinterpret_cast<unsigned char const *>(input.data()),
+            input.size()};
+    }
+    auto const hash = state_key_hash(byte_string_view{
+        reinterpret_cast<unsigned char const *>(input.data()), input.size()});
+    return byte_string{hash.bytes, sizeof(hash.bytes)};
 }
 
 void print_account(Account const &acct)

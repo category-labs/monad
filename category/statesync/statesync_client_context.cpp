@@ -171,7 +171,7 @@ void monad_statesync_client_context::commit()
             bool const is_empty = page.is_empty();
             storage.push_front(alloc.emplace_back(Update{
                 .key = hash_alloc.emplace_back(
-                    keccak256({page_key.bytes, sizeof(page_key.bytes)})),
+                    state_key_hash({page_key.bytes, sizeof(page_key.bytes)})),
                 .value = is_empty
                              ? std::nullopt
                              : std::make_optional<byte_string_view>(
@@ -194,7 +194,7 @@ void monad_statesync_client_context::commit()
             storage = build_page_storage(addr, slot_deltas);
         }
         accounts.push_front(alloc.emplace_back(Update{
-            .key = hash_alloc.emplace_back(keccak256(addr.bytes)),
+            .key = hash_alloc.emplace_back(state_key_hash(addr.bytes)),
             .value = value,
             .incarnation = false,
             .next = std::move(storage),

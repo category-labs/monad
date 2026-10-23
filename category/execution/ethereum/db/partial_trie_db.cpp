@@ -26,6 +26,7 @@
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/offset_trie.hpp>
+#include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/mpt/nibbles_view.hpp>
@@ -64,7 +65,7 @@ MONAD_NAMESPACE_BEGIN
 
 std::optional<Account> PartialTrieDb::read_account(Address const &addr)
 {
-    auto const key = keccak256(addr.bytes);
+    auto const key = state_key_hash(addr.bytes);
     return match(
         trie_.find_original(trie_.root, mpt::NibblesView{key}),
         Cases{
@@ -82,7 +83,7 @@ std::optional<Account> PartialTrieDb::read_account(Address const &addr)
 bytes32_t PartialTrieDb::read_storage(
     Address const &addr, Incarnation, bytes32_t const &slot)
 {
-    auto const akey = keccak256(addr.bytes);
+    auto const akey = state_key_hash(addr.bytes);
     auto const sroot = match(
         trie_.find_original(trie_.root, mpt::NibblesView{akey}),
         Cases{
@@ -126,7 +127,7 @@ void PartialTrieDb::commit(
         if (!new_account || !is_changed(delta)) {
             continue;
         }
-        auto const acct_key = keccak256(addr.bytes);
+        auto const acct_key = state_key_hash(addr.bytes);
         auto const [leaf, leaf_path] =
             trie_.upsert_node(trie_.root, mpt::NibblesView{acct_key});
         if (MONAD_UNLIKELY(trie_.root == NULL_ID)) {
@@ -184,7 +185,7 @@ void PartialTrieDb::commit(
         if (delta.account.second || !delta.account.first) {
             continue;
         }
-        auto const acct_key = keccak256(addr.bytes);
+        auto const acct_key = state_key_hash(addr.bytes);
         if (MONAD_UNLIKELY(
                 trie_.erase_node(trie_.root, mpt::NibblesView{acct_key}) ==
                 OffsetTrie::EraseResult::Erased)) {

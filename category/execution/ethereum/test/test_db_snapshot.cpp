@@ -702,7 +702,7 @@ TEST(DbBinarySnapshot, LoadPageModeOnSecondaryDb)
             auto const account_path = concat(
                 finalized_nibbles,
                 STATE_NIBBLE,
-                NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})});
+                NibblesView{state_key_hash({addr.bytes, sizeof(addr.bytes)})});
             for (bytes32_t const &page_key : {bytes32_t{}, pk1}) {
                 auto const leaf_res = db.find(
                     concat(

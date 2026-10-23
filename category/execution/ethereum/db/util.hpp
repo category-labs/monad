@@ -16,12 +16,16 @@
 #pragma once
 
 #include <category/core/address.hpp>
+#include <category/core/blake3.hpp>
 #include <category/core/byte_string.hpp>
+#include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
+#include <category/core/keccak.hpp>
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
+#include <category/mpt/config.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/state_machine.hpp>
 
@@ -145,6 +149,33 @@ protected:
     virtual mpt::Compute &storage_compute() const override;
     virtual mpt::Compute &storage_root_compute() const override;
 };
+
+//////////////////////////////////////////////////////////
+// State keys
+//////////////////////////////////////////////////////////
+// Hash of an address or a storage slot into its trie key. keccak256 as in
+// Ethereum, or BLAKE3 when the build hashes nodes with BLAKE3
+// (MONAD_MPT_NODE_HASH=blake3), so that a blake3 build is blake3 throughout.
+inline monad_hash256 state_key_hash(byte_string_view const v)
+{
+    if constexpr (mpt::NODE_HASH_BLAKE3) {
+        return blake3(v);
+    }
+    else {
+        return keccak256(v);
+    }
+}
+
+template <size_t N>
+inline monad_hash256 state_key_hash(unsigned char const (&a)[N])
+{
+    return state_key_hash(byte_string_view{a, N});
+}
+
+inline monad_hash256 state_key_hash(bytes32_t const &b)
+{
+    return state_key_hash(byte_string_view{b.bytes, sizeof(b.bytes)});
+}
 
 //////////////////////////////////////////////////////////
 // Table Nibbles

@@ -114,7 +114,7 @@ std::optional<Account> TrieDb::read_account(Address const &addr)
         concat(
             prefix_,
             STATE_NIBBLE,
-            NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})}),
+            NibblesView{state_key_hash({addr.bytes, sizeof(addr.bytes)})}),
         block_number_);
     // result stays nullopt if absent at the finalized baseline.
     if (res.has_error()) {
@@ -175,9 +175,9 @@ storage_page_t TrieDb::load_storage_page(
         concat(
             prefix_,
             STATE_NIBBLE,
-            NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
+            NibblesView{state_key_hash({addr.bytes, sizeof(addr.bytes)})},
             NibblesView{
-                keccak256({lookup_key.bytes, sizeof(lookup_key.bytes)})}),
+                state_key_hash({lookup_key.bytes, sizeof(lookup_key.bytes)})}),
         block_number_);
     storage_page_t page;
     if (res.has_error()) {
@@ -544,8 +544,8 @@ nlohmann::json TrieDb::to_json(size_t const concurrency_limit)
                 MONAD_ASSERT(decoded.has_value());
                 for (auto const [slot_key, slot_value] :
                      decoded.value().slots()) {
-                    auto const hashed_slot_key = to_bytes(
-                        keccak256({slot_key.bytes, sizeof(slot_key.bytes)}));
+                    auto const hashed_slot_key = to_bytes(state_key_hash(
+                        {slot_key.bytes, sizeof(slot_key.bytes)}));
                     auto const key = fmt::format("{}", hashed_slot_key);
                     auto storage_data_json = nlohmann::json::object();
                     storage_data_json["slot"] = fmt::format(

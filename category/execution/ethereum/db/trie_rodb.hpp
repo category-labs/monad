@@ -85,7 +85,8 @@ public:
             prefix_cursor_,
             mpt::concat(
                 STATE_NIBBLE,
-                mpt::NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})}),
+                mpt::NibblesView{
+                    state_key_hash({addr.bytes, sizeof(addr.bytes)})}),
             block_number_);
         if (!acc_leaf_res.has_value()) {
             MONAD_ASSERT_THROW(
@@ -109,9 +110,10 @@ public:
             prefix_cursor_,
             mpt::concat(
                 STATE_NIBBLE,
-                mpt::NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
                 mpt::NibblesView{
-                    keccak256({lookup_key.bytes, sizeof(lookup_key.bytes)})}),
+                    state_key_hash({addr.bytes, sizeof(addr.bytes)})},
+                mpt::NibblesView{state_key_hash(
+                    {lookup_key.bytes, sizeof(lookup_key.bytes)})}),
             block_number_);
         if (!storage_leaf_res.has_value()) {
             MONAD_ASSERT_THROW(

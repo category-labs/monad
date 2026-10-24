@@ -166,6 +166,7 @@ add_library(
   "cli/help_formatter.cpp"
   "cli/help_formatter.hpp"
   # event
+  "event/event_def.c"
   "event/event_def.h"
   "event/event_metadata.h"
   "event/event_recorder.cpp"

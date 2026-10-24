@@ -107,6 +107,17 @@ impl MonadBindgen {
         self
     }
 
+    pub fn blocklist_items<S>(mut self, items: impl IntoIterator<Item = S>) -> Self
+    where
+        S: AsRef<str>,
+    {
+        for item in items {
+            self.builder = self.builder.blocklist_item(item.as_ref());
+        }
+
+        self
+    }
+
     pub fn no_prepend_enum_name(mut self) -> Self {
         self.builder = self.builder.prepend_enum_name(false);
         self

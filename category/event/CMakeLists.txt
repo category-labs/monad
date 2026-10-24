@@ -30,6 +30,7 @@ add_library(
   "../core/cleanup.c"
   "../core/format_err.c"
   "../core/path_util.c"
+  "../core/event/event_def.c"
   "../core/event/event_ring.c"
   "../core/event/event_ring_util.c"
   "../core/event/test_event_ctypes_metadata.c"

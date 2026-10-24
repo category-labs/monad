@@ -131,7 +131,8 @@ init_exec_event_ring(std::string const event_ring_path)
         .payload_buf_shift = PAYLOAD_BUF_SHIFT,
         .context_large_pages = 0,
         .content_type = MONAD_EVENT_CONTENT_TYPE_EXEC,
-        .schema_hash = &g_monad_exec_event_schema_hash};
+        .schema_hash = &g_monad_exec_event_schema_hash,
+        .version_table = g_monad_exec_event_version_table};
     int rc = monad_event_ring_init_simple(&simple_cfg, ring_fd, 0, MEMFD_NAME);
     MONAD_ASSERT_PRINTF(
         rc == 0,

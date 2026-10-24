@@ -30,6 +30,13 @@ fn main() {
             "category/execution/monad/core/monad_ctypes.h",
         ])
         .blocklist_types(["monad_exec_record_error", "monad_event_record_error"])
+        // This is a `static` (internal linkage) variable defined in the header,
+        // so there is no symbol to link against; the Rust side builds the
+        // equivalent table from `g_monad_exec_event_versions` instead. Its type,
+        // `monad_event_content_version_table`, is defined in event_def.h, which
+        // is not allowlisted, so the generated declaration would refer to an
+        // undefined type
+        .blocklist_items(["g_monad_exec_event_version_table"])
         .no_prepend_enum_name()
         .generate_and_build_static("monad_exec_events__wrap_static_fns");
 }

@@ -32,6 +32,8 @@ struct Receipt
         byte_string data{};
         std::vector<bytes32_t> topics{};
         Address address{};
+        // eth_simulateV1 traceTransfers log, left out of the bloom.
+        bool trace_transfer{false};
 
         friend bool operator==(Log const &, Log const &) = default;
     };

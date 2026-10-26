@@ -37,6 +37,7 @@
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/chain/chain_config.h>
 #include <category/execution/ethereum/core/block.hpp>
+#include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/rlp/address_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/bytes_rlp.hpp>
@@ -620,6 +621,7 @@ namespace
         entry[eth_simulate_json::calls] = nlohmann::json::array();
         auto &txns = entry[eth_simulate_json::calls];
 
+        size_t log_index_value = 0;
         for (size_t tx_idx = 0; tx_idx < block.transactions.size(); ++tx_idx) {
             if (MONAD_UNLIKELY(call_frames[tx_idx].empty())) {
                 return SimulationError::InvalidData;
@@ -634,7 +636,6 @@ namespace
             call_result[eth_simulate_json::gas_used] =
                 std::format("0x{:x}", call_frames[tx_idx][0].gas_used);
 
-            size_t log_index_value = 0;
             if (call_frames[tx_idx][0].status == MONAD_STATUS_SUCCESS) {
                 call_result[eth_simulate_json::logs] = nlohmann::json::array();
                 for (auto const &log : receipts[tx_idx].logs) {

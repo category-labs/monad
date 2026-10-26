@@ -80,7 +80,7 @@ public:
     {
     }
 
-    T load() const noexcept
+    T load() const
     {
         Slots slots;
         for (size_t i = 0; i < N; ++i) {
@@ -90,7 +90,7 @@ public:
         return from_slots(slots);
     }
 
-    std::optional<T> load_checked() const noexcept
+    std::optional<T> load_checked() const
     {
         Slots slots;
         bool has_data = false;

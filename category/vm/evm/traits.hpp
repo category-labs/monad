@@ -539,6 +539,16 @@ namespace monad
             return Rev >= MONAD_FIVE;
         }
 
+        static consteval bool staking_active() noexcept
+        {
+            return Rev >= MONAD_FOUR;
+        }
+
+        static consteval bool reserve_balance_active() noexcept
+        {
+            return Rev >= MONAD_FOUR;
+        }
+
         static consteval int64_t base_sstore_cost() noexcept
         {
             return 100;

@@ -2350,7 +2350,7 @@ TYPED_TEST(EvmTraitsTest, code_tracer_records_authorization_code)
 TYPED_TEST(MonadTraitsTest, code_tracer_records_reserve_balance_code)
 {
     using Trait = typename TestFixture::Trait;
-    if (TestFixture::REV < MONAD_FOUR) {
+    if (!Trait::reserve_balance_active()) {
         GTEST_SKIP() << "reserve-balance code reads are MONAD_FOUR+ only";
     }
 

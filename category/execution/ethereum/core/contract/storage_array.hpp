@@ -51,24 +51,24 @@ public:
     {
     }
 
-    uint64_t length() const noexcept
+    uint64_t length() const
     {
         return length_.load().native();
     }
 
-    bool empty() const noexcept
+    bool empty() const
     {
         return length() == 0;
     }
 
-    StorageVariable<T> get(uint64_t const index) const noexcept
+    StorageVariable<T> get(uint64_t const index) const
     {
         uint256_t const offset = start_index_ + index * SLOT_PER_ELEM;
         return StorageVariable<T>{
             state_, address_, store_be_as<bytes32_t>(offset)};
     }
 
-    void push(T const &value) noexcept
+    void push(T const &value)
     {
         auto const len = length();
         uint256_t const offset = start_index_ + len * SLOT_PER_ELEM;
@@ -78,7 +78,7 @@ public:
         length_.store(len + 1);
     }
 
-    T pop() noexcept
+    T pop()
     {
         uint64_t len = length();
         MONAD_ASSERT(len > 0);

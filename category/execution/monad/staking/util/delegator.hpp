@@ -101,39 +101,39 @@ public:
     /////////////
 
     // currently active stake in the consensus
-    StorageVariable<Stake_t> stake() noexcept
+    StorageVariable<Stake_t> stake()
     {
         return {state_, address_, key_ + Offsets::stake};
     }
 
     // Last read reward per token accumulator. This is updated lazily whenever a
     // delegator action is performed.
-    StorageVariable<RewardsPerToken_t> accumulated_reward_per_token() noexcept
+    StorageVariable<RewardsPerToken_t> accumulated_reward_per_token()
     {
         return {state_, address_, key_ + Offsets::rewards_per_token};
     }
 
     // unclaimed rewards
-    StorageVariable<Rewards_t> rewards() noexcept
+    StorageVariable<Rewards_t> rewards()
     {
         return {state_, address_, key_ + Offsets::rewards};
     }
 
     // stake that will be active next epoch
-    StorageVariable<DeltaStake_t> delta_stake() noexcept
+    StorageVariable<DeltaStake_t> delta_stake()
     {
         return {state_, address_, key_ + Offsets::delta_stake};
     }
 
     // stake that will be active next next epoch (delegate during boundary)
-    StorageVariable<NextDeltaStake_t> next_delta_stake() noexcept
+    StorageVariable<NextDeltaStake_t> next_delta_stake()
     {
         return {state_, address_, key_ + Offsets::next_delta_stake};
     }
 
     // low level getter returning packed epochs for delta epoch and next delta
     // epoch. prefer the helpers for getting those values individually.
-    StorageVariable<Epochs_t> epochs() noexcept
+    StorageVariable<Epochs_t> epochs()
     {
         return {state_, address_, key_ + Offsets::epochs};
     }
@@ -141,7 +141,7 @@ public:
     // list nodes that point to two things:
     //  1. next validator ID
     //  2. next delegator address
-    StorageVariable<ListNode> list_node() noexcept
+    StorageVariable<ListNode> list_node()
     {
         return {state_, address_, key_ + Offsets::list_node};
     }
@@ -151,7 +151,7 @@ public:
     /////////////
 
     // epoch the delta stake activates
-    u64_be get_delta_epoch() const noexcept
+    u64_be get_delta_epoch() const
     {
         return StorageVariable<Epochs_t>(
                    state_, address_, key_ + Offsets::epochs)
@@ -160,7 +160,7 @@ public:
     }
 
     // epoch the next delta stake activates
-    u64_be get_next_delta_epoch() const noexcept
+    u64_be get_next_delta_epoch() const
     {
         return StorageVariable<Epochs_t>(
                    state_, address_, key_ + Offsets::epochs)
@@ -169,7 +169,7 @@ public:
     }
 
     // the total stake that will come online next epoch.
-    uint256_t get_next_epoch_stake() const noexcept
+    uint256_t get_next_epoch_stake() const
     {
         uint256_t const stake =
             StorageVariable<Stake_t>(state_, address_, key_ + Offsets::stake)
@@ -190,7 +190,7 @@ public:
 
     // set the epoch the delegation (before the epoch delay) will be come
     // active.
-    void set_delta_epoch(u64_be const delta_epoch) noexcept
+    void set_delta_epoch(u64_be const delta_epoch)
     {
         auto e = epochs().load();
         e.delta_epoch = delta_epoch;
@@ -198,7 +198,7 @@ public:
     }
 
     // set the epoch the delegation (after the epoch delay) will be come active.
-    void set_next_delta_epoch(u64_be const next_delta_epoch) noexcept
+    void set_next_delta_epoch(u64_be const next_delta_epoch)
     {
         auto e = epochs().load();
         e.next_delta_epoch = next_delta_epoch;

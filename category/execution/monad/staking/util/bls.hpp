@@ -36,7 +36,7 @@ public:
         parse_result_ = blst_p1_uncompress(&pubkey_, compressed.data());
     }
 
-    bool is_valid() const noexcept
+    bool is_valid() const
     {
         // NOTE: deserializing already checks the point is on the curve
         return parse_result_ == BLST_SUCCESS &&
@@ -44,14 +44,14 @@ public:
                !blst_p1_affine_is_inf(&pubkey_);
     }
 
-    byte_string_fixed<96> serialize() const noexcept
+    byte_string_fixed<96> serialize() const
     {
         byte_string_fixed<96> serialized;
         blst_p1_affine_serialize(serialized.data(), &pubkey_);
         return serialized;
     }
 
-    blst_p1_affine const &get() const noexcept
+    blst_p1_affine const &get() const
     {
         return pubkey_;
     }
@@ -70,7 +70,7 @@ public:
         parse_result_ = blst_p2_uncompress(&sig_, compressed.data());
     }
 
-    bool is_valid() const noexcept
+    bool is_valid() const
     {
         // NOTE: deserializing already checks the point is on the curve
         return parse_result_ == BLST_SUCCESS && blst_p2_affine_in_g2(&sig_) &&

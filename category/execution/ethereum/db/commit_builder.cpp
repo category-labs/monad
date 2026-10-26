@@ -28,6 +28,7 @@
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/execution/ethereum/db/storage_key.hpp>
+#include <category/execution/ethereum/db/storage_stats.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
@@ -79,6 +80,7 @@ CommitBuilder &CommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
             auto const inc = account->incarnation;
             for (auto const &[key, delta] : delta.storage) {
                 if (delta.first != delta.second) {
+                    storage_stats::on_write(key);
                     storage_updates.push_front(
                         update_alloc_.emplace_back(Update{
                             .key = hash_alloc_.emplace_back(

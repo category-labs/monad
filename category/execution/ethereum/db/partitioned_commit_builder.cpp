@@ -13,14 +13,17 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <ankerl/unordered_dense.h>
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/bytes_hash_compare.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/partitioned_commit_builder.hpp>
 #include <category/execution/ethereum/db/partitioned_layout.hpp>
 #include <category/execution/ethereum/db/storage_key.hpp>
+#include <category/execution/ethereum/db/storage_stats.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
 #include <category/mpt/nibbles_view.hpp>
@@ -105,28 +108,45 @@ PartitionedCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
             }
             return *header_page;
         };
+        // Storage zone pages touched by this account, read on first touch
+        // and merged like the MIP-8 page builder; page 0 is the header
+        ankerl::unordered_dense::
+            map<bytes32_t, storage_page_t, BytesHashCompare<bytes32_t>>
+                pages;
         for (auto const &[key, storage_delta] : delta.storage) {
             if (storage_delta.first == storage_delta.second) {
                 continue;
             }
-            if (is_header_slot(key)) {
-                header().set(header_slot_offset(key), storage_delta.second);
+            storage_stats::on_write(key);
+            auto const loc = locate_storage(key);
+            if (loc.in_header()) {
+                header().set(loc.offset, storage_delta.second);
                 continue;
             }
-            auto const loc = locate_storage(addr, key);
-            MONAD_ASSERT(!loc.in_header);
-            Nibbles leaf_key = concat(
-                NibblesView{hash_nibbles(loc.group_position)},
-                NibblesView{sub_index_nibbles(loc.sub_index)});
-            if (storage_delta.second == bytes32_t{}) {
+            auto [it, inserted] = pages.try_emplace(loc.page_key);
+            if (inserted && !fresh) {
+                it->second = db_.read_storage_page(addr, inc, loc.page_key);
+            }
+            it->second.set(loc.offset, storage_delta.second);
+        }
+        for (auto const &[page_key, page] : pages) {
+            Nibbles leaf_key =
+                hash_nibbles(storage_page_position(addr, page_key));
+            if (page.is_empty()) {
                 storage_updates.push_front(erase_update(std::move(leaf_key)));
             }
             else {
-                storage_updates.push_front(
-                    leaf_update(std::move(leaf_key), storage_delta.second));
+                storage_updates.push_front(update_alloc_.emplace_back(Update{
+                    .key = NibblesView{nibbles_alloc_.emplace_back(
+                        std::move(leaf_key))},
+                    .value =
+                        bytes_alloc_.emplace_back(encode_storage_page(page)),
+                    .incarnation = false,
+                    .next = UpdateList{},
+                    .version = static_cast<int64_t>(block_number_)}));
             }
-            proposal_post_state_.storage[::monad::StorageKey{addr, inc, key}] =
-                storage_page_t{storage_delta.second};
+            proposal_post_state_
+                .storage[::monad::StorageKey{addr, inc, page_key}] = page;
         }
 
         // The account leaf at the header stem key: rewritten on any change

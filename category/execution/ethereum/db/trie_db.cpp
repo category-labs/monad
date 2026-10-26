@@ -36,6 +36,7 @@
 #include <category/execution/ethereum/core/rlp/withdrawal_rlp.hpp>
 #include <category/execution/ethereum/db/partitioned_commit_builder.hpp>
 #include <category/execution/ethereum/db/partitioned_layout.hpp>
+#include <category/execution/ethereum/db/storage_stats.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
@@ -239,15 +240,11 @@ bytes32_t TrieDb::read_storage(
     Address const &addr, Incarnation const incarnation, bytes32_t const &key)
 {
     // Lookup key and in-page offset: the page key and slot offset for the
-    // page layout, the header page and slot number for a partitioned header
-    // slot, the slot itself at offset 0 otherwise
-    bool const header_slot = partitioned_ && partitioned::is_header_slot(key);
-    bytes32_t const lookup_key =
-        header_slot ? partitioned::HEADER_PAGE_KEY : storage_lookup_key(key);
-    uint8_t const lookup_offset =
-        page_encoded_
-            ? compute_slot_offset(key)
-            : (header_slot ? partitioned::header_slot_offset(key) : 0);
+    // page and partitioned layouts (page 0 being the partitioned header), the
+    // slot itself at offset 0 for the slot layout
+    bool const paged = page_encoded_ || partitioned_;
+    bytes32_t const lookup_key = paged ? compute_page_key(key) : key;
+    uint8_t const lookup_offset = paged ? compute_slot_offset(key) : 0;
     bytes32_t result{};
     auto const status =
         cache_ ? cache_->try_read_storage(
@@ -286,16 +283,16 @@ storage_page_t TrieDb::load_storage_partitioned(
             concat(
                 prefix_,
                 STATE_NIBBLE,
-                NibblesView{storage_key_nibbles(addr, lookup_key)}),
+                NibblesView{storage_page_key_nibbles(addr, lookup_key)}),
             block_number_);
         if (res.has_error()) {
             stats_storage_no_value();
         }
         else {
             stats_storage_value();
-            auto const value = res.value().node->value();
-            MONAD_ASSERT(value.size() == sizeof(bytes32_t));
-            page = storage_page_t{to_bytes(value)};
+            auto decoded = decode_storage_page(res.value().node->value());
+            MONAD_ASSERT(decoded.has_value());
+            page = std::move(decoded).value();
         }
     }
     if (cache_ && status == CacheReadStatus::MissResolved) {
@@ -308,12 +305,7 @@ storage_page_t TrieDb::read_storage_page(
     Address const &addr, Incarnation const incarnation,
     bytes32_t const &page_key)
 {
-    if (partitioned_) {
-        MONAD_ASSERT_PRINTF(
-            page_key == partitioned::HEADER_PAGE_KEY,
-            "a partitioned TrieDb only pages the header slots");
-    }
-    else if (!page_encoded_) {
+    if (!page_encoded_ && !partitioned_) {
         MONAD_ABORT("read_storage_page is only valid on a page-encoded TrieDb");
     }
     storage_page_t result;
@@ -599,6 +591,15 @@ std::string TrieDb::print_stats()
     n_account_value_.store(0, std::memory_order_release);
     n_storage_no_value_.store(0, std::memory_order_release);
     n_storage_value_.store(0, std::memory_order_release);
+    // Storage reads reaching BlockState and slots written at commit, with
+    // the share in the first page (slot < 128): see storage_stats.hpp
+    ret += std::format(
+        ",sread={:5},sreadp={:5},swrite={:5},swritep={:5}",
+        storage_stats::reads.exchange(0, std::memory_order_relaxed),
+        storage_stats::reads_first_page.exchange(0, std::memory_order_relaxed),
+        storage_stats::writes.exchange(0, std::memory_order_relaxed),
+        storage_stats::writes_first_page.exchange(
+            0, std::memory_order_relaxed));
     // Per-interval AsyncIO counters of the db's io (on-disk dbs only): reads
     // and writes submitted, KiB read and written, reads retried on EAGAIN,
     // and the peak in-flight depth since start. Read across threads as a

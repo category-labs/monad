@@ -212,19 +212,49 @@ void monad_db_snapshot_loader_finalize_pages(
     using namespace monad;
     using namespace monad::mpt;
     if (loader->partitioned()) {
-        // Re-encode each account leaf with its header slot page
+        // Page 0 is re-encoded into the account leaf; every other page is a
+        // leaf under the account's storage stem, created here
+        using namespace monad::partitioned;
         for (size_t shard = 0; shard < MONAD_SNAPSHOT_SHARDS; ++shard) {
             auto &shard_pages = loader->page_accumulator.at(shard);
             auto &shard_accounts = loader->account_offset_to_update.at(shard);
+            auto &stems = loader->account_offset_to_storage_update.at(shard);
             for (auto &[account_offset, pages] : shard_pages) {
-                MONAD_ASSERT(pages.size() == 1);
-                auto const &page = pages.at(partitioned::HEADER_PAGE_KEY);
                 Update &leaf = shard_accounts.at(account_offset);
-                auto const decoded =
-                    partitioned::decode_account_leaf(leaf.value.value());
-                MONAD_ASSERT(decoded.has_value());
-                leaf.value = loader->bytes_alloc.emplace_back(
-                    partitioned::encode_account_leaf(decoded->account, page));
+                Address const &addr =
+                    loader->account_offset_to_address.at(shard).at(
+                        account_offset);
+                for (auto const &[page_key, page] : pages) {
+                    if (page_key == HEADER_PAGE_KEY) {
+                        auto const decoded =
+                            decode_account_leaf(leaf.value.value());
+                        MONAD_ASSERT(decoded.has_value());
+                        leaf.value = loader->bytes_alloc.emplace_back(
+                            encode_account_leaf(decoded->account, page));
+                        continue;
+                    }
+                    auto it = stems.find(account_offset);
+                    if (it == stems.end()) {
+                        it = stems
+                                 .emplace(
+                                     account_offset,
+                                     loader->stem_update(
+                                         storage_stem_nibbles(addr)))
+                                 .first;
+                        loader->state_updates.push_front(it->second);
+                    }
+                    it->second.next.push_front(
+                        loader->update_alloc.emplace_back(Update{
+                            .key =
+                                NibblesView{loader->nibbles_alloc.emplace_back(
+                                    hash_nibbles(storage_page_position(
+                                        addr, page_key)))},
+                            .value = loader->bytes_alloc.emplace_back(
+                                encode_storage_page(page)),
+                            .incarnation = false,
+                            .next = UpdateList{},
+                            .version = static_cast<int64_t>(loader->block)}));
+                }
             }
             shard_pages.clear();
         }
@@ -386,37 +416,16 @@ void monad_db_snapshot_loader_add_partitioned_slot(
     monad::bytes32_t const &slot_val)
 {
     using namespace monad;
-    using namespace monad::mpt;
     using namespace monad::partitioned;
     if (slot_val == bytes32_t{}) {
         return;
     }
-    if (is_header_slot(slot_key)) {
-        // folded into the account leaf by
-        // monad_db_snapshot_loader_finalize_pages
-        loader->page_accumulator.at(shard)[account_offset][HEADER_PAGE_KEY].set(
-            header_slot_offset(slot_key), slot_val);
-        return;
-    }
-    Address const &addr =
-        loader->account_offset_to_address.at(shard).at(account_offset);
-    auto const loc = locate_storage(addr, slot_key);
-    MONAD_ASSERT(!loc.in_header);
-    auto &storage_map = loader->account_offset_to_storage_update.at(shard);
-    auto it = storage_map.find(account_offset);
-    if (it == storage_map.end()) {
-        it = storage_map
-                 .emplace(
-                     account_offset,
-                     loader->stem_update(storage_stem_nibbles(addr)))
-                 .first;
-        loader->state_updates.push_front(it->second);
-    }
-    it->second.next.push_front(loader->leaf_update(
-        concat(
-            NibblesView{hash_nibbles(loc.group_position)},
-            NibblesView{sub_index_nibbles(loc.sub_index)}),
-        slot_val));
+    // Pages are assembled here and emitted by
+    // monad_db_snapshot_loader_finalize_pages: page 0 into the account leaf,
+    // the others as storage zone leaves
+    auto const loc = locate_storage(slot_key);
+    loader->page_accumulator.at(shard)[account_offset][loc.page_key].set(
+        loc.offset, slot_val);
 }
 
 // Consume the stream header if there is one, leaving `stream` at its first

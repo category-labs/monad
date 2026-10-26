@@ -50,8 +50,11 @@
 //     leaves, the mpt commitment hashes the leaf as is. One read brings the
 //     account and its header slots, one write stores them, and the stem is
 //     the leaf's path rather than a node;
-//   - the header holds 128 slots (one storage_page_t), the EIP 64, so group 0
-//     of the storage zone holds slots 128..255;
+//   - the header holds 128 slots (one storage_page_t), the EIP 64;
+//   - the storage zone stores pages, not slots: one leaf per 128 consecutive
+//     slots at 0xFF || H(addr32) || H(addr32 || page_key), its value the
+//     compact encode_storage_page of the page, with no sub-index byte in the
+//     key. The EIP's one leaf per slot is a commitment detail here;
 //   - code_size in basic data is 0 while code stays in the mpt's code table.
 
 #include <category/core/address.hpp>
@@ -92,8 +95,13 @@ namespace partitioned
     inline constexpr size_t STEM_LENGTH = 1 + 32;
     inline constexpr size_t ACCOUNT_KEY_LENGTH = STEM_LENGTH + 1;
     inline constexpr size_t CODE_KEY_LENGTH = STEM_LENGTH + 1;
-    inline constexpr size_t STORAGE_STEM_LENGTH = STEM_LENGTH + 32;
-    inline constexpr size_t STORAGE_KEY_LENGTH = STORAGE_STEM_LENGTH + 1;
+    // Storage zone key: 0xFF || H(addr32) || H(addr32 || page_key). Slots are
+    // stored in pages of storage_page_t::SLOTS consecutive slots
+    // (compute_page_key), one leaf per page; page 0 lives in the account leaf.
+    // The EIP's per-slot sub-index byte is a commitment detail here.
+    inline constexpr size_t STORAGE_KEY_LENGTH = STEM_LENGTH + 32;
+    inline constexpr unsigned STORAGE_PAGE_SLOTS = storage_page_t::SLOTS;
+    static_assert(HEADER_STORAGE_SLOTS == STORAGE_PAGE_SLOTS);
     inline constexpr size_t CODE_CHUNK_CODE_BYTES = 31;
 
     static_assert(
@@ -113,8 +121,7 @@ namespace partitioned
     inline constexpr unsigned STEM_NIBBLES = ZONE_NIBBLES + HASH_NIBBLES;
     inline constexpr unsigned ACCOUNT_KEY_NIBBLES =
         STEM_NIBBLES + SUB_INDEX_NIBBLES;
-    inline constexpr unsigned STORAGE_KEY_NIBBLES =
-        STEM_NIBBLES + HASH_NIBBLES + SUB_INDEX_NIBBLES;
+    inline constexpr unsigned STORAGE_KEY_NIBBLES = STEM_NIBBLES + HASH_NIBBLES;
 
     using Stem = std::array<unsigned char, STEM_LENGTH>;
     using AccountKey = std::array<unsigned char, ACCOUNT_KEY_LENGTH>;
@@ -129,8 +136,8 @@ namespace partitioned
     bytes32_t address32(Address const &);
     // H(addr32)
     bytes32_t address_position(Address const &);
-    // H(addr32 || idx32): the second digest of a storage stem
-    bytes32_t storage_group_position(Address const &, bytes32_t const &group);
+    // H(addr32 || page_key): the second digest of a storage page key
+    bytes32_t storage_page_position(Address const &, bytes32_t const &page_key);
     // H(code_hash || idx32)
     bytes32_t code_group_position(bytes32_t const &code_hash, uint64_t group);
 
@@ -145,19 +152,25 @@ namespace partitioned
 
     // Where a storage slot lives: the header stem of its account, or a group
     // in the storage zone.
+    // Where a slot lives: its page key (compute_page_key) and offset in the
+    // page (compute_slot_offset). Page 0 is the header page in the account
+    // leaf, every other page a leaf in the storage zone.
     struct StorageLocation
     {
-        bool in_header;
-        // H(addr32 || group) when !in_header
-        bytes32_t group_position;
-        uint8_t sub_index;
+        bytes32_t page_key;
+        uint8_t offset;
+
+        bool in_header() const
+        {
+            return page_key == HEADER_PAGE_KEY;
+        }
     };
 
-    StorageLocation locate_storage(Address const &, bytes32_t const &slot);
+    StorageLocation locate_storage(bytes32_t const &slot);
     // Whether a slot lives in the header, and its offset there
     bool is_header_slot(bytes32_t const &slot);
     uint8_t header_slot_offset(bytes32_t const &slot);
-    // The 34 or 66 byte key of a slot, as locate_storage places it.
+    // The 34 byte header key or the 65 byte storage page key of a slot
     byte_string storage_key(Address const &, bytes32_t const &slot);
 
     //////////////////////////////////////////////////////////
@@ -172,6 +185,9 @@ namespace partitioned
     mpt::Nibbles storage_stem_nibbles(Address const &);
     // Full keys relative to the state table
     mpt::Nibbles header_key_nibbles(Address const &, uint8_t sub_index);
+    // The page leaf's key for a page key or for the slot in it
+    mpt::Nibbles
+    storage_page_key_nibbles(Address const &, bytes32_t const &page_key);
     mpt::Nibbles storage_key_nibbles(Address const &, bytes32_t const &slot);
     mpt::Nibbles
     code_chunk_key_nibbles(bytes32_t const &code_hash, uint64_t chunk_id);

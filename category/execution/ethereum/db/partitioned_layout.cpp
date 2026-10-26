@@ -91,9 +91,9 @@ namespace partitioned
     }
 
     bytes32_t
-    storage_group_position(Address const &address, bytes32_t const &group)
+    storage_page_position(Address const &address, bytes32_t const &page_key)
     {
-        return hash_concat(address32_bytes(address), group);
+        return hash_concat(address32_bytes(address), page_key);
     }
 
     bytes32_t
@@ -141,30 +141,11 @@ namespace partitioned
         return key;
     }
 
-    StorageLocation
-    locate_storage(Address const &address, bytes32_t const &slot)
+    StorageLocation locate_storage(bytes32_t const &slot)
     {
-        // slot < HEADER_STORAGE_SLOTS: all bytes but the last are zero and the
-        // last is below 64
-        bool const high_zero =
-            std::all_of(slot.bytes, slot.bytes + 31, [](unsigned char const b) {
-                return b == 0;
-            });
-        uint8_t const low = slot.bytes[31];
-        if (high_zero && low < HEADER_STORAGE_SLOTS) {
-            return StorageLocation{
-                .in_header = true,
-                .group_position = {},
-                .sub_index = static_cast<uint8_t>(HEADER_STORAGE_OFFSET + low)};
-        }
-        // tree_index = slot / 256 as a 32 byte big-endian integer: the slot
-        // shifted right by one byte. sub_index = slot % 256: the last byte.
-        bytes32_t group{};
-        std::memcpy(group.bytes + 1, slot.bytes, 31);
         return StorageLocation{
-            .in_header = false,
-            .group_position = storage_group_position(address, group),
-            .sub_index = low};
+            .page_key = compute_page_key(slot),
+            .offset = compute_slot_offset(slot)};
     }
 
     bool is_header_slot(bytes32_t const &slot)
@@ -184,16 +165,18 @@ namespace partitioned
 
     byte_string storage_key(Address const &address, bytes32_t const &slot)
     {
-        auto const loc = locate_storage(address, slot);
-        if (loc.in_header) {
-            auto const key = header_key(address, loc.sub_index);
+        auto const loc = locate_storage(slot);
+        if (loc.in_header()) {
+            auto const key = header_key(address, BASIC_DATA_LEAF_KEY);
             return byte_string{key.data(), key.size()};
         }
         StorageKey key;
         auto const stem = storage_stem(address);
         std::memcpy(key.data(), stem.data(), stem.size());
-        std::memcpy(key.data() + STEM_LENGTH, loc.group_position.bytes, 32);
-        key[STORAGE_STEM_LENGTH] = loc.sub_index;
+        std::memcpy(
+            key.data() + STEM_LENGTH,
+            storage_page_position(address, loc.page_key).bytes,
+            32);
         return byte_string{key.data(), key.size()};
     }
 
@@ -241,17 +224,22 @@ namespace partitioned
     }
 
     mpt::Nibbles
-    storage_key_nibbles(Address const &address, bytes32_t const &slot)
+    storage_page_key_nibbles(Address const &address, bytes32_t const &page_key)
     {
-        auto const loc = locate_storage(address, slot);
-        if (loc.in_header) {
-            return header_key_nibbles(address, loc.sub_index);
-        }
-        unsigned char const b = loc.sub_index;
         return mpt::concat(
             mpt::NibblesView{storage_stem_nibbles(address)},
-            mpt::NibblesView{to_byte_string_view(loc.group_position.bytes)},
-            mpt::NibblesView{byte_string_view{&b, 1}});
+            mpt::NibblesView{to_byte_string_view(
+                storage_page_position(address, page_key).bytes)});
+    }
+
+    mpt::Nibbles
+    storage_key_nibbles(Address const &address, bytes32_t const &slot)
+    {
+        auto const loc = locate_storage(slot);
+        if (loc.in_header()) {
+            return header_stem_nibbles(address);
+        }
+        return storage_page_key_nibbles(address, loc.page_key);
     }
 
     mpt::Nibbles

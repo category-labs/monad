@@ -50,7 +50,7 @@ namespace
     // header slot 5, storage zone slots in two groups, and a hashed slot
     bytes32_t const header_slot = slot(5);
     bytes32_t const zone_slot = slot(1000);
-    bytes32_t const zone_slot_same_group = slot(1001);
+    bytes32_t const zone_slot_same_group = slot(1001); // same page
     bytes32_t const hashed_slot =
         0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c_bytes32;
     bytes32_t const value1 =
@@ -504,7 +504,10 @@ TYPED_TEST(PartitionedDbTest, recreate_account_replaces_storage)
     EXPECT_EQ(
         tdb.read_storage(ADDR_A, fresh.incarnation, zone_slot_same_group),
         value1);
-    EXPECT_FALSE(this->has_leaf(tdb, storage_key_nibbles(ADDR_A, zone_slot)));
+    // zone_slot shares its page leaf with the rewritten zone_slot_same_group;
+    // the hashed slot's page is gone
+    EXPECT_TRUE(this->has_leaf(tdb, storage_key_nibbles(ADDR_A, zone_slot)));
+    EXPECT_FALSE(this->has_leaf(tdb, storage_key_nibbles(ADDR_A, hashed_slot)));
     EXPECT_TRUE(tdb.storage_bucket_exists(ADDR_A));
 
     // recreated again with no storage writes: the bucket goes away

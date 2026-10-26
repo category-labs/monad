@@ -18,6 +18,7 @@
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/partitioned_commit_builder.hpp>
 #include <category/execution/ethereum/db/storage_key.hpp>
+#include <category/execution/ethereum/db/storage_stats.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/proposal_post_state.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
@@ -78,6 +79,7 @@ PageCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
 
             for (auto const &[key, slot_delta] : delta.storage) {
                 if (slot_delta.first != slot_delta.second) {
+                    storage_stats::on_write(key);
                     auto const pg_key = compute_page_key(key);
                     auto const slot_off = compute_slot_offset(key);
                     auto [it, inserted] = pages.try_emplace(pg_key);

@@ -65,58 +65,54 @@ TEST(PartitionedLayout, header_key_vectors)
     EXPECT_EQ(delegation[33], 0x02);
 
     // storage slot 5 lives in the header at sub-index 69
-    auto const loc5 = locate_storage(A, slot(5));
-    EXPECT_TRUE(loc5.in_header);
-    EXPECT_EQ(loc5.sub_index, 0x45);
+    auto const loc5 = locate_storage(slot(5));
+    EXPECT_TRUE(loc5.in_header());
+    EXPECT_EQ(loc5.offset, 5);
     auto const key5 = storage_key(A, slot(5));
     ASSERT_EQ(key5.size(), ACCOUNT_KEY_LENGTH);
     EXPECT_EQ(key5[0], ACCOUNT_ZONE);
-    EXPECT_EQ(key5[33], 0x45);
 
     // the header holds one page of slots; the next slot is in the zone
-    EXPECT_TRUE(locate_storage(A, slot(HEADER_STORAGE_SLOTS - 1)).in_header);
-    EXPECT_FALSE(locate_storage(A, slot(HEADER_STORAGE_SLOTS)).in_header);
+    EXPECT_TRUE(locate_storage(slot(HEADER_STORAGE_SLOTS - 1)).in_header());
+    EXPECT_FALSE(locate_storage(slot(HEADER_STORAGE_SLOTS)).in_header());
     EXPECT_EQ(HEADER_STORAGE_SLOTS, 128u);
 }
 
 TEST(PartitionedLayout, storage_key_vector)
 {
-    // slot 1000: tree_index 3, sub_index 232, key 0xFF || H(A) || H(A||3) ||
-    // 0xE8
-    auto const loc = locate_storage(A, slot(1000));
-    EXPECT_FALSE(loc.in_header);
-    EXPECT_EQ(loc.sub_index, 0xE8);
-    EXPECT_EQ(loc.group_position, storage_group_position(A, slot(3)));
+    // slot 1000: page 7 (1000 / 128), offset 104, key 0xFF || H(A) || H(A||7)
+    auto const loc = locate_storage(slot(1000));
+    EXPECT_FALSE(loc.in_header());
+    EXPECT_EQ(loc.page_key, slot(7));
+    EXPECT_EQ(loc.offset, 104);
 
     auto const key = storage_key(A, slot(1000));
     ASSERT_EQ(key.size(), STORAGE_KEY_LENGTH);
     EXPECT_EQ(key[0], STORAGE_ZONE);
     EXPECT_EQ(std::memcmp(key.data() + 1, address_position(A).bytes, 32), 0);
-    EXPECT_EQ(std::memcmp(key.data() + 33, loc.group_position.bytes, 32), 0);
-    EXPECT_EQ(key[65], 0xE8);
+    EXPECT_EQ(
+        std::memcmp(
+            key.data() + 33, storage_page_position(A, slot(7)).bytes, 32),
+        0);
 
-    // H(A || 3) is the digest of addr32 followed by 32 byte big-endian 3
+    // H(A || 7) is the digest of addr32 followed by 32 byte big-endian 7
     unsigned char buf[64]{};
     std::memcpy(buf, address32(A).bytes, 32);
-    buf[63] = 3;
-    EXPECT_EQ(loc.group_position, key_hash({buf, sizeof(buf)}));
+    buf[63] = 7;
+    EXPECT_EQ(storage_page_position(A, slot(7)), key_hash({buf, sizeof(buf)}));
 
-    // slots in one aligned group of 256 share the stem and differ only in the
-    // last byte; a high bit anywhere above the last byte picks another group
+    // slots in one aligned page of 128 share the leaf
     EXPECT_EQ(
-        locate_storage(A, slot(1000)).group_position,
-        locate_storage(A, slot(768)).group_position);
+        locate_storage(slot(1000)).page_key,
+        locate_storage(slot(896)).page_key);
     EXPECT_NE(
-        locate_storage(A, slot(1000)).group_position,
-        locate_storage(A, slot(1024)).group_position);
+        locate_storage(slot(1000)).page_key,
+        locate_storage(slot(1024)).page_key);
     bytes32_t hashed_slot =
-        0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbe00_bytes32;
-    bytes32_t group{};
-    std::memcpy(group.bytes + 1, hashed_slot.bytes, 31);
+        0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbe80_bytes32;
     EXPECT_EQ(
-        locate_storage(A, hashed_slot).group_position,
-        storage_group_position(A, group));
-    EXPECT_EQ(locate_storage(A, hashed_slot).sub_index, 0x00);
+        locate_storage(hashed_slot).page_key, compute_page_key(hashed_slot));
+    EXPECT_EQ(locate_storage(hashed_slot).offset, 0x00);
 }
 
 TEST(PartitionedLayout, code_chunk_key_vectors)
@@ -154,17 +150,14 @@ TEST(PartitionedLayout, nibble_keys)
     auto const sstem = storage_stem_nibbles(A);
 
     EXPECT_TRUE(mpt::NibblesView{basic}.starts_with(stem));
-    EXPECT_TRUE(mpt::NibblesView{slot5}.starts_with(stem));
     EXPECT_TRUE(mpt::NibblesView{slot1000}.starts_with(sstem));
     EXPECT_EQ(
         mpt::NibblesView{basic}.substr(stem.nibble_size()),
         mpt::NibblesView{sub_index_nibbles(BASIC_DATA_LEAF_KEY)});
     EXPECT_EQ(
         mpt::NibblesView{slot1000}.substr(sstem.nibble_size()),
-        mpt::NibblesView{mpt::concat(
-            mpt::NibblesView{
-                hash_nibbles(locate_storage(A, slot(1000)).group_position)},
-            mpt::NibblesView{sub_index_nibbles(0xE8)})});
+        mpt::NibblesView{hash_nibbles(storage_page_position(A, slot(7)))});
+    EXPECT_EQ(slot5, stem);
 
     if constexpr (8 % mpt::NIBBLE_BITS == 0) {
         EXPECT_EQ(

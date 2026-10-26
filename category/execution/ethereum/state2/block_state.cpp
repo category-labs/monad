@@ -27,6 +27,7 @@
 #include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/partitioned_layout.hpp>
+#include <category/execution/ethereum/db/storage_stats.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state2/fmt/state_deltas_fmt.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
@@ -86,6 +87,7 @@ std::optional<Account> BlockState::read_account(Address const &address)
 bytes32_t BlockState::read_storage(
     Address const &address, Incarnation const incarnation, bytes32_t const &key)
 {
+    storage_stats::on_read(key);
     bool read_storage = false;
     std::optional<bytes32_t> header_value;
     // block state

@@ -36,11 +36,20 @@
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/vm/code.hpp>
+#include <category/vm/evm/access_status.hpp>
 #include <category/vm/evm/message.hpp>
-#include <category/vm/evm/monad/revision.h>
+#include <category/vm/evm/opcodes.hpp>
 #include <category/vm/evm/result.hpp>
+#include <category/vm/evm/revision.h>
+#include <category/vm/evm/status_code.h>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/utils/evm-as/builder.hpp>
+#include <category/vm/utils/evm-as/compiler.hpp>
+#include <category/vm/utils/evm-as/validator.hpp>
 #include <category/vm/vm.hpp>
+#include <test/vm/utils/mocked_host.hpp>
+#include <test/vm/utils/test_message.hpp>
+
 #include <monad/test/traits_test.hpp>
 #include <test_resource_data.h>
 
@@ -49,6 +58,8 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <limits>
@@ -66,6 +77,20 @@ using db_t = TrieDb;
 
 namespace
 {
+    // Model an unresolved callee: access_account can warm it, but its code
+    // must not be read on an early CALL failure.
+    struct UnresolvedCallHost : vm::test::MockedHost
+    {
+        mutable size_t code_reads{};
+
+        size_t copy_code(
+            Address const &, size_t, uint8_t *, size_t) const noexcept override
+        {
+            ++code_reads;
+            return 0;
+        }
+    };
+
     template <Traits traits>
     void init_rb_for_test(
         State &state, StateHost<traits> &host, Address const &sender)
@@ -1482,6 +1507,73 @@ TYPED_TEST(TraitsTest, defensive_delegation_check)
     auto const d4 = h.resolve_delegation(correctly_delegated);
     EXPECT_TRUE(d4.has_value());
     EXPECT_EQ(d4.value(), falsely_delegated_3);
+}
+
+TEST(ExecuteMessage, CallFailuresDoNotReadUnresolvedCalleeCode)
+{
+    using namespace monad::vm::utils;
+    using enum vm::compiler::EvmOpCode;
+
+    using CallTraits = EvmTraits<MONAD_ETH_PRAGUE>;
+    constexpr auto address = 0x00000000000000000000000000000000deadbeef_address;
+
+    struct Case
+    {
+        vm::compiler::EvmOpCode opcode;
+        uint32_t flags;
+        int64_t gas;
+        monad_status_code status;
+    };
+
+    // Seven pushes cost 16 gas; CALL/CALLCODE have a 100-gas base cost.
+    // Leave exactly 8,999 gas for the 9,000-gas value-transfer charge.
+    constexpr int64_t insufficient_gas = 16 + 100 + 8'999;
+    for (auto const &c : std::array{
+             Case{CALL, 0, insufficient_gas, MONAD_STATUS_OUT_OF_GAS},
+             Case{CALLCODE, 0, insufficient_gas, MONAD_STATUS_OUT_OF_GAS},
+             Case{
+                 CALL,
+                 std::to_underlying(vm::CallFlags::Static),
+                 100'000,
+                 MONAD_STATUS_FAILURE}}) {
+        SCOPED_TRACE(static_cast<unsigned>(c.opcode));
+        SCOPED_TRACE(c.flags);
+
+        // <opcode>(gas=0, address, value=1, 0, 0, 0, 0); STOP
+        auto eb = evm_as::EvmBuilder<CallTraits>{};
+        eb.push0()
+            .push0()
+            .push0()
+            .push0()
+            .push(1)
+            .push(address)
+            .push0()
+            .ins(c.opcode)
+            .stop();
+        ASSERT_TRUE(evm_as::validate(eb));
+        std::vector<uint8_t> code;
+        evm_as::compile(eb, code);
+
+        for (bool const warm : {false, true}) {
+            SCOPED_TRACE(warm);
+            vm::VM vm;
+            UnresolvedCallHost host;
+            if (warm) {
+                EXPECT_EQ(host.access_account(address), AccessStatus::Cold);
+            }
+            vm::test::TestMessage msg;
+            msg->kind = vm::CallKind::Call;
+            msg->flags = c.flags;
+            msg->gas = c.gas + (warm ? 0 : CallTraits::cold_account_cost());
+            auto const result =
+                vm.execute_bytecode<CallTraits>(host, &*msg, code);
+            EXPECT_EQ(result.status_code, c.status);
+            EXPECT_EQ(host.code_reads, 0);
+            EXPECT_TRUE(host.recorded_calls.empty());
+            EXPECT_EQ(host.recorded_account_accesses.size(), warm ? 2 : 1);
+            EXPECT_TRUE(host.accounts.empty());
+        }
+    }
 }
 
 #undef PUSH3

@@ -20,6 +20,7 @@
 // directly into the executable alongside zkvm/guest/ffi.cpp; no intermediate
 // static library.
 
+#include <category/execution/ethereum/precompiles.hpp>
 #include <io-interface/zkvm_io.h>
 
 #include <cstddef>
@@ -105,6 +106,14 @@ int main(int const argc, char **const argv)
             std::fprintf(stderr, "failed to open %s\n", output_path.c_str());
             return 1;
         }
+    }
+
+    // The host-side point-evaluation precompile needs the KZG trusted setup,
+    // which cmd/monad/main.cpp loads at startup; the RISC-V guest routes the
+    // precompile elsewhere, so only this x86 driver has to load it.
+    if (!monad::init_trusted_setup()) {
+        std::fprintf(stderr, "failed to load the KZG trusted setup\n");
+        return 1;
     }
 
     monad_zkvm_execute_witness();

@@ -61,46 +61,6 @@ struct AsyncIOContext
     explicit AsyncIOContext(OnDiskDbConfig const &options);
 };
 
-// A read-only db handle bound to one timeline. The constructor opens the
-// primary; a secondary handle comes from open_secondary_timeline and shares
-// the primary's service thread and node cache. During the dual-timeline
-// migration the timelines differ in encoding and, once post-fork commits go
-// to the page-encoded timeline only, in which versions they have on file.
-class RODb
-{
-    struct Impl;
-    std::unique_ptr<Impl> impl_;
-
-    explicit RODb(std::unique_ptr<Impl>);
-
-public:
-    explicit RODb(ReadOnlyOnDiskDbConfig const &);
-    ~RODb();
-
-    RODb(RODb const &) = delete;
-    RODb(RODb &&) = delete;
-    RODb &operator=(RODb const &) = delete;
-    RODb &operator=(RODb &&) = delete;
-
-    Result<NodeCursor>
-    find(NodeCursor const &, NibblesView, uint64_t block_id) const;
-    Result<NodeCursor> find(NibblesView prefix, uint64_t block_id) const;
-
-    uint64_t get_latest_version() const;
-    uint64_t get_earliest_version() const;
-    bool timeline_active(timeline_id) const;
-    bool version_is_valid_ondisk(uint64_t version) const;
-    bool traverse(
-        NodeCursor const &, TraverseMachine &, uint64_t block_id,
-        size_t concurrency_limit = 4096);
-
-    state_machine_kind state_machine_type() const;
-
-    // Handle on the secondary timeline sharing this (primary) handle's
-    // service thread and node cache; nullptr when no secondary is active.
-    [[nodiscard]] std::unique_ptr<RODb> open_secondary_timeline() const;
-};
-
 struct DbStorageStats
 {
     uint64_t disk_capacity_bytes;
@@ -111,6 +71,9 @@ struct DbStorageStats
 // Db; a secondary Db is obtained from activate_secondary_timeline /
 // open_secondary_timeline. Both instances share the underlying UpdateAux
 // and worker thread via the on-disk service thread held inside the Impl.
+// During the dual-timeline migration the timelines differ in encoding and,
+// once post-fork commits go to the page-encoded timeline only, in which
+// versions they have on file.
 class Db
 {
 private:
@@ -119,6 +82,7 @@ private:
     struct Impl;
     class RWOnDisk;
     class ROOnDiskBlocking;
+    class ROOnDiskAsync;
     class InMemory;
 
     std::unique_ptr<Impl> impl_;
@@ -135,6 +99,10 @@ public:
     // and owns the SM internally. Caller must have registered the relevant
     // kinds at process start (e.g. monad::register_ethereum_state_machines()).
     explicit Db(OnDiskDbConfig const &);
+    // On-disk RO served by a dedicated service thread that owns the node
+    // cache and pumps the i/o. find/traverse may be called from fibers on
+    // any thread.
+    explicit Db(ReadOnlyOnDiskDbConfig const &);
     explicit Db(
         AsyncIOContext &,
         timeline_id tid = timeline_id::primary); // on-disk RO blocking
@@ -147,7 +115,7 @@ public:
 
     // `block_id` is both the version to read and the validity check.
     // These calls may block on a fiber future and read from this Db's
-    // bound timeline.
+    // bound timeline. An empty key returns the start cursor as is.
     Result<NodeCursor>
     find(NodeCursor const &, NibblesView, uint64_t block_id) const;
     Result<NodeCursor> find(NibblesView prefix, uint64_t block_id) const;
@@ -251,6 +219,9 @@ public:
     // ring) and construct the StateMachine via the registry. Returns nullopt
     // if no secondary is active. Stamping the kind is the operator's job
     // (monad-mpt --activate-secondary --state-machine <kind>).
+    //
+    // On a read-only Db no StateMachine is built; the returned Db shares
+    // this Db's service thread and node cache.
     [[nodiscard]] std::optional<Db> open_secondary_timeline();
 
     // Swap primary and secondary slots. Clears the primary Db's
@@ -262,6 +233,9 @@ public:
     void deactivate_secondary_timeline();
 
     bool timeline_active(timeline_id tid) const;
+
+    // Whether `version` is on disk in this Db's bound timeline.
+    bool version_is_valid_ondisk(uint64_t version) const;
 
     // The timeline this Db is bound to (primary for ctor-constructed
     // and in-memory Dbs; secondary for Dbs returned by the activate /
@@ -280,8 +254,8 @@ private:
     UpdateAux &aux();
 };
 
-// The following are not threadsafe. Please use async get from the RODb owning
-// thread.
+// The following are not threadsafe. Please use async get from the thread that
+// owns the Db.
 
 struct AsyncContext
 {

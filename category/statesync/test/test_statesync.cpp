@@ -537,7 +537,7 @@ TEST_F(StateSyncFixture, sync_from_some)
     EXPECT_TRUE(monad_statesync_client_finalize(cctx));
 
     // find transaction trie
-    mpt::RODb const cdb{ReadOnlyOnDiskDbConfig{.dbname_path = this->cdbname}};
+    mpt::Db const cdb{ReadOnlyOnDiskDbConfig{.dbname_path = this->cdbname}};
     for (auto const nibble :
          {RECEIPT_NIBBLE,
           TRANSACTION_NIBBLE,

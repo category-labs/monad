@@ -40,6 +40,7 @@
 #include <cstdint>
 #include <deque>
 #include <optional>
+#include <type_traits>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -89,6 +90,11 @@ private:
 
     AccountState &current_account_state(Address const &);
 
+    template <typename OnMiss>
+    auto get_storage_impl(Address const &, bytes32_t const &, OnMiss &&)
+        -> std::invoke_result_t<
+            OnMiss, AccountState::StorageMap &, Incarnation>;
+
     // Whether SELFDESTRUCT to the account itself destroys the balance.
     template <Traits traits>
     bool selfdestruct_to_self_burns(Address const &);
@@ -101,6 +107,13 @@ private:
 
 public:
     State(BlockState &, Incarnation, bool relaxed_validation = false);
+
+    // Guest only: defined in zkvm/category/execution/ethereum/state3 for the
+    // history-contract fallback. The native build has no definition. Returns
+    // nullopt, without asserting or warming anything, when the account is
+    // unresolved or missing or the witness omits the slot.
+    std::optional<bytes32_t>
+    try_get_storage(Address const &, bytes32_t const &);
 
     State(State &&) = delete;
     State(State const &) = delete;

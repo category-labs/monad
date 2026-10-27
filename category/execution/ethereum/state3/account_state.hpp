@@ -62,7 +62,7 @@ private:
     friend std::optional<Account> const &
     get_account_for_trace(AccountState const &as)
     {
-        return as.account_;
+        return as.account();
     }
 
 public:
@@ -94,13 +94,27 @@ public:
     AccountState &operator=(AccountState &&) noexcept = default;
     AccountState &operator=(AccountState const &) = default;
 
+    std::optional<Account> &account()
+    {
+        MONAD_ASSERT(is_resolved());
+        return account_;
+    }
+
+    std::optional<Account> const &account() const
+    {
+        MONAD_ASSERT(is_resolved());
+        return account_;
+    }
+
     [[nodiscard]] bool has_account() const
     {
+        MONAD_ASSERT(is_resolved());
         return account_.has_value();
     }
 
     [[nodiscard]] bytes32_t get_code_hash() const
     {
+        MONAD_ASSERT(is_resolved());
         if (MONAD_LIKELY(account_.has_value())) {
             return account_->code_hash;
         }
@@ -109,6 +123,7 @@ public:
 
     [[nodiscard]] uint64_t get_nonce() const
     {
+        MONAD_ASSERT(is_resolved());
         if (MONAD_LIKELY(account_.has_value())) {
             return account_->nonce;
         }
@@ -117,6 +132,7 @@ public:
 
     [[nodiscard]] std::optional<Incarnation> get_incarnation() const
     {
+        MONAD_ASSERT(is_resolved());
         if (MONAD_LIKELY(account_.has_value())) {
             return account_->incarnation;
         }
@@ -125,6 +141,7 @@ public:
 
     bytes32_t get_transient_storage(bytes32_t const &key) const
     {
+        MONAD_ASSERT(is_resolved());
         if (auto const *const it = transient_storage_.find(key);
             MONAD_LIKELY(it)) {
             return *it;
@@ -136,6 +153,7 @@ public:
         bytes32_t const &key, bytes32_t const &value,
         bytes32_t const &original_value)
     {
+        MONAD_ASSERT(is_resolved());
         bytes32_t current_value = original_value;
         {
             if (auto const *const it = storage_.find(key); it) {
@@ -150,6 +168,7 @@ public:
 
     void set_transient_storage(bytes32_t const &key, bytes32_t const &value)
     {
+        MONAD_ASSERT(is_resolved());
         transient_storage_ = transient_storage_.insert({key, value});
     }
 };
@@ -192,6 +211,7 @@ public:
 
     uint256_t get_balance_pessimistic()
     {
+        MONAD_ASSERT(is_resolved());
         set_validate_exact_balance();
         if (account_.has_value()) {
             return account_->balance;

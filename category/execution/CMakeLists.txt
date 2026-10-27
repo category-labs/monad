@@ -131,6 +131,7 @@ add_library(
   "ethereum/block_hash_buffer/util.hpp"
   "ethereum/block_hash_history.cpp"
   "ethereum/block_hash_history.hpp"
+  "ethereum/block_hash_history_impl.cpp"
   "ethereum/block_reward.cpp"
   "ethereum/block_reward.hpp"
   "ethereum/create_contract_address.cpp"
@@ -185,6 +186,7 @@ add_library(
   "ethereum/rlp/execution_witness.hpp"
   # ethereum/state2
   "ethereum/state2/block_state.cpp"
+  "ethereum/state2/block_state_impl.cpp"
   "ethereum/state2/block_state.hpp"
   "ethereum/state2/fmt/state_deltas_fmt.hpp"
   "ethereum/state2/proposal_post_state.hpp"
@@ -195,7 +197,10 @@ add_library(
   "ethereum/state3/account_substate.hpp"
   "ethereum/state3/page_tracker.hpp"
   "ethereum/state3/state.cpp"
+  "ethereum/state3/state_impl.cpp"
+  "ethereum/state3/get_storage.hpp"
   "ethereum/state3/state.hpp"
+  "ethereum/state3/account_resolution.hpp"
   "ethereum/state3/version_stack.hpp"
   # ethereum/test
   "ethereum/test/test_traits_state.hpp"

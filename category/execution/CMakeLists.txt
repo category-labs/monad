@@ -272,6 +272,8 @@ add_library(
   "monad/graph_eval/matmul.hpp"
   "monad/graph_eval/interpreter.cpp"
   "monad/graph_eval/interpreter.hpp"
+  "monad/graph_eval/lite_compiler.cpp"
+  "monad/graph_eval/lite_compiler.hpp"
   "monad/graph_eval/references.cpp"
   "monad/graph_eval/references.hpp"
   "monad/graph_eval/types.hpp"

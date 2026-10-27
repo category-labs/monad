@@ -719,8 +719,11 @@ Halide::Func HalideCompiler::halide_op(
     product(j, i) +=
         Halide::cast<int32_t>(x(k, i)) * Halide::cast<int32_t>(y(j, k));
     Shape const &output = gc_.tensor_types()[values.size()].shape();
-    products_.push_back(
-        Product{product, output.dimensions()[0], output.dimensions()[1]});
+    products_.push_back(Product{
+        product,
+        output.dimensions()[0],
+        output.dimensions()[1],
+        x_shape.dimensions()[1]});
     return product;
 }
 
@@ -967,8 +970,11 @@ Halide::Func HalideCompiler::halide_op(
     sums(j, i) = Halide::Expr{uint64_t{0}};
     sums(j, i) += product(x(k, i), y(j, k));
     Shape const &output = gc_.tensor_types()[values.size()].shape();
-    products_.push_back(
-        Product{sums, output.dimensions()[0], output.dimensions()[1]});
+    products_.push_back(Product{
+        sums,
+        output.dimensions()[0],
+        output.dimensions()[1],
+        x_type.shape().dimensions()[1]});
 
     Halide::Expr const sum =
         sign ? Halide::reinterpret(Halide::Int(64), sums(j, i)) : sums(j, i);
@@ -1394,10 +1400,13 @@ void HalideCompiler::halide_schedule(HalidePipeline &pipeline)
 
     // A product's sums are computed at root. Its update loops along its rows
     // outermost, then k, then its
-    // columns, which are vectorized, reading a row of y per element of x;
-    // with too few columns, as for a matrix-vector product, the rows are
-    // vectorized instead, innermost, each loop along k reading a column of x
-    for (auto &[product, rows, columns] : products_) {
+    // columns, which are vectorized, reading a row of y per element of x.
+    // With one column, a matrix-vector product, each sum is a row of x, which
+    // is contiguous, times y, a column, which is too: the update is vectorized
+    // along k, each vector's lanes added into the sum. With too few columns
+    // otherwise, the rows are vectorized instead, innermost, each loop along k
+    // reading a column of x
+    for (auto &[product, rows, columns, depth] : products_) {
         Halide::Var const &j = vars_[0];
         Halide::Var const &i = vars_[1];
         Halide::RVar const k = product.rvars(0)[0];
@@ -1407,6 +1416,10 @@ void HalideCompiler::halide_schedule(HalidePipeline &pipeline)
             product.vectorize(j, lanes);
             product.update().reorder(j, k, i).vectorize(
                 j, lanes, Halide::TailStrategy::GuardWithIf);
+        }
+        else if (columns == 1 && depth >= lanes) {
+            product.update().atomic().vectorize(
+                k, lanes, Halide::TailStrategy::GuardWithIf);
         }
         else if (rows >= lanes) {
             product.reorder(i, j).vectorize(i, lanes);

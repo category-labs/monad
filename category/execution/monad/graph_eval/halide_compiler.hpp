@@ -110,6 +110,8 @@ class HalideCompiler
         Halide::Func sums;
         int rows;
         int columns;
+        // The length of the dimension summed over, x's columns and y's rows
+        int depth;
     };
 
     std::vector<Product> products_;

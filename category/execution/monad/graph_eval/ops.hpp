@@ -40,12 +40,13 @@ using InputTypes = std::array<TensorType const *, Arity>;
 template <size_t Arity>
 using InputValues = std::array<Tensor const *, Arity>;
 
-template <Op Opcode, typename P, size_t A>
-struct GraphOp
+struct GraphOpBase {};
+
+template <typename P, size_t A>
+struct GraphOp : GraphOpBase
 {
     using Parameters = P;
     static constexpr size_t ARITY = A;
-    static constexpr Op OPCODE = Opcode;
     Parameters params;
     std::array<size_t, ARITY> input_ids;
     virtual Result<void> evaluate_impl(
@@ -87,7 +88,7 @@ protected:
 
 template <typename T>
 concept IsGraphOp =
-    std::derived_from<T, GraphOp<T::OPCODE, typename T::Parameters, T::ARITY>>;
+    std::derived_from<T, GraphOp<typename T::Parameters, T::ARITY>>;
 
 template <typename OpT>
     requires(IsGraphOp<OpT>)
@@ -105,8 +106,10 @@ Result<OpT> read_next(std::span<uint8_t const> &graphcode)
 
 // Literal: a constant tensor, copied out of the graphcode
 struct LiteralOp final
-    : GraphOp<Op::Literal, std::tuple<TensorType, std::span<uint8_t const>>, 0>
+    : GraphOp<std::tuple<TensorType, std::span<uint8_t const>>, 0>
 {
+    static constexpr Op OPCODE = Op::Literal;
+
     Result<TensorType> check_impl(InputTypes<0> const &) const override
     {
         auto const &[type, bytes] = params;
@@ -130,9 +133,10 @@ struct LiteralOp final
     }
 };
 
-struct TensorRefOp final
-    : GraphOp<Op::TensorRef, std::tuple<TensorType, Address, uint32_t>, 0>
+struct TensorRefOp final : GraphOp<std::tuple<TensorType, Address, uint32_t>, 0>
 {
+    static constexpr Op OPCODE = Op::TensorRef;
+
     Result<TensorType> check_impl(InputTypes<0> const &) const override
     {
         auto const &[type, address, offset] = params;
@@ -264,8 +268,9 @@ inline void run_op3(
 // shapes broadcast together. The output has the broadcast shape, and the dtype
 // of what F returns, with bool stored as uint8 0/1.
 template <Op Opcode, typename F>
-struct ElementwiseOp2 final : GraphOp<Opcode, std::monostate, 2>
+struct ElementwiseOp2 final : GraphOp<std::monostate, 2>
 {
+    static constexpr Op OPCODE = Opcode;
     // The output's element type for inputs of T
     template <typename T>
     using Out = std::conditional_t<
@@ -281,7 +286,8 @@ struct ElementwiseOp2 final : GraphOp<Opcode, std::monostate, 2>
             return GraphEvalError::TypeError;
         }
         BOOST_OUTCOME_TRY(
-            auto const shape, broadcast_shape(std::array{x.shape(), y.shape()}));
+            auto const shape,
+            broadcast_shape(std::array{x.shape(), y.shape()}));
         Dtype const dtype = visit_dtype(
             x.dtype(), []<typename T>() { return dtype_of<Out<T>>(); });
         return TensorType::checked(dtype, shape);
@@ -293,7 +299,8 @@ struct ElementwiseOp2 final : GraphOp<Opcode, std::monostate, 2>
         Tensor const &x = *inputs[0];
         Tensor const &y = *inputs[1];
         BOOST_OUTCOME_TRY(
-            auto const loops, broadcast<2>({x.type().shape(), y.type().shape()}));
+            auto const loops,
+            broadcast<2>({x.type().shape(), y.type().shape()}));
 
         return visit_dtype(x.type().dtype(), [&]<typename T>() -> Result<void> {
             T const *const xs = x.elements<T const>().data();
@@ -389,8 +396,10 @@ using MinOp = ElementwiseOp2<Op::Min, Minimum>;
 // Reshape: the input's elements under a new shape with the same element count.
 // The result shares the input's data, which is safe while tensors are never
 // written after they're produced
-struct ReshapeOp final : GraphOp<Op::Reshape, Shape, 1>
+struct ReshapeOp final : GraphOp<Shape, 1>
 {
+    static constexpr Op OPCODE = Op::Reshape;
+
     Result<TensorType>
     check_impl(InputTypes<1> const &input_types) const override
     {
@@ -411,8 +420,9 @@ struct ReshapeOp final : GraphOp<Op::Reshape, Shape, 1>
 // Where: each element from x where the condition is nonzero, else from y, with
 // the three shapes broadcast together. The condition is uint8, as comparisons
 // return.
-struct WhereOp final : GraphOp<Op::Where, std::monostate, 3>
+struct WhereOp final : GraphOp<std::monostate, 3>
 {
+    static constexpr Op OPCODE = Op::Where;
 
     template <typename T>
     struct Impl
@@ -434,7 +444,8 @@ struct WhereOp final : GraphOp<Op::Where, std::monostate, 3>
         }
         BOOST_OUTCOME_TRY(
             auto const shape,
-            broadcast_shape(std::array{condition.shape(), x.shape(), y.shape()}));
+            broadcast_shape(
+                std::array{condition.shape(), x.shape(), y.shape()}));
         return TensorType::checked(x.dtype(), shape);
     }
 
@@ -447,7 +458,9 @@ struct WhereOp final : GraphOp<Op::Where, std::monostate, 3>
         BOOST_OUTCOME_TRY(
             auto const loops,
             broadcast<3>(
-                {condition.type().shape(), x.type().shape(), y.type().shape()}));
+                {condition.type().shape(),
+                 x.type().shape(),
+                 y.type().shape()}));
 
         visit_dtype(x.type().dtype(), [&]<typename T>() {
             uint8_t const *const conditions =
@@ -478,8 +491,10 @@ struct WhereOp final : GraphOp<Op::Where, std::monostate, 3>
 
 // Saturate: converts to the dtype given as its parameter, clamping values
 // outside that dtype's range to the nearest bound
-struct SaturateOp final : GraphOp<Op::Saturate, Dtype, 1>
+struct SaturateOp final : GraphOp<Dtype, 1>
 {
+    static constexpr Op OPCODE = Op::Saturate;
+
     template <typename To>
     struct Impl
     {
@@ -524,8 +539,10 @@ struct SaturateOp final : GraphOp<Op::Saturate, Dtype, 1>
 };
 
 // TODO: we don't need/want CAST at all
-struct CastOp final : GraphOp<Op::Cast, Dtype, 1>
+struct CastOp final : GraphOp<Dtype, 1>
 {
+    static constexpr Op OPCODE = Op::Cast;
+
     Result<TensorType> check_impl(InputTypes<1> const &) const override
     {
         // TODO
@@ -543,8 +560,9 @@ struct CastOp final : GraphOp<Op::Cast, Dtype, 1>
 // shape's last ones, and each must equal its counterpart or be 1, in which case
 // the input is repeated along it. Element-wise ops broadcast their operands
 // themselves, so this is only needed for a broadcast tensor on its own.
-struct ExpandOp final : GraphOp<Op::Expand, Shape, 1>
+struct ExpandOp final : GraphOp<Shape, 1>
 {
+    static constexpr Op OPCODE = Op::Expand;
 
     template <typename T>
     struct Impl
@@ -564,7 +582,8 @@ struct ExpandOp final : GraphOp<Op::Expand, Shape, 1>
             return GraphEvalError::RankError;
         }
         BOOST_OUTCOME_TRY(
-            auto const broadcast, broadcast_shape(std::array{shape, x.shape()}));
+            auto const broadcast,
+            broadcast_shape(std::array{shape, x.shape()}));
         if (broadcast != shape) {
             return GraphEvalError::ShapeError;
         }
@@ -600,8 +619,9 @@ struct ExpandOp final : GraphOp<Op::Expand, Shape, 1>
 
 // Div: divides each element by the denominator given as its parameter, an
 // int64 that must be nonzero, as `divide` does
-struct DivOp final : GraphOp<Op::Div, int64_t, 1>
+struct DivOp final : GraphOp<int64_t, 1>
 {
+    static constexpr Op OPCODE = Op::Div;
 
     Result<TensorType>
     check_impl(InputTypes<1> const &input_types) const override
@@ -652,8 +672,9 @@ struct DivOp final : GraphOp<Op::Div, int64_t, 1>
 
 // MatMul: the product of two int8 matrices, in int32, which can't overflow:
 // even 65535 products of -128 and -128 sum to less than 2^31
-struct MatMulOp final : GraphOp<Op::MatMul, std::monostate, 2>
+struct MatMulOp final : GraphOp<std::monostate, 2>
 {
+    static constexpr Op OPCODE = Op::MatMul;
 
     Result<TensorType>
     check_impl(InputTypes<2> const &input_types) const override
@@ -671,7 +692,8 @@ struct MatMulOp final : GraphOp<Op::MatMul, std::monostate, 2>
         }
         BOOST_OUTCOME_TRY(
             auto const shape,
-            Shape::checked(2, {x.shape().dimensions()[0], y.shape().dimensions()[1]}));
+            Shape::checked(
+                2, {x.shape().dimensions()[0], y.shape().dimensions()[1]}));
         return TensorType::checked(Dtype::int32, shape);
     }
 
@@ -688,8 +710,9 @@ struct MatMulOp final : GraphOp<Op::MatMul, std::monostate, 2>
 // ArgMax: the row-major index of the input's largest element, the first of any
 // equal ones, as a scalar of the input's dtype, so an index that doesn't fit
 // wraps. An empty input has none.
-struct ArgMaxOp final : GraphOp<Op::ArgMax, std::monostate, 1>
+struct ArgMaxOp final : GraphOp<std::monostate, 1>
 {
+    static constexpr Op OPCODE = Op::ArgMax;
 
     Result<TensorType>
     check_impl(InputTypes<1> const &input_types) const override
@@ -719,8 +742,9 @@ struct ArgMaxOp final : GraphOp<Op::ArgMax, std::monostate, 1>
     }
 };
 
-struct ArgMinOp final : GraphOp<Op::ArgMin, std::monostate, 1>
+struct ArgMinOp final : GraphOp<std::monostate, 1>
 {
+    static constexpr Op OPCODE = Op::ArgMin;
 
     Result<TensorType>
     check_impl(InputTypes<1> const &input_types) const override
@@ -750,9 +774,10 @@ struct ArgMinOp final : GraphOp<Op::ArgMin, std::monostate, 1>
     }
 };
 
-struct ClipOp final
-    : GraphOp<Op::Clip, std::tuple<Dtype, uint64_t, uint64_t>, 1>
+struct ClipOp final : GraphOp<std::tuple<Dtype, uint64_t, uint64_t>, 1>
 {
+    static constexpr Op OPCODE = Op::Clip;
+
     Result<TensorType> check_impl(InputTypes<1> const &) const override
     {
         // TODO
@@ -767,8 +792,10 @@ struct ClipOp final
 
 // CumSum: running sums along the axis given as its parameter, inclusive and in
 // increasing index order, wrapping on overflow like Add
-struct CumSumOp final : GraphOp<Op::CumSum, uint8_t, 1>
+struct CumSumOp final : GraphOp<uint8_t, 1>
 {
+    static constexpr Op OPCODE = Op::CumSum;
+
     Result<TensorType>
     check_impl(InputTypes<1> const &input_types) const override
     {
@@ -821,9 +848,10 @@ struct CumSumOp final : GraphOp<Op::CumSum, uint8_t, 1>
 // parameter, with their shapes broadcast together. The output has their dtype
 // and the broadcast shape. F::check checks the inputs' elements first
 template <Op Opcode, typename F>
-struct FixedPointOp2 final : GraphOp<Opcode, uint8_t, 2>
+struct FixedPointOp2 final : GraphOp<uint8_t, 2>
 {
-    using GraphOp<Opcode, uint8_t, 2>::params;
+    static constexpr Op OPCODE = Opcode;
+    using GraphOp<uint8_t, 2>::params;
 
     Result<TensorType>
     check_impl(InputTypes<2> const &input_types) const override
@@ -841,7 +869,8 @@ struct FixedPointOp2 final : GraphOp<Opcode, uint8_t, 2>
             return GraphEvalError::TypeError;
         }
         BOOST_OUTCOME_TRY(
-            auto const shape, broadcast_shape(std::array{x.shape(), y.shape()}));
+            auto const shape,
+            broadcast_shape(std::array{x.shape(), y.shape()}));
         return TensorType::checked(x.dtype(), shape);
     }
 
@@ -852,7 +881,8 @@ struct FixedPointOp2 final : GraphOp<Opcode, uint8_t, 2>
         Tensor const &x = *inputs[0];
         Tensor const &y = *inputs[1];
         BOOST_OUTCOME_TRY(
-            auto const loops, broadcast<2>({x.type().shape(), y.type().shape()}));
+            auto const loops,
+            broadcast<2>({x.type().shape(), y.type().shape()}));
 
         return visit_dtype(x.type().dtype(), [&]<typename T>() -> Result<void> {
             BOOST_OUTCOME_TRY(
@@ -931,8 +961,10 @@ using QDivOp = FixedPointOp2<Op::QDiv, FixedPointDiv>;
 // element's products are summed exactly, wrapping at 128 bits, then shifted
 // right by the number of fractional bits, rounding down, and wrapped to the
 // output's dtype. For int8 matrices, 0 bits and int32 out, it's MatMul
-struct QMatMulOp final : GraphOp<Op::QMatMul, std::tuple<uint8_t, Dtype>, 2>
+struct QMatMulOp final : GraphOp<std::tuple<uint8_t, Dtype>, 2>
 {
+    static constexpr Op OPCODE = Op::QMatMul;
+
     Result<TensorType>
     check_impl(InputTypes<2> const &input_types) const override
     {
@@ -953,10 +985,11 @@ struct QMatMulOp final : GraphOp<Op::QMatMul, std::tuple<uint8_t, Dtype>, 2>
         if (y.shape().dimensions()[0] != x.shape().dimensions()[1]) {
             return GraphEvalError::ShapeError;
         }
-        BOOST_OUTCOME_TRY(auto const shape, Shape::checked(2, {x.shape().dimensions()[0], y.shape().dimensions()[1]}));
-        return TensorType::checked(
-            out_dtype,
-            shape);
+        BOOST_OUTCOME_TRY(
+            auto const shape,
+            Shape::checked(
+                2, {x.shape().dimensions()[0], y.shape().dimensions()[1]}));
+        return TensorType::checked(out_dtype, shape);
     }
 
     Result<void>
@@ -976,9 +1009,10 @@ struct QMatMulOp final : GraphOp<Op::QMatMul, std::tuple<uint8_t, Dtype>, 2>
 // against the input. An empty axis reduces to 0 if `empty_is_zero`, and is a
 // ShapeError otherwise
 template <Op Opcode, typename F, bool empty_is_zero>
-struct ReduceOp final : GraphOp<Opcode, uint8_t, 1>
+struct ReduceOp final : GraphOp<uint8_t, 1>
 {
-    using GraphOp<Opcode, uint8_t, 1>::params;
+    static constexpr Op OPCODE = Opcode;
+    using GraphOp<uint8_t, 1>::params;
 
     Result<TensorType>
     check_impl(InputTypes<1> const &input_types) const override
@@ -1046,9 +1080,10 @@ using ReduceMaxOp = ReduceOp<Op::ReduceMax, Maximum, false>;
 // the number of fractional bits given as the op's parameter, into a tensor of
 // its dtype and shape. F::check checks the input's elements first
 template <Op Opcode, typename F>
-struct FixedPointOp1 final : GraphOp<Opcode, uint8_t, 1>
+struct FixedPointOp1 final : GraphOp<uint8_t, 1>
 {
-    using GraphOp<Opcode, uint8_t, 1>::params;
+    static constexpr Op OPCODE = Opcode;
+    using GraphOp<uint8_t, 1>::params;
 
     Result<TensorType>
     check_impl(InputTypes<1> const &input_types) const override
@@ -1144,8 +1179,10 @@ inline uint64_t dimensions_product(
 // result's dimensions are data's before the axis, then the indices', then
 // data's after the axis. IndexError if an index isn't in [0, n), for data's
 // length n along the axis
-struct GatherOp final : GraphOp<Op::Gather, uint8_t, 2>
+struct GatherOp final : GraphOp<uint8_t, 2>
 {
+    static constexpr Op OPCODE = Op::Gather;
+
     Result<TensorType>
     check_impl(InputTypes<2> const &input_types) const override
     {
@@ -1217,8 +1254,10 @@ struct GatherOp final : GraphOp<Op::Gather, uint8_t, 2>
 // Concat: a and b joined along the axis given as its parameter, a's slices
 // first. They must have the same dtype and rank, and the same dimensions but
 // along the axis, where the result's is the sum, which must fit a dimension
-struct ConcatOp final : GraphOp<Op::Concat, uint8_t, 2>
+struct ConcatOp final : GraphOp<uint8_t, 2>
 {
+    static constexpr Op OPCODE = Op::Concat;
+
     static Result<TensorType>
     type(uint8_t const axis, TensorType const &a, TensorType const &b)
     {
@@ -1229,12 +1268,13 @@ struct ConcatOp final : GraphOp<Op::Concat, uint8_t, 2>
             return GraphEvalError::RankError;
         }
         for (size_t i = 0; i < a.shape().rank(); i++) {
-            if (i != axis && a.shape().dimensions()[i] != b.shape().dimensions()[i]) {
+            if (i != axis &&
+                a.shape().dimensions()[i] != b.shape().dimensions()[i]) {
                 return GraphEvalError::ShapeError;
             }
         }
-        uint32_t const length =
-            uint32_t{a.shape().dimensions()[axis]} + b.shape().dimensions()[axis];
+        uint32_t const length = uint32_t{a.shape().dimensions()[axis]} +
+                                b.shape().dimensions()[axis];
         if (length > std::numeric_limits<uint16_t>::max()) {
             return GraphEvalError::ShapeError;
         }
@@ -1367,6 +1407,19 @@ visit_next(std::span<uint8_t const> &graphcode, Fs &&...fs)
         return visit.template operator()<ConcatOp>();
     }
     MONAD_ABORT();
+}
+
+using AnyGraphOp = std::variant<
+    LiteralOp, TensorRefOp, AddOp, SubOp, GreaterOp, GeOp, EqualOp, ReshapeOp,
+    WhereOp, CumSumOp, SaturateOp, MatMulOp, ArgMaxOp, ArgMinOp, ClipOp, MaxOp,
+    MinOp, MulOp, DivOp, CastOp, ExpandOp, QMulOp, QDivOp, QMatMulOp,
+    ReduceSumOp, ReduceMaxOp, QExpOp, QInvSqrtOp, GatherOp, ConcatOp>;
+
+inline Result<AnyGraphOp> read_next(std::span<uint8_t const> &graphcode)
+{
+    return visit_next(
+        graphcode,
+        [&]<typename OpT>(OpT op) -> Result<AnyGraphOp> { return op; });
 }
 
 MONAD_GRAPH_EVAL_NAMESPACE_END

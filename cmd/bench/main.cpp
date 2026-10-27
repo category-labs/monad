@@ -31,13 +31,16 @@
 // .dat file, which it needs, with the accounts in --accounts' file, an address
 // and its code in hex a line, for the code its TensorRefs and the calldata's
 // code references read. scripts/graphcode.py writes all three from a .graph
-// file. The graph runs in the interpreter (--interpreted), compiled with IREE
-// (--iree), compiled with XLA (--xla), or compiled with Halide, with the
-// hand-written schedule (--halide) or an autoscheduler (--halide-mullapudi2016,
-// --halide-adams2019, --halide-li2018). Each call is timed from the inputs,
-// decoded, in memory, to the outputs written, in the same way for each engine:
-// the interpreter copies the inputs into its arena, as the precompile does, and
-// a compiled graph is given copies of them made in the call, aligned. With
+// file. The graph runs in the interpreter (--interpreted), compiled with the
+// lite compiler (--lite), compiled with IREE (--iree), compiled with XLA
+// (--xla), or compiled with Halide, with the hand-written schedule (--halide)
+// or an autoscheduler (--halide-mullapudi2016, --halide-adams2019,
+// --halide-li2018). Each call is timed from the inputs, decoded, in memory, to
+// the outputs written, in the same way for each engine: the interpreter copies
+// the inputs into its arena, as the precompile does, and so does the lite
+// compiler's graph, at the offsets its compiler chose, and a graph compiled
+// with IREE, XLA or Halide is given copies of them made in the call, aligned.
+// With
 // --node-times, the interpreter's time is also broken down by node, in a pass
 // of its own after it's timed, and printed after every mode's timing. With
 // --dump-ir, each compiled mode writes the IR its compiler dumps to a file:
@@ -71,6 +74,7 @@
 #include <category/execution/monad/graph_eval/constants.hpp>
 #include <category/execution/monad/graph_eval/graphcode.hpp>
 #include <category/execution/monad/graph_eval/interpreter.hpp>
+#include <category/execution/monad/graph_eval/lite_compiler.hpp>
 #include <category/execution/monad/graph_eval/references.hpp>
 #include <category/execution/monad/graph_eval/tensor.hpp>
 #include <category/mpt/db.hpp>
@@ -497,6 +501,7 @@ namespace
         bool interpreted = false;
         // After timing the interpreter, time each of its nodes too
         bool node_times = false;
+        bool lite = false;
         bool iree = false;
         bool xla = false;
         bool halide = false;
@@ -647,6 +652,51 @@ namespace
                 }
                 node_report = "\ninterpreted, by node: " + times.report();
             }
+        }
+
+        if (modes.lite) {
+            auto const start = Clock::now();
+            auto compiled = LiteCompiler::compile(gc, state);
+            if (compiled.has_error()) {
+                die("the lite compiler couldn't compile the graph: " +
+                    std::string{compiled.error().message().c_str()});
+            }
+            print_compile("lite", elapsed_ns(start));
+            LiteCompiledGraph &graph = compiled.value();
+            // Like the interpreter, it reads its inputs from the arena, at
+            // the offsets its compiler chose, so each call copies them there,
+            // and leaves its outputs in the arena too
+            auto const call_once = [&] {
+                for (size_t i = 0; i < inputs.size(); i++) {
+                    std::memcpy(
+                        arena + graph.input_offsets()[i],
+                        inputs[i].data(),
+                        inputs[i].size());
+                }
+                auto const result =
+                    graph.run(std::span<uint8_t>{arena, ARENA_SIZE});
+                if (result.has_error()) {
+                    die("lite failed: " +
+                        std::string{result.error().message().c_str()});
+                }
+            };
+            auto const lite_outputs = [&](size_t const i) {
+                return byte_string_view{
+                    arena + graph.output_offsets()[i],
+                    output_type(i).size_bytes()};
+            };
+            std::memset(arena, 0xa5, ARENA_SIZE);
+            call_once();
+            check("lite", lite_outputs);
+            measure(
+                "lite",
+                timing,
+                1000,
+                [](size_t) {},
+                [&](size_t) { call_once(); });
+            std::memset(arena, 0xa5, ARENA_SIZE);
+            call_once();
+            check("lite", lite_outputs);
         }
 
         // A compiled graph's outputs go at the start of the arena, each
@@ -1122,6 +1172,10 @@ int main(int argc, char **argv)
     app.add_flag("--interpreted", interpreted, "Run in the interpreter");
     app.add_flag(
         "--compiled", compiled, "Bytecode: run compiled to native code");
+    app.add_flag(
+        "--lite",
+        graph_modes.lite,
+        "Graph: run compiled with the lite compiler");
     app.add_flag("--iree", graph_modes.iree, "Graph: run compiled with IREE");
     app.add_flag("--xla", graph_modes.xla, "Graph: run compiled with XLA");
     app.add_flag(
@@ -1202,11 +1256,11 @@ int main(int argc, char **argv)
         die("calldata must be a .dat file");
     }
     if (extension == ".bc") {
-        if (graph_modes.iree || graph_modes.xla || graph_modes.halide ||
-            !graph_modes.halide_schedulers.empty() || graph_modes.node_times ||
-            dump_ir || accounts) {
-            die("--iree, --xla, --halide*, --node-times, --dump-ir and "
-                "--accounts are for .gc files");
+        if (graph_modes.lite || graph_modes.iree || graph_modes.xla ||
+            graph_modes.halide || !graph_modes.halide_schedulers.empty() ||
+            graph_modes.node_times || dump_ir || accounts) {
+            die("--lite, --iree, --xla, --halide*, --node-times, --dump-ir "
+                "and --accounts are for .gc files");
         }
         if (!interpreted && !compiled) {
             die("give --interpreted, --compiled, or both");
@@ -1240,11 +1294,14 @@ int main(int argc, char **argv)
             die("a .gc file needs a .dat file of calldata for its inputs");
         }
         if (compiled) {
-            die("--compiled is for .bc files; give --iree, --xla or --halide*");
+            die("--compiled is for .bc files; give --lite, --iree, --xla or "
+                "--halide*");
         }
-        if (!interpreted && !graph_modes.iree && !graph_modes.xla &&
-            !graph_modes.halide && graph_modes.halide_schedulers.empty()) {
-            die("give one or more of --interpreted, --iree, --xla, --halide*");
+        if (!interpreted && !graph_modes.lite && !graph_modes.iree &&
+            !graph_modes.xla && !graph_modes.halide &&
+            graph_modes.halide_schedulers.empty()) {
+            die("give one or more of --interpreted, --lite, --iree, --xla, "
+                "--halide*");
         }
         if (graph_modes.node_times && !interpreted) {
             die("--node-times times the interpreter; give --interpreted");

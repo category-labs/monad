@@ -28,8 +28,7 @@
 
 MONAD_RLP_NAMESPACE_BEGIN
 
-Result<Secp256k1Signature>
-decode_ecdsa_signature_fields(byte_string_view &enc)
+Result<Secp256k1Signature> decode_ecdsa_signature_fields(byte_string_view &enc)
 {
     Secp256k1Signature sig;
 

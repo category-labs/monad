@@ -257,8 +257,7 @@ CommitBuilder &CommitBuilder::add_code(Code const &code)
     return *this;
 }
 
-CommitBuilder &CommitBuilder::add_receipts(
-    std::vector<Receipt> const &receipts)
+CommitBuilder &CommitBuilder::add_receipts(std::vector<Receipt> const &receipts)
 {
     UpdateList receipt_updates;
     MONAD_ASSERT(receipts.size() <= std::numeric_limits<uint32_t>::max());
@@ -308,8 +307,7 @@ CommitBuilder &CommitBuilder::add_transactions(
             .next = UpdateList{},
             .version = static_cast<int64_t>(block_number_)}));
         transaction_hash_updates.push_front(update_alloc_.emplace_back(Update{
-            .key = NibblesView{
-                hash_alloc_.emplace_back(keccak256(encoded_tx))},
+            .key = NibblesView{hash_alloc_.emplace_back(keccak256(encoded_tx))},
             .value = bytes_alloc_.emplace_back(
                 rlp::encode_list2(encoded_block_number, rlp_index)),
             .incarnation = false,
@@ -365,8 +363,8 @@ CommitBuilder &CommitBuilder::add_domain_block_ancillaries(
                 .version = static_cast<int64_t>(block_number_)}));
             transaction_hash_updates.push_front(
                 update_alloc_.emplace_back(Update{
-                    .key = NibblesView{
-                        hash_alloc_.emplace_back(keccak256(encoded_tx))},
+                    .key = NibblesView{hash_alloc_.emplace_back(
+                        keccak256(encoded_tx))},
                     .value = bytes_alloc_.emplace_back(
                         rlp::encode_list2(encoded_block_number, rlp_index)),
                     .incarnation = false,

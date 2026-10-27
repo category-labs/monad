@@ -344,8 +344,7 @@ TEST(SystemTransaction, gasless_static_validation_is_not_supported)
             tx, SYSTEM_SENDER, chain.get_chain_id());
 
     ASSERT_TRUE(result.has_error());
-    EXPECT_EQ(
-        result.error(), SystemTransactionError::SystemTxnInGaslessMode);
+    EXPECT_EQ(result.error(), SystemTransactionError::SystemTxnInGaslessMode);
 }
 
 TEST(SystemTransaction, gasless_execution_returns_skipped_receipt)
@@ -364,19 +363,18 @@ TEST(SystemTransaction, gasless_execution_returns_skipped_receipt)
     auto prev = promise.get_future();
     promise.set_value();
 
-    auto const result =
-        ExecuteSystemTransaction<MonadTraits<MONAD_NEXT>, true>{
-            chain,
-            0,
-            tx,
-            SYSTEM_SENDER,
-            header,
-            block_state,
-            block_metrics,
-            prev,
-            noop_call_tracer,
-            noop_state_tracer,
-            /* exec_recorder = */ nullptr}();
+    auto const result = ExecuteSystemTransaction<MonadTraits<MONAD_NEXT>, true>{
+        chain,
+        0,
+        tx,
+        SYSTEM_SENDER,
+        header,
+        block_state,
+        block_metrics,
+        prev,
+        noop_call_tracer,
+        noop_state_tracer,
+        /* exec_recorder = */ nullptr}();
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value().status, 0);

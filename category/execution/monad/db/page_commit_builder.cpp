@@ -50,8 +50,9 @@ namespace
         monad::Db &db, StateDeltas const &state_deltas,
         ProposalPostState &post_state, std::optional<uint64_t> const domain,
         UpdateList &account_updates, std::deque<Update> &update_alloc,
-        std::deque<byte_string> &bytes_alloc, std::deque<monad_hash256> &hash_alloc,
-        uint64_t const block_number, bool const gasless)
+        std::deque<byte_string> &bytes_alloc,
+        std::deque<monad_hash256> &hash_alloc, uint64_t const block_number,
+        bool const gasless)
     {
         for (auto const &[addr, delta] : state_deltas) {
             if (gasless) {

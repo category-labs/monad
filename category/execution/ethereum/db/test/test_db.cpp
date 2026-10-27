@@ -43,8 +43,8 @@
 #include <category/mpt/test/test_fixtures_gtest.hpp>
 #include <category/mpt/traverse.hpp>
 #include <category/mpt/traverse_util.hpp>
-#include <category/vm/evm/status_code.h>
 #include <category/mpt/update.hpp>
+#include <category/vm/evm/status_code.h>
 
 #include <intx/intx.hpp>
 #include <nlohmann/json.hpp>

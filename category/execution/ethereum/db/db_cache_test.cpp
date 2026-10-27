@@ -255,7 +255,8 @@ TEST(DbCacheTest, proposal_reincarnated_account_reads_as_empty)
     // so a read at new_inc is answered there as empty.
     Incarnation const new_inc{2, 1};
     ProposalPostState post;
-    post.accounts[AccountKey{ADDR, std::nullopt}] = Account{.nonce = 1, .incarnation = new_inc};
+    post.accounts[AccountKey{ADDR, std::nullopt}] =
+        Account{.nonce = 1, .incarnation = new_inc};
     cache.update_proposal_post_state(
         std::move(post), std::nullopt, 2, bytes32_t{2});
     cache.set_block_and_prefix(2, bytes32_t{2});

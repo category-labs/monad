@@ -366,7 +366,11 @@ Result<BlockExecOutput> propose_block(
     block_state.log_debug();
     auto const commit_begin = std::chrono::steady_clock::now();
     commit_private_domain_blocks<traits>(
-        db, /*secondary_db=*/nullptr, block_id, block.header, private_domain_outputs);
+        db,
+        /*secondary_db=*/nullptr,
+        block_id,
+        block.header,
+        private_domain_outputs);
     auto [state, code, _] = std::move(block_state).release();
     MONAD_ASSERT(state);
 

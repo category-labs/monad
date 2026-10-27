@@ -189,7 +189,8 @@ storage_page_t TrieDb::load_storage_page(
     std::optional<uint64_t> const &domain)
 {
     auto const addr_hash = keccak256({addr.bytes, sizeof(addr.bytes)});
-    auto const key_hash = keccak256({lookup_key.bytes, sizeof(lookup_key.bytes)});
+    auto const key_hash =
+        keccak256({lookup_key.bytes, sizeof(lookup_key.bytes)});
     auto const res = [&] {
         if (domain.has_value()) {
             uint8_t domain_bytes[sizeof(uint64_t)];
@@ -207,7 +208,9 @@ storage_page_t TrieDb::load_storage_page(
         return db_.find(
             curr_root_,
             concat(
-                prefix_, STATE_NIBBLE, NibblesView{addr_hash},
+                prefix_,
+                STATE_NIBBLE,
+                NibblesView{addr_hash},
                 NibblesView{key_hash}),
             block_number_);
     }();

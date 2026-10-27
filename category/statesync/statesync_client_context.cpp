@@ -21,8 +21,8 @@
 #include <category/core/keccak.hpp>
 #include <category/crypto/hash256.h>
 #include <category/execution/ethereum/core/block.hpp>
-#include <category/execution/ethereum/core/rlp/int_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
+#include <category/execution/ethereum/core/rlp/int_rlp.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
 #include <category/mpt/nibbles_view.hpp>
@@ -170,8 +170,8 @@ void monad_statesync_client_context::commit()
             storage_page_t,
             BytesHashCompare<bytes32_t>>
             pages;
-        auto const cov = domain.has_value() ? covered_pages.end()
-                                            : covered_pages.find(addr);
+        auto const cov =
+            domain.has_value() ? covered_pages.end() : covered_pages.find(addr);
         auto const *const covered =
             cov == covered_pages.end() ? nullptr : &cov->second;
         for (auto const &[slot_key, slot_val] : slot_deltas) {

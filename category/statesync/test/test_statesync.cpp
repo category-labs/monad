@@ -616,10 +616,7 @@ TEST_F(StateSyncFixture, sync_domain_from_empty)
 {
     this->init();
     commit_sequential(
-        this->sctx,
-        StateDeltas{},
-        Code{},
-        BlockHeader{.number = 0});
+        this->sctx, StateDeltas{}, Code{}, BlockHeader{.number = 0});
     auto const parent_hash = header_hash(this->stdb.read_eth_header());
 
     constexpr uint64_t domain{0x0102030405060708ULL};
@@ -647,9 +644,7 @@ TEST_F(StateSyncFixture, sync_domain_from_empty)
                 {key3, StorageDelta{bytes32_t{}, value3}}}),
         StateDeltas{},
         Code{},
-        BlockHeader{
-            .parent_hash = parent_hash,
-            .number = 1});
+        BlockHeader{.parent_hash = parent_hash, .number = 1});
 
     handle_target(this->cctx, hdr);
     this->run();
@@ -680,10 +675,7 @@ TEST_F(StateSyncFixture, sync_domain_incremental_update_and_delete)
 {
     this->init();
     commit_sequential(
-        this->sctx,
-        StateDeltas{},
-        Code{},
-        BlockHeader{.number = 0});
+        this->sctx, StateDeltas{}, Code{}, BlockHeader{.number = 0});
     auto parent_hash = header_hash(this->stdb.read_eth_header());
 
     constexpr uint64_t domain{0x1111222233334444ULL};
@@ -711,9 +703,7 @@ TEST_F(StateSyncFixture, sync_domain_incremental_update_and_delete)
                 {key3, StorageDelta{bytes32_t{}, value3}}}),
         StateDeltas{},
         Code{},
-        BlockHeader{
-            .parent_hash = parent_hash,
-            .number = 1});
+        BlockHeader{.parent_hash = parent_hash, .number = 1});
 
     handle_target(this->cctx, hdr1);
     this->run();
@@ -733,9 +723,7 @@ TEST_F(StateSyncFixture, sync_domain_incremental_update_and_delete)
             StorageDeltas{{key1, StorageDelta{value1, bytes32_t{}}}}),
         StateDeltas{},
         Code{},
-        BlockHeader{
-            .parent_hash = parent_hash,
-            .number = 2});
+        BlockHeader{.parent_hash = parent_hash, .number = 2});
 
     handle_target(this->cctx, hdr2);
     this->run();
@@ -766,10 +754,7 @@ TEST_F(StateSyncFixture, sync_multiple_domains_root_isolation_and_code)
 {
     this->init();
     commit_sequential(
-        this->sctx,
-        StateDeltas{},
-        Code{},
-        BlockHeader{.number = 0});
+        this->sctx, StateDeltas{}, Code{}, BlockHeader{.number = 0});
     auto const parent_hash = header_hash(this->stdb.read_eth_header());
 
     constexpr uint64_t domain1{0x0102030405060708ULL};
@@ -816,9 +801,7 @@ TEST_F(StateSyncFixture, sync_multiple_domains_root_isolation_and_code)
         domain_deltas,
         root_deltas,
         code,
-        BlockHeader{
-            .parent_hash = parent_hash,
-            .number = 1});
+        BlockHeader{.parent_hash = parent_hash, .number = 1});
 
     handle_target(this->cctx, hdr);
     this->run();
@@ -861,10 +844,7 @@ TEST_F(StateSyncFixture, sync_domain_account_delete_preserves_other_domain)
 {
     this->init();
     commit_sequential(
-        this->sctx,
-        StateDeltas{},
-        Code{},
-        BlockHeader{.number = 0});
+        this->sctx, StateDeltas{}, Code{}, BlockHeader{.number = 0});
     auto parent_hash = header_hash(this->stdb.read_eth_header());
 
     constexpr uint64_t deleted_domain{0x1111222233334444ULL};
@@ -896,9 +876,7 @@ TEST_F(StateSyncFixture, sync_domain_account_delete_preserves_other_domain)
         initial_deltas,
         StateDeltas{},
         Code{},
-        BlockHeader{
-            .parent_hash = parent_hash,
-            .number = 1});
+        BlockHeader{.parent_hash = parent_hash, .number = 1});
 
     handle_target(this->cctx, hdr1);
     this->run();
@@ -911,9 +889,7 @@ TEST_F(StateSyncFixture, sync_domain_account_delete_preserves_other_domain)
         one_domain_delta(deleted_domain, addr, deleted_account, std::nullopt),
         StateDeltas{},
         Code{},
-        BlockHeader{
-            .parent_hash = parent_hash,
-            .number = 2});
+        BlockHeader{.parent_hash = parent_hash, .number = 2});
 
     handle_target(this->cctx, hdr2);
     this->run();
@@ -943,10 +919,7 @@ TEST_F(StateSyncFixture, domain_storage_before_account_is_buffered)
     this->init();
     this->net.defer_first_account_until_storage = true;
     commit_sequential(
-        this->sctx,
-        StateDeltas{},
-        Code{},
-        BlockHeader{.number = 0});
+        this->sctx, StateDeltas{}, Code{}, BlockHeader{.number = 0});
     auto const parent_hash = header_hash(this->stdb.read_eth_header());
 
     constexpr uint64_t domain{0x123456789abcdef0ULL};
@@ -964,9 +937,7 @@ TEST_F(StateSyncFixture, domain_storage_before_account_is_buffered)
             StorageDeltas{{key, StorageDelta{bytes32_t{}, value}}}),
         StateDeltas{},
         Code{},
-        BlockHeader{
-            .parent_hash = parent_hash,
-            .number = 1});
+        BlockHeader{.parent_hash = parent_hash, .number = 1});
 
     handle_target(this->cctx, hdr);
     this->run();
@@ -985,11 +956,7 @@ TEST_F(StateSyncFixture, domain_storage_without_account_fails_finalize)
 {
     init();
     net.drop_first_account = true;
-    commit_sequential(
-        sctx,
-        StateDeltas{},
-        Code{},
-        BlockHeader{.number = 0});
+    commit_sequential(sctx, StateDeltas{}, Code{}, BlockHeader{.number = 0});
     auto const parent_hash = header_hash(stdb.read_eth_header());
 
     constexpr uint64_t domain{0x123456789abcdef0ULL};
@@ -1005,9 +972,7 @@ TEST_F(StateSyncFixture, domain_storage_without_account_fails_finalize)
             StorageDeltas{{key, StorageDelta{bytes32_t{}, bytes32_t{1}}}}),
         StateDeltas{},
         Code{},
-        BlockHeader{
-            .parent_hash = parent_hash,
-            .number = 1});
+        BlockHeader{.parent_hash = parent_hash, .number = 1});
 
     handle_target(cctx, hdr);
     run();
@@ -1020,11 +985,7 @@ TEST_F(StateSyncFixture, malformed_domain_upsert_aborts_sync_session)
 {
     init();
     net.corrupt_first_account_domain_suffix = true;
-    commit_sequential(
-        sctx,
-        StateDeltas{},
-        Code{},
-        BlockHeader{.number = 0});
+    commit_sequential(sctx, StateDeltas{}, Code{}, BlockHeader{.number = 0});
     auto const parent_hash = header_hash(stdb.read_eth_header());
 
     constexpr uint64_t domain{0x123456789abcdef0ULL};
@@ -1034,9 +995,7 @@ TEST_F(StateSyncFixture, malformed_domain_upsert_aborts_sync_session)
             domain, Address{0x48}, std::nullopt, Account{.balance = 100}),
         StateDeltas{},
         Code{},
-        BlockHeader{
-            .parent_hash = parent_hash,
-            .number = 1});
+        BlockHeader{.parent_hash = parent_hash, .number = 1});
 
     handle_target(cctx, hdr);
     run();
@@ -2947,11 +2906,7 @@ TEST(ProtocolValidation, account_upsert_accepts_domain_suffix)
         monad::register_monad_state_machines();
         monad_statesync_client client;
         monad_statesync_client_context ctx{
-            {dbname},
-            std::nullopt,
-            4,
-            &client,
-            &statesync_send_request};
+            {dbname}, std::nullopt, 4, &client, &statesync_send_request};
 
         Address a{0xdeadbeef};
         Account acct{.balance = 1};
@@ -2974,11 +2929,7 @@ TEST(ProtocolValidation, account_upsert_rejects_zero_domain_suffix)
         monad::register_monad_state_machines();
         monad_statesync_client client;
         monad_statesync_client_context ctx{
-            {dbname},
-            std::nullopt,
-            4,
-            &client,
-            &statesync_send_request};
+            {dbname}, std::nullopt, 4, &client, &statesync_send_request};
 
         Address a{0xdeadbeef};
         Account acct{.balance = 1};
@@ -3001,11 +2952,7 @@ TEST(ProtocolValidation, storage_upsert_accepts_domain_suffix)
         monad::register_monad_state_machines();
         monad_statesync_client client;
         monad_statesync_client_context ctx{
-            {dbname},
-            std::nullopt,
-            4,
-            &client,
-            &statesync_send_request};
+            {dbname}, std::nullopt, 4, &client, &statesync_send_request};
 
         Address a{0xdeadbeef};
         bytes32_t key{1};
@@ -3049,11 +2996,7 @@ TEST(ProtocolValidation, account_deletion_accepts_domain_suffix)
         monad::register_monad_state_machines();
         monad_statesync_client client;
         monad_statesync_client_context ctx{
-            {dbname},
-            std::nullopt,
-            4,
-            &client,
-            &statesync_send_request};
+            {dbname}, std::nullopt, 4, &client, &statesync_send_request};
 
         Address a{0xdeadbeef};
 
@@ -3076,11 +3019,7 @@ TEST(ProtocolValidation, storage_deletion_accepts_domain_suffix)
         monad::register_monad_state_machines();
         monad_statesync_client client;
         monad_statesync_client_context ctx{
-            {dbname},
-            std::nullopt,
-            4,
-            &client,
-            &statesync_send_request};
+            {dbname}, std::nullopt, 4, &client, &statesync_send_request};
 
         Address a{0xdeadbeef};
         bytes32_t key{1};
@@ -3105,11 +3044,7 @@ TEST(ProtocolValidation, domain_suffix_rejects_zero_and_multiple_items)
         monad::register_monad_state_machines();
         monad_statesync_client client;
         monad_statesync_client_context ctx{
-            {dbname},
-            std::nullopt,
-            4,
-            &client,
-            &statesync_send_request};
+            {dbname}, std::nullopt, 4, &client, &statesync_send_request};
 
         Address const addr{0xdeadbeef};
         Account const account{.balance = 1};
@@ -3159,11 +3094,7 @@ TEST(ProtocolValidation, header_upsert_rejects_trailing_bytes)
         monad::register_monad_state_machines();
         monad_statesync_client client;
         monad_statesync_client_context ctx{
-            {dbname},
-            std::nullopt,
-            4,
-            &client,
-            &statesync_send_request};
+            {dbname}, std::nullopt, 4, &client, &statesync_send_request};
 
         byte_string buf = rlp::encode_block_header(BlockHeader{.number = 1});
         buf += rlp::encode_unsigned(uint64_t{1});

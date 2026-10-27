@@ -318,18 +318,18 @@ bool statesync_server_handle_request(
                     ++(*num_upserts);
                     *upsert_bytes += size1 + size2;
                 };
-                auto const send_domain_upsert =
-                    [&](monad_sync_type const type, byte_string_view payload) {
-                        sync->statesync_server_send_upsert(
-                            sync->net,
-                            type,
-                            payload.data(),
-                            payload.size(),
-                            nullptr,
-                            0);
-                        ++(*num_upserts);
-                        *upsert_bytes += payload.size();
-                    };
+                auto const send_domain_upsert = [&](monad_sync_type const type,
+                                                    byte_string_view payload) {
+                    sync->statesync_server_send_upsert(
+                        sync->net,
+                        type,
+                        payload.data(),
+                        payload.size(),
+                        nullptr,
+                        0);
+                    ++(*num_upserts);
+                    *upsert_bytes += payload.size();
+                };
 
                 // Expand a page-encoded storage leaf into one slot-format
                 // upsert per non-zero slot, preserving the domain suffix

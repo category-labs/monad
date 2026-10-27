@@ -85,7 +85,8 @@ namespace
         uint64_t const domain_chain_id = DOMAIN_CHAIN_ID,
         uint64_t const source_chain_id = NETWORK_CHAIN_ID)
     {
-        // Non-indexed `(uint64 sourceChainId, bytes ciphertext, uint256 nonce)`.
+        // Non-indexed `(uint64 sourceChainId, bytes ciphertext, uint256
+        // nonce)`.
         byte_string encoded;
         encoded += abi_encode_uint(u64_be{source_chain_id});
         encoded += abi_encode_uint(u256_be{3 * 32});

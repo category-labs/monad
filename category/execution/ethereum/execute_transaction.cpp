@@ -19,8 +19,8 @@
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
-#include <category/core/monad_exception.hpp>
 #include <category/core/log.hpp>
+#include <category/core/monad_exception.hpp>
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>

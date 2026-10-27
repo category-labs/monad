@@ -24,6 +24,15 @@
 #include <array>
 #include <cstdint>
 
+// Bias stack_lower_bound from the array's beginning. With StackTop's one-past
+// pointer, a bias of one makes both one- and two-operand checks compare
+// directly against stack_lower_bound (>= and > respectively).
+#if defined(MONAD_ZKVM_ZISK)
+    #define MONAD_VM_STACK_LOWER_BOUND_BIAS 1
+#else
+    #define MONAD_VM_STACK_LOWER_BOUND_BIAS 0
+#endif
+
 namespace monad::vm::interpreter
 {
     // Use void const * to pass either a slot base or a pointer table without

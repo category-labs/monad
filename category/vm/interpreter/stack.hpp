@@ -57,19 +57,15 @@
         /* Compare against pointer bounds: addition costs less than            \
          * subtracting pointers on ZisK. */                                    \
         uint256_t const *const stack_at = stack_top.next_slot() + (SHIFT);     \
-        MONAD_DEBUG_ASSERT(stack_at - stack_bottom <= 1024);                   \
+        MONAD_DEBUG_ASSERT(                                                    \
+            stack_at -                                                         \
+                (stack_lower_bound - MONAD_VM_STACK_LOWER_BOUND_BIAS) <=       \
+            1024);                                                             \
                                                                                \
-        /* For one operand, compare directly with stack_bottom to avoid        \
-         * computing stack_bottom + 1. */                                      \
-        if constexpr (info.min_stack == 1) {                                   \
-            if (MONAD_UNLIKELY(stack_at <= stack_bottom)) {                    \
-                EXIT(Error);                                                   \
-            }                                                                  \
-        }                                                                      \
-        else if constexpr (info.min_stack > 1) {                               \
-            if (MONAD_UNLIKELY(stack_at < stack_bottom + info.min_stack)) {    \
-                EXIT(Error);                                                   \
-            }                                                                  \
+        if (MONAD_UNLIKELY(                                                    \
+                !::monad::vm::interpreter::stack_holds<info.min_stack>(        \
+                    stack_top + (SHIFT), stack_lower_bound))) {                \
+            EXIT(Error);                                                       \
         }                                                                      \
                                                                                \
         if constexpr (info.stack_outputs > 0) {                                \
@@ -113,10 +109,32 @@ namespace monad::vm::interpreter
     }
 #endif
 
+    // Shared operand-count check for individual opcodes and fused sequences.
+    template <int32_t Required>
+    [[gnu::always_inline]] inline bool
+    stack_holds(StackTop const top, uint256_t const *const stack_lower_bound)
+    {
+        auto const *const stack_top = top.next_slot();
+        if constexpr (Required == 0) {
+            return true;
+        }
+        else if constexpr (Required == MONAD_VM_STACK_LOWER_BOUND_BIAS) {
+            return stack_top >= stack_lower_bound;
+        }
+        else if constexpr (Required == MONAD_VM_STACK_LOWER_BOUND_BIAS + 1) {
+            return stack_top > stack_lower_bound;
+        }
+        else {
+            return stack_top >=
+                   stack_lower_bound +
+                       (Required - MONAD_VM_STACK_LOWER_BOUND_BIAS);
+        }
+    }
+
     template <uint8_t Instr, Traits traits>
     [[gnu::always_inline]] inline void check_requirements(
         runtime::Context &ctx, Intercode const &,
-        uint256_t const *const stack_bottom, StackTop const stack_top,
+        uint256_t const *const stack_lower_bound, StackTop const stack_top,
         int64_t &gas_remaining)
     {
         MONAD_VM_CHECK_REQUIREMENTS(Instr, ctx.exit);
@@ -130,7 +148,7 @@ namespace monad::vm::interpreter
 
     template <uint8_t Instr, Traits traits>
     [[gnu::always_inline]] inline Eip8024Operands check_requirements_eip8024(
-        runtime::Context &ctx, uint256_t const *const stack_bottom,
+        runtime::Context &ctx, uint256_t const *const stack_lower_bound,
         StackTop const stack_top, int64_t &gas_remaining, uint8_t const imm)
     {
         static constexpr auto info = compiler::opcode_table<traits>[Instr];
@@ -149,7 +167,9 @@ namespace monad::vm::interpreter
         ptrdiff_t const min_stack =
             compiler::eip8024_stack_effect(Instr, operands).min_stack;
 
-        auto const stack_size = stack_top.next_slot() - stack_bottom;
+        auto const stack_size =
+            stack_top.next_slot() -
+            (stack_lower_bound - MONAD_VM_STACK_LOWER_BOUND_BIAS);
         MONAD_DEBUG_ASSERT(stack_size <= 1024);
         if (MONAD_UNLIKELY(stack_size < min_stack)) {
             ctx.exit(Error);

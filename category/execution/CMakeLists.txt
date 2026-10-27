@@ -255,6 +255,8 @@ add_library(
   "monad/monad_transaction_gas.hpp"
   "monad/private_domain_hpke.cpp"
   "monad/private_domain_hpke.hpp"
+  "monad/private_domain_scanner.cpp"
+  "monad/private_domain_scanner.hpp"
   "monad/reserve_balance.cpp"
   "monad/reserve_balance.h"
   "monad/reserve_balance.hpp"

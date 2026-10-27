@@ -35,6 +35,8 @@ enum class AbiDecodeError
     Success = 0,
     InputTooShort,
     LengthMismatch,
+    InputTooLong,
+    InvalidEncoding,
 };
 
 MONAD_NAMESPACE_END

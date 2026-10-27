@@ -43,7 +43,7 @@ namespace monad::vm::interpreter
             monad_vm_slot_##NAME##_##OP(                                       \
                 runtime::Context &ctx,                                         \
                 Intercode const &analysis,                                     \
-                uint256_t const *const stack_bottom,                           \
+                uint256_t const *const stack_lower_bound,                      \
                 StackTop const stack_top,                                      \
                 int64_t const gas_remaining,                                   \
                 uint8_t const *const instr_ptr,                                \
@@ -54,7 +54,7 @@ namespace monad::vm::interpreter
             __attribute__((musttail)) return handler(                          \
                 ctx,                                                           \
                 analysis,                                                      \
-                stack_bottom,                                                  \
+                stack_lower_bound,                                             \
                 stack_top,                                                     \
                 gas_remaining,                                                 \
                 instr_ptr,                                                     \
@@ -119,8 +119,8 @@ namespace monad::vm::interpreter
             uint256_t *stack_ptr, void *)
         {
             StackTop const stack_top{stack_ptr};
-            auto const *const stack_bottom =
-                stack_ptr + MONAD_VM_STACK_BOTTOM_BIAS;
+            auto const *const stack_lower_bound =
+                stack_ptr + MONAD_VM_STACK_LOWER_BOUND_BIAS;
             auto const *const instr_ptr = analysis->code();
             auto const gas_remaining = ctx->gas_remaining;
 
@@ -145,7 +145,7 @@ namespace monad::vm::interpreter
             first(
                 *ctx,
                 *analysis,
-                stack_bottom,
+                stack_lower_bound,
                 stack_top,
                 gas_remaining,
                 instr_ptr MONAD_VM_TBL_ARG);

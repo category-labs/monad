@@ -45,7 +45,7 @@ TYPED_TEST(MonadBlockHashHistoryFixture, noop_before_fork)
     using Trait = TestFixture::Trait;
 
     deploy_block_hash_history_contract<Trait>(this->state);
-    if constexpr (!Trait::deploys_block_hash_history()) {
+    if constexpr (!Trait::eip_2935_active()) {
         EXPECT_FALSE(this->state.account_exists(BLOCK_HISTORY_ADDRESS));
     }
     else {
@@ -60,7 +60,7 @@ TYPED_TEST(MonadBlockHashHistoryFixture, noop_before_fork)
 
     for (size_t i = 1; i < 128; ++i) {
         bytes32_t const actual = get_block_hash_history(this->state, i);
-        if constexpr (!Trait::eip_2935_active()) {
+        if constexpr (Trait::monad_rev() < MONAD_SIX) {
             EXPECT_EQ(actual, bytes32_t{});
         }
         else {
@@ -82,7 +82,7 @@ TYPED_TEST(MonadBlockHashHistoryFixture, redeploy)
     // redeploy
     deploy_block_hash_history_contract<Trait>(this->state);
 
-    if constexpr (Trait::eip_2935_active()) {
+    if constexpr (Trait::monad_rev() >= MONAD_SIX) {
         EXPECT_NE(
             this->state.get_code_hash(BLOCK_HISTORY_ADDRESS), bad_code_hash);
     }

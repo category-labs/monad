@@ -117,7 +117,6 @@ namespace monad
         { T::mip_12_active() } -> std::same_as<bool>;
         { T::can_create_inside_delegated() } -> std::same_as<bool>;
         { T::charges_gas_limit() } -> std::same_as<bool>;
-        { T::deploys_block_hash_history() } -> std::same_as<bool>;
         { T::bumps_nonce_on_unfunded_create() } -> std::same_as<bool>;
 
         // Constants
@@ -359,11 +358,6 @@ namespace monad
             return false;
         }
 
-        static consteval bool deploys_block_hash_history() noexcept
-        {
-            return Rev >= MONAD_ETH_PRAGUE;
-        }
-
         static consteval bool bumps_nonce_on_unfunded_create() noexcept
         {
             return false;
@@ -458,7 +452,7 @@ namespace monad
 
         static consteval bool eip_2935_active() noexcept
         {
-            return Rev >= MONAD_SIX;
+            return evm_rev() >= MONAD_ETH_PRAGUE;
         }
 
         static consteval bool eip_3198_active() noexcept
@@ -653,11 +647,6 @@ namespace monad
         static consteval bool charges_gas_limit() noexcept
         {
             return Rev >= MONAD_ONE;
-        }
-
-        static consteval bool deploys_block_hash_history() noexcept
-        {
-            return evm_rev() >= MONAD_ETH_PRAGUE;
         }
 
         static consteval bool bumps_nonce_on_unfunded_create() noexcept

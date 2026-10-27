@@ -23,6 +23,8 @@ add_library(
   "chain_id.cpp"
   "chain_id.hpp"
   "config.hpp"
+  "derivation.cpp"
+  "derivation.hpp"
   "domain_block.cpp"
   "domain_block.hpp"
   "hpke.cpp"

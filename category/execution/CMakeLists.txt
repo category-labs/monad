@@ -217,6 +217,8 @@ add_library(
   # monad/chain
   "monad/chain/chain_factory.cpp"
   "monad/chain/chain_factory.hpp"
+  "monad/chain/domain_chain_id.cpp"
+  "monad/chain/domain_chain_id.hpp"
   "monad/chain/monad_chain.cpp"
   "monad/chain/monad_chain.hpp"
   "monad/chain/monad_devnet.cpp"

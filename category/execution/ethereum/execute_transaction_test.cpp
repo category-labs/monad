@@ -36,7 +36,6 @@
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/execution/monad/chain/monad_testnet.hpp>
-#include <category/vm/evm/monad/revision.h>
 #include <category/vm/vm.hpp>
 #include <monad/test/traits_test.hpp>
 
@@ -139,18 +138,9 @@ TYPED_TEST(TraitsTest, irrevocable_gas_and_refund_new_contract)
         ASSERT_TRUE(
             final_balance_uint256 < std::numeric_limits<uint64_t>::max());
         auto const final_balance = static_cast<uint64_t>(final_balance_uint256);
-        if constexpr (TestFixture::is_monad_trait()) {
-            if constexpr (TestFixture::Trait::monad_rev() == MONAD_ZERO) {
-                EXPECT_EQ(
-                    final_balance,
-
-                    initial_balance - actual_gas_cost * max_fee_per_gas);
-            }
-            else {
-                EXPECT_EQ(
-                    final_balance,
-                    initial_balance - gas_limit * max_fee_per_gas);
-            }
+        if constexpr (TestFixture::Trait::charges_gas_limit()) {
+            EXPECT_EQ(
+                final_balance, initial_balance - gas_limit * max_fee_per_gas);
         }
         else {
             EXPECT_EQ(
@@ -161,13 +151,8 @@ TYPED_TEST(TraitsTest, irrevocable_gas_and_refund_new_contract)
         EXPECT_EQ(state.get_nonce(from), 26); // EVMC will inc for creation
     }
     // check if miner gets the right reward
-    if constexpr (TestFixture::is_monad_trait()) {
-        if constexpr (TestFixture::Trait::monad_rev() == MONAD_ZERO) {
-            EXPECT_EQ(receipt.value().gas_used, actual_gas_cost);
-        }
-        else {
-            EXPECT_EQ(receipt.value().gas_used, gas_limit);
-        }
+    if constexpr (TestFixture::Trait::charges_gas_limit()) {
+        EXPECT_EQ(receipt.value().gas_used, gas_limit);
     }
     else {
         EXPECT_EQ(receipt.value().gas_used, actual_gas_cost);
@@ -280,11 +265,8 @@ TYPED_TEST(TraitsTest, refunds_delete)
     static constexpr auto gas_limit_tx2 = 50'000;
 
     static constexpr auto gas_charged_tx1 = [] {
-        if constexpr (TestFixture::is_monad_trait()) {
-            if constexpr (TestFixture::Trait::monad_rev() > MONAD_ZERO) {
-                // Since MONAD_ONE full gas_limit is charged
-                return gas_limit_tx1;
-            }
+        if constexpr (TestFixture::Trait::charges_gas_limit()) {
+            return gas_limit_tx1;
         }
 
         // Gas increased due to storage repricing in Berlin
@@ -292,11 +274,8 @@ TYPED_TEST(TraitsTest, refunds_delete)
     }();
 
     static constexpr auto gas_charged_tx2 = [] {
-        if constexpr (TestFixture::is_monad_trait()) {
-            if constexpr (TestFixture::Trait::monad_rev() > MONAD_ZERO) {
-                // Since MONAD_ONE full gas_limit is charged
-                return gas_limit_tx2;
-            }
+        if constexpr (TestFixture::Trait::charges_gas_limit()) {
+            return gas_limit_tx2;
         }
         return 26'025;
     }();
@@ -311,10 +290,8 @@ TYPED_TEST(TraitsTest, refunds_delete)
         }
     }();
     static constexpr auto storage_refund_tx2 = [=] {
-        if constexpr (TestFixture::is_monad_trait()) {
-            if constexpr (TestFixture::Trait::monad_rev() > MONAD_ZERO) {
-                return 0;
-            }
+        if constexpr (TestFixture::Trait::charges_gas_limit()) {
+            return 0;
         }
         if constexpr (TestFixture::Trait::eip_3529_active()) {
             return std::min(
@@ -585,12 +562,8 @@ TYPED_TEST(TraitsTest, refunds_delete_then_set)
                 static_cast<uint64_t>(final_balance_uint256);
 
             static constexpr auto gas_charged = [] {
-                if constexpr (TestFixture::is_monad_trait()) {
-                    if constexpr (
-                        TestFixture::Trait::monad_rev() > MONAD_ZERO) {
-                        // Since MONAD_ONE full gas_limit is charged
-                        return gas_limit_tx;
-                    }
+                if constexpr (TestFixture::Trait::charges_gas_limit()) {
+                    return gas_limit_tx;
                 }
 
                 return 26'112;
@@ -600,11 +573,8 @@ TYPED_TEST(TraitsTest, refunds_delete_then_set)
                 return 2800;
             }();
             static constexpr auto storage_refund = [=] {
-                if constexpr (TestFixture::is_monad_trait()) {
-                    if constexpr (
-                        TestFixture::Trait::monad_rev() > MONAD_ZERO) {
-                        return 0;
-                    }
+                if constexpr (TestFixture::Trait::charges_gas_limit()) {
+                    return 0;
                 }
                 if constexpr (TestFixture::Trait::eip_3529_active()) {
                     return std::min(

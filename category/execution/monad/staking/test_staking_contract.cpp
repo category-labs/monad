@@ -5135,8 +5135,8 @@ TYPED_TEST(StakeAllRevisions, events)
 TYPED_TEST(StakeAllRevisions, withdraw_transfer_logs_in_receipt)
 {
     using Trait = typename TestFixture::Trait;
-    if constexpr (Trait::monad_rev() < MONAD_FOUR) {
-        return; // no staking precompile
+    if constexpr (!Trait::staking_active()) {
+        return;
     }
 
     auto const auth = 0xdeadbeef_address;
@@ -5273,8 +5273,8 @@ TYPED_TEST(StakeAllRevisions, withdraw_transfer_logs_in_receipt)
 TYPED_TEST(StakeAllRevisions, delegate_value_is_logged_once)
 {
     using Trait = typename TestFixture::Trait;
-    if constexpr (Trait::monad_rev() < MONAD_FOUR) {
-        return; // no staking precompile
+    if constexpr (!Trait::staking_active()) {
+        return;
     }
 
     auto const auth = 0xdeadbeef_address;

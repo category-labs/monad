@@ -420,7 +420,7 @@ public:
         timeline_id tid;
     };
 
-    struct RODbFiberFindOwningNodeRequest
+    struct FiberFindOwningNodeRequest
     {
         ::boost::fibers::promise<find_result_type<NodeCursor>> promise;
         NodeCursor start;
@@ -433,7 +433,7 @@ public:
         std::monostate, fiber_find_request_t, FiberUpsertRequest,
         FiberLoadAllFromBlockRequest, FiberTraverseRequest, MoveSubtrieRequest,
         FiberLoadRootVersionRequest, FiberCopyTrieRequest,
-        RODbFiberFindOwningNodeRequest>;
+        FiberFindOwningNodeRequest>;
 
 private:
     ::moodycamel::ConcurrentQueue<Comms> comms_;
@@ -1019,12 +1019,13 @@ public:
     }
 };
 
-struct RODb::Impl final
+class Db::ROOnDiskAsync final : public Db::Impl
 {
     std::shared_ptr<OnDiskDbServiceThread> worker_thread_;
     timeline_id const tid_;
 
-    explicit Impl(
+public:
+    ROOnDiskAsync(
         std::shared_ptr<OnDiskDbServiceThread> worker_thread,
         timeline_id const tid)
         : worker_thread_(std::move(worker_thread))
@@ -1033,21 +1034,52 @@ struct RODb::Impl final
         MONAD_ASSERT(worker_thread_ != nullptr);
         MONAD_ASSERT(
             worker_thread_->aux().metadata_ctx().timeline_active(tid_),
-            "RODb opened on an inactive timeline");
+            "read-only Db opened on an inactive timeline");
     }
 
-    UpdateAux &aux()
+    // Sibling handle on `tid` sharing this service thread and node cache.
+    std::unique_ptr<ROOnDiskAsync> spawn_sibling(timeline_id const tid) const
+    {
+        return std::make_unique<ROOnDiskAsync>(worker_thread_, tid);
+    }
+
+    virtual UpdateAux &aux() override
     {
         return worker_thread_->aux();
     }
 
-    find_owning_cursor_result_type find_fiber_blocking(
-        NodeCursor const &start, NibblesView const &key, uint64_t const version)
+    virtual Node::SharedPtr upsert_fiber_blocking(
+        Node::SharedPtr, UpdateList &&, uint64_t, bool, bool, bool) override
     {
-        ::boost::fibers::promise<find_owning_cursor_result_type> promise;
+        MONAD_ABORT();
+    }
+
+    virtual Node::SharedPtr copy_trie_fiber_blocking(
+        Node::SharedPtr, NibblesView, Node::SharedPtr, NibblesView, uint64_t,
+        bool) override
+    {
+        MONAD_ABORT();
+    }
+
+    virtual void move_trie_version_fiber_blocking(uint64_t, uint64_t) override
+    {
+        MONAD_ABORT();
+    }
+
+    virtual size_t prefetch_fiber_blocking(Node::SharedPtr const &) override
+    {
+        MONAD_ABORT();
+    }
+
+    // threadsafe
+    virtual find_cursor_result_type find_fiber_blocking(
+        NodeCursor const &start, NibblesView const &key,
+        uint64_t const version) override
+    {
+        ::boost::fibers::promise<find_cursor_result_type> promise;
         auto fut = promise.get_future();
         worker_thread_->submit(
-            OnDiskDbServiceThread::RODbFiberFindOwningNodeRequest{
+            OnDiskDbServiceThread::FiberFindOwningNodeRequest{
                 .promise = std::move(promise),
                 .start = start,
                 .key = key,
@@ -1056,24 +1088,32 @@ struct RODb::Impl final
         return fut.get();
     }
 
-    NodeCursor load_root_fiber_blocking(uint64_t const version)
+    // threadsafe. The service thread serves the root from its node cache.
+    virtual Node::SharedPtr
+    load_root_for_version(uint64_t const version) override
     {
-        auto const root_offset =
-            aux().metadata_ctx().get_root_offset_at_version(version, tid_);
-        if (root_offset == INVALID_OFFSET) {
-            return {};
+        if (aux().metadata_ctx().get_root_offset_at_version(version, tid_) ==
+            INVALID_OFFSET) {
+            return nullptr;
         }
         auto [cursor, result] = find_fiber_blocking({}, {}, version);
-        if (result == find_result::success) {
-            MONAD_ASSERT(cursor.is_valid());
-            return cursor;
+        if (result != find_result::success) {
+            return nullptr;
         }
-        return {};
+        MONAD_ASSERT(cursor.is_valid());
+        return cursor.node;
     }
 
-    bool traverse_fiber_blocking(
+    // The service thread pumps its own i/o.
+    virtual size_t poll(bool, size_t) override
+    {
+        return 0;
+    }
+
+    // threadsafe
+    virtual bool traverse_fiber_blocking(
         Node::SharedPtr node, TraverseMachine &machine, uint64_t const version,
-        size_t const concurrency_limit)
+        size_t const concurrency_limit) override
     {
         ::boost::fibers::promise<bool> promise;
         auto fut = promise.get_future();
@@ -1086,64 +1126,18 @@ struct RODb::Impl final
             .tid = tid_});
         return fut.get();
     }
-};
 
-RODb::RODb(std::unique_ptr<Impl> impl)
-    : impl_(std::move(impl))
-{
-}
-
-RODb::RODb(ReadOnlyOnDiskDbConfig const &options)
-    : impl_(std::make_unique<Impl>(
-          std::make_shared<OnDiskDbServiceThread>(options),
-          timeline_id::primary))
-{
-}
-
-RODb::~RODb() = default;
-
-std::unique_ptr<RODb> RODb::open_secondary_timeline() const
-{
-    MONAD_ASSERT(impl_);
-    MONAD_ASSERT(impl_->tid_ == timeline_id::primary);
-    if (!impl_->aux().metadata_ctx().timeline_active(timeline_id::secondary)) {
-        return nullptr;
+    virtual timeline_id tid() const override
+    {
+        return tid_;
     }
-    return std::unique_ptr<RODb>(new RODb(
-        std::make_unique<Impl>(impl_->worker_thread_, timeline_id::secondary)));
-}
 
-uint64_t RODb::get_latest_version() const
-{
-    MONAD_ASSERT(impl_);
-    return impl_->aux().metadata_ctx().db_history_max_version(impl_->tid_);
-}
-
-uint64_t RODb::get_earliest_version() const
-{
-    MONAD_ASSERT(impl_);
-    return impl_->aux().metadata_ctx().db_history_min_valid_version(
-        impl_->tid_);
-}
-
-bool RODb::timeline_active(timeline_id const tid) const
-{
-    MONAD_ASSERT(impl_);
-    return impl_->aux().metadata_ctx().timeline_active(tid);
-}
-
-bool RODb::version_is_valid_ondisk(uint64_t const version) const
-{
-    MONAD_ASSERT(impl_);
-    return impl_->aux().metadata_ctx().version_is_valid_ondisk(
-        version, impl_->tid_);
-}
-
-state_machine_kind RODb::state_machine_type() const
-{
-    MONAD_ASSERT(impl_);
-    return impl_->aux().metadata_ctx().get_state_machine_kind(impl_->tid_);
-}
+    virtual mpt::state_machine_kind state_machine_type() const override
+    {
+        return worker_thread_->aux().metadata_ctx().get_state_machine_kind(
+            tid_);
+    }
+};
 
 DbError find_result_to_db_error(find_result const result) noexcept
 {
@@ -1162,45 +1156,6 @@ DbError find_result_to_db_error(find_result const result) noexcept
             false, "Unexpected find result: %d", static_cast<int>(result));
         return DbError::unknown;
     }
-}
-
-Result<NodeCursor> RODb::find(
-    NodeCursor const &node_cursor, NibblesView const key,
-    uint64_t const block_id) const
-{
-    MONAD_ASSERT(impl_);
-    if (!node_cursor.is_valid()) {
-        return DbError::version_no_longer_exist;
-    }
-    if (key.empty()) {
-        return node_cursor;
-    }
-    auto [cursor, result] =
-        impl_->find_fiber_blocking(node_cursor, key, block_id);
-    if (result != find_result::success) {
-        return find_result_to_db_error(result);
-    }
-    MONAD_ASSERT(cursor.is_valid());
-    MONAD_ASSERT(cursor.node->has_value());
-    return cursor;
-}
-
-Result<NodeCursor>
-RODb::find(NibblesView const key, uint64_t const block_id) const
-{
-    MONAD_ASSERT(impl_);
-    NodeCursor const cursor = impl_->load_root_fiber_blocking(block_id);
-    return find(cursor, key, block_id);
-}
-
-bool RODb::traverse(
-    NodeCursor const &cursor, TraverseMachine &machine, uint64_t const block_id,
-    size_t const concurrency_limit)
-{
-    MONAD_ASSERT(impl_);
-    MONAD_ASSERT(cursor.is_valid());
-    return impl_->traverse_fiber_blocking(
-        cursor.node, machine, block_id, concurrency_limit);
 }
 
 Db::Db(std::unique_ptr<StateMachine> machine)
@@ -1238,6 +1193,14 @@ Db::Db(OnDiskDbConfig const &config)
     MONAD_ASSERT(impl_->aux().is_on_disk());
 }
 
+Db::Db(ReadOnlyOnDiskDbConfig const &config)
+    : impl_{std::make_unique<ROOnDiskAsync>(
+          std::make_shared<OnDiskDbServiceThread>(config),
+          timeline_id::primary)}
+{
+    MONAD_ASSERT(impl_->aux().is_on_disk());
+}
+
 Db::Db(AsyncIOContext &io_ctx, timeline_id const tid)
     : impl_{std::make_unique<ROOnDiskBlocking>(io_ctx, tid)}
 {
@@ -1258,6 +1221,12 @@ Result<NodeCursor> Db::find(
     uint64_t const block_id) const
 {
     MONAD_ASSERT(impl_);
+    if (!root.is_valid()) {
+        return DbError::version_no_longer_exist;
+    }
+    if (key.empty()) {
+        return root;
+    }
     auto const [it, result] = impl_->find_fiber_blocking(root, key, block_id);
     if (result != find_result::success) {
         return find_result_to_db_error(result);
@@ -1530,13 +1499,21 @@ Db::open_secondary_timeline(std::unique_ptr<StateMachine> secondary_machine)
 std::optional<Db> Db::open_secondary_timeline()
 {
     MONAD_ASSERT(impl_);
-    MONAD_ASSERT(is_on_disk() && !is_read_only());
-    auto *const rw = static_cast<RWOnDisk *>(impl_.get());
-    MONAD_ASSERT(rw->tid() == timeline_id::primary);
-    MONAD_ASSERT(rw->worker_thread_use_count() == 1);
-    if (!rw->aux().metadata_ctx().timeline_active(timeline_id::secondary)) {
+    MONAD_ASSERT(is_on_disk());
+    MONAD_ASSERT(impl_->tid() == timeline_id::primary);
+    if (!timeline_active(timeline_id::secondary)) {
         return std::nullopt;
     }
+    if (is_read_only()) {
+        auto *const ro = dynamic_cast<ROOnDiskAsync *>(impl_.get());
+        MONAD_ASSERT(
+            ro != nullptr,
+            "open_secondary_timeline on a read-only Db needs the "
+            "ReadOnlyOnDiskDbConfig constructor");
+        return Db{ro->spawn_sibling(timeline_id::secondary)};
+    }
+    auto *const rw = static_cast<RWOnDisk *>(impl_.get());
+    MONAD_ASSERT(rw->worker_thread_use_count() == 1);
     auto const kind =
         rw->aux().metadata_ctx().get_state_machine_kind(timeline_id::secondary);
     auto machine = create_state_machine(kind); // will assert if undefined
@@ -1571,6 +1548,13 @@ bool Db::timeline_active(timeline_id const tid) const
 {
     MONAD_ASSERT(impl_);
     return impl_->aux().metadata_ctx().timeline_active(tid);
+}
+
+bool Db::version_is_valid_ondisk(uint64_t const version) const
+{
+    MONAD_ASSERT(impl_);
+    MONAD_ASSERT(is_on_disk());
+    return impl_->aux().metadata_ctx().version_is_valid_ondisk(version, tid());
 }
 
 timeline_id Db::tid() const

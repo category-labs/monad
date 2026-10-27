@@ -705,9 +705,8 @@ TEST_F(OnDiskTrieDbWithFileFixture, get_transactions)
     // RWDb
     verify_transactions(this->db);
 
-    { // nonblocking RODb
-        mpt::RODb rodb{
-            mpt::ReadOnlyOnDiskDbConfig{.dbname_path = this->dbname}};
+    { // service-thread read-only Db
+        mpt::Db rodb{mpt::ReadOnlyOnDiskDbConfig{.dbname_path = this->dbname}};
         verify_transactions(rodb);
     }
 

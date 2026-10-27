@@ -28,7 +28,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
-LazyBlockHash::LazyBlockHash(mpt::RODb const &db, uint64_t const n)
+LazyBlockHash::LazyBlockHash(mpt::Db const &db, uint64_t const n)
     : db_{db}
     , n_{n}
     , blockhash_cache_{N}

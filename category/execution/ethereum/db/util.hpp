@@ -35,7 +35,6 @@ MONAD_MPT_NAMESPACE_BEGIN
 
 struct Compute;
 class Db;
-class RODb;
 
 MONAD_MPT_NAMESPACE_END
 
@@ -241,11 +240,8 @@ mpt::Nibbles proposal_prefix(bytes32_t const &);
 
 std::vector<bytes32_t> get_proposal_block_ids(mpt::Db &, uint64_t block_number);
 
-template <typename DBType>
-    requires std::is_same_v<mpt::Db, DBType> ||
-             std::is_same_v<mpt::RODb, DBType>
 Result<std::vector<Transaction>> get_transactions(
-    DBType &, uint64_t block_number, bytes32_t const &block_id = {});
+    mpt::Db &, uint64_t block_number, bytes32_t const &block_id = {});
 
 bool for_each_code(
     mpt::Db &, uint64_t block,

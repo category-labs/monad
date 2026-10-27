@@ -1001,11 +1001,8 @@ get_proposal_block_ids(mpt::Db &db, uint64_t const block_number)
     return block_ids;
 }
 
-template <typename DBType>
-    requires std::is_same_v<mpt::Db, DBType> ||
-             std::is_same_v<mpt::RODb, DBType>
 Result<std::vector<Transaction>> get_transactions(
-    DBType &db, uint64_t const block_number, bytes32_t const &block_id)
+    mpt::Db &db, uint64_t const block_number, bytes32_t const &block_id)
 {
     Nibbles const prefix =
         block_id == bytes32_t{} ? finalized_nibbles : proposal_prefix(block_id);
@@ -1038,12 +1035,6 @@ Result<std::vector<Transaction>> get_transactions(
     }
     return txs;
 }
-
-template Result<std::vector<Transaction>>
-get_transactions<mpt::Db>(mpt::Db &, uint64_t, bytes32_t const &);
-
-template Result<std::vector<Transaction>>
-get_transactions<mpt::RODb>(mpt::RODb &, uint64_t, bytes32_t const &);
 
 bool for_each_code(
     mpt::Db &db, uint64_t const block,

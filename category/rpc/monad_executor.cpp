@@ -872,7 +872,7 @@ namespace
         std::vector<std::vector<Address>> senders,
         std::vector<std::vector<std::vector<std::optional<Address>>>>
             authorities,
-        mpt::RODb &db, vm::VM &vm, fiber::FiberGroup &tx_exec_pool,
+        mpt::Db &db, vm::VM &vm, fiber::FiberGroup &tx_exec_pool,
         struct monad_state_override_vec const &state_overrides,
         struct monad_block_override_vec const &block_overrides,
         uint64_t const gas_limit, size_t const max_calls, size_t const max_size,
@@ -1387,13 +1387,13 @@ struct monad_executor
     // requests started earlier have higher priority.
     std::atomic<uint64_t> call_seq_no_{0};
 
-    mpt::RODb db_;
+    mpt::Db db_;
 
     // Secondary timeline, opened when active; shares db_'s service thread
     // and node cache. On archive nodes after the offline promote this is the
     // frozen slot-encoded history that serves pre-cutoff versions the
     // page-encoded primary does not have.
-    std::unique_ptr<mpt::RODb> secondary_db_;
+    std::optional<mpt::Db> secondary_db_;
 
     // The VM for executing eth calls needs to unconditionally use the
     // interpreter rather than the compiler. If it uses the compiler, then
@@ -1418,10 +1418,10 @@ struct monad_executor
     // older history). Availability is re-validated inside the read path, so
     // a version trimmed between here and the read fails the same way it
     // always has.
-    mpt::RODb &select_db(uint64_t const block_number)
+    mpt::Db &select_db(uint64_t const block_number)
     {
         if (block_number >= db_.get_earliest_version() ||
-            secondary_db_ == nullptr) {
+            !secondary_db_.has_value()) {
             return db_;
         }
         return *secondary_db_;
@@ -1450,6 +1450,8 @@ struct monad_executor
         , db_{make_db_config(triedb_path, node_lru_max_mem)}
         , secondary_db_{db_.open_secondary_timeline()}
     {
+        MONAD_ASSERT(db_.is_read_only());
+        MONAD_ASSERT(!secondary_db_ || secondary_db_->is_read_only());
     }
 
     monad_executor(monad_executor const &) = delete;

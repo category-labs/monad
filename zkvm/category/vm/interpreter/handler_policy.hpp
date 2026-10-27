@@ -28,6 +28,11 @@
     #define MONAD_VM_TWIN_CALL
     #define MONAD_VM_POINTER_CALL
 
+// Bias stack_lower_bound from the array's beginning. With StackTop's one-past
+// pointer, a bias of one makes both one- and two-operand checks compare
+// directly against stack_lower_bound (>= and > respectively).
+    #define MONAD_VM_STACK_LOWER_BOUND_BIAS 1
+
 // On ZisK, pass the table base in a seventh register argument to avoid
 // reloading it at each dispatch: the slots' base where the revision has them
 // (dispatch_table, instruction_table.hpp), the table's otherwise.

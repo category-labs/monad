@@ -20,7 +20,9 @@ add_library(
   # domain
   "chain_id.cpp"
   "chain_id.hpp"
-  "config.hpp")
+  "config.hpp"
+  "system_transaction.cpp"
+  "system_transaction.hpp")
 
 target_link_libraries(
   monad_domain_execution

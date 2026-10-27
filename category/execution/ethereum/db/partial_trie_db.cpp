@@ -24,13 +24,11 @@
 #include <category/core/likely.h>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/block.hpp>
-#include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/offset_trie.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/mpt/nibbles_view.hpp>
 
-#include <functional>
 #include <optional>
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
@@ -62,23 +60,6 @@ MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
 
-std::optional<Account> PartialTrieDb::read_account(Address const &addr)
-{
-    auto const key = keccak256(addr.bytes);
-    return match(
-        trie_.find_original(trie_.root, mpt::NibblesView{key}),
-        Cases{
-            [](mpt::NullView) -> std::optional<Account> {
-                return std::nullopt;
-            },
-            [](mpt::AccountLeafView l) -> std::optional<Account> {
-                return l.account();
-            },
-            [](auto) -> std::optional<Account> {
-                MONAD_ABORT("incorrect node type returned in read_account");
-            }});
-}
-
 bytes32_t PartialTrieDb::read_storage(
     Address const &addr, Incarnation, bytes32_t const &slot)
 {
@@ -107,10 +88,7 @@ bytes32_t PartialTrieDb::read_storage(
             }});
 }
 
-void PartialTrieDb::commit(
-    bytes32_t const &, CommitBuilder &, BlockHeader const &header,
-    StateDeltas const &deltas,
-    std::function<void(BlockHeader &)> populate_header_fn)
+void PartialTrieDb::commit(BlockHeader const &header, StateDeltas const &deltas)
 {
     using mpt::NodeId;
     using mpt::NULL_ID;
@@ -191,10 +169,6 @@ void PartialTrieDb::commit(
             trie_.root = NULL_ID;
         }
     }
-
-    last_committed_header_ = header;
-    MONAD_ASSERT(populate_header_fn);
-    populate_header_fn(last_committed_header_);
 }
 
 MONAD_NAMESPACE_END

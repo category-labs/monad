@@ -33,9 +33,8 @@
 #include <category/execution/ethereum/core/rlp/withdrawal_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/core/withdrawal.hpp>
-#include <category/execution/ethereum/db/commit_builder.hpp>
-#include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/ordered_trie.hpp>
+#include <category/execution/ethereum/db/partial_trie_db.hpp>
 #include <category/execution/ethereum/execute_block_header.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
@@ -86,7 +85,7 @@ Result<void> validate_block_body(
             block.header.ommers_hash)) {
         return BlockError::WrongOmmersHash;
     }
-    if constexpr (traits::evm_rev() >= MONAD_ETH_SHANGHAI) {
+    if constexpr (traits::eip_4895_active()) {
         MONAD_ASSERT(
             block.header.withdrawals_root.has_value() &&
             block.withdrawals.has_value());
@@ -160,8 +159,8 @@ template <Traits traits>
     requires(is_evm_trait_v<traits>)
 Result<bytes32_t> execute_block_zkvm(
     Chain const &chain, Block const &block,
-    std::span<byte_string_view const> const raw_transactions, Db &pdb,
-    vm::VM &vm, BlockHashBuffer const &block_hash_buffer)
+    std::span<byte_string_view const> const raw_transactions,
+    PartialTrieDb &pdb, vm::VM &vm, BlockHashBuffer const &block_hash_buffer)
 {
     static_assert(traits::evm_rev() > MONAD_ETH_TANGERINE_WHISTLE);
 
@@ -239,7 +238,7 @@ Result<bytes32_t> execute_block_zkvm(
     State state{
         block_state, Incarnation{block.header.number, Incarnation::LAST_TX}};
 
-    if constexpr (traits::evm_rev() >= MONAD_ETH_SHANGHAI) {
+    if constexpr (traits::eip_4895_active()) {
         process_withdrawal(state, block.withdrawals);
     }
 
@@ -271,10 +270,7 @@ Result<bytes32_t> execute_block_zkvm(
     // Commit accumulated state deltas to the partial trie, then read the
     // post-state root back.
     auto const released = std::move(block_state).release();
-    CommitBuilder builder{block.header.number};
-    pdb.commit(
-        bytes32_t{}, builder, block.header, *released.state, [](BlockHeader &) {
-        });
+    pdb.commit(block.header, *released.state);
 
     return pdb.state_root();
 }

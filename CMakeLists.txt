@@ -43,6 +43,9 @@ option(MONAD_COMPILER_BENCHMARKS "Build compiler benchmarks" OFF)
 option(MONAD_COMPILER_DUMP_ASM "Dump assembly files into build/asm" OFF)
 option(MONAD_COMPILER_STATS "Print statistics about the compiler" OFF)
 option(MONAD_COMPILER_HOT_PATH_STATS "Print statistics about the vm" OFF)
+option(MONAD_ZKVM_X86_GUEST
+       "Build the x86 zkVM guest runner and state tests (recompiles execution)"
+       OFF)
 
 include(cmake/test.cmake)
 
@@ -342,4 +345,6 @@ if(UTILS_CLANG_TIDY_AUTO_CONST)
   add_subdirectory(${PROJECT_SOURCE_DIR}/utils)
 endif()
 
-add_subdirectory(${PROJECT_SOURCE_DIR}/zkvm/guest)
+if(MONAD_ZKVM_X86_GUEST)
+  add_subdirectory(${PROJECT_SOURCE_DIR}/zkvm/guest)
+endif()

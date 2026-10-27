@@ -26,12 +26,53 @@
 #    STATIC archive.
 #
 # 2. Host x86: invoked from the root host CMakeLists.txt via
-#    add_subdirectory(zkvm/guest). MONAD_ZKVM_GUEST_TARGET is not set;
-#    this file builds the monad-zkvm-x86-test-runner executable from
-#    x86_test_runner.cpp + monad-zkvm-guest, linked against the host's
-#    existing monad_execution target.
+#    add_subdirectory(zkvm/guest) when MONAD_ZKVM_X86_GUEST is ON.
+#    MONAD_ZKVM_GUEST_TARGET is not set; this file builds the
+#    monad-zkvm-x86-test-runner executable from x86_test_runner.cpp +
+#    monad-zkvm-guest, linked against a separate native execution library
+#    compiled with the same state shadows as RISC-V. That library recompiles
+#    the whole execution tree, which is why the mode is opt-in.
 
 cmake_minimum_required(VERSION 3.30)
+
+include("${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/zkvm.cmake")
+
+# Source shadows are explicit: include precedence alone only replaces headers.
+function(monad_guest_execution_sources target)
+    # Both guests omit host execution, live databases, and tracing.
+    monad_zkvm_drop_sources(${target}
+        "dispatch_transaction.cpp"
+        "execute_system_transaction.cpp"
+        "execute_block.cpp"
+        "block_db.cpp"
+        "block_hash_buffer/util.cpp"
+        "db_snapshot.cpp"
+        "db_snapshot_filesystem.cpp"
+        "file_db.cpp"
+        "trie_db.cpp"
+        "db/util.cpp"
+        "db/commit_builder.cpp"
+        "genesis_state.cpp"
+        "hive_net.cpp"
+        "exec_event_ctypes_metadata.c"
+        "exec_event_recorder.cpp"
+        "record_block_events.cpp"
+        "record_consensus_events.cpp"
+        "record_txn_events.cpp"
+        "trace/event_trace.cpp"
+        "trace/call_frame.cpp"
+        "trace/call_tracer.cpp"
+        "trace/state_tracer.cpp"
+        "trace/rlp/call_frame_rlp.cpp"
+        "state2/block_state_impl.cpp")
+    foreach(source
+        "state3/state_impl.cpp"
+        "block_hash_history_impl.cpp")
+        monad_zkvm_drop_sources(${target} "${source}")
+        target_sources(${target} PRIVATE
+            "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../category/execution/ethereum/${source}")
+    endforeach()
+endfunction()
 
 if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # ---- Cross-compile mode ----
@@ -341,33 +382,8 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # already does for the file list).
     add_subdirectory("${MONAD_ROOT}/category/execution" execution)
 
-    # Host-only sources: fiber dispatch, async storage, live-DB initializers,
-    # event ring, full host execute_block, host precompiles/tracing paths.
-    monad_zkvm_drop_sources(monad_execution_ethereum
-        "dispatch_transaction.cpp"
-        "execute_block.cpp"
-        "block_db.cpp"
-        "block_hash_buffer/util.cpp"
-        "db_snapshot.cpp"
-        "db_snapshot_filesystem.cpp"
-        "file_db.cpp"
-        "trie_db.cpp"
-        "db/util.cpp"
-        "db/commit_builder.cpp"
-        "ecrecover/impl.cpp"
-        "exec_event_ctypes_metadata.c"
-        "exec_event_recorder.cpp"
-        "record_block_events.cpp"
-        "record_consensus_events.cpp"
-        "record_txn_events.cpp"
-        "trace/event_trace.cpp"
-        "trace/call_frame.cpp"
-        "trace/call_tracer.cpp"
-        "trace/state_tracer.cpp"
-        "trace/rlp/call_frame_rlp.cpp"
-        "genesis_state.cpp"
-        "hive_net.cpp"
-    )
+    # RISC-V uses the accelerator-backed ecrecover shadow.
+    monad_zkvm_drop_sources(monad_execution_ethereum "ecrecover/impl.cpp")
     # Host-only link deps — their targets don't exist (or aren't wanted) in
     # the bare-metal guest. The shared deps (evmc, immer, unordered_dense,
     # blst, nlohmann_json) are inherited as-is. monad_crypto (vendored
@@ -473,6 +489,8 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         quill::quill)
     monad_riscv_compile_options(monad_execution_native)
 
+    monad_guest_execution_sources(monad_execution_ethereum)
+
     # ---- Final guest static archive ----
     add_library(${_guest_target} STATIC
         $<TARGET_OBJECTS:monad-zkvm-guest>
@@ -493,23 +511,81 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
 
 else()
     # ---- Host x86 mode ----
-    # Reached via add_subdirectory(zkvm/guest) from the root host CMakeLists.
-    # The x86 driver links the shared monad-zkvm-guest objects against the
-    # host's existing monad_execution target.
+    # Recompile the execution sources against the guest state types. Linking
+    # monad_execution here would mix incompatible host/guest class definitions.
+    # Platform support (VM, crypto, assertions) remains native.
+    set(_shadow_inc "${CMAKE_CURRENT_BINARY_DIR}/guest-include")
+    foreach(header
+        "state2/block_state.hpp"
+        "state2/state_deltas.hpp"
+        "state3/account_resolution.hpp"
+        "trace/call_tracer.hpp"
+        "trace/state_tracer.hpp"
+        "event/exec_event_recorder.hpp"
+        "event/record_txn_events.hpp")
+        set(_relative "category/execution/ethereum/${header}")
+        get_filename_component(_dir "${_shadow_inc}/${_relative}" DIRECTORY)
+        file(MAKE_DIRECTORY "${_dir}")
+        file(CREATE_LINK
+            "${CMAKE_CURRENT_SOURCE_DIR}/../${_relative}"
+            "${_shadow_inc}/${_relative}" SYMBOLIC)
+    endforeach()
+
+    add_library(monad-zkvm-execution-x86 STATIC)
+    foreach(host_target monad_execution_ethereum monad_execution_native)
+        get_target_property(_source_dir ${host_target} SOURCE_DIR)
+        get_target_property(_sources ${host_target} SOURCES)
+        foreach(source IN LISTS _sources)
+            cmake_path(ABSOLUTE_PATH source BASE_DIRECTORY "${_source_dir}")
+            target_sources(monad-zkvm-execution-x86 PRIVATE "${source}")
+        endforeach()
+        target_include_directories(monad-zkvm-execution-x86 PUBLIC
+            "$<TARGET_PROPERTY:${host_target},INCLUDE_DIRECTORIES>")
+        target_compile_definitions(monad-zkvm-execution-x86 PUBLIC
+            "$<TARGET_PROPERTY:${host_target},COMPILE_DEFINITIONS>")
+        get_target_property(_libs ${host_target} LINK_LIBRARIES)
+        list(REMOVE_ITEM _libs monad_execution_ethereum)
+        target_link_libraries(monad-zkvm-execution-x86 PUBLIC ${_libs})
+    endforeach()
+    monad_compile_options(monad-zkvm-execution-x86)
+    target_include_directories(monad-zkvm-execution-x86
+        BEFORE PUBLIC "${_shadow_inc}")
+    # Omit native database and staking harness sources from the guest.
+    monad_zkvm_drop_sources(monad-zkvm-execution-x86
+        "db/state_machine_init.cpp"
+        "db/page_commit_builder.cpp"
+        "db/commit_block.cpp"
+        "staking/fuzzer/staking_contract_machine.cpp"
+        "staking/fuzzer/staking_contract_model.cpp"
+        "staking/test/input_generation.cpp"
+        "staking/read_valset.cpp")
+    monad_guest_execution_sources(monad-zkvm-execution-x86)
+    # OBJECT libraries contribute objects only when linked directly. Mirror
+    # the VM component aggregation without importing host execution objects.
+    target_link_libraries(monad-zkvm-execution-x86 PUBLIC
+        monad_precompiles monad_async monad-vm-compiler monad-vm-evm
+        monad-vm-interpreter monad-vm-runtime monad-vm-utils)
 
     add_executable(monad-zkvm-x86-test-runner
         "${CMAKE_CURRENT_SOURCE_DIR}/x86_test_runner.cpp"
     )
     monad_compile_options(monad-zkvm-x86-test-runner)
     target_link_libraries(monad-zkvm-x86-test-runner
-        PRIVATE monad-zkvm-guest monad_execution zkevm-standards)
+        PRIVATE monad-zkvm-guest monad-zkvm-execution-x86 zkevm-standards)
+
+    add_executable(monad-zkvm-state-test
+        "${CMAKE_CURRENT_SOURCE_DIR}/state_test.cpp")
+    monad_compile_options(monad-zkvm-state-test)
+    target_link_libraries(monad-zkvm-state-test
+        PRIVATE monad-zkvm-execution-x86 GTest::gtest_main)
+    add_test(NAME monad-zkvm-state COMMAND monad-zkvm-state-test)
 
 endif()
 
 # ---- Guest sources, shared by both modes ----
 # The witness pipeline itself. Defined once, after the mode split: the two
 # modes differ only in what these sources compile against — the adapted
-# bare-metal targets on RISC-V, the host's monad_execution on x86 — so only
+# bare-metal targets on RISC-V, monad-zkvm-execution-x86 on x86 — so only
 # the dependency edge is conditional, never the target or its file list.
 add_library(monad-zkvm-guest OBJECT
     "${CMAKE_CURRENT_SOURCE_DIR}/execute_block.cpp"
@@ -523,7 +599,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     target_link_libraries(monad-zkvm-guest
         PRIVATE monad-core monad_execution_ethereum)
 else()
-    target_link_libraries(monad-zkvm-guest PRIVATE monad_execution)
+    target_link_libraries(monad-zkvm-guest PRIVATE monad-zkvm-execution-x86)
 endif()
 
 # ---- eth-act zkEVM standards (header-only), shared by both modes ----

@@ -142,9 +142,13 @@ Use the Cargo commands above for SP1 so cmake-rs selects its `rv64im` flags;
 the standalone toolchain defaults to `rv64ima`.
 
 For host iteration, configure the main build as described in the
-[repository README](../README.md#compiling-the-execution-code), then run:
+[repository README](../README.md#compiling-the-execution-code) with
+`-DMONAD_ZKVM_X86_GUEST=ON` added. The option is off by default because the
+x86 guest recompiles the execution tree against the guest state headers.
+Then run:
 
 ```sh
+cmake build -DMONAD_ZKVM_X86_GUEST=ON
 cmake --build build --target monad-zkvm-x86-test-runner --parallel
 build/zkvm/guest/monad-zkvm-x86-test-runner \
     --input /path/to/witness.bin --output /tmp/zkvm-output.bin
@@ -153,3 +157,16 @@ xxd -p /tmp/zkvm-output.bin
 
 The host runner accepts raw witness bytes and writes the block hash as binary
 to `--output`, or to stdout if omitted.
+
+### Guest state stack
+
+Both x86 and RISC-V guests use the partial-state stack. Unresolved accounts
+retain warmth and frame rollback through placeholder account states; accessing
+account data still requires a witness proof.
+
+Run the guest state tests with (`MONAD_ZKVM_X86_GUEST` must be ON):
+
+```sh
+cmake --build build --target monad-zkvm-state-test --parallel
+ctest --test-dir build -R '^monad-zkvm-state$' --output-on-failure
+```

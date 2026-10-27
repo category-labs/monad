@@ -1907,7 +1907,7 @@ TEST(ExecuteMessage, domain_access_check_rejects_less_than_stipend)
 
     evmc_message const msg{
         .kind = EVMC_CALL,
-        .gas = 29'999,
+        .gas = 49'999,
     };
 
     auto const result = execute_call_message<traits, true>(&host, state, msg);

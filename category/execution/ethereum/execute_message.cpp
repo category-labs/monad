@@ -48,7 +48,9 @@ MONAD_NAMESPACE_BEGIN
 namespace
 {
 
-    constexpr int64_t DOMAIN_ACCESS_GAS_STIPEND = 30'000;
+    // Budget of one access check: the spoke's policy lookup, the call into the policy
+    // contract and the policy's own storage reads at Monad's cold-access prices.
+    constexpr int64_t DOMAIN_ACCESS_GAS_STIPEND = 50'000;
     constexpr uint32_t CAN_CALL_SELECTOR =
         abi_encode_selector("canCall(address,address,bytes)");
 

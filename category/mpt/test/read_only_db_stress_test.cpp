@@ -181,8 +181,9 @@ int main(int const argc, char *const argv[])
 
             auto upsert_new_version_overwrite_keys =
                 [&](uint64_t const version) {
-                    // RWDb writes the same set of nodes every block. While RODb
-                    // concurrently read a random key from the latest block
+                    // RWDb writes the same set of nodes every block. While the
+                    // read-only Db concurrently read a random key from the
+                    // latest block
 
                     UpdateList ul;
 
@@ -531,8 +532,7 @@ int main(int const argc, char *const argv[])
             };
 
             auto async_read_nonblocking_rodb = [&] {
-                // RODb
-                RODb ro_db{ReadOnlyOnDiskDbConfig{.dbname_path = dbname_path}};
+                Db ro_db{ReadOnlyOnDiskDbConfig{.dbname_path = dbname_path}};
 
                 constexpr unsigned num_fibers = 16;
                 monad::fiber::PriorityPool pool(

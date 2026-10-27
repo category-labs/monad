@@ -21,6 +21,8 @@ add_library(
   "chain_id.cpp"
   "chain_id.hpp"
   "config.hpp"
+  "hpke.cpp"
+  "hpke.hpp"
   "inputs.hpp"
   "l1_source.cpp"
   "l1_source.hpp"
@@ -31,7 +33,8 @@ add_library(
 
 target_link_libraries(
   monad_domain_execution
-  PUBLIC monad_execution_native)
+  PUBLIC monad_execution_native
+  PRIVATE aws_lc::crypto)
 monad_compile_options(monad_domain_execution)
 
 file(GLOB_RECURSE domain_tests CONFIGURE_DEPENDS *_test.cpp)

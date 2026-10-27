@@ -253,6 +253,8 @@ add_library(
   "monad/monad_precompiles_gas_cost_impl.cpp"
   "monad/monad_transaction_gas.cpp"
   "monad/monad_transaction_gas.hpp"
+  "monad/private_domain_hpke.cpp"
+  "monad/private_domain_hpke.hpp"
   "monad/reserve_balance.cpp"
   "monad/reserve_balance.h"
   "monad/reserve_balance.hpp"
@@ -406,6 +408,7 @@ target_link_libraries(
   PUBLIC monad_execution_ethereum
   PUBLIC monad_core
   PUBLIC monad_trie
+  PRIVATE aws_lc::crypto
   PUBLIC evmc
   PUBLIC magic_enum::magic_enum
   PUBLIC secp256k1

@@ -18,13 +18,19 @@
 #include "category/execution/monad/graph_eval/broadcasting.hpp"
 #include "category/execution/monad/graph_eval/config.hpp"
 #include "category/execution/monad/graph_eval/constants.hpp"
+#include "category/execution/monad/graph_eval/interpreter.hpp"
 #include "category/execution/monad/graph_eval/matmul.hpp"
 #include "category/execution/monad/graph_eval/ops.hpp"
 #include <category/execution/monad/graph_eval/lite_compiler.hpp>
 
+#include <algorithm>
+#include <bit>
 #include <cstdint>
 #include <set>
+#include <type_traits>
 #include <variant>
+
+#include <x86intrin.h>
 
 MONAD_GRAPH_EVAL_ANONYMOUS_NAMESPACE_BEGIN
 
@@ -115,9 +121,26 @@ MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
 
 Result<void> LiteCompiledGraph::run(std::span<uint8_t> scratch)
 {
+    uint64_t const entry = node_times_ ? __rdtsc() : 0;
     kernel_memory_arenas arenas{scratch.data(), data_blob_.data(), nullptr};
     std::span<uint8_t> kernels{kernel_blob_};
-    while (!kernels.empty()) {
+    uint64_t start = node_times_
+                         ? node_times_->start_ops(
+                               entry, input_offsets_.size(), op_labels_.size())
+                         : 0;
+    // Ops without kernels, such as literals and reshapes, are recorded when
+    // the kernels around them run, as taking no time
+    size_t next_op = 0;
+    auto const record_ops_until = [&](size_t const end) {
+        for (; next_op < end; next_op++) {
+            auto const &[op, type] = op_labels_[next_op];
+            start = node_times_->end_op(next_op, op, type, start);
+        }
+    };
+    for (size_t k = 0; !kernels.empty(); k++) {
+        if (node_times_) {
+            record_ops_until(kernel_ops_[k]);
+        }
         // TODO: create a type alias for this
         Result<size_t> (*eval_kernel)(uint8_t const *, kernel_memory_arenas &);
         std::memcpy(
@@ -128,6 +151,13 @@ Result<void> LiteCompiledGraph::run(std::span<uint8_t> scratch)
         BOOST_OUTCOME_TRY(
             auto const offset, eval_kernel(kernels.data(), arenas));
         kernels = kernels.subspan(offset);
+        if (node_times_) {
+            record_ops_until(kernel_ops_[k] + 1);
+        }
+    }
+    if (node_times_) {
+        record_ops_until(op_labels_.size());
+        node_times_->end_run(entry, start);
     }
     return outcome::success();
 }
@@ -471,6 +501,43 @@ struct DivKernel
     }
 };
 
+template <typename T>
+struct DivPow2Kernel
+{
+    Place x;
+    Place out;
+    size_t size;
+    unsigned shift;
+    T mask;
+
+    Result<size_t> eval(uint8_t const *, kernel_memory_arenas &arenas)
+    {
+        auto const *const xs = x.get_as<T const>(arenas);
+        auto *const outs = out.get_as<T>(arenas);
+        // Every quotient is 0, and shifting by the type's width is undefined
+        if (shift >= 8 * sizeof(T)) {
+            std::fill_n(outs, size, T{0});
+            return 0;
+        }
+        if constexpr (std::is_signed_v<T>) {
+            // Adding 2^shift - 1 to negative values rounds toward zero
+            auto const divide = [shift = shift,
+                                 mask = mask](T const value) -> T {
+                return static_cast<T>(
+                    (value < 0 ? value + mask : value) >> shift);
+            };
+            run_op1<decltype(divide)>(xs, outs, size, true, divide);
+        }
+        else {
+            auto const divide = [shift = shift](T const value) -> T {
+                return static_cast<T>(value >> shift);
+            };
+            run_op1<decltype(divide)>(xs, outs, size, true, divide);
+        }
+        return 0;
+    }
+};
+
 template <typename From, typename To>
 struct SaturateKernel
 {
@@ -557,6 +624,8 @@ struct Lowering
     LiteCompiler const &compiler;
     std::vector<std::vector<uint8_t>> kernels;
     std::vector<std::vector<uint8_t>> data_bytes;
+    std::vector<size_t> kernel_ops;
+    std::vector<std::pair<Op, TensorType>> op_labels;
 
     TensorType type_of(size_t id)
     {
@@ -605,6 +674,9 @@ struct Lowering
             MONAD_ASSERT(place.arena == Arena::Memory);
             result.output_offsets_.push_back(place.offset);
         }
+
+        result.kernel_ops_ = std::move(kernel_ops);
+        result.op_labels_ = std::move(op_labels);
 
         return result;
     }
@@ -797,7 +869,20 @@ struct Lowering
     Result<void> operator()(size_t id, DivOp const &div)
     {
         auto const &[x_id] = div.input_ids;
+        auto const denominator = static_cast<uint64_t>(div.params);
         return visit_dtype(type_of(id).dtype(), [&]<typename T>() {
+            if (div.params > 0 && std::has_single_bit(denominator)) {
+                DivPow2Kernel<T> k;
+                k.x = place_of(x_id);
+                k.out = place_of(id);
+                k.size = type_of(id).shape().size();
+                k.shift = static_cast<unsigned>(std::countr_zero(denominator));
+                k.mask = k.shift < 8 * sizeof(T)
+                             ? static_cast<T>((uint64_t{1} << k.shift) - 1)
+                             : T{0};
+                add_kernel(k);
+                return outcome::success();
+            }
             DivKernel<T> k;
             k.x = place_of(x_id);
             k.out = place_of(id);
@@ -869,7 +954,12 @@ Result<LiteCompiledGraph> LiteCompiler::lower()
         auto const id = i + n_inputs_;
         auto const &node = ops_[i];
         BOOST_OUTCOME_TRY(std::visit(
-            ([&]<typename OpT>(OpT op) { return lowering(id, op); }), node));
+            ([&]<typename OpT>(OpT op) {
+                lowering.op_labels.emplace_back(OpT::OPCODE, node_types_[id]);
+                return lowering(id, op);
+            }),
+            node));
+        lowering.kernel_ops.resize(lowering.kernels.size(), i);
     }
 
     return lowering.pack();

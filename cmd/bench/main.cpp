@@ -40,9 +40,10 @@
 // the inputs into its arena, as the precompile does, and so does the lite
 // compiler's graph, at the offsets its compiler chose, and a graph compiled
 // with IREE, XLA or Halide is given copies of them made in the call, aligned.
-// With
-// --node-times, the interpreter's time is also broken down by node, in a pass
-// of its own after it's timed, and printed after every mode's timing. With
+// With --node-times, the interpreter's and the lite compiler's times are also
+// broken down by node, each in a pass of its own after it's timed, and printed
+// after every mode's timing, with the lite compiler's input copy timed apart,
+// as it happens before its run. With
 // --dump-ir, each compiled mode writes the IR its compiler dumps to a file:
 // the HLO before and after XLA's passes, Halide's lowered pipeline, or IREE's
 // MLIR before and after its pipeline.
@@ -697,6 +698,31 @@ namespace
             std::memset(arena, 0xa5, ARENA_SIZE);
             call_once();
             check("lite", lite_outputs);
+            if (modes.node_times) {
+                NodeTimes times;
+                graph.time_kernels(&times);
+                auto const start = Clock::now();
+                while (elapsed_ns(start) < timing.seconds * 1e9) {
+                    call_once();
+                }
+                graph.time_kernels(nullptr);
+                // The input copy alone, in a loop, as it's outside run
+                constexpr size_t COPIES = 100000;
+                auto const copy_start = Clock::now();
+                for (size_t c = 0; c < COPIES; c++) {
+                    for (size_t i = 0; i < inputs.size(); i++) {
+                        std::memcpy(
+                            arena + graph.input_offsets()[i],
+                            inputs[i].data(),
+                            inputs[i].size());
+                    }
+                }
+                double const copy_ns =
+                    elapsed_ns(copy_start) / static_cast<double>(COPIES);
+                node_report +=
+                    "\nlite, by node: " + times.report() +
+                    "  input copy, before run: " + format_time(copy_ns) + "\n";
+            }
         }
 
         // A compiled graph's outputs go at the start of the arena, each
@@ -1222,8 +1248,9 @@ int main(int argc, char **argv)
     app.add_flag(
         "--node-times",
         graph_modes.node_times,
-        "Graph: after timing the interpreter, time each of its nodes, in a "
-        "pass of its own, and print the average time of each");
+        "Graph: after timing the interpreter or the lite compiler, time each "
+        "of its nodes, in a pass of its own, and print the average time of "
+        "each");
     app.add_option(
         "--dump-ir",
         dump_ir,
@@ -1303,8 +1330,9 @@ int main(int argc, char **argv)
             die("give one or more of --interpreted, --lite, --iree, --xla, "
                 "--halide*");
         }
-        if (graph_modes.node_times && !interpreted) {
-            die("--node-times times the interpreter; give --interpreted");
+        if (graph_modes.node_times && !interpreted && !graph_modes.lite) {
+            die("--node-times times the interpreter and the lite compiler; "
+                "give --interpreted, --lite or both");
         }
         print_environment(cpu);
         bench_graph(input, *calldata, accounts, graph_modes, dump_ir, timing);

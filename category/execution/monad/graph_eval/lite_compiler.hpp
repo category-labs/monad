@@ -29,6 +29,7 @@ MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
 
 struct Lifetime;
 struct Lowering;
+class NodeTimes;
 
 class LiteCompiledGraph
 {
@@ -39,6 +40,11 @@ class LiteCompiledGraph
     std::vector<uint8_t> data_blob_;
     std::vector<uint32_t> input_offsets_;
     std::vector<uint32_t> output_offsets_;
+
+    // For timing: each kernel's op index, and each op's opcode and type
+    std::vector<size_t> kernel_ops_;
+    std::vector<std::pair<Op, TensorType>> op_labels_;
+    NodeTimes *node_times_ = nullptr;
 
 public:
     std::vector<uint32_t> const &input_offsets() const
@@ -56,6 +62,11 @@ public:
     // run assumes inputs have been written at input_offsets() by
     // the caller
     Result<void> run(std::span<uint8_t> scratch);
+
+    void time_kernels(NodeTimes *const times) noexcept
+    {
+        node_times_ = times;
+    }
 };
 
 enum class Arena : uint8_t

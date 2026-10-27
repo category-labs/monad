@@ -36,13 +36,15 @@ MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
 // Evaluates graphcode on inputs as read from the calldata: literals, or
 // references to tensors in accounts' code or in the caller's storage
 // Benchmarking: the time of each part of the runs of the Interpreters given
-// it with time_nodes, summed over them, as ticks of the timestamp counter:
-// from the start of run() to its first op, each op, and from its last op to
-// the end of run(). An op's time includes reading it from the graphcode. The
-// runs are expected to be of one graph
+// it with time_nodes, or the LiteCompiledGraphs given it with time_kernels,
+// summed over them, as ticks of the timestamp counter: from the start of run()
+// to its first op, each op, and from its last op to the end of run(). An op's
+// time includes reading it from the graphcode, or its kernel's record from the
+// kernel blob. The runs are expected to be of one graph
 class NodeTimes
 {
     friend class Interpreter;
+    friend class LiteCompiledGraph;
 
     struct Node
     {

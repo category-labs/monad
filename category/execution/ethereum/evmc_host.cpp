@@ -382,15 +382,6 @@ namespace monad::vm::runtime
 
     EXPLICIT_EVM_TRAITS(guest_access_account);
 
-    template <Traits traits>
-    evmc::Result guest_call(Host &host, evmc_message const &msg) noexcept
-    {
-        return static_cast<EvmcHost<traits> &>(host).EvmcHost<traits>::call(
-            msg);
-    }
-
-    EXPLICIT_EVM_TRAITS(guest_call);
-
     evmc::bytes32 guest_get_transient_storage(
         Host const &host, evmc::address const &addr,
         evmc::bytes32 const &key) noexcept

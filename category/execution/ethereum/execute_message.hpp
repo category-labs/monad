@@ -39,8 +39,13 @@ template <Traits traits>
 evmc::Result
 execute_create_message(EvmcHost<traits> *, State &, evmc_message const &);
 
+#if defined(MONAD_ZKVM_ZISK)
+// A call message runs through vm::runtime::guest_call_message (vm/host.hpp),
+// which holds execute_call_message's one body.
+#else
 template <Traits traits>
 evmc::Result
 execute_call_message(EvmcHost<traits> *, State &, evmc_message const &);
+#endif
 
 MONAD_NAMESPACE_END

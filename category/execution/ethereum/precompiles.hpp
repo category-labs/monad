@@ -19,6 +19,9 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
+#if defined(MONAD_ZKVM_ZISK)
+    #include <category/core/likely.h>
+#endif
 #include <category/vm/evm/status_code.h>
 #include <category/vm/evm/traits.hpp>
 
@@ -45,6 +48,21 @@ inline constexpr Address ripemd_address{3};
 [[gnu::always_inline]] inline bool
 may_be_precompile(evmc_address const &address) noexcept
 {
+#if defined(MONAD_ZKVM_ZISK)
+    // The first word alone rules out nearly every address a message calls:
+    // the other two, the sub-word read among them, are read only when it is
+    // zero.
+    std::uint64_t w0;
+    __builtin_memcpy(&w0, address.bytes, 8);
+    if (MONAD_LIKELY(w0 != 0)) {
+        return false;
+    }
+    std::uint64_t w1;
+    std::uint16_t w2;
+    __builtin_memcpy(&w1, address.bytes + 8, 8);
+    __builtin_memcpy(&w2, address.bytes + 16, 2);
+    return (w1 | static_cast<std::uint64_t>(w2)) == 0;
+#else
     // Read the 18 bytes in 3 chunks, and test them all at the same time with |
     std::uint64_t w0;
     std::uint64_t w1;
@@ -53,6 +71,7 @@ may_be_precompile(evmc_address const &address) noexcept
     __builtin_memcpy(&w1, address.bytes + 8, 8);
     __builtin_memcpy(&w2, address.bytes + 16, 2);
     return (w0 | w1 | static_cast<std::uint64_t>(w2)) == 0;
+#endif
 }
 
 template <Traits traits>

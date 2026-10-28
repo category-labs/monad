@@ -221,6 +221,34 @@ namespace monad::vm::runtime
             return 0;
         }
 
+#if defined(MONAD_ZKVM_ZISK)
+        // Built field by field, so that create2_salt is left unset: only a
+        // CREATE2 message's salt is read, and the 32-byte copy of the frame's
+        // own went into every call. The call is delegated when a delegate
+        // was found and is not the target itself: the delegate is the code
+        // address then, and the target otherwise, so this is the test of the
+        // two addresses with the compare left to the delegated calls.
+        evmc_message message;
+        message.kind = call_kind;
+        message.flags = message_flags(
+            static_cast<uint32_t>(ctx->env.evmc_flags),
+            static_call,
+            delegate_address != nullptr && *delegate_address != dest_address);
+        message.depth = static_cast<int32_t>(ctx->env.depth + 1);
+        message.gas = gas;
+        message.recipient = recipient;
+        message.sender = sender;
+        message.input_data =
+            (*args_size > 0) ? ctx->memory.data + *args_offset : nullptr;
+        message.input_size = *args_size;
+        // Sliced into the message's words as they lie: converted through
+        // evmc::bytes32, it was copied twice more on the way.
+        message.value = value;
+        message.code_address = code_address;
+        message.memory_handle = ctx->memory.data_handle;
+        message.memory = ctx->memory.data + ctx->memory.size;
+        message.memory_capacity = ctx->memory.capacity - ctx->memory.size;
+#else
         auto const message = evmc_message{
             .kind = call_kind,
             .flags = message_flags(
@@ -234,26 +262,24 @@ namespace monad::vm::runtime
             .input_data =
                 (*args_size > 0) ? ctx->memory.data + *args_offset : nullptr,
             .input_size = *args_size,
-#if defined(MONAD_ZKVM_ZISK)
-            // Sliced into the message's words as they lie: converted through
-            // evmc::bytes32, each was copied twice more on the way.
-            .value = value,
-            .create2_salt = ctx->env.create2_salt,
-#else
             .value = static_cast<evmc::bytes32>(value),
             .create2_salt = static_cast<evmc::bytes32>(ctx->env.create2_salt),
-#endif
             .code_address = code_address,
             .memory_handle = ctx->memory.data_handle,
             .memory = ctx->memory.data + ctx->memory.size,
             .memory_capacity = ctx->memory.capacity - ctx->memory.size,
         };
+#endif
 
 #if defined(MONAD_ZKVM_ZISK)
         // What the C adapter does, without its frame, and read where it was
         // returned: release_raw copied the 72 bytes out first. The output
         // passes to the return data below, so the result releases nothing.
-        evmc::Result callee = guest_call<traits>(host_of(*ctx), message);
+        // The message goes straight to the host's CALL entry: through
+        // EvmcHost::call, a relay's frame tested its kind, which is never a
+        // creation here, and called on.
+        evmc::Result callee =
+            guest_call_message<traits>(host_of(*ctx), message);
         evmc_result &result = callee.raw();
         result.release = nullptr;
 #else

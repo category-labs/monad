@@ -95,6 +95,13 @@ protected:
     CallTracerBase &call_tracer_;
     bool const log_native_transfers_;
 
+#if defined(MONAD_ZKVM_ZISK)
+    // The runtime's CALL entry runs its message on this state.
+    template <Traits traits>
+    friend evmc::Result vm::runtime::guest_call_message(
+        vm::Host &, evmc_message const &) noexcept;
+
+#endif
 public:
     trace::StateTracer &state_tracer_;
 
@@ -236,7 +243,13 @@ struct EvmcHost final : public EvmcHostBase
                 return result;
             }
             else {
+#if defined(MONAD_ZKVM_ZISK)
+                // The runtime's CALL entry holds execute_call_message's one
+                // body, on this host's state.
+                return vm::runtime::guest_call_message<traits>(*this, msg);
+#else
                 return ::monad::execute_call_message<traits>(this, state_, msg);
+#endif
             }
         }
         MONAD_CATCH(...)

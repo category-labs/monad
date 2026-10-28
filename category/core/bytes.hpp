@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/bit_primitives.hpp>
 #include <category/core/config.hpp>
 
 #include <category/core/address.hpp>
@@ -86,6 +87,38 @@ struct bytes32_t : monad_bytes32
     friend constexpr bool
     operator==(bytes32_t const &a, bytes32_t const &b) noexcept
     {
+#if defined(MONAD_ZKVM_ZISK)
+        if !consteval {
+            // Test the last word first, where small big-endian integers differ.
+            // If it matches, compare the remaining 24 bytes by DMA.
+            uint64_t a3;
+            uint64_t b3;
+            __builtin_memcpy(&a3, a.bytes + 24, sizeof(a3));
+            __builtin_memcpy(&b3, b.bytes + 24, sizeof(b3));
+            if (a3 != b3) {
+                return false;
+            }
+            // CSR 0x814 selects ZisK's DMA memory comparison precompile.
+            // ZisK decodes csrrs + addi as one DMA comparison:
+            // %0 is the result (zero if equal), %1 and %2 are the addresses.
+            // addi supplies the length, 24; it is not executed as an addition.
+            uint64_t differ;
+            // Enable CSR instructions locally, then restore assembler options.
+            asm(".option push\n\t"
+                ".option arch, +zicsr\n\t"
+                "csrrs %0, 0x814, %1\n\t"
+                "addi x0, %2, 24\n\t"
+                ".option pop"
+                // '&' prevents sharing a register with an input.
+                : "=&r"(differ)
+                : "r"(a.bytes),
+                  "r"(b.bytes),
+                  // Tell GCC about the reads; no copy is generated.
+                  "m"(*reinterpret_cast<uint8_t const(*)[24]>(a.bytes)),
+                  "m"(*reinterpret_cast<uint8_t const(*)[24]>(b.bytes)));
+            return differ == 0;
+        }
+#endif
         return std::equal(a.bytes, a.bytes + 32, b.bytes);
     }
 
@@ -162,9 +195,16 @@ MONAD_NAMESPACE_END
 template <>
 struct std::hash<monad::bytes32_t>
 {
-    size_t operator()(monad::bytes32_t const &x) const noexcept
+    [[gnu::always_inline]] inline size_t
+    operator()(monad::bytes32_t const &x) const noexcept
     {
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_SP1)
+        // Guest map keys are initialized from the witness header.
+        return monad::bits::hash_bytes32(x.bytes);
+#else
+        // Keep seeded komihash for host HashDoS protection.
         return monad::seeded_fast_hash(x.bytes, sizeof(x.bytes));
+#endif
     }
 };
 
@@ -173,7 +213,8 @@ struct ankerl::unordered_dense::hash<monad::bytes32_t>
 {
     using is_avalanching = void;
 
-    uint64_t operator()(monad::bytes32_t const &x) const noexcept
+    [[gnu::always_inline]] inline uint64_t
+    operator()(monad::bytes32_t const &x) const noexcept
     {
         return std::hash<monad::bytes32_t>{}(x);
     }

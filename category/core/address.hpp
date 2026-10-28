@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/bit_primitives.hpp>
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
 #include <category/core/hex.hpp>
@@ -117,9 +118,16 @@ MONAD_NAMESPACE_END
 template <>
 struct std::hash<monad::Address>
 {
-    size_t operator()(monad::Address const &x) const noexcept
+    [[gnu::always_inline]] inline size_t
+    operator()(monad::Address const &x) const noexcept
     {
+#if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_SP1)
+        // Guest map keys are initialized from the witness header.
+        return monad::bits::hash_bytes20(x.bytes);
+#else
+        // Keep seeded komihash for host HashDoS protection.
         return monad::seeded_fast_hash(x.bytes, sizeof(x.bytes));
+#endif
     }
 };
 
@@ -128,7 +136,8 @@ struct ankerl::unordered_dense::hash<monad::Address>
 {
     using is_avalanching = void;
 
-    uint64_t operator()(monad::Address const &x) const noexcept
+    [[gnu::always_inline]] inline uint64_t
+    operator()(monad::Address const &x) const noexcept
     {
         return std::hash<monad::Address>{}(x);
     }

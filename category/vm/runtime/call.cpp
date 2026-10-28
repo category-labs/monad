@@ -177,7 +177,29 @@ namespace monad::vm::runtime
             return 0;
         }
 
-        auto const message = Message{
+#if defined(MONAD_ZKVM_ZISK)
+        // CALL messages never read create2_salt; CREATE2 builds its own
+        // message.
+        vm::Message message;
+        message.kind = call_kind;
+        message.flags = message_flags(
+            static_cast<uint32_t>(ctx->env.flags),
+            static_call,
+            dest_address != code_address);
+        message.depth = static_cast<int32_t>(ctx->env.depth + 1);
+        message.gas = gas;
+        message.recipient = recipient;
+        message.sender = sender;
+        message.input_data =
+            (*args_size > 0) ? ctx->memory.data + *args_offset : nullptr;
+        message.input_size = *args_size;
+        message.value = value;
+        message.code_address = code_address;
+        message.memory_handle = ctx->memory.data_handle;
+        message.memory = ctx->memory.data + ctx->memory.size;
+        message.memory_capacity = ctx->memory.capacity - ctx->memory.size;
+#else
+        auto const message = vm::Message{
             .kind = call_kind,
             .flags = message_flags(
                 static_cast<uint32_t>(ctx->env.flags),
@@ -197,6 +219,7 @@ namespace monad::vm::runtime
             .memory = ctx->memory.data + ctx->memory.size,
             .memory_capacity = ctx->memory.capacity - ctx->memory.size,
         };
+#endif
 
         // Even after releasing its buffer, result's destructor remains
         // non-trivial: longjmp must not bypass it. Destroy the result before

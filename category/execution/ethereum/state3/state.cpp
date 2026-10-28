@@ -602,6 +602,8 @@ void State::pop_reject()
 #if defined(MONAD_ZKVM_ZISK)
             // No payload: see journal_warm_slot.
             row.undo_warm_slot();
+            // The original row keeps the slot if the frame read it.
+            row.orig_->rows_unwarmed_ = 1;
 #else
             row.undo_warm_slot(undo_words_[u.aux]);
 #endif
@@ -813,6 +815,8 @@ inline void State::current_storage_into(
             address,
             account.value().incarnation,
             key);
+        // A slot read here is not warmed.
+        original_account_state.rows_unwarmed_ = 1;
 #else
         bytes32_t const value = block_state_.read_storage(
             address, account.value().incarnation, key);
@@ -886,6 +890,9 @@ void State::get_storage_into(
                 address,
                 account.value().incarnation,
                 key);
+            // As in current_storage_into: the slot is not warmed, and the
+            // account's current row, made later, starts with no warm slot.
+            account_state.rows_unwarmed_ = 1;
 #else
             bytes32_t const value = block_state_.read_storage(
                 address, account.value().incarnation, key);
@@ -982,20 +989,52 @@ monad_storage_status State::set_storage(
     evmc_address const &address, bytes32_t const &key, bytes32_t const &value)
 {
 #ifdef MONAD_ZKVM_ZISK
-    return set_storage_of(current_account_state(address), address, key, value);
+    auto &account_state = current_account_state(address);
+    // Written without being warmed, unlike an SSTORE's slot: see
+    // OriginalAccountState::rows_unwarmed_.
+    MONAD_ASSERT(account_state.orig_ != nullptr);
+    account_state.orig_->rows_unwarmed_ = 1;
+    return set_storage_of(account_state, address, key, value);
 }
 
 inline monad_storage_status State::set_storage_of(
     AccountState &account_state, evmc_address const &address, bytes32_t const &key,
     bytes32_t const &value)
 {
+    // Reuse one lookup for journaling, status computation and the write.
+    // The pre-state lookup uses a separate container, preserving prev.
+    MONAD_ASSERT(account_state.orig_ != nullptr);
+    return set_storage_found(
+        account_state,
+        address,
+        key,
+        value,
+        account_state.storage_.find(key),
+        account_state.orig_->prestate_storage_.find(key));
+}
+
+inline monad_storage_status State::set_storage_found(
+    AccountState &account_state, evmc_address const &address, bytes32_t const &key,
+    bytes32_t const &value, bytes32_t const *const prev,
+    bytes32_t const *const original)
+{
+    MONAD_ASSERT(account_state.account_);
     // Where the original value lies, in the original row or the block: a
     // local was zeroed, then assigned from one of them.
-    bytes32_t const *original_value;
+    bytes32_t const *original_value = original;
+    if (original_value == nullptr) {
+        auto &orig_account_state = *account_state.orig_;
+        Incarnation const incarnation = account_state.account_->incarnation;
+        bytes32_t const &stored = block_state_.read_storage(
+            *orig_account_state.delta_, address, incarnation, key);
+        orig_account_state.prestate_storage_.insert(key, stored);
+        original_value = &stored;
+    }
+    journal_slot(address, key, prev);
+    return account_state.set_storage(key, value, *original_value, prev);
 #else
     bytes32_t original_value;
     auto &account_state = current_account_state(address);
-#endif
     MONAD_ASSERT(account_state.account_);
     // Reuse one lookup for journaling, status computation and the write.
     // The pre-state lookup below uses a separate container, preserving prev.
@@ -1006,39 +1045,24 @@ inline monad_storage_status State::set_storage_of(
         auto &orig_account_state = *account_state.orig_;
         auto &storage = orig_account_state.prestate_storage_;
         if (auto const *const it = storage.find(key); it) {
-#ifdef MONAD_ZKVM_ZISK
-            original_value = it;
-#else
             original_value = *it;
-#endif
         }
         else {
             Incarnation const incarnation = account_state.account_->incarnation;
-#ifdef MONAD_ZKVM_ZISK
-            bytes32_t const &value = block_state_.read_storage(
-                *orig_account_state.delta_, address, incarnation, key);
-            storage.insert(key, value);
-            original_value = &value;
-#else
             bytes32_t const value =
                 block_state_.read_storage(address, incarnation, key);
             storage.insert(key, value);
             original_value = value;
-#endif
         }
     }
     // state
     {
         journal_slot(address, key, prev);
-#ifdef MONAD_ZKVM_ZISK
-        auto const result =
-            account_state.set_storage(key, value, *original_value, prev);
-#else
         auto const result =
             account_state.set_storage(key, value, original_value, prev);
-#endif
         return result;
     }
+#endif
 }
 
 void State::set_transient_storage(
@@ -1143,7 +1167,27 @@ monad_access_status State::sload_cold(
     return MONAD_ACCESS_COLD;
 }
 
-// The caller checked that the current and original incarnations match.
+// sload_cold for a slot that sload_into found in neither row, of an account
+// whose incarnation is its original row's: current_storage_load would search
+// both again before it read the block's state.
+monad_access_status State::sload_cold_absent(
+    evmc_address const &address, bytes32_t const &key, bool const can_pay_cold_access,
+    uint256_t &out, AccountState &account_state)
+{
+    account_state.add_accessed_storage(key);
+    journal_warm_slot(address);
+    if (can_pay_cold_access) {
+        OriginalAccountState &orig = *account_state.orig_;
+        bytes32_t const &value = block_state_.read_storage(
+            *orig.delta_, address, orig.account_.value().incarnation, key);
+        orig.prestate_storage_.insert(key, value);
+        out = load_be<uint256_t>(value);
+    }
+    return MONAD_ACCESS_COLD;
+}
+
+// current_storage_into's read of the block's state, for an original row whose
+// incarnation sload_into found to be the account's.
 monad_access_status State::sload_read(
     evmc_address const &address, bytes32_t const &key, uint256_t &out,
     OriginalAccountState &orig)
@@ -1155,8 +1199,11 @@ monad_access_status State::sload_read(
     return MONAD_ACCESS_WARM;
 }
 
-// Answer cached warm reads without calls. Keep slower paths out of line so
-// they can be tail-called without adding register saves to the fast path.
+// A warm slot of the memoised account whose value the state holds, about
+// half of all SLOADs, is answered with no call, so with no frame to save and
+// restore registers in. Every other case goes on by a tail call: into
+// sload_cold or sload_cold_absent with the account found, into sload_read
+// with its original row, or into sload_full.
 template <Traits traits>
 monad_access_status State::sload_into(
     evmc_address const &address, bytes32_t const &key, bool const can_pay_cold_access,
@@ -1165,33 +1212,60 @@ monad_access_status State::sload_into(
     if constexpr (!traits::mip_8_active()) {
         AccountState *const cur = memoised_current(address);
         if (MONAD_LIKELY(cur != nullptr)) {
-            if (!cur->is_accessed_storage(key)) {
-                return sload_cold(address, key, can_pay_cold_access, out, *cur);
-            }
-            // Try current storage, then cached original storage, before reading
-            // DB.
             auto const &account = cur->account_;
             OriginalAccountState *const orig = cur->orig_;
-            if (MONAD_LIKELY(account.has_value())) {
+            // An account that does not exist, or a row without its original,
+            // goes to sload_full, which does what the order below would,
+            // sload_cold's part included.
+            if (MONAD_LIKELY(account.has_value() && orig != nullptr)) {
+                auto const &original_account = orig->account_;
+                // A slot either row holds is warm while the original row
+                // says so: the rows are searched first, and the warm slots
+                // only when both miss. An account recreated since its
+                // original row was read takes the order below, its original
+                // slots not being its own.
+                if (MONAD_LIKELY(orig->rows_unwarmed_ == 0)) {
+                    if (auto const *const v = cur->storage_.find(key); v) {
+                        out = load_be<uint256_t>(*v);
+                        return MONAD_ACCESS_WARM;
+                    }
+                    if (MONAD_LIKELY(
+                            original_account.has_value() &&
+                            account.value().incarnation ==
+                                original_account.value().incarnation)) {
+                        if (auto const *const v =
+                                orig->prestate_storage_.find(key);
+                            v) {
+                            out = load_be<uint256_t>(*v);
+                            return MONAD_ACCESS_WARM;
+                        }
+                        if (!cur->is_accessed_storage(key)) {
+                            return sload_cold_absent(
+                                address, key, can_pay_cold_access, out, *cur);
+                        }
+                        return sload_read(address, key, out, *orig);
+                    }
+                }
+                if (!cur->is_accessed_storage(key)) {
+                    return sload_cold(address, key, can_pay_cold_access, out, *cur);
+                }
+                // current_storage_into, up to a read of the block's state.
                 if (auto const *const v = cur->storage_.find(key); v) {
                     out = load_be<uint256_t>(*v);
                     return MONAD_ACCESS_WARM;
                 }
-                if (MONAD_LIKELY(orig != nullptr)) {
-                    auto const &original_account = orig->account_;
-                    if (!original_account.has_value() ||
-                        account.value().incarnation !=
-                            original_account.value().incarnation) {
-                        out = uint256_t{};
-                        return MONAD_ACCESS_WARM;
-                    }
-                    if (auto const *const v = orig->prestate_storage_.find(key);
-                        v) {
-                        out = load_be<uint256_t>(*v);
-                        return MONAD_ACCESS_WARM;
-                    }
-                    return sload_read(address, key, out, *orig);
+                if (!original_account.has_value() ||
+                    account.value().incarnation !=
+                        original_account.value().incarnation) {
+                    out = uint256_t{};
+                    return MONAD_ACCESS_WARM;
                 }
+                if (auto const *const v = orig->prestate_storage_.find(key);
+                    v) {
+                    out = load_be<uint256_t>(*v);
+                    return MONAD_ACCESS_WARM;
+                }
+                return sload_read(address, key, out, *orig);
             }
         }
     }
@@ -1208,12 +1282,35 @@ vm::runtime::SstoreStatus State::sstore_into(
     bool const write_cold)
 {
     auto &account_state = current_account_state(address);
-    monad_access_status const access =
-        access_storage_of<traits>(account_state, address, key);
-    if (access == MONAD_ACCESS_COLD && !write_cold) {
-        return {access, MONAD_STORAGE_ASSIGNED};
+    if constexpr (!traits::mip_8_active()) {
+        // set_storage_of's two searches first: a slot either row holds is
+        // warm while the original row says so, as in sload_into, and its
+        // search of the warm slots is skipped.
+        MONAD_ASSERT(account_state.orig_ != nullptr);
+        OriginalAccountState const &orig = *account_state.orig_;
+        bytes32_t const *const prev = account_state.storage_.find(key);
+        bytes32_t const *const original = orig.prestate_storage_.find(key);
+        monad_access_status access = MONAD_ACCESS_WARM;
+        if ((prev == nullptr && original == nullptr) ||
+            orig.rows_unwarmed_ != 0) {
+            access = access_storage_of<traits>(account_state, address, key);
+            if (access == MONAD_ACCESS_COLD && !write_cold) {
+                return {access, MONAD_STORAGE_ASSIGNED};
+            }
+        }
+        return {
+            access,
+            set_storage_found(
+                account_state, address, key, value, prev, original)};
     }
-    return {access, set_storage_of(account_state, address, key, value)};
+    else {
+        monad_access_status const access =
+            access_storage_of<traits>(account_state, address, key);
+        if (access == MONAD_ACCESS_COLD && !write_cold) {
+            return {access, MONAD_STORAGE_ASSIGNED};
+        }
+        return {access, set_storage_of(account_state, address, key, value)};
+    }
 }
 
 EXPLICIT_TRAITS_MEMBER(State::sstore_into);

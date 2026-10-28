@@ -568,6 +568,10 @@ void State::pop_reject()
 
         case Undo::Kind::WarmSlot:
             row.undo_warm_slot(undo_words_[undo_record.payload_index]);
+#if defined(MONAD_ZKVM_ZISK)
+            // Original values survive rollback; their warmth does not.
+            row.original_state_->cached_slots_may_be_cold_ = 1;
+#endif
             break;
 
         case Undo::Kind::Slot: {
@@ -774,6 +778,7 @@ inline void State::current_storage_into(
             address,
             account.value().incarnation,
             key);
+        original_account_state.cached_slots_may_be_cold_ = 1;
 #else
         bytes32_t const value = block_state_.read_storage(
             address, account.value().incarnation, key);
@@ -810,6 +815,7 @@ void State::get_storage_into(
                 address,
                 account.value().incarnation,
                 key);
+            account_state.cached_slots_may_be_cold_ = 1;
 #else
             bytes32_t const value = block_state_.read_storage(
                 address, account.value().incarnation, key);
@@ -902,23 +908,59 @@ void State::subtract_from_balance(
     }
 }
 
+#if defined(MONAD_ZKVM_ZISK)
 StorageStatus State::set_storage(
     monad_address const &address, bytes32_t const &key, bytes32_t const &value)
 {
-#ifdef MONAD_ZKVM_ZISK
-    return set_storage_of(current_account_state(address), address, key, value);
+    auto &account_state = current_account_state(address);
+    // Written without being warmed, unlike an SSTORE's slot: see
+    // OriginalAccountState::cached_slots_may_be_cold_.
+    MONAD_ASSERT(account_state.original_state_ != nullptr);
+    account_state.original_state_->cached_slots_may_be_cold_ = 1;
+    return set_storage_of(account_state, address, key, value);
 }
 
 inline StorageStatus State::set_storage_of(
     AccountState &account_state, monad_address const &address,
     bytes32_t const &key, bytes32_t const &value)
 {
-    // Borrow the original value until the slot is updated below.
-    bytes32_t const *original_value;
+    // Reuse cached values for journaling and storage-status computation.
+    MONAD_ASSERT(account_state.original_state_ != nullptr);
+    return set_storage_with_cached_values(
+        account_state,
+        address,
+        key,
+        value,
+        account_state.storage_.find(key),
+        account_state.original_state_->prestate_storage_.find(key));
+}
+
+inline StorageStatus State::set_storage_with_cached_values(
+    AccountState &account_state, monad_address const &address,
+    bytes32_t const &key, bytes32_t const &value,
+    bytes32_t const *const stored_value,
+    bytes32_t const *const cached_original_value)
+{
+    MONAD_ASSERT(account_state.account_);
+    // Borrow the original value from its cache or the block state.
+    bytes32_t const *original_value = cached_original_value;
+    if (original_value == nullptr) {
+        auto &orig_account_state = *account_state.original_state_;
+        Incarnation const incarnation = account_state.account_->incarnation;
+        bytes32_t const &stored = block_state_.read_storage(
+            *orig_account_state.block_delta_, address, incarnation, key);
+        orig_account_state.prestate_storage_.insert(key, stored);
+        original_value = &stored;
+    }
+    journal_slot(address, key, stored_value);
+    return account_state.set_storage(key, value, *original_value, stored_value);
+}
 #else
+StorageStatus State::set_storage(
+    monad_address const &address, bytes32_t const &key, bytes32_t const &value)
+{
     bytes32_t original_value;
     auto &account_state = current_account_state(address);
-#endif
     MONAD_ASSERT(account_state.account_);
     // Reuse this value for journalling and storage-status computation.
     // The separate pre-state cache cannot invalidate this pointer; the
@@ -930,40 +972,25 @@ inline StorageStatus State::set_storage_of(
         auto &orig_account_state = *account_state.original_state_;
         auto &storage = orig_account_state.prestate_storage_;
         if (auto const *const it = storage.find(key); it) {
-#ifdef MONAD_ZKVM_ZISK
-            original_value = it;
-#else
             original_value = *it;
-#endif
         }
         else {
             Incarnation const incarnation = account_state.account_->incarnation;
-#ifdef MONAD_ZKVM_ZISK
-            bytes32_t const &value = block_state_.read_storage(
-                *orig_account_state.block_delta_, address, incarnation, key);
-            storage.insert(key, value);
-            original_value = &value;
-#else
             bytes32_t const value =
                 block_state_.read_storage(address, incarnation, key);
             storage.insert(key, value);
             original_value = value;
-#endif
         }
     }
     // state
     {
         journal_slot(address, key, stored_value);
-#ifdef MONAD_ZKVM_ZISK
-        auto const result = account_state.set_storage(
-            key, value, *original_value, stored_value);
-#else
         auto const result =
             account_state.set_storage(key, value, original_value, stored_value);
-#endif
         return result;
     }
 }
+#endif
 
 void State::set_transient_storage(
     monad_address const &address, bytes32_t const &key, bytes32_t const &value)
@@ -1063,6 +1090,26 @@ AccessStatus State::sload_cold(
     return AccessStatus::Cold;
 }
 
+// Both value caches missed; warm the slot and read the block directly.
+AccessStatus State::sload_cold_uncached(
+    monad_address const &address, bytes32_t const &key,
+    bool const can_pay_cold_access, uint256_t &out, AccountState &account_state)
+{
+    account_state.add_accessed_storage(key);
+    journal_warm_slot(address, key);
+    if (can_pay_cold_access) {
+        OriginalAccountState &original_state = *account_state.original_state_;
+        bytes32_t const &value = block_state_.read_storage(
+            *original_state.block_delta_,
+            address,
+            original_state.account_.value().incarnation,
+            key);
+        original_state.prestate_storage_.insert(key, value);
+        out = load_be<uint256_t>(value);
+    }
+    return AccessStatus::Cold;
+}
+
 // The caller checked that the current and original incarnations match.
 AccessStatus State::sload_read(
     monad_address const &address, bytes32_t const &key, uint256_t &out,
@@ -1089,38 +1136,68 @@ AccessStatus State::sload_into(
         AccountState *const current_state =
             cached_current_account_in_frame(address);
         if (MONAD_LIKELY(current_state != nullptr)) {
-            if (!current_state->is_accessed_storage(key)) {
-                return sload_cold(
-                    address, key, can_pay_cold_access, out, *current_state);
-            }
-            // Try current storage, then cached original storage, before
-            // reading the block state.
             auto const &account = current_state->account_;
             OriginalAccountState *const original_state =
                 current_state->original_state_;
-            if (MONAD_LIKELY(account.has_value())) {
+            // Missing accounts or original state use the general path below.
+            if (MONAD_LIKELY(
+                    account.has_value() && original_state != nullptr)) {
+                auto const &original_account = original_state->account_;
+                // Cached values prove warmth only while this invariant holds.
+                // Original storage also requires a matching incarnation.
+                if (MONAD_LIKELY(
+                        original_state->cached_slots_may_be_cold_ == 0)) {
+                    if (auto const *const cached_value =
+                            current_state->storage_.find(key);
+                        cached_value) {
+                        out = load_be<uint256_t>(*cached_value);
+                        return AccessStatus::Warm;
+                    }
+                    if (MONAD_LIKELY(
+                            original_account.has_value() &&
+                            account.value().incarnation ==
+                                original_account.value().incarnation)) {
+                        if (auto const *const cached_value =
+                                original_state->prestate_storage_.find(key);
+                            cached_value) {
+                            out = load_be<uint256_t>(*cached_value);
+                            return AccessStatus::Warm;
+                        }
+                        if (!current_state->is_accessed_storage(key)) {
+                            return sload_cold_uncached(
+                                address,
+                                key,
+                                can_pay_cold_access,
+                                out,
+                                *current_state);
+                        }
+                        return sload_read(address, key, out, *original_state);
+                    }
+                }
+                if (!current_state->is_accessed_storage(key)) {
+                    return sload_cold(
+                        address, key, can_pay_cold_access, out, *current_state);
+                }
+                // current_storage_into, up to a read of the block's state.
                 if (auto const *const cached_value =
                         current_state->storage_.find(key);
                     cached_value) {
                     out = load_be<uint256_t>(*cached_value);
                     return AccessStatus::Warm;
                 }
-                if (MONAD_LIKELY(original_state != nullptr)) {
-                    auto const &original_account = original_state->account_;
-                    if (!original_account.has_value() ||
-                        account.value().incarnation !=
-                            original_account.value().incarnation) {
-                        out = {};
-                        return AccessStatus::Warm;
-                    }
-                    if (auto const *const cached_value =
-                            original_state->prestate_storage_.find(key);
-                        cached_value) {
-                        out = load_be<uint256_t>(*cached_value);
-                        return AccessStatus::Warm;
-                    }
-                    return sload_read(address, key, out, *original_state);
+                if (!original_account.has_value() ||
+                    account.value().incarnation !=
+                        original_account.value().incarnation) {
+                    out = uint256_t{};
+                    return AccessStatus::Warm;
                 }
+                if (auto const *const cached_value =
+                        original_state->prestate_storage_.find(key);
+                    cached_value) {
+                    out = load_be<uint256_t>(*cached_value);
+                    return AccessStatus::Warm;
+                }
+                return sload_read(address, key, out, *original_state);
             }
         }
     }
@@ -1135,12 +1212,40 @@ vm::runtime::SstoreStatus State::sstore_into(
     bool const can_pay_cold_access)
 {
     auto &account_state = current_account_state(address);
-    AccessStatus const access =
-        access_storage_of<traits>(account_state, address, key);
-    if (access == AccessStatus::Cold && !can_pay_cold_access) {
-        return {access, StorageStatus::Assigned};
+    if constexpr (!traits::mip_8_active()) {
+        // Reuse the value lookups for both warmth and the eventual write.
+        MONAD_ASSERT(account_state.original_state_ != nullptr);
+        OriginalAccountState const &original_state =
+            *account_state.original_state_;
+        bytes32_t const *const stored_value = account_state.storage_.find(key);
+        bytes32_t const *const cached_original_value =
+            original_state.prestate_storage_.find(key);
+        AccessStatus access = AccessStatus::Warm;
+        if ((stored_value == nullptr && cached_original_value == nullptr) ||
+            original_state.cached_slots_may_be_cold_ != 0) {
+            access = access_storage_of<traits>(account_state, address, key);
+            if (access == AccessStatus::Cold && !can_pay_cold_access) {
+                return {access, StorageStatus::Assigned};
+            }
+        }
+        return {
+            access,
+            set_storage_with_cached_values(
+                account_state,
+                address,
+                key,
+                value,
+                stored_value,
+                cached_original_value)};
     }
-    return {access, set_storage_of(account_state, address, key, value)};
+    else {
+        AccessStatus const access =
+            access_storage_of<traits>(account_state, address, key);
+        if (access == AccessStatus::Cold && !can_pay_cold_access) {
+            return {access, StorageStatus::Assigned};
+        }
+        return {access, set_storage_of(account_state, address, key, value)};
+    }
 }
 
 EXPLICIT_TRAITS_MEMBER(State::sstore_into);

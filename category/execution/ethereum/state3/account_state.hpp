@@ -389,6 +389,11 @@ public:
     // Reuse the block entry for slot reads and merge, without an address
     // lookup. Block entries are never moved or erased.
     StateDelta *block_delta_{nullptr};
+
+    // Cached values imply warm slots only until an unwarmed read/write or
+    // rollback breaks that invariant. Never reset: this row survives rollback.
+    // Keep a full word for inexpensive aligned loads on ZisK.
+    std::uint64_t cached_slots_may_be_cold_{0};
 #endif
 
     explicit OriginalAccountState(std::optional<Account> &&account)

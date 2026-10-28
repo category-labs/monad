@@ -19,15 +19,14 @@ jobs:
     name: Check clang-format
     runs-on: ubuntu-26.04
     timeout-minutes: 15
-    env:
-      LLVM_VERSION: '19'
 
     steps:
       - uses: actions/checkout@v7
 
-      - name: Install clang-format-${{ env.LLVM_VERSION }}
+      - name: Install clang-format
         run: |
-          sudo apt install -y clang-format-${{ env.LLVM_VERSION }} ripgrep
+          source scripts/ubuntu-build/toolchain.env
+          sudo apt install -y clang-format-${LLVM_VERSION} ripgrep
 
       - name: Run clang-format check
         run: scripts/apply-clang-format.sh --check

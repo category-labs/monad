@@ -768,6 +768,9 @@ class OffsetTrie
         // branch's child k, bit 0 for an extension's. A patch rewrites every
         // dirty child's ref there, in place, so the window holds the priming
         // RLP with those refs as the last patch left them. See encode_current.
+        // put_node clears it, so a window that is set is the RLP of the
+        // node's current bytes but for its dirty refs: the leaves the commit
+        // rewrites in place patch their new fields into it, or clear it.
         unsigned char *rlp;
         uint64_t rlp_len;
         uint64_t dirty;
@@ -1073,6 +1076,20 @@ public:
     // rewrites in its priming RLP. False, touching nothing, for any other
     // leaf, which put_acct then writes.
     bool keep_account_leaf(NodeId leaf, NodeId storage);
+    // For an account the block changed through its nonce or balance: writes
+    // `leaf`, a primed account leaf the block has not rewritten whose code
+    // hash is `acct`'s and whose storage edge is `storage`, as a copy of its
+    // own bytes with `acct`'s nonce ‖ balance run, and writes the run over
+    // the one in its priming RLP. False, touching nothing, for any other
+    // leaf, or a run whose length changed, which put_acct then writes.
+    bool
+    rewrite_account_fields(NodeId leaf, Account const &acct, NodeId storage);
+    // For a slot the block changed: writes `leaf`, a storage leaf of the blob
+    // the block has not rewritten, as a copy of its own bytes with `value`,
+    // and writes the value over the one in its priming RLP when the field's
+    // length holds. False, touching nothing, for any other node, which
+    // put_storage then writes.
+    bool rewrite_storage_value(NodeId leaf, bytes32_t const &value);
 #endif
     // Copies account data verbatim but appends a new path
     NodeId clone_acct(NodeId id, AccountLeafView acc, NibblesView new_path);

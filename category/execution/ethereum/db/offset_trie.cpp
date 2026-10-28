@@ -698,12 +698,12 @@ namespace
     }
 }
 
-// The node's bytes are the ones it was primed with, so its RLP differs from
-// the priming RLP only in the refs of the children a descent has passed
-// through since -- which set their bits in `dirty` -- and each of those is
-// recomputed and written over its ref, in the window itself: `dirty` never
-// clears, so every patch rewrites all of them, and a ref is only written when
-// its length holds. A ref whose length changed would move everything after
+// The window holds the node's current bytes encoded (see CachedHash::rlp), so
+// it differs from the node's RLP only in the refs of the children a descent
+// has passed through since -- which set their bits in `dirty` -- and each of
+// those is recomputed and written over its ref, in the window itself: `dirty`
+// never clears, so every patch rewrites all of them, and a ref is only written
+// when its length holds. A ref whose length changed would move everything after
 // it: that case, zero, falls back to a full encode.
 size_t OffsetTrie::patch_rlp(CachedHash const &e, NodeViewBase const node)
 {
@@ -739,6 +739,11 @@ size_t OffsetTrie::patch_rlp(CachedHash const &e, NodeViewBase const node)
             std::memcpy(
                 out + len - 2 * HASH_RLP_LEN + 1, h.bytes, KECCAK256_SIZE);
         }
+    }
+    else if (node.tag() == LEAF_STORAGE) {
+        // A storage leaf has no child to patch: its window holds its value
+        // as the priming sweep or rewrite_storage_value wrote it.
+        return len;
     }
     else {
         MONAD_ASSERT(node.tag() == EXT);
@@ -777,22 +782,28 @@ bool OffsetTrie::patch_ref(
     // child's entry straight from Keccak, where child_ref would copy it into
     // the entry, into a ref of its own, and that ref over this one.
     if (ref_len == HASH_RLP_LEN) {
-        // The commonest child: a primed branch or extension the block has
-        // not rewritten, below a dirty ref. Its slots are read once, and its
-        // RLP is its patched priming RLP -- what encode_current would build
-        // after reading the same slots again. A patch that falls back to the
-        // full encode leaves it to the general path below.
+        // The commonest child: a primed node whose window is still its RLP,
+        // below a dirty ref. Its slots are read once, and its RLP is its
+        // patched window -- what encode_current would build after reading
+        // the same slots again. A patch that falls back to the full encode
+        // leaves it to the general path below.
         //
-        // patch_rlp's only node is a blob node without an overlay entry, so
-        // the child is one the constructor bounded.
+        // patch_rlp reads children only for a branch or an extension, which
+        // keeps a window only while the block has not rewritten it: a blob
+        // node, so the child is one the constructor bounded. The blob's
+        // bytes stand in for a leaf's current ones: a leaf the commit
+        // rewrote in place kept its tag and its storage edge, all patch_rlp
+        // reads of it.
         uint64_t const v = static_cast<uint64_t>(child);
         if (v < OVERLAY_BASE) {
             NodeViewBase const original = original_child(child);
             Tag const tag = original.tag();
             CachedHash *const e = blob_hash_slots_[v >> 2];
-            if (blob_overlay_slots_[v >> 2] == nullptr &&
-                (tag == BRANCH || tag == EXT || tag == LEAF_ACCT) &&
-                e != nullptr && e->rlp != nullptr) {
+            // A branch, an extension or either leaf, in one compare: the
+            // tags a hashed node carries are the four lowest.
+            static_assert(
+                BRANCH == 0 && EXT == 1 && LEAF_ACCT == 2 && LEAF_STORAGE == 3);
+            if (tag <= LEAF_STORAGE && e != nullptr && e->rlp != nullptr) {
                 auto const patched = [&] {
                     size_t const len = patch_rlp(*e, original);
                     if (len == 0) {
@@ -848,13 +859,12 @@ OffsetTrie::node_rlp_span OffsetTrie::encode_current(
     unsigned char (&buf)[MAX_NODE_RLP])
 {
 #if defined(MONAD_ZKVM_ZISK)
-    // A primed node that is neither fresh nor rewritten: a blob id with no
-    // overlay entry, its slot bounded by the get_current or get_original that
-    // produced `node`. Only branches and extensions have children to patch.
+    // A primed node whose window is still its RLP (see CachedHash::rlp): a
+    // blob id, its slot bounded by the get_current or get_original that
+    // produced `node`. Any tag will do: no node is encoded as a digest or the
+    // empty node, and only a primed node has a window.
     uint64_t const v = static_cast<uint64_t>(id);
-    if (v < OVERLAY_BASE && blob_overlay_slots_[v >> 2] == nullptr &&
-        (node.tag() == BRANCH || node.tag() == EXT ||
-         node.tag() == LEAF_ACCT)) {
+    if (v < OVERLAY_BASE) {
         CachedHash const *const e = blob_hash_slots_[v >> 2];
         if (e != nullptr && e->rlp != nullptr) {
             if (size_t const len = patch_rlp(*e, node); len != 0) {
@@ -1636,7 +1646,11 @@ NodeId OffsetTrie::put_node(NodeId const id, unsigned char *const node)
             node;
         return fresh;
     }
-    drop_hash(id); // bytes changed; the cached hash is stale
+    // Bytes changed: the cached hash is stale, and the window no longer
+    // holds the node's RLP.
+    if (CachedHash *const e = drop_hash(id)) {
+        e->rlp = nullptr;
+    }
     uint64_t const v = static_cast<uint64_t>(id);
     unsigned char *&slot = v < OVERLAY_BASE
                                ? blob_overlay_slots_[v >> 2]
@@ -1775,6 +1789,149 @@ NodeId OffsetTrie::put_acct(
     return put_node(id, std::move(node));
 #endif
 }
+
+#if defined(MONAD_ZKVM_ZISK)
+namespace
+{
+    // append_unsigned_rlp's encoding of `n`, written at `out`, which has room
+    // for it; its length.
+    size_t write_unsigned_rlp(unsigned char *const out, uint256_t const &n)
+    {
+        size_t w = uint256_t::num_words;
+        while (w != 0 && n[w - 1] == 0) {
+            --w;
+        }
+        if (w == 0) {
+            out[0] = 0x80;
+            return 1;
+        }
+        unsigned const top =
+            8u - static_cast<unsigned>(std::countl_zero(n[w - 1]) >> 3);
+        size_t const len = (w - 1) * 8 + top;
+        alignas(8) unsigned char be[uint256_t::num_bytes];
+        for (size_t i = 0; i < w; ++i) {
+            uint64_t const b = bswap(n[i]);
+            std::memcpy(be + (w - 1 - i) * 8, &b, sizeof(b));
+        }
+        unsigned char const *const p = be + (w * 8 - len);
+        if (len == 1 && p[0] <= 0x7f) {
+            out[0] = p[0];
+            return 1;
+        }
+        out[0] = static_cast<unsigned char>(0x80 + len);
+        std::memcpy(out + 1, p, len);
+        return 1 + len;
+    }
+}
+
+// The leaf's RLP ends with its account's nonce ‖ balance run, then its
+// storage root and code hash, two 33-byte strings. With the run's length
+// unchanged, so are the account list's, the value string's and the leaf
+// list's, whose headers depend on nothing else: the new run goes over the old
+// one, 66 bytes from the end, and the window is the RLP of the copy. The
+// storage root is patch_rlp's, from the edge the copy keeps.
+bool OffsetTrie::rewrite_account_fields(
+    NodeId const leaf, Account const &acct, NodeId const storage)
+{
+    uint64_t const v = static_cast<uint64_t>(leaf);
+    if (v >= OVERLAY_BASE || blob_overlay_slots_[v >> 2] != nullptr) {
+        return false;
+    }
+    NodeViewBase const node = get_original(leaf);
+    if (node.tag() != LEAF_ACCT) {
+        return false;
+    }
+    AccountLeafView const l{node};
+    if (l.storage() != storage) {
+        return false;
+    }
+    CachedHash *const e = blob_hash_slots_[v >> 2];
+    if (e == nullptr || e->rlp == nullptr) {
+        return false;
+    }
+    // The code hash as the 64 nibbles it is: one DMA compare, where the
+    // leaf's copy lies at any offset.
+    if (!aligned_nibbles_equal(
+            l.code_hash_rlp().data() + 1,
+            acct.code_hash.bytes,
+            2 * sizeof(acct.code_hash.bytes))) {
+        return false;
+    }
+    alignas(8) unsigned char run[2 * (1 + sizeof(uint256_t))];
+    size_t const nonce_len = write_unsigned_rlp(run, uint256_t{acct.nonce});
+    size_t const run_len =
+        nonce_len + write_unsigned_rlp(run + nonce_len, acct.balance);
+    byte_string_view const old_run = l.nonce_balance_rlp();
+    if (run_len != old_run.size()) {
+        return false;
+    }
+    unsigned char const *const end = path_view_end(old_run.data() + run_len);
+    size_t const size = static_cast<size_t>(end - node.bytes());
+    unsigned char *const n = node_space(size);
+    std::memcpy(n, node.bytes(), size);
+    std::memcpy(n + (old_run.data() - node.bytes()), run, run_len);
+    node_done(n + size);
+    blob_overlay_slots_[v >> 2] = n;
+    std::memcpy(e->rlp + e->rlp_len - 2 * HASH_RLP_LEN - run_len, run, run_len);
+    e->stale = 1;
+    // The edge is the same, not the subtree under it.
+    if (storage != NULL_ID) {
+        mark_dirty(e, 0);
+    }
+    return true;
+}
+
+// A storage leaf's RLP ends with its value field: the value's own RLP, one
+// byte for a single byte under 0x80, else a short string, wrapped in a second
+// header. With the field's length unchanged, the leaf list's header is the
+// same and so are the field's headers: the value's bytes go over the old
+// ones, at the end of the window. Otherwise the window goes, and the copy is
+// encoded whole.
+bool OffsetTrie::rewrite_storage_value(
+    NodeId const leaf, bytes32_t const &value)
+{
+    uint64_t const v = static_cast<uint64_t>(leaf);
+    if (v >= OVERLAY_BASE || blob_overlay_slots_[v >> 2] != nullptr) {
+        return false;
+    }
+    NodeViewBase const node = get_original(leaf);
+    if (node.tag() != LEAF_STORAGE) {
+        return false;
+    }
+    // 8-aligned for zeroless_view32's word reads.
+    alignas(8) bytes32_t const val = value;
+    unsigned char const *const end =
+        path_view_end(node.payload() + sizeof(val.bytes));
+    size_t const size = static_cast<size_t>(end - node.bytes());
+    unsigned char *const n = node_space(size);
+    std::memcpy(n, node.bytes(), size);
+    std::memcpy(n + 1, val.bytes, sizeof(val.bytes));
+    node_done(n + size);
+    blob_overlay_slots_[v >> 2] = n;
+    CachedHash *const e = blob_hash_slots_[v >> 2];
+    if (e == nullptr) {
+        return true; // inlined by its parent: encoded whole
+    }
+    e->stale = 1;
+    if (e->rlp == nullptr) {
+        return true;
+    }
+    unsigned char *const out = e->rlp;
+    size_t const len = e->rlp_len;
+    unsigned char const *field = out + rlp_list_header_len(out[0]);
+    field += rlp_path_len(*field);
+    byte_string_view const zl = zeroless_view32(val.bytes);
+    size_t const field_len =
+        zl.size() == 1 && zl[0] <= 0x7f ? 1 : 2 + zl.size();
+    if (static_cast<size_t>(out + len - field) == field_len) {
+        std::memcpy(out + len - zl.size(), zl.data(), zl.size());
+    }
+    else {
+        e->rlp = nullptr;
+    }
+    return true;
+}
+#endif
 
 void OffsetTrie::fold_ext_node_path_maybe(
     NodeId const ext_parent, NibblesView const prefix, NodeViewBase const child)

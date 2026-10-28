@@ -58,8 +58,40 @@ extern "C" void monad_zkvm_keccak256_trie_prime(
 extern "C" void monad_zkvm_keccak256_trie_patch(
     void const *in, size_t len, uint8_t out[KECCAK256_SIZE]);
 
+#if defined(MONAD_ZKVM_ZISK)
+// The same digest for the lengths callers most often pass as constants: an
+// address, a key or a slot, a public key. Each asks the known-input table at
+// its length and otherwise builds its one padded block with the length folded
+// in; see keccak256_one_block_n in zkvm/guest/keccak_accel.cpp.
+extern "C" void monad_zkvm_keccak256_20(
+    void const *in, uint8_t out[KECCAK256_SIZE]);
+extern "C" void monad_zkvm_keccak256_32(
+    void const *in, uint8_t out[KECCAK256_SIZE]);
+extern "C" void monad_zkvm_keccak256_64(
+    void const *in, uint8_t out[KECCAK256_SIZE]);
+#endif
+
 [[gnu::always_inline]] static inline void monad_keccak256(
     void const *const in, size_t const len, uint8_t out[KECCAK256_SIZE])
 {
+#if defined(MONAD_ZKVM_ZISK)
+    // gcc settles __builtin_constant_p only after inlining, so this sees the
+    // length of the caller the wrapper ends up in. A site where it does not
+    // fold keeps the general entry, which computes the same digest.
+    if (__builtin_constant_p(len)) {
+        if (len == 32) {
+            monad_zkvm_keccak256_32(in, out);
+            return;
+        }
+        if (len == 20) {
+            monad_zkvm_keccak256_20(in, out);
+            return;
+        }
+        if (len == 64) {
+            monad_zkvm_keccak256_64(in, out);
+            return;
+        }
+    }
+#endif
     monad_zkvm_keccak256_fast(in, len, out);
 }

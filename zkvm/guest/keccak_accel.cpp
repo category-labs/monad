@@ -273,32 +273,29 @@ static inline uint64_t fcall_get_keccakf_index(uint64_t const *const state)
 // first. Every slot past `keccakf_memo_used` is untouched, and untouched memory
 // reads zero on ZisK: the memory AIR constrains a first read to 0. A miss
 // publishes this slot, so the next call stands on a fresh one; a hit clears
-// the seventeen lanes a one-block digest writes before it returns; and the
-// spare past a full table, the one slot reused as it is, is permuted in place
-// and cleared whole before the call returns.
-static void keccak256_one_block(
-    void const *const in, size_t const len, uint8_t out[32])
+// the lanes the block's builder wrote before it returns; and the spare past a
+// full table, the one slot reused as it is, is permuted in place and cleared
+// whole before the call returns.
+//
+// This is the half after the padded pre-state is built, shared by the
+// runtime-length builder and the constant-length entries below. `Lanes` is how
+// many leading lanes the builder may have written; a hit clears those and lane
+// 16, which every builder writes. No permutation ran in the slot on a hit, so
+// every other lane is still zero.
+template <size_t Lanes>
+[[gnu::always_inline]] static inline void keccak256_one_block_finish(
+    KeccakfEntry &e, uint64_t const used, uint8_t out[32])
 {
-    static_assert(135 == 16 * 8 + 7, "the pad bit is byte 7 of lane 16");
-
-    // Read once: an fcall or a permutation is an asm statement that may touch
-    // any memory, so gcc reads the global again after each of them, and the
-    // entry's address with it.
-    uint64_t const used = keccakf_memo_used;
-    KeccakfEntry &e = keccakf_memo[used];
+    static_assert(Lanes >= 1 && Lanes <= 17);
     uint64_t *const s = e.in;
-
-    if (len) {
-        std::memcpy(s, in, len);
-    }
-    reinterpret_cast<unsigned char *>(s)[len] = 0x01;
-    s[16] |= uint64_t{0x80} << 56;
 
     uint64_t const index = fcall_get_keccakf_index(s);
     if (index < used && keccakf_state_eq(keccakf_memo[index].in, s)) {
         std::memcpy(out, keccakf_memo[index].out, 32);
-        // Lanes 0-16, the rate: the block wrote bytes 0..len and byte 135.
-        std::memset(s, 0, 17 * sizeof(uint64_t));
+        std::memset(s, 0, Lanes * sizeof(uint64_t));
+        if constexpr (Lanes < 17) {
+            s[16] = 0;
+        }
         return;
     }
 
@@ -323,6 +320,63 @@ static void keccak256_one_block(
     // move until both halves are there.
     keccakf_memo_used = used + 1;
     std::memcpy(out, e.out, 32);
+}
+
+static void keccak256_one_block(
+    void const *const in, size_t const len, uint8_t out[32])
+{
+    static_assert(135 == 16 * 8 + 7, "the pad bit is byte 7 of lane 16");
+
+    // Read once: an fcall or a permutation is an asm statement that may touch
+    // any memory, so gcc reads the global again after each of them, and the
+    // entry's address with it.
+    uint64_t const used = keccakf_memo_used;
+    KeccakfEntry &e = keccakf_memo[used];
+    uint64_t *const s = e.in;
+
+    if (len) {
+        std::memcpy(s, in, len);
+    }
+    reinterpret_cast<unsigned char *>(s)[len] = 0x01;
+    s[16] |= uint64_t{0x80} << 56;
+
+    // Lanes 0-16, the rate: the block wrote bytes 0..len and byte 135.
+    keccak256_one_block_finish<17>(e, used, out);
+}
+
+// The same digest for a length known at compile time -- an address, a key, a
+// public key -- entered from monad_keccak256 when the caller's length folds to
+// a constant. The constant takes out what only a runtime length needs: the
+// one-block-or-sponge test, the length handed to the block copy, and the
+// read-modify-write of lane 16.
+//
+// The scratch is zero on entry (see keccak256_one_block_finish), so the pad
+// stores below write into zero bytes. The 0x01 goes in whole when it starts a
+// lane, and as a byte otherwise, since the lane's low bytes are input. Lane 16
+// can take the 0x80 as a plain store only while no input or 0x01 byte reaches
+// it, that is N + 1 <= 128; at N = 135 the two pad bytes share byte 135 and
+// the lane would need 0x81.
+template <size_t N>
+static void keccak256_one_block_n(void const *const in, uint8_t out[32])
+{
+    static_assert(135 == 16 * 8 + 7, "the pad bit is byte 7 of lane 16");
+    static_assert(N >= 1 && N + 1 <= 16 * 8, "lane 16 holds only the pad bit");
+
+    uint64_t const used = keccakf_memo_used;
+    KeccakfEntry &e = keccakf_memo[used];
+    uint64_t *const s = e.in;
+
+    std::memcpy(s, in, N);
+    if constexpr (N % 8 == 0) {
+        s[N / 8] = 0x01;
+    }
+    else {
+        reinterpret_cast<unsigned char *>(s)[N] = 0x01;
+    }
+    s[16] = uint64_t{0x80} << 56;
+
+    // The input and the 0x01 span the first (N + 1 + 7) / 8 lanes.
+    keccak256_one_block_finish<(N + 1 + 7) / 8>(e, used, out);
 }
 
 // One permutation of the pre-state standing in the scratch slot,
@@ -845,7 +899,7 @@ keccak256_memo_digest(void const *const in, size_t const len, uint8_t out[32])
 
 #endif // MONAD_ZKVM_KECCAKF_MEMO
 
-// Only `syscall_keccak_f` above and the two entry points below carry C linkage;
+// Only `syscall_keccak_f` above and the entry points below carry C linkage;
 // everything between them is C++ and the sponge is a template, which may not have it.
 
 // The only Keccak-f this guest runs. With the memo on it IS the permutation,
@@ -1129,6 +1183,30 @@ static void keccak256_sponge(
     std::memcpy(out, st, 32);
 }
 
+#ifdef MONAD_ZKVM_ZISK
+// The constant-length entries monad_keccak256 picks when its length folds; see
+// keccak256_one_block_n. The known-input table is asked first, as the general
+// entry asks it, here with the length folded into its probe. With the memo
+// compiled out a miss is the plain sponge at that length, so the header can
+// name the entries without knowing whether the memo is in.
+template <size_t N>
+[[gnu::always_inline]] static inline void
+keccak256_n(void const *in, uint8_t out[32])
+{
+    // Tied to their argument registers, as in monad_zkvm_keccak256_fast.
+    asm("" : "+r"(in), "+r"(out));
+    if (monad::zkvm::known_input_hash(
+            static_cast<unsigned char const *>(in), N, out)) {
+        return;
+    }
+    #if MONAD_ZKVM_KECCAKF_MEMO
+    keccak256_one_block_n<N>(in, out);
+    #else
+    keccak256_sponge<true>(in, N, out);
+    #endif
+}
+#endif
+
 #if defined(MONAD_ZKVM_ZISK) && MONAD_ZKVM_KECCAKF_MEMO
 template <Filing F>
 static void keccak256_trie(void const *in, size_t len, uint8_t out[32])
@@ -1168,6 +1246,23 @@ void monad_zkvm_keccak256_fast(void const *in, size_t len, uint8_t out[32])
     }
     keccak256_sponge<true>(in, len, out);
 }
+
+#ifdef MONAD_ZKVM_ZISK
+void monad_zkvm_keccak256_20(void const *const in, uint8_t out[32])
+{
+    keccak256_n<20>(in, out);
+}
+
+void monad_zkvm_keccak256_32(void const *const in, uint8_t out[32])
+{
+    keccak256_n<32>(in, out);
+}
+
+void monad_zkvm_keccak256_64(void const *const in, uint8_t out[32])
+{
+    keccak256_n<64>(in, out);
+}
+#endif
 
 // A trie node's digest as the pre-state check takes it, and as the post-state
 // takes it again (Filing). An input of one rate block keeps the memo's usual

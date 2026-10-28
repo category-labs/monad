@@ -83,7 +83,7 @@ MONAD_NAMESPACE_BEGIN
     // the block where this one takes 36, and runs past the Keccak-f memo:
     // a sender that recurs in the block recurs here too.
     uint8_t key_hash[KECCAK256_SIZE];
-    monad_zkvm_keccak256_fast(pubkey, 64, key_hash);
+    monad_keccak256(pubkey, 64, key_hash);
 
     std::memcpy(out.data(), key_hash + 12, out.size());
 

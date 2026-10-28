@@ -4659,6 +4659,34 @@ namespace monad::vm::interpreter
             *stack_top = *dup_source;
             MONAD_VM_DISPATCH(1, 1, *instr_ptr);
         }
+        else if constexpr (OP == CALLDATALOAD || OP == EQ || OP == ISZERO) {
+    #if defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
+            MONAD_VM_CHARGE(static_cast<compiler::EvmOpCode>(OP));
+    #else
+            gas_remaining -=
+                static_gas<traits, static_cast<compiler::EvmOpCode>(OP)>();
+    #endif
+            if constexpr (OP == CALLDATALOAD) {
+                runtime::calldataload(&ctx, stack_top.next_slot(), dup_source);
+                MONAD_VM_DISPATCH(1, 1, *instr_ptr);
+            }
+            else {
+                // ISZERO replaces the duplicate; EQ consumes it and the old
+                // top.
+                constexpr std::ptrdiff_t result_slot = OP == ISZERO ? 1 : 0;
+                bool const result = OP == ISZERO
+                                        ? !*dup_source
+                                        : zisk_equal32(
+                                              dup_source->as_words().data(),
+                                              stack_top[0].as_words().data());
+                if constexpr (fuse_comparison) {
+                    MONAD_VM_COMPARISON_DISPATCH(
+                        instr_ptr[1], stack_top + result_slot, result);
+                }
+                stack_top[result_slot] = result;
+                MONAD_VM_DISPATCH(1, result_slot, *instr_ptr);
+            }
+        }
         else {
             MONAD_VM_CHECK(static_cast<compiler::EvmOpCode>(OP));
             if constexpr (OP == ADD) {

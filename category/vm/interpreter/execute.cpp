@@ -172,6 +172,9 @@ namespace monad::vm::interpreter
     #define MONAD_VM_DUP_THEN(NAME, OP, SUFFIX)                                \
         "\ttail monad_vm_slot_" #NAME "_" #OP "_dup" #SUFFIX                   \
         "\n" MONAD_VM_NOP5 "\tnop\n\tnop\n\tnop\n"
+    #define MONAD_VM_DUP_OF_14 ~, THEN // EQ
+    #define MONAD_VM_DUP_OF_15 ~, THEN // ISZERO
+    #define MONAD_VM_DUP_OF_35 ~, THEN // CALLDATALOAD
     #define MONAD_VM_DUP_OF_01 ~, THEN // ADD
     #define MONAD_VM_DUP_OF_03 ~, THEN // SUB
     #define MONAD_VM_DUP_OF_10 ~, THEN // LT
@@ -1099,6 +1102,9 @@ namespace monad::vm::interpreter
     #undef MONAD_VM_NEXT_COPY_0
     #undef MONAD_VM_DUP_PLAIN
     #undef MONAD_VM_DUP_THEN
+    #undef MONAD_VM_DUP_OF_14
+    #undef MONAD_VM_DUP_OF_15
+    #undef MONAD_VM_DUP_OF_35
     #undef MONAD_VM_DUP_OF_01
     #undef MONAD_VM_DUP_OF_03
     #undef MONAD_VM_DUP_OF_10

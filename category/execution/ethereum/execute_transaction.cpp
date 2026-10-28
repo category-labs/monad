@@ -313,7 +313,15 @@ evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
 
     // EIP-3651
     if constexpr (traits::evm_rev() >= MONAD_ETH_SHANGHAI) {
+#if defined(MONAD_ZKVM_ZISK)
+        // Made by the State on the row it makes for the beneficiary, if it
+        // makes one: see State::defer_beneficiary.
+        if (!state.defers_beneficiary()) {
+            host.access_account(header_.beneficiary);
+        }
+#else
         host.access_account(header_.beneficiary);
+#endif
     }
 
     state.access_account(sender_);
@@ -486,7 +494,15 @@ Receipt ExecuteTransaction<traits>::execute_final(
         staking::collect_priority_fee(state, reward);
     }
     else {
+#if defined(MONAD_ZKVM_ZISK)
+        // Held back in the block's state when the transaction made no row
+        // for the beneficiary: see State::defer_beneficiary_credit.
+        if (!state.defer_beneficiary_credit(reward)) {
+            state.add_to_balance(header_.beneficiary, reward);
+        }
+#else
         state.add_to_balance(header_.beneficiary, reward);
+#endif
     }
 
     // finalize state, Eqn. 77-79
@@ -618,6 +634,21 @@ Result<Receipt> ExecuteTransaction<traits>::execute(SequentialExecutionToken)
 
     State state{block_state_, Incarnation{header_.number, i_ + 1}};
     state.set_original_nonce(sender_, tx_.nonce);
+#if defined(MONAD_ZKVM_ZISK)
+    // The token's loop runs one transaction at a time and credits the
+    // beneficiary's pending fees before the block's state is released, so a
+    // fee held back in the block's state reaches the account before anything
+    // reads it. Only this path holds fees back: a transaction run ahead of
+    // its predecessor's merge could read the entry before a fee it must see
+    // was held back, and can_merge, which compares entries, would not see
+    // the fee. Ethereum's only, where no reserve balance is tracked on a
+    // credit.
+    if constexpr (
+        traits::evm_rev() >= MONAD_ETH_SHANGHAI &&
+        !::monad::is_monad_trait_v<traits>) {
+        state.defer_beneficiary();
+    }
+#endif
 
     call_tracer_.reset();
     trace::reset(state_tracer_);

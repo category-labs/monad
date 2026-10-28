@@ -169,6 +169,12 @@ Result<bytes32_t> execute_block_zkvm(
     // block_gas_used stays within the block limit and subtraction cannot wrap.
     uint64_t block_gas_used = 0;
 
+#if defined(MONAD_ZKVM_ZISK)
+    // The transactions' fees to the beneficiary are held in block_state until
+    // its account is next read; see State::defer_beneficiary.
+    block_state.set_beneficiary(block.header.beneficiary);
+#endif
+
     for (uint64_t i = 0; i < block.transactions.size(); ++i) {
         if (MONAD_UNLIKELY(
                 block.transactions[i].gas_limit >
@@ -292,6 +298,12 @@ Result<bytes32_t> execute_block_zkvm(
 
     MONAD_ASSERT(block_state.can_merge(state));
     block_state.merge(state);
+#if defined(MONAD_ZKVM_ZISK)
+    // The fees no State has read since they were held back: the last
+    // transactions', when neither they nor the withdrawals and system calls
+    // after them read the beneficiary.
+    block_state.flush_beneficiary_credit();
+#endif
 
     // Commit accumulated state deltas to the partial trie, then read the
     // post-state root back.

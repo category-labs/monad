@@ -60,6 +60,20 @@
 
 MONAD_MPT_NAMESPACE_BEGIN
 
+#if defined(MONAD_ZKVM_KECCAKF_RESUME)
+namespace
+{
+    // The word of a hashed node's window after a branch's sixteen ref starts
+    // (see encode_rlp), where the priming hash leaves its Keccak mark for
+    // patch_ref. No node's RLP is longer than a branch's, so none reaches it,
+    // and an inlined node, whose window the next node reuses, never hashes.
+    constexpr size_t PRIME_MARK_WORD = 16;
+    static_assert(
+        MAX_NODE_RLP - (3 + 16 * HASH_RLP_LEN + 1) >=
+        (PRIME_MARK_WORD + 1) * sizeof(uint64_t));
+}
+#endif
+
 NodeId OffsetTrie::read_root(byte_string_view const blob)
 {
     unsigned char const *const base = blob.data();
@@ -413,7 +427,23 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
             e->rlp_len = rem.rlp_size();
             walk_hash_slots[node_offset >> 2] = e;
             walk_window += RLP_WINDOW_STRIDE;
+#if defined(MONAD_ZKVM_KECCAKF_RESUME)
+            // A node of a whole rate block or more leaves its mark in its
+            // window, which is fresh memory and reads zero, "none", where the
+            // hash leaves nothing. Only a patched branch reads it.
+            if (rem.rlp_size() >= KECCAK256_RATE) {
+                monad_zkvm_keccak256_trie_prime_mark(
+                    rem.rlp_data(),
+                    rem.rlp_size(),
+                    e->h.bytes,
+                    reinterpret_cast<uint64_t *>(window) + PRIME_MARK_WORD);
+            }
+            else {
+                TRIE_PRIME_DIGEST(rem.rlp_data(), rem.rlp_size(), e->h.bytes);
+            }
+#else
             TRIE_PRIME_DIGEST(rem.rlp_data(), rem.rlp_size(), e->h.bytes);
+#endif
 #else
             TRIE_PRIME_DIGEST(rem.rlp_data(), rem.rlp_size(), ch.h.bytes);
             hashes_.insert_or_assign(NodeId{node_offset}, ch);
@@ -704,7 +734,8 @@ namespace
 // those is recomputed and written over its ref, in the window itself: `dirty`
 // never clears, so every patch rewrites all of them, and a ref is only written
 // when its length holds. A ref whose length changed would move everything after
-// it: that case, zero, falls back to a full encode.
+// it: that case, zero, falls back to a full encode. So nothing before the first
+// dirty ref is ever written, which patch_ref's resumed digest relies on.
 size_t OffsetTrie::patch_rlp(CachedHash const &e, NodeViewBase const node)
 {
     size_t const len = e.rlp_len;
@@ -810,6 +841,38 @@ bool OffsetTrie::patch_ref(
                         return false;
                     }
                     MONAD_KECCAK_SITE(TRIE_ENCODE, len);
+#if defined(MONAD_ZKVM_KECCAKF_RESUME)
+                    // The bytes before the first dirty child's ref are the
+                    // ones the priming hash absorbed: every patch wrote only
+                    // at the refs of children dirty then, and `dirty` never
+                    // clears, so at or after the first one dirty now -- and
+                    // a patch keeps each ref's length, so the list header
+                    // too. The digest resumes after the whole blocks there.
+                    uint64_t const dirty = e->dirty;
+                    if (tag == BRANCH && dirty != 0) {
+                        auto const *const head = reinterpret_cast<
+                            uint64_t const *>(e->rlp + len - MAX_NODE_RLP);
+                        size_t const unchanged =
+                            head[std::countr_zero(dirty)] -
+                            reinterpret_cast<uintptr_t>(e->rlp);
+                        // A branch's RLP is 532 bytes at most.
+                        size_t const blocks =
+                            unchanged >= 3 * KECCAK256_RATE   ? 3
+                            : unchanged >= 2 * KECCAK256_RATE ? 2
+                            : unchanged >= KECCAK256_RATE     ? 1
+                                                              : 0;
+                        if (blocks != 0) {
+                            monad_zkvm_keccak256_trie_resume(
+                                e->rlp,
+                                len,
+                                e->h.bytes,
+                                head[PRIME_MARK_WORD],
+                                blocks);
+                            e->stale = 0;
+                            return true;
+                        }
+                    }
+#endif
                     TRIE_PATCH_DIGEST(e->rlp, len, e->h.bytes);
                     e->stale = 0;
                     return true;

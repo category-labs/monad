@@ -85,6 +85,18 @@ namespace monad::vm
             return it->second;
         }
 
+        // Preload witness code under its verified hash, moving the intercode
+        // without incrementing its reference count. Keep existing duplicates.
+        void
+        insert_varcode(bytes32_t const &code_hash, SharedIntercode &&intercode)
+        {
+            auto const [it, inserted] =
+                varcode_.try_emplace(code_hash, nullptr);
+            if (inserted) {
+                it->second = std::make_shared<Varcode>(std::move(intercode));
+            }
+        }
+
         SharedVarcode try_insert_varcode_raw(
             bytes32_t const &code_hash, std::span<uint8_t const> const code)
         {

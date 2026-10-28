@@ -109,6 +109,11 @@ class State
     // aux indexes the matching payload vector. Use addresses because map
     // erasure
     // can move entries.
+    //
+    // Every append to a payload vector comes with its own record, whose aux is
+    // the vector's size before the append: the guest's pop_reject finds each
+    // vector's size at the frame mark in the aux of the frame's earliest record
+    // of a kind that uses it.
     struct Undo
     {
         enum class Kind : unsigned char
@@ -128,7 +133,8 @@ class State
             FlagTouched,
             FlagDestructed,
             FlagAccessed,
-            // undo_words_[aux]: appended warm-slot key.
+            // undo_words_[aux]: appended warm-slot key. The guest keeps no
+            // key, and its aux is 0: the key to remove is the row's last.
             WarmSlot,
             // undo_slots_[aux]
             Slot,
@@ -183,7 +189,11 @@ class State
     void journal_code_hash(Address const &address, bytes32_t const &prev);
     void journal_nonce(Address const &address, std::uint64_t prev);
     void journal_flag(Address const &address, Undo::Kind which);
+#ifdef MONAD_ZKVM_ZISK
+    void journal_warm_slot(Address const &address);
+#else
     void journal_warm_slot(Address const &address, bytes32_t const &key);
+#endif
     void journal_slot(
         Address const &address, bytes32_t const &key,
         bytes32_t const *prev);
@@ -194,7 +204,14 @@ class State
     // True when a frame is open, i.e. when anything could still roll back.
     [[nodiscard]] bool journalling() const
     {
+#if defined(MONAD_ZKVM_ZISK) && defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
+        // One load where the vector test is two: push and both pops assert
+        // undo_marks_.size() == version_, and no journal is written between
+        // a pop's mark and its decrement.
+        return version_ != 0;
+#else
         return !undo_marks_.empty();
+#endif
     }
 
     std::vector<Undo> undo_{};
@@ -204,6 +221,26 @@ class State
     std::vector<SlotUndo> undo_slots_{};
     std::vector<PageTracker> undo_pages_{};
 
+#ifdef MONAD_ZKVM_ZISK
+    // Each open frame's watermark in undo_ and in logs_, in bytes. The payload
+    // vectors' are not kept: a rejection reads them from its records' aux (see
+    // Undo), and every frame paid for six of them where few are rejected.
+    struct UndoMark
+    {
+        size_t log;
+        size_t logs;
+
+        // Built through a constructor, as SlotUndo is: an aggregate mark was
+        // zeroed whole before its fields were written.
+        UndoMark(size_t const log_at, size_t const logs_at)
+            : log{log_at}
+            , logs{logs_at}
+        {
+        }
+    };
+
+    static_assert(sizeof(UndoMark) == 16);
+#else
     // Each open frame's watermark in all six vectors. `accts` is in bytes:
     // an optional<Account> is 88 of them, and a count would cost a multiply
     // by 11's inverse on every frame, where only a rejection needs it.
@@ -216,37 +253,22 @@ class State
         size_t slots;
         size_t pages;
         // Power-of-two size for cheaper vector::size(), as in Undo.
-#ifdef MONAD_ZKVM_ZISK
-        // Left as it is, as SlotUndo's: built as an aggregate, the mark was
-        // zeroed whole, a 64-byte memset on every frame.
-        size_t pad_[2];
-
-        UndoMark(
-            size_t const log_at, size_t const accts_at, size_t const words_at,
-            size_t const u64_at, size_t const slots_at, size_t const pages_at)
-            : log{log_at}
-            , accts{accts_at}
-            , words{words_at}
-            , u64{u64_at}
-            , slots{slots_at}
-            , pages{pages_at}
-        {
-        }
-#else
         size_t pad_[2]{};
-#endif
     };
 
     static_assert(sizeof(UndoMark) == 64);
+#endif
 
     std::vector<UndoMark> undo_marks_{};
 
     // Logs are append-only. Each frame saves the current size so reverting
     // can discard its logs without persistent-vector snapshots.
     std::vector<Receipt::Log> logs_{};
+#ifndef MONAD_ZKVM_ZISK
     // One saved size per open frame, in bytes as UndoMark::accts (a Log is
-    // 80); log_marks_.size() == version_.
+    // 80); log_marks_.size() == version_. The guest keeps it in UndoMark.
     std::vector<size_t> log_marks_{};
+#endif
 
     Map<bytes32_t, vm::SharedVarcode> code_{};
 
@@ -407,7 +429,7 @@ public:
 
     void push();
 #if defined(MONAD_ZKVM_ZISK)
-    // push with a mark row full: both grown, then push.
+    // push with the mark row full: grown, then push.
     [[gnu::noinline, gnu::cold]] void push_after_growing();
 #endif
 

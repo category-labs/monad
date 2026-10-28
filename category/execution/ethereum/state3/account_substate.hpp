@@ -179,6 +179,18 @@ public:
     }
 
     // Warm slots are appended; reverse replay must remove the last key.
+#ifdef MONAD_ZKVM_ZISK
+    // The guest's journal does not keep the key: accessed_storage_ grows only
+    // by a push_back that a warm-slot record follows whenever a frame is open,
+    // and shrinks only here, so reverse replay always finds its key last. The
+    // host build keeps the key and checks it.
+    void undo_warm_slot()
+    {
+        MONAD_ASSERT(!accessed_storage_.empty());
+        accessed_storage_.pop_back();
+        aidx_.reset();
+    }
+#else
     void undo_warm_slot(bytes32_t const &key)
     {
         MONAD_ASSERT(!accessed_storage_.empty());
@@ -187,10 +199,8 @@ public:
                 accessed_storage_.back().bytes, key.bytes, sizeof(key.bytes)) ==
             0);
         accessed_storage_.pop_back();
-#ifdef MONAD_ZKVM_ZISK
-        aidx_.reset();
-#endif
     }
+#endif
 };
 
 // Guard against unintended growth of the per-account substate.

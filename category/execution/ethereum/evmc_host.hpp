@@ -277,5 +277,7 @@ static_assert(
     alignof(EvmcHost<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>) == 8);
 static_assert(sizeof(EvmcHost<MonadTraits<MONAD_NEXT>>) == 136);
 static_assert(alignof(EvmcHost<MonadTraits<MONAD_NEXT>>) == 8);
+static_assert(sizeof(EvmcHost<MonadTraits<MONAD_NEXT_AMSTERDAM>>) == 136);
+static_assert(alignof(EvmcHost<MonadTraits<MONAD_NEXT_AMSTERDAM>>) == 8);
 
 MONAD_NAMESPACE_END

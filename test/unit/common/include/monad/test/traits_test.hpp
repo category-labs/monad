@@ -155,22 +155,22 @@ namespace detail
     }
 
     using MonadRevisionTypes = decltype(make_monad_revision_types(
-        std::make_index_sequence<MONAD_NEXT + 1>{}));
+        std::make_index_sequence<MONAD_MAX_REVISION + 1>{}));
 
     template <monad_eth_revision Since>
     using MonadRevisionTypesSinceEvmRevision =
         decltype(make_monad_revision_types_since<Since>(
-            std::make_index_sequence<MONAD_NEXT + 1>{}));
+            std::make_index_sequence<MONAD_MAX_REVISION + 1>{}));
 
     template <monad_revision Since>
     using MonadRevisionTypesSince =
         decltype(make_monad_revision_types_since<Since>(
-            std::make_index_sequence<MONAD_NEXT + 1>{}));
+            std::make_index_sequence<MONAD_MAX_REVISION + 1>{}));
 
     template <monad_revision Before>
     using MonadRevisionTypesBefore =
         decltype(make_monad_revision_types_before<Before>(
-            std::make_index_sequence<MONAD_NEXT + 1>{}));
+            std::make_index_sequence<MONAD_MAX_REVISION + 1>{}));
 
     // Skip the unsupported early forks and the MONAD_ETH_MAX_REVISION /
     // EXPERIMENTAL sentinel. Generate revisions in the closed range

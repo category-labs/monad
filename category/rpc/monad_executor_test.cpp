@@ -309,20 +309,7 @@ namespace
                 gas_specified ? tx.gas_limit : MONAD_ETH_CALL_LOW_GAS_LIMIT,
             .status = MONAD_STATUS_SUCCESS,
             .depth = 0,
-            // EIP-7708: log this transfer
-            .logs =
-                std::vector<CallFrame::Log>{
-                    {Receipt::Log{
-                         .data = byte_string{store_be_as<bytes32_t>(
-                             uint256_t{0x10000})},
-                         .topics =
-                             std::vector{
-                                 transfer_sig,
-                                 abi_encode_address(from),
-                                 abi_encode_address(ADDR_B),
-                             },
-                         .address = ETH_SYSTEM_ADDRESS},
-                     0}},
+            .logs = std::vector<CallFrame::Log>{},
         };
 
         byte_string_view view(rlp_call_frames);
@@ -529,6 +516,7 @@ TEST_F(EthCallFixture, on_proposed_block)
 
 TEST_F(EthCallFixture, eth_call_slot_number)
 {
+    GTEST_SKIP() << "MONAD_NEXT_AMSTERDAM has no chain config (EXE-248)";
     for (uint64_t i = 0; i < 256; ++i) {
         commit_sequential(tdb, StateDeltas({}), {}, BlockHeader{.number = i});
     }
@@ -2317,6 +2305,7 @@ TEST_F(EthCallFixture, trace_block_with_prestate)
 
 TEST_F(EthCallFixture, trace_block_slot_number)
 {
+    GTEST_SKIP() << "MONAD_NEXT_AMSTERDAM has no chain config (EXE-248)";
     static constexpr Address ADDR_A =
         0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_address;
 
@@ -5311,6 +5300,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_simple_transfer)
 
 TEST_F(EthCallFixture, eth_simulate_slot_number)
 {
+    GTEST_SKIP() << "MONAD_NEXT_AMSTERDAM has no chain config (EXE-248)";
     using namespace monad::vm::utils;
 
     static constexpr Address sender =
@@ -5425,6 +5415,7 @@ TEST_F(EthCallFixture, eth_simulate_slot_number)
 
 TEST_F(EthCallFixture, eth_simulate_v1_slot_number_across_amsterdam)
 {
+    GTEST_SKIP() << "MONAD_NEXT_AMSTERDAM has no chain config (EXE-248)";
     using namespace monad::vm::utils;
 
     static constexpr uint64_t fork_timestamp = 100;
@@ -7201,41 +7192,10 @@ TEST_F(EthCallFixture, eth_simulate_v1_deploy_and_call)
         std::format("0x{}", to_hex(expected_bytes));
     EXPECT_EQ(output[1]["calls"][0]["returnData"], expected_return_data);
 
-    // EIP-7708 Transfer logs bracket the contract's LOG0: sender -> deployed
-    // (10 MON), then deployed -> beneficiary (5 MON) from the internal call.
-    auto const topic_hex = [](bytes32_t const &b) {
-        return std::format("0x{}", to_hex(b));
-    };
-    auto const transfer_topic0 = topic_hex(transfer_sig);
-    auto const *const system_address =
-        "0xfffffffffffffffffffffffffffffffffffffffe";
-    auto const expected_full =
-        std::format("0x{}", to_hex(store_be_as<bytes32_t>(10_ether)));
-
-    ASSERT_EQ(output[1]["calls"][0]["logs"].size(), 3);
-
-    auto const &transfer_in = output[1]["calls"][0]["logs"][0];
-    EXPECT_EQ(transfer_in["address"], system_address);
-    EXPECT_EQ(transfer_in["data"], expected_full);
-    ASSERT_EQ(transfer_in["topics"].size(), 3);
-    EXPECT_EQ(transfer_in["topics"][0], transfer_topic0);
-    EXPECT_EQ(transfer_in["topics"][1], topic_hex(abi_encode_address(sender)));
-    EXPECT_EQ(
-        transfer_in["topics"][2], topic_hex(abi_encode_address(deployed)));
-
-    EXPECT_EQ(output[1]["calls"][0]["logs"][1]["data"], expected_return_data);
-    EXPECT_EQ(output[1]["calls"][0]["logs"][1]["topics"].size(), 0);
-    EXPECT_EQ(output[1]["calls"][0]["logs"][1]["blockNumber"], "0x3");
-
-    auto const &transfer_out = output[1]["calls"][0]["logs"][2];
-    EXPECT_EQ(transfer_out["address"], system_address);
-    EXPECT_EQ(transfer_out["data"], expected_return_data);
-    ASSERT_EQ(transfer_out["topics"].size(), 3);
-    EXPECT_EQ(transfer_out["topics"][0], transfer_topic0);
-    EXPECT_EQ(
-        transfer_out["topics"][1], topic_hex(abi_encode_address(deployed)));
-    EXPECT_EQ(
-        transfer_out["topics"][2], topic_hex(abi_encode_address(beneficiary)));
+    ASSERT_EQ(output[1]["calls"][0]["logs"].size(), 1);
+    EXPECT_EQ(output[1]["calls"][0]["logs"][0]["data"], expected_return_data);
+    EXPECT_EQ(output[1]["calls"][0]["logs"][0]["topics"].size(), 0);
+    EXPECT_EQ(output[1]["calls"][0]["logs"][0]["blockNumber"], "0x3");
 
     // Third simulated block: balance checker confirms beneficiary received 5
     // MON.
@@ -7258,6 +7218,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_deploy_and_call)
 // EIP-7708 is active here, so traceTransfers adds nothing.
 TEST_F(EthCallFixture, eth_simulate_v1_native_transfer_logs)
 {
+    GTEST_SKIP() << "MONAD_NEXT_AMSTERDAM has no chain config (EXE-248)";
     using namespace monad::vm::utils;
 
     static constexpr Address sender =
@@ -7443,6 +7404,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_native_transfer_logs)
 
 TEST_F(EthCallFixture, eth_simulate_v1_trace_transfers_across_amsterdam)
 {
+    GTEST_SKIP() << "MONAD_NEXT_AMSTERDAM has no chain config (EXE-248)";
     static constexpr uint64_t fork_timestamp = 100;
     static constexpr Address sender =
         0x00000000000000000000000000000000deadbeef_address;

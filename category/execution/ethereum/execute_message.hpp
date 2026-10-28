@@ -32,15 +32,18 @@ struct EvmcHost;
 class State;
 
 template <Traits traits>
-evmc::Result
-deploy_contract_code(State &, Address const &, evmc::Result) noexcept;
+evmc::Result deploy_contract_code(
+    State &, Address const &, evmc::Result,
+    uint64_t *growth_gas_ptr = nullptr) noexcept;
 
 template <Traits traits>
-evmc::Result
-execute_create_message(EvmcHost<traits> *, State &, evmc_message const &);
+evmc::Result execute_create_message(
+    EvmcHost<traits> *, State &, evmc_message const &,
+    uint64_t *growth_gas_ptr = nullptr);
 
 template <Traits traits>
-evmc::Result
-execute_call_message(EvmcHost<traits> *, State &, evmc_message const &);
+evmc::Result execute_call_message(
+    EvmcHost<traits> *, State &, evmc_message const &,
+    uint64_t *growth_gas_ptr = nullptr);
 
 MONAD_NAMESPACE_END

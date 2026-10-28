@@ -47,6 +47,7 @@
 
 #if defined(MONAD_ZKVM_ZISK)
     #include <category/crypto/keccak.h>
+    #include <zkvm/core/zkvm_halt.h>
 #endif
 
 #ifdef MONAD_ZKVM_SELFTEST
@@ -200,4 +201,8 @@ extern "C" void monad_zkvm_execute_witness(void)
     // Bind execution to the header hashed above before publishing its hash.
     MONAD_ASSERT(root_result.value() == block.header.state_root);
     write_output(block_hash.bytes, sizeof(block_hash.bytes));
+#ifdef MONAD_ZKVM_ZISK
+    // Output is flushed; skip destructors backed by the no-op guest free.
+    zkvm_halt(0);
+#endif
 }

@@ -2829,8 +2829,9 @@ namespace monad::vm::interpreter
         MONAD_VM_NEXT(MLOAD);
     }
 
-    // Use the generic path for allocation or a memory-limit failure.
-    // It receives the gas remaining before any expansion charge.
+    // What mstore_grow does not take, through the generic path: capacity
+    // growth, an offset of 2^28 or more (on ZisK, any from memory_grow_end
+    // up), and a size past the transaction's memory limit.
     template <Traits traits>
     [[gnu::noinline, gnu::cold]] MONAD_VM_TWIN_CALL void mstore_slow(
         runtime::Context &ctx, MONAD_VM_DISPATCH_STATE_PARAM,
@@ -2856,15 +2857,39 @@ namespace monad::vm::interpreter
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         MONAD_VM_TWIN_ENTRY();
-        // mstore validated the offset, so its low word is all of it.
+        // mstore validated the offset's high words, so its low word is all
+        // of it; on the host it is also under 2^28, on ZisK it is bounded
+        // here.
+#if defined(MONAD_ZKVM_ZISK)
+        // A low word under memory_grow_end is under 2^28, and its store grows
+        // the memory within the capacity. One from there up, past the
+        // capacity or out of range, goes through the generic path, before
+        // it is made a Memory::Offset, which must be under 2^28.
+        if (MONAD_UNLIKELY((*stack_top)[0] >= ctx.memory_grow_end)) {
+            MONAD_VM_MUST_TAIL return mstore_slow<quiet_traits<traits>>(
+                ctx,
+                MONAD_VM_ANALYSIS_ARG,
+                stack_bottom,
+                stack_top,
+                gas_remaining,
+                MONAD_VM_AS_CALLED(instr_ptr) MONAD_VM_TBL_ARG);
+        }
+#endif
         auto const offset = runtime::Memory::Offset::unsafe_from(
             static_cast<runtime::Memory::Offset::rep>((*stack_top)[0]));
         auto const word_count = runtime::Context::memory_size_to_word_count(
             offset + runtime::bin<32>);
         auto const new_size =
             runtime::Context::word_count_to_memory_size(word_count);
+#if defined(MONAD_ZKVM_ZISK)
+        // The bound above stood for the capacity test.
+        MONAD_DEBUG_ASSERT(*new_size <= ctx.memory.capacity);
+        bool const monad_vm_beyond = false;
+#else
+        bool const monad_vm_beyond = ctx.memory.capacity < *new_size;
+#endif
         if (MONAD_UNLIKELY(
-                ctx.memory.capacity < *new_size ||
+                monad_vm_beyond ||
                 !ctx.is_memory_size_in_bound<traits>(new_size))) {
             MONAD_VM_MUST_TAIL return mstore_slow<quiet_traits<traits>>(
                 ctx,
@@ -2907,25 +2932,15 @@ namespace monad::vm::interpreter
         // makes no call, so no frame.
 #if defined(MONAD_ZKVM_ZISK)
         // As in mload: high words zero and a low word under
-        // memory_access32_end. A low word from there up grows the memory.
+        // memory_access32_end. A low word from there up grows the memory,
+        // and mstore_grow bounds it: one of 2^28 or more goes through the
+        // generic path, which runs out of gas.
         uint256_t const &monad_vm_x = *stack_top;
         if (MONAD_UNLIKELY(
                 (monad_vm_x[1] | monad_vm_x[2] | monad_vm_x[3]) != 0)) {
             MONAD_VM_MUST_TAIL return ctx.exit(OutOfGas);
         }
         if (MONAD_UNLIKELY(monad_vm_x[0] >= ctx.memory_access32_end)) {
-            // mstore_grow takes a low word under 2^28; one of 2^28 or more
-            // goes through the generic path, which runs out of gas.
-            if (MONAD_UNLIKELY(
-                    (monad_vm_x[0] >> runtime::Memory::offset_bits) != 0)) {
-                MONAD_VM_MUST_TAIL return mstore_slow<quiet_traits<traits>>(
-                    ctx,
-                    MONAD_VM_DISPATCH_STATE_ARG,
-                    stack_lower_bound,
-                    stack_top,
-                    gas_remaining,
-                    MONAD_VM_AS_CALLED(instr_ptr) MONAD_VM_TBL_ARG);
-            }
             MONAD_VM_MUST_TAIL return mstore_grow<traits>(
                 ctx,
                 MONAD_VM_DISPATCH_STATE_ARG,
@@ -4921,16 +4936,6 @@ namespace monad::vm::interpreter
             }
             if (MONAD_UNLIKELY(monad_vm_x[0] >= ctx.memory_access32_end)) {
                 *(stack_top + 1) = *src;
-                if (MONAD_UNLIKELY(
-                        (monad_vm_x[0] >> runtime::Memory::offset_bits) != 0)) {
-                    MONAD_VM_MUST_TAIL return mstore_slow<quiet_traits<traits>>(
-                        ctx,
-                        MONAD_VM_DISPATCH_STATE_ARG,
-                        stack_lower_bound,
-                        stack_top + 1,
-                        gas_remaining,
-                        MONAD_VM_AS_CALLED(instr_ptr) MONAD_VM_TBL_ARG);
-                }
                 MONAD_VM_MUST_TAIL return mstore_grow<traits>(
                     ctx,
                     MONAD_VM_DISPATCH_STATE_ARG,

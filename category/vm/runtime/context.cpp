@@ -88,6 +88,9 @@ extern "C" void monad_vm_runtime_increase_capacity(
 
     ctx->memory.release();
     ctx->memory.capacity = *new_total_capacity - *parent_total_size;
+#if defined(MONAD_ZKVM_ZISK)
+    ctx->memory_grow_end = Context::memory_grow_end_of(ctx->memory.capacity);
+#endif
     ctx->memory.data_handle = new_handle;
     ctx->memory.data = new_handle + *parent_total_size;
 }
@@ -169,6 +172,9 @@ namespace monad::vm::runtime
             .result = {},
             .memory =
                 Memory(msg->memory_handle, msg->memory, msg->memory_capacity),
+#if defined(MONAD_ZKVM_ZISK)
+            .memory_grow_end = memory_grow_end_of(msg->memory_capacity),
+#endif
         };
     }
 
@@ -198,6 +204,9 @@ namespace monad::vm::runtime
                 },
             .result = {},
             .memory = Memory(memory_handle, memory_handle, memory_capacity),
+#if defined(MONAD_ZKVM_ZISK)
+            .memory_grow_end = memory_grow_end_of(memory_capacity),
+#endif
         };
     }
 

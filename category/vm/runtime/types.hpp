@@ -308,12 +308,35 @@ namespace monad::vm::runtime
         // bound and the size test took four instructions.
         uint64_t memory_access32_end = 0;
 
+        // The offsets a 32-byte store starts at growing the memory within its
+        // capacity are those below min(memory.capacity, 2^28) - 31, none
+        // while the capacity is under 32: memory_grow_end_of. Kept with
+        // memory.capacity by everything that writes it, so that mstore_grow
+        // bounds an offset's low word with one test, where its callers tested
+        // it under 2^28 and it then tested the size against the capacity.
+        // The capacity never shrinks within a frame, so a value left stale is
+        // low, and only sends a growth through the generic path.
+        uint64_t memory_grow_end = 0;
+
         // The handlers' third argument, stack_bottom, kept here by core_loop
         // with stack_limit above: a handler that calls the runtime reads both
         // back after the call instead of keeping them in saved registers.
         uint256_t const *frame_stack_bottom = nullptr;
         // The stack top across such a call, stored before it and read back.
         uint256_t *frame_stack_top = nullptr;
+
+        // The capacity is a multiple of 32, so a store at an offset below
+        // the result ends inside it, rounded up to the word. Saturated at
+        // both ends: a frame's capacity is often 0, and the result must stay
+        // a Memory::Offset.
+        [[gnu::always_inline]]
+        static constexpr uint64_t
+        memory_grow_end_of(uint64_t const capacity) noexcept
+        {
+            uint64_t const limit = uint64_t{1} << Memory::offset_bits;
+            return capacity < 32 ? 0
+                                 : (capacity < limit ? capacity : limit) - 31;
+        }
 #endif
 
         [[gnu::always_inline]]
@@ -440,6 +463,9 @@ namespace monad::vm::runtime
                     p.release();
                     p.data = memory.data - p.size;
                     p.capacity = memory.capacity + p.size;
+#if defined(MONAD_ZKVM_ZISK)
+                    parent->memory_grow_end = memory_grow_end_of(p.capacity);
+#endif
                     p.data_handle = memory.data_handle;
                 }
             }

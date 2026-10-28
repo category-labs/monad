@@ -177,34 +177,25 @@ static inline uint64_t fcall_get_keccakf_index(uint64_t const *const state)
         #endif
 }
 
-// Build a padded input (< KECCAK_RATE bytes) in the next memo entry.
-// Hints must name a published entry with an exact input match; this scratch
-// stays unpublished until both states are ready.
-// Its input starts zeroed: misses advance to fresh .bss, hits clear the
-// rate, and full-table calls clear all 200 bytes after permutation.
-static void
-keccak256_one_block(void const *const in, size_t const len, uint8_t out[32])
+// Finish a padded one-block input in the unpublished scratch entry.
+// Accept hints only for published entries with an identical full input state.
+// Scratch starts zeroed: misses advance to fresh entries; hits clear the
+// leading WrittenLanes and padding lane 16; full-table calls clear all 25
+// lanes.
+template <size_t WrittenLanes>
+[[gnu::always_inline]] static inline void keccak256_one_block_finish(
+    KeccakfEntry &entry, uint64_t const used, uint8_t out[32])
 {
-    static_assert(
-        KECCAK_RATE - 1 == 16 * 8 + 7, "the pad bit is byte 7 of lane 16");
-
-    // Keep the count local to avoid global reloads after asm memory clobbers.
-    uint64_t const used = keccakf_memo_used;
-    KeccakfEntry &entry = keccakf_memo[used];
+    static_assert(WrittenLanes >= 1 && WrittenLanes <= 17);
     uint64_t *const state = entry.in;
-
-    if (len) {
-        std::memcpy(state, in, len);
-    }
-    reinterpret_cast<unsigned char *>(state)[len] = 0x01;
-    state[16] |= uint64_t{0x80} << 56;
 
     uint64_t const index = fcall_get_keccakf_index(state);
     if (index < used && keccakf_state_eq(keccakf_memo[index].in, state)) {
         std::memcpy(out, keccakf_memo[index].out, 32);
-        // Clear 17 lanes (136 bytes) used by input and padding.
-        // No permutation ran here, so the other 64 bytes are still zero.
-        std::memset(state, 0, KECCAK_RATE);
+        std::memset(state, 0, WrittenLanes * sizeof(uint64_t));
+        if constexpr (WrittenLanes < 17) {
+            state[16] = 0;
+        }
         return;
     }
 
@@ -224,6 +215,56 @@ keccak256_one_block(void const *const in, size_t const len, uint8_t out[32])
     // Publish only after both input and output are stored.
     keccakf_memo_used = used + 1;
     std::memcpy(out, entry.out, 32);
+}
+
+static void
+keccak256_one_block(void const *const in, size_t const len, uint8_t out[32])
+{
+    static_assert(
+        KECCAK_RATE - 1 == 16 * 8 + 7, "the pad bit is byte 7 of lane 16");
+
+    // Keep the count local across asm memory clobbers.
+    uint64_t const used = keccakf_memo_used;
+    KeccakfEntry &entry = keccakf_memo[used];
+    uint64_t *const state = entry.in;
+
+    if (len) {
+        std::memcpy(state, in, len);
+    }
+    reinterpret_cast<unsigned char *>(state)[len] = 0x01;
+    state[16] |= uint64_t{0x80} << 56;
+
+    // Any of the 17 rate lanes may hold input or padding.
+    keccak256_one_block_finish<17>(entry, used, out);
+}
+
+// Fixed lengths eliminate runtime dispatch and make copy/padding sizes
+// constant. Scratch starts zeroed. The domain byte must precede lane 16,
+// allowing a plain store of the final padding bit without overwriting input.
+template <size_t InputBytes>
+static void keccak256_one_block_fixed(void const *const in, uint8_t out[32])
+{
+    static_assert(
+        KECCAK_RATE - 1 == 16 * 8 + 7, "the pad bit is byte 7 of lane 16");
+    static_assert(
+        InputBytes >= 1 && InputBytes + 1 <= 16 * 8,
+        "lane 16 holds only the pad bit");
+
+    uint64_t const used = keccakf_memo_used;
+    KeccakfEntry &entry = keccakf_memo[used];
+    uint64_t *const state = entry.in;
+
+    std::memcpy(state, in, InputBytes);
+    if constexpr (InputBytes % 8 == 0) {
+        state[InputBytes / 8] = 0x01;
+    }
+    else {
+        reinterpret_cast<unsigned char *>(state)[InputBytes] = 0x01;
+    }
+    state[16] = uint64_t{0x80} << 56;
+
+    // The input and the 0x01 span the first (InputBytes + 1 + 7) / 8 lanes.
+    keccak256_one_block_finish<(InputBytes + 1 + 7) / 8>(entry, used, out);
 }
 
 enum class Block
@@ -666,6 +707,18 @@ static void keccak256_sponge(void const *const in, size_t len, uint8_t out[32])
     std::memcpy(out, st, 32);
 }
 
+// Keep the same entry points when memoization is disabled.
+template <size_t InputBytes>
+[[gnu::always_inline]] static inline void
+keccak256_fixed(void const *const in, uint8_t out[32])
+{
+    #if MONAD_ZKVM_KECCAKF_MEMO
+    keccak256_one_block_fixed<InputBytes>(in, out);
+    #else
+    keccak256_sponge<true>(in, InputBytes, out);
+    #endif
+}
+
 extern "C"
 {
 
@@ -681,6 +734,21 @@ void monad_zkvm_keccak256_fast_nomemo(
     void const *const in, size_t len, uint8_t out[32])
 {
     keccak256_sponge<false>(in, len, out);
+}
+
+void monad_zkvm_keccak256_20(void const *const in, uint8_t out[32])
+{
+    keccak256_fixed<20>(in, out);
+}
+
+void monad_zkvm_keccak256_32(void const *const in, uint8_t out[32])
+{
+    keccak256_fixed<32>(in, out);
+}
+
+void monad_zkvm_keccak256_64(void const *const in, uint8_t out[32])
+{
+    keccak256_fixed<64>(in, out);
 }
 
 } // extern "C"

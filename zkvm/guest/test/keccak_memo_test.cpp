@@ -233,6 +233,52 @@ int main()
         }
     }
 
+    // Exercise fixed-length entries with honest/dishonest hints, hits and a
+    // full table. An empty digest afterwards checks scratch cleanup.
+    for (bool const full : {false, true}) {
+        for (auto const mode :
+             {Hint::Find,
+              Hint::Missing,
+              Hint::OutOfRange,
+              Hint::Unpublished,
+              Hint::Mismatch}) {
+            for (size_t alignment = 0; alignment < 8; ++alignment) {
+                reset();
+                size_t const initial_entries = full ? KECCAKF_MEMO_ENTRIES : 1;
+                for (size_t i = 0; i < initial_entries; ++i) {
+                    uint8_t const seed = static_cast<uint8_t>(i);
+                    check(&seed, 1);
+                }
+                hint = mode;
+                for (size_t const len : {20u, 32u, 64u}) {
+                    auto const *const input = longer.data() + alignment;
+                    auto const expected = ethash_keccak256(input, len);
+                    for (unsigned repeat = 0; repeat < 2; ++repeat) {
+                        std::array<uint8_t, 32> actual{};
+                        switch (len) {
+                        case 20:
+                            monad_zkvm_keccak256_20(input, actual.data());
+                            break;
+                        case 32:
+                            monad_zkvm_keccak256_32(input, actual.data());
+                            break;
+                        case 64:
+                            monad_zkvm_keccak256_64(input, actual.data());
+                            break;
+                        }
+                        require(
+                            std::memcmp(
+                                actual.data(), expected.bytes, actual.size()) ==
+                                0,
+                            "fixed-length digest mismatch");
+                        ++checks;
+                        check(nullptr, 0);
+                    }
+                }
+            }
+        }
+    }
+
     // A valid index with an equal rate but different capacity must be rejected.
     reset();
     alignas(8) std::array<uint8_t, 2 * KECCAK_RATE> collision{};

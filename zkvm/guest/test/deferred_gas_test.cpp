@@ -16,6 +16,7 @@
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/host.hpp>
 #include <category/vm/interpreter/execute.hpp>
+#include <category/vm/runtime/allocator.hpp>
 #include <category/vm/runtime/types.hpp>
 
 #include <array>
@@ -203,7 +204,7 @@ namespace
         msg.input_size = input.size();
         auto ctx = runtime::Context::from(host, &msg, code);
         interpreter::Intercode analysis{code};
-        std::array<uint256_t, 1024> stack;
+        std::array<uint256_t, runtime::EvmStackAllocatorMeta::size> stack;
         interpreter::execute<Traits>(ctx, analysis, stack.data());
         auto result = ctx.copy_to_result<Traits>();
         return {
@@ -393,6 +394,66 @@ namespace
         return failed_cleanly(run(short_stack, 100));
     }
 
+    bool full_stack_swaps()
+    {
+        using Stack = runtime::EvmStackAllocatorMeta;
+        constexpr size_t height = Stack::max_stack_height;
+        uint256_t const sentinel{std::array<uint64_t, 4>{
+            0x0123456789abcdef,
+            0xfedcba9876543210,
+            0xa5a5a5a5a5a5a5a5,
+            0x5a5a5a5a5a5a5a5a}};
+
+        for (bool const followed_by_swap2 : {false, true}) {
+            std::vector<uint8_t> code;
+            code.insert(code.end(), height - 3, PUSH0);
+            std::array<uint256_t, 3> values;
+            for (size_t i = 0; i < values.size(); ++i) {
+                uint8_t const byte = static_cast<uint8_t>(0x11 * (i + 1));
+                uint64_t const word = 0x0101010101010101ULL * byte;
+                values[i] =
+                    uint256_t{std::array<uint64_t, 4>{word, word, word, word}};
+                code.push_back(PUSH32);
+                code.insert(code.end(), 32, byte);
+            }
+            code.push_back(SWAP1);
+            if (followed_by_swap2) {
+                code.push_back(SWAP2);
+            }
+            // STOP selects the ordinary SWAP1 prefix, without a push.
+            code.push_back(STOP);
+            int64_t const gas = static_cast<int64_t>(
+                2 * (height - 3) + 9 + 3 + (followed_by_swap2 ? 3 : 0));
+
+            CountingHost host;
+            vm::Message msg{};
+            msg.gas = gas;
+            auto ctx = runtime::Context::from(host, &msg, code);
+            interpreter::Intercode analysis{code};
+            // Guard the physical allocation, including ZisK's spare slot.
+            std::array<uint256_t, Stack::size + 1> stack{};
+            stack[Stack::size] = sentinel;
+            interpreter::execute<GasTraits>(ctx, analysis, stack.data());
+            auto const result = ctx.copy_to_result<GasTraits>();
+            std::array<uint256_t, 3> const expected =
+                followed_by_swap2 ? std::array{values[1], values[2], values[0]}
+                                  : std::array{values[0], values[2], values[1]};
+            if (result.status_code != CallStatus::Success ||
+                result.gas_left != 0 || host.accesses != 0 ||
+                stack[Stack::size] != sentinel) {
+                return false;
+            }
+            for (size_t i = 0; i < height; ++i) {
+                uint256_t const value =
+                    i < height - 3 ? uint256_t{0} : expected[i - (height - 3)];
+                if (stack[i] != value) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
     bool swap1_prefixes()
     {
         for (unsigned padding = 0; padding < 7; ++padding) {
@@ -470,7 +531,6 @@ namespace
                failed_cleanly(run(bad_jump, 100)) &&
                failed_cleanly(run(full_stack, 10000));
     }
-
 }
 
 extern "C" uint32_t monad_zkvm_deferred_gas_test()
@@ -1059,8 +1119,8 @@ extern "C" uint32_t monad_zkvm_deferred_gas_test()
         effects &= failed_cleanly(run(code, 61)); // OOG at loop entry.
     }
     check(
-        effects && swap1_prefixes() && dup_prefixes() && swapn_prefixes() &&
-        comparison_prefixes());
+        effects && full_stack_swaps() && swap1_prefixes() && dup_prefixes() &&
+        swapn_prefixes() && comparison_prefixes());
     // Two selector tests: first match, second match, or neither. Sweep gas
     // through both tests and the taken jump's JUMPDEST charge.
     bool selectors = true;

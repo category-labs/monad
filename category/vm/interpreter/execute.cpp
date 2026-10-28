@@ -406,19 +406,17 @@ namespace monad::vm::interpreter
             MONAD_VM_BOOL_PAIR_PICK(MONAD_VM_LEAD_KIND(                        \
                 MONAD_VM_BOOL_OF_##OP, PLAIN, ~))(REV, NAME, OP)
     #endif
-    // a3 points one past the top. Swap the words at -32 and -64 via
-    // Context::swap_scratch. The caller passes a5 at the follower's lag.
+    // Save the second word in the spare slot at a3, then move both words
+    // down together. ZisK DMA supports overlap; the spare slot exists even
+    // at the EVM stack limit. Keep this prefix at 40 bytes.
     #define MONAD_VM_SWAP1_PLAIN(NAME, OP, COPY, SUFFIX)                       \
-        "\taddi t1, a0, monad_vm_swap_scratch_offset\n"                        \
-        "\taddi t4, a3, -32\n"                                                 \
-        "\taddi t5, a3, -64\n"                                                 \
+        "\taddi t4, a3, -64\n"                                                 \
+        "\taddi t1, a3, -32\n"                                                 \
         "\tcsrs 0x813, t4\n"                                                   \
-        "\taddi zero, t1, 32\n"                                                \
-        "\tcsrs 0x813, t5\n"                                                   \
-        "\taddi zero, t4, 32\n"                                                \
+        "\taddi zero, a3, 32\n"                                                \
         "\tcsrs 0x813, t1\n"                                                   \
-        "\taddi zero, t5, 32\n"                                                \
-        "\tj monad_vm_slot_" #NAME "_" #OP #SUFFIX "\n"
+        "\taddi zero, t4, 64\n"                                                \
+        "\tj monad_vm_slot_" #NAME "_" #OP #SUFFIX "\n\tnop\n\tnop\n\tnop\n"
     // POP discards the deeper word brought to the top. Only the old top
     // needs copying, to the second slot for SWAP1 or the slot in a7 for SWAPn.
     #define MONAD_VM_POP_MOVE_swap1                                            \
@@ -1273,7 +1271,8 @@ namespace monad::vm::interpreter
     {
         // Cache the one-past stack limit for comparisons with
         // StackTop::next_slot().
-        ctx.stack_limit = stack_ptr + runtime::EvmStackAllocatorMeta::size;
+        ctx.stack_limit =
+            stack_ptr + runtime::EvmStackAllocatorMeta::max_stack_height;
 
 #if defined(MONAD_ZKVM_ZISK)
         // The carry-ins are fixed; ADD and SUB set the pointers on every call.

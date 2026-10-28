@@ -26,7 +26,14 @@ namespace monad::vm::runtime
     struct EvmStackAllocatorMeta
     {
         using base_type = uint256_t;
-        static constexpr size_t size = 1024;
+        static constexpr size_t max_stack_height = 1024;
+#if defined(MONAD_ZKVM_ZISK)
+        // SWAP1 uses the slot above the top as scratch, even on a full stack.
+        // This extra allocation does not raise the EVM stack limit.
+        static constexpr size_t size = max_stack_height + 1;
+#else
+        static constexpr size_t size = max_stack_height;
+#endif
         static constexpr size_t alignment = 32;
         static MONAD_THREAD_LOCAL CachedAllocatorList cache_list;
     };

@@ -36,6 +36,7 @@
 #include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <memory>
 #include <type_traits>
 #include <utility>
@@ -1479,7 +1480,7 @@ namespace monad::vm::interpreter
                     (stack_top.next_slot() - 1) -
                         (stack_lower_bound - MONAD_VM_STACK_LOWER_BOUND_BIAS) <
                     static_cast<std::ptrdiff_t>(
-                        runtime::EvmStackAllocatorMeta::size));
+                        runtime::EvmStackAllocatorMeta::max_stack_height));
                 MONAD_VM_CHARGE(PUSH2);
                 // PUSH2 adds one value, restoring the original stack height.
                 MONAD_VM_CHECK_AT(JUMPI, 0);
@@ -4739,19 +4740,18 @@ namespace monad::vm::interpreter
                 MONAD_VM_MUST_TAIL return exit_stack_overflow(ctx);
             }
     #endif
-            stack_top[1] = stack_top[0];
-            stack_top[0] = stack_top[-1];
+            // [a,b] -> [a,a,b], then [b,a,b]. DUP2's check permits the new
+            // slot.
+            std::memmove(&stack_top[0], &stack_top[-1], 2 * sizeof(uint256_t));
             stack_top[-1] = stack_top[1];
             stack_top += 1;
         }
         else {
             static_assert(OP == SWAP2);
             MONAD_VM_CHECK(SWAP2);
-            auto &scratch = ctx.swap_scratch;
-            scratch = stack_top[-2];
-            stack_top[-2] = stack_top[-1];
-            stack_top[-1] = stack_top[0];
-            stack_top[0] = scratch;
+            // [a,b,c] -> [a,b,c,a], then shift [b,c,a] down into place.
+            stack_top[1] = stack_top[-2];
+            std::memmove(&stack_top[-2], &stack_top[-1], 3 * sizeof(uint256_t));
         }
         MONAD_VM_DISPATCH(1, 0, *instr_ptr);
     }

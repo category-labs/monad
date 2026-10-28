@@ -37,6 +37,7 @@
 #include <cstdint>
 #include <cstring>
 #include <span>
+#include <type_traits>
 #include <utility>
 
 MONAD_MPT_NAMESPACE_BEGIN
@@ -649,9 +650,9 @@ class OffsetTrie
         uint64_t priming_rlp_len;
         uint64_t dirty_children;
 #else
-        // Pad std::pair<NodeId, NodeCacheEntry> to 64 bytes so unordered_dense can
-        // convert between entry indices and addresses using shifts instead of
-        // multiplication or division by 48. Trades extra memory for cheaper
+        // Pad std::pair<NodeId, NodeCacheEntry> to 64 bytes so unordered_dense
+        // can convert between entry indices and addresses using shifts instead
+        // of multiplication or division by 48. Trades extra memory for cheaper
         // indexing.
         [[maybe_unused]] uint64_t pad_[2];
 #endif
@@ -688,16 +689,30 @@ class OffsetTrie
     alignas(8) node_id_wire_t
         primed_slots_[PRIMED_CHILDREN_OFFSET + BRANCH_CHILD_COUNT]{};
 
-    // Constructor-only marks: a nonzero byte identifies an unclaimed node.
-    unsigned char *claim_marks_{nullptr};
-    // Claims made during priming, counted in DIGEST_NODE_LEN units per node.
-    size_t claimed_bytes_{0};
+    // What the priming encode of a branch needs to claim its children, handed
+    // over from the constructor's walk, which holds all of it in registers:
+    // members are read again after every mark the encode clears, as a byte
+    // store may alias them, and a count kept in a member is a load and a
+    // store per branch. `unclaimed` is the walk's own count, in its unit:
+    // DIGEST_NODE_LEN a claim. The other encodes take the empty ClaimNone.
+    struct ClaimPass
+    {
+        unsigned char const *blob;
+        unsigned char *marks;
+        size_t blob_size;
+        size_t *unclaimed;
+    };
+
+    struct ClaimNone
+    {
+    };
 
     // Keep hashed nodes' RLP at the end of stable windows. An 8-byte stride
     // multiple gives source and destination the same alignment modulo eight
     // when copied into an aligned buffer, keeping DMA copies cheap.
     static constexpr size_t RLP_WINDOW_STRIDE = 704;
-    static_assert(RLP_WINDOW_STRIDE >= MAX_NODE_RLP && RLP_WINDOW_STRIDE % 8 == 0);
+    static_assert(
+        RLP_WINDOW_STRIDE >= MAX_NODE_RLP && RLP_WINDOW_STRIDE % 8 == 0);
     unsigned char *rlp_window_{nullptr};
     unsigned char *rlp_windows_end_{nullptr};
 
@@ -816,10 +831,11 @@ public:
         //
         // `id - HEADER_LEN < blob_.size() - HEADER_LEN` is the SAME predicate
         // as `id >= HEADER_LEN && id < blob_.size()`: an id below HEADER_LEN
-        // wraps to at least 2^64 - HEADER_LEN, which exceeds any blob (read_root
-        // asserts blob_.size() <= OVERLAY_BASE), and an overlay id is rejected
-        // by the same bound it is rejected by today. Two priced `ltu` at 60
-        // cells become one, and the low bound stops needing its own constant.
+        // wraps to at least 2^64 - HEADER_LEN, which exceeds any blob
+        // (read_root asserts blob_.size() <= OVERLAY_BASE), and an overlay id
+        // is rejected by the same bound it is rejected by today. Two priced
+        // `ltu` at 60 cells become one, and the low bound stops needing its own
+        // constant.
         MONAD_ASSERT(
             id == NULL_ID ||
             static_cast<uint64_t>(id) - HEADER_LEN < blob_span_);
@@ -976,14 +992,24 @@ private:
 
     // The node's full canonical Ethereum RLP. Reads `node`'s fields and
     // resolves its children through child_ref.
-    // On ZisK, reuse the supplied aligned array of 16 child ids, or copy
-    // the branch's children locally when none is supplied.
-    // claims validates and claims each child during constructor priming (ZisK).
-    // With claims enabled, children must have a zero slot immediately before it.
+    // `children`, when given, is an aligned copy of a branch's sixteen
+    // children the caller already holds; otherwise the branch copies its own.
+    // `claims`: the priming encode of a branch the constructor has not
+    // validated claims its children itself, as it first reads them (ZisK).
+    // Its `children` are the constructor's copy, whose slot below the first
+    // is zero, and `claim` what it claims them with.
+#if defined(MONAD_ZKVM_ZISK)
+    template <bool priming_pass = false, bool claims = false>
+    node_rlp_span encode_rlp(
+        NodeViewBase node, node_rlp_span dest,
+        node_id_wire_t const *children = nullptr,
+        std::conditional_t<claims, ClaimPass, ClaimNone> claim = {});
+#else
     template <bool priming_pass = false, bool claims = false>
     node_rlp_span encode_rlp(
         NodeViewBase node, node_rlp_span dest,
         node_id_wire_t const *children = nullptr);
+#endif
 
     NodeId fresh_id();
 

@@ -103,7 +103,6 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
     std::span<unsigned char> const node_offsets{
         static_cast<unsigned char *>(::operator new(blob_.size())),
         blob_.size()};
-    claim_marks_ = node_offsets.data();
 #else
     std::vector<unsigned char> node_offsets(blob_.size(), 0);
 #endif
@@ -157,12 +156,23 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
     // claiming it subtracts DIGEST_NODE_LEN. DIGEST nodes need no adjustment.
     // Once the region is fully read and root claimed, zero means no orphan
     // remains, without scanning node_offsets again.
+#if defined(MONAD_ZKVM_ZISK)
+    // On ZisK a digest's claim only tests its mark, which stays set: a digest
+    // is never written and never descended into -- lookup, upsert, erase and
+    // collapse all abort on one -- so it may be shared by two parents or
+    // referenced by none, and the pre-state root still binds every hash a
+    // parent copies from it. The mark still proves the child a node start,
+    // which the id / 4 slot tables rely on. `unclaimed` counts the other nodes
+    // alone, each of which is still claimed exactly once.
+    size_t unclaimed = 0;
+#else
     size_t unclaimed = static_cast<size_t>(region_end - node.bytes());
+#endif
 
 #if !defined(MONAD_ZKVM_ZISK)
-    // Reuse one NodeCacheEntry for the sweep: Keccak overwrites the hash directly,
-    // avoiding per-node zeroing and an intermediate copy. All entries are
-    // valid.
+    // Reuse one NodeCacheEntry for the sweep: Keccak overwrites the hash
+    // directly, avoiding per-node zeroing and an intermediate copy. All entries
+    // are valid.
     NodeCacheEntry ch{};
     ch.hash_valid = true;
 #endif
@@ -177,6 +187,12 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
         uint64_t child_offset = static_cast<uint64_t>(c);
         MONAD_ASSERT(
             child_offset < blob_size && node_offsets[child_offset] != 0);
+#if defined(MONAD_ZKVM_ZISK)
+        // Read after the mark's test, so at a node start the walk reached.
+        if (NodeViewBase{base + child_offset}.tag() == DIGEST) {
+            return;
+        }
+#endif
         node_offsets[child_offset] = 0;
         unclaimed -= DIGEST_NODE_LEN;
     };
@@ -223,7 +239,8 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
                     static_assert(
                         sizeof(uint64_t) == 2 * sizeof(node_id_wire_t));
 #if defined(MONAD_ZKVM_ZISK)
-                    // Copy once; the priming encode validates each child before use.
+                    // Copy once; the priming encode validates each child before
+                    // use.
                     std::memcpy(
                         primed_slots_ + PRIMED_CHILDREN_OFFSET,
                         b.payload(),
@@ -231,7 +248,7 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
 #else
                     unsigned char const *const p = b.payload();
                     uint64_t pair;
-#pragma GCC unroll 8
+    #pragma GCC unroll 8
                     for (unsigned i = 0; i < 8; ++i) {
                         std::memcpy(&pair, p + i * sizeof(pair), sizeof(pair));
                         is_valid_offset(
@@ -261,7 +278,9 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
                 ? encode_rlp<true, true>(
                       node,
                       node_rlp_span{window},
-                      primed_slots_ + PRIMED_CHILDREN_OFFSET)
+                      primed_slots_ + PRIMED_CHILDREN_OFFSET,
+                      ClaimPass{
+                          base, node_offsets.data(), blob_size, &unclaimed})
                 : encode_rlp<true>(node, node_rlp_span{window}); // priming pass
 #else
         node_rlp_span const rem =
@@ -289,15 +308,17 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
         }
 
         node_offsets[node_offset] = 1;
+#if defined(MONAD_ZKVM_ZISK)
+        unclaimed += DIGEST_NODE_LEN;
+#else
         unclaimed = unclaimed + DIGEST_NODE_LEN - (next_offset - node_offset);
+#endif
         node = NodeViewBase{base + next_offset};
         seen = node_offsets.data() + next_offset;
     }
     MONAD_ASSERT(node.bytes() == region_end); // nodes tile exactly
     is_valid_offset(root);
 #if defined(MONAD_ZKVM_ZISK)
-    unclaimed -= claimed_bytes_;
-    claim_marks_ = nullptr;
 #endif
 
     // Any remaining count indicates a node unreachable from root.
@@ -368,7 +389,7 @@ namespace
         }
         // Load the full key as four big-endian words.
         uint64_t w[4];
-        #pragma GCC unroll 1
+    #pragma GCC unroll 1
         for (size_t i = 0; i < 4; ++i) {
             __builtin_memcpy(&w[i], whole_key + 8 * i, sizeof(w[i]));
             w[i] = __builtin_bswap64(w[i]);
@@ -457,46 +478,45 @@ NodeViewBase OffsetTrie::find_original(NodeId id, NibblesView key) const
             continue;
         }
         id = match(
-            node,
-            Cases{
+            node, Cases {
                 [](BranchView) -> NodeId { std::unreachable(); },
-                [&](ExtView e) -> NodeId {
-                    NibblesView const ep = e.path();
-                    if (!key.starts_with(ep)) {
+                    [&](ExtView e) -> NodeId {
+                        NibblesView const ep = e.path();
+                        if (!key.starts_with(ep)) {
+                            return NULL_ID;
+                        }
+                        key = key.substr(ep.nibble_size());
+                        return e.child();
+                    },
+                    [&](AccountLeafView l) -> NodeId {
+#if defined(MONAD_ZKVM_ZISK)
+                        if (leaf_path_equals(l.path(), key, whole_key)) {
+#else
+                    if (l.path() == key) {
+#endif
+                            found = l;
+                        }
                         return NULL_ID;
-                    }
-                    key = key.substr(ep.nibble_size());
-                    return e.child();
-                },
-                [&](AccountLeafView l) -> NodeId {
+                    },
+                    [&](StorageLeafView l) -> NodeId {
 #if defined(MONAD_ZKVM_ZISK)
-                    if (leaf_path_equals(l.path(), key, whole_key)) {
+                        if (leaf_path_equals(l.path(), key, whole_key)) {
 #else
                     if (l.path() == key) {
 #endif
-                        found = l;
-                    }
-                    return NULL_ID;
-                },
-                [&](StorageLeafView l) -> NodeId {
-#if defined(MONAD_ZKVM_ZISK)
-                    if (leaf_path_equals(l.path(), key, whole_key)) {
-#else
-                    if (l.path() == key) {
-#endif
-                        found = l;
-                    }
-                    return NULL_ID;
-                },
-                [](DigestView) -> NodeId {
-                    MONAD_ABORT("incomplete witness: lookup hit a Digest");
-                },
-                [](NullView) -> NodeId {
-                    // There is only a single NullView node, namely the NULL_ID
-                    // magic header. The loop excludes NULL_ID, so a null tag
-                    // here would indicate a malformed node.
-                    MONAD_ABORT("malformed trie: node not found");
-                },
+                            found = l;
+                        }
+                        return NULL_ID;
+                    },
+                    [](DigestView) -> NodeId {
+                        MONAD_ABORT("incomplete witness: lookup hit a Digest");
+                    },
+                    [](NullView) -> NodeId {
+                        // There is only a single NullView node, namely the
+                        // NULL_ID magic header. The loop excludes NULL_ID, so a
+                        // null tag here would indicate a malformed node.
+                        MONAD_ABORT("malformed trie: node not found");
+                    },
             });
         node = original_child(id);
     }
@@ -537,8 +557,8 @@ bytes32_t OffsetTrie::state_root()
 void OffsetTrie::refill_hash_pool(size_t const entries)
 {
     // Keep previous chunks alive so existing slot pointers remain valid.
-    next_cache_entry_ =
-        static_cast<NodeCacheEntry *>(::operator new(entries * sizeof(NodeCacheEntry)));
+    next_cache_entry_ = static_cast<NodeCacheEntry *>(
+        ::operator new(entries * sizeof(NodeCacheEntry)));
     cache_entries_end_ = next_cache_entry_ + entries;
 }
 
@@ -563,7 +583,7 @@ namespace
     // which is under 32 bytes and so a short list.
     constexpr size_t rlp_ref_len(unsigned char const b)
     {
-        return b == 0x80 ? 1
+        return b == 0x80   ? 1
                : b == 0xa0 ? 1 + KECCAK256_SIZE
                            : 1 + static_cast<size_t>(b - 0xc0);
     }
@@ -579,7 +599,8 @@ namespace
 // Dirty bits never clear, so every patch revisits all modified children.
 // A changed reference length returns 0 for a full encode. Partial patches
 // remain in the window; later attempts revisit them using the same dirty bits.
-size_t OffsetTrie::patch_rlp(NodeCacheEntry const &cached, NodeViewBase const node)
+size_t
+OffsetTrie::patch_rlp(NodeCacheEntry const &cached, NodeViewBase const node)
 {
     size_t const len = cached.priming_rlp_len;
     unsigned char *const out = cached.priming_rlp;
@@ -616,7 +637,8 @@ size_t OffsetTrie::patch_rlp(NodeCacheEntry const &cached, NodeViewBase const no
     else {
         MONAD_ASSERT(node.tag() == EXT);
         p += rlp_path_len(*p);
-        if ((mask & 1) != 0 && !patch_ref(ExtView{node}.child(), p, rlp_ref_len(*p))) {
+        if ((mask & 1) != 0 &&
+            !patch_ref(ExtView{node}.child(), p, rlp_ref_len(*p))) {
             return 0;
         }
     }
@@ -806,10 +828,15 @@ namespace
 }
 
 template <bool priming_pass, bool claims>
-OffsetTrie::node_rlp_span
-OffsetTrie::encode_rlp(
+OffsetTrie::node_rlp_span OffsetTrie::encode_rlp(
     NodeViewBase const node, OffsetTrie::node_rlp_span dest,
+#if defined(MONAD_ZKVM_ZISK)
+    [[maybe_unused]] node_id_wire_t const *const children_in,
+    [[maybe_unused]] std::conditional_t<claims, ClaimPass, ClaimNone> const
+        claim)
+#else
     [[maybe_unused]] node_id_wire_t const *const children_in)
+#endif
 {
     MONAD_DEBUG_ASSERT(node.tag() != EMPTY && node.tag() != DIGEST);
     if constexpr (claims) {
@@ -863,8 +890,7 @@ OffsetTrie::encode_rlp(
         return s.shrink(3);
     };
     return match(
-        node,
-        Cases{
+        node, Cases {
             [&, wrap](BranchView b) -> node_rlp_span {
                 dest.back() = 0x80; // empty branch value — last list element
                 dest = dest.shrink(1);
@@ -879,23 +905,38 @@ OffsetTrie::encode_rlp(
                 std::array<node_id_wire_t, 16> const children = b.children();
 #endif
 
-                // A digest is pre-state only, put_node never shadows a digest
-                // id and its original bytes are still its current bytes which
-                // is why we can memcpy from the blob_ directly below.
-                //
-                // Taken widened. A wire field reaching a 64-bit parameter is
-                // cheaper than a 32-bit one.
-                //
-                // Keep the blob address across byte stores, which may alias
-                // blob_ and otherwise force the compiler to reload it.
+            // A digest is pre-state only, put_node never shadows a digest
+            // id and its original bytes are still its current bytes which
+            // is why we can memcpy from the blob_ directly below.
+            //
+            // Taken widened. A wire field reaching a 64-bit parameter is
+            // cheaper than a 32-bit one.
+            //
+            // Priming already validated all child IDs as blob offsets;
+            // only mutation needs the overlay check. get_original also
+            // checks bounds before access.
+            // The blob's address, held: the mark and digest byte stores
+            // below may alias any member, so gcc reloads blob_ after each.
+            // The claims pass has it from the constructor, which holds it.
+#if defined(MONAD_ZKVM_ZISK)
+                unsigned char const *const blob = [&] {
+                    if constexpr (claims) {
+                        return claim.blob;
+                    }
+                    else {
+                        return blob_.data();
+                    }
+                }();
+#else
                 unsigned char const *const blob = blob_.data();
+#endif
                 auto const blob_digest_at = [&](uint64_t const w) {
                     if constexpr (priming_pass) {
                         // Children are validated before this read, either by
                         // the constructor or by this encode's claim step.
                         // Inlined children's references were checked earlier.
-                        return w != 0 && NodeViewBase{blob + w}.tag() ==
-                                             Tag::DIGEST;
+                        return w != 0 &&
+                               NodeViewBase{blob + w}.tag() == Tag::DIGEST;
                     }
                     else {
                         return w != 0 &&
@@ -911,15 +952,7 @@ OffsetTrie::encode_rlp(
                     }
                 };
 
-#if defined(MONAD_ZKVM_ZISK)
-                [[maybe_unused]] unsigned char *const marks = claim_marks_;
-                [[maybe_unused]] size_t const blob_size = blob_.size();
-                [[maybe_unused]] size_t claimed = 0;
-                static_assert(DIGEST_NODE_LEN == HASH_RLP_LEN);
-#endif
-                // Walk backwards by pointer to avoid repeated index scaling.
-                // Test before decrementing to stay within the array and avoid
-                // GCC copying the pointer's old value for the comparison.
+// Walk backwards by pointer; test before decrementing.
 #if defined(MONAD_ZKVM_ZISK)
                 node_id_wire_t const *const first = children;
                 for (node_id_wire_t const *c = first + 16; c != first;) {
@@ -937,16 +970,24 @@ OffsetTrie::encode_rlp(
                     uint64_t const w = *c;
 #if defined(MONAD_ZKVM_ZISK)
                     if constexpr (claims) {
-                        // Before reading the child, require a previously seen
-                        // node that no other parent has claimed.
+                        // A nonzero child must name a node the walk marked.
                         if (w != 0) {
-                            MONAD_ASSERT(w < blob_size && marks[w] != 0);
-                            marks[w] = 0;
-                            claimed += DIGEST_NODE_LEN;
+                            MONAD_ASSERT(
+                                w < claim.blob_size && claim.marks[w] != 0);
                         }
                     }
 #endif
                     if (!digest_at(w)) {
+#if defined(MONAD_ZKVM_ZISK)
+                        if constexpr (claims) {
+                            // Not a digest: cleared, so that a second parent's
+                            // claim fails, and counted. A digest's mark stays.
+                            if (w != 0) {
+                                claim.marks[w] = 0;
+                                *claim.unclaimed -= DIGEST_NODE_LEN;
+                            }
+                        }
+#endif
                         dest = child_ref<priming_pass>(NodeId{w}, dest);
 #if defined(MONAD_ZKVM_ZISK)
                         if constexpr (priming_pass) {
@@ -959,7 +1000,8 @@ OffsetTrie::encode_rlp(
                             if (w != 0) {
                                 reinterpret_cast<uintptr_t *>(
                                     dest.base())[c - first] =
-                                    reinterpret_cast<uintptr_t>(dest.rlp_data());
+                                    reinterpret_cast<uintptr_t>(
+                                        dest.rlp_data());
                             }
                         }
 #endif
@@ -997,10 +1039,10 @@ OffsetTrie::encode_rlp(
                         }
 #if defined(MONAD_ZKVM_ZISK)
                         if constexpr (claims) {
-                            // prev matches the preceding offset below validated
-                            // w, so it is in bounds. Claim this digest once.
-                            MONAD_ASSERT(marks[prev] != 0);
-                            marks[prev] = 0;
+                            // Under w, so inside the blob. Its mark proves it a
+                            // node start, and stays: a digest's claim leaves
+                            // it.
+                            MONAD_ASSERT(claim.marks[prev] != 0);
                         }
 #endif
                         below -= HASH_RLP_LEN;
@@ -1015,12 +1057,8 @@ OffsetTrie::encode_rlp(
                     // NOLINTNEXTLINE(misc-const-correctness)
                     size_t digests_length = w - below;
 #if defined(MONAD_ZKVM_ZISK)
-                    // Reuse this subtraction for claims, the copy and the cursor.
+                    // Reuse the subtraction for the copy and cursor.
                     asm("" : "+r"(digests_length));
-                    if constexpr (claims) {
-                        // Count the remaining digests; w was already counted.
-                        claimed += digests_length - HASH_RLP_LEN;
-                    }
 #endif
 
                     // A complete branch needs at most 532 bytes, within
@@ -1029,76 +1067,74 @@ OffsetTrie::encode_rlp(
                         blob + (below + HASH_RLP_LEN), digests_length);
                     c = lo; // the next turn's decrement steps past the run
                 }
-#if defined(MONAD_ZKVM_ZISK)
-                if constexpr (claims) {
-                    claimed_bytes_ += claimed;
-                }
-#endif
                 return wrap(dest);
             },
-            [&, encode_path, wrap](ExtView e) -> node_rlp_span {
-                // child ref — last element
-                dest = child_ref<priming_pass>(e.child(), dest);
-                dest = encode_path(dest, e.path(), /*terminating=*/false);
-                return wrap(dest);
-            },
-            [&, encode_path, wrap](AccountLeafView l) -> node_rlp_span {
-                // The leaf's value is the account's canonical RLP, which the
-                // node no longer holds whole: rebuild it straight into dest's
-                // tail — last field first, like everything else here —
-                // splicing the storage subtree's own hash in between the
-                // stored code_hash and nonce ‖ balance run. Reading the root
-                // through hash() is what ties the account to its storage — a
-                // leaf can only claim the root its subtree actually hashes to,
-                // and NULL_ID resolves to NULL_ROOT, i.e. no storage at all.
-                dest = encode_rlp(l.code_hash_rlp(), dest);
-                dest = encode_rlp(hash(l.storage()), dest);
-                byte_string_view const nonce_balance = l.nonce_balance_rlp();
-                std::memcpy(
-                    dest.last(nonce_balance.size()).data(),
-                    nonce_balance.data(),
-                    nonce_balance.size());
-                dest = dest.shrink(nonce_balance.size());
-                // The value is the first thing a leaf writes, so what stands
-                // in the buffer is exactly the account's payload: wrap closes
-                // it as the account list.
-                dest = wrap(dest);
-                // That list is in turn the leaf's value string. Its length is
-                // 68..108 of payload plus the 2-byte list header, so the
-                // string header is always 0xB7 + 1 followed by one length
-                // byte.
-                size_t const account_len = dest.rlp_size();
-                MONAD_DEBUG_ASSERT(account_len > 55 && account_len <= 0xFF);
-                dest.back() = static_cast<unsigned char>(account_len);
-                dest = dest.shrink(1);
-                dest.back() = 0xB8;
-                dest = dest.shrink(1);
-                dest = encode_path(dest, l.path(), /*terminating=*/true);
-                return wrap(dest);
-            },
-            [&, encode_path, wrap](StorageLeafView l) -> node_rlp_span {
-                // 8-aligned so zeroless_view32's word reads are 16 cells and
-                // not 191.
-                alignas(8) bytes32_t const v = l.value();
-                // storage value = rlp(zeroless(slot)), itself wrapped again
-                // as the leaf's value string: write the inner rlp(zl) into
-                // dest's tail, then prepend the outer string prefix in
-                // place.
-                auto const val = zeroless_view32(v.bytes);
-                size_t const val_len = rlp::string_length(val);
-                rlp::encode_string(dest.last(val_len), val);
-                dest = dest.shrink(val_len);
-                // The outer wrap collapses to no prefix only when it wraps
-                // a single byte <=0x7F, i.e. zl itself is one byte <=0x7F.
-                if (!(val.size() == 1 && val[0] <= 0x7F)) {
-                    dest.back() = static_cast<unsigned char>(0x80 + val_len);
+                [&, encode_path, wrap](ExtView e) -> node_rlp_span {
+                    // child ref — last element
+                    dest = child_ref<priming_pass>(e.child(), dest);
+                    dest = encode_path(dest, e.path(), /*terminating=*/false);
+                    return wrap(dest);
+                },
+                [&, encode_path, wrap](AccountLeafView l) -> node_rlp_span {
+                    // The leaf's value is the account's canonical RLP, which
+                    // the node no longer holds whole: rebuild it straight into
+                    // dest's tail — last field first, like everything else here
+                    // — splicing the storage subtree's own hash in between the
+                    // stored code_hash and nonce ‖ balance run. Reading the
+                    // root through hash() is what ties the account to its
+                    // storage — a leaf can only claim the root its subtree
+                    // actually hashes to, and NULL_ID resolves to NULL_ROOT,
+                    // i.e. no storage at all.
+                    dest = encode_rlp(l.code_hash_rlp(), dest);
+                    dest = encode_rlp(hash(l.storage()), dest);
+                    byte_string_view const nonce_balance =
+                        l.nonce_balance_rlp();
+                    std::memcpy(
+                        dest.last(nonce_balance.size()).data(),
+                        nonce_balance.data(),
+                        nonce_balance.size());
+                    dest = dest.shrink(nonce_balance.size());
+                    // The value is the first thing a leaf writes, so what
+                    // stands in the buffer is exactly the account's payload:
+                    // wrap closes it as the account list.
+                    dest = wrap(dest);
+                    // That list is in turn the leaf's value string. Its length
+                    // is 68..108 of payload plus the 2-byte list header, so the
+                    // string header is always 0xB7 + 1 followed by one length
+                    // byte.
+                    size_t const account_len = dest.rlp_size();
+                    MONAD_DEBUG_ASSERT(account_len > 55 && account_len <= 0xFF);
+                    dest.back() = static_cast<unsigned char>(account_len);
                     dest = dest.shrink(1);
-                }
-                dest = encode_path(dest, l.path(), /*terminating=*/true);
-                return wrap(dest);
-            },
-            [](DigestView) -> node_rlp_span { std::unreachable(); },
-            [](NullView) -> node_rlp_span { std::unreachable(); },
+                    dest.back() = 0xB8;
+                    dest = dest.shrink(1);
+                    dest = encode_path(dest, l.path(), /*terminating=*/true);
+                    return wrap(dest);
+                },
+                [&, encode_path, wrap](StorageLeafView l) -> node_rlp_span {
+                    // 8-aligned so zeroless_view32's word reads are 16 cells
+                    // and not 191.
+                    alignas(8) bytes32_t const v = l.value();
+                    // storage value = rlp(zeroless(slot)), itself wrapped again
+                    // as the leaf's value string: write the inner rlp(zl) into
+                    // dest's tail, then prepend the outer string prefix in
+                    // place.
+                    auto const val = zeroless_view32(v.bytes);
+                    size_t const val_len = rlp::string_length(val);
+                    rlp::encode_string(dest.last(val_len), val);
+                    dest = dest.shrink(val_len);
+                    // The outer wrap collapses to no prefix only when it wraps
+                    // a single byte <=0x7F, i.e. zl itself is one byte <=0x7F.
+                    if (!(val.size() == 1 && val[0] <= 0x7F)) {
+                        dest.back() =
+                            static_cast<unsigned char>(0x80 + val_len);
+                        dest = dest.shrink(1);
+                    }
+                    dest = encode_path(dest, l.path(), /*terminating=*/true);
+                    return wrap(dest);
+                },
+                [](DigestView) -> node_rlp_span { std::unreachable(); },
+                [](NullView) -> node_rlp_span { std::unreachable(); },
         });
 }
 
@@ -1282,7 +1318,8 @@ NodeId OffsetTrie::fresh_id()
     NodeId const fresh = next_id_;
 #if defined(MONAD_ZKVM_ZISK)
     // Every fresh id has a slot in the fresh tables.
-    MONAD_ASSERT(static_cast<uint64_t>(fresh) - OVERLAY_BASE < FRESH_HASH_SLOTS);
+    MONAD_ASSERT(
+        static_cast<uint64_t>(fresh) - OVERLAY_BASE < FRESH_HASH_SLOTS);
 #endif
     next_id_ = NodeId{static_cast<uint64_t>(next_id_) + 1};
     return fresh;
@@ -1299,9 +1336,8 @@ NodeId OffsetTrie::put_node(NodeId const id, byte_string node)
     }
     drop_hash(id); // bytes changed; the cached hash is stale
     uint64_t const v = static_cast<uint64_t>(id);
-    byte_string *&slot = v < OVERLAY_BASE
-                             ? modified_blob_nodes_[v >> 2]
-                             : new_nodes_[v - OVERLAY_BASE];
+    byte_string *&slot = v < OVERLAY_BASE ? modified_blob_nodes_[v >> 2]
+                                          : new_nodes_[v - OVERLAY_BASE];
     if (slot == nullptr) {
         slot = new byte_string(std::move(node));
     }
@@ -1491,7 +1527,7 @@ OffsetTrie::upsert_node(NodeId id, NibblesView key)
         // displaced leaf's bytes.
         auto const split_leaf = [&](NibblesView const path,
                                     auto const &reput_old) -> Result {
-            // exact match -> overwrite (reuse id + its path)
+        // exact match -> overwrite (reuse id + its path)
 #if defined(MONAD_ZKVM_ZISK)
             if (leaf_path_equals(path, key, whole_key)) {
 #else
@@ -1576,7 +1612,8 @@ OffsetTrie::upsert_node(NodeId id, NibblesView key)
                     // Consume the nibble in place; the original key is no
                     // longer needed, so no temporary view is necessary.
                     key.drop_front1();
-                    // Keep the child load after drop_front1, as in find_original.
+                    // Keep the child load after drop_front1, as in
+                    // find_original.
                     NodeId const child = b.child(nib);
                     if (child != NULL_ID) {
 #if defined(MONAD_ZKVM_ZISK)
@@ -1586,7 +1623,8 @@ OffsetTrie::upsert_node(NodeId id, NibblesView key)
                         return std::nullopt;
                     }
                     // This case still recurses: the parent must be rewritten
-                    // afterwards. Save its children before changing the overlay.
+                    // afterwards. Save its children before changing the
+                    // overlay.
                     std::array<node_id_wire_t, 16> children = b.children();
                     auto const result = upsert_node(NULL_ID, key);
                     children[nib] = to_node_id_wire_t(result.first);

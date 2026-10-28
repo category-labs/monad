@@ -398,6 +398,17 @@ public:
     // slot reads and the merge reach it without looking the address up.
     // The block state never erases an entry or moves one.
     std::pair<Address, StateDelta> *delta_{nullptr};
+
+    // Nonzero once the account's current row or this row may hold a slot
+    // that the current row has not warmed. SLOAD and SSTORE warm a slot
+    // before either row takes it, so until then a slot found in a row is
+    // warm, and its search of the warm slots can be skipped. Set by a write
+    // or read outside them (set_storage, get_storage_into) and by a rejected
+    // frame's unwarming of a slot, which leaves the slot here: this row is
+    // not journalled. Never cleared, and kept here, not in the current row,
+    // which a rejected frame can erase. A word: ZisK prices a byte's load at
+    // more than twice an aligned word's.
+    std::uint64_t rows_unwarmed_{0};
 #endif
 
     explicit OriginalAccountState(std::optional<Account> &&account)

@@ -382,10 +382,15 @@ private:
     }
 
     // sload_into past its first part, each in a frame of its own: a cold
-    // slot of the memoised account, a warm one whose value the block's state
-    // has to give, and every other case. The account comes last, so the tail
-    // call leaves sload_into's arguments where they are.
+    // slot of the memoised account, one that neither of its rows holds, a
+    // warm one whose value the block's state has to give, and every other
+    // case. The account comes last, so the tail call leaves sload_into's
+    // arguments where they are.
     [[gnu::noinline]] monad_access_status sload_cold(
+        Address const &, bytes32_t const &key, bool read_cold, uint256_t &out,
+        AccountState &);
+
+    [[gnu::noinline]] monad_access_status sload_cold_absent(
         Address const &, bytes32_t const &key, bool read_cold, uint256_t &out,
         AccountState &);
 
@@ -407,6 +412,14 @@ private:
     [[gnu::always_inline]] inline monad_storage_status set_storage_of(
         AccountState &, Address const &, bytes32_t const &key,
         bytes32_t const &value);
+
+    // set_storage_of past its searches of the two rows: `prev` is the slot's
+    // current value and `original` its original one, each null when its row
+    // does not hold the slot.
+    [[gnu::always_inline]] inline monad_storage_status set_storage_found(
+        AccountState &, Address const &, bytes32_t const &key,
+        bytes32_t const &value, bytes32_t const *prev,
+        bytes32_t const *original);
 #endif
 
     std::optional<Account> const &recent_account(Address const &);

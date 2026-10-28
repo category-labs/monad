@@ -29,6 +29,10 @@
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
+#if defined(MONAD_ZKVM_ZISK)
+    #include <zkvm/core/arena.hpp>
+#endif
+
 #include <bit>
 #include <cstdint>
 #include <cstdlib>
@@ -212,7 +216,13 @@ namespace monad::vm::runtime
         // the cost of a necessary expansion).
         uint8_t *output_buf = nullptr;
         auto allocate_output_buf = [size] {
+#if defined(MONAD_ZKVM_ZISK)
+            // Use the inline arena fast path to avoid a malloc call.
+            // release_result's free is a no-op in this guest.
+            return static_cast<uint8_t *>(zkvm_arena_alloc(*size));
+#else
             return reinterpret_cast<uint8_t *>(std::malloc(*size));
+#endif
         };
 
         if (*memory_end <= memory.size) {

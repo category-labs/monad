@@ -15,6 +15,7 @@
 
 #include <category/core/address.hpp>
 #include <category/core/assert.h>
+#include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/core/likely.h>
@@ -261,6 +262,13 @@ monad_statesync_server_context::read_code(bytes32_t const &hash)
 monad::BlockHeader monad_statesync_server_context::read_eth_header()
 {
     return rw.read_eth_header();
+}
+
+std::optional<byte_string>
+monad_statesync_server_context::read_domain_block_header(
+    uint64_t const domain_chain_id)
+{
+    return rw.read_domain_block_header(domain_chain_id);
 }
 
 bytes32_t monad_statesync_server_context::state_root()

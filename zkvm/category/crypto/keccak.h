@@ -29,7 +29,7 @@ constexpr size_t KECCAK256_SIZE = 32;
 extern "C" void monad_zkvm_keccak256_fast(
     void const *in, size_t len, uint8_t out[KECCAK256_SIZE]);
 
-// Same digest without memo lookups or inserts, used for bytecode.
+// Same digest without memo lookups or inserts, for inputs unlikely to repeat.
 extern "C" void monad_zkvm_keccak256_fast_nomemo(
     void const *in, size_t len, uint8_t out[KECCAK256_SIZE]);
 
@@ -60,6 +60,19 @@ monad_zkvm_keccak256_64(void const *in, uint8_t out[KECCAK256_SIZE]);
         }
     }
     monad_zkvm_keccak256_fast(in, len, out);
+}
+
+// For trie leaves and signing payloads, whose long inputs rarely reuse states.
+[[gnu::always_inline]] static inline void monad_zkvm_keccak256_memo_short(
+    void const *const in, size_t const len, uint8_t out[KECCAK256_SIZE])
+{
+    // Keep the memo below one Keccak-256 rate block.
+    if (len < 136) {
+        monad_keccak256(in, len, out);
+    }
+    else {
+        monad_zkvm_keccak256_fast_nomemo(in, len, out);
+    }
 }
 
 #elif defined(MONAD_ZKVM_SP1)

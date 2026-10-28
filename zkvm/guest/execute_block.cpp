@@ -23,6 +23,7 @@
 #include <category/core/keccak.hpp>
 #include <category/core/likely.h>
 #include <category/core/result.hpp>
+#include <category/crypto/keccak.h>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/block_reward.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
@@ -154,6 +155,24 @@ void process_withdrawal(
     }
 }
 
+#if defined(MONAD_ZKVM_ZISK)
+// Out of line, so that the Keccak state stays in this small frame: inlined
+// into execute_block_zkvm it lands beyond a 12-bit stack offset, and every
+// lane access of the absorb loop then rebuilds its address.
+[[gnu::noinline]] std::optional<Address> recover_sender(
+    Secp256k1Signature const &signature, byte_string_view const payload)
+{
+    // A lambda, not the function's address: its type names the hash, so the
+    // call inlines.
+    return recover_address(
+        signature,
+        payload,
+        [](void const *const in, size_t const len, uint8_t *const out) {
+            monad_zkvm_keccak256_memo_short(in, len, out);
+        });
+}
+#endif
+
 MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
@@ -193,12 +212,17 @@ Result<bytes32_t> execute_block_zkvm(
     MONAD_ASSERT(raw_transactions.size() == block.transactions.size());
     for (size_t i = 0; i < block.transactions.size(); ++i) {
         auto const &tx = block.transactions[i];
-        auto const s = recover_address(
+#if defined(MONAD_ZKVM_ZISK)
+        auto const sender = recover_sender(
             tx.sc.signature, rlp::signing_payload(tx, raw_transactions[i]));
-        if (MONAD_UNLIKELY(!s.has_value())) {
+#else
+        auto const sender = recover_address(
+            tx.sc.signature, rlp::signing_payload(tx, raw_transactions[i]));
+#endif
+        if (MONAD_UNLIKELY(!sender.has_value())) {
             return TransactionError::MissingSender;
         }
-        senders.push_back(*s);
+        senders.push_back(*sender);
 
         std::vector<std::optional<Address>> al;
         al.reserve(tx.authorization_list.size());

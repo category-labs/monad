@@ -76,6 +76,13 @@ namespace detail
                     MONAD_ASSERT(out.empty());
                     return node_len;
                 });
+#if defined(MONAD_ZKVM_ZISK)
+            if (node.size() >= KECCAK256_SIZE) {
+                monad_zkvm_keccak256_memo_short(
+                    node.data(), node.size(), ref_dest.data());
+                return KECCAK256_SIZE;
+            }
+#endif
             return compute_ref(node);
         }
 

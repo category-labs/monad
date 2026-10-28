@@ -2868,8 +2868,8 @@ namespace monad::vm::interpreter
         if (MONAD_UNLIKELY((*stack_top)[0] >= ctx.memory_grow_end)) {
             MONAD_VM_MUST_TAIL return mstore_slow<quiet_traits<traits>>(
                 ctx,
-                MONAD_VM_ANALYSIS_ARG,
-                stack_bottom,
+                MONAD_VM_DISPATCH_STATE_ARG,
+                stack_lower_bound,
                 stack_top,
                 gas_remaining,
                 MONAD_VM_AS_CALLED(instr_ptr) MONAD_VM_TBL_ARG);
@@ -4673,8 +4673,12 @@ namespace monad::vm::interpreter
     {
         static constexpr auto monad_vm_req =
             fused_requirements<traits, JUMP, JUMPDEST>();
+        // SWAP1 tested two words, JUMP's one among them, and the jump does
+        // not grow the stack: only the gas is left to test.
+        static_assert(
+            monad_vm_req.min_required <= 2 && monad_vm_req.max_growth == 0);
         uint8_t const *new_ip;
-        if (MONAD_LIKELY(MONAD_VM_FUSED_CHARGE(monad_vm_req))) {
+        if (MONAD_LIKELY(charge_gas(gas_remaining, monad_vm_req.gas))) {
             new_ip = jump_impl(ctx, MONAD_VM_CODE_VIEW, *(stack_top - 1)) + 1;
         }
         else {
@@ -4713,7 +4717,14 @@ namespace monad::vm::interpreter
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
         if constexpr (OP == DUP2) {
-            MONAD_VM_CHECK_OWN_OVERFLOW(DUP2);
+            // DUP2 takes the two words SWAP1 tested: its gas, which it does
+            // not test (gas_tested), and the room for its push are left.
+            static_assert(!gas_tested(
+                DUP2, compiler::opcode_table<traits>[DUP2].dynamic_gas));
+            gas_remaining -= static_gas<traits, DUP2>();
+            if (MONAD_UNLIKELY(stack_top.next_slot() >= MONAD_VM_STACK_LIMIT)) {
+                MONAD_VM_MUST_TAIL return exit_stack_overflow(ctx);
+            }
             std::memmove(stack_top, stack_top - 1, 2 * sizeof(uint256_t));
             stack_top[-1] = stack_top[1];
             ++stack_top;
@@ -4927,7 +4938,11 @@ namespace monad::vm::interpreter
     {
         runtime::Context &ctx = held_in_a0(entry_ctx);
         if constexpr (OP == MSTORE) {
-            MONAD_VM_CHECK_OWN_GAS(MSTORE);
+            // DUPn tested two words or more, MSTORE's two counting the copy:
+            // its gas is left, which it does not test (gas_tested).
+            static_assert(!gas_tested(
+                MSTORE, compiler::opcode_table<traits>[MSTORE].dynamic_gas));
+            gas_remaining -= static_gas<traits, MSTORE>();
             // Tested as mstore tests its offset.
             uint256_t const &monad_vm_x = *src;
             if (MONAD_UNLIKELY(
@@ -4950,7 +4965,11 @@ namespace monad::vm::interpreter
             MONAD_VM_DISPATCH(1, -1, *instr_ptr);
         }
         else if constexpr (OP == MLOAD) {
-            MONAD_VM_CHECK_OWN_GAS(MLOAD);
+            // MLOAD's word is DUPn's copy, whose room DUPn tested: its gas is
+            // left, which it does not test (gas_tested).
+            static_assert(!gas_tested(
+                MLOAD, compiler::opcode_table<traits>[MLOAD].dynamic_gas));
+            gas_remaining -= static_gas<traits, MLOAD>();
             // Tested as mload tests its offset.
             uint256_t const &monad_vm_x = *src;
             if (MONAD_UNLIKELY(

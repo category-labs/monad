@@ -4522,27 +4522,76 @@ namespace monad::vm::interpreter
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM,
         uint256_t *const swap_partner)
     {
-        static_assert(OP >= SWAP1 && OP <= SWAP4);
-        constexpr auto follower = static_cast<compiler::EvmOpCode>(OP);
-        constexpr std::ptrdiff_t depth = OP - SWAP1 + 1;
-        if constexpr (depth <= 2) {
+        if constexpr (OP >= SWAP1 && OP <= SWAP4) {
+            constexpr auto follower = static_cast<compiler::EvmOpCode>(OP);
+            constexpr std::ptrdiff_t depth = OP - SWAP1 + 1;
+            if constexpr (depth <= 2) {
+    #if defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
+                MONAD_VM_CHARGE(follower);
+    #else
+                gas_remaining -= static_gas<traits, follower>();
+    #endif
+            }
+            else {
+                MONAD_VM_CHECK(follower);
+            }
+            // This order also restores the original stack when the partners
+            // coincide.
+            auto &second_partner = stack_top[-depth];
+            ctx.swap_scratch = *swap_partner;
+            *swap_partner = *stack_top;
+            *stack_top = second_partner;
+            second_partner = ctx.swap_scratch;
+            MONAD_VM_DISPATCH(1, 0, *instr_ptr);
+        }
+        else {
+            constexpr auto follower = static_cast<compiler::EvmOpCode>(OP);
+            // SWAPn already checked the operands; only follower gas remains.
     #if defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
             MONAD_VM_CHARGE(follower);
     #else
             gas_remaining -= static_gas<traits, follower>();
     #endif
+            if constexpr (OP == MSTORE) {
+                auto const offset = ctx.get_memory_offset(*swap_partner);
+                if (MONAD_UNLIKELY(ctx.memory.size < *offset + 32)) {
+                    // Restore the ordinary post-SWAP stack before growing
+                    // memory.
+                    ctx.swap_scratch = *swap_partner;
+                    *swap_partner = *stack_top;
+                    *stack_top = ctx.swap_scratch;
+                    MONAD_VM_MUST_TAIL return mstore_grow<traits>(
+                        ctx,
+                        MONAD_VM_DISPATCH_STATE_ARG,
+                        stack_lower_bound,
+                        stack_top,
+                        gas_remaining,
+                        MONAD_VM_AS_CALLED(instr_ptr) MONAD_VM_TBL_ARG);
+                }
+                runtime::mstore_at<base_traits<traits>>(
+                    &ctx, offset, &stack_top[-1]);
+                *swap_partner = *stack_top;
+                MONAD_VM_DISPATCH(1, -2, *instr_ptr);
+            }
+            else {
+                // SWAP2–SWAP16's partner cannot alias the result at top - 1.
+                if constexpr (OP == ADD) {
+                    ctx.add256_params.a = swap_partner->as_words().data();
+                    zisk_add256(
+                        ctx.add256_params, stack_top[-1], stack_top[-1]);
+                }
+                else if constexpr (OP == SUB) {
+                    zisk_sub256_into(
+                        ctx, swap_partner->as_words().data(), stack_top[-1]);
+                }
+                else {
+                    static_assert(OP == AND);
+                    stack_top[-1] = *swap_partner & stack_top[-1];
+                }
+                *swap_partner = *stack_top;
+                MONAD_VM_DISPATCH(1, -1, *instr_ptr);
+            }
         }
-        else {
-            MONAD_VM_CHECK(follower);
-        }
-        // This order also restores the original stack when the partners
-        // coincide.
-        auto &second_partner = stack_top[-depth];
-        ctx.swap_scratch = *swap_partner;
-        *swap_partner = *stack_top;
-        *stack_top = second_partner;
-        second_partner = ctx.swap_scratch;
-        MONAD_VM_DISPATCH(1, 0, *instr_ptr);
     }
 
     // DUPn has checked its operands and paid its gas. Memory growth needs

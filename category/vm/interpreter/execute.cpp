@@ -291,6 +291,10 @@ namespace monad::vm::interpreter
     #define MONAD_VM_SWAPN_THEN(NAME, OP, COPY, SUFFIX)                        \
         "\ttail monad_vm_slot_" #NAME "_" #OP "_swapn" #SUFFIX                 \
         "\n" MONAD_VM_NOP5 "\tnop\n\tnop\n\tnop\n"
+    #define MONAD_VM_SWAPN_OF_01 ~, THEN // ADD
+    #define MONAD_VM_SWAPN_OF_03 ~, THEN // SUB
+    #define MONAD_VM_SWAPN_OF_16 ~, THEN // AND
+    #define MONAD_VM_SWAPN_OF_52 ~, THEN // MSTORE
     #define MONAD_VM_SWAPN_OF_50 ~, POP // POP
     #define MONAD_VM_SWAPN_OF_90 ~, THEN // SWAP1
     #define MONAD_VM_SWAPN_OF_91 ~, THEN // SWAP2
@@ -954,6 +958,10 @@ namespace monad::vm::interpreter
     #undef MONAD_VM_SWAPN_THEN_IN
     #undef MONAD_VM_SWAPN_PLAIN
     #undef MONAD_VM_SWAPN_THEN
+    #undef MONAD_VM_SWAPN_OF_01
+    #undef MONAD_VM_SWAPN_OF_03
+    #undef MONAD_VM_SWAPN_OF_16
+    #undef MONAD_VM_SWAPN_OF_52
     #undef MONAD_VM_SWAPN_OF_50
     #undef MONAD_VM_SWAPN_OF_90
     #undef MONAD_VM_SWAPN_OF_91

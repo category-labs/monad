@@ -210,8 +210,8 @@ int main()
         longer[i] = static_cast<uint8_t>(i * 37 + 11);
     }
     // Rate boundaries (136 bytes) and the aligned-copy limit (1088 bytes).
-    constexpr std::array<size_t, 10> lengths{
-        0, 1, 135, 136, 137, 271, 272, 1087, 1088, 1089};
+    constexpr std::array<size_t, 11> lengths{
+        0, 1, 135, 136, 137, 271, 272, 532, 1087, 1088, 1089};
     for (auto const mode :
          {Hint::Find,
           Hint::Missing,
@@ -256,6 +256,19 @@ int main()
     require(recorded_count == 4, "accepted a capacity-only mismatch");
     // One initial miss, then a hit and a miss; the final lookup is skipped.
     require(lookups == 3, "expected a hit, then a miss, then no lookup");
+
+    // A 532-byte digest needs four entries: test exact room and fallback
+    // when fewer entries remain, then reuse the scratch slot.
+    for (size_t free_entries = 0; free_entries <= 4; ++free_entries) {
+        reset();
+        for (uint8_t i = 0; i < KECCAKF_MEMO_ENTRIES - free_entries; ++i) {
+            check(&i, 1);
+        }
+        check(longer.data(), 532);
+        require(recorded_count == KECCAKF_MEMO_ENTRIES, "table did not fill");
+        check(longer.data(), 532);
+        check(nullptr, 0);
+    }
 
     // Leave one free entry: the next digest fills it on its first block and
     // must use the spare for the rest, without modifying published entries.

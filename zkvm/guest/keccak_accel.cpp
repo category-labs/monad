@@ -34,6 +34,8 @@
 
 #if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_SP1)
 
+#include <category/core/likely.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -473,6 +475,119 @@ static void keccak256_memo_sponge(void const *const in, size_t len, uint8_t out[
     else {
         post = keccakf_memo_permute<true>(pre, used);
         look = post != pre + KECCAKF_LANES;
+    }
+
+    // A branch node with all sixteen children hashed is 532 bytes of RLP (a
+    // 3-byte list header, sixteen 33-byte references and the empty value),
+    // and it is most of what reaches this sponge from the trie. After a
+    // first-block miss its other 396 bytes are always two middle blocks and a
+    // final block of fifteen lanes and four bytes, so they are absorbed here
+    // in straight-line code: literal offsets from one base, no per-block
+    // length or table-full test, no jump table and no masked or shifted read
+    // for the partial lane. Each filing does what the no-lookup path does,
+    // block for block: All files all three, NotFinal the two middle blocks
+    // and permutes the last one apart, None files none and permutes all three
+    // in keccakf_apart, where its first block's miss left the state. A filed
+    // slot's input is complete before it is copied, filed and permuted, and
+    // the count is published once at the end. The room test asks for every
+    // filed slot below capacity, which a first block run in the full table's
+    // spare fails; such digests take the general path below. The hint on the
+    // miss keeps gcc from carrying `look` into that path as a value, which a
+    // first-block hit would otherwise pay for in extra steps.
+    constexpr size_t FULL_BRANCH = 532;
+    static_assert(
+        FULL_BRANCH - RATE == 2 * RATE + 15 * 8 + 4,
+        "two middle blocks, then fifteen lanes and four bytes");
+    if constexpr (F == Filing::None) {
+        if (MONAD_LIKELY(!look) && len == FULL_BRANCH - RATE) {
+            // The miss permuted keccakf_apart in place: `post` is `pre`.
+            uint64_t *st = pre;
+            asm("" : "+r"(st));
+            auto *const perm = reinterpret_cast<uint64_t(*)[KECCAKF_LANES]>(st);
+            for (size_t i = 0; i < WORDS; ++i) {
+                st[i] ^= load64(p + 8 * i);
+            }
+            zisk_keccakf(perm);
+            unsigned char const *const q1 = p + RATE;
+            for (size_t i = 0; i < WORDS; ++i) {
+                st[i] ^= load64(q1 + 8 * i);
+            }
+            zisk_keccakf(perm);
+            unsigned char const *const q2 = p + 2 * RATE;
+            for (size_t i = 0; i < 15; ++i) {
+                st[i] ^= load64(q2 + 8 * i);
+            }
+            // The input's last four bytes, read in place: an eight-byte load
+            // at this lane would run four bytes past the input. The domain
+            // byte follows them, and the closing bit is the top of lane 16.
+            uint32_t last;
+            __builtin_memcpy(&last, q2 + 15 * 8, sizeof last);
+            st[15] ^= last | uint64_t{0x01} << 32;
+            st[16] ^= uint64_t{0x80} << 56;
+            zisk_keccakf(perm);
+            // Nothing filed and the scratch untouched: `used` stands.
+            std::memcpy(out, st, 32);
+            return;
+        }
+    }
+    else {
+        constexpr uint64_t FILED = F == Filing::All ? 3 : 2;
+        if (MONAD_LIKELY(!look) && len == FULL_BRANCH - RATE &&
+            used + FILED <= KECCAKF_MEMO_ENTRIES) {
+            // One opaque base for the slots keeps every lane at a literal
+            // offset from a single register.
+            KeccakfEntry *e = &keccakf_memo[used];
+            asm("" : "+r"(e));
+            for (size_t i = 0; i < WORDS; ++i) {
+                e[0].in[i] = post[i] ^ load64(p + 8 * i);
+            }
+            std::memcpy(
+                e[0].in + WORDS, post + WORDS, (KECCAKF_LANES - WORDS) * 8);
+            keccakf_state_copy(e[0].out, e[0].in);
+            fcall_set_keccakf_index(used);
+            zisk_keccakf(&e[0].out);
+
+            unsigned char const *const q1 = p + RATE;
+            for (size_t i = 0; i < WORDS; ++i) {
+                e[1].in[i] = e[0].out[i] ^ load64(q1 + 8 * i);
+            }
+            std::memcpy(
+                e[1].in + WORDS, e[0].out + WORDS, (KECCAKF_LANES - WORDS) * 8);
+            keccakf_state_copy(e[1].out, e[1].in);
+            fcall_set_keccakf_index(used + 1);
+            zisk_keccakf(&e[1].out);
+
+            // NotFinal's last block is not filed: it is built and permuted
+            // apart, and the scratch is left as the filings left it, unwritten.
+            uint64_t *const fin = F == Filing::All ? e[2].in : keccakf_apart;
+            unsigned char const *const q2 = p + 2 * RATE;
+            for (size_t i = 0; i < 15; ++i) {
+                fin[i] = e[1].out[i] ^ load64(q2 + 8 * i);
+            }
+            // The input's last four bytes, read in place: an eight-byte load
+            // at this lane would run four bytes past the input. The domain
+            // byte follows them, and the closing bit is the top of lane 16.
+            uint32_t last;
+            __builtin_memcpy(&last, q2 + 15 * 8, sizeof last);
+            fin[15] = e[1].out[15] ^ (last | uint64_t{0x01} << 32);
+            fin[16] = e[1].out[16] ^ (uint64_t{0x80} << 56);
+            std::memcpy(
+                fin + WORDS, e[1].out + WORDS, (KECCAKF_LANES - WORDS) * 8);
+            if constexpr (F == Filing::All) {
+                keccakf_state_copy(e[2].out, e[2].in);
+                fcall_set_keccakf_index(used + 2);
+                zisk_keccakf(&e[2].out);
+                std::memcpy(out, e[2].out, 32);
+            }
+            else {
+                zisk_keccakf(reinterpret_cast<uint64_t(*)[KECCAKF_LANES]>(fin));
+                std::memcpy(out, fin, 32);
+            }
+            // Every block but NotFinal's last was filed, so the next scratch
+            // is a slot no one has written.
+            keccakf_memo_used = used + FILED;
+            return;
+        }
     }
 
     // From the first miss, every later pre-state of this input is new as well:

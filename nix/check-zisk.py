@@ -146,7 +146,7 @@ BRANCHES = {
 }
 FUNCTION = re.compile(r"^([0-9a-f]+) <(.+)>:$")
 INSTRUCTION = re.compile(r"^\s+([0-9a-f]+):\s+([0-9a-f]{4,8})\s+(\S+)(?:\s+(.*))?$")
-MANUAL_JUMP = re.compile(r"monad_vm_manual_jump_(prefix|lag)_(?:\d+|(?:swap(?:1|n)_pop|bool_(?:not|pop))_\d{2}_[0-6])$")
+MANUAL_JUMP = re.compile(r"monad_vm_manual_jump_(prefix|lag)_(?:\d+|(?:swap(?:1|n)_pop|bool_(?:not|pop)|dup_push[12])_\d{2}_[0-6])$")
 STACK_SLOT = re.compile(r"^(-?(?:0x[0-9a-f]+|\d+))\(sp\)$")
 CALLEE_SAVED = {f"s{n}" for n in range(12)}
 # Instructions whose first operand is not a destination register.

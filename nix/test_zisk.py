@@ -261,6 +261,12 @@ class ManualJumpChecks(unittest.TestCase):
                    "108 t monad_vm_manual_jump_lag_bool_pop_08_6\n")
         self.assertEqual(check.manual_jump_addresses(symbols), {0x100, 0x104, 0x108})
 
+    def test_dup_push_prefixes_are_marked(self):
+        symbols = ("100 t monad_vm_manual_jump_prefix_1\n"
+                   "104 t monad_vm_manual_jump_lag_dup_push1_08_0\n"
+                   "108 t monad_vm_manual_jump_lag_dup_push2_15_5\n")
+        self.assertEqual(check.manual_jump_addresses(symbols), {0x100, 0x104, 0x108})
+
     def test_missing_marker_family_fails(self):
         with self.assertRaisesRegex(ValueError, "missing"):
             check.manual_jump_addresses("100 t monad_vm_manual_jump_lag_1")

@@ -386,6 +386,10 @@ private:
         monad_address const &, bytes32_t const &key, bool can_pay_cold_access,
         uint256_t &out, AccountState &);
 
+    [[gnu::noinline]] AccessStatus sload_cold_uncached(
+        monad_address const &, bytes32_t const &key, bool can_pay_cold_access,
+        uint256_t &out, AccountState &);
+
     [[gnu::noinline]] AccessStatus sload_read(
         monad_address const &, bytes32_t const &key, uint256_t &out,
         OriginalAccountState &);
@@ -398,6 +402,11 @@ private:
     [[gnu::always_inline]] inline StorageStatus set_storage_of(
         AccountState &, monad_address const &, bytes32_t const &key,
         bytes32_t const &value);
+    // Null pointers indicate values absent from the corresponding cache.
+    [[gnu::always_inline]] inline StorageStatus set_storage_with_cached_values(
+        AccountState &, monad_address const &, bytes32_t const &key,
+        bytes32_t const &value, bytes32_t const *stored_value,
+        bytes32_t const *cached_original_value);
 #endif
 
     std::optional<Account> const &recent_account(monad_address const &);

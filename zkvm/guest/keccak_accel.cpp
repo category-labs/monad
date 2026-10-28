@@ -1306,6 +1306,12 @@ void monad_zkvm_keccak256_trie_patch(
 // only site large enough to be worth splitting: the rest of the block's rate
 // blocks hit 12.1 %, above the 10.27 % break-even.
 //
+// The transactions and receipts trie leaves of a full rate block or more, and
+// the signing payloads of that size, lose the same bet: a leaf or payload's
+// first block carries a nonce and fees, or a receipt's cumulative gas, so its
+// chain almost never starts from a state an earlier call filed. Shorter ones
+// are one block and keep the memo's one-block shape.
+//
 // Soundness is unaffected in both directions. Not filing an entry can only
 // cost a later hint; and a permutation that runs without a preceding
 // `fcall_set_keccakf_index` leaves the executor's next filing under a stale

@@ -37,10 +37,9 @@ extern "C" void monad_zkvm_keccak256_fast(
     void const *in, size_t len, uint8_t out[KECCAK256_SIZE]);
 
 // The same digest with the Keccak-f memo compiled out, for an input whose
-// permutations cannot repeat -- see the entry point's own comment for why
-// contract bytecode is the one such caller and why not filing is sound. It has
-// no host counterpart, so callers name it directly rather than through a
-// shadowed name.
+// permutations cannot repeat -- see the entry point's own comment for which
+// callers those are and why not filing is sound. It has no host counterpart,
+// so callers name it directly rather than through a shadowed name.
 extern "C" void monad_zkvm_keccak256_fast_nomemo(
     void const *in, size_t len, uint8_t out[KECCAK256_SIZE]);
 

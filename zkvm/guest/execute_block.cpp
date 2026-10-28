@@ -23,6 +23,7 @@
 #include <category/core/keccak.hpp>
 #include <category/core/likely.h>
 #include <category/core/result.hpp>
+#include <category/crypto/keccak.h>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/block_reward.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
@@ -78,6 +79,46 @@ void process_withdrawal(
     }
 }
 
+#if defined(MONAD_ZKVM_ZISK)
+// recover_address (ecrecover.hpp) with the payload hashed outside the
+// Keccak-f memo once it spans a full rate block. Its first block carries the
+// transaction's nonce and fees, so an earlier call has almost never filed the
+// state it starts from; the memo would file every permutation and collect
+// almost nothing. A shorter payload is one block and keeps the memo's cheaper
+// one-block shape. Not filing only forgoes hits; see
+// monad_zkvm_keccak256_fast_nomemo. The signature checks are
+// recover_address's own, kept in the same order.
+std::optional<Address>
+recover_sender(Secp256k1Signature const &sig, byte_string_view const payload)
+{
+    if (!sig.is_valid()) {
+        return std::nullopt;
+    }
+
+    bytes32_t payload_hash;
+    if (payload.size() >= 136) {
+        monad_zkvm_keccak256_fast_nomemo(
+            payload.data(), payload.size(), payload_hash.bytes);
+    }
+    else {
+        monad_keccak256(payload.data(), payload.size(), payload_hash.bytes);
+    }
+
+    uint8_t signature[sizeof(sig.r) * 2];
+    store_be(signature, sig.r);
+    store_be(signature + sizeof(sig.r), sig.s);
+
+    Address result;
+
+    if (!recover_address(
+            result.bytes, payload_hash.bytes, signature, sig.y_parity)) {
+        return std::nullopt;
+    }
+
+    return result;
+}
+#endif
+
 MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
@@ -117,8 +158,13 @@ Result<bytes32_t> execute_block_zkvm(
     MONAD_ASSERT(raw_transactions.size() == block.transactions.size());
     for (size_t i = 0; i < block.transactions.size(); ++i) {
         auto const &tx = block.transactions[i];
+#if defined(MONAD_ZKVM_ZISK)
+        auto const s = recover_sender(
+            tx.sc.signature, rlp::signing_payload(tx, raw_transactions[i]));
+#else
         auto const s = recover_address(
             tx.sc.signature, rlp::signing_payload(tx, raw_transactions[i]));
+#endif
         if (MONAD_UNLIKELY(!s.has_value())) {
             return TransactionError::MissingSender;
         }

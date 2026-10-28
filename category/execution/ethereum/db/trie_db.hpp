@@ -95,6 +95,11 @@ public:
         uint64_t block_number, bytes32_t const &block_id) override;
 
     virtual BlockHeader read_eth_header() override;
+    virtual std::optional<byte_string>
+    read_domain_block_header(uint64_t domain_chain_id) override;
+    // Whether the current block has private domain tables, which only a node
+    // that derives private domains writes.
+    bool has_domain_tables();
     virtual bytes32_t state_root() override;
     virtual bytes32_t receipts_root() override;
     virtual bytes32_t transactions_root() override;

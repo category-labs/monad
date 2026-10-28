@@ -502,6 +502,10 @@ mpt::Compute &MachineBase::get_compute() const
 
 bool MachineBase::is_variable_length() const
 {
+    if (table == TableType::DomainTransaction) {
+        // rlp(index) keys below the table nibble and the domain key
+        return depth > prefix_len() + 1 + sizeof(uint64_t) * 2;
+    }
     return depth > prefix_len() &&
            (table == TableType::Transaction || table == TableType::Receipt ||
             table == TableType::Withdrawal || table == TableType::CallFrame);
@@ -528,15 +532,24 @@ void MachineBase::down(unsigned char const nibble)
     if (MONAD_UNLIKELY(depth == prefix_length)) {
         MONAD_ASSERT(table == TableType::Prefix);
         MONAD_ASSERT_PRINTF(
-            nibble <= CALL_FRAME_NIBBLE,
+            nibble <= DOMAIN_NIBBLE,
             "Invalid nibble %u",
             static_cast<unsigned>(nibble));
         table = static_cast<TableType>(nibble + 1);
     }
+    else if (MONAD_UNLIKELY(table == TableType::Domain)) {
+        MONAD_ASSERT(depth == prefix_length + 1);
+        MONAD_ASSERT_PRINTF(
+            nibble <= DOMAIN_BLOCK_NUMBER_NIBBLE,
+            "Invalid domain table nibble %u",
+            static_cast<unsigned>(nibble));
+        table = static_cast<TableType>(
+            static_cast<uint8_t>(TableType::Domain) + 1 + nibble);
+    }
 }
 
-// Equivalent to down() on each nibble: only the trie-section and table nibbles
-// change state other than depth.
+// Equivalent to down() on each nibble: only the trie-section, table and
+// domain table nibbles change state other than depth.
 void MachineBase::down(mpt::NibblesView const path)
 {
     auto const n = static_cast<unsigned>(path.nibble_size());
@@ -558,6 +571,9 @@ void MachineBase::down(mpt::NibblesView const path)
             MachineBase::down(path.get(i++));
         }
     }
+    if (MONAD_UNLIKELY(table == TableType::Domain) && i < n) {
+        MachineBase::down(path.get(i++));
+    }
     auto const new_depth = depth + (n - i);
     MONAD_ASSERT(new_depth <= max_depth(prefix_length));
     depth = static_cast<uint8_t>(new_depth);
@@ -569,6 +585,10 @@ void MachineBase::up(size_t const n)
     depth -= static_cast<uint8_t>(n);
     if (MONAD_UNLIKELY(depth < prefix_len())) {
         table = TableType::Prefix;
+    }
+    else if (MONAD_UNLIKELY(
+                 depth == prefix_len() && table > TableType::Domain)) {
+        table = TableType::Domain;
     }
     if (MONAD_UNLIKELY(depth < TOP_NIBBLE_PREFIX_LEN)) {
         trie_section = TrieType::Undefined;
@@ -640,7 +660,9 @@ bool OnDiskMachine::cache() const
     return table == TableType::Prefix ||
            ((depth <= prefix_len() + CACHE_DEPTH_IN_TABLE) &&
             (table == TableType::State || table == TableType::Code ||
-             table == TableType::TxHash || table == TableType::BlockHash));
+             table == TableType::TxHash || table == TableType::BlockHash ||
+             table == TableType::Domain ||
+             table == TableType::DomainBlockHeader));
 }
 
 bool OnDiskMachine::compact() const
@@ -650,7 +672,10 @@ bool OnDiskMachine::compact() const
 
 bool OnDiskMachine::auto_expire() const
 {
-    return table == TableType::TxHash || table == TableType::BlockHash;
+    // DomainBlockHeader never expires: a domain's latest header must outlive
+    // any gap between its blocks.
+    return table == TableType::TxHash || table == TableType::BlockHash ||
+           table == TableType::DomainBlockNumber;
 }
 
 std::unique_ptr<StateMachine> OnDiskMachine::clone() const
@@ -705,6 +730,13 @@ decode_transaction_db(byte_string_view &enc)
         return rlp::DecodeError::InputTooLong;
     }
     return {transaction, sender};
+}
+
+byte_string_fixed<8> domain_key(uint64_t const domain_chain_id)
+{
+    byte_string_fixed<8> key;
+    store_be(key.data(), domain_chain_id);
+    return key;
 }
 
 byte_string encode_account_db(Address const &address, Account const &account)

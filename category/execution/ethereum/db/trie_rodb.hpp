@@ -16,7 +16,10 @@
 #pragma once
 
 #include <category/core/config.hpp>
+#include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
+#include <category/core/monad_exception.hpp>
+#include <category/execution/ethereum/core/rlp/int_rlp.hpp>
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
@@ -27,8 +30,11 @@
 
 #include <category/core/hex.hpp>
 
+#include <cstdint>
 #include <memory>
 #include <optional>
+#include <utility>
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -205,6 +211,83 @@ public:
     virtual uint64_t get_block_number() const override
     {
         return block_number_;
+    }
+
+    virtual std::optional<byte_string>
+    read_domain_block_header(uint64_t const domain_chain_id) override
+    {
+        return find_domain_value(
+            DOMAIN_BLOCK_HEADER_NIBBLE, domain_chain_id, {});
+    }
+
+    // The transactions and senders of the domain's block derived from the
+    // current block; empty if the current block derived none.
+    std::vector<std::pair<Transaction, Address>>
+    read_domain_transactions(uint64_t const domain_chain_id)
+    {
+        std::vector<std::pair<Transaction, Address>> transactions;
+        for (uint32_t index = 0;; ++index) {
+            auto const encoded = find_domain_value(
+                DOMAIN_TRANSACTION_NIBBLE,
+                domain_chain_id,
+                rlp::encode_unsigned(index));
+            if (!encoded.has_value()) {
+                return transactions;
+            }
+            byte_string_view view{*encoded};
+            auto decoded = decode_transaction_db(view);
+            MONAD_ASSERT(decoded.has_value() && view.empty());
+            transactions.push_back(std::move(decoded.value()));
+        }
+    }
+
+    // The L1 block number a domain block was derived from.
+    std::optional<uint64_t>
+    read_domain_block_l1_number(uint64_t const domain_chain_id, uint64_t number)
+    {
+        byte_string_fixed<8> number_key;
+        store_be(number_key.data(), number);
+        auto const encoded = find_domain_value(
+            DOMAIN_BLOCK_NUMBER_NIBBLE,
+            domain_chain_id,
+            byte_string{number_key.data(), number_key.size()});
+        if (!encoded.has_value()) {
+            return std::nullopt;
+        }
+        byte_string_view view{*encoded};
+        auto const l1_block_number = rlp::decode_unsigned<uint64_t>(view);
+        MONAD_ASSERT_PRINTF(
+            l1_block_number.has_value() && view.empty(),
+            "corrupt l1 block number of domain %lu block %lu: %s",
+            domain_chain_id,
+            number,
+            to_hex(*encoded).c_str());
+        return l1_block_number.value();
+    }
+
+private:
+    std::optional<byte_string> find_domain_value(
+        unsigned char const table, uint64_t const domain_chain_id,
+        byte_string_view const subkey)
+    {
+        auto const domain = domain_key(domain_chain_id);
+        auto const res = db_.find(
+            prefix_cursor_,
+            mpt::concat(
+                DOMAIN_NIBBLE,
+                table,
+                mpt::NibblesView{
+                    byte_string_view{domain.data(), domain.size()}},
+                mpt::NibblesView{subkey}),
+            block_number_);
+        if (!res.has_value()) {
+            MONAD_ASSERT_THROW(
+                res.assume_error() !=
+                    ::monad::mpt::DbError::version_no_longer_exist,
+                "Block was invalidated in db while execution was in progress");
+            return std::nullopt;
+        }
+        return byte_string{res.value().node->value()};
     }
 };
 

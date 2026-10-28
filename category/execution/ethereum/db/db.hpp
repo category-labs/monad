@@ -16,6 +16,7 @@
 #pragma once
 
 #include <category/core/address.hpp>
+#include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
@@ -52,6 +53,15 @@ struct Db
     virtual vm::SharedIntercode read_code(bytes32_t const &) = 0;
 
     virtual BlockHeader read_eth_header() = 0;
+
+    // rlp(ProposedDomainHeader) of the domain's latest block as of the current
+    // block, if it has one. See docs/domains-protocol.md.
+    virtual std::optional<byte_string>
+    read_domain_block_header(uint64_t /* domain_chain_id */)
+    {
+        MONAD_ABORT("private domain blocks are not supported by this Db");
+    }
+
     virtual bytes32_t state_root() = 0;
     virtual bytes32_t receipts_root() = 0;
     virtual bytes32_t transactions_root() = 0;

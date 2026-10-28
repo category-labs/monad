@@ -329,13 +329,52 @@ keccakf_memo_permute(uint64_t *const pre, uint64_t &used)
     return slot_out;
 }
 
-// Build states in the memo, preserving the previous output's capacity.
-// Scratch is zero on entry; later blocks overwrite all 25 lanes.
-// Capacity::Guaranteed guarantees space for every permutation: len / 136 + 1 is
-// at most (len >> 7) + 1. Hits consume no entries. Publish used on return.
-template <Capacity capacity>
+// Where the sponge starts: at the input's first block; there too, leaving a
+// mark of where the memo filed the states after the input's whole blocks; or
+// from such a state, `post`, the input then being what follows its blocks.
+//
+// A mark is the first block's slot plus one, written only when that block was
+// filed. Every later block then misses, so lookups stop and each is filed in
+// the next slot, until the table fills: the state after block j is at
+// mark - 1 + j, if that is below `keccakf_memo_used`. A first block that hit
+// files nothing there, and the next block would take its slot.
+enum class SpongeEntry
+{
+    Plain,
+    Prime,
+    Resume
+};
+
+// The one argument a prime (the mark's address) or a resume (its state) takes
+// past `used`. A plain sponge takes none: a null argument would be one more
+// register to set before the jump to it, on every input of a block or more.
+template <typename T>
+[[gnu::always_inline]] static inline T sponge_extra(T const extra)
+{
+    return extra;
+}
+
+// For inputs >= 136 bytes, build each pre-state in the memo's scratch slot
+// and read the previous output in place, carrying its 64 capacity bytes.
+// The scratch must be zero on entry for the first block's capacity.
+// Later blocks overwrite all 25 lanes. On return, clear the scratch if a
+// hit or full table left it in use; a published miss advances to a zero slot.
+//
+// `used` is the caller's load of keccakf_memo_used; it stays local across
+// permutations and is written back once on return. Room=true is the caller's
+// one test that the table has an entry for every permutation of this digest:
+// len >= 136 bytes take len / 136 + 1 <= (len >> 7) + 1 permutations, each
+// files at most one entry, so `used + (len >> 7) < KECCAKF_MEMO_ENTRIES`
+// puts every filing below KECCAKF_MEMO_ENTRIES and leaves the scratch the
+// digest ends on at the spare at worst. A hit files nothing, so the bound only
+// over-counts. With room, no permutation tests for a full table, and the
+// slot a filing leaves is always the next one: the loop steps its slot pointer
+// instead of re-forming it from `used`, and only a final hit can leave the
+// scratch in use. Without room, every permutation keeps its full-table test.
+template <Capacity capacity, SpongeEntry Entry = SpongeEntry::Plain, typename... Extra>
 static void keccak256_memo_sponge(
-    void const *const in, size_t len, uint8_t out[32], uint64_t used)
+    void const *const in, size_t len, uint8_t out[32], uint64_t used,
+    [[maybe_unused]] Extra const... extra)
 {
     constexpr size_t WORDS = KECCAK_RATE / 8; // 17
     static_assert(
@@ -350,15 +389,30 @@ static void keccak256_memo_sponge(
     }
 
     uint64_t *pre = keccakf_memo[used].in;
-    std::memcpy(pre, p, KECCAK_RATE);
-    p += KECCAK_RATE;
-    len -= KECCAK_RATE;
-    uint64_t const *post =
-        keccakf_memo_permute<Block::First, Lookup::Search, capacity>(pre, used);
-
     // Stop lookups after the first miss. This may forgo later hits, but
     // skipped lookups run the real permutation and cache it when space permits.
-    bool look = post != pre + KECCAKF_LANES;
+    // A resumed sponge looks from its first block: a patched ref that holds
+    // the hash it held when primed leaves that block as the prime filed it.
+    // It skips the full-branch tail below, which follows a first-block miss.
+    bool look = true;
+    uint64_t const *post;
+    if constexpr (Entry == SpongeEntry::Resume) {
+        post = sponge_extra(extra...);
+    }
+    else {
+        std::memcpy(pre, p, KECCAK_RATE);
+        p += KECCAK_RATE;
+        len -= KECCAK_RATE;
+        uint64_t const first = used;
+        post = keccakf_memo_permute<Block::First, Lookup::Search, capacity>(pre, used);
+        look = post != pre + KECCAKF_LANES;
+        if constexpr (Entry == SpongeEntry::Prime) {
+            // The count moves only when the block is filed.
+            if (used != first) {
+                *sponge_extra(extra...) = used;
+            }
+        }
+    }
 
     // Full branch RLP: 3 header bytes + 16 * (1 prefix + 32 hash bytes)
     // + 1 empty-value byte = 532 bytes.
@@ -588,7 +642,27 @@ lanes0:
     keccakf_memo_used = used;
 }
 
-    #endif // MONAD_ZKVM_KECCAKF_MEMO
+// The table's room, tested once per digest rather than at every permutation
+// (see keccak256_memo_sponge for the bound), for the plain, primed and
+// resumed digests alike.
+template <SpongeEntry Entry = SpongeEntry::Plain, typename... Extra>
+[[gnu::always_inline]] static inline void keccak256_memo_digest(
+    void const *const in, size_t const len, uint8_t out[32],
+    Extra const... extra)
+{
+    uint64_t const used = keccakf_memo_used;
+    if (used + (len >> 7) < KECCAKF_MEMO_ENTRIES) {
+        keccak256_memo_sponge<Capacity::Guaranteed, Entry>(in, len, out, used, extra...);
+    }
+    else {
+        keccak256_memo_sponge<Capacity::Checked, Entry>(in, len, out, used, extra...);
+    }
+}
+
+#endif // MONAD_ZKVM_KECCAKF_MEMO
+
+// Only `syscall_keccak_f` above and the entry points below carry C linkage;
+// everything between them is C++ and the sponge is a template, which may not have it.
 
 // Raw permutation for the sponge's non-memo path.
 static inline void keccak_permute(uint64_t (*state)[25])
@@ -610,14 +684,8 @@ static void keccak256_sponge(void const *const in, size_t len, uint8_t out[32])
         }
         else {
             // Test the table's room once per digest rather than once per
-            // permutation; see keccak256_memo_sponge for the bound.
-            uint64_t const used = keccakf_memo_used;
-            if (used + (len >> 7) < KECCAKF_MEMO_ENTRIES) {
-                keccak256_memo_sponge<Capacity::Guaranteed>(in, len, out, used);
-            }
-            else {
-                keccak256_memo_sponge<Capacity::Checked>(in, len, out, used);
-            }
+            // permutation; see keccak256_memo_digest.
+            keccak256_memo_digest(in, len, out);
         }
         return;
     }
@@ -750,6 +818,44 @@ void monad_zkvm_keccak256_64(void const *const in, uint8_t out[32])
 {
     keccak256_fixed<64>(in, out);
 }
+
+#if defined(MONAD_ZKVM_ZISK) && MONAD_ZKVM_KECCAKF_MEMO
+// A trie node hashed when the trie is primed, whose RLP is later patched in
+// place past its leading blocks: the patched digest starts from the state
+// the priming hash left after them instead of looking each of them up again,
+// a hint request and a 200-byte compare a block.
+void monad_zkvm_keccak256_prime(
+    void const *const in, size_t const len, uint8_t out[32],
+    uint64_t *const mark)
+{
+    keccak256_memo_digest<SpongeEntry::Prime>(in, len, out, mark);
+}
+
+// SOUNDNESS. The mark is guest memory the prime wrote, not a hint, and the
+// state it names is checked the way a hint's index is: below
+// `keccakf_memo_used`, so inside the table this execution has written, whose
+// entries never change once counted. The prime filed its blocks in
+// consecutive slots from mark - 1, and a slot past the table's end is never
+// below the count, so a slot that passes is the prime's own state after
+// `blocks` blocks: the real permutations of those bytes, which the caller
+// vouches are this input's first `blocks` blocks.
+void monad_zkvm_keccak256_resume(
+    void const *const in, size_t const len, uint8_t out[32],
+    uint64_t const mark, size_t const blocks)
+{
+    uint64_t const at = mark - 1 + blocks - 1;
+    if (mark != 0 && at < keccakf_memo_used) {
+        size_t const skip = blocks * KECCAK_RATE;
+        keccak256_memo_digest<SpongeEntry::Resume>(
+            static_cast<unsigned char const *>(in) + skip,
+            len - skip,
+            out,
+            static_cast<uint64_t const *>(keccakf_memo[at].out));
+        return;
+    }
+    keccak256_memo_digest(in, len, out);
+}
+#endif
 
 } // extern "C"
 

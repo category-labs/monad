@@ -44,6 +44,20 @@
 
 MONAD_MPT_NAMESPACE_BEGIN
 
+#if defined(MONAD_ZKVM_KECCAKF_RESUME)
+namespace
+{
+    // The word of a hashed node's window after a branch's sixteen ref starts
+    // (see encode_rlp), where the priming hash leaves its Keccak mark for
+    // patch_ref. No node's RLP is longer than a branch's, so none reaches it,
+    // and an inlined node, whose window the next node reuses, never hashes.
+    constexpr size_t PRIME_MARK_WORD = 16;
+    static_assert(
+        MAX_NODE_RLP - (3 + 16 * HASH_RLP_LEN + 1) >=
+        (PRIME_MARK_WORD + 1) * sizeof(uint64_t));
+}
+#endif
+
 NodeId OffsetTrie::read_root(byte_string_view const blob)
 {
     unsigned char const *const base = blob.data();
@@ -300,7 +314,18 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
             cached->priming_rlp_len = rem.rlp_size();
             blob_node_cache_[node_offset >> 2] = cached;
             rlp_window_ += RLP_WINDOW_STRIDE;
+#if defined(MONAD_ZKVM_KECCAKF_RESUME)
+            if (rem.rlp_size() >= KECCAK256_RATE) {
+                monad_zkvm_keccak256_prime(
+                    rem.rlp_data(), rem.rlp_size(), cached->hash.bytes,
+                    reinterpret_cast<uint64_t *>(window) + PRIME_MARK_WORD);
+            }
+            else {
+                monad_keccak256(rem.rlp_data(), rem.rlp_size(), cached->hash.bytes);
+            }
+#else
             monad_keccak256(rem.rlp_data(), rem.rlp_size(), cached->hash.bytes);
+#endif
 #else
             monad_keccak256(rem.rlp_data(), rem.rlp_size(), ch.hash.bytes);
             hashes_.insert_or_assign(NodeId{node_offset}, ch);
@@ -595,7 +620,8 @@ namespace
     }
 }
 
-// Patch saved child references in an retained node window.
+// Patch saved child references in a retained node window.
+// Nothing before the first dirty reference is written.
 // Dirty bits never clear, so every patch revisits all modified children.
 // A changed reference length returns 0 for a full encode. Partial patches
 // remain in the window; later attempts revisit them using the same dirty bits.
@@ -704,8 +730,39 @@ bool OffsetTrie::patch_ref(
                     if (len == 0) {
                         return false;
                     }
-                    monad_keccak256(
-                        cached->priming_rlp, len, cached->hash.bytes);
+#if defined(MONAD_ZKVM_KECCAKF_RESUME)
+                    // The bytes before the first dirty child's ref are the
+                    // ones the priming hash absorbed: every patch wrote only
+                    // at the refs of children dirty then, and `dirty` never
+                    // clears, so at or after the first one dirty now -- and
+                    // a patch keeps each ref's length, so the list header
+                    // too. The digest resumes after the whole blocks there.
+                    uint64_t const dirty = cached->dirty_children;
+                    if (tag == BRANCH && dirty != 0) {
+                        auto const *const head = reinterpret_cast<
+                            uint64_t const *>(cached->priming_rlp + len - MAX_NODE_RLP);
+                        size_t const unchanged =
+                            head[std::countr_zero(dirty)] -
+                            reinterpret_cast<uintptr_t>(cached->priming_rlp);
+                        // A branch's RLP is 532 bytes at most.
+                        size_t const blocks =
+                            unchanged >= 3 * KECCAK256_RATE   ? 3
+                            : unchanged >= 2 * KECCAK256_RATE ? 2
+                            : unchanged >= KECCAK256_RATE     ? 1
+                                                              : 0;
+                        if (blocks != 0) {
+                            monad_zkvm_keccak256_resume(
+                                cached->priming_rlp,
+                                len,
+                                cached->hash.bytes,
+                                head[PRIME_MARK_WORD],
+                                blocks);
+                            cached->hash_stale = 0;
+                            return true;
+                        }
+                    }
+#endif
+                    monad_keccak256(cached->priming_rlp, len, cached->hash.bytes);
                     cached->hash_stale = 0;
                     return true;
                 };

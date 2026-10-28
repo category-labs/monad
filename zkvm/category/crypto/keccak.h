@@ -41,6 +41,28 @@ monad_zkvm_keccak256_32(void const *in, uint8_t out[KECCAK256_SIZE]);
 extern "C" void
 monad_zkvm_keccak256_64(void const *in, uint8_t out[KECCAK256_SIZE]);
 
+#if defined(MONAD_ZKVM_ZISK) &&                                                \
+    (!defined(MONAD_ZKVM_KECCAKF_MEMO) || MONAD_ZKVM_KECCAKF_MEMO)
+    #define MONAD_ZKVM_KECCAKF_RESUME 1
+
+constexpr size_t KECCAK256_RATE = 136;
+
+// The same digest of an input of at least KECCAK256_RATE bytes, which also
+// leaves in `*mark` where the memo filed the states after its whole blocks,
+// or nothing when its first block was not filed. Only ever written, never
+// cleared: a mark that should say "none" must start out zero.
+extern "C" void monad_zkvm_keccak256_prime(
+    void const *in, size_t len, uint8_t out[KECCAK256_SIZE], uint64_t *mark);
+
+// The digest of an input whose first `blocks` rate blocks (at least one, and
+// fewer than the input holds) are the bytes an earlier prime absorbed when it
+// left `mark`: it starts from the state the memo filed after them, or, when
+// the mark does not name one, from the input's start.
+extern "C" void monad_zkvm_keccak256_resume(
+    void const *in, size_t len, uint8_t out[KECCAK256_SIZE], uint64_t mark,
+    size_t blocks);
+#endif
+
 [[gnu::always_inline]] static inline void monad_keccak256(
     void const *const in, size_t const len, uint8_t out[KECCAK256_SIZE])
 {

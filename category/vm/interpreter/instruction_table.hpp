@@ -3955,8 +3955,6 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        auto const monad_vm_dst =
-            static_cast<size_t>(detail::load_be_k<2>(instr_ptr + 1));
         static constexpr auto monad_vm_reqi =
             fused_requirements<traits, PUSH2, JUMPI>();
         if (MONAD_UNLIKELY(!MONAD_VM_FUSED_CHARGE_PURE(monad_vm_reqi))) {
@@ -3969,6 +3967,9 @@ namespace monad::vm::interpreter
         MONAD_VM_LAUNDER(gas_remaining);
         // The condition is the original top, below PUSH2's destination.
         if (*stack_top) {
+            // Decoded on this arm only: the other one never reads it.
+            auto const monad_vm_dst =
+                static_cast<size_t>(detail::load_be_k<2>(instr_ptr + 1));
             if (MONAD_UNLIKELY(
                     !MONAD_VM_ANALYSIS.is_jumpdest16(monad_vm_dst))) {
                 ctx.exit(Error);
@@ -4800,8 +4801,6 @@ namespace monad::vm::interpreter
                 instr_ptr MONAD_VM_TBL_ARG,
                 bit);
         }
-        auto const monad_vm_dst =
-            static_cast<size_t>(detail::load_be_k<2>(instr_ptr + 1));
         if (MONAD_UNLIKELY(stack_top >= MONAD_VM_STACK_LIMIT)) {
             // An exit of its own: merged with the jump's equal one below,
             // the exit block took a copy of ctx on every execution.
@@ -4810,6 +4809,9 @@ namespace monad::vm::interpreter
         gas_remaining -= static_gas<traits, PUSH2, JUMPI>();
         MONAD_VM_LAUNDER(gas_remaining);
         if (bit) {
+            // Decoded on this arm only: the other one never reads it.
+            auto const monad_vm_dst =
+                static_cast<size_t>(detail::load_be_k<2>(instr_ptr + 1));
             if (MONAD_UNLIKELY(
                     !MONAD_VM_ANALYSIS.is_jumpdest16(monad_vm_dst))) {
                 // A tail call: a call would keep a frame for ra.

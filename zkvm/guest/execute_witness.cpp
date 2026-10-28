@@ -52,6 +52,9 @@
 #else
 #define MONAD_KECCAK_SITE(s, len) ((void)0)
 #endif
+#ifdef MONAD_ZKVM_ZISK
+#include <zkvm/core/zkvm_halt.h>
+#endif
 
 #ifdef MONAD_ZKVM_OFFICIAL_PROFILE
 // Kept by zkvm/zisk/align.ld. The audit requires the exact commit, build
@@ -273,9 +276,29 @@ extern "C" void monad_zkvm_execute_witness(void)
         monad::byte_string_view{input, input_len});
     MONAD_ASSERT(witness.has_value());
 
+    monad::vm::VM vm;
     monad::CodeIndex code_index;
     // Reserve initial capacity to avoid rehashes while indexing bytecodes.
     code_index.reserve(512);
+    // A witness code, filed where its first read will look for it. With the
+    // varcode cache on that is the VM's cache, which BlockState::read_code_ref
+    // asks first: indexed in the PartialTrieDb instead, a code's first read
+    // would miss the VM, miss the block's own codes, find it there and only
+    // then build the varcode -- the same one, after two probes. Both maps are
+    // keyed by the hash computed below from the bytes, or by a table entry's
+    // hash for the bytes it was found equal to, so which one holds a code
+    // changes nothing a read can return. A hash the witness lacks still
+    // reaches the PartialTrieDb, whose index then holds only what
+    // zkvm_code_by_hash adds, and read_code_ref's empty-code assertion fires
+    // as it did.
+    auto const file_code = [&](monad::bytes32_t const &code_hash,
+                               monad::vm::SharedIntercode code) {
+#ifdef MONAD_ZKVM_VARCODE_CACHE
+        vm.insert_varcode(code_hash, std::move(code));
+#else
+        code_index.emplace(code_hash, std::move(code));
+#endif
+    };
     {
         monad::byte_string_view codes = witness.value().encoded_codes;
         // Hash the intercode's copy, not the witness bytes.
@@ -342,7 +365,7 @@ extern "C" void monad_zkvm_execute_witness(void)
                             bytes.value().data(), bytes.value().size())) {
                         monad::bytes32_t known_hash;
                         std::memcpy(known_hash.bytes, e->hash, 32);
-                        code_index.emplace(
+                        file_code(
                             known_hash, monad::zkvm::known_code_intercode(*e));
                         continue;
                     }
@@ -363,7 +386,7 @@ extern "C" void monad_zkvm_execute_witness(void)
                     monad_zkvm_keccak256_fast_nomemo(
                         p.code->code(), p.code->size(), code_hash.bytes);
                 }
-                code_index.emplace(code_hash, std::move(p.code));
+                file_code(code_hash, std::move(p.code));
             }
         }
 #endif
@@ -381,16 +404,16 @@ extern "C" void monad_zkvm_execute_witness(void)
                 if (auto const *const e = monad::zkvm::known_code_find(
                         bytes.value().data(), bytes.value().size())) {
                     std::memcpy(code_hash.bytes, e->hash, 32);
-                    code_index.emplace(
+                    file_code(
                         code_hash, monad::zkvm::known_code_intercode(*e));
                     continue;
                 }
             }
 #endif
-            auto const code = intercode_of(bytes.value());
+            auto code = intercode_of(bytes.value());
             monad_zkvm_keccak256_fast_nomemo(
                 code->code(), bytes.value().size(), code_hash.bytes);
-            code_index.emplace(code_hash, code);
+            file_code(code_hash, std::move(code));
         }
     }
 
@@ -452,7 +475,6 @@ extern "C" void monad_zkvm_execute_witness(void)
     }
 
     monad::EthereumMainnet const chain;
-    monad::vm::VM vm;
     pdb.set_block_and_prefix(block.header.number, monad::bytes32_t{});
 
     monad_eth_revision const rev =
@@ -495,5 +517,16 @@ extern "C" void monad_zkvm_execute_witness(void)
 #ifdef MONAD_ZKVM_KECCAK_SITES
     // Append diagnostic counters after the unchanged 32-byte block hash.
     write_output(monad::keccak_sites::bytes(), monad::keccak_sites::size());
+#endif
+#ifdef MONAD_ZKVM_ZISK
+    // The output is complete: the pinned ziskos's write_output emits every
+    // word as it goes, padding a partial last one, and holds nothing back.
+    // Returning would only run the destructors -- the VM and its varcodes,
+    // the witness and the trie, handed to a free that does nothing -- and
+    // none of them checks anything. After main, ziskos's deinit does nothing
+    // in a guest and its exit handlers find nothing of ours (the guest's
+    // __cxa_atexit registers nothing); _start then ends on the same exit
+    // ecall, status 0, that this issues.
+    zkvm_halt(0);
 #endif
 }

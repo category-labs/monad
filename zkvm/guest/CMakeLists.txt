@@ -611,7 +611,8 @@ else()
     target_compile_definitions(monad-zkvm-keccak-test
         PRIVATE MONAD_ZKVM_KECCAK_TEST)
     target_include_directories(monad-zkvm-keccak-test
-        PRIVATE "${THIRD_PARTY_DIR}/ethash/include")
+        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../.."
+                "${THIRD_PARTY_DIR}/ethash/include")
     add_test(NAME monad-zkvm-keccak-test COMMAND monad-zkvm-keccak-test)
 
     add_executable(monad-zkvm-keccak-memo-test
@@ -622,7 +623,8 @@ else()
     target_compile_definitions(monad-zkvm-keccak-memo-test
         PRIVATE MONAD_ZKVM_KECCAK_TEST MONAD_ZKVM_KECCAKF_MEMO=1)
     target_include_directories(monad-zkvm-keccak-memo-test
-        PRIVATE "${THIRD_PARTY_DIR}/ethash/include")
+        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../.."
+                "${THIRD_PARTY_DIR}/ethash/include")
     add_test(NAME monad-zkvm-keccak-memo-test COMMAND monad-zkvm-keccak-memo-test)
 
 endif()

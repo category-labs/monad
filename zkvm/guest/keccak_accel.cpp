@@ -18,6 +18,8 @@
 
 #if defined(MONAD_ZKVM_ZISK) || defined(MONAD_ZKVM_KECCAK_TEST)
 
+    #include <category/core/likely.h>
+
     #include <cstddef>
     #include <cstdint>
     #include <cstring>
@@ -296,6 +298,81 @@ static void keccak256_memo_sponge(
     // Stop lookups after the first miss. This may forgo later hits, but
     // skipped lookups run the real permutation and cache it when space permits.
     bool keep_looking_up = output_state != input_state + KECCAKF_LANES;
+
+    // Full branch RLP: 3 header bytes + 16 * (1 prefix + 32 hash bytes)
+    // + 1 empty-value byte = 532 bytes.
+    // After a first-block miss, absorb its remaining 2 * 136 + 124 bytes
+    // with fixed offsets and padding. Require three free memo slots;
+    // otherwise use the general path below.
+    constexpr size_t FULL_BRANCH_RLP_BYTES = 532;
+    static_assert(
+        FULL_BRANCH_RLP_BYTES - KECCAK_RATE == 2 * KECCAK_RATE + 15 * 8 + 4,
+        "two middle blocks, then fifteen lanes and four bytes");
+    if (MONAD_LIKELY(!keep_looking_up) &&
+        remaining_bytes == FULL_BRANCH_RLP_BYTES - KECCAK_RATE &&
+        entry_count + 3 <= KECCAKF_MEMO_ENTRIES) {
+        // One opaque base for the three slots keeps every lane at a literal
+        // offset from a single register.
+        KeccakfEntry *entries = &keccakf_memo[entry_count];
+        asm("" : "+r"(entries));
+        // Block 2: input_cursor follows block 1; output_state is its
+        // permutation result. XOR the 136 input bytes into the state's first 17
+        // lanes.
+        for (size_t i = 0; i < RATE_WORDS; ++i) {
+            entries[0].in[i] = output_state[i] ^ load64(input_cursor + 8 * i);
+        }
+        // Preserve the eight capacity lanes, which do not absorb input.
+        std::memcpy(
+            entries[0].in + RATE_WORDS,
+            output_state + RATE_WORDS,
+            (KECCAKF_LANES - RATE_WORDS) * 8);
+        // Keep .in for future cache comparisons; permute its copy in .out.
+        // Register each entry immediately before computing its permutation.
+        keccakf_state_copy(entries[0].out, entries[0].in);
+        fcall_set_keccakf_index(entry_count);
+        zisk_keccakf(&entries[0].out);
+
+        // Block 3: repeat absorption using block 2's output state.
+        unsigned char const *const third_block = input_cursor + KECCAK_RATE;
+        for (size_t i = 0; i < RATE_WORDS; ++i) {
+            entries[1].in[i] = entries[0].out[i] ^ load64(third_block + 8 * i);
+        }
+        std::memcpy(
+            entries[1].in + RATE_WORDS,
+            entries[0].out + RATE_WORDS,
+            (KECCAKF_LANES - RATE_WORDS) * 8);
+        keccakf_state_copy(entries[1].out, entries[1].in);
+        fcall_set_keccakf_index(entry_count + 1);
+        zisk_keccakf(&entries[1].out);
+
+        // Final block: 124 bytes = fifteen complete lanes + four bytes.
+        unsigned char const *const final_block = input_cursor + 2 * KECCAK_RATE;
+        for (size_t i = 0; i < 15; ++i) {
+            entries[2].in[i] = entries[1].out[i] ^ load64(final_block + 8 * i);
+        }
+        // Read exactly four bytes to stay within the input. In byte order:
+        // lane 15 = [last four bytes, 01, 00, 00, 00];
+        // lane 16 = [00, 00, 00, 00, 00, 00, 00, 80].
+        uint32_t final_four_bytes;
+        __builtin_memcpy(
+            &final_four_bytes, final_block + 15 * 8, sizeof final_four_bytes);
+        entries[2].in[15] =
+            entries[1].out[15] ^ (final_four_bytes | uint64_t{0x01} << 32);
+        entries[2].in[16] = entries[1].out[16] ^ (uint64_t{0x80} << 56);
+        std::memcpy(
+            entries[2].in + RATE_WORDS,
+            entries[1].out + RATE_WORDS,
+            (KECCAKF_LANES - RATE_WORDS) * 8);
+        keccakf_state_copy(entries[2].out, entries[2].in);
+        fcall_set_keccakf_index(entry_count + 2);
+        zisk_keccakf(&entries[2].out);
+        // Keccak-256 returns the first 32 bytes of the final state.
+        std::memcpy(output, entries[2].out, 32);
+        // Publish all three entries; the next scratch slot is still unwritten.
+        keccakf_memo_used = entry_count + 3;
+        return;
+    }
+
     while (keep_looking_up && remaining_bytes >= KECCAK_RATE) {
         input_state = keccakf_memo[entry_count].in;
         // Keep one opaque base pointer for the lanes to avoid extra saved

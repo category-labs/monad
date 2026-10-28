@@ -728,8 +728,8 @@ void monad_zkvm_keccak256_fast(
     keccak256_sponge<true>(in, len, out);
 }
 
-// Compute every permutation without caching; later calls may lose cache hits.
-// Their hints still require valid indices and exact input-state matches.
+// Skip caching bytecode and large transaction, receipt and signing payloads.
+// Later calls may lose cache hits; their hints still require exact matches.
 void monad_zkvm_keccak256_fast_nomemo(
     void const *const in, size_t len, uint8_t out[32])
 {

@@ -76,6 +76,24 @@ namespace detail
                     MONAD_ASSERT(out.empty());
                     return node_len;
                 });
+#if defined(MONAD_ZKVM_ZISK)
+            // A leaf of a full rate block or more is a transaction or a
+            // receipt, and its first block does not recur: it carries the
+            // receipt's cumulative gas, which strictly increases through the
+            // block, or the transaction's nonce and fees. So it skips the
+            // Keccak-f memo, which would file every permutation and look up
+            // a state that is almost never there. Branch nodes and shorter
+            // leaves keep it. Not filing only forgoes hits; see
+            // monad_zkvm_keccak256_fast_nomemo.
+            if (node.size() >= 136) {
+#ifdef MONAD_ZKVM_KECCAK_SITES
+                MONAD_KECCAK_SITE(BODY_ROOTS, node.size());
+#endif
+                monad_zkvm_keccak256_fast_nomemo(
+                    node.data(), node.size(), ref_dest.data());
+                return KECCAK256_SIZE;
+            }
+#endif
             return compute_ref(node);
         }
 

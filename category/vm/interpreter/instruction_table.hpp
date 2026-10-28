@@ -35,6 +35,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <memory>
 #include <type_traits>
 
@@ -1588,8 +1589,7 @@ namespace monad::vm::interpreter
                 MONAD_DEBUG_ASSERT(
                     (stack_top - 1) -
                         (stack_bottom - MONAD_VM_STACK_BOTTOM_BIAS) <
-                    static_cast<std::ptrdiff_t>(
-                        runtime::EvmStackAllocatorMeta::size));
+                    1024);
                 MONAD_VM_CHARGE(PUSH2);
                 // PUSH2 adds one value, restoring the original stack height.
                 MONAD_VM_CHECK_AT(JUMPI, 0);
@@ -4630,8 +4630,15 @@ namespace monad::vm::interpreter
     }
 
     // SWAP1 then DUP2 or SWAP2, SWAP1's test and gas made: a b -> b a b in
-    // three copies where the two opcodes make four, x y z -> y z x in four
-    // where they make six.
+    // two copies where the two opcodes make four, x y z -> y z x in two where
+    // they make six. For DUP2 the pair a b moves up one slot in one
+    // overlapping copy, its destination above its source, which ZisK's DMA
+    // reads whole before it writes, as ziskos's memmove relies on; the new
+    // top is then copied to the slot under it, and the slot above is the
+    // push DUP2's test allows. For SWAP2 the deepest word is copied to the
+    // slot above the top, then the words over it move down one slot in one
+    // overlapping copy, its destination below its source; that slot may be
+    // the one above the 1024th, which the stack keeps for it (allocator.hpp).
     template <uint8_t OP, Traits traits>
     MONAD_VM_INSTRUCTION_CALL void swap1_then(
         runtime::Context &ctx, MONAD_VM_ANALYSIS_PARAM,
@@ -4640,19 +4647,15 @@ namespace monad::vm::interpreter
     {
         if constexpr (OP == DUP2) {
             MONAD_VM_CHECK_OWN_OVERFLOW(DUP2);
-            stack_top[1] = stack_top[0];
-            stack_top[0] = stack_top[-1];
+            std::memmove(stack_top, stack_top - 1, 2 * sizeof(uint256_t));
             stack_top[-1] = stack_top[1];
             ++stack_top;
         }
         else {
             static_assert(OP == SWAP2);
             MONAD_VM_CHECK(SWAP2);
-            uint256_t *const monad_t = &ctx.swap_scratch;
-            *monad_t = stack_top[-2];
-            stack_top[-2] = stack_top[-1];
-            stack_top[-1] = stack_top[0];
-            stack_top[0] = *monad_t;
+            stack_top[1] = stack_top[-2];
+            std::memmove(stack_top - 2, stack_top - 1, 3 * sizeof(uint256_t));
         }
         MONAD_VM_DISPATCH(1, 0, *instr_ptr);
     }

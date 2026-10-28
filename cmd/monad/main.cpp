@@ -21,6 +21,7 @@
 #include <category/core/config.hpp>
 #include <category/core/event/owned_event_ring.hpp>
 #include <category/core/fiber/priority_pool.hpp>
+#include <category/core/hex.hpp>
 #include <category/core/likely.h>
 #include <category/core/log.hpp>
 #include <category/core/monad_exception.hpp>
@@ -44,8 +45,11 @@
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/event_trace.hpp>
 #include <category/execution/monad/chain/chain_factory.hpp>
+#include <category/execution/monad/chain/domain_chain_id.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/db/state_machine_init.hpp>
+#include <category/execution/monad/private_domain_hpke.hpp>
+#include <category/execution/monad/private_domains.hpp>
 #include <category/execution/runloop/runloop_ethereum.hpp>
 #include <category/execution/runloop/runloop_monad.hpp>
 #include <category/execution/runloop/runloop_monad_ethblocks.hpp>
@@ -62,6 +66,7 @@
 #include <nlohmann/json.hpp>
 
 #include <quill/std/FilesystemPath.h>
+#include <quill/std/Vector.h>
 
 #include <algorithm>
 #include <chrono>
@@ -75,6 +80,7 @@
 #include <stdexcept>
 #include <string>
 #include <sys/sysinfo.h>
+#include <tuple>
 #include <unistd.h>
 
 MONAD_NAMESPACE_BEGIN
@@ -122,6 +128,21 @@ bool ripemd_account_exists_and_is_empty(Db &db)
     return acct && is_empty(*acct);
 }
 
+std::string
+validate_address(std::string const &value, bool const require_nonzero)
+{
+    std::string_view hex{value};
+    monad::skip_optional_hex_prefix(hex);
+    auto const address = monad::from_hex<monad::Address>(value);
+    if (hex.size() != sizeof(monad::Address) * 2 || !address.has_value()) {
+        return "address must contain exactly 20 bytes of hexadecimal";
+    }
+    if (require_nonzero && *address == monad::Address{}) {
+        return "address must be nonzero";
+    }
+    return {};
+}
+
 MONAD_ANONYMOUS_NAMESPACE_END
 
 using namespace monad;
@@ -158,6 +179,9 @@ try {
     fs::path dump_snapshot;
     std::string statesync;
     fs::path chain_rlp_path;
+    using PrivateDomainArgument = std::tuple<uint64_t, std::string, fs::path>;
+    std::vector<PrivateDomainArgument> private_domain_arguments;
+    std::string private_domain_hub_hex(40, '0');
     auto log_level = quill::LogLevel::Info;
 
     std::unordered_map<std::string, monad_chain_config> const CHAIN_CONFIG_MAP =
@@ -222,6 +246,28 @@ try {
            "timeout in seconds for reading blocks from blockdb (0 = no retry)")
         ->needs(as_eth_blocks_flag);
     cli.add_option("--chain-rlp", chain_rlp_path, "path to chain rlp file");
+    auto *const private_domain_option =
+        cli.add_option(
+               "--private-domain",
+               private_domain_arguments,
+               "Private domain to derive blocks for, with its spoke address "
+               "and HPKE receiver key; repeat for each domain")
+            ->type_name("<CHAIN_ID> <SPOKE_ADDRESS> <PRIVATE_KEY_PEM_PATH>");
+    CLI::Validator spoke_address_validator{
+        [](std::string &value) { return validate_address(value, true); }, ""};
+    auto key_file_validator = CLI::ExistingFile;
+    key_file_validator.description("").application_index(2);
+    private_domain_option->check(spoke_address_validator.application_index(1))
+        ->check(key_file_validator);
+    cli.add_option(
+           "--private-domain-hub",
+           private_domain_hub_hex,
+           "L1 DomainHub address whose events private domain blocks are "
+           "derived from")
+        ->type_name("ADDRESS")
+        ->check([](std::string const &value) {
+            return validate_address(value, false);
+        });
     auto *const group =
         cli.add_option_group("load", "methods to initialize the db");
     group
@@ -322,6 +368,60 @@ try {
 
     auto chain = make_chain(chain_config);
 
+    std::vector<PrivateDomainConfig> private_domain_configs;
+    for (auto const &[chain_id, spoke_text, key_path] :
+         private_domain_arguments) {
+        auto const spoke = from_hex<Address>(spoke_text);
+        MONAD_ASSERT(spoke.has_value(), "not validated by CLI11?");
+        private_domain_configs.push_back(PrivateDomainConfig{
+            .domain_chain_id = chain_id,
+            .spoke_address = *spoke,
+            .private_key_path = key_path});
+    }
+    auto keyring = PrivateDomainKeyring::load(private_domain_configs);
+    if (keyring.has_error()) {
+        LOG_ERROR(
+            "invalid private domain configuration: {}",
+            keyring.assume_error().message().c_str());
+        return 1;
+    }
+    std::optional<PrivateDomains> private_domains;
+    if (!keyring.value().domain_ids().empty()) {
+        Address const hub = *from_hex<Address>(private_domain_hub_hex);
+        if (hub == Address{}) {
+            LOG_ERROR("--private-domain-hub must be nonzero when private "
+                      "domains are configured");
+            return 1;
+        }
+        if (chain->get_chain_id() > uint256_t{0xffff}) {
+            LOG_ERROR(
+                "network chain ID {} does not fit the private domain "
+                "chain ID suffix",
+                to_string(chain->get_chain_id(), 10));
+            return 1;
+        }
+        for (auto const domain_id : keyring.value().domain_ids()) {
+            auto const domain = domain_from_chain_id(
+                uint256_t{domain_id}, chain->get_chain_id());
+            if (domain.has_error() || !domain.value().has_value()) {
+                LOG_ERROR(
+                    "private domain chain ID {} must differ from and end with "
+                    "network chain ID {}",
+                    domain_id,
+                    to_string(chain->get_chain_id(), 10));
+                return 1;
+            }
+        }
+        LOG_INFO(
+            "deriving private domain blocks for {} from DomainHub {}",
+            std::vector<uint64_t>{
+                keyring.value().domain_ids().begin(),
+                keyring.value().domain_ids().end()},
+            private_domain_hub_hex);
+        private_domains.emplace(PrivateDomains{
+            .keyring = std::move(keyring).assume_value(), .hub = hub});
+    }
+
     // The on-disk Db ctor reads the persisted state_machine_kind from
     // db_metadata and constructs the StateMachine via the registry. The
     // in-memory path has no metadata to read from and constructs the SM
@@ -419,6 +519,16 @@ try {
         triedb.state_root(),
         std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - load_start_time));
+
+    if (!private_domains.has_value() && triedb.has_domain_tables()) {
+        // The domain tables must be written with every block for compaction
+        // to move them forward, so keep writing them, without deriving.
+        LOG_WARNING("db has private domain tables but no --private-domain is "
+                    "configured: no private domain blocks will be derived");
+        private_domains.emplace();
+    }
+    PrivateDomains const *const private_domains_ptr =
+        private_domains.has_value() ? &*private_domains : nullptr;
 
     uint64_t const start_block_num = init_block_num + 1;
 
@@ -524,7 +634,8 @@ try {
                     stop,
                     trace_calls,
                     block_db_timeout,
-                    exec_recorder);
+                    exec_recorder,
+                    private_domains_ptr);
             }
             else {
                 return runloop_monad(
@@ -539,7 +650,9 @@ try {
                     end_block_num,
                     stop,
                     trace_calls,
-                    exec_recorder);
+                    exec_recorder,
+                    /*runloop_override=*/{},
+                    private_domains_ptr);
             }
         }
         }

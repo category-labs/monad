@@ -261,6 +261,8 @@ add_library(
   "monad/private_domain_scanner.hpp"
   "monad/private_domain_system_transaction.cpp"
   "monad/private_domain_system_transaction.hpp"
+  "monad/private_domains.cpp"
+  "monad/private_domains.hpp"
   "monad/reserve_balance.cpp"
   "monad/reserve_balance.h"
   "monad/reserve_balance.hpp"

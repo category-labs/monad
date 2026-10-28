@@ -42,7 +42,8 @@ void commit_block(
     std::vector<Address> const &senders,
     std::vector<Transaction> const &transactions,
     std::vector<BlockHeader> const &ommers,
-    std::optional<std::vector<Withdrawal>> const &withdrawals)
+    std::optional<std::vector<Withdrawal>> const &withdrawals,
+    std::optional<std::span<DomainBlockCommit const>> const domain_blocks)
 {
     // make_commit_builder picks the slot or page builder from the db's
     // encoding, which must match the block's revision.
@@ -54,6 +55,9 @@ void commit_block(
         .add_transactions(transactions, senders)
         .add_call_frames(call_frames)
         .add_ommers(ommers);
+    if (domain_blocks.has_value()) {
+        builder->add_domain_blocks(domain_blocks.value());
+    }
     if (withdrawals.has_value()) {
         builder->add_withdrawals(withdrawals.value());
     }

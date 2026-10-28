@@ -27,7 +27,7 @@ monad_compile_options(monad)
 
 target_link_libraries(monad PRIVATE monad_execution CLI11::CLI11)
 
-add_executable(monad-cli monad_cli.cpp)
+add_executable(monad-cli monad_cli.cpp monad_cli_domain.cpp monad_cli_domain.hpp)
 monad_compile_options(monad-cli)
 target_link_libraries(monad-cli PUBLIC monad_execution CLI11::CLI11)
 

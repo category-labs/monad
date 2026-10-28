@@ -316,7 +316,13 @@ vm::Result ExecuteTransactionNoValidation<traits>::operator()(
     }
 
     if constexpr (traits::eip_3651_active()) {
+#if defined(MONAD_ZKVM_ZISK)
+        if (!state.defers_beneficiary()) {
+            host.access_account(header_.beneficiary);
+        }
+#else
         host.access_account(header_.beneficiary);
+#endif
     }
 
     state.access_account(sender_);
@@ -470,7 +476,15 @@ Receipt ExecuteTransaction<traits>::execute_final(
         staking::collect_priority_fee(state, reward);
     }
     else {
+#if defined(MONAD_ZKVM_ZISK)
+        // Held back in the block's state when the transaction made no row
+        // for the beneficiary: see State::defer_beneficiary_credit.
+        if (!state.defer_beneficiary_credit(reward)) {
+            state.add_to_balance(header_.beneficiary, reward);
+        }
+#else
         state.add_to_balance(header_.beneficiary, reward);
+#endif
     }
 
     // finalize state, Eqn. 77-79
@@ -587,6 +601,14 @@ Result<Receipt> ExecuteTransaction<traits>::execute(SequentialExecutionToken)
 
     State state{block_state_, Incarnation{header_.number, i_ + 1}};
     state.set_original_nonce(sender_, tx_.nonce);
+#if defined(MONAD_ZKVM_ZISK)
+    // Only sequential Ethereum execution can defer credits: speculative reads
+    // and Monad reserve-balance tracking require immediate updates.
+    if constexpr (
+        traits::eip_3651_active() && !::monad::is_monad_trait_v<traits>) {
+        state.defer_beneficiary();
+    }
+#endif
 
     call_tracer_.reset();
     trace::reset(state_tracer_);

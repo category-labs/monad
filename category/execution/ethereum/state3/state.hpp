@@ -328,6 +328,10 @@ class State
     // Original rows are never erased; inserts preserve the cached pointer.
     alignas(8) Address original_memo_address_{};
     OriginalAccountState *original_memo_state_{nullptr};
+
+    bool defers_beneficiary_{false};
+    // Remains true even if rollback erases the beneficiary's current row.
+    bool beneficiary_row_created_{false};
 #endif
 
     bool const relaxed_validation_{false};
@@ -436,6 +440,20 @@ private:
     std::optional<Account> &current_account(monad_address const &);
 
 public:
+#if defined(MONAD_ZKVM_ZISK)
+    // Only enable lazy warming and fee credits for a configured sequential
+    // block.
+    void defer_beneficiary();
+
+    [[nodiscard]] bool defers_beneficiary() const
+    {
+        return defers_beneficiary_;
+    }
+
+    // Return false when the fee must be credited through the transaction state.
+    bool defer_beneficiary_credit(uint256_t const &);
+#endif
+
     State(BlockState &, Incarnation, bool relaxed_validation = false);
 
     State(State &&) = delete;

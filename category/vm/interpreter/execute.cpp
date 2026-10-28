@@ -614,24 +614,26 @@ namespace monad::vm::interpreter
 
     // SWAP1's head, 40 bytes ahead of PUSH2's: in copy R it takes a SWAP1
     // (R + 5) % 6 bytes behind (swap1_offset). For most opcodes it is the
-    // swap through ctx's scratch word, a5 stepped by 6 in copy 0, and a jump
-    // to the copy; POP's makes SWAP1 POP whole, the top's word moved down
-    // once; JUMP's, DUP2's and SWAP2's jump to their pairs.
+    // swap in two copies, a5 stepped by 6 in copy 0, and a jump to the copy:
+    // the word under the top copied to the slot above the top, then the top
+    // and that copy moved down a slot in one overlapping copy, its
+    // destination below its source, which ZisK's DMA makes as memmove does.
+    // The stack keeps the slot above the 1024th for it (allocator.hpp).
+    // POP's makes SWAP1 POP whole, the top's word moved down once; JUMP's,
+    // DUP2's and SWAP2's jump to their pairs.
     #define MONAD_VM_SWAP1_SWAP                                                \
-        "\taddi t1, a0, 360\n"                                                 \
-        "\tcsrs 0x813, a3\n"                                                   \
-        "\taddi zero, t1, 32\n"                                                \
         "\taddi t4, a3, -32\n"                                                 \
+        "\taddi t1, a3, 32\n"                                                  \
         "\tcsrs 0x813, t4\n"                                                   \
-        "\taddi zero, a3, 32\n"                                                \
-        "\tcsrs 0x813, t1\n"                                                   \
-        "\taddi zero, t4, 32\n"
+        "\taddi zero, t1, 32\n"                                                \
+        "\tcsrs 0x813, a3\n"                                                   \
+        "\taddi zero, t4, 64\n"
     #define MONAD_VM_SWAP1_PLAIN_0(NAME, OP)                                   \
         MONAD_VM_SWAP1_SWAP MONAD_VM_STEP6 "\tj monad_vm_slot_" #NAME "_" #OP  \
-                                           "\n"
+                                           "\n\tnop\n\tnop\n"
     #define MONAD_VM_SWAP1_PLAIN_R(NAME, OP, SUFFIX)                           \
         MONAD_VM_SWAP1_SWAP "\tj monad_vm_slot_" #NAME "_" #OP SUFFIX          \
-                            "\n\tnop\n"
+                            "\n\tnop\n\tnop\n\tnop\n"
     #define MONAD_VM_SWAP1_PLAIN_1(NAME, OP)                                   \
         MONAD_VM_SWAP1_PLAIN_R(NAME, OP, "_1")
     #define MONAD_VM_SWAP1_PLAIN_2(NAME, OP)                                   \

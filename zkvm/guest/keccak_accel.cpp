@@ -226,18 +226,38 @@ keccak256_one_block(void const *const in, size_t const len, uint8_t out[32])
     std::memcpy(out, entry.out, 32);
 }
 
+enum class Block
+{
+    First,
+    Following
+};
+enum class Lookup
+{
+    Search,
+    Skip
+};
+enum class Capacity
+{
+    Checked,
+    Guaranteed
+};
+
 // Permute pre = keccakf_memo[used].in without changing it.
-// A hit requires a valid index and an exact full-state match.
-// First allows a rate-only copy into a fresh output (both capacities zero).
-// Later blocks and the reused spare require all 200 bytes.
-// Lookup=false still computes the result and caches it if space permits.
-// A miss returns pre + KECCAKF_LANES; a hit returns an earlier entry's output.
-// The caller writes the local count back after the digest.
-template <bool First, bool Lookup = true>
+// A hit needs a valid index and an identical full input state.
+// Hits return an earlier output; misses return pre + KECCAKF_LANES.
+// Block::First copies only the rate into a fresh output: both capacities are
+// zero. Other blocks and the reused spare need all 200 bytes. Lookup::Skip
+// skips hints but still computes and caches the permutation.
+// Capacity::Guaranteed skips capacity checks after the caller bounds all
+// insertions. used is local to the caller, which writes it back after the
+// digest.
+template <
+    Block block, Lookup lookup = Lookup::Search,
+    Capacity capacity = Capacity::Checked>
 static inline uint64_t const *
 keccakf_memo_permute(uint64_t *const pre, uint64_t &used)
 {
-    if constexpr (Lookup) {
+    if constexpr (lookup == Lookup::Search) {
         uint64_t const index = fcall_get_keccakf_index(pre);
         // Reject out-of-range hints before reading the table.
         if (index < used && keccakf_state_eq(keccakf_memo[index].in, pre)) {
@@ -246,13 +266,15 @@ keccakf_memo_permute(uint64_t *const pre, uint64_t &used)
     }
     uint64_t *const slot_out = pre + KECCAKF_LANES;
     auto *const post = reinterpret_cast<uint64_t(*)[KECCAKF_LANES]>(slot_out);
-    if (used == KECCAKF_MEMO_ENTRIES) {
-        // The reused spare may hold an earlier output; overwrite all lanes.
-        keccakf_state_copy(slot_out, pre);
-        zisk_keccakf(post);
-        return slot_out;
+    if constexpr (capacity == Capacity::Checked) {
+        if (used == KECCAKF_MEMO_ENTRIES) {
+            // The reused spare may hold an earlier output; overwrite all lanes.
+            keccakf_state_copy(slot_out, pre);
+            zisk_keccakf(post);
+            return slot_out;
+        }
     }
-    if constexpr (First) {
+    if constexpr (block == Block::First) {
         std::memcpy(slot_out, pre, 17 * sizeof(uint64_t));
     }
     else {
@@ -266,18 +288,18 @@ keccakf_memo_permute(uint64_t *const pre, uint64_t &used)
     return slot_out;
 }
 
-// Inputs >= 136 bytes: build states directly in the memo, carrying the
-// previous output's 64-byte capacity. The scratch is zero on entry;
-// later blocks overwrite all 25 lanes.
-static void
-keccak256_memo_sponge(void const *const in, size_t len, uint8_t out[32])
+// Build states in the memo, preserving the previous output's capacity.
+// Scratch is zero on entry; later blocks overwrite all 25 lanes.
+// Capacity::Guaranteed guarantees space for every permutation: len / 136 + 1 is
+// at most (len >> 7) + 1. Hits consume no entries. Publish used on return.
+template <Capacity capacity>
+static void keccak256_memo_sponge(
+    void const *const in, size_t len, uint8_t out[32], uint64_t used)
 {
     constexpr size_t WORDS = KECCAK_RATE / 8; // 17
     static_assert(
         KECCAK_RATE - 1 == 16 * 8 + 7, "the pad bit is byte 7 of lane 16");
     auto const *p = static_cast<unsigned char const *>(in);
-    // Keep the count local across permutations; write it back once on return.
-    uint64_t used = keccakf_memo_used;
 
     // Copy misaligned inputs that fit here once, making word loads aligned.
     alignas(8) unsigned char staged[8 * KECCAK_RATE];
@@ -290,7 +312,8 @@ keccak256_memo_sponge(void const *const in, size_t len, uint8_t out[32])
     std::memcpy(pre, p, KECCAK_RATE);
     p += KECCAK_RATE;
     len -= KECCAK_RATE;
-    uint64_t const *post = keccakf_memo_permute<true>(pre, used);
+    uint64_t const *post =
+        keccakf_memo_permute<Block::First, Lookup::Search, capacity>(pre, used);
 
     // Stop lookups after the first miss. This may forgo later hits, but
     // skipped lookups run the real permutation and cache it when space permits.
@@ -374,27 +397,55 @@ keccak256_memo_sponge(void const *const in, size_t len, uint8_t out[32])
             pre[i] = post[i] ^ load64(p + 8 * i);
         }
         std::memcpy(pre + WORDS, post + WORDS, (KECCAKF_LANES - WORDS) * 8);
-        post = keccakf_memo_permute<false>(pre, used);
+        post = keccakf_memo_permute<Block::Following, Lookup::Search, capacity>(
+            pre, used);
         look = post != pre + KECCAKF_LANES;
         p += KECCAK_RATE;
         len -= KECCAK_RATE;
     }
-    while (len >= KECCAK_RATE) {
-        pre = keccakf_memo[used].in;
-        asm("" : "+r"(pre));
-        for (size_t i = 0; i < WORDS; ++i) {
-            pre[i] = post[i] ^ load64(p + 8 * i);
+    if constexpr (capacity == Capacity::Guaranteed) {
+        // After a miss, each permutation inserts one entry. Walk the entry
+        // array directly; if all lookups hit, pre remains the scratch slot.
+        if (!look) {
+            KeccakfEntry *next_entry = &keccakf_memo[used];
+            while (len >= KECCAK_RATE) {
+                pre = next_entry->in;
+                asm("" : "+r"(pre));
+                for (size_t i = 0; i < WORDS; ++i) {
+                    pre[i] = post[i] ^ load64(p + 8 * i);
+                }
+                std::memcpy(
+                    pre + WORDS, post + WORDS, (KECCAKF_LANES - WORDS) * 8);
+                post = keccakf_memo_permute<
+                    Block::Following,
+                    Lookup::Skip,
+                    Capacity::Guaranteed>(pre, used);
+                ++next_entry;
+                p += KECCAK_RATE;
+                len -= KECCAK_RATE;
+            }
+            pre = next_entry->in;
         }
-        std::memcpy(pre + WORDS, post + WORDS, (KECCAKF_LANES - WORDS) * 8);
-        post = keccakf_memo_permute<false, false>(pre, used);
-        p += KECCAK_RATE;
-        len -= KECCAK_RATE;
+    }
+    else {
+        while (len >= KECCAK_RATE) {
+            pre = keccakf_memo[used].in;
+            asm("" : "+r"(pre));
+            for (size_t i = 0; i < WORDS; ++i) {
+                pre[i] = post[i] ^ load64(p + 8 * i);
+            }
+            std::memcpy(pre + WORDS, post + WORDS, (KECCAKF_LANES - WORDS) * 8);
+            post =
+                keccakf_memo_permute<Block::Following, Lookup::Skip>(pre, used);
+            p += KECCAK_RATE;
+            len -= KECCAK_RATE;
+        }
+        pre = keccakf_memo[used].in;
     }
 
     // Absorb the remaining bytes and Keccak padding (0x01 ... 0x80).
     // The partial lane is read backwards from the input end; the preceding
     // full block keeps the eight-byte load within the input.
-    pre = keccakf_memo[used].in;
     size_t const whole = len / 8;
     unsigned const rem = static_cast<unsigned>(len % 8);
     // Direct label addresses avoid switch-table offset arithmetic.
@@ -460,13 +511,38 @@ lanes0:
     std::memcpy(
         pre + whole + 1, post + whole + 1, (KECCAKF_LANES - 1 - whole) * 8);
     pre[16] ^= uint64_t{0x80} << 56;
-    post = look ? keccakf_memo_permute<false>(pre, used)
-                : keccakf_memo_permute<false, false>(pre, used);
-    std::memcpy(out, post, 32);
+    if constexpr (capacity == Capacity::Guaranteed) {
+        // A filing advances `used` past `pre` to a zero slot; only a hit
+        // leaves the scratch in use, so only a hit clears it.
+        if (look) {
+            post = keccakf_memo_permute<
+                Block::Following,
+                Lookup::Search,
+                Capacity::Guaranteed>(pre, used);
+            if (post != pre + KECCAKF_LANES) {
+                std::memcpy(out, post, 32);
+                std::memset(pre, 0, KECCAKF_STATE_BYTES);
+                keccakf_memo_used = used;
+                return;
+            }
+        }
+        else {
+            post = keccakf_memo_permute<
+                Block::Following,
+                Lookup::Skip,
+                Capacity::Guaranteed>(pre, used);
+        }
+        std::memcpy(out, post, 32);
+    }
+    else {
+        post = look ? keccakf_memo_permute<Block::Following>(pre, used)
+                    : keccakf_memo_permute<Block::Following, Lookup::Skip>(
+                          pre, used);
+        std::memcpy(out, post, 32);
 
-    // A hit or full table reuses this scratch; a miss advanced to a zero slot.
-    if (pre == keccakf_memo[used].in) {
-        std::memset(pre, 0, KECCAKF_STATE_BYTES);
+        if (pre == keccakf_memo[used].in) {
+            std::memset(pre, 0, KECCAKF_STATE_BYTES);
+        }
     }
     keccakf_memo_used = used;
 }
@@ -492,7 +568,15 @@ static void keccak256_sponge(void const *const in, size_t len, uint8_t out[32])
             keccak256_one_block(in, len, out);
         }
         else {
-            keccak256_memo_sponge(in, len, out);
+            // Test the table's room once per digest rather than once per
+            // permutation; see keccak256_memo_sponge for the bound.
+            uint64_t const used = keccakf_memo_used;
+            if (used + (len >> 7) < KECCAKF_MEMO_ENTRIES) {
+                keccak256_memo_sponge<Capacity::Guaranteed>(in, len, out, used);
+            }
+            else {
+                keccak256_memo_sponge<Capacity::Checked>(in, len, out, used);
+            }
         }
         return;
     }

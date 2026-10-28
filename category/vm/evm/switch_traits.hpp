@@ -69,6 +69,8 @@
         return f<::monad::MonadTraits<MONAD_TEN>>(__VA_ARGS__);                \
     case MONAD_NEXT:                                                           \
         return f<::monad::MonadTraits<MONAD_NEXT>>(__VA_ARGS__);               \
+    case MONAD_NEXT_AMSTERDAM:                                                 \
+        return f<::monad::MonadTraits<MONAD_NEXT_AMSTERDAM>>(__VA_ARGS__);     \
     }
 
 // NOLINTEND(bugprone-macro-parentheses)

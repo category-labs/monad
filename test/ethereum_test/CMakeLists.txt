@@ -151,11 +151,11 @@ add_monad_test(FORK MONAD_EIGHT)
 add_monad_test(FORK MONAD_NINE)
 add_monad_test(FORK MONAD_TEN)
 
-# MONAD_NEXT Amsterdam spec tests, from a separate fixtures release.
-include(${CMAKE_CURRENT_SOURCE_DIR}/exclude/MONAD_NEXT_amsterdam.cmake)
-list(JOIN MONAD_NEXT_amsterdam_excluded_tests ":" TESTS_EXCLUDED)
-add_sharded_test(MONAD_NEXT_amsterdam_monad_ethereum_test
-                 COMMAND monad-ethereum-test --fork MONAD_NEXT
+# MONAD_NEXT_AMSTERDAM spec tests, from a separate fixtures release.
+include(${CMAKE_CURRENT_SOURCE_DIR}/exclude/MONAD_NEXT_AMSTERDAM.cmake)
+list(JOIN MONAD_NEXT_AMSTERDAM_excluded_tests ":" TESTS_EXCLUDED)
+add_sharded_test(MONAD_NEXT_AMSTERDAM_monad_ethereum_test
+                 COMMAND monad-ethereum-test --fork MONAD_NEXT_AMSTERDAM
                          --blockchain-tests ${CMAKE_BINARY_DIR}/src/MonadAmsterdamSpecTestFixtures/blockchain_tests
                          --gtest_filter=-:${TESTS_EXCLUDED})
 

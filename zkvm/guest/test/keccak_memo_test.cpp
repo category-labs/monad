@@ -274,18 +274,23 @@ int main()
     require(
         hint_lookup_count == 3, "expected a hit, then a miss, then no lookup");
 
-    // A 532-byte digest needs four entries: test exact room and fallback
-    // when fewer entries remain, then reuse the scratch slot.
-    for (size_t free_entries = 0; free_entries <= 4; ++free_entries) {
-        reset();
-        for (uint8_t i = 0; i < KECCAKF_MEMO_ENTRIES - free_entries; ++i) {
-            check(&i, 1);
+    // Cross the one-time capacity check with zero through five free
+    // entries. Both lengths need four permutations, including padding.
+    for (size_t free_entries = 0; free_entries <= 5; ++free_entries) {
+        for (size_t input_length : {408u, 532u}) {
+            reset();
+            for (uint8_t i = 0; i < KECCAKF_MEMO_ENTRIES - free_entries; ++i) {
+                check(&i, 1);
+            }
+            check(longer.data(), input_length);
+            require(
+                recorded_entry_count ==
+                    KECCAKF_MEMO_ENTRIES - free_entries +
+                        (free_entries < 4 ? free_entries : 4),
+                "unexpected insertion count at capacity boundary");
+            check(longer.data(), input_length);
+            check(nullptr, 0);
         }
-        check(longer.data(), 532);
-        require(
-            recorded_entry_count == KECCAKF_MEMO_ENTRIES, "table did not fill");
-        check(longer.data(), 532);
-        check(nullptr, 0);
     }
 
     // Leave one free entry: the next digest fills it on its first block and

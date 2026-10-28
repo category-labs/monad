@@ -644,7 +644,7 @@ class OffsetTrie
         uint64_t hash_valid;
 #endif
 #if defined(MONAD_ZKVM_ZISK)
-        // Saved RLP, patched in place. Dirty bits never clear: each patch
+        // Retained RLP; cleared when the node cannot be patched in place. Dirty bits never clear: each patch
         // revisits those children (branch bit k, extension bit 0).
         unsigned char *priming_rlp;
         uint64_t priming_rlp_len;
@@ -890,6 +890,20 @@ public:
     // original leaf with the same storage edge and patchable RLP; mark its
     // storage root dirty. Return false without changes if it cannot be kept.
     bool keep_account_leaf(NodeId leaf, NodeId storage);
+    // For an account the block changed through its nonce or balance: writes
+    // `leaf`, a primed account leaf the block has not rewritten whose code
+    // hash is `acct`'s and whose storage edge is `storage`, as a copy of its
+    // own bytes with `acct`'s nonce ‖ balance run, and writes the run over
+    // the one in its priming RLP. False, touching nothing, for any other
+    // leaf, or a run whose length changed, which put_acct then writes.
+    bool
+    rewrite_account_fields(NodeId leaf, Account const &acct, NodeId storage);
+    // For a slot the block changed: writes `leaf`, a storage leaf of the blob
+    // the block has not rewritten, as a copy of its own bytes with `value`,
+    // and writes the value over the one in its priming RLP when the field's
+    // length holds. False, touching nothing, for any other node, which
+    // put_storage then writes.
+    bool rewrite_storage_value(NodeId leaf, bytes32_t const &value);
 #endif
     // Copies account data verbatim but appends a new path
     NodeId clone_acct(NodeId id, AccountLeafView acc, NibblesView new_path);

@@ -196,6 +196,14 @@ void PartialTrieDb::commit(
                     storage = sleaf; // first slot into empty storage: the leaf
                                      // is the sub-root
                 }
+#if defined(MONAD_ZKVM_ZISK)
+                // A slot the pre-state holds: its leaf is copied with the new
+                // value, its path as stored, and keeps its priming RLP with
+                // the value written in when the value's length allows.
+                if (trie_.rewrite_storage_value(sleaf, sdelta.second)) {
+                    continue;
+                }
+#endif
                 trie_.put_storage(sleaf, sleaf_path, sdelta.second);
             }
         }
@@ -217,6 +225,12 @@ void PartialTrieDb::commit(
             old->balance == new_account->balance &&
             old->code_hash == new_account->code_hash &&
             trie_.keep_account_leaf(leaf, storage)) {
+            continue;
+        }
+        // The code hash and storage edge as the leaf's, the nonce or the
+        // balance new, and their run as long as the leaf's: the leaf is
+        // copied with the new run, which goes into its priming RLP as well.
+        if (trie_.rewrite_account_fields(leaf, *new_account, storage)) {
             continue;
         }
 #endif

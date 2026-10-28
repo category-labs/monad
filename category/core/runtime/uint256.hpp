@@ -201,9 +201,14 @@ public:
         return result;
     }
 
+    // On ZisK, stop at the first nonzero word instead of combining all four.
     [[gnu::always_inline]]
     constexpr explicit operator bool() const noexcept
     {
+#if defined(MONAD_ZKVM_ZISK)
+        return words_[0] != 0 || words_[1] != 0 || words_[2] != 0 ||
+               words_[3] != 0;
+#else
         using namespace monad::uint256::intrinsics;
 
         auto const w0 = force(words_[0]);
@@ -211,6 +216,7 @@ public:
         auto const w2 = force(words_[2]);
         auto const w3 = force(words_[3]);
         return force(w0 | w1) | force(w2 | w3);
+#endif
     }
 
     template <typename Int>
@@ -288,11 +294,28 @@ public:
         return subb(lhs, rhs).value;
     }
 
+    // On ZisK, compare from the most significant word and stop at the first
+    // difference, avoiding a full subtraction and borrow chain.
+    // High words usually match; mark differences unlikely so GCC can avoid
+    // an extra jump on the common path to the low word.
     [[gnu::always_inline]]
     friend constexpr bool
     operator<(uint256_t const &lhs, uint256_t const &rhs) noexcept
     {
+#if defined(MONAD_ZKVM_ZISK)
+        if (MONAD_UNLIKELY(lhs[3] != rhs[3])) {
+            return lhs[3] < rhs[3];
+        }
+        if (MONAD_UNLIKELY(lhs[2] != rhs[2])) {
+            return lhs[2] < rhs[2];
+        }
+        if (MONAD_UNLIKELY(lhs[1] != rhs[1])) {
+            return lhs[1] < rhs[1];
+        }
+        return lhs[0] < rhs[0];
+#else
         return subb(lhs, rhs).carry;
+#endif
     }
 
     [[gnu::always_inline]]
@@ -335,9 +358,23 @@ public:
 
     // NOLINTEND(bugprone-macro-parentheses)
 
+    // On ZisK, stop at the first difference. Check the low word first because
+    // small integers differ there.
     [[gnu::always_inline]] friend constexpr bool
     operator==(uint256_t const &x, uint256_t const &y) noexcept
     {
+#if defined(MONAD_ZKVM_ZISK)
+        if (x[0] != y[0]) {
+            return false;
+        }
+        if (x[1] != y[1]) {
+            return false;
+        }
+        if (x[2] != y[2]) {
+            return false;
+        }
+        return x[3] == y[3];
+#else
         using namespace monad::uint256::intrinsics;
 
         auto const e0 = force(x[0] ^ y[0]);
@@ -345,6 +382,7 @@ public:
         auto const e2 = force(x[2] ^ y[2]);
         auto const e3 = force(x[3] ^ y[3]);
         return !(force(e0 | e1) | force(e2 | e3));
+#endif
     }
 
     [[gnu::always_inline]] constexpr uint256_t operator-() const noexcept
@@ -366,6 +404,37 @@ public:
         if (MONAD_UNLIKELY(static_cast<uint64_t>(shift0) >= 256)) {
             return 0;
         }
+#if defined(MONAD_ZKVM_ZISK)
+        // Handle b == 0 separately to avoid shifting a uint64_t by 64.
+        // Otherwise, transfer bits between words with one shift by 64 - b,
+        // instead of shld's two successive shifts.
+        auto const shift = static_cast<unsigned>(shift0);
+        unsigned const b = shift & 63; // shift % 64
+        unsigned const nb = 64 - b;
+        auto const up = [b, nb](uint64_t const hi, uint64_t const lo) {
+            return (hi << b) | (lo >> nb);
+        };
+        if (shift < 128) {
+            if (shift < 64) {
+                if (b == 0) {
+                    return x; // shift = 0
+                }
+                return uint256_t{
+                    x[0] << b, up(x[1], x[0]), up(x[2], x[1]), up(x[3], x[2])};
+            }
+            if (b == 0) {
+                return uint256_t{0, x[0], x[1], x[2]}; // shift == 64
+            }
+            return uint256_t{0, x[0] << b, up(x[1], x[0]), up(x[2], x[1])};
+        }
+        if (shift < 192) {
+            if (b == 0) {
+                return uint256_t{0, 0, x[0], x[1]}; // shift == 128
+            }
+            return uint256_t{0, 0, x[0] << b, up(x[1], x[0])};
+        }
+        return uint256_t{0, 0, 0, x[0] << b};
+#else
         auto shift = static_cast<uint8_t>(shift0);
         if (shift < 128) {
             if (shift < 64) {
@@ -401,6 +470,7 @@ public:
                 return uint256_t{0, 0, 0, x[0] << shift};
             }
         }
+#endif
     }
 
     [[gnu::always_inline]]
@@ -442,6 +512,43 @@ public:
                 shift0[3] | shift0[2] | shift0[1] | (shift0[0] >= 256))) {
             return uint256_t{fill, fill, fill, fill};
         }
+#if defined(MONAD_ZKVM_ZISK)
+        // As above, handle b == 0 separately to use a single cross-word shift.
+        // For arithmetic shifts, tail and fill preserve the sign.
+        auto const shift = static_cast<unsigned>(shift0[0]);
+        unsigned const b = shift & 63;
+        unsigned const nb = 64 - b;
+        auto const down = [b, nb](uint64_t const hi, uint64_t const lo) {
+            return (lo >> b) | (hi << nb);
+        };
+        uint64_t tail;
+        if constexpr (type == RightShiftType::Logical) {
+            tail = x[3] >> b;
+        }
+        else {
+            tail = static_cast<uint64_t>(static_cast<int64_t>(x[3]) >> b);
+        }
+        if (shift < 128) {
+            if (shift < 64) {
+                if (b == 0) {
+                    return x;
+                }
+                return uint256_t{
+                    down(x[1], x[0]), down(x[2], x[1]), down(x[3], x[2]), tail};
+            }
+            if (b == 0) {
+                return uint256_t{x[1], x[2], x[3], fill};
+            }
+            return uint256_t{down(x[2], x[1]), down(x[3], x[2]), tail, fill};
+        }
+        if (shift < 192) {
+            if (b == 0) {
+                return uint256_t{x[2], x[3], fill, fill};
+            }
+            return uint256_t{down(x[3], x[2]), tail, fill, fill};
+        }
+        return uint256_t{tail, fill, fill, fill};
+#else
         auto shift = static_cast<uint8_t>(shift0);
         uint64_t tail;
         if constexpr (type == RightShiftType::Logical) {
@@ -478,6 +585,7 @@ public:
                 return uint256_t{tail, fill, fill, fill};
             }
         }
+#endif
     }
 
     [[gnu::always_inline]] friend constexpr uint256_t
@@ -634,6 +742,18 @@ MONAD_NO_VECTORIZE
 constexpr uint256_t
 operator*(uint256_t const &lhs, uint256_t const &rhs) noexcept
 {
+#if defined(MONAD_ZKVM_ZISK)
+    if !consteval {
+        // Gas and fee operands often fit in 64 bits; multiply just their low
+        // words and keep the full 128-bit product.
+        if ((lhs[1] | lhs[2] | lhs[3] | rhs[1] | rhs[2] | rhs[3]) == 0) {
+            uint64_t hi;
+            uint64_t lo;
+            mulx(lhs[0], rhs[0], hi, lo);
+            return uint256_t{lo, hi, 0, 0};
+        }
+    }
+#endif
     return truncating_mul(lhs, rhs);
 }
 
@@ -957,11 +1077,19 @@ constexpr bool slt(uint256_t const &x, uint256_t const &y) noexcept
 {
     auto const x_neg = x[uint256_t::num_words - 1] >> 63;
     auto const y_neg = y[uint256_t::num_words - 1] >> 63;
+#if defined(MONAD_ZKVM_ZISK)
+    // On ZisK, skip the full comparison when signs alone decide the result.
+    if (x_neg != y_neg) {
+        return x_neg != 0;
+    }
+    return x < y;
+#else
     auto const diff = x_neg ^ y_neg;
     // branching on the sign bit will be mispredicted on
     // random data ~50% of the time. The branchless version does not add
     // much overhead so it is probably worth it
     return (~diff & (x < y)) | (x_neg & ~y_neg);
+#endif
 }
 
 MONAD_NO_VECTORIZE
@@ -969,8 +1097,22 @@ MONAD_NO_VECTORIZE
 exp(uint256_t base, uint256_t const &exponent) noexcept
 {
     uint256_t result{1};
-    if (base == 2) {
-        return result << exponent;
+    // For a 64-bit base = 2^s, use 1 << (s * exponent).
+    // For s >= 1, exponent >= 256 gives zero modulo 2^256.
+    // Check this bound before multiplying to avoid overflow.
+    if ((base[1] | base[2] | base[3]) == 0 && base[0] != 0 &&
+        (base[0] & (base[0] - 1)) == 0) {
+        uint64_t const s = static_cast<uint64_t>(std::countr_zero(base[0]));
+        if (s == 0) {
+            return result;
+        }
+        if ((exponent[1] | exponent[2] | exponent[3]) != 0 ||
+            exponent[0] >= 256) {
+            // base = 2^s with s >= 1: the result is a multiple of 2^256,
+            // so its low 256 bits are zero.
+            return 0;
+        }
+        return result << uint256_t{s * exponent[0]};
     }
 
     size_t const sig_words = count_significant_words(exponent.as_words());

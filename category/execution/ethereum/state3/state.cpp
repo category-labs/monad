@@ -251,6 +251,18 @@ void State::journal_flag(evmc_address const &address, Undo::Kind const which)
     undo_.emplace_back(address, which, 0);
 }
 
+#ifdef MONAD_ZKVM_ZISK
+// No key and no payload: the row's last warm slot is the one to remove (see
+// AccountSubstate::undo_warm_slot), and a constant aux keeps the record from
+// reading undo_words_'s size.
+void State::journal_warm_slot(evmc_address const &address)
+{
+    if (!journalling()) {
+        return;
+    }
+    undo_.emplace_back(address, Undo::Kind::WarmSlot, 0);
+}
+#else
 void State::journal_warm_slot(evmc_address const &address, bytes32_t const &key)
 {
     if (!journalling()) {
@@ -259,6 +271,7 @@ void State::journal_warm_slot(evmc_address const &address, bytes32_t const &key)
     undo_.emplace_back(address, Undo::Kind::WarmSlot, undo_words_.size());
     undo_words_.push_back(key);
 }
+#endif
 
 // `prev` is the caller's probe of this row's slot, not one of our own: the
 // journal record, the status computation and the write all wanted it, and each
@@ -329,8 +342,11 @@ State::State(
     original_.reserve(FLOOR);
     current_.reserve(FLOOR);
 #ifdef MONAD_ZKVM_ZISK
-    // Reserve more room for slot-related undo records to avoid early growth
-    // and copies. reserve() allocates capacity without constructing entries.
+    // Every slot a transaction warms or writes is journalled here, and one
+    // that touches more than sixteen copied these as they doubled. The
+    // guest's bump allocator charges the same for any size and touches no
+    // memory, so they start at sixty-four. undo_words_ no longer holds the
+    // warm slots' keys, but its balances keep the floor, which costs nothing.
     constexpr size_t SLOT_FLOOR = 64;
     undo_.reserve(SLOT_FLOOR);
     undo_accts_.reserve(FLOOR);
@@ -346,7 +362,9 @@ State::State(
 #endif
     undo_marks_.reserve(FLOOR);
     logs_.reserve(FLOOR);
+#ifndef MONAD_ZKVM_ZISK
     log_marks_.reserve(FLOOR);
+#endif
 }
 
 State::Map<Address, OriginalAccountState> const &State::original() const
@@ -378,7 +396,6 @@ DirtyAccounts const &State::current_frame_dirty_accounts() const
 void State::push_after_growing()
 {
     undo_marks_.reserve(2 * undo_marks_.capacity() + 1);
-    log_marks_.reserve(2 * log_marks_.capacity() + 1);
     push();
 }
 #endif
@@ -386,11 +403,9 @@ void State::push_after_growing()
 void State::push()
 {
 #if defined(MONAD_ZKVM_ZISK)
-    // Keep vector growth out of the common path so it can avoid the call's
-    // register saves when both mark vectors have room.
-    if (MONAD_UNLIKELY(
-            undo_marks_.size() == undo_marks_.capacity() ||
-            log_marks_.size() == log_marks_.capacity())) {
+    // A full mark row grows out of line: the common push then makes no call,
+    // and keeps no frame for one.
+    if (MONAD_UNLIKELY(undo_marks_.size() == undo_marks_.capacity())) {
         return push_after_growing();
     }
 #endif
@@ -412,14 +427,10 @@ void State::push()
 #endif
     // Construct the mark in place to avoid copying a 64-byte temporary.
 #if defined(MONAD_ZKVM_ZISK)
-    // Save byte offsets; convert to element counts only when rolling back.
-    undo_marks_.emplace_back(
-        bytes_of(undo_),
-        bytes_of(undo_accts_),
-        bytes_of(undo_words_),
-        bytes_of(undo_u64_),
-        bytes_of(undo_slots_),
-        bytes_of(undo_pages_));
+    // In bytes: a count is the bytes shifted down, a step a vector on every
+    // frame, and only a rejected frame reads them back. The payload vectors'
+    // sizes are not kept (see UndoMark).
+    undo_marks_.emplace_back(bytes_of(undo_), bytes_of(logs_));
 #else
     undo_marks_.emplace_back(
         undo_.size(),
@@ -428,8 +439,8 @@ void State::push()
         undo_u64_.size(),
         undo_slots_.size(),
         undo_pages_.size());
-#endif
     log_marks_.push_back(bytes_of(logs_));
+#endif
 }
 
 void State::pop_accept()
@@ -467,8 +478,11 @@ void State::pop_accept()
         undo_pages_.clear();
     }
 
-    // Accepted: the frame's logs stay where they are, only its watermark goes.
+    // Accepted: the frame's logs stay where they are, only its watermark goes,
+    // which the guest keeps in its UndoMark.
+#if !defined(MONAD_ZKVM_ZISK)
     log_marks_.pop_back();
+#endif
 
     --version_;
 }
@@ -492,8 +506,12 @@ void State::pop_reject()
 #endif
 
     // Rejected: drop exactly what this frame appended.
+#if defined(MONAD_ZKVM_ZISK)
+    logs_.resize(undo_marks_.back().logs / sizeof(Receipt::Log));
+#else
     logs_.resize(log_marks_.back() / sizeof(Receipt::Log));
     log_marks_.pop_back();
+#endif
 
     // Rollback may erase and move map entries, invalidating the cached
     // pointer.
@@ -503,6 +521,16 @@ void State::pop_reject()
     UndoMark const mark = undo_marks_.back();
     undo_marks_.pop_back();
 #if defined(MONAD_ZKVM_ZISK)
+    // Each payload vector's size at the mark: the aux of the frame's earliest
+    // record that appended to it, which the backward replay meets last. A
+    // vector's records index its entries in order: an accepted inner frame
+    // left its records in place, and a rejected one removed them with their
+    // entries. A vector the frame did not append to keeps its size.
+    size_t accts_n = undo_accts_.size();
+    size_t words_n = undo_words_.size();
+    size_t u64_n = undo_u64_.size();
+    size_t slots_n = undo_slots_.size();
+    size_t pages_n = undo_pages_.size();
     while (bytes_of(undo_) > mark.log) {
 #else
     while (undo_.size() > mark.log) {
@@ -524,6 +552,9 @@ void State::pop_reject()
 
         case Undo::Kind::AccountWhole:
             row.account_ = std::move(undo_accts_[u.aux]);
+#if defined(MONAD_ZKVM_ZISK)
+            accts_n = u.aux;
+#endif
             break;
 
         case Undo::Kind::Balance:
@@ -534,16 +565,25 @@ void State::pop_reject()
                 &row.account_->balance,
                 undo_words_[u.aux].bytes,
                 sizeof(undo_words_[u.aux].bytes));
+#if defined(MONAD_ZKVM_ZISK)
+            words_n = u.aux;
+#endif
             break;
 
         case Undo::Kind::CodeHash:
             MONAD_ASSERT(row.account_.has_value());
             row.account_->code_hash = undo_words_[u.aux];
+#if defined(MONAD_ZKVM_ZISK)
+            words_n = u.aux;
+#endif
             break;
 
         case Undo::Kind::Nonce:
             MONAD_ASSERT(row.account_.has_value());
             row.account_->nonce = undo_u64_[u.aux];
+#if defined(MONAD_ZKVM_ZISK)
+            u64_n = u.aux;
+#endif
             break;
 
         case Undo::Kind::FlagTouched:
@@ -559,7 +599,12 @@ void State::pop_reject()
             break;
 
         case Undo::Kind::WarmSlot:
+#if defined(MONAD_ZKVM_ZISK)
+            // No payload: see journal_warm_slot.
+            row.undo_warm_slot();
+#else
             row.undo_warm_slot(undo_words_[u.aux]);
+#endif
             break;
 
         case Undo::Kind::Slot: {
@@ -570,6 +615,9 @@ void State::pop_reject()
             else {
                 row.storage_.erase(sl.key);
             }
+#if defined(MONAD_ZKVM_ZISK)
+            slots_n = u.aux;
+#endif
             break;
         }
 
@@ -581,22 +629,29 @@ void State::pop_reject()
             else {
                 row.transient_storage_.erase(sl.key);
             }
+#if defined(MONAD_ZKVM_ZISK)
+            slots_n = u.aux;
+#endif
             break;
         }
 
         case Undo::Kind::Pages:
             row.page_tracker_ = std::move(undo_pages_[u.aux]);
+#if defined(MONAD_ZKVM_ZISK)
+            pages_n = u.aux;
+#endif
             break;
         }
         undo_.pop_back();
     }
-    undo_accts_.resize(mark.accts / sizeof(std::optional<Account>));
 #if defined(MONAD_ZKVM_ZISK)
-    undo_words_.resize(mark.words / sizeof(bytes32_t));
-    undo_u64_.resize(mark.u64 / sizeof(std::uint64_t));
-    undo_slots_.resize(mark.slots / sizeof(SlotUndo));
-    undo_pages_.resize(mark.pages / sizeof(PageTracker));
+    undo_accts_.resize(accts_n);
+    undo_words_.resize(words_n);
+    undo_u64_.resize(u64_n);
+    undo_slots_.resize(slots_n);
+    undo_pages_.resize(pages_n);
 #else
+    undo_accts_.resize(mark.accts / sizeof(std::optional<Account>));
     undo_words_.resize(mark.words);
     undo_u64_.resize(mark.u64);
     undo_slots_.resize(mark.slots);
@@ -993,7 +1048,11 @@ template <Traits traits>
 {
     auto const slot_status = account_state.access_storage(key);
     if (slot_status == MONAD_ACCESS_COLD) {
+#ifdef MONAD_ZKVM_ZISK
+        journal_warm_slot(address);
+#else
         journal_warm_slot(address, key);
+#endif
     }
     if constexpr (traits::mip_8_active()) {
         journal_pages(address, account_state);
@@ -1034,7 +1093,7 @@ monad_access_status State::sload_cold(
     AccountState &account_state)
 {
     account_state.add_accessed_storage(key);
-    journal_warm_slot(address, key);
+    journal_warm_slot(address);
     if (can_pay_cold_access) {
         current_storage_into(account_state, address, key, out);
     }

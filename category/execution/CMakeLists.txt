@@ -250,6 +250,7 @@ add_library(
   "monad/monad_precompiles_gas_cost_impl.cpp"
   "monad/monad_transaction_gas.cpp"
   "monad/monad_transaction_gas.hpp"
+  "monad/private_domain_fee.hpp"
   "monad/private_domain_hpke.cpp"
   "monad/private_domain_hpke.hpp"
   "monad/private_domain_scanner.cpp"

@@ -57,8 +57,6 @@ TEST(PrivateDomainSystemTransaction, encodes_empty_payload_calldata)
 
 TEST(PrivateDomainSystemTransaction, encodes_forwarded_domain_source)
 {
-    // A message the hub forwarded from another domain names that domain as
-    // its source; the client passes it through to the spoke unchanged.
     constexpr uint64_t SOURCE_DOMAIN = (2u << 16) | NETWORK_CHAIN_ID;
     auto const calldata =
         encode_relay_l1_message(SOURCE_DOMAIN, FROM, TO, {}, 0);
@@ -74,11 +72,13 @@ TEST(PrivateDomainSystemTransaction, encodes_forwarded_domain_source)
 TEST(PrivateDomainSystemTransaction, builds_gasless_legacy_delivery)
 {
     constexpr uint256_t BASE_FEE = 100'000'000'000;
+    constexpr uint64_t GAS_LIMIT = 2'500'000;
     auto const tx = make_domain_system_transaction(
         DOMAIN_CHAIN_ID,
         SPOKE,
         5,
         BASE_FEE,
+        GAS_LIMIT,
         NETWORK_CHAIN_ID,
         FROM,
         TO,
@@ -89,9 +89,7 @@ TEST(PrivateDomainSystemTransaction, builds_gasless_legacy_delivery)
     ASSERT_TRUE(tx.sc.chain_id.has_value());
     EXPECT_EQ(*tx.sc.chain_id, uint256_t{DOMAIN_CHAIN_ID});
     EXPECT_EQ(tx.nonce, 5);
-    EXPECT_EQ(tx.gas_limit, DOMAIN_SYSTEM_TRANSACTION_GAS_LIMIT);
-    // The L1 base fee is the floor the shared validation enforces; the gasless
-    // path never charges it.
+    EXPECT_EQ(tx.gas_limit, GAS_LIMIT);
     EXPECT_EQ(tx.max_fee_per_gas, BASE_FEE);
     EXPECT_EQ(tx.max_priority_fee_per_gas, 0);
     EXPECT_EQ(tx.value, 0);
@@ -103,8 +101,6 @@ TEST(PrivateDomainSystemTransaction, builds_gasless_legacy_delivery)
             NETWORK_CHAIN_ID, FROM, TO, byte_string{0x01}, 9));
     EXPECT_TRUE(tx.access_list.empty());
     EXPECT_TRUE(tx.authorization_list.empty());
-    // Passes the shared EIP-2 well-formedness check without being a real
-    // signature; the sender is pinned by the client, never recovered.
     EXPECT_TRUE(tx.sc.signature.is_valid());
     EXPECT_NE(recover_sender(tx), DOMAIN_SYSTEM_RELAYER);
 }
@@ -116,6 +112,7 @@ TEST(PrivateDomainSystemTransaction, round_trips_through_rlp)
         SPOKE,
         0,
         0,
+        100'000,
         NETWORK_CHAIN_ID,
         FROM,
         TO,

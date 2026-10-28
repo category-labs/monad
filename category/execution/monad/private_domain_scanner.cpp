@@ -10,7 +10,6 @@
 #include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
 #include <category/core/likely.h>
-#include <category/core/log.hpp>
 #include <category/execution/ethereum/core/contract/abi_decode.hpp>
 #include <category/execution/ethereum/core/contract/abi_decode_error.hpp>
 #include <category/execution/ethereum/core/contract/abi_signatures.hpp>
@@ -23,16 +22,16 @@
 #include <cstdint>
 #include <optional>
 #include <span>
-#include <string>
 #include <utility>
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
-struct FunctionSelector
-{
-    static constexpr uint32_t SEQUENCE_TO_DOMAIN =
-        monad::abi_encode_selector("sequenceToDomain(uint64,bytes)");
-};
+constexpr monad::bytes32_t DOMAIN_TRANSACTION_SEQUENCED_SIGNATURE =
+    monad::abi_encode_event_signature(
+        "DomainTransactionSequenced(uint64,bytes,uint256)");
+static_assert(
+    DOMAIN_TRANSACTION_SEQUENCED_SIGNATURE ==
+    0x840905264e95f5c327ec724710cb5708abafd6f5070886668d62fc66d4cf34dc_bytes32);
 
 constexpr monad::bytes32_t DOMAIN_STATE_UPDATED_SIGNATURE =
     monad::abi_encode_event_signature(
@@ -41,33 +40,30 @@ static_assert(
     DOMAIN_STATE_UPDATED_SIGNATURE ==
     0x430254339a03e208e4f6cfb37d6928ba19f2f6315b1680dbecfba7e622f8c838_bytes32);
 
-static_assert(FunctionSelector::SEQUENCE_TO_DOMAIN == 0xc791e98a);
-
 constexpr monad::bytes32_t L1_MESSAGE_RECORDED_SIGNATURE =
     monad::abi_encode_event_signature("L1MessageRecorded(uint64,uint64,address,"
-                                      "address,bytes,uint256,bytes32)");
+                                      "address,bytes,uint256,uint256,bytes32)");
 static_assert(
     L1_MESSAGE_RECORDED_SIGNATURE ==
-    0x41e4011d4fcb4fb73b7c8049017cf26a95628f8498c7a46a765b2260e6c5ddab_bytes32);
+    0x5407b49426d6ce93eaf2b804f06575113f1ce26f67ada45a1307db40662a528a_bytes32);
 
 constexpr monad::bytes32_t ENCRYPTED_L1_MESSAGE_RECORDED_SIGNATURE =
     monad::abi_encode_event_signature(
-        "EncryptedL1MessageRecorded(uint64,uint64,address,bytes,uint256)");
+        "EncryptedL1MessageRecorded(uint64,uint64,address,bytes,uint256,"
+        "uint256)");
 static_assert(
     ENCRYPTED_L1_MESSAGE_RECORDED_SIGNATURE ==
-    0x00deb2c73e40cb1b2a9085715d5b9985c143b45d90f1f56e9fda108d271551fe_bytes32);
+    0xb2679e875836e5ada3566e7b1304e7638ec7301653b9fbcb920dbe0aee7b4831_bytes32);
 
 constexpr size_t ABI_WORD_SIZE = 32;
-constexpr size_t UINT64_PADDING_SIZE = ABI_WORD_SIZE - sizeof(uint64_t);
-constexpr uint64_t PAYLOAD_OFFSET = 2 * ABI_WORD_SIZE;
 constexpr size_t DOMAIN_STATE_UPDATED_DATA_SIZE = 4 * ABI_WORD_SIZE;
 // Indexed parameters including the signature topic.
+constexpr size_t DOMAIN_TRANSACTION_SEQUENCED_TOPIC_COUNT = 2;
 constexpr size_t L1_MESSAGE_RECORDED_TOPIC_COUNT = 4;
 constexpr size_t ENCRYPTED_L1_MESSAGE_RECORDED_TOPIC_COUNT = 3;
-// Non-indexed head words: (sourceChainId, offset, nonce, messageHash) and
-// (sourceChainId, offset, nonce).
-constexpr size_t L1_MESSAGE_RECORDED_HEAD_WORDS = 4;
-constexpr size_t ENCRYPTED_L1_MESSAGE_RECORDED_HEAD_WORDS = 3;
+constexpr size_t DOMAIN_TRANSACTION_SEQUENCED_HEAD_WORDS = 2;
+constexpr size_t L1_MESSAGE_RECORDED_HEAD_WORDS = 5;
+constexpr size_t ENCRYPTED_L1_MESSAGE_RECORDED_HEAD_WORDS = 4;
 
 struct BloomProbe
 {
@@ -90,49 +86,23 @@ struct BloomProbe
     }
 };
 
-struct MessageEventData
-{
-    uint64_t source_chain_id;
-    monad::byte_string payload;
-    monad::uint256_t nonce;
-};
-
-// Decodes the non-indexed `(uint64 sourceChainId, bytes payload,
-// uint256 nonce[, bytes32 hash])` data of a hub message event. Solidity
-// places the single dynamic value right after the head, so the offset is
-// fixed; the trailing message hash is not needed to derive the delivery and
-// is skipped.
-monad::Result<MessageEventData> decode_message_event_data(
-    monad::byte_string_view input, size_t const head_word_count)
+// Decodes the single dynamic `bytes` value that follows an event's head and
+// must end its data: a length word, the bytes and canonical zero padding.
+monad::Result<monad::byte_string>
+decode_bytes_tail(monad::byte_string_view input)
 {
     using namespace monad;
 
-    size_t const head_size = head_word_count * ABI_WORD_SIZE;
-    BOOST_OUTCOME_TRY(
-        auto const source_chain_id_be, abi_decode_fixed<u64_be>(input));
-    BOOST_OUTCOME_TRY(
-        auto const payload_offset, abi_decode_fixed<u256_be>(input));
-    if (MONAD_UNLIKELY(payload_offset.native() != uint256_t{head_size})) {
-        return AbiDecodeError::InvalidEncoding;
-    }
-    BOOST_OUTCOME_TRY(auto const nonce_be, abi_decode_fixed<u256_be>(input));
-    size_t const remaining_head = head_size - 3 * ABI_WORD_SIZE;
-    if (MONAD_UNLIKELY(input.size() < remaining_head)) {
+    BOOST_OUTCOME_TRY(auto const size_be, abi_decode_fixed<u256_be>(input));
+    if (MONAD_UNLIKELY(size_be.native() > uint256_t{input.size()})) {
         return AbiDecodeError::InputTooShort;
     }
-    input.remove_prefix(remaining_head);
-
-    BOOST_OUTCOME_TRY(
-        auto const payload_size_be, abi_decode_fixed<u256_be>(input));
-    if (MONAD_UNLIKELY(payload_size_be.native() > uint256_t{input.size()})) {
-        return AbiDecodeError::InputTooShort;
-    }
-    size_t const payload_size = static_cast<size_t>(payload_size_be.native());
-    byte_string payload{input.substr(0, payload_size)};
-    input.remove_prefix(payload_size);
+    size_t const size = static_cast<size_t>(size_be.native());
+    byte_string payload{input.substr(0, size)};
+    input.remove_prefix(size);
 
     size_t const padding_size =
-        (ABI_WORD_SIZE - (payload_size % ABI_WORD_SIZE)) % ABI_WORD_SIZE;
+        (ABI_WORD_SIZE - (size % ABI_WORD_SIZE)) % ABI_WORD_SIZE;
     if (MONAD_UNLIKELY(input.size() < padding_size)) {
         return AbiDecodeError::InputTooShort;
     }
@@ -145,152 +115,151 @@ monad::Result<MessageEventData> decode_message_event_data(
     if (MONAD_UNLIKELY(!input.empty())) {
         return AbiDecodeError::InputTooLong;
     }
+    return payload;
+}
+
+// Solidity places an event's single dynamic value right after its head, so
+// the offset word is fixed by the head size.
+monad::Result<void> expect_tail_offset(
+    monad::byte_string_view &input, size_t const head_word_count)
+{
+    using namespace monad;
+
+    BOOST_OUTCOME_TRY(auto const offset, abi_decode_fixed<u256_be>(input));
+    if (MONAD_UNLIKELY(
+            offset.native() != uint256_t{head_word_count * ABI_WORD_SIZE})) {
+        return AbiDecodeError::InvalidEncoding;
+    }
+    return outcome::success();
+}
+
+struct SequencedEventData
+{
+    monad::byte_string payload;
+    monad::uint256_t fee;
+};
+
+// Non-indexed `(bytes payload, uint256 fee)`.
+monad::Result<SequencedEventData>
+decode_sequenced_event_data(monad::byte_string_view input)
+{
+    using namespace monad;
+
+    BOOST_OUTCOME_TRY(expect_tail_offset(
+        input, DOMAIN_TRANSACTION_SEQUENCED_HEAD_WORDS));
+    BOOST_OUTCOME_TRY(auto const fee_be, abi_decode_fixed<u256_be>(input));
+    BOOST_OUTCOME_TRY(auto payload, decode_bytes_tail(input));
+    return SequencedEventData{
+        .payload = std::move(payload), .fee = fee_be.native()};
+}
+
+struct MessageEventData
+{
+    uint64_t source_chain_id;
+    monad::byte_string payload;
+    monad::uint256_t nonce;
+    monad::uint256_t fee;
+};
+
+// Non-indexed `(uint64 sourceChainId, bytes payload, uint256 nonce,
+// uint256 fee[, bytes32 messageHash])`; the trailing hash is skipped.
+monad::Result<MessageEventData> decode_message_event_data(
+    monad::byte_string_view input, size_t const head_word_count)
+{
+    using namespace monad;
+
+    BOOST_OUTCOME_TRY(
+        auto const source_chain_id_be, abi_decode_fixed<u64_be>(input));
+    BOOST_OUTCOME_TRY(expect_tail_offset(input, head_word_count));
+    BOOST_OUTCOME_TRY(auto const nonce_be, abi_decode_fixed<u256_be>(input));
+    BOOST_OUTCOME_TRY(auto const fee_be, abi_decode_fixed<u256_be>(input));
+    constexpr size_t DECODED_HEAD_WORDS = 4;
+    size_t const remaining_head =
+        (head_word_count - DECODED_HEAD_WORDS) * ABI_WORD_SIZE;
+    if (MONAD_UNLIKELY(input.size() < remaining_head)) {
+        return AbiDecodeError::InputTooShort;
+    }
+    input.remove_prefix(remaining_head);
+    BOOST_OUTCOME_TRY(auto payload, decode_bytes_tail(input));
     return MessageEventData{
         .source_chain_id = source_chain_id_be.native(),
         .payload = std::move(payload),
-        .nonce = nonce_be.native()};
+        .nonce = nonce_be.native(),
+        .fee = fee_be.native()};
+}
+
+// Only events of served domains are decoded further, so a malformed event for
+// another domain never affects this node.
+monad::Result<std::optional<uint64_t>> served_domain_of(
+    monad::Receipt::Log const &log,
+    std::span<uint64_t const> const private_domain_ids)
+{
+    using namespace monad;
+
+    if (MONAD_UNLIKELY(log.topics.size() < 2)) {
+        return AbiDecodeError::InvalidEncoding;
+    }
+    auto domain_chain_id_word = to_byte_string_view(log.topics[1].bytes);
+    BOOST_OUTCOME_TRY(
+        auto const domain_chain_id_be,
+        abi_decode_fixed<u64_be>(domain_chain_id_word));
+    uint64_t const domain_chain_id = domain_chain_id_be.native();
+    if (!std::ranges::contains(private_domain_ids, domain_chain_id)) {
+        return std::optional<uint64_t>{};
+    }
+    return std::optional<uint64_t>{domain_chain_id};
 }
 
 MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
 
-Result<std::optional<PrivateDomainPayloadView>> extract_private_domain_payload(
-    Transaction const &tx, uint256_t const &network_chain_id,
-    Address const &sequencer_address,
+Result<std::vector<SequencedDomainTransaction>>
+scan_sequenced_domain_transactions(
+    std::span<Receipt const> const receipts, Address const &domain_hub,
     std::span<uint64_t const> const private_domain_ids) noexcept
 {
-    // Reject unrelated outer transactions before inspecting calldata.
-    if (private_domain_ids.empty() || !tx.to.has_value() ||
-        *tx.to != sequencer_address || !tx.sc.chain_id.has_value() ||
-        *tx.sc.chain_id != network_chain_id) {
-        return std::optional<PrivateDomainPayloadView>{};
-    }
-
-    // A matching call begins with the canonical Solidity function selector.
-    byte_string_view input{tx.data};
-    if (MONAD_UNLIKELY(input.size() < 4)) {
-        return std::optional<PrivateDomainPayloadView>{};
-    }
-
-    auto const signature = load_be_unsafe<uint32_t>(input.substr(0, 4).data());
-    input.remove_prefix(4);
-    if (signature != FunctionSelector::SEQUENCE_TO_DOMAIN) {
-        return std::optional<PrivateDomainPayloadView>{};
-    }
-
-    // Decode the canonical ABI head: a zero-padded uint64 followed by the
-    // dynamic bytes offset. Solidity emits the bytes tail at offset 64.
-    if (MONAD_UNLIKELY(input.size() < ABI_WORD_SIZE)) {
-        return AbiDecodeError::InputTooShort;
-    }
-    if (MONAD_UNLIKELY(!std::ranges::all_of(
-            input.substr(0, UINT64_PADDING_SIZE),
-            [](uint8_t const byte) { return byte == 0; }))) {
-        return AbiDecodeError::InvalidEncoding;
-    }
-
-    BOOST_OUTCOME_TRY(
-        auto const domain_chain_id_be, abi_decode_fixed<u64_be>(input));
-    uint64_t const domain_chain_id = domain_chain_id_be.native();
-
-    // Ignore calls for domains not assigned to this node before decoding
-    // the dynamic payload.
-    if (!std::ranges::contains(private_domain_ids, domain_chain_id)) {
-        return std::optional<PrivateDomainPayloadView>{};
-    }
-
-    BOOST_OUTCOME_TRY(
-        auto const payload_offset, abi_decode_fixed<u256_be>(input));
-    if (MONAD_UNLIKELY(payload_offset.native() != PAYLOAD_OFFSET)) {
-        return AbiDecodeError::InvalidEncoding;
-    }
-
-    // Decode the bytes tail in place. The returned view borrows from tx.data;
-    // canonical Solidity encoding has zero padding and no trailing calldata.
-    BOOST_OUTCOME_TRY(
-        auto const payload_size_be, abi_decode_fixed<u256_be>(input));
-    if (MONAD_UNLIKELY(payload_size_be.native() > uint256_t{input.size()})) {
-        return AbiDecodeError::InputTooShort;
-    }
-
-    size_t const payload_size = static_cast<size_t>(payload_size_be.native());
-    byte_string_view const raw_payload = input.substr(0, payload_size);
-    input.remove_prefix(payload_size);
-
-    size_t const padding_size =
-        (ABI_WORD_SIZE - (payload_size % ABI_WORD_SIZE)) % ABI_WORD_SIZE;
-    if (MONAD_UNLIKELY(input.size() < padding_size)) {
-        return AbiDecodeError::InputTooShort;
-    }
-    if (MONAD_UNLIKELY(!std::ranges::all_of(
-            input.substr(0, padding_size),
-            [](uint8_t const byte) { return byte == 0; }))) {
-        return AbiDecodeError::InvalidEncoding;
-    }
-    input.remove_prefix(padding_size);
-
-    if (MONAD_UNLIKELY(!input.empty())) {
-        return AbiDecodeError::InputTooLong;
-    }
-
-    return std::optional<PrivateDomainPayloadView>{PrivateDomainPayloadView{
-        .l1_transaction_index = 0,
-        .domain_chain_id = domain_chain_id,
-        .raw_payload = raw_payload,
-        .l1_gas_limit = tx.gas_limit}};
-}
-
-std::vector<PrivateDomainPayloadView> scan_private_domain_payloads(
-    std::span<Transaction const> const transactions,
-    uint64_t const block_number, uint256_t const &network_chain_id,
-    Address const &sequencer_address,
-    std::span<uint64_t const> const private_domain_ids)
-{
+    std::vector<SequencedDomainTransaction> transactions;
     if (private_domain_ids.empty()) {
-        return {};
+        return transactions;
     }
 
-    std::vector<PrivateDomainPayloadView> payloads;
-
-    size_t malformed_count = 0;
-    size_t first_malformed_index = 0;
-    std::string first_error;
-
-    auto const record_error =
-        [&]<typename Error>(size_t const index, Error const &error) {
-            if (malformed_count++ == 0) {
-                first_malformed_index = index;
-                first_error = error.message().c_str();
+    BloomProbe const hub_probe{to_byte_string_view(domain_hub.bytes)};
+    BloomProbe const signature_probe{
+        to_byte_string_view(DOMAIN_TRANSACTION_SEQUENCED_SIGNATURE.bytes)};
+    for (size_t i = 0; i < receipts.size(); ++i) {
+        auto const &receipt = receipts[i];
+        if (!hub_probe.matches(receipt.bloom) ||
+            !signature_probe.matches(receipt.bloom)) {
+            continue;
+        }
+        for (auto const &log : receipt.logs) {
+            if (log.address != domain_hub || log.topics.empty() ||
+                log.topics[0] != DOMAIN_TRANSACTION_SEQUENCED_SIGNATURE) {
+                continue;
             }
-        };
-
-    for (size_t i = 0; i < transactions.size(); ++i) {
-        auto result = extract_private_domain_payload(
-            transactions[i],
-            network_chain_id,
-            sequencer_address,
-            private_domain_ids);
-        if (MONAD_UNLIKELY(result.has_error())) {
-            record_error(i, result.assume_error());
-        }
-        else if (result.value().has_value()) {
-            auto payload = *result.value();
-            payload.l1_transaction_index = i;
-            payloads.push_back(payload);
+            BOOST_OUTCOME_TRY(
+                auto const domain_chain_id,
+                served_domain_of(log, private_domain_ids));
+            if (!domain_chain_id.has_value()) {
+                continue;
+            }
+            if (MONAD_UNLIKELY(
+                    log.topics.size() !=
+                    DOMAIN_TRANSACTION_SEQUENCED_TOPIC_COUNT)) {
+                return AbiDecodeError::InvalidEncoding;
+            }
+            BOOST_OUTCOME_TRY(
+                auto event_data,
+                decode_sequenced_event_data(byte_string_view{log.data}));
+            transactions.push_back(SequencedDomainTransaction{
+                .domain_chain_id = *domain_chain_id,
+                .payload = std::move(event_data.payload),
+                .fee = event_data.fee,
+                .l1_transaction_index = i});
         }
     }
-
-    if (malformed_count != 0) {
-        LOG_WARNING(
-            "Dropped {} malformed private domain sequencing call(s) in "
-            "block {}; first at transaction {}: {}",
-            malformed_count,
-            block_number,
-            first_malformed_index,
-            first_error);
-    }
-    return payloads;
+    return transactions;
 }
 
 Result<std::vector<DomainStateUpdate>> scan_domain_state_updates(
@@ -315,20 +284,14 @@ Result<std::vector<DomainStateUpdate>> scan_domain_state_updates(
                 log.topics[0] != DOMAIN_STATE_UPDATED_SIGNATURE) {
                 continue;
             }
-            if (MONAD_UNLIKELY(log.topics.size() != 2)) {
-                return AbiDecodeError::InvalidEncoding;
-            }
-
-            auto domain_chain_id_word =
-                to_byte_string_view(log.topics[1].bytes);
             BOOST_OUTCOME_TRY(
-                auto const domain_chain_id_be,
-                abi_decode_fixed<u64_be>(domain_chain_id_word));
-            uint64_t const domain_chain_id = domain_chain_id_be.native();
-            if (!std::ranges::contains(private_domain_ids, domain_chain_id)) {
+                auto const domain_chain_id,
+                served_domain_of(log, private_domain_ids));
+            if (!domain_chain_id.has_value()) {
                 continue;
             }
             if (MONAD_UNLIKELY(
+                    log.topics.size() != 2 ||
                     log.data.size() != DOMAIN_STATE_UPDATED_DATA_SIZE)) {
                 return AbiDecodeError::InvalidEncoding;
             }
@@ -346,7 +309,7 @@ Result<std::vector<DomainStateUpdate>> scan_domain_state_updates(
                     2 * ABI_WORD_SIZE, ABI_WORD_SIZE),
                 new_state_root.bytes);
             updates.push_back(DomainStateUpdate{
-                .domain_chain_id = domain_chain_id,
+                .domain_chain_id = *domain_chain_id,
                 .domain_block_number = domain_block_number,
                 .new_state_root = new_state_root});
         }
@@ -389,18 +352,10 @@ Result<std::vector<L1DomainMessage>> scan_l1_domain_messages(
             else {
                 continue;
             }
-            // Only events of served domains are decoded further, so a
-            // malformed event for another domain never affects this node.
-            if (MONAD_UNLIKELY(log.topics.size() < 2)) {
-                return AbiDecodeError::InvalidEncoding;
-            }
-            auto domain_chain_id_word =
-                to_byte_string_view(log.topics[1].bytes);
             BOOST_OUTCOME_TRY(
-                auto const domain_chain_id_be,
-                abi_decode_fixed<u64_be>(domain_chain_id_word));
-            uint64_t const domain_chain_id = domain_chain_id_be.native();
-            if (!std::ranges::contains(private_domain_ids, domain_chain_id)) {
+                auto const domain_chain_id,
+                served_domain_of(log, private_domain_ids));
+            if (!domain_chain_id.has_value()) {
                 continue;
             }
             size_t const topic_count =
@@ -427,12 +382,13 @@ Result<std::vector<L1DomainMessage>> scan_l1_domain_messages(
                     encrypted ? ENCRYPTED_L1_MESSAGE_RECORDED_HEAD_WORDS
                               : L1_MESSAGE_RECORDED_HEAD_WORDS));
             messages.push_back(L1DomainMessage{
-                .domain_chain_id = domain_chain_id,
+                .domain_chain_id = *domain_chain_id,
                 .source_chain_id = event_data.source_chain_id,
                 .from = from,
                 .to = to,
                 .payload = std::move(event_data.payload),
                 .nonce = event_data.nonce,
+                .fee = event_data.fee,
                 .encrypted = encrypted,
                 .l1_transaction_index = i});
         }

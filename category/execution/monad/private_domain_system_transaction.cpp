@@ -45,8 +45,9 @@ byte_string encode_relay_l1_message(
 Transaction make_domain_system_transaction(
     uint64_t const domain_chain_id, Address const &spoke,
     uint64_t const relayer_nonce, uint256_t const &base_fee_per_gas,
-    uint64_t const source_chain_id, Address const &from, Address const &to,
-    byte_string_view const data, uint256_t const &message_nonce)
+    uint64_t const gas_limit, uint64_t const source_chain_id,
+    Address const &from, Address const &to, byte_string_view const data,
+    uint256_t const &message_nonce)
 {
     return Transaction{
         .sc =
@@ -54,7 +55,7 @@ Transaction make_domain_system_transaction(
              .chain_id = uint256_t{domain_chain_id}},
         .nonce = relayer_nonce,
         .max_fee_per_gas = base_fee_per_gas,
-        .gas_limit = DOMAIN_SYSTEM_TRANSACTION_GAS_LIMIT,
+        .gas_limit = gas_limit,
         .value = 0,
         .to = spoke,
         .type = TransactionType::legacy,

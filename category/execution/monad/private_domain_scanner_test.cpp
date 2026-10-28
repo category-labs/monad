@@ -15,7 +15,6 @@
 
 #include <gtest/gtest.h>
 
-#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <optional>
@@ -28,10 +27,29 @@ namespace
 {
     constexpr uint64_t NETWORK_CHAIN_ID = 20143;
     constexpr uint64_t DOMAIN_CHAIN_ID = 0x114eaf;
-    constexpr Address SEQUENCER =
+    constexpr Address HUB =
         0x1234567890abcdef1234567890abcdef12345678_address;
     constexpr bytes32_t STATE_ROOT =
         0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd_bytes32;
+
+    constexpr bytes32_t DOMAIN_TRANSACTION_SEQUENCED_SIGNATURE =
+        abi_encode_event_signature(
+            "DomainTransactionSequenced(uint64,bytes,uint256)");
+
+    Receipt::Log make_sequenced(
+        byte_string_view const payload, uint64_t const fee = 7,
+        uint64_t const domain_chain_id = DOMAIN_CHAIN_ID)
+    {
+        // (bytes payload, uint256 fee)
+        byte_string encoded;
+        encoded += abi_encode_uint(u256_be{2 * 32});
+        encoded += abi_encode_uint(u256_be{fee});
+        encoded += abi_encode_bytes(payload);
+        return EventBuilder(HUB, DOMAIN_TRANSACTION_SEQUENCED_SIGNATURE)
+            .add_topic(abi_encode_uint(u64_be{domain_chain_id}))
+            .add_data(encoded)
+            .build();
+    }
 
     Receipt::Log make_state_update(
         uint64_t const domain_chain_id = DOMAIN_CHAIN_ID,
@@ -39,7 +57,7 @@ namespace
     {
         constexpr bytes32_t signature = abi_encode_event_signature(
             "DomainStateUpdated(uint64,uint256,uint64,bytes32,bytes32)");
-        return EventBuilder(SEQUENCER, signature)
+        return EventBuilder(HUB, signature)
             .add_topic(abi_encode_uint(u64_be{domain_chain_id}))
             .add_data(abi_encode_uint(u256_be{7}))
             .add_data(abi_encode_uint(u64_be{domain_block_number}))
@@ -54,25 +72,28 @@ namespace
         0x2222222222222222222222222222222222222222_address;
     constexpr bytes32_t L1_MESSAGE_RECORDED_SIGNATURE =
         abi_encode_event_signature("L1MessageRecorded(uint64,uint64,address,"
-                                   "address,bytes,uint256,bytes32)");
+                                   "address,bytes,uint256,uint256,bytes32)");
     constexpr bytes32_t ENCRYPTED_L1_MESSAGE_RECORDED_SIGNATURE =
         abi_encode_event_signature(
-            "EncryptedL1MessageRecorded(uint64,uint64,address,bytes,uint256)");
+            "EncryptedL1MessageRecorded(uint64,uint64,address,bytes,uint256,"
+            "uint256)");
 
     Receipt::Log make_l1_message(
         byte_string_view const data, uint64_t const nonce = 7,
         uint64_t const domain_chain_id = DOMAIN_CHAIN_ID,
-        uint64_t const source_chain_id = NETWORK_CHAIN_ID)
+        uint64_t const source_chain_id = NETWORK_CHAIN_ID,
+        uint64_t const fee = 3)
     {
-        // Non-indexed `(uint64 sourceChainId, bytes data, uint256 nonce,
-        // bytes32 messageHash)`: the dynamic bytes follow the four head words.
+        // (uint64 sourceChainId, bytes data, uint256 nonce, uint256 fee,
+        //  bytes32 messageHash)
         byte_string encoded;
         encoded += abi_encode_uint(u64_be{source_chain_id});
-        encoded += abi_encode_uint(u256_be{4 * 32});
+        encoded += abi_encode_uint(u256_be{5 * 32});
         encoded += abi_encode_uint(u256_be{nonce});
+        encoded += abi_encode_uint(u256_be{fee});
         encoded += bytes32_t{0xab};
         encoded += abi_encode_bytes(data);
-        return EventBuilder(SEQUENCER, L1_MESSAGE_RECORDED_SIGNATURE)
+        return EventBuilder(HUB, L1_MESSAGE_RECORDED_SIGNATURE)
             .add_topic(abi_encode_uint(u64_be{domain_chain_id}))
             .add_topic(abi_encode_address(MESSAGE_FROM))
             .add_topic(abi_encode_address(MESSAGE_TO))
@@ -83,267 +104,204 @@ namespace
     Receipt::Log make_encrypted_l1_message(
         byte_string_view const ciphertext, uint64_t const nonce = 8,
         uint64_t const domain_chain_id = DOMAIN_CHAIN_ID,
-        uint64_t const source_chain_id = NETWORK_CHAIN_ID)
+        uint64_t const source_chain_id = NETWORK_CHAIN_ID,
+        uint64_t const fee = 5)
     {
-        // Non-indexed `(uint64 sourceChainId, bytes ciphertext, uint256 nonce)`.
+        // (uint64 sourceChainId, bytes ciphertext, uint256 nonce, uint256 fee)
         byte_string encoded;
         encoded += abi_encode_uint(u64_be{source_chain_id});
-        encoded += abi_encode_uint(u256_be{3 * 32});
+        encoded += abi_encode_uint(u256_be{4 * 32});
         encoded += abi_encode_uint(u256_be{nonce});
+        encoded += abi_encode_uint(u256_be{fee});
         encoded += abi_encode_bytes(ciphertext);
-        return EventBuilder(SEQUENCER, ENCRYPTED_L1_MESSAGE_RECORDED_SIGNATURE)
+        return EventBuilder(HUB, ENCRYPTED_L1_MESSAGE_RECORDED_SIGNATURE)
             .add_topic(abi_encode_uint(u64_be{domain_chain_id}))
             .add_topic(abi_encode_address(MESSAGE_FROM))
             .add_data(encoded)
             .build();
     }
 
+    Result<std::vector<SequencedDomainTransaction>>
+    scan_sequenced(std::span<Receipt const> const receipts)
+    {
+        std::array<uint64_t, 1> const ids{DOMAIN_CHAIN_ID};
+        return scan_sequenced_domain_transactions(receipts, HUB, ids);
+    }
+
     Result<std::vector<L1DomainMessage>>
     scan_messages(std::span<Receipt const> const receipts)
     {
         std::array<uint64_t, 1> const ids{DOMAIN_CHAIN_ID};
-        return scan_l1_domain_messages(receipts, SEQUENCER, ids);
-    }
-
-    byte_string make_calldata(
-        uint64_t const domain_chain_id, byte_string_view const payload)
-    {
-        constexpr uint32_t selector =
-            abi_encode_selector("sequenceToDomain(uint64,bytes)");
-        byte_string calldata{
-            static_cast<uint8_t>(selector >> 24),
-            static_cast<uint8_t>(selector >> 16),
-            static_cast<uint8_t>(selector >> 8),
-            static_cast<uint8_t>(selector)};
-        AbiEncoder encoder;
-        encoder.add_uint(u64_be{domain_chain_id});
-        encoder.add_bytes(payload);
-        calldata += encoder.encode_final();
-        return calldata;
-    }
-
-    Transaction make_transaction(
-        uint64_t const domain_chain_id = DOMAIN_CHAIN_ID,
-        byte_string const &payload = byte_string{0x01, 0x02, 0x03})
-    {
-        return Transaction{
-            .sc = {.chain_id = NETWORK_CHAIN_ID},
-            .gas_limit = 123456,
-            .to = SEQUENCER,
-            .data = make_calldata(domain_chain_id, payload)};
-    }
-
-    byte_string solidity_reference_calldata()
-    {
-        // Generated independently with eth_abi 5.1.0:
-        // keccak(signature)[:4] + encode(["uint64", "bytes"], values)
-        return *from_hex(
-            "c791e98a"
-            "0000000000000000000000000000000000000000000000000000000000114eaf"
-            "0000000000000000000000000000000000000000000000000000000000000040"
-            "0000000000000000000000000000000000000000000000000000000000000004"
-            "deadbeef00000000000000000000000000000000000000000000000000000000");
-    }
-
-    Result<std::optional<PrivateDomainPayloadView>> extract(
-        Transaction const &tx,
-        std::span<uint64_t const> const ids = std::span<uint64_t const>{
-            &DOMAIN_CHAIN_ID, 1})
-    {
-        return extract_private_domain_payload(
-            tx, uint256_t{NETWORK_CHAIN_ID}, SEQUENCER, ids);
-    }
-
-    void expect_not_candidate(
-        Result<std::optional<PrivateDomainPayloadView>> const &result)
-    {
-        ASSERT_FALSE(result.has_error());
-        EXPECT_FALSE(result.value().has_value());
+        return scan_l1_domain_messages(receipts, HUB, ids);
     }
 }
 
-TEST(PrivateDomainScanner, extracts_borrowed_payload_and_l1_gas_limit)
+TEST(PrivateDomainScanner, extracts_solidity_reference_sequenced_transaction)
 {
-    byte_string const raw_payload{0xde, 0xad, 0xbe, 0xef};
-    Transaction const tx = make_transaction(DOMAIN_CHAIN_ID, raw_payload);
+    // Non-indexed data generated independently with
+    // `cast abi-encode "f(bytes,uint256)" 0xdeadbeef 7`.
+    Receipt::Log log = make_sequenced({});
+    log.data = *from_hex(
+        "0000000000000000000000000000000000000000000000000000000000000040"
+        "0000000000000000000000000000000000000000000000000000000000000007"
+        "0000000000000000000000000000000000000000000000000000000000000004"
+        "deadbeef00000000000000000000000000000000000000000000000000000000");
+    Receipt receipt;
+    receipt.add_log(log);
 
-    auto const result = extract(tx);
+    auto const result = scan_sequenced(std::span{&receipt, 1});
 
-    ASSERT_FALSE(result.has_error());
-    ASSERT_TRUE(result.value().has_value());
-    auto const &payload = *result.value();
-    EXPECT_EQ(payload.domain_chain_id, DOMAIN_CHAIN_ID);
-    EXPECT_EQ(payload.l1_gas_limit, tx.gas_limit);
-    EXPECT_TRUE(std::ranges::equal(payload.raw_payload, raw_payload));
-    EXPECT_EQ(payload.raw_payload.data(), tx.data.data() + 100);
+    ASSERT_TRUE(result.has_value());
+    ASSERT_EQ(result.value().size(), 1);
+    EXPECT_EQ(
+        result.value()[0],
+        (SequencedDomainTransaction{
+            .domain_chain_id = DOMAIN_CHAIN_ID,
+            .payload = byte_string{0xde, 0xad, 0xbe, 0xef},
+            .fee = 7,
+            .l1_transaction_index = 0}));
 }
 
-TEST(PrivateDomainScanner, decodes_solidity_reference_calldata)
+TEST(PrivateDomainScanner, accepts_sequenced_payload_sizes_across_words)
 {
-    Transaction tx = make_transaction();
-    tx.data = solidity_reference_calldata();
+    for (size_t const size : {0uz, 1uz, 31uz, 32uz, 33uz, 64uz, 100uz}) {
+        byte_string const payload(size, 0xab);
+        Receipt receipt;
+        receipt.add_log(make_sequenced(payload));
 
-    auto const result = extract(tx);
+        auto const result = scan_sequenced(std::span{&receipt, 1});
 
-    ASSERT_FALSE(result.has_error());
-    ASSERT_TRUE(result.value().has_value());
-    auto const &payload = *result.value();
-    EXPECT_EQ(payload.domain_chain_id, DOMAIN_CHAIN_ID);
-    EXPECT_TRUE(std::ranges::equal(payload.raw_payload, *from_hex("deadbeef")));
-    EXPECT_EQ(payload.raw_payload.data(), tx.data.data() + 100);
-}
-
-TEST(PrivateDomainScanner, accepts_empty_opaque_payload)
-{
-    Transaction const tx = make_transaction(DOMAIN_CHAIN_ID, {});
-
-    auto const result = extract(tx);
-
-    ASSERT_FALSE(result.has_error());
-    ASSERT_TRUE(result.value().has_value());
-    EXPECT_TRUE(result.value()->raw_payload.empty());
-}
-
-TEST(PrivateDomainScanner, accepts_canonical_payload_sizes)
-{
-    for (size_t const size : {1uz, 32uz, 33uz, 64uz}) {
-        byte_string const raw_payload(size, 0xab);
-        Transaction const tx = make_transaction(DOMAIN_CHAIN_ID, raw_payload);
-
-        auto const result = extract(tx);
-
-        ASSERT_FALSE(result.has_error()) << "payload size " << size;
-        ASSERT_TRUE(result.value().has_value()) << "payload size " << size;
-        EXPECT_TRUE(
-            std::ranges::equal(result.value()->raw_payload, raw_payload));
+        ASSERT_TRUE(result.has_value()) << size;
+        ASSERT_EQ(result.value().size(), 1) << size;
+        EXPECT_EQ(result.value()[0].payload, payload);
     }
 }
 
-TEST(PrivateDomainScanner, filters_before_abi_decoding)
+TEST(PrivateDomainScanner, carries_the_full_fee_word)
 {
-    Transaction tx = make_transaction();
+    Receipt::Log log = make_sequenced(byte_string{0x01});
+    log.data[32] = 0x80;
+    Receipt receipt;
+    receipt.add_log(log);
 
-    tx.to.reset();
-    expect_not_candidate(extract(tx));
+    auto const result = scan_sequenced(std::span{&receipt, 1});
 
-    tx = make_transaction();
-    tx.to = Address{1};
-    expect_not_candidate(extract(tx));
-
-    tx = make_transaction();
-    tx.data[0] ^= 0xff;
-    expect_not_candidate(extract(tx));
-
-    tx = make_transaction();
-    tx.sc.chain_id.reset();
-    expect_not_candidate(extract(tx));
-
-    tx = make_transaction();
-    tx.sc.chain_id = NETWORK_CHAIN_ID + 1;
-    expect_not_candidate(extract(tx));
-
-    tx = make_transaction(DOMAIN_CHAIN_ID + 1);
-    expect_not_candidate(extract(tx));
-
-    std::span<uint64_t const> const empty_ids;
-    tx = make_transaction();
-    expect_not_candidate(extract(tx, empty_ids));
+    ASSERT_TRUE(result.has_value());
+    ASSERT_EQ(result.value().size(), 1);
+    EXPECT_EQ(result.value()[0].fee, (uint256_t{1} << 255) + 7);
 }
 
-TEST(PrivateDomainScanner, rejects_noncanonical_uint64_padding)
-{
-    Transaction tx = make_transaction();
-    tx.data[4] = 1;
-
-    auto const result = extract(tx);
-
-    ASSERT_TRUE(result.has_error());
-    EXPECT_EQ(result.assume_error(), AbiDecodeError::InvalidEncoding);
-}
-
-TEST(PrivateDomainScanner, rejects_noncanonical_dynamic_bytes_offset)
-{
-    Transaction tx = make_transaction();
-    tx.data[67] = 0x60;
-
-    auto const result = extract(tx);
-
-    ASSERT_TRUE(result.has_error());
-    EXPECT_EQ(result.assume_error(), AbiDecodeError::InvalidEncoding);
-}
-
-TEST(PrivateDomainScanner, rejects_invalid_bytes_length)
-{
-    Transaction tx = make_transaction();
-    tx.data[68] = 1;
-    EXPECT_TRUE(extract(tx).has_error());
-
-    tx = make_transaction();
-    tx.data[99] = 64;
-    EXPECT_TRUE(extract(tx).has_error());
-
-    tx = make_transaction();
-    tx.data.resize(tx.data.size() - 1);
-    EXPECT_TRUE(extract(tx).has_error());
-}
-
-TEST(PrivateDomainScanner, rejects_trailing_calldata)
-{
-    Transaction tx = make_transaction();
-    tx.data.push_back(0xaa);
-
-    auto const result = extract(tx);
-
-    ASSERT_TRUE(result.has_error());
-    EXPECT_EQ(result.assume_error(), AbiDecodeError::InputTooLong);
-}
-
-TEST(PrivateDomainScanner, rejects_nonzero_dynamic_bytes_padding)
-{
-    Transaction tx = make_transaction();
-    tx.data.back() = 1;
-
-    auto const result = extract(tx);
-
-    ASSERT_TRUE(result.has_error());
-    EXPECT_EQ(result.assume_error(), AbiDecodeError::InvalidEncoding);
-}
-
-TEST(PrivateDomainScanner, uses_linear_ownership_check)
-{
-    std::array<uint64_t, 4> const ids{DOMAIN_CHAIN_ID, 7, DOMAIN_CHAIN_ID, 3};
-    Transaction const tx = make_transaction();
-
-    auto const result = extract(tx, ids);
-
-    ASSERT_FALSE(result.has_error());
-    EXPECT_TRUE(result.value().has_value());
-}
-
-TEST(PrivateDomainScanner, returns_flat_borrowed_payloads_in_l1_order)
+TEST(PrivateDomainScanner, returns_sequenced_transactions_in_receipt_and_log_order)
 {
     constexpr uint64_t OTHER_DOMAIN = DOMAIN_CHAIN_ID + 1;
     std::array<uint64_t, 2> const ids{DOMAIN_CHAIN_ID, OTHER_DOMAIN};
-    std::array<Transaction, 3> const l1_transactions{
-        make_transaction(DOMAIN_CHAIN_ID, byte_string{10}),
-        make_transaction(OTHER_DOMAIN, byte_string{20}),
-        make_transaction(DOMAIN_CHAIN_ID, byte_string{30})};
+    std::array<Receipt, 3> receipts;
+    receipts[0].add_log(make_sequenced(byte_string{10}, 1, DOMAIN_CHAIN_ID));
+    receipts[0].add_log(make_sequenced(byte_string{20}, 2, OTHER_DOMAIN));
+    receipts[2].add_log(make_sequenced(byte_string{30}, 3, DOMAIN_CHAIN_ID));
 
-    auto payloads = scan_private_domain_payloads(
-        l1_transactions, 7, NETWORK_CHAIN_ID, SEQUENCER, ids);
+    auto const result =
+        scan_sequenced_domain_transactions(receipts, HUB, ids);
 
-    ASSERT_EQ(payloads.size(), 3);
-    EXPECT_EQ(payloads[0].domain_chain_id, DOMAIN_CHAIN_ID);
-    EXPECT_EQ(payloads[1].domain_chain_id, OTHER_DOMAIN);
-    EXPECT_EQ(payloads[2].domain_chain_id, DOMAIN_CHAIN_ID);
-    for (size_t i = 0; i < payloads.size(); ++i) {
-        EXPECT_EQ(payloads[i].l1_transaction_index, i);
-        ASSERT_EQ(payloads[i].raw_payload.size(), 1);
-        EXPECT_EQ(payloads[i].raw_payload[0], (i + 1) * 10);
-        EXPECT_EQ(
-            payloads[i].raw_payload.data(),
-            l1_transactions[i].data.data() + 100);
+    ASSERT_TRUE(result.has_value());
+    auto const &transactions = result.value();
+    ASSERT_EQ(transactions.size(), 3);
+    EXPECT_EQ(transactions[0].domain_chain_id, DOMAIN_CHAIN_ID);
+    EXPECT_EQ(transactions[1].domain_chain_id, OTHER_DOMAIN);
+    EXPECT_EQ(transactions[2].domain_chain_id, DOMAIN_CHAIN_ID);
+    for (size_t i = 0; i < transactions.size(); ++i) {
+        EXPECT_EQ(transactions[i].l1_transaction_index, i < 2 ? 0 : 2);
+        EXPECT_EQ(transactions[i].fee, i + 1);
+        EXPECT_EQ(transactions[i].payload, byte_string{uint8_t((i + 1) * 10)});
     }
+}
+
+TEST(PrivateDomainScanner, accepts_unsorted_duplicate_domain_ids)
+{
+    std::array<uint64_t, 4> const ids{DOMAIN_CHAIN_ID, 7, DOMAIN_CHAIN_ID, 3};
+    Receipt receipt;
+    receipt.add_log(make_sequenced(byte_string{1}));
+
+    auto const result =
+        scan_sequenced_domain_transactions(std::span{&receipt, 1}, HUB, ids);
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value().size(), 1);
+}
+
+TEST(PrivateDomainScanner, sequenced_receipt_bloom_skips_log_scan)
+{
+    Receipt receipt;
+    receipt.add_log(make_sequenced(byte_string{1}));
+
+    receipt.bloom = {};
+    auto const result = scan_sequenced(std::span{&receipt, 1});
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_TRUE(result.value().empty());
+}
+
+TEST(PrivateDomainScanner, ignores_sequenced_events_of_other_emitters_and_domains)
+{
+    constexpr uint64_t OTHER_DOMAIN = DOMAIN_CHAIN_ID + 1;
+    Receipt receipt;
+    auto wrong_emitter = make_sequenced(byte_string{1});
+    wrong_emitter.address = Address{1};
+    receipt.add_log(wrong_emitter);
+    auto unconfigured = make_sequenced(byte_string{1}, 7, OTHER_DOMAIN);
+    unconfigured.data.pop_back();
+    receipt.add_log(unconfigured);
+    receipt.add_log(make_l1_message({}));
+    std::span<uint64_t const> const empty_ids;
+
+    auto const result = scan_sequenced(std::span{&receipt, 1});
+    ASSERT_TRUE(result.has_value());
+    EXPECT_TRUE(result.value().empty());
+
+    receipt.add_log(make_sequenced(byte_string{1}));
+    auto const unserved = scan_sequenced_domain_transactions(
+        std::span{&receipt, 1}, HUB, empty_ids);
+    ASSERT_TRUE(unserved.has_value());
+    EXPECT_TRUE(unserved.value().empty());
+}
+
+TEST(PrivateDomainScanner, rejects_malformed_authentic_sequenced_events)
+{
+    auto const expect_rejected = [](Receipt::Log log, AbiDecodeError const error) {
+        Receipt receipt;
+        receipt.add_log(log);
+        auto const result = scan_sequenced(std::span{&receipt, 1});
+        ASSERT_TRUE(result.has_error());
+        EXPECT_EQ(result.assume_error(), error);
+    };
+
+    auto truncated = make_sequenced(byte_string{0xde, 0xad});
+    truncated.data.pop_back();
+    expect_rejected(truncated, AbiDecodeError::InputTooShort);
+
+    auto trailing = make_sequenced(byte_string{0xde, 0xad});
+    trailing.data.push_back(0);
+    expect_rejected(trailing, AbiDecodeError::InputTooLong);
+
+    auto nonzero_padding = make_sequenced(byte_string{0xde, 0xad});
+    nonzero_padding.data.back() = 1;
+    expect_rejected(nonzero_padding, AbiDecodeError::InvalidEncoding);
+
+    auto wrong_offset = make_sequenced({});
+    wrong_offset.data[31] = 0x60;
+    expect_rejected(wrong_offset, AbiDecodeError::InvalidEncoding);
+
+    auto oversized_length = make_sequenced({});
+    oversized_length.data[2 * 32 + 31] = 1;
+    expect_rejected(oversized_length, AbiDecodeError::InputTooShort);
+
+    auto missing_topic = make_sequenced({});
+    missing_topic.topics.pop_back();
+    expect_rejected(missing_topic, AbiDecodeError::InvalidEncoding);
+
+    auto extra_topic = make_sequenced({});
+    extra_topic.topics.push_back(bytes32_t{});
+    expect_rejected(extra_topic, AbiDecodeError::InvalidEncoding);
 }
 
 TEST(PrivateDomainScanner, extracts_domain_state_update)
@@ -353,7 +311,7 @@ TEST(PrivateDomainScanner, extracts_domain_state_update)
     std::array<uint64_t, 1> const ids{DOMAIN_CHAIN_ID};
 
     auto const result =
-        scan_domain_state_updates(std::span{&receipt, 1}, SEQUENCER, ids);
+        scan_domain_state_updates(std::span{&receipt, 1}, HUB, ids);
 
     ASSERT_TRUE(result.has_value());
     ASSERT_EQ(result.value().size(), 1);
@@ -365,7 +323,7 @@ TEST(PrivateDomainScanner, extracts_domain_state_update)
             .new_state_root = STATE_ROOT}));
 }
 
-TEST(PrivateDomainScanner, receipt_bloom_skips_log_scan)
+TEST(PrivateDomainScanner, state_update_receipt_bloom_skips_log_scan)
 {
     Receipt receipt;
     receipt.add_log(make_state_update());
@@ -373,13 +331,13 @@ TEST(PrivateDomainScanner, receipt_bloom_skips_log_scan)
 
     receipt.bloom = {};
     auto const result =
-        scan_domain_state_updates(std::span{&receipt, 1}, SEQUENCER, ids);
+        scan_domain_state_updates(std::span{&receipt, 1}, HUB, ids);
 
     ASSERT_TRUE(result.has_value());
     EXPECT_TRUE(result.value().empty());
 }
 
-TEST(PrivateDomainScanner, filters_emitter_and_unconfigured_domain)
+TEST(PrivateDomainScanner, state_update_filters_emitter_and_unconfigured_domain)
 {
     constexpr uint64_t OTHER_DOMAIN = DOMAIN_CHAIN_ID + 1;
     Receipt receipt;
@@ -392,13 +350,13 @@ TEST(PrivateDomainScanner, filters_emitter_and_unconfigured_domain)
     std::array<uint64_t, 1> const ids{DOMAIN_CHAIN_ID};
 
     auto const result =
-        scan_domain_state_updates(std::span{&receipt, 1}, SEQUENCER, ids);
+        scan_domain_state_updates(std::span{&receipt, 1}, HUB, ids);
 
     ASSERT_TRUE(result.has_value());
     EXPECT_TRUE(result.value().empty());
 }
 
-TEST(PrivateDomainScanner, rejects_malformed_authentic_event)
+TEST(PrivateDomainScanner, state_update_rejects_malformed_authentic_event)
 {
     Receipt receipt;
     auto malformed = make_state_update();
@@ -407,7 +365,7 @@ TEST(PrivateDomainScanner, rejects_malformed_authentic_event)
     std::array<uint64_t, 1> const ids{DOMAIN_CHAIN_ID};
 
     auto result =
-        scan_domain_state_updates(std::span{&receipt, 1}, SEQUENCER, ids);
+        scan_domain_state_updates(std::span{&receipt, 1}, HUB, ids);
     EXPECT_TRUE(result.has_error());
 }
 
@@ -421,7 +379,7 @@ TEST(PrivateDomainScanner, ignores_uint64_high_bits)
     std::array<uint64_t, 1> const ids{DOMAIN_CHAIN_ID};
 
     auto const result =
-        scan_domain_state_updates(std::span{&receipt, 1}, SEQUENCER, ids);
+        scan_domain_state_updates(std::span{&receipt, 1}, HUB, ids);
 
     ASSERT_TRUE(result.has_value());
     ASSERT_EQ(result.value().size(), 1);
@@ -432,13 +390,14 @@ TEST(PrivateDomainScanner, ignores_uint64_high_bits)
 TEST(PrivateDomainScanner, extracts_solidity_reference_l1_message)
 {
     // Non-indexed data generated independently with
-    // `cast abi-encode "f(uint64,bytes,uint256,bytes32)" 20143 0xdeadbeef 7
-    //  0xab..ab`.
+    // `cast abi-encode "f(uint64,bytes,uint256,uint256,bytes32)" 20143
+    //  0xdeadbeef 7 3 0xab..ab`.
     Receipt::Log log = make_l1_message({});
     log.data = *from_hex(
         "0000000000000000000000000000000000000000000000000000000000004eaf"
-        "0000000000000000000000000000000000000000000000000000000000000080"
+        "00000000000000000000000000000000000000000000000000000000000000a0"
         "0000000000000000000000000000000000000000000000000000000000000007"
+        "0000000000000000000000000000000000000000000000000000000000000003"
         "abababababababababababababababababababababababababababababababab"
         "0000000000000000000000000000000000000000000000000000000000000004"
         "deadbeef00000000000000000000000000000000000000000000000000000000");
@@ -458,18 +417,21 @@ TEST(PrivateDomainScanner, extracts_solidity_reference_l1_message)
             .to = MESSAGE_TO,
             .payload = byte_string{0xde, 0xad, 0xbe, 0xef},
             .nonce = 7,
+            .fee = 3,
             .encrypted = false,
             .l1_transaction_index = 0}));
 }
 
 TEST(PrivateDomainScanner, extracts_solidity_reference_encrypted_l1_message)
 {
-    // `cast abi-encode "f(uint64,bytes,uint256)" 20143 0x0102030405 8`.
+    // `cast abi-encode "f(uint64,bytes,uint256,uint256)" 20143 0x0102030405
+    //  8 5`.
     Receipt::Log log = make_encrypted_l1_message({});
     log.data = *from_hex(
         "0000000000000000000000000000000000000000000000000000000000004eaf"
-        "0000000000000000000000000000000000000000000000000000000000000060"
+        "0000000000000000000000000000000000000000000000000000000000000080"
         "0000000000000000000000000000000000000000000000000000000000000008"
+        "0000000000000000000000000000000000000000000000000000000000000005"
         "0000000000000000000000000000000000000000000000000000000000000005"
         "0102030405000000000000000000000000000000000000000000000000000000");
     Receipt receipt;
@@ -488,14 +450,13 @@ TEST(PrivateDomainScanner, extracts_solidity_reference_encrypted_l1_message)
             .to = std::nullopt,
             .payload = byte_string{0x01, 0x02, 0x03, 0x04, 0x05},
             .nonce = 8,
+            .fee = 5,
             .encrypted = true,
             .l1_transaction_index = 0}));
 }
 
 TEST(PrivateDomainScanner, passes_forwarded_message_source_chain_id_through)
 {
-    // A message the hub forwarded from another domain names that domain, not
-    // the L1 chain, as its authenticated source.
     constexpr uint64_t SOURCE_DOMAIN = DOMAIN_CHAIN_ID + 1;
     byte_string const data{0x01};
     Receipt receipt;
@@ -577,6 +538,7 @@ TEST(PrivateDomainScanner, filters_message_emitter_and_unconfigured_domain)
     receipt.add_log(unconfigured);
     auto unrelated = make_state_update();
     receipt.add_log(unrelated);
+    receipt.add_log(make_sequenced(byte_string{1}));
 
     auto const result = scan_messages(std::span{&receipt, 1});
 
@@ -605,11 +567,11 @@ TEST(PrivateDomainScanner, rejects_malformed_authentic_message_events)
     expect_rejected(nonzero_padding);
 
     auto wrong_offset = make_l1_message({});
-    wrong_offset.data[32 + 31] = 0x60;
+    wrong_offset.data[32 + 31] = 0x80;
     expect_rejected(wrong_offset);
 
     auto oversized_length = make_encrypted_l1_message({});
-    oversized_length.data[3 * 32 + 31] = 1;
+    oversized_length.data[4 * 32 + 31] = 1;
     expect_rejected(oversized_length);
 
     auto missing_topic = make_l1_message({});

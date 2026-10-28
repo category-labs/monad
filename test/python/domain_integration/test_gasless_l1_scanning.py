@@ -1,9 +1,16 @@
-"""End-to-end coverage for L1-sequenced gasless domain blocks."""
+"""End-to-end coverage for L1-sequenced gasless domain blocks.
+
+Every test runs against the real hub: the committed parent block deploys it,
+registers both domains and seeds their spokes, and each sequencing call pays
+`gas * DOMAIN_GAS_PRICE` for the gas its domain transaction declares.
+"""
 
 from __future__ import annotations
 
 import rlp
+from eth_abi import encode as abi_encode
 from eth_account import Account
+from eth_keys import keys
 from eth_utils import keccak
 
 from .abi import sequence_to_domain_calldata
@@ -11,6 +18,7 @@ from .block_builder import BlockSpec, build_ledger
 from .conftest import FreshEnv
 from .constants import DEV_ACCOUNTS, DEVNET_CHAIN_ID
 from .hpke import encrypt_inner_transaction, write_private_key_files
+from .domain_hub_bytecode import DOMAIN_HUB_CREATION_CODE
 from .domain_spoke_bytecode import DOMAIN_SPOKE_CREATION_CODE
 from .monad_runner import (
     query_domain_receipt,
@@ -36,10 +44,14 @@ DOMAIN_KEYS = {
     DOMAIN_A: (1).to_bytes(32, "big"),
     DOMAIN_B: (2).to_bytes(32, "big"),
 }
-SEQUENCER = DEV_ACCOUNTS[4][0]
 OUTER_ADDR, OUTER_KEY = DEV_ACCOUNTS[0]
 INNER_ADDR, INNER_KEY = DEV_ACCOUNTS[1]
+HUB_DEPLOYER, HUB_DEPLOYER_KEY = DEV_ACCOUNTS[2]
+FEE_RECIPIENT = DEV_ACCOUNTS[4][0]
 ACCESS_DEPLOYER, ACCESS_DEPLOYER_KEY = DEV_ACCOUNTS[5]
+
+# Mirrors DomainHub.DOMAIN_GAS_PRICE.
+DOMAIN_GAS_PRICE = 50_000_000_000
 
 INNER_SSTORE_RUNTIME = b"\x33\x60\x00\x55\x00"
 INNER_LOG_RUNTIME = (
@@ -112,15 +124,22 @@ def _contract_address(sender: bytes, nonce: int) -> bytes:
     return keccak(rlp.encode([sender, nonce]))[12:]
 
 
+HUB = _contract_address(HUB_DEPLOYER, 0)
 ACCESS_SPOKE = _contract_address(ACCESS_DEPLOYER, 0)
 ACCESS_TARGET = _contract_address(ACCESS_SPOKE, 1)
 ACCESS_TARGET_SELECTOR = keccak(text="writeFor(address)")[:4]
 ACCESS_TARGET_RUNTIME = b"\x33\x60\x00\x55\x00"  # sstore(0, caller)
 # keccak of the pinned DomainSpoke runtime as deployed on DOMAIN_A by the committed
-# parent of test_domain_state_update_validates_exact_historical_root, i.e. with the
-# immutables (DOMAIN_A, ACCESS_DEPLOYER, DEVNET_CHAIN_ID, hub = CREATE(DEV_ACCOUNTS[2], 0)).
+# parent, i.e. with the immutables (DOMAIN_A, DEVNET_CHAIN_ID, HUB).
 ACCESS_SPOKE_CODE_HASH_DOMAIN_A = bytes.fromhex(
-    "1ad829ca7fe7687468acc30e0c2d75a72d22fc2f5c03dea05ce6b855d4212467"
+    "4070a9c0dccd003c949555388da5450b81a1ad6ca14677d1104426a30f37cf76"
+)
+# Balance of every dev account in MONAD_DEVNET_ALLOC.
+GENESIS_BALANCE = 10**38
+
+STATE_TRANSITION_TYPEHASH = keccak(
+    text="StateTransition(uint64 domainChainId,uint256 stateNonce,uint64 domainBlockNumber,"
+    "bytes32 newStateRoot,bytes32 domainAnchor)"
 )
 
 
@@ -128,15 +147,100 @@ def _abi_word(value: int) -> bytes:
     return value.to_bytes(32, "big")
 
 
+def _selector(signature: str) -> bytes:
+    return keccak(text=signature)[:4]
+
+
 def _domain_spoke_init_code(domain_id: int, hub: bytes) -> bytes:
-    """Pinned DomainSpoke bytecode plus (domainChainId, operator, l1ChainId, hub)."""
+    """Pinned DomainSpoke bytecode plus (domainChainId, l1ChainId, hub)."""
     return (
         DOMAIN_SPOKE_CREATION_CODE
         + _abi_word(domain_id)
-        + ACCESS_DEPLOYER.rjust(32, b"\x00")
         + _abi_word(DEVNET_CHAIN_ID)
         + hub.rjust(32, b"\x00")
     )
+
+
+def _fees_collected(dump: dict) -> int:
+    """Wei the fee recipient has received, from the L1 state dump."""
+    return int(dump["accounts"]["0x" + FEE_RECIPIENT.hex()]["balance"]) - GENESIS_BALANCE
+
+
+def _l1_tx(
+    nonce: int,
+    to: bytes | None,
+    data: bytes,
+    key: bytes,
+    *,
+    value: int = 0,
+    gas_limit: int = 5_000_000,
+    max_fee_per_gas: int = 0,
+):
+    return (
+        Tx(
+            nonce=nonce,
+            gas_limit=gas_limit,
+            max_priority_fee_per_gas=0,
+            max_fee_per_gas=max_fee_per_gas,
+            to=to,
+            value=value,
+            data=data,
+        ),
+        key,
+    )
+
+
+def _deploy_hub():
+    return _l1_tx(0, None, DOMAIN_HUB_CREATION_CODE, HUB_DEPLOYER_KEY, gas_limit=8_000_000)
+
+
+def _register_domain(nonce: int, domain_id: int):
+    """registerDomain with the hub deployer as sole validator and a one-block checkpoint schedule."""
+    data = _selector("registerDomain(uint64,address[],uint256,address,bytes,uint64)") + abi_encode(
+        ["uint64", "address[]", "uint256", "address", "bytes", "uint64"],
+        [domain_id, [HUB_DEPLOYER], 1, FEE_RECIPIENT, b"", 1],
+    )
+    return _l1_tx(nonce, HUB, data, HUB_DEPLOYER_KEY)
+
+
+def _state_transition_signature(
+    domain_id: int, state_nonce: int, block_number: int, state_root: bytes, anchor: bytes = bytes(32)
+) -> bytes:
+    """The hub deployer's EIP-712 signature over a state transition, as a validator."""
+    domain_separator = keccak(
+        abi_encode(
+            ["bytes32", "bytes32", "bytes32", "uint256", "address"],
+            [
+                keccak(text="EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
+                keccak(text="MonadDomainHub"),
+                keccak(text="1"),
+                DEVNET_CHAIN_ID,
+                HUB,
+            ],
+        )
+    )
+    struct_hash = keccak(
+        abi_encode(
+            ["bytes32", "uint64", "uint256", "uint64", "bytes32", "bytes32"],
+            [STATE_TRANSITION_TYPEHASH, domain_id, state_nonce, block_number, state_root, anchor],
+        )
+    )
+    signature = keys.PrivateKey(HUB_DEPLOYER_KEY).sign_msg_hash(keccak(b"\x19\x01" + domain_separator + struct_hash))
+    return signature.r.to_bytes(32, "big") + signature.s.to_bytes(32, "big") + bytes([signature.v + 27])
+
+
+def _submit_state_signature(nonce: int, domain_id: int, state_nonce: int, block_number: int, state_root: bytes):
+    data = _selector("submitStateSignature(uint64,uint64,bytes32,bytes32,bytes)") + abi_encode(
+        ["uint64", "uint64", "bytes32", "bytes32", "bytes"],
+        [
+            domain_id,
+            block_number,
+            state_root,
+            bytes(32),
+            _state_transition_signature(domain_id, state_nonce, block_number, state_root),
+        ],
+    )
+    return _l1_tx(nonce, HUB, data, HUB_DEPLOYER_KEY)
 
 
 def _deploy_contract_calldata(init_code: bytes, policy_owner: bytes) -> bytes:
@@ -152,25 +256,22 @@ def _deploy_contract_calldata(init_code: bytes, policy_owner: bytes) -> bytes:
     )
 
 
-def _set_access_control_calldata(target: bytes) -> bytes:
-    selector = keccak(text="setAccessControl(address,bytes4,bool,uint16)")[:4]
-    return (
-        selector
-        + target.rjust(32, b"\x00")
-        + ACCESS_TARGET_SELECTOR.ljust(32, b"\x00")
-        + _abi_word(1)
-        + _abi_word(0)
-    )
+def _set_access_policy_calldata(target: bytes, policy: bytes) -> bytes:
+    return _selector("setAccessPolicy(address,address)") + target.rjust(32, b"\x00") + policy.rjust(32, b"\x00")
+
+
+def _caller_policy_runtime(allowed: bytes) -> bytes:
+    """canCall(caller, context, data) returning true only for `allowed`."""
+    return b"\x60\x04\x35\x73" + allowed + b"\x14\x60\x00\x52\x60\x20\x60\x00\xf3"
 
 
 def _access_target_calldata(subject: bytes) -> bytes:
     return ACCESS_TARGET_SELECTOR + subject.rjust(32, b"\x00")
 
 
-def _domain_spoke_parent_transactions(
-    sequencer: bytes = SEQUENCER,
-) -> list[tuple[Tx, bytes]]:
-    transactions = []
+def _committed_parent_transactions() -> list[tuple[Tx, bytes]]:
+    """Deploy the hub, register both domains and seed their spokes."""
+    transactions = [_deploy_hub(), _register_domain(1, DOMAIN_A), _register_domain(2, DOMAIN_B)]
     for outer_nonce, domain_id in enumerate((DOMAIN_A, DOMAIN_B)):
         deploy = sign_tx(
             Tx(
@@ -180,24 +281,19 @@ def _domain_spoke_parent_transactions(
                 max_fee_per_gas=0,
                 to=None,
                 value=0,
-                data=_domain_spoke_init_code(domain_id, sequencer),
+                data=_domain_spoke_init_code(domain_id, HUB),
                 chain_id=domain_id,
             ),
             ACCESS_DEPLOYER_KEY,
         )
         encrypted = encrypt_inner_transaction(DOMAIN_KEYS[domain_id], deploy)
         transactions.append(
-            (
-                Tx(
-                    nonce=outer_nonce,
-                    gas_limit=4_500_000,
-                    max_priority_fee_per_gas=0,
-                    max_fee_per_gas=0,
-                    to=sequencer,
-                    value=0,
-                    data=sequence_to_domain_calldata(domain_id, encrypted),
-                ),
+            _l1_tx(
+                outer_nonce,
+                HUB,
+                sequence_to_domain_calldata(domain_id, encrypted),
                 ACCESS_DEPLOYER_KEY,
+                value=4_000_000 * DOMAIN_GAS_PRICE,
             )
         )
     return transactions
@@ -231,7 +327,7 @@ def _outer(
     nonce: int,
     domain_id: int,
     payload: bytes,
-    gas_limit: int = 1_500_000,
+    paid_gas: int = 1_500_000,
     *,
     receiver_scalar: bytes | None = None,
     frame_version: int = 1,
@@ -245,23 +341,25 @@ def _outer(
         payload,
         frame_version=frame_version,
     )
-    return _outer_raw(nonce, domain_id, encrypted, gas_limit)
+    return _outer_raw(nonce, domain_id, encrypted, paid_gas)
 
 
 def _outer_raw(
-    nonce: int, domain_id: int, payload: bytes, gas_limit: int = 1_500_000
+    nonce: int,
+    domain_id: int,
+    payload: bytes,
+    paid_gas: int = 1_500_000,
+    *,
+    l1_gas_limit: int = 1_500_000,
 ) -> tuple[Tx, bytes]:
-    return (
-        Tx(
-            nonce=nonce,
-            gas_limit=gas_limit,
-            max_priority_fee_per_gas=0,
-            max_fee_per_gas=0,
-            to=SEQUENCER,
-            value=0,
-            data=sequence_to_domain_calldata(domain_id, payload),
-        ),
+    """sequenceToDomain through the hub, paying for `paid_gas` of domain gas."""
+    return _l1_tx(
+        nonce,
+        HUB,
+        sequence_to_domain_calldata(domain_id, payload),
         OUTER_KEY,
+        value=paid_gas * DOMAIN_GAS_PRICE,
+        gas_limit=l1_gas_limit,
     )
 
 
@@ -291,16 +389,9 @@ def _unprotected_legacy_inner(*, nonce: int, to: bytes) -> bytes:
     return encoded
 
 
-def _with_committed_parent(
-    blocks: list[BlockSpec],
-    sequencer: bytes = SEQUENCER,
-) -> list[BlockSpec]:
-    """Prepend an empty L1 block and shift test blocks by one.
-
-    Private domain execution is based on the committed L1 parent. Keeping
-    that parent explicit preserves the historical-version assertions without
-    relying on native domain registration.
-    """
+def _with_committed_parent(blocks: list[BlockSpec]) -> list[BlockSpec]:
+    """Prepend the protocol setup block and shift test blocks by one; private
+    domain execution is based on the committed L1 parent."""
     assert blocks
     shifted = [
         BlockSpec(
@@ -319,7 +410,7 @@ def _with_committed_parent(
         BlockSpec(
             seqno=1,
             timestamp=max(0, blocks[0].timestamp - 1),
-            txs=_domain_spoke_parent_transactions(sequencer),
+            txs=_committed_parent_transactions(),
         ),
         *shifted,
     ]
@@ -335,7 +426,7 @@ def _run(fresh_env: FreshEnv, blocks: list[BlockSpec], domains: list[int]):
         private_domain_spokes={
             domain_id: ACCESS_SPOKE for domain_id in domains
         },
-        private_domain_sequencer=SEQUENCER,
+        private_domain_sequencer=HUB,
     )
     assert result.returncode == 0, (
         f"monad exited {result.returncode}:\n{result.stdout[-4000:]}\n"
@@ -359,6 +450,7 @@ def test_gasless_deploy_and_call(fresh_env: FreshEnv):
     _run(fresh_env, [block], [DOMAIN_A])
 
     assert all(r.status == 1 for r in query_receipts(fresh_env.triedb, 2, 2))
+    assert all(r.status == 1 for r in query_receipts(fresh_env.triedb, 1, 5))
     receipt0 = query_domain_receipt(fresh_env.triedb, 2, DOMAIN_A, 0)
     receipt1 = query_domain_receipt(fresh_env.triedb, 2, DOMAIN_A, 1)
     assert receipt0 is not None and receipt0.status == 1 and receipt0.gas_used > 0
@@ -388,6 +480,7 @@ def test_gasless_deploy_and_call(fresh_env: FreshEnv):
 
 
 def test_domain_spoke_enforces_custom_access_rule(fresh_env: FreshEnv):
+    policy = _contract_address(INNER_ADDR, 0)
     deploy_target = sign_tx(
         Tx(
             nonce=1,
@@ -403,6 +496,7 @@ def test_domain_spoke_enforces_custom_access_rule(fresh_env: FreshEnv):
         ),
         ACCESS_DEPLOYER_KEY,
     )
+    deploy_policy = _inner(nonce=0, to=None, data=_init_code(_caller_policy_runtime(INNER_ADDR)))
     configure_target = sign_tx(
         Tx(
             nonce=2,
@@ -411,7 +505,7 @@ def test_domain_spoke_enforces_custom_access_rule(fresh_env: FreshEnv):
             max_fee_per_gas=0,
             to=ACCESS_SPOKE,
             value=0,
-            data=_set_access_control_calldata(ACCESS_TARGET),
+            data=_set_access_policy_calldata(ACCESS_TARGET, policy),
             chain_id=DOMAIN_A,
         ),
         ACCESS_DEPLOYER_KEY,
@@ -430,7 +524,7 @@ def test_domain_spoke_enforces_custom_access_rule(fresh_env: FreshEnv):
         OUTER_KEY,
     )
     allowed = _inner(
-        nonce=0,
+        nonce=1,
         to=ACCESS_TARGET,
         data=_access_target_calldata(INNER_ADDR),
     )
@@ -439,19 +533,20 @@ def test_domain_spoke_enforces_custom_access_rule(fresh_env: FreshEnv):
         timestamp=1_000_000_001,
         txs=[
             _outer(0, DOMAIN_A, deploy_target),
-            _outer(1, DOMAIN_A, configure_target),
-            _outer(2, DOMAIN_A, denied),
-            _outer(3, DOMAIN_A, allowed),
+            _outer(1, DOMAIN_A, deploy_policy),
+            _outer(2, DOMAIN_A, configure_target),
+            _outer(3, DOMAIN_A, denied),
+            _outer(4, DOMAIN_A, allowed),
         ],
     )
 
     _run(fresh_env, [block], [DOMAIN_A])
 
     receipts = [
-        query_domain_receipt(fresh_env.triedb, 2, DOMAIN_A, index) for index in range(4)
+        query_domain_receipt(fresh_env.triedb, 2, DOMAIN_A, index) for index in range(5)
     ]
     assert all(receipt is not None for receipt in receipts)
-    assert [receipt.status for receipt in receipts] == [1, 1, 0, 1]
+    assert [receipt.status for receipt in receipts] == [1, 1, 1, 0, 1]
     accounts = dump_state(fresh_env.triedb, 2)["domains"][domain_key(DOMAIN_A)][
         "accounts"
     ]
@@ -521,7 +616,7 @@ def test_domain_access_check_reverts_on_second_hop_call(fresh_env: FreshEnv):
         nblocks=2,
         private_domain_keys=keys,
         private_domain_spokes={DOMAIN_A: ACCESS_SPOKE},
-        private_domain_sequencer=SEQUENCER,
+        private_domain_sequencer=HUB,
     )
     assert deployed.returncode == 0, deployed.stderr[-4000:]
     deploy_receipts = [
@@ -537,7 +632,7 @@ def test_domain_access_check_reverts_on_second_hop_call(fresh_env: FreshEnv):
         nblocks=1,
         private_domain_keys=keys,
         private_domain_spokes={DOMAIN_A: policy_spoke},
-        private_domain_sequencer=SEQUENCER,
+        private_domain_sequencer=HUB,
     )
     assert executed.returncode == 0, executed.stderr[-4000:]
 
@@ -560,125 +655,67 @@ def test_domain_access_check_reverts_on_second_hop_call(fresh_env: FreshEnv):
 def test_domain_state_update_validates_exact_historical_root(
     fresh_env: FreshEnv,
 ):
-    emitter_deployer, emitter_deployer_key = DEV_ACCOUNTS[2]
-    emitter = _contract_address(emitter_deployer, 0)
-
     # A successful zero-value call increments the sender nonce without leaving
-    # an empty recipient behind. Build the expected domain trie from that
+    # an empty recipient behind. Build the expected domain tries from that
     # protocol state, independently of the database under test.
-    expected_root = compute_state_root(
-        {
-            INNER_ADDR: AccountState(nonce=1),
-            ACCESS_DEPLOYER: AccountState(nonce=1),
-            ACCESS_SPOKE: AccountState(nonce=1, code_hash=ACCESS_SPOKE_CODE_HASH_DOMAIN_A),
-        }
-    )
-    assert expected_root != EMPTY_ROOT
+    def expected_root(inner_nonce: int) -> bytes:
+        return compute_state_root(
+            {
+                INNER_ADDR: AccountState(nonce=inner_nonce),
+                ACCESS_DEPLOYER: AccountState(nonce=1),
+                ACCESS_SPOKE: AccountState(nonce=1, code_hash=ACCESS_SPOKE_CODE_HASH_DOMAIN_A),
+            }
+        )
 
-    sequenced = _outer(0, DOMAIN_A, _inner(nonce=0, to=OUTER_ADDR))
-    sequenced[0].to = emitter
-    domain_block = BlockSpec(
-        seqno=1,
-        timestamp=1_000_000_001,
-        txs=[sequenced],
+    root_at_2 = expected_root(1)
+    root_at_3 = expected_root(2)
+    assert EMPTY_ROOT not in (root_at_2, root_at_3)
+    bad_root = bytes([root_at_2[0] ^ 1]) + root_at_2[1:]
+
+    blocks = _with_committed_parent(
+        [
+            BlockSpec(seqno=1, timestamp=1_000_000_001, txs=[_outer(0, DOMAIN_A, _inner(nonce=0, to=OUTER_ADDR))]),
+            # The sole validator attests a wrong root for domain block 2 while
+            # block 3 advances the domain again.
+            BlockSpec(
+                seqno=2,
+                timestamp=1_000_000_002,
+                txs=[
+                    _outer(1, DOMAIN_A, _inner(nonce=1, to=OUTER_ADDR)),
+                    _submit_state_signature(3, DOMAIN_A, 0, 2, bad_root),
+                ],
+            ),
+            BlockSpec(seqno=3, timestamp=1_000_000_003, txs=[_submit_state_signature(4, DOMAIN_A, 1, 3, root_at_3)]),
+        ]
     )
-    blocks = _with_committed_parent([domain_block], emitter)
     build_ledger(fresh_env.ledger, blocks)
-    result = run_monad(
-        fresh_env.ledger,
-        fresh_env.triedb,
-        nblocks=2,
-        private_domain_keys=_key_files(fresh_env, (DOMAIN_A,)),
-        private_domain_spokes={DOMAIN_A: ACCESS_SPOKE},
-        private_domain_sequencer=emitter,
-    )
+    common = {
+        "private_domain_keys": _key_files(fresh_env, (DOMAIN_A,)),
+        "private_domain_spokes": {DOMAIN_A: ACCESS_SPOKE},
+        "private_domain_sequencer": HUB,
+    }
+    result = run_monad(fresh_env.ledger, fresh_env.triedb, nblocks=2, **common)
     assert result.returncode == 0, result.stderr[-4000:]
-
     domain_dump = dump_state(fresh_env.triedb, 2)["domains"][domain_key(DOMAIN_A)]
-    assert bytes.fromhex(domain_dump["state_root"][2:]) == expected_root
+    assert bytes.fromhex(domain_dump["state_root"][2:]) == root_at_2
 
-    runtime = _domain_state_updated_runtime(DOMAIN_A)
-    valid_event_block = BlockSpec(
-        seqno=3,
-        timestamp=1_000_000_002,
-        txs=[
-            (
-                Tx(
-                    nonce=0,
-                    gas_limit=500_000,
-                    max_priority_fee_per_gas=0,
-                    max_fee_per_gas=0,
-                    to=None,
-                    value=0,
-                    data=_init_code(runtime),
-                ),
-                emitter_deployer_key,
-            ),
-            (
-                Tx(
-                    nonce=1,
-                    gas_limit=500_000,
-                    max_priority_fee_per_gas=0,
-                    max_fee_per_gas=0,
-                    to=emitter,
-                    value=0,
-                    data=_domain_state_updated_data(2, expected_root),
-                ),
-                OUTER_KEY,
-            ),
-        ],
-    )
-    build_ledger(fresh_env.ledger, [*blocks, valid_event_block])
-    validated = run_monad(
-        fresh_env.ledger,
-        fresh_env.triedb,
-        nblocks=1,
-        private_domain_keys=_key_files(fresh_env, (DOMAIN_A,)),
-        private_domain_spokes={DOMAIN_A: ACCESS_SPOKE},
-        private_domain_sequencer=emitter,
-    )
-    validated_output = validated.stdout + "\n" + validated.stderr
-    assert validated.returncode == 0, validated_output[-4000:]
-    assert "Validated DomainStateUpdated" in validated_output
-
-    bad_root = bytes([expected_root[0] ^ 1]) + expected_root[1:]
-    invalid_event_block = BlockSpec(
-        seqno=4,
-        timestamp=1_000_000_003,
-        txs=[
-            (
-                Tx(
-                    nonce=2,
-                    gas_limit=500_000,
-                    max_priority_fee_per_gas=0,
-                    max_fee_per_gas=0,
-                    to=emitter,
-                    value=0,
-                    data=_domain_state_updated_data(2, bad_root),
-                ),
-                OUTER_KEY,
-            )
-        ],
-    )
-    build_ledger(
-        fresh_env.ledger,
-        [*blocks, valid_event_block, invalid_event_block],
-    )
     # A root that disagrees with local history is reported as an error; the
     # block carrying the attestation still executes and commits.
-    mismatched = run_monad(
-        fresh_env.ledger,
-        fresh_env.triedb,
-        nblocks=1,
-        private_domain_keys=_key_files(fresh_env, (DOMAIN_A,)),
-        private_domain_spokes={DOMAIN_A: ACCESS_SPOKE},
-        private_domain_sequencer=emitter,
-    )
+    mismatched = run_monad(fresh_env.ledger, fresh_env.triedb, nblocks=1, **common)
     mismatched_output = mismatched.stdout + "\n" + mismatched.stderr
     assert mismatched.returncode == 0, mismatched_output[-4000:]
+    assert query_receipts(fresh_env.triedb, 3, 2)[1].status == 1
     assert "state root mismatch at finalized block 2" in mismatched_output
-    assert expected_root.hex() in mismatched_output
+    assert root_at_2.hex() in mismatched_output
     assert bad_root.hex() in mismatched_output
+    assert bytes.fromhex(dump_state(fresh_env.triedb, 3)["domains"][domain_key(DOMAIN_A)]["state_root"][2:]) == root_at_3
+
+    validated = run_monad(fresh_env.ledger, fresh_env.triedb, nblocks=1, **common)
+    validated_output = validated.stdout + "\n" + validated.stderr
+    assert validated.returncode == 0, validated_output[-4000:]
+    assert query_receipts(fresh_env.triedb, 4, 1)[0].status == 1
+    assert "Validated DomainStateUpdated for domain" in validated_output
+    assert root_at_3.hex() in validated_output
 
 
 def test_gasless_runtime_revert_is_retained(fresh_env: FreshEnv):
@@ -713,7 +750,7 @@ def test_gasless_runtime_revert_is_retained(fresh_env: FreshEnv):
 def test_decoded_invalid_transactions_are_not_persisted(
     fresh_env: FreshEnv,
 ):
-    over_gas = _inner(nonce=0, to=OUTER_ADDR, gas_limit=500_001)
+    unpaid_gas = _inner(nonce=0, to=OUTER_ADDR, gas_limit=500_001)
     nonzero_value = _inner(nonce=0, to=OUTER_ADDR, value=1)
     bad_nonce = _inner(nonce=9, to=OUTER_ADDR)
     signed = _inner(nonce=0, to=OUTER_ADDR)
@@ -730,7 +767,7 @@ def test_decoded_invalid_transactions_are_not_persisted(
         timestamp=1_000_000_001,
         txs=[
             _outer(0, DOMAIN_A, b"not rlp"),
-            _outer(1, DOMAIN_A, over_gas, gas_limit=500_000),
+            _outer(1, DOMAIN_A, unpaid_gas, paid_gas=500_000),
             _outer(2, DOMAIN_A, nonzero_value),
             _outer(3, DOMAIN_A, bad_nonce),
             _outer(4, DOMAIN_A, invalid_signature),
@@ -742,7 +779,7 @@ def test_decoded_invalid_transactions_are_not_persisted(
     _run(fresh_env, [block], [DOMAIN_A])
 
     invalid = [
-        over_gas,
+        unpaid_gas,
         nonzero_value,
         bad_nonce,
         invalid_signature,
@@ -808,9 +845,8 @@ def test_payload_decode_and_envelope_eligibility_boundaries(
             _outer(0, DOMAIN_A, b""),
             _outer(1, DOMAIN_A, trailing_rlp),
             _outer(2, DOMAIN_A, no_chain_id),
-            # Equality is accepted: only an inner gas limit strictly greater
-            # than its L1 envelope is ineligible.
-            _outer(3, DOMAIN_A, exact_gas, gas_limit=300_000),
+            # gas_limit == purchased gas is eligible.
+            _outer(3, DOMAIN_A, exact_gas, paid_gas=300_000),
         ],
     )
     _run(fresh_env, [block], [DOMAIN_A])
@@ -881,15 +917,15 @@ def test_inner_nonce_blocks_identical_ciphertext_replay(fresh_env: FreshEnv):
     assert int(accounts["0x" + INNER_ADDR.hex()]["nonce"]) == 1
 
 
-def test_ciphertext_can_move_to_an_envelope_with_more_gas(fresh_env: FreshEnv):
+def test_ciphertext_can_be_resubmitted_with_a_sufficient_fee(fresh_env: FreshEnv):
     inner = _inner(nonce=0, to=OUTER_ADDR, gas_limit=300_000)
     encrypted = encrypt_inner_transaction(DOMAIN_KEYS[DOMAIN_A], inner)
     block = BlockSpec(
         seqno=1,
         timestamp=1_000_000_001,
         txs=[
-            _outer_raw(0, DOMAIN_A, encrypted, gas_limit=299_999),
-            _outer_raw(1, DOMAIN_A, encrypted, gas_limit=300_000),
+            _outer_raw(0, DOMAIN_A, encrypted, paid_gas=299_999),
+            _outer_raw(1, DOMAIN_A, encrypted, paid_gas=300_000),
         ],
     )
 
@@ -897,6 +933,9 @@ def test_ciphertext_can_move_to_an_envelope_with_more_gas(fresh_env: FreshEnv):
 
     stored = query_domain_transaction(fresh_env.triedb, 2, DOMAIN_A, 0)
     assert stored is not None and stored.encoded == inner
+    assert query_domain_transaction(fresh_env.triedb, 2, DOMAIN_A, 1) is None
+    # Both fees reached the recipient: an unpaid-for transaction is not refunded.
+    assert _fees_collected(dump_state(fresh_env.triedb, 2)) == (4_000_000 * 2 + 299_999 + 300_000) * DOMAIN_GAS_PRICE
 
 
 def test_out_of_gas_and_logs_are_persisted_as_executed_receipts(
@@ -977,57 +1016,50 @@ def test_empty_domain_output_does_not_disturb_valid_domain(
     assert receipt_b is not None and receipt_b.status == 1
 
 
-def test_reverted_l1_sequencing_call_is_still_scanned(
-    fresh_env: FreshEnv,
-):
-    """Private sequencing is calldata-based, not conditional on L1 status."""
-    reverter_deployer, reverter_deployer_key = DEV_ACCOUNTS[2]
-    reverter = _contract_address(reverter_deployer, 0)
-    inner = _inner(nonce=0, to=OUTER_ADDR)
-    reverted_sequence = _outer(0, DOMAIN_A, inner)
-    reverted_sequence[0].to = reverter
-    deploy_block = BlockSpec(
+def test_domain_block_gas_limit_is_enforced_by_the_hub(fresh_env: FreshEnv):
+    """The hub sells at most DOMAIN_BLOCK_GAS_LIMIT gas per domain and L1 block, so
+    a call that would exceed it reverts and nothing of it reaches the domain."""
+    cap = 150_000_000
+    first = _inner(nonce=0, to=OUTER_ADDR)
+    second = _inner(nonce=1, to=OUTER_ADDR)
+    block = BlockSpec(
         seqno=1,
         timestamp=1_000_000_001,
         txs=[
-            (
-                Tx(
-                    nonce=0,
-                    gas_limit=500_000,
-                    max_priority_fee_per_gas=0,
-                    max_fee_per_gas=0,
-                    to=None,
-                    value=0,
-                    data=_init_code(b"\x60\x00\x60\x00\xfd"),
-                ),
-                reverter_deployer_key,
-            ),
-            *_domain_spoke_parent_transactions(reverter),
+            _outer(0, DOMAIN_A, first, paid_gas=cap - 1_000_000),
+            _outer(1, DOMAIN_A, second, paid_gas=1_000_001),
+            _outer(2, DOMAIN_A, second, paid_gas=1_000_000),
         ],
     )
-    block = BlockSpec(
-        seqno=2,
-        timestamp=1_000_000_002,
-        txs=[reverted_sequence],
-    )
-    build_ledger(fresh_env.ledger, [deploy_block, block])
-    result = run_monad(
-        fresh_env.ledger,
-        fresh_env.triedb,
-        nblocks=2,
-        private_domain_keys=_key_files(fresh_env, (DOMAIN_A,)),
-        private_domain_spokes={DOMAIN_A: ACCESS_SPOKE},
-        # The configured sequencer contract reverts after the scanner has
-        # recognized its calldata.
-        private_domain_sequencer=reverter,
-    )
-    assert result.returncode == 0, result.stderr[-4000:]
+    _run(fresh_env, [block], [DOMAIN_A])
 
-    assert query_receipts(fresh_env.triedb, 2, 1)[0].status == 0
+    assert [r.status for r in query_receipts(fresh_env.triedb, 2, 3)] == [1, 0, 1]
+    assert query_domain_transaction(fresh_env.triedb, 2, DOMAIN_A, 0).encoded == first
+    assert query_domain_transaction(fresh_env.triedb, 2, DOMAIN_A, 1).encoded == second
+    assert query_domain_transaction(fresh_env.triedb, 2, DOMAIN_A, 2) is None
+    assert _fees_collected(dump_state(fresh_env.triedb, 2)) == (4_000_000 * 2 + cap) * DOMAIN_GAS_PRICE
+
+
+def test_reverted_l1_sequencing_call_is_not_executed(fresh_env: FreshEnv):
+    """Sequencing derives from the hub's event, which a reverted call never emits."""
+    inner = _inner(nonce=0, to=OUTER_ADDR)
+    encrypted = encrypt_inner_transaction(DOMAIN_KEYS[DOMAIN_A], inner)
+    block = BlockSpec(
+        seqno=1,
+        timestamp=1_000_000_001,
+        txs=[
+            # Pays the fee, but runs out of gas inside the hub.
+            _outer_raw(0, DOMAIN_A, encrypted, l1_gas_limit=30_000),
+            _outer_raw(1, DOMAIN_A, encrypted),
+        ],
+    )
+    _run(fresh_env, [block], [DOMAIN_A])
+
+    assert [r.status for r in query_receipts(fresh_env.triedb, 2, 2)] == [0, 1]
     stored = query_domain_transaction(fresh_env.triedb, 2, DOMAIN_A, 0)
     assert stored is not None and stored.encoded == inner
-    receipt = query_domain_receipt(fresh_env.triedb, 2, DOMAIN_A, 0)
-    assert receipt is not None and receipt.status == 1
+    assert query_domain_transaction(fresh_env.triedb, 2, DOMAIN_A, 1) is None
+    assert _fees_collected(dump_state(fresh_env.triedb, 2)) == (4_000_000 * 2 + 1_500_000) * DOMAIN_GAS_PRICE
 
 
 def test_interleaved_domains_form_independent_blocks(fresh_env: FreshEnv):
@@ -1088,7 +1120,7 @@ def test_gasless_state_and_block_tables_survive_restart(fresh_env: FreshEnv):
     common = {
         "private_domain_keys": _key_files(fresh_env, (DOMAIN_A,)),
         "private_domain_spokes": {DOMAIN_A: ACCESS_SPOKE},
-        "private_domain_sequencer": SEQUENCER,
+        "private_domain_sequencer": HUB,
     }
     first = run_monad(fresh_env.ledger, fresh_env.triedb, nblocks=2, **common)
     assert first.returncode == 0, first.stderr[-4000:]
@@ -1162,7 +1194,7 @@ def test_unassigned_domain_payload_is_ignored(fresh_env: FreshEnv):
         nblocks=2,
         private_domain_keys=_key_files(fresh_env, (DOMAIN_A,)),
         private_domain_spokes={DOMAIN_A: ACCESS_SPOKE},
-        private_domain_sequencer=SEQUENCER,
+        private_domain_sequencer=HUB,
     )
     assert result.returncode == 0, result.stderr[-4000:]
     assert query_domain_receipt(fresh_env.triedb, 2, DOMAIN_A, 0) is not None
@@ -1176,7 +1208,7 @@ def test_staged_gasless_block_is_discarded_when_l1_execution_fails(
     committed_parent = BlockSpec(
         seqno=1,
         timestamp=1_000_000_000,
-        txs=_domain_spoke_parent_transactions(),
+        txs=_committed_parent_transactions(),
     )
     build_ledger(fresh_env.ledger, [committed_parent])
     checkpointed = run_monad(
@@ -1185,7 +1217,7 @@ def test_staged_gasless_block_is_discarded_when_l1_execution_fails(
         nblocks=1,
         private_domain_keys=_key_files(fresh_env, (DOMAIN_A,)),
         private_domain_spokes={DOMAIN_A: ACCESS_SPOKE},
-        private_domain_sequencer=SEQUENCER,
+        private_domain_sequencer=HUB,
     )
     assert checkpointed.returncode == 0, checkpointed.stderr[-4000:]
 
@@ -1214,7 +1246,7 @@ def test_staged_gasless_block_is_discarded_when_l1_execution_fails(
         nblocks=1,
         private_domain_keys=_key_files(fresh_env, (DOMAIN_A,)),
         private_domain_spokes={DOMAIN_A: ACCESS_SPOKE},
-        private_domain_sequencer=SEQUENCER,
+        private_domain_sequencer=HUB,
     )
     assert failed.returncode != 0
 
@@ -1233,7 +1265,7 @@ def test_staged_gasless_block_is_discarded_when_l1_execution_fails(
         nblocks=1,
         private_domain_keys=_key_files(fresh_env, (DOMAIN_A,)),
         private_domain_spokes={DOMAIN_A: ACCESS_SPOKE},
-        private_domain_sequencer=SEQUENCER,
+        private_domain_sequencer=HUB,
     )
     assert recovered.returncode == 0, recovered.stderr[-4000:]
     receipt = query_domain_receipt(fresh_env.triedb, 2, DOMAIN_A, 0)

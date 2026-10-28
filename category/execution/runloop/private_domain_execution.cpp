@@ -22,6 +22,7 @@
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/db/commit_block_migration.hpp>
+#include <category/execution/monad/private_domain_fee.hpp>
 #include <category/execution/monad/private_domain_hpke.hpp>
 #include <category/execution/monad/private_domain_scanner.hpp>
 #include <category/execution/monad/private_domain_system_transaction.hpp>
@@ -45,9 +46,7 @@ MONAD_NAMESPACE_BEGIN
 
 namespace
 {
-    // One L1 -> domain message ready for delivery, i.e. decrypted when
-    // it was recorded encrypted. `source_chain_id`/`from` are the origin
-    // the hub authenticated and are passed through to the spoke untouched.
+    // An L1DomainMessage with its target resolved, decrypted if encrypted.
     struct L1MessageDelivery
     {
         uint64_t source_chain_id{};
@@ -55,13 +54,13 @@ namespace
         Address to{};
         byte_string data{};
         uint256_t nonce{};
+        uint64_t gas_limit{};
     };
 
     struct PrivateDomainTransactions
     {
         uint64_t domain_chain_id{};
         std::vector<Transaction> transactions;
-        std::vector<uint8_t> within_l1_gas_limit;
         std::vector<L1MessageDelivery> deliveries;
     };
 
@@ -77,11 +76,8 @@ namespace
                 return candidate.domain_chain_id == domain_chain_id;
             });
         if (block == domain_blocks.end()) {
-            domain_blocks.push_back(PrivateDomainTransactions{
-                .domain_chain_id = domain_chain_id,
-                .transactions = {},
-                .within_l1_gas_limit = {},
-                .deliveries = {}});
+            domain_blocks.push_back(
+                PrivateDomainTransactions{.domain_chain_id = domain_chain_id});
             block = std::prev(domain_blocks.end());
         }
         return *block;
@@ -105,36 +101,30 @@ Result<std::vector<PrivateDomainBlockOutput>> execute_private_domain_blocks(
     MonadChain const &chain, Db &db, Db *const secondary_db, vm::VM &vm,
     fiber::PriorityPool &priority_pool,
     BlockHashBuffer const &block_hash_buffer, BlockHeader const &header,
-    std::span<Transaction const> const l1_transactions,
     std::span<Receipt const> const l1_receipts,
     PrivateDomainKeyring const &private_domain_keyring,
-    Address const &private_domain_sequencer)
+    Address const &domain_hub)
 {
-    auto const payloads = scan_private_domain_payloads(
-        l1_transactions,
-        header.number,
-        chain.get_chain_id(),
-        private_domain_sequencer,
-        private_domain_keyring.domain_ids());
-
     // Only the hub emits these events from its address, so a malformed one
     // means the configured hub contract is incompatible with this client.
+    auto scanned_transactions = scan_sequenced_domain_transactions(
+        l1_receipts, domain_hub, private_domain_keyring.domain_ids());
+    MONAD_ASSERT_PRINTF(
+        scanned_transactions.has_value(),
+        "malformed sequencing event from domain hub: %s",
+        scanned_transactions.assume_error().message().c_str());
     auto scanned_messages = scan_l1_domain_messages(
-        l1_receipts,
-        private_domain_sequencer,
-        private_domain_keyring.domain_ids());
+        l1_receipts, domain_hub, private_domain_keyring.domain_ids());
     MONAD_ASSERT_PRINTF(
         scanned_messages.has_value(),
         "malformed L1 message event from domain hub: %s",
         scanned_messages.assume_error().message().c_str());
 
-    // One L1 block may sequence transactions for several private domains.
-    // Preserve payload order within each domain while forming the synthetic
-    // blocks that will be executed below.
+    // Group by domain, preserving event order.
     std::vector<PrivateDomainTransactions> domain_blocks;
-    for (auto const &payload : payloads) {
+    for (auto const &sequenced : scanned_transactions.value()) {
         auto decrypted = private_domain_keyring.decrypt(
-            payload.domain_chain_id, payload.raw_payload);
+            sequenced.domain_chain_id, sequenced.payload);
         if (MONAD_UNLIKELY(decrypted.has_error())) {
             if (decrypted.assume_error() !=
                 PrivateDomainHpkeError::DecryptionFailed) {
@@ -144,8 +134,8 @@ Result<std::vector<PrivateDomainBlockOutput>> execute_private_domain_blocks(
                 "Dropped private domain payload after decryption failed "
                 "in block {} for domain {} at transaction {}",
                 header.number,
-                payload.domain_chain_id,
-                payload.l1_transaction_index);
+                sequenced.domain_chain_id,
+                sequenced.l1_transaction_index);
             continue;
         }
 
@@ -157,30 +147,39 @@ Result<std::vector<PrivateDomainBlockOutput>> execute_private_domain_blocks(
                 "Dropped malformed private domain payload in block {} at "
                 "transaction {}: {}",
                 header.number,
-                payload.l1_transaction_index,
+                sequenced.l1_transaction_index,
                 error);
             continue;
         }
 
-        auto &block =
-            find_or_create_domain_block(domain_blocks, payload.domain_chain_id);
-        block.within_l1_gas_limit.push_back(
-            decoded.value().gas_limit <= payload.l1_gas_limit);
-        block.transactions.push_back(std::move(decoded).value());
+        uint64_t const purchased_gas =
+            purchased_domain_gas(sequenced.fee, header.gas_limit);
+        if (decoded.value().gas_limit > purchased_gas) {
+            LOG_WARNING(
+                "Dropped underpaid private domain transaction in block {} at "
+                "transaction {}: gas limit {} exceeds the {} gas its fee bought",
+                header.number,
+                sequenced.l1_transaction_index,
+                decoded.value().gas_limit,
+                purchased_gas);
+            continue;
+        }
+
+        find_or_create_domain_block(domain_blocks, sequenced.domain_chain_id)
+            .transactions.push_back(std::move(decoded).value());
     }
 
-    // Every recorded L1 -> domain message becomes a system delivery
-    // transaction, appended after the sequenced transactions of its
-    // domain block in hub nonce order. An encrypted message that does not
-    // decrypt, or whose plaintext cannot carry a target, is never delivered;
-    // the spoke accepts the nonce gap this leaves.
+    // Deliveries follow their domain's sequenced transactions in hub nonce
+    // order. An encrypted message that does not decrypt or lacks a 20-byte
+    // target is dropped; the spoke accepts the nonce gap.
     for (auto &message : scanned_messages.value()) {
         L1MessageDelivery delivery{
             .source_chain_id = message.source_chain_id,
             .from = message.from,
             .to = {},
             .data = {},
-            .nonce = message.nonce};
+            .nonce = message.nonce,
+            .gas_limit = purchased_domain_gas(message.fee, header.gas_limit)};
         if (message.encrypted) {
             auto decrypted = private_domain_keyring.decrypt(
                 message.domain_chain_id, message.payload);
@@ -228,24 +227,21 @@ Result<std::vector<PrivateDomainBlockOutput>> execute_private_domain_blocks(
     }
 
     std::vector<PrivateDomainBlockOutput> outputs;
-    outputs.reserve(payloads.size());
+    outputs.reserve(domain_blocks.size());
 
     for (auto &domain_block : domain_blocks) {
         auto &transactions = domain_block.transactions;
-        auto const &within_l1_gas_limit = domain_block.within_l1_gas_limit;
         auto const &deliveries = domain_block.deliveries;
 
         auto recovered_senders = recover_senders(transactions, priority_pool);
         auto recovered_authorities =
             recover_authorities(transactions, priority_pool);
 
-        // Remove failures known from the L1 envelope before constructing the
-        // block. Ordinary static and state-dependent transaction validation is
-        // deliberately left to execute_block's shared gasless path. The
-        // system relayer is reserved for protocol-derived transactions.
+        // Envelope checks (signature, chain id, reserved relayer); everything
+        // else is left to execute_block's shared validation.
         size_t eligible_count = 0;
         for (size_t i = 0; i < transactions.size(); ++i) {
-            if (!within_l1_gas_limit[i] || !recovered_senders[i].has_value() ||
+            if (!recovered_senders[i].has_value() ||
                 *recovered_senders[i] == DOMAIN_SYSTEM_RELAYER ||
                 !transactions[i].sc.chain_id.has_value() ||
                 *transactions[i].sc.chain_id != domain_block.domain_chain_id) {
@@ -283,10 +279,8 @@ Result<std::vector<PrivateDomainBlockOutput>> execute_private_domain_blocks(
             BlockState gasless_state{db, vm, secondary_db};
 
             if (!deliveries.empty()) {
-                // Nobody can sign for the relayer, so its nonce only advances
-                // through the deliveries derived here: continue from the
-                // parent domain state and number this block's deliveries
-                // consecutively.
+                // Only derived deliveries advance the relayer nonce; continue
+                // from the parent domain state.
                 uint64_t relayer_nonce = [&] {
                     State probe{
                         gasless_state,
@@ -301,17 +295,15 @@ Result<std::vector<PrivateDomainBlockOutput>> execute_private_domain_blocks(
                         *domain_spoke,
                         relayer_nonce,
                         header.base_fee_per_gas.value_or(0),
+                        delivery.gas_limit,
                         delivery.source_chain_id,
                         delivery.from,
                         delivery.to,
                         delivery.data,
                         delivery.nonce);
-                    // A delivery the shared static validation would skip
-                    // (e.g. a payload whose intrinsic gas exceeds the fixed
-                    // limit) must not take a relayer nonce, or every later
-                    // delivery in this block would fail its nonce check and
-                    // be lost with it. Drop it here instead: its hub nonce
-                    // becomes a gap the spoke accepts.
+                    // Pre-validate so a delivery the shared static validation
+                    // would skip does not consume a relayer nonce and break
+                    // every later delivery; its hub nonce becomes a gap.
                     auto const validation =
                         static_validate_transaction<traits, true>(
                             transaction,

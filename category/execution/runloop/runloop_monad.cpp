@@ -342,8 +342,7 @@ Result<BlockExecOutput> propose_block(
             exec_recorder));
     record_block_marker_event(exec_recorder, MONAD_EXEC_BLOCK_PERF_EVM_EXIT);
 
-    // Private domain blocks are derived from both the L1 transactions and
-    // the L1 receipts (hub message events), against the same parent state.
+    // Needs this block's L1 receipts; runs against the same parent state.
     BOOST_OUTCOME_TRY(
         auto const private_domain_outputs,
         execute_private_domain_blocks<traits>(
@@ -354,7 +353,6 @@ Result<BlockExecOutput> propose_block(
             priority_pool,
             block_hash_buffer,
             block.header,
-            block.transactions,
             results,
             private_domain_keyring,
             private_domain_sequencer));

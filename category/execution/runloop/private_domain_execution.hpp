@@ -48,20 +48,18 @@ namespace vm
     class VM;
 }
 
-// Derives and executes the private domain blocks of one L1 block: the
-// transactions sequenced through the hub (scanned from L1 calldata) followed
-// by one system delivery transaction per L1 -> domain message the hub
-// recorded (scanned from the L1 receipts, so this runs after ordinary L1
-// execution). `private_domain_sequencer` is the hub address.
+// Derives and executes the private domain blocks of one L1 block from the
+// hub's events in its receipts, so this runs after ordinary L1 execution:
+// the sequenced transactions followed by one system delivery transaction per
+// L1 -> domain message.
 template <Traits traits>
     requires is_monad_trait_v<traits>
 Result<std::vector<PrivateDomainBlockOutput>> execute_private_domain_blocks(
     MonadChain const &, Db &, Db *secondary_db, vm::VM &, fiber::PriorityPool &,
     BlockHashBuffer const &, BlockHeader const &,
-    std::span<Transaction const> l1_transactions,
     std::span<Receipt const> l1_receipts,
     PrivateDomainKeyring const &private_domain_keyring,
-    Address const &private_domain_sequencer);
+    Address const &domain_hub);
 
 template <Traits traits>
     requires is_monad_trait_v<traits>

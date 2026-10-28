@@ -43,6 +43,9 @@
 #include <span>
 #include <type_traits>
 #include <variant>
+#if defined(MONAD_ZKVM_ZISK)
+    #include <cstddef>
+#endif
 
 using namespace monad::vm::runtime;
 
@@ -98,6 +101,19 @@ namespace monad::vm::runtime
             MONAD_DEBUG_ASSERT(result);
             std::free(const_cast<uint8_t *>(result->output_data));
         }
+
+#if defined(MONAD_ZKVM_ZISK)
+        // An evmc_result as the nine words it is stored in. A store through
+        // a word is seen to overwrite what an earlier clear of the result
+        // wrote; one through a byte pointer offset from the result is not,
+        // and the clear stays under it.
+        struct [[gnu::may_alias]] ResultWords
+        {
+            uint64_t w[9];
+        };
+
+        static_assert(sizeof(ResultWords) == sizeof(evmc_result));
+#endif
     }
 
     namespace
@@ -135,7 +151,13 @@ namespace monad::vm::runtime
                     .recipient = msg->recipient,
                     .sender = msg->sender,
                     .value = static_cast<bytes32_t>(msg->value),
+#if defined(MONAD_ZKVM_ZISK)
+                    // create2_salt is left as the clear sets it: its one
+                    // reader copied it into a call's message, which no
+                    // longer takes it, as only a CREATE2 message's is read.
+#else
                     .create2_salt = static_cast<bytes32_t>(msg->create2_salt),
+#endif
                     .input_data = msg->input_data,
                     .code = code.data(),
                     .return_data = {},
@@ -335,14 +357,33 @@ namespace monad::vm::runtime
                     // Built where it is returned: an evmc_result handed to
                     // evmc::Result is staged in the frame and copied, 72
                     // bytes a call.
+                    auto const status =
+                        result.status == Success ? EVMC_SUCCESS : EVMC_REVERT;
                     evmc::Result r{
-                        result.status == Success ? EVMC_SUCCESS : EVMC_REVERT,
+                        status,
                         gas_remaining,
                         result.status == Success ? gas_refund : 0};
                     evmc_result &raw = r.raw();
                     raw.output_data = output.data();
                     raw.output_size = output.size();
                     raw.release = release_result;
+                    // The constructor clears the result before it stores the
+                    // fields, and the padding after the status, create_address
+                    // and the padding after it kept 68 bytes of that clear
+                    // under the stores. Stored again in words, every byte is
+                    // written here and the clear goes: the status
+                    // zero-extended over its padding, the last three words as
+                    // zeros. The zero is laundered: known, its stores are
+                    // dropped as repeating the clear, which stays for them.
+                    static_assert(std::endian::native == std::endian::little);
+                    static_assert(offsetof(evmc_result, create_address) == 48);
+                    uint64_t zero = 0;
+                    asm("" : "+r"(zero));
+                    auto &words = reinterpret_cast<ResultWords &>(raw);
+                    words.w[0] = static_cast<uint32_t>(status);
+                    words.w[6] = zero;
+                    words.w[7] = zero;
+                    words.w[8] = zero;
                     return r;
 #else
                     return evmc::Result{evmc_result{

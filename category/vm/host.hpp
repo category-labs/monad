@@ -341,8 +341,11 @@ namespace monad::vm::runtime
     evmc_access_status
     guest_access_account(Host &, evmc::address const &) noexcept;
 
+    // A CALL, CALLCODE or DELEGATECALL message, run on the host's state:
+    // execute_call_message's body, defined in execute_message.cpp, so that
+    // the runtime's call reaches it with no relay between them.
     template <Traits traits>
-    evmc::Result guest_call(Host &, evmc_message const &) noexcept;
+    evmc::Result guest_call_message(Host &, evmc_message const &) noexcept;
 
     evmc::bytes32 guest_get_transient_storage(
         Host const &, evmc::address const &, evmc::bytes32 const &) noexcept;

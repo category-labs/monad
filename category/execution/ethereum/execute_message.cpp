@@ -400,8 +400,17 @@ evmc::Result execute_create_message(
 
 EXPLICIT_TRAITS(execute_create_message);
 
+// Inlined into the runtime's CALL entry below, its one caller on ZisK: called
+// from there, as it was through EvmcHost::call, a relay kept a frame between
+// the runtime's call and this body.
+#if defined(MONAD_ZKVM_ZISK)
+    #define MONAD_EXECUTE_CALL_MESSAGE_INLINE [[gnu::always_inline]] inline
+#else
+    #define MONAD_EXECUTE_CALL_MESSAGE_INLINE
+#endif
+
 template <Traits traits>
-evmc::Result execute_call_message(
+MONAD_EXECUTE_CALL_MESSAGE_INLINE evmc::Result execute_call_message(
     EvmcHost<traits> *const host, State &state, evmc_message const &msg)
 {
     MONAD_ASSERT(
@@ -476,5 +485,25 @@ evmc::Result execute_call_message(
     return result;
 }
 
+#if defined(MONAD_ZKVM_ZISK)
+MONAD_NAMESPACE_END
+
+// The runtime's CALL entry (vm/host.hpp): the message runs on the host's
+// state, as EvmcHost::call ran it.
+namespace monad::vm::runtime
+{
+    template <Traits traits>
+    evmc::Result
+    guest_call_message(Host &host, evmc_message const &msg) noexcept
+    {
+        auto &evmc_host = static_cast<EvmcHost<traits> &>(host);
+        return ::monad::execute_call_message<traits>(
+            &evmc_host, evmc_host.state_, msg);
+    }
+
+    EXPLICIT_TRAITS(guest_call_message);
+}
+#else
 EXPLICIT_TRAITS(execute_call_message);
 MONAD_NAMESPACE_END
+#endif

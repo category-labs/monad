@@ -337,10 +337,22 @@ evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
         }
     }
 
+#if defined(MONAD_ZKVM_ZISK)
+    // The runtime's CALL entry holds execute_call_message's one body and
+    // runs the message on the host's state, which is `state`:
+    // ExecuteTransaction builds the host on the state it passes here, and
+    // this function already takes them for one, warming the beneficiary
+    // through the host.
+    auto result =
+        (msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2)
+            ? ::monad::execute_create_message<traits>(&host, state, msg)
+            : vm::runtime::guest_call_message<traits>(host, msg);
+#else
     auto result =
         (msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2)
             ? ::monad::execute_create_message<traits>(&host, state, msg)
             : ::monad::execute_call_message<traits>(&host, state, msg);
+#endif
 
     result.gas_refund += auth_refund;
     return result;

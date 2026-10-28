@@ -1,15 +1,21 @@
 [package]
 name = "monad-zkvm-zisk"
-description = "Monad witness-execution guest for the ZisK zkVM"
+description = "Monad witness executor and embedded guest for the ZisK zkVM"
 version = "0.1.0"
 edition = "2021"
 
-# Standalone workspace — the main monad cargo workspace at /rust targets
-# x86_64-linux and pins a host-only dependency tree (alloy, bindgen, cmake
-# host toolchains). ziskos pulls a custom rust-toolchain and cross-builds
-# for riscv64ima-zisk-zkvm-elf, so it has to live in its own resolution
-# tree to avoid polluting the host workspace.
+# Isolate the ZisK host/guest dependency graph from the main Rust workspace.
 [workspace]
+resolver = "2"
+
+[features]
+# Select the RISC-V entry point when invoking cargo-zisk directly.
+guest = []
+
+[[bin]]
+name = "monad-zkvm-zisk"
+path = "src/main.rs"
+required-features = ["guest"]
 
 [profile.release]
 opt-level = 3
@@ -17,7 +23,10 @@ lto = true
 codegen-units = 1
 panic = "abort"
 
-[dependencies]
+[target.'cfg(not(all(target_os = "zkvm", target_vendor = "zisk")))'.dependencies]
+zisk-sdk = "=1.3.1-alpha"
+
+[target.'cfg(all(target_os = "zkvm", target_vendor = "zisk"))'.dependencies]
 ziskos = { git = "https://github.com/0xPolygonHermez/zisk.git", tag = "v1.3.1-alpha" }
 tiny-keccak = { version = "2.0.2", features = ["keccak"] }
 sha2 = { version = "0.10", default-features = false }
@@ -25,13 +34,12 @@ ripemd = { version = "0.1", default-features = false }
 k256 = { version = "0.13", default-features = false, features = ["ecdsa"] }
 p256 = { version = "0.13", default-features = false, features = ["ecdsa"] }
 
-# Heavier precompile crates that only make sense once the C++ side actually
-# calls into them. Cfg-gated to the ZisK target so the x86 development build
-# doesn't pull them in.
-[target.'cfg(all(target_os = "zkvm", target_vendor = "zisk"))'.dependencies]
 substrate-bn = "0.6"
 aurora-engine-modexp = "1.2"
 kzg-rs = { git = "https://github.com/succinctlabs/kzg-rs.git" }
 
-[build-dependencies]
+[target.'cfg(not(all(target_os = "zkvm", target_vendor = "zisk")))'.build-dependencies]
+monad-zkvm-build-support = { path = "../build-support", features = ["zisk-host"] }
+
+[target.'cfg(all(target_os = "zkvm", target_vendor = "zisk"))'.build-dependencies]
 monad-zkvm-build-support = { path = "../build-support" }

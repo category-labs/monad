@@ -73,12 +73,18 @@ namespace monad::vm::runtime
         std::memcpy(&t0, addr.bytes + 12, 8);
         t0 = bswap(t0);
 
+#if defined(MONAD_ZKVM_ZISK)
+        // Construct from low to high words without a temporary byte array.
+        // t2 holds the address's top 32 bits; the remaining 96 bits stay zero.
+        return uint256_t{t0, t1, uint64_t{t2}, uint64_t{0}};
+#else
         alignas(uint256_t) uint8_t ret[32];
         std::memcpy(ret, &t0, 8);
         std::memcpy(ret + 8, &t1, 8);
         std::memcpy(ret + 16, &t2, 4);
         std::memset(ret + 20, 0, 12);
         return std::bit_cast<uint256_t>(ret);
+#endif
     }
 
     template <uint64_t N>

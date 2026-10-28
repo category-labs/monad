@@ -323,6 +323,11 @@ class State
     // Segmented storage keeps pointers stable on insert; original_ never erases.
     alignas(8) Address orig_memo_addr_{};
     OriginalAccountState *orig_memo_{nullptr};
+
+    // Set by defer_beneficiary: the beneficiary's row is warm when made, and
+    // the fee goes to the block's pending sum if no row was ever made.
+    bool defers_beneficiary_{false};
+    bool beneficiary_row_{false};
 #endif
 
     bool const relaxed_validation_{false};
@@ -611,6 +616,28 @@ public:
     // EIP-7702's delegate of the address, read where its code is kept, and
     // returned where it lies in the code, or null.
     Address const *delegate_of(evmc_address const &);
+
+    // For a transaction run with SequentialExecutionToken, from Shanghai on:
+    // EIP-3651's access to the block's beneficiary is not made up front, and
+    // a row made for it is warm from the start instead. The accesses before
+    // that one, of the authorities, ignore what they return, and it is made
+    // outside any frame and never undone, so the row is warm wherever it
+    // would have been. A transaction that makes no row leaves its fee to
+    // defer_beneficiary_credit.
+    void defer_beneficiary()
+    {
+        defers_beneficiary_ = true;
+    }
+
+    [[nodiscard]] bool defers_beneficiary() const
+    {
+        return defers_beneficiary_;
+    }
+
+    // The transaction's fee to the beneficiary, handed to the block's pending
+    // sum when this State made no row for the beneficiary; false, with
+    // nothing done, when add_to_balance must credit it.
+    bool defer_beneficiary_credit(uint256_t const &);
 
     // A CALL's access_account and delegate_of, with one lookup of the
     // account: see vm::runtime::guest_call_target.

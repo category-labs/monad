@@ -15,8 +15,11 @@
 
 #pragma once
 
+#include <category/core/address.hpp>
+#include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
+#include <category/core/int.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
@@ -56,6 +59,24 @@ class BlockState final
     /// the slots they wipe are not pre-state reads and must not be added.
     SelfDestructStorageReads self_destruct_storage_reads_;
 
+#ifdef MONAD_ZKVM_ZISK
+    // The block's beneficiary, and the transaction fees credited to it since
+    // its entry was last read: a transaction that never looked at it adds its
+    // fee here instead of making a row for it, and the sum goes into the
+    // entry before anything reads it. alignas(8) because the address is
+    // compared as words, as State's memoised one.
+    alignas(8) Address beneficiary_{};
+    uint256_t pending_credit_{};
+    // The incarnation an absent beneficiary is created with: that of the
+    // first transaction whose fee is pending, which would have created it.
+    Incarnation pending_incarnation_{0, 0};
+    bool pending_{false};
+
+    // Adds the pending fees to the beneficiary's entry and clears them.
+    [[gnu::noinline, gnu::cold]] void
+    apply_beneficiary_credit(StateDelta &);
+#endif
+
 public:
     BlockState(Db &, vm::VM &);
 
@@ -70,15 +91,39 @@ public:
     read_storage(evmc_address const &, Incarnation, bytes32_t const &key);
 
 #ifdef MONAD_ZKVM_ZISK
-    // Find or load the account entry. Its pointer stays valid for the block:
-    // segmented storage preserves pointers on insert, and entries are not erased.
+    // The account's entry, read from the database if the block has none, and
+    // with the beneficiary's pending fees credited if it is the beneficiary's.
+    // Its address stays valid for the block: state_ never erases, and its
+    // values never move (a segmented map's).
     StateDelta &read_account_delta(evmc_address const &);
 
     // Read using the supplied delta, without copying the returned slot value.
     // The reference points into block storage, or to a static zero value;
     // use it before that slot is modified or erased.
     bytes32_t const &read_storage(
-        StateDelta &, evmc_address const &, Incarnation, bytes32_t const &key);
+        StateDelta &, evmc_address const &, Incarnation,
+        bytes32_t const &key);
+
+    // The beneficiary whose fees defer_beneficiary_credit holds back. Set
+    // once, by the sequential block loop, before its first transaction.
+    void set_beneficiary(Address const &beneficiary)
+    {
+        MONAD_ASSERT(!pending_);
+        beneficiary_ = beneficiary;
+    }
+
+    Address const &beneficiary() const
+    {
+        return beneficiary_;
+    }
+
+    // A transaction's fee to the beneficiary, credited when its entry is
+    // next read or at flush_beneficiary_credit, whichever comes first. The
+    // incarnation is the transaction's, for an account that does not exist.
+    void defer_beneficiary_credit(uint256_t const &, Incarnation);
+
+    // Credits whatever is pending: the block's state is complete only after.
+    void flush_beneficiary_credit();
 #endif
 
     vm::SharedVarcode read_code(bytes32_t const &);

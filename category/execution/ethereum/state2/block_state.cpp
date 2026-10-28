@@ -19,6 +19,7 @@
 #include <category/core/config.hpp>
 #include <category/core/likely.h>
 #include <category/core/log.hpp>
+#include <category/core/monad_exception.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
@@ -43,6 +44,7 @@
 
 #include <quill/std/Optional.h>
 
+#include <limits>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -93,7 +95,53 @@ StateDelta &BlockState::read_account_delta(evmc_address const &address)
     };
 
     MONAD_ASSERT(state_);
-    return state_->try_emplace(address, Read{db_, address}).first->second;
+    auto &entry = *state_->try_emplace(address, Read{db_, address}).first;
+    // Every row of an account is built from this entry, so crediting the
+    // pending fees here is crediting them before anyone sees the account.
+    if (MONAD_UNLIKELY(address == beneficiary_) && pending_) {
+        apply_beneficiary_credit(entry.second);
+    }
+    return entry.second;
+}
+
+void BlockState::defer_beneficiary_credit(
+    uint256_t const &credit, Incarnation const incarnation)
+{
+    if (!pending_) {
+        pending_incarnation_ = incarnation;
+        pending_ = true;
+    }
+    // Every partial sum is no larger than the last, so the account's balance
+    // overflows with one credit at a time exactly when it does with the sum:
+    // this and the check where the sum is credited are add_to_balance's.
+    MONAD_ASSERT_THROW(
+        std::numeric_limits<uint256_t>::max() - credit >= pending_credit_,
+        "balance overflow");
+    pending_credit_ += credit;
+}
+
+void BlockState::apply_beneficiary_credit(StateDelta &entry)
+{
+    // As add_to_balance has it: an absent account is created by the first
+    // credit, with that transaction's incarnation.
+    auto &account = entry.account.second;
+    if (!account.has_value()) {
+        account = Account{.incarnation = pending_incarnation_};
+    }
+    MONAD_ASSERT_THROW(
+        std::numeric_limits<uint256_t>::max() - pending_credit_ >=
+            account->balance,
+        "balance overflow");
+    account->balance += pending_credit_;
+    pending_credit_ = 0;
+    pending_ = false;
+}
+
+void BlockState::flush_beneficiary_credit()
+{
+    if (pending_) {
+        (void)read_account_delta(beneficiary_);
+    }
 }
 #endif
 

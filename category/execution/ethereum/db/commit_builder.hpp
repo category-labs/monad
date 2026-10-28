@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/address.hpp>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
@@ -23,6 +24,7 @@
 #include <category/mpt/update.hpp>
 
 #include <deque>
+#include <span>
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN
@@ -32,6 +34,18 @@ struct Transaction;
 struct BlockHeader;
 struct Receipt;
 struct Withdrawal;
+
+// One derived private domain block, as committed with the L1 block it was
+// derived from. See docs/domains-protocol.md.
+struct DomainBlockCommit
+{
+    uint64_t domain_chain_id;
+    uint64_t number;
+    // rlp(ProposedDomainHeader)
+    byte_string_view encoded_header;
+    std::span<Transaction const> transactions;
+    std::span<Address const> senders;
+};
 
 class CommitBuilder
 {
@@ -67,6 +81,11 @@ public:
     CommitBuilder &add_withdrawals(std::vector<Withdrawal> const &);
 
     CommitBuilder &add_block_header(BlockHeader const &);
+
+    // The private domain blocks derived from this block, at most one per
+    // domain. Called with every block, with or without domain blocks, by
+    // nodes that derive private domains, and by no others.
+    CommitBuilder &add_domain_blocks(std::span<DomainBlockCommit const>);
 
     // Consumes updates_ but preserves the backing deque storage. New updates
     // can be added after a build() call (e.g. add_block_header between the

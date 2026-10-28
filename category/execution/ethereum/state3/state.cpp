@@ -168,6 +168,13 @@ AccountState &State::current_account_state(monad_address const &address)
         it = current_.try_emplace(address, account_state).first;
 #endif
         it->second.original_state_ = &account_state;
+#if defined(MONAD_ZKVM_ZISK)
+        // EIP-3651 warmth is transaction-wide, so do not journal this access.
+        if (defers_beneficiary_ && address == block_state_.beneficiary()) {
+            (void)it->second.access();
+            beneficiary_row_created_ = true;
+        }
+#endif
         created = true;
         // Record creation separately from dirty tracking.
         journal_created(address);
@@ -1081,6 +1088,27 @@ void State::touch(monad_address const &address)
     }
 }
 
+#if defined(MONAD_ZKVM_ZISK)
+void State::defer_beneficiary()
+{
+    defers_beneficiary_ = block_state_.beneficiary_deferral_enabled();
+}
+
+bool State::defer_beneficiary_credit(uint256_t const &reward)
+{
+    // With a row, add_to_balance credits it where the merge will find it. A
+    // zero fee is no credit but a touch, which can delete an empty account.
+    if (!defers_beneficiary_ || beneficiary_row_created_ || reward == 0) {
+        return false;
+    }
+    // No row: the beneficiary's entry is the one the transaction began with,
+    // and the merge leaves it as it is, so the fee commutes with the
+    // transactions that follow until one of them reads it.
+    block_state_.defer_beneficiary_credit(reward, incarnation_);
+    return true;
+}
+
+#endif
 AccessStatus State::access_account(monad_address const &address)
 {
     auto &account_state = current_account_state(address);

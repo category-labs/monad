@@ -19,9 +19,11 @@
 #include <category/core/config.hpp>
 #include <category/core/likely.h>
 #include <category/core/log.hpp>
+#include <category/core/monad_exception.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
 #include <category/execution/ethereum/db/db.hpp>
+#include <limits>
 #if defined(MONAD_ZKVM_ZISK) && !defined(MONAD_ZKVM_SELFTEST)
     #include <category/execution/ethereum/db/partial_trie_db.hpp>
 #endif
@@ -87,8 +89,56 @@ StateDelta &BlockState::read_account_delta(monad_address const &address)
     };
 
     MONAD_ASSERT(state_);
-    return state_->try_emplace(address, DeferredAccountRead{db_, address})
-        .first->second;
+    auto &delta =
+        state_->try_emplace(address, DeferredAccountRead{db_, address})
+            .first->second;
+    // Apply deferred fees before exposing the beneficiary's account.
+    if (MONAD_UNLIKELY(address == beneficiary_) &&
+        has_pending_beneficiary_credit_) {
+        apply_beneficiary_credit(delta);
+    }
+    return delta;
+}
+
+void BlockState::defer_beneficiary_credit(
+    uint256_t const &credit, Incarnation const incarnation)
+{
+    if (!has_pending_beneficiary_credit_) {
+        first_credit_incarnation_ = incarnation;
+        has_pending_beneficiary_credit_ = true;
+    }
+    // Every partial sum is no larger than the last, so the account's balance
+    // overflows with one credit at a time exactly when it does with the sum:
+    // this and the check where the sum is credited are add_to_balance's.
+    MONAD_ASSERT_THROW(
+        std::numeric_limits<uint256_t>::max() - credit >=
+            pending_beneficiary_credit_,
+        "balance overflow");
+    pending_beneficiary_credit_ += credit;
+}
+
+void BlockState::apply_beneficiary_credit(StateDelta &delta)
+{
+    // As add_to_balance has it: an absent account is created by the first
+    // credit, with that transaction's incarnation.
+    auto &account = delta.account.second;
+    if (!account.has_value()) {
+        account = Account{.incarnation = first_credit_incarnation_};
+    }
+    MONAD_ASSERT_THROW(
+        std::numeric_limits<uint256_t>::max() - pending_beneficiary_credit_ >=
+            account->balance,
+        "balance overflow");
+    account->balance += pending_beneficiary_credit_;
+    pending_beneficiary_credit_ = 0;
+    has_pending_beneficiary_credit_ = false;
+}
+
+void BlockState::flush_beneficiary_credit()
+{
+    if (has_pending_beneficiary_credit_) {
+        (void)read_account_delta(beneficiary_);
+    }
 }
 #endif
 

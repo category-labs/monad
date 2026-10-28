@@ -185,7 +185,7 @@ namespace monad::vm::runtime
         message.flags = message_flags(
             static_cast<uint32_t>(ctx->env.flags),
             static_call,
-            dest_address != code_address);
+            delegate_address.has_value() && *delegate_address != dest_address);
         message.depth = static_cast<int32_t>(ctx->env.depth + 1);
         message.gas = gas;
         message.recipient = recipient;

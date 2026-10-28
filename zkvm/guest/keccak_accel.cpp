@@ -343,7 +343,9 @@ static void keccak256_one_block(
 // `used` is the caller's copy of `keccakf_memo_used`, held for the whole
 // digest and stored back at its end, for the reason keccak256_one_block
 // gives; the slot's `out` is reached from `pre`, which the caller launders.
-template <bool First, bool Lookup = true>
+// With `Room` the caller has shown the table holds an entry for every
+// permutation its digest can still file, so the full-table arm is left out.
+template <bool First, bool Lookup = true, bool Room = false>
 static inline uint64_t const *
 keccakf_memo_permute(uint64_t *const pre, uint64_t &used)
 {
@@ -355,10 +357,12 @@ keccakf_memo_permute(uint64_t *const pre, uint64_t &used)
     }
     uint64_t *const slot_out = pre + KECCAKF_LANES;
     auto *const post = reinterpret_cast<uint64_t(*)[KECCAKF_LANES]>(slot_out);
-    if (used == KECCAKF_MEMO_ENTRIES) {
-        keccakf_state_copy(slot_out, pre);
-        zisk_keccakf(post);
-        return slot_out;
+    if constexpr (!Room) {
+        if (used == KECCAKF_MEMO_ENTRIES) {
+            keccakf_state_copy(slot_out, pre);
+            zisk_keccakf(post);
+            return slot_out;
+        }
     }
     if constexpr (First) {
         std::memcpy(slot_out, pre, 17 * sizeof(uint64_t));
@@ -443,15 +447,22 @@ enum class MemoFrom
 
 constexpr size_t MEMO_STAGED_BYTES = 8 * 136;
 
-template <MemoFrom From, Filing F = Filing::All>
-static void keccak256_memo_sponge(void const *const in, size_t len, uint8_t out[32])
+// `used` is the caller's load of `keccakf_memo_used`, stored back once, at the
+// end: see keccakf_memo_permute. `Room` is the caller's one test that the table
+// has an entry for every permutation this digest files (keccak256_memo_digest
+// below). With it no permutation tests for a full table, and the slot a filing
+// leaves is always the next one: the no-lookup loop steps its slot pointer
+// instead of re-forming it from `used`, and the scratch is left in use only
+// where no filing followed it. Without it, every filing keeps its test.
+template <MemoFrom From, Filing F, bool Room>
+static void keccak256_memo_sponge(
+    void const *const in, size_t len, uint8_t out[32], uint64_t used)
 {
     constexpr size_t RATE = 136;
     constexpr size_t WORDS = RATE / 8; // 17
     static_assert(135 == 16 * 8 + 7, "the pad bit is byte 7 of lane 16");
+    static_assert(!Room || F != Filing::None, "None files nothing");
     auto const *p = static_cast<unsigned char const *>(in);
-    // Stored back once, at the end: see keccakf_memo_permute.
-    uint64_t used = keccakf_memo_used;
 
     [[maybe_unused]] alignas(8) unsigned char staged[MEMO_STAGED_BYTES];
     if constexpr (From == MemoFrom::Staged) {
@@ -473,7 +484,7 @@ static void keccak256_memo_sponge(void const *const in, size_t len, uint8_t out[
         post = keccakf_unfiled_permute<true>(pre, used, look);
     }
     else {
-        post = keccakf_memo_permute<true>(pre, used);
+        post = keccakf_memo_permute<true, true, Room>(pre, used);
         look = post != pre + KECCAKF_LANES;
     }
 
@@ -610,30 +621,56 @@ static void keccak256_memo_sponge(void const *const in, size_t len, uint8_t out[
             post = keccakf_unfiled_permute<true>(pre, used, look);
         }
         else {
-            post = keccakf_memo_permute<false>(pre, used);
+            post = keccakf_memo_permute<false, true, Room>(pre, used);
             look = post != pre + KECCAKF_LANES;
         }
         p += RATE;
         len -= RATE;
     }
-    while (len >= RATE) {
-        pre = F == Filing::None ? keccakf_apart : keccakf_memo[used].in;
-        asm("" : "+r"(pre));
-        for (size_t i = 0; i < WORDS; ++i) {
-            pre[i] = post[i] ^ load64(p + 8 * i);
+    if constexpr (Room) {
+        // Every permutation from here files at `pre` and advances `used` by
+        // one, so the next scratch is the entry after `pre`. While `look`
+        // holds every permutation so far hit, and `pre` is still the scratch.
+        constexpr size_t SLOT = sizeof(KeccakfEntry) / sizeof(uint64_t);
+        if (!look) {
+            while (len >= RATE) {
+                pre += SLOT;
+                asm("" : "+r"(pre));
+                for (size_t i = 0; i < WORDS; ++i) {
+                    pre[i] = post[i] ^ load64(p + 8 * i);
+                }
+                std::memcpy(
+                    pre + WORDS, post + WORDS, (KECCAKF_LANES - WORDS) * 8);
+                post = keccakf_memo_permute<false, false, true>(pre, used);
+                p += RATE;
+                len -= RATE;
+            }
+            if constexpr (F == Filing::All) {
+                pre += SLOT;
+            }
         }
-        if constexpr (F == Filing::None) {
-            // The scratch was permuted in place: the capacity is already there.
-            bool hit;
-            post = keccakf_unfiled_permute<false>(pre, used, hit);
+    }
+    else {
+        while (len >= RATE) {
+            pre = F == Filing::None ? keccakf_apart : keccakf_memo[used].in;
+            asm("" : "+r"(pre));
+            for (size_t i = 0; i < WORDS; ++i) {
+                pre[i] = post[i] ^ load64(p + 8 * i);
+            }
+            if constexpr (F == Filing::None) {
+                // The scratch was permuted in place: the capacity is
+                // already there.
+                bool hit;
+                post = keccakf_unfiled_permute<false>(pre, used, hit);
+            }
+            else {
+                std::memcpy(
+                    pre + WORDS, post + WORDS, (KECCAKF_LANES - WORDS) * 8);
+                post = keccakf_memo_permute<false, false>(pre, used);
+            }
+            p += RATE;
+            len -= RATE;
         }
-        else {
-            std::memcpy(
-                pre + WORDS, post + WORDS, (KECCAKF_LANES - WORDS) * 8);
-            post = keccakf_memo_permute<false, false>(pre, used);
-        }
-        p += RATE;
-        len -= RATE;
     }
 
     // The final block, pad10*1 with the 0x01 domain byte: its whole lanes, a
@@ -652,14 +689,25 @@ static void keccak256_memo_sponge(void const *const in, size_t len, uint8_t out[
     // left its pre-state in the scratch, and a full table permutes the spare
     // where it lies: those build the last block there and clear it, as before.
     // None ran every block apart.
+    //
+    // With Room the scratch is `pre` already, and every filing went below
+    // capacity: NotFinal builds its last block apart after any miss.
     if constexpr (F == Filing::NotFinal) {
-        pre = !look && used != KECCAKF_MEMO_ENTRIES ? keccakf_apart
-                                                    : keccakf_memo[used].in;
+        if constexpr (Room) {
+            if (!look) {
+                pre = keccakf_apart;
+            }
+        }
+        else {
+            pre = !look && used != KECCAKF_MEMO_ENTRIES
+                      ? keccakf_apart
+                      : keccakf_memo[used].in;
+        }
     }
     else if constexpr (F == Filing::None) {
         pre = keccakf_apart;
     }
-    else {
+    else if constexpr (!Room) {
         pre = keccakf_memo[used].in;
     }
     size_t const whole = len / 8;
@@ -723,6 +771,36 @@ lanes0:
             pre + whole + 1, post + whole + 1, (KECCAKF_LANES - 1 - whole) * 8);
     }
     pre[16] ^= uint64_t{0x80} << 56;
+    if constexpr (Room) {
+        // A filing advances `used` past `pre`, to an unwritten slot: the
+        // scratch is left in use only by a final hit, or, under NotFinal, by
+        // the hits that kept the last block in it, and only those clear it.
+        if constexpr (F == Filing::All) {
+            if (look) {
+                post = keccakf_memo_permute<false, true, true>(pre, used);
+                if (post != pre + KECCAKF_LANES) {
+                    std::memcpy(out, post, 32);
+                    std::memset(pre, 0, KECCAKF_STATE_BYTES);
+                    keccakf_memo_used = used;
+                    return;
+                }
+            }
+            else {
+                post = keccakf_memo_permute<false, false, true>(pre, used);
+            }
+            std::memcpy(out, post, 32);
+        }
+        else {
+            bool hit;
+            post = keccakf_unfiled_permute<false>(pre, used, hit);
+            std::memcpy(out, post, 32);
+            if (look) {
+                std::memset(pre, 0, KECCAKF_STATE_BYTES);
+            }
+        }
+        keccakf_memo_used = used;
+        return;
+    }
     if constexpr (F == Filing::All) {
         post = look ? keccakf_memo_permute<false>(pre, used)
                     : keccakf_memo_permute<false, false>(pre, used);
@@ -742,6 +820,27 @@ lanes0:
         std::memset(pre, 0, KECCAKF_STATE_BYTES);
     }
     keccakf_memo_used = used;
+}
+
+// The table's room, tested once per digest rather than at every permutation.
+// An input of len >= 136 bytes takes len / 136 + 1 <= (len >> 7) + 1
+// permutations, and each files at most one entry, so when
+// `used + (len >> 7) < KECCAKF_MEMO_ENTRIES` every filing lands below the
+// table's capacity and the scratch the digest ends on is at worst the spare
+// slot, which exists. A hit or an unfiled permutation files nothing, so the
+// bound only over-counts. Filing::None files nothing at all and never tests.
+template <MemoFrom From, Filing F = Filing::All>
+[[gnu::always_inline]] static inline void
+keccak256_memo_digest(void const *const in, size_t const len, uint8_t out[32])
+{
+    uint64_t const used = keccakf_memo_used;
+    if constexpr (F != Filing::None) {
+        if (used + (len >> 7) < KECCAKF_MEMO_ENTRIES) {
+            keccak256_memo_sponge<From, F, true>(in, len, out, used);
+            return;
+        }
+    }
+    keccak256_memo_sponge<From, F, false>(in, len, out, used);
 }
 
 #endif // MONAD_ZKVM_KECCAKF_MEMO
@@ -835,13 +934,13 @@ static void keccak256_sponge(
             keccak256_one_block(in, len, out);
         }
         else if ((reinterpret_cast<uintptr_t>(in) & 7) == 0) {
-            keccak256_memo_sponge<MemoFrom::Aligned>(in, len, out);
+            keccak256_memo_digest<MemoFrom::Aligned>(in, len, out);
         }
         else if (len <= MEMO_STAGED_BYTES) {
-            keccak256_memo_sponge<MemoFrom::Staged>(in, len, out);
+            keccak256_memo_digest<MemoFrom::Staged>(in, len, out);
         }
         else {
-            keccak256_memo_sponge<MemoFrom::Misaligned>(in, len, out);
+            keccak256_memo_digest<MemoFrom::Misaligned>(in, len, out);
         }
         return;
     }
@@ -1042,13 +1141,13 @@ static void keccak256_trie(void const *in, size_t len, uint8_t out[32])
         keccak256_one_block(in, len, out);
     }
     else if ((reinterpret_cast<uintptr_t>(in) & 7) == 0) {
-        keccak256_memo_sponge<MemoFrom::Aligned, F>(in, len, out);
+        keccak256_memo_digest<MemoFrom::Aligned, F>(in, len, out);
     }
     else if (len <= MEMO_STAGED_BYTES) {
-        keccak256_memo_sponge<MemoFrom::Staged, F>(in, len, out);
+        keccak256_memo_digest<MemoFrom::Staged, F>(in, len, out);
     }
     else {
-        keccak256_memo_sponge<MemoFrom::Misaligned, F>(in, len, out);
+        keccak256_memo_digest<MemoFrom::Misaligned, F>(in, len, out);
     }
 }
 #endif

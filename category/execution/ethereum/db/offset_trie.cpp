@@ -126,7 +126,6 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
         static_cast<uint64_t *>(
             ::operator new(blob_.size() * sizeof(uint64_t))),
         blob_.size()};
-    claim_marks_ = node_offsets.data();
 #else
     std::vector<unsigned char> node_offsets(blob_.size(), 0);
 #endif
@@ -380,7 +379,9 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
                 ? encode_rlp<true, true>(
                       node,
                       node_rlp_span{window},
-                      primed_slots_ + PRIMED_CHILDREN)
+                      primed_slots_ + PRIMED_CHILDREN,
+                      ClaimPass{
+                          base, node_offsets.data(), blob_size, &unclaimed})
                 : encode_rlp<true>(node, node_rlp_span{window}); // priming pass
 #else
         node_rlp_span const rem =
@@ -423,8 +424,6 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
     is_valid_offset(root);
 #if defined(MONAD_ZKVM_ZISK)
     rlp_window_ = walk_window;
-    unclaimed -= claimed_bytes_;
-    claim_marks_ = nullptr;
 #endif
 
     // Every node was claimed exactly once; a leftover count is a node not
@@ -938,7 +937,13 @@ template <bool priming_pass, bool claims>
 OffsetTrie::node_rlp_span
 OffsetTrie::encode_rlp(
     NodeViewBase const node, OffsetTrie::node_rlp_span dest,
+#if defined(MONAD_ZKVM_ZISK)
+    [[maybe_unused]] node_id_wire_t const *const children_in,
+    [[maybe_unused]] std::conditional_t<claims, ClaimPass, ClaimNone> const
+        claim)
+#else
     [[maybe_unused]] node_id_wire_t const *const children_in)
+#endif
 {
     MONAD_DEBUG_ASSERT(node.tag() != EMPTY && node.tag() != DIGEST);
     if constexpr (claims) {
@@ -1034,7 +1039,19 @@ OffsetTrie::encode_rlp(
                 // checks bounds before access.
                 // The blob's address, held: the mark and digest byte stores
                 // below may alias any member, so gcc reloads blob_ after each.
+                // The claims pass has it from the constructor, which holds it.
+#if defined(MONAD_ZKVM_ZISK)
+                unsigned char const *const blob = [&] {
+                    if constexpr (claims) {
+                        return claim.blob;
+                    }
+                    else {
+                        return blob_.data();
+                    }
+                }();
+#else
                 unsigned char const *const blob = blob_.data();
+#endif
                 auto const blob_digest_at = [&](uint64_t const w) {
                     if constexpr (priming_pass) {
                         // No bounds test: the priming pass encodes only nodes
@@ -1061,8 +1078,26 @@ OffsetTrie::encode_rlp(
                 };
 
 #if defined(MONAD_ZKVM_ZISK)
-                [[maybe_unused]] uint64_t *const marks = claim_marks_;
-                [[maybe_unused]] size_t const blob_size = blob_.size();
+                // The claims pass's marks and blob size, from the constructor.
+                // Its claims are counted here and taken off the walk's count
+                // once, after the loop: the count's word may alias a mark, so
+                // gcc would load and store it around every mark cleared.
+                [[maybe_unused]] uint64_t *const marks = [&] {
+                    if constexpr (claims) {
+                        return claim.marks;
+                    }
+                    else {
+                        return static_cast<uint64_t *>(nullptr);
+                    }
+                }();
+                [[maybe_unused]] size_t const blob_size = [&] {
+                    if constexpr (claims) {
+                        return claim.blob_size;
+                    }
+                    else {
+                        return size_t{0};
+                    }
+                }();
                 [[maybe_unused]] size_t claimed = 0;
                 static_assert(DIGEST_NODE_LEN == HASH_RLP_LEN);
                 // DIGEST, the mark a claim tests for, is also a hash ref's
@@ -1237,7 +1272,7 @@ OffsetTrie::encode_rlp(
                 }
 #if defined(MONAD_ZKVM_ZISK)
                 if constexpr (claims) {
-                    claimed_bytes_ += claimed;
+                    *claim.unclaimed -= claimed;
                 }
 #endif
                 // The list header, as wrap writes it, without its tests.

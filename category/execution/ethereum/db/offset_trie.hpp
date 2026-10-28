@@ -38,6 +38,7 @@
 #include <cstdint>
 #include <cstring>
 #include <span>
+#include <type_traits>
 #include <utility>
 
 MONAD_MPT_NAMESPACE_BEGIN
@@ -811,11 +812,24 @@ class OffsetTrie
     alignas(8) node_id_wire_t primed_slots_[2 + 16]{};
     static constexpr size_t PRIMED_CHILDREN = 2;
 
-    // The constructor's claim marks, a word per blob offset, for the
-    // branches whose priming encode claims their children, and the claims
-    // those encodes made, in the constructor's unit: DIGEST_NODE_LEN a claim.
-    uint64_t *claim_marks_{nullptr};
-    size_t claimed_bytes_{0};
+    // What the priming encode of a branch needs to claim its children, handed
+    // over from the constructor's walk, which holds all of it in registers: a
+    // member is read again after every mark the encode clears, as a word store
+    // may alias it, and a count kept in a member is a load and a store per
+    // branch. `marks` is a word per blob offset; `unclaimed` is the walk's own
+    // count, in its unit: DIGEST_NODE_LEN a claim. The other encodes take the
+    // empty ClaimNone.
+    struct ClaimPass
+    {
+        unsigned char const *blob;
+        uint64_t *marks;
+        size_t blob_size;
+        size_t *unclaimed;
+    };
+
+    struct ClaimNone
+    {
+    };
 
     // The priming sweep encodes each node at the end of its own window, which
     // a hashed node keeps as its CachedHash::rlp. Windows are carved from
@@ -1166,11 +1180,19 @@ private:
     // `claims`: the priming encode of a branch the constructor has not
     // validated claims its children itself, as it first reads them (ZisK).
     // Its `children` are the constructor's copy, whose slot below the first
-    // is zero.
+    // is zero, and `claim` what it claims them with.
+#if defined(MONAD_ZKVM_ZISK)
+    template <bool priming_pass = false, bool claims = false>
+    node_rlp_span encode_rlp(
+        NodeViewBase node, node_rlp_span dest,
+        node_id_wire_t const *children = nullptr,
+        std::conditional_t<claims, ClaimPass, ClaimNone> claim = {});
+#else
     template <bool priming_pass = false, bool claims = false>
     node_rlp_span encode_rlp(
         NodeViewBase node, node_rlp_span dest,
         node_id_wire_t const *children = nullptr);
+#endif
 
     NodeId fresh_id();
 

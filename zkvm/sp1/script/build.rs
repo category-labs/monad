@@ -16,6 +16,12 @@
 fn main() {
     // Both entries link the shared C++ archive and libzkevm.a built from the
     // pinned SDK source. Export the selected ELF for src/main.rs to embed.
-    let elf = monad_zkvm_build_support::Backend::Sp1.build_guest_elf();
-    println!("cargo:rustc-env=GUEST_ELF={}", elf.display());
+    println!("cargo:rerun-if-env-changed=CARGO_FEATURE_PRECOMPILE_TEST");
+    let backend = monad_zkvm_build_support::Backend::Sp1;
+    let elf = if std::env::var_os("CARGO_FEATURE_PRECOMPILE_TEST").is_some() {
+        backend.build_precompile_test_elf()
+    } else {
+        backend.build_guest_elf()
+    };
+    println!("cargo:rustc-env=MONAD_ELF={}", elf.display());
 }

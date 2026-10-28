@@ -4446,7 +4446,8 @@ namespace monad::vm::interpreter
                 // DUPn lands at a head of its follower's slot, as SWAP1 does,
                 // with the address of the word it copies: the copy there and
                 // a jump to the handler, or the pair it makes with ADD, AND,
-                // LT, GT or MSTORE (execute.cpp).
+                // LT, GT, EQ, ISZERO, CALLDATALOAD or MSTORE, among others,
+                // or the copy and PUSH1's or PUSH2's handler (execute.cpp).
                 MONAD_VM_LEAD_DISPATCH_SRC(
                     dup_offset(lag_of<traits>),
                     *(instr_ptr + 1),
@@ -4490,8 +4491,8 @@ namespace monad::vm::interpreter
         if constexpr (N >= 2 && has_slots<traits>) {
             // SWAPn lands at a head of its follower's slot as the DUPs do,
             // the word the top swaps with in a7: the swap there and a jump
-            // to the handler, or the pair it makes with POP or SWAP1 to
-            // SWAP4 (execute.cpp).
+            // to the handler, or the pair it makes with POP, ADD, SUB, AND,
+            // MSTORE or SWAP1 to SWAP4 (execute.cpp).
             MONAD_VM_LEAD_DISPATCH_SRC(
                 swapn_offset(lag_of<traits>),
                 *(instr_ptr + 1),
@@ -4661,6 +4662,13 @@ namespace monad::vm::interpreter
     // top and that one's to the top, four copies where the two opcodes make
     // six. When m is n they leave the stack as it was, as the two opcodes do.
     // SWAP1 and SWAP2 swap words SWAPn has tested, n being 2 or more.
+    //
+    // SWAPn then ADD, SUB, AND or MSTORE: SRC's word, the top's after the
+    // swap, is read where it lies, with the word under the top, and the top's
+    // word goes to SRC, one copy where SWAPn makes three. SRC is two words or
+    // more below the top, never the one under it, and SWAPn's test covers
+    // the follower's two words. A store that grows the memory makes the swap
+    // whole and takes MSTORE's growth path.
     template <uint8_t OP, Traits traits>
     MONAD_VM_INSTRUCTION_CALL void swapn_then(
         runtime::Context &ctx, MONAD_VM_ANALYSIS_PARAM,
@@ -4668,20 +4676,84 @@ namespace monad::vm::interpreter
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM,
         uint256_t *const src)
     {
-        static constexpr auto op = static_cast<compiler::EvmOpCode>(OP);
-        constexpr auto m = static_cast<std::ptrdiff_t>(OP - SWAP1 + 1);
-        if constexpr (m <= 2) {
-            gas_remaining -= static_gas<traits, op>();
+        if constexpr (OP >= SWAP1 && OP <= SWAP4) {
+            static constexpr auto op = static_cast<compiler::EvmOpCode>(OP);
+            constexpr auto m = static_cast<std::ptrdiff_t>(OP - SWAP1 + 1);
+            if constexpr (m <= 2) {
+                gas_remaining -= static_gas<traits, op>();
+            }
+            else {
+                MONAD_VM_CHECK(op);
+            }
+            uint256_t *const monad_t = &ctx.swap_scratch;
+            *monad_t = *src;
+            *src = *stack_top;
+            *stack_top = *(stack_top - m);
+            *(stack_top - m) = *monad_t;
+            MONAD_VM_DISPATCH(1, 0, *instr_ptr);
+        }
+        else if constexpr (OP == MSTORE) {
+            gas_remaining -= static_gas<traits, MSTORE>();
+            // Tested as mstore tests its offset, SRC's word.
+            uint256_t const &monad_vm_x = *src;
+            if (MONAD_UNLIKELY(
+                    (monad_vm_x[1] | monad_vm_x[2] | monad_vm_x[3]) != 0)) {
+                MONAD_VM_MUST_TAIL return ctx.exit(OutOfGas);
+            }
+            if (MONAD_UNLIKELY(monad_vm_x[0] >= ctx.memory_access32_end)) {
+                bool const monad_vm_slow =
+                    (monad_vm_x[0] >> runtime::Memory::offset_bits) != 0;
+                // The stack as SWAPn leaves it, for MSTORE's growth path.
+                uint256_t *const monad_t = &ctx.swap_scratch;
+                *monad_t = *src;
+                *src = *stack_top;
+                *stack_top = *monad_t;
+                if (MONAD_UNLIKELY(monad_vm_slow)) {
+                    MONAD_VM_MUST_TAIL return mstore_slow<quiet_traits<traits>>(
+                        ctx,
+                        MONAD_VM_ANALYSIS_ARG,
+                        stack_bottom,
+                        stack_top,
+                        gas_remaining,
+                        MONAD_VM_AS_CALLED(instr_ptr) MONAD_VM_TBL_ARG);
+                }
+                MONAD_VM_MUST_TAIL return mstore_grow<traits>(
+                    ctx,
+                    MONAD_VM_ANALYSIS_ARG,
+                    stack_bottom,
+                    stack_top,
+                    gas_remaining,
+                    MONAD_VM_AS_CALLED(instr_ptr) MONAD_VM_TBL_ARG);
+            }
+            auto const offset = runtime::Memory::Offset::unsafe_from(
+                static_cast<runtime::Memory::Offset::rep>(monad_vm_x[0]));
+            runtime::mstore_at<base_traits<traits>>(
+                &ctx, offset, stack_top - 1);
+            *src = *stack_top;
+            MONAD_VM_DISPATCH(1, -2, *instr_ptr);
         }
         else {
-            MONAD_VM_CHECK(op);
+            gas_remaining -=
+                static_gas<traits, static_cast<compiler::EvmOpCode>(OP)>();
+            if constexpr (OP == ADD) {
+                ctx.add256_params.a = reinterpret_cast<uint64_t const *>(src);
+                zisk_add256(
+                    ctx.add256_params, *(stack_top - 1), *(stack_top - 1));
+            }
+            else if constexpr (OP == SUB) {
+                // As SUB: SRC's word, the swapped top, less the one under it.
+                zisk_sub256_into(
+                    ctx,
+                    reinterpret_cast<uint64_t const *>(src),
+                    *(stack_top - 1));
+            }
+            else {
+                static_assert(OP == AND);
+                *(stack_top - 1) = *src & *(stack_top - 1);
+            }
+            *src = *stack_top;
+            MONAD_VM_DISPATCH(1, -1, *instr_ptr);
         }
-        uint256_t *const monad_t = &ctx.swap_scratch;
-        *monad_t = *src;
-        *src = *stack_top;
-        *stack_top = *(stack_top - m);
-        *(stack_top - m) = *monad_t;
-        MONAD_VM_DISPATCH(1, 0, *instr_ptr);
     }
 
     // bool_push2 without a JUMPI after the push: the result written, then
@@ -4768,11 +4840,13 @@ namespace monad::vm::interpreter
         MONAD_VM_DISPATCH(1, -1, *instr_ptr);
     }
 
-    // DUPn then ADD, SUB, AND, LT, GT, MLOAD, MSTORE or SWAP1, DUPn's tests
-    // and gas made: the word DUPn copies, at SRC, is read where it lies
-    // instead of copied to the top. A load or a store that grows the memory
-    // makes the copy and takes its opcode's growth path; LT's and GT's result
-    // goes to the follower's head in a7, as LT's does.
+    // DUPn then ADD, SUB, AND, LT, GT, EQ, ISZERO, CALLDATALOAD, MLOAD,
+    // MSTORE or SWAP1, DUPn's tests and gas made: the word DUPn copies, at
+    // SRC, is read where it lies instead of copied to the top. A load or a
+    // store that grows the memory makes the copy and takes its opcode's
+    // growth path; LT's, GT's, EQ's and ISZERO's result goes to the
+    // follower's head in a7, as LT's does, so that PUSH2 JUMPI branches on it
+    // unwritten (bool_push2).
     template <uint8_t OP, Traits traits>
     MONAD_VM_INSTRUCTION_CALL void dup_then(
         runtime::Context &entry_ctx, MONAD_VM_ANALYSIS_PARAM,
@@ -4843,6 +4917,31 @@ namespace monad::vm::interpreter
             *(stack_top + 1) = *stack_top;
             *stack_top = *src;
             MONAD_VM_DISPATCH(1, 1, *instr_ptr);
+        }
+        else if constexpr (OP == CALLDATALOAD) {
+            // The offset read where it lies, the word loaded to the top.
+            gas_remaining -= static_gas<traits, CALLDATALOAD>();
+            runtime::calldataload(&ctx, stack_top + 1, src);
+            MONAD_VM_DISPATCH(1, 1, *instr_ptr);
+        }
+        else if constexpr (OP == ISZERO || OP == EQ) {
+            // ISZERO's result takes the copy's slot, EQ's the top's.
+            constexpr std::ptrdiff_t monad_vm_at = OP == ISZERO ? 1 : 0;
+            bool const monad_vm_bit =
+                OP == ISZERO
+                    ? !*src
+                    : zisk_equal32(
+                          reinterpret_cast<uint64_t const *>(src),
+                          reinterpret_cast<uint64_t const *>(stack_top));
+            gas_remaining -=
+                static_gas<traits, static_cast<compiler::EvmOpCode>(OP)>();
+            MONAD_VM_LEAD_DISPATCH_BIT(
+                bool_offset(lag_of<traits>),
+                *(instr_ptr + 1),
+                stack_top + monad_vm_at,
+                gas_remaining,
+                instr_ptr - lag_of<traits>,
+                static_cast<uint64_t>(monad_vm_bit));
         }
         else {
             gas_remaining -=

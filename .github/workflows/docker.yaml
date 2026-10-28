@@ -15,11 +15,35 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  toolchain:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    outputs:
+      gcc: ${{ steps.versions.outputs.gcc }}
+      llvm: ${{ steps.versions.outputs.llvm }}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - id: versions
+        run: |
+          source scripts/ubuntu-build/toolchain.env
+          echo "gcc=$GCC_VERSION" >> "$GITHUB_OUTPUT"
+          echo "llvm=$LLVM_VERSION" >> "$GITHUB_OUTPUT"
+
   build:
+    name: build (${{ matrix.CMAKE_BUILD_TYPE }}, ${{ matrix.compiler.name }})
+    needs: toolchain
     strategy:
       matrix:
         CMAKE_BUILD_TYPE: [RelWithDebInfo, Debug]
-        compiler: [{CXX: g++-15, CC: gcc-15}, {CXX: clang++-19, CC: clang-19}]
+        compiler:
+          - name: gcc
+            CXX: g++-${{ needs.toolchain.outputs.gcc }}
+            CC: gcc-${{ needs.toolchain.outputs.gcc }}
+          - name: clang
+            CXX: clang++-${{ needs.toolchain.outputs.llvm }}
+            CC: clang-${{ needs.toolchain.outputs.llvm }}
 
     runs-on: ubuntu-26.04-32
     timeout-minutes: 90

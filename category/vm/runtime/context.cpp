@@ -103,8 +103,12 @@ namespace monad::vm::runtime
                     .depth = msg->depth,
                     .recipient = msg->recipient,
                     .sender = msg->sender,
-                    .value = msg->value,
-                    .create2_salt = msg->create2_salt,
+                    .value = static_cast<bytes32_t>(msg->value),
+#if defined(MONAD_ZKVM_ZISK)
+        // Only CREATE2 reads the salt directly from its message.
+#else
+                    .create2_salt = static_cast<bytes32_t>(msg->create2_salt),
+#endif
                     .input_data = msg->input_data,
                     .code = code.data(),
                     .return_data = {},

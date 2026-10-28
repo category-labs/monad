@@ -15,6 +15,7 @@
 
 // Minimal C++ runtime stubs for bare-metal zkVM.
 
+#include <zkvm/core/arena.hpp>
 #include <zkvm/core/libc.hpp>
 #include <zkvm/core/zkvm_halt.h>
 
@@ -27,73 +28,59 @@
 //
 // delete never frees memory in the guest. Serve new/new[] from 32 MiB chunks
 // (larger for oversized requests) to amortize allocator overhead. When a
-// request does not fit, abandon the tail and start a new chunk.
+// request does not fit, abandon the tail and start a new chunk. The fast path
+// is zkvm_arena_alloc in zkvm/core/arena.hpp, shared with other buffers the
+// guest never frees.
 namespace
 {
     constexpr std::size_t ARENA_CHUNK = std::size_t{32} << 20;
-
-    // The next free address and the chunk's end, side by side: one address
-    // formed on entry reaches both, where two separate variables took an
-    // address each for the loads and another for the store.
-    struct Arena
-    {
-        unsigned char *cur;
-        unsigned char *end;
-    };
-
-    Arena g_arena = {nullptr, nullptr};
 }
 
-[[gnu::always_inline]] static inline void *alloc_or_exit(std::size_t size)
+ZkvmArena zkvm_arena = {nullptr, nullptr};
+
+void *zkvm_arena_alloc_slow(std::size_t size)
 {
-    unsigned char *cur = g_arena.cur;
-    // What is left is always a multiple of 16 -- every chunk is one, and every
-    // request takes one from it -- so a request fits exactly when its size
-    // rounded up to 16 does, and the size can be tested before it is rounded.
-    // That keeps the rounding's overflow check on the new-chunk path, the only
-    // one a size within 15 of SIZE_MAX can take. Checked on entry instead, its
-    // halt is reachable before any other call, and gcc sets up the frame on
-    // every allocation rather than on that path. A zero-byte request wraps
-    // size - 1, so it comes here too, and is served like a one-byte one.
-    std::size_t const left = static_cast<std::size_t>(g_arena.end - cur);
-    if (size - 1 >= left) {
-        if (size == 0) {
-            size = 1;
+    unsigned char *cur = zkvm_arena.cur;
+    std::size_t const left = static_cast<std::size_t>(zkvm_arena.end - cur);
+    // A zero-byte request wraps size - 1 on the fast path, so it comes here
+    // too, and is served like a one-byte one.
+    if (size == 0) {
+        size = 1;
+    }
+    if (size > left) {
+        // Add 15, checking for overflow, then round down to a multiple of 16:
+        // the size this chunk has to hold. The check lives here, on the
+        // new-chunk path, the only one a size within 15 of SIZE_MAX can take,
+        // so the inline fast path carries no halt and no frame.
+        std::size_t rounded;
+        if (__builtin_add_overflow(size, std::size_t{15}, &rounded)) {
+            zkvm_halt(1);
         }
-        if (size > left) {
-            // Add 15, checking for overflow, then round down to a multiple of
-            // 16: the size this chunk has to hold.
-            std::size_t rounded;
-            if (__builtin_add_overflow(size, std::size_t{15}, &rounded)) {
-                zkvm_halt(1);
-            }
-            rounded &= ~std::size_t{15};
-            // Reserve ARENA_CHUNK for future allocations, or size if larger.
-            std::size_t const chunk =
-                rounded > ARENA_CHUNK ? rounded : ARENA_CHUNK;
-            cur = static_cast<unsigned char *>(sys_alloc_aligned(chunk, 16));
-            if (!cur) {
-                zkvm_halt(1);
-            }
-            g_arena.end = cur + chunk;
+        rounded &= ~std::size_t{15};
+        // Reserve ARENA_CHUNK for future allocations, or size if larger.
+        std::size_t const chunk = rounded > ARENA_CHUNK ? rounded : ARENA_CHUNK;
+        cur = static_cast<unsigned char *>(sys_alloc_aligned(chunk, 16));
+        if (!cur) {
+            zkvm_halt(1);
         }
+        zkvm_arena.end = cur + chunk;
     }
     // Round up to a multiple of 16 to keep subsequent allocations aligned.
     // size fits what is left here, so the addition cannot wrap.
     size = (size + 15) & ~std::size_t{15};
     // Advance past the allocation and return its start.
-    g_arena.cur = cur + size;
+    zkvm_arena.cur = cur + size;
     return cur;
 }
 
 void *operator new(std::size_t size)
 {
-    return alloc_or_exit(size);
+    return zkvm_arena_alloc(size);
 }
 
 void *operator new[](std::size_t size)
 {
-    return alloc_or_exit(size);
+    return zkvm_arena_alloc(size);
 }
 
 void operator delete(void *) noexcept {}

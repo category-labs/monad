@@ -32,6 +32,10 @@
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
+#if defined(MONAD_ZKVM_ZISK)
+    #include <zkvm/core/arena.hpp>
+#endif
+
 #include <bit>
 #include <cstdint>
 #include <cstdlib>
@@ -293,7 +297,15 @@ namespace monad::vm::runtime
         // the cost of a necessary expansion).
         uint8_t *output_buf = nullptr;
         auto allocate_output_buf = [size] {
+#if defined(MONAD_ZKVM_ZISK)
+            // Bumped inline from operator new's arena: malloc reached
+            // sys_alloc_aligned through a call that cost this function its
+            // spills. Nothing is ever freed in the guest -- release_result's
+            // free is a no-op -- so the buffer needs no allocator of its own.
+            return static_cast<uint8_t *>(zkvm_arena_alloc(*size));
+#else
             return reinterpret_cast<uint8_t *>(std::malloc(*size));
+#endif
         };
 
         if (*memory_end <= memory.size) {

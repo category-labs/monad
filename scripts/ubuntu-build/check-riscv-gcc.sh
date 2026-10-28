@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-HOST_CC="${CC:-gcc-15}"
+HOST_CC="${CC:-gcc}"
 HOST_VERSION="$("${HOST_CC}" -dumpfullversion)"
 CROSS_VERSION="$("/riscv/bin/riscv64-none-elf-gcc" -dumpfullversion)"
 if [ "${CROSS_VERSION}" != "${HOST_VERSION}" ]; then

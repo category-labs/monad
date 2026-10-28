@@ -47,6 +47,7 @@
 
 #if defined(MONAD_ZKVM_ZISK)
     #include <category/crypto/keccak.h>
+    #include <zkvm/core/zkvm_halt.h>
 #endif
 
 #ifdef MONAD_ZKVM_SELFTEST
@@ -112,9 +113,12 @@ extern "C" void monad_zkvm_execute_witness(void)
         monad::keccak256(monad::rlp::encode_block_header(block.header));
     monad::bits::set_map_keys(block_hash.bytes);
 
+    monad::vm::VM vm;
+#ifndef MONAD_ZKVM_VARCODE_CACHE
     monad::CodeIndex code_index;
     // Reserve initial capacity to avoid rehashes while indexing bytecodes.
     code_index.reserve(512);
+#endif
     {
         monad::byte_string_view codes = witness.value().encoded_codes;
         while (!codes.empty()) {
@@ -123,7 +127,7 @@ extern "C" void monad_zkvm_execute_witness(void)
             // Hash the intercode's existing aligned copy: witness slices may
             // be misaligned. Keccak's 136-byte blocks keep word loads aligned,
             // and no additional copy is needed.
-            auto const code = monad::vm::make_shared_intercode(bytes.value());
+            auto code = monad::vm::make_shared_intercode(bytes.value());
             // Check alignment and, in debug builds, unchanged bytecode.
             // The hash excludes the surrounding padding.
             MONAD_ASSERT((reinterpret_cast<uintptr_t>(code->code()) & 7) == 0);
@@ -137,7 +141,11 @@ extern "C" void monad_zkvm_execute_witness(void)
             monad::bytes32_t code_hash;
             monad_zkvm_keccak256_fast_nomemo(
                 code->code(), bytes.value().size(), code_hash.bytes);
+#ifdef MONAD_ZKVM_VARCODE_CACHE
+            vm.insert_varcode(code_hash, std::move(code));
+#else
             code_index.emplace(code_hash, code);
+#endif
 #else
             code_index.emplace(
                 monad::to_bytes(
@@ -151,7 +159,11 @@ extern "C" void monad_zkvm_execute_witness(void)
     // A witness must carry a materialised pre-state trie; an overlay-id root
     // signifies an empty trie.
     MONAD_ASSERT(!monad::mpt::is_overlay_id(trie.root));
+#ifdef MONAD_ZKVM_VARCODE_CACHE
+    monad::PartialTrieDb pdb{std::move(trie), monad::CodeIndex{}};
+#else
     monad::PartialTrieDb pdb{std::move(trie), std::move(code_index)};
+#endif
 
     monad::WitnessBlockHashBuffer block_hash_buffer;
     monad::bytes32_t pre_state_root{};
@@ -195,7 +207,6 @@ extern "C" void monad_zkvm_execute_witness(void)
     }
 
     monad::EthereumMainnet const chain;
-    monad::vm::VM vm;
     pdb.set_block_and_prefix(block.header.number, monad::bytes32_t{});
 
     monad_eth_revision const rev =
@@ -225,4 +236,8 @@ extern "C" void monad_zkvm_execute_witness(void)
     // Bind execution to the header hashed above before publishing its hash.
     MONAD_ASSERT(root_result.value() == block.header.state_root);
     write_output(block_hash.bytes, sizeof(block_hash.bytes));
+#ifdef MONAD_ZKVM_ZISK
+    // Output is flushed; skip destructors backed by the no-op guest free.
+    zkvm_halt(0);
+#endif
 }

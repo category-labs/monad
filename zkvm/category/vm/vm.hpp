@@ -88,6 +88,19 @@ namespace monad::vm
             return it->second;
         }
 
+        // A witness code, filed under the hash the guest computed from its
+        // bytes before any block reads it. The intercode moves into the
+        // varcode, so its count is neither raised nor lowered; a duplicate
+        // keeps the first copy, whose bytes are the same.
+        void insert_varcode(bytes32_t const &code_hash, SharedIntercode &&icode)
+        {
+            auto const [it, inserted] =
+                varcode_.try_emplace(code_hash, nullptr);
+            if (inserted) {
+                it->second = std::make_shared<Varcode>(std::move(icode));
+            }
+        }
+
         SharedVarcode const &try_insert_varcode_raw(
             bytes32_t const &code_hash, std::span<uint8_t const> const code)
         {

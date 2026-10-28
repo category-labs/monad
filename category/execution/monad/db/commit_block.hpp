@@ -22,6 +22,7 @@
 #include <category/vm/evm/traits.hpp>
 
 #include <optional>
+#include <span>
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN
@@ -31,10 +32,13 @@ struct CallFrame;
 struct Receipt;
 struct Transaction;
 struct Withdrawal;
+struct DomainBlockCommit;
 struct Db;
 
 // Commit one block to `db`. The db's storage encoding must match the block's
-// revision (slot before MIP-8, page after); asserted on entry.
+// revision (slot before MIP-8, page after); asserted on entry. `domain_blocks`
+// is the private domain blocks derived from the block, or nullopt on a node
+// that derives no private domains.
 template <Traits traits>
     requires is_monad_trait_v<traits>
 void commit_block(
@@ -45,6 +49,8 @@ void commit_block(
     std::vector<Address> const &senders = {},
     std::vector<Transaction> const &transactions = {},
     std::vector<BlockHeader> const &ommers = {},
-    std::optional<std::vector<Withdrawal>> const &withdrawals = std::nullopt);
+    std::optional<std::vector<Withdrawal>> const &withdrawals = std::nullopt,
+    std::optional<std::span<DomainBlockCommit const>> domain_blocks =
+        std::nullopt);
 
 MONAD_NAMESPACE_END

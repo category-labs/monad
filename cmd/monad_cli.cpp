@@ -42,6 +42,8 @@
 #include <category/mpt/traverse.hpp>
 #include <category/mpt/util.hpp>
 
+#include "monad_cli_domain.hpp"
+
 #include <CLI/CLI.hpp>
 #include <evmc/evmc.hpp>
 
@@ -833,6 +835,7 @@ int main(int const argc, char *argv[])
     bool interactive = false;
     std::optional<std::filesystem::path> dump_binary_snapshot;
     std::optional<std::filesystem::path> load_binary_snapshot;
+    std::optional<uint64_t> dump_domain_blocks_id;
     std::string version;
     unsigned dump_concurrency_limit = 2048;
     bool use_secondary = false;
@@ -919,6 +922,14 @@ int main(int const argc, char *argv[])
             load_binary_snapshot,
             "Load a binary snapshot to db")
         ->check(CLI::ExistingDirectory)
+        ->excludes(dump_binary_snapshot_option);
+    cli_group
+        ->add_option(
+            "--dump-domain-blocks",
+            dump_domain_blocks_id,
+            "Print the blocks of a private domain as JSON lines, from genesis "
+            "to its latest block as of --version")
+        ->type_name("DOMAIN_CHAIN_ID")
         ->excludes(dump_binary_snapshot_option);
     cli.add_flag(
         "--secondary",
@@ -1029,7 +1040,8 @@ int main(int const argc, char *argv[])
             return interactive_impl(ro_db);
         }
         if (dump_binary_snapshot.has_value() ||
-            load_binary_snapshot.has_value()) {
+            load_binary_snapshot.has_value() ||
+            dump_domain_blocks_id.has_value()) {
             auto const v = resolve_snapshot_version(
                 version, ro_db.get_latest_finalized_version());
             if (!v.has_value()) {
@@ -1047,6 +1059,10 @@ int main(int const argc, char *argv[])
             }
             resolved_version = *v;
         }
+    }
+    if (dump_domain_blocks_id.has_value()) {
+        return dump_domain_blocks(
+            dbname_path, resolved_version, *dump_domain_blocks_id);
     }
     if (dump_binary_snapshot.has_value()) {
         auto *const context =

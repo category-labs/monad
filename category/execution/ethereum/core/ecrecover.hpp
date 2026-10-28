@@ -29,14 +29,17 @@ MONAD_NAMESPACE_BEGIN
 /// Recovers the Ethereum address that signed `encoding` with the given ECDSA
 /// signature. Rejects malformed signatures up-front (y_parity > 1, malleable
 /// s); returns nullopt if ECDSA recovery fails.
-inline std::optional<Address>
-recover_address(Secp256k1Signature const &sig, byte_string_view const encoding)
+template <typename Hash>
+inline std::optional<Address> recover_address(
+    Secp256k1Signature const &sig, byte_string_view const encoding,
+    Hash const hash)
 {
     if (!sig.is_valid()) {
         return std::nullopt;
     }
 
-    auto const encoding_hash = keccak256(encoding);
+    monad_hash256 encoding_hash;
+    hash(encoding.data(), encoding.size(), encoding_hash.bytes);
 
     uint8_t signature[sizeof(sig.r) * 2];
     store_be(signature, sig.r);
@@ -50,6 +53,12 @@ recover_address(Secp256k1Signature const &sig, byte_string_view const encoding)
     }
 
     return result;
+}
+
+inline std::optional<Address>
+recover_address(Secp256k1Signature const &sig, byte_string_view const encoding)
+{
+    return recover_address(sig, encoding, monad_keccak256);
 }
 
 MONAD_NAMESPACE_END

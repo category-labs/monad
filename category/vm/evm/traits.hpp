@@ -697,11 +697,6 @@ namespace monad
             return Rev >= MONAD_NINE;
         }
 
-        static consteval bool tracks_proposer_val_id() noexcept
-        {
-            return Rev >= MONAD_FIVE;
-        }
-
         static consteval bool staking_active() noexcept
         {
             return Rev >= MONAD_FOUR;

@@ -17,6 +17,7 @@
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/monad/staking/execute_block_prelude.hpp>
 #include <category/execution/monad/staking/staking_contract.hpp>
+#include <category/execution/monad/staking/traits.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 
@@ -25,7 +26,7 @@ MONAD_STAKING_NAMESPACE_BEGIN
 template <Traits traits>
 void execute_block_prelude(State &state)
 {
-    if constexpr (!traits::tracks_proposer_val_id()) {
+    if constexpr (!tracks_proposer_val_id<traits>()) {
         return;
     }
 

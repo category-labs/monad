@@ -780,7 +780,7 @@ size_t OffsetTrie::patch_rlp(CachedHash const &e, NodeViewBase const node)
                 return 0;
             }
             auto *const ref = reinterpret_cast<unsigned char *>(at);
-            if (!patch_ref(b.child(k), ref, rlp_ref_len(*ref))) {
+            if (!patch_chain(b.child(k), ref, rlp_ref_len(*ref))) {
                 return 0;
             }
         }
@@ -802,11 +802,143 @@ size_t OffsetTrie::patch_rlp(CachedHash const &e, NodeViewBase const node)
     else {
         MONAD_ASSERT(node.tag() == EXT);
         p += rlp_path_len(*p);
-        if ((mask & 1) != 0 && !patch_ref(ExtView{node}.child(), p, rlp_ref_len(*p))) {
+        if ((mask & 1) != 0 &&
+            !patch_chain(ExtView{node}.child(), p, rlp_ref_len(*p))) {
             return 0;
         }
     }
     return len;
+}
+
+// The digest of a patched window of `len` bytes, into `e`'s entry, which it
+// makes current again. Inlined into both its callers, which reach it once per
+// patched node.
+[[gnu::always_inline]] inline void
+OffsetTrie::digest_window(CachedHash &e, size_t const len, Tag const tag)
+{
+    MONAD_KECCAK_SITE(TRIE_ENCODE, len);
+#if defined(MONAD_ZKVM_KECCAKF_RESUME)
+    // The bytes before the first dirty child's ref are the ones the priming
+    // hash absorbed: every patch wrote only at the refs of children dirty
+    // then, and `dirty` never clears, so at or after the first one dirty now
+    // -- and a patch keeps each ref's length, so the list header too. The
+    // digest resumes after the whole blocks there.
+    uint64_t const dirty = e.dirty;
+    if (tag == BRANCH && dirty != 0) {
+        auto const *const head =
+            reinterpret_cast<uint64_t const *>(e.rlp + len - MAX_NODE_RLP);
+        size_t const unchanged =
+            head[std::countr_zero(dirty)] - reinterpret_cast<uintptr_t>(e.rlp);
+        // A branch's RLP is 532 bytes at most.
+        size_t const blocks = unchanged >= 3 * KECCAK256_RATE   ? 3
+                              : unchanged >= 2 * KECCAK256_RATE ? 2
+                              : unchanged >= KECCAK256_RATE     ? 1
+                                                                : 0;
+        if (blocks != 0) {
+            monad_zkvm_keccak256_trie_resume(
+                e.rlp, len, e.h.bytes, head[PRIME_MARK_WORD], blocks);
+            e.stale = 0;
+            return;
+        }
+    }
+#else
+    (void)tag;
+#endif
+    TRIE_PATCH_DIGEST(e.rlp, len, e.h.bytes);
+    e.stale = 0;
+}
+
+// patch_ref over a chain of stale primed branches, the dirty part of a trie
+// being nearly a path: each branch on it is pushed on a stack of its own,
+// its dirty children are patched in patch_rlp's order, and it is hashed once
+// the last one is, where the recursion paid patch_ref's and patch_rlp's
+// frames for every level. Only such a branch is pushed, and only while it
+// patches in place. Any other child goes to patch_ref, the recursion itself.
+// A child that fails -- a ref recorded as zero, or one whose length changed
+// -- is where the branch's patch_rlp would return zero: the branch goes to
+// patch_ref instead, which patches it again from the start. A patch is
+// idempotent, `dirty` never clearing and each ref being recomputed from the
+// current bytes, and its children already patched answer from their entries,
+// so it finds what the recursion would have, and so does every branch above
+// that its failure reaches.
+bool OffsetTrie::patch_chain(
+    NodeId const child, unsigned char *const ref, size_t const ref_len)
+{
+    // A stale primed branch below a hash ref, which patch_ref would take on
+    // its fast path: a child of a node that keeps a window, so a blob node
+    // the constructor bounded (see patch_ref).
+    auto const stale_branch =
+        [this](NodeId const id, size_t const len) -> CachedHash * {
+        uint64_t const v = static_cast<uint64_t>(id);
+        if (len != HASH_RLP_LEN || v >= OVERLAY_BASE ||
+            original_child(id).tag() != BRANCH) {
+            return nullptr;
+        }
+        CachedHash *const e = blob_hash_slots_[v >> 2];
+        if (e == nullptr || e->rlp == nullptr || e->stale == 0) {
+            return nullptr;
+        }
+        return e;
+    };
+    CachedHash *const first = stale_branch(child, ref_len);
+    if (first == nullptr) {
+        return patch_ref(child, ref, ref_len);
+    }
+
+    struct Frame
+    {
+        CachedHash *e;
+        uint64_t mask;
+        unsigned char *ref;
+        NodeId id;
+    };
+
+    // A branch consumes a nibble of a 64-nibble key: a deeper chain cannot
+    // be a trie's, and patch_ref takes it from there anyway.
+    constexpr size_t DEPTH = 64;
+    Frame stack[DEPTH];
+    size_t depth = 0;
+    stack[0] = Frame{first, first->dirty, ref, child};
+    for (;;) {
+        Frame &f = stack[depth];
+        if (f.mask != 0) {
+            unsigned const k = static_cast<unsigned>(std::countr_zero(f.mask));
+            f.mask &= f.mask - 1;
+            // As in patch_rlp: the ref starts where the priming encode
+            // recorded it, and zero is a slot never written.
+            CachedHash const &e = *f.e;
+            uintptr_t const at = reinterpret_cast<uintptr_t const *>(
+                e.rlp + e.rlp_len - MAX_NODE_RLP)[k];
+            if (at != 0) {
+                auto *const r = reinterpret_cast<unsigned char *>(at);
+                size_t const len = rlp_ref_len(*r);
+                NodeId const c = BranchView{original_child(f.id)}.child(k);
+                CachedHash *const ce = stale_branch(c, len);
+                if (ce != nullptr && depth + 1 < DEPTH) {
+                    stack[++depth] = Frame{ce, ce->dirty, r, c};
+                    continue;
+                }
+                if (patch_ref(c, r, len)) {
+                    continue;
+                }
+            }
+            while (
+                !patch_ref(stack[depth].id, stack[depth].ref, HASH_RLP_LEN)) {
+                if (depth == 0) {
+                    return false;
+                }
+                --depth;
+            }
+        }
+        else {
+            digest_window(*f.e, f.e->rlp_len, BRANCH);
+            std::memcpy(f.ref + 1, f.e->h.bytes, KECCAK256_SIZE);
+        }
+        if (depth == 0) {
+            return true;
+        }
+        --depth;
+    }
 }
 
 bool OffsetTrie::keep_account_leaf(NodeId const leaf, NodeId const storage)
@@ -863,41 +995,7 @@ bool OffsetTrie::patch_ref(
                     if (len == 0) {
                         return false;
                     }
-                    MONAD_KECCAK_SITE(TRIE_ENCODE, len);
-#if defined(MONAD_ZKVM_KECCAKF_RESUME)
-                    // The bytes before the first dirty child's ref are the
-                    // ones the priming hash absorbed: every patch wrote only
-                    // at the refs of children dirty then, and `dirty` never
-                    // clears, so at or after the first one dirty now -- and
-                    // a patch keeps each ref's length, so the list header
-                    // too. The digest resumes after the whole blocks there.
-                    uint64_t const dirty = e->dirty;
-                    if (tag == BRANCH && dirty != 0) {
-                        auto const *const head = reinterpret_cast<
-                            uint64_t const *>(e->rlp + len - MAX_NODE_RLP);
-                        size_t const unchanged =
-                            head[std::countr_zero(dirty)] -
-                            reinterpret_cast<uintptr_t>(e->rlp);
-                        // A branch's RLP is 532 bytes at most.
-                        size_t const blocks =
-                            unchanged >= 3 * KECCAK256_RATE   ? 3
-                            : unchanged >= 2 * KECCAK256_RATE ? 2
-                            : unchanged >= KECCAK256_RATE     ? 1
-                                                              : 0;
-                        if (blocks != 0) {
-                            monad_zkvm_keccak256_trie_resume(
-                                e->rlp,
-                                len,
-                                e->h.bytes,
-                                head[PRIME_MARK_WORD],
-                                blocks);
-                            e->stale = 0;
-                            return true;
-                        }
-                    }
-#endif
-                    TRIE_PATCH_DIGEST(e->rlp, len, e->h.bytes);
-                    e->stale = 0;
+                    digest_window(*e, len, tag);
                     return true;
                 };
                 if (e->stale == 0 || patched()) {

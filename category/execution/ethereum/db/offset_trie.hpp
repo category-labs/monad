@@ -1137,7 +1137,9 @@ private:
         NodeId id, NodeViewBase node, unsigned char (&buf)[MAX_NODE_RLP]);
 #if defined(MONAD_ZKVM_ZISK)
     size_t patch_rlp(CachedHash const &e, NodeViewBase node);
+    bool patch_chain(NodeId child, unsigned char *ref, size_t ref_len);
     bool patch_ref(NodeId child, unsigned char *ref, size_t ref_len);
+    static void digest_window(CachedHash &e, size_t len, Tag tag);
 #endif
 
     template <bool priming_pass>

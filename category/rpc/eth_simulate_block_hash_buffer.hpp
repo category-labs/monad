@@ -42,7 +42,7 @@ class EthSimulateBlockHashBuffer : public LazyBlockHash
 
 public:
     EthSimulateBlockHashBuffer(
-        mpt::RODb const &db, uint64_t const n,
+        mpt::RODb const *db, uint64_t const n,
         std::optional<bytes32_t const> const &base_block_hash);
 
     ~EthSimulateBlockHashBuffer() override = default;

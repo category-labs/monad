@@ -130,8 +130,8 @@ namespace grow_test
         flags.recorded_size_of_grown_device = recorded;
         flags.metadata_budget =
             MONAD_ASYNC_NAMESPACE::storage_pool::db_metadata_budget{
-                .header_bytes = MONAD_MPT_NAMESPACE::detail::db_metadata::
-                    MONAD007_HEADER_BYTES,
+                .header_bytes =
+                    sizeof(MONAD_MPT_NAMESPACE::detail::db_metadata),
                 .bytes_per_chunk = sizeof(
                     MONAD_MPT_NAMESPACE::detail::db_metadata::chunk_info_t)};
         return flags;

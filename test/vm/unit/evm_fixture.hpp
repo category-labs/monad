@@ -168,7 +168,8 @@ namespace monad::vm::test
             std::span<std::uint8_t const> calldata = {},
             Implementation impl = Compiler) noexcept
         {
-            execute(gas_limit, std::span{code}, calldata, impl);
+            execute(
+                gas_limit, std::span<std::uint8_t const>{code}, calldata, impl);
         }
 
         void execute(
@@ -185,7 +186,7 @@ namespace monad::vm::test
             std::span<std::uint8_t const> calldata = {},
             Implementation impl = Compiler) noexcept
         {
-            execute(std::span{code}, calldata, impl);
+            execute(std::span<std::uint8_t const>{code}, calldata, impl);
         }
 
         bool has_empty_state() const noexcept

@@ -46,7 +46,7 @@
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/core/monad_block.hpp>
 #include <category/execution/monad/core/rlp/monad_block_rlp.hpp>
-#include <category/execution/monad/db/commit_block_migration.hpp>
+#include <category/execution/monad/db/commit_block.hpp>
 #include <category/execution/monad/event/record_consensus_events.hpp>
 #include <category/execution/monad/reserve_balance.hpp>
 #include <category/execution/monad/validate_monad_block.hpp>
@@ -288,13 +288,6 @@ Result<BlockExecOutput> propose_block(
     block.header.parent_hash =
         to_bytes(keccak256(rlp::encode_block_header(db.read_eth_header())));
 
-    // EIP-7843: surface the Monad consensus round to execution via the EL
-    // header's slot_number (in-memory only for now; not RLP-encoded). It is
-    // read into evmc_tx_context.block_round by get_tx_context and system_call.
-    // NOTE: only this path populates slot_number; RPC/trace re-execution does
-    // not (see EXE-60).
-    block.header.slot_number = consensus_header.block_round;
-
     BlockExecOutput exec_output;
     BlockMetrics block_metrics;
 
@@ -327,16 +320,18 @@ Result<BlockExecOutput> propose_block(
     // Allow overriding the state deltas for testing purposes:
     runloop_override.preprocess_state_deltas(&state);
 
-    BlockCommitAncillaries const anc{
-        .code = code,
-        .receipts = results,
-        .transactions = block.transactions,
-        .senders = senders,
-        .call_frames = call_frames,
-        .ommers = block.ommers,
-        .withdrawals = block.withdrawals};
     commit_block<traits>(
-        db, /*secondary_db=*/nullptr, block_id, block.header, *state, anc);
+        db,
+        block_id,
+        block.header,
+        *state,
+        code,
+        results,
+        call_frames,
+        senders,
+        block.transactions,
+        block.ommers,
+        block.withdrawals);
     [[maybe_unused]] auto const commit_time =
         std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - commit_begin);

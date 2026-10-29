@@ -67,31 +67,11 @@ namespace detail
     inline void
     db_copy(db_metadata *dest, db_metadata const *src, size_t bytes);
 
-    // In-place relocation of one metadata copy's fixed-header fields from the
-    // MONAD007 layout to MONAD008, rewriting the magic on success. chunk_count
-    // is the seq-chunk count (== chunk_info[] length). The caller is
-    // responsible for holding the copy's hold_dirty, healing dirty copies from
-    // a clean sibling beforehand, and flushing afterward. Exposed for unit
-    // tests that exercise large chunk_count layouts the constructor cannot
-    // reach without an impractically large pool.
-    void migrate_monad007_to_monad008(db_metadata *m, uint32_t chunk_count);
-
     // For the memory map of the first conventional chunk
     struct db_metadata
     {
         static constexpr char const *MAGIC = "MONAD008";
         static constexpr unsigned MAGIC_STRING_LEN = 8;
-        // Previous magic supported via on-the-fly migration (see
-        // DbMetadataContext constructor).
-        static constexpr char const *PREVIOUS_MAGIC = "MONAD007";
-
-        // Fixed header of the MONAD007 layout, whose root_offsets_ring_t held
-        // 65536 slots. Still the largest of any format this code can read, so
-        // every pool must reserve it: migration relocates chunk_info[] in
-        // place rather than remapping. It is therefore also the header half of
-        // the budget storage_pool checks a device set against, which is why it
-        // is public rather than local to db_metadata_context.cpp.
-        static constexpr size_t MONAD007_HEADER_BYTES = 528512;
 
         friend class MONAD_MPT_NAMESPACE::DbMetadataContext;
         friend class MONAD_MPT_NAMESPACE::UpdateAux;
@@ -297,8 +277,9 @@ namespace detail
         // mid-device, so the device stops reporting its own former geometry
         // and this becomes the only record of it; monad-mpt --grow
         // refuses to take up an extended device without it. Carved from the
-        // padding below, which both a fresh pool and the MONAD007 migration
-        // zero, so the sentinel holds on every pool that already exists.
+        // padding below, which a fresh pool zeroes and which every pool
+        // upgraded from the MONAD007 layout had zeroed, so the sentinel holds
+        // on every pool that already exists.
         uint64_t recorded_device_size;
 
         // padding for adding future atomics without requiring DB reset.
@@ -693,7 +674,8 @@ namespace detail
     static_assert(sizeof(db_metadata) == 4480);
     static_assert(alignof(db_metadata) == 8);
     // recorded_device_size reads zero on a pool that predates it only
-    // while it stays inside the window the MONAD007 migration zeroes.
+    // while it stays inside the window the MONAD007 -> MONAD008 upgrade
+    // zeroed on every pool that already exists.
     static_assert(
         offsetof(db_metadata, recorded_device_size) >
         offsetof(db_metadata, secondary_timeline));

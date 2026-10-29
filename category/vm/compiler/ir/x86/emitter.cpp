@@ -1034,6 +1034,10 @@ namespace monad::vm::compiler::native
 
     void Emitter::add_jump_dest(byte_offset const d)
     {
+        if (MONAD_LIKELY(!debug_logger_.file())) {
+            jump_dests_.emplace(d, as_.newLabel());
+            return;
+        }
         char name[2 * sizeof(byte_offset) + 2];
         static_assert(sizeof(byte_offset) <= sizeof(long));
         auto const isize = snprintf(name, sizeof(name), "B%lx", d);
@@ -2426,6 +2430,14 @@ namespace monad::vm::compiler::native
         stack_.swap(stack_.top_index() - static_cast<int32_t>(swap_ix));
     }
 
+    // No discharge
+    void Emitter::exchange(uint8_t const n, uint8_t const m)
+    {
+        MONAD_ASSERT(n > 0);
+        MONAD_ASSERT(m > n);
+        stack_.exchange(stack_.top_index() - n, stack_.top_index() - m);
+    }
+
     // Discharge through `lt` overload
     void Emitter::lt()
     {
@@ -3246,6 +3258,13 @@ namespace monad::vm::compiler::native
     void Emitter::blobbasefee()
     {
         read_evmc_tx_context_word(offsetof(evmc_tx_context, blob_base_fee));
+    }
+
+    // No discharge
+    void Emitter::slotnum()
+    {
+        read_evmc_tx_context_uint64_to_word(
+            offsetof(evmc_tx_context, block_round));
     }
 
     // Discharge

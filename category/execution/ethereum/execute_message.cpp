@@ -25,11 +25,11 @@
 #include <category/execution/ethereum/create_contract_address.hpp>
 #include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/execute_message.hpp>
+#include <category/execution/ethereum/native_transfer_log.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/reserve_balance.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
-#include <category/vm/evm/monad/revision.h>
 #include <category/vm/evm/traits.hpp>
 
 #include <evmc/evmc.h>
@@ -62,7 +62,13 @@ namespace
         uint256_t const value = load_be<uint256_t>(msg.value);
         state.subtract_from_balance(msg.sender, value);
         state.add_to_balance(to, value);
-        host.emit_native_transfer_event(msg.sender, to, value);
+        emit_native_transfer_logs<traits>(
+            state,
+            host.get_call_tracer(),
+            msg.sender,
+            to,
+            value,
+            host.log_native_transfers_);
     }
 
 } // anonymous namespace
@@ -75,8 +81,7 @@ evmc::Result deploy_contract_code(
 
     MONAD_ASSERT(result.status_code == EVMC_SUCCESS);
 
-    // EIP-3541
-    if constexpr (traits::evm_rev() >= MONAD_ETH_LONDON) {
+    if constexpr (traits::eip_3541_active()) {
         if (result.output_size > 0 && result.output_data[0] == 0xef) {
             return evmc::Result{EVMC_CONTRACT_VALIDATION_FAILURE};
         }
@@ -125,7 +130,7 @@ pre_call(EvmcHost<traits> &host, evmc_message const &msg, State &state)
         }
     }
 
-    if constexpr (traits::evm_rev() < MONAD_ETH_PRAGUE) {
+    if constexpr (!traits::eip_7702_active()) {
         MONAD_ASSERT(
             msg.kind != EVMC_CALL ||
             Address{msg.recipient} == Address{msg.code_address});
@@ -191,22 +196,20 @@ evmc::Result execute_create_message(
     call_tracer.on_enter(msg);
 
     if (MONAD_UNLIKELY(!sender_has_balance(state, msg))) {
-        if constexpr (is_monad_trait_v<traits>) {
-            /**
-             * for Ethereum, at depth = 0, the sender always has sufficient
-             * balance here as the transaction would be invalid otherwise
-             *
-             * for Monad, at depth = 0, this is not necessarily the case because
-             * Monad has delayed execution with a reserve balance concept -
-             * therefore we must be sure to increment the sender nonce if the
-             * sender does not have sufficient balance
-             */
-            if constexpr (traits::monad_rev() >= MONAD_FIVE) {
-                if (!msg.depth) {
-                    uint64_t const nonce = state.get_nonce(msg.sender);
-                    MONAD_ASSERT(nonce != UINT64_MAX);
-                    state.set_nonce(msg.sender, nonce + 1);
-                }
+        /**
+         * for Ethereum, at depth = 0, the sender always has sufficient
+         * balance here as the transaction would be invalid otherwise
+         *
+         * for Monad, at depth = 0, this is not necessarily the case because
+         * Monad has delayed execution with a reserve balance concept -
+         * therefore we must be sure to increment the sender nonce if the
+         * sender does not have sufficient balance
+         */
+        if constexpr (traits::bumps_nonce_on_unfunded_create()) {
+            if (!msg.depth) {
+                uint64_t const nonce = state.get_nonce(msg.sender);
+                MONAD_ASSERT(nonce != UINT64_MAX);
+                state.set_nonce(msg.sender, nonce + 1);
             }
         }
         evmc::Result result{EVMC_INSUFFICIENT_BALANCE, msg.gas};
@@ -324,8 +327,8 @@ evmc::Result execute_call_message(
     }
 
     evmc::Result result;
-    if (auto maybe_result =
-            check_call_precompile<traits>(state, call_tracer, msg);
+    if (auto maybe_result = check_call_precompile<traits>(
+            state, call_tracer, msg, host->log_native_transfers_);
         maybe_result.has_value()) {
         result = std::move(maybe_result.value());
     }

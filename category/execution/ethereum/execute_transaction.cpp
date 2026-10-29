@@ -48,7 +48,7 @@
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
-#include <boost/fiber/future/promise.hpp>
+#include <boost/fiber/future/future.hpp>
 #include <boost/outcome/try.hpp>
 
 #include <algorithm>
@@ -74,7 +74,7 @@ constexpr void irrevocable_change(
     }
 
     uint256_t blob_gas = 0;
-    if constexpr (traits::evm_rev() >= MONAD_ETH_CANCUN) {
+    if constexpr (traits::eip_4844_active()) {
         blob_gas = (tx.type == TransactionType::eip4844)
                        ? calc_blob_fee(tx, excess_blob_gas, blob_schedule)
                        : 0;
@@ -251,14 +251,12 @@ evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
         header_.excess_blob_gas.value_or(0),
         chain_.get_blob_schedule(header_.timestamp));
 
-    // EIP-7702
     uint64_t auth_refund = 0u;
-    if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
+    if constexpr (traits::eip_7702_active()) {
         auth_refund = process_authorizations(state, host);
     }
 
-    // EIP-3651
-    if constexpr (traits::evm_rev() >= MONAD_ETH_SHANGHAI) {
+    if constexpr (traits::eip_3651_active()) {
         host.access_account(header_.beneficiary);
     }
 
@@ -276,8 +274,7 @@ evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
     auto msg_memory = state.vm().message_memory_ref();
     auto msg = to_message(msg_memory, state.vm().message_memory_capacity());
 
-    // EIP-7702
-    if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
+    if constexpr (traits::eip_7702_active()) {
         if (tx_.to.has_value()) {
             if (auto const delegate = vm::evm::resolve_delegation(
                     &host.get_interface(), host.to_context(), *tx_.to)) {
@@ -306,7 +303,7 @@ ExecuteTransaction<traits>::ExecuteTransaction(
     std::span<std::optional<Address> const> const authorities,
     BlockHeader const &header, BlockHashBuffer const &block_hash_buffer,
     BlockState &block_state, BlockMetrics &block_metrics,
-    boost::fibers::promise<void> &prev, CallTracerBase &call_tracer,
+    boost::fibers::future<void> &prev, CallTracerBase &call_tracer,
     trace::StateTracer &state_tracer, ChainContext<traits> const &chain_ctx,
     ExecutionEventRecorder *const exec_recorder, bool const trace_transfers)
     : ExecuteTransactionNoValidation<
@@ -390,8 +387,7 @@ Receipt ExecuteTransaction<traits>::execute_final(
 
     auto gas_used = tx_.gas_limit - gas_refund;
 
-    // EIP-7623
-    if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
+    if constexpr (traits::eip_7623_active()) {
         auto const floor_gas = floor_data_gas<traits>(tx_);
         if (gas_used < floor_gas) {
             auto const delta = floor_gas - gas_used;
@@ -447,7 +443,7 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
             chain_.get_chain_id(),
             chain_.get_blob_schedule(header_.timestamp));
         if (validation_result.has_error()) {
-            prev_.get_future().wait();
+            prev_.wait();
             return std::move(validation_result).as_failure();
         }
     }
@@ -465,7 +461,7 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
 
         {
             TRACE_TXN_EVENT(StartStall);
-            prev_.get_future().wait();
+            prev_.wait();
         }
 
         if (block_state_.can_merge(state)) {

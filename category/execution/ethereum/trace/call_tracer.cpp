@@ -19,6 +19,7 @@
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
+#include <category/core/monad_exception.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
@@ -34,8 +35,10 @@
 
 #include <quill/bundled/fmt/ranges.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <optional>
 #include <span>
 #include <stack>
@@ -56,7 +59,9 @@ namespace
         json = to_json(frames[pos]);
 
         while (pos + 1 < frames.size()) {
-            MONAD_ASSERT(json.contains("depth"));
+            MONAD_ASSERT_THROW(
+                json.contains("depth"),
+                "JSON object does not contain 'depth' key");
             if (frames[pos + 1].depth > json["depth"]) {
                 nlohmann::json j;
                 pos++;
@@ -91,19 +96,128 @@ std::span<CallFrame const> NoopCallTracer::get_call_frames() const
 }
 
 CallTracer::CallTracer(Transaction const &tx, std::vector<CallFrame> &frames)
-    : frames_(frames)
-    , tx_(tx)
+    : CallTracer(tx, frames, std::numeric_limits<size_t>::max())
 {
-    frames_.reserve(128);
+}
+
+CallTracer::CallFramesStack::CallFramesStack(std::vector<CallFrame> &frames)
+    : frames_(frames)
+{
     positions_.push(0);
+}
+
+void CallTracer::CallFramesStack::advance_position()
+{
+    MONAD_ASSERT_THROW(!positions_.empty(), "Positions stack is empty");
+    positions_.top()++;
+}
+
+CallFrame &CallTracer::CallFramesStack::top_frame()
+{
+    MONAD_ASSERT_THROW(!last_.empty(), "Last stack is empty");
+    return frames_.at(last_.top());
+}
+
+CallFrame &CallTracer::CallFramesStack::pop_frame()
+{
+    MONAD_ASSERT_THROW(!frames_.empty(), "Frames vector is empty");
+    MONAD_ASSERT_THROW(!last_.empty(), "Last stack is empty");
+    MONAD_ASSERT_THROW(!positions_.empty(), "Positions stack is empty");
+
+    auto &frame = frames_.at(last_.top());
+    last_.pop();
+    positions_.pop();
+    return frame;
+}
+
+CallFrame &CallTracer::CallFramesStack::push_frame(CallFrame &&frame)
+{
+    advance_position();
+    positions_.push(0);
+    frames_.emplace_back(std::move(frame));
+    last_.push(frames_.size() - 1);
+    return frames_.back();
+}
+
+CallFrame &
+CallTracer::CallFramesStack::push_selfdestruct_frame(CallFrame &&frame)
+{
+    // A selfdestruct requires an active frame on the stack.
+    MONAD_ASSERT_THROW(!last_.empty(), "Last stack is empty");
+    advance_position();
+    frames_.emplace_back(std::move(frame));
+    return frames_.back();
+}
+
+bool CallTracer::CallFramesStack::has_active_frame() const
+{
+    return !last_.empty();
+}
+
+size_t CallTracer::CallFramesStack::position() const
+{
+    MONAD_ASSERT_THROW(!positions_.empty(), "Positions stack is empty");
+    return positions_.top();
+}
+
+void CallTracer::CallFramesStack::reset()
+{
+    last_ = std::stack<size_t>{};
+    positions_ = std::stack<size_t>{};
+    positions_.push(0);
+}
+
+CallTracer::BoundedSize::BoundedSize(size_t const max)
+    : max_(max)
+{
+}
+
+CallTracer::BoundedSize::operator bool() const noexcept
+{
+    return !exceeded_;
+}
+
+CallTracer::BoundedSize &
+CallTracer::BoundedSize::operator+=(size_t const additional_size) noexcept
+{
+    if (exceeded_) {
+        return *this;
+    }
+
+    if (additional_size > max_ - current_) {
+        exceeded_ = true;
+    }
+    else {
+        current_ += additional_size;
+    }
+
+    return *this;
+}
+
+void CallTracer::BoundedSize::reset() noexcept
+{
+    current_ = 0;
+    exceeded_ = false;
+}
+
+CallTracer::CallTracer(
+    Transaction const &tx, std::vector<CallFrame> &frames,
+    size_t const max_size)
+    : frames_(frames)
+    , frames_stack_(frames_)
+    , tx_(tx)
+    , size_(max_size)
+{
+    size_t const initial_capacity =
+        std::min<size_t>(128, max_size / sizeof(CallFrame));
+    frames_.reserve(initial_capacity);
 }
 
 void CallTracer::on_enter(evmc_message const &msg)
 {
-    MONAD_ASSERT(!positions_.empty());
-
-    positions_.top()++;
-    positions_.push(0);
+    if (!(size_ += sizeof(CallFrame)) || !(size_ += msg.input_size)) {
+        return;
+    }
 
     auto const depth = static_cast<uint64_t>(msg.depth);
 
@@ -121,7 +235,7 @@ void CallTracer::on_enter(evmc_message const &msg)
         to = msg.code_address;
     }
 
-    frames_.emplace_back(CallFrame{
+    frames_stack_.push_frame(CallFrame{
         .type =
             [kind = msg.kind] {
                 switch (kind) {
@@ -154,19 +268,23 @@ void CallTracer::on_enter(evmc_message const &msg)
         .depth = depth,
         .logs = std::vector<CallFrame::Log>{},
     });
-
-    last_.push(frames_.size() - 1);
 }
 
 void CallTracer::on_exit(evmc::Result const &res)
 {
-    MONAD_ASSERT(!frames_.empty());
-    MONAD_ASSERT(!last_.empty());
-    MONAD_ASSERT(!positions_.empty());
+    size_t const output_size =
+        res.status_code == EVMC_SUCCESS || res.status_code == EVMC_REVERT
+            ? res.output_size
+            : 0;
+    if (!(size_ += output_size)) {
+        return;
+    }
 
-    auto &frame = frames_.at(last_.top());
+    CallFrame &frame = frames_stack_.pop_frame();
 
-    MONAD_ASSERT(frame.gas >= static_cast<uint64_t>(res.gas_left));
+    MONAD_ASSERT_THROW(
+        frame.gas >= static_cast<uint64_t>(res.gas_left),
+        "Frame gas is less than remaining gas");
     frame.gas_used = frame.gas - static_cast<uint64_t>(res.gas_left);
 
     if (res.status_code == EVMC_SUCCESS || res.status_code == EVMC_REVERT) {
@@ -181,34 +299,37 @@ void CallTracer::on_exit(evmc::Result const &res)
                        ? std::nullopt
                        : std::optional{res.create_address};
     }
-
-    last_.pop();
-    positions_.pop();
 }
 
 void CallTracer::on_log(Receipt::Log log)
 {
-    MONAD_ASSERT(!frames_.empty());
-    MONAD_ASSERT(!last_.empty());
-    MONAD_ASSERT(!positions_.empty());
+    if (!(size_ += sizeof(CallFrame::Log)) || !(size_ += log.data.size())) {
+        return;
+    }
+    for (auto const &topic : log.topics) {
+        if (!(size_ += sizeof(topic))) {
+            return;
+        }
+    }
 
-    auto &frame = frames_.at(last_.top());
-    MONAD_ASSERT(frame.logs.has_value());
+    auto &frame = frames_stack_.top_frame();
+    MONAD_ASSERT_THROW(
+        frame.logs.has_value(), "Frame logs are not initialized");
 
-    frame.logs->emplace_back(std::move(log), positions_.top());
+    frame.logs->emplace_back(std::move(log), frames_stack_.position());
 }
 
 void CallTracer::on_self_destruct(
     Address const &from, Address const &to,
     uint256_t const &transferred_balance)
 {
-    MONAD_ASSERT(!last_.empty());
-    MONAD_ASSERT(!positions_.empty());
-    positions_.top()++;
+    if (!(size_ += sizeof(CallFrame))) {
+        return;
+    }
 
-    auto const &parent = frames_.at(last_.top());
+    auto &parent = frames_stack_.top_frame();
 
-    frames_.emplace_back(CallFrame{
+    frames_stack_.push_selfdestruct_frame(CallFrame{
         .type = CallType::SELFDESTRUCT,
         .flags = 0,
         .from = from,
@@ -226,18 +347,22 @@ void CallTracer::on_self_destruct(
 
 void CallTracer::on_finish(uint64_t const gas_used)
 {
-    MONAD_ASSERT(!frames_.empty());
-    MONAD_ASSERT(last_.empty());
+    if (!size_) {
+        return;
+    }
+
+    MONAD_ASSERT_THROW(!frames_.empty(), "Frames vector is empty");
+    MONAD_ASSERT_THROW(
+        !frames_stack_.has_active_frame(),
+        "There is an active frame on the stack");
     frames_.front().gas_used = gas_used;
 }
 
 void CallTracer::reset()
 {
     frames_.clear();
-    last_ = std::stack<size_t>{};
-
-    positions_ = std::stack<size_t>{};
-    positions_.push(0);
+    frames_stack_.reset();
+    size_.reset();
 }
 
 std::span<CallFrame const> CallTracer::get_call_frames() const
@@ -245,19 +370,27 @@ std::span<CallFrame const> CallTracer::get_call_frames() const
     return frames_;
 }
 
+void CallTracer::check_size_limit() const
+{
+    MONAD_ASSERT_THROW(
+        static_cast<bool>(size_),
+        "call trace size exceeds maximum allowed size");
+}
+
 nlohmann::json CallTracer::to_json() const
 {
-    MONAD_ASSERT(!frames_.empty());
-    MONAD_ASSERT(frames_[0].depth == 0);
-
-    size_t pos = 0;
-
+    check_size_limit();
     nlohmann::json res{};
     auto const hash = keccak256(rlp::encode_transaction(tx_));
     auto const key = fmt::format(
         "0x{:02x}", fmt::join(std::as_bytes(std::span(hash.bytes)), ""));
     nlohmann::json value{};
+
+    MONAD_ASSERT_THROW(!frames_.empty(), "Frames vector is empty");
+    MONAD_ASSERT_THROW(frames_[0].depth == 0, "First frame depth is not zero");
+    size_t pos = 0;
     to_json_helper(frames_, value, pos);
+
     res[key] = value;
 
     return res;

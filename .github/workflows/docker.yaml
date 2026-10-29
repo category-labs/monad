@@ -22,9 +22,10 @@ jobs:
         compiler: [{CXX: g++-15, CC: gcc-15}, {CXX: clang++-19, CC: clang-19}]
 
     runs-on: ubuntu-26.04-32
+    timeout-minutes: 90
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Reserve hugepages
         run: |
@@ -45,4 +46,6 @@ jobs:
             CMAKE_BUILD_TYPE=${{ matrix.CMAKE_BUILD_TYPE }}
             TOOLCHAIN=gcc-avx2
           allow: security.insecure # for tests which use io_uring
-          cache-from: type=gha,scope=base
+          cache-from: |
+            type=gha,scope=base
+            type=gha,scope=test_fixtures

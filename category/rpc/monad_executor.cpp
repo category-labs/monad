@@ -82,6 +82,7 @@
 #include <boost/outcome/try.hpp>
 #include <boost/scope_exit.hpp>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -390,16 +391,6 @@ namespace
         std::span<std::vector<std::optional<Address>> const> const
             authorities_view{authorities.data(), transactions_size};
 
-        // TODO(EXE-60): this re-execution path (and the sibling eth_call /
-        // eth_simulate paths in this file) receives a BlockHeader whose
-        // slot_number is unset (it is in-memory only, not RLP-encoded), so
-        // once SLOTNUM (EIP-7843) is wired the round read via
-        // evmc_tx_context.block_round would be 0. On this historical-trace
-        // path that diverges from how the block actually executed; the
-        // eth_call/eth_simulate paths run against synthetic headers where a 0
-        // round may be acceptable. Repopulate slot_number from the persisted
-        // MonadConsensusBlockHeader::block_round where a real round exists, per
-        // EXE-60.
         // Execute block header
         execute_block_header<traits>(
             block_state, header, /*exec_recorder=*/nullptr);
@@ -775,6 +766,104 @@ namespace
         return carried_size;
     }
 
+    // Executes one simulated block under the fork rules active at its
+    // header. Fork-dependent header fields are populated here.
+    template <Traits traits>
+    Result<std::vector<Receipt>> eth_simulate_execute_block(
+        Chain const &chain, BlockHeader const &parent, Block &block,
+        std::vector<Address> const &senders,
+        std::vector<std::vector<std::optional<Address>>> const &authorities,
+        BlockState &block_state, BlockHashBuffer const &block_hash_buffer,
+        fiber::FiberGroup &tx_exec_pool,
+        std::vector<std::unique_ptr<CallTracerBase>> &call_tracers,
+        std::vector<std::unique_ptr<trace::StateTracer>> &state_tracers,
+        ChainContextBuffer &context_buffer,
+        bool const emit_native_transfer_logs)
+    {
+        if constexpr (traits::eip_7843_active()) {
+            block.header.requests_hash = bytes32_t{};
+            block.header.block_access_list_hash = bytes32_t{};
+            block.header.slot_number = parent.slot_number.has_value()
+                                           ? parent.slot_number.value() + 1
+                                           : 0;
+        }
+
+        auto block_metrics = BlockMetrics{};
+        trace::StateTracer system_call_state_tracer{std::monostate{}};
+        auto const chain_context =
+            context_buffer.advance<traits>(senders, authorities);
+
+        return execute_block<traits>(
+            chain,
+            block,
+            senders,
+            authorities,
+            block_state,
+            block_hash_buffer,
+            tx_exec_pool,
+            block_metrics,
+            call_tracers,
+            state_tracers,
+            system_call_state_tracer,
+            chain_context,
+            /*exec_recorder=*/nullptr,
+            emit_native_transfer_logs);
+    }
+
+    template <Traits base_traits>
+    Result<std::vector<Receipt>> eth_simulate_dispatch_block(
+        Chain const &chain, BlockHeader const &parent, Block &block,
+        std::vector<Address> const &senders,
+        std::vector<std::vector<std::optional<Address>>> const &authorities,
+        BlockState &block_state, BlockHashBuffer const &block_hash_buffer,
+        fiber::FiberGroup &tx_exec_pool,
+        std::vector<std::unique_ptr<CallTracerBase>> &call_tracers,
+        std::vector<std::unique_ptr<trace::StateTracer>> &state_tracers,
+        ChainContextBuffer &context_buffer,
+        bool const emit_native_transfer_logs)
+    {
+        if constexpr (is_monad_trait_v<base_traits>) {
+            auto const *const monad_chain =
+                dynamic_cast<MonadChain const *>(&chain);
+            MONAD_ASSERT(monad_chain);
+            auto const rev =
+                monad_chain->get_monad_revision(block.header.timestamp);
+            SWITCH_MONAD_TRAITS(
+                eth_simulate_execute_block,
+                chain,
+                parent,
+                block,
+                senders,
+                authorities,
+                block_state,
+                block_hash_buffer,
+                tx_exec_pool,
+                call_tracers,
+                state_tracers,
+                context_buffer,
+                emit_native_transfer_logs);
+        }
+        else {
+            monad_eth_revision const rev =
+                chain.get_revision(block.header.number, block.header.timestamp);
+            SWITCH_EVM_TRAITS(
+                eth_simulate_execute_block,
+                chain,
+                parent,
+                block,
+                senders,
+                authorities,
+                block_state,
+                block_hash_buffer,
+                tx_exec_pool,
+                call_tracers,
+                state_tracers,
+                context_buffer,
+                emit_native_transfer_logs);
+        }
+        MONAD_ASSERT(false);
+    }
+
     template <Traits traits>
     Result<nlohmann::json> eth_simulate_impl(
         Chain const &chain, std::vector<std::vector<Transaction>> calls,
@@ -829,7 +918,7 @@ namespace
         tdb.set_block_and_prefix(base_block_number, block_id);
 
         // Initialize the chain context buffer.
-        auto context_buffer = ChainContextBuffer<traits>{};
+        auto context_buffer = ChainContextBuffer{};
         // Load grandparent context if available.
         if (MONAD_LIKELY(base_block_number > 0)) {
             auto const grandparent_transactions = monad::get_transactions(
@@ -841,7 +930,7 @@ namespace
             auto const &[grandparent_senders, grandparent_authorities] =
                 recover_senders_and_authorities(
                     grandparent_transactions.assume_value());
-            context_buffer.advance(
+            context_buffer.advance<traits>(
                 grandparent_senders, grandparent_authorities);
         }
         // Load parent context.
@@ -856,7 +945,7 @@ namespace
             auto const &[parent_senders, parent_authorities] =
                 recover_senders_and_authorities(
                     parent_transactions.assume_value());
-            context_buffer.advance(parent_senders, parent_authorities);
+            context_buffer.advance<traits>(parent_senders, parent_authorities);
 
             // If the base block is in-flight then we compute a mock block hash
             // using the header and the loaded transactions.
@@ -893,56 +982,51 @@ namespace
                 bo.number.value_or(header.number + 1) - header.number;
             // No-op for gap == 1.
             for (size_t i = 1; i < gap; ++i) {
-                BlockHeader const synthetic_header{
-                    .parent_hash = block_hash_buffer.get(header.number),
-                    .number = header.number + 1,
-                    // NOTE(dhil): Synthetic blocks carry forward the previous
-                    // gas limit.
-                    .gas_limit = header.gas_limit,
-                    // TODO(dhil): Better Monad timestamp simulation (e.g. pack
-                    // multiple blocks into the same timestamp).
-                    .timestamp = header.timestamp + DEFAULT_TIMESTAMP_INCREMENT,
-                    // NOTE(dhil): Synthetic blocks carry forward the block
-                    // beneficiary.
-                    .beneficiary = header.beneficiary,
-                    // TODO(dhil): The simulation does not compute roots at this
-                    // time.
-                    .parent_beacon_block_root = bytes32_t{},
-                };
-                Block const synthetic_block{
-                    .header = synthetic_header,
+                Block synthetic_block{
+                    .header =
+                        BlockHeader{
+                            .parent_hash = block_hash_buffer.get(header.number),
+                            .number = header.number + 1,
+                            // NOTE(dhil): Synthetic blocks carry forward the
+                            // previous gas limit.
+                            .gas_limit = header.gas_limit,
+                            // TODO(dhil): Better Monad timestamp simulation
+                            // (e.g. pack multiple blocks into the same
+                            // timestamp).
+                            .timestamp =
+                                header.timestamp + DEFAULT_TIMESTAMP_INCREMENT,
+                            // NOTE(dhil): Synthetic blocks carry forward the
+                            // block beneficiary.
+                            .beneficiary = header.beneficiary,
+                            // TODO(dhil): The simulation does not compute roots
+                            // at this time.
+                            .parent_beacon_block_root = bytes32_t{},
+                        },
                 };
 
-                auto block_metrics = BlockMetrics{};
                 auto call_tracers =
                     std::vector<std::unique_ptr<CallTracerBase>>{};
                 auto state_tracers =
                     std::vector<std::unique_ptr<trace::StateTracer>>{};
-                trace::StateTracer system_call_state_tracer{std::monostate{}};
 
-                static std::vector<Address> empty_senders{};
-                static std::vector<std::vector<std::optional<Address>>>
+                static std::vector<Address> const empty_senders{};
+                static std::vector<std::vector<std::optional<Address>>> const
                     empty_authorities{};
-
-                auto const chain_context =
-                    context_buffer.advance(empty_senders, empty_authorities);
 
                 BOOST_OUTCOME_TRY(
                     auto const receipts,
-                    execute_block<traits>(
+                    eth_simulate_dispatch_block<traits>(
                         chain,
+                        header,
                         synthetic_block,
                         empty_senders,
                         empty_authorities,
                         block_state,
                         block_hash_buffer,
                         tx_exec_pool,
-                        block_metrics,
                         call_tracers,
                         state_tracers,
-                        system_call_state_tracer,
-                        chain_context,
-                        /*exec_recorder=*/nullptr,
+                        context_buffer,
                         emit_native_transfer_logs));
 
                 // NOTE(dhil): Synthetic blocks are free, so we don't update
@@ -1028,7 +1112,6 @@ namespace
                 }
             }
 
-            auto block_metrics = BlockMetrics{};
             auto call_frames = std::vector<std::vector<CallFrame>>{};
             call_frames.reserve(calls[block_idx].size());
             auto call_tracers = std::vector<std::unique_ptr<CallTracerBase>>{};
@@ -1036,18 +1119,21 @@ namespace
             auto state_tracers =
                 std::vector<std::unique_ptr<trace::StateTracer>>{};
             state_tracers.reserve(calls[block_idx].size());
-            trace::StateTracer system_call_state_tracer{std::monostate{}};
+
+            size_t const remaining_size =
+                max_size > carried_size ? max_size - carried_size : 0;
+            size_t const call_tracer_max_size = std::max<size_t>(
+                1UL, // 1 byte minimum.
+                remaining_size /
+                    std::max<size_t>(1UL, calls[block_idx].size()));
 
             for (Transaction const &tx : calls[block_idx]) {
                 call_frames.emplace_back();
-                call_tracers.emplace_back(
-                    std::make_unique<CallTracer>(tx, call_frames.back()));
+                call_tracers.emplace_back(std::make_unique<CallTracer>(
+                    tx, call_frames.back(), call_tracer_max_size));
                 state_tracers.emplace_back(
                     std::make_unique<trace::StateTracer>());
             }
-
-            auto const chain_context = context_buffer.advance(
-                senders[block_idx], authorities[block_idx]);
 
             auto block = Block{
                 .header = current_header,
@@ -1058,21 +1144,27 @@ namespace
 
             BOOST_OUTCOME_TRY(
                 auto const receipts,
-                execute_block<traits>(
+                eth_simulate_dispatch_block<traits>(
                     chain,
+                    header,
                     block,
                     senders[block_idx],
                     authorities[block_idx],
                     block_state,
                     block_hash_buffer,
                     tx_exec_pool,
-                    block_metrics,
                     call_tracers,
                     state_tracers,
-                    system_call_state_tracer,
-                    chain_context,
-                    /*exec_recorder=*/nullptr,
+                    context_buffer,
                     emit_native_transfer_logs));
+
+            for (auto const &call_tracer : call_tracers) {
+                static_cast<CallTracer const &>(*call_tracer)
+                    .check_size_limit();
+            }
+
+            // The next block derives its defaults from the executed header.
+            BlockHeader const executed_header = block.header;
 
             // Receipts have cumulative gas_used (YP eq. 22), so
             // the last receipt's value is the total for the block.
@@ -1128,7 +1220,7 @@ namespace
                     soft_max_size,
                     result));
 
-            header = current_header;
+            header = executed_header;
         }
 
         return result;
@@ -1369,7 +1461,8 @@ struct monad_executor
         uint64_t const block_number, bytes32_t const &block_id,
         monad_state_override const *const overrides,
         void (*complete)(monad_executor_result *, void *user), void *const user,
-        monad_tracer_config const tracer_config, bool const gas_specified)
+        monad_tracer_config const tracer_config,
+        size_t const call_tracer_max_size, bool const gas_specified)
     {
         monad_executor_result *const result = new monad_executor_result();
 
@@ -1389,6 +1482,7 @@ struct monad_executor
             complete,
             user,
             tracer_config,
+            call_tracer_max_size,
             gas_specified,
             std::chrono::steady_clock::now(),
             call_seq_no_.fetch_add(1, std::memory_order_relaxed),
@@ -1402,7 +1496,8 @@ struct monad_executor
         uint64_t const block_number, bytes32_t const &block_id,
         monad_state_override const *const overrides,
         void (*complete)(monad_executor_result *, void *user), void *const user,
-        monad_tracer_config const tracer_config, bool const gas_specified,
+        monad_tracer_config const tracer_config,
+        size_t const call_tracer_max_size, bool const gas_specified,
         std::chrono::steady_clock::time_point const call_begin,
         uint64_t const eth_call_seq_no, monad_executor_result *const result,
         Pool &active_pool)
@@ -1431,6 +1526,7 @@ struct monad_executor
              complete = complete,
              user = user,
              state_overrides = overrides,
+             call_tracer_max_size = call_tracer_max_size,
              tracer_config = tracer_config,
              gas_specified = gas_specified,
              active_pool = &active_pool] {
@@ -1482,8 +1578,11 @@ struct monad_executor
                     nlohmann::json state_trace;
                     std::unique_ptr<CallTracerBase> call_tracer =
                         tracer_config == CALL_TRACER
-                            ? std::unique_ptr<CallTracerBase>{std::make_unique<
-                                  CallTracer>(transaction, call_frames)}
+                            ? std::unique_ptr<
+                                  CallTracerBase>{std::make_unique<CallTracer>(
+                                  transaction,
+                                  call_frames,
+                                  call_tracer_max_size)}
                             : std::unique_ptr<CallTracerBase>{
                                   std::make_unique<NoopCallTracer>()};
                     auto state_tracer = [&]() -> trace::StateTracer {
@@ -1571,6 +1670,7 @@ struct monad_executor
                             complete,
                             user,
                             tracer_config,
+                            call_tracer_max_size,
                             call_begin,
                             eth_call_seq_no,
                             result);
@@ -1582,6 +1682,10 @@ struct monad_executor
                         MONAD_ASSERT(result->message);
                         complete(result, user);
                         return;
+                    }
+                    if (tracer_config == CALL_TRACER) {
+                        static_cast<CallTracer const &>(*call_tracer)
+                            .check_size_limit();
                     }
                     call_complete(
                         transaction,
@@ -1665,6 +1769,7 @@ struct monad_executor
         monad_state_override const *const overrides,
         void (*complete)(monad_executor_result *, void *user), void *const user,
         monad_tracer_config const tracer_config,
+        size_t const call_tracer_max_size,
         std::chrono::steady_clock::time_point const call_begin,
         auto const eth_call_seq_no, monad_executor_result *const result)
     {
@@ -1684,6 +1789,7 @@ struct monad_executor
             complete,
             user,
             tracer_config,
+            call_tracer_max_size,
             false /* gas_specified */,
             call_begin,
             eth_call_seq_no,
@@ -2140,7 +2246,7 @@ void monad_executor_eth_call_submit(
     size_t const rlp_block_id_len, monad_state_override const *const overrides,
     void (*complete)(monad_executor_result *result, void *user),
     void *const user, monad_tracer_config const tracer_config,
-    bool const gas_specified)
+    size_t const call_tracer_max_size, bool const gas_specified)
 {
     MONAD_ASSERT(executor);
 
@@ -2182,6 +2288,7 @@ void monad_executor_eth_call_submit(
         complete,
         user,
         tracer_config,
+        call_tracer_max_size,
         gas_specified);
 }
 

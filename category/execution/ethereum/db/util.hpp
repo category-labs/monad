@@ -83,6 +83,7 @@ struct MachineBase : public mpt::StateMachine
 
     virtual mpt::Compute &get_compute() const override;
     virtual void down(unsigned char nibble) override;
+    virtual void down(mpt::NibblesView path) override;
     virtual void up(size_t n) override;
     virtual bool is_variable_length() const override;
     constexpr uint8_t prefix_len() const;
@@ -206,7 +207,8 @@ storage_page_t
 decode_storage_leaf_to_page(byte_string_view encoded, bool page_encoded);
 
 // Decode a page-encoded storage leaf (an encode_storage_page_db value) into its
-// page key and page; fails on a malformed leaf (including trailing bytes).
+// page key and page; fails on a malformed leaf (including trailing bytes) and
+// on a page key that compute_page_key cannot produce.
 Result<DecodedStoragePage> decode_storage_page_leaf(byte_string_view leaf);
 
 struct AccountLeafProcessor

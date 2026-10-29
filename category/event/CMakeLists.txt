@@ -41,6 +41,7 @@ target_sources(monad_event PUBLIC
   BASE_DIRS ".."
   FILES
   "../core/assert.h"
+  "../core/bytes32.h"
   "../core/cleanup.h"
   "../core/format_err.h"
   "../core/likely.h"

@@ -336,7 +336,7 @@ namespace
 
                 NoopCallTracer call_tracer{};
                 evmc::Result const result =
-                    check_call_precompile<traits>(s, call_tracer, input)
+                    check_call_precompile<traits>(s, call_tracer, input, false)
                         .value();
 
                 if (auto const *expected_value =
@@ -401,8 +401,7 @@ namespace
 TYPED_TEST(TraitsTest, ecrecover)
 {
     if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-        if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
-            // MONAD_SEVEN doubles the price of ecrecover
+        if constexpr (TestFixture::Trait::monad_pricing_version() >= 1) {
             auto const tests = transform_test_cases(
                 ECRECOVER_TEST_CASES, [](auto &test) { test.gas *= 2; });
             return do_geth_tests<typename TestFixture::Trait>(
@@ -436,15 +435,13 @@ TYPED_TEST(TraitsTest, modular_exponentiation)
 {
     static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_BERLIN);
 
-    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_OSAKA) {
-        // EIP-2565 repricing since Berlin
-        do_geth_tests<typename TestFixture::Trait>(
-            "Modular Exponentiation", "modexp_eip2565.json", 0x05_address);
-    }
-    else {
-        // EIP-7883 repricing since Osaka
+    if constexpr (TestFixture::Trait::eip_7883_active()) {
         do_geth_tests<typename TestFixture::Trait>(
             "Modular Exponentiation", "modexp_eip7883.json", 0x05_address);
+    }
+    else {
+        do_geth_tests<typename TestFixture::Trait>(
+            "Modular Exponentiation", "modexp_eip2565.json", 0x05_address);
     }
 }
 
@@ -456,8 +453,7 @@ TYPED_TEST(TraitsTest, bn_add)
         load_test_cases(test_resource::geth_vectors_dir / "bn256Add.json");
 
     if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-        if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
-            // MONAD_SEVEN doubles the price of bn_add
+        if constexpr (TestFixture::Trait::monad_pricing_version() >= 1) {
             tests =
                 transform_test_cases(tests, [](auto &test) { test.gas *= 2; });
         }
@@ -474,8 +470,7 @@ TYPED_TEST(TraitsTest, bn_mul)
         test_resource::geth_vectors_dir / "bn256ScalarMul.json");
 
     if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-        if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
-            // MONAD_SEVEN increases the price of bn_mul by 5x
+        if constexpr (TestFixture::Trait::monad_pricing_version() >= 1) {
             tests =
                 transform_test_cases(tests, [](auto &test) { test.gas *= 5; });
         }
@@ -492,8 +487,7 @@ TYPED_TEST(TraitsTest, bn_pairing)
         load_test_cases(test_resource::geth_vectors_dir / "bn256Pairing.json");
 
     if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-        if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
-            // MONAD_SEVEN increases the price of bn_pairing by 5x
+        if constexpr (TestFixture::Trait::monad_pricing_version() >= 1) {
             tests =
                 transform_test_cases(tests, [](auto &test) { test.gas *= 5; });
         }
@@ -512,8 +506,7 @@ TYPED_TEST(TraitsTest, blake2f)
             load_test_cases(test_resource::geth_vectors_dir / json);
 
         if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
-                // MONAD_SEVEN doubles the price of blake2F
+            if constexpr (TestFixture::Trait::monad_pricing_version() >= 1) {
                 tests = transform_test_cases(tests, [](auto &test) {
                     if (test.gas != std::numeric_limits<int64_t>::max()) {
                         test.gas *= 2;
@@ -536,15 +529,14 @@ TYPED_TEST(TraitsTest, blake2f)
 
 TYPED_TEST(TraitsTest, point_evaluation)
 {
-    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_CANCUN) {
+    if constexpr (!TestFixture::Trait::eip_4844_precompile_active()) {
         EXPECT_FALSE(is_precompile<typename TestFixture::Trait>(0x0a_address));
     }
     else {
         ASSERT_TRUE(init_trusted_setup());
 
         if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
-                // In MONAD_SEVEN point_evaluation cost is increased by 4x
+            if constexpr (TestFixture::Trait::monad_pricing_version() >= 1) {
                 auto const tests = transform_test_cases(
                     POINT_EVALUATION_CASES, [](auto &test) { test.gas *= 4; });
                 return do_geth_tests<typename TestFixture::Trait>(
@@ -559,7 +551,7 @@ TYPED_TEST(TraitsTest, point_evaluation)
 
 TYPED_TEST(TraitsTest, blsg1add)
 {
-    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_PRAGUE) {
+    if constexpr (!TestFixture::Trait::eip_2537_active()) {
         EXPECT_FALSE(is_precompile<typename TestFixture::Trait>(0x0b_address));
     }
     else {
@@ -573,7 +565,7 @@ TYPED_TEST(TraitsTest, blsg1add)
 
 TYPED_TEST(TraitsTest, blsg1mul)
 {
-    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_PRAGUE) {
+    if constexpr (!TestFixture::Trait::eip_2537_active()) {
         EXPECT_FALSE(is_precompile<typename TestFixture::Trait>(0x0c_address));
     }
     else {
@@ -593,7 +585,7 @@ TYPED_TEST(TraitsTest, blsg1mul)
 
 TYPED_TEST(TraitsTest, blsg2add)
 {
-    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_PRAGUE) {
+    if constexpr (!TestFixture::Trait::eip_2537_active()) {
         EXPECT_FALSE(is_precompile<typename TestFixture::Trait>(0x0d_address));
     }
     else {
@@ -606,7 +598,7 @@ TYPED_TEST(TraitsTest, blsg2add)
 
 TYPED_TEST(TraitsTest, blsg2mul)
 {
-    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_PRAGUE) {
+    if constexpr (!TestFixture::Trait::eip_2537_active()) {
         EXPECT_FALSE(is_precompile<typename TestFixture::Trait>(0x0e_address));
     }
     else {
@@ -623,7 +615,7 @@ TYPED_TEST(TraitsTest, blsg2mul)
 
 TYPED_TEST(TraitsTest, bls_pairing_check)
 {
-    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_PRAGUE) {
+    if constexpr (!TestFixture::Trait::eip_2537_active()) {
         EXPECT_FALSE(is_precompile<typename TestFixture::Trait>(0x0f_address));
     }
     else {
@@ -638,7 +630,7 @@ TYPED_TEST(TraitsTest, bls_pairing_check)
 
 TYPED_TEST(TraitsTest, bls_map_g1)
 {
-    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_PRAGUE) {
+    if constexpr (!TestFixture::Trait::eip_2537_active()) {
         EXPECT_FALSE(is_precompile<typename TestFixture::Trait>(0x10_address));
     }
     else {
@@ -651,7 +643,7 @@ TYPED_TEST(TraitsTest, bls_map_g1)
 
 TYPED_TEST(TraitsTest, bls_map_g2)
 {
-    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_PRAGUE) {
+    if constexpr (!TestFixture::Trait::eip_2537_active()) {
         EXPECT_FALSE(is_precompile<typename TestFixture::Trait>(0x11_address));
     }
     else {
@@ -687,7 +679,7 @@ TYPED_TEST(TraitsTest, modexp_truncated_input)
             : evmc_status_code::EVMC_OUT_OF_GAS;
 
     static constexpr auto min_gas = [] {
-        if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_OSAKA) {
+        if constexpr (TestFixture::Trait::eip_7883_active()) {
             return 500;
         }
         else {

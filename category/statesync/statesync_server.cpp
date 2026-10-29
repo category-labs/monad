@@ -32,6 +32,7 @@
 #include <category/statesync/statesync_messages.h>
 #include <category/statesync/statesync_server.h>
 #include <category/statesync/statesync_server_context.hpp>
+#include <category/statesync/statesync_version.h>
 
 #include <quill/std/Chrono.h>
 
@@ -206,11 +207,14 @@ bool statesync_server_handle_request(
         uint64_t until;
         uint64_t *num_upserts;
         uint64_t *upsert_bytes;
+        // peer speaks 1.3 or newer, so storage pages go out verbatim
+        bool emit_page_records;
 
         Traverse(
             monad_statesync_server *const sync, NibblesView const prefix,
             uint64_t const from, uint64_t const until,
-            uint64_t *const num_upserts, uint64_t *const upsert_bytes)
+            uint64_t *const num_upserts, uint64_t *const upsert_bytes,
+            bool const emit_page_records)
             : nibble{INVALID_BRANCH}
             , depth{0}
             , sync{sync}
@@ -219,6 +223,7 @@ bool statesync_server_handle_request(
             , until{until}
             , num_upserts{num_upserts}
             , upsert_bytes{upsert_bytes}
+            , emit_page_records{emit_page_records}
         {
         }
 
@@ -266,17 +271,15 @@ bool statesync_server_handle_request(
             }
 
             if (node.has_value() && v <= until) {
-                auto const send_upsert = [&](monad_sync_type const type) {
+                auto const send_upsert = [&](monad_sync_type const type,
+                                             unsigned char const *const v1 =
+                                                 nullptr,
+                                             uint64_t const size1 = 0) {
                     auto const value = node.value();
                     sync->statesync_server_send_upsert(
-                        sync->net,
-                        type,
-                        nullptr,
-                        0,
-                        value.data(),
-                        value.size());
+                        sync->net, type, v1, size1, value.data(), value.size());
                     ++(*num_upserts);
-                    *upsert_bytes += value.size();
+                    *upsert_bytes += size1 + value.size();
                 };
 
                 if (nibble == CODE_NIBBLE) {
@@ -290,25 +293,34 @@ bool statesync_server_handle_request(
                     }
                     else {
                         MONAD_ASSERT(depth == (HASH_SIZE * 2));
-                        // Storage leaves hold page-encoded pages. Expand each
-                        // into one slot-format upsert per non-zero slot so
-                        // the wire protocol stays slot-based.
-                        auto const decoded =
-                            decode_storage_page_leaf(node.value());
-                        MONAD_ASSERT(decoded.has_value());
-                        for (auto const [slot_key, slot_val] :
-                             decoded.value().slots()) {
-                            auto const entry =
-                                encode_storage_db(slot_key, slot_val);
-                            sync->statesync_server_send_upsert(
-                                sync->net,
-                                SYNC_TYPE_UPSERT_STORAGE,
+                        if (emit_page_records) {
+                            send_upsert(
+                                SYNC_TYPE_UPSERT_STORAGE_PAGE,
                                 reinterpret_cast<unsigned char const *>(&addr),
-                                sizeof(addr),
-                                entry.data(),
-                                entry.size());
-                            ++(*num_upserts);
-                            *upsert_bytes += sizeof(addr) + entry.size();
+                                sizeof(addr));
+                        }
+                        else {
+                            // A peer below 1.3 cannot decode page records:
+                            // expand the page into one slot-format upsert per
+                            // non-zero slot.
+                            auto const decoded =
+                                decode_storage_page_leaf(node.value());
+                            MONAD_ASSERT(decoded.has_value());
+                            for (auto const [slot_key, slot_val] :
+                                 decoded.value().slots()) {
+                                auto const entry =
+                                    encode_storage_db(slot_key, slot_val);
+                                sync->statesync_server_send_upsert(
+                                    sync->net,
+                                    SYNC_TYPE_UPSERT_STORAGE,
+                                    reinterpret_cast<unsigned char const *>(
+                                        &addr),
+                                    sizeof(addr),
+                                    entry.data(),
+                                    entry.size());
+                                ++(*num_upserts);
+                                *upsert_bytes += sizeof(addr) + entry.size();
+                            }
                         }
                     }
                 }
@@ -428,7 +440,8 @@ bool statesync_server_handle_request(
         rq.from,
         rq.until,
         &num_upserts,
-        &upsert_bytes);
+        &upsert_bytes,
+        rq.version >= MONAD_STATESYNC_VERSION_1_3);
     if (!db.traverse(finalized_root, traverse, rq.target)) {
         LOG_INFO(
             "Request failed: traverse failed for target={} prefix={} "

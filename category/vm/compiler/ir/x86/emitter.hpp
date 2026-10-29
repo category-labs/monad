@@ -313,6 +313,7 @@ namespace monad::vm::compiler::native
         void pop();
         void dup(uint8_t dup_index);
         void swap(uint8_t swap_index);
+        void exchange(uint8_t n, uint8_t m);
 
         void lt();
         void gt();
@@ -354,6 +355,7 @@ namespace monad::vm::compiler::native
         void chainid();
         void basefee();
         void blobbasefee();
+        void slotnum();
 
         void calldataload();
 

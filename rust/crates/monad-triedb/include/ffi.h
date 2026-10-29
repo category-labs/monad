@@ -15,16 +15,16 @@
 
 #pragma once
 
-#include <category/execution/ethereum/core/base_ctypes.h>
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#include <category/core/bytes32.h>
 
 #ifdef __cplusplus
 extern "C"
 {
 #endif
-
-#include <stdbool.h>
-#include <stddef.h>
-#include <stdint.h>
 
 typedef struct TriedbRoInner TriedbRoInner;
 
@@ -109,6 +109,24 @@ typedef struct triedb_update_stats
 // so it cannot double as the failure signal.
 bool triedb_update_stats_read(TriedbStatsReader *, triedb_update_stats *out);
 
+// The sidecar's thread slot count; `out` below must have room for this many.
+#define TRIEDB_THREAD_IDLE_MAX 32
+
+// Cumulative time one of the writing process's busy-polling threads spent
+// with nothing to do. They restart at zero when that process does.
+typedef struct triedb_thread_idle
+{
+    char name[16]; // NUL-terminated
+    uint64_t idle_ns; // CLOCK_MONOTONIC nanoseconds
+    uint64_t registered_at_ns; // CLOCK_MONOTONIC in the writing process
+} triedb_thread_idle;
+
+// Fills out[0, *count). False if the arguments are bad, the writer predates
+// these counters, the section is corrupt, or the writer kept republishing it
+// for the whole retry budget; `out` and `count` are then left untouched.
+bool triedb_thread_idle_stats_read(
+    TriedbStatsReader *, triedb_thread_idle *out, size_t *count);
+
 // Compute the storage page key for a 32-byte slot key on a page-encoded db:
 // page_key = slot >> 7. Writes the 32-byte big-endian page key (the key the
 // storage trie is looked up by) to out_page_key.
@@ -171,11 +189,11 @@ int triedb_finalize(uint8_t const *value);
 // returns MAX if doesn't exist
 uint64_t triedb_latest_proposed_version(TriedbRoInner *);
 // returns all-zeros if doesn't exist
-monad_c_bytes32 triedb_latest_proposed_block_id(TriedbRoInner *);
+monad_bytes32 triedb_latest_proposed_block_id(TriedbRoInner *);
 // returns MAX if doesn't exist
 uint64_t triedb_latest_voted_version(TriedbRoInner *);
 // returns all-zeros if doesn't exist
-monad_c_bytes32 triedb_latest_voted_block_id(TriedbRoInner *);
+monad_bytes32 triedb_latest_voted_block_id(TriedbRoInner *);
 // returns MAX if doesn't exist
 uint64_t triedb_latest_finalized_version(TriedbRoInner *);
 // returns MAX if doesn't exist

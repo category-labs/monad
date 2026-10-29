@@ -55,7 +55,7 @@ evmc::bytes32 EvmcHostBase::get_storage(
 {
     MONAD_TRY
     {
-        return state_.get_storage(address, key);
+        return to_evmc(state_.get_storage(address, key));
     }
     MONAD_CATCH(...)
     {
@@ -122,9 +122,9 @@ EvmcHostBase::get_code_hash(evmc::address const &address) const noexcept
     MONAD_TRY
     {
         if (state_.account_is_dead(address)) {
-            return bytes32_t{};
+            return evmc::bytes32{};
         }
-        return state_.get_code_hash(address);
+        return to_evmc(state_.get_code_hash(address));
     }
     MONAD_CATCH(...)
     {
@@ -175,12 +175,12 @@ EvmcHostBase::get_block_hash(int64_t const block_number) const noexcept
         if (bytes32_t const block_hash = get_block_hash_history(
                 state_, static_cast<uint64_t>(block_number));
             block_hash != bytes32_t{}) {
-            return block_hash;
+            return to_evmc(block_hash);
         }
         bytes32_t const block_hash =
             block_hash_buffer_.get(static_cast<uint64_t>(block_number));
         MONAD_ASSERT(block_hash != bytes32_t{});
-        return block_hash;
+        return to_evmc(block_hash);
     }
     MONAD_CATCH(...)
     {
@@ -216,7 +216,7 @@ evmc::bytes32 EvmcHostBase::get_transient_storage(
 {
     MONAD_TRY
     {
-        return state_.get_transient_storage(address, key);
+        return to_evmc(state_.get_transient_storage(address, key));
     }
     MONAD_CATCH(...)
     {

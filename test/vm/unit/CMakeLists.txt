@@ -26,6 +26,7 @@ target_sources(vm-unit-tests PRIVATE
     monad_vm_interface_tests.cpp
     monad_vm_memory_pool_tests.cpp
     mocked_host_tests.cpp
+    opcode_table_tests.cpp
     utils_tests.cpp
     uint256_tests.cpp
     uint128_tests.cpp
@@ -54,6 +55,7 @@ target_sources(vm-unit-tests PRIVATE
 
 if(MONAD_COMPILER_TESTING)
     target_sources(vm-unit-tests PRIVATE
+        eip8024_tests.cpp
         evm_fixture.hpp
         evm_tests.cpp
     )

@@ -49,7 +49,7 @@ MONAD_NAMESPACE_BEGIN
 template <Traits traits>
 void deploy_block_hash_history_contract(State &state)
 {
-    if constexpr (traits::evm_rev() < MONAD_ETH_PRAGUE) {
+    if constexpr (!traits::eip_2935_active()) {
         return;
     }
 
@@ -64,7 +64,8 @@ void deploy_block_hash_history_contract(State &state)
         state.set_nonce(BLOCK_HISTORY_ADDRESS, 1);
     }
 
-    // cleanup: overwrite bad code from MONAD_FOUR
+    // Monad-only workaround, not a feature: MONAD_FOUR deployed bad code and
+    // MONAD_SIX overwrites it, so this compares the revision directly.
     if constexpr (is_monad_trait_v<traits>) {
         if constexpr (traits::monad_rev() >= MONAD_SIX) {
             if (MONAD_UNLIKELY(
@@ -81,11 +82,10 @@ EXPLICIT_TRAITS(deploy_block_hash_history_contract);
 template <Traits traits>
 void set_block_hash_history(State &state, BlockHeader const &header)
 {
-    if constexpr (traits::evm_rev() < MONAD_ETH_PRAGUE) {
+    if constexpr (!traits::eip_2935_active()) {
         return;
     }
 
-    // before MONAD_SIX, nothing was being written.
     if constexpr (is_monad_trait_v<traits>) {
         if constexpr (traits::monad_rev() < MONAD_SIX) {
             return;

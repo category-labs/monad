@@ -475,6 +475,11 @@ namespace monad::vm::compiler::native
         void swap(int32_t swap_index);
 
         /**
+         * Swap the stack elements at the two specified indices.
+         */
+        void exchange(int32_t index_a, int32_t index_b);
+
+        /**
          * Clear deferred comparison and insert a stack offset to the
          * corresponding stack elements. Returns the old `DeferredComparison`
          * containing the stack elements.

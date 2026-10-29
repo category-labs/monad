@@ -109,7 +109,12 @@ TYPED_TEST(TraitsTest, Genesis)
 
         auto result =
             static_validate_header<typename TestFixture::Trait>(header);
-        if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_PRAGUE) {
+        if constexpr (TestFixture::Trait::eip_7843_active()) {
+            // EIP-7843 (Amsterdam) requires block_access_list_hash and
+            // slot_number in the header, predating this header
+            EXPECT_TRUE(result.has_error());
+        }
+        else if constexpr (TestFixture::Trait::eip_7685_header_active()) {
             EXPECT_TRUE(result.has_value());
         }
         else {
@@ -129,10 +134,10 @@ TYPED_TEST(TraitsTest, Genesis)
             to_bytes(keccak256(rlp::encode_block_header(header)));
         EXPECT_EQ(
             hash,
-            0xb711505d8f46fc921ae824f847f26c5c3657bf6c8b9dcf07ffdf3357a143bca9_bytes32);
+            0x1b92d942a27b0433f5b1b1d7b9e50a61c6e1a1a103f62a4d6693e5095b3e2b68_bytes32);
         auto result =
             static_validate_header<typename TestFixture::Trait>(header);
-        if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_LONDON) {
+        if constexpr (!TestFixture::Trait::eip_1559_header_active()) {
             EXPECT_TRUE(result.has_value());
         }
         else {
@@ -155,7 +160,9 @@ TYPED_TEST(TraitsTest, Genesis)
 
         auto result =
             static_validate_header<typename TestFixture::Trait>(header);
-        if constexpr (TestFixture::Trait::evm_rev() == MONAD_ETH_CANCUN) {
+        if constexpr (
+            TestFixture::Trait::eip_4844_header_active() &&
+            !TestFixture::Trait::eip_7685_header_active()) {
             EXPECT_TRUE(result.has_value());
         }
         else {
@@ -331,7 +338,7 @@ TYPED_TEST(
 TYPED_TEST(MonadTraitsTest, revert_transaction_no_dip_gas_fee_with_value_true)
 {
     constexpr auto should_revert = [] {
-        if (TestFixture::Trait::monad_rev() >= MONAD_FOUR) {
+        if (TestFixture::Trait::reserve_balance_active()) {
             return true;
         }
         else {
@@ -371,10 +378,9 @@ TYPED_TEST(MonadTraitsTest, revert_transaction_no_dip_gas_fee_with_value_false)
 
 TYPED_TEST(MonadTraitsTest, reserve_balance_checks_disabled_before_monad_four)
 {
-    if constexpr (TestFixture::Trait::monad_rev() < MONAD_FOUR) {
-        // For revisions before MONAD_FOUR, reserve-balance tracking must stay
-        // disabled. If it is accidentally enabled, this case hits
-        // sender_gas_fees > reserve for a non-dipping sender and throws.
+    if constexpr (!TestFixture::Trait::reserve_balance_active()) {
+        // If reserve-balance tracking were enabled here, this case would hit
+        // sender_gas_fees > reserve for a non-dipping sender and throw.
         run_revert_transaction_test<typename TestFixture::Trait>(
             (1 << IsDelegated), // not allowed to dip into reserve
             20, // initial balance (MON)
@@ -390,7 +396,7 @@ TYPED_TEST(
     sender_gas_fee_above_reserve_stays_failed_after_large_credit)
 {
     using traits = typename TestFixture::Trait;
-    if constexpr (traits::monad_rev() < MONAD_FOUR) {
+    if constexpr (!traits::reserve_balance_active()) {
         GTEST_SKIP() << "reserve-balance checks are disabled before MONAD_FOUR";
     }
 
@@ -461,7 +467,7 @@ TYPED_TEST(
 
 TYPED_TEST(MonadTraitsTest, staking_contract_balance_drop_does_not_revert)
 {
-    if constexpr (TestFixture::Trait::monad_rev() < MONAD_FOUR) {
+    if constexpr (!TestFixture::Trait::reserve_balance_active()) {
         GTEST_SKIP() << "reserve-balance checks are disabled before MONAD_FOUR";
     }
 
@@ -659,11 +665,11 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_code_hash)
         SENDER, tx, BASE_FEE_PER_GAS, 0, state, noop_state_tracer, context);
     bool const should_revert_cached = revert_transaction_cached<traits>(state);
 
-    if constexpr (traits::monad_rev() < MONAD_FOUR) {
+    if constexpr (!traits::reserve_balance_active()) {
         EXPECT_FALSE(should_revert);
         EXPECT_FALSE(should_revert_cached);
     }
-    else if constexpr (traits::monad_rev() >= MONAD_EIGHT) {
+    else if constexpr (traits::reserve_balance_uses_recent_code_hash()) {
         EXPECT_FALSE(should_revert);
         EXPECT_FALSE(should_revert_cached);
     }
@@ -730,7 +736,7 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_empty_code_hash)
         SENDER, tx, BASE_FEE_PER_GAS, 0, state, noop_state_tracer, context);
     bool const should_revert_cached = revert_transaction_cached<traits>(state);
 
-    if constexpr (traits::monad_rev() < MONAD_FOUR) {
+    if constexpr (!traits::reserve_balance_active()) {
         EXPECT_FALSE(should_revert);
         EXPECT_FALSE(should_revert_cached);
     }
@@ -807,11 +813,11 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_prefunded_init_selfdestruct)
         SENDER, tx, BASE_FEE_PER_GAS, 0, state, noop_state_tracer, context);
     bool const should_revert_cached = revert_transaction_cached<traits>(state);
 
-    if constexpr (traits::monad_rev() < MONAD_FOUR) {
+    if constexpr (!traits::reserve_balance_active()) {
         EXPECT_FALSE(should_revert);
         EXPECT_FALSE(should_revert_cached);
     }
-    else if constexpr (traits::monad_rev() >= MONAD_NINE) {
+    else if constexpr (traits::reserve_balance_skips_init_selfdestruct()) {
         EXPECT_FALSE(should_revert);
         EXPECT_FALSE(should_revert_cached);
     }
@@ -833,7 +839,7 @@ TYPED_TEST(MonadTraitsTest, system_transaction_sender_is_authority)
     trace::StateTracer noop_state_tracer = std::monostate{};
     auto const res = validate_transaction<typename TestFixture::Trait>(
         {}, {}, state, 0, authorities, noop_state_tracer);
-    if constexpr (TestFixture::Trait::monad_rev() < MONAD_FOUR) {
+    if constexpr (!TestFixture::Trait::staking_active()) {
         EXPECT_TRUE(res.has_value());
     }
     else {

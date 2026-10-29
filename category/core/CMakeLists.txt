@@ -13,8 +13,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-cmake_policy(SET CMP0144 NEW) # find_package uses upper-case _ROOT variables
-
 include(CheckCXXSourceCompiles)
 include(CheckCXXSourceRuns)
 include(CheckCXXSymbolExists)
@@ -117,6 +115,7 @@ add_library(
   "blake3.hpp"
   "byte_string.hpp"
   "bytes.hpp"
+  "bytes32.h"
   "bytes_hash_compare.hpp"
   "cases.hpp"
   "checked_math.cpp"
@@ -151,6 +150,8 @@ add_library(
   "small_prng.hpp"
   "spinlock.h"
   "srcloc.h"
+  "thread_idle.cpp"
+  "thread_idle.hpp"
   "thread_local.h"
   "throw.hpp"
   "tl_tid.c"
@@ -258,7 +259,6 @@ else()
   target_link_libraries(monad_core PRIVATE Boost::stacktrace_basic)
 endif()
 
-target_link_libraries(monad_core PUBLIC ankerl_hash)
 target_link_libraries(monad_core PUBLIC Boost::fiber TBB::tbb)
 target_link_libraries(monad_core PUBLIC CLI11::CLI11)
 target_link_libraries(monad_core PUBLIC komihash)
@@ -288,7 +288,8 @@ target_link_libraries(monad_core_disas PUBLIC monad_core)
 monad_add_test_folder("${CMAKE_CURRENT_SOURCE_DIR}"
   EXCLUDE "${CMAKE_CURRENT_SOURCE_DIR}/log_ffi_test.cpp"
           "${CMAKE_CURRENT_SOURCE_DIR}/event/event_recorder_test.cpp"
-          "${CMAKE_CURRENT_SOURCE_DIR}/fiber/priority_pool_test.cpp")
+          "${CMAKE_CURRENT_SOURCE_DIR}/fiber/priority_pool_test.cpp"
+          "${CMAKE_CURRENT_SOURCE_DIR}/fiber/fiber_thread_pool_idle_test.cpp")
 
 # log_ffi_test needs default gtest main — incompatible with monad test
 # environment which pre-initializes logging
@@ -296,5 +297,7 @@ monad_add_test(log_ffi_test NO_CUSTOM_MAIN log_ffi_test.cpp)
 monad_add_test(event_recorder_test event/event_recorder_test.cpp
   PROPERTIES RUN_SERIAL TRUE)
 monad_add_test(priority_pool_test fiber/priority_pool_test.cpp
+  PROPERTIES RUN_SERIAL TRUE)
+monad_add_test(fiber_thread_pool_idle_test fiber/fiber_thread_pool_idle_test.cpp
   PROPERTIES RUN_SERIAL TRUE)
 target_compile_definitions(event_reader_extra_test PRIVATE "TEST_DATA_DIR=\"${TEST_DATA_DIR}\"")

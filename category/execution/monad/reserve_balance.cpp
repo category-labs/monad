@@ -62,7 +62,7 @@ bool dipped_into_reserve(
     MONAD_ASSERT(ctx.senders.size() == ctx.authorities.size());
 
     static constexpr bool allow_init_selfdestruct_exemption =
-        traits::monad_rev() >= MONAD_NINE;
+        traits::reserve_balance_skips_init_selfdestruct();
 
     uint256_t const gas_fees =
         uint256_t{tx.gas_limit} * gas_price<traits>(tx, base_fee_per_gas);
@@ -71,7 +71,7 @@ bool dipped_into_reserve(
         MONAD_ASSERT(orig.contains(addr));
         bytes32_t const orig_code_hash = orig.at(addr).get_code_hash();
         bytes32_t const effective_code_hash =
-            (traits::monad_rev() >= MONAD_EIGHT)
+            traits::reserve_balance_uses_recent_code_hash()
                 ? cur_account.recent().get_code_hash()
                 : orig_code_hash;
         bool effective_is_delegated = false;
@@ -333,7 +333,7 @@ void ReserveBalance::init_from_tx(
             return true;
         }
         else {
-            return traits::monad_rev() < MONAD_FOUR;
+            return !traits::reserve_balance_active();
         }
     }();
 
@@ -352,8 +352,9 @@ void ReserveBalance::init_from_tx(
     MONAD_ASSERT(i < ctx.senders.size());
     MONAD_ASSERT(i < ctx.authorities.size());
     MONAD_ASSERT(ctx.senders.size() == ctx.authorities.size());
-    use_recent_code_hash_ = traits::monad_rev() >= MONAD_EIGHT;
-    allow_init_selfdestruct_exemption_ = traits::monad_rev() >= MONAD_NINE;
+    use_recent_code_hash_ = traits::reserve_balance_uses_recent_code_hash();
+    allow_init_selfdestruct_exemption_ =
+        traits::reserve_balance_skips_init_selfdestruct();
     bytes32_t const sender_code_hash =
         use_recent_code_hash_
             ? state_->get_code_hash(sender)
@@ -393,11 +394,11 @@ bool revert_transaction(
     uint256_t const &base_fee_per_gas, uint64_t const i, State &state,
     trace::StateTracer &state_tracer, ChainContext<traits> const &ctx)
 {
-    if constexpr (traits::monad_rev() >= MONAD_FOUR) {
+    if constexpr (traits::reserve_balance_active()) {
         return dipped_into_reserve<traits>(
             sender, tx, base_fee_per_gas, i, state_tracer, ctx, state);
     }
-    else if constexpr (traits::monad_rev() >= MONAD_ZERO) {
+    else {
         return false;
     }
 }
@@ -407,10 +408,10 @@ EXPLICIT_MONAD_TRAITS(revert_transaction);
 template <Traits traits>
 bool revert_transaction_cached(State &state)
 {
-    if constexpr (traits::monad_rev() >= MONAD_FOUR) {
+    if constexpr (traits::reserve_balance_active()) {
         return dipped_into_reserve_cached(state.rb_);
     }
-    else if constexpr (traits::monad_rev() >= MONAD_ZERO) {
+    else {
         return false;
     }
 }

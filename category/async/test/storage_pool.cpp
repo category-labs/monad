@@ -321,10 +321,9 @@ namespace
         using monad::async::test::StoragePoolGrowInput;
         using monad::async::test::StoragePoolTestAccess;
 
-        // A budget the size of MONAD008's, which the pool only does
-        // arithmetic with: a 2Mb chunk capacity leaves 1Mb of database
-        // metadata, which this header and 8 bytes per chunk exhaust at about
-        // 65000 chunks.
+        // A synthetic budget the pool only does arithmetic with: a 2Mb chunk
+        // capacity leaves 1Mb of database metadata, which this header and 8
+        // bytes per chunk exhaust at about 65000 chunks.
         static constexpr storage_pool::db_metadata_budget budget{
             .header_bytes = 528512, .bytes_per_chunk = 8};
         static constexpr file_offset_t TWO_MB = 2 * 1024 * 1024;

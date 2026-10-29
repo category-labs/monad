@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/bytes.hpp>
 #include <category/core/hex.hpp>
 #include <category/core/int.hpp>
 #include <category/core/runtime/uint256.hpp>
@@ -22,6 +23,7 @@
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/core/units.hpp>
+#include <category/execution/ethereum/create_contract_address.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
@@ -34,13 +36,13 @@
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/execution/monad/chain/monad_testnet.hpp>
-#include <category/vm/evm/monad/revision.h>
 #include <category/vm/vm.hpp>
 #include <monad/test/traits_test.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
+#include <boost/fiber/future/future.hpp>
 #include <boost/fiber/future/promise.hpp>
 
 #include <gtest/gtest.h>
@@ -102,8 +104,9 @@ TYPED_TEST(TraitsTest, irrevocable_gas_and_refund_new_contract)
         .beneficiary = bene};
     BlockHashBufferFinalized const block_hash_buffer;
 
-    boost::fibers::promise<void> prev{};
-    prev.set_value();
+    boost::fibers::promise<void> prev_promise{};
+    boost::fibers::future<void> prev = prev_promise.get_future();
+    prev_promise.set_value();
 
     NoopCallTracer noop_call_tracer;
     trace::StateTracer noop_state_tracer = std::monostate{};
@@ -135,18 +138,9 @@ TYPED_TEST(TraitsTest, irrevocable_gas_and_refund_new_contract)
         ASSERT_TRUE(
             final_balance_uint256 < std::numeric_limits<uint64_t>::max());
         auto const final_balance = static_cast<uint64_t>(final_balance_uint256);
-        if constexpr (TestFixture::is_monad_trait()) {
-            if constexpr (TestFixture::Trait::monad_rev() == MONAD_ZERO) {
-                EXPECT_EQ(
-                    final_balance,
-
-                    initial_balance - actual_gas_cost * max_fee_per_gas);
-            }
-            else {
-                EXPECT_EQ(
-                    final_balance,
-                    initial_balance - gas_limit * max_fee_per_gas);
-            }
+        if constexpr (TestFixture::Trait::charges_gas_limit()) {
+            EXPECT_EQ(
+                final_balance, initial_balance - gas_limit * max_fee_per_gas);
         }
         else {
             EXPECT_EQ(
@@ -157,13 +151,8 @@ TYPED_TEST(TraitsTest, irrevocable_gas_and_refund_new_contract)
         EXPECT_EQ(state.get_nonce(from), 26); // EVMC will inc for creation
     }
     // check if miner gets the right reward
-    if constexpr (TestFixture::is_monad_trait()) {
-        if constexpr (TestFixture::Trait::monad_rev() == MONAD_ZERO) {
-            EXPECT_EQ(receipt.value().gas_used, actual_gas_cost);
-        }
-        else {
-            EXPECT_EQ(receipt.value().gas_used, gas_limit);
-        }
+    if constexpr (TestFixture::Trait::charges_gas_limit()) {
+        EXPECT_EQ(receipt.value().gas_used, gas_limit);
     }
     else {
         EXPECT_EQ(receipt.value().gas_used, actual_gas_cost);
@@ -218,8 +207,9 @@ TYPED_TEST(TraitsTest, TopLevelCreate)
     NoopCallTracer noop_call_tracer;
     trace::StateTracer noop_state_tracer = std::monostate{};
 
-    boost::fibers::promise<void> prev{};
-    prev.set_value();
+    boost::fibers::promise<void> prev_promise{};
+    boost::fibers::future<void> prev = prev_promise.get_future();
+    prev_promise.set_value();
 
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
@@ -249,7 +239,7 @@ TYPED_TEST(TraitsTest, TopLevelCreate)
         }
     }
     else {
-        if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_SHANGHAI) {
+        if constexpr (TestFixture::Trait::eip_3860_active()) {
             ASSERT_TRUE(receipt.has_error());
         }
         else {
@@ -275,11 +265,8 @@ TYPED_TEST(TraitsTest, refunds_delete)
     static constexpr auto gas_limit_tx2 = 50'000;
 
     static constexpr auto gas_charged_tx1 = [] {
-        if constexpr (TestFixture::is_monad_trait()) {
-            if constexpr (TestFixture::Trait::monad_rev() > MONAD_ZERO) {
-                // Since MONAD_ONE full gas_limit is charged
-                return gas_limit_tx1;
-            }
+        if constexpr (TestFixture::Trait::charges_gas_limit()) {
+            return gas_limit_tx1;
         }
 
         // Gas increased due to storage repricing in Berlin
@@ -287,18 +274,15 @@ TYPED_TEST(TraitsTest, refunds_delete)
     }();
 
     static constexpr auto gas_charged_tx2 = [] {
-        if constexpr (TestFixture::is_monad_trait()) {
-            if constexpr (TestFixture::Trait::monad_rev() > MONAD_ZERO) {
-                // Since MONAD_ONE full gas_limit is charged
-                return gas_limit_tx2;
-            }
+        if constexpr (TestFixture::Trait::charges_gas_limit()) {
+            return gas_limit_tx2;
         }
         return 26'025;
     }();
 
     // X -> X -> 0
     static constexpr auto storage_refund_tx2_evm_uncapped = [] {
-        if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_LONDON) {
+        if constexpr (TestFixture::Trait::eip_3529_active()) {
             return 4'800;
         }
         else {
@@ -306,13 +290,10 @@ TYPED_TEST(TraitsTest, refunds_delete)
         }
     }();
     static constexpr auto storage_refund_tx2 = [=] {
-        if constexpr (TestFixture::is_monad_trait()) {
-            if constexpr (TestFixture::Trait::monad_rev() > MONAD_ZERO) {
-                return 0;
-            }
+        if constexpr (TestFixture::Trait::charges_gas_limit()) {
+            return 0;
         }
-        if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_LONDON) {
-            // due to EIP-3529 introduced in London revision
+        if constexpr (TestFixture::Trait::eip_3529_active()) {
             return std::min(
                 gas_charged_tx2 / 5, storage_refund_tx2_evm_uncapped);
         }
@@ -367,8 +348,9 @@ TYPED_TEST(TraitsTest, refunds_delete)
         BlockHeader const header{.beneficiary = bene};
         BlockHashBufferFinalized const block_hash_buffer;
 
-        boost::fibers::promise<void> prev{};
-        prev.set_value();
+        boost::fibers::promise<void> prev_promise{};
+        boost::fibers::future<void> prev = prev_promise.get_future();
+        prev_promise.set_value();
 
         NoopCallTracer noop_call_tracer;
         trace::StateTracer noop_state_tracer = std::monostate{};
@@ -431,8 +413,9 @@ TYPED_TEST(TraitsTest, refunds_delete)
         BlockHeader const header{.beneficiary = bene};
         BlockHashBufferFinalized const block_hash_buffer;
 
-        boost::fibers::promise<void> prev{};
-        prev.set_value();
+        boost::fibers::promise<void> prev_promise{};
+        boost::fibers::future<void> prev = prev_promise.get_future();
+        prev_promise.set_value();
 
         NoopCallTracer noop_call_tracer;
         trace::StateTracer noop_state_tracer = std::monostate{};
@@ -541,8 +524,9 @@ TYPED_TEST(TraitsTest, refunds_delete_then_set)
         BlockHeader const header{.beneficiary = bene};
         BlockHashBufferFinalized const block_hash_buffer;
 
-        boost::fibers::promise<void> prev{};
-        prev.set_value();
+        boost::fibers::promise<void> prev_promise{};
+        boost::fibers::future<void> prev = prev_promise.get_future();
+        prev_promise.set_value();
 
         NoopCallTracer noop_call_tracer;
         trace::StateTracer noop_state_tracer = std::monostate{};
@@ -578,12 +562,8 @@ TYPED_TEST(TraitsTest, refunds_delete_then_set)
                 static_cast<uint64_t>(final_balance_uint256);
 
             static constexpr auto gas_charged = [] {
-                if constexpr (TestFixture::is_monad_trait()) {
-                    if constexpr (
-                        TestFixture::Trait::monad_rev() > MONAD_ZERO) {
-                        // Since MONAD_ONE full gas_limit is charged
-                        return gas_limit_tx;
-                    }
+                if constexpr (TestFixture::Trait::charges_gas_limit()) {
+                    return gas_limit_tx;
                 }
 
                 return 26'112;
@@ -593,15 +573,10 @@ TYPED_TEST(TraitsTest, refunds_delete_then_set)
                 return 2800;
             }();
             static constexpr auto storage_refund = [=] {
-                if constexpr (TestFixture::is_monad_trait()) {
-                    if constexpr (
-                        TestFixture::Trait::monad_rev() > MONAD_ZERO) {
-                        return 0;
-                    }
+                if constexpr (TestFixture::Trait::charges_gas_limit()) {
+                    return 0;
                 }
-                if constexpr (
-                    TestFixture::Trait::evm_rev() >= MONAD_ETH_LONDON) {
-                    // due to EIP-3529 introduced in London revision
+                if constexpr (TestFixture::Trait::eip_3529_active()) {
                     return std::min(
                         gas_charged / 5, storage_refund_evm_uncapped);
                 }
@@ -629,8 +604,9 @@ TYPED_TEST(TraitsTest, static_validate_transaction_failure)
     BlockState bs{tdb, vm};
     BlockMetrics metrics;
 
-    boost::fibers::promise<void> prev{};
-    prev.set_value();
+    boost::fibers::promise<void> prev_promise{};
+    boost::fibers::future<void> prev = prev_promise.get_future();
+    prev_promise.set_value();
 
     NoopCallTracer noop_call_tracer;
     trace::StateTracer noop_state_tracer = std::monostate{};
@@ -665,4 +641,96 @@ TYPED_TEST(TraitsTest, static_validate_transaction_failure)
     ASSERT_TRUE(receipt.has_error());
 
     ASSERT_EQ(receipt.error(), TransactionError::WrongChainId);
+}
+
+// The block beneficiary is created and self-destructs in the same
+// transaction. The award is paid before finalization, so under EIP-8246 the
+// account is preserved holding it; before 8246 it is destroyed with it.
+TYPED_TEST(TraitsTest, selfdestructed_beneficiary_keeps_award)
+{
+    static constexpr auto from{
+        0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
+    static constexpr uint64_t nonce = 25;
+    auto const bene = create_contract_address(from, nonce);
+
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
+    db_t tdb{db};
+    vm::VM vm;
+    BlockState bs{tdb, vm};
+    BlockMetrics metrics;
+
+    {
+        State state{bs, Incarnation{0, 0}};
+        state.add_to_balance(from, 20_ether);
+        state.set_nonce(from, nonce);
+        bs.merge(state);
+    }
+
+    // ADDRESS SELFDESTRUCT
+    auto const data = byte_string{0x30, 0xff};
+
+    Transaction const tx{
+        .sc =
+            {
+                .signature =
+                    {
+                        .r =
+                            0x5fd883bb01a10915ebc06621b925bd6d624cb6768976b73c0d468b31f657d15b_u256,
+                        .s =
+                            0x121d855c539a23aadf6f06ac21165db1ad5efd261842e82a719c9863ca4ac04c_u256,
+                    },
+            },
+        .nonce = nonce,
+        .max_fee_per_gas = 1,
+        .gas_limit = 100'000,
+        .value = 0,
+        .to = std::nullopt,
+        .data = data,
+    };
+
+    BlockHeader const header{.beneficiary = bene};
+    BlockHashBufferFinalized const block_hash_buffer;
+
+    NoopCallTracer noop_call_tracer;
+    trace::StateTracer noop_state_tracer = std::monostate{};
+
+    boost::fibers::promise<void> prev_promise{};
+    auto prev = prev_promise.get_future();
+    prev_promise.set_value();
+
+    auto const chain_ctx =
+        ChainContext<typename TestFixture::Trait>::debug_empty();
+
+    auto const receipt = ExecuteTransaction<typename TestFixture::Trait>(
+        MonadTestnet{},
+        0,
+        tx,
+        from,
+        {},
+        header,
+        block_hash_buffer,
+        bs,
+        metrics,
+        prev,
+        noop_call_tracer,
+        noop_state_tracer,
+        chain_ctx,
+        /*exec_recorder=*/nullptr)();
+
+    ASSERT_TRUE(receipt.has_value());
+    EXPECT_EQ(receipt.value().status, 1u);
+
+    State state{bs, Incarnation{0, 0}};
+    // Under MIP-11 the award goes to staking, so the beneficiary stays empty.
+    if constexpr (
+        TestFixture::Trait::eip_8246_active() &&
+        !TestFixture::Trait::mip_11_active()) {
+        ASSERT_TRUE(state.account_exists(bene));
+        EXPECT_EQ(state.get_balance(bene), receipt.value().gas_used);
+        EXPECT_EQ(state.get_nonce(bene), 0);
+        EXPECT_EQ(state.get_code_hash(bene), NULL_HASH);
+    }
+    else {
+        EXPECT_FALSE(state.account_exists(bene));
+    }
 }

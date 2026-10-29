@@ -56,8 +56,7 @@ TYPED_TEST(VMTraitsTest, Stop)
 TYPED_TEST(VMTraitsTest, Push0)
 {
     TestFixture::execute(2, {PUSH0});
-    // PUSH0 supported since EIP-3855
-    if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_SHANGHAI) {
+    if constexpr (TestFixture::Trait::eip_3855_active()) {
         ASSERT_EQ(this->result_.status_code, EVMC_SUCCESS);
     }
     else {
@@ -68,7 +67,7 @@ TYPED_TEST(VMTraitsTest, Push0)
 
 TYPED_TEST(VMTraitsTest, PushSeveral)
 {
-    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_SHANGHAI) {
+    if constexpr (!TestFixture::Trait::eip_3855_active()) {
         TestFixture::execute(11, {PUSH1, 0x01, PUSH2, 0x20, 0x20, PUSH1, 0x0});
     }
     else {
@@ -111,10 +110,8 @@ TYPED_TEST(VMTraitsTest, MLoadAtBoundMIP3)
 TYPED_TEST(VMTraitsTest, MStore8AtBoundMIP3)
 {
     auto memory_version = [] {
-        if constexpr (TestFixture::is_monad_trait()) {
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NINE) {
-                return runtime::Memory::Version::MIP3;
-            }
+        if constexpr (TestFixture::Trait::mip_3_active()) {
+            return runtime::Memory::Version::MIP3;
         }
         return runtime::Memory::Version::V1;
     }();
@@ -741,8 +738,8 @@ TYPED_TEST(VMTraitsTest, EthCallOutOfGas)
 
     TestFixture::execute(
         30'000'000, code, data, TestFixture::Implementation::Interpreter);
-    // code contains PUSH0, so will terminate with a failure pre Shanghai
-    if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_SHANGHAI) {
+    // code contains PUSH0
+    if constexpr (TestFixture::Trait::eip_3855_active()) {
         ASSERT_EQ(this->result_.status_code, EVMC_OUT_OF_GAS);
     }
     else {
@@ -756,11 +753,10 @@ namespace
     monad_evm_revisions()
     {
         std::vector<std::variant<monad_eth_revision, monad_revision>> result;
-        // Only run regression tests for forks whose behavior is implemented;
-        // later forks (e.g. AMSTERDAM) exist in the enum but are not yet wired
-        // up. TODO(amsterdam): bump LATEST_SUPPORTED_EVM_FORK to include it.
+        // Only run regression tests for forks whose behavior is implemented
+        // and have a corresponding reference implementation,
         for (auto evm_rev = 0;
-             evm_rev <= monad::constants::LATEST_SUPPORTED_EVM_FORK;
+             evm_rev <= monad::constants::LATEST_REFERENCE_REVISION;
              ++evm_rev) {
             result.push_back(static_cast<monad_eth_revision>(evm_rev));
         }

@@ -42,17 +42,17 @@ public:
             get_secp_context(), &pubkey_, serialized.data(), serialized.size());
     }
 
-    bool is_valid() const noexcept
+    bool is_valid() const
     {
         return parse_result_ == 1;
     }
 
-    secp256k1_pubkey const &get() const noexcept
+    secp256k1_pubkey const &get() const
     {
         return pubkey_;
     }
 
-    byte_string_fixed<65> serialize() const noexcept
+    byte_string_fixed<65> serialize() const
     {
         byte_string_fixed<65> serialized;
         size_t uncompressed_pubkey_size = 65;
@@ -79,13 +79,13 @@ public:
             get_secp_context(), &sig_, serialized.data());
     }
 
-    bool is_valid() const noexcept
+    bool is_valid() const
     {
         return parse_result_ == 1;
     }
 
-    bool verify(Secp256k1Pubkey const &pubkey, byte_string_view const message)
-        const noexcept
+    bool
+    verify(Secp256k1Pubkey const &pubkey, byte_string_view const message) const
     {
         bytes32_t const digest = to_bytes(blake3(message));
         int res = secp256k1_ecdsa_verify(
@@ -93,7 +93,7 @@ public:
         return res == 1;
     }
 
-    secp256k1_ecdsa_signature const &get() const noexcept
+    secp256k1_ecdsa_signature const &get() const
     {
         return sig_;
     }

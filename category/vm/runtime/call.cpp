@@ -28,7 +28,6 @@
 #include <category/vm/runtime/types.hpp>
 
 #include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 
 #include <algorithm>
 #include <cstddef>
@@ -88,7 +87,7 @@ namespace monad::vm::runtime
         }
 
         auto const code_address = [&]() -> Address {
-            if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
+            if constexpr (traits::eip_7702_active()) {
                 // EIP-7702: if the code address starts with 0xEF0100, then
                 // treat it as a delegated call in the context of the
                 // current authority.
@@ -165,8 +164,8 @@ namespace monad::vm::runtime
             .input_data =
                 (*args_size > 0) ? ctx->memory.data + *args_offset : nullptr,
             .input_size = *args_size,
-            .value = static_cast<evmc::bytes32>(value),
-            .create2_salt = static_cast<evmc::bytes32>(ctx->env.create2_salt),
+            .value = to_evmc(value),
+            .create2_salt = to_evmc(ctx->env.create2_salt),
             .code_address = code_address,
             .memory_handle = ctx->memory.data_handle,
             .memory = ctx->memory.data + ctx->memory.size,

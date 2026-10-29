@@ -31,7 +31,7 @@
 #    x86_test_runner.cpp + monad-zkvm-guest, linked against the host's
 #    existing monad_execution target.
 
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.30)
 
 if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # ---- Cross-compile mode ----
@@ -382,7 +382,6 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         Boost::json
         c-kzg-4844
         PkgConfig::brotli
-        PkgConfig::crypto++
         PkgConfig::secp256k1
         intx::intx
         quill::quill
@@ -430,7 +429,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         monad_crypto
         c-kzg-4844
         ethash::keccak
-        PkgConfig::crypto++
+        aws_lc::crypto
         intx::intx
         silkpre)
     target_link_libraries(monad_precompiles
@@ -453,7 +452,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     monad_zkvm_drop_sources(monad_execution_native
         "db/storage_page.cpp"
         "db/page_commit_builder.cpp"
-        "db/commit_block_migration.cpp"
+        "db/commit_block.cpp"
         "staking/fuzzer/staking_contract_machine.cpp"
         "staking/fuzzer/staking_contract_model.cpp"
         "staking/test/input_generation.cpp"

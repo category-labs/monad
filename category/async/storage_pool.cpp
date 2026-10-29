@@ -1116,7 +1116,6 @@ storage_pool::storage_pool(
     storage_pool const *const src, clone_as_read_only_tag_)
     : is_read_only_(true)
     , is_read_only_allow_dirty_(false)
-    , is_migration_allowed_(false)
     , is_newly_truncated_(false)
     , is_growing_(false)
     , device_(reopen_device_read_only_(src->device_))
@@ -1131,7 +1130,6 @@ storage_pool::storage_pool(
     creation_flags const flags)
     : is_read_only_(flags.open_read_only || flags.open_read_only_allow_dirty)
     , is_read_only_allow_dirty_(flags.open_read_only_allow_dirty)
-    , is_migration_allowed_(flags.allow_migration)
     // mode::grow must never set this: DbMetadataContext zeroes both
     // metadata magics when it is set, which would destroy the database it is
     // meant to be growing.
@@ -1153,7 +1151,6 @@ storage_pool::storage_pool(
     use_anonymous_sized_inode_tag, off_t const len, creation_flags const flags)
     : is_read_only_(flags.open_read_only || flags.open_read_only_allow_dirty)
     , is_read_only_allow_dirty_(flags.open_read_only_allow_dirty)
-    , is_migration_allowed_(flags.allow_migration)
     , is_newly_truncated_(false)
     , is_growing_(false)
     , device_(make_anonymous_device_(len, flags))

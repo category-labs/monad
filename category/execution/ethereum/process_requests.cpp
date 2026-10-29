@@ -23,6 +23,7 @@
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/evmc_host.hpp>
+#include <category/execution/ethereum/native_transfer_log.hpp>
 #include <category/execution/ethereum/process_requests.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
@@ -55,9 +56,6 @@ Result<byte_string> system_call(
     BlockHeader const &header, Address const &contract_address,
     trace::StateTracer &state_tracer, ChainContext<traits> const &chain_ctx)
 {
-    constexpr auto SYSTEM_ADDRESS =
-        0xfffffffffffffffffffffffffffffffffffffffe_address;
-
     // Per EIP-7002/EIP-7251: if there is no code at the predeploy address,
     // the block MUST be marked invalid.
     auto const hash = state.get_code_hash(contract_address);
@@ -70,18 +68,18 @@ Result<byte_string> system_call(
 
     evmc_tx_context const tx_context = {
         .tx_gas_price = {},
-        .tx_origin = SYSTEM_ADDRESS,
+        .tx_origin = ETH_SYSTEM_ADDRESS,
         .block_coinbase = header.beneficiary,
         .block_number = static_cast<int64_t>(header.number),
         .block_timestamp = static_cast<int64_t>(header.timestamp),
         .block_gas_limit = static_cast<int64_t>(header.gas_limit),
         .block_prev_randao = header.difficulty
-                                 ? store_be_as<bytes32_t>(header.difficulty)
-                                 : header.prev_randao,
-        .chain_id = store_be_as<bytes32_t>(chain.get_chain_id()),
+                                 ? store_be_as<evmc_bytes32>(header.difficulty)
+                                 : to_evmc(header.prev_randao),
+        .chain_id = store_be_as<evmc_bytes32>(chain.get_chain_id()),
         .block_base_fee =
-            store_be_as<bytes32_t>(header.base_fee_per_gas.value_or(0)),
-        .blob_base_fee = store_be_as<bytes32_t>(get_base_fee_per_blob_gas(
+            store_be_as<evmc_bytes32>(header.base_fee_per_gas.value_or(0)),
+        .blob_base_fee = store_be_as<evmc_bytes32>(get_base_fee_per_blob_gas(
             header.excess_blob_gas.value_or(0), blob_schedule)),
         .blob_hashes = nullptr,
         .blob_hashes_count = 0,
@@ -97,7 +95,7 @@ Result<byte_string> system_call(
         .depth = 0,
         .gas = 30'000'000, // as per eip-7002, eip-7251
         .recipient = contract_address,
-        .sender = SYSTEM_ADDRESS,
+        .sender = ETH_SYSTEM_ADDRESS,
         .input_data = nullptr,
         .input_size = 0,
         .value = {},

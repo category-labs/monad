@@ -63,7 +63,7 @@ namespace monad::vm::runtime
         auto const result = ctx->host->selfdestruct(
             ctx->context, &ctx->env.recipient, &address);
 
-        if constexpr (traits::evm_rev() < MONAD_ETH_LONDON) {
+        if constexpr (!traits::eip_3529_active()) {
             if (result) {
                 ctx->gas_refund += 24000;
             }

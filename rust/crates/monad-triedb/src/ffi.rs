@@ -14,7 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 pub(crate) use self::bindings::{
-    monad_c_bytes32, triedb_async_ranged_get, triedb_async_read, triedb_async_read_callback_fn,
+    monad_bytes32, triedb_async_ranged_get, triedb_async_read, triedb_async_read_callback_fn,
     triedb_async_traverse, triedb_async_traverse_callback, triedb_async_traverse_callback_fn,
     triedb_async_traverse_callback_triedb_async_traverse_callback_finished_early,
     triedb_async_traverse_callback_triedb_async_traverse_callback_finished_normally,
@@ -25,8 +25,9 @@ pub(crate) use self::bindings::{
     triedb_latest_proposed_version, triedb_latest_verified_version, triedb_latest_voted_block_id,
     triedb_latest_voted_version, triedb_migration_phase, triedb_open, triedb_poll,
     triedb_primary_earliest_version, triedb_read, triedb_read_valset, triedb_stats_close,
-    triedb_stats_open, triedb_storage_stats, triedb_storage_stats_read, triedb_traverse,
-    triedb_update_stats, triedb_update_stats_read, TriedbRoInner, TriedbStatsReader,
+    triedb_stats_open, triedb_storage_stats, triedb_storage_stats_read, triedb_thread_idle,
+    triedb_thread_idle_stats_read, triedb_traverse, triedb_update_stats, triedb_update_stats_read,
+    TriedbRoInner, TriedbStatsReader, TRIEDB_THREAD_IDLE_MAX,
 };
 pub use self::bindings::{validator_data, validator_set};
 

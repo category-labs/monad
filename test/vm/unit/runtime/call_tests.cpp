@@ -52,10 +52,8 @@ TYPED_TEST(RuntimeTraitsTest, CallBasic)
     }
 
     constexpr auto gas_remaining = [] {
-        if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NINE) {
-                return 92000;
-            }
+        if constexpr (TestFixture::Trait::mip_3_active()) {
+            return 92000;
         }
         return 91997;
     }();
@@ -80,7 +78,7 @@ TYPED_TEST(RuntimeTraitsTest, CallWithValueCold)
     ASSERT_EQ(this->ctx_.memory.size, 0);
     constexpr auto gas_remaining = [] {
         if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
+            if constexpr (TestFixture::Trait::monad_pricing_version() >= 1) {
                 return 48'000;
             }
         }
@@ -108,7 +106,7 @@ TYPED_TEST(RuntimeTraitsTest, CallGasLimit)
 
     constexpr auto gas_remaining = [] {
         if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
+            if constexpr (TestFixture::Trait::monad_pricing_version() >= 1) {
                 return 2882;
             }
         }
@@ -135,7 +133,7 @@ TYPED_TEST(RuntimeTraitsTest, CallFailure)
 
     constexpr auto gas_remaining = [] {
         if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
+            if constexpr (TestFixture::Trait::monad_pricing_version() >= 1) {
                 return 80'000;
             }
         }
@@ -160,7 +158,7 @@ TYPED_TEST(RuntimeTraitsTest, DelegateCall)
     ASSERT_EQ(this->ctx_.memory.size, 0);
     constexpr auto gas_remaining = [] {
         if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
+            if constexpr (TestFixture::Trait::monad_pricing_version() >= 1) {
                 return 82'000;
             }
         }
@@ -185,10 +183,10 @@ TYPED_TEST(RuntimeTraitsTest, CallCode)
     ASSERT_EQ(this->ctx_.memory.size, 128);
     constexpr auto gas_remaining = [] {
         if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NINE) {
+            if constexpr (TestFixture::Trait::mip_3_active()) {
                 return 72'998;
             }
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
+            if constexpr (TestFixture::Trait::monad_pricing_version() >= 1) {
                 return 72'988;
             }
         }
@@ -213,10 +211,10 @@ TYPED_TEST(RuntimeTraitsTest, StaticCall)
     ASSERT_EQ(this->ctx_.memory.size, 960);
     constexpr auto gas_remaining = [] {
         if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_NINE) {
+            if constexpr (TestFixture::Trait::mip_3_active()) {
                 return 81'985;
             }
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
+            if constexpr (TestFixture::Trait::monad_pricing_version() >= 1) {
                 return 81'909;
             }
         }
@@ -242,7 +240,7 @@ TYPED_TEST(RuntimeTraitsTest, CallTooDeep)
     ASSERT_EQ(this->ctx_.memory.size, 0);
     constexpr auto gas_remaining = [] {
         if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
+            if constexpr (TestFixture::Trait::monad_pricing_version() >= 1) {
                 return 58'300;
             }
         }
@@ -384,7 +382,7 @@ TYPED_TEST(RuntimeTraitsTest, DelegatedCallPrecompile)
         EVMC_ACCESS_WARM);
     ASSERT_EQ(this->host_.recorded_calls.size(), 1);
 
-    if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_PRAGUE) {
+    if constexpr (TestFixture::Trait::eip_7702_active()) {
         ASSERT_EQ(
             this->host_.recorded_calls[0].flags &
                 static_cast<uint32_t>(EVMC_DELEGATED),

@@ -5,10 +5,8 @@ packages=(
   libbenchmark-dev
   libbrotli-dev
   libcap-dev
-  libcgroup-dev
   libclang-19-dev
   libcli11-dev
-  libcrypto++-dev
   libgmock-dev
   libgmp-dev
   libgtest-dev

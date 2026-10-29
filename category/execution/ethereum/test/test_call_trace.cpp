@@ -19,6 +19,7 @@
 #include <category/core/hex.hpp>
 #include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
+#include <category/core/monad_exception.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
@@ -29,6 +30,7 @@
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
+#include <category/execution/ethereum/native_transfer_log.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
@@ -51,6 +53,7 @@
 
 #include <test_resource_data.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <optional>
@@ -70,6 +73,16 @@ namespace
 
     constexpr auto a = 0x5353535353535353535353535353535353535353_address;
     constexpr auto b = 0xbebebebebebebebebebebebebebebebebebebebe_address;
+
+    // The receipt's logs (State::store_log) must match the frame's.
+    void expect_receipt_logs_match(
+        State &state, std::vector<CallFrame::Log> const &frame_logs)
+    {
+        ASSERT_EQ(state.logs().size(), frame_logs.size());
+        for (size_t i = 0; i < frame_logs.size(); ++i) {
+            EXPECT_EQ(state.logs()[i], frame_logs[i].log);
+        }
+    }
 }
 
 TEST(CallFrame, to_json)
@@ -124,6 +137,307 @@ TEST(CallTrace, enter_and_exit)
     EXPECT_EQ(call_frames.size(), 2);
     EXPECT_EQ(call_frames[0].depth, 0);
     EXPECT_EQ(call_frames[1].depth, 1);
+}
+
+TEST(CallTrace, initial_capacity_is_bounded_by_size_limit)
+{
+    constexpr size_t max_size = 2 * sizeof(CallFrame);
+    std::vector<CallFrame> call_frames;
+    CallTracer call_tracer{tx, call_frames, max_size};
+
+    EXPECT_GE(call_frames.capacity(), 2);
+    EXPECT_LT(call_frames.capacity(), 128);
+}
+
+TEST(CallTrace, unlimited_size_uses_target_initial_capacity)
+{
+    std::vector<CallFrame> call_frames;
+    CallTracer call_tracer{tx, call_frames};
+
+    EXPECT_LE(call_frames.capacity(), 128);
+}
+
+TEST(CallTrace, size_limit_is_checked_explicitly)
+{
+    Transaction const tx{};
+    std::vector<CallFrame> frames;
+    CallTracer tracer{tx, frames, 0};
+    evmc_message const msg{};
+
+    EXPECT_NO_THROW(tracer.on_enter(msg));
+    EXPECT_NO_THROW(tracer.on_exit(evmc::Result{EVMC_SUCCESS, 0, 0}));
+    EXPECT_NO_THROW(tracer.on_finish(0));
+    EXPECT_THROW(tracer.check_size_limit(), MonadException);
+    EXPECT_THROW(tracer.to_json(), MonadException);
+
+    tracer.reset();
+    EXPECT_NO_THROW(tracer.check_size_limit());
+}
+
+TEST(CallTrace, frame_size_limit_throws_on_check)
+{
+    evmc_message msg{.input_data = input, .input_size = sizeof(input)};
+
+    std::vector<CallFrame> call_frames;
+    CallTracer call_tracer{tx, call_frames, sizeof(CallFrame) + sizeof(input)};
+
+    msg.depth = 0;
+    call_tracer.on_enter(msg);
+
+    msg.depth = 1;
+    EXPECT_NO_THROW(call_tracer.on_enter(msg));
+    EXPECT_EQ(call_frames.size(), 1);
+    EXPECT_NO_THROW(call_tracer.on_finish(1'000));
+    EXPECT_THROW(call_tracer.check_size_limit(), MonadException);
+}
+
+TEST(CallTrace, zero_size_limit_throws_on_check)
+{
+    evmc_message msg{.input_data = input, .input_size = sizeof(input)};
+
+    std::vector<CallFrame> call_frames;
+    CallTracer call_tracer{tx, call_frames, 0};
+
+    msg.depth = 0;
+    EXPECT_NO_THROW(call_tracer.on_enter(msg));
+    EXPECT_TRUE(call_frames.empty());
+    EXPECT_NO_THROW(call_tracer.on_finish(1'000));
+    EXPECT_THROW(call_tracer.check_size_limit(), MonadException);
+}
+
+TEST(CallTrace, output_size_limit_throws_on_check)
+{
+    evmc_message msg{.input_data = input, .input_size = sizeof(input)};
+    evmc::Result res{};
+    res.status_code = EVMC_SUCCESS;
+    res.gas_left = 9'000;
+    res.output_data = output;
+    res.output_size = sizeof(output);
+
+    std::vector<CallFrame> call_frames;
+    CallTracer call_tracer{tx, call_frames, sizeof(CallFrame) + sizeof(input)};
+
+    msg.depth = 0;
+    call_tracer.on_enter(msg);
+    EXPECT_NO_THROW(call_tracer.on_exit(res));
+    ASSERT_EQ(call_frames.size(), 1);
+    EXPECT_TRUE(call_frames.front().output.empty());
+    EXPECT_NO_THROW(call_tracer.on_finish(1'000));
+    EXPECT_THROW(call_tracer.check_size_limit(), MonadException);
+}
+
+TEST(CallTrace, log_size_limit_throws_on_check)
+{
+    evmc_message msg{.input_data = input, .input_size = sizeof(input)};
+
+    std::vector<CallFrame> call_frames;
+    CallTracer call_tracer{tx, call_frames, sizeof(CallFrame) + sizeof(input)};
+
+    call_tracer.on_enter(msg);
+    EXPECT_NO_THROW(call_tracer.on_log(Receipt::Log{}));
+    ASSERT_EQ(call_frames.size(), 1);
+    ASSERT_TRUE(call_frames.front().logs.has_value());
+    EXPECT_TRUE(call_frames.front().logs->empty());
+    EXPECT_NO_THROW(call_tracer.on_finish(1'000));
+    EXPECT_THROW(call_tracer.check_size_limit(), MonadException);
+}
+
+TEST(CallTrace, self_destruct_size_limit_throws_on_check)
+{
+    evmc_message msg{.input_data = input, .input_size = sizeof(input)};
+
+    std::vector<CallFrame> call_frames;
+    CallTracer call_tracer{tx, call_frames, sizeof(CallFrame) + sizeof(input)};
+
+    call_tracer.on_enter(msg);
+    EXPECT_NO_THROW(call_tracer.on_self_destruct(a, b, 0));
+    EXPECT_EQ(call_frames.size(), 1);
+    EXPECT_NO_THROW(call_tracer.on_finish(1'000));
+    EXPECT_THROW(call_tracer.check_size_limit(), MonadException);
+}
+
+TEST(CallTrace, callbacks_after_size_limit_exceeded_are_ignored)
+{
+    evmc_message msg{.input_data = input, .input_size = sizeof(input)};
+    evmc::Result res{};
+    res.status_code = EVMC_SUCCESS;
+
+    std::vector<CallFrame> call_frames;
+    CallTracer call_tracer{tx, call_frames, sizeof(CallFrame) + sizeof(input)};
+
+    call_tracer.on_enter(msg);
+    msg.depth = 1;
+    EXPECT_NO_THROW(call_tracer.on_enter(msg));
+    EXPECT_NO_THROW(call_tracer.on_exit(res));
+    EXPECT_NO_THROW(call_tracer.on_log(Receipt::Log{}));
+    EXPECT_NO_THROW(call_tracer.on_self_destruct(a, b, 0));
+    msg.depth = 0;
+    EXPECT_NO_THROW(call_tracer.on_exit(res));
+
+    ASSERT_EQ(call_frames.size(), 1);
+    EXPECT_EQ(call_frames.front().status, MONAD_STATUS_FAILURE);
+    ASSERT_TRUE(call_frames.front().logs.has_value());
+    EXPECT_TRUE(call_frames.front().logs->empty());
+    EXPECT_NO_THROW(call_tracer.on_finish(1'000));
+    EXPECT_THROW(call_tracer.check_size_limit(), MonadException);
+}
+
+TEST(CallTrace, reset_clears_size_limit_exceeded)
+{
+    evmc_message msg{.input_data = input, .input_size = sizeof(input)};
+    evmc::Result res{};
+    res.status_code = EVMC_SUCCESS;
+    res.gas_left = 9'000;
+
+    std::vector<CallFrame> call_frames;
+    CallTracer call_tracer{tx, call_frames, sizeof(CallFrame) + sizeof(input)};
+
+    call_tracer.on_enter(msg);
+    EXPECT_NO_THROW(call_tracer.on_log(Receipt::Log{}));
+    EXPECT_NO_THROW(call_tracer.on_finish(1'000));
+    EXPECT_THROW(call_tracer.check_size_limit(), MonadException);
+
+    call_tracer.reset();
+    EXPECT_TRUE(call_frames.empty());
+    call_tracer.on_enter(msg);
+    call_tracer.on_exit(res);
+    EXPECT_NO_THROW(call_tracer.on_finish(1'000));
+    EXPECT_NO_THROW(call_tracer.check_size_limit());
+
+    ASSERT_EQ(call_frames.size(), 1);
+    EXPECT_EQ(call_frames.front().status, MONAD_STATUS_SUCCESS);
+    EXPECT_EQ(call_frames.front().gas_used, 1'000);
+
+    call_tracer.on_enter(msg);
+    EXPECT_EQ(call_frames.size(), 1);
+    EXPECT_THROW(call_tracer.check_size_limit(), MonadException);
+}
+
+TEST(CallTrace, exact_size_limit_succeeds)
+{
+    evmc_message msg{.input_data = input, .input_size = sizeof(input)};
+    evmc::Result res{};
+    res.status_code = EVMC_SUCCESS;
+    res.gas_left = 9'000;
+    res.output_data = output;
+    res.output_size = sizeof(output);
+
+    std::vector<CallFrame> call_frames;
+    CallTracer call_tracer{
+        tx, call_frames, sizeof(CallFrame) + sizeof(input) + sizeof(output)};
+
+    call_tracer.on_enter(msg);
+    call_tracer.on_exit(res);
+    EXPECT_NO_THROW(call_tracer.on_finish(1'000));
+    EXPECT_NO_THROW(call_tracer.check_size_limit());
+
+    ASSERT_EQ(call_frames.size(), 1);
+    EXPECT_EQ(call_frames.front().output.size(), sizeof(output));
+}
+
+TEST(CallTrace, one_byte_over_size_limit_is_rejected)
+{
+    evmc_message const msg{.input_data = input, .input_size = sizeof(input)};
+    evmc::Result res{};
+    res.status_code = EVMC_SUCCESS;
+    res.gas_left = 9'000;
+    res.output_data = output;
+    res.output_size = sizeof(output);
+
+    std::vector<CallFrame> call_frames;
+    CallTracer call_tracer{
+        tx,
+        call_frames,
+        sizeof(CallFrame) + sizeof(input) + sizeof(output) - 1};
+
+    call_tracer.on_enter(msg);
+    EXPECT_NO_THROW(call_tracer.on_exit(res));
+    EXPECT_NO_THROW(call_tracer.on_finish(1'000));
+    EXPECT_THROW(call_tracer.check_size_limit(), MonadException);
+    ASSERT_EQ(call_frames.size(), 1);
+    EXPECT_TRUE(call_frames.front().output.empty());
+}
+
+TEST(CallTrace, input_size_overflow_is_rejected)
+{
+    evmc_message const msg{.input_size = std::numeric_limits<size_t>::max()};
+    std::vector<CallFrame> call_frames;
+    CallTracer call_tracer{tx, call_frames};
+
+    EXPECT_NO_THROW(call_tracer.on_enter(msg));
+    EXPECT_TRUE(call_frames.empty());
+    EXPECT_NO_THROW(call_tracer.on_exit(evmc::Result{EVMC_SUCCESS, 0, 0}));
+    EXPECT_NO_THROW(call_tracer.on_finish(0));
+    EXPECT_THROW(call_tracer.check_size_limit(), MonadException);
+}
+
+TEST(CallTrace, output_size_overflow_is_rejected)
+{
+    evmc_message const msg{};
+    evmc::Result res{};
+    res.status_code = EVMC_SUCCESS;
+    res.output_size = std::numeric_limits<size_t>::max();
+
+    std::vector<CallFrame> call_frames;
+    CallTracer call_tracer{tx, call_frames};
+    call_tracer.on_enter(msg);
+
+    EXPECT_NO_THROW(call_tracer.on_exit(res));
+    EXPECT_NO_THROW(call_tracer.on_finish(0));
+    EXPECT_THROW(call_tracer.check_size_limit(), MonadException);
+    ASSERT_EQ(call_frames.size(), 1);
+    EXPECT_TRUE(call_frames.front().output.empty());
+}
+
+TEST(CallTrace, exact_log_size_limit_succeeds)
+{
+    evmc_message const msg{};
+    evmc::Result res{};
+    res.status_code = EVMC_SUCCESS;
+    res.gas_left = 9'000;
+    Receipt::Log const log{
+        .data = byte_string{output, sizeof(output)},
+        .topics = {bytes32_t{}, bytes32_t{}},
+    };
+
+    std::vector<CallFrame> call_frames;
+    CallTracer call_tracer{
+        tx,
+        call_frames,
+        sizeof(CallFrame) + sizeof(CallFrame::Log) + log.data.size() +
+            log.topics.size() * sizeof(bytes32_t)};
+
+    call_tracer.on_enter(msg);
+    call_tracer.on_log(log);
+    call_tracer.on_exit(res);
+    EXPECT_NO_THROW(call_tracer.on_finish(1'000));
+    EXPECT_NO_THROW(call_tracer.check_size_limit());
+    ASSERT_EQ(call_frames.size(), 1);
+    ASSERT_TRUE(call_frames.front().logs.has_value());
+    ASSERT_EQ(call_frames.front().logs->size(), 1);
+    EXPECT_EQ(call_frames.front().logs->front().log, log);
+}
+
+TEST(CallTrace, json_output_has_empty_calls_without_nested_frames)
+{
+    evmc_message msg{.input_data = input, .input_size = sizeof(input)};
+    evmc::Result res{};
+    res.status_code = EVMC_SUCCESS;
+    res.gas_left = 9'000;
+
+    std::vector<CallFrame> call_frames;
+    CallTracer call_tracer{tx, call_frames};
+
+    msg.depth = 0;
+    call_tracer.on_enter(msg);
+    call_tracer.on_exit(res);
+    call_tracer.on_finish(1'000);
+
+    ASSERT_EQ(call_frames.size(), 1);
+
+    nlohmann::json const trace = call_tracer.to_json().begin().value();
+    ASSERT_TRUE(trace.contains("calls"));
+    EXPECT_TRUE(trace["calls"].empty());
 }
 
 TYPED_TEST(TraitsTest, execute_success)
@@ -208,7 +522,25 @@ TYPED_TEST(TraitsTest, execute_success)
         .logs = std::vector<CallFrame::Log>{},
     };
 
+    if constexpr (TestFixture::Trait::eip_7708_active()) {
+        // EIP-7708: log the top-level transfer
+        expected.logs->push_back(
+            {{
+                 .data =
+                     byte_string{store_be_as<bytes32_t>(uint256_t{0x10000})},
+                 .topics =
+                     std::vector{
+                         0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef_bytes32,
+                         abi_encode_address(sender),
+                         abi_encode_address(ADDR_B),
+                     },
+                 .address = ETH_SYSTEM_ADDRESS,
+             },
+             0});
+    }
+
     EXPECT_EQ(call_frames[0], expected);
+    expect_receipt_logs_match(s, *expected.logs);
 }
 
 TYPED_TEST(TraitsTest, execute_reverted_insufficient_balance)
@@ -786,13 +1118,16 @@ TYPED_TEST(TraitsTest, simulate_v1_trace)
                         0x0000000000000000000000000000000000000000000000000000000000000100_bytes32,
                         0x0000000000000000000000000000000000000000000000000000000000000101_bytes32,
                     },
-                .address = 0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee_address,
+                .address = TestFixture::Trait::eip_7708_active()
+                               ? ETH_SYSTEM_ADDRESS
+                               : SIMULATE_NATIVE_TOKEN_LOG_ADDRESS,
             },
             0,
         }},
     };
 
     EXPECT_EQ(call_frames[0], expected);
+    expect_receipt_logs_match(s, *expected.logs);
 }
 
 TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct)
@@ -879,7 +1214,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct)
     EXPECT_EQ(call_frames[1].type, CallType::SELFDESTRUCT);
     EXPECT_EQ(call_frames[1].value, 1000u);
 
-    // The synthetic Transfer log appears in the parent CALL frame
+    // The Transfer log appears in the parent CALL frame
     ASSERT_TRUE(call_frames[0].logs.has_value());
     ASSERT_EQ(call_frames[0].logs->size(), 1);
 
@@ -892,7 +1227,9 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct)
                     0x0000000000000000000000000000000000000000000000000000000000000101_bytes32,
                     0x0000000000000000000000000000000000000000000000000000000000000102_bytes32,
                 },
-            .address = 0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee_address,
+            .address = TestFixture::Trait::eip_7708_active()
+                           ? ETH_SYSTEM_ADDRESS
+                           : SIMULATE_NATIVE_TOKEN_LOG_ADDRESS,
         },
         1, // position: after the selfdestruct sub-frame
     };
@@ -1163,6 +1500,10 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs)
                      "000000F4240")
                 .value(); // 1'000'000 in hex (left padded)
 
+        EXPECT_EQ(
+            call_frames[1].logs->at(0).log.address,
+            traits::eip_7708_active() ? ETH_SYSTEM_ADDRESS
+                                      : SIMULATE_NATIVE_TOKEN_LOG_ADDRESS);
         EXPECT_EQ(call_frames[1].logs->at(0).log.topics, expected_topics);
         EXPECT_EQ(call_frames[1].logs->at(0).log.data, expected_data);
     }
@@ -1183,6 +1524,10 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs)
                      "000000F4240")
                 .value(); // 1'000'000 in hex (left padded)
 
+        EXPECT_EQ(
+            logs[0].log.address,
+            traits::eip_7708_active() ? ETH_SYSTEM_ADDRESS
+                                      : SIMULATE_NATIVE_TOKEN_LOG_ADDRESS);
         EXPECT_EQ(logs[0].log.topics, expected_topics);
         EXPECT_EQ(logs[0].log.data, expected_data);
     }
@@ -1201,6 +1546,10 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs)
                      "000000F4240")
                 .value(); // 1'000'000 in hex (left padded)
 
+        EXPECT_EQ(
+            logs[1].log.address,
+            traits::eip_7708_active() ? ETH_SYSTEM_ADDRESS
+                                      : SIMULATE_NATIVE_TOKEN_LOG_ADDRESS);
         EXPECT_EQ(logs[1].log.topics, expected_topics);
         EXPECT_EQ(logs[1].log.data, expected_data);
     }
@@ -1355,6 +1704,8 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs_recursive)
     ASSERT_TRUE(call_frames[2].logs.has_value());
     ASSERT_EQ(call_frames[2].logs->size(), 0);
     EXPECT_EQ(call_frames[2].type, CallType::SELFDESTRUCT);
+    // The frame reports the balance read before the guard, at every revision.
+    EXPECT_EQ(call_frames[2].value, 1'000'000);
 
     ASSERT_TRUE(call_frames[3].logs.has_value());
     ASSERT_EQ(call_frames[3].logs->size(), 0);
@@ -1363,6 +1714,15 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs_recursive)
     ASSERT_TRUE(call_frames[4].logs.has_value());
     ASSERT_EQ(call_frames[4].logs->size(), 0);
     EXPECT_EQ(call_frames[4].type, CallType::SELFDESTRUCT);
+    // Destructs to itself twice with matching incarnations. Pre-8246 the first
+    // burns the balance, so this frame reports zero; under EIP-8246 nothing is
+    // destroyed and it sees the full balance.
+    if constexpr (TestFixture::Trait::eip_8246_active()) {
+        EXPECT_EQ(call_frames[4].value, 1'000'000);
+    }
+    else {
+        EXPECT_EQ(call_frames[4].value, 0);
+    }
 }
 
 TYPED_TEST(TraitsTest, simulate_v1_trace_transfers)
@@ -1518,6 +1878,10 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_transfers)
                 abi_encode_address(ADDR_A),
                 abi_encode_address(ADDR_B)};
 
+            EXPECT_EQ(
+                call_frames[1].logs->at(0).log.address,
+                traits::eip_7708_active() ? ETH_SYSTEM_ADDRESS
+                                          : SIMULATE_NATIVE_TOKEN_LOG_ADDRESS);
             EXPECT_EQ(call_frames[1].logs->at(0).log.topics, expected_topics);
 
             byte_string const expected_data =

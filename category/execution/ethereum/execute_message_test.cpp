@@ -208,7 +208,7 @@ TYPED_TEST(TraitsTest, create_insufficient_balance_nonce_bump)
 
     auto const final_nonce = s.get_nonce(from);
     if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
-        if constexpr (TestFixture::Trait::monad_rev() >= MONAD_FIVE) {
+        if constexpr (TestFixture::Trait::bumps_nonce_on_unfunded_create()) {
             EXPECT_EQ(final_nonce, initial_nonce + 1);
         }
         else {
@@ -921,8 +921,7 @@ TYPED_TEST(TraitsTest, deploy_contract_code_validation)
         EVMC_SUCCESS, 1'000, 0, illegal_code.data(), illegal_code.size()};
     auto const r2 =
         deploy_contract_code<typename TestFixture::Trait>(s, a, std::move(r));
-    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_LONDON) {
-        // Contract starting with 0xef was valid before the London revision
+    if constexpr (!TestFixture::Trait::eip_3541_active()) {
         EXPECT_EQ(r2.status_code, EVMC_SUCCESS);
         EXPECT_EQ(r2.create_address, a);
     }
@@ -1024,7 +1023,7 @@ TYPED_TEST(TraitsTest, create_inside_delegated_call)
         chain_ctx};
     init_rb_for_test<typename TestFixture::Trait>(s, h, Address{m.sender});
 
-    if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_PRAGUE) {
+    if constexpr (TestFixture::Trait::eip_7702_active()) {
         auto const result = h.call(m);
         // CREATE should fail on Monad chains and succeed on Ethereum chains
         if constexpr (TestFixture::Trait::can_create_inside_delegated()) {
@@ -1155,7 +1154,7 @@ TYPED_TEST(TraitsTest, create2_inside_delegated_call_via_delegatecall)
         chain_ctx};
     init_rb_for_test<typename TestFixture::Trait>(s, h, Address{m.sender});
 
-    if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_PRAGUE) {
+    if constexpr (TestFixture::Trait::eip_7702_active()) {
         auto const result = h.call(m);
         // CREATE2 should fail on Monad chains and succeed on Ethereum chains
         if constexpr (TestFixture::Trait::can_create_inside_delegated()) {
@@ -1250,8 +1249,7 @@ TYPED_TEST(TraitsTest, nested_call_to_delegated_precompile)
         .memory_capacity = vm.message_memory_capacity(),
     };
 
-    // requires EIP-7702
-    if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_PRAGUE) {
+    if constexpr (TestFixture::Trait::eip_7702_active()) {
         BlockHashBufferFinalized const block_hash_buffer;
         NoopCallTracer call_tracer;
         Transaction tx{};
@@ -1358,7 +1356,7 @@ TYPED_TEST(TraitsTest, cold_account_access)
 
     constexpr auto balance_gas = [] {
         if constexpr (TestFixture::is_monad_trait()) {
-            if constexpr (TestFixture::Trait::monad_rev() >= MONAD_SEVEN) {
+            if constexpr (TestFixture::Trait::monad_pricing_version() >= 1) {
                 return 10100;
             }
             else {

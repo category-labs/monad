@@ -2019,3 +2019,94 @@ TEST(EvmAs, NewVarMaxSubscript)
     std::string const var = evm_as::internal::new_var(ctx);
     ASSERT_EQ(var, std::format("X{}", std::numeric_limits<size_t>::max()));
 }
+
+TEST(EvmAs, Eip8024Emission)
+{
+    auto eb = evm_as::amsterdam();
+    eb.dupn(17).swapn(235).exchange(1, 2);
+
+    ASSERT_EQ(eb.size(), 3u);
+    ASSERT_TRUE(evm_as::Instruction::is_eip8024(eb[0]));
+    EXPECT_EQ(
+        evm_as::Instruction::as_eip8024(eb[0]).opcode,
+        compiler::EvmOpCode::DUPN);
+    EXPECT_EQ(
+        evm_as::Instruction::as_eip8024(eb[1]).opcode,
+        compiler::EvmOpCode::SWAPN);
+    EXPECT_EQ(
+        evm_as::Instruction::as_eip8024(eb[2]).opcode,
+        compiler::EvmOpCode::EXCHANGE);
+
+    std::vector<uint8_t> bytecode{};
+    evm_as::compile(eb, bytecode);
+    std::vector<uint8_t> const expected{
+        0xE6,
+        compiler::eip8024_encode_single(17),
+        0xE7,
+        compiler::eip8024_encode_single(235),
+        0xE8,
+        compiler::eip8024_encode_pair(1, 2)};
+    EXPECT_EQ(bytecode, expected);
+
+    std::string const expected_mnemonic = "DUPN 17\n"
+                                          "SWAPN 235\n"
+                                          "EXCHANGE 1, 2\n";
+    EXPECT_EQ(evm_as::mcompile(eb), expected_mnemonic);
+}
+
+TEST(EvmAs, Eip8024NotNullary)
+{
+    auto eb = evm_as::amsterdam();
+    eb.ins(compiler::EvmOpCode::DUPN)
+        .ins(compiler::EvmOpCode::SWAPN)
+        .ins(compiler::EvmOpCode::EXCHANGE);
+
+    ASSERT_EQ(eb.size(), 3u);
+    EXPECT_TRUE(evm_as::Instruction::is_invalid(eb[0]));
+    EXPECT_TRUE(evm_as::Instruction::is_invalid(eb[1]));
+    EXPECT_TRUE(evm_as::Instruction::is_invalid(eb[2]));
+
+    auto rb = evm_as::amsterdam();
+    rb.push(1).ins(compiler::EvmOpCode::DUPN).push(2).stop();
+
+    std::vector<uint8_t> bytecode{};
+    evm_as::compile(rb, bytecode);
+    std::vector<uint8_t> const expected{0x60, 0x01, 0xFE, 0x60, 0x02, 0x00};
+    EXPECT_EQ(bytecode, expected);
+}
+
+TEST(EvmAs, Eip8024Gating)
+{
+    {
+        auto eb = evm_as::amsterdam();
+        eb.dupn(16); // below the [17, 235] single range
+        ASSERT_EQ(eb.size(), 1u);
+        EXPECT_TRUE(evm_as::Instruction::is_invalid(eb[0]));
+        EXPECT_FALSE(evm_as::validate(eb));
+    }
+    {
+        auto eb = evm_as::amsterdam();
+        eb.exchange(2, 2); // pair requires n < m
+        ASSERT_EQ(eb.size(), 1u);
+        EXPECT_TRUE(evm_as::Instruction::is_invalid(eb[0]));
+    }
+    {
+        auto eb = evm_as::osaka();
+        eb.dupn(17);
+        ASSERT_EQ(eb.size(), 1u);
+        EXPECT_TRUE(evm_as::Instruction::is_invalid(eb[0]));
+    }
+    {
+        auto eb = evm_as::amsterdam();
+        for (int i = 0; i < 18; ++i) {
+            eb.push(1);
+        }
+        eb.dupn(17);
+        EXPECT_TRUE(evm_as::validate(eb));
+    }
+    {
+        auto eb = evm_as::amsterdam();
+        eb.push(1).push(2).dupn(17);
+        EXPECT_FALSE(evm_as::validate(eb));
+    }
+}

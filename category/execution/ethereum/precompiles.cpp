@@ -90,11 +90,11 @@ std::optional<PrecompiledContract> resolve_precompile(Address const &address)
 
     CASE(0x09, blake2bf_gas_cost<traits>, blake2bf_execute);
 
-    if constexpr (traits::evm_rev() >= MONAD_ETH_CANCUN) {
+    if constexpr (traits::eip_4844_precompile_active()) {
         CASE(0x0A, point_evaluation_gas_cost<traits>, point_evaluation_execute);
     }
 
-    if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
+    if constexpr (traits::eip_2537_active()) {
         CASE(0x0B, bls12_g1_add_gas_cost, bls12_g1_add_execute);
         CASE(0x0C, bls12_g1_msm_gas_cost, bls12_g1_msm_execute);
         CASE(0x0D, bls12_g2_add_gas_cost, bls12_g2_add_execute);
@@ -142,7 +142,7 @@ std::optional<evmc::Result> check_call_eth_precompile(evmc_message const &msg)
         return std::nullopt;
     }
 
-    if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
+    if constexpr (traits::eip_7702_active()) {
         // EIP-7702 specifies that precompiles don't actually get called when
         // they're the target of a delegation.
         auto const delegated = (msg.flags & EVMC_DELEGATED) != 0;
@@ -184,7 +184,7 @@ EXPLICIT_TRAITS(check_call_eth_precompile);
 
 template <Traits traits>
 std::optional<evmc::Result>
-check_call_precompile(State &, CallTracerBase &, evmc_message const &msg)
+check_call_precompile(State &, CallTracerBase &, evmc_message const &msg, bool)
 {
     return check_call_eth_precompile<traits>(msg);
 }

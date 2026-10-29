@@ -676,7 +676,7 @@ namespace monad::vm::fuzzing
         }
         pre_compiles.emplace_back(0x100);
         pre_compiles.push_back(staking::STAKING_CA);
-        if constexpr (traits::monad_rev() >= MONAD_NINE) {
+        if constexpr (traits::mip_4_active()) {
             pre_compiles.push_back(RESERVE_BALANCE_CA);
         }
         return pre_compiles;
@@ -1199,9 +1199,8 @@ namespace monad::vm::fuzzing
             .sender = sender,
             .input_data = input_data,
             .input_size = input_size,
-            .value = static_cast<evmc::bytes32>(store_be_as<bytes32_t>(value)),
-            .create2_salt =
-                static_cast<evmc::bytes32>(store_be_as<bytes32_t>(salt)),
+            .value = store_be_as<evmc_bytes32>(value),
+            .create2_salt = store_be_as<evmc_bytes32>(salt),
             .code_address = target,
             .memory_handle = memory_handle,
             .memory = memory_handle,

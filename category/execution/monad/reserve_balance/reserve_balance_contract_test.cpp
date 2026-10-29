@@ -540,7 +540,7 @@ TEST_F(ReserveBalanceEvm, precompile_dipped_into_reserve_with_argument)
 TYPED_TEST(MonadTraitsTest, reverttransaction_no_dip)
 {
     constexpr Outcome outcome = [] {
-        if (TestFixture::Trait::monad_rev() >= MONAD_NINE) {
+        if (TestFixture::Trait::mip_4_active()) {
             return Outcome::WontRevert;
         }
         else {
@@ -554,7 +554,7 @@ TYPED_TEST(MonadTraitsTest, reverttransaction_no_dip)
 TYPED_TEST(MonadTraitsTest, reverttransaction_revert)
 {
     constexpr Outcome outcome = [] {
-        if (TestFixture::Trait::monad_rev() >= MONAD_NINE) {
+        if (TestFixture::Trait::mip_4_active()) {
             return Outcome::WillRevert;
         }
         else {
@@ -572,7 +572,8 @@ void run_check_call_precompile_test(
     std::string_view expected_message = "")
 {
     NoopCallTracer call_tracer;
-    auto const result = check_call_precompile<traits>(state, call_tracer, msg);
+    auto const result =
+        check_call_precompile<traits>(state, call_tracer, msg, false);
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result->status_code, expected_status);
@@ -652,11 +653,10 @@ TYPED_TEST(
         };
     };
 
-    if constexpr (TestFixture::Trait::monad_rev() < MONAD_NINE) {
-        // The precompile should be unavailable prior to MONAD_NINE.
+    if constexpr (!TestFixture::Trait::mip_4_active()) {
         NoopCallTracer call_tracer;
         auto const result = check_call_precompile<typename TestFixture::Trait>(
-            this->state, call_tracer, make_msg());
+            this->state, call_tracer, make_msg(), false);
         EXPECT_FALSE(result.has_value());
         return;
     }
@@ -713,7 +713,7 @@ TYPED_TEST(
                     for (uint256_be_t const value :
                          std::initializer_list<uint256_be_t>{
                              0x00_bytes32, 0x01_bytes32}) {
-                        msg.value = value;
+                        msg.value = to_evmc(value);
 
                         for (auto const &calldata_variant : calldata_variants) {
                             msg.input_data = calldata_variant.data();
@@ -736,7 +736,7 @@ TYPED_TEST(
 
         for (uint256_be_t const value :
              std::initializer_list<uint256_be_t>{0x00_bytes32, 0x01_bytes32}) {
-            msg.value = value;
+            msg.value = to_evmc(value);
 
             for (auto const &calldata_variant : calldata_variants) {
                 msg.input_data = calldata_variant.data();
@@ -769,7 +769,7 @@ TYPED_TEST(
 
             for (uint256_be_t const value : std::initializer_list<uint256_be_t>{
                      0x00_bytes32, 0x01_bytes32}) {
-                msg.value = value;
+                msg.value = to_evmc(value);
 
                 run_check_call_precompile_test<typename TestFixture::Trait>(
                     this->state, msg, EVMC_REVERT, "method not supported");
@@ -791,7 +791,7 @@ TYPED_TEST(
 
         for (uint256_be_t const value :
              std::initializer_list<uint256_be_t>{0x00_bytes32, 0x01_bytes32}) {
-            msg.value = value;
+            msg.value = to_evmc(value);
 
             for (auto const &[data, size] : wrong_calldata) {
                 msg.input_data = data;
@@ -806,7 +806,7 @@ TYPED_TEST(
     // with message "value is nonzero"
     {
         evmc_message msg = make_msg();
-        msg.value = 0x01_bytes32;
+        msg.value = to_evmc(0x01_bytes32);
 
         std::array<uint8_t, 4> selector = {s[0], s[1], s[2], s[3]};
         std::array<uint8_t, 5> too_long = {s[0], s[1], s[2], s[3], 0x00};

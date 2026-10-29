@@ -16,7 +16,6 @@
 #pragma once
 
 #include <category/core/address.hpp>
-#include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/core/int.hpp>
 #include <category/core/runtime/uint256.hpp>
@@ -27,8 +26,8 @@
 
 namespace monad::vm::runtime
 {
-    static_assert(sizeof(evmc_address) == 20);
-    static_assert(sizeof(bytes32_t) == 32);
+    static_assert(sizeof(Address) == 20);
+    static_assert(sizeof(monad_bytes32) == 32);
     static_assert(sizeof(uint256_t) == 32);
 
     [[gnu::always_inline]]

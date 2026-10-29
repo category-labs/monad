@@ -194,6 +194,26 @@ static size_t const total_physical_memory_bytes = [] {
     return size_t(v) * size_t(getpagesize());
 }();
 
+static void
+pwrite_fully(int const fd, std::span<std::byte const> buffer, uint64_t offset)
+{
+    while (!buffer.empty()) {
+        auto const written =
+            ::pwrite(fd, buffer.data(), buffer.size(), off_t(offset));
+        if (written < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            throw std::system_error(errno, std::system_category());
+        }
+        if (written == 0) {
+            throw std::runtime_error("pwrite made no progress");
+        }
+        buffer = buffer.subspan(size_t(written));
+        offset += uint64_t(written);
+    }
+}
+
 struct chunk_info_restore_t
 {
     monad::async::storage_pool::chunk_type const type;
@@ -311,26 +331,14 @@ struct chunk_info_restore_t
             }
             if (nonchunkstorage.empty()) {
                 auto [wfd, offset] = chunk->write_fd(written);
-                if (::pwrite(
-                        wfd,
-                        decompressed.data(),
-                        decompressed.size(),
-                        off_t(offset)) < 0) {
-                    throw std::system_error(errno, std::system_category());
-                }
+                pwrite_fully(wfd, decompressed, offset);
             }
             return written;
         }
         else {
             if (nonchunkstorage.empty()) {
                 auto [wfd, offset] = chunk->write_fd(compressed.size());
-                if (::pwrite(
-                        wfd,
-                        compressed.data(),
-                        compressed.size(),
-                        off_t(offset)) < 0) {
-                    throw std::system_error(errno, std::system_category());
-                }
+                pwrite_fully(wfd, compressed, offset);
             }
             else {
                 memcpy(
@@ -463,11 +471,9 @@ struct impl_t
     bool create_database = false;
     bool truncate_database = false;
     bool create_empty_database = false;
-    bool upgrade_database = false;
     bool activate_secondary = false;
     bool deactivate_secondary = false;
     bool promote_secondary = false;
-    bool repair_database = false;
     MONAD_MPT_NAMESPACE::state_machine_kind state_machine =
         MONAD_MPT_NAMESPACE::state_machine_kind::ethereum;
     // Distinguishes an operator-supplied --state-machine from the ethereum
@@ -1614,15 +1620,6 @@ device has been extended in place.
                 "travels with the physical data; the daemon picks up the new "
                 "primary kind on next open.");
             cli_ops_group->add_flag(
-                "--repair",
-                impl.repair_database,
-                "repair a database migrated by a buggy earlier build: the "
-                "MONAD007->MONAD008 migration zero-filled the inactive "
-                "secondary ring's cnv_chunks[] instead of using the empty "
-                "sentinel, which would make a later --activate-secondary wipe "
-                "the metadata. Normalises it so activation is safe. Run with "
-                "the daemon stopped.");
-            cli_ops_group->add_flag(
                 "--grow",
                 impl.grow_database,
                 "take up the space the database's device gained from being "
@@ -1638,13 +1635,6 @@ device has been extended in place.
                 "--rewind-to",
                 impl.rewind_database_to,
                 "rewind database to an earlier point in its history.");
-            cli_ops_group->add_flag(
-                "--upgrade",
-                impl.upgrade_database,
-                "migrate the database metadata to the current on-disk "
-                "format (MONAD008) and ensure it is durable on disk "
-                "before exiting. Run after upgrading the monad apt "
-                "package and before starting monad services.");
             cli.add_option(
                 "--archive",
                 impl.archive_database,
@@ -1744,8 +1734,7 @@ device has been extended in place.
             // database could not describe before it writes any footer.
             impl.flags.metadata_budget =
                 MONAD_ASYNC_NAMESPACE::storage_pool::db_metadata_budget{
-                    .header_bytes =
-                        monad::mpt::detail::db_metadata::MONAD007_HEADER_BYTES,
+                    .header_bytes = sizeof(monad::mpt::detail::db_metadata),
                     .bytes_per_chunk =
                         sizeof(monad::mpt::detail::db_metadata::chunk_info_t)};
             // --restore sets truncate_database below, so this must run first:
@@ -1798,12 +1787,6 @@ device has been extended in place.
             else if (impl.rewind_database_to || impl.reset_history_length) {
                 impl.flags.open_read_only = false;
                 impl.flags.open_read_only_allow_dirty = false;
-            }
-            else if (impl.upgrade_database) {
-                mode = MONAD_ASYNC_NAMESPACE::storage_pool::mode::open_existing;
-                impl.flags.open_read_only = false;
-                impl.flags.open_read_only_allow_dirty = false;
-                impl.flags.allow_migration = true;
             }
             else if (impl.grow_database) {
                 // The pool constructor aborts on a path it cannot open, so a
@@ -1882,7 +1865,7 @@ device has been extended in place.
             }
             else if (
                 impl.activate_secondary || impl.deactivate_secondary ||
-                impl.promote_secondary || impl.repair_database) {
+                impl.promote_secondary) {
                 impl.flags.open_read_only = false;
                 impl.flags.open_read_only_allow_dirty = false;
             }
@@ -1904,8 +1887,7 @@ device has been extended in place.
         bool const needs_write_ring =
             impl.rewind_database_to || impl.reset_history_length ||
             impl.activate_secondary || impl.deactivate_secondary ||
-            impl.promote_secondary || impl.repair_database ||
-            impl.grow_database;
+            impl.promote_secondary || impl.grow_database;
         auto wr_ring(
             needs_write_ring
                 ? std::optional<monad::io::Ring>(monad::io::RingConfig{4})
@@ -1994,22 +1976,6 @@ device has been extended in place.
                 cerr << "Secondary timeline already active; nothing to do.\n";
                 return 1;
             }
-            // Refuse to activate a pool whose secondary ring is still in the
-            // pre-fix MONAD007->MONAD008 migration artifact state (zero-filled
-            // cnv_chunks[] aliasing cnv chunk 0). Bail out BEFORE
-            // activate_secondary_timeline stamps its pending-op intent log:
-            // otherwise the activate body would trip the cnv-chunk-0 guard and
-            // that abort would replay on every subsequent open, bricking the
-            // pool (unopenable even by --repair). Direct the operator to
-            // --repair, which is safe and idempotent.
-            if (aux.metadata_ctx().secondary_ring_needs_repair()) {
-                cerr << "Secondary ring is corrupt: cnv_chunks[] were "
-                        "zero-filled by a pre-fix MONAD007->MONAD008 migration "
-                        "and would alias cnv chunk 0 (the db_metadata chunk). "
-                        "Run 'monad-mpt --repair' before "
-                        "--activate-secondary.\n";
-                return 1;
-            }
             // Order matters: stamp the kind first, then flip the active bit.
             // open_secondary_timeline gates on the active bit, so flipping it
             // first and crashing before the stamp would expose a secondary
@@ -2045,30 +2011,6 @@ device has been extended in place.
             cout << "Promoted secondary timeline to primary "
                     "(primary_ring_idx flipped).\n";
         }
-        else if (impl.repair_database) {
-            // --repair only applies to an inactive secondary. An active one is
-            // a precondition violation, not an idempotent no-op, so signal it
-            // like the other secondary-lifecycle ops (stderr + non-zero) so
-            // scripts can detect the refusal. "Nothing to do on a well-formed
-            // inactive ring" below stays a success (exit 0).
-            if (aux.metadata_ctx().timeline_active(
-                    MONAD_MPT_NAMESPACE::timeline_id::secondary)) {
-                cerr
-                    << "Secondary timeline is active; --repair only applies to "
-                       "an inactive secondary. Nothing to repair.\n";
-                return 1;
-            }
-            if (aux.metadata_ctx().repair_inactive_secondary_ring()) {
-                cout << "Repaired secondary ring: reset a zero-filled "
-                        "cnv_chunks[] (left by a buggy MONAD007->MONAD008 "
-                        "migration, which would alias cnv chunk 0 and wipe the "
-                        "metadata on --activate-secondary) to the empty "
-                        "sentinel. Activation is now safe.\n";
-            }
-            else {
-                cout << "No repair needed; secondary ring is well-formed.\n";
-            }
-        }
 
         {
             cout << R"(MPT database on storages:
@@ -2103,22 +2045,6 @@ device has been extended in place.
             impl.print_list_info(
                 aux, aux.metadata_ctx().main()->free_list_begin(), "Free");
             impl.print_db_history_summary(aux);
-
-            if (impl.upgrade_database) {
-                if (aux.metadata_ctx().is_new_pool()) {
-                    cout << "\nWARNING: --upgrade found no existing DB "
-                            "metadata; a fresh MONAD008 pool was created. "
-                            "Use --create for an explicit new-pool "
-                            "workflow.\n";
-                }
-                else {
-                    cout << "\nDB is on version MONAD008; flushing "
-                            "metadata...\n";
-                }
-                aux.metadata_ctx().sync_metadata_to_disk();
-                cout << "Success.\n";
-                return 0;
-            }
 
             if (impl.reset_history_length) {
                 // set to fixed history length, database will prune any outdated

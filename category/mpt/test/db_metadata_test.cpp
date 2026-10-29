@@ -154,7 +154,8 @@ TEST(db_metadata, ring_b_layout_matches_ring_a)
         offset_pending + sizeof(md::pending_shrink_grow_t));
     EXPECT_EQ(offset_future, offset_recorded_size + sizeof(uint64_t));
     // recorded_device_size reads as not-recorded on a pool that predates
-    // it only while it stays inside the window the MONAD007 migration zeroes.
+    // it only while it stays inside the window the MONAD007 -> MONAD008
+    // upgrade zeroed on every pool that already exists.
     EXPECT_GT(offset_recorded_size, offset_secondary);
     EXPECT_LT(offset_recorded_size, offsetof(md, free_list));
 }

@@ -26,7 +26,8 @@ MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
 template <Traits traits, typename Contract, Address contract_address>
 std::optional<evmc::Result> check_call_monad_precompile(
-    State &state, CallTracerBase &call_tracer, evmc_message const &msg)
+    State &state, CallTracerBase &call_tracer, evmc_message const &msg,
+    bool const log_native_transfers)
 {
 
     if (msg.code_address != contract_address) {
@@ -44,7 +45,7 @@ std::optional<evmc::Result> check_call_monad_precompile(
         return evmc::Result{evmc_status_code::EVMC_OUT_OF_GAS};
     }
 
-    Contract contract = Contract{state, call_tracer};
+    Contract contract = Contract{state, call_tracer, log_native_transfers};
     auto const res = (contract.*method)(input, msg.sender, msg.value);
     if (MONAD_LIKELY(res.has_value())) {
         int64_t const gas_left = msg.gas - static_cast<int64_t>(cost);
@@ -76,14 +77,15 @@ bool is_precompile(Address const &address)
     // in.
     return is_eth_precompile<traits>(address) ||
            (address == staking::STAKING_CA) ||
-           (traits::monad_rev() >= MONAD_NINE && address == RESERVE_BALANCE_CA);
+           (traits::mip_4_active() && address == RESERVE_BALANCE_CA);
 }
 
 EXPLICIT_MONAD_TRAITS(is_precompile);
 
 template <Traits traits>
 std::optional<evmc::Result> check_call_precompile(
-    State &state, CallTracerBase &call_tracer, evmc_message const &msg)
+    State &state, CallTracerBase &call_tracer, evmc_message const &msg,
+    bool const log_native_transfers)
 {
     if (auto maybe_result = check_call_eth_precompile<traits>(msg)) {
         return maybe_result;
@@ -94,7 +96,7 @@ std::optional<evmc::Result> check_call_precompile(
         if constexpr ((cond)) {                                                \
             if (auto maybe_result =                                            \
                     check_call_monad_precompile<traits, contract, addr>(       \
-                        state, call_tracer, msg)) {                            \
+                        state, call_tracer, msg, log_native_transfers)) {      \
                 return maybe_result;                                           \
             }                                                                  \
         }                                                                      \
@@ -102,14 +104,11 @@ std::optional<evmc::Result> check_call_precompile(
     while (false);
 
     CASE(
-        traits::monad_rev() >= MONAD_FOUR,
+        traits::staking_active(),
         staking::StakingContract,
         staking::STAKING_CA);
 
-    CASE(
-        traits::monad_rev() >= MONAD_NINE,
-        ReserveBalanceContract,
-        RESERVE_BALANCE_CA);
+    CASE(traits::mip_4_active(), ReserveBalanceContract, RESERVE_BALANCE_CA);
 
     return std::nullopt;
 

@@ -54,7 +54,7 @@ struct ChainContext<T>
 
     // Returns an empty ChainContext for unit testing purposes.
     // Not intended for production use.
-    static ChainContext<T> debug_empty();
+    static ChainContext<T> const &debug_empty();
 };
 
 struct MonadChain : Chain

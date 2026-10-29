@@ -66,6 +66,9 @@ namespace monad::vm::utils::evm_as
                                  return 1; // 1 byte encoding
                              },
                              [](InvalidI const &) -> size_t { return 1; },
+                             [](Eip8024I const &) -> size_t {
+                                 return 2; // opcode + 1 immediate byte.
+                             },
                              [](auto const &) -> size_t { MONAD_ABORT(); }},
                          ins);
         }
@@ -98,11 +101,8 @@ namespace monad::vm::utils::evm_as
                                 size_t const n =
                                     offset == 0 ? 0 : byte_width(offset);
 
-                                if constexpr (
-                                    traits::evm_rev() < MONAD_ETH_SHANGHAI) {
+                                if constexpr (!traits::eip_3855_active()) {
                                     if (n == 0) {
-                                        // Special case for zero offset before
-                                        // Shanghai, as PUSH0 is not available.
                                         return 2; // PUSH1 0x00
                                     }
                                 }
@@ -136,7 +136,7 @@ namespace monad::vm::utils::evm_as
                                     sizeof(Address);
                                 size_t const least_n =
                                     addr_size - countl(push.address);
-                                if (traits::evm_rev() < MONAD_ETH_SHANGHAI &&
+                                if (!traits::eip_3855_active() &&
                                     least_n == 0) {
                                     return 2; // PUSH1 0x00
                                 }
@@ -147,6 +147,9 @@ namespace monad::vm::utils::evm_as
                                 return 1; // 1 byte encoding
                             },
                             [](InvalidI const &) -> size_t { return 1; },
+                            [](Eip8024I const &) -> size_t {
+                                return 2; // opcode + 1 immediate byte.
+                            },
                             [](auto const &) -> size_t { MONAD_ABORT(); }},
                         ins);
 

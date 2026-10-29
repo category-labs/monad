@@ -96,6 +96,11 @@ bool monad_statesync_client_has_reached_target(
     return true;
 }
 
+// `version` is what the caller declares this client can decode, not the result
+// of a handshake: production passes monad_statesync_version(), this build's own
+// newest, so the page-record branch is the only one taken there. Peer version
+// negotiation lives in bft and gates what a *server* sends; it does not reach
+// here. Tests pass a lower value to exercise the older branch.
 void monad_statesync_client_handle_new_peer(
     monad_statesync_client_context *const ctx, uint64_t const prefix,
     uint32_t const version)
@@ -104,7 +109,12 @@ void monad_statesync_client_handle_new_peer(
     auto &ptr = ctx->protocol.at(prefix);
     // TODO: handle switching peers
     MONAD_ASSERT(!ptr);
-    ptr = std::make_unique<StatesyncProtocolV1_2>();
+    if (version >= MONAD_STATESYNC_VERSION_1_3) {
+        ptr = std::make_unique<StatesyncProtocolV1_3>(version);
+    }
+    else {
+        ptr = std::make_unique<StatesyncProtocolV1_2>(version);
+    }
 }
 
 void monad_statesync_client_handle_target(
@@ -187,7 +197,7 @@ bool monad_statesync_client_finalize(monad_statesync_client_context *const ctx)
     }
 
     // Roll the db forward from its synced version to the target, replaying the
-    // trailing block headers, then mark the target finalized.
+    // trailing block headers.
     if (latest_version != tgrt.number) {
         ctx->db.move_trie_version_forward(latest_version, tgrt.number);
         bytes32_t expected = tgrt.parent_hash;
@@ -225,13 +235,16 @@ bool monad_statesync_client_finalize(monad_statesync_client_context *const ctx)
                 false);
         }
     }
-    ctx->db.update_finalized_version(tgrt.number);
 
     // The client db is page-encoded, so a target from before MIP-8 fails
     // this root comparison rather than being detected up front.
-    ctx->tdb.set_block_and_prefix(ctx->db.get_latest_finalized_version());
-    MONAD_ASSERT(ctx->tdb.get_block_number() == tgrt.number);
-    return ctx->tdb.state_root() == tgrt.state_root;
+    ctx->tdb.set_block_and_prefix(tgrt.number);
+    if (ctx->tdb.state_root() != tgrt.state_root) {
+        return false;
+    }
+
+    ctx->db.update_finalized_version(tgrt.number);
+    return true;
 }
 
 void monad_statesync_client_context_destroy(

@@ -32,12 +32,13 @@
 #include <quill/std/SystemError.h>
 
 #include <algorithm>
-#include <cassert>
+#include <cstring>
 #include <filesystem>
 #include <iostream>
 #include <limits>
 #include <memory>
 #include <optional>
+#include <type_traits>
 #include <utility>
 
 struct TriedbRoInner
@@ -296,6 +297,35 @@ bool triedb_update_stats_read(
     return true;
 }
 
+bool triedb_thread_idle_stats_read(
+    TriedbStatsReader *const stats_reader, triedb_thread_idle *const out,
+    size_t *const count)
+{
+    using monad::mpt::detail::ThreadIdleSection;
+    static_assert(
+        TRIEDB_THREAD_IDLE_MAX ==
+        std::extent_v<decltype(ThreadIdleSection::slots)>);
+    static_assert(
+        sizeof(triedb_thread_idle) ==
+        sizeof(monad::mpt::detail::ThreadIdleSlot));
+
+    if (stats_reader == nullptr || out == nullptr || count == nullptr) {
+        return false;
+    }
+    auto const section = stats_reader->reader.read_thread_idle();
+    if (!section.has_value()) {
+        return false;
+    }
+    for (uint32_t i = 0; i < section->count; ++i) {
+        std::memcpy(out[i].name, section->slots[i].name, sizeof(out[i].name));
+        out[i].name[sizeof(out[i].name) - 1] = '\0';
+        out[i].idle_ns = section->slots[i].idle_ns;
+        out[i].registered_at_ns = section->slots[i].registered_at_ns;
+    }
+    *count = section->count;
+    return true;
+}
+
 void triedb_storage_stats_read(
     TriedbRoInner *const db, triedb_storage_stats *const out)
 {
@@ -441,8 +471,10 @@ namespace
                 node.path_nibble_view());
 
             if (node.has_value()) { // node is a leaf
-                assert(
-                    (path_.nibble_size() & 1) == 0); // assert even nibble size
+                MONAD_ASSERT_PRINTF(
+                    (path_.nibble_size() & 1) == 0,
+                    "Only supported for even length paths but got %u nibbles",
+                    path_.nibble_size());
                 size_t const path_bytes = path_.nibble_size() / 2;
                 auto path_data = std::make_unique<uint8_t[]>(path_bytes);
 
@@ -666,7 +698,7 @@ uint64_t triedb_latest_proposed_version(TriedbRoInner *db)
     return db->db.get_latest_proposed_version();
 }
 
-monad_c_bytes32 triedb_latest_proposed_block_id(TriedbRoInner *db)
+monad_bytes32 triedb_latest_proposed_block_id(TriedbRoInner *db)
 {
     return db->db.get_latest_proposed_block_id();
 }
@@ -676,7 +708,7 @@ uint64_t triedb_latest_voted_version(TriedbRoInner *db)
     return db->db.get_latest_voted_version();
 }
 
-monad_c_bytes32 triedb_latest_voted_block_id(TriedbRoInner *db)
+monad_bytes32 triedb_latest_voted_block_id(TriedbRoInner *db)
 {
     return db->db.get_latest_voted_block_id();
 }

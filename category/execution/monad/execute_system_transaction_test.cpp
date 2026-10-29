@@ -36,6 +36,7 @@
 
 #include <test_resource_data.h>
 
+#include <boost/fiber/future/promise.hpp>
 #include <boost/outcome/success_failure.hpp>
 #include <boost/outcome/try.hpp>
 
@@ -91,6 +92,7 @@ TEST(SystemTransaction, prestate_trace_staking_epoch_change)
         // Fulfil this promise such that ExecuteSystemTransaction doesn't wait
         // indefinitely.
         boost::fibers::promise<void> promise;
+        auto prev = promise.get_future();
         promise.set_value();
 
         Result<Receipt> const result =
@@ -102,7 +104,7 @@ TEST(SystemTransaction, prestate_trace_staking_epoch_change)
                 header,
                 block_state,
                 block_metrics,
-                promise,
+                prev,
                 noop_call_tracer,
                 prestate_tracer,
                 /*exec_recorder=*/nullptr}();
@@ -127,6 +129,7 @@ TEST(SystemTransaction, prestate_trace_staking_epoch_change)
             trace::PrestateTracer{trace, beneficiary};
 
         boost::fibers::promise<void> promise;
+        auto prev = promise.get_future();
         promise.set_value();
 
         Result<Receipt> const result =
@@ -138,7 +141,7 @@ TEST(SystemTransaction, prestate_trace_staking_epoch_change)
                 header,
                 block_state,
                 block_metrics,
-                promise,
+                prev,
                 noop_call_tracer,
                 prestate_tracer,
                 /*exec_recorder=*/nullptr}();
@@ -200,6 +203,7 @@ TEST(SystemTransaction, statediff_trace_staking_epoch_change)
         trace::StateTracer statediff_tracer = trace::StateDiffTracer{trace};
 
         boost::fibers::promise<void> promise;
+        auto prev = promise.get_future();
         promise.set_value();
 
         Result<Receipt> const result =
@@ -211,7 +215,7 @@ TEST(SystemTransaction, statediff_trace_staking_epoch_change)
                 header,
                 block_state,
                 block_metrics,
-                promise,
+                prev,
                 noop_call_tracer,
                 statediff_tracer,
                 /*exec_recorder=*/nullptr}();
@@ -242,6 +246,7 @@ TEST(SystemTransaction, statediff_trace_staking_epoch_change)
         trace::StateTracer statediff_tracer = trace::StateDiffTracer{trace};
 
         boost::fibers::promise<void> promise;
+        auto prev = promise.get_future();
         promise.set_value();
 
         Result<Receipt> const result =
@@ -253,7 +258,7 @@ TEST(SystemTransaction, statediff_trace_staking_epoch_change)
                 header,
                 block_state,
                 block_metrics,
-                promise,
+                prev,
                 noop_call_tracer,
                 statediff_tracer,
                 /*exec_recorder=*/nullptr}();
@@ -308,6 +313,7 @@ TEST(SystemTransaction, static_validate_system_transaction_failure)
     auto const tx = Transaction{.type = TransactionType::eip7702};
 
     boost::fibers::promise<void> promise;
+    auto prev = promise.get_future();
     promise.set_value();
 
     Result<Receipt> const result =
@@ -319,7 +325,7 @@ TEST(SystemTransaction, static_validate_system_transaction_failure)
             header,
             block_state,
             block_metrics,
-            promise,
+            prev,
             noop_call_tracer,
             noop_state_tracer,
             /*exec_recorder=*/nullptr}();
@@ -348,6 +354,7 @@ TEST(SystemTransaction, static_validate_transaction_failure)
         .sc = SignatureAndChain{.chain_id = 1}, .to = staking::STAKING_CA};
 
     boost::fibers::promise<void> promise;
+    auto prev = promise.get_future();
     promise.set_value();
 
     Result<Receipt> const result =
@@ -359,7 +366,7 @@ TEST(SystemTransaction, static_validate_transaction_failure)
             header,
             block_state,
             block_metrics,
-            promise,
+            prev,
             noop_call_tracer,
             noop_state_tracer,
             /*exec_recorder=*/nullptr}();

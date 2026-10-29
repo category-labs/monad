@@ -43,7 +43,26 @@ RUN apt-get update && \
 COPY scripts/ubuntu-build/install-ocaml.sh third_party/monad-execution-specs/monad-spec.opam /tmp/ocaml/
 RUN /tmp/ocaml/install-ocaml.sh /tmp/ocaml && rm -rf /tmp/ocaml
 
+# Spec test fixture tarballs for test/ethereum_test, fetched in their own
+# stage so the layers are cached (keyed on the checksums) and CI does not
+# depend on GitHub release downloads succeeding on every run. Keep the URLs
+# and checksums in sync with test/ethereum_test/CMakeLists.txt.
+FROM scratch AS test_fixtures
+
+ADD --checksum=sha256:3e2b02d49fe903eda4fd8caca5cbf0d139c470e97e1de9a85299b1b034f97099 \
+    https://github.com/ethereum/execution-spec-tests/releases/download/v5.4.0/fixtures_develop.tar.gz \
+    /fixtures/
+ADD --checksum=sha256:c96c822d2e187e9168aa20f2c158c8a2de96ea076f6e6c473a1b6d3fc5c064df \
+    https://github.com/monad-developers/execution-specs/releases/download/tests-monad@v1.2.2/fixtures_monad.tar.gz \
+    /fixtures/
+ADD --checksum=sha256:9ee1075421aa620b08690c9df9a302a9c11654c0ef0eaed561f650936288f98e \
+    https://github.com/monad-developers/execution-specs/releases/download/tests-monad_eip7708%2B7843%2B7981%2B7997%2B8024%2B8246%40v0.3.1/fixtures_monad_eip7708+7843+7981+7997+8024+8246.tar.gz \
+    /fixtures/
+
 FROM base AS build_and_test
+
+COPY --from=test_fixtures /fixtures /fixtures
+ENV MONAD_TEST_FIXTURES_DIR=/fixtures
 
 COPY . src
 
@@ -191,8 +210,6 @@ RUN cd src && cmake --build build-zkvm --target monad-zkvm-guest-zisk --parallel
 
 FROM base_vm_test AS vm_fuzz
 
-RUN apt-get update && apt-get install -y tmux
-
 COPY . src
 
 RUN cd src && CMAKE_TOOLCHAIN_FILE=category/core/toolchains/gcc-avx2.cmake cmake -S . -B build \
@@ -205,7 +222,7 @@ RUN cd src && CMAKE_TOOLCHAIN_FILE=category/core/toolchains/gcc-avx2.cmake cmake
 RUN cd src && cmake --build build -t monad-compiler-fuzzer
 ARG FUZZER_BASE_SEED
 ARG FUZZER_SECONDS
-RUN cd src && ./scripts/vm/ci-fuzzer.sh
+RUN cd src && ./scripts/vm/fuzz.sh -c 26 -i 5 -s "${FUZZER_BASE_SEED:-143}" -t "${FUZZER_SECONDS:-420}"
 
 FROM base AS runner
 COPY --from=build_and_test /src/build/category/mpt/monad-mpt /usr/local/bin/

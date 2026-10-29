@@ -13,9 +13,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-cmake_minimum_required(VERSION 3.27)
-
-cmake_policy(SET CMP0144 NEW) # find_package uses upper-case _ROOT variables
+cmake_minimum_required(VERSION 3.30)
 
 project(monad)
 
@@ -56,19 +54,31 @@ set(THIRD_PARTY_DIR "${PROJECT_SOURCE_DIR}/third_party")
 
 include(cmake/compile_options.cmake)
 
-find_package(Boost REQUIRED COMPONENTS context filesystem json CONFIG)
+find_package(Boost REQUIRED COMPONENTS context json CONFIG)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(brotli REQUIRED IMPORTED_TARGET libbrotlienc libbrotlidec)
-pkg_check_modules(crypto++ REQUIRED IMPORTED_TARGET libcrypto++)
 pkg_check_modules(zstd REQUIRED IMPORTED_TARGET libzstd)
-
-# ankerl
-add_library(ankerl_hash INTERFACE)
-target_include_directories(ankerl_hash INTERFACE "third_party/ankerl")
 
 # asmjit
 set(ASMJIT_STATIC ON)
 add_subdirectory(third_party/asmjit)
+
+# AWS-LC, for P256VERIFY. Always static and never re-exported, so that its
+# OpenSSL-named API cannot clash with another libcrypto in the same process.
+block()
+  set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
+  set(BUILD_SHARED_LIBS OFF)
+  set(BUILD_TESTING OFF)
+  set(BUILD_LIBSSL OFF)
+  set(BUILD_TOOL OFF)
+  set(DISABLE_GO ON)
+  set(DISABLE_PERL ON)
+  set(ENABLE_SOURCE_MODIFICATION OFF)
+  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+  add_subdirectory(third_party/aws-lc EXCLUDE_FROM_ALL SYSTEM)
+endblock()
+add_library(aws_lc::crypto ALIAS crypto)
+target_link_options(crypto INTERFACE "LINKER:--exclude-libs,libcrypto.a")
 
 # BLAKE3
 add_subdirectory(third_party/BLAKE3/c)
@@ -148,9 +158,6 @@ target_include_directories(komihash INTERFACE "third_party/komihash")
 
 # magic_enum
 add_subdirectory("third_party/magic_enum")
-
-# nanobench
-add_subdirectory("third_party/nanobench")
 
 # nlohmann_json
 add_subdirectory("third_party/nlohmann_json" SYSTEM)
@@ -309,6 +316,8 @@ target_link_libraries(
          monad-vm-interpreter
          monad-vm-runtime
          monad-vm-utils)
+
+include(cmake/c_headers.cmake)
 
 # ##############################################################################
 # cmds

@@ -409,6 +409,16 @@ public:
     // which a rejected frame can erase. A word: ZisK prices a byte's load at
     // more than twice an aligned word's.
     std::uint64_t rows_unwarmed_{0};
+
+    // Nonzero once the account's current row may have warmed a slot that
+    // neither row holds. A slot that SLOAD reads or SSTORE writes is in this
+    // row from then on, which never loses one, so until then a slot that
+    // both rows miss is cold, and its search of the warm slots can be
+    // skipped. Set where a slot is warmed and not read: by an access list,
+    // by a cold access the gas left cannot pay for, and by a read of an
+    // account recreated since this row, whose value is no row's. Never
+    // cleared, as rows_unwarmed_, and a word for the same reason.
+    std::uint64_t warm_unread_{0};
 #endif
 
     explicit OriginalAccountState(std::optional<Account> &&account)

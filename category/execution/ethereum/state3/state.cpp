@@ -620,6 +620,12 @@ void State::pop_reject()
             }
             else {
                 row.storage_.erase(sl.key);
+#if defined(MONAD_ZKVM_ZISK)
+                // The original row took the slot when it was written, so it
+                // is still in a row; set all the same, the erase being the
+                // one place a row loses a slot.
+                row.orig_->warm_unread_ = 1;
+#endif
             }
 #if defined(MONAD_ZKVM_ZISK)
             slots_n = u.aux;
@@ -857,6 +863,9 @@ inline void State::current_storage_load(
     auto const &original_account = original_account_state.account_;
     if (!original_account.has_value() ||
         account.value().incarnation != original_account.value().incarnation) {
+        // The caller warmed the slot, and no row takes it: see
+        // OriginalAccountState::warm_unread_.
+        original_account_state.warm_unread_ = 1;
         out = uint256_t{};
         return;
     }
@@ -1159,8 +1168,17 @@ template <Traits traits>
 monad_access_status
 State::access_storage(Address const &address, bytes32_t const &key)
 {
+#if defined(MONAD_ZKVM_ZISK)
+    auto &account_state = current_account_state(address);
+    // Warmed without being read, as an access list's slots are: see
+    // OriginalAccountState::warm_unread_.
+    MONAD_ASSERT(account_state.orig_ != nullptr);
+    account_state.orig_->warm_unread_ = 1;
+    return access_storage_of<traits>(account_state, address, key);
+#else
     return access_storage_of<traits>(
         current_account_state(address), address, key);
+#endif
 }
 
 EXPLICIT_TRAITS_MEMBER(State::access_storage);
@@ -1179,6 +1197,11 @@ monad_access_status State::sload_full(
     if (status == MONAD_ACCESS_WARM || read_cold) {
         current_storage_load(account_state, address, key, out);
     }
+    else {
+        // Warmed and not read: see OriginalAccountState::warm_unread_.
+        MONAD_ASSERT(account_state.orig_ != nullptr);
+        account_state.orig_->warm_unread_ = 1;
+    }
     return status;
 }
 
@@ -1191,6 +1214,10 @@ monad_access_status State::sload_cold(
     if (read_cold) {
         current_storage_load(account_state, address, key, out);
     }
+    else {
+        // As in sload_full.
+        account_state.orig_->warm_unread_ = 1;
+    }
     return MONAD_ACCESS_COLD;
 }
 
@@ -1201,6 +1228,9 @@ monad_access_status State::sload_cold_absent(
     Address const &address, bytes32_t const &key, bool const read_cold,
     uint256_t &out, AccountState &account_state)
 {
+    // sload_into skips the search of the warm slots while no slot is warm
+    // that both rows miss: the debug build checks it.
+    MONAD_DEBUG_ASSERT(!account_state.is_accessed_storage(key));
     account_state.add_accessed_storage(key);
     journal_warm_slot(address);
     if (read_cold) {
@@ -1209,6 +1239,10 @@ monad_access_status State::sload_cold_absent(
             *orig.delta_, address, orig.account_.value().incarnation, key);
         orig.prestate_storage_.insert(key, value);
         out = load_be<uint256_t>(value);
+    }
+    else {
+        // As in sload_full.
+        account_state.orig_->warm_unread_ = 1;
     }
     return MONAD_ACCESS_COLD;
 }
@@ -1248,7 +1282,8 @@ monad_access_status State::sload_into(
                 auto const &original_account = orig->account_;
                 // A slot either row holds is warm while the original row
                 // says so: the rows are searched first, and the warm slots
-                // only when both miss. An account recreated since its
+                // only when both miss, and not even then while no slot is
+                // warm that both miss. An account recreated since its
                 // original row was read takes the order below, its original
                 // slots not being its own.
                 if (MONAD_LIKELY(orig->rows_unwarmed_ == 0)) {
@@ -1266,7 +1301,8 @@ monad_access_status State::sload_into(
                             out = load_be<uint256_t>(*v);
                             return MONAD_ACCESS_WARM;
                         }
-                        if (!cur->is_accessed_storage(key)) {
+                        if (orig->warm_unread_ == 0 ||
+                            !cur->is_accessed_storage(key)) {
                             return sload_cold_absent(
                                 address, key, read_cold, out, *cur);
                         }
@@ -1322,6 +1358,9 @@ vm::runtime::SstoreStatus State::sstore_into(
             orig.rows_unwarmed_ != 0) {
             access = access_storage_of<traits>(account_state, address, key);
             if (access == MONAD_ACCESS_COLD && !write_cold) {
+                // Warmed and not written: see
+                // OriginalAccountState::warm_unread_.
+                account_state.orig_->warm_unread_ = 1;
                 return {access, MONAD_STORAGE_ASSIGNED};
             }
         }
@@ -1334,6 +1373,8 @@ vm::runtime::SstoreStatus State::sstore_into(
         monad_access_status const access =
             access_storage_of<traits>(account_state, address, key);
         if (access == MONAD_ACCESS_COLD && !write_cold) {
+            MONAD_ASSERT(account_state.orig_ != nullptr);
+            account_state.orig_->warm_unread_ = 1;
             return {access, MONAD_STORAGE_ASSIGNED};
         }
         return {access, set_storage_of(account_state, address, key, value)};

@@ -49,6 +49,7 @@
 #include <category/execution/ethereum/execute_block.hpp>
 #include <category/execution/ethereum/execute_block_header.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
+#include <category/execution/ethereum/execution_modalities.hpp>
 #include <category/execution/ethereum/rlp/decode.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
@@ -237,23 +238,10 @@ namespace
 
         State state{block_state, incarnation};
 
-        // validate_transaction expects nonce to match.
-        // However, eth_call doesn't take a nonce parameter.
-        // Solving the issue by manually setting nonce to match with the
-        // expected nonce
-        enriched_txn.nonce = state.get_nonce(sender);
-
-        // Safe to pass empty code to validation here because the above override
-        // will always mark this transaction as coming from an EOA.
         {
             State state{block_state, incarnation};
-            // validate_transaction expects the sender of a transaction is EOA,
-            // not CA. However, eth_call allows the sender to be CA to simulate
-            // a subroutine. Solving this issue by manually setting account to
-            // be EOA for validation
-            state.set_code(sender, {});
             BOOST_OUTCOME_TRY(validate_ethereum_transaction<traits>(
-                enriched_txn, sender, state, state_tracer));
+                enriched_txn, sender, state, state_tracer, false));
         }
 
         auto const senders = std::vector{sender};
@@ -778,7 +766,7 @@ namespace
         std::vector<std::unique_ptr<CallTracerBase>> &call_tracers,
         std::vector<std::unique_ptr<trace::StateTracer>> &state_tracers,
         ChainContextBuffer &context_buffer,
-        bool const emit_native_transfer_logs)
+        bool const emit_native_transfer_logs, Simulation const &execution_mode)
     {
         if constexpr (traits::eip_7843_active()) {
             block.header.requests_hash = bytes32_t{};
@@ -790,8 +778,11 @@ namespace
 
         auto block_metrics = BlockMetrics{};
         trace::StateTracer system_call_state_tracer{std::monostate{}};
-        auto const chain_context =
+        auto chain_context =
             context_buffer.advance<traits>(senders, authorities);
+        if constexpr (is_monad_trait_v<traits>) {
+            chain_context.mode = execution_mode;
+        }
 
         return execute_block<traits>(
             chain,
@@ -820,7 +811,7 @@ namespace
         std::vector<std::unique_ptr<CallTracerBase>> &call_tracers,
         std::vector<std::unique_ptr<trace::StateTracer>> &state_tracers,
         ChainContextBuffer &context_buffer,
-        bool const emit_native_transfer_logs)
+        bool const emit_native_transfer_logs, Simulation const &execution_mode)
     {
         if constexpr (is_monad_trait_v<base_traits>) {
             auto const *const monad_chain =
@@ -841,7 +832,8 @@ namespace
                 call_tracers,
                 state_tracers,
                 context_buffer,
-                emit_native_transfer_logs);
+                emit_native_transfer_logs,
+                execution_mode);
         }
         else {
             monad_eth_revision const rev =
@@ -859,7 +851,8 @@ namespace
                 call_tracers,
                 state_tracers,
                 context_buffer,
-                emit_native_transfer_logs);
+                emit_native_transfer_logs,
+                execution_mode);
         }
         MONAD_ASSERT(false);
     }
@@ -876,10 +869,15 @@ namespace
         struct monad_state_override_vec const &state_overrides,
         struct monad_block_override_vec const &block_overrides,
         uint64_t const gas_limit, size_t const max_calls, size_t const max_size,
-        bool emit_native_transfer_logs)
+        Simulation const execution_mode, bool emit_native_transfer_logs)
     {
         // TODO(dhil): Decide on the default timestamp increment.
         static constexpr uint64_t DEFAULT_TIMESTAMP_INCREMENT = 1;
+
+        if (MONAD_UNLIKELY(is_evm_trait_v<traits>)) {
+            return Result<nlohmann::json>::error_type{
+                SimulationError::UnsupportedMode};
+        }
 
         if (MONAD_UNLIKELY(
                 calls.size() != senders.size() ||
@@ -1027,7 +1025,8 @@ namespace
                         call_tracers,
                         state_tracers,
                         context_buffer,
-                        emit_native_transfer_logs));
+                        emit_native_transfer_logs,
+                        execution_mode));
 
                 // NOTE(dhil): Synthetic blocks are free, so we don't update
                 // `gas_consumed_so_far`.
@@ -1108,6 +1107,13 @@ namespace
                     // Update tx.nonce to match the expected nonce in the
                     // current block state.
                     tx.nonce = state.get_nonce(senders[block_idx][tx_idx]);
+                    // NOTE(dhil): Unlike eth_call, eth_simulateV1 always
+                    // performs the max nonce check.
+                    if (MONAD_UNLIKELY(
+                            tx.nonce == std::numeric_limits<uint64_t>::max())) {
+                        return Result<nlohmann::json>::error_type{
+                            TransactionError::NonceExceedsMax};
+                    }
                     state.set_nonce(senders[block_idx][tx_idx], tx.nonce + 1);
                 }
             }
@@ -1156,7 +1162,8 @@ namespace
                     call_tracers,
                     state_tracers,
                     context_buffer,
-                    emit_native_transfer_logs));
+                    emit_native_transfer_logs,
+                    execution_mode));
 
             for (auto const &call_tracer : call_tracers) {
                 static_cast<CallTracer const &>(*call_tracer)
@@ -2039,7 +2046,7 @@ struct monad_executor
         BlockHeader const &block_header, uint64_t const block_number,
         bytes32_t const &block_id, bytes32_t const &grandparent_id,
         uint64_t const gas_limit, size_t const max_calls, size_t const max_size,
-        bool emit_native_transfer_logs,
+        bool const validation, bool emit_native_transfer_logs,
         void (*complete)(monad_executor_result *, void *user), void *const user)
     {
         monad_executor_result *const result = new monad_executor_result();
@@ -2069,6 +2076,7 @@ struct monad_executor
              gas_limit = gas_limit,
              max_calls = max_calls,
              max_size = max_size,
+             execution_mode = Simulation{validation},
              emit_native_transfer_logs = emit_native_transfer_logs,
              fiber_group = &trace_block_group_,
              tx_exec_group = &trace_tx_exec_group_,
@@ -2139,6 +2147,7 @@ struct monad_executor
                                 gas_limit,
                                 max_calls,
                                 max_size,
+                                execution_mode,
                                 emit_native_transfer_logs);
                             MONAD_ASSERT(false);
                         }
@@ -2165,6 +2174,7 @@ struct monad_executor
                                 gas_limit,
                                 max_calls,
                                 max_size,
+                                execution_mode,
                                 emit_native_transfer_logs);
                             MONAD_ASSERT(false);
                         }
@@ -2427,7 +2437,7 @@ void monad_executor_eth_simulate_submit(
     size_t max_calls, size_t max_output_size,
     struct monad_state_override_vec const *const state_overrides,
     struct monad_block_override_vec const *const block_overrides,
-    bool emit_native_transfer_logs,
+    bool const validation, bool emit_native_transfer_logs,
     void (*complete)(monad_executor_result *, void *user), void *user)
 {
 
@@ -2489,6 +2499,7 @@ void monad_executor_eth_simulate_submit(
         gas_limit,
         max_calls,
         max_output_size,
+        validation,
         emit_native_transfer_logs,
         complete,
         user);

@@ -23,6 +23,7 @@
 #include <category/vm/evm/explicit_traits.hpp>
 
 #include <boost/outcome/success_failure.hpp>
+#include <boost/outcome/try.hpp>
 
 #include <ranges>
 #include <system_error>
@@ -34,10 +35,15 @@ Result<void> validate_transaction(
     Transaction const &tx, Address const &sender, State &state,
     uint256_t const &base_fee_per_gas,
     std::span<std::optional<Address> const> const authorities,
-    trace::StateTracer &state_tracer)
+    trace::StateTracer &state_tracer, ExecutionMode const &mode)
 {
-    auto res =
-        validate_ethereum_transaction<traits>(tx, sender, state, state_tracer);
+    bool const strict = strict_validation(mode);
+    if (!strict) {
+        BOOST_OUTCOME_TRY(validate_relaxed_sender_nonce(sender, state));
+    }
+    auto res = validate_ethereum_transaction<traits>(
+        tx, sender, state, state_tracer, strict);
+
     if constexpr (traits::reserve_balance_active()) {
         if (res.has_error() &&
             res.error() != TransactionError::InsufficientBalance) {

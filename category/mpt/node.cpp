@@ -24,6 +24,7 @@
 #include <category/mpt/util.hpp>
 
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cassert>
 #include <cstddef>
@@ -641,9 +642,10 @@ void serialize_node_to_buffer(
     MONAD_ASSERT(disk_size > 0 && disk_size <= Node::max_disk_size);
     if (offset < Node::disk_size_bytes) { // serialize node disk size
         MONAD_ASSERT(bytes_to_append <= disk_size - offset);
+        uint32_t const word = encode_node_size_word(disk_size);
         unsigned const written =
             std::min(bytes_to_append, Node::disk_size_bytes - offset);
-        memcpy(write_pos, (unsigned char *)&disk_size + offset, written);
+        memcpy(write_pos, (unsigned char const *)&word + offset, written);
         bytes_to_append -= written;
         write_pos += written;
     }
@@ -657,6 +659,107 @@ void serialize_node_to_buffer(
             (unsigned char *)&node + offset_within_node,
             bytes_to_append);
     }
+}
+
+uint32_t legacy_layout_disk_size(Node const &node) noexcept
+{
+    return node.get_disk_size() -
+           static_cast<uint32_t>(
+               2 * node.number_of_children() *
+               (sizeof(compact_virtual_chunk_offset_t) - sizeof(uint32_t)));
+}
+
+void serialize_legacy_layout_node_to_buffer(
+    unsigned char *write_pos, unsigned const bytes_to_append, Node const &node,
+    uint32_t const legacy_disk_size, unsigned const offset)
+{
+    MONAD_ASSERT(
+        legacy_disk_size > 0 && legacy_disk_size <= Node::max_disk_size);
+    MONAD_ASSERT(bytes_to_append <= legacy_disk_size - offset);
+
+    unsigned const n = node.number_of_children();
+    std::array<uint32_t, 2 * Node::max_number_of_children> narrowed;
+    for (unsigned i = 0; i < n; ++i) {
+        narrowed[i] = node.min_offset_fast(i).to_legacy();
+        narrowed[n + i] = node.min_offset_slow(i).to_legacy();
+    }
+
+    struct segment
+    {
+        unsigned char const *src;
+        size_t len;
+    };
+
+    uint32_t const word = legacy_disk_size;
+    auto const *const node_bytes =
+        reinterpret_cast<unsigned char const *>(&node);
+    size_t const head_len = sizeof(Node) + n * sizeof(chunk_offset_t);
+    auto const *const tail = reinterpret_cast<unsigned char const *>(
+        node.child_min_version_data().data());
+    size_t const tail_len = legacy_disk_size - Node::disk_size_bytes -
+                            head_len - 2 * n * sizeof(uint32_t);
+    segment const segments[] = {
+        {reinterpret_cast<unsigned char const *>(&word), sizeof(word)},
+        {node_bytes, head_len},
+        {reinterpret_cast<unsigned char const *>(narrowed.data()),
+         2 * n * sizeof(uint32_t)},
+        {tail, tail_len}};
+
+    size_t seg_start = 0;
+    size_t const end = static_cast<size_t>(offset) + bytes_to_append;
+    for (auto const &seg : segments) {
+        size_t const lo = std::max<size_t>(seg_start, offset);
+        size_t const hi = std::min(seg_start + seg.len, end);
+        if (lo < hi) {
+            memcpy(write_pos, seg.src + (lo - seg_start), hi - lo);
+            write_pos += hi - lo;
+        }
+        seg_start += seg.len;
+    }
+}
+
+Node::SharedPtr deserialize_legacy_layout_node(
+    unsigned char const *const read_pos, uint32_t const disk_size)
+{
+    auto const mask = unaligned_load<uint16_t>(read_pos);
+    auto const n = static_cast<unsigned>(std::popcount(mask));
+    size_t const widening =
+        2 * n * (sizeof(compact_virtual_chunk_offset_t) - sizeof(uint32_t));
+    size_t const legacy_base = disk_size - Node::disk_size_bytes;
+    size_t const base_size = legacy_base + widening;
+    size_t const alloc_size =
+        round_up_align<3>(base_size) + n * sizeof(Node::SharedPtr);
+    MONAD_ASSERT(base_size + Node::disk_size_bytes <= Node::max_disk_size);
+    auto node = Node::make_shared(alloc_size);
+
+    size_t const head_len = sizeof(Node) + n * sizeof(chunk_offset_t);
+    size_t const offsets_len = 2 * n * sizeof(uint32_t);
+    MONAD_ASSERT(legacy_base >= head_len + offsets_len);
+    std::copy_n(
+        read_pos, head_len, reinterpret_cast<unsigned char *>(node.get()));
+    for (unsigned i = 0; i < n; ++i) {
+        node->set_min_offset_fast(
+            i,
+            compact_virtual_chunk_offset_t::from_legacy(
+                unaligned_load<uint32_t>(
+                    read_pos + head_len + i * sizeof(uint32_t))));
+        node->set_min_offset_slow(
+            i,
+            compact_virtual_chunk_offset_t::from_legacy(
+                unaligned_load<uint32_t>(
+                    read_pos + head_len + (n + i) * sizeof(uint32_t))));
+    }
+    std::copy_n(
+        read_pos + head_len + offsets_len,
+        legacy_base - head_len - offsets_len,
+        reinterpret_cast<unsigned char *>(
+            node->child_min_version_data().data()));
+    auto const sp = node->child_next_data();
+    for (size_t i = 0; i < sp.size(); ++i) {
+        new (sp.data() + i) Node::SharedPtr();
+    }
+    MONAD_ASSERT(alloc_size == node->get_mem_size());
+    return node;
 }
 
 int64_t calc_min_version(Node const &node)

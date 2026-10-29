@@ -372,6 +372,10 @@ public:
         //! can cause pool data loss, as well as system data loss as it will
         //! happily use any partition you feed it, including the system drive.
         uint32_t disable_mismatching_storage_pool_check : 1;
+        //! Whether an open may migrate the database from the previous on-disk
+        //! format. When false, opening a database in that format aborts with
+        //! a message directing the operator to run monad-mpt --upgrade.
+        uint32_t allow_migration : 1;
 
         //! Number of conventional chunks to allocate. Default is 3.
         uint32_t num_cnv_chunks;
@@ -389,6 +393,7 @@ public:
             , open_read_only(false)
             , open_read_only_allow_dirty(false)
             , disable_mismatching_storage_pool_check(false)
+            , allow_migration(false)
             , num_cnv_chunks(3)
             , recorded_size_of_grown_device(std::nullopt)
             , metadata_budget(std::nullopt)
@@ -405,8 +410,8 @@ public:
     };
 
 private:
-    bool const is_read_only_, is_read_only_allow_dirty_, is_newly_truncated_,
-        is_growing_;
+    bool const is_read_only_, is_read_only_allow_dirty_, is_migration_allowed_,
+        is_newly_truncated_, is_growing_;
     device_t device_;
     // A chunk's whole geometry follows from its id, so these counts are all
     // the pool keeps per chunk type.
@@ -556,6 +561,12 @@ public:
         return is_read_only_allow_dirty_;
     }
 
+    //! \brief True if the storage pool was opened with allow_migration set.
+    bool is_migration_allowed() const noexcept
+    {
+        return is_migration_allowed_;
+    }
+
     //! \brief True if the storage pool was just truncated, and structures may
     //! need reinitialising
     bool is_newly_truncated() const noexcept
@@ -600,6 +611,10 @@ public:
         std::filesystem::path const &source,
         std::optional<file_offset_t> recorded_size,
         std::optional<db_metadata_budget> const &budget);
+
+    //! \brief Whether `source` ends in a pool footer. A device extended in
+    //! place does not until a grow relocates its footer there.
+    static bool ends_in_footer(std::filesystem::path const &source);
 
     //! \brief Returns the number of chunks for the specified type
     size_t chunks(chunk_type const which) const noexcept

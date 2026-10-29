@@ -133,12 +133,10 @@ struct NodeWriterTestBase : public ::testing::Test
         return node_writer->sender().offset().id;
     }
 
-    uint32_t get_writer_chunk_count(node_writer_unique_ptr_type &node_writer)
+    uint64_t get_writer_chunk_count(node_writer_unique_ptr_type &node_writer)
     {
-        return (uint32_t)aux.metadata_ctx()
-            .main()
-            ->at(get_writer_chunk_id(node_writer))
-            ->insertion_count();
+        return aux.metadata_ctx().main()->insertion_count(
+            get_writer_chunk_id(node_writer));
     }
 };
 
@@ -208,7 +206,7 @@ TEST_F(NodeWriterTest, write_node_across_buffers_ends_at_buffer_boundary)
     auto const node_writer_chunk_count_after =
         get_writer_chunk_count(aux.node_writer_fast);
     EXPECT_EQ(
-        aux.metadata_ctx().main()->at(new_node_offset.id)->insertion_count(),
+        aux.metadata_ctx().main()->insertion_count(new_node_offset.id),
         node_writer_chunk_count_after);
     EXPECT_EQ(
         node_writer_chunk_count_before + 1, node_writer_chunk_count_after);
@@ -232,7 +230,7 @@ TEST_F(NodeWriterTest, write_node_at_new_chunk)
     auto const node = make_node_of_size(chunk_remaining_bytes + 1024);
     auto const node_offset = async_write_node_set_spare(aux, *node, true);
     auto const node_offset_chunk_count =
-        aux.metadata_ctx().main()->at(node_offset.id)->insertion_count();
+        aux.metadata_ctx().main()->insertion_count(node_offset.id);
     EXPECT_EQ(
         node_offset_chunk_count, node_writer_chunk_count_before_write_node + 1);
     EXPECT_EQ(

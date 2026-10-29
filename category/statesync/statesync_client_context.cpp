@@ -123,7 +123,9 @@ void monad_statesync_client_context::prepare_current_state()
     MONAD_ASSERT(finalized_res.value().node->number_of_children() == 2);
     MONAD_ASSERT(db.find(dest_root, state_key, current).has_value());
     MONAD_ASSERT(db.find(dest_root, code_key, current).has_value());
-    MONAD_ASSERT(dest_root->value() == src_root->value());
+    MONAD_ASSERT(
+        compact_offset_pair::deserialize(dest_root->value()) ==
+        compact_offset_pair::deserialize(src_root->value()));
     tdb.reset_root(dest_root, current);
     MONAD_ASSERT(db.get_latest_version() == current);
 }

@@ -70,8 +70,9 @@ add_trie_test(TARGET state_machine_kind_test SOURCES
 add_trie_test(TARGET db_state_machine_kind_open_test SOURCES
               "db_state_machine_kind_open_test.cpp")
 add_trie_test(TARGET subtrie_version_test SOURCES "subtrie_version_test.cpp")
-add_trie_test(TARGET unsigned_20_test SOURCES "unsigned_20_test.cpp")
 add_trie_test(TARGET virtual_offset_test SOURCES "virtual_offset_test.cpp")
+add_trie_test(TARGET wide_insertion_count_test SOURCES
+              "wide_insertion_count_test.cpp")
 
 # monad trie perf test
 add_executable(monad_trie_test "monad_trie_test.cpp")

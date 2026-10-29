@@ -31,6 +31,7 @@
 #include <category/mpt/nibbles_view.hpp>
 
 #include <functional>
+#include <memory>
 #include <optional>
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
@@ -103,8 +104,10 @@ std::optional<Account> PartialTrieDb::read_account(Address const &addr)
             }});
 }
 
-bytes32_t PartialTrieDb::read_storage(
-    Address const &addr, Incarnation, bytes32_t const &slot)
+// Inlined into both reads: read_storage compiles as it did before
+// read_storage_into shared it.
+[[gnu::always_inline]] inline mpt::NodeId
+PartialTrieDb::storage_root(Address const &addr)
 {
     mpt::NodeId sroot;
     if (sroot_valid_ && sroot_addr_ == addr) {
@@ -136,7 +139,13 @@ bytes32_t PartialTrieDb::read_storage(
         sroots_.try_emplace(addr, sroot);
 #endif
     }
+    return sroot;
+}
 
+bytes32_t PartialTrieDb::read_storage(
+    Address const &addr, Incarnation, bytes32_t const &slot)
+{
+    mpt::NodeId const sroot = storage_root(addr);
     if (sroot == mpt::NULL_ID) {
         return bytes32_t{};
     }
@@ -152,6 +161,42 @@ bytes32_t PartialTrieDb::read_storage(
                 MONAD_ABORT("incorrect node type returned in read_storage");
             }});
 }
+
+#ifdef MONAD_ZKVM_ZISK
+bytes32_t const &PartialTrieDb::read_storage_into(
+    Address const &addr, Incarnation, bytes32_t const &slot,
+    StorageDelta *const delta)
+{
+    // read_storage's descent, with the value constructed in the delta rather
+    // than returned through the caller's stack and copied in.
+    mpt::NodeId const sroot = storage_root(addr);
+    if (sroot == mpt::NULL_ID) {
+        return std::construct_at(delta)->second;
+    }
+    MONAD_KECCAK_SITE(READ_STOR_SLOT, sizeof(slot.bytes));
+    auto const skey = keccak256(slot.bytes);
+
+    return match(
+        trie_.find_original(sroot, mpt::NibblesView{skey}),
+        Cases{
+            [delta](mpt::NullView) -> bytes32_t const & {
+                return std::construct_at(delta)->second;
+            },
+            [delta](mpt::StorageLeafView l) -> bytes32_t const & {
+                // A half at a time, so the leaf's value is copied straight
+                // into the first and from there into the second, where a
+                // value built on the stack was copied into both.
+                auto const *const first = ::new (
+                    static_cast<void *>(const_cast<bytes32_t *>(&delta->first)))
+                    bytes32_t(l.value());
+                return *::new (static_cast<void *>(&delta->second))
+                    bytes32_t(*first);
+            },
+            [](auto) -> bytes32_t const & {
+                MONAD_ABORT("incorrect node type returned in read_storage");
+            }});
+}
+#endif
 
 void PartialTrieDb::commit(
     bytes32_t const &, CommitBuilder &, BlockHeader const &header,

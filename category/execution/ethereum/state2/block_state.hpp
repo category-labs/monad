@@ -80,6 +80,14 @@ class BlockState final
     // Adds the pending fees to the beneficiary's entry and clears them.
     [[gnu::noinline, gnu::cold]] void
     apply_beneficiary_credit(StateDeltas::value_type &);
+
+    // read_storage(entry, ...) for a slot its probe cannot place without
+    // growing the account's table, or read with a cross-check database: the
+    // emplace that builds the slot from the read. Out of line, so the probe
+    // keeps no frame.
+    [[gnu::noinline]] bytes32_t const &read_storage_emplacing(
+        StateDeltas::value_type &, Address const &, Incarnation,
+        bytes32_t const &key);
 #endif
 
 public:

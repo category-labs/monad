@@ -72,6 +72,10 @@ class PartialTrieDb final : public Db
     uint64_t block_number_{0};
     BlockHeader last_committed_header_{};
 
+    // The storage root of the account at the address, NULL_ID when it has
+    // none, from the entries above when they hold it.
+    mpt::NodeId storage_root(Address const &);
+
 public:
     PartialTrieDb(mpt::OffsetTrie trie, CodeIndex codes)
         : trie_(std::move(trie))
@@ -98,6 +102,15 @@ public:
 
     bytes32_t
     read_storage(Address const &, Incarnation, bytes32_t const &) override;
+
+#ifdef MONAD_ZKVM_ZISK
+    // read_storage, with the value constructed as both halves of the delta,
+    // which must not hold one yet; returns the second.
+    // BlockState::read_storage places a slot before reading it, so the read is
+    // its tail call and the value is built where the block keeps it.
+    bytes32_t const &read_storage_into(
+        Address const &, Incarnation, bytes32_t const &, StorageDelta *);
+#endif
 
     storage_page_t
     read_storage_page(Address const &, Incarnation, bytes32_t const &) override

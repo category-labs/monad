@@ -146,8 +146,85 @@ function(monad_zkvm_unordered_dense_derive target third_party_dir out_dir)
     set(_to_fill [==[    void clear_and_fill_buckets_from_values() {
         for (value_idx_type value_idx = 0,]==])
 
+    # Four. A map gains try_emplace_unbuilt, and segmented_vector the
+    # push_back_unbuilt it rests on: try_emplace's one probe, with the key
+    # placed on a miss and the mapped value left for the caller to construct.
+    # BlockState::read_storage builds a slot's value from a database read, and
+    # with the read inside the emplace, every call kept a frame and spilled
+    # around it. Placed first, the read becomes the function's tail call and
+    # constructs the value where the map keeps it. Both return null, changing
+    # nothing, rather than grow the buckets or the value blocks, so the caller
+    # takes try_emplace for those and the probe itself never calls out. They
+    # are additions: nothing that already calls the header changes.
+    set(_from_unbuilt_vec [==[        auto& ref = *new (ptr) T(std::forward<Args>(args)...);
+        ++m_size;
+        return ref;
+    }
+]==])
+    set(_to_unbuilt_vec [==[        auto& ref = *new (ptr) T(std::forward<Args>(args)...);
+        ++m_size;
+        return ref;
+    }
+
+    // The next element's storage, counted in size() but not constructed: the
+    // caller constructs it before anything reads the container. Null, changing
+    // nothing, when it would need a new block.
+    auto push_back_unbuilt() -> T* {
+        if (m_size == capacity()) {
+            return nullptr;
+        }
+        return &operator[](m_size++);
+    }
+]==])
+    set(_from_unbuilt_map [==[    template <class... Args, typename Q = T, std::enable_if_t<is_map_v<Q>, bool> = true>
+    auto try_emplace(Key const& key, Args&&... args) -> std::pair<iterator, bool> {
+        return do_try_emplace(key, std::forward<Args>(args)...);
+    }
+]==])
+    set(_to_unbuilt_map [==[    template <class... Args, typename Q = T, std::enable_if_t<is_map_v<Q>, bool> = true>
+    auto try_emplace(Key const& key, Args&&... args) -> std::pair<iterator, bool> {
+        return do_try_emplace(key, std::forward<Args>(args)...);
+    }
+
+    // do_try_emplace's probe, returning the element and whether it is new. A
+    // new element has its key and not its mapped value, which the caller
+    // constructs before anything reads the map. Null, changing nothing, when
+    // the insertion would grow the buckets or the values.
+    template <typename Q = T, std::enable_if_t<is_map_v<Q>, bool> = true>
+    auto try_emplace_unbuilt(Key const& key) -> std::pair<value_type*, bool> {
+        if (ANKERL_UNORDERED_DENSE_UNLIKELY(is_full())) {
+            return {nullptr, false};
+        }
+
+        auto hash = mixed_hash(key);
+        auto dist_and_fingerprint = dist_and_fingerprint_from_hash(hash);
+        auto bucket_idx = bucket_idx_from_hash(hash);
+
+        while (true) {
+            auto* bucket = &at(m_buckets, bucket_idx);
+            if (dist_and_fingerprint == bucket->m_dist_and_fingerprint) {
+                if (m_equal(key, m_values[bucket->m_value_idx].first)) {
+                    return {&m_values[bucket->m_value_idx], false};
+                }
+            } else if (dist_and_fingerprint > bucket->m_dist_and_fingerprint) {
+                auto* slot = m_values.push_back_unbuilt();
+                if (ANKERL_UNORDERED_DENSE_UNLIKELY(slot == nullptr)) {
+                    return {nullptr, false};
+                }
+                ::new (static_cast<void*>(&slot->first)) Key(key);
+                place_and_shift_up({dist_and_fingerprint, static_cast<value_idx_type>(m_values.size() - 1)}, bucket_idx);
+                return {slot, true};
+            }
+            dist_and_fingerprint = dist_inc(dist_and_fingerprint);
+            bucket_idx = next(bucket_idx);
+        }
+    }
+]==])
+
     foreach(_pair "_from_shifts;_to_shifts" "_from_capacity;_to_capacity"
-                  "_from_bucket;_to_bucket" "_from_fill;_to_fill")
+                  "_from_bucket;_to_bucket" "_from_fill;_to_fill"
+                  "_from_unbuilt_vec;_to_unbuilt_vec"
+                  "_from_unbuilt_map;_to_unbuilt_map")
         list(GET _pair 0 _from_var)
         list(GET _pair 1 _to_var)
         string(FIND "${_text}" "${${_from_var}}" _found)

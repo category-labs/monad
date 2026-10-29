@@ -189,12 +189,42 @@ bytes32_t const &BlockState::read_storage(
     // single-threaded, map insertions preserve elements, and the read does
     // not modify state_. The host releases its TBB lock before reading the
     // database.
-    StateDeltas::value_type *const it = &entry;
-    auto const &account = it->second.account.second;
+    auto const &account = entry.second.account.second;
     if (!account || incarnation != account->incarnation) {
         static constexpr bytes32_t zero{};
         return zero;
     }
+    if (MONAD_UNLIKELY(secondary_db_ != nullptr)) {
+        return read_storage_emplacing(entry, address, incarnation, key);
+    }
+    // One probe for the slot, as try_emplace's, and a new slot is placed
+    // before its value is read: the read is then this function's last call,
+    // made as a jump, and builds the value where the map keeps it. Nothing
+    // reads the map between the two -- the read does not touch state_ -- and a
+    // segmented map's values never move, so the slot outlives the read. Where
+    // placing it would grow the table, the emplace builds it instead.
+    auto const [slot, inserted] = entry.second.storage.try_emplace_unbuilt(key);
+    if (MONAD_UNLIKELY(slot == nullptr)) {
+        return read_storage_emplacing(entry, address, incarnation, key);
+    }
+    if (MONAD_LIKELY(!inserted)) {
+        return slot->second.second;
+    }
+    // Nothing changes the account across the read here, so the host's
+    // post-read check holds by construction.
+    auto const &orig_account = entry.second.account.first;
+    if (!orig_account || incarnation != orig_account->incarnation) {
+        return std::construct_at(&slot->second)->second;
+    }
+    return guest_db(db_).read_storage_into(
+        address, incarnation, key, &slot->second);
+}
+
+bytes32_t const &BlockState::read_storage_emplacing(
+    StateDeltas::value_type &entry, Address const &address,
+    Incarnation const incarnation, bytes32_t const &key)
+{
+    StateDeltas::value_type *const it = &entry;
     // One probe for the slot: try_emplace places it where the search for it
     // ended, and the database is read only to build it, where a find and then
     // an emplace would hash and probe the key twice. Nothing changes the

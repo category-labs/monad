@@ -9923,3 +9923,388 @@ TEST_F(EthCallFixture, eth_call_discards_oversized_low_gas_trace_on_retry)
     EXPECT_EQ(retry_frames.value().front().status, MONAD_STATUS_SUCCESS);
     EXPECT_TRUE(retry_frames.value().front().output.empty());
 }
+
+namespace
+{
+    monad_executor *create_executor_without_db()
+    {
+        monad_executor_pool_config const conf = {1, 2, max_timeout, 1000};
+        unsigned const tx_exec_num_fibers = 10;
+        return monad_executor_create(
+            conf, conf, conf, tx_exec_num_fibers, node_lru_max_mem, nullptr);
+    }
+
+    void run_eth_call(
+        monad_executor *const executor, Transaction const &tx,
+        BlockHeader const &header, Address const &sender,
+        monad_state_override const *const state_override, callback_context &ctx)
+    {
+        auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
+        auto const rlp_header = to_vec(rlp::encode_block_header(header));
+        auto const rlp_sender =
+            to_vec(rlp::encode_address(std::make_optional(sender)));
+        auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+        boost::fibers::future<void> f = ctx.promise.get_future();
+        monad_executor_eth_call_submit(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_tx.data(),
+            rlp_tx.size(),
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_sender.data(),
+            rlp_sender.size(),
+            header.number,
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            state_override,
+            complete_callback,
+            &ctx,
+            NOOP_TRACER,
+            call_tracer_max_size,
+            true);
+        f.get();
+    }
+}
+
+TEST(EthCallWithoutDb, call_with_code_and_storage_overrides)
+{
+    using namespace monad::vm::utils;
+
+    static constexpr Address sender =
+        0x00000000000000000000000000000000deadbeef_address;
+    static constexpr Address contract =
+        0xcccccccccccccccccccccccccccccccccccccccc_address;
+
+    // Returns the value of storage slot 0.
+    auto const eb = evm_as::latest()
+                        .push0()
+                        .sload()
+                        .push0()
+                        .mstore()
+                        .push(32)
+                        .push0()
+                        .return_();
+    ASSERT_TRUE(evm_as::validate(eb));
+    std::vector<uint8_t> code{};
+    evm_as::compile(eb, code);
+    bytes32_t const storage_key{};
+    bytes32_t const storage_value = store_be_as<bytes32_t>(uint256_t{42});
+
+    auto *const executor = create_executor_without_db();
+    auto *const state_override = monad_state_override_create();
+    add_override_address(
+        state_override, contract.bytes, sizeof(contract.bytes));
+    set_override_code(
+        state_override,
+        contract.bytes,
+        sizeof(contract.bytes),
+        code.data(),
+        code.size());
+    set_override_state_diff(
+        state_override,
+        contract.bytes,
+        sizeof(contract.bytes),
+        storage_key.bytes,
+        sizeof(storage_key.bytes),
+        storage_value.bytes,
+        sizeof(storage_value.bytes));
+
+    callback_context ctx;
+    run_eth_call(
+        executor,
+        Transaction{.gas_limit = 100'000, .to = contract},
+        BlockHeader{.number = 1000},
+        sender,
+        state_override,
+        ctx);
+
+    ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    ASSERT_EQ(ctx.result->output_data_len, sizeof(bytes32_t));
+    EXPECT_EQ(
+        std::memcmp(
+            ctx.result->output_data,
+            storage_value.bytes,
+            sizeof(storage_value.bytes)),
+        0);
+
+    monad_state_override_destroy(state_override);
+    monad_executor_destroy(executor);
+}
+
+TEST(EthCallWithoutDb, transfer_to_absent_account)
+{
+    static constexpr Address sender =
+        0x00000000000000000000000000000000deadbeef_address;
+    static constexpr Address recipient =
+        0x00000000000000000000000000000000feedface_address;
+    bytes32_t const balance = store_be_as<bytes32_t>(uint256_t{1_ether});
+
+    auto *const executor = create_executor_without_db();
+    auto *const state_override = monad_state_override_create();
+    add_override_address(state_override, sender.bytes, sizeof(sender.bytes));
+    set_override_balance(
+        state_override,
+        sender.bytes,
+        sizeof(sender.bytes),
+        balance.bytes,
+        sizeof(balance.bytes));
+
+    callback_context ctx;
+    run_eth_call(
+        executor,
+        Transaction{
+            .gas_limit = 100'000,
+            .value = uint256_t{1'000},
+            .to = recipient,
+            .type = TransactionType::eip1559},
+        BlockHeader{.number = 1000},
+        sender,
+        state_override,
+        ctx);
+
+    EXPECT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    EXPECT_EQ(ctx.result->gas_used, 21000);
+
+    monad_state_override_destroy(state_override);
+    monad_executor_destroy(executor);
+}
+
+TEST(EthCallWithoutDb, blockhash_is_unavailable)
+{
+    using namespace monad::vm::utils;
+
+    static constexpr Address sender =
+        0x00000000000000000000000000000000deadbeef_address;
+    static constexpr Address contract =
+        0x000000000000000000000000000000000000b10c_address;
+
+    // Returns the hash of the parent block.
+    auto const eb = evm_as::latest()
+                        .push(1)
+                        .number()
+                        .sub()
+                        .blockhash()
+                        .push0()
+                        .mstore()
+                        .push(32)
+                        .push0()
+                        .return_();
+    ASSERT_TRUE(evm_as::validate(eb));
+    std::vector<uint8_t> code{};
+    evm_as::compile(eb, code);
+
+    auto *const executor = create_executor_without_db();
+    auto *const state_override = monad_state_override_create();
+    add_override_address(
+        state_override, contract.bytes, sizeof(contract.bytes));
+    set_override_code(
+        state_override,
+        contract.bytes,
+        sizeof(contract.bytes),
+        code.data(),
+        code.size());
+
+    callback_context ctx;
+    run_eth_call(
+        executor,
+        Transaction{.gas_limit = 100'000, .to = contract},
+        BlockHeader{.number = 1000},
+        sender,
+        state_override,
+        ctx);
+
+    EXPECT_EQ(ctx.result->status_code, EVMC_INTERNAL_ERROR);
+    EXPECT_STREQ(
+        ctx.result->message, "blockhash: unavailable without a database");
+
+    monad_state_override_destroy(state_override);
+    monad_executor_destroy(executor);
+}
+
+TEST(EthCallWithoutDb, eth_simulate_v1_with_state_overrides)
+{
+    using namespace monad::vm::utils;
+
+    static constexpr Address sender =
+        0x00000000000000000000000000000000deadbeef_address;
+    static constexpr Address recipient =
+        0x00000000000000000000000000000000feedface_address;
+    static constexpr Address blockhash_contract =
+        0x000000000000000000000000000000000000b10c_address;
+
+    // Returns the hash of the parent block.
+    auto const eb = evm_as::latest()
+                        .push(1)
+                        .number()
+                        .sub()
+                        .blockhash()
+                        .push0()
+                        .mstore()
+                        .push(32)
+                        .push0()
+                        .return_();
+    ASSERT_TRUE(evm_as::validate(eb));
+    std::vector<uint8_t> code{};
+    evm_as::compile(eb, code);
+    bytes32_t const balance = store_be_as<bytes32_t>(uint256_t{100_ether});
+
+    auto *const executor = create_executor_without_db();
+
+    Transaction const blockhash_tx{
+        .gas_limit = 200'000'000,
+        .to = blockhash_contract,
+    };
+    Transaction const transfer_tx{
+        .gas_limit = 200'000'000,
+        .value = uint256_t{1'000},
+        .to = recipient,
+    };
+    Transaction const create_tx{.gas_limit = 200'000'000};
+
+    auto const enc_sender = rlp::encode_address(std::make_optional(sender));
+    auto const rlp_senders = to_vec(rlp::encode_list2(
+        rlp::encode_list2(enc_sender, enc_sender, enc_sender),
+        rlp::encode_list2(enc_sender),
+        rlp::encode_list2(enc_sender)));
+
+    auto const enc_blockhash_tx =
+        rlp::encode_string2(rlp::encode_transaction(blockhash_tx));
+    auto const enc_transfer_tx =
+        rlp::encode_string2(rlp::encode_transaction(transfer_tx));
+    auto const enc_create_tx =
+        rlp::encode_string2(rlp::encode_transaction(create_tx));
+    auto const rlp_calls = to_vec(rlp::encode_list2(
+        rlp::encode_list2(enc_blockhash_tx, enc_transfer_tx, enc_create_tx),
+        rlp::encode_list2(enc_blockhash_tx),
+        rlp::encode_list2(enc_blockhash_tx)));
+
+    // Without a database the base block hash is derived from this header.
+    BlockHeader const header{.number = 255, .gas_limit = 200'000'000};
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    auto *const so = monad_state_override_vec_create(3);
+    add_override_address_at(so, 0, sender.bytes, sizeof(sender.bytes));
+    set_override_balance_at(
+        so,
+        0,
+        sender.bytes,
+        sizeof(sender.bytes),
+        balance.bytes,
+        sizeof(balance.bytes));
+    add_override_address_at(
+        so, 0, blockhash_contract.bytes, sizeof(blockhash_contract.bytes));
+    set_override_code_at(
+        so,
+        0,
+        blockhash_contract.bytes,
+        sizeof(blockhash_contract.bytes),
+        code.data(),
+        code.size());
+    auto *const bo = monad_block_override_vec_create(3);
+    set_block_override_number_at(bo, 2, 511); // forces synthetic blocks
+
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+
+    monad_executor_eth_simulate_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_senders.data(),
+        rlp_senders.size(),
+        rlp_calls.data(),
+        rlp_calls.size(),
+        255,
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        rlp_finalized_id.data(),
+        rlp_finalized_id.size(),
+        simulate_gas_limit,
+        simulate_max_calls,
+        simulate_max_output_size,
+        so,
+        bo,
+        false,
+        complete_callback,
+        (void *)&ctx);
+    f.get();
+
+    ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    ASSERT_TRUE(ctx.result->encoded_trace_len > 0);
+
+    nlohmann::json const output = nlohmann::json::from_cbor(
+        ctx.result->encoded_trace,
+        ctx.result->encoded_trace + ctx.result->encoded_trace_len);
+
+    ASSERT_EQ(output.size(), 256);
+
+    // The first block reads the derived base block hash, transfers to an
+    // absent account, and deploys a contract.
+    auto const expected_base_hash = std::format(
+        "0x{}", to_hex(to_bytes(keccak256(rlp::encode_block_header(header)))));
+    ASSERT_EQ(output[0]["calls"].size(), 3);
+    for (auto const &call : output[0]["calls"]) {
+        EXPECT_EQ(call["status"], "0x1");
+    }
+    EXPECT_EQ(output[0]["parentHash"], expected_base_hash);
+    EXPECT_EQ(output[0]["calls"][0]["returnData"], expected_base_hash);
+
+    ASSERT_EQ(output[1]["calls"].size(), 1);
+    EXPECT_EQ(output[1]["calls"][0]["status"], "0x1");
+    EXPECT_EQ(output[1]["parentHash"], output[0]["hash"]);
+    EXPECT_EQ(output[1]["calls"][0]["returnData"], output[0]["hash"]);
+
+    for (size_t i = 2; i < output.size() - 1; ++i) {
+        ASSERT_EQ(output[i]["calls"].size(), 0);
+        EXPECT_EQ(output[i]["parentHash"], output[i - 1]["hash"]);
+    }
+
+    auto const &last = output[output.size() - 1];
+    ASSERT_EQ(last["calls"].size(), 1);
+    EXPECT_EQ(last["calls"][0]["status"], "0x1");
+    EXPECT_EQ(last["parentHash"], output[output.size() - 2]["hash"]);
+    EXPECT_EQ(
+        last["calls"][0]["returnData"], output[output.size() - 2]["hash"]);
+
+    monad_block_override_vec_destroy(bo);
+    monad_state_override_vec_destroy(so);
+    monad_executor_destroy(executor);
+}
+
+TEST(EthCallWithoutDb, trace_is_rejected)
+{
+    auto *const executor = create_executor_without_db();
+
+    BlockHeader const header{.number = 256};
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+    monad_executor_run_transactions(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_header.data(),
+        rlp_header.size(),
+        header.number,
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        -1,
+        complete_callback,
+        (void *)&ctx,
+        PRESTATE_TRACER);
+    f.get();
+
+    EXPECT_EQ(ctx.result->status_code, EVMC_REJECTED);
+    EXPECT_STREQ(ctx.result->message, "cannot trace without a database");
+
+    monad_executor_destroy(executor);
+}

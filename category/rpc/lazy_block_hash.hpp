@@ -31,9 +31,12 @@ MONAD_NAMESPACE_BEGIN
 //
 // A thread-safe LRU is not needed. Each submitted call to the executor pool
 // creates its own LazyBlockHash instance.
+//
+// A null `db` means no database is attached; looking up a block hash then
+// throws.
 class LazyBlockHash : public BlockHashBuffer
 {
-    mpt::RODb const &db_;
+    mpt::RODb const *const db_;
     uint64_t const n_;
     using Cache = static_lru_cache<uint64_t, bytes32_t>;
     mutable Cache blockhash_cache_;
@@ -41,7 +44,7 @@ class LazyBlockHash : public BlockHashBuffer
 public:
     using BlockHashBuffer::N;
 
-    LazyBlockHash(mpt::RODb const &db, uint64_t const n);
+    LazyBlockHash(mpt::RODb const *db, uint64_t const n);
     ~LazyBlockHash() override = default;
 
     uint64_t n() const override;

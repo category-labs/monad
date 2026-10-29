@@ -27,6 +27,8 @@ add_library(
   "lazy_block_hash.hpp"
   "monad_executor.cpp" 
   "monad_executor.h"
+  "null_db.cpp"
+  "null_db.hpp"
   "overrides.cpp" 
   "overrides.h" 
   "overrides.hpp"

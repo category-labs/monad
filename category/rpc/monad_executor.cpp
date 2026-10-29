@@ -43,6 +43,7 @@
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/core/withdrawal.hpp>
+#include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/trie_rodb.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/evmc_host.hpp>
@@ -70,6 +71,7 @@
 #include <category/rpc/chain_context_buffer.hpp>
 #include <category/rpc/eth_simulate_block_hash_buffer.hpp>
 #include <category/rpc/lazy_block_hash.hpp>
+#include <category/rpc/null_db.hpp>
 #include <category/rpc/simulation_error.hpp>
 #include <category/rpc/utils/response_size.hpp>
 #include <category/vm/evm/revision.h>
@@ -125,6 +127,8 @@ namespace
         "tracer are supported";
     char const *const CANNOT_TRACE_GENESIS_ERR_MSG =
         "cannot trace genesis block";
+    char const *const CANNOT_TRACE_WITHOUT_DB_ERR_MSG =
+        "cannot trace without a database";
     char const *const RECOVER_SENDER_ERR_MSG = "failed to recover sender";
     char const *const TRANSACTIONS_CONTEXT_ERR_MSG =
         "failed to recover the transactions context";
@@ -137,6 +141,26 @@ namespace
     namespace eth_simulate_json = monad::rpc::eth_simulateV1::json_fields;
     static ankerl::unordered_dense::segmented_set<Address>
         empty_senders_and_authorities{};
+
+    // Owns the state backend of a request. Without a database, requests
+    // execute against an empty world.
+    class StateDb
+    {
+        std::variant<NullDb, TrieRODb> db_;
+
+    public:
+        explicit StateDb(mpt::RODb *const db)
+        {
+            if (db != nullptr) {
+                db_.emplace<TrieRODb>(*db);
+            }
+        }
+
+        Db &get()
+        {
+            return std::visit([](Db &db) -> Db & { return db; }, db_);
+        }
+    };
 
     void apply_state_overrides(
         BlockState &block_state, Incarnation const incarnation,
@@ -207,7 +231,7 @@ namespace
         Chain const &chain, Transaction const &txn, BlockHeader const &header,
         uint64_t const block_number, bytes32_t const &block_id,
         Address const &sender,
-        std::vector<std::optional<Address>> const &authorities, TrieRODb &tdb,
+        std::vector<std::optional<Address>> const &authorities, Db &db,
         vm::VM &vm, BlockHashBuffer const &buffer,
         monad_state_override const &state_overrides,
         CallTracerBase &call_tracer, trace::StateTracer &state_tracer)
@@ -229,8 +253,8 @@ namespace
             chain.get_chain_id(),
             chain.get_blob_schedule(header.timestamp)));
 
-        tdb.set_block_and_prefix(block_number, block_id);
-        BlockState block_state{tdb, vm};
+        db.set_block_and_prefix(block_number, block_id);
+        BlockState block_state{db, vm};
         // avoid conflict with block reward txn
         Incarnation const incarnation{block_number, Incarnation::LAST_TX - 1u};
         apply_state_overrides(block_state, incarnation, state_overrides);
@@ -872,7 +896,7 @@ namespace
         std::vector<std::vector<Address>> senders,
         std::vector<std::vector<std::vector<std::optional<Address>>>>
             authorities,
-        mpt::RODb &db, vm::VM &vm, fiber::FiberGroup &tx_exec_pool,
+        mpt::RODb *const db, vm::VM &vm, fiber::FiberGroup &tx_exec_pool,
         struct monad_state_override_vec const &state_overrides,
         struct monad_block_override_vec const &block_overrides,
         uint64_t const gas_limit, size_t const max_calls, size_t const max_size,
@@ -914,15 +938,17 @@ namespace
         // willing to materialize this simulation.
         size_t const soft_max_size = padded_max_size(max_size);
 
-        TrieRODb tdb{db};
-        tdb.set_block_and_prefix(base_block_number, block_id);
+        StateDb state_db{db};
+        state_db.get().set_block_and_prefix(base_block_number, block_id);
 
-        // Initialize the chain context buffer.
+        // Initialize the chain context buffer. Without a database the
+        // transactions of the parent and grandparent blocks are unavailable,
+        // so their contexts are left empty.
         auto context_buffer = ChainContextBuffer{};
         // Load grandparent context if available.
-        if (MONAD_LIKELY(base_block_number > 0)) {
+        if (MONAD_LIKELY(db != nullptr && base_block_number > 0)) {
             auto const grandparent_transactions = monad::get_transactions(
-                db, base_block_number - 1, grandparent_id);
+                *db, base_block_number - 1, grandparent_id);
             if (MONAD_UNLIKELY(!grandparent_transactions.has_value())) {
                 return Result<nlohmann::json>::error_type{
                     SimulationError::TransactionsContextUnavailable};
@@ -935,9 +961,9 @@ namespace
         }
         // Load parent context.
         std::optional<bytes32_t> base_block_hash = std::nullopt;
-        {
+        if (MONAD_LIKELY(db != nullptr)) {
             auto const parent_transactions =
-                monad::get_transactions(db, base_block_number, block_id);
+                monad::get_transactions(*db, base_block_number, block_id);
             if (MONAD_UNLIKELY(!parent_transactions.has_value())) {
                 return Result<nlohmann::json>::error_type{
                     SimulationError::TransactionsContextUnavailable};
@@ -958,6 +984,12 @@ namespace
                     to_bytes(keccak256(rlp::encode_block(base_block)));
             }
         }
+        else {
+            // The base block hash cannot be read from a database, so derive
+            // it from the base header.
+            base_block_hash =
+                to_bytes(keccak256(rlp::encode_block_header(base_header)));
+        }
 
         // Instantiate the block hash buffer. We simulate on top of the base
         // block, thus the head block is `base_block_number + 1`.
@@ -971,7 +1003,7 @@ namespace
         uint64_t gas_consumed_so_far = 0;
         size_t carried_size = sizeof(nlohmann::json::array_t);
 
-        auto block_state = BlockState{tdb, vm};
+        auto block_state = BlockState{state_db.get(), vm};
         for (size_t block_idx = 0; block_idx < calls.size(); ++block_idx) {
             auto const &bo = block_overrides.overrides[block_idx];
 
@@ -1387,7 +1419,9 @@ struct monad_executor
     // requests started earlier have higher priority.
     std::atomic<uint64_t> call_seq_no_{0};
 
-    mpt::RODb db_;
+    // Null when the executor runs without a database, in which case requests
+    // execute against an empty world (see `NullDb`).
+    std::unique_ptr<mpt::RODb> db_;
 
     // Secondary timeline, opened when active; shares db_'s service thread
     // and node cache. On archive nodes after the offline promote this is the
@@ -1417,22 +1451,25 @@ struct monad_executor
     // versions below that floor fall through to the secondary (the strictly
     // older history). Availability is re-validated inside the read path, so
     // a version trimmed between here and the read fails the same way it
-    // always has.
-    mpt::RODb &select_db(uint64_t const block_number)
+    // always has. Returns null when the executor runs without a database.
+    mpt::RODb *select_db(uint64_t const block_number)
     {
-        if (block_number >= db_.get_earliest_version() ||
-            secondary_db_ == nullptr) {
-            return db_;
+        if (db_ == nullptr) {
+            return nullptr;
         }
-        return *secondary_db_;
+        if (block_number >= db_->get_earliest_version() ||
+            secondary_db_ == nullptr) {
+            return db_.get();
+        }
+        return secondary_db_.get();
     }
 
     monad_executor(
         monad_executor_pool_config const &low_pool_config,
         monad_executor_pool_config const &high_pool_config,
         monad_executor_pool_config const &block_pool_config,
-        unsigned const tx_exec_num_fibers,
-        uint64_t const node_lru_max_mem, std::string const &triedb_path)
+        unsigned const tx_exec_num_fibers, uint64_t const node_lru_max_mem,
+        std::optional<std::string> const &triedb_path)
         : low_gas_pool_{Pool::Type::low, low_pool_config}
         , high_gas_pool_{Pool::Type::high, high_pool_config}
         , trace_thread_pool_{block_pool_config.num_threads, true}
@@ -1447,8 +1484,12 @@ struct monad_executor
         // create the db instances on the PriorityPool thread so all the
         // thread local storage gets instantiated on the one thread its
         // used
-        , db_{make_db_config(triedb_path, node_lru_max_mem)}
-        , secondary_db_{db_.open_secondary_timeline()}
+        , db_{
+              triedb_path.has_value()
+                  ? std::make_unique<mpt::RODb>(
+                        make_db_config(*triedb_path, node_lru_max_mem))
+                  : nullptr}
+        , secondary_db_{db_ ? db_->open_secondary_timeline() : nullptr}
     {
     }
 
@@ -1520,7 +1561,7 @@ struct monad_executor
              block_header = block_header,
              block_number = block_number,
              block_id = block_id,
-             &db = select_db(block_number),
+             db = select_db(block_number),
              sender = sender,
              result = result,
              complete = complete,
@@ -1573,7 +1614,7 @@ struct monad_executor
                     auto const chain = make_chain(chain_config);
 
                     LazyBlockHash block_hash_buffer{db, block_number};
-                    TrieRODb tdb{db};
+                    StateDb state_db{db};
                     std::vector<CallFrame> call_frames;
                     nlohmann::json state_trace;
                     std::unique_ptr<CallTracerBase> call_tracer =
@@ -1620,7 +1661,7 @@ struct monad_executor
                                 block_id,
                                 sender,
                                 authorities,
-                                tdb,
+                                state_db.get(),
                                 vm_,
                                 block_hash_buffer,
                                 *state_overrides,
@@ -1642,7 +1683,7 @@ struct monad_executor
                                 block_id,
                                 sender,
                                 authorities,
-                                tdb,
+                                state_db.get(),
                                 vm_,
                                 block_hash_buffer,
                                 *state_overrides,
@@ -1824,6 +1865,14 @@ struct monad_executor
             return;
         }
 
+        if (db_ == nullptr) {
+            result->status_code = EVMC_REJECTED;
+            result->message = strdup(CANNOT_TRACE_WITHOUT_DB_ERR_MSG);
+            MONAD_ASSERT(result->message);
+            complete(result, user);
+            return;
+        }
+
         if (!trace_block_group_.try_enqueue()) {
             result->status_code = EVMC_REJECTED;
             result->message = strdup(EXCEED_QUEUE_SIZE_ERR_MSG);
@@ -1842,7 +1891,7 @@ struct monad_executor
              block_number = block_number,
              chain_config = chain_config,
              complete = complete,
-             &db = select_db(block_number),
+             &db = *select_db(block_number),
              fiber_group = &trace_block_group_,
              tx_exec_group = &trace_tx_exec_group_,
              grandparent_id = grandparent_id,
@@ -1928,7 +1977,7 @@ struct monad_executor
                     TrieRODb tdb{db};
                     tdb.set_block_and_prefix(block_number - 1, parent_id);
                     BlockState block_state{tdb, vm_};
-                    LazyBlockHash block_hash_buffer{db, block_number};
+                    LazyBlockHash block_hash_buffer{&db, block_number};
 
                     auto const res = [&]() -> Result<nlohmann::json> {
                         if (chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET ||
@@ -2065,7 +2114,7 @@ struct monad_executor
              block_id = block_id,
              grandparent_id = grandparent_id,
              chain_config = chain_config,
-             &db = select_db(block_number),
+             db = select_db(block_number),
              gas_limit = gas_limit,
              max_calls = max_calls,
              max_size = max_size,
@@ -2216,8 +2265,13 @@ monad_executor *monad_executor_create(
     uint64_t const hash_seed = set_hash_seed();
     LOG_INFO("rpc: hashtable seed: {}", hash_seed);
 
-    MONAD_ASSERT(dbpath);
-    std::string const triedb_path{dbpath};
+    std::optional<std::string> triedb_path;
+    if (dbpath != nullptr) {
+        triedb_path.emplace(dbpath);
+    }
+    else {
+        LOG_INFO("rpc: no database path given, executing against empty state");
+    }
 
     monad_executor *const e = new monad_executor(
         low_pool_conf,

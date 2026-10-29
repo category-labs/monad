@@ -28,7 +28,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
-LazyBlockHash::LazyBlockHash(mpt::RODb const &db, uint64_t const n)
+LazyBlockHash::LazyBlockHash(mpt::RODb const *const db, uint64_t const n)
     : db_{db}
     , n_{n}
     , blockhash_cache_{N}
@@ -47,7 +47,9 @@ bytes32_t const &LazyBlockHash::get(uint64_t const n) const
         return acc->second->val;
     }
 
-    auto const cursor_res = db_.find(
+    MONAD_ASSERT_THROW(
+        db_ != nullptr, "blockhash: unavailable without a database");
+    auto const cursor_res = db_->find(
         mpt::concat(FINALIZED_NIBBLE, mpt::NibblesView{block_header_nibbles}),
         n);
     MONAD_ASSERT_THROW(!cursor_res.has_error(), "blockhash: error querying DB");

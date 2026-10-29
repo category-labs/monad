@@ -74,6 +74,20 @@ namespace
 }
 #endif
 
+#if defined(MONAD_ZKVM_ZISK)
+namespace
+{
+    // The constructor's marks on ZisK: zero for an offset the walk has not
+    // marked or a node already claimed, 1 for a branch, an extension or a
+    // leaf, and for a digest the address of the first node of the run of
+    // digests the walk marked it in, which is never 0 or 1.
+    constexpr bool is_digest_mark(uint64_t const mark)
+    {
+        return mark > 1;
+    }
+}
+#endif
+
 NodeId OffsetTrie::read_root(byte_string_view const blob)
 {
     unsigned char const *const base = blob.data();
@@ -186,7 +200,10 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
 
     // A node's mark is set when the walk reaches it -- to DIGEST for a digest,
     // to 1 for any other node -- and cleared when a parent claims it as a
-    // child.
+    // child. On ZisK a digest's mark is the address of its run's first node
+    // instead (see is_digest_mark): a slot that extends a run of digests in
+    // the claims pass then needs no mark of its own, only an address at or
+    // above the run's start, which the run tests once.
     // A child whose mark is clear is either previously unseen/invalid or
     // already claimed by a different parent.
     //
@@ -233,7 +250,7 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
         MONAD_ASSERT(
             child_offset < blob_size && node_offsets[child_offset] != 0);
 #if defined(MONAD_ZKVM_ZISK)
-        if (node_offsets[child_offset] == DIGEST) {
+        if (is_digest_mark(node_offsets[child_offset])) {
             return;
         }
 #endif
@@ -283,21 +300,27 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
             uintptr_t const quad_end =
                 reinterpret_cast<uintptr_t>(region_end) - 3 * DIGEST_NODE_LEN;
             unsigned char const *p = node.bytes();
-            *seen = DIGEST;
+#if defined(MONAD_ZKVM_ZISK)
+            // The run's first node, the mark of every digest in the run.
+            uint64_t const run_mark = reinterpret_cast<uintptr_t>(p);
+#else
+            unsigned char const run_mark = DIGEST;
+#endif
+            *seen = run_mark;
             seen += DIGEST_NODE_LEN;
             p += DIGEST_NODE_LEN;
             while (MONAD_LIKELY(reinterpret_cast<uintptr_t>(p) < quad_end)) {
                 if (MONAD_UNLIKELY(NodeViewBase{p}.tag() != DIGEST)) {
                     goto digest_run_end;
                 }
-                seen[0] = DIGEST;
+                seen[0] = run_mark;
                 if (MONAD_UNLIKELY(
                         NodeViewBase{p + DIGEST_NODE_LEN}.tag() != DIGEST)) {
                     seen += DIGEST_NODE_LEN;
                     p += DIGEST_NODE_LEN;
                     goto digest_run_end;
                 }
-                seen[DIGEST_NODE_LEN] = DIGEST;
+                seen[DIGEST_NODE_LEN] = run_mark;
                 if (MONAD_UNLIKELY(
                         NodeViewBase{p + 2 * DIGEST_NODE_LEN}.tag() !=
                         DIGEST)) {
@@ -305,7 +328,7 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
                     p += 2 * DIGEST_NODE_LEN;
                     goto digest_run_end;
                 }
-                seen[2 * DIGEST_NODE_LEN] = DIGEST;
+                seen[2 * DIGEST_NODE_LEN] = run_mark;
                 if (MONAD_UNLIKELY(
                         NodeViewBase{p + 3 * DIGEST_NODE_LEN}.tag() !=
                         DIGEST)) {
@@ -313,13 +336,13 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
                     p += 3 * DIGEST_NODE_LEN;
                     goto digest_run_end;
                 }
-                seen[3 * DIGEST_NODE_LEN] = DIGEST;
+                seen[3 * DIGEST_NODE_LEN] = run_mark;
                 seen += 4 * DIGEST_NODE_LEN;
                 p += 4 * DIGEST_NODE_LEN;
             }
             // Fewer than four nodes start inside the region from here.
             while (p < region_end && NodeViewBase{p}.tag() == DIGEST) {
-                *seen = DIGEST;
+                *seen = run_mark;
                 seen += DIGEST_NODE_LEN;
                 p += DIGEST_NODE_LEN;
             }
@@ -1173,14 +1196,16 @@ OffsetTrie::encode_rlp(
                 }();
                 [[maybe_unused]] size_t claimed = 0;
                 static_assert(DIGEST_NODE_LEN == HASH_RLP_LEN);
-                // DIGEST, the mark a claim tests for, is also a hash ref's
-                // first byte, 0xa0. Held in a register of its own for the
-                // loop: as a constant, gcc formed it again on every child,
-                // the register it chose being taken for a temporary on the
-                // hashed children's path.
+                // A hash ref's first byte, 0xa0. Held in a register of its
+                // own for the loop: as a constant, gcc formed it again on
+                // every child, the register it chose being taken for a
+                // temporary on the hashed children's path.
                 [[maybe_unused]] uint64_t digest_tag = DIGEST;
                 asm("" : "+r"(digest_tag));
                 static_assert(DIGEST == 0xa0);
+                // A digest child's mark: the address of the first node of the
+                // walk's run of digests that holds it.
+                [[maybe_unused]] uint64_t run_start = 0;
 #endif
                 // Walked by pointer: an index costs a shift and an add to
                 // reach each slot, and a copy at the end of every turn.
@@ -1213,10 +1238,12 @@ OffsetTrie::encode_rlp(
                         // The constructor's claim, before anything of the
                         // child is read: a node start the walk marked and,
                         // unless it is a digest, not yet claimed by another
-                        // parent (see is_valid_offset). The mark is DIGEST for
-                        // a digest and only for a digest, and a digest's stays.
+                        // parent (see is_valid_offset). The mark is its run's
+                        // start for a digest and only for a digest, and a
+                        // digest's stays.
                         MONAD_ASSERT(w < blob_size && marks[w] != 0);
-                        digest = marks[w] == digest_tag;
+                        run_start = marks[w];
+                        digest = is_digest_mark(run_start);
                     }
                     else
 #endif
@@ -1283,7 +1310,9 @@ OffsetTrie::encode_rlp(
                     // The claims pass has no bound test: its children lie over
                     // the constructor's zero slot, which ends a run -- zero
                     // equals `below` only when `below` is zero, and offset zero
-                    // is the magic, which the walk never marks.
+                    // is the magic, which the walk never marks, so the run's
+                    // start test below sends it to the marks; past it, `below`
+                    // has wrapped and no slot equals it.
                     uint64_t below = w - HASH_RLP_LEN;
 #pragma GCC unroll 1
                     while (claims || lo != first) {
@@ -1293,14 +1322,8 @@ OffsetTrie::encode_rlp(
                         }
 #if defined(MONAD_ZKVM_ZISK)
                         if constexpr (claims) {
-                            // Under w, so inside the blob. The mark alone
-                            // decides: a digest the walk marked, whose mark
-                            // stays. Any other slot ends the run, and the main
-                            // loop's claim rejects it if it is not a node start
-                            // or is claimed already.
-                            if (marks[prev] != digest_tag) {
-                                break;
-                            }
+                            // No mark read: the run's start, tested once
+                            // after the loop, decides for the whole run.
                         }
                         else
 #endif
@@ -1325,6 +1348,31 @@ OffsetTrie::encode_rlp(
                     // turn that ended it, and keeps both, a register copy
                     // on every turn that does not.
                     asm("" : "+r"(below));
+                    if constexpr (claims) {
+                        // The walk marks the digests of a run, at its start
+                        // and every DIGEST_NODE_LEN bytes after, with the
+                        // start's address, and a digest's mark is never
+                        // cleared. So every offset w - k * DIGEST_NODE_LEN at
+                        // or above w's run start is a digest the walk marked,
+                        // and the run is accepted whole when its lowest
+                        // digest is. Else the run is taken again one slot at
+                        // a time, by the marks: any slot that is not a
+                        // digest's ends it, and the main loop's claim rejects
+                        // it if it is not a node start or is claimed already.
+                        if (MONAD_UNLIKELY(
+                                reinterpret_cast<uintptr_t>(
+                                    blob + (below + HASH_RLP_LEN)) <
+                                run_start)) {
+                            lo = c;
+                            below = w - HASH_RLP_LEN;
+                            // Under w, so inside the blob.
+                            while (lo[-1] == below &&
+                                   is_digest_mark(marks[below])) {
+                                below -= HASH_RLP_LEN;
+                                --lo;
+                            }
+                        }
+                    }
 #endif
                     // From the run's lowest digest, at below + HASH_RLP_LEN,
                     // to the end of the one at w: `below` has counted the

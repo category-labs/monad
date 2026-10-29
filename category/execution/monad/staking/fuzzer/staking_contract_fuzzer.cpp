@@ -107,7 +107,7 @@ namespace
 
         std::map<std::string, monad_revision> rev_map;
         for (int i = static_cast<int>(MONAD_ZERO);
-             i <= static_cast<int>(MONAD_NEXT);
+             i <= static_cast<int>(MONAD_MAX_REVISION);
              ++i) {
             rev_map.emplace(
                 monad_revision_to_string(static_cast<monad_revision>(i)),

@@ -13,4 +13,4 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-set(MONAD_NEXT_amsterdam_excluded_tests "")
+set(MONAD_NEXT_AMSTERDAM_excluded_tests "")

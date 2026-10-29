@@ -33,7 +33,16 @@ enum monad_revision
     MONAD_EIGHT = 8,
     MONAD_NINE = 9,
     MONAD_TEN = 10,
+    // Feature revisions. Each one is the latest numbered revision plus a set
+    // of in-development features, and none includes another's features. They
+    // sort above every numbered revision, so `Rev >= MONAD_<N>` gates enable
+    // in all of them; their own features are gated with `Rev == MONAD_NEXT*`
+    // only, never an ordered comparison.
     MONAD_NEXT = 11,
+    MONAD_NEXT_AMSTERDAM = 12,
+
+    // The maximum Monad revision supported.
+    MONAD_MAX_REVISION = MONAD_NEXT_AMSTERDAM,
 
     // The latest known Monad revision with finalized specification.
     MONAD_LATEST_STABLE_REVISION = MONAD_TEN
@@ -66,6 +75,8 @@ inline char const *monad_revision_to_string(enum monad_revision const rev)
         return "MONAD_TEN";
     case MONAD_NEXT:
         return "MONAD_NEXT";
+    case MONAD_NEXT_AMSTERDAM:
+        return "MONAD_NEXT_AMSTERDAM";
     }
     return ""; // unreachable
 }

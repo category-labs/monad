@@ -160,21 +160,58 @@ static_assert(
 
 constexpr size_t KECCAKF_MEMO_ENTRIES = size_t{1} << 18;
 
-// One entry past capacity. `keccakf_memo[keccakf_memo_used]` is the scratch a
-// one-block digest builds its state in (keccak256_one_block below), and
-// `keccakf_memo_used` reaches KECCAKF_MEMO_ENTRIES when the table fills, so the
-// slot has to exist for the sponge to have somewhere to stand. It is never
-// filed and never in range: 512 B of .bss for one fewer bounds branch on the
-// hot path.
-static KeccakfEntry keccakf_memo[KECCAKF_MEMO_ENTRIES + 1];
-static uint64_t keccakf_memo_used = 0;
+// The memo's globals, gathered in one object that `gp` points at. The guest's
+// RAM sits above 2^31, so a plain global costs an `auipc` and its low 12 bits
+// on every access, and the "memory" clobber of every fcall and permutation
+// makes gcc form the address again after each one. Neither linker relaxes
+// those pairs to `gp`, which ziskos sets in `_start` and nothing reads after.
+// Held in `gp` instead, the apart state is `gp` itself, the count is one load
+// or store at a fixed offset, and an entry is its index's shift and one add.
+// The table is last so that every other field's offset fits a load's 12 bits.
+struct alignas(8) KeccakfHot
+{
+    // The state a digest's unfiled permutations run in, apart from the
+    // scratch slot: a trie node's last one under Filing::NotFinal, and all of
+    // them under Filing::None. Every lane is written before each permutation
+    // but the first block's capacity, which None clears first, so nothing is
+    // cleared after it, where the scratch would be cleared whole.
+    uint64_t keccakf_apart[KECCAKF_LANES];
 
-// The state a digest's unfiled permutations run in, apart from the scratch
-// slot: a trie node's last one under Filing::NotFinal, and all of them under
-// Filing::None. Every lane is written before each permutation but the first
-// block's capacity, which None clears first, so nothing is cleared after it,
-// where the scratch would be cleared whole.
-alignas(8) static uint64_t keccakf_apart[KECCAKF_LANES];
+    uint64_t keccakf_memo_used;
+
+    // One entry past capacity. `keccakf_memo[keccakf_memo_used]` is the
+    // scratch a one-block digest builds its state in (keccak256_one_block
+    // below), and `keccakf_memo_used` reaches KECCAKF_MEMO_ENTRIES when the
+    // table fills, so the slot has to exist for the sponge to have somewhere
+    // to stand. It is never filed and never in range: 512 B of .bss for one
+    // fewer bounds branch on the hot path.
+    KeccakfEntry keccakf_memo[KECCAKF_MEMO_ENTRIES + 1];
+};
+
+static_assert(
+    offsetof(KeccakfHot, keccakf_memo) + offsetof(KeccakfEntry, out) +
+            KECCAKF_STATE_BYTES <=
+        2048,
+    "an entry's two states are reached at a 12-bit offset from gp");
+
+// Zero-initialised .bss, so the table's untouched slots still read zero as
+// the one-block scratch requires, and no constructor runs for it.
+static KeccakfHot keccakf_hot;
+
+// `gp` is a fixed register to gcc, so no code of this guest -- C++, ziskos'
+// Rust or the libraries -- allocates it, and setting it here takes it from
+// nobody. Nothing writes it after the constructor below, so every function
+// reads the same base out of the register and none has to form it.
+register KeccakfHot *hot asm("gp");
+
+// Points `gp` at the memo before anything can hash. A priority constructor
+// runs ahead of every default-priority one, all of which ziskos' _zisk_main
+// runs before it enters the guest, so no static initialiser that hashes and
+// no part of the entry ever sees `gp` still at _global_pointer.
+[[gnu::constructor(101)]] static void keccakf_hot_init()
+{
+    hot = &keccakf_hot;
+}
 
 // A 200-byte block op that reaches the DMA port instead of being expanded
 // inline. gcc turns a constant-size copy into 25 ld/sd pairs — 50
@@ -290,8 +327,8 @@ template <size_t Lanes>
     uint64_t *const s = e.in;
 
     uint64_t const index = fcall_get_keccakf_index(s);
-    if (index < used && keccakf_state_eq(keccakf_memo[index].in, s)) {
-        std::memcpy(out, keccakf_memo[index].out, 32);
+    if (index < used && keccakf_state_eq(hot->keccakf_memo[index].in, s)) {
+        std::memcpy(out, hot->keccakf_memo[index].out, 32);
         std::memset(s, 0, Lanes * sizeof(uint64_t));
         if constexpr (Lanes < 17) {
             s[16] = 0;
@@ -318,7 +355,7 @@ template <size_t Lanes>
     zisk_keccakf(&e.out);
     // Published last: this is what puts the entry in range, so it must not
     // move until both halves are there.
-    keccakf_memo_used = used + 1;
+    hot->keccakf_memo_used = used + 1;
     std::memcpy(out, e.out, 32);
 }
 
@@ -330,8 +367,8 @@ static void keccak256_one_block(
     // Read once: an fcall or a permutation is an asm statement that may touch
     // any memory, so gcc reads the global again after each of them, and the
     // entry's address with it.
-    uint64_t const used = keccakf_memo_used;
-    KeccakfEntry &e = keccakf_memo[used];
+    uint64_t const used = hot->keccakf_memo_used;
+    KeccakfEntry &e = hot->keccakf_memo[used];
     uint64_t *const s = e.in;
 
     if (len) {
@@ -362,8 +399,8 @@ static void keccak256_one_block_n(void const *const in, uint8_t out[32])
     static_assert(135 == 16 * 8 + 7, "the pad bit is byte 7 of lane 16");
     static_assert(N >= 1 && N + 1 <= 16 * 8, "lane 16 holds only the pad bit");
 
-    uint64_t const used = keccakf_memo_used;
-    KeccakfEntry &e = keccakf_memo[used];
+    uint64_t const used = hot->keccakf_memo_used;
+    KeccakfEntry &e = hot->keccakf_memo[used];
     uint64_t *const s = e.in;
 
     std::memcpy(s, in, N);
@@ -405,8 +442,9 @@ keccakf_memo_permute(uint64_t *const pre, uint64_t &used)
 {
     if constexpr (Lookup) {
         uint64_t const index = fcall_get_keccakf_index(pre);
-        if (index < used && keccakf_state_eq(keccakf_memo[index].in, pre)) {
-            return keccakf_memo[index].out;
+        if (index < used &&
+            keccakf_state_eq(hot->keccakf_memo[index].in, pre)) {
+            return hot->keccakf_memo[index].out;
         }
     }
     uint64_t *const slot_out = pre + KECCAKF_LANES;
@@ -445,9 +483,10 @@ keccakf_unfiled_permute(uint64_t *const pre, uint64_t const used, bool &hit)
 {
     if constexpr (Lookup) {
         uint64_t const index = fcall_get_keccakf_index(pre);
-        if (index < used && keccakf_state_eq(keccakf_memo[index].in, pre)) {
+        if (index < used &&
+            keccakf_state_eq(hot->keccakf_memo[index].in, pre)) {
             hit = true;
-            return keccakf_memo[index].out;
+            return hot->keccakf_memo[index].out;
         }
     }
     hit = false;
@@ -566,14 +605,14 @@ static void keccak256_memo_sponge(
         // it. The lookup loop below takes a whole block's capacity from that
         // state, and the final block takes it there too. Not the full-branch
         // tail, which starts after a first-block miss.
-        pre = keccakf_apart;
+        pre = hot->keccakf_apart;
         post = sponge_extra(extra...);
         look = true;
     }
     else {
-        pre = keccakf_memo[used].in;
+        pre = hot->keccakf_memo[used].in;
         if constexpr (F == Filing::None) {
-            pre = keccakf_apart;
+            pre = hot->keccakf_apart;
             std::memset(pre + WORDS, 0, (KECCAKF_LANES - WORDS) * 8);
         }
         std::memcpy(pre, p, RATE);
@@ -654,7 +693,7 @@ static void keccak256_memo_sponge(
             used + FILED <= KECCAKF_MEMO_ENTRIES) {
             // One opaque base for the slots keeps every lane at a literal
             // offset from a single register.
-            KeccakfEntry *e = &keccakf_memo[used];
+            KeccakfEntry *e = &hot->keccakf_memo[used];
             asm("" : "+r"(e));
             for (size_t i = 0; i < WORDS; ++i) {
                 e[0].in[i] = post[i] ^ load64(p + 8 * i);
@@ -677,7 +716,8 @@ static void keccak256_memo_sponge(
 
             // NotFinal's last block is not filed: it is built and permuted
             // apart, and the scratch is left as the filings left it, unwritten.
-            uint64_t *const fin = F == Filing::All ? e[2].in : keccakf_apart;
+            uint64_t *const fin =
+                F == Filing::All ? e[2].in : hot->keccakf_apart;
             unsigned char const *const q2 = p + 2 * RATE;
             for (size_t i = 0; i < 15; ++i) {
                 fin[i] = e[1].out[i] ^ load64(q2 + 8 * i);
@@ -703,7 +743,7 @@ static void keccak256_memo_sponge(
             }
             // Every block but NotFinal's last was filed, so the next scratch
             // is a slot no one has written.
-            keccakf_memo_used = used + FILED;
+            hot->keccakf_memo_used = used + FILED;
             return;
         }
     }
@@ -715,7 +755,8 @@ static void keccak256_memo_sponge(
     // request, three steps and a priced range test each: two in three of the
     // sponge's requests.
     while (look && len >= RATE) {
-        pre = F == Filing::None ? keccakf_apart : keccakf_memo[used].in;
+        pre =
+            F == Filing::None ? hot->keccakf_apart : hot->keccakf_memo[used].in;
         // Opaque, so that the lanes are reached at offsets from it: seen
         // through, gcc forms each lane's address from the table's base in a
         // register of its own, ten of them saved and restored on entry.
@@ -759,7 +800,8 @@ static void keccak256_memo_sponge(
     }
     else {
         while (len >= RATE) {
-            pre = F == Filing::None ? keccakf_apart : keccakf_memo[used].in;
+            pre = F == Filing::None ? hot->keccakf_apart
+                                    : hot->keccakf_memo[used].in;
             asm("" : "+r"(pre));
             for (size_t i = 0; i < WORDS; ++i) {
                 pre[i] = post[i] ^ load64(p + 8 * i);
@@ -802,20 +844,20 @@ static void keccak256_memo_sponge(
     if constexpr (F == Filing::NotFinal) {
         if constexpr (Room) {
             if (!look) {
-                pre = keccakf_apart;
+                pre = hot->keccakf_apart;
             }
         }
         else {
             pre = !look && used != KECCAKF_MEMO_ENTRIES
-                      ? keccakf_apart
-                      : keccakf_memo[used].in;
+                      ? hot->keccakf_apart
+                      : hot->keccakf_memo[used].in;
         }
     }
     else if constexpr (F == Filing::None) {
-        pre = keccakf_apart;
+        pre = hot->keccakf_apart;
     }
     else if constexpr (!Room) {
-        pre = keccakf_memo[used].in;
+        pre = hot->keccakf_memo[used].in;
     }
     size_t const whole = len / 8;
     unsigned const rem = static_cast<unsigned>(len % 8);
@@ -888,7 +930,7 @@ lanes0:
                 if (post != pre + KECCAKF_LANES) {
                     std::memcpy(out, post, 32);
                     std::memset(pre, 0, KECCAKF_STATE_BYTES);
-                    keccakf_memo_used = used;
+                    hot->keccakf_memo_used = used;
                     return;
                 }
             }
@@ -905,7 +947,7 @@ lanes0:
                 std::memset(pre, 0, KECCAKF_STATE_BYTES);
             }
         }
-        keccakf_memo_used = used;
+        hot->keccakf_memo_used = used;
         return;
     }
     if constexpr (F == Filing::All) {
@@ -923,10 +965,10 @@ lanes0:
     }
     std::memcpy(out, post, 32);
 
-    if (pre == keccakf_memo[used].in) {
+    if (pre == hot->keccakf_memo[used].in) {
         std::memset(pre, 0, KECCAKF_STATE_BYTES);
     }
-    keccakf_memo_used = used;
+    hot->keccakf_memo_used = used;
 }
 
 // The table's room, tested once per digest rather than at every permutation.
@@ -943,7 +985,7 @@ template <
     void const *const in, size_t const len, uint8_t out[32],
     Extra const... extra)
 {
-    uint64_t const used = keccakf_memo_used;
+    uint64_t const used = hot->keccakf_memo_used;
     if constexpr (F != Filing::None) {
         if (used + (len >> 7) < KECCAKF_MEMO_ENTRIES) {
             keccak256_memo_sponge<From, F, true, Entry>(
@@ -975,13 +1017,13 @@ static inline void keccak_permute(uint64_t (*state)[25])
     }
     uint64_t *const s = &(*state)[0];
     // Read once, for the reason keccak256_one_block gives.
-    uint64_t const used = keccakf_memo_used;
+    uint64_t const used = hot->keccakf_memo_used;
     uint64_t const index = fcall_get_keccakf_index(s);
 
     // Cheap check first, so an out-of-range index — which is what
     // KECCAKF_INDEX_NOT_FOUND is — never reaches the compare.
-    if (index < used && keccakf_state_eq(keccakf_memo[index].in, s)) {
-        keccakf_state_copy(s, keccakf_memo[index].out);
+    if (index < used && keccakf_state_eq(hot->keccakf_memo[index].in, s)) {
+        keccakf_state_copy(s, hot->keccakf_memo[index].out);
         return;
     }
 
@@ -999,14 +1041,14 @@ static inline void keccak_permute(uint64_t (*state)[25])
     // path. A stray permutation in between would file the wrong state under
     // this index. The compare above would reject the resulting hint, so it is
     // a poisoned entry rather than a wrong digest, but keep these adjacent.
-    KeccakfEntry &e = keccakf_memo[used];
+    KeccakfEntry &e = hot->keccakf_memo[used];
     keccakf_state_copy(e.in, s);
     fcall_set_keccakf_index(used);
     zisk_keccakf(state);
     keccakf_state_copy(e.out, s);
     // Published last: this is what puts the entry in range, so it must not
     // move until both halves are there.
-    keccakf_memo_used = used + 1;
+    hot->keccakf_memo_used = used + 1;
 #else
     zisk_keccakf(state);
 #endif
@@ -1380,13 +1422,13 @@ void monad_zkvm_keccak256_trie_resume(
     uint64_t const mark, size_t const blocks)
 {
     uint64_t const at = mark - 1 + blocks - 1;
-    if (mark != 0 && at < keccakf_memo_used) {
+    if (mark != 0 && at < hot->keccakf_memo_used) {
         size_t const skip = blocks * 136;
         keccak256_trie_entry<Filing::None, SpongeEntry::Resume>(
             static_cast<unsigned char const *>(in) + skip,
             len - skip,
             out,
-            static_cast<uint64_t const *>(keccakf_memo[at].out));
+            static_cast<uint64_t const *>(hot->keccakf_memo[at].out));
         return;
     }
     keccak256_trie<Filing::None>(in, len, out);

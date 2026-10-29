@@ -25,6 +25,7 @@
 #include <cstdint>
 #include <cstring>
 #include <mutex>
+#include <optional>
 #include <span>
 #include <string_view>
 #include <utility>
@@ -36,6 +37,18 @@ MONAD_ANONYMOUS_NAMESPACE_BEGIN
 // A transition holds the seqlock for two stores, so exhausting this means the
 // owner was descheduled mid-update.
 constexpr unsigned SAMPLE_ATTEMPTS = 64;
+
+std::array<char, 16> thread_name(std::string_view const name) noexcept
+{
+    std::array<char, 16> out{};
+    std::memcpy(out.data(), name.data(), std::min(name.size(), out.size() - 1));
+    return out;
+}
+
+uint64_t saturating_sub(uint64_t const a, uint64_t const b) noexcept
+{
+    return a > b ? a - b : 0;
+}
 
 MONAD_ANONYMOUS_NAMESPACE_END
 
@@ -63,6 +76,39 @@ void keep_idle_monotonic(
             sample.idle_ns = std::max(sample.idle_ns, match->idle_ns);
         }
     }
+}
+
+IdleFromBusyTime::IdleFromBusyTime(
+    std::string_view const name, IdleClock const clock) noexcept
+    : name_{thread_name(name)}
+    , clock_{clock}
+{
+}
+
+std::optional<ThreadIdleSample>
+IdleFromBusyTime::sample(std::optional<uint64_t> const busy_ns) noexcept
+{
+    if (busy_ns.has_value() &&
+        (!readings_.has_value() || *busy_ns >= readings_->last.busy_ns)) {
+        Reading const reading{.now_ns = clock_(), .busy_ns = *busy_ns};
+        if (readings_.has_value()) {
+            readings_->last = reading;
+        }
+        else {
+            readings_ = Readings{.first = reading, .last = reading};
+        }
+    }
+    if (!readings_.has_value()) {
+        return std::nullopt;
+    }
+    Reading const &first = readings_->first;
+    Reading const &last = readings_->last;
+    return ThreadIdleSample{
+        .name = name_,
+        .idle_ns = saturating_sub(
+            saturating_sub(last.now_ns, first.now_ns),
+            saturating_sub(last.busy_ns, first.busy_ns)),
+        .registered_at_ns = first.now_ns};
 }
 
 ThreadIdleCounter::ThreadIdleCounter(IdleClock const clock) noexcept
@@ -202,11 +248,7 @@ ThreadIdleRegistry::claim(std::string_view const name)
                 continue;
             }
             slot.in_use = true;
-            slot.name = {};
-            std::memcpy(
-                slot.name.data(),
-                name.data(),
-                std::min(name.size(), slot.name.size() - 1));
+            slot.name = thread_name(name);
             slot.registered_at_ns = clock_();
             slot.counter.reset(clock_);
             return Registration{this, i};

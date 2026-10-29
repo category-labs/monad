@@ -1,0 +1,106 @@
+// Copyright (C) 2025-26 Category Labs, Inc.
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+#include <category/core/address.hpp>
+#include <category/core/config.hpp>
+#include <category/execution/ethereum/core/block.hpp>
+#include <category/execution/ethereum/trace/trace_context.hpp>
+
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <span>
+#include <utility>
+#include <vector>
+
+MONAD_NAMESPACE_BEGIN
+TxTraceContext::TxTraceContext(
+    std::span<monad::trace::TypeErasedTracer const> const tracers)
+    : tracers_{tracers}
+{
+}
+
+void TxTraceContext::dispatch(
+    trace::OpId const op_type, void const *const op, void *const result) const
+{
+    for (auto const &tracer : tracers_) {
+        if (tracer.dispatch(op_type, op, result)) {
+            return;
+        }
+    }
+}
+
+void TxTraceContext::reset() const
+{
+    for (auto const &tracer : tracers_) {
+        tracer.reset();
+    }
+}
+
+size_t TxTraceContext::size() const
+{
+    return tracers_.size();
+}
+
+BlockTraceContext::BlockTraceContext(size_t num_txs)
+    : num_txs_(num_txs)
+    , tracers_{nullptr}
+{
+}
+
+bool BlockTraceContext::can_slice(size_t n) const
+{
+    // We can slice the empty context infinitely many times, whereas we can only
+    // slice a non-empty context as many times as there are transactions. The
+    // right hand side is intentionally an equality rather than inequality,
+    // because we want every transaction tracing context to be materialized.
+    return !tracers_ || num_txs_ == n;
+}
+
+size_t BlockTraceContext::tracers_per_tx() const
+{
+    if (!tracers_ || num_txs_ == 0) {
+        return 0;
+    }
+
+    // Every transaction tracing context must have the same number of tracers,
+    // so we can just check the first one.
+    return tracers_[0].size();
+}
+
+static constexpr TxTraceContext empty_tx_trace_context{};
+
+TxTraceContext BlockTraceContext::slice(size_t i) const
+{
+    if (!tracers_) {
+        return empty_tx_trace_context;
+    }
+
+    MONAD_ASSERT(i < num_txs_);
+    return TxTraceContext{tracers_[i]};
+}
+
+TxTraceContext BlockTraceContext::system_call_context() const
+{
+    if (!system_call_tracer_) {
+        return empty_tx_trace_context;
+    }
+
+    std::span<monad::trace::TypeErasedTracer const> const tracers{
+        system_call_tracer_.get(), 1};
+    return TxTraceContext{tracers};
+}
+
+MONAD_NAMESPACE_END

@@ -19,7 +19,6 @@
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
-#include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/vm/evm/traits.hpp>
 
 #include <evmc/evmc.h>
@@ -30,13 +29,14 @@
 MONAD_NAMESPACE_BEGIN
 
 class State;
+class TxTraceContext;
 struct Transaction;
 
 template <Traits traits>
 bool revert_transaction(
     Address const &sender, Transaction const &,
     uint256_t const &base_fee_per_gas, uint64_t i, State &,
-    trace::StateTracer &state_tracer, ChainContext<traits> const &);
+    TxTraceContext const &, ChainContext<traits> const &);
 
 template <Traits traits>
 bool revert_transaction_cached(State &);
@@ -46,6 +46,6 @@ template <Traits traits>
 void init_reserve_balance_context(
     State &state, Address const &sender, Transaction const &tx,
     std::optional<uint256_t> const &base_fee_per_gas, uint64_t i,
-    trace::StateTracer &state_tracer, ChainContext<traits> const &ctx);
+    TxTraceContext const &, ChainContext<traits> const &ctx);
 
 MONAD_NAMESPACE_END

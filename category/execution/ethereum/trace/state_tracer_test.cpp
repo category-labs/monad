@@ -24,12 +24,16 @@
 #include <category/execution/ethereum/execute_message.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
+#include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/process_requests.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/trace/access_list_tracer.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
-#include <category/execution/ethereum/trace/state_tracer.hpp>
+#include <category/execution/ethereum/trace/code_tracer.hpp>
+#include <category/execution/ethereum/trace/prestate_tracer.hpp>
+#include <category/execution/ethereum/trace/statediff_tracer.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
@@ -65,6 +69,7 @@
 #include <bit>
 #include <cstdint>
 #include <format>
+#include <functional>
 #include <optional>
 #include <vector>
 
@@ -655,7 +660,7 @@ TYPED_TEST(TraitsTest, access_list_empty)
     nlohmann::json storage;
     auto const authorities = std::vector<std::optional<Address>>{};
     AccessListTracer tracer{storage, addr1, addr2, std::nullopt, authorities};
-    tracer.encode<typename TestFixture::Trait>(s);
+    tracer(trace::PostState{s});
 
     EXPECT_EQ(storage, nlohmann::json::parse("[]"));
 }
@@ -678,7 +683,7 @@ TYPED_TEST(TraitsTest, access_list_state_view_excludes_rejected_frame)
     nlohmann::json storage;
     auto const authorities = std::vector<std::optional<Address>>{};
     AccessListTracer tracer{storage, addr1, addr2, std::nullopt, authorities};
-    tracer.encode<typename TestFixture::Trait>(s);
+    tracer(trace::PostState{s});
 
     // Rejected frames must not leak accessed storage back into State. RPC
     // access-list observability needs to be handled by tracer-specific capture.
@@ -698,15 +703,15 @@ TYPED_TEST(TraitsTest, access_list_records_rejected_frame_storage)
 
     nlohmann::json storage;
     auto const authorities = std::vector<std::optional<Address>>{};
-    StateTracer tracer =
+    AccessListTracer tracer =
         AccessListTracer{storage, addr1, addr2, std::nullopt, authorities};
 
     s.push();
     s.access_storage<typename TestFixture::Trait>(addr4, key4);
-    on_frame_reject(tracer, s);
+    tracer(trace::RejectFrame{s});
     s.pop_reject();
 
-    run_tracer<typename TestFixture::Trait>(tracer, s);
+    tracer(trace::PostState{s});
 
     auto const json_str = R"(
         [
@@ -735,15 +740,15 @@ TYPED_TEST(TraitsTest, access_list_records_rejected_frame_regular_account)
 
     nlohmann::json storage;
     auto const authorities = std::vector<std::optional<Address>>{};
-    StateTracer tracer =
+    AccessListTracer tracer =
         AccessListTracer{storage, addr1, addr2, std::nullopt, authorities};
 
     s.push();
     s.access_account(addr4);
-    on_frame_reject(tracer, s);
+    tracer(trace::RejectFrame{s});
     s.pop_reject();
 
-    run_tracer<typename TestFixture::Trait>(tracer, s);
+    tracer(trace::PostState{s});
 
     auto const json_str = R"(
         [
@@ -783,7 +788,7 @@ TYPED_TEST(TraitsTest, access_list_write)
     auto const authorities = std::vector<std::optional<Address>>{};
     auto const to = std::optional<Address>{addr5};
     AccessListTracer tracer{storage, addr1, addr4, to, authorities};
-    tracer.encode<typename TestFixture::Trait>(s);
+    tracer(trace::PostState{s});
 
     auto const json_str = R"(
         [
@@ -828,8 +833,15 @@ TYPED_TEST(TraitsTest, access_list_regular_account)
         nlohmann::json storage;
         auto const authorities = std::vector<std::optional<Address>>{};
         auto const to = std::optional<Address>{addr3};
-        AccessListTracer tracer{storage, addr1, addr2, to, authorities};
-        tracer.encode<typename TestFixture::Trait>(s);
+        AccessListTracer tracer{
+            storage,
+            addr1,
+            addr2,
+            to,
+            authorities,
+            TestFixture::Trait::mip_8_active(),
+            &is_precompile<typename TestFixture::Trait>};
+        tracer(trace::PostState{s});
 
         auto const json_str = R"(
             [
@@ -857,8 +869,15 @@ TYPED_TEST(TraitsTest, access_list_regular_account)
         nlohmann::json storage;
         auto const authorities = std::vector<std::optional<Address>>{};
         auto const to = std::optional<Address>{addr3};
-        AccessListTracer tracer{storage, addr1, addr2, to, authorities};
-        tracer.encode<typename TestFixture::Trait>(s);
+        AccessListTracer tracer{
+            storage,
+            addr1,
+            addr2,
+            to,
+            authorities,
+            TestFixture::Trait::mip_8_active(),
+            &is_precompile<typename TestFixture::Trait>};
+        tracer(trace::PostState{s});
 
         auto const json_str = R"(
             [
@@ -896,8 +915,15 @@ TYPED_TEST(TraitsTest, access_list_sender)
         nlohmann::json storage;
         auto const authorities = std::vector<std::optional<Address>>{};
         auto const to = std::optional<Address>{addr3};
-        AccessListTracer tracer{storage, addr1, addr2, to, authorities};
-        tracer.encode<typename TestFixture::Trait>(s);
+        AccessListTracer tracer{
+            storage,
+            addr1,
+            addr2,
+            to,
+            authorities,
+            TestFixture::Trait::mip_8_active(),
+            &is_precompile<typename TestFixture::Trait>};
+        tracer(trace::PostState{s});
 
         EXPECT_EQ(storage, nlohmann::json::parse("[]"));
     }
@@ -915,8 +941,15 @@ TYPED_TEST(TraitsTest, access_list_sender)
         nlohmann::json storage;
         auto const authorities = std::vector<std::optional<Address>>{};
         auto const to = std::optional<Address>{addr3};
-        AccessListTracer tracer{storage, addr1, addr2, to, authorities};
-        tracer.encode<typename TestFixture::Trait>(s);
+        AccessListTracer tracer{
+            storage,
+            addr1,
+            addr2,
+            to,
+            authorities,
+            TestFixture::Trait::mip_8_active(),
+            &is_precompile<typename TestFixture::Trait>};
+        tracer(trace::PostState{s});
 
         auto const json_str = R"(
             [
@@ -954,8 +987,15 @@ TYPED_TEST(TraitsTest, access_list_beneficiary)
         nlohmann::json storage;
         auto const authorities = std::vector<std::optional<Address>>{};
         auto const to = std::optional<Address>{addr3};
-        AccessListTracer tracer{storage, addr1, addr2, to, authorities};
-        tracer.encode<typename TestFixture::Trait>(s);
+        AccessListTracer tracer{
+            storage,
+            addr1,
+            addr2,
+            to,
+            authorities,
+            TestFixture::Trait::mip_8_active(),
+            &is_precompile<typename TestFixture::Trait>};
+        tracer(trace::PostState{s});
 
         EXPECT_EQ(storage, nlohmann::json::parse("[]"));
     }
@@ -974,7 +1014,7 @@ TYPED_TEST(TraitsTest, access_list_beneficiary)
         auto const authorities = std::vector<std::optional<Address>>{};
         auto const to = std::optional<Address>{addr3};
         AccessListTracer tracer{storage, addr1, addr2, to, authorities};
-        tracer.encode<typename TestFixture::Trait>(s);
+        tracer(trace::PostState{s});
 
         auto const json_str = R"(
             [
@@ -1013,7 +1053,7 @@ TYPED_TEST(TraitsTest, access_list_recipient)
         auto const authorities = std::vector<std::optional<Address>>{};
         auto const to = std::optional<Address>{addr3};
         AccessListTracer tracer{storage, addr1, addr2, to, authorities};
-        tracer.encode<typename TestFixture::Trait>(s);
+        tracer(trace::PostState{s});
 
         EXPECT_EQ(storage, nlohmann::json::parse("[]"));
     }
@@ -1032,7 +1072,7 @@ TYPED_TEST(TraitsTest, access_list_recipient)
         auto const authorities = std::vector<std::optional<Address>>{};
         auto const to = std::optional<Address>{addr3};
         AccessListTracer tracer{storage, addr1, addr2, to, authorities};
-        tracer.encode<typename TestFixture::Trait>(s);
+        tracer(trace::PostState{s});
 
         auto const json_str = R"(
             [
@@ -1074,7 +1114,7 @@ TYPED_TEST(TraitsTest, access_list_authorities)
             std::vector<std::optional<Address>>{addr4, addr5};
         auto const to = std::optional<Address>{addr3};
         AccessListTracer tracer{storage, addr1, addr2, to, authorities};
-        tracer.encode<typename TestFixture::Trait>(s);
+        tracer(trace::PostState{s});
 
         EXPECT_EQ(storage, nlohmann::json::parse("[]"));
     }
@@ -1097,7 +1137,7 @@ TYPED_TEST(TraitsTest, access_list_authorities)
             std::vector<std::optional<Address>>{addr4, addr5};
         auto const to = std::optional<Address>{addr3};
         AccessListTracer tracer{storage, addr1, addr2, to, authorities};
-        tracer.encode<typename TestFixture::Trait>(s);
+        tracer(trace::PostState{s});
 
         auto const json_str = R"(
             [
@@ -1164,8 +1204,15 @@ TYPED_TEST(TraitsTest, access_list_precompiles)
         nlohmann::json storage;
         auto const authorities = std::vector<std::optional<Address>>{};
         auto const to = std::optional<Address>{addr3};
-        AccessListTracer tracer{storage, addr1, addr2, to, authorities};
-        tracer.encode<typename TestFixture::Trait>(s);
+        AccessListTracer tracer{
+            storage,
+            addr1,
+            addr2,
+            to,
+            authorities,
+            TestFixture::Trait::mip_8_active(),
+            &is_precompile<typename TestFixture::Trait>};
+        tracer(trace::PostState{s});
 
         EXPECT_EQ(storage, nlohmann::json::parse(json_string));
     }
@@ -1221,16 +1268,18 @@ TYPED_TEST(TraitsTest, statediff_selfdestruct_same_tx_preserved)
     BlockHeader const header{};
     BlockHashBufferFinalized const block_hash_buffer;
 
-    NoopCallTracer noop_call_tracer;
-    nlohmann::json diff;
-    StateTracer state_tracer = StateDiffTracer{diff};
-
     boost::fibers::promise<void> prev_promise{};
     auto prev = prev_promise.get_future();
     prev_promise.set_value();
 
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
+    nlohmann::json diff;
+    StateDiffTracer statediff_tracer{diff};
+    TypeErasedTracer const erased_tracer =
+        TypeErasedTracer::erase(statediff_tracer);
+    std::span<TypeErasedTracer const> const tracers{&erased_tracer, 1};
+    TxTraceContext const trace_context{tracers};
 
     auto const receipt = ExecuteTransaction<typename TestFixture::Trait>(
         MonadTestnet{},
@@ -1243,10 +1292,9 @@ TYPED_TEST(TraitsTest, statediff_selfdestruct_same_tx_preserved)
         bs,
         metrics,
         prev,
-        noop_call_tracer,
-        state_tracer,
         chain_ctx,
-        /*exec_recorder=*/nullptr)();
+        /*exec_recorder=*/nullptr,
+        trace_context)();
 
     ASSERT_TRUE(receipt.has_value());
     EXPECT_EQ(receipt.value().status, 1u);
@@ -1302,8 +1350,8 @@ TEST(PrestateTracer, prestate_access_storage)
     {
         // Run prestate tracer
         nlohmann::json trace;
-        trace::PrestateTracer tracer{trace, ADDR_A};
-        tracer.encode(s.original(), s);
+        PrestateTracer tracer{trace, ADDR_A};
+        tracer(trace::PostState{s});
 
         auto const json_str = R"(
         {
@@ -1322,8 +1370,8 @@ TEST(PrestateTracer, prestate_access_storage)
     {
         // Run statediff tracer
         nlohmann::json trace;
-        trace::StateDiffTracer tracer{trace};
-        tracer.encode(tracer.trace(s), s);
+        StateDiffTracer tracer{trace};
+        tracer(trace::PostState{s});
 
         // We only read the storage, so no changes are recorded in the
         // statediff.
@@ -1366,8 +1414,8 @@ TEST(PrestateTracer, prestate_access_zero_storage)
     {
         // Run prestate tracer
         nlohmann::json trace;
-        trace::PrestateTracer tracer{trace, ADDR_A};
-        tracer.encode(s.original(), s);
+        PrestateTracer tracer{trace, ADDR_A};
+        tracer(trace::PostState{s});
 
         auto const json_str = R"(
         {
@@ -1386,8 +1434,8 @@ TEST(PrestateTracer, prestate_access_zero_storage)
     {
         // Run statediff tracer
         nlohmann::json trace;
-        trace::StateDiffTracer tracer{trace};
-        tracer.encode(tracer.trace(s), s);
+        StateDiffTracer tracer{trace};
+        tracer(trace::PostState{s});
 
         // We only read the storage, so no changes are recorded in the
         // statediff.
@@ -1429,8 +1477,8 @@ TEST(PrestateTracer, prestate_retain_beneficiary_set_storage)
     {
         // Run pretracer
         nlohmann::json trace;
-        trace::PrestateTracer tracer{trace, ADDR_A};
-        tracer.encode(s.original(), s);
+        PrestateTracer tracer{trace, ADDR_A};
+        tracer(trace::PostState{s});
 
         auto const json_str = R"(
         {
@@ -1450,8 +1498,8 @@ TEST(PrestateTracer, prestate_retain_beneficiary_set_storage)
     {
         // Run statediff tracer
         nlohmann::json trace;
-        trace::StateDiffTracer tracer{trace};
-        tracer.encode(tracer.trace(s), s);
+        StateDiffTracer tracer{trace};
+        tracer(trace::PostState{s});
 
         auto const json_str = R"(
         {
@@ -1504,8 +1552,8 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_storage)
     {
         // Run prestate tracer
         nlohmann::json trace;
-        trace::PrestateTracer tracer{trace, ADDR_A};
-        tracer.encode(s.original(), s);
+        PrestateTracer tracer{trace, ADDR_A};
+        tracer(trace::PostState{s});
 
         auto const json_str = R"(
         {
@@ -1524,8 +1572,8 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_storage)
     {
         // Run statediff tracer
         nlohmann::json trace;
-        trace::StateDiffTracer tracer{trace};
-        tracer.encode(tracer.trace(s), s);
+        StateDiffTracer tracer{trace};
+        tracer(trace::PostState{s});
 
         auto const json_str = R"(
         {
@@ -1579,10 +1627,10 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_balance)
     {
         // Run prestate tracer
         nlohmann::json trace;
-        trace::PrestateTracer tracer{trace, ADDR_A};
+        PrestateTracer tracer{trace, ADDR_A};
 
         // Run tracer
-        tracer.encode(s.original(), s);
+        tracer(trace::PostState{s});
 
         auto const json_str = R"(
         {
@@ -1599,10 +1647,10 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_balance)
     {
         // Run statediff tracer
         nlohmann::json trace;
-        trace::StateDiffTracer tracer{trace};
+        StateDiffTracer tracer{trace};
 
         // Run tracer
-        tracer.encode(tracer.trace(s), s);
+        tracer(trace::PostState{s});
 
         auto const json_str = R"(
         {
@@ -1651,8 +1699,8 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_nonce)
     {
         // Run prestate tracer
         nlohmann::json trace;
-        trace::PrestateTracer tracer{trace, ADDR_A};
-        tracer.encode(s.original(), s);
+        PrestateTracer tracer{trace, ADDR_A};
+        tracer(trace::PostState{s});
 
         auto const json_str = R"(
         {
@@ -1669,8 +1717,8 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_nonce)
     {
         // Run statediff tracer
         nlohmann::json trace;
-        trace::StateDiffTracer tracer{trace};
-        tracer.encode(tracer.trace(s), s);
+        StateDiffTracer tracer{trace};
+        tracer(trace::PostState{s});
 
         auto const json_str = R"(
         {
@@ -1720,8 +1768,8 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_code_hash)
     {
         // Run prestate tracer
         nlohmann::json trace;
-        trace::PrestateTracer tracer{trace, ADDR_A};
-        tracer.encode(s.original(), s);
+        PrestateTracer tracer{trace, ADDR_A};
+        tracer(trace::PostState{s});
 
         auto const json_str = R"(
         {
@@ -1738,8 +1786,8 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_code_hash)
     {
         // Run statediff tracer
         nlohmann::json trace;
-        trace::StateDiffTracer tracer{trace};
-        tracer.encode(tracer.trace(s), s);
+        StateDiffTracer tracer{trace};
+        tracer(trace::PostState{s});
 
         auto const json_str = R"(
         {
@@ -1798,8 +1846,8 @@ TEST(PrestateTracer, prestate_retain_beneficiary_access_storage)
     {
         // Run prestate tracer
         nlohmann::json trace;
-        trace::PrestateTracer tracer{trace, ADDR_A};
-        tracer.encode(s.original(), s);
+        PrestateTracer tracer{trace, ADDR_A};
+        tracer(trace::PostState{s});
 
         auto const json_str = R"(
         {
@@ -1818,8 +1866,8 @@ TEST(PrestateTracer, prestate_retain_beneficiary_access_storage)
     {
         // Run statediff tracer
         nlohmann::json trace;
-        trace::StateDiffTracer tracer{trace};
-        tracer.encode(tracer.trace(s), s);
+        StateDiffTracer tracer{trace};
+        tracer(trace::PostState{s});
 
         // We only read the storage, so no changes are recorded in the
         // statediff.
@@ -1864,8 +1912,8 @@ TEST(PrestateTracer, prestate_omit_beneficiary)
     {
         // Run prestate tracer
         nlohmann::json trace;
-        trace::PrestateTracer tracer{trace, ADDR_A};
-        tracer.encode(s.original(), s);
+        PrestateTracer tracer{trace, ADDR_A};
+        tracer(trace::PostState{s});
 
         auto const json_str = "null";
 
@@ -1875,8 +1923,8 @@ TEST(PrestateTracer, prestate_omit_beneficiary)
     {
         // Run statediff tracer
         nlohmann::json trace;
-        trace::StateDiffTracer tracer{trace};
-        tracer.encode(tracer.trace(s), s);
+        StateDiffTracer tracer{trace};
+        tracer(trace::PostState{s});
 
         auto const json_str = R"(
         {
@@ -1912,8 +1960,8 @@ TEST(PrestateTracer, prestate_empty_block_no_reward)
     {
         // Run prestate tracer
         nlohmann::json trace;
-        trace::PrestateTracer tracer{trace, ADDR_A};
-        tracer.encode(s.original(), s);
+        PrestateTracer tracer{trace, ADDR_A};
+        tracer(trace::PostState{s});
 
         auto const json_str = "null";
 
@@ -1923,8 +1971,8 @@ TEST(PrestateTracer, prestate_empty_block_no_reward)
     {
         // Run statediff tracer
         nlohmann::json trace;
-        trace::StateDiffTracer tracer{trace};
-        tracer.encode(tracer.trace(s), s);
+        StateDiffTracer tracer{trace};
+        tracer(trace::PostState{s});
 
         auto const json_str = R"(
         {
@@ -1938,10 +1986,8 @@ TEST(PrestateTracer, prestate_empty_block_no_reward)
 
 // CodeTracer coverage.
 //
-// Each test below constructs `StateTracer{CodeTracer{}}`, exercises exactly
-// one of the `on_read_code` recording sites in the execution layer, and
-// asserts that the recorded codes map contains the (code_hash, intercode)
-// pair that the site is responsible for. The sites are:
+// The tracing context must preserve the (code_hash, intercode) pairs needed for
+// witness generation. Recording sites:
 //
 //   1. EvmcHostBase::get_code_size  (EXTCODESIZE host hook)
 //   2. EvmcHostBase::copy_code       (EXTCODECOPY host hook)
@@ -1953,6 +1999,84 @@ TEST(PrestateTracer, prestate_empty_block_no_reward)
 //
 // Without these, future changes to any site can silently drop a code preimage
 // from the witness without CI catching it.
+
+static_assert(Tracer<CodeTracer>);
+
+TEST(CodeTracer, trace_context_deduplicates_code_preimages)
+{
+    CodeTracer code_tracer{};
+    TypeErasedTracer const erased_tracer = TypeErasedTracer::erase(code_tracer);
+    std::span<TypeErasedTracer const> const tracers{&erased_tracer, 1};
+    TxTraceContext const trace_context{tracers};
+
+    trace::emit<trace::ReadCode>(trace_context, A_CODE_HASH, A_ICODE);
+    trace::emit<trace::ReadCode>(trace_context, B_CODE_HASH, B_ICODE);
+    trace::emit<trace::ReadCode>(trace_context, A_CODE_HASH, A_ICODE);
+
+    ASSERT_EQ(code_tracer.codes.size(), 2u);
+    EXPECT_EQ(code_tracer.codes.at(A_CODE_HASH), A_ICODE);
+    EXPECT_EQ(code_tracer.codes.at(B_CODE_HASH), B_ICODE);
+}
+
+// Code may be recorded before the transaction trace context is reset (e.g.
+// during validation), so a reset must not drop recorded code preimages.
+TEST(CodeTracer, reset_retains_code_preimages)
+{
+    CodeTracer code_tracer{};
+    TypeErasedTracer const erased_tracer = TypeErasedTracer::erase(code_tracer);
+    std::span<TypeErasedTracer const> const tracers{&erased_tracer, 1};
+    TxTraceContext const trace_context{tracers};
+
+    trace::emit<trace::ReadCode>(trace_context, A_CODE_HASH, A_ICODE);
+    trace_context.reset();
+    trace::emit<trace::ReadCode>(trace_context, B_CODE_HASH, B_ICODE);
+
+    ASSERT_EQ(code_tracer.codes.size(), 2u);
+    EXPECT_EQ(code_tracer.codes.at(A_CODE_HASH), A_ICODE);
+    EXPECT_EQ(code_tracer.codes.at(B_CODE_HASH), B_ICODE);
+}
+
+TEST(CodeTracer, maybe_read_code_returns_typed_result)
+{
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
+    TrieDb tdb{db};
+    vm::VM vm;
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {ADDR_A,
+             StateDelta{
+                 .account = {std::nullopt, Account{.code_hash = A_CODE_HASH}}}},
+            {ADDR_B, StateDelta{.account = {std::nullopt, Account{}}}}},
+        Code{{A_CODE_HASH, A_ICODE}},
+        BlockHeader{.number = 0});
+
+    BlockState bs{tdb, vm};
+    State state{bs, Incarnation{0, 0}};
+    CodeTracer code_tracer{};
+    TypeErasedTracer const erased_tracer = TypeErasedTracer::erase(code_tracer);
+    std::span<TypeErasedTracer const> const tracers{&erased_tracer, 1};
+    TxTraceContext const trace_context{tracers};
+
+    EXPECT_EQ(
+        trace::emit<trace::MaybeReadCode>(trace_context, state, ADDR_A),
+        std::optional<bool>{false});
+    ASSERT_EQ(code_tracer.codes.size(), 1u);
+    auto const &code = code_tracer.codes.at(A_CODE_HASH);
+    EXPECT_EQ(
+        byte_string_view(code->code(), code->size()),
+        byte_string_view(A_ICODE->code(), A_ICODE->size()));
+
+    EXPECT_EQ(
+        trace::emit<trace::MaybeReadCode>(trace_context, state, ADDR_B),
+        std::optional<bool>{true});
+    EXPECT_EQ(code_tracer.codes.size(), 1u);
+
+    TxTraceContext const empty_context{};
+    EXPECT_FALSE(trace::emit<trace::MaybeReadCode>(empty_context, state, ADDR_A)
+                     .has_value());
+}
 
 namespace
 {
@@ -1988,28 +2112,28 @@ TYPED_TEST(TraitsTest, code_tracer_records_extcodesize)
 
     BlockState bs{tdb, vm};
     State state{bs, Incarnation{0, 0}};
-
-    NoopCallTracer call_tracer;
     BlockHashBufferFinalized const block_hash_buffer;
     Transaction const tx{};
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t const base_fee{0};
-    trace::StateTracer state_tracer = trace::CodeTracer{};
+    CodeTracer code_tracer{};
+    TypeErasedTracer const erased_tracer = TypeErasedTracer::erase(code_tracer);
+    std::span<TypeErasedTracer const> const tracers{&erased_tracer, 1};
+    TxTraceContext const trace_context{tracers};
     EvmcHost<typename TestFixture::Trait> host{
-        call_tracer,
-        state_tracer,
         EMPTY_TX_CONTEXT,
         block_hash_buffer,
         state,
         tx,
         base_fee,
         0,
-        chain_ctx};
+        chain_ctx,
+        trace_context};
 
     EXPECT_EQ(host.get_code_size(ADDR_A), A_ICODE->size());
 
-    auto const &codes = std::get<trace::CodeTracer>(state_tracer).codes;
+    auto const &codes = code_tracer.codes;
     EXPECT_EQ(codes.size(), 1u);
     auto const it = codes.find(A_CODE_HASH);
     ASSERT_TRUE(it != codes.end());
@@ -2037,24 +2161,24 @@ TYPED_TEST(TraitsTest, code_tracer_records_extcodecopy)
 
     BlockState bs{tdb, vm};
     State state{bs, Incarnation{0, 0}};
-
-    NoopCallTracer call_tracer;
     BlockHashBufferFinalized const block_hash_buffer;
     Transaction const tx{};
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t const base_fee{0};
-    trace::StateTracer state_tracer = trace::CodeTracer{};
+    CodeTracer code_tracer{};
+    TypeErasedTracer const erased_tracer = TypeErasedTracer::erase(code_tracer);
+    std::span<TypeErasedTracer const> const tracers{&erased_tracer, 1};
+    TxTraceContext const trace_context{tracers};
     EvmcHost<typename TestFixture::Trait> host{
-        call_tracer,
-        state_tracer,
         EMPTY_TX_CONTEXT,
         block_hash_buffer,
         state,
         tx,
         base_fee,
         0,
-        chain_ctx};
+        chain_ctx,
+        trace_context};
 
     std::vector<uint8_t> buf(A_ICODE->size(), 0);
     auto const n = host.copy_code(ADDR_A, 0, buf.data(), buf.size());
@@ -2064,7 +2188,7 @@ TYPED_TEST(TraitsTest, code_tracer_records_extcodecopy)
         buf.begin() + static_cast<std::ptrdiff_t>(n),
         A_ICODE->code()));
 
-    auto const &codes = std::get<trace::CodeTracer>(state_tracer).codes;
+    auto const &codes = code_tracer.codes;
     EXPECT_EQ(codes.size(), 1u);
     auto const it = codes.find(A_CODE_HASH);
     ASSERT_TRUE(it != codes.end());
@@ -2096,24 +2220,24 @@ TYPED_TEST(TraitsTest, code_tracer_records_called_contract_code)
 
     BlockState bs{tdb, vm};
     State state{bs, Incarnation{0, 0}};
-
-    NoopCallTracer call_tracer;
     BlockHashBufferFinalized const block_hash_buffer;
     Transaction const tx{};
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t const base_fee{0};
-    trace::StateTracer state_tracer = trace::CodeTracer{};
+    CodeTracer code_tracer{};
+    TypeErasedTracer const erased_tracer = TypeErasedTracer::erase(code_tracer);
+    std::span<TypeErasedTracer const> const tracers{&erased_tracer, 1};
+    TxTraceContext const trace_context{tracers};
     EvmcHost<typename TestFixture::Trait> host{
-        call_tracer,
-        state_tracer,
         EMPTY_TX_CONTEXT,
         block_hash_buffer,
         state,
         tx,
         base_fee,
         0,
-        chain_ctx};
+        chain_ctx,
+        trace_context};
 
     // depth = 1 to bypass the depth-0 reserve-balance revert path; we want
     // to isolate execute_call_message's own code-read here.
@@ -2132,7 +2256,7 @@ TYPED_TEST(TraitsTest, code_tracer_records_called_contract_code)
 
     (void)execute_call_message<typename TestFixture::Trait>(&host, state, msg);
 
-    auto const &codes = std::get<trace::CodeTracer>(state_tracer).codes;
+    auto const &codes = code_tracer.codes;
     auto const it = codes.find(B_CODE_HASH);
     ASSERT_TRUE(it != codes.end())
         << "called contract code not recorded by execute_call_message";
@@ -2176,19 +2300,23 @@ TYPED_TEST(TraitsTest, code_tracer_records_system_contract_code)
         EthereumMainnet const chain;
         auto const chain_ctx =
             ChainContext<typename TestFixture::Trait>::debug_empty();
-        trace::StateTracer state_tracer = trace::CodeTracer{};
+        CodeTracer code_tracer{};
+        TypeErasedTracer const erased_tracer =
+            TypeErasedTracer::erase(code_tracer);
+        std::span<TypeErasedTracer const> const tracers{&erased_tracer, 1};
+        TxTraceContext const trace_context{tracers};
 
         auto const result = process_requests<typename TestFixture::Trait>(
             chain,
             state,
             block_hash_buffer,
             header,
-            state_tracer,
+            trace_context,
             chain_ctx,
             std::span<Receipt const>{});
         ASSERT_TRUE(result.has_value());
 
-        auto const &codes = std::get<trace::CodeTracer>(state_tracer).codes;
+        auto const &codes = code_tracer.codes;
         auto const it = codes.find(SYSTEM_STUB_CODE_HASH);
         ASSERT_TRUE(it != codes.end())
             << "system contract code not recorded by system_call";
@@ -2230,11 +2358,15 @@ TYPED_TEST(TraitsTest, code_tracer_records_sender_code_in_validate)
         State state{bs, Incarnation{0, 0}};
 
         Transaction const tx{.gas_limit = 60'500};
-        trace::StateTracer state_tracer = trace::CodeTracer{};
+        CodeTracer code_tracer{};
+        TypeErasedTracer const erased_tracer =
+            TypeErasedTracer::erase(code_tracer);
+        std::span<TypeErasedTracer const> const tracers{&erased_tracer, 1};
+        TxTraceContext const trace_context{tracers};
         (void)validate_ethereum_transaction<typename TestFixture::Trait>(
-            tx, ADDR_A, state, state_tracer);
+            tx, ADDR_A, state, trace_context);
 
-        auto const &codes = std::get<trace::CodeTracer>(state_tracer).codes;
+        auto const &codes = code_tracer.codes;
         auto const it = codes.find(C_CODE_HASH);
         ASSERT_TRUE(it != codes.end())
             << "sender code not recorded by validate_ethereum_transaction";
@@ -2242,6 +2374,37 @@ TYPED_TEST(TraitsTest, code_tracer_records_sender_code_in_validate)
             byte_string_view(it->second->code(), it->second->size()),
             byte_string_view(C_ICODE->code(), C_ICODE->size()));
     }
+}
+
+TYPED_TEST(TraitsTest, code_tracer_validation_skips_empty_code)
+{
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
+    TrieDb tdb{db};
+    vm::VM vm;
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {ADDR_A,
+             StateDelta{.account = {std::nullopt, Account{.balance = 1}}}}},
+        Code{},
+        BlockHeader{.number = 0});
+
+    BlockState bs{tdb, vm};
+    State state{bs, Incarnation{0, 0}};
+    CodeTracer code_tracer{};
+    TypeErasedTracer const erased_tracer = TypeErasedTracer::erase(code_tracer);
+    std::span<TypeErasedTracer const> const tracers{&erased_tracer, 1};
+    TxTraceContext const trace_context{tracers};
+
+    auto const result =
+        validate_ethereum_transaction<typename TestFixture::Trait>(
+            Transaction{.gas_limit = 21'000, .to = ADDR_B},
+            ADDR_A,
+            state,
+            trace_context);
+    EXPECT_TRUE(result.has_value());
+    EXPECT_TRUE(code_tracer.codes.empty());
 }
 
 // Site 6: process_authorizations records authority code
@@ -2286,9 +2449,9 @@ TYPED_TEST(EvmTraitsTest, code_tracer_records_authorization_code)
         BlockState bs{tdb, vm};
         State state{bs, Incarnation{0, 0}};
 
-        // One authorization entry whose authority is ADDR_B. The authorities
-        // span shadows recovered addresses; we set it to ADDR_B directly,
-        // sidestepping signature recovery.
+        constexpr auto EMPTY_AUTHORITY =
+            0x0300000000000000000000000000000000000000_address;
+        // Supply recovered authorities directly to avoid signature recovery.
         AuthorizationEntry auth{};
         auth.sc.chain_id = 0; // 0 always matches host_chain_id in step 1
         auth.nonce = 0;
@@ -2300,31 +2463,39 @@ TYPED_TEST(EvmTraitsTest, code_tracer_records_authorization_code)
             .type = TransactionType::eip7702,
         };
         tx.authorization_list.push_back(auth);
+        AuthorizationEntry empty_auth = auth;
+        empty_auth.address = {};
+        tx.authorization_list.push_back(empty_auth);
 
-        std::vector<std::optional<Address>> const authorities = {ADDR_B};
-
-        NoopCallTracer call_tracer;
+        std::vector<std::optional<Address>> const authorities = {
+            ADDR_B, EMPTY_AUTHORITY};
         BlockHashBufferFinalized const block_hash_buffer;
         auto const chain_ctx =
             ChainContext<typename TestFixture::Trait>::debug_empty();
         uint256_t const base_fee{0};
-        trace::StateTracer state_tracer = trace::CodeTracer{};
+        CodeTracer code_tracer{};
+        TypeErasedTracer const erased_tracer =
+            TypeErasedTracer::erase(code_tracer);
+        std::span<TypeErasedTracer const> const tracers{&erased_tracer, 1};
+        TxTraceContext const trace_context{tracers};
         EvmcHost<typename TestFixture::Trait> host{
-            call_tracer,
-            state_tracer,
             EMPTY_TX_CONTEXT,
             block_hash_buffer,
             state,
             tx,
             base_fee,
             0,
-            chain_ctx};
+            chain_ctx,
+            trace_context};
 
         (void)ExecuteTransactionNoValidation<typename TestFixture::Trait>{
             EthereumMainnet{}, tx, ADDR_A, authorities, BlockHeader{}}(
             state, host);
 
-        auto const &codes = std::get<trace::CodeTracer>(state_tracer).codes;
+        EXPECT_EQ(state.get_code_hash(EMPTY_AUTHORITY), NULL_HASH);
+        EXPECT_EQ(state.get_nonce(EMPTY_AUTHORITY), 1);
+        auto const &codes = code_tracer.codes;
+        EXPECT_FALSE(codes.contains(NULL_HASH));
         auto const it = codes.find(B_CODE_HASH);
         ASSERT_TRUE(it != codes.end())
             << "authority code not recorded by process_authorizations";
@@ -2400,7 +2571,10 @@ TYPED_TEST(MonadTraitsTest, code_tracer_records_reserve_balance_code)
         .authorities = authorities};
 
     Transaction const tx{.max_fee_per_gas = 1, .gas_limit = 21'000};
-    trace::StateTracer state_tracer = trace::CodeTracer{};
+    CodeTracer code_tracer{};
+    TypeErasedTracer const erased_tracer = TypeErasedTracer::erase(code_tracer);
+    std::span<TypeErasedTracer const> const tracers{&erased_tracer, 1};
+    TxTraceContext const trace_context{tracers};
 
     init_reserve_balance_context<Trait>(
         state,
@@ -2408,13 +2582,19 @@ TYPED_TEST(MonadTraitsTest, code_tracer_records_reserve_balance_code)
         tx,
         std::optional<uint256_t>{0},
         /*i=*/0,
-        state_tracer,
+        trace_context,
         ctx);
 
     (void)revert_transaction<Trait>(
-        SENDER, tx, /*base_fee_per_gas=*/0, /*i=*/0, state, state_tracer, ctx);
+        SENDER,
+        tx,
+        /*base_fee_per_gas=*/0,
+        /*i=*/0,
+        state,
+        trace_context,
+        ctx);
 
-    auto const &codes = std::get<trace::CodeTracer>(state_tracer).codes;
+    auto const &codes = code_tracer.codes;
     auto const it_a = codes.find(A_CODE_HASH);
     ASSERT_TRUE(it_a != codes.end())
         << "sender code not recorded by is_delegated";
@@ -2461,8 +2641,15 @@ TYPED_TEST(MonadTraitsTest, access_list_page_dedup_same_page)
     nlohmann::json storage;
     auto const authorities = std::vector<std::optional<Address>>{};
     auto const to = std::optional<Address>{addr3};
-    AccessListTracer tracer{storage, addr1, addr2, to, authorities};
-    tracer.encode<typename TestFixture::Trait>(s);
+    AccessListTracer tracer{
+        storage,
+        addr1,
+        addr2,
+        to,
+        authorities,
+        TestFixture::Trait::mip_8_active(),
+        &is_precompile<typename TestFixture::Trait>};
+    tracer(trace::PostState{s});
 
     auto const json_str = R"([
         {
@@ -2506,8 +2693,15 @@ TYPED_TEST(MonadTraitsTest, access_list_page_dedup_same_page_three_slots)
     nlohmann::json storage;
     auto const authorities = std::vector<std::optional<Address>>{};
     auto const to = std::optional<Address>{addr3};
-    AccessListTracer tracer{storage, addr1, addr2, to, authorities};
-    tracer.encode<typename TestFixture::Trait>(s);
+    AccessListTracer tracer{
+        storage,
+        addr1,
+        addr2,
+        to,
+        authorities,
+        TestFixture::Trait::mip_8_active(),
+        &is_precompile<typename TestFixture::Trait>};
+    tracer(trace::PostState{s});
 
     auto const json_str = R"([
         {
@@ -2551,8 +2745,15 @@ TYPED_TEST(MonadTraitsTest, access_list_mip8_passthrough_two_addresses)
     nlohmann::json storage;
     auto const authorities = std::vector<std::optional<Address>>{};
     auto const to = std::optional<Address>{addr3};
-    AccessListTracer tracer{storage, addr1, addr2, to, authorities};
-    tracer.encode<typename TestFixture::Trait>(s);
+    AccessListTracer tracer{
+        storage,
+        addr1,
+        addr2,
+        to,
+        authorities,
+        TestFixture::Trait::mip_8_active(),
+        &is_precompile<typename TestFixture::Trait>};
+    tracer(trace::PostState{s});
 
     // Sort outer array by address for deterministic comparison
     std::sort(storage.begin(), storage.end(), [](auto const &a, auto const &b) {
@@ -2606,8 +2807,15 @@ TYPED_TEST(MonadTraitsTest, access_list_page_dedup_one_addr_two_pages)
     nlohmann::json storage;
     auto const authorities = std::vector<std::optional<Address>>{};
     auto const to = std::optional<Address>{addr3};
-    AccessListTracer tracer{storage, addr1, addr2, to, authorities};
-    tracer.encode<typename TestFixture::Trait>(s);
+    AccessListTracer tracer{
+        storage,
+        addr1,
+        addr2,
+        to,
+        authorities,
+        TestFixture::Trait::mip_8_active(),
+        &is_precompile<typename TestFixture::Trait>};
+    tracer(trace::PostState{s});
 
     ASSERT_EQ(storage.size(), 1U);
     EXPECT_EQ(
@@ -2651,8 +2859,15 @@ TYPED_TEST(MonadTraitsTest, access_list_page_dedup_old_revision)
     nlohmann::json storage;
     auto const authorities = std::vector<std::optional<Address>>{};
     auto const to = std::optional<Address>{addr3};
-    AccessListTracer tracer{storage, addr1, addr2, to, authorities};
-    tracer.encode<typename TestFixture::Trait>(s);
+    AccessListTracer tracer{
+        storage,
+        addr1,
+        addr2,
+        to,
+        authorities,
+        TestFixture::Trait::mip_8_active(),
+        &is_precompile<typename TestFixture::Trait>};
+    tracer(trace::PostState{s});
 
     ASSERT_EQ(storage.size(), 1U);
     EXPECT_EQ(
@@ -2699,8 +2914,15 @@ TYPED_TEST(MonadTraitsTest, access_list_page_dedup_page_boundary)
     nlohmann::json storage;
     auto const authorities = std::vector<std::optional<Address>>{};
     auto const to = std::optional<Address>{addr3};
-    AccessListTracer tracer{storage, addr1, addr2, to, authorities};
-    tracer.encode<typename TestFixture::Trait>(s);
+    AccessListTracer tracer{
+        storage,
+        addr1,
+        addr2,
+        to,
+        authorities,
+        TestFixture::Trait::mip_8_active(),
+        &is_precompile<typename TestFixture::Trait>};
+    tracer(trace::PostState{s});
 
     ASSERT_EQ(storage.size(), 1U);
     EXPECT_EQ(
@@ -2750,8 +2972,15 @@ TYPED_TEST(MonadTraitsTest, access_list_page_dedup_multi_byte_page_boundary)
     nlohmann::json storage;
     auto const authorities = std::vector<std::optional<Address>>{};
     auto const to = std::optional<Address>{addr3};
-    AccessListTracer tracer{storage, addr1, addr2, to, authorities};
-    tracer.encode<typename TestFixture::Trait>(s);
+    AccessListTracer tracer{
+        storage,
+        addr1,
+        addr2,
+        to,
+        authorities,
+        TestFixture::Trait::mip_8_active(),
+        &is_precompile<typename TestFixture::Trait>};
+    tracer(trace::PostState{s});
 
     ASSERT_EQ(storage.size(), 1U);
     EXPECT_EQ(

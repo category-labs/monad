@@ -1,0 +1,140 @@
+// Copyright (C) 2025-26 Category Labs, Inc.
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+#pragma once
+
+#include <category/core/config.hpp>
+
+#include <concepts>
+#include <functional>
+#include <optional>
+#include <span>
+#include <tuple>
+#include <type_traits>
+
+MONAD_NAMESPACE_BEGIN
+
+// TODO(dhil): Clean up the return type computing machinery.
+
+template <typename Op, typename = void>
+struct full_answer_type
+{
+    using type = void;
+};
+
+template <typename Op>
+struct full_answer_type<Op, std::void_t<typename Op::returns>>
+{
+    using type = std::optional<typename Op::returns>;
+};
+
+template <typename Op, typename = void>
+struct answer_type
+{
+    using return_type = void;
+    using full_answer_type = typename full_answer_type<Op>::type;
+};
+
+template <typename Op>
+struct answer_type<Op, std::void_t<typename Op::returns>>
+{
+    using return_type = typename Op::returns;
+    using full_answer_type = typename full_answer_type<Op>::type;
+};
+
+template <typename Op>
+using return_type_t = typename answer_type<Op>::return_type;
+template <typename Op>
+using answer_type_t = typename answer_type<Op>::full_answer_type;
+
+template <typename... Ts>
+using Signature = std::tuple<Ts...>;
+
+// Type-checking machinery
+template <typename R>
+concept CheckSignature =
+    requires { typename std::remove_cvref_t<R>::Signature; };
+
+template <typename R>
+struct HasSignature
+{
+    static constexpr bool has_signature = CheckSignature<R>;
+
+    static consteval bool check()
+    {
+        // TODO(dhil): Tweak the error message.
+        static_assert(
+            has_signature,
+            "Tracer must define 'using Signature = Signature<...>;' to conform "
+            "with the structure of a tracer");
+        return has_signature;
+    }
+};
+
+template <typename R, typename Op>
+concept HandlesOp = requires(std::remove_cvref_t<R> &tracer, Op const &op) {
+    { std::invoke(tracer, op) } -> std::same_as<return_type_t<Op>>;
+};
+
+template <typename R, typename Signature>
+struct HandleOpsImpl;
+
+template <typename R, typename... Ops>
+struct HandleOpsImpl<R, Signature<Ops...>>
+{
+    static constexpr bool handle_ops = (HandlesOp<R, Ops> && ...);
+};
+
+template <typename R>
+struct HandleOps
+{
+    static constexpr bool handle_ops = HandleOpsImpl<
+        R, typename std::remove_cvref_t<R>::Signature>::handle_ops;
+
+    static consteval bool check()
+    {
+        static_assert(
+            handle_ops,
+            "Tracer must implement operator()(Op const&) with the required "
+            "return type for every operation type in the Signature");
+        return handle_ops;
+    }
+};
+
+template <typename R>
+concept Resettable = requires(std::remove_cvref_t<R> &tracer) {
+    { tracer.reset() } -> std::same_as<void>;
+};
+
+template <typename R>
+struct HasReset
+{
+    static constexpr bool has_reset = Resettable<R>;
+
+    static consteval bool check()
+    {
+        static_assert(
+            has_reset,
+            "Tracer must implement 'void reset()', which discards any state "
+            "accumulated by a prior execution attempt of the transaction");
+        return has_reset;
+    }
+};
+
+template <typename R>
+concept Tracer =
+    HasSignature<R>::check() && HandleOps<R>::check() && HasReset<R>::check();
+
+MONAD_NAMESPACE_END

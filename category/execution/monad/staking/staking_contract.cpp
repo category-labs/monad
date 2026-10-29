@@ -29,6 +29,8 @@
 #include <category/execution/ethereum/core/contract/storage_variable.hpp>
 #include <category/execution/ethereum/native_transfer_log.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/trace/commands/call_trace.hpp>
+#include <category/execution/ethereum/trace/trace_context.hpp>
 #include <category/execution/monad/staking/staking_contract.hpp>
 #include <category/execution/monad/staking/util/bls.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
@@ -372,10 +374,9 @@ MONAD_STAKING_ANONYMOUS_NAMESPACE_END
 MONAD_STAKING_NAMESPACE_BEGIN
 
 StakingContract::StakingContract(
-    State &state, CallTracerBase &call_tracer, bool const log_native_transfers)
+    State &state, TxTraceContext const tx_trace_context)
     : state_{state}
-    , call_tracer_{call_tracer}
-    , log_native_transfers_{log_native_transfers}
+    , tx_trace_context_{tx_trace_context}
     , vars{state}
 {
 }
@@ -564,7 +565,7 @@ void StakingContract::send_tokens(Address const &to, uint256_t const &amount)
     state_.add_to_balance(to, amount);
     state_.subtract_from_balance(STAKING_CA, amount);
     emit_native_transfer_logs<traits>(
-        state_, call_tracer_, STAKING_CA, to, amount, log_native_transfers_);
+        state_, tx_trace_context_, STAKING_CA, to, amount);
 }
 
 EXPLICIT_MONAD_TRAITS_MEMBER(StakingContract::send_tokens);
@@ -2129,7 +2130,7 @@ std::tuple<bool, Ptr, std::vector<Ptr>> StakingContract::linked_list_traverse(
 void StakingContract::emit_log(Receipt::Log const &log)
 {
     state_.store_log(log);
-    call_tracer_.on_log(log);
+    trace::emit<trace::Log>(tx_trace_context_, log);
 }
 
 MONAD_STAKING_NAMESPACE_END

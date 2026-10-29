@@ -15,19 +15,20 @@
 
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
-#include <category/execution/ethereum/trace/call_tracer.hpp>
+#include <category/execution/ethereum/trace/trace_context.hpp>
 #include <category/execution/monad/monad_precompiles.hpp>
 #include <category/execution/monad/reserve_balance/reserve_balance_contract.hpp>
 #include <category/execution/monad/staking/staking_contract.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 
+#include <type_traits>
+
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
 template <Traits traits, typename Contract, Address contract_address>
 std::optional<evmc::Result> check_call_monad_precompile(
-    State &state, CallTracerBase &call_tracer, evmc_message const &msg,
-    bool const log_native_transfers)
+    State &state, evmc_message const &msg, TxTraceContext const &trace_ctx)
 {
 
     if (msg.code_address != contract_address) {
@@ -45,7 +46,7 @@ std::optional<evmc::Result> check_call_monad_precompile(
         return evmc::Result{evmc_status_code::EVMC_OUT_OF_GAS};
     }
 
-    Contract contract = Contract{state, call_tracer, log_native_transfers};
+    Contract contract = Contract{state, trace_ctx};
     auto const res = (contract.*method)(input, msg.sender, msg.value);
     if (MONAD_LIKELY(res.has_value())) {
         int64_t const gas_left = msg.gas - static_cast<int64_t>(cost);
@@ -84,8 +85,7 @@ EXPLICIT_MONAD_TRAITS(is_precompile);
 
 template <Traits traits>
 std::optional<evmc::Result> check_call_precompile(
-    State &state, CallTracerBase &call_tracer, evmc_message const &msg,
-    bool const log_native_transfers)
+    State &state, evmc_message const &msg, TxTraceContext const &trace_ctx)
 {
     if (auto maybe_result = check_call_eth_precompile<traits>(msg)) {
         return maybe_result;
@@ -96,7 +96,7 @@ std::optional<evmc::Result> check_call_precompile(
         if constexpr ((cond)) {                                                \
             if (auto maybe_result =                                            \
                     check_call_monad_precompile<traits, contract, addr>(       \
-                        state, call_tracer, msg, log_native_transfers)) {      \
+                        state, msg, trace_ctx)) {                              \
                 return maybe_result;                                           \
             }                                                                  \
         }                                                                      \

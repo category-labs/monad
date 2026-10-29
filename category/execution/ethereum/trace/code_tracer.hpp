@@ -17,39 +17,32 @@
 
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
+#include <category/execution/ethereum/trace/commands/state_trace.hpp>
 #include <category/vm/code.hpp>
-#include <category/vm/evm/traits.hpp>
 
-#include <variant>
+#include <ankerl/unordered_dense.h>
 
 MONAD_NAMESPACE_BEGIN
 
-class State;
-
-namespace trace
+/// Records code preimages for witness generation through trace operations.
+/// Each instance is confined to one execution thread.
+class CodeTracer
 {
-    using StateTracer = std::monostate;
+public:
+    using Signature = monad::Signature<trace::ReadCode, trace::MaybeReadCode>;
 
-    [[gnu::always_inline]] inline bool is_code_tracer(StateTracer const &)
-    {
-        return false;
-    }
+    template <typename Key, typename Elem>
+    using Map = ankerl::unordered_dense::segmented_map<Key, Elem>;
 
-    [[gnu::always_inline]] inline void
-    on_read_code(StateTracer &, bytes32_t const &, vm::SharedIntercode const &)
-    {
-    }
+    Map<bytes32_t, vm::SharedIntercode> codes{};
 
-    [[gnu::always_inline]] inline void on_frame_reject(StateTracer &, State &)
-    {
-    }
+    bool operator()(trace::MaybeReadCode const &);
+    void operator()(trace::ReadCode const &);
 
-    [[gnu::always_inline]] inline void reset(StateTracer &) {}
-
-    template <Traits>
-    [[gnu::always_inline]] inline void run_tracer(StateTracer &, State &)
-    {
-    }
-}
+    // Code read by any execution attempt is retained, since code preimages are
+    // also recorded outside execution (e.g. during transaction validation),
+    // and therefore before the transaction trace context is reset.
+    void reset() {}
+};
 
 MONAD_NAMESPACE_END

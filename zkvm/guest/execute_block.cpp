@@ -42,8 +42,7 @@
 #include <category/execution/ethereum/process_requests.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
-#include <category/execution/ethereum/trace/call_tracer.hpp>
-#include <category/execution/ethereum/trace/state_tracer.hpp>
+#include <category/execution/ethereum/trace/trace_context.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction_error.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
@@ -60,7 +59,6 @@
 #include <optional>
 #include <span>
 #include <utility>
-#include <variant>
 #include <vector>
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
@@ -194,8 +192,7 @@ Result<bytes32_t> execute_block_zkvm(
     ChainContext<traits> const
         chain_ctx{}; // chain context is empty for evm traits
     BlockMetrics metrics{}; // unused; constructor requires a reference
-    NoopCallTracer call_tracer{};
-    trace::StateTracer state_tracer{std::monostate{}};
+    TxTraceContext const trace_context{};
     std::vector<Receipt> receipts;
     receipts.reserve(block.transactions.size());
 
@@ -224,10 +221,9 @@ Result<bytes32_t> execute_block_zkvm(
             block_state,
             metrics,
             prev,
-            call_tracer,
-            state_tracer,
             chain_ctx,
-            /*exec_recorder=*/nullptr};
+            /*exec_recorder=*/nullptr,
+            trace_context};
         BOOST_OUTCOME_TRY(auto receipt, exec());
         block_gas_used += receipt.gas_used;
         receipts.push_back(std::move(receipt));
@@ -251,7 +247,7 @@ Result<bytes32_t> execute_block_zkvm(
                 state,
                 block_hash_buffer,
                 block.header,
-                state_tracer,
+                trace_context,
                 chain_ctx,
                 receipts));
         MONAD_ASSERT(block.header.requests_hash.has_value());

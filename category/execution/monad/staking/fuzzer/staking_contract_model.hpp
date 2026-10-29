@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/address.hpp>
+#include <category/core/config.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
@@ -21,6 +22,10 @@
 #include <category/vm/evm/traits.hpp>
 
 #include <boost/functional/hash.hpp>
+
+MONAD_NAMESPACE_BEGIN
+class TxTraceContext;
+MONAD_NAMESPACE_END
 
 namespace monad::staking::test
 {
@@ -31,8 +36,8 @@ namespace monad::staking::test
         TrieDb trie_db_{mpt_db_};
         BlockState block_state_{trie_db_, vm_};
         State state_{block_state_, Incarnation{0, 0}};
-        NoopCallTracer call_tracer_{};
-        StakingContract contract_{state_, call_tracer_};
+        TxTraceContext const trace_context_{};
+        StakingContract contract_{state_, trace_context_};
 
         // An upper bound on reward rounding errors:
         uint256_t error_bound_{};

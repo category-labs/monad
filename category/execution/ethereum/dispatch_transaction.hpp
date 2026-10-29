@@ -21,7 +21,6 @@
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
-#include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/vm/evm/traits.hpp>
 
 #include <boost/fiber/future/future.hpp>
@@ -37,9 +36,9 @@ class BlockHashBuffer;
 class BlockState;
 class ExecutionEventRecorder;
 class State;
+class TxTraceContext;
 struct BlockHeader;
 struct BlockMetrics;
-struct CallTracerBase;
 struct Chain;
 struct Transaction;
 
@@ -50,8 +49,8 @@ Result<Receipt> dispatch_transaction(
     std::vector<std::optional<Address>> const &authorities,
     BlockHeader const &header, BlockHashBuffer const &block_hash_buffer,
     BlockState &block_state, BlockMetrics &block_metrics,
-    boost::fibers::future<void> &prev, CallTracerBase &call_tracer,
-    trace::StateTracer &state_tracer, ChainContext<traits> const &chain_ctx,
-    ExecutionEventRecorder *exec_recorder, bool trace_transfers = false);
+    boost::fibers::future<void> &prev, ChainContext<traits> const &chain_ctx,
+    ExecutionEventRecorder *exec_recorder,
+    TxTraceContext const &tx_trace_context);
 
 MONAD_NAMESPACE_END

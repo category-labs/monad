@@ -19,7 +19,7 @@
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
-#include <category/execution/ethereum/trace/call_tracer.hpp>
+#include <category/execution/ethereum/trace/trace_context.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <monad/test/traits_test.hpp>
 
@@ -334,10 +334,9 @@ namespace
                     .input_size = test_case.input.size(),
                     .code_address = code_address};
 
-                NoopCallTracer call_tracer{};
+                TxTraceContext const trace_ctx{};
                 evmc::Result const result =
-                    check_call_precompile<traits>(s, call_tracer, input, false)
-                        .value();
+                    check_call_precompile<traits>(s, input, trace_ctx).value();
 
                 if (auto const *expected_value =
                         std::get_if<byte_string>(&test_case.expected)) {

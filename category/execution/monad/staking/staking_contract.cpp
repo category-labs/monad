@@ -30,6 +30,7 @@
 #include <category/execution/ethereum/native_transfer_log.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/monad/staking/staking_contract.hpp>
+#include <category/execution/monad/staking/traits.hpp>
 #include <category/execution/monad/staking/util/bls.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
 #include <category/execution/monad/staking/util/secp256k1.hpp>
@@ -835,7 +836,7 @@ StakingContract::precompile_dispatch(byte_string_view &input)
         return {&StakingContract::precompile_get_epoch, GET_EPOCH_OP_COST};
     case PrecompileSelector::GET_PROPOSER_VAL_ID:
         // [0, 1, 0, 0, 0, 0, 0]
-        if constexpr (traits::tracks_proposer_val_id()) {
+        if constexpr (tracks_proposer_val_id<traits>()) {
             return {
                 &StakingContract::precompile_get_proposer_val_id,
                 GET_PROPOSER_VAL_ID_OP_COST};
@@ -1739,7 +1740,7 @@ Result<void> StakingContract::syscall_reward(
         apply_reward(val_id.value(), SYSTEM_SENDER, del_reward, active_stake));
 
     // 5. Store the proposer validator id for other contracts to query.
-    if constexpr (traits::tracks_proposer_val_id()) {
+    if constexpr (tracks_proposer_val_id<traits>()) {
         vars.proposer_val_id.store(val_id.value());
     }
 

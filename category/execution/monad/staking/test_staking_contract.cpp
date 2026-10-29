@@ -51,6 +51,7 @@
 #include <category/execution/monad/staking/priority_fee.hpp>
 #include <category/execution/monad/staking/staking_contract.hpp>
 #include <category/execution/monad/staking/test/input_generation.hpp>
+#include <category/execution/monad/staking/traits.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
 #include <category/execution/monad/staking/util/staking_error.hpp>
 #include <category/execution/monad/system_sender.hpp>
@@ -4214,7 +4215,7 @@ TYPED_TEST(StakeAllRevisions, reward_sets_block_proposer)
         byte_string_view view = getter_res.value();
         auto const decode_res = abi_decode_fixed<u64_be>(view);
         ASSERT_FALSE(decode_res.has_error());
-        if constexpr (TestFixture::Trait::tracks_proposer_val_id()) {
+        if constexpr (tracks_proposer_val_id<typename TestFixture::Trait>()) {
             EXPECT_EQ(decode_res.value().native(), v.id);
             EXPECT_EQ(expected_slot_val_id.native(), v.id);
         }
@@ -4713,7 +4714,7 @@ TYPED_TEST(StakeAllRevisions, get_proposer_val_id_fork)
     auto const [func, cost] =
         this->contract
             .template precompile_dispatch<typename TestFixture::Trait>(view);
-    if constexpr (TestFixture::Trait::tracks_proposer_val_id()) {
+    if constexpr (tracks_proposer_val_id<typename TestFixture::Trait>()) {
         EXPECT_EQ(func, &StakingContract::precompile_get_proposer_val_id);
         EXPECT_EQ(cost, 100);
     }

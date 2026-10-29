@@ -23,7 +23,6 @@
 #include <span>
 #include <tuple>
 #include <type_traits>
-#include <typeindex>
 
 MONAD_NAMESPACE_BEGIN
 

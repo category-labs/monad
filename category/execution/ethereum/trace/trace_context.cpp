@@ -22,7 +22,6 @@
 #include <cstdint>
 #include <memory>
 #include <span>
-#include <typeindex>
 #include <utility>
 #include <vector>
 
@@ -34,7 +33,7 @@ TxTraceContext::TxTraceContext(
 }
 
 void TxTraceContext::dispatch(
-    std::type_index const &op_type, void const *op, void *result) const
+    trace::OpId const op_type, void const *const op, void *const result) const
 {
     for (auto const &tracer : tracers_) {
         if (tracer.dispatch(op_type, op, result)) {

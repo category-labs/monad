@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/config.hpp>
+#include <category/execution/ethereum/trace/commands/state_trace.hpp>
 #include <category/execution/ethereum/trace/trace_context.hpp>
 #include <category/execution/ethereum/trace/trace_traits.hpp>
 
@@ -83,7 +84,21 @@ static_assert(Tracer<CountingTracer>);
 static_assert(Resettable<CountingTracer>);
 static_assert(!Resettable<NonResettableTracer>);
 
+static_assert(trace::op_id<Ping> == trace::op_id<Ping const &>);
+static_assert(trace::op_id<Ping> != trace::op_id<Count>);
+static_assert(
+    trace::detail::type_name<trace::PostState>() == "monad::trace::PostState");
+static_assert(trace::detail::op_name<trace::PostState>.back() == '\0');
+
 MONAD_ANONYMOUS_NAMESPACE_END
+
+TEST(OpId, names_the_operation_type)
+{
+    EXPECT_EQ(trace::op_id<trace::PostState>->name, "monad::trace::PostState");
+
+    // The spelling of the anonymous namespace is compiler-specific.
+    EXPECT_TRUE(trace::op_id<Ping>->name.ends_with("::Ping"));
+}
 
 TEST(TxTraceContext, run_dispatches_to_first_suitable_tracer)
 {

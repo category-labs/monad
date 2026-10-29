@@ -21,14 +21,16 @@
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/trace/trace_traits.hpp>
 
+#include <algorithm>
+#include <array>
 #include <cstddef>
 #include <functional>
 #include <memory>
 #include <optional>
 #include <span>
+#include <string_view>
 #include <tuple>
 #include <type_traits>
-#include <typeindex>
 #include <utility>
 #include <vector>
 
@@ -48,6 +50,71 @@ MONAD_NAMESPACE_BEGIN
 
 namespace trace
 {
+    // NOTE(dhil): A previous compile-time mechanism for obtaining a unique
+    // runtime identity for a trace command relied on RTTI, which is unavailable
+    // on the zkVM). This approach uses the address of a statically allocated
+    // descriptor to uniquely identify each operation type at runtime. The
+    // descriptor includes a name too, but this is only to be used for
+    // diagnostic purposes, because distinct types may share a spelling, e.g.
+    // anonymous-namespace types in different translation units.
+    struct OpInfo
+    {
+        // Null-terminated, so `name.data()` is also a valid C string.
+        std::string_view name;
+    };
+
+    using OpId = OpInfo const *;
+
+    namespace detail
+    {
+        template <typename Op>
+        consteval std::string_view pretty_function()
+        {
+            return __extension__ __PRETTY_FUNCTION__;
+        }
+
+        // Extracts the spelling of `Op` from `pretty_function<Op>()` by
+        // measuring the compiler-specific decoration around a known type.
+        template <typename Op>
+        consteval std::string_view type_name()
+        {
+            constexpr std::string_view probe = pretty_function<void>();
+            constexpr size_t prefix = probe.find("void");
+            constexpr size_t suffix = probe.size() - prefix - 4;
+            constexpr std::string_view raw = pretty_function<Op>();
+            return raw.substr(prefix, raw.size() - prefix - suffix);
+        }
+
+        // Copies the name out of the decorated function signature, so that
+        // only the spelling of `Op` is retained in the binary.
+        //
+        // NOTE(dhil): This is a slight binary size optimization, as it avoids
+        // storing the full decorated function signature in the binary. We can
+        // consider removing this optimization if binary size is not a concern.
+        // Alternatively, we can eliminate textual names entirely.
+        template <typename Op>
+        consteval auto make_op_name()
+        {
+            constexpr std::string_view name = type_name<Op>();
+            std::array<char, name.size() + 1> storage{};
+            std::ranges::copy(name, storage.begin());
+            return storage;
+        }
+
+        template <typename Op>
+        inline constexpr auto op_name = make_op_name<Op>();
+
+        // NOTE(dhil): This is deliberately non-const! A writable object cannot
+        // be merged with another by constant merging or identical code folding,
+        // so distinct operation types are guaranteed distinct addresses.
+        template <typename Op>
+        inline constinit OpInfo op_info{
+            std::string_view{op_name<Op>.data(), op_name<Op>.size() - 1}};
+    }
+
+    template <typename Op>
+    inline constexpr OpId op_id = &detail::op_info<std::remove_cvref_t<Op>>;
+
     // This is an implementation detail of the tracing framework. This structure
     // represents a tracer, whose type information has been erased, thus
     // allowing us to store heterogeneous tracers in the same container.
@@ -62,8 +129,7 @@ namespace trace
         }
 
         bool dispatch(
-            std::type_index const &op_type, void const *const op,
-            void *const result) const
+            OpId const op_type, void const *const op, void *const result) const
         {
             return vtable_->dispatch(self_, op_type, op, result);
         }
@@ -76,15 +142,14 @@ namespace trace
     private:
         struct VTable
         {
-            bool (*dispatch)(
-                void *, std::type_index const &, void const *, void *);
+            bool (*dispatch)(void *, OpId, void const *, void *);
             void (*reset)(void *);
         };
 
         template <typename R>
         static bool dispatch_impl(
-            void *const self, std::type_index const &op_type,
-            void const *const raw_op, void *const result)
+            void *const self, OpId const op_type, void const *const raw_op,
+            void *const result)
         {
             using Signature = typename R::Signature;
             constexpr size_t num_ops = std::tuple_size_v<Signature>;
@@ -96,7 +161,7 @@ namespace trace
                 }
                 else {
                     using Op = std::tuple_element_t<I, Signature>;
-                    if (op_type == std::type_index(typeid(Op))) {
+                    if (op_type == op_id<Op>) {
                         // TODO(dhil): This assertion is redundant if this
                         // object was applied by the tracing context
                         // object. It would be good to make this
@@ -187,7 +252,7 @@ public:
                 return;
             }
             Op op(std::forward<Args>(args)...);
-            dispatch(std::type_index(typeid(Op)), &op, nullptr);
+            dispatch(trace::op_id<Op>, &op, nullptr);
             return;
         }
         else {
@@ -198,7 +263,7 @@ public:
 
             Op op(std::forward<Args>(args)...);
             answer_type_t<Op> answer{};
-            dispatch(std::type_index(typeid(Op)), &op, &answer);
+            dispatch(trace::op_id<Op>, &op, &answer);
             return answer;
         }
     }
@@ -211,8 +276,7 @@ public:
     size_t size() const;
 
 private:
-    void dispatch(
-        std::type_index const &op_type, void const *op, void *result) const;
+    void dispatch(trace::OpId op_type, void const *op, void *result) const;
 
     std::span<monad::trace::TypeErasedTracer const> tracers_;
 };

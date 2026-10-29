@@ -545,13 +545,13 @@ constexpr size_t MEMO_STAGED_BYTES = 8 * 136;
 // from such a state, `post`, the input then being what follows its blocks.
 //
 // A mark is the first block's slot plus one, written only when that block was
-// filed. From that miss lookups stop and every later block but the last is
-// filed in the next slot -- the straight-line full-branch tail and the Room
-// loop alike -- until the table fills: the state after block j is at
-// mark - 1 + j, if that is below `keccakf_memo_used`. A first block that hit
-// files nothing there, and the next block would take its slot. Prime goes
-// with Filing::NotFinal, whose whole blocks are all filed, and Resume with
-// Filing::None, the post-state's.
+// filed. A prime asks for no hint: its first block is filed as a miss, and
+// every later block but the last is filed in the next slot -- the
+// straight-line full-branch tail and the Room loop alike -- until the table
+// fills: the state after block j is at mark - 1 + j, if that is below
+// `keccakf_memo_used`. A first block the full table permuted in its spare
+// files nothing, and leaves no mark. Prime goes with Filing::NotFinal, whose
+// whole blocks are all filed, and Resume with Filing::None, the post-state's.
 enum class SpongeEntry
 {
     Plain,
@@ -621,16 +621,23 @@ static void keccak256_memo_sponge(
         if constexpr (F == Filing::None) {
             post = keccakf_unfiled_permute<true>(pre, used, look);
         }
+        else if constexpr (Entry == SpongeEntry::Prime) {
+            // A primed node's first block is almost never one the memo holds:
+            // it is filed as a miss, without the hint request, and lookups are
+            // off from the start, so that none of the sponge's lookup arms is
+            // built. A state the table already held is filed again, which a
+            // later hint's word-for-word compare does not mind.
+            uint64_t const first = used;
+            post = keccakf_memo_permute<true, false, Room>(pre, used);
+            look = false;
+            // The count moves only when the block is filed.
+            if (used != first) {
+                *sponge_extra(extra...) = used;
+            }
+        }
         else {
-            [[maybe_unused]] uint64_t const first = used;
             post = keccakf_memo_permute<true, true, Room>(pre, used);
             look = post != pre + KECCAKF_LANES;
-            if constexpr (Entry == SpongeEntry::Prime) {
-                // The count moves only when the block is filed.
-                if (used != first) {
-                    *sponge_extra(extra...) = used;
-                }
-            }
         }
     }
 

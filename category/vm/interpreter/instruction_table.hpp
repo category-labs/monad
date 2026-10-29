@@ -633,7 +633,11 @@ namespace monad::vm::interpreter
 #if defined(MONAD_ZKVM_ZISK)
     #define MONAD_VM_FUSED_CHARGE_PURE(REQ)                                    \
         ((gas_remaining -= (REQ).gas, true) &&                                 \
-         ::monad::vm::interpreter::stack_holds<(REQ).min_required>(            \
+         MONAD_VM_FUSED_STACK_HOLDS(REQ))
+    // Its stack tests alone, for a sequence ending on a JUMPI whose arms make
+    // the charge themselves (charge_on_arm).
+    #define MONAD_VM_FUSED_STACK_HOLDS(REQ)                                    \
+        (::monad::vm::interpreter::stack_holds<(REQ).min_required>(            \
              stack_top, stack_bottom) &&                                       \
          ((REQ).max_growth == 0 ||                                             \
           (stack_top) < MONAD_VM_STACK_LIMIT + (1 - (REQ).max_growth)))
@@ -845,16 +849,35 @@ namespace monad::vm::interpreter
         }
     }
 
+    // Charge GAS on one arm of a branch, in place, with an addi gcc cannot
+    // see through. Seen, the charge both arms make is hoisted above the
+    // branch, and folded into the taken arm's JUMPDEST charge it costs the
+    // other arm a move.
+    template <int64_t GAS>
+    [[gnu::always_inline]] inline void charge_on_arm(int64_t &gas_remaining)
+    {
+        static_assert(GAS > 0 && GAS <= 2048, "one addi's immediate");
+        asm("addi %0, %0, %1" : "+r"(gas_remaining) : "i"(-GAS));
+    }
+
     // After validating the destination, charge JUMPDEST's gas and skip it.
-    // Invalid jumps must exit before this charge.
+    // Invalid jumps must exit before this charge. A fused JUMPI that leaves
+    // its own charge, GAS, to its arms makes it here with JUMPDEST's: one
+    // addi on the taken arm, its sign tested once.
+    template <int64_t GAS = 0>
     [[gnu::always_inline]] inline uint8_t const *swallow_jumpdest(
         runtime::Context &ctx, uint8_t const *landing, int64_t &gas_remaining)
     {
-        gas_remaining -= 1;
-        // gcc knows the gas was not negative before this charge, and turns
-        // the test into a compare with -1, a constant it must load first:
-        // hidden from it, the test is one bltz.
-        MONAD_VM_LAUNDER(gas_remaining);
+        if constexpr (GAS == 0) {
+            gas_remaining -= 1;
+            // gcc knows the gas was not negative before this charge, and
+            // turns the test into a compare with -1, a constant it must load
+            // first: hidden from it, the test is one bltz.
+            MONAD_VM_LAUNDER(gas_remaining);
+        }
+        else {
+            charge_on_arm<GAS + 1>(gas_remaining);
+        }
         if (MONAD_UNLIKELY(gas_remaining < 0)) {
             ctx.exit(OutOfGas);
         }
@@ -863,12 +886,17 @@ namespace monad::vm::interpreter
 
     // Complete <test> PUSH2 JUMPI using the test result directly.
     // Jump to the validated destination encoded at p[2..3], or skip five bytes.
+    // A sequence that leaves its charge, GAS, to the arms has it made on each.
+    template <int64_t GAS = 0>
     [[gnu::always_inline]] inline uint8_t const *fused_branch(
         runtime::Context &ctx, uint8_t const *p, bool taken,
         int64_t &gas_remaining)
     {
         // Condition is false; continue after the sequence.
         if (!taken) {
+            if constexpr (GAS != 0) {
+                charge_on_arm<GAS>(gas_remaining);
+            }
             return p + 5;
         }
         auto const dst = static_cast<size_t>(detail::load_be_k<2>(p + 2));
@@ -876,7 +904,7 @@ namespace monad::vm::interpreter
             ctx.exit(Error);
         }
         auto const *ip = MONAD_VM_ANALYSIS.code() + dst;
-        ip = swallow_jumpdest(ctx, ip, gas_remaining);
+        ip = swallow_jumpdest<GAS>(ctx, ip, gas_remaining);
         return ip;
     }
 #endif
@@ -3972,14 +4000,17 @@ namespace monad::vm::interpreter
     {
         static constexpr auto monad_vm_reqi =
             fused_requirements<traits, PUSH2, JUMPI>();
-        if (MONAD_UNLIKELY(!MONAD_VM_FUSED_CHARGE_PURE(monad_vm_reqi))) {
-            gas_remaining += monad_vm_reqi.gas;
+        if (MONAD_UNLIKELY(!MONAD_VM_FUSED_STACK_HOLDS(monad_vm_reqi))) {
             MONAD_VM_CHECK(PUSH2);
             MONAD_VM_CHECK_AT(JUMPI, 1);
+            // Given back: the arms make the charge.
+            gas_remaining += monad_vm_reqi.gas;
         }
-        // The charge made here, for both arms: folded into the taken arm's
-        // JUMPDEST charge, it would cost the other arm a move.
-        MONAD_VM_LAUNDER(gas_remaining);
+        // The charge made on each arm, in one addi gcc cannot fold or hoist:
+        // the taken arm's with its JUMPDEST's, whose sign test covers both.
+        // Made after the destination's test, the charge changes no outcome:
+        // an invalid destination halts with all the gas consumed, as running
+        // out of it does.
         // The condition is the original top, below PUSH2's destination.
         if (*stack_top) {
             // Decoded on this arm only: the other one never reads it.
@@ -3990,7 +4021,8 @@ namespace monad::vm::interpreter
                 ctx.exit(Error);
             }
             auto const *monad_vm_ip = MONAD_VM_ANALYSIS.code() + monad_vm_dst;
-            monad_vm_ip = swallow_jumpdest(ctx, monad_vm_ip, gas_remaining);
+            monad_vm_ip = swallow_jumpdest<monad_vm_reqi.gas>(
+                ctx, monad_vm_ip, gas_remaining);
             instr_ptr = monad_vm_ip;
             MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
                 ctx,
@@ -4000,6 +4032,7 @@ namespace monad::vm::interpreter
                 gas_remaining,
                 instr_ptr MONAD_VM_TBL_ARG);
         }
+        charge_on_arm<monad_vm_reqi.gas>(gas_remaining);
         // Advance instr_ptr by 4 bytes, reduce the stack size by 1 to
         // consume JUMPI's condition, and call the next opcode handler.
         // Returns from the current handler.
@@ -4349,6 +4382,15 @@ namespace monad::vm::interpreter
                 (monad_vm_op6 == static_cast<std::uint8_t>(EQ) ||
                  monad_vm_op6 == static_cast<std::uint8_t>(GT))) {
                 bool monad_vm_taken = true;
+                // The charge of the test that decides, made on its arms as in
+                // push2_jumpi_at: GT costs what EQ does.
+                static constexpr auto monad_vm_gas = fused_requirements<
+                    traits,
+                    DUP1,
+                    PUSH4,
+                    EQ,
+                    PUSH2,
+                    JUMPI>().gas;
                 if (monad_vm_op6 == static_cast<std::uint8_t>(EQ)) {
                     static constexpr auto monad_vm_req = fused_requirements<
                         traits,
@@ -4358,11 +4400,9 @@ namespace monad::vm::interpreter
                         PUSH2,
                         JUMPI>();
                     if (MONAD_UNLIKELY(
-                            !MONAD_VM_FUSED_CHARGE_PURE(monad_vm_req))) {
+                            !MONAD_VM_FUSED_STACK_HOLDS(monad_vm_req))) {
                         MONAD_VM_MUST_TAIL return ctx.exit(Error);
                     }
-                    // The charge made here, as in push2_jumpi.
-                    MONAD_VM_LAUNDER(gas_remaining);
                     // A contract's function dispatch is a chain of these
                     // tests, one a selector. The stack is the same before each
                     // of them, so a test not taken goes on to the next without
@@ -4402,6 +4442,8 @@ namespace monad::vm::interpreter
                                       << 16
                             : 0;
                     uint64_t monad_vm_word = test_word(instr_ptr);
+                    // A test not taken is charged as the chain leaves it; the
+                    // one that matches has its charge made on its arm.
                     while (monad_vm_word != monad_vm_want) {
                         instr_ptr += 11;
                         monad_vm_word = test_word(instr_ptr);
@@ -4409,6 +4451,7 @@ namespace monad::vm::interpreter
                                 monad_vm_frame ||
                             *(instr_ptr + 10) !=
                                 static_cast<std::uint8_t>(JUMPI)) {
+                            gas_remaining -= monad_vm_req.gas;
                             MONAD_VM_DISPATCH(0, 0, *instr_ptr);
                         }
                         gas_remaining -= monad_vm_req.gas;
@@ -4424,18 +4467,18 @@ namespace monad::vm::interpreter
                         GT,
                         PUSH2,
                         JUMPI>();
+                    static_assert(monad_vm_req.gas == monad_vm_gas);
                     if (MONAD_UNLIKELY(
-                            !MONAD_VM_FUSED_CHARGE_PURE(monad_vm_req))) {
+                            !MONAD_VM_FUSED_STACK_HOLDS(monad_vm_req))) {
                         MONAD_VM_MUST_TAIL return ctx.exit(Error);
                     }
-                    MONAD_VM_LAUNDER(gas_remaining);
                     monad_vm_taken =
                         (uint256_t{detail::load_be_k<4>(instr_ptr + 2)} >
                          *stack_top);
                 }
                 // fused_branch expects a pointer to EQ or GT, followed by
                 // PUSH2 <dst> JUMPI.
-                instr_ptr = fused_branch(
+                instr_ptr = fused_branch<monad_vm_gas>(
                     ctx, instr_ptr + 6, monad_vm_taken, gas_remaining);
                 MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
                     ctx,
@@ -4832,8 +4875,8 @@ namespace monad::vm::interpreter
             // the exit block took a copy of ctx on every execution.
             MONAD_VM_MUST_TAIL return exit_stack_overflow(ctx);
         }
-        gas_remaining -= static_gas<traits, PUSH2, JUMPI>();
-        MONAD_VM_LAUNDER(gas_remaining);
+        // The charge made on each arm, as in push2_jumpi_at.
+        static constexpr auto monad_vm_gas = static_gas<traits, PUSH2, JUMPI>();
         if (bit) {
             // Decoded on this arm only: the other one never reads it.
             auto const monad_vm_dst =
@@ -4844,7 +4887,8 @@ namespace monad::vm::interpreter
                 MONAD_VM_MUST_TAIL return ctx.exit(Error);
             }
             auto const *monad_vm_ip = MONAD_VM_ANALYSIS.code() + monad_vm_dst;
-            monad_vm_ip = swallow_jumpdest(ctx, monad_vm_ip, gas_remaining);
+            monad_vm_ip = swallow_jumpdest<monad_vm_gas>(
+                ctx, monad_vm_ip, gas_remaining);
             instr_ptr = monad_vm_ip;
             MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
                 ctx,
@@ -4854,6 +4898,7 @@ namespace monad::vm::interpreter
                 gas_remaining,
                 instr_ptr MONAD_VM_TBL_ARG);
         }
+        charge_on_arm<monad_vm_gas>(gas_remaining);
         MONAD_VM_FUSED_NEXT(4, -1);
     }
 
@@ -5291,4 +5336,5 @@ namespace monad::vm::interpreter
 #undef MONAD_VM_CHARGE
 #undef MONAD_VM_FUSED_CHARGE
 #undef MONAD_VM_FUSED_CHARGE_PURE
+#undef MONAD_VM_FUSED_STACK_HOLDS
 #undef MONAD_VM_CHECKED_RUNTIME_CALL

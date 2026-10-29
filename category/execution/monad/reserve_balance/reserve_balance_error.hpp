@@ -33,9 +33,11 @@ MONAD_NAMESPACE_BEGIN
 enum class ReserveBalanceError
 {
     Success = 0,
+    InternalError,
     MethodNotSupported,
     ValueNonZero,
     InvalidInput,
+    PendingUpdate,
 };
 
 MONAD_NAMESPACE_END

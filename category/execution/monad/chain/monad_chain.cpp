@@ -27,22 +27,21 @@
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/monad_precompiles.hpp>
-#include <category/execution/monad/reserve_balance.h>
 #include <category/execution/monad/reserve_balance.hpp>
 #include <category/execution/monad/system_sender.hpp>
 #include <category/execution/monad/validate_monad_transaction.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/switch_traits.hpp>
 
-namespace
-{
-    using namespace monad;
+MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
-    static ankerl::unordered_dense::segmented_set<Address> const
-        empty_senders_and_authorities{};
-    static std::vector<Address> const empty_senders{Address{0}};
-    static std::vector<std::vector<std::optional<Address>>> const
-        empty_authorities{{}};
-}
+static ankerl::unordered_dense::segmented_set<monad::Address> const
+    empty_senders_and_authorities{};
+static std::vector<monad::Address> const empty_senders{monad::Address{0}};
+static std::vector<std::vector<std::optional<monad::Address>>> const
+    empty_authorities{{}};
+
+MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
 

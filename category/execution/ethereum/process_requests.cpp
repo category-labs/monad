@@ -74,12 +74,12 @@ Result<byte_string> system_call(
         .block_timestamp = static_cast<int64_t>(header.timestamp),
         .block_gas_limit = static_cast<int64_t>(header.gas_limit),
         .block_prev_randao = header.difficulty
-                                 ? store_be_as<bytes32_t>(header.difficulty)
-                                 : header.prev_randao,
-        .chain_id = store_be_as<bytes32_t>(chain.get_chain_id()),
+                                 ? store_be_as<evmc_bytes32>(header.difficulty)
+                                 : to_evmc(header.prev_randao),
+        .chain_id = store_be_as<evmc_bytes32>(chain.get_chain_id()),
         .block_base_fee =
-            store_be_as<bytes32_t>(header.base_fee_per_gas.value_or(0)),
-        .blob_base_fee = store_be_as<bytes32_t>(get_base_fee_per_blob_gas(
+            store_be_as<evmc_bytes32>(header.base_fee_per_gas.value_or(0)),
+        .blob_base_fee = store_be_as<evmc_bytes32>(get_base_fee_per_blob_gas(
             header.excess_blob_gas.value_or(0), blob_schedule)),
         .blob_hashes = nullptr,
         .blob_hashes_count = 0,

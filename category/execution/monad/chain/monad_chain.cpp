@@ -13,8 +13,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/assert.h>
 #include <category/core/config.hpp>
-#include <category/core/likely.h>
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/core/block.hpp>
@@ -49,15 +49,9 @@ MONAD_NAMESPACE_BEGIN
 using BOOST_OUTCOME_V2_NAMESPACE::success;
 
 monad_eth_revision MonadChain::get_revision(
-    uint64_t /*block_number*/, uint64_t const timestamp) const
+    uint64_t /*block_number*/, uint64_t /*timestamp*/) const
 {
-    auto const monad_revision = get_monad_revision(timestamp);
-
-    if (MONAD_LIKELY(monad_revision >= MONAD_FOUR)) {
-        return MONAD_ETH_PRAGUE;
-    }
-
-    return MONAD_ETH_CANCUN;
+    MONAD_ABORT("Monad chains dispatch on get_monad_revision");
 }
 
 BlobSchedule MonadChain::get_blob_schedule(uint64_t /*timestamp*/) const
@@ -67,14 +61,15 @@ BlobSchedule MonadChain::get_blob_schedule(uint64_t /*timestamp*/) const
 
 template <typename T>
     requires is_monad_trait_v<T>
-ChainContext<T> ChainContext<T>::debug_empty()
+ChainContext<T> const &ChainContext<T>::debug_empty()
 {
-    return ChainContext<T>{
+    static ChainContext<T> const ctx{
         .grandparent_senders_and_authorities = empty_senders_and_authorities,
         .parent_senders_and_authorities = empty_senders_and_authorities,
         .senders_and_authorities = empty_senders_and_authorities,
         .senders = empty_senders,
         .authorities = empty_authorities};
+    return ctx;
 }
 
 EXPLICIT_MONAD_TRAITS_STRUCT(ChainContext);

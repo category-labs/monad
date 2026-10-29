@@ -53,7 +53,7 @@ template <Traits traits>
 ExecuteSystemTransaction<traits>::ExecuteSystemTransaction(
     Chain const &chain, uint64_t const i, Transaction const &tx,
     Address const &sender, BlockHeader const &header, BlockState &block_state,
-    BlockMetrics &block_metrics, boost::fibers::promise<void> &prev,
+    BlockMetrics &block_metrics, boost::fibers::future<void> &prev,
     CallTracerBase &call_tracer, trace::StateTracer &state_tracer,
     ExecutionEventRecorder *const exec_recorder)
     : chain_{chain}
@@ -81,7 +81,7 @@ Result<Receipt> ExecuteSystemTransaction<traits>::operator()()
         auto system_validation_result =
             static_validate_system_transaction<traits>(tx_, sender_);
         if (system_validation_result.has_error()) {
-            prev_.get_future().wait();
+            prev_.wait();
             return std::move(system_validation_result).as_failure();
         }
         Transaction tx = tx_;
@@ -94,7 +94,7 @@ Result<Receipt> ExecuteSystemTransaction<traits>::operator()()
             chain_.get_chain_id(),
             chain_.get_blob_schedule(header_.timestamp));
         if (tx_validation_result.has_error()) {
-            prev_.get_future().wait();
+            prev_.wait();
             return std::move(tx_validation_result).as_failure();
         }
     }
@@ -112,7 +112,7 @@ Result<Receipt> ExecuteSystemTransaction<traits>::operator()()
 
         {
             TRACE_TXN_EVENT(StartStall);
-            prev_.get_future().wait();
+            prev_.wait();
         }
 
         if (block_state_.can_merge(state)) {

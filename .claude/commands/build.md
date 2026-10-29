@@ -100,7 +100,7 @@ You are helping the user configure and build the monad C++ project located at $C
      which gcc-15 g++-15    # GCC (default)
      which clang-19 clang++-19  # Clang (if --clang)
      # Key dev libraries (check via pkg-config — TBB uses find_package, not pkg-config)
-     pkg-config --exists liburing libzstd libcrypto++ gmp
+     pkg-config --exists liburing libzstd gmp
      # TBB: cmake's find_package(TBB) looks for TBBConfig.cmake; check via dpkg
      dpkg -s libtbb-dev 2>/dev/null | grep -q "Status: install ok installed"
      # Additional dev packages (check via dpkg)

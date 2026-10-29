@@ -1136,7 +1136,7 @@ TYPED_TEST(TraitsTest, access_list_precompiles)
         0x000000000000000000000000000000000000000b_address;
 
     auto const json_string = [] {
-        if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_PRAGUE) {
+        if constexpr (!TestFixture::Trait::eip_2537_active()) {
             return R"(
                     [
                         {
@@ -1225,8 +1225,9 @@ TYPED_TEST(TraitsTest, statediff_selfdestruct_same_tx_preserved)
     nlohmann::json diff;
     StateTracer state_tracer = StateDiffTracer{diff};
 
-    boost::fibers::promise<void> prev{};
-    prev.set_value();
+    boost::fibers::promise<void> prev_promise{};
+    auto prev = prev_promise.get_future();
+    prev_promise.set_value();
 
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
@@ -2201,7 +2202,7 @@ TYPED_TEST(TraitsTest, code_tracer_records_system_contract_code)
 // Site 5: validate_ethereum_transaction records sender code on EIP-7702 check
 TYPED_TEST(TraitsTest, code_tracer_records_sender_code_in_validate)
 {
-    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_PRAGUE) {
+    if constexpr (!TestFixture::Trait::eip_7702_active()) {
         GTEST_SKIP() << "EIP-7702 sender code read requires Prague+";
     }
     else {
@@ -2257,7 +2258,7 @@ TYPED_TEST(TraitsTest, code_tracer_records_sender_code_in_validate)
 // covered by the witness-generation integration tests.
 TYPED_TEST(EvmTraitsTest, code_tracer_records_authorization_code)
 {
-    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_PRAGUE) {
+    if constexpr (!TestFixture::Trait::eip_7702_active()) {
         GTEST_SKIP() << "EIP-7702 authority code read requires Prague+";
     }
     else {
@@ -2349,7 +2350,7 @@ TYPED_TEST(EvmTraitsTest, code_tracer_records_authorization_code)
 TYPED_TEST(MonadTraitsTest, code_tracer_records_reserve_balance_code)
 {
     using Trait = typename TestFixture::Trait;
-    if (TestFixture::REV < MONAD_FOUR) {
+    if (!Trait::reserve_balance_active()) {
         GTEST_SKIP() << "reserve-balance code reads are MONAD_FOUR+ only";
     }
 

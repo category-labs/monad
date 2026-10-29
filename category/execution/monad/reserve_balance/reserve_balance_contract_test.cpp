@@ -713,7 +713,7 @@ TYPED_TEST(
                     for (uint256_be_t const value :
                          std::initializer_list<uint256_be_t>{
                              0x00_bytes32, 0x01_bytes32}) {
-                        msg.value = value;
+                        msg.value = to_evmc(value);
 
                         for (auto const &calldata_variant : calldata_variants) {
                             msg.input_data = calldata_variant.data();
@@ -736,7 +736,7 @@ TYPED_TEST(
 
         for (uint256_be_t const value :
              std::initializer_list<uint256_be_t>{0x00_bytes32, 0x01_bytes32}) {
-            msg.value = value;
+            msg.value = to_evmc(value);
 
             for (auto const &calldata_variant : calldata_variants) {
                 msg.input_data = calldata_variant.data();
@@ -769,7 +769,7 @@ TYPED_TEST(
 
             for (uint256_be_t const value : std::initializer_list<uint256_be_t>{
                      0x00_bytes32, 0x01_bytes32}) {
-                msg.value = value;
+                msg.value = to_evmc(value);
 
                 run_check_call_precompile_test<typename TestFixture::Trait>(
                     this->state, msg, EVMC_REVERT, "method not supported");
@@ -791,7 +791,7 @@ TYPED_TEST(
 
         for (uint256_be_t const value :
              std::initializer_list<uint256_be_t>{0x00_bytes32, 0x01_bytes32}) {
-            msg.value = value;
+            msg.value = to_evmc(value);
 
             for (auto const &[data, size] : wrong_calldata) {
                 msg.input_data = data;
@@ -806,7 +806,7 @@ TYPED_TEST(
     // with message "value is nonzero"
     {
         evmc_message msg = make_msg();
-        msg.value = 0x01_bytes32;
+        msg.value = to_evmc(0x01_bytes32);
 
         std::array<uint8_t, 4> selector = {s[0], s[1], s[2], s[3]};
         std::array<uint8_t, 5> too_long = {s[0], s[1], s[2], s[3], 0x00};

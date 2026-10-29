@@ -83,6 +83,13 @@ namespace
 
         using Trait = decltype(get_trait());
 
+        static constexpr bool records_history = [] {
+            if constexpr (is_monad_trait_v<Trait>) {
+                return Trait::monad_rev() >= MONAD_SIX;
+            }
+            return true;
+        }();
+
         evmc::Result call(
             uint64_t const current_block_number, Address const sender,
             Address const code_addr, std::uint8_t const *const input_data,
@@ -231,7 +238,7 @@ TYPED_TEST(BlockHashHistoryTraitsTest, read_write_block_hash_history_storage)
     for (uint64_t i = 1; i <= window_size; i++) {
         bytes32_t const actual = get_block_hash_history(this->state, i - 1);
         auto const expected = [i] {
-            if constexpr (!TestFixture::Trait::eip_2935_active()) {
+            if constexpr (!TestFixture::records_history) {
                 return bytes32_t{};
             }
             return to_bytes(i - 1);
@@ -254,7 +261,7 @@ TYPED_TEST(BlockHashHistoryTraitsTest, ring_buffer)
         bytes32_t const actual = get_block_hash_history(this->state, i);
         bytes32_t const calculated = to_bytes(i);
 
-        if constexpr (!TestFixture::Trait::eip_2935_active()) {
+        if constexpr (!TestFixture::records_history) {
             ASSERT_EQ(actual, bytes32_t{});
             continue;
         }
@@ -266,7 +273,7 @@ TYPED_TEST(BlockHashHistoryTraitsTest, ring_buffer)
         uint64_t number = window_size + i;
         bytes32_t const actual = get_block_hash_history(this->state, number);
         auto const expected = [number] {
-            if constexpr (!TestFixture::Trait::eip_2935_active()) {
+            if constexpr (!TestFixture::records_history) {
                 return bytes32_t{};
             }
             return to_bytes(number);
@@ -306,7 +313,7 @@ TYPED_TEST(BlockHashHistoryTraitsTest, read_from_block_hash_history_contract)
             bytes32_t actual;
             memcpy(actual.bytes, result.output_data, 32);
             auto const expected = [block_number] {
-                if constexpr (!TestFixture::Trait::eip_2935_active()) {
+                if constexpr (!TestFixture::records_history) {
                     return bytes32_t{};
                 }
                 return to_bytes(block_number);
@@ -538,7 +545,7 @@ TYPED_TEST(BlockHashHistoryTraitsTest, blockhash_opcode)
         bytes32_t actual{};
         memcpy(actual.bytes, result.output_data, 32);
         auto const expected = [i] {
-            if constexpr (!TestFixture::Trait::eip_2935_active()) {
+            if constexpr (!TestFixture::records_history) {
                 return to_bytes(0xBB);
             }
             return i < 128 ? to_bytes(0xAA) : to_bytes(0xBB);
@@ -556,7 +563,7 @@ TYPED_TEST(BlockHashHistoryTraitsTest, blockhash_opcode)
         bytes32_t actual{};
         memcpy(actual.bytes, result.output_data, 32);
         auto const expected = [] {
-            if constexpr (!TestFixture::Trait::eip_2935_active()) {
+            if constexpr (!TestFixture::records_history) {
                 return to_bytes(0xBB);
             }
             return to_bytes(0xAA);
@@ -574,7 +581,7 @@ TYPED_TEST(BlockHashHistoryTraitsTest, blockhash_opcode)
         bytes32_t actual{};
         memcpy(actual.bytes, result.output_data, 32);
         auto const expected = [] {
-            if constexpr (!TestFixture::Trait::eip_2935_active()) {
+            if constexpr (!TestFixture::records_history) {
                 return to_bytes(0xBB);
             }
             return to_bytes(0xCC);
@@ -628,7 +635,7 @@ TYPED_TEST(BlockHashHistoryTraitsTest, blockhash_opcode_late_deploy)
         memcpy(actual.bytes, result.output_data, 32);
 
         auto const expected = [i] {
-            if constexpr (!TestFixture::Trait::eip_2935_active()) {
+            if constexpr (!TestFixture::records_history) {
                 return to_bytes(0xBB);
             }
             return i >= start_block - 1 ? to_bytes(0xAA) : to_bytes(0xBB);
@@ -646,7 +653,7 @@ TYPED_TEST(BlockHashHistoryTraitsTest, blockhash_opcode_late_deploy)
         bytes32_t actual{};
         memcpy(actual.bytes, result.output_data, 32);
         auto const expected = [] {
-            if constexpr (!TestFixture::Trait::eip_2935_active()) {
+            if constexpr (!TestFixture::records_history) {
                 return to_bytes(0xBB);
             }
             return to_bytes(0xAA);
@@ -708,7 +715,7 @@ TYPED_TEST(
         auto const expected = [i] {
             // nothing is recorded, so the values come from the
             // block_hash_buffer
-            if constexpr (!TestFixture::Trait::eip_2935_active()) {
+            if constexpr (!TestFixture::records_history) {
                 return bytes32_t{0xFF};
             }
             return to_bytes(i + 1);

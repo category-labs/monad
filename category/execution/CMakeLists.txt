@@ -13,10 +13,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-cmake_minimum_required(VERSION 3.27)
-
-cmake_policy(SET CMP0144 NEW) # find_package uses upper-case _ROOT variables
-
 project(monad_execution)
 
 # ##############################################################################
@@ -210,8 +206,8 @@ add_library(
 add_library(
   monad_execution_native OBJECT
   # monad/db
-  "monad/db/commit_block_migration.cpp"
-  "monad/db/commit_block_migration.hpp"
+  "monad/db/commit_block.cpp"
+  "monad/db/commit_block.hpp"
   "monad/db/page_commit_builder.hpp"
   "monad/db/page_commit_builder.cpp"
   "monad/db/state_machine_init.cpp"
@@ -366,7 +362,7 @@ target_link_libraries(
   PUBLIC monad_crypto
   PUBLIC blst::blst
   PUBLIC c-kzg-4844
-  PRIVATE PkgConfig::crypto++
+  PRIVATE aws_lc::crypto
   PUBLIC ethash::keccak
   PUBLIC evmc
   PUBLIC immer

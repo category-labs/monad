@@ -104,7 +104,7 @@ std::optional<evmc::Result> check_call_precompile(
     while (false);
 
     CASE(
-        traits::monad_rev() >= MONAD_FOUR,
+        traits::staking_active(),
         staking::StakingContract,
         staking::STAKING_CA);
 

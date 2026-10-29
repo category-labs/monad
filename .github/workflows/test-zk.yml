@@ -18,9 +18,10 @@ jobs:
   build:
     name: Compile for RISC-V
     runs-on: ubuntu-26.04-32
+    timeout-minutes: 90
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Build `build_zk` stage
         uses: ./.github/actions/docker-stage
@@ -28,6 +29,4 @@ jobs:
           target: build_zk
           setup: true
           submodules: true
-          cache-from: |
-            type=gha,scope=riscv-toolchain
-            type=gha,scope=base
+          cache-from: type=gha,scope=riscv-toolchain

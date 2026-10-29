@@ -5135,8 +5135,8 @@ TYPED_TEST(StakeAllRevisions, events)
 TYPED_TEST(StakeAllRevisions, withdraw_transfer_logs_in_receipt)
 {
     using Trait = typename TestFixture::Trait;
-    if constexpr (Trait::monad_rev() < MONAD_FOUR) {
-        return; // no staking precompile
+    if constexpr (!Trait::staking_active()) {
+        return;
     }
 
     auto const auth = 0xdeadbeef_address;
@@ -5193,8 +5193,9 @@ TYPED_TEST(StakeAllRevisions, withdraw_transfer_logs_in_receipt)
                 WITHDRAW_SELECTOR, craft_withdraw_input(val.id, withdrawal_id)),
         };
         CallTracer call_tracer{tx, frames};
-        boost::fibers::promise<void> prev{};
-        prev.set_value();
+        boost::fibers::promise<void> prev_promise{};
+        auto prev = prev_promise.get_future();
+        prev_promise.set_value();
         return ExecuteTransaction<Trait>(
             MonadDevnet{},
             nonce,
@@ -5272,8 +5273,8 @@ TYPED_TEST(StakeAllRevisions, withdraw_transfer_logs_in_receipt)
 TYPED_TEST(StakeAllRevisions, delegate_value_is_logged_once)
 {
     using Trait = typename TestFixture::Trait;
-    if constexpr (Trait::monad_rev() < MONAD_FOUR) {
-        return; // no staking precompile
+    if constexpr (!Trait::staking_active()) {
+        return;
     }
 
     auto const auth = 0xdeadbeef_address;
@@ -5309,8 +5310,9 @@ TYPED_TEST(StakeAllRevisions, delegate_value_is_logged_once)
     std::vector<CallFrame> frames;
     CallTracer call_tracer{tx, frames};
     trace::StateTracer state_tracer = std::monostate{};
-    boost::fibers::promise<void> prev{};
-    prev.set_value();
+    boost::fibers::promise<void> prev_promise{};
+    auto prev = prev_promise.get_future();
+    prev_promise.set_value();
     // Reserve-balance tracking indexes the block's senders by tx position.
     std::vector<Address> const senders{auth};
     std::vector<std::vector<std::optional<Address>>> const authorities{{}};

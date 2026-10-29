@@ -131,6 +131,12 @@ struct EvmcHost final : public EvmcHostBase
     {
     }
 
+    EvmcHost(
+        CallTracerBase &, trace::StateTracer &, evmc_tx_context const &,
+        BlockHashBuffer const &, State &, Transaction const &,
+        std::optional<uint256_t>, uint64_t, ChainContext<traits> const &&,
+        bool = false) = delete;
+
     virtual bool
     account_exists(evmc::address const &address) const noexcept override
     {

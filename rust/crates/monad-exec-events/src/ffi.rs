@@ -16,9 +16,9 @@
 //! This module contains low-level bindings to the monad execution client event types.
 
 pub use self::bindings::{
-    g_monad_exec_event_metadata, monad_c_access_list_entry, monad_c_address,
-    monad_c_auth_list_entry, monad_c_bytes32, monad_c_eth_txn_header, monad_c_eth_txn_receipt,
-    monad_c_uint256_ne, monad_exec_account_access, monad_exec_account_access_context,
+    g_monad_exec_event_metadata, monad_bytes32, monad_c_access_list_entry, monad_c_address,
+    monad_c_auth_list_entry, monad_c_eth_txn_header, monad_c_eth_txn_receipt, monad_c_uint256_ne,
+    monad_exec_account_access, monad_exec_account_access_context,
     monad_exec_account_access_list_header, monad_exec_block_end, monad_exec_block_finalized,
     monad_exec_block_qc, monad_exec_block_reject, monad_exec_block_start, monad_exec_block_tag,
     monad_exec_block_verified, monad_exec_evm_error, monad_exec_storage_access,
@@ -75,7 +75,7 @@ pub(crate) fn monad_exec_ring_get_block_number(
 pub(crate) fn monad_exec_ring_block_id_matches(
     c_event_ring: &monad_event_ring,
     c_event_descriptor: &monad_event_descriptor,
-    block_id: &monad_c_bytes32,
+    block_id: &monad_bytes32,
 ) -> bool {
     unsafe {
         self::bindings::monad_exec_ring_block_id_matches(c_event_ring, c_event_descriptor, block_id)
@@ -123,7 +123,7 @@ pub(crate) fn monad_exec_iter_block_number_prev(
 pub(crate) fn monad_exec_iter_block_id_prev(
     c_event_iterator: &mut monad_event_iterator,
     c_event_ring: &monad_event_ring,
-    block_id: &monad_c_bytes32,
+    block_id: &monad_bytes32,
     c_exec_event_filter: monad_exec_event_type,
 ) -> Option<monad_event_descriptor> {
     let mut c_event_descriptor: monad_event_descriptor = unsafe { std::mem::zeroed() };

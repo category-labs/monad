@@ -14,7 +14,6 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/address.hpp>
-#include <category/core/bytes.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
 #include <category/core/runtime/uint256.hpp>
@@ -28,20 +27,19 @@
 #include <category/vm/runtime/types.hpp>
 
 #include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 
 #include <cstdint>
 
 namespace monad::vm::runtime
 {
-    consteval Bin<2> create_code_word_cost(monad_eth_revision const rev)
+    consteval Bin<2> create_code_word_cost(bool const eip_3860_active)
     {
-        return (rev >= MONAD_ETH_SHANGHAI) ? bin<2> : bin<0>;
+        return eip_3860_active ? bin<2> : bin<0>;
     }
 
-    consteval Bin<4> create2_code_word_cost(monad_eth_revision const rev)
+    consteval Bin<4> create2_code_word_cost(bool const eip_3860_active)
     {
-        return (rev >= MONAD_ETH_SHANGHAI) ? bin<8> : bin<6>;
+        return eip_3860_active ? bin<8> : bin<6>;
     }
 
     template <Traits traits>
@@ -57,7 +55,7 @@ namespace monad::vm::runtime
         }
 
         if constexpr (
-            traits::evm_rev() >= MONAD_ETH_PRAGUE &&
+            traits::eip_7702_active() &&
             !traits::can_create_inside_delegated()) {
             if (evm::resolve_delegation(
                     ctx->host, ctx->context, ctx->env.recipient)) {
@@ -75,16 +73,17 @@ namespace monad::vm::runtime
             ctx->expand_memory<traits>(offset + size);
         }
 
-        if constexpr (traits::evm_rev() >= MONAD_ETH_SHANGHAI) {
+        if constexpr (traits::eip_3860_active()) {
             if (MONAD_UNLIKELY(*size > traits::max_initcode_size())) {
                 ctx->exit(StatusCode::OutOfGas);
             }
         }
 
         auto const min_words = shr_ceil<5>(size);
-        auto const word_cost = (kind == EVMC_CREATE2)
-                                   ? create2_code_word_cost(traits::evm_rev())
-                                   : create_code_word_cost(traits::evm_rev());
+        auto const word_cost =
+            (kind == EVMC_CREATE2)
+                ? create2_code_word_cost(traits::eip_3860_active())
+                : create_code_word_cost(traits::eip_3860_active());
 
         ctx->deduct_gas(min_words * word_cost);
 
@@ -104,9 +103,8 @@ namespace monad::vm::runtime
             .sender = ctx->env.recipient,
             .input_data = (*size > 0) ? ctx->memory.data + *offset : nullptr,
             .input_size = *size,
-            .value = static_cast<evmc::bytes32>(store_be_as<bytes32_t>(value)),
-            .create2_salt =
-                static_cast<evmc::bytes32>(store_be_as<bytes32_t>(salt_word)),
+            .value = store_be_as<evmc_bytes32>(value),
+            .create2_salt = store_be_as<evmc_bytes32>(salt_word),
             .code_address = {},
             .memory_handle = ctx->memory.data_handle,
             .memory = ctx->memory.data + ctx->memory.size,

@@ -13,8 +13,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-cmake_policy(SET CMP0144 NEW) # find_package uses upper-case _ROOT variables
-
 include(CheckCXXSourceRuns)
 
 project(monad_async)

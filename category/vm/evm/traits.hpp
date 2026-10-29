@@ -75,14 +75,30 @@ namespace monad
         // Feature flags
 
         { T::eip_1153_active() } -> std::same_as<bool>;
+        { T::eip_1559_header_active() } -> std::same_as<bool>;
+        { T::eip_2537_active() } -> std::same_as<bool>;
         { T::eip_2935_active() } -> std::same_as<bool>;
         { T::eip_3198_active() } -> std::same_as<bool>;
+        { T::eip_3529_active() } -> std::same_as<bool>;
+        { T::eip_3541_active() } -> std::same_as<bool>;
+        { T::eip_3651_active() } -> std::same_as<bool>;
+        { T::eip_3675_active() } -> std::same_as<bool>;
         { T::eip_3855_active() } -> std::same_as<bool>;
+        { T::eip_3860_active() } -> std::same_as<bool>;
         { T::eip_4399_active() } -> std::same_as<bool>;
+        { T::eip_4788_active() } -> std::same_as<bool>;
         { T::eip_4844_active() } -> std::same_as<bool>;
+        { T::eip_4844_header_active() } -> std::same_as<bool>;
+        { T::eip_4844_opcodes_active() } -> std::same_as<bool>;
+        { T::eip_4844_precompile_active() } -> std::same_as<bool>;
+        { T::eip_4895_active() } -> std::same_as<bool>;
         { T::eip_5656_active() } -> std::same_as<bool>;
+        { T::eip_6780_active() } -> std::same_as<bool>;
+        { T::eip_7623_active() } -> std::same_as<bool>;
         { T::eip_7685_active() } -> std::same_as<bool>;
+        { T::eip_7685_header_active() } -> std::same_as<bool>;
         { T::eip_7691_active() } -> std::same_as<bool>;
+        { T::eip_7702_active() } -> std::same_as<bool>;
         { T::eip_7708_active() } -> std::same_as<bool>;
         { T::eip_7823_active() } -> std::same_as<bool>;
         { T::eip_7843_active() } -> std::same_as<bool>;
@@ -100,9 +116,6 @@ namespace monad
         { T::mip_11_active() } -> std::same_as<bool>;
         { T::mip_12_active() } -> std::same_as<bool>;
         { T::can_create_inside_delegated() } -> std::same_as<bool>;
-        // If true, BLOBHASH/BLOBBASEFEE exist and return
-        // stub data. Separate from eip_4844_active.
-        { T::has_blob_opcodes() } -> std::same_as<bool>;
         { T::charges_gas_limit() } -> std::same_as<bool>;
         { T::bumps_nonce_on_unfunded_create() } -> std::same_as<bool>;
 
@@ -135,6 +148,16 @@ namespace monad
             return Rev >= MONAD_ETH_CANCUN;
         }
 
+        static consteval bool eip_1559_header_active() noexcept
+        {
+            return Rev >= MONAD_ETH_LONDON;
+        }
+
+        static consteval bool eip_2537_active() noexcept
+        {
+            return Rev >= MONAD_ETH_PRAGUE;
+        }
+
         static consteval bool eip_2935_active() noexcept
         {
             return Rev >= MONAD_ETH_PRAGUE;
@@ -145,7 +168,32 @@ namespace monad
             return Rev >= MONAD_ETH_LONDON;
         }
 
+        static consteval bool eip_3529_active() noexcept
+        {
+            return Rev >= MONAD_ETH_LONDON;
+        }
+
+        static consteval bool eip_3541_active() noexcept
+        {
+            return Rev >= MONAD_ETH_LONDON;
+        }
+
+        static consteval bool eip_3651_active() noexcept
+        {
+            return Rev >= MONAD_ETH_SHANGHAI;
+        }
+
+        static consteval bool eip_3675_active() noexcept
+        {
+            return Rev >= MONAD_ETH_PARIS;
+        }
+
         static consteval bool eip_3855_active() noexcept
+        {
+            return Rev >= MONAD_ETH_SHANGHAI;
+        }
+
+        static consteval bool eip_3860_active() noexcept
         {
             return Rev >= MONAD_ETH_SHANGHAI;
         }
@@ -155,9 +203,34 @@ namespace monad
             return Rev >= MONAD_ETH_PARIS;
         }
 
+        static consteval bool eip_4788_active() noexcept
+        {
+            return Rev >= MONAD_ETH_CANCUN;
+        }
+
         static consteval bool eip_4844_active() noexcept
         {
             return Rev >= MONAD_ETH_CANCUN;
+        }
+
+        static consteval bool eip_4844_header_active() noexcept
+        {
+            return Rev >= MONAD_ETH_CANCUN;
+        }
+
+        static consteval bool eip_4844_opcodes_active() noexcept
+        {
+            return Rev >= MONAD_ETH_CANCUN;
+        }
+
+        static consteval bool eip_4844_precompile_active() noexcept
+        {
+            return Rev >= MONAD_ETH_CANCUN;
+        }
+
+        static consteval bool eip_4895_active() noexcept
+        {
+            return Rev >= MONAD_ETH_SHANGHAI;
         }
 
         static consteval bool eip_5656_active() noexcept
@@ -165,12 +238,32 @@ namespace monad
             return Rev >= MONAD_ETH_CANCUN;
         }
 
+        static consteval bool eip_6780_active() noexcept
+        {
+            return Rev >= MONAD_ETH_CANCUN;
+        }
+
+        static consteval bool eip_7623_active() noexcept
+        {
+            return Rev >= MONAD_ETH_PRAGUE;
+        }
+
         static consteval bool eip_7685_active() noexcept
         {
             return Rev >= MONAD_ETH_PRAGUE;
         }
 
+        static consteval bool eip_7685_header_active() noexcept
+        {
+            return Rev >= MONAD_ETH_PRAGUE;
+        }
+
         static consteval bool eip_7691_active() noexcept
+        {
+            return Rev >= MONAD_ETH_PRAGUE;
+        }
+
+        static consteval bool eip_7702_active() noexcept
         {
             return Rev >= MONAD_ETH_PRAGUE;
         }
@@ -260,11 +353,6 @@ namespace monad
             return true;
         }
 
-        static consteval bool has_blob_opcodes() noexcept
-        {
-            return Rev >= MONAD_ETH_CANCUN;
-        }
-
         static consteval bool charges_gas_limit() noexcept
         {
             return false;
@@ -352,9 +440,19 @@ namespace monad
             return evm_rev() >= MONAD_ETH_CANCUN;
         }
 
+        static consteval bool eip_1559_header_active() noexcept
+        {
+            return evm_rev() >= MONAD_ETH_LONDON;
+        }
+
+        static consteval bool eip_2537_active() noexcept
+        {
+            return evm_rev() >= MONAD_ETH_PRAGUE;
+        }
+
         static consteval bool eip_2935_active() noexcept
         {
-            return Rev >= MONAD_SIX;
+            return evm_rev() >= MONAD_ETH_PRAGUE;
         }
 
         static consteval bool eip_3198_active() noexcept
@@ -362,7 +460,32 @@ namespace monad
             return evm_rev() >= MONAD_ETH_LONDON;
         }
 
+        static consteval bool eip_3529_active() noexcept
+        {
+            return evm_rev() >= MONAD_ETH_LONDON;
+        }
+
+        static consteval bool eip_3541_active() noexcept
+        {
+            return evm_rev() >= MONAD_ETH_LONDON;
+        }
+
+        static consteval bool eip_3651_active() noexcept
+        {
+            return evm_rev() >= MONAD_ETH_SHANGHAI;
+        }
+
+        static consteval bool eip_3675_active() noexcept
+        {
+            return evm_rev() >= MONAD_ETH_PARIS;
+        }
+
         static consteval bool eip_3855_active() noexcept
+        {
+            return evm_rev() >= MONAD_ETH_SHANGHAI;
+        }
+
+        static consteval bool eip_3860_active() noexcept
         {
             return evm_rev() >= MONAD_ETH_SHANGHAI;
         }
@@ -370,6 +493,11 @@ namespace monad
         static consteval bool eip_4399_active() noexcept
         {
             return evm_rev() >= MONAD_ETH_PARIS;
+        }
+
+        static consteval bool eip_4788_active() noexcept
+        {
+            return evm_rev() >= MONAD_ETH_CANCUN;
         }
 
         static consteval bool eip_4844_active() noexcept
@@ -380,9 +508,39 @@ namespace monad
             return false;
         }
 
+        static consteval bool eip_4844_header_active() noexcept
+        {
+            return evm_rev() >= MONAD_ETH_CANCUN;
+        }
+
+        static consteval bool eip_4844_opcodes_active() noexcept
+        {
+            return evm_rev() >= MONAD_ETH_CANCUN;
+        }
+
+        static consteval bool eip_4844_precompile_active() noexcept
+        {
+            return evm_rev() >= MONAD_ETH_CANCUN;
+        }
+
+        static consteval bool eip_4895_active() noexcept
+        {
+            return evm_rev() >= MONAD_ETH_SHANGHAI;
+        }
+
         static consteval bool eip_5656_active() noexcept
         {
             return evm_rev() >= MONAD_ETH_CANCUN;
+        }
+
+        static consteval bool eip_6780_active() noexcept
+        {
+            return evm_rev() >= MONAD_ETH_CANCUN;
+        }
+
+        static consteval bool eip_7623_active() noexcept
+        {
+            return evm_rev() >= MONAD_ETH_PRAGUE;
         }
 
         static consteval bool eip_7685_active() noexcept
@@ -394,9 +552,19 @@ namespace monad
             return false;
         }
 
+        static consteval bool eip_7685_header_active() noexcept
+        {
+            return evm_rev() >= MONAD_ETH_PRAGUE;
+        }
+
         static consteval bool eip_7691_active() noexcept
         {
             return false;
+        }
+
+        static consteval bool eip_7702_active() noexcept
+        {
+            return evm_rev() >= MONAD_ETH_PRAGUE;
         }
 
         static consteval bool eip_7708_active() noexcept
@@ -476,11 +644,6 @@ namespace monad
             return false;
         }
 
-        static consteval bool has_blob_opcodes() noexcept
-        {
-            return evm_rev() >= MONAD_ETH_CANCUN;
-        }
-
         static consteval bool charges_gas_limit() noexcept
         {
             return Rev >= MONAD_ONE;
@@ -537,6 +700,16 @@ namespace monad
         static consteval bool tracks_proposer_val_id() noexcept
         {
             return Rev >= MONAD_FIVE;
+        }
+
+        static consteval bool staking_active() noexcept
+        {
+            return Rev >= MONAD_FOUR;
+        }
+
+        static consteval bool reserve_balance_active() noexcept
+        {
+            return Rev >= MONAD_FOUR;
         }
 
         static consteval int64_t base_sstore_cost() noexcept

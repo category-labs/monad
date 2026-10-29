@@ -50,7 +50,7 @@ struct arguments
 {
     bool verbose = false;
     bool binary = false;
-    bool stdin = false;
+    bool read_stdin = false;
     bool compile = false;
     bool validate = false;
     std::vector<std::string> filenames;
@@ -81,7 +81,7 @@ arguments parse_args(int const argc, char **const argv)
     app.add_flag("-v,--verbose", args.verbose, "send debug info to stdout");
 
     app.add_flag(
-        "-s,--stdin", args.stdin, "read from stdin and write to stdout");
+        "-s,--stdin", args.read_stdin, "read from stdin and write to stdout");
 
     try {
         app.parse(argc, argv);
@@ -128,7 +128,7 @@ int main(int const argc, char **const argv)
 
     parser_config const config{args.verbose, args.validate};
 
-    if (args.stdin) {
+    if (args.read_stdin) {
         std::stringstream buffer;
         buffer << std::cin.rdbuf();
         std::string s = buffer.str();

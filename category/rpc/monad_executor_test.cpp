@@ -5497,7 +5497,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_slot_number_across_amsterdam)
             return 1;
         }
         MonadDevnet const devnet;
-        if (devnet.get_monad_revision(fork_timestamp - 1) != MONAD_NINE ||
+        if (devnet.get_monad_revision(fork_timestamp - 1) !=
+                MONAD_LATEST_STABLE_REVISION ||
             devnet.get_monad_revision(fork_timestamp) != MONAD_NEXT) {
             return 2;
         }
@@ -7502,7 +7503,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_trace_transfers_across_amsterdam)
             return 1;
         }
         MonadDevnet const devnet;
-        if (devnet.get_monad_revision(fork_timestamp - 1) != MONAD_NINE ||
+        if (devnet.get_monad_revision(fork_timestamp - 1) !=
+                MONAD_LATEST_STABLE_REVISION ||
             devnet.get_monad_revision(fork_timestamp) != MONAD_NEXT) {
             return 2;
         }

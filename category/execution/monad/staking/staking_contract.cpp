@@ -569,15 +569,14 @@ void StakingContract::send_tokens(Address const &to, uint256_t const &amount)
 
 EXPLICIT_MONAD_TRAITS_MEMBER(StakingContract::send_tokens);
 
-uint64_t StakingContract::get_activation_epoch() const noexcept
+uint64_t StakingContract::get_activation_epoch() const
 {
     auto const epoch = vars.epoch.load().native();
     return vars.in_epoch_delay_period.load_checked().has_value() ? epoch + 2
                                                                  : epoch + 1;
 }
 
-bool StakingContract::is_epoch_active(
-    uint64_t const active_epoch) const noexcept
+bool StakingContract::is_epoch_active(uint64_t const active_epoch) const
 {
     auto const current_epoch = vars.epoch.load().native();
     return active_epoch != 0 && active_epoch <= current_epoch;

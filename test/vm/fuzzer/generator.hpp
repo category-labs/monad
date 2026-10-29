@@ -1199,9 +1199,8 @@ namespace monad::vm::fuzzing
             .sender = sender,
             .input_data = input_data,
             .input_size = input_size,
-            .value = static_cast<evmc::bytes32>(store_be_as<bytes32_t>(value)),
-            .create2_salt =
-                static_cast<evmc::bytes32>(store_be_as<bytes32_t>(salt)),
+            .value = store_be_as<evmc_bytes32>(value),
+            .create2_salt = store_be_as<evmc_bytes32>(salt),
             .code_address = target,
             .memory_handle = memory_handle,
             .memory = memory_handle,

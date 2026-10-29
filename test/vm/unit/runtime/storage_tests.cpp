@@ -84,7 +84,7 @@ TYPED_TEST(RuntimeTraitsTest, StorageLoadWarm)
     auto load = TestFixture::wrap(sload<traits>);
 
     this->host_.access_storage(
-        this->ctx_.env.recipient, store_be_as<bytes32_t>(key));
+        this->ctx_.env.recipient, store_be_as<evmc_bytes32>(key));
 
     this->ctx_.gas_remaining = 0;
     ASSERT_EQ(load(key), 0);
@@ -180,7 +180,7 @@ TYPED_TEST(RuntimeTraitsTest, StorageOriginalNonEmpty)
         if constexpr (traits::mip_8_active()) {
             ASSERT_EQ(ctx_.gas_refund, 0);
         }
-        else if constexpr (traits::evm_rev() <= MONAD_ETH_BERLIN) {
+        else if constexpr (!traits::eip_3529_active()) {
             ASSERT_EQ(ctx_.gas_refund, 15000);
         }
         else {

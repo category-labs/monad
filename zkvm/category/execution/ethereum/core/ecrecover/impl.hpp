@@ -48,7 +48,7 @@ MONAD_NAMESPACE_BEGIN
 #if defined(MONAD_ZKVM_ZISK)
     // Hash the recovered 64-byte public key with the guest sponge.
     uint8_t key_hash[KECCAK256_SIZE];
-    monad_zkvm_keccak256_fast(pubkey.data, 64, key_hash);
+    monad_keccak256(pubkey.data, 64, key_hash);
 
     std::memcpy(out.data(), key_hash + 12, out.size());
 #else

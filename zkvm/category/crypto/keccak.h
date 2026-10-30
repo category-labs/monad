@@ -29,9 +29,36 @@ constexpr size_t KECCAK256_SIZE = 32;
 extern "C" void monad_zkvm_keccak256_fast(
     void const *in, size_t len, uint8_t out[KECCAK256_SIZE]);
 
+// Same digest without memo lookups or inserts, used for bytecode.
+extern "C" void monad_zkvm_keccak256_fast_nomemo(
+    void const *in, size_t len, uint8_t out[KECCAK256_SIZE]);
+
+// Fixed-length entries for addresses, storage keys and public keys.
+extern "C" void
+monad_zkvm_keccak256_20(void const *in, uint8_t out[KECCAK256_SIZE]);
+extern "C" void
+monad_zkvm_keccak256_32(void const *in, uint8_t out[KECCAK256_SIZE]);
+extern "C" void
+monad_zkvm_keccak256_64(void const *in, uint8_t out[KECCAK256_SIZE]);
+
 [[gnu::always_inline]] static inline void monad_keccak256(
     void const *const in, size_t const len, uint8_t out[KECCAK256_SIZE])
 {
+    // Select a fixed-length entry when inlining exposes a constant length.
+    if (__builtin_constant_p(len)) {
+        if (len == 32) {
+            monad_zkvm_keccak256_32(in, out);
+            return;
+        }
+        if (len == 20) {
+            monad_zkvm_keccak256_20(in, out);
+            return;
+        }
+        if (len == 64) {
+            monad_zkvm_keccak256_64(in, out);
+            return;
+        }
+    }
     monad_zkvm_keccak256_fast(in, len, out);
 }
 

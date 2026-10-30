@@ -268,6 +268,54 @@ def check_hand_made_jumps(disassembly: str) -> int:
     return count
 
 
+INTERPRETER = ("monad_vm_slot_", "_ZN5monad2vm11interpreter")
+TRAMPOLINE = "_ZN5monad2vm11interpreter10trampoline"
+OPERAND_SEPARATOR = re.compile(r"[\s,()]+")
+
+
+def check_thread_pointer(disassembly: str, headers: str) -> int:
+    """Count the writes of tp; fail on any use of it but the interpreter's.
+
+    On ZisK tp holds the running frame's JUMPDEST map (interpreter/types.hpp):
+    the trampoline sets it for each frame and puts the caller's back, and the
+    jumps test the bits it points at. That is sound only while nothing else
+    uses tp: code writing it would change the map a jump tests, and code
+    storing through it, as thread-local storage does, would set bits in it. So
+    an ELF holding thread-local storage fails, as does an instruction naming tp
+    outside the interpreter, or writing it outside the trampoline.
+    """
+    if re.search(r"^\s*TLS\s", headers, re.MULTILINE) or re.search(
+        r"\]\s+\.t(?:data|bss)\b", headers
+    ):
+        fail("ELF holds thread-local storage, which tp would address")
+    count = 0
+    name = None
+    for line in disassembly.splitlines():
+        header = FUNCTION.match(line)
+        if header:
+            if not header.group(2).startswith(".L"):
+                name = header.group(2)
+            continue
+        instruction = INSTRUCTION.match(line)
+        if not instruction:
+            continue
+        mnemonic = instruction.group(2)
+        operands = re.split(r"\s*[<#]", instruction.group(3) or "", maxsplit=1)[0]
+        registers = OPERAND_SEPARATOR.split(operands)
+        if "tp" not in registers:
+            continue
+        pc = int(instruction.group(1), 16)
+        if name is None or not name.startswith(INTERPRETER):
+            fail(f"{name} uses tp at {pc:x}, which holds the JUMPDEST map")
+        if mnemonic not in NO_DESTINATION and registers[0] == "tp":
+            if not name.startswith(TRAMPOLINE):
+                fail(f"{name} writes tp at {pc:x} outside the trampoline")
+            count += 1
+    if count == 0:
+        fail("no trampoline sets tp, which the interpreter's jumps read")
+    return count
+
+
 def check_runtime(repo: pathlib.Path) -> dict[str, str]:
     lock_path = repo / "zkvm/zisk/Cargo.lock"
     packages: list[dict[str, str]] = []
@@ -448,6 +496,9 @@ def main() -> int:
     if jumpdest_syscalls == 0:
         fail("ELF does not contain the ZisK JUMPDEST syscall")
     offset_jumps = check_hand_made_jumps(disassembly)
+    tp_writes = check_thread_pointer(
+        disassembly, run(str(readelf), "-lSW", str(elf))
+    )
 
     signature = str(profile.get("build_signature", ""))
     if len(signature) != 64:
@@ -472,6 +523,7 @@ def main() -> int:
             "elf_attributes": ["zba", "zbb", "zbs", "zbkb"],
             "jumpdest_syscalls": jumpdest_syscalls,
             "interpreter_offset_jumps": offset_jumps,
+            "trampoline_tp_writes": tp_writes,
             "cargo_lock_sha256": sha256(repo / "zkvm/zisk/Cargo.lock"),
             "cmake_profile_sha256": sha256(profile_path),
         },

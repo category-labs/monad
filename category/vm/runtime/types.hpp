@@ -315,11 +315,10 @@ namespace monad::vm::runtime
         // The running code as the interpreter's jumps read it, from its
         // analysis: its padded bytes from the second on, where a taken jump
         // to pc goes on at landing_base + pc, past the JUMPDEST it lands on;
-        // its size; and its JUMPDEST map. The handlers' second argument
-        // carries stack_limit instead (interpreter/types.hpp).
+        // and its size. Its JUMPDEST map is held in tp, and the handlers'
+        // second argument carries stack_limit instead (interpreter/types.hpp).
         uint8_t const *landing_base = nullptr;
         size_t code_bound = 0;
-        uint64_t const *jumpdest_words = nullptr;
 
         // The offsets a 32-byte access starts at without growing the memory
         // are those below memory.size - 31, none while it is empty. Kept with

@@ -25,6 +25,9 @@
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/runtime/types.hpp>
+#if defined(MONAD_ZKVM_ZISK)
+    #include <category/vm/interpreter/types.hpp>
+#endif
 
 #include <csetjmp>
 
@@ -43,10 +46,20 @@ namespace monad::vm::interpreter
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t *const stack_ptr)
     {
+#if defined(MONAD_ZKVM_ZISK)
+        // The frame's JUMPDEST map in tp (interpreter/types.hpp). longjmp
+        // does not restore tp, so the caller's is put back from this frame
+        // below, where the loop's return and every exit's longjmp meet.
+        auto const *const caller_jumpdest_words = frame_jumpdest_words;
+        frame_jumpdest_words = analysis.jumpdest_words();
+#endif
         std::jmp_buf jb;
         if (setjmp(jb) == 0) {
             ctx.exit_stack_ptr = &jb;
             core_loop_fn(nullptr, &ctx, &analysis, stack_ptr, nullptr);
         }
+#if defined(MONAD_ZKVM_ZISK)
+        frame_jumpdest_words = caller_jumpdest_words;
+#endif
     }
 }

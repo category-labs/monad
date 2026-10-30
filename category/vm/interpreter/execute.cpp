@@ -1484,7 +1484,6 @@ namespace monad::vm::interpreter
         // the stack limit.
         ctx.landing_base = analysis.code() + 1;
         ctx.code_bound = analysis.size();
-        ctx.jumpdest_words = analysis.jumpdest_words();
 #endif
         trampoline<core_loop<traits>>(
             ctx, analysis, reinterpret_cast<uint256_t *>(stack_ptr));

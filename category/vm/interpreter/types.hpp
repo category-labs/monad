@@ -99,8 +99,9 @@
 // A handler's second argument: the code's analysis, or on ZisK the stack's
 // last valid slot, which every handler that pushes compares with and would
 // otherwise load from ctx. On ZisK the jumps read what they need of the code
-// from ctx instead, through MONAD_VM_ANALYSIS (FrameCode); interpreter::execute
-// puts it there. MONAD_VM_STACK_LIMIT is the slot, wherever it is.
+// from ctx and tp instead, through MONAD_VM_ANALYSIS (FrameCode);
+// interpreter::execute and its trampoline put it there. MONAD_VM_STACK_LIMIT
+// is the slot, wherever it is.
 #if defined(MONAD_ZKVM_ZISK)
     #define MONAD_VM_ANALYSIS_TYPE uint256_t const *
     #define MONAD_VM_ANALYSIS_PARAM uint256_t const *stack_limit
@@ -143,8 +144,20 @@ namespace monad::vm::interpreter
     using InstrTable = std::array<InstrEval, 256>;
 
 #if defined(MONAD_ZKVM_ZISK)
-    // What the handlers read of the running code, from ctx: the same as the
-    // analysis's.
+    // The running frame's JUMPDEST map, in `tp`: a jump forms its word's
+    // address from the register. `tp` is a fixed register to gcc, as `gp` is
+    // (keccak_accel.cpp), and this guest has no thread-local storage: no code
+    // of it -- C++, ziskos' Rust or the libraries -- uses `tp` but the
+    // interpreter, whose jumps read it and whose trampoline sets it for each
+    // frame and puts the caller's back however the frame ends (an exit's
+    // longjmp lands in the frame's own trampoline), so a jump only ever tests
+    // its own frame's map. zkvm/zisk/audit-official-build.py fails an ELF
+    // holding thread-local storage, or where code outside the interpreter
+    // names `tp` or code outside the trampoline writes it.
+    register uint64_t const *frame_jumpdest_words asm("tp");
+
+    // What the handlers read of the running code, from ctx and tp: the same
+    // as the analysis's.
     struct FrameCode
     {
         runtime::Context const &ctx;
@@ -164,7 +177,7 @@ namespace monad::vm::interpreter
         [[gnu::always_inline]] bool
         is_jumpdest16(size_t const pc) const noexcept
         {
-            return Intercode::JumpdestMap::test(ctx.jumpdest_words, pc);
+            return Intercode::JumpdestMap::test(frame_jumpdest_words, pc);
         }
 
         [[gnu::always_inline]] bool is_jumpdest(size_t const pc) const noexcept

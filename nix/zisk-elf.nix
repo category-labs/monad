@@ -36,7 +36,7 @@ pkgs.stdenv.mkDerivation (finalAttrs: {
   cargoDeps = pkgs.rustPlatform.importCargoLock {
     inherit lockFile;
     outputHashes = {
-      "ziskos-1.3.2-alpha" = "sha256-697gSFxn30jL/+4cbJXObPNXvK32QVWYWE4I2GqYe8s=";
+      "ziskos-1.4.0-alpha" = "sha256-oC7uNR5QQN1V8recpGKJVOXU/atfqHVgZjrQwxigheg=";
       "kzg-rs-0.2.8" = "sha256-YFkDQ9lKREHr+nzk3FuMtZrgpWDTEkqNe8KoA2kQFCg=";
     };
   };

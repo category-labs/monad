@@ -78,6 +78,7 @@ impl StateSyncCtx {
             unsafe extern "C" fn(arg1: *mut monad_statesync_client, arg2: monad_sync_request),
         >,
     ) -> Self {
+        unsafe { bindings::monad_statesync_client_set_hash_seed() };
         let client_version = unsafe { bindings::monad_statesync_version() };
         assert!(unsafe { bindings::monad_statesync_client_compatible(client_version) });
 

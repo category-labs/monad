@@ -1384,12 +1384,14 @@ namespace monad::vm::interpreter
         uint256_t const *stack_lower_bound, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
+        alignas(8) static constexpr uint8_t taken_prefix_pattern[8] = {
+            static_cast<uint8_t>(ISZERO), static_cast<uint8_t>(PUSH2)};
         auto const *const instructions = instr_ptr;
         bool const falls_through = opcode_at_is(instructions, 2, PUSH2) &&
                                    opcode_at_is(instructions, 5, JUMPI);
-        bool const jumps_to_dispatch = opcode_at_is(instructions, 2, ISZERO) &&
-                                       opcode_at_is(instructions, 3, PUSH2) &&
-                                       opcode_at_is(instructions, 6, JUMPI);
+        bool const jumps_to_dispatch =
+            code_matches<2>(instructions + 2, taken_prefix_pattern) &&
+            opcode_at_is(instructions, 6, JUMPI);
         if (MONAD_UNLIKELY(!(
                 (falls_through || jumps_to_dispatch) &&
                 ctx.env.input_data_size >= 4 &&

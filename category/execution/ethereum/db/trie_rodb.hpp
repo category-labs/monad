@@ -34,13 +34,13 @@ MONAD_NAMESPACE_BEGIN
 
 class TrieRODb final : public ::monad::Db
 {
-    ::monad::mpt::RODb &db_;
+    ::monad::mpt::Db &db_;
     uint64_t block_number_;
     ::monad::mpt::NodeCursor prefix_cursor_;
     bool const page_encoded_;
 
 public:
-    explicit TrieRODb(mpt::RODb &db)
+    explicit TrieRODb(mpt::Db &db)
         : db_(db)
         , block_number_(mpt::INVALID_BLOCK_NUM)
         , prefix_cursor_()

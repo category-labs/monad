@@ -159,8 +159,8 @@ namespace
     }
 
     // Machine selects the db state machine: OnDiskMachine = slot-encoded,
-    // MonadOnDiskMachine = page-encoded. The executor opens its own RODb on
-    // dbname, so the on-disk encoding drives TrieRODb's read path.
+    // MonadOnDiskMachine = page-encoded. The executor opens its own read-only
+    // Db on dbname, so the on-disk encoding drives TrieRODb's read path.
     template <class Machine>
     struct EthCallEncodingFixture : public ::testing::Test
     {

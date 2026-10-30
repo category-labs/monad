@@ -278,7 +278,7 @@ public:
     uint16_t child_data_offset(unsigned index) const noexcept;
 
     unsigned child_data_len(unsigned index) const;
-    unsigned child_data_len();
+    unsigned child_data_len() const;
 
     //! path
     unsigned char *path_data() noexcept;
@@ -389,8 +389,17 @@ constexpr size_t MAX_VALUE_LEN_OF_LEAF =
         0 /* number_of_children */, 0 /* child_data_size */, 0 /* value_size */,
         KECCAK256_SIZE /* path_size */, KECCAK256_SIZE /* data_size*/);
 
+// Build a node with the same children and data as `from`, but with the
+// given path, value and version. In-memory child pointers are moved out of
+// `from`, which is left without cached children.
 Node::SharedPtr make_node(
     Node &from, NibblesView path, std::optional<byte_string_view> value,
+    int64_t version);
+
+// Same as `make_node(Node &, ...)`, but in-memory child pointers are copied
+// instead of moved, so `from` keeps its cached children.
+Node::SharedPtr make_node_copy_children(
+    Node const &from, NibblesView path, std::optional<byte_string_view> value,
     int64_t version);
 
 Node::SharedPtr make_node(

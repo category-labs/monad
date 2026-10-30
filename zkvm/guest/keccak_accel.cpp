@@ -179,6 +179,12 @@ struct alignas(8) KeccakfHot
 
     uint64_t keccakf_memo_used;
 
+    // The first of keccakf_fresh_states that no digest has stood on, and one
+    // past the last of them: see keccak256_one_block_fresh. Set by the
+    // constructor below; after it, the cursor only ever advances.
+    uint64_t *keccakf_fresh;
+    uint64_t *keccakf_fresh_end;
+
     // One entry past capacity. `keccakf_memo[keccakf_memo_used]` is the
     // scratch a one-block digest builds its state in (keccak256_one_block
     // below), and `keccakf_memo_used` reaches KECCAKF_MEMO_ENTRIES when the
@@ -198,6 +204,15 @@ static_assert(
 // the one-block scratch requires, and no constructor runs for it.
 static KeccakfHot keccakf_hot;
 
+// The states keccak256_one_block_fresh permutes a trie node's one block in,
+// each handed out once, from the front. Zero-initialised .bss like the table,
+// and nothing writes a state before it is handed out, so each reads zero as
+// the table's untouched slots do. 2^15 states are 6.25 MiB; a digest that
+// finds them all used takes the memo's one-block path, so the count bounds
+// only how many go unfiled.
+constexpr size_t KECCAKF_FRESH_STATES = size_t{1} << 15;
+static uint64_t keccakf_fresh_states[KECCAKF_FRESH_STATES * KECCAKF_LANES];
+
 // `gp` is a fixed register to gcc, so no code of this guest -- C++, ziskos'
 // Rust or the libraries -- allocates it, and setting it here takes it from
 // nobody. Nothing writes it after the constructor below, so every function
@@ -207,10 +222,14 @@ register KeccakfHot *hot asm("gp");
 // Points `gp` at the memo before anything can hash. A priority constructor
 // runs ahead of every default-priority one, all of which ziskos' _zisk_main
 // runs before it enters the guest, so no static initialiser that hashes and
-// no part of the entry ever sees `gp` still at _global_pointer.
+// no part of the entry ever sees `gp` still at _global_pointer, nor the fresh
+// states' cursor unset.
 [[gnu::constructor(101)]] static void keccakf_hot_init()
 {
     hot = &keccakf_hot;
+    hot->keccakf_fresh = keccakf_fresh_states;
+    hot->keccakf_fresh_end =
+        keccakf_fresh_states + KECCAKF_FRESH_STATES * KECCAKF_LANES;
 }
 
 // A 200-byte block op that reaches the DMA port instead of being expanded
@@ -414,6 +433,46 @@ static void keccak256_one_block_n(void const *const in, uint8_t out[32])
 
     // The input and the 0x01 span the first (N + 1 + 7) / 8 lanes.
     keccak256_one_block_finish<(N + 1 + 7) / 8>(e, used, out);
+}
+
+// A trie node's digest of one rate block, which the memo neither asks after
+// nor files. Its hint almost never comes: the post-state hashes such a node
+// again only where it changed, and a node of the pre-state seldom repeats one
+// hashed before it. So keccak256_one_block's miss is what it pays nearly every
+// time -- the hint request and its range test, the rate's copy into the
+// entry's `out`, the filing and the count's store -- for a hit that rarely
+// saves a permutation. Here the block is built in a state no digest has stood
+// on, and permuted in place.
+//
+// The state is zero on entry, as keccak256_one_block's scratch is: the cursor
+// only advances, so no state is handed out twice and none was written before.
+// The block is built the way keccak256_one_block builds it.
+//
+// SOUNDNESS. Nothing here comes from the executor. Not filing can only cost a
+// later digest its hint; and without `fcall_set_keccakf_index` the executor
+// may file this permutation under a stale index, which the compare rejects --
+// a lost hint, never a wrong digest (see monad_zkvm_keccak256_fast_nomemo).
+// Once the fresh states are used up, the digest takes keccak256_one_block,
+// the memo's two checks with it.
+static void keccak256_one_block_fresh(
+    void const *const in, size_t const len, uint8_t out[32])
+{
+    static_assert(135 == 16 * 8 + 7, "the pad bit is byte 7 of lane 16");
+
+    uint64_t *const s = hot->keccakf_fresh;
+    if (MONAD_UNLIKELY(s == hot->keccakf_fresh_end)) {
+        keccak256_one_block(in, len, out);
+        return;
+    }
+    hot->keccakf_fresh = s + KECCAKF_LANES;
+
+    if (len) {
+        std::memcpy(s, in, len);
+    }
+    reinterpret_cast<unsigned char *>(s)[len] = 0x01;
+    s[16] |= uint64_t{0x80} << 56;
+    zisk_keccakf(reinterpret_cast<uint64_t(*)[KECCAKF_LANES]>(s));
+    std::memcpy(out, s, 32);
 }
 
 // One permutation of the pre-state standing in the scratch slot,
@@ -1322,7 +1381,7 @@ static void keccak256_trie(void const *in, size_t len, uint8_t out[32])
     // the two thirds that only pass them on included.
     asm("" : "+r"(in), "+r"(len), "+r"(out));
     if (len < 136) {
-        keccak256_one_block(in, len, out);
+        keccak256_one_block_fresh(in, len, out);
     }
     else if ((reinterpret_cast<uintptr_t>(in) & 7) == 0) {
         keccak256_memo_digest<MemoFrom::Aligned, F>(in, len, out);
@@ -1389,8 +1448,8 @@ void monad_zkvm_keccak256_64(void const *const in, uint8_t out[32])
 #endif
 
 // A trie node's digest as the pre-state check takes it, and as the post-state
-// takes it again (Filing). An input of one rate block keeps the memo's usual
-// path: a leaf may repeat whole, in two contracts' storage alike.
+// takes it again (Filing). An input of one rate block is neither looked up nor
+// filed: see keccak256_one_block_fresh.
 #if defined(MONAD_ZKVM_ZISK) && MONAD_ZKVM_KECCAKF_MEMO
 void monad_zkvm_keccak256_trie_prime(
     void const *const in, size_t len, uint8_t out[32])

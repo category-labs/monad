@@ -29,6 +29,12 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
   endif()
 endif()
 
+if(BUILD_SHARED_LIBS)
+  # BUILD_SHARED_LIBS=ON does not automatically set -fPIC, leading to
+  # relocations being emitted in object files that can't be patched
+  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+endif()
+
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(MONAD_COMPILER_COVERAGE "Build with coverage" OFF)
@@ -61,6 +67,61 @@ add_subdirectory(third_party/asmjit)
 # OpenSSL-named API cannot clash with another libcrypto in the same process.
 block()
   set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
+  set(_aws_lc_bootstrap_dir "${CMAKE_BINARY_DIR}/aws-lc-bootstrap")
+  set(_aws_lc_prefix_dir "${CMAKE_BINARY_DIR}/aws-lc-prefix")
+  set(_aws_lc_bootstrap_archive "${_aws_lc_bootstrap_dir}/crypto/libcrypto.a")
+  set(_aws_lc_stamp "${_aws_lc_prefix_dir}/.stamp")
+  set(_aws_lc_common_options
+      -DBUILD_SHARED_LIBS=OFF -DBUILD_TESTING=OFF -DBUILD_LIBSSL=OFF
+      -DBUILD_TOOL=OFF -DDISABLE_GO=ON -DDISABLE_PERL=ON
+      -DENABLE_SOURCE_MODIFICATION=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON)
+  find_program(_aws_lc_go go REQUIRED)
+
+  file(GLOB_RECURSE _aws_lc_inputs CONFIGURE_DEPENDS
+       "${PROJECT_SOURCE_DIR}/third_party/aws-lc/*")
+  set(_aws_lc_regenerate_prefix FALSE)
+  if(NOT EXISTS "${_aws_lc_stamp}")
+    set(_aws_lc_regenerate_prefix TRUE)
+  else()
+    foreach(_aws_lc_input IN LISTS _aws_lc_inputs)
+      if(_aws_lc_input IS_NEWER_THAN "${_aws_lc_stamp}")
+        set(_aws_lc_regenerate_prefix TRUE)
+        break()
+      endif()
+    endforeach()
+  endif()
+
+  if(_aws_lc_regenerate_prefix)
+    execute_process(
+      COMMAND ${CMAKE_COMMAND} -S "${PROJECT_SOURCE_DIR}/third_party/aws-lc"
+              -B "${_aws_lc_bootstrap_dir}" ${_aws_lc_common_options}
+      COMMAND_ERROR_IS_FATAL ANY)
+    execute_process(
+      COMMAND ${CMAKE_COMMAND} --build "${_aws_lc_bootstrap_dir}" --target crypto
+      COMMAND_ERROR_IS_FATAL ANY)
+    if(NOT EXISTS "${_aws_lc_bootstrap_archive}")
+      message(FATAL_ERROR "AWS-LC bootstrap did not produce libcrypto.a")
+    endif()
+
+    file(MAKE_DIRECTORY "${_aws_lc_prefix_dir}/openssl")
+    set(_aws_lc_symbols "${_aws_lc_prefix_dir}/symbols.txt")
+    execute_process(
+      COMMAND "${_aws_lc_go}" run ./util/read_symbols.go
+              -out "${_aws_lc_symbols}" -obj-file-format elf
+              "${_aws_lc_bootstrap_archive}"
+      WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}/third_party/aws-lc"
+      COMMAND_ERROR_IS_FATAL ANY)
+    execute_process(
+      COMMAND "${_aws_lc_go}" run ./util/make_prefix_headers.go
+              -out "${_aws_lc_prefix_dir}/openssl" -prefix MONAD_AWS_LC
+              "${_aws_lc_symbols}"
+      WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}/third_party/aws-lc"
+      COMMAND_ERROR_IS_FATAL ANY)
+    file(TOUCH "${_aws_lc_stamp}")
+  endif()
+
+  set(BORINGSSL_PREFIX MONAD_AWS_LC)
+  set(BORINGSSL_PREFIX_HEADERS "${_aws_lc_prefix_dir}")
   set(BUILD_SHARED_LIBS OFF)
   set(BUILD_TESTING OFF)
   set(BUILD_LIBSSL OFF)

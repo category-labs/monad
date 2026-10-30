@@ -74,7 +74,7 @@ a simple loop that starts and ends with the consensus client:
    ││                             ││        │ │    libmonad_execution.a    │ │
    │├─────────────────────────────┤│        │ │  static library functions  │ │
    ││                             ││        │ │ (including EVM and triedb) │ │
-   ││    static execution code    ││        │ │                            │ │
+   ││    libmonad_execution.a    ││        │ │                            │ │
    ││ (including triedb read API) ││        │ └──────────────┬─────────────┘ │
    ││                             ││        └────────────────┼───────────────┘
    │└──────────────▲──────────────┘│                         │

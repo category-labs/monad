@@ -16,22 +16,22 @@
 .intel_syntax noprefix
 
 // offsetof(Context, gas_remaining):
-#define gas_remaining_offset 16
+#define gas_remaining_offset 8
 
 // offsetof(Context, memory) + offsetof(Memory, size):
-#define memory_size_offset (264 + 0)
+#define memory_size_offset (256 + 0)
 
 // offsetof(Context, memory) + offsetof(Memory, capacity):
-#define memory_capacity_offset (264 + 4)
+#define memory_capacity_offset (256 + 4)
 
 // offsetof(Context, memory) + offsetof(Memory, data):
-#define memory_data_offset (264 + 8)
+#define memory_data_offset (256 + 8)
 
 // offsetof(Context, memory) + offsetof(Memory, cost):
-#define memory_cost_offset (264 + 16)
+#define memory_cost_offset (256 + 16)
 
 // offsetof(Context, memory) + offsetof(Memory, data_handle):
-#define memory_data_handle_offset (264 + 24)
+#define memory_data_handle_offset (256 + 24)
 
 // Like `runtime::expand_memory`, but no `memory.size < *min_size` check:
 .text

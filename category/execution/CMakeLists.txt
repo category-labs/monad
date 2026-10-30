@@ -231,8 +231,11 @@ add_library(
   "monad/chain/monad_testnet.hpp"
   "monad/chain/monad_testnet_alloc.hpp"
   # monad/core
+  "monad/core/domain_block.hpp"
   "monad/core/monad_block.hpp"
   "monad/core/monad_ctypes.h"
+  "monad/core/rlp/domain_block_rlp.cpp"
+  "monad/core/rlp/domain_block_rlp.hpp"
   "monad/core/rlp/monad_block_rlp.cpp"
   "monad/core/rlp/monad_block_rlp.hpp"
   # monad/event

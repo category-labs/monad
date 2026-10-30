@@ -23,6 +23,7 @@
 #include <category/vm/evm/revision.h>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/interpreter/intercode.hpp>
+#include <category/vm/interpreter/jumpdest_scan.hpp>
 #include <category/vm/vm.hpp>
 
 #include <test_resource_data.h>
@@ -48,6 +49,7 @@
 #include <ios>
 #include <iterator>
 #include <memory>
+#include <random>
 #include <span>
 #include <string>
 #include <string_view>
@@ -284,6 +286,85 @@ namespace
         }
     }
 
+    // JUMPDEST-scan microbenchmark: the SIMD kernel against the scalar fallback
+    // on identical buffers. Both kernels are compiled on AVX2 builds (the
+    // scalar one is also the production path without AVX2), so this times them
+    // directly rather than through a CREATE.
+    std::vector<uint8_t>
+    make_scan_code(std::string_view const pattern, size_t const n)
+    {
+        // 32 trailing zero bytes: the AVX2 kernel reads code in 32-byte steps.
+        std::vector<uint8_t> v(n + 32, 0);
+        std::mt19937_64 rng(0xC0FFEE);
+        if (pattern == "random") {
+            for (size_t i = 0; i < n; ++i) {
+                v[i] = static_cast<uint8_t>(rng() & 0xff);
+            }
+        }
+        else if (pattern == "branchy") {
+            // Independent JUMPDEST/PUSH1 coin flips, so the scalar scan's
+            // is-PUSH branch is unpredictable.
+            for (size_t i = 0; i < n; ++i) {
+                v[i] = static_cast<uint8_t>((rng() & 1) ? 0x60 : 0x5b);
+            }
+        }
+        else if (pattern == "jumpdest_add") {
+            // Independent JUMPDEST/ADD coin flips: the scalar scan visits every
+            // byte, and its is-JUMPDEST branch is unpredictable.
+            for (size_t i = 0; i < n; ++i) {
+                v[i] = static_cast<uint8_t>((rng() & 1) ? 0x5b : 0x01);
+            }
+        }
+        else if (pattern == "push_dense") {
+            // PUSH32, which the scalar scan skips 32 at a time.
+            std::fill_n(v.begin(), n, static_cast<uint8_t>(0x7f));
+        }
+        else {
+            MONAD_ASSERT(false);
+        }
+        return v;
+    }
+
+    using scan_fn = void (*)(uint8_t const *, size_t, uint64_t *);
+
+    void run_jumpdest_scan_benchmark(
+        benchmark::State &bench_state, scan_fn const scan,
+        std::vector<uint8_t> const &code, size_t const n)
+    {
+        std::vector<uint64_t> bits(
+            vm::interpreter::detail::jumpdest_word_count(n), 0);
+        for (auto _ : bench_state) {
+            scan(code.data(), n, bits.data());
+            benchmark::DoNotOptimize(bits.data());
+            benchmark::ClobberMemory();
+        }
+        bench_state.SetBytesProcessed(
+            static_cast<int64_t>(bench_state.iterations()) *
+            static_cast<int64_t>(n));
+    }
+
+    void register_jumpdest_scan_benchmarks()
+    {
+        size_t const n = 256 * 1024;
+        for (auto const *const pattern :
+             {"random", "branchy", "jumpdest_add", "push_dense"}) {
+            benchmark::RegisterBenchmark(
+                std::format("jumpdest_scan/scalar/{}", pattern),
+                run_jumpdest_scan_benchmark,
+                &vm::interpreter::detail::find_jumpdests_scalar,
+                make_scan_code(pattern, n),
+                n);
+#if defined(__AVX2__)
+            benchmark::RegisterBenchmark(
+                std::format("jumpdest_scan/avx2/{}", pattern),
+                run_jumpdest_scan_benchmark,
+                &vm::interpreter::detail::find_jumpdests_avx2,
+                make_scan_code(pattern, n),
+                n);
+#endif
+        }
+    }
+
     static vm::VM::Mode const all_impls[] = {
         vm::VM::InterpreterOnly,
         vm::VM::CompilerOnly,
@@ -402,6 +483,8 @@ int main(int argc, char **argv)
     for (auto const &path : all_bms_json) {
         register_benchmark_json(path, test_memory);
     }
+
+    register_jumpdest_scan_benchmarks();
 
     benchmark::Initialize(&argc, argv);
     benchmark::RunSpecifiedBenchmarks();

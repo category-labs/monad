@@ -72,7 +72,10 @@ block()
   add_subdirectory(third_party/aws-lc EXCLUDE_FROM_ALL SYSTEM)
 endblock()
 add_library(aws_lc::crypto ALIAS crypto)
-target_link_options(crypto INTERFACE "LINKER:--exclude-libs,libcrypto.a")
+# Keep AWS-LC's private archive distinct from OpenSSL's libcrypto when both are
+# linked into Rust consumers.
+set_target_properties(crypto PROPERTIES OUTPUT_NAME aws_lc_crypto)
+target_link_options(crypto INTERFACE "LINKER:--exclude-libs,libaws_lc_crypto.a")
 
 # BLAKE3
 add_subdirectory(third_party/BLAKE3/c)
@@ -292,7 +295,7 @@ add_subdirectory("category/vm")
 
 # Assemble all the object libraries into complete monad runtime library,
 # monad_execution
-add_library(monad_execution)
+add_library(monad_execution STATIC)
 target_link_libraries(
   monad_execution
   PUBLIC monad_core

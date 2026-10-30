@@ -22,11 +22,13 @@ fn main() {
         monad_build::MonadCMake::new(&root)
             .link_libraries([
                 "asmjit",
+                "aws_lc_crypto",
                 "blake3",
                 "boost_context",
                 "boost_fiber",
                 "boost_stacktrace_backtrace",
                 "c-kzg-4844",
+                "crypto",
                 "ff",
                 "gmp",
                 "monad_crypto",

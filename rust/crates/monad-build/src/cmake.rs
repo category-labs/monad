@@ -53,7 +53,6 @@ impl MonadCMake {
 
         let dst = cmake.build_target(target).build();
 
-        println!("cargo:rustc-link-lib=static={target}");
         println!("cargo:CMAKE_BINARY_DIR={}/build", dst.display());
 
         let archive_names = std::iter::once(target)
@@ -62,30 +61,44 @@ impl MonadCMake {
             .collect::<Vec<_>>();
 
         let mut archive_dirs = vec![dst.join("build")];
+        let mut static_libraries: Vec<String> = Vec::new();
 
         while let Some(dir) = archive_dirs.pop() {
             let Ok(entries) = std::fs::read_dir(&dir) else {
                 continue;
             };
 
-            let (directories, files): (Vec<_>, Vec<_>) = entries
+            let (dirs, files): (Vec<_>, Vec<_>) = entries
                 .flatten()
                 .map(|entry| entry.path())
                 .partition(|path| path.is_dir());
 
-            archive_dirs.extend(directories);
+            archive_dirs.extend(dirs);
 
-            if files.iter().any(|path| {
-                path.file_name().is_some_and(|name| {
-                    archive_names.iter().any(|archive| archive.as_str() == name)
-                })
-            }) {
+            let archives = files
+                .iter()
+                .filter_map(|path| path.file_name()?.to_str())
+                .filter(|name| archive_names.iter().any(|archive| archive == name))
+                .filter_map(|name| name.strip_prefix("lib")?.strip_suffix(".a"))
+                .map(str::to_owned)
+                .collect::<Vec<_>>();
+
+            if !archives.is_empty() {
                 println!("cargo:rustc-link-search=native={}", dir.display());
+                static_libraries.extend(archives);
             }
         }
 
+        println!("cargo:rustc-link-lib=static={target}");
         for link_library in link_libraries {
-            println!("cargo:rustc-link-lib={link_library}");
+            if static_libraries
+                .iter()
+                .any(|library| library == link_library)
+            {
+                println!("cargo:rustc-link-lib=static={link_library}");
+            } else {
+                println!("cargo:rustc-link-lib={link_library}");
+            }
         }
     }
 }

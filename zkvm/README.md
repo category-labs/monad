@@ -87,15 +87,17 @@ cd zkvm/zisk
 cargo build --release --locked --target riscv64ima-zisk-zkvm-elf --target-dir target/elf --bin monad-zkvm-zisk
 ```
 
-It supplies the pinned compilers and linker configuration, enables DMA and clean
-byte stores, and builds local edits without `cargo-zisk`.
+It supplies the pinned compilers and linker configuration, enables DMA, clean
+byte stores and link-time optimization, and builds local edits without
+`cargo-zisk`.
 
 Select locally installed compiler tools with the `RISCV_TOOLCHAIN_DIR` environment
 variable. Toolchain-selection `-D` overrides are rejected so the cache fingerprint
 and Cargo watch list always describe the tools actually used.
 
-DMA and clean byte stores are off by default outside Nix; enable them with the
-`MONAD_ZKVM_ZISK_DMA=ON` and `MONAD_ZKVM_ZISK_CLEAN_BYTE_STORES=ON` environment
+DMA, clean byte stores and link-time optimization are off by default outside
+Nix; enable them with the `MONAD_ZKVM_ZISK_DMA=ON`,
+`MONAD_ZKVM_ZISK_CLEAN_BYTE_STORES=ON` and `MONAD_ZKVM_ZISK_LTO=ON` environment
 variables. Further CMake options go in `MONAD_ZKVM_CMAKE_ARGS` as shell-quoted
 `-DNAME=VALUE` words. Each compiler and configuration keeps its own CMake build
 under Cargo's `OUT_DIR`, so switching between them reuses their objects.

@@ -54,7 +54,8 @@ stdenv.mkDerivation {
   '';
 
   setupHook = writeText "zisk-linker-script-setup-hook" ''
-    export CARGO_TARGET_RISCV64IMA_ZISK_ZKVM_ELF_RUSTFLAGS="--cfg zisk_guest -C link-arg=-T@out@/lib/zisk_linker_script.ld"
+    # Match cargo-zisk 1.4 default Rust code generation.
+    export CARGO_TARGET_RISCV64IMA_ZISK_ZKVM_ELF_RUSTFLAGS="-C target-feature=+unaligned-scalar-mem,+zba --cfg zisk_guest -C link-arg=-T@out@/lib/zisk_linker_script.ld"
   '';
 
   passthru = {

@@ -5226,6 +5226,7 @@ TYPED_TEST(StakeAllRevisions, withdraw_transfer_logs_in_receipt)
             logs[0].address,
             Trait::eip_7708_active() ? ETH_SYSTEM_ADDRESS
                                      : SIMULATE_NATIVE_TOKEN_LOG_ADDRESS);
+        EXPECT_EQ(logs[0].trace_transfer, !Trait::eip_7708_active());
         EXPECT_EQ(logs[1].address, STAKING_CA);
         ASSERT_EQ(logs[0].topics.size(), 3);
         EXPECT_EQ(logs[0].topics[0], TRANSFER_SIGNATURE);

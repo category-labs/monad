@@ -139,6 +139,7 @@ namespace rpc::eth_simulateV1
             sizeof(nlohmann::json::object_t) * block.transactions.size();
 
         // Calculate the size of the nested objects within the call array.
+        size_t log_index_cnt = 0;
         for (size_t tx_idx = 0; tx_idx < block.transactions.size(); ++tx_idx) {
             MONAD_ASSERT_THROW(
                 call_frames[tx_idx].size() > 0,
@@ -158,7 +159,6 @@ namespace rpc::eth_simulateV1
                      // bytes, either 0x0 or 0x1.
 
             // Calculate the size of each log entry
-            size_t log_index_cnt = 0;
             if (call_frames[tx_idx][0].status == MONAD_STATUS_SUCCESS) {
                 carried_size += eth_simulate_json::logs.size() +
                                 sizeof(nlohmann::json::array_t);

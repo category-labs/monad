@@ -897,47 +897,55 @@ bool OffsetTrie::patch_chain(
     // be a trie's, and patch_ref takes it from there anyway.
     constexpr size_t DEPTH = 64;
     Frame stack[DEPTH];
-    size_t depth = 0;
-    stack[0] = Frame{first, first->dirty, ref, child};
+    // The top frame, walked by pointer: by index, gcc formed its address
+    // from sp at every use, the stack lying out of an immediate's reach in
+    // this frame. The last frame's address is held in a register for the
+    // same reason: as a constant, gcc formed it from sp on every push.
+    Frame *f = stack;
+    Frame *last = stack + (DEPTH - 1);
+    asm("" : "+r"(last));
+    *f = Frame{first, first->dirty, ref, child};
     for (;;) {
-        Frame &f = stack[depth];
-        if (f.mask != 0) {
-            unsigned const k = static_cast<unsigned>(std::countr_zero(f.mask));
-            f.mask &= f.mask - 1;
+        // The frame is read through f's new value: folded into the old
+        // one's offset, both stay live and every turn ends copying one into
+        // the other.
+        asm("" : "+r"(f));
+        if (f->mask != 0) {
+            unsigned const k = static_cast<unsigned>(std::countr_zero(f->mask));
+            f->mask &= f->mask - 1;
             // As in patch_rlp: the ref starts where the priming encode
             // recorded it, and zero is a slot never written.
-            CachedHash const &e = *f.e;
+            CachedHash const &e = *f->e;
             uintptr_t const at = reinterpret_cast<uintptr_t const *>(
                 e.rlp + e.rlp_len - MAX_NODE_RLP)[k];
             if (at != 0) {
                 auto *const r = reinterpret_cast<unsigned char *>(at);
                 size_t const len = rlp_ref_len(*r);
-                NodeId const c = BranchView{original_child(f.id)}.child(k);
+                NodeId const c = BranchView{original_child(f->id)}.child(k);
                 CachedHash *const ce = stale_branch(c, len);
-                if (ce != nullptr && depth + 1 < DEPTH) {
-                    stack[++depth] = Frame{ce, ce->dirty, r, c};
+                if (ce != nullptr && f < last) {
+                    *++f = Frame{ce, ce->dirty, r, c};
                     continue;
                 }
                 if (patch_ref(c, r, len)) {
                     continue;
                 }
             }
-            while (
-                !patch_ref(stack[depth].id, stack[depth].ref, HASH_RLP_LEN)) {
-                if (depth == 0) {
+            while (!patch_ref(f->id, f->ref, HASH_RLP_LEN)) {
+                if (f == stack) {
                     return false;
                 }
-                --depth;
+                --f;
             }
         }
         else {
-            digest_window(*f.e, f.e->rlp_len, BRANCH);
-            std::memcpy(f.ref + 1, f.e->h.bytes, KECCAK256_SIZE);
+            digest_window(*f->e, f->e->rlp_len, BRANCH);
+            std::memcpy(f->ref + 1, f->e->h.bytes, KECCAK256_SIZE);
         }
-        if (depth == 0) {
+        if (f == stack) {
             return true;
         }
-        --depth;
+        --f;
     }
 }
 

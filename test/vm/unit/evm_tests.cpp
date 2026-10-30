@@ -31,6 +31,7 @@
 #include <evmc/evmc.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -743,6 +744,41 @@ TYPED_TEST(VMTraitsTest, EthCallOutOfGas)
         ASSERT_EQ(this->result_.status_code, EVMC_OUT_OF_GAS);
     }
     else {
+        ASSERT_EQ(this->result_.status_code, EVMC_FAILURE);
+    }
+}
+
+TYPED_TEST(VMTraitsTest, Extension)
+{
+    auto const impls = {
+        TestFixture::Implementation::Compiler,
+        TestFixture::Implementation::Interpreter};
+
+    for (auto const impl : impls) {
+        for (uint8_t const selector :
+             std::array<uint8_t, 5>{0x02, 0x5B, 0x60, 0x7F, 0xFF}) {
+            TestFixture::execute(100'000, {EXTENSION, selector}, {}, impl);
+            ASSERT_EQ(this->result_.status_code, EVMC_FAILURE);
+            ASSERT_EQ(this->result_.gas_left, 0);
+        }
+
+        TestFixture::execute(100'000, {EXTENSION}, {}, impl);
+        ASSERT_EQ(this->result_.status_code, EVMC_FAILURE);
+        ASSERT_EQ(this->result_.gas_left, 0);
+
+        TestFixture::execute(100'000, {PUSH0, EXTENSION}, {}, impl);
+        ASSERT_EQ(this->result_.status_code, EVMC_FAILURE);
+        ASSERT_EQ(this->result_.gas_left, 0);
+
+        TestFixture::execute(
+            100'000, {PUSH1, 4, JUMP, EXTENSION, JUMPDEST, STOP}, {}, impl);
+        ASSERT_EQ(this->result_.status_code, EVMC_SUCCESS);
+
+        TestFixture::execute(
+            100'000,
+            {PUSH1, 5, JUMP, EXTENSION, PUSH1, JUMPDEST, STOP},
+            {},
+            impl);
         ASSERT_EQ(this->result_.status_code, EVMC_FAILURE);
     }
 }

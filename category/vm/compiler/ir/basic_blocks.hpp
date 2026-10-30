@@ -395,6 +395,34 @@ namespace monad::vm::compiler::basic_blocks
     }
 
     template <Traits traits>
+    std::variant<Instruction, Terminator, JumpDest> decode_extension(
+        uint32_t const opcode_offset, std::span<uint8_t const> const bytes,
+        uint32_t &current_offset)
+    {
+        if (current_offset >= bytes.size()) {
+            return Terminator::InvalidInstruction;
+        }
+
+        auto const selector = bytes[current_offset];
+        auto const &info = extension_opcode_table<traits>[selector];
+
+        if (is_unknown_opcode_info<traits>(info)) {
+            return Terminator::InvalidInstruction;
+        }
+
+        current_offset++;
+
+        return Instruction(
+            opcode_offset,
+            OpCode::Extension,
+            info.min_gas,
+            info.min_stack,
+            selector,
+            info.stack_increase,
+            info.dynamic_gas);
+    }
+
+    template <Traits traits>
     std::variant<Instruction, Terminator, JumpDest> BasicBlocksIR::scan_from(
         std::span<uint8_t const> bytes, uint32_t &current_offset)
     {
@@ -425,6 +453,9 @@ namespace monad::vm::compiler::basic_blocks
             return Terminator::SelfDestruct;
         case JUMPDEST:
             return JumpDest{opcode_offset};
+        case EXTENSION:
+            return decode_extension<traits>(
+                opcode_offset, bytes, current_offset);
         default:
             break;
         }

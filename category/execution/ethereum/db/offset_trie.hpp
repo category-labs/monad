@@ -755,9 +755,10 @@ class OffsetTrie
         // a 1-byte write 66, against 16 and 18 for an aligned word. The width
         // is free: the padding below fixes the pair at 64 bytes either way.
 #if defined(MONAD_ZKVM_ZISK)
-        // Down while the hash is the node's: an entry comes from the pool's
-        // untouched memory, which reads zero on ZisK, so the priming sweep's
-        // entries, one a hashed node, are current without a store.
+        // Down while the hash is the node's: an entry comes from untouched
+        // memory, the pool's or its window's (see RLP_WINDOW_ENTRY), which
+        // reads zero on ZisK, so the priming sweep's entries, one a hashed
+        // node, are current without a store.
         uint64_t stale;
 #else
         uint64_t valid;
@@ -838,9 +839,19 @@ class OffsetTrie
     // a hashed node keeps as its CachedHash::rlp. Windows are carved from
     // chunks that never move, RLP_WINDOW_STRIDE apart: a multiple of eight,
     // so a kept RLP starts at the alignment an 8-aligned buffer's copy of it
-    // does, which keeps encode_current's copy on DMA's cheap path.
-    static constexpr size_t RLP_WINDOW_STRIDE = 704;
-    static_assert(RLP_WINDOW_STRIDE >= MAX_NODE_RLP && RLP_WINDOW_STRIDE % 8 == 0);
+    // does, which keeps encode_current's copy on DMA's cheap path. A hashed
+    // node's entry follows its window, RLP_WINDOW_ENTRY from its start: the
+    // sweep takes it with an add, where the pool's cursor is two loads and a
+    // store. No encode or patch writes past a window's MAX_NODE_RLP bytes, and
+    // an inlined node passes its window on with the entry untaken, so an
+    // entry is untouched memory until its node takes it, as a pool entry is.
+    static constexpr size_t RLP_WINDOW_ENTRY = 704;
+    static constexpr size_t RLP_WINDOW_STRIDE =
+        RLP_WINDOW_ENTRY + sizeof(CachedHash);
+    static_assert(
+        RLP_WINDOW_ENTRY >= MAX_NODE_RLP &&
+        RLP_WINDOW_ENTRY % alignof(CachedHash) == 0 &&
+        RLP_WINDOW_STRIDE % 8 == 0);
     unsigned char *rlp_window_{nullptr};
     unsigned char *rlp_windows_end_{nullptr};
 

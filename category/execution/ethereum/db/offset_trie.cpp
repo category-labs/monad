@@ -177,13 +177,14 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
     // below is deliberately below that: over-reserving costs arena, which this
     // guest has, and under-reserving costs the rehash this is here to avoid.
 #if defined(MONAD_ZKVM_ZISK)
-    // The hash tables in place of the map: one slot per four blob bytes, one
-    // per fresh id, and a first chunk of entries sized as the map's reserve.
+    // The hash tables in place of the map: one slot per four blob bytes and
+    // one per fresh id. The sweep's entries come with its windows (see
+    // RLP_WINDOW_ENTRY); the pool holds the others and takes its first chunk
+    // with the first of them.
     blob_hash_slots_ = static_cast<CachedHash **>(
         ::operator new((blob_.size() / 4 + 1) * sizeof(CachedHash *)));
     fresh_hash_slots_ = static_cast<CachedHash **>(
         ::operator new(FRESH_HASH_SLOTS * sizeof(CachedHash *)));
-    refill_hash_pool(blob_.size() / 256 + 1);
 #else
     hashes_.reserve(blob_.size() / 256);
 #endif
@@ -441,11 +442,13 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
             MONAD_KECCAK_SITE(TRIE_PRIME, rem.rlp_size());
 #if defined(MONAD_ZKVM_ZISK)
             // The sweep reaches each node once, so its slot is empty: the
-            // digest goes straight into a new entry, current as it comes (see
-            // CachedHash::stale). Filled before the hash, which comes last:
-            // nothing then lives across the call, where the entry and the
-            // RLP's length were saved and reloaded around it.
-            CachedHash *const e = new_hash_entry();
+            // digest goes straight into a new entry, the one after the
+            // window, current as it comes (see CachedHash::stale). Filled
+            // before the hash, which comes last: nothing then lives across
+            // the call, where the entry and the RLP's length were saved and
+            // reloaded around it.
+            CachedHash *const e =
+                reinterpret_cast<CachedHash *>(walk_window + RLP_WINDOW_ENTRY);
             e->rlp = rem.base() + rem.size();
             e->rlp_len = rem.rlp_size();
             walk_hash_slots[node_offset >> 2] = e;
@@ -720,7 +723,8 @@ void OffsetTrie::refill_hash_pool(size_t const entries)
 
 void OffsetTrie::refill_rlp_windows()
 {
-    // Never freed, and never moved: a kept RLP stays where its entry says.
+    // Never freed, and never moved: a kept RLP stays where its entry says,
+    // and the entry after it where its slot does.
     constexpr size_t WINDOWS = 2048;
     rlp_window_ = static_cast<unsigned char *>(
         ::operator new(WINDOWS * RLP_WINDOW_STRIDE));

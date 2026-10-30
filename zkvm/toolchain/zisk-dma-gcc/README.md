@@ -61,7 +61,7 @@ the separate patches remain available in Git history.
 On x86_64 Linux, run from the repository root:
 
 ```bash
-nix build ./nix#riscv64-none-elf-toolchain
+nix build .#riscv64-none-elf-toolchain
 ./result/bin/riscv64-none-elf-gcc --version
 ```
 

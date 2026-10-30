@@ -257,6 +257,32 @@ namespace monad::vm::interpreter
         return instructions[offset] == static_cast<uint8_t>(opcode);
     }
 
+#if defined(MONAD_ZKVM_ZISK)
+    // Compare N bytecode bytes with a constant pattern using ZisK's DMA
+    // comparator (CSR 0x814). The following instruction encodes the length.
+    template <size_t N, size_t M>
+    [[gnu::always_inline]] inline bool code_matches(
+        uint8_t const *const instructions,
+        unsigned char const (&pattern)[M]) noexcept
+    {
+        static_assert(N <= M);
+        uint64_t mismatch;
+        asm(".option push\n\t"
+            ".option arch, +zicsr\n\t"
+            "csrrs %0, 0x814, %1\n\t"
+            "addi x0, %2, %5\n\t"
+            ".option pop"
+            : "=&r"(mismatch)
+            : "r"(instructions),
+              "r"(pattern),
+              "m"(*reinterpret_cast<uint8_t const(*)[N]>(instructions)),
+              "m"(pattern),
+              "i"(N));
+        return mismatch == 0;
+    }
+
+#endif
+
     // Static gas and stack requirements, computed from the opcode table.
     // Track required operands and peak height, not just net stack change.
     struct FusedRequirements
@@ -1290,29 +1316,6 @@ namespace monad::vm::interpreter
         0xff,
         static_cast<unsigned char>(AND)};
 
-    // Compare N bytecode bytes with a constant pattern using ZisK's DMA
-    // comparator (CSR 0x814). The following instruction encodes the length.
-    template <size_t N, size_t M>
-    [[gnu::always_inline]] inline bool code_matches(
-        uint8_t const *const instructions,
-        unsigned char const (&pattern)[M]) noexcept
-    {
-        static_assert(N <= M);
-        uint64_t mismatch;
-        asm(".option push\n\t"
-            ".option arch, +zicsr\n\t"
-            "csrrs %0, 0x814, %1\n\t"
-            "addi x0, %2, %5\n\t"
-            ".option pop"
-            : "=&r"(mismatch)
-            : "r"(instructions),
-              "r"(pattern),
-              "m"(*reinterpret_cast<uint8_t const(*)[N]>(instructions)),
-              "m"(pattern),
-              "i"(N));
-        return mismatch == 0;
-    }
-
     // These fusions use deferred gas checks; eager mode keeps per-opcode
     // dispatch. Recognize one of these selector extractions:
     //
@@ -2130,6 +2133,24 @@ namespace monad::vm::interpreter
         uint256_t const *stack_lower_bound, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
+        alignas(8) static constexpr uint8_t condition_pattern[8] = {
+            static_cast<uint8_t>(LT),
+            static_cast<uint8_t>(ISZERO),
+            static_cast<uint8_t>(PUSH2)};
+        alignas(8) static constexpr uint8_t copy_pattern[16] = {
+            static_cast<uint8_t>(JUMPI),
+            static_cast<uint8_t>(DUP2),
+            static_cast<uint8_t>(DUP2),
+            static_cast<uint8_t>(ADD),
+            static_cast<uint8_t>(MLOAD),
+            static_cast<uint8_t>(DUP4),
+            static_cast<uint8_t>(DUP3),
+            static_cast<uint8_t>(ADD),
+            static_cast<uint8_t>(MSTORE),
+            static_cast<uint8_t>(PUSH1),
+            32,
+            static_cast<uint8_t>(ADD),
+            static_cast<uint8_t>(PUSH2)};
         auto const *const loop_instructions = instr_ptr;
         auto const fits_memory_offset = [](uint256_t const &x) {
             return (x[1] | x[2] | x[3]) == 0 && x[0] < (uint64_t{1} << 28);
@@ -2148,23 +2169,10 @@ namespace monad::vm::interpreter
         uint256_t const &destination_offset = stack_top[-2];
         uint256_t const &loop_end_index = stack_top[-3];
         // Entry through JUMPDEST guarantees the preceding opcode is JUMPDEST.
-        if (!(opcode_at_is(loop_instructions, 2, LT) &&
-              opcode_at_is(loop_instructions, 3, ISZERO) &&
-              opcode_at_is(loop_instructions, 4, PUSH2) &&
-              opcode_at_is(loop_instructions, 7, JUMPI) &&
-              opcode_at_is(loop_instructions, 8, DUP2) &&
-              opcode_at_is(loop_instructions, 9, DUP2) &&
-              opcode_at_is(loop_instructions, 10, ADD) &&
-              opcode_at_is(loop_instructions, 11, MLOAD) &&
-              opcode_at_is(loop_instructions, 12, DUP4) &&
-              opcode_at_is(loop_instructions, 13, DUP3) &&
-              opcode_at_is(loop_instructions, 14, ADD) &&
-              opcode_at_is(loop_instructions, 15, MSTORE) &&
-              // PUSH1 0x20; ADD advances the loop index by 32 bytes each turn.
-              opcode_at_is(loop_instructions, 16, PUSH1) &&
-              loop_instructions[17] == 0x20 &&
-              opcode_at_is(loop_instructions, 18, ADD) &&
-              opcode_at_is(loop_instructions, 19, PUSH2) &&
+        // Compare fixed spans around the two variable jump destinations.
+        // The copy span includes PUSH1 0x20; ADD (advance by 32 bytes).
+        if (!(code_matches<3>(loop_instructions + 2, condition_pattern) &&
+              code_matches<13>(loop_instructions + 7, copy_pattern) &&
               opcode_at_is(loop_instructions, 22, JUMP) &&
               // The back jump must target the JUMPDEST at the loop's start.
               loop_pc ==

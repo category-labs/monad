@@ -14,14 +14,25 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 # Incremental guest builds in the working tree, including uncommitted changes.
-{ pkgs, callPackage }:
+{
+  callPackage,
+  mkShell,
+  gitMinimal,
+}:
 let
-  buildEnv = callPackage ./zisk-build-env.nix { inherit pkgs; };
+  buildEnv = callPackage ./zisk-build-env.nix { };
 in
-pkgs.mkShell {
-  inherit (buildEnv) nativeBuildInputs buildInputs hardeningDisable env;
-  packages = [ pkgs.gitMinimal ];
-  shellHook = buildEnv.setup + ''
+mkShell {
+  inherit (buildEnv)
+    nativeBuildInputs
+    buildInputs
+    hardeningDisable
+    env
+    ;
+  packages = [ gitMinimal ];
+  shellHook = ''
+    # Host compiler flags must not reach RISC-V GCC.
+    unset CFLAGS CXXFLAGS CPPFLAGS LDFLAGS
     # Global Rust flags override the target-specific ZisK cfg and linker script.
     unset RUSTFLAGS CARGO_ENCODED_RUSTFLAGS CARGO_BUILD_RUSTFLAGS
     # Development builds must not inherit a reference build's identity.

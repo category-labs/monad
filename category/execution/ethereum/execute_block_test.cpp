@@ -616,6 +616,64 @@ TYPED_TEST(TraitsTest, fibers_join_exception)
     EXPECT_THROW((void)result.get(), std::runtime_error);
 }
 
+TYPED_TEST(TraitsTest, non_last_transaction_exception)
+{
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
+    db_t tdb{db};
+    vm::VM vm;
+    BlockState block_state{tdb, vm};
+    BlockMetrics block_metrics;
+    BlockHeader const header{.number = 1, .gas_limit = 42'000};
+    BlockHashBufferFinalized const block_hash_buffer;
+    auto const chain = [] {
+        if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
+            return MonadMainnet{};
+        }
+        else {
+            return EthereumMainnet{};
+        }
+    }();
+    auto const chain_ctx =
+        ChainContext<typename TestFixture::Trait>::debug_empty();
+
+    Transaction const transaction{
+        .sc = {.signature = {.r = 1, .s = 2}},
+        .gas_limit = 21'000,
+        .to = 0xbbbf5374fce5edbc8e2a8697c15331677e6ebf0b_address};
+    std::vector<Transaction> transactions(2, transaction);
+    transactions[1].gas_limit = 0;
+    std::vector<Address> const senders(
+        2, 0xa94f5374fce5edbc8e2a8697c15331677e6ebf0b_address);
+    std::vector<std::vector<std::optional<Address>>> const authorities(2);
+
+    std::vector<std::unique_ptr<CallTracerBase>> call_tracers;
+    call_tracers.emplace_back(std::make_unique<ResetCallTracer>(
+        [] { throw std::runtime_error{"tracer reset failed"}; }));
+    call_tracers.emplace_back(std::make_unique<ResetCallTracer>([] {}));
+    std::vector<std::unique_ptr<trace::StateTracer>> state_tracers(2);
+    for (auto &tracer : state_tracers) {
+        tracer = std::make_unique<trace::StateTracer>(std::monostate{});
+    }
+
+    fiber::PriorityPool pool{1, 2};
+    EXPECT_THROW(
+        (void)execute_block_transactions<typename TestFixture::Trait>(
+            chain,
+            header,
+            transactions,
+            senders,
+            authorities,
+            block_state,
+            block_hash_buffer,
+            pool.fiber_group(),
+            block_metrics,
+            call_tracers,
+            state_tracers,
+            chain_ctx,
+            nullptr),
+        std::runtime_error);
+}
+
 // test referenced from :
 // https://github.com/ethereum/tests/blob/v10.0/BlockchainTests/GeneralStateTests/stRefundTest/refund50_1.json
 TYPED_TEST(TraitsTest, call_frames_refund)

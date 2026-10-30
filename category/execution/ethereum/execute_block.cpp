@@ -255,7 +255,10 @@ Result<std::vector<Receipt>> execute_block_transactions(
     }
 
     auto const last = static_cast<ptrdiff_t>(transactions.size());
-    futures[last].get();
+    futures[last].wait();
+    for (ptrdiff_t i = 1; i <= last; ++i) {
+        futures[i].get();
+    }
     block_metrics.tx_exec_time =
         std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - tx_exec_begin);

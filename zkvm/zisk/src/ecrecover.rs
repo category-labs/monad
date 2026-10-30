@@ -90,15 +90,6 @@ static SEVEN: [u64; 4] = [7, 0, 0, 0];
 /// A quadratic non-residue mod p: zisklib's NQR.
 static NQR: [u64; 4] = [3, 0, 0, 0];
 
-/// The operands of the curve add, p1 += p2. ZisK 1.4 takes both addresses as
-/// the instruction's operands; the block keeps the accumulator's address in
-/// place across the adds, which then store only their second point.
-#[repr(C)]
-struct AddArgs {
-    p1: *mut Point,
-    p2: *const Point,
-}
-
 /// The argument block of the modular multiply-add, as ziskos's
 /// SyscallArith256ModParams: d = a·b + c mod module.
 #[repr(C)]
@@ -111,12 +102,13 @@ struct MulModArgs {
 }
 
 /// The precompiles, issued here rather than through ziskos's wrappers, which
-/// take references: a block built afresh for every add is two stores and the
-/// address of each operand rebuilt, where the accumulator's block is built
-/// once and an add stores only its second point.
+/// take references: a multiply-add block built afresh for every call is five
+/// stores, where `build_table` keeps one block and stores only the operands
+/// that change. The curve add has no block: its two addresses are the
+/// instruction's operands.
 #[cfg(all(target_os = "zkvm", target_vendor = "zisk"))]
 mod op {
-    use super::{AddArgs, MulModArgs, Point};
+    use super::{MulModArgs, Point};
 
     // zisk_definitions::SYSCALL_ARITH256_MOD_ID, SYSCALL_SECP256K1_ADD_ID and
     // SYSCALL_SECP256K1_DBL_ID.
@@ -127,13 +119,13 @@ mod op {
     /// `csrs port, p1` then `add x0, p2, x0`: the transpiler folds the pair
     /// into one precompiled instruction whose operands are p1 and p2.
     #[inline(always)]
-    pub unsafe fn add(args: *mut AddArgs) {
+    pub unsafe fn add(p1: *mut Point, p2: *const Point) {
         core::arch::asm!(
             "csrs {port}, {p1}",
             "add x0, {p2}, x0",
             port = const SECP256K1_ADD,
-            p1 = in(reg) (*args).p1,
-            p2 = in(reg) (*args).p2,
+            p1 = in(reg) p1,
+            p2 = in(reg) p2,
         );
     }
 
@@ -161,15 +153,14 @@ mod op {
 /// Everywhere else, ziskos's emulation of the same precompiles.
 #[cfg(not(all(target_os = "zkvm", target_vendor = "zisk")))]
 mod op {
-    use super::{AddArgs, MulModArgs, Point};
+    use super::{MulModArgs, Point};
     use ziskos::syscalls::{
         syscall_arith256_mod, syscall_secp256k1_add, syscall_secp256k1_dbl,
         SyscallArith256ModParams,
     };
 
-    pub unsafe fn add(args: *mut AddArgs) {
-        let a = &*args;
-        syscall_secp256k1_add(&mut *a.p1, &*a.p2);
+    pub unsafe fn add(p1: *mut Point, p2: *const Point) {
+        syscall_secp256k1_add(&mut *p1, &*p2);
     }
 
     pub unsafe fn dbl(p: *mut Point) {
@@ -247,11 +238,10 @@ unsafe fn mul_mod(
 
 /// The Straus accumulator. It starts at the point at infinity, which the
 /// precompiles cannot take: while `inf` holds, a doubling is skipped and an
-/// add is a copy. `args.p1` is `acc` throughout. Never passed to a call that
-/// is not inlined, so its three fields live in registers.
+/// add is a copy. Never passed to a call that is not inlined, so its two
+/// fields live in registers.
 struct Chain {
     acc: *mut Point,
-    args: *mut AddArgs,
     inf: bool,
 }
 
@@ -280,10 +270,9 @@ impl Chain {
             restart(self.acc, t);
             self.inf = false;
         } else if (*self.acc).x[0] != (*t).x[0] {
-            (*self.args).p2 = t;
-            op::add(self.args);
+            op::add(self.acc, t);
         } else {
-            self.inf = add_same_x0(self.acc, self.args, t);
+            self.inf = add_same_x0(self.acc, t);
         }
     }
 }
@@ -299,10 +288,9 @@ unsafe fn restart(acc: *mut Point, t: *const Point) {
 /// infinity.
 #[cold]
 #[inline(never)]
-unsafe fn add_same_x0(acc: *mut Point, args: *mut AddArgs, t: *const Point) -> bool {
+unsafe fn add_same_x0(acc: *mut Point, t: *const Point) -> bool {
     if (*acc).x != (*t).x {
-        (*args).p2 = t;
-        op::add(args);
+        op::add(acc, t);
         false
     } else if (*acc).y == (*t).y {
         op::dbl(acc);
@@ -343,13 +331,9 @@ type RTable = [Point; 33];
 /// Four doublings and three adds for 2R..8R, whose adds never meet equal x:
 /// k·R = ±R would make R's order divide k ± 1, and n is prime.
 #[inline(always)]
-unsafe fn build_table(t: *mut Point, r: &Point, args: *mut AddArgs) {
+unsafe fn build_table(t: *mut Point, r: &Point) {
     let row = |k: usize| t.add(k);
-    let add = |k: usize, j: usize| {
-        (*args).p1 = row(k);
-        (*args).p2 = row(j);
-        op::add(args);
-    };
+    let add = |k: usize, j: usize| op::add(row(k), row(j));
     *row(1) = *r;
     *row(2) = *r;
     op::dbl(row(2));
@@ -480,23 +464,13 @@ fn double_scalar_mul(
 ) -> Option<Point> {
     let mut table = MaybeUninit::<RTable>::uninit();
     let mut acc = MaybeUninit::<Point>::uninit();
-    let mut args = AddArgs {
-        p1: core::ptr::null_mut(),
-        p2: core::ptr::null(),
-    };
     // SAFETY: the table's rows 1..=32 are written before the windows read
     // them, and `acc` is written by the first add, which `inf` makes a copy.
     unsafe {
         let t = op::opaque(table.as_mut_ptr() as *mut Point);
-        let args = op::opaque(&mut args as *mut AddArgs);
-        build_table(t, r, args);
+        build_table(t, r);
         let acc = op::opaque(acc.as_mut_ptr());
-        (*args).p1 = acc;
-        let mut c = Chain {
-            acc,
-            args,
-            inf: true,
-        };
+        let mut c = Chain { acc, inf: true };
         let o = Operands {
             t: t as *const u8,
             booth1: op::opaque(BOOTH[0][sigma1 as usize].as_ptr() as *mut u64),

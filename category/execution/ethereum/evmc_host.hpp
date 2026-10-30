@@ -99,7 +99,7 @@ protected:
     // The runtime's CALL entry runs its message on this state.
     template <Traits traits>
     friend evmc::Result vm::runtime::guest_call_message(
-        vm::Host &, evmc_message const &) noexcept;
+        vm::Host &, evmc_message const &, vm::SharedVarcode const *) noexcept;
 
 #endif
 public:
@@ -245,8 +245,9 @@ struct EvmcHost final : public EvmcHostBase
             else {
 #if defined(MONAD_ZKVM_ZISK)
                 // The runtime's CALL entry holds execute_call_message's one
-                // body, on this host's state.
-                return vm::runtime::guest_call_message<traits>(*this, msg);
+                // body, on this host's state; the message finds its code.
+                return vm::runtime::guest_call_message<traits>(
+                    *this, msg, nullptr);
 #else
                 return ::monad::execute_call_message<traits>(this, state_, msg);
 #endif

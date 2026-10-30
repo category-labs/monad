@@ -17,6 +17,7 @@
 
 #include <category/core/address.hpp>
 #if defined(MONAD_ZKVM_ZISK)
+    #include <category/vm/code.hpp>
     #include <category/vm/evm/access_status.h>
     #include <category/vm/evm/storage_status.h>
     #include <category/vm/evm/traits.hpp>
@@ -350,9 +351,13 @@ namespace monad::vm::runtime
 
     // A CALL, CALLCODE or DELEGATECALL message, run on the host's state:
     // execute_call_message's body, defined in execute_message.cpp, so that
-    // the runtime's call reaches it with no relay between them.
+    // the runtime's call reaches it with no relay between them. `code` is the
+    // code the message runs, as guest_call_target returned it, when the
+    // caller has it; null otherwise, and the body finds it by the message's
+    // code address.
     template <Traits traits>
-    evmc::Result guest_call_message(Host &, evmc_message const &) noexcept;
+    evmc::Result guest_call_message(
+        Host &, evmc_message const &, SharedVarcode const *code) noexcept;
 
     evmc::bytes32 guest_get_transient_storage(
         Host const &, evmc::address const &, evmc::bytes32 const &) noexcept;
@@ -376,17 +381,18 @@ namespace monad::vm::runtime
         Host &, evmc::address const &, uint8_t const *, size_t,
         evmc::bytes32 const[], size_t) noexcept;
 
-    // A CALL's two statuses for its target, from one host call: the access
-    // status, as the State gives it, and EIP-7702's delegate, where it lies
-    // in the target's code, or null.
+    // A CALL's target, from one host call: its access status, as the State
+    // gives it, and its code, where the State keeps it, or null when it was
+    // left unread. EIP-7702's delegate lies in the code, which a message to
+    // the target itself runs.
     struct CallTarget
     {
         monad_access_status access;
-        Address const *delegate;
+        SharedVarcode const *code;
     };
 
-    // access_account and delegate_of, with one lookup of the account. The
-    // delegate is read when the target was warm, or when `read_cold` says the
+    // access_account and the target's code, with one lookup of the account.
+    // The code is read when the target was warm, or when `read_cold` says the
     // caller can pay for a cold access: one that cannot exits before the
     // read, as it did between the two calls, and the witness holds only the
     // code that execution read.

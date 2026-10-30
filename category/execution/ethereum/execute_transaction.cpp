@@ -355,11 +355,11 @@ evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
     // runs the message on the host's state, which is `state`:
     // ExecuteTransaction builds the host on the state it passes here, and
     // this function already takes them for one, warming the beneficiary
-    // through the host.
+    // through the host. The message finds its code.
     auto result =
         (msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2)
             ? ::monad::execute_create_message<traits>(&host, state, msg)
-            : vm::runtime::guest_call_message<traits>(host, msg);
+            : vm::runtime::guest_call_message<traits>(host, msg, nullptr);
 #else
     auto result =
         (msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2)

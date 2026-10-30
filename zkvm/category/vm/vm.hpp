@@ -168,6 +168,16 @@ namespace monad::vm
             Host &host, evmc_message const *const msg,
             bytes32_t const & /*code_hash*/, SharedVarcode const &vcode)
         {
+            return execute<traits>(host, msg, vcode);
+        }
+
+        // The same without the code's hash, which this VM does not read: for
+        // a caller that has the code alone.
+        template <Traits traits>
+        evmc::Result execute(
+            Host &host, evmc_message const *const msg,
+            SharedVarcode const &vcode)
+        {
             auto const &icode = vcode->intercode();
             auto rt_ctx = runtime::Context::from(
                 &host.get_interface(),

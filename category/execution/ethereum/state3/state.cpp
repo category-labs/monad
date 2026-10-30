@@ -1613,16 +1613,18 @@ State::call_target(Address const &address, bool const read_cold)
             return {status, nullptr};
         }
     }
-    // delegate_of's, from the row just looked up.
+    // code_ref_of's, from the row just looked up.
     vm::SharedVarcode const &vcode =
         code_ref_in(account_state, account_state.orig_).code;
     MONAD_ASSERT(vcode);
-    return {status, vm::evm::delegate_in(vcode->intercode()->code_span())};
+    return {status, &vcode};
 }
 
 vm::runtime::CallTarget State::warm_call_target(Address const &address)
 {
-    return {MONAD_ACCESS_WARM, delegate_of(address)};
+    vm::SharedVarcode const &vcode = code_ref_of(address).code;
+    MONAD_ASSERT(vcode);
+    return {MONAD_ACCESS_WARM, &vcode};
 }
 #endif
 

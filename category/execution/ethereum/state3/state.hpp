@@ -633,14 +633,14 @@ public:
     // nothing done, when add_to_balance must credit it.
     bool defer_beneficiary_credit(uint256_t const &);
 
-    // A CALL's access_account and delegate_of, with one lookup of the
+    // A CALL's access_account and the target's code, with one lookup of the
     // account: see vm::runtime::guest_call_target.
     vm::runtime::CallTarget call_target(Address const &, bool read_cold);
 
     // The same for a target that is warm without its row, a precompile: its
-    // delegate only. With both in the State, the host jumps to either: a
-    // status it built itself would join the other's in a register, repacked
-    // after the call.
+    // code only. With both in the State, the host jumps to either: a status
+    // it built itself would join the other's in a register, repacked after
+    // the call.
     vm::runtime::CallTarget warm_call_target(Address const &);
 
 private:

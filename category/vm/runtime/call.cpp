@@ -23,6 +23,7 @@
 #include <category/vm/evm/revision.h>
 #include <category/vm/evm/traits.hpp>
 #if defined(MONAD_ZKVM_ZISK)
+    #include <category/vm/code.hpp>
     #include <category/vm/host.hpp>
 #endif
 #include <category/vm/runtime/bin.hpp>
@@ -101,10 +102,12 @@ namespace monad::vm::runtime
         // 0xEF0100, then treat it as a delegated call in the context of the
         // current authority; the delegate is the address where it lies in
         // the code, which the host returns. From Prague the access and the
-        // delegate come from one host call, with one lookup of the account.
+        // code come from one host call, with one lookup of the account.
         // A cold access that the gas left cannot pay for exits below, before
-        // the target's code is read, as it did between them.
+        // the target's code is read, as it did between them: past the exit
+        // the code was read.
         Address const *delegate_address = nullptr;
+        SharedVarcode const *target_code = nullptr;
         if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
             auto const target = guest_call_target<traits>(
                 host_of(*ctx),
@@ -113,7 +116,9 @@ namespace monad::vm::runtime
             if (target.access == MONAD_ACCESS_COLD) {
                 ctx->deduct_gas(traits::cold_account_cost());
             }
-            delegate_address = target.delegate;
+            target_code = target.code;
+            delegate_address =
+                evm::delegate_in((*target_code)->intercode()->code_span());
         }
         else {
             auto const access_status = guest_access_account<traits>(
@@ -141,6 +146,8 @@ namespace monad::vm::runtime
                                            : 0) +
                                       100;
                 code_address_p = delegate_address;
+                // The delegate's code runs, which the message finds.
+                target_code = nullptr;
             }
         }
         Address const &code_address = *code_address_p;
@@ -277,9 +284,20 @@ namespace monad::vm::runtime
         // passes to the return data below, so the result releases nothing.
         // The message goes straight to the host's CALL entry: through
         // EvmcHost::call, a relay's frame tested its kind, which is never a
-        // creation here, and called on.
+        // creation here, and called on. It takes the target's code when it
+        // runs that code, which it would otherwise find again by the code
+        // address: nothing on the way sets a code, and the varcode cache
+        // keeps each code where it was read for the block. Without the cache
+        // the State keeps the last code it read in one place, and a read on
+        // the way would replace it: a reserve balance's test of the sender's
+        // delegation, in pre_call's debit.
+    #if defined(MONAD_ZKVM_VARCODE_CACHE)
+        SharedVarcode const *const message_code = target_code;
+    #else
+        SharedVarcode const *const message_code = nullptr;
+    #endif
         evmc::Result callee =
-            guest_call_message<traits>(host_of(*ctx), message);
+            guest_call_message<traits>(host_of(*ctx), message, message_code);
         evmc_result &result = callee.raw();
         result.release = nullptr;
 #else

@@ -426,7 +426,12 @@ EXPLICIT_TRAITS(execute_create_message);
 
 template <Traits traits>
 MONAD_EXECUTE_CALL_MESSAGE_INLINE evmc::Result execute_call_message(
-    EvmcHost<traits> *const host, State &state, evmc_message const &msg)
+    EvmcHost<traits> *const host, State &state, evmc_message const &msg
+#if defined(MONAD_ZKVM_ZISK)
+    ,
+    vm::SharedVarcode const *const target_code
+#endif
+)
 {
     MONAD_ASSERT(
         msg.kind == EVMC_DELEGATECALL || msg.kind == EVMC_CALLCODE ||
@@ -456,27 +461,37 @@ MONAD_EXECUTE_CALL_MESSAGE_INLINE evmc::Result execute_call_message(
             }
         }
 #if defined(MONAD_ZKVM_ZISK)
-        // The account's own hash and code, by reference, from one search
-        // for its row: the block's entry for the account keeps the code,
-        // the guest's VM does not keep the hash, and the VM takes the
-        // intercode from the code before it runs anything.
-        auto const [hash, code] =
-            state.code_ref_of(msg_address(msg.code_address));
+        // The code the runtime's CALL read for its target, when the message
+        // runs it (vm/host.hpp). Otherwise, or for a tracer told of each code
+        // read with its hash, the account's own hash and code, by reference,
+        // from one search for its row: the block's entry for the account
+        // keeps the code, the guest's VM does not keep the hash, and the VM
+        // takes the intercode from the code before it runs anything.
+        vm::SharedVarcode const *code = target_code;
+        if (code == nullptr ||
+            MONAD_UNLIKELY(trace::is_code_tracer(host->state_tracer_))) {
+            auto const [hash, found] =
+                state.code_ref_of(msg_address(msg.code_address));
+            trace::on_read_code(host->state_tracer_, hash, found->intercode());
+            code = &found;
+        }
+        MONAD_DEBUG_ASSERT(
+            code->get() ==
+            state.code_ref_of(msg_address(msg.code_address)).code.get());
+        return state.vm().execute<traits>(*host, &msg, *code);
 #else
         auto const hash = state.get_code_hash(msg.code_address);
-#endif
-#if defined(MONAD_ZKVM_ZISK)
-        // The code came with the hash.
-#elif defined(MONAD_ZKVM_VARCODE_CACHE)
+    #if defined(MONAD_ZKVM_VARCODE_CACHE)
         // The guest's VM keeps every varcode for the block and takes the
         // intercode from this one before it runs anything, so the State's
         // own copy is enough, though a nested read_code replaces it.
         auto const &code = state.read_code_ref(hash);
-#else
+    #else
         auto const code = state.read_code(hash);
-#endif
+    #endif
         trace::on_read_code(host->state_tracer_, hash, code->intercode());
         return state.vm().execute<traits>(*host, &msg, hash, code);
+#endif
     }();
     if (pre_called) {
         call_tracer.on_exit(result);
@@ -510,12 +525,13 @@ MONAD_NAMESPACE_END
 namespace monad::vm::runtime
 {
     template <Traits traits>
-    evmc::Result
-    guest_call_message(Host &host, evmc_message const &msg) noexcept
+    evmc::Result guest_call_message(
+        Host &host, evmc_message const &msg,
+        SharedVarcode const *const code) noexcept
     {
         auto &evmc_host = static_cast<EvmcHost<traits> &>(host);
         return ::monad::execute_call_message<traits>(
-            &evmc_host, evmc_host.state_, msg);
+            &evmc_host, evmc_host.state_, msg, code);
     }
 
     EXPLICIT_TRAITS(guest_call_message);

@@ -126,7 +126,7 @@ The toolchain is provided by nix, which is what CI uses. Flakes must be
 enabled; see [nix/README.md](nix/README.md).
 
 ```shell
-nix build ./nix#toolchainEnv
+nix build .#riscv64-none-elf-toolchain
 ```
 
 A [riscv-gnu-toolchain](https://github.com/riscv-collab/riscv-gnu-toolchain) build also works if you already have one; pass whichever prefix you have as `RISCV_TOOLCHAIN_DIR`.

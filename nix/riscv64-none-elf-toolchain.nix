@@ -20,6 +20,7 @@
 # Newlib is shipped unmodified; zkvm/guest/CMakeLists.txt extracts only the
 # objects it needs (setjmp/longjmp) by querying -print-file-name=libc.a.
 {
+  lib,
   path,
   stdenv,
   buildEnv,
@@ -46,11 +47,17 @@ let
   # The ZisK guest relies on -mzisk-dma and -mzisk-clean-byte-stores, which
   # exist only in the patched compiler; zkvm/toolchain/zisk-dma-gcc/README.md
   # describes the patches. Applied in order after nixpkgs's own GCC patches.
-  ziskPatchDir = ../zkvm/toolchain/zisk-dma-gcc;
-  ziskPatches = map (name: ziskPatchDir + "/${name}") [
-    "0001-riscv-zisk-dma-lowering-15.2.0.patch"
-    "0002-riscv-zisk-clean-byte-stores-15.2.0.diff"
+  ziskPatches = [
+    ../zkvm/toolchain/zisk-dma-gcc/0001-riscv-zisk-dma-lowering-15.2.0.patch
+    ../zkvm/toolchain/zisk-dma-gcc/0002-riscv-zisk-clean-byte-stores-15.2.0.diff
   ];
+
+  ziskProbes = lib.fileset.toSource {
+    root = ../zkvm/toolchain/zisk-dma-gcc;
+    fileset = lib.fileset.fileFilter (
+      file: file.hasExt "sh" || file.hasExt "c"
+    ) ../zkvm/toolchain/zisk-dma-gcc;
+  };
 
   # buildPackages is the build -> target package set, i.e. the cross
   # compiler itself. gcc15 is the wrapped compiler, which knows where the
@@ -70,13 +77,16 @@ in
 assert cc.version == "15.2.0";
 buildEnv {
   name = "riscv64-none-elf-toolchain";
-  paths = [ cc bintools ];
+  paths = [
+    cc
+    bintools
+  ];
 
   # Check that each patched option changes the generated code, not only
   # that it parses: a compiler accepting -mzisk-dma while still emitting
   # memcpy calls would build a slower guest without any error. The probes
   # and the check live beside the patches.
   postBuild = ''
-    bash ${ziskPatchDir}/check-probes.sh $out/bin/riscv64-none-elf-gcc
+    bash ${ziskProbes}/check-probes.sh $out/bin/riscv64-none-elf-gcc
   '';
 }

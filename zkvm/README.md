@@ -71,7 +71,7 @@ zero-padded to an 8-byte boundary.
 Published benchmarks and releases use the [reference Nix build](../nix/README.md#zisk-guest-elf):
 
 ```sh
-nix build --option sandbox true --option sandbox-fallback false './nix?submodules=1#zisk-elf'
+nix build --option sandbox true --option sandbox-fallback false '.?submodules=1#zisk-elf'
 # result/monad-zkvm-zisk and result/monad-zkvm-zisk.build.json
 ```
 
@@ -82,7 +82,7 @@ builder. Reproducibility must still be checked by independent rebuilds.
 For incremental development on x86_64 Linux, use the [Nix development shell](../nix/README.md#development-shell):
 
 ```sh
-nix develop ./nix#zisk
+nix develop .#zisk
 cd zkvm/zisk
 cargo build --release --locked --target riscv64ima-zisk-zkvm-elf --target-dir target/elf --bin monad-zkvm-zisk
 ```

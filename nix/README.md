@@ -17,7 +17,7 @@ to `~/.config/nix/nix.conf`, or pass
 below, as `docker/Dockerfile` does.
 
 ```shell
-nix build ./nix#riscv64-none-elf-toolchain
+nix build .#riscv64-none-elf-toolchain
 cmake -B build-zkvm -S zkvm/guest \
     -DCMAKE_TOOLCHAIN_FILE=$PWD/category/core/toolchains/riscv64-elf.cmake \
     -DRISCV_TOOLCHAIN_DIR=$PWD/result \
@@ -27,11 +27,12 @@ cmake -B build-zkvm -S zkvm/guest \
 Both toolchains are ordinary packages added by `overlay.nix`, which the
 flake exports as `overlays.default` for other package sets to apply.
 
-The flake lives in `nix/` but reads the GCC patches from
-`zkvm/toolchain/zisk-dma-gcc`, so it must be evaluated from a tree that
-holds both: the repository itself, or a copy of the two directories built
-as a Git flake (`git+file://<copy>?dir=nix#riscv64-none-elf-toolchain`),
-as `docker/Dockerfile` does.
+The flake lives at the repository root, its packages in `nix/`, and the
+GCC patches in `zkvm/toolchain/zisk-dma-gcc`, so it must be evaluated from
+a tree that holds all three: the repository itself, or a copy of
+`flake.nix`, `flake.lock`, `nix/` and the patch directory built as a Git
+flake (`git+file://<copy>#riscv64-none-elf-toolchain`), as
+`docker/Dockerfile` does.
 
 ## ZisK patches
 
@@ -57,7 +58,7 @@ hash itself and relinks the binaries for nix. To bump it, change `tag`
 and replace the hash with the one the first build reports.
 
 ```shell
-nix build ./nix#zisk-rust-toolchain
+nix build .#zisk-rust-toolchain
 ./result/bin/rustc --version
 ```
 
@@ -78,7 +79,7 @@ submodules included.
 Build it from a clean checkout:
 
 ```shell
-nix build './nix?submodules=1#zisk-elf'
+nix build '.?submodules=1#zisk-elf'
 ls result/   # monad-zkvm-zisk, monad-zkvm-zisk.build.json
 ```
 
@@ -101,7 +102,7 @@ the bare return `nodelete.hpp` promises GCC. The checks also inspect the
 allocator source definitions, including functions removed by optimization,
 and verify the actual return instruction encoding.
 
-`nix build --rebuild './nix?submodules=1#zisk-elf'` builds the ELF again and fails if the
+`nix build --rebuild '.?submodules=1#zisk-elf'` builds the ELF again and fails if the
 result differs. Run it to check reproducibility rather than assuming it.
 
 ## Development shell
@@ -111,7 +112,7 @@ root, then build the working tree directly with Cargo:
 
 ```shell
 git submodule update --init --recursive
-nix develop ./nix#zisk
+nix develop .#zisk
 cd zkvm/zisk
 cargo build --release --locked --target riscv64ima-zisk-zkvm-elf --target-dir target/elf --bin monad-zkvm-zisk
 ```
@@ -122,10 +123,11 @@ Local edits are supported, and Cargo/CMake keep their incremental artifacts.
 `build.rs`.
 
 Use `nix develop`, rather than plain `nix shell`: the environment needs setup
-hooks for the Rust wrapper and linker script, plus cross-compiler and bindgen
-settings. `zisk-build-env.nix` shares these settings with the reference build,
-including explicit DMA and clean byte stores. The shell clears inherited global
-Rust flags so they cannot override the target-specific ZisK cfg and linker script.
+hooks for the Rust wrapper, the linker script and the bindgen flags, plus
+cross-compiler settings. `zisk-build-env.nix` shares these settings with the
+reference build, including explicit DMA and clean byte stores. The shell clears
+inherited host compiler flags and global Rust flags so they cannot reach the
+RISC-V compiler or override the target-specific ZisK cfg and linker script.
 This shell does not require a
 clean source commit or run the reference ELF audit; its default marker is
 `monad-zkvm;commit=none;build=none`.
@@ -151,15 +153,15 @@ full `riscv-gnu-toolchain` bootstrap would.
 
 ## Pinning
 
-`flake.lock` pins nixpkgs. The pin is chosen so GCC is **15.2.0**, matching
+The root `flake.lock` pins nixpkgs. The pin is chosen so GCC is **15.2.0**, matching
 both the Ubuntu host `gcc-15` and the GCC that `riscv-gnu-toolchain`
 2026.05.06 built. Keeping the cross and host compilers in lockstep is
 deliberate; check it after bumping:
 
 ```shell
-nix build ./nix#riscv64-none-elf-toolchain
+nix build .#riscv64-none-elf-toolchain
 ./result/bin/riscv64-none-elf-gcc -dumpfullversion   # must match gcc-15 -dumpfullversion
-nix flake update --flake ./nix                       # to bump
+nix flake update                                     # to bump
 ```
 
 ## Soft float

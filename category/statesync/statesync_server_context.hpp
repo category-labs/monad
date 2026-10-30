@@ -116,6 +116,9 @@ struct monad_statesync_server_context final : public monad::Db
 
     virtual monad::BlockHeader read_eth_header() override;
 
+    virtual std::optional<monad::byte_string>
+    read_domain_block_header(uint64_t domain_chain_id) override;
+
     virtual monad::bytes32_t state_root() override;
 
     virtual monad::bytes32_t receipts_root() override;

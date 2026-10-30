@@ -42,6 +42,7 @@
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/db/commit_block.hpp>
+#include <category/execution/monad/private_domains.hpp>
 #include <category/execution/monad/reserve_balance.hpp>
 #include <category/execution/monad/validate_monad_block.hpp>
 #include <category/vm/evm/switch_traits.hpp>
@@ -129,7 +130,8 @@ Result<void> process_monad_block(
         &parent_senders_and_authorities,
     ankerl::unordered_dense::segmented_set<Address>
         &senders_and_authorities_out,
-    ExecutionEventRecorder *const exec_recorder)
+    ExecutionEventRecorder *const exec_recorder,
+    PrivateDomains const *const private_domains)
 {
     [[maybe_unused]] auto const block_start = std::chrono::system_clock::now();
     auto const block_begin = std::chrono::steady_clock::now();
@@ -234,6 +236,13 @@ Result<void> process_monad_block(
             exec_recorder));
     record_block_marker_event(exec_recorder, MONAD_EXEC_BLOCK_PERF_EVM_EXIT);
 
+    // Private domain blocks are derived from the executed L1 block and
+    // committed with it. db is still set to the parent.
+    BOOST_OUTCOME_TRY(
+        auto const domain_blocks,
+        derive_private_domain_blocks(
+            private_domains, db, block.header, block_id, receipts));
+
     // Database commit of state changes (incl. Merkle root calculations)
     block_state.log_debug();
     auto const commit_begin = std::chrono::steady_clock::now();
@@ -250,7 +259,8 @@ Result<void> process_monad_block(
         senders,
         block.transactions,
         block.ommers,
-        block.withdrawals);
+        block.withdrawals,
+        domain_blocks.commits());
 
     [[maybe_unused]] auto const commit_time =
         std::chrono::duration_cast<std::chrono::microseconds>(
@@ -331,7 +341,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
     fiber::PriorityPool &priority_pool, uint64_t &finalized_block_num,
     uint64_t const end_block_num, sig_atomic_t const volatile &stop,
     bool const enable_tracing, std::chrono::seconds const block_db_timeout,
-    ExecutionEventRecorder *const exec_recorder)
+    ExecutionEventRecorder *const exec_recorder,
+    PrivateDomains const *const private_domains)
 {
     uint64_t const batch_size =
         end_block_num == std::numeric_limits<uint64_t>::max() ? 1 : 1000;
@@ -453,7 +464,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
                 grandparent_senders_and_authorities,
                 parent_senders_and_authorities,
                 senders_and_authorities,
-                exec_recorder);
+                exec_recorder,
+                private_domains);
             MONAD_ABORT_PRINTF("unhandled rev switch case: %d", rev);
         }());
 

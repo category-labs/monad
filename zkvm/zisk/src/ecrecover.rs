@@ -90,8 +90,9 @@ static SEVEN: [u64; 4] = [7, 0, 0, 0];
 /// A quadratic non-residue mod p: zisklib's NQR.
 static NQR: [u64; 4] = [3, 0, 0, 0];
 
-/// The argument block of the curve add, as ziskos's SyscallSecp256k1AddParams:
-/// p1 += p2.
+/// The operands of the curve add, p1 += p2. ZisK 1.4 takes both addresses as
+/// the instruction's operands; the block keeps the accumulator's address in
+/// place across the adds, which then store only their second point.
 #[repr(C)]
 struct AddArgs {
     p1: *mut Point,
@@ -123,9 +124,17 @@ mod op {
     const SECP256K1_ADD: u16 = 0x803;
     const SECP256K1_DBL: u16 = 0x804;
 
+    /// `csrs port, p1` then `add x0, p2, x0`: the transpiler folds the pair
+    /// into one precompiled instruction whose operands are p1 and p2.
     #[inline(always)]
     pub unsafe fn add(args: *mut AddArgs) {
-        core::arch::asm!("csrs {port}, {args}", port = const SECP256K1_ADD, args = in(reg) args);
+        core::arch::asm!(
+            "csrs {port}, {p1}",
+            "add x0, {p2}, x0",
+            port = const SECP256K1_ADD,
+            p1 = in(reg) (*args).p1,
+            p2 = in(reg) (*args).p2,
+        );
     }
 
     #[inline(always)]
@@ -155,15 +164,12 @@ mod op {
     use super::{AddArgs, MulModArgs, Point};
     use ziskos::syscalls::{
         syscall_arith256_mod, syscall_secp256k1_add, syscall_secp256k1_dbl,
-        SyscallArith256ModParams, SyscallSecp256k1AddParams,
+        SyscallArith256ModParams,
     };
 
     pub unsafe fn add(args: *mut AddArgs) {
         let a = &*args;
-        syscall_secp256k1_add(&mut SyscallSecp256k1AddParams {
-            p1: &mut *a.p1,
-            p2: &*a.p2,
-        });
+        syscall_secp256k1_add(&mut *a.p1, &*a.p2);
     }
 
     pub unsafe fn dbl(p: *mut Point) {

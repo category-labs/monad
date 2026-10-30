@@ -48,7 +48,8 @@ SP1 zkEVM SDK source at build time.
 
   (cargo merges `.cargo/config.toml` up the tree, so this one file covers both
   `zkvm/zisk` and `zkvm/sp1/script`.)
-- [ZisK](https://github.com/0xPolygonHermez/zisk) ≥ v1.2.0-alpha
+- [ZisK](https://github.com/0xPolygonHermez/zisk) ≥ v1.4.0-alpha (the guest is
+  linked for its memory map, which earlier emulators refuse)
   (`ziskup` from <https://github.com/0xPolygonHermez/zisk>) — installs
   `cargo-zisk`, `ziskemu`.
 - [SP1](https://docs.succinct.xyz/) ≥ v6.2.x (`sp1up` from

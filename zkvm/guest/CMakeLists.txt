@@ -448,7 +448,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
 
     # Host-only sources in monad_execution_native: fuzzer/test harnesses,
     # libsecp256k1, fiber dispatch, event-ring recorder, disk-page storage,
-    # live-database commit, private domain decryption (AWS-LC) and signing.
+    # live-database commit, private domain decryption (AWS-LC), signing and derivation.
     monad_zkvm_drop_sources(monad_execution_native
         "db/storage_page.cpp"
         "db/page_commit_builder.cpp"
@@ -464,6 +464,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         "event/record_consensus_events.cpp"
         "private_domain_hpke.cpp"
         "private_domain_system_transaction.cpp"
+        "private_domain_derivation.cpp"
     )
     monad_zkvm_drop_libraries(monad_execution_native
         monad_core

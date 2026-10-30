@@ -17,6 +17,7 @@
 
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
+#include <category/execution/ethereum/state3/account_resolution.hpp>
 #include <category/vm/evm/access_status.h>
 
 // TODO immer known to trigger incorrect warning
@@ -28,7 +29,7 @@
 MONAD_NAMESPACE_BEGIN
 
 // YP 6.1
-class AccountSubstate
+class AccountSubstate : public AccountResolution
 {
     using Set =
         immer::set<bytes32_t, ankerl::unordered_dense::hash<monad::bytes32_t>>;

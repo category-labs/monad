@@ -80,9 +80,9 @@ with the artifact. An x86_64 Linux builder is required. Check reproducibility
 with independent rebuilds.
 
 For local edits, use the [Nix development shell](../nix/zisk/README.md#development-shell).
-It supplies the compilers and linker configuration and enables DMA.
+It supplies the compilers and linker configuration and enables DMA and LTO.
 No `cargo-zisk` is needed. Build-tool selection is fixed by the shell;
-override `MONAD_ZKVM_ZISK_DMA` to compare options.
+override `MONAD_ZKVM_ZISK_DMA` or `MONAD_ZKVM_ZISK_LTO` to compare options.
 Pass other CMake definitions through `MONAD_ZKVM_CMAKE_ARGS` as shell-quoted
 `-DNAME=VALUE` words.
 

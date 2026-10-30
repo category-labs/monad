@@ -32,6 +32,7 @@ struct MonadChain;
 struct Db;
 class BlockHashBufferFinalized;
 class ExecutionEventRecorder;
+struct PrivateDomains;
 
 namespace mpt
 {
@@ -49,6 +50,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
     MonadChain const &, std::filesystem::path const &, mpt::Db &, Db &,
     vm::VM &, BlockHashBufferFinalized &, fiber::PriorityPool &, uint64_t &,
     uint64_t, sig_atomic_t const volatile &, bool enable_tracing,
-    ExecutionEventRecorder *, RunloopMonadOverride runloop_override = {});
+    ExecutionEventRecorder *, RunloopMonadOverride runloop_override = {},
+    PrivateDomains const * = nullptr);
 
 MONAD_NAMESPACE_END

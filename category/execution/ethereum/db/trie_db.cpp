@@ -404,6 +404,30 @@ BlockHeader TrieDb::read_eth_header()
     return std::move(decode_res.value());
 }
 
+std::optional<byte_string>
+TrieDb::read_domain_block_header(uint64_t const domain_chain_id)
+{
+    auto const key = domain_key(domain_chain_id);
+    auto const res = db_.find(
+        curr_root_,
+        concat(
+            prefix_,
+            DOMAIN_NIBBLE,
+            DOMAIN_BLOCK_HEADER_NIBBLE,
+            NibblesView{byte_string_view{key.data(), key.size()}}),
+        block_number_);
+    if (res.has_error()) {
+        return std::nullopt;
+    }
+    return byte_string{res.value().node->value()};
+}
+
+bool TrieDb::has_domain_tables()
+{
+    return db_.find(curr_root_, concat(prefix_, DOMAIN_NIBBLE), block_number_)
+        .has_value();
+}
+
 std::string TrieDb::print_stats()
 {
     std::string ret;

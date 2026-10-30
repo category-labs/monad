@@ -217,6 +217,8 @@ add_library(
   # monad/chain
   "monad/chain/chain_factory.cpp"
   "monad/chain/chain_factory.hpp"
+  "monad/chain/domain_chain_id.cpp"
+  "monad/chain/domain_chain_id.hpp"
   "monad/chain/monad_chain.cpp"
   "monad/chain/monad_chain.hpp"
   "monad/chain/monad_devnet.cpp"
@@ -229,8 +231,11 @@ add_library(
   "monad/chain/monad_testnet.hpp"
   "monad/chain/monad_testnet_alloc.hpp"
   # monad/core
+  "monad/core/domain_block.hpp"
   "monad/core/monad_block.hpp"
   "monad/core/monad_ctypes.h"
+  "monad/core/rlp/domain_block_rlp.cpp"
+  "monad/core/rlp/domain_block_rlp.hpp"
   "monad/core/rlp/monad_block_rlp.cpp"
   "monad/core/rlp/monad_block_rlp.hpp"
   # monad/event
@@ -248,6 +253,16 @@ add_library(
   "monad/monad_precompiles_gas_cost_impl.cpp"
   "monad/monad_transaction_gas.cpp"
   "monad/monad_transaction_gas.hpp"
+  "monad/private_domain_derivation.cpp"
+  "monad/private_domain_derivation.hpp"
+  "monad/private_domain_hpke.cpp"
+  "monad/private_domain_hpke.hpp"
+  "monad/private_domain_scanner.cpp"
+  "monad/private_domain_scanner.hpp"
+  "monad/private_domain_system_transaction.cpp"
+  "monad/private_domain_system_transaction.hpp"
+  "monad/private_domains.cpp"
+  "monad/private_domains.hpp"
   "monad/reserve_balance.cpp"
   "monad/reserve_balance.h"
   "monad/reserve_balance.hpp"
@@ -401,6 +416,7 @@ target_link_libraries(
   PUBLIC monad_execution_ethereum
   PUBLIC monad_core
   PUBLIC monad_trie
+  PRIVATE aws_lc::crypto
   PUBLIC evmc
   PUBLIC magic_enum::magic_enum
   PUBLIC secp256k1

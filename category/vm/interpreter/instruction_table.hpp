@@ -2314,6 +2314,25 @@ namespace monad::vm::interpreter
         uint256_t const *stack_lower_bound, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
+        alignas(8) static constexpr uint8_t limit_pattern[16] = {
+            255,
+            255,
+            255,
+            255,
+            255,
+            255,
+            255,
+            255,
+            static_cast<uint8_t>(DUP3),
+            static_cast<uint8_t>(GT),
+            static_cast<uint8_t>(OR),
+            static_cast<uint8_t>(PUSH2)};
+        alignas(8) static constexpr uint8_t store_pattern[8] = {
+            static_cast<uint8_t>(JUMPI),
+            static_cast<uint8_t>(PUSH1),
+            64,
+            static_cast<uint8_t>(MSTORE),
+            static_cast<uint8_t>(JUMP)};
         auto const *const instructions = instr_ptr;
         // Validate the three operands and two temporary slots before reading.
         if (!stack_holds<3>(stack_top, stack_lower_bound) ||
@@ -2325,18 +2344,10 @@ namespace monad::vm::interpreter
         uint256_t const &pointer_wrapped = stack_top[0];
         uint256_t const &free_memory_pointer = stack_top[-1];
         uint256_t const &return_address = stack_top[-2];
-        uint64_t pointer_limit;
-        std::memcpy(&pointer_limit, instructions + 1, sizeof(pointer_limit));
         auto const return_pc = static_cast<size_t>(return_address[0]);
-        if (!(pointer_limit == ~uint64_t{0} &&
-              opcode_at_is(instructions, 10, GT) &&
-              opcode_at_is(instructions, 11, OR) &&
-              opcode_at_is(instructions, 12, PUSH2) &&
-              opcode_at_is(instructions, 15, JUMPI) &&
-              opcode_at_is(instructions, 16, PUSH1) &&
-              instructions[17] == 0x40 &&
-              opcode_at_is(instructions, 18, MSTORE) &&
-              opcode_at_is(instructions, 19, JUMP) &&
+        // Skip the variable panic destination between the fixed spans.
+        if (!(code_matches<12>(instructions + 1, limit_pattern) &&
+              code_matches<5>(instructions + 15, store_pattern) &&
               (pointer_wrapped[0] | pointer_wrapped[1] | pointer_wrapped[2] |
                pointer_wrapped[3]) == 0 &&
               (free_memory_pointer[1] | free_memory_pointer[2] |

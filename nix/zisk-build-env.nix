@@ -79,6 +79,7 @@ assert lib.assertMsg (toolchainMajor == zisk.toolchainMajor) ''
     CXX_riscv64ima_zisk_zkvm_elf = "${riscv64-none-elf-toolchain}/bin/riscv64-none-elf-g++";
     MONAD_ZKVM_ZISK_DMA = "ON";
     MONAD_ZKVM_ZISK_CLEAN_BYTE_STORES = "ON";
+    MONAD_ZKVM_ZISK_LTO = "ON";
     ZISK_ROOT_CRATE = "monad_zkvm_zisk";
   }
   // lib.optionalAttrs (rev != "") { MONAD_ZKVM_GIT_COMMIT = rev; };

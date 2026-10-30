@@ -95,10 +95,6 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         add_compile_definitions(MONAD_ZKVM_SP1)
     elseif(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
         add_compile_definitions(MONAD_ZKVM_ZISK)
-        # Expose the no-op operator delete declarations to every ZisK C++ file.
-        # One argument, which CMake quotes: the path may contain spaces.
-        add_compile_options(
-            "$<$<COMPILE_LANGUAGE:CXX>:-include${CMAKE_CURRENT_SOURCE_DIR}/nodelete.hpp>")
 
         # Lower eligible block memory operations, including struct copies,
         # directly to ZisK DMA. Requires Zicsr and the patched GCC.
@@ -117,6 +113,20 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         if(MONAD_ZKVM_ZISK_CLEAN_BYTE_STORES)
             string(APPEND CMAKE_C_FLAGS " -mzisk-clean-byte-stores")
             string(APPEND CMAKE_CXX_FLAGS " -mzisk-clean-byte-stores")
+        endif()
+
+        # Optimize across translation units. Cargo links the archive with
+        # rust-lld, which cannot run GCC's LTO plugin, so the archive is
+        # partially linked below into one native object before it reaches
+        # Cargo. Every C and C++ object carries GIMPLE for that step. This
+        # also lets callers see that operator delete and free
+        # (zkvm/core/libstdcxx.cpp, zkvm/core/libc.cpp) are empty, so the
+        # calls and their argument setup disappear.
+        option(MONAD_ZKVM_ZISK_LTO
+               "link-time optimize the ZisK guest archive with GCC" OFF)
+        if(MONAD_ZKVM_ZISK_LTO)
+            string(APPEND CMAKE_C_FLAGS " -flto")
+            string(APPEND CMAKE_CXX_FLAGS " -flto")
         endif()
     endif()
 
@@ -544,6 +554,32 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     )
     monad_compile_options(${_guest_target})
     monad_riscv_compile_options(${_guest_target})
+
+    # Replace the archive of GIMPLE objects with one holding a single native
+    # object. GCC runs the whole-program optimization during this partial
+    # link (-r), with the same flags the objects were compiled with, and
+    # -flinker-output=nolto-rel makes it emit machine code instead of
+    # GIMPLE. The newlib and libgcc objects pass through as they are.
+    # Per-function sections let the final link's --gc-sections still drop
+    # unreferenced code from the merged object.
+    if(MONAD_ZKVM_ZISK_LTO)
+        separate_arguments(_lto_flags UNIX_COMMAND
+            "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_RELEASE}")
+        set(_lto_merged "$<TARGET_FILE_DIR:${_guest_target}>/lto-merged.o")
+        add_custom_command(TARGET ${_guest_target} POST_BUILD
+            COMMAND ${CMAKE_CXX_COMPILER} ${_lto_flags}
+                -flto=auto -flinker-output=nolto-rel
+                -ffunction-sections -fdata-sections
+                -r -nostdlib -nostartfiles
+                -o "${_lto_merged}"
+                -Wl,--whole-archive "$<TARGET_FILE:${_guest_target}>"
+                -Wl,--no-whole-archive
+            COMMAND ${CMAKE_COMMAND} -E rm -f "$<TARGET_FILE:${_guest_target}>"
+            COMMAND ${CMAKE_AR} rcs "$<TARGET_FILE:${_guest_target}>"
+                "${_lto_merged}"
+            COMMENT "Link-time optimizing ${_guest_target}"
+            VERBATIM)
+    endif()
 
 else()
     # ---- Host x86 mode ----

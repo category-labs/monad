@@ -90,29 +90,33 @@ def fail(message):
     raise ValueError(message)
 
 
+# The replaceable deallocation functions the guest must define itself: it
+# links without libstdc++, and the bump allocator never frees.
+REQUIRED_DELETES = (
+    "operator delete(void*)",
+    "operator delete[](void*)",
+    "operator delete(void*,std::size_t)",
+    "operator delete[](void*,std::size_t)",
+)
+
+
 def check_allocator(repo):
+    """The guest never deallocates: every delete and free must be a no-op.
+
+    Link-time optimization inlines these bodies into their callers, so a
+    body added here would run at every delete in the guest.
+    """
     libstdcxx = (repo / "zkvm" / "core" / "libstdcxx.cpp").read_text(
         errors="replace"
     )
-    # Discover overloads from both files so new ones are checked too.
-    declared = delete_overloads(
-        (repo / "zkvm" / "guest" / "nodelete.hpp").read_text(errors="replace")
-    )
+    # Discover overloads so new ones are checked too.
     defined = delete_overloads(libstdcxx)
-    if not declared:
-        fail("nodelete.hpp declares no operator delete; the assertion is gone")
     for key, body in sorted(defined.items()):
         if body is not None and body.strip():
-            fail(
-                f"libstdcxx.cpp defines {key} with a body; nodelete.hpp asserts "
-                "the family does nothing"
-            )
-    for key in sorted(declared):
+            fail(f"libstdcxx.cpp defines {key} with a body; the family does nothing")
+    for key in REQUIRED_DELETES:
         if key not in defined or defined[key] is None:
-            fail(
-                f"nodelete.hpp declares {key} a no-op and libstdcxx.cpp does not "
-                "define it; the attribute then speaks for a definition elsewhere"
-            )
+            fail(f"libstdcxx.cpp does not define {key}")
     libc = strip_comments(
         (repo / "zkvm" / "core" / "libc.cpp").read_text(errors="replace")
     )
@@ -120,10 +124,7 @@ def check_allocator(repo):
     if free_body is None or free_body.group(2).split() != [
         f"(void){free_body.group(1)};"
     ]:
-        fail(
-            "nodelete.hpp declares free a no-op and libc.cpp no longer "
-            "defines it so"
-        )
+        fail("libc.cpp no longer defines free as a no-op")
 
 
 def check_return(disassembly):

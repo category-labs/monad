@@ -1373,20 +1373,6 @@ namespace
 
 struct monad_executor
 {
-    Pool low_gas_pool_;
-    Pool high_gas_pool_;
-
-    // Shared thread pool for trace operations (reduces thread count)
-    fiber::FiberThreadPool trace_thread_pool_;
-
-    // Fiber groups sharing the trace thread pool
-    Group trace_block_group_; // Limits concurrent trace requests
-    Group trace_tx_exec_group_; // Executes transactions within trace blocks
-
-    // Sequence number for each call. This is used as a priority of the request,
-    // requests started earlier have higher priority.
-    std::atomic<uint64_t> call_seq_no_{0};
-
     mpt::RODb db_;
 
     // Secondary timeline, opened when active; shares db_'s service thread
@@ -1399,6 +1385,23 @@ struct monad_executor
     // interpreter rather than the compiler. If it uses the compiler, then
     // out-of-gas errors can be misreported as generic failures.
     vm::VM vm_{vm::VM::InterpreterOnly};
+
+    // Destroyed in reverse order before db_, secondary_db_ and vm_, which the
+    // requests they drain still use. Low gas calls retry into high_gas_pool_
+    // and trace blocks submit into trace_tx_exec_group_, so those outlive them.
+    Pool high_gas_pool_;
+    Pool low_gas_pool_;
+
+    // Shared thread pool for trace operations (reduces thread count)
+    fiber::FiberThreadPool trace_thread_pool_;
+
+    // Fiber groups sharing the trace thread pool
+    Group trace_tx_exec_group_; // Executes transactions within trace blocks
+    Group trace_block_group_; // Limits concurrent trace requests
+
+    // Sequence number for each call. This is used as a priority of the request,
+    // requests started earlier have higher priority.
+    std::atomic<uint64_t> call_seq_no_{0};
 
     static mpt::ReadOnlyOnDiskDbConfig make_db_config(
         std::string const &triedb_path, uint64_t const node_lru_max_mem)
@@ -1433,22 +1436,19 @@ struct monad_executor
         monad_executor_pool_config const &block_pool_config,
         unsigned const tx_exec_num_fibers,
         uint64_t const node_lru_max_mem, std::string const &triedb_path)
-        : low_gas_pool_{Pool::Type::low, low_pool_config}
+        : db_{make_db_config(triedb_path, node_lru_max_mem)}
+        , secondary_db_{db_.open_secondary_timeline()}
         , high_gas_pool_{Pool::Type::high, high_pool_config}
+        , low_gas_pool_{Pool::Type::low, low_pool_config}
         , trace_thread_pool_{block_pool_config.num_threads, true}
-        , trace_block_group_{
-              block_pool_config.queue_limit,
-              std::chrono::seconds(block_pool_config.timeout_sec),
-              trace_thread_pool_.create_fiber_group(block_pool_config.num_fibers)}
         , trace_tx_exec_group_{
               block_pool_config.queue_limit,
               std::chrono::seconds(block_pool_config.timeout_sec),
               trace_thread_pool_.create_fiber_group(tx_exec_num_fibers)}
-        // create the db instances on the PriorityPool thread so all the
-        // thread local storage gets instantiated on the one thread its
-        // used
-        , db_{make_db_config(triedb_path, node_lru_max_mem)}
-        , secondary_db_{db_.open_secondary_timeline()}
+        , trace_block_group_{
+              block_pool_config.queue_limit,
+              std::chrono::seconds(block_pool_config.timeout_sec),
+              trace_thread_pool_.create_fiber_group(block_pool_config.num_fibers)}
     {
     }
 

@@ -283,8 +283,12 @@ fn sp1_zkevm_dir() -> PathBuf {
 }
 
 /// The ZisK compiler options, read from the environment and OFF by default.
-/// The reference Nix build turns both on.
-const ZISK_OPTIONS: [&str; 2] = ["MONAD_ZKVM_ZISK_DMA", "MONAD_ZKVM_ZISK_CLEAN_BYTE_STORES"];
+/// The reference Nix build turns all of them on.
+const ZISK_OPTIONS: [&str; 3] = [
+    "MONAD_ZKVM_ZISK_DMA",
+    "MONAD_ZKVM_ZISK_CLEAN_BYTE_STORES",
+    "MONAD_ZKVM_ZISK_LTO",
+];
 
 /// Environment inputs used by cc-rs and cmake-rs, including target overrides.
 fn build_env_names(triple: &str) -> Vec<String> {

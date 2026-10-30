@@ -29,12 +29,6 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
   endif()
 endif()
 
-if(BUILD_SHARED_LIBS)
-  # BUILD_SHARED_LIBS=ON does not automatically set -fPIC, leading to
-  # relocations being emitted in object files that can't be patched
-  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-endif()
-
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(MONAD_COMPILER_COVERAGE "Build with coverage" OFF)

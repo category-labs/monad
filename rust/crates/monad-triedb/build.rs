@@ -20,9 +20,8 @@ fn main() {
     println!("cargo:rerun-if-changed=../../../category");
 
     if let Some(execution_dir) = monad_build::execution_dir() {
-        monad_build::MonadCMake::new(".", monad_build::MonadCMakeLinkage::Dynamic)
+        monad_build::MonadCMake::new(".")
             .define("MONAD_EXECUTION_DIR", execution_dir)
-            .with_rpath()
             .build("triedb_driver");
     }
 

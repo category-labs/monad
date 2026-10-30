@@ -14,7 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #[cfg(feature = "cmake")]
-pub use self::cmake::{MonadCMake, MonadCMakeLinkage};
+pub use self::cmake::MonadCMake;
 
 #[cfg(feature = "bindgen")]
 pub mod bindgen;

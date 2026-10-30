@@ -13,39 +13,18 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#[derive(Debug)]
-pub enum MonadCMakeLinkage {
-    Static,
-    Dynamic,
-}
-
 pub struct MonadCMake {
     cmake: cmake::Config,
-    linkage: MonadCMakeLinkage,
-    with_rpath: bool,
-
     link_libraries: Vec<&'static str>,
 }
 
 impl MonadCMake {
-    pub fn new<P>(path: P, linkage: MonadCMakeLinkage) -> Self
+    pub fn new<P>(path: P) -> Self
     where
         P: AsRef<std::path::Path>,
     {
-        let mut cmake = cmake::Config::new(path);
-
-        match linkage {
-            MonadCMakeLinkage::Static => {}
-            MonadCMakeLinkage::Dynamic => {
-                cmake.define("BUILD_SHARED_LIBS", "ON");
-            }
-        }
-
         Self {
-            cmake,
-            linkage,
-            with_rpath: false,
-
+            cmake: cmake::Config::new(path),
             link_libraries: Vec::default(),
         }
     }
@@ -55,11 +34,6 @@ impl MonadCMake {
         V: AsRef<std::ffi::OsStr>,
     {
         self.cmake.define(var, value);
-        self
-    }
-
-    pub fn with_rpath(mut self) -> Self {
-        self.with_rpath = true;
         self
     }
 
@@ -74,30 +48,43 @@ impl MonadCMake {
     pub fn build(self, target: &'static str) {
         let Self {
             mut cmake,
-            linkage,
-            with_rpath,
-
-            link_libraries: libraries,
+            link_libraries,
         } = self;
 
         let dst = cmake.build_target(target).build();
 
-        println!("cargo:rustc-link-search=native={}/build", dst.display());
-        println!(
-            "cargo:rustc-link-lib={}={}",
-            match linkage {
-                MonadCMakeLinkage::Static => "static",
-                MonadCMakeLinkage::Dynamic => "dylib",
-            },
-            target
-        );
+        println!("cargo:rustc-link-lib=static={target}");
         println!("cargo:CMAKE_BINARY_DIR={}/build", dst.display());
 
-        if with_rpath {
-            println!("cargo:rustc-link-arg=-Wl,-rpath,{}/build", dst.display());
+        let archive_names = std::iter::once(target)
+            .chain(link_libraries.iter().copied())
+            .map(|name| format!("lib{name}.a"))
+            .collect::<Vec<_>>();
+
+        let mut archive_dirs = vec![dst.join("build")];
+
+        while let Some(dir) = archive_dirs.pop() {
+            let Ok(entries) = std::fs::read_dir(&dir) else {
+                continue;
+            };
+
+            let (directories, files): (Vec<_>, Vec<_>) = entries
+                .flatten()
+                .map(|entry| entry.path())
+                .partition(|path| path.is_dir());
+
+            archive_dirs.extend(directories);
+
+            if files.iter().any(|path| {
+                path.file_name().is_some_and(|name| {
+                    archive_names.iter().any(|archive| archive.as_str() == name)
+                })
+            }) {
+                println!("cargo:rustc-link-search=native={}", dir.display());
+            }
         }
 
-        for link_library in libraries {
+        for link_library in link_libraries {
             println!("cargo:rustc-link-lib={link_library}");
         }
     }

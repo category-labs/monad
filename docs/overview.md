@@ -31,9 +31,9 @@ reasons:
 
 ## How is execution used?
 
-Most of the source code in this repository is compiled into a single library,
-called `libmonad_execution.a` (or `libmonad_execution.so`, if you compile
-using shared libraries).
+Most of the source code in this repository is compiled into a single static
+library, called `libmonad_execution.a`, and linked directly into each consuming
+binary.
 
 This library is used in a few different ways:
 
@@ -44,9 +44,8 @@ This library is used in a few different ways:
    immediately, updating the local state database after successful execution
 
 2. **Hosted mode**: the consensus daemon and the RPC server also use some
-   execution APIs directly; they do this by compiling the execution library
-   as a shared object (`libmonad_execution.so`), and loading it into their
-   processes; they can then call execution functions directly
+   execution APIs directly; the static execution library is linked into their
+   processes, so they can call execution functions without a runtime library.
 
 3. **Interactive mode**: `cmd/monad` can also be run interactively from the
    command line; this is not typically done when participating in the
@@ -75,7 +74,7 @@ a simple loop that starts and ends with the consensus client:
    ││                             ││        │ │    libmonad_execution.a    │ │
    │├─────────────────────────────┤│        │ │  static library functions  │ │
    ││                             ││        │ │ (including EVM and triedb) │ │
-   ││    libmonad_execution.so    ││        │ │                            │ │
+   ││    static execution code    ││        │ │                            │ │
    ││ (including triedb read API) ││        │ └──────────────┬─────────────┘ │
    ││                             ││        └────────────────┼───────────────┘
    │└──────────────▲──────────────┘│                         │

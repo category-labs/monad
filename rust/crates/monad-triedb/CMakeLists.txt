@@ -25,16 +25,16 @@ endif()
 
 # This is the library already built by monad-cxx, so that we don't built it
 # again
-add_library(monad_execution_local SHARED IMPORTED)
+add_library(monad_execution_local STATIC IMPORTED)
 set_target_properties(monad_execution_local PROPERTIES
   INTERFACE_INCLUDE_DIRECTORIES "${PROJECT_SOURCE_DIR}/../../../"
-  IMPORTED_LOCATION "${MONAD_EXECUTION_DIR}/libmonad_execution.so"
+  IMPORTED_LOCATION "${MONAD_EXECUTION_DIR}/libmonad_execution.a"
 )
 
 add_subdirectory("../../../" "monad-execution-build"
 )# needed for monad-trie
 
-add_library(triedb_driver SHARED "${PROJECT_SOURCE_DIR}/include/ffi.h"
+add_library(triedb_driver STATIC "${PROJECT_SOURCE_DIR}/include/ffi.h"
                                  "${PROJECT_SOURCE_DIR}/src/ffi.cpp")
 
 target_include_directories(triedb_driver PUBLIC ${PROJECT_SOURCE_DIR}/include)

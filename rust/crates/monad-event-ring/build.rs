@@ -24,12 +24,9 @@ fn main() {
         monad_build::repository_root().join("category").display()
     );
 
-    monad_build::MonadCMake::new(
-        monad_build::repository_root().join("category/event"),
-        monad_build::MonadCMakeLinkage::Static,
-    )
-    .link_libraries(link_libs)
-    .build("monad_event");
+    monad_build::MonadCMake::new(monad_build::repository_root().join("category/event"))
+        .link_libraries(link_libs)
+        .build("monad_event");
 
     monad_build::bindgen::MonadBindgen::default()
         .header("wrapper.h")

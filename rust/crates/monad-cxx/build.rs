@@ -19,7 +19,22 @@ fn main() {
         for path in ["CMakeLists.txt", "cmake", "category", "third_party"] {
             println!("cargo:rerun-if-changed={}", root.join(path).display());
         }
-        monad_build::MonadCMake::new(&root, monad_build::MonadCMakeLinkage::Dynamic)
+        monad_build::MonadCMake::new(&root)
+            .link_libraries([
+                "asmjit",
+                "blake3",
+                "boost_context",
+                "boost_fiber",
+                "boost_stacktrace_backtrace",
+                "c-kzg-4844",
+                "ff",
+                "gmp",
+                "monad_crypto",
+                "secp256k1",
+                "stdc++",
+                "tbb",
+                "uring",
+            ])
             .build("monad_execution");
     }
 

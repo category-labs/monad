@@ -52,6 +52,8 @@ namespace monad::vm::interpreter
             return;
         }
 
+        ctx.check_deadline();
+
         auto const stack_size = stack_top.next_slot() - stack_bottom;
         MONAD_DEBUG_ASSERT(stack_size <= 1024);
 
@@ -99,6 +101,8 @@ namespace monad::vm::interpreter
         if (MONAD_UNLIKELY(gas_remaining < 0)) {
             ctx.exit(OutOfGas);
         }
+
+        ctx.check_deadline();
 
         auto const operands = compiler::eip8024_operands(Instr, imm);
         ptrdiff_t const min_stack =

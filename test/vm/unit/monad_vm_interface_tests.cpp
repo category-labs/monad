@@ -33,7 +33,10 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <chrono>
 #include <cstdint>
+#include <limits>
 #include <vector>
 
 using namespace monad;
@@ -851,4 +854,154 @@ TEST(MonadVmInterface, message_memory)
         mem1.get()[capacity - 1] = 0;
         mem1.get()[0] = 0;
     }
+}
+
+namespace
+{
+    // JUMPDEST; PUSH1 0; POP; PUSH1 0; JUMP -- an infinite loop, bounded
+    // only by gas.
+    std::vector<uint8_t> make_loop_bytecode()
+    {
+        return {JUMPDEST, PUSH1, 0, POP, PUSH1, 0, JUMP};
+    }
+
+    using DeadlineTraits = EvmTraits<MONAD_ETH_PRAGUE>;
+
+    // CALL(gas=all, addr=ADDRESS, value=0, no args, no ret), then return 32
+    // bytes regardless of the call's result. If a cancelled child frame were
+    // treated as an ordinary failed call, this frame would run on to RETURN
+    // and report EVMC_SUCCESS.
+    std::vector<uint8_t> make_call_then_return_bytecode()
+    {
+        return {
+            PUSH0,
+            PUSH0,
+            PUSH0,
+            PUSH0,
+            PUSH0,
+            ADDRESS,
+            GAS,
+            CALL,
+            PUSH1,
+            1,
+            PUSH0,
+            MSTORE,
+            PUSH1,
+            32,
+            PUSH0,
+            RETURN};
+    }
+
+    // Disables HostMock's throw-after-N-calls behaviour.
+    constexpr size_t never_throw = std::numeric_limits<size_t>::max();
+
+    std::chrono::steady_clock::time_point
+    deadline_from_now(std::chrono::steady_clock::duration const delta)
+    {
+        return std::chrono::steady_clock::now() + delta;
+    }
+}
+
+TEST(MonadVmInterface, expired_deadline_aborts_execution)
+{
+    VM vm{VM::InterpreterOnly};
+
+    auto const bytecode = make_loop_bytecode();
+
+    HostMock host{never_throw, [](Host &, evmc_message const &) {
+                      return evmc::Result{};
+                  }};
+    host.set_execution_deadline(
+        deadline_from_now(-std::chrono::nanoseconds(1)));
+
+    test::TestMessage msg{};
+    msg->gas = 100'000'000;
+
+    auto const result =
+        vm.execute_bytecode<DeadlineTraits>(host, &*msg, bytecode);
+    ASSERT_EQ(result.status_code, EVMC_REJECTED);
+    ASSERT_TRUE(host.execution_cancelled());
+}
+
+TEST(MonadVmInterface, deadline_aborts_execution_mid_loop)
+{
+    VM vm{VM::InterpreterOnly};
+
+    auto const bytecode = make_loop_bytecode();
+
+    HostMock host{never_throw, [](Host &, evmc_message const &) {
+                      return evmc::Result{};
+                  }};
+    host.set_execution_deadline(
+        deadline_from_now(std::chrono::milliseconds(50)));
+
+    test::TestMessage msg{};
+    // Enough gas that the loop runs for minutes if the deadline is not
+    // honored; the test passing quickly demonstrates the mid-execution
+    // abort.
+    msg->gas = 1'000'000'000'000;
+
+    auto const start = std::chrono::steady_clock::now();
+    auto const result =
+        vm.execute_bytecode<DeadlineTraits>(host, &*msg, bytecode);
+    auto const elapsed = std::chrono::steady_clock::now() - start;
+
+    ASSERT_EQ(result.status_code, EVMC_REJECTED);
+    ASSERT_TRUE(host.execution_cancelled());
+    ASSERT_LT(elapsed, std::chrono::seconds(5));
+}
+
+TEST(MonadVmInterface, no_deadline_runs_to_out_of_gas)
+{
+    VM vm{VM::InterpreterOnly};
+
+    auto const bytecode = make_loop_bytecode();
+
+    HostMock host{never_throw, [](Host &, evmc_message const &) {
+                      return evmc::Result{};
+                  }};
+
+    test::TestMessage msg{};
+    msg->gas = 10'000;
+
+    auto const result =
+        vm.execute_bytecode<DeadlineTraits>(host, &*msg, bytecode);
+    ASSERT_EQ(result.status_code, EVMC_OUT_OF_GAS);
+    ASSERT_FALSE(host.execution_cancelled());
+}
+
+TEST(MonadVmInterface, deadline_in_call_stack_cancels_every_frame)
+{
+    // A chain of CALLs where only the leaf loops; every ancestor must be
+    // cancelled on the way back up rather than treating the child as an
+    // ordinary failed call.
+    constexpr int32_t leaf_depth = 100;
+
+    VM vm{VM::InterpreterOnly};
+
+    auto const parent = make_call_then_return_bytecode();
+    auto const child = make_loop_bytecode();
+
+    int32_t max_depth = 0;
+    HostMock host{never_throw, [&](Host &h, evmc_message const &m) {
+                      max_depth = std::max(max_depth, m.depth);
+                      auto const &code = m.depth < leaf_depth ? parent : child;
+                      return vm.execute_bytecode<DeadlineTraits>(h, &m, code);
+                  }};
+    host.set_execution_deadline(
+        deadline_from_now(std::chrono::milliseconds(50)));
+
+    test::TestMessage msg{};
+    msg->gas = 1'000'000'000'000;
+
+    auto const start = std::chrono::steady_clock::now();
+    auto const result =
+        vm.execute_bytecode<DeadlineTraits>(host, &*msg, parent);
+    auto const elapsed = std::chrono::steady_clock::now() - start;
+
+    ASSERT_EQ(max_depth, leaf_depth);
+    ASSERT_EQ(result.status_code, EVMC_REJECTED);
+    ASSERT_EQ(result.output_size, 0);
+    ASSERT_TRUE(host.execution_cancelled());
+    ASSERT_LT(elapsed, std::chrono::seconds(5));
 }

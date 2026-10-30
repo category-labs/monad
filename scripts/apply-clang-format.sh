@@ -2,6 +2,8 @@
 
 set -euo pipefail
 
+source "$(dirname "$0")/ubuntu-build/toolchain.env"
+
 case "${1:-}" in
   "") mode=(-i) ;;
   --check) mode=(--dry-run --Werror) ;;
@@ -15,4 +17,4 @@ rg --files -0 -g '*.hpp' -g '*.cpp' -g '*.c' -g '*.h' \
   cmd \
   test \
   zkvm \
-  | xargs -0 -r "clang-format-${LLVM_VERSION:-19}" "${mode[@]}"
+  | xargs -0 -r "clang-format-${LLVM_VERSION}" "${mode[@]}"

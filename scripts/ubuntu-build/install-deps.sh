@@ -1,11 +1,13 @@
 #!/bin/bash
 
+source "$(dirname "$0")/toolchain.env"
+
 packages=(
   libarchive-dev
   libbenchmark-dev
   libbrotli-dev
   libcap-dev
-  libclang-19-dev
+  libclang-${LLVM_VERSION}-dev
   libcli11-dev
   libgmock-dev
   libgmp-dev

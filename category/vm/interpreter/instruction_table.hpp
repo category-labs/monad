@@ -1443,14 +1443,16 @@ namespace monad::vm::interpreter
         uint256_t const *stack_lower_bound, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
+        alignas(8) static constexpr uint8_t bound_pattern[8] = {
+            static_cast<uint8_t>(DUP2),
+            static_cast<uint8_t>(LT),
+            static_cast<uint8_t>(ISZERO),
+            static_cast<uint8_t>(PUSH2)};
         auto const *const instructions = instr_ptr;
         uint64_t const calldata_size = ctx.env.input_data_size;
         if (MONAD_UNLIKELY(
                 !(opcode_at_is(instructions, 2, PUSH1) &&
-                  opcode_at_is(instructions, 4, DUP2) &&
-                  opcode_at_is(instructions, 5, LT) &&
-                  opcode_at_is(instructions, 6, ISZERO) &&
-                  opcode_at_is(instructions, 7, PUSH2) &&
+                  code_matches<4>(instructions + 4, bound_pattern) &&
                   opcode_at_is(instructions, 10, JUMPI) &&
                   stack_holds<1>(stack_top, stack_lower_bound) &&
                   stack_top.next_slot() < MONAD_VM_STACK_LIMIT - 1 &&

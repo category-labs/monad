@@ -40,11 +40,14 @@ jobs:
           target: build_and_test
           setup: true
           submodules: true
+          # The x86 zkVM guest recompiles execution, so only the GCC
+          # RelWithDebInfo runner builds it and runs the guest state tests.
           build-args: |
             CC=${{ matrix.compiler.CC }}
             CXX=${{ matrix.compiler.CXX }}
             CMAKE_BUILD_TYPE=${{ matrix.CMAKE_BUILD_TYPE }}
             TOOLCHAIN=gcc-avx2
+            MONAD_ZKVM_X86_GUEST=${{ (matrix.CMAKE_BUILD_TYPE == 'RelWithDebInfo' && matrix.compiler.CC == 'gcc-15') && 'ON' || 'OFF' }}
           allow: security.insecure # for tests which use io_uring
           cache-from: |
             type=gha,scope=base

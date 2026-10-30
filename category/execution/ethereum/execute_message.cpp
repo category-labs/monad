@@ -74,6 +74,23 @@ namespace
 
     // The value of a call that moves none, bound where a converted one is.
     constexpr uint256_t zero_value{};
+
+    // EIP-161's touch of a static call's recipient, which no transfer
+    // touches. For Ethereum's traits execute_call_message makes it, in the
+    // frame pre_call pushed, and only when the code the call runs is empty:
+    // an account with code is never dead. Its code goes only with the
+    // account, which a self-destruct removes whatever its touch, or with the
+    // revert of a frame that set it, which ended before this call or holds
+    // it and so undoes the touch as well. The code is the code address's:
+    // a recipient without code is its own code address, and one that
+    // delegates (EIP-7702) has the delegation for code.
+    [[gnu::always_inline]] inline void
+    touch_static_recipient(State &state, evmc_message const &msg)
+    {
+        if (msg.kind == EVMC_CALL && (msg.flags & EVMC_STATIC)) {
+            state.touch(msg_address(msg.recipient));
+        }
+    }
 #endif
 
     bool sender_has_balance(State &state, evmc_message const &msg) noexcept
@@ -244,7 +261,10 @@ pre_call(EvmcHost<traits> &host, evmc_message const &msg, State &state)
     if (msg.kind == EVMC_CALL && static_call) {
         // eip-161
 #if defined(MONAD_ZKVM_ZISK)
-        state.touch(msg_address(msg.recipient));
+        // Ethereum's is execute_call_message's: see touch_static_recipient.
+        if constexpr (is_monad_trait_v<traits>) {
+            state.touch(msg_address(msg.recipient));
+        }
 #else
         state.touch(msg.recipient);
 #endif
@@ -457,6 +477,13 @@ MONAD_EXECUTE_CALL_MESSAGE_INLINE evmc::Result execute_call_message(
             if (auto maybe_result =
                     check_call_precompile<traits>(state, call_tracer, msg);
                 maybe_result.has_value()) {
+#if defined(MONAD_ZKVM_ZISK)
+                // A precompile has no code. Touched before post_call, which
+                // reads RIPEMD-160's touch when the call fails.
+                if constexpr (!is_monad_trait_v<traits>) {
+                    touch_static_recipient(state, msg);
+                }
+#endif
                 return std::move(maybe_result.value());
             }
         }
@@ -474,6 +501,15 @@ MONAD_EXECUTE_CALL_MESSAGE_INLINE evmc::Result execute_call_message(
                 state.code_ref_of(msg_address(msg.code_address));
             trace::on_read_code(host->state_tracer_, hash, found->intercode());
             code = &found;
+        }
+        // The code is the preimage of its hash, so it is empty exactly when
+        // the hash is NULL_HASH, the one EIP-161 tests: its size is one word
+        // to compare, the hash four, and the VM reads the size next. The
+        // State's maps are segmented, so a touch leaves both where they lie.
+        if constexpr (!is_monad_trait_v<traits>) {
+            if ((*code)->intercode()->size() == 0) {
+                touch_static_recipient(state, msg);
+            }
         }
         MONAD_DEBUG_ASSERT(
             code->get() ==

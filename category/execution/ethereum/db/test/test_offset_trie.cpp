@@ -113,8 +113,8 @@ namespace
     {
         mpt::Nibbles const p = nibs_to_path(nibs);
         unsigned char cbuf[33];
-        auto const compact =
-            mpt::compact_encode(cbuf, mpt::NibblesView{p}, /*term=*/true);
+        auto const compact = mpt::compact_encode(
+            cbuf, mpt::NibblesView{p}, /*terminating=*/true);
         byte_string const trie_val = rlp::encode_string2(
             rlp::zeroless_view(to_byte_string_view(v.bytes)));
         return rlp::encode_list2(
@@ -138,7 +138,8 @@ namespace
         mpt::NibblesView const path, byte_string const &acct_rlp)
     {
         unsigned char cbuf[33];
-        auto const compact = mpt::compact_encode(cbuf, path, /*term=*/true);
+        auto const compact =
+            mpt::compact_encode(cbuf, path, /*terminating=*/true);
         return rlp::encode_list2(
             rlp::encode_string2(compact),
             rlp::encode_string2(byte_string_view{acct_rlp}));

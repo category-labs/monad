@@ -4356,11 +4356,27 @@ namespace monad::vm::interpreter
     template <size_t N, Traits traits>
         requires(N >= 1)
     MONAD_VM_INSTRUCTION_CALL void
-    dup(runtime::Context &ctx, MONAD_VM_ANALYSIS_PARAM,
+    dup(runtime::Context &entry_ctx, MONAD_VM_ANALYSIS_PARAM,
         uint256_t const *stack_bottom, uint256_t *stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
 #if defined(MONAD_ZKVM_ZISK)
+        // DUP1 runs the selector tests below in its copies 0 and 1, where
+        // nearly all of them come: a fused branch, a JUMPDEST and the
+        // selector's extraction dispatch to copy 0. Copies 2 to 5 leave the
+        // rare one they meet to the unfused handlers, and spare their DUP1s
+        // the test of the follower. They keep ctx in a0: without the arm, gcc
+        // would save it at their first instruction and restore it for the
+        // stack test's exit.
+        constexpr bool monad_vm_selector_arm = N == 1 && lag_of<traits> < 2;
+        runtime::Context &ctx = [&]() -> runtime::Context & {
+            if constexpr (N == 1 && !monad_vm_selector_arm) {
+                return held_in_a0(entry_ctx);
+            }
+            else {
+                return entry_ctx;
+            }
+        }();
         // Fuse DUP1 PUSH4 <selector> EQ PUSH2 <dst> JUMPI without temporary
         // stack writes. Fusing only DUP1/PUSH4/EQ would prevent the existing
         // EQ/PUSH2/JUMPI fusion.
@@ -4368,6 +4384,8 @@ namespace monad::vm::interpreter
         [[maybe_unused]] uint8_t monad_vm_op2 = 0;
         if constexpr (N == 1) {
             monad_vm_op2 = *(instr_ptr + 1);
+        }
+        if constexpr (monad_vm_selector_arm) {
             // Check PUSH4 first; Intercode's tail padding makes lookahead
             // through instr_ptr[10] safe. A stack without the word DUP1
             // copies, or the room for the two the sequence pushes, halts as
@@ -4528,6 +4546,7 @@ namespace monad::vm::interpreter
             MONAD_VM_DISPATCH(1, 0, *instr_ptr);
         }
 #else
+        runtime::Context &ctx = entry_ctx;
         MONAD_VM_CHECK(DUP1 + (N - 1));
 
         auto *const old_top = stack_top;

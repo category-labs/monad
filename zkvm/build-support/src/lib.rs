@@ -281,8 +281,8 @@ fn sp1_zkevm_dir() -> PathBuf {
 }
 
 /// The ZisK compiler options, read from the environment and OFF by default.
-/// The reference Nix build enables DMA.
-const ZISK_OPTIONS: [&str; 1] = ["MONAD_ZKVM_ZISK_DMA"];
+/// The reference Nix build turns all of them on.
+const ZISK_OPTIONS: [&str; 2] = ["MONAD_ZKVM_ZISK_DMA", "MONAD_ZKVM_ZISK_LTO"];
 
 /// Environment variables cmake-rs reads for the guest build.
 const CMAKE_ENV: [&str; 3] = ["CMAKE", "CMAKE_GENERATOR", "CMAKE_PREFIX_PATH"];

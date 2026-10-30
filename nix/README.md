@@ -101,7 +101,8 @@ out, so a build copies a few hundred megabytes rather than the whole tree.
 Before the ELF is kept, the derivation checks what the guest build
 promises about it: the commit marker, the Zba/Zbb/Zbs/Zbkb ISA attributes,
 and that every `operator delete` or `free` symbol that survived linking is
-the bare return `nodelete.hpp` promises GCC. The checks also inspect the
+a bare return. The guest never deallocates, and link-time optimization
+inlines these bodies into every caller, so the checks also inspect the
 allocator source definitions, including functions removed by optimization,
 and verify the actual return instruction encoding.
 
@@ -183,7 +184,7 @@ Local development remains available with locally installed tools. The
 unordered_dense fork remains pinned by the repository's gitlink and
 `.gitmodules`.
 
-Benchmark drivers invoking Cargo directly must pass
-`MONAD_ZKVM_ZISK_DMA=ON` and `MONAD_ZKVM_ZISK_CLEAN_BYTE_STORES=ON`.
+Benchmark drivers invoking Cargo directly must pass `MONAD_ZKVM_ZISK_DMA=ON`,
+`MONAD_ZKVM_ZISK_CLEAN_BYTE_STORES=ON` and `MONAD_ZKVM_ZISK_LTO=ON`.
 `MONAD_ZKVM_OFFICIAL_PROFILE` is no longer used. The commit and build stamps
 are supplied separately with `MONAD_ZKVM_GIT_COMMIT` and `MONAD_ZKVM_BUILD_ID`.

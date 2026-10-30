@@ -37,7 +37,7 @@ class ZiskChecks(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.repo = Path(self.temp.name)
-        for name in ("zkvm/guest/nodelete.hpp", "zkvm/core/libstdcxx.cpp", "zkvm/core/libc.cpp"):
+        for name in ("zkvm/core/libstdcxx.cpp", "zkvm/core/libc.cpp"):
             dest = self.repo / name
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(REPO / name, dest)

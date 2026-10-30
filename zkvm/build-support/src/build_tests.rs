@@ -94,6 +94,7 @@ printf '%s\n' "$@" > configuration.txt
                     "MONAD_ZKVM_BUILD_ID",
                     "MONAD_ZKVM_ZISK_DMA",
                     "MONAD_ZKVM_ZISK_CLEAN_BYTE_STORES",
+                    "MONAD_ZKVM_ZISK_LTO",
                     "GCC_EXEC_PREFIX",
                     "COMPILER_PATH",
                 ]

@@ -16,6 +16,7 @@
 #include "commit_builder.hpp"
 
 #include <category/core/assert.h>
+#include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
@@ -228,6 +229,91 @@ CommitBuilder &CommitBuilder::add_transactions(
         .next = std::move(txn_hash_updates),
         .version = static_cast<int64_t>(block_number_)}));
 
+    return *this;
+}
+
+CommitBuilder &CommitBuilder::add_domain_blocks(
+    std::span<DomainBlockCommit const> const blocks)
+{
+    UpdateList header_updates;
+    UpdateList transaction_updates;
+    UpdateList number_updates;
+    // Referenced by the number index leaves, so it must live in bytes_alloc_.
+    auto const &encoded_block_number =
+        bytes_alloc_.emplace_back(rlp::encode_unsigned(block_number_));
+    auto const version = static_cast<int64_t>(block_number_);
+    auto const leaf = [&](NibblesView const key,
+                          byte_string_view const value) -> Update & {
+        return update_alloc_.emplace_back(Update{
+            .key = key,
+            .value = value,
+            .incarnation = false,
+            .next = UpdateList{},
+            .version = version});
+    };
+    auto const node = [&](NibblesView const key,
+                          bool const incarnation,
+                          UpdateList children) -> Update & {
+        return update_alloc_.emplace_back(Update{
+            .key = key,
+            .value = byte_string_view{},
+            .incarnation = incarnation,
+            .next = std::move(children),
+            .version = version});
+    };
+
+    for (size_t i = 0; i < blocks.size(); ++i) {
+        auto const &block = blocks[i];
+        for (size_t j = 0; j < i; ++j) {
+            MONAD_ASSERT(blocks[j].domain_chain_id != block.domain_chain_id);
+        }
+        MONAD_ASSERT(block.transactions.size() == block.senders.size());
+        MONAD_ASSERT(
+            block.transactions.size() <= std::numeric_limits<uint32_t>::max());
+
+        auto const key = domain_key(block.domain_chain_id);
+        NibblesView const domain{
+            bytes_alloc_.emplace_back(key.data(), key.size())};
+
+        UpdateList txs;
+        for (uint32_t index = 0;
+             index < static_cast<uint32_t>(block.transactions.size());
+             ++index) {
+            auto const &rlp_index =
+                bytes_alloc_.emplace_back(rlp::encode_unsigned(index));
+            txs.push_front(leaf(
+                NibblesView{rlp_index},
+                bytes_alloc_.emplace_back(encode_transaction_db(
+                    rlp::encode_transaction(block.transactions[index]),
+                    block.senders[index]))));
+        }
+
+        byte_string_fixed<8> number_key;
+        store_be(number_key.data(), block.number);
+        UpdateList number;
+        number.push_front(leaf(
+            NibblesView{bytes_alloc_.emplace_back(
+                number_key.data(), number_key.size())},
+            encoded_block_number));
+
+        header_updates.push_front(
+            leaf(domain, bytes_alloc_.emplace_back(block.encoded_header)));
+        transaction_updates.push_front(node(domain, false, std::move(txs)));
+        number_updates.push_front(node(domain, false, std::move(number)));
+    }
+
+    // Every table is written with every L1 block, even one without domain
+    // blocks, so that the domain subtrie is compacted like the L1 tables.
+    UpdateList tables;
+    tables.push_front(
+        node(domain_block_header_nibbles, false, std::move(header_updates)));
+    // Replaced as a whole, like the L1 transaction table: it holds the domain
+    // blocks of this L1 block only.
+    tables.push_front(
+        node(domain_transaction_nibbles, true, std::move(transaction_updates)));
+    tables.push_front(
+        node(domain_block_number_nibbles, false, std::move(number_updates)));
+    updates_.push_front(node(domain_nibbles, false, std::move(tables)));
     return *this;
 }
 

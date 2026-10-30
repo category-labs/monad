@@ -75,6 +75,13 @@ struct MachineBase : public mpt::StateMachine
         TxHash,
         BlockHash,
         CallFrame,
+        // Parent of the private domain tables.
+        Domain,
+        // Private domain tables below DOMAIN_NIBBLE, in sub-table nibble
+        // order: TableType(Domain + 1 + nibble).
+        DomainBlockHeader,
+        DomainTransaction,
+        DomainBlockNumber,
     };
 
     uint8_t depth{0};
@@ -157,6 +164,18 @@ inline constexpr unsigned char OMMER_NIBBLE = 6;
 inline constexpr unsigned char TX_HASH_NIBBLE = 7;
 inline constexpr unsigned char BLOCK_HASH_NIBBLE = 8;
 inline constexpr unsigned char CALL_FRAME_NIBBLE = 9;
+// Private domain tables, all below DOMAIN_NIBBLE. A domain table key is
+// DOMAIN_NIBBLE || table nibble || 8-byte big-endian domain chain id || ...
+//   DOMAIN_BLOCK_HEADER: domain -> rlp(ProposedDomainHeader) of the domain's
+//     latest block. Never expires: it is the derivation cursor.
+//   DOMAIN_TRANSACTION: domain || rlp(index) -> encode_transaction_db. Holds
+//     the domain blocks derived from this L1 block only.
+//   DOMAIN_BLOCK_NUMBER: domain || be64(number) -> rlp(l1_block_number)
+// Only nodes that derive private domains write them.
+inline constexpr unsigned char DOMAIN_NIBBLE = 10;
+inline constexpr unsigned char DOMAIN_BLOCK_HEADER_NIBBLE = 0;
+inline constexpr unsigned char DOMAIN_TRANSACTION_NIBBLE = 1;
+inline constexpr unsigned char DOMAIN_BLOCK_NUMBER_NIBBLE = 2;
 inline constexpr unsigned char INVALID_NIBBLE = 255;
 inline mpt::Nibbles const state_nibbles = mpt::concat(STATE_NIBBLE);
 inline mpt::Nibbles const code_nibbles = mpt::concat(CODE_NIBBLE);
@@ -169,6 +188,18 @@ inline mpt::Nibbles const ommer_nibbles = mpt::concat(OMMER_NIBBLE);
 inline mpt::Nibbles const withdrawal_nibbles = mpt::concat(WITHDRAWAL_NIBBLE);
 inline mpt::Nibbles const tx_hash_nibbles = mpt::concat(TX_HASH_NIBBLE);
 inline mpt::Nibbles const block_hash_nibbles = mpt::concat(BLOCK_HASH_NIBBLE);
+inline mpt::Nibbles const domain_nibbles = mpt::concat(DOMAIN_NIBBLE);
+// Keys of the domain tables below domain_nibbles.
+inline mpt::Nibbles const domain_block_header_nibbles =
+    mpt::concat(DOMAIN_BLOCK_HEADER_NIBBLE);
+inline mpt::Nibbles const domain_transaction_nibbles =
+    mpt::concat(DOMAIN_TRANSACTION_NIBBLE);
+inline mpt::Nibbles const domain_block_number_nibbles =
+    mpt::concat(DOMAIN_BLOCK_NUMBER_NIBBLE);
+
+// Big-endian domain chain id, the part of every domain table key after the
+// table nibble.
+byte_string_fixed<8> domain_key(uint64_t domain_chain_id);
 
 //////////////////////////////////////////////////////////
 // Proposed and finialized subtries. Active on all tables.

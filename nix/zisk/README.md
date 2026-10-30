@@ -69,9 +69,9 @@ global Rust flags and build stamps. Development ELFs default to
 identity check, and they embed the checkout's path. The shell does not
 supply `ziskemu` or the prover.
 
-`build-env.nix` enables DMA for both paths. Override
-`MONAD_ZKVM_ZISK_DMA` to compare configurations. Direct Cargo benchmark
-builds outside the shell must enable DMA explicitly.
+`build-env.nix` enables DMA and LTO for both paths. Override
+`MONAD_ZKVM_ZISK_DMA` or `MONAD_ZKVM_ZISK_LTO` to compare configurations.
+Direct Cargo benchmark builds outside the shell must enable both explicitly.
 See [guest usage](../../zkvm/README.md#zisk).
 
 ## GCC and DMA

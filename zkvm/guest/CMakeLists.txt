@@ -106,6 +106,15 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
             string(APPEND CMAKE_CXX_FLAGS " -mzisk-dma")
         endif()
 
+        # Compile to GIMPLE, then use GCC to produce native code before
+        # rust-lld links the guest: rust-lld cannot run GCC's LTO plugin.
+        # LTO also eliminates calls to the guest's empty delete/free bodies.
+        option(MONAD_ZKVM_ZISK_LTO
+               "link-time optimize the ZisK guest archive with GCC" OFF)
+        if(MONAD_ZKVM_ZISK_LTO)
+            string(APPEND CMAKE_C_FLAGS " -flto")
+            string(APPEND CMAKE_CXX_FLAGS " -flto")
+        endif()
     endif()
 
     if(DEFINED MONAD_ZKVM_GIT_COMMIT AND NOT MONAD_ZKVM_GIT_COMMIT STREQUAL "")
@@ -533,6 +542,27 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     monad_compile_options(${_guest_target})
     monad_riscv_compile_options(${_guest_target})
 
+    # Partially link the archive with GCC, emitting native code for rust-lld.
+    # Keep per-function sections for --gc-sections; newlib/libgcc objects
+    # already contain native code.
+    if(MONAD_ZKVM_ZISK_LTO)
+        separate_arguments(_lto_flags UNIX_COMMAND
+            "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_RELEASE}")
+        set(_lto_merged "$<TARGET_FILE_DIR:${_guest_target}>/lto-merged.o")
+        add_custom_command(TARGET ${_guest_target} POST_BUILD
+            COMMAND ${CMAKE_CXX_COMPILER} ${_lto_flags}
+                -flto=auto -flinker-output=nolto-rel
+                -ffunction-sections -fdata-sections
+                -r -nostdlib -nostartfiles
+                -o "${_lto_merged}"
+                -Wl,--whole-archive "$<TARGET_FILE:${_guest_target}>"
+                -Wl,--no-whole-archive
+            COMMAND ${CMAKE_COMMAND} -E rm -f "$<TARGET_FILE:${_guest_target}>"
+            COMMAND ${CMAKE_AR} rcs "$<TARGET_FILE:${_guest_target}>"
+                "${_lto_merged}"
+            COMMENT "Link-time optimizing ${_guest_target}"
+            VERBATIM)
+    endif()
 
 else()
     # ---- Host x86 mode ----

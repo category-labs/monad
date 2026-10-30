@@ -13,12 +13,13 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-# What `cargo-zisk build` adds to every guest build: the zisk_guest cfg
-# and the linker script of its ZisK release. The script is taken from the
-# release the guest's Cargo.lock pins ziskos to, the only place the guest
-# names a ZisK version, so it cannot drift from the runtime the guest
+# The ZisK release the guest is built against, and what `cargo-zisk build`
+# would add to every guest build from it: the zisk_guest cfg and the
+# release's linker script. The guest names a ZisK version in one place
+# only, the ziskos entry of its Cargo.lock, so everything taken from the
+# release follows that pin and cannot drift from the runtime the guest
 # links against. As a native build input, the package's setup hook adds
-# both to cargo's rustflags for the ZisK target.
+# the cfg and the script to cargo's rustflags for the ZisK target.
 {
   lib,
   stdenv,
@@ -32,12 +33,19 @@ let
       (builtins.fromTOML (builtins.readFile lockFile)).package;
   # "git+<url>?tag=<tag>#<rev>"
   source = builtins.match "git\\+([^?]*)\\?tag=([^#]*)#([0-9a-f]*)" ziskos.source;
+  tag = builtins.elemAt source 1;
   rev = builtins.elemAt source 2;
-  zisk = builtins.fetchGit {
+  src = builtins.fetchGit {
     url = builtins.elemAt source 0;
-    ref = "refs/tags/${builtins.elemAt source 1}";
+    ref = "refs/tags/${tag}";
     inherit rev;
   };
+
+  # The only statement ZisK makes about which Rust toolchain it needs:
+  # `cargo-zisk toolchain install` downloads the newest zisk-<major>.x.y
+  # release of 0xPolygonHermez/rust for this major.
+  support = builtins.readFile "${src}/cli/src/commands/user/toolchain/support.rs";
+  major = builtins.match ".*const TOOLCHAIN_MAJOR: u64 = ([0-9]+);.*" support;
 in
 stdenv.mkDerivation {
   pname = "zisk-linker-script";
@@ -49,7 +57,7 @@ stdenv.mkDerivation {
 
   installPhase = ''
     runHook preInstall
-    install -Dm644 ${zisk}/ziskbuild/zisk_linker_script.ld $out/lib/zisk_linker_script.ld
+    install -Dm644 ${src}/ziskbuild/zisk_linker_script.ld $out/lib/zisk_linker_script.ld
     runHook postInstall
   '';
 
@@ -59,6 +67,11 @@ stdenv.mkDerivation {
   '';
 
   passthru = {
-    inherit rev;
+    inherit tag rev src;
+    toolchainMajor =
+      if major == null then
+        throw "ZisK ${tag} no longer defines TOOLCHAIN_MAJOR in cli/src/commands/user/toolchain/support.rs"
+      else
+        lib.toInt (builtins.head major);
   };
 }

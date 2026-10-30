@@ -22,7 +22,7 @@ let
     inherit rev;
     vendorCargoDeps = true;
   };
-  inherit (buildEnv) ziskLinkerScript;
+  inherit (buildEnv) zisk;
 
 in
 stdenv.mkDerivation (finalAttrs: {
@@ -78,7 +78,7 @@ stdenv.mkDerivation (finalAttrs: {
             riscv_toolchain = toString riscv64-none-elf-toolchain;
             rust_toolchain = toString zisk-rust-toolchain;
             cargo_dependencies = toString finalAttrs.cargoDeps;
-            zisk = ziskLinkerScript.rev;
+            zisk = zisk.rev;
           }
         )
       } --build-id "''${out##*/}" --manifest $out/monad-zkvm-zisk.build.json

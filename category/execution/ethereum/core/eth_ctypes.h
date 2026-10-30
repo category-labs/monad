@@ -28,6 +28,7 @@
  * C layout-compatible types describing Ethereum blocks and transactions
  */
 
+#include <category/core/address.h>
 #include <category/core/bytes32.h>
 #include <category/execution/ethereum/core/base_ctypes.h>
 #include <stdint.h>
@@ -51,7 +52,7 @@ enum monad_c_transaction_type : uint8_t
 /// Entry in a EIP-2930 storage access warmup list
 struct monad_c_access_list_entry
 {
-    monad_c_address address;    ///< E_a: addr of account whose storage to warm
+    monad_address address;      ///< E_a: addr of account whose storage to warm
     uint32_t storage_key_count; ///< Size of trailing E_s storage key array
 };
 
@@ -59,7 +60,7 @@ struct monad_c_access_list_entry
 struct monad_c_auth_list_entry
 {
     monad_c_uint256_ne chain_id; ///< Chain where authorization is valid
-    monad_c_address address;     ///< Delegation contract address
+    monad_address address;       ///< Delegation contract address
     uint64_t nonce;              ///< Nonce of signing authority
     bool y_parity;               ///< y parity of authority ECDSA signature
     monad_c_uint256_ne r;        ///< r of authority ECDSA signature
@@ -83,7 +84,7 @@ struct monad_c_eth_txn_header
     monad_c_uint256_ne
         max_priority_fee_per_gas;        ///< T_f in EIP-1559 txns, 0 otherwise
     monad_c_uint256_ne value;            ///< T_v: wei xfered or contract endowment
-    monad_c_address to;                  ///< T_t: recipient
+    monad_address to;                    ///< T_t: recipient
     bool is_contract_creation;           ///< True -> interpret T_t == 0 as null
     monad_c_uint256_ne r;                ///< T_r: r value of ECDSA signature
     monad_c_uint256_ne s;                ///< T_s: s value of ECDSA signature
@@ -112,7 +113,7 @@ struct monad_c_eth_txn_receipt
 struct monad_c_eth_txn_log
 {
     uint32_t index;          ///< Index of log in series
-    monad_c_address address; ///< Address of contract generating log
+    monad_address address;   ///< Address of contract generating log
     uint8_t topic_count;     ///< Size of hash32 topic array after header
     uint32_t data_length;    ///< Length of log data placed after header
 };
@@ -129,7 +130,7 @@ struct monad_c_eth_account_state
 struct monad_c_eth_block_input
 {
     monad_bytes32 ommers_hash;           ///< H_o: hash of ommer blocks
-    monad_c_address beneficiary;         ///< H_c: recipient addr of prio gas fees
+    monad_address beneficiary;           ///< H_c: recipient addr of prio gas fees
     monad_bytes32 transactions_root;     ///< H_t: hash of block txn list
     uint64_t difficulty;                 ///< H_d: PoW difficulty scaling param
     uint64_t number;                     ///< H_i: # of ancestor blocks ("height")

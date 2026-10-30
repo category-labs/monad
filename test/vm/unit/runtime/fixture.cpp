@@ -47,9 +47,10 @@ namespace monad::vm::test
         {
             host.tx_context = evmc_tx_context{
                 .tx_gas_price = store_be_as<evmc_bytes32>(uint256_t{56762}),
-                .tx_origin = 0x000000000000000000000000000000005CA1AB1E_address,
+                .tx_origin =
+                    to_evmc(0x000000000000000000000000000000005CA1AB1E_address),
                 .block_coinbase =
-                    0x00000000000000000000000000000000BA5EBA11_address,
+                    to_evmc(0x00000000000000000000000000000000BA5EBA11_address),
                 .block_number = 23784,
                 .block_timestamp = 1733494490,
                 .block_gas_limit = 30000000,
@@ -129,7 +130,7 @@ namespace monad::vm::test
             .output_data = output_data.data(),
             .output_size = output_data.size(),
             .release = nullptr,
-            .create_address = prog_addr,
+            .create_address = to_evmc(prog_addr),
             .padding = {},
         };
     }
@@ -180,7 +181,7 @@ namespace monad::vm::test
             .transient_storage = {},
         };
         auto const [_, inserted] =
-            host_.accounts.insert({contract_addr, account});
+            host_.accounts.insert({to_evmc(contract_addr), account});
         ASSERT_TRUE(inserted);
     }
 }

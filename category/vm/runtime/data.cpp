@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
@@ -38,7 +39,8 @@ namespace monad::vm::runtime
     {
         static_assert(traits::evm_rev() >= MONAD_ETH_BERLIN);
 
-        auto address = address_from_uint256(*address_ptr);
+        evmc_address const address =
+            to_evmc(address_from_uint256(*address_ptr));
 
         auto const access_status =
             ctx->host->access_account(ctx->context, &address);
@@ -136,7 +138,8 @@ namespace monad::vm::runtime
             ctx->deduct_gas(size_in_words * bin<3>);
         }
 
-        auto address = address_from_uint256(*address_ptr);
+        evmc_address const address =
+            to_evmc(address_from_uint256(*address_ptr));
 
         auto const access_status =
             ctx->host->access_account(ctx->context, &address);
@@ -198,7 +201,8 @@ namespace monad::vm::runtime
     {
         static_assert(traits::evm_rev() >= MONAD_ETH_BERLIN);
 
-        auto address = address_from_uint256(*address_ptr);
+        evmc_address const address =
+            to_evmc(address_from_uint256(*address_ptr));
 
         auto const access_status =
             ctx->host->access_account(ctx->context, &address);
@@ -219,7 +223,8 @@ namespace monad::vm::runtime
     {
         static_assert(traits::evm_rev() >= MONAD_ETH_BERLIN);
 
-        auto address = address_from_uint256(*address_ptr);
+        evmc_address const address =
+            to_evmc(address_from_uint256(*address_ptr));
 
         auto const access_status =
             ctx->host->access_account(ctx->context, &address);

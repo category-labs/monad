@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
@@ -38,16 +39,17 @@ namespace monad::vm::runtime
     {
         static_assert(traits::evm_rev() >= MONAD_ETH_BERLIN);
 
+        evmc_address const recipient = to_evmc(ctx->env.recipient);
         auto const key = store_be_as<evmc_bytes32>(*key_ptr);
 
         auto const access_status =
-            ctx->host->access_storage(ctx->context, &ctx->env.recipient, &key);
+            ctx->host->access_storage(ctx->context, &recipient, &key);
         if (access_status == EVMC_ACCESS_COLD) {
             ctx->deduct_gas(traits::cold_storage_cost());
         }
 
         evmc_bytes32 const value =
-            ctx->host->get_storage(ctx->context, &ctx->env.recipient, &key);
+            ctx->host->get_storage(ctx->context, &recipient, &key);
 
         *result_ptr = load_be<uint256_t>(value);
     }
@@ -72,21 +74,22 @@ namespace monad::vm::runtime
             ctx->exit(StatusCode::OutOfGas);
         }
 
+        evmc_address const recipient = to_evmc(ctx->env.recipient);
         auto const key = store_be_as<evmc_bytes32>(*key_ptr);
         auto const value = store_be_as<evmc_bytes32>(*value_ptr);
 
         if constexpr (traits::mip_8_active()) {
-            auto const access_status = ctx->host->access_storage(
-                ctx->context, &ctx->env.recipient, &key);
+            evmc_access_status const access_status =
+                ctx->host->access_storage(ctx->context, &recipient, &key);
             if (access_status == EVMC_ACCESS_COLD) {
                 ctx->deduct_gas(traits::cold_storage_cost());
             }
 
-            auto const storage_status = ctx->host->set_storage(
-                ctx->context, &ctx->env.recipient, &key, &value);
+            auto const storage_status =
+                ctx->host->set_storage(ctx->context, &recipient, &key, &value);
 
             auto const [first_page_write, grew_state] = ctx->host->update_page(
-                ctx->context, &ctx->env.recipient, &key, storage_status);
+                ctx->context, &recipient, &key, storage_status);
 
             int64_t gas_used = traits::base_sstore_cost();
             if (first_page_write) {
@@ -100,14 +103,14 @@ namespace monad::vm::runtime
             ctx->deduct_gas(gas_used);
         }
         else {
-            auto const access_status = ctx->host->access_storage(
-                ctx->context, &ctx->env.recipient, &key);
+            auto const access_status =
+                ctx->host->access_storage(ctx->context, &recipient, &key);
             if (access_status == EVMC_ACCESS_COLD) {
                 ctx->deduct_gas(traits::cold_storage_cost() + min_gas);
             }
 
-            auto const storage_status = ctx->host->set_storage(
-                ctx->context, &ctx->env.recipient, &key, &value);
+            auto const storage_status =
+                ctx->host->set_storage(ctx->context, &recipient, &key, &value);
 
             auto [gas_used, gas_refund] = store_cost<traits>(storage_status);
 
@@ -127,10 +130,11 @@ namespace monad::vm::runtime
     {
         auto const magic = uint256_t{0xdeb009};
         auto const base = (magic + base_offset) * 1024;
+        evmc_address const recipient = to_evmc(ctx->env.recipient);
         if (offset == 0) {
             auto const base_key = store_be_as<evmc_bytes32>(base);
             evmc_bytes32 const base_value = ctx->host->get_transient_storage(
-                ctx->context, &ctx->env.recipient, &base_key);
+                ctx->context, &recipient, &base_key);
             if (base_value != bytes32_t{}) {
                 // If this transient storage location has already been written,
                 // then we are likely in a loop. We return early in this case
@@ -146,7 +150,7 @@ namespace monad::vm::runtime
             auto const s = x < magic ? x + 1 : x;
             auto const value = store_be_as<evmc_bytes32>(s);
             ctx->host->set_transient_storage(
-                ctx->context, &ctx->env.recipient, &key, &value);
+                ctx->context, &recipient, &key, &value);
         }
         return true;
     }

@@ -68,8 +68,8 @@ Result<byte_string> system_call(
 
     evmc_tx_context const tx_context = {
         .tx_gas_price = {},
-        .tx_origin = ETH_SYSTEM_ADDRESS,
-        .block_coinbase = header.beneficiary,
+        .tx_origin = to_evmc(ETH_SYSTEM_ADDRESS),
+        .block_coinbase = to_evmc(header.beneficiary),
         .block_number = static_cast<int64_t>(header.number),
         .block_timestamp = static_cast<int64_t>(header.timestamp),
         .block_gas_limit = static_cast<int64_t>(header.gas_limit),
@@ -94,13 +94,13 @@ Result<byte_string> system_call(
         .flags = 0,
         .depth = 0,
         .gas = 30'000'000, // as per eip-7002, eip-7251
-        .recipient = contract_address,
-        .sender = ETH_SYSTEM_ADDRESS,
+        .recipient = to_evmc(contract_address),
+        .sender = to_evmc(ETH_SYSTEM_ADDRESS),
         .input_data = nullptr,
         .input_size = 0,
         .value = {},
         .create2_salt = {},
-        .code_address = contract_address,
+        .code_address = to_evmc(contract_address),
         .memory_handle = msg_memory.get(),
         .memory = msg_memory.get(),
         .memory_capacity = state.vm().message_memory_capacity(),

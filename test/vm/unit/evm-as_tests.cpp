@@ -20,6 +20,7 @@
 #include "category/vm/runtime//types.hpp"
 #include "category/vm/utils/evm-as/compiler.hpp"
 #include "evmc/evmc.hpp"
+#include <category/core/address.h>
 #include <category/core/address.hpp>
 #include <category/core/int.hpp>
 #include <category/vm/compiler/ir/basic_blocks.hpp>
@@ -1483,9 +1484,9 @@ TEST(EvmAs, PushAddressLabelResolution)
     }
 
     {
-        static Address const addr{{0xaa, 0xaf, 0x53, 0x74, 0xfc, 0xe5, 0xed,
-                                   0xbc, 0x8e, 0x2a, 0x86, 0x97, 0xc1, 0x53,
-                                   0x31, 0x67, 0x7e, 0x6e, 0xbf, 0x0b}};
+        static Address const addr = monad_address{
+            0xaa, 0xaf, 0x53, 0x74, 0xfc, 0xe5, 0xed, 0xbc, 0x8e, 0x2a,
+            0x86, 0x97, 0xc1, 0x53, 0x31, 0x67, 0x7e, 0x6e, 0xbf, 0x0b};
         auto eb = evm_as::latest();
         for (size_t i = 0; i < 999; i++) {
             eb.push(addr); // 1 + 20 bytes

@@ -28,19 +28,15 @@ extern "C"
 // numerically unchanged. The 1:1 correspondence is enforced by static_assert in
 // access_status.cpp.
 //
-// The enum itself carries no evmc dependency. The only tie to evmc is the
-// conversion function below, which is needed solely at the remaining evmc host
-// interface boundary (the EvmcHost overrides, whose return types are fixed by
-// evmc::HostInterface); it — together with the <evmc/evmc.h> include — is
-// removable in one step once the host interface is ported off evmc.
+// The enum itself carries no evmc dependency. The conversion below is used
+// only by the test-only EvmcHostAdapter.
 enum monad_access_status
 {
     MONAD_ACCESS_COLD = 0,
     MONAD_ACCESS_WARM = 1
 };
 
-// Convert monad_access_status to evmc's evmc_access_status. Needed only at the
-// remaining evmc host interface boundary (see the note above).
+// Convert monad_access_status to evmc's evmc_access_status.
 enum evmc_access_status to_evmc_access_status(enum monad_access_status status);
 
 #ifdef __cplusplus

@@ -5,6 +5,10 @@ build-zkvm
 perf.data*
 scratch
 
+# nix build output links
+result
+result-*
+
 # Local, machine-specific zkVM cargo config (sets RISCV_TOOLCHAIN_DIR)
 zkvm/.cargo/
 

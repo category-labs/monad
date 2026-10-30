@@ -27,6 +27,8 @@ quick_status_code_from_enum<monad::AbiDecodeError>::value_mappings()
         {AbiDecodeError::Success, "success", {errc::success}},
         {AbiDecodeError::InputTooShort, "input too short", {}},
         {AbiDecodeError::LengthMismatch, "length mismatch", {}},
+        {AbiDecodeError::InputTooLong, "input too long", {}},
+        {AbiDecodeError::InvalidEncoding, "invalid encoding", {}},
     };
 
     return v;

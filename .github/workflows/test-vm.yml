@@ -10,6 +10,7 @@ on:
       - '.github/actions/docker-stage/**'
       - 'CMakeLists.txt'
       - 'cmake/**'
+      - 'category/core/**'
       - 'category/vm/**'
       - 'cmd/vm/**'
       - 'scripts/vm/**'
@@ -17,6 +18,9 @@ on:
       - 'docker/Dockerfile'
       - 'scripts/ubuntu-build/install-ocaml.sh'
       - 'scripts/ubuntu-build/toolchain.env'
+      - 'third_party/asmjit'
+      - 'third_party/evmc'
+      - 'third_party/intx'
       - 'third_party/monad-execution-specs'
   workflow_dispatch:
 

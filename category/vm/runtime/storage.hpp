@@ -16,8 +16,8 @@
 #pragma once
 
 #include <category/core/bytes.hpp>
-#include <category/core/likely.h>
 #include <category/core/int.hpp>
+#include <category/core/likely.h>
 #if defined(MONAD_ZKVM_ZISK)
     #include <category/vm/host.hpp>
     #include <category/vm/runtime/storage_costs.hpp>
@@ -72,7 +72,7 @@ namespace monad::vm::runtime
         }
 
         auto const key = store_be_as<evmc_bytes32>(*key_ptr);
-        auto value = store_be_as<bytes32_t>(*value_ptr);
+        auto value = store_be_as<evmc_bytes32>(*value_ptr);
 
         if constexpr (traits::mip_8_active()) {
             auto const access_status = ctx->host->access_storage(

@@ -229,8 +229,11 @@ namespace monad::vm::host_shim
         size_t num_topics) noexcept
     {
         of(h)->emit_log(
-            addr(a), data, data_size,
-            static_cast<evmc::bytes32 const *>(topics), num_topics);
+            addr(a),
+            data,
+            data_size,
+            static_cast<evmc::bytes32 const *>(topics),
+            num_topics);
     }
 
     inline evmc_access_status

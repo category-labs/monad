@@ -33,7 +33,7 @@ class State;
 
 template <Traits traits>
 evmc::Result
-deploy_contract_code(State &, Address const &, evmc::Result) noexcept;
+deploy_contract_code(State &, evmc_address const &, evmc::Result) noexcept;
 
 template <Traits traits>
 evmc::Result

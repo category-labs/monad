@@ -151,7 +151,8 @@ namespace monad::vm::interpreter
                                    LOG1,         LOG2,         LOG3,
                                    LOG4,         CREATE,       CALL,
                                    CALLCODE,     DELEGATECALL, CREATE2,
-                                   STATICCALL};
+                                   STATICCALL,   DUPN,         SWAPN,
+                                   EXCHANGE};
         for (uint8_t const o : ops) {
             if (o == op) {
                 return true;
@@ -254,9 +255,10 @@ namespace monad::vm::interpreter
                 (static_cast<uintptr_t>(NEXT_OPCODE) << slot_shift);           \
             register runtime::Context *monad_vm_a0 asm("a0") = &ctx;           \
             register uint256_t const *monad_vm_a1 asm("a1") =                  \
-                MONAD_VM_DISPATCH_STATE_ARG;                                         \
-            register uint256_t const *monad_vm_a2 asm("a2") = stack_lower_bound;    \
-            register uint256_t *monad_vm_a3 asm("a3") = (TOP).next_slot();                 \
+                MONAD_VM_DISPATCH_STATE_ARG;                                   \
+            register uint256_t const *monad_vm_a2 asm("a2") =                  \
+                stack_lower_bound;                                             \
+            register uint256_t *monad_vm_a3 asm("a3") = (TOP).next_slot();     \
             register int64_t monad_vm_a4 asm("a4") = (GAS);                    \
             register uint8_t const *monad_vm_a5 asm("a5") = (IP);              \
             register void const *monad_vm_a6 asm("a6") = itbl;                 \
@@ -285,13 +287,14 @@ namespace monad::vm::interpreter
                 (static_cast<uintptr_t>(NEXT_OPCODE) << slot_shift);           \
             register runtime::Context *monad_vm_a0 asm("a0") = &ctx;           \
             register uint256_t const *monad_vm_a1 asm("a1") =                  \
-                MONAD_VM_DISPATCH_STATE_ARG;                                         \
-            register uint256_t const *monad_vm_a2 asm("a2") = stack_lower_bound;    \
-            register uint256_t *monad_vm_a3 asm("a3") = (TOP).next_slot();                 \
+                MONAD_VM_DISPATCH_STATE_ARG;                                   \
+            register uint256_t const *monad_vm_a2 asm("a2") =                  \
+                stack_lower_bound;                                             \
+            register uint256_t *monad_vm_a3 asm("a3") = (TOP).next_slot();     \
             register int64_t monad_vm_a4 asm("a4") = (GAS);                    \
             register uint8_t const *monad_vm_a5 asm("a5") = (IP);              \
             register void const *monad_vm_a6 asm("a6") = itbl;                 \
-            register uint256_t const *monad_vm_a7 asm("a7") = (SRC);           \
+            register uint256_t const *monad_vm_a7 asm("a7") = &*(SRC);         \
             asm volatile("jalr zero, %[off](%[head])"                          \
                          :                                                     \
                          : [head] "r"(monad_vm_head),                          \
@@ -317,9 +320,10 @@ namespace monad::vm::interpreter
                 (static_cast<uintptr_t>(NEXT_OPCODE) << slot_shift);           \
             register runtime::Context *monad_vm_a0 asm("a0") = &ctx;           \
             register uint256_t const *monad_vm_a1 asm("a1") =                  \
-                MONAD_VM_DISPATCH_STATE_ARG;                                         \
-            register uint256_t const *monad_vm_a2 asm("a2") = stack_lower_bound;    \
-            register uint256_t *monad_vm_a3 asm("a3") = (TOP).next_slot();                 \
+                MONAD_VM_DISPATCH_STATE_ARG;                                   \
+            register uint256_t const *monad_vm_a2 asm("a2") =                  \
+                stack_lower_bound;                                             \
+            register uint256_t *monad_vm_a3 asm("a3") = (TOP).next_slot();     \
             register int64_t monad_vm_a4 asm("a4") = (GAS);                    \
             register uint8_t const *monad_vm_a5 asm("a5") = (IP);              \
             register void const *monad_vm_a6 asm("a6") = itbl;                 \
@@ -351,9 +355,10 @@ namespace monad::vm::interpreter
                 (static_cast<uintptr_t>(NEXT_OPCODE) << slot_shift);           \
             register runtime::Context *monad_vm_a0 asm("a0") = &ctx;           \
             register uint256_t const *monad_vm_a1 asm("a1") =                  \
-                MONAD_VM_DISPATCH_STATE_ARG;                                         \
-            register uint256_t const *monad_vm_a2 asm("a2") = stack_lower_bound;    \
-            register uint256_t *monad_vm_a3 asm("a3") = (TOP).next_slot();                 \
+                MONAD_VM_DISPATCH_STATE_ARG;                                   \
+            register uint256_t const *monad_vm_a2 asm("a2") =                  \
+                stack_lower_bound;                                             \
+            register uint256_t *monad_vm_a3 asm("a3") = (TOP).next_slot();     \
             register int64_t monad_vm_a4 asm("a4") = (GAS);                    \
             register uint8_t const *monad_vm_a5 asm("a5") = (IP);              \
             register void const *monad_vm_a6 asm("a6") = itbl;                 \
@@ -454,7 +459,7 @@ namespace monad::vm::interpreter
             if ((NBYTES) == (N)) {                                             \
                 instr_ptr += (N);                                              \
                 if constexpr (debug_enabled) {                                 \
-                    trace(MONAD_VM_CODE_VIEW, gas_remaining, instr_ptr);        \
+                    trace(MONAD_VM_CODE_VIEW, gas_remaining, instr_ptr);       \
                 }                                                              \
                 MONAD_VM_LAG_DISPATCH(                                         \
                     ::monad::vm::interpreter::lag_of<traits> + (N),            \
@@ -479,12 +484,12 @@ namespace monad::vm::interpreter
                 instr_ptr += (NBYTES);                                         \
                 MONAD_VM_LAUNDER(instr_ptr);                                   \
                 if constexpr (debug_enabled) {                                 \
-                    trace(MONAD_VM_CODE_VIEW, gas_remaining, instr_ptr);        \
+                    trace(MONAD_VM_CODE_VIEW, gas_remaining, instr_ptr);       \
                 }                                                              \
                 MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[(NEXT_OPCODE)](   \
                     ctx,                                                       \
-                    MONAD_VM_DISPATCH_STATE_ARG,                                     \
-                    stack_lower_bound,                                              \
+                    MONAD_VM_DISPATCH_STATE_ARG,                               \
+                    stack_lower_bound,                                         \
                     stack_top + (DELTA),                                       \
                     gas_remaining,                                             \
                     instr_ptr MONAD_VM_TBL_ARG);                               \
@@ -497,12 +502,12 @@ namespace monad::vm::interpreter
             instr_ptr += (NBYTES);                                             \
             MONAD_VM_LAUNDER(instr_ptr);                                       \
             if constexpr (debug_enabled) {                                     \
-                trace(MONAD_VM_CODE_VIEW, gas_remaining, instr_ptr);            \
+                trace(MONAD_VM_CODE_VIEW, gas_remaining, instr_ptr);           \
             }                                                                  \
             MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[(NEXT_OPCODE)](       \
                 ctx,                                                           \
-                MONAD_VM_DISPATCH_STATE_ARG,                                         \
-                stack_lower_bound,                                                  \
+                MONAD_VM_DISPATCH_STATE_ARG,                                   \
+                stack_lower_bound,                                             \
                 stack_top + (DELTA),                                           \
                 gas_remaining,                                                 \
                 instr_ptr MONAD_VM_TBL_ARG);                                   \
@@ -544,13 +549,13 @@ namespace monad::vm::interpreter
                 ::monad::vm::interpreter::runtime_fn_uses_context<             \
                     std::decay_t<decltype(__VA_ARGS__)>>::value;               \
             if constexpr (monad_vm_real_call) {                                \
-                ctx.frame_stack_top = stack_top.next_slot();                               \
+                ctx.frame_stack_top = stack_top.next_slot();                   \
             }                                                                  \
             call_runtime(__VA_ARGS__, ctx, stack_top, gas_remaining);          \
             if constexpr (monad_vm_real_call) {                                \
-                stack_lower_bound = ctx.frame_stack_bottom;                         \
+                stack_lower_bound = ctx.frame_stack_bottom;                    \
                 stack_limit = ctx.stack_limit;                                 \
-                stack_top = StackTop{ctx.frame_stack_top};                               \
+                stack_top = StackTop{ctx.frame_stack_top};                     \
             }                                                                  \
         }                                                                      \
         while (false)
@@ -1297,7 +1302,8 @@ namespace monad::vm::interpreter
         MONAD_VM_CHECK(SUB);
 #if defined(MONAD_ZKVM_ZISK)
         // Name a, then step to the new top, as ADD does.
-        uint64_t const *const a = reinterpret_cast<uint64_t const *>(&*stack_top);
+        uint64_t const *const a =
+            reinterpret_cast<uint64_t const *>(&*stack_top);
         --stack_top;
         auto *next_slot = stack_top.next_slot();
         MONAD_VM_LAUNDER(next_slot);
@@ -1618,7 +1624,7 @@ namespace monad::vm::interpreter
                     (stack_top.next_slot() - 1) -
                         (stack_lower_bound - MONAD_VM_STACK_LOWER_BOUND_BIAS) <
                     static_cast<std::ptrdiff_t>(
-                        runtime::EvmStackAllocatorMeta::size));
+                        runtime::EvmStackAllocatorMeta::stack_limit));
                 MONAD_VM_CHARGE(PUSH2);
                 // PUSH2 adds one value, restoring the original stack height.
                 MONAD_VM_CHECK_AT(JUMPI, 0);
@@ -1627,8 +1633,8 @@ namespace monad::vm::interpreter
             // words compared by DMA (zisk_equal32): one step where gcc's
             // compare is three a word, and half of EQ's run all four.
             bool const monad_vm_taken = zisk_equal32(
-                reinterpret_cast<uint64_t const *>(stack_top),
-                reinterpret_cast<uint64_t const *>(stack_top - 1));
+                reinterpret_cast<uint64_t const *>(&*(stack_top)),
+                reinterpret_cast<uint64_t const *>(&*(stack_top - 1)));
             instr_ptr =
                 fused_branch(ctx, instr_ptr, monad_vm_taken, gas_remaining);
             MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
@@ -1652,8 +1658,8 @@ namespace monad::vm::interpreter
                 gas_remaining,
                 instr_ptr - lag_of<traits>,
                 static_cast<uint64_t>(zisk_equal32(
-                    reinterpret_cast<uint64_t const *>(stack_top),
-                    reinterpret_cast<uint64_t const *>(stack_top - 1))));
+                    reinterpret_cast<uint64_t const *>(&*(stack_top)),
+                    reinterpret_cast<uint64_t const *>(&*(stack_top - 1)))));
         }
 #endif
         auto &&[a, b] = top_two(stack_top);
@@ -2075,8 +2081,10 @@ namespace monad::vm::interpreter
     {
         MONAD_VM_TWIN_ENTRY();
         auto const *const instructions = instr_ptr;
-        alignas(8) static constexpr uint8_t push0_tail[8] = {JUMPI, PUSH0, DUP1, REVERT, JUMPDEST, POP};
-        alignas(8) static constexpr uint8_t push1_tail[8] = {JUMPI, PUSH1, 0, DUP1, REVERT, JUMPDEST, POP};
+        alignas(8) static constexpr uint8_t push0_tail[8] = {
+            JUMPI, PUSH0, DUP1, REVERT, JUMPDEST, POP};
+        alignas(8) static constexpr uint8_t push1_tail[8] = {
+            JUMPI, PUSH1, 0, DUP1, REVERT, JUMPDEST, POP};
         // PUSH0 occupies one byte less than PUSH1 0, shifting the success
         // label.
         size_t success_offset;
@@ -3240,7 +3248,8 @@ namespace monad::vm::interpreter
                     MONAD_VM_AS_CALLED(instr_ptr) MONAD_VM_TBL_ARG);
             }
             interpreter::push(stack_top, uint256_t{monad_vm_imm1});
-            if (MONAD_UNLIKELY(stack_top.next_slot() + 1 >= MONAD_VM_STACK_LIMIT)) {
+            if (MONAD_UNLIKELY(
+                    stack_top.next_slot() + 1 >= MONAD_VM_STACK_LIMIT)) {
                 MONAD_VM_MUST_TAIL return ctx.exit(Error);
             }
             // The second PUSH1 two bytes further behind, modulo the copies.
@@ -3315,7 +3324,7 @@ namespace monad::vm::interpreter
                 if (MONAD_LIKELY(ctx.memory.size >= *monad_vm_k + 32)) {
                     gas_remaining -= static_gas<traits, PUSH1, MLOAD>();
                     runtime::mload_at<base_traits<traits>>(
-                        &ctx, stack_top + 1, monad_vm_k);
+                        &ctx, &stack_top[1], monad_vm_k);
                     MONAD_VM_FUSED_NEXT(3, 1);
                 }
             }
@@ -3326,7 +3335,7 @@ namespace monad::vm::interpreter
                         ctx.memory.size >= *monad_vm_k + 32)) {
                     gas_remaining -= static_gas<traits, PUSH1, MSTORE>();
                     runtime::mstore_at<base_traits<traits>>(
-                        &ctx, monad_vm_k, stack_top);
+                        &ctx, monad_vm_k, &*stack_top);
                     MONAD_VM_FUSED_NEXT(3, -1);
                 }
             }
@@ -3346,7 +3355,8 @@ namespace monad::vm::interpreter
             // the immediate, and the immediate takes its place.
             constexpr size_t monad_vm_n = OP - SWAP1 + 1;
             uint8_t const monad_vm_k = *(instr_ptr + 1);
-            if (MONAD_LIKELY(stack_top + 1 - monad_vm_n >= stack_lower_bound)) {
+            if (MONAD_LIKELY(
+                    stack_holds<monad_vm_n>(stack_top, stack_lower_bound))) {
                 gas_remaining -= static_gas<
                     traits,
                     PUSH1,
@@ -3430,7 +3440,9 @@ namespace monad::vm::interpreter
             // address formed in a6 makes gcc copy the arguments away at the
             // first instruction.
             uint8_t const monad_vm_k = *(instr_ptr + 1);
-            if (MONAD_LIKELY(stack_holds<1>(stack_top, stack_lower_bound) && monad_vm_k < 31)) {
+            if (MONAD_LIKELY(
+                    stack_holds<1>(stack_top, stack_lower_bound) &&
+                    monad_vm_k < 31)) {
                 gas_remaining -= static_gas<traits, PUSH1, SIGNEXTEND>();
                 auto &monad_vm_x = *stack_top;
                 if (MONAD_LIKELY(monad_vm_k < 8)) {
@@ -3709,7 +3721,8 @@ namespace monad::vm::interpreter
             MONAD_VM_MUST_TAIL return ctx.exit(OutOfGas);
         }
         ctx.memory.size = new_memory_size;
-        ctx.memory_access32_end = new_memory_size >= 32 ? new_memory_size - 31 : 0;
+        ctx.memory_access32_end =
+            new_memory_size >= 32 ? new_memory_size - 31 : 0;
         ctx.memory.cost = new_memory_cost;
         uint8_t *const memory_data = ctx.memory.data;
         uint64_t const copy_byte_count = 32 * iteration_count;
@@ -4039,7 +4052,7 @@ namespace monad::vm::interpreter
                 if (MONAD_LIKELY(ctx.memory.size >= *monad_vm_k + 32)) {
                     gas_remaining -= static_gas<traits, PUSH2, MLOAD>();
                     runtime::mload_at<base_traits<traits>>(
-                        &ctx, stack_top + 1, monad_vm_k);
+                        &ctx, &stack_top[1], monad_vm_k);
                     MONAD_VM_FUSED_NEXT(4, 1);
                 }
             }
@@ -4049,7 +4062,7 @@ namespace monad::vm::interpreter
                         ctx.memory.size >= *monad_vm_k + 32)) {
                     gas_remaining -= static_gas<traits, PUSH2, MSTORE>();
                     runtime::mstore_at<base_traits<traits>>(
-                        &ctx, monad_vm_k, stack_top);
+                        &ctx, monad_vm_k, &*stack_top);
                     MONAD_VM_FUSED_NEXT(4, -1);
                 }
             }
@@ -4404,15 +4417,15 @@ namespace monad::vm::interpreter
                                 static_cast<std::uint8_t>(JUMPI)) {
                             MONAD_VM_DISPATCH(0, 0, *instr_ptr);
                         }
-#if defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
+    #if defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
                         MONAD_VM_CHARGE(DUP1);
                         MONAD_VM_CHARGE(PUSH4);
                         MONAD_VM_CHARGE(EQ);
                         MONAD_VM_CHARGE(PUSH2);
                         MONAD_VM_CHARGE(JUMPI);
-#else
+    #else
                         gas_remaining -= monad_vm_req.gas;
-#endif
+    #endif
                     }
                 }
                 else {
@@ -4718,22 +4731,22 @@ namespace monad::vm::interpreter
     {
         if constexpr (OP == DUP2) {
             // DUP2 takes the two words SWAP1 tested: its gas, which it does
-            // not test (gas_tested), and the room for its push are left.
-            static_assert(!gas_tested(
+            // not test (should_check_gas), and the room for its push are left.
+            static_assert(!should_check_gas(
                 DUP2, compiler::opcode_table<traits>[DUP2].dynamic_gas));
             gas_remaining -= static_gas<traits, DUP2>();
             if (MONAD_UNLIKELY(stack_top.next_slot() >= MONAD_VM_STACK_LIMIT)) {
                 MONAD_VM_MUST_TAIL return exit_stack_overflow(ctx);
             }
-            std::memmove(stack_top, stack_top - 1, 2 * sizeof(uint256_t));
+            std::memmove(&stack_top[0], &stack_top[-1], 2 * sizeof(uint256_t));
             stack_top[-1] = stack_top[1];
-            ++stack_top;
+            stack_top += 1;
         }
         else {
             static_assert(OP == SWAP2);
             MONAD_VM_CHECK(SWAP2);
             stack_top[1] = stack_top[-2];
-            std::memmove(stack_top - 2, stack_top - 1, 3 * sizeof(uint256_t));
+            std::memmove(&stack_top[-2], &stack_top[-1], 3 * sizeof(uint256_t));
         }
         MONAD_VM_DISPATCH(1, 0, *instr_ptr);
     }
@@ -4809,7 +4822,7 @@ namespace monad::vm::interpreter
             auto const offset = runtime::Memory::Offset::unsafe_from(
                 static_cast<runtime::Memory::Offset::rep>(monad_vm_x[0]));
             runtime::mstore_at<base_traits<traits>>(
-                &ctx, offset, stack_top - 1);
+                &ctx, offset, &stack_top[-1]);
             *src = *stack_top;
             MONAD_VM_DISPATCH(1, -2, *instr_ptr);
         }
@@ -4939,8 +4952,8 @@ namespace monad::vm::interpreter
         runtime::Context &ctx = held_in_a0(entry_ctx);
         if constexpr (OP == MSTORE) {
             // DUPn tested two words or more, MSTORE's two counting the copy:
-            // its gas is left, which it does not test (gas_tested).
-            static_assert(!gas_tested(
+            // its gas is left, which it does not test (should_check_gas).
+            static_assert(!should_check_gas(
                 MSTORE, compiler::opcode_table<traits>[MSTORE].dynamic_gas));
             gas_remaining -= static_gas<traits, MSTORE>();
             // Tested as mstore tests its offset.
@@ -4961,13 +4974,13 @@ namespace monad::vm::interpreter
             }
             auto const offset = runtime::Memory::Offset::unsafe_from(
                 static_cast<runtime::Memory::Offset::rep>(monad_vm_x[0]));
-            runtime::mstore_at<base_traits<traits>>(&ctx, offset, stack_top);
+            runtime::mstore_at<base_traits<traits>>(&ctx, offset, &*stack_top);
             MONAD_VM_DISPATCH(1, -1, *instr_ptr);
         }
         else if constexpr (OP == MLOAD) {
             // MLOAD's word is DUPn's copy, whose room DUPn tested: its gas is
-            // left, which it does not test (gas_tested).
-            static_assert(!gas_tested(
+            // left, which it does not test (should_check_gas).
+            static_assert(!should_check_gas(
                 MLOAD, compiler::opcode_table<traits>[MLOAD].dynamic_gas));
             gas_remaining -= static_gas<traits, MLOAD>();
             // Tested as mload tests its offset.
@@ -4988,7 +5001,7 @@ namespace monad::vm::interpreter
                     gas_remaining,
                     MONAD_VM_AS_CALLED(instr_ptr) MONAD_VM_TBL_ARG);
             }
-            runtime::mload_at<base_traits<traits>>(&ctx, stack_top + 1, offset);
+            runtime::mload_at<base_traits<traits>>(&ctx, &stack_top[1], offset);
             MONAD_VM_DISPATCH(1, 1, *instr_ptr);
         }
         else if constexpr (OP == SWAP1) {
@@ -5001,7 +5014,7 @@ namespace monad::vm::interpreter
         else if constexpr (OP == CALLDATALOAD) {
             // The offset read where it lies, the word loaded to the top.
             gas_remaining -= static_gas<traits, CALLDATALOAD>();
-            runtime::calldataload(&ctx, stack_top + 1, src);
+            runtime::calldataload(&ctx, &stack_top[1], src);
             MONAD_VM_DISPATCH(1, 1, *instr_ptr);
         }
         else if constexpr (OP == ISZERO || OP == EQ) {
@@ -5012,7 +5025,7 @@ namespace monad::vm::interpreter
                     ? !*src
                     : zisk_equal32(
                           reinterpret_cast<uint64_t const *>(src),
-                          reinterpret_cast<uint64_t const *>(stack_top));
+                          reinterpret_cast<uint64_t const *>(&*(stack_top)));
             gas_remaining -=
                 static_gas<traits, static_cast<compiler::EvmOpCode>(OP)>();
             MONAD_VM_LEAD_DISPATCH_BIT(

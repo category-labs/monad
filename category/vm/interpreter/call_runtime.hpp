@@ -20,8 +20,8 @@
 #include <category/vm/runtime/types.hpp>
 
 #include <cstddef>
-#include <utility>
 #include <type_traits>
+#include <utility>
 
 namespace monad::vm::interpreter
 {
@@ -94,7 +94,8 @@ namespace monad::vm::interpreter
         }();
 
         // Context-free runtime functions do not change gas. Skip the sync:
-        // result stores may alias the gas field, preventing GCC from removing it.
+        // result stores may alias the gas field, preventing GCC from removing
+        // it.
         if constexpr (use_context) {
             ctx.gas_remaining = gas_remaining;
         }

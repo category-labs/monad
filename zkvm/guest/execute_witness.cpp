@@ -79,9 +79,9 @@ extern "C" void monad_zkvm_execute_witness(void)
     }
 #endif
 #ifdef MONAD_ZKVM_SELFTEST
-    // Self-test build: no witness is read. The first four output bytes are a bitmask -- bit N set
-    // means case N failed, all zero means every case passed. Padded to 32 so the harness that
-    // reads a root can read this too.
+    // Self-test build: no witness is read. The first four output bytes are a
+    // bitmask -- bit N set means case N failed, all zero means every case
+    // passed. Padded to 32 so the harness that reads a root can read this too.
     {
         std::uint32_t const failures = monad_zkvm_revert_semantics_test();
         unsigned char out[32]{};
@@ -141,11 +141,11 @@ extern "C" void monad_zkvm_execute_witness(void)
             monad::bytes32_t code_hash;
             monad_zkvm_keccak256_fast_nomemo(
                 code->code(), bytes.value().size(), code_hash.bytes);
-#ifdef MONAD_ZKVM_VARCODE_CACHE
+    #ifdef MONAD_ZKVM_VARCODE_CACHE
             vm.insert_varcode(code_hash, std::move(code));
-#else
+    #else
             code_index.emplace(code_hash, code);
-#endif
+    #endif
 #else
             code_index.emplace(
                 monad::to_bytes(

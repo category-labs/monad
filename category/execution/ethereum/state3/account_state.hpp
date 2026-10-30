@@ -360,8 +360,16 @@ public:
     {
         return v_.size();
     }
-    auto begin() const { return v_.begin(); }
-    auto end() const { return v_.end(); }
+
+    auto begin() const
+    {
+        return v_.begin();
+    }
+
+    auto end() const
+    {
+        return v_.end();
+    }
 };
 
 class OriginalAccountState final : public AccountState

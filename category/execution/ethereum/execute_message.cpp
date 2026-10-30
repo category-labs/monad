@@ -104,7 +104,11 @@ namespace
         state.subtract_from_balance(from, value);
         state.add_to_balance(to, value);
         emit_native_transfer_logs<traits>(
-            state, host.get_call_tracer(), from, to, value,
+            state,
+            host.get_call_tracer(),
+            from,
+            to,
+            value,
             host.log_native_transfers_);
     }
 #endif
@@ -431,9 +435,8 @@ MONAD_EXECUTE_CALL_MESSAGE_INLINE evmc::Result execute_call_message(
         }
         // Skip precompile lookup for ordinary addresses.
         if (may_be_precompile(msg.code_address)) {
-            if (auto maybe_result =
-                    check_call_precompile<traits>(
-                        state, call_tracer, msg, host->log_native_transfers_);
+            if (auto maybe_result = check_call_precompile<traits>(
+                    state, call_tracer, msg, host->log_native_transfers_);
                 maybe_result.has_value()) {
                 return std::move(maybe_result.value());
             }
@@ -443,8 +446,7 @@ MONAD_EXECUTE_CALL_MESSAGE_INLINE evmc::Result execute_call_message(
         // for its row: the block's entry for the account keeps the code,
         // the guest's VM does not keep the hash, and the VM takes the
         // intercode from the code before it runs anything.
-        auto const [hash, code] =
-            state.code_ref_of(msg.code_address);
+        auto const [hash, code] = state.code_ref_of(msg.code_address);
 #else
         auto const hash = state.get_code_hash(msg.code_address);
 #endif

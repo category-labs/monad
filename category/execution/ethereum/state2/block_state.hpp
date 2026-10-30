@@ -73,8 +73,7 @@ class BlockState final
     bool pending_{false};
 
     // Adds the pending fees to the beneficiary's entry and clears them.
-    [[gnu::noinline, gnu::cold]] void
-    apply_beneficiary_credit(StateDelta &);
+    [[gnu::noinline, gnu::cold]] void apply_beneficiary_credit(StateDelta &);
 #endif
 
 public:
@@ -101,8 +100,7 @@ public:
     // The reference points into block storage, or to a static zero value;
     // use it before that slot is modified or erased.
     bytes32_t const &read_storage(
-        StateDelta &, evmc_address const &, Incarnation,
-        bytes32_t const &key);
+        StateDelta &, evmc_address const &, Incarnation, bytes32_t const &key);
 
     // The beneficiary whose fees defer_beneficiary_credit holds back. Set
     // once, by the sequential block loop, before its first transaction.

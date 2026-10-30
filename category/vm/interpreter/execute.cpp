@@ -200,10 +200,10 @@ namespace monad::vm::interpreter
     // PUSH2's jumps to its pair (bool_push2), which takes a JUMPI after the
     // push on a7, and OR's to bool_or.
     #define MONAD_VM_BOOL_STORE                                                \
-        "\tsd a7, 0(a3)\n"                                                     \
-        "\tsd zero, 8(a3)\n"                                                   \
-        "\tsd zero, 16(a3)\n"                                                  \
-        "\tsd zero, 24(a3)\n"
+        "\tsd a7, -32(a3)\n"                                                   \
+        "\tsd zero, -24(a3)\n"                                                 \
+        "\tsd zero, -16(a3)\n"                                                 \
+        "\tsd zero, -8(a3)\n"
     #define MONAD_VM_BOOL_PLAIN_0(NAME, OP)                                    \
         MONAD_VM_BOOL_STORE MONAD_VM_STEP6 "\tj monad_vm_slot_" #NAME "_" #OP  \
                                            "\n\tnop\n"
@@ -293,9 +293,9 @@ namespace monad::vm::interpreter
         extern "C" [[gnu::section(".monad_vm_bool." #NAME "." #OP)]] void      \
             monad_vm_slot_##NAME##_##OP##_bool##SUFFIX(                        \
                 runtime::Context &ctx,                                         \
-                MONAD_VM_DISPATCH_STATE_PARAM,                                       \
-                uint256_t const *const stack_lower_bound,                           \
-                StackTop const stack_top,                                    \
+                MONAD_VM_DISPATCH_STATE_PARAM,                                 \
+                uint256_t const *const stack_lower_bound,                      \
+                StackTop const stack_top,                                      \
                 int64_t const gas_remaining,                                   \
                 uint8_t const *const instr_ptr,                                \
                 void const *const itbl,                                        \
@@ -304,8 +304,8 @@ namespace monad::vm::interpreter
             __attribute__((musttail)) return MONAD_VM_BOOL_FN_##OP<            \
                 MONAD_VM_LAGT(REV, LAG)>(                                      \
                 ctx,                                                           \
-                MONAD_VM_DISPATCH_STATE_ARG,                                         \
-                stack_lower_bound,                                                  \
+                MONAD_VM_DISPATCH_STATE_ARG,                                   \
+                stack_lower_bound,                                             \
                 stack_top,                                                     \
                 gas_remaining,                                                 \
                 instr_ptr + (LAG),                                             \
@@ -336,19 +336,19 @@ namespace monad::vm::interpreter
     // AND's, MSTORE's and SWAP1's to SWAP4's jump to their pair, a7 as it
     // came.
     #define MONAD_VM_SWAPN_SWAP                                                \
-        "\taddi t1, a0, 360\n"                                                 \
-        "\tcsrs 0x813, a3\n"                                                   \
+        "\taddi t4, a3, -32\n\taddi t1, a0, 360\n"                             \
+        "\tcsrs 0x813, t4\n"                                                   \
         "\taddi zero, t1, 32\n"                                                \
         "\tcsrs 0x813, a7\n"                                                   \
-        "\taddi zero, a3, 32\n"                                                \
+        "\taddi zero, t4, 32\n"                                                \
         "\tcsrs 0x813, t1\n"                                                   \
         "\taddi zero, a7, 32\n"
     #define MONAD_VM_SWAPN_PLAIN_0(NAME, OP)                                   \
         MONAD_VM_SWAPN_SWAP MONAD_VM_STEP6 "\tj monad_vm_slot_" #NAME "_" #OP  \
-                                           "\n\tnop\n"
+                                           "\n"
     #define MONAD_VM_SWAPN_PLAIN_R(NAME, OP, SUFFIX)                           \
         MONAD_VM_SWAPN_SWAP "\tj monad_vm_slot_" #NAME "_" #OP SUFFIX          \
-                            "\n\tnop\n\tnop\n"
+                            "\n\tnop\n"
     #define MONAD_VM_SWAPN_PLAIN_1(NAME, OP)                                   \
         MONAD_VM_SWAPN_PLAIN_R(NAME, OP, "_1")
     #define MONAD_VM_SWAPN_PLAIN_2(NAME, OP)                                   \
@@ -363,9 +363,8 @@ namespace monad::vm::interpreter
         MONAD_VM_LEAD_CAT(MONAD_VM_SWAPN_PLAIN_, R)(NAME, OP)
     // SWAPn POP: the top's word to a7, POP's gas and dispatch, as SWAP1 POP.
     #define MONAD_VM_SWAPN_POP_AT(STEP, NEXT, JUMP, PAD)                       \
-        STEP "\tcsrs 0x813, a3\n"                                              \
+        STEP "\taddi a3, a3, -32\n\tcsrs 0x813, a3\n"                          \
              "\taddi zero, a7, 32\n"                                           \
-             "\taddi a3, a3, -32\n"                                            \
              "\taddi a4, a4, -2\n"                                             \
              "\tlbu a7, " NEXT "(a5)\n"                                        \
              "\tslli a7, a7, 12\n"                                             \
@@ -422,9 +421,9 @@ namespace monad::vm::interpreter
         extern "C" [[gnu::section(".monad_vm_swapn." #NAME "." #OP)]] void     \
             monad_vm_slot_##NAME##_##OP##_swapn##SUFFIX(                       \
                 runtime::Context &ctx,                                         \
-                MONAD_VM_DISPATCH_STATE_PARAM,                                       \
-                uint256_t const *const stack_lower_bound,                           \
-                StackTop const stack_top,                                    \
+                MONAD_VM_DISPATCH_STATE_PARAM,                                 \
+                uint256_t const *const stack_lower_bound,                      \
+                StackTop const stack_top,                                      \
                 int64_t const gas_remaining,                                   \
                 uint8_t const *const instr_ptr,                                \
                 void const *const itbl,                                        \
@@ -434,8 +433,8 @@ namespace monad::vm::interpreter
                 0x##OP,                                                        \
                 MONAD_VM_LAGT(REV, LAG)>(                                      \
                 ctx,                                                           \
-                MONAD_VM_DISPATCH_STATE_ARG,                                         \
-                stack_lower_bound,                                                  \
+                MONAD_VM_DISPATCH_STATE_ARG,                                   \
+                stack_lower_bound,                                             \
                 stack_top,                                                     \
                 gas_remaining,                                                 \
                 instr_ptr + (LAG),                                             \
@@ -465,9 +464,9 @@ namespace monad::vm::interpreter
     // pair, a7 as it came; PUSH1's and PUSH2's run the copy's handler after
     // the copy instead of jumping to it.
     #define MONAD_VM_DUP_COPY                                                  \
-        "\taddi a3, a3, 32\n"                                                  \
         "\tcsrs 0x813, a7\n"                                                   \
-        "\taddi zero, a3, 32\n"
+        "\taddi zero, a3, 32\n"                                                \
+        "\taddi a3, a3, 32\n"
     #define MONAD_VM_DUP_PLAIN_0(NAME, OP)                                     \
         MONAD_VM_DUP_COPY MONAD_VM_STEP6 "\tj monad_vm_slot_" #NAME "_" #OP    \
                                          "\n" MONAD_VM_NOP5
@@ -573,9 +572,9 @@ namespace monad::vm::interpreter
         extern "C" [[gnu::section(".monad_vm_dup." #NAME "." #OP)]] void       \
             monad_vm_slot_##NAME##_##OP##_dup##SUFFIX(                         \
                 runtime::Context &ctx,                                         \
-                MONAD_VM_DISPATCH_STATE_PARAM,                                       \
-                uint256_t const *const stack_lower_bound,                           \
-                StackTop const stack_top,                                    \
+                MONAD_VM_DISPATCH_STATE_PARAM,                                 \
+                uint256_t const *const stack_lower_bound,                      \
+                StackTop const stack_top,                                      \
                 int64_t const gas_remaining,                                   \
                 uint8_t const *const instr_ptr,                                \
                 void const *const itbl,                                        \
@@ -588,8 +587,8 @@ namespace monad::vm::interpreter
                     quiet_traits<MONAD_VM_LAGT(REV, LAG)>,                     \
                     MONAD_VM_LAGT(REV, LAG)>>(                                 \
                 ctx,                                                           \
-                MONAD_VM_DISPATCH_STATE_ARG,                                         \
-                stack_lower_bound,                                                  \
+                MONAD_VM_DISPATCH_STATE_ARG,                                   \
+                stack_lower_bound,                                             \
                 stack_top,                                                     \
                 gas_remaining,                                                 \
                 instr_ptr + (LAG),                                             \
@@ -622,11 +621,11 @@ namespace monad::vm::interpreter
     // POP's makes SWAP1 POP whole, the top's word moved down once; JUMP's,
     // DUP2's and SWAP2's jump to their pairs.
     #define MONAD_VM_SWAP1_SWAP                                                \
-        "\taddi t4, a3, -32\n"                                                 \
-        "\taddi t1, a3, 32\n"                                                  \
+        "\taddi t4, a3, -64\n"                                                 \
+        "\taddi t1, a3, -32\n"                                                 \
         "\tcsrs 0x813, t4\n"                                                   \
-        "\taddi zero, t1, 32\n"                                                \
-        "\tcsrs 0x813, a3\n"                                                   \
+        "\taddi zero, a3, 32\n"                                                \
+        "\tcsrs 0x813, t1\n"                                                   \
         "\taddi zero, t4, 64\n"
     #define MONAD_VM_SWAP1_PLAIN_0(NAME, OP)                                   \
         MONAD_VM_SWAP1_SWAP MONAD_VM_STEP6 "\tj monad_vm_slot_" #NAME "_" #OP  \
@@ -650,10 +649,9 @@ namespace monad::vm::interpreter
     // to the copy one byte further behind (NEXT, the follower's offset from
     // a5, and JUMP, the copy's offset from the base).
     #define MONAD_VM_SWAP1_POP_AT(STEP, NEXT, JUMP, PAD)                       \
-        STEP "\taddi t4, a3, -32\n"                                            \
-             "\tcsrs 0x813, a3\n"                                              \
+        STEP "\taddi t4, a3, -64\n"                                            \
+             "\taddi a3, a3, -32\n\tcsrs 0x813, a3\n"                          \
              "\taddi zero, t4, 32\n"                                           \
-             "\taddi a3, a3, -32\n"                                            \
              "\taddi a4, a4, -2\n"                                             \
              "\tlbu a7, " NEXT "(a5)\n"                                        \
              "\tslli a7, a7, 12\n"                                             \
@@ -711,8 +709,8 @@ namespace monad::vm::interpreter
         {                                                                      \
             __attribute__((musttail)) return swap1_jump<EvmTraits<REV>>(       \
                 ctx,                                                           \
-                MONAD_VM_DISPATCH_STATE_ARG,                                         \
-                stack_lower_bound,                                                  \
+                MONAD_VM_DISPATCH_STATE_ARG,                                   \
+                stack_lower_bound,                                             \
                 stack_top,                                                     \
                 gas_remaining,                                                 \
                 instr_ptr,                                                     \
@@ -728,8 +726,8 @@ namespace monad::vm::interpreter
                 0x##OP,                                                        \
                 MONAD_VM_LAGT(REV, LAG)>(                                      \
                 ctx,                                                           \
-                MONAD_VM_DISPATCH_STATE_ARG,                                         \
-                stack_lower_bound,                                                  \
+                MONAD_VM_DISPATCH_STATE_ARG,                                   \
+                stack_lower_bound,                                             \
                 stack_top,                                                     \
                 gas_remaining,                                                 \
                 instr_ptr + (LAG),                                             \
@@ -756,8 +754,8 @@ namespace monad::vm::interpreter
         "\tpackh t3, t4, t3\n"
     // The push of t3 and PUSH1's gas.
     #define MONAD_VM_PUSH_T3                                                   \
-        "\tsd t3, 0(a3)\n"                                                    \
-        "\tsd zero, 8(a3)\n"                                                  \
+        "\tsd t3, 0(a3)\n"                                                     \
+        "\tsd zero, 8(a3)\n"                                                   \
         "\tsd zero, 16(a3)\n"                                                  \
         "\tsd zero, 24(a3)\n"                                                  \
         "\taddi a3, a3, 32\n"                                                  \
@@ -802,9 +800,9 @@ namespace monad::vm::interpreter
         extern "C"                                                             \
             [[gnu::section(SECTION)]] void monad_vm_slot_##NAME##SUFFIX(       \
                 runtime::Context &ctx,                                         \
-                MONAD_VM_DISPATCH_STATE_PARAM,                                       \
-                uint256_t const *const stack_lower_bound,                           \
-                StackTop const stack_top,                                    \
+                MONAD_VM_DISPATCH_STATE_PARAM,                                 \
+                uint256_t const *const stack_lower_bound,                      \
+                StackTop const stack_top,                                      \
                 int64_t const gas_remaining,                                   \
                 uint8_t const *const instr_ptr,                                \
                 void const *const itbl)
@@ -832,8 +830,8 @@ namespace monad::vm::interpreter
                     MONAD_VM_LAGT(REV, LAG)>                                   \
                     __VA_OPT__(, ) __VA_ARGS__>(                               \
                 ctx,                                                           \
-                MONAD_VM_DISPATCH_STATE_ARG,                                         \
-                stack_lower_bound,                                                  \
+                MONAD_VM_DISPATCH_STATE_ARG,                                   \
+                stack_lower_bound,                                             \
                 stack_top,                                                     \
                 gas_remaining,                                                 \
                 instr_ptr + (LAG),                                             \
@@ -929,9 +927,9 @@ namespace monad::vm::interpreter
         extern "C" [[gnu::section(".monad_vm_slot." #NAME "." #OP)]] void      \
             monad_vm_slot_##NAME##_##OP(                                       \
                 runtime::Context &,                                            \
-                MONAD_VM_ANALYSIS_TYPE,                                        \
+                MONAD_VM_DISPATCH_STATE_TYPE,                                  \
                 uint256_t const *,                                             \
-                StackTop,                                                   \
+                StackTop,                                                      \
                 int64_t,                                                       \
                 uint8_t const *,                                               \
                 void const *);                                                 \
@@ -1016,9 +1014,9 @@ namespace monad::vm::interpreter
         extern "C" [[gnu::section(SECTION "." #NAME "." #OP)]] void            \
             monad_vm_slot_##NAME##_##OP##SUFFIX(                               \
                 runtime::Context &ctx,                                         \
-                MONAD_VM_DISPATCH_STATE_PARAM,                                       \
-                uint256_t const *const stack_lower_bound,                           \
-                StackTop const stack_top,                                    \
+                MONAD_VM_DISPATCH_STATE_PARAM,                                 \
+                uint256_t const *const stack_lower_bound,                      \
+                StackTop const stack_top,                                      \
                 int64_t const gas_remaining,                                   \
                 uint8_t const *const instr_ptr,                                \
                 void const *const itbl)                                        \
@@ -1027,8 +1025,8 @@ namespace monad::vm::interpreter
                 Lagged<EvmTraits<REV>, LAG, !keeps_frame(0x##OP)>>[0x##OP];    \
             __attribute__((musttail)) return handler(                          \
                 ctx,                                                           \
-                MONAD_VM_DISPATCH_STATE_ARG,                                         \
-                stack_lower_bound,                                                  \
+                MONAD_VM_DISPATCH_STATE_ARG,                                   \
+                stack_lower_bound,                                             \
                 stack_top,                                                     \
                 gas_remaining,                                                 \
                 instr_ptr + LAG,                                               \
@@ -1106,6 +1104,24 @@ namespace monad::vm::interpreter
     #define MONAD_VM_RELAY_OF_0a ~, RELAY
     #define MONAD_VM_RELAY_OF_20 ~, RELAY
     #define MONAD_VM_RELAY_OF_55 ~, RELAY
+    #define MONAD_VM_RELAY_OF_31 ~, RELAY
+    #define MONAD_VM_RELAY_OF_37 ~, RELAY
+    #define MONAD_VM_RELAY_OF_39 ~, RELAY
+    #define MONAD_VM_RELAY_OF_3b ~, RELAY
+    #define MONAD_VM_RELAY_OF_3c ~, RELAY
+    #define MONAD_VM_RELAY_OF_3e ~, RELAY
+    #define MONAD_VM_RELAY_OF_47 ~, RELAY
+    #define MONAD_VM_RELAY_OF_54 ~, RELAY
+    #define MONAD_VM_RELAY_OF_a0 ~, RELAY
+    #define MONAD_VM_RELAY_OF_a1 ~, RELAY
+    #define MONAD_VM_RELAY_OF_a2 ~, RELAY
+    #define MONAD_VM_RELAY_OF_a3 ~, RELAY
+    #define MONAD_VM_RELAY_OF_a4 ~, RELAY
+    #define MONAD_VM_RELAY_OF_f0 ~, RELAY
+    #define MONAD_VM_RELAY_OF_f1 ~, RELAY
+    #define MONAD_VM_RELAY_OF_f2 ~, RELAY
+    #define MONAD_VM_RELAY_OF_5c ~, RELAY
+    #define MONAD_VM_RELAY_OF_5d ~, RELAY
     #define MONAD_VM_SLOT_PICK(KIND) MONAD_VM_LEAD_CAT(MONAD_VM_SLOT_, KIND)
 
     #define MONAD_VM_SLOT(REV, NAME, OP)                                       \
@@ -1475,7 +1491,8 @@ namespace monad::vm::interpreter
     {
         // Cache the one-past stack limit for comparisons with
         // StackTop::next_slot().
-        ctx.stack_limit = stack_ptr + runtime::EvmStackAllocatorMeta::size;
+        ctx.stack_limit =
+            stack_ptr + runtime::EvmStackAllocatorMeta::stack_limit;
 
 #if defined(MONAD_ZKVM_ZISK)
         // The carry-ins are fixed; ADD and SUB set the pointers on every call.

@@ -65,15 +65,15 @@ MONAD_NAMESPACE_BEGIN
 std::optional<Account> PartialTrieDb::read_account(evmc_address const &addr)
 {
     auto const key = keccak256(addr.bytes);
-    // This descent already reaches the account's leaf, and the leaf carries its storage root -- so
-    // prime the one-entry cache with it.
+    // This descent already reaches the account's leaf, and the leaf carries its
+    // storage root -- so prime the one-entry cache with it.
     return match(
         trie_.find_original(trie_.root, mpt::NibblesView{key}),
         Cases{
             [&](mpt::NullView) -> std::optional<Account> {
-                // An absent account is worth caching too, and NULL_ID is what read_storage would
-                // have concluded: otherwise every storage read against it re-descends to find the
-                // same nothing.
+                // An absent account is worth caching too, and NULL_ID is what
+                // read_storage would have concluded: otherwise every storage
+                // read against it re-descends to find the same nothing.
                 static_cast<evmc_address &>(sroot_addr_) = addr;
                 sroot_id_ = mpt::NULL_ID;
                 sroot_valid_ = true;

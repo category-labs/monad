@@ -155,9 +155,9 @@ namespace monad::vm::runtime
                     .sender = msg->sender,
                     .value = static_cast<bytes32_t>(msg->value),
 #if defined(MONAD_ZKVM_ZISK)
-                    // create2_salt is left as the clear sets it: its one
-                    // reader copied it into a call's message, which no
-                    // longer takes it, as only a CREATE2 message's is read.
+        // create2_salt is left as the clear sets it: its one
+        // reader copied it into a call's message, which no
+        // longer takes it, as only a CREATE2 message's is read.
 #else
                     .create2_salt = static_cast<bytes32_t>(msg->create2_salt),
 #endif

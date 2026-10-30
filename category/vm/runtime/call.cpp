@@ -240,7 +240,7 @@ namespace monad::vm::runtime
         message.input_size = *args_size;
         // Sliced into the message's words as they lie: converted through
         // evmc::bytes32, it was copied twice more on the way.
-        message.value = value;
+        message.value = to_evmc(value);
         message.code_address = code_address;
         message.memory_handle = ctx->memory.data_handle;
         message.memory = ctx->memory.data + ctx->memory.size;

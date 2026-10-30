@@ -644,8 +644,9 @@ class OffsetTrie
         uint64_t hash_valid;
 #endif
 #if defined(MONAD_ZKVM_ZISK)
-        // Retained RLP; cleared when the node cannot be patched in place. Dirty bits never clear: each patch
-        // revisits those children (branch bit k, extension bit 0).
+        // Retained RLP; cleared when the node cannot be patched in place. Dirty
+        // bits never clear: each patch revisits those children (branch bit k,
+        // extension bit 0).
         unsigned char *priming_rlp;
         uint64_t priming_rlp_len;
         uint64_t dirty_children;

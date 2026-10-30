@@ -41,9 +41,9 @@ monad_zkvm_keccak256_32(void const *in, uint8_t out[KECCAK256_SIZE]);
 extern "C" void
 monad_zkvm_keccak256_64(void const *in, uint8_t out[KECCAK256_SIZE]);
 
-#if defined(MONAD_ZKVM_ZISK) &&                                                \
-    (!defined(MONAD_ZKVM_KECCAKF_MEMO) || MONAD_ZKVM_KECCAKF_MEMO)
-    #define MONAD_ZKVM_KECCAKF_RESUME 1
+    #if defined(MONAD_ZKVM_ZISK) &&                                            \
+        (!defined(MONAD_ZKVM_KECCAKF_MEMO) || MONAD_ZKVM_KECCAKF_MEMO)
+        #define MONAD_ZKVM_KECCAKF_RESUME 1
 
 constexpr size_t KECCAK256_RATE = 136;
 
@@ -61,7 +61,7 @@ extern "C" void monad_zkvm_keccak256_prime(
 extern "C" void monad_zkvm_keccak256_resume(
     void const *in, size_t len, uint8_t out[KECCAK256_SIZE], uint64_t mark,
     size_t blocks);
-#endif
+    #endif
 
 [[gnu::always_inline]] static inline void monad_keccak256(
     void const *const in, size_t const len, uint8_t out[KECCAK256_SIZE])

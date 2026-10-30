@@ -1007,8 +1007,8 @@ monad_storage_status State::set_storage(
 }
 
 inline monad_storage_status State::set_storage_of(
-    AccountState &account_state, evmc_address const &address, bytes32_t const &key,
-    bytes32_t const &value)
+    AccountState &account_state, evmc_address const &address,
+    bytes32_t const &key, bytes32_t const &value)
 {
     // Reuse one lookup for journaling, status computation and the write.
     // The pre-state lookup uses a separate container, preserving prev.
@@ -1023,8 +1023,8 @@ inline monad_storage_status State::set_storage_of(
 }
 
 inline monad_storage_status State::set_storage_found(
-    AccountState &account_state, evmc_address const &address, bytes32_t const &key,
-    bytes32_t const &value, bytes32_t const *const prev,
+    AccountState &account_state, evmc_address const &address,
+    bytes32_t const &key, bytes32_t const &value, bytes32_t const *const prev,
     bytes32_t const *const original)
 {
     MONAD_ASSERT(account_state.account_);
@@ -1168,8 +1168,8 @@ EXPLICIT_TRAITS_MEMBER(State::access_storage);
 // Warm and read the slot using the same account lookup.
 template <Traits traits>
 monad_access_status State::sload_full(
-    evmc_address const &address, bytes32_t const &key, bool const can_pay_cold_access,
-    uint256_t &out)
+    evmc_address const &address, bytes32_t const &key,
+    bool const can_pay_cold_access, uint256_t &out)
 {
     auto &account_state = current_account_state(address);
     monad_access_status const status =
@@ -1181,8 +1181,8 @@ monad_access_status State::sload_full(
 }
 
 monad_access_status State::sload_cold(
-    evmc_address const &address, bytes32_t const &key, bool const can_pay_cold_access,
-    uint256_t &out, AccountState &account_state)
+    evmc_address const &address, bytes32_t const &key,
+    bool const can_pay_cold_access, uint256_t &out, AccountState &account_state)
 {
     account_state.add_accessed_storage(key);
     journal_warm_slot(address);
@@ -1196,8 +1196,8 @@ monad_access_status State::sload_cold(
 // whose incarnation is its original row's: current_storage_load would search
 // both again before it read the block's state.
 monad_access_status State::sload_cold_absent(
-    evmc_address const &address, bytes32_t const &key, bool const can_pay_cold_access,
-    uint256_t &out, AccountState &account_state)
+    evmc_address const &address, bytes32_t const &key,
+    bool const can_pay_cold_access, uint256_t &out, AccountState &account_state)
 {
     account_state.add_accessed_storage(key);
     journal_warm_slot(address);
@@ -1231,8 +1231,8 @@ monad_access_status State::sload_read(
 // with its original row, or into sload_full.
 template <Traits traits>
 monad_access_status State::sload_into(
-    evmc_address const &address, bytes32_t const &key, bool const can_pay_cold_access,
-    uint256_t &out)
+    evmc_address const &address, bytes32_t const &key,
+    bool const can_pay_cold_access, uint256_t &out)
 {
     if constexpr (!traits::mip_8_active()) {
         AccountState *const cur = memoised_current(address);
@@ -1272,7 +1272,8 @@ monad_access_status State::sload_into(
                     }
                 }
                 if (!cur->is_accessed_storage(key)) {
-                    return sload_cold(address, key, can_pay_cold_access, out, *cur);
+                    return sload_cold(
+                        address, key, can_pay_cold_access, out, *cur);
                 }
                 // current_storage_into, up to a read of the block's state.
                 if (auto const *const v = cur->storage_.find(key); v) {
@@ -1351,7 +1352,8 @@ monad_page_storage_status State::update_page(
 }
 
 template <Traits traits>
-bool State::selfdestruct_to_self_burns([[maybe_unused]] evmc_address const &address)
+bool State::selfdestruct_to_self_burns(
+    [[maybe_unused]] evmc_address const &address)
 {
     if constexpr (!traits::eip_6780_active()) {
         return true;
@@ -1365,8 +1367,8 @@ bool State::selfdestruct_to_self_burns([[maybe_unused]] evmc_address const &addr
 }
 
 template <Traits traits>
-std::pair<bool, uint256_t>
-State::selfdestruct(evmc_address const &address, evmc_address const &beneficiary)
+std::pair<bool, uint256_t> State::selfdestruct(
+    evmc_address const &address, evmc_address const &beneficiary)
 {
     auto &account_state = current_account_state(address);
     uint256_t const balance = get_balance(address);
@@ -1395,7 +1397,8 @@ EXPLICIT_TRAITS_MEMBER(State::selfdestruct);
 // Overwrite every slot this transaction touched with zero: a slot only read has
 // an entry in the original map, a slot written has one in both. Zero rather
 // than remove, since a missing entry reads through to the pre-destruct value.
-void State::zero_storage(evmc_address const &address, AccountState &account_state)
+void State::zero_storage(
+    evmc_address const &address, AccountState &account_state)
 {
     auto const orig = original_.find(address);
     MONAD_ASSERT(orig != original_.end());
@@ -1576,7 +1579,7 @@ State::code_ref_in(AccountState const &row, OriginalAccountState *const orig)
     }
     bytes32_t const &hash = account.value().code_hash;
     #if defined(MONAD_ZKVM_VARCODE_CACHE)
-    StateDelta &entry = orig->delta_->second;
+    StateDelta &entry = *orig->delta_;
     if (entry.code != nullptr && entry.code_hash == hash) {
         return {hash, *entry.code};
     }

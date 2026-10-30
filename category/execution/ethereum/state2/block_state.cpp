@@ -206,7 +206,8 @@ bytes32_t const &BlockState::read_storage(
         bytes32_t const &key;
         bool in_db;
 
-        // Initialize directly from the DB result instead of zeroing then assigning.
+        // Initialize directly from the DB result instead of zeroing then
+        // assigning.
         operator StorageDelta() const
         {
             if (!in_db) {
@@ -275,14 +276,16 @@ bytes32_t BlockState::read_storage(
         bytes32_t result{};
         if (read_storage) {
     #if defined(MONAD_ZKVM_ZISK)
-            result = guest_db(db_).read_storage(owned_address, incarnation, key);
+            result =
+                guest_db(db_).read_storage(owned_address, incarnation, key);
     #else
             result = db_.read_storage(owned_address, incarnation, key);
     #endif
         }
         StateDeltas::accessor it{};
         MONAD_ASSERT(state_->find(it, owned_address));
-        // The host must recheck the account after releasing the lock for the read.
+        // The host must recheck the account after releasing the lock for the
+        // read.
         auto const &account = it->second.account.second;
         if (!account || incarnation != account->incarnation) {
             return result;
@@ -316,11 +319,11 @@ vm::SharedVarcode BlockState::read_code(bytes32_t const &code_hash)
     }
     // database
     {
-    #if defined(MONAD_ZKVM_ZISK)
+#if defined(MONAD_ZKVM_ZISK)
         auto const result = guest_db(db_).read_code(code_hash);
-    #else
+#else
         auto const result = db_.read_code(code_hash);
-    #endif
+#endif
         MONAD_ASSERT(result);
         MONAD_ASSERT_PRINTF(
             code_hash == NULL_HASH || result->size() != 0,

@@ -187,7 +187,8 @@ size_t EvmcHostBase::copy_code(
     MONAD_TRY
     {
         if (MONAD_UNLIKELY(trace::is_code_tracer(state_tracer_))) {
-            auto const vcode = read_code_for_tracer(state_, state_tracer_, address);
+            auto const vcode =
+                read_code_for_tracer(state_, state_tracer_, address);
             if (!vcode) {
                 return 0;
             }
@@ -209,7 +210,8 @@ EvmcHostBase::delegate_of(evmc::address const &address) const noexcept
     MONAD_TRY
     {
         if (MONAD_UNLIKELY(trace::is_code_tracer(state_tracer_))) {
-            auto const vcode = read_code_for_tracer(state_, state_tracer_, address);
+            auto const vcode =
+                read_code_for_tracer(state_, state_tracer_, address);
             if (!vcode) {
                 return nullptr;
             }
@@ -320,7 +322,8 @@ evmc::bytes32 EvmcHostBase::get_transient_storage(
 {
     MONAD_TRY
     {
-        return to_evmc(state_.get_transient_storage(as_monad(address), as_monad(key)));
+        return to_evmc(
+            state_.get_transient_storage(as_monad(address), as_monad(key)));
     }
     MONAD_CATCH(...)
     {

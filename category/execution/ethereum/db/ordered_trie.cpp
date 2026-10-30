@@ -86,9 +86,9 @@ namespace detail
             // leaves keep it. Not filing only forgoes hits; see
             // monad_zkvm_keccak256_fast_nomemo.
             if (node.size() >= 136) {
-#ifdef MONAD_ZKVM_KECCAK_SITES
+    #ifdef MONAD_ZKVM_KECCAK_SITES
                 MONAD_KECCAK_SITE(BODY_ROOTS, node.size());
-#endif
+    #endif
                 monad_zkvm_keccak256_fast_nomemo(
                     node.data(), node.size(), ref_dest.data());
                 return KECCAK256_SIZE;

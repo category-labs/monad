@@ -26,6 +26,7 @@ namespace monad::vm::runtime
     struct EvmStackAllocatorMeta
     {
         using base_type = uint256_t;
+        static constexpr size_t stack_limit = 1024;
 #if defined(MONAD_ZKVM_ZISK)
         // One slot past the 1024 the EVM can fill: the interpreter's SWAP1,
         // and its pair with SWAP2, copy a word to the slot above the top,
@@ -33,9 +34,9 @@ namespace monad::vm::runtime
         // swap1_then), so that slot must exist when the stack is full. It
         // holds nothing between two instructions, and the stack's limit
         // stays at 1024.
-        static constexpr size_t size = 1025;
+        static constexpr size_t size = stack_limit + 1;
 #else
-        static constexpr size_t size = 1024;
+        static constexpr size_t size = stack_limit;
 #endif
         static constexpr size_t alignment = 32;
         static MONAD_THREAD_LOCAL CachedAllocatorList cache_list;

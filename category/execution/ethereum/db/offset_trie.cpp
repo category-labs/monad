@@ -160,16 +160,8 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
     overlay_.reserve(1024);
 #endif
 
-    // A node's byte is set when the walk reaches it and cleared when a parent
-    // claims it as a child.
-    // A child whose byte is clear is either previously unseen/invalid or
-    // already claimed by a different parent.
-    //
-    // Count unread bytes plus DIGEST_NODE_LEN per marked, unclaimed node.
-    // Reading a node replaces its encoded length with DIGEST_NODE_LEN;
-    // claiming it subtracts DIGEST_NODE_LEN. DIGEST nodes need no adjustment.
-    // Once the region is fully read and root claimed, zero means no orphan
-    // remains, without scanning node_offsets again.
+    // Mark validated node starts. Non-digest nodes must be claimed exactly
+    // once; clearing their mark rejects duplicate parents.
 #if defined(MONAD_ZKVM_ZISK)
     // On ZisK a digest's claim only tests its mark, which stays set: a digest
     // is never written and never descended into -- lookup, upsert, erase and
@@ -180,6 +172,8 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
     // alone, each of which is still claimed exactly once.
     size_t unclaimed = 0;
 #else
+    // Unread bytes plus DIGEST_NODE_LEN per marked, unclaimed node.
+    // Reading replaces its encoded size; claiming removes its contribution.
     size_t unclaimed = static_cast<size_t>(region_end - node.bytes());
 #endif
 
@@ -314,18 +308,21 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
             cached->priming_rlp_len = rem.rlp_size();
             blob_node_cache_[node_offset >> 2] = cached;
             rlp_window_ += RLP_WINDOW_STRIDE;
-#if defined(MONAD_ZKVM_KECCAKF_RESUME)
+    #if defined(MONAD_ZKVM_KECCAKF_RESUME)
             if (rem.rlp_size() >= KECCAK256_RATE) {
                 monad_zkvm_keccak256_prime(
-                    rem.rlp_data(), rem.rlp_size(), cached->hash.bytes,
+                    rem.rlp_data(),
+                    rem.rlp_size(),
+                    cached->hash.bytes,
                     reinterpret_cast<uint64_t *>(window) + PRIME_MARK_WORD);
             }
             else {
-                monad_keccak256(rem.rlp_data(), rem.rlp_size(), cached->hash.bytes);
+                monad_keccak256(
+                    rem.rlp_data(), rem.rlp_size(), cached->hash.bytes);
             }
-#else
+    #else
             monad_keccak256(rem.rlp_data(), rem.rlp_size(), cached->hash.bytes);
-#endif
+    #endif
 #else
             monad_keccak256(rem.rlp_data(), rem.rlp_size(), ch.hash.bytes);
             hashes_.insert_or_assign(NodeId{node_offset}, ch);
@@ -724,13 +721,14 @@ bool OffsetTrie::patch_ref(
             // tags a hashed node carries are the four lowest.
             static_assert(
                 BRANCH == 0 && EXT == 1 && LEAF_ACCT == 2 && LEAF_STORAGE == 3);
-            if (tag <= LEAF_STORAGE && cached != nullptr && cached->priming_rlp != nullptr) {
+            if (tag <= LEAF_STORAGE && cached != nullptr &&
+                cached->priming_rlp != nullptr) {
                 auto const patched = [&] {
                     size_t const len = patch_rlp(*cached, original);
                     if (len == 0) {
                         return false;
                     }
-#if defined(MONAD_ZKVM_KECCAKF_RESUME)
+    #if defined(MONAD_ZKVM_KECCAKF_RESUME)
                     // The bytes before the first dirty child's ref are the
                     // ones the priming hash absorbed: every patch wrote only
                     // at the refs of children dirty then, and `dirty` never
@@ -739,8 +737,9 @@ bool OffsetTrie::patch_ref(
                     // too. The digest resumes after the whole blocks there.
                     uint64_t const dirty = cached->dirty_children;
                     if (tag == BRANCH && dirty != 0) {
-                        auto const *const head = reinterpret_cast<
-                            uint64_t const *>(cached->priming_rlp + len - MAX_NODE_RLP);
+                        auto const *const head =
+                            reinterpret_cast<uint64_t const *>(
+                                cached->priming_rlp + len - MAX_NODE_RLP);
                         size_t const unchanged =
                             head[std::countr_zero(dirty)] -
                             reinterpret_cast<uintptr_t>(cached->priming_rlp);
@@ -761,8 +760,9 @@ bool OffsetTrie::patch_ref(
                             return true;
                         }
                     }
-#endif
-                    monad_keccak256(cached->priming_rlp, len, cached->hash.bytes);
+    #endif
+                    monad_keccak256(
+                        cached->priming_rlp, len, cached->hash.bytes);
                     cached->hash_stale = 0;
                     return true;
                 };
@@ -813,10 +813,11 @@ OffsetTrie::node_rlp_span OffsetTrie::encode_current(
     unsigned char (&buf)[MAX_NODE_RLP])
 {
 #if defined(MONAD_ZKVM_ZISK)
-    // A primed node whose window is still its RLP (see NodeCacheEntry::rlp): a
-    // blob id, its slot bounded by the get_current or get_original that
-    // produced `node`. Any tag will do: no node is encoded as a digest or the
-    // empty node, and only a primed node has a window.
+    // A primed node whose window is still its RLP (see
+    // NodeCacheEntry::priming_rlp): a blob id, its slot bounded by the
+    // get_current or get_original that produced `node`. Any tag will do: no
+    // node is encoded as a digest or the empty node, and only a primed node has
+    // a window.
     uint64_t const v = static_cast<uint64_t>(id);
     if (v < OVERLAY_BASE) {
         NodeCacheEntry const *const cached = blob_node_cache_[v >> 2];
@@ -824,8 +825,9 @@ OffsetTrie::node_rlp_span OffsetTrie::encode_current(
             if (size_t const len = patch_rlp(*cached, node); len != 0) {
                 // Patched where it is kept: the window is an RLP buffer like
                 // `buf`, its RLP ending at the same place.
-                auto &window = *reinterpret_cast<unsigned char(*)[MAX_NODE_RLP]>(
-                    cached->priming_rlp + len - MAX_NODE_RLP);
+                auto &window =
+                    *reinterpret_cast<unsigned char(*)[MAX_NODE_RLP]>(
+                        cached->priming_rlp + len - MAX_NODE_RLP);
                 return node_rlp_span{window}.shrink(len);
             }
             // The window may be partly patched. Fall back to a complete
@@ -1563,7 +1565,10 @@ bool OffsetTrie::rewrite_account_fields(
         new byte_string(node.bytes(), static_cast<size_t>(end - node.bytes()));
     std::memcpy(n->data() + (old_run.data() - node.bytes()), run, run_len);
     modified_blob_nodes_[v >> 2] = n;
-    std::memcpy(e->priming_rlp + e->priming_rlp_len - 2 * HASH_RLP_LEN - run_len, run, run_len);
+    std::memcpy(
+        e->priming_rlp + e->priming_rlp_len - 2 * HASH_RLP_LEN - run_len,
+        run,
+        run_len);
     e->hash_stale = 1;
     // The edge is the same, not the subtree under it.
     if (storage != NULL_ID) {

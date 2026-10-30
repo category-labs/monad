@@ -61,8 +61,7 @@ MONAD_NAMESPACE_BEGIN
     if (!monad_zkvm_secp256k1_recover(z, r, s, recid, pubkey_words)) {
         return false;
     }
-    auto const *const pubkey =
-        reinterpret_cast<uint8_t const *>(pubkey_words);
+    auto const *const pubkey = reinterpret_cast<uint8_t const *>(pubkey_words);
 #else
     auto const *msg_hash =
         reinterpret_cast<zkvm_secp256k1_hash const *>(msg.data());
@@ -72,8 +71,8 @@ MONAD_NAMESPACE_BEGIN
 
     zkvm_secp256k1_pubkey pubkey_struct;
 
-    if (zkvm_secp256k1_ecrecover(
-            msg_hash, signature, recid, &pubkey_struct) != ZKVM_EOK) {
+    if (zkvm_secp256k1_ecrecover(msg_hash, signature, recid, &pubkey_struct) !=
+        ZKVM_EOK) {
         return false;
     }
     auto const *const pubkey = pubkey_struct.data;

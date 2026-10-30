@@ -90,8 +90,8 @@ protected:
 #if defined(MONAD_ZKVM_ZISK)
     // The runtime's CALL entry runs its message on this state.
     template <Traits traits>
-    friend evmc::Result vm::runtime::guest_call_message(
-        vm::Host &, evmc_message const &) noexcept;
+    friend evmc::Result
+    vm::runtime::guest_call_message(vm::Host &, evmc_message const &) noexcept;
 
 #endif
 public:

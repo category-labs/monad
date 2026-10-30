@@ -455,8 +455,8 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
             walk_window += RLP_WINDOW_STRIDE;
 #if defined(MONAD_ZKVM_KECCAKF_RESUME)
             // A node of a whole rate block or more leaves its mark in its
-            // window, which is fresh memory and reads zero, "none", where the
-            // hash leaves nothing. Only a patched branch reads it.
+            // window: where its hash kept the states after its whole blocks,
+            // or zero, "none". Only a patched branch reads it.
             if (rem.rlp_size() >= KECCAK256_RATE) {
                 monad_zkvm_keccak256_trie_prime_mark(
                     rem.rlp_data(),
@@ -825,14 +825,19 @@ OffsetTrie::digest_window(CachedHash &e, size_t const len, Tag const tag)
     // The bytes before the first dirty child's ref are the ones the priming
     // hash absorbed: every patch wrote only at the refs of children dirty
     // then, and `dirty` never clears, so at or after the first one dirty now
-    // -- and a patch keeps each ref's length, so the list header too. The
-    // digest resumes after the whole blocks there.
+    // -- and a patch keeps each ref's length, so the list header too. So is
+    // that ref's first byte, which says its length: 0xa0 for a hash, c0 + n
+    // for an inlined node, a dirty child never being empty. The digest resumes
+    // after the whole blocks those bytes span.
     uint64_t const dirty = e.dirty;
     if (tag == BRANCH && dirty != 0) {
         auto const *const head =
             reinterpret_cast<uint64_t const *>(e.rlp + len - MAX_NODE_RLP);
-        size_t const unchanged =
-            head[std::countr_zero(dirty)] - reinterpret_cast<uintptr_t>(e.rlp);
+        auto const *const ref = reinterpret_cast<unsigned char const *>(
+            head[std::countr_zero(dirty)]);
+        MONAD_DEBUG_ASSERT(
+            *ref == 0xa0 || (*ref > 0xc0 && rlp_ref_len(*ref) < 32));
+        size_t const unchanged = static_cast<size_t>(ref - e.rlp) + 1;
         // A branch's RLP is 532 bytes at most.
         size_t const blocks = unchanged >= 3 * KECCAK256_RATE   ? 3
                               : unchanged >= 2 * KECCAK256_RATE ? 2

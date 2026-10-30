@@ -172,16 +172,18 @@ struct alignas(8) KeccakfHot
 {
     // The state a digest's unfiled permutations run in, apart from the
     // scratch slot: a trie node's last one under Filing::NotFinal, and all of
-    // them under Filing::None. Every lane is written before each permutation
-    // but the first block's capacity, which None clears first, so nothing is
-    // cleared after it, where the scratch would be cleared whole.
+    // them under Filing::None but the whole blocks of a prime, which keeps
+    // those in fresh states (SpongeEntry). Every lane is written before each
+    // permutation but the first block's capacity, which None clears first, so
+    // nothing is cleared after it, where the scratch would be cleared whole.
     uint64_t keccakf_apart[KECCAKF_LANES];
 
     uint64_t keccakf_memo_used;
 
     // The first of keccakf_fresh_states that no digest has stood on, and one
-    // past the last of them: see keccak256_one_block_fresh. Set by the
-    // constructor below; after it, the cursor only ever advances.
+    // past the last of them: see keccak256_one_block_fresh and
+    // monad_zkvm_keccak256_trie_prime_mark. Set by the constructor below;
+    // after it, the cursor only ever advances.
     uint64_t *keccakf_fresh;
     uint64_t *keccakf_fresh_end;
 
@@ -205,12 +207,13 @@ static_assert(
 static KeccakfHot keccakf_hot;
 
 // The states keccak256_one_block_fresh permutes a trie node's one block in,
-// each handed out once, from the front. Zero-initialised .bss like the table,
-// and nothing writes a state before it is handed out, so each reads zero as
-// the table's untouched slots do. 2^15 states are 6.25 MiB; a digest that
-// finds them all used takes the memo's one-block path, so the count bounds
-// only how many go unfiled.
-constexpr size_t KECCAKF_FRESH_STATES = size_t{1} << 15;
+// and those a primed node's whole blocks leave (SpongeEntry::Prime), each
+// handed out once, from the front. Zero-initialised .bss like the table, and
+// nothing writes a state before it is handed out, so each reads zero as the
+// table's untouched slots do. 2^16 states are 12.5 MiB, a full branch's prime
+// taking three; a digest that finds too few left takes the memo's path, so
+// the count bounds only how many go unfiled.
+constexpr size_t KECCAKF_FRESH_STATES = size_t{1} << 16;
 static uint64_t keccakf_fresh_states[KECCAKF_FRESH_STATES * KECCAKF_LANES];
 
 // `gp` is a fixed register to gcc, so no code of this guest -- C++, ziskos'
@@ -559,7 +562,8 @@ keccakf_unfiled_permute(uint64_t *const pre, uint64_t const used, bool &hit)
 // trie node, which the post-state hashes again with some children changed;
 // the last permutation's output is the digest itself. `None`: none, for that
 // later digest: the requests hit until the first change, and nothing after
-// will be asked for again.
+// will be asked for again; and for a prime, which keeps its leading states
+// itself (SpongeEntry).
 enum class Filing
 {
     All,
@@ -599,18 +603,18 @@ enum class MemoFrom
 
 constexpr size_t MEMO_STAGED_BYTES = 8 * 136;
 
-// Where the sponge starts: at the input's first block; there too, leaving a
-// mark of where the memo filed the states after the input's whole blocks; or
-// from such a state, `post`, the input then being what follows its blocks.
+// Where the sponge starts: at the input's first block; there too, keeping the
+// states after the input's whole blocks in fresh states from the one it is
+// handed; or from such a state, `post`, the input then being what follows its
+// blocks.
 //
-// A mark is the first block's slot plus one, written only when that block was
-// filed. A prime asks for no hint: its first block is filed as a miss, and
-// every later block but the last is filed in the next slot -- the
-// straight-line full-branch tail and the Room loop alike -- until the table
-// fills: the state after block j is at mark - 1 + j, if that is below
-// `keccakf_memo_used`. A first block the full table permuted in its spare
-// files nothing, and leaves no mark. Prime goes with Filing::NotFinal, whose
-// whole blocks are all filed, and Resume with Filing::None, the post-state's.
+// A prime asks for no hint and files nothing. Its first block is built in the
+// first of its states, whose capacity reads zero, and every later whole block
+// in the next one, from the one before -- the straight-line full-branch tail
+// and the loop alike -- each permuted where it lies: the state after block j
+// is j - 1 states past the first. The cursor is left past the last, and the
+// final block is permuted apart. Prime and Resume both go with Filing::None,
+// and neither files a permutation.
 enum class SpongeEntry
 {
     Plain,
@@ -618,7 +622,7 @@ enum class SpongeEntry
     Resume
 };
 
-// The one argument a prime (the mark's address) or a resume (its state) takes
+// The one argument a prime (its first state) or a resume (its state) takes
 // past `used`. A plain sponge takes none: a null argument would be one more
 // register to set before the jump to it, on every input of a block or more.
 template <typename T>
@@ -645,7 +649,7 @@ static void keccak256_memo_sponge(
     constexpr size_t WORDS = RATE / 8; // 17
     static_assert(135 == 16 * 8 + 7, "the pad bit is byte 7 of lane 16");
     static_assert(!Room || F != Filing::None, "None files nothing");
-    static_assert(Entry != SpongeEntry::Prime || F == Filing::NotFinal);
+    static_assert(Entry != SpongeEntry::Prime || F == Filing::None);
     static_assert(Entry != SpongeEntry::Resume || F == Filing::None);
     auto const *p = static_cast<unsigned char const *>(in);
 
@@ -659,40 +663,39 @@ static void keccak256_memo_sponge(
     uint64_t const *post;
     bool look;
     if constexpr (Entry == SpongeEntry::Resume) {
-        // From a filed state, with lookups on: a patched ref that holds the
-        // hash it held when primed leaves the next block as the prime filed
-        // it. The lookup loop below takes a whole block's capacity from that
-        // state, and the final block takes it there too. Not the full-branch
-        // tail, which starts after a first-block miss.
+        // From a state the prime kept, with lookups on, as a plain
+        // Filing::None digest has them. The lookup loop below takes a whole
+        // block's capacity from that state, and the final block takes it
+        // there too. Not the full-branch tail, which starts after a
+        // first-block miss.
         pre = hot->keccakf_apart;
         post = sponge_extra(extra...);
         look = true;
     }
     else {
         pre = hot->keccakf_memo[used].in;
-        if constexpr (F == Filing::None) {
+        if constexpr (Entry == SpongeEntry::Prime) {
+            // Fresh: the capacity reads zero.
+            pre = sponge_extra(extra...);
+        }
+        else if constexpr (F == Filing::None) {
             pre = hot->keccakf_apart;
             std::memset(pre + WORDS, 0, (KECCAKF_LANES - WORDS) * 8);
         }
         std::memcpy(pre, p, RATE);
         p += RATE;
         len -= RATE;
-        if constexpr (F == Filing::None) {
-            post = keccakf_unfiled_permute<true>(pre, used, look);
-        }
-        else if constexpr (Entry == SpongeEntry::Prime) {
+        if constexpr (Entry == SpongeEntry::Prime) {
             // A primed node's first block is almost never one the memo holds:
-            // it is filed as a miss, without the hint request, and lookups are
-            // off from the start, so that none of the sponge's lookup arms is
-            // built. A state the table already held is filed again, which a
-            // later hint's word-for-word compare does not mind.
-            uint64_t const first = used;
-            post = keccakf_memo_permute<true, false, Room>(pre, used);
+            // it is permuted where it is kept, without the hint request, and
+            // lookups are off from the start, so that none of the sponge's
+            // lookup arms is built.
+            zisk_keccakf(reinterpret_cast<uint64_t(*)[KECCAKF_LANES]>(pre));
+            post = pre;
             look = false;
-            // The count moves only when the block is filed.
-            if (used != first) {
-                *sponge_extra(extra...) = used;
-            }
+        }
+        else if constexpr (F == Filing::None) {
+            post = keccakf_unfiled_permute<true>(pre, used, look);
         }
         else {
             post = keccakf_memo_permute<true, true, Room>(pre, used);
@@ -710,18 +713,57 @@ static void keccak256_memo_sponge(
     // for the partial lane. Each filing does what the no-lookup path does,
     // block for block: All files all three, NotFinal the two middle blocks
     // and permutes the last one apart, None files none and permutes all three
-    // in keccakf_apart, where its first block's miss left the state. A filed
-    // slot's input is complete before it is copied, filed and permuted, and
-    // the count is published once at the end. The room test asks for every
-    // filed slot below capacity, which a first block run in the full table's
-    // spare fails; such digests take the general path below. The hint on the
-    // miss keeps gcc from carrying `look` into that path as a value, which a
-    // first-block hit would otherwise pay for in extra steps.
+    // in keccakf_apart, where its first block's miss left the state, and a
+    // prime keeps the two middle blocks' states in the two after its first and
+    // permutes the last one apart. A filed slot's input is complete before it
+    // is copied, filed and permuted, and the count is published once at the
+    // end. The room test asks for every filed slot below capacity, which a
+    // first block run in the full table's spare fails; such digests take the
+    // general path below. The hint on the miss keeps gcc from carrying `look`
+    // into that path as a value, which a first-block hit would otherwise pay
+    // for in extra steps.
     constexpr size_t FULL_BRANCH = 532;
     static_assert(
         FULL_BRANCH - RATE == 2 * RATE + 15 * 8 + 4,
         "two middle blocks, then fifteen lanes and four bytes");
-    if constexpr (F == Filing::None && Entry != SpongeEntry::Resume) {
+    if constexpr (Entry == SpongeEntry::Prime) {
+        if (len == FULL_BRANCH - RATE) {
+            // The first block's state is `pre`, and the next two follow it.
+            auto *st = reinterpret_cast<uint64_t(*)[KECCAKF_LANES]>(pre);
+            asm("" : "+r"(st));
+            for (size_t i = 0; i < WORDS; ++i) {
+                st[1][i] = st[0][i] ^ load64(p + 8 * i);
+            }
+            std::memcpy(
+                st[1] + WORDS, st[0] + WORDS, (KECCAKF_LANES - WORDS) * 8);
+            zisk_keccakf(&st[1]);
+            unsigned char const *const q1 = p + RATE;
+            for (size_t i = 0; i < WORDS; ++i) {
+                st[2][i] = st[1][i] ^ load64(q1 + 8 * i);
+            }
+            std::memcpy(
+                st[2] + WORDS, st[1] + WORDS, (KECCAKF_LANES - WORDS) * 8);
+            zisk_keccakf(&st[2]);
+            hot->keccakf_fresh = pre + 3 * KECCAKF_LANES;
+
+            uint64_t *const fin = hot->keccakf_apart;
+            unsigned char const *const q2 = p + 2 * RATE;
+            for (size_t i = 0; i < 15; ++i) {
+                fin[i] = st[2][i] ^ load64(q2 + 8 * i);
+            }
+            // The input's last four bytes, read in place, as below.
+            uint32_t last;
+            __builtin_memcpy(&last, q2 + 15 * 8, sizeof last);
+            fin[15] = st[2][15] ^ (last | uint64_t{0x01} << 32);
+            fin[16] = st[2][16] ^ (uint64_t{0x80} << 56);
+            std::memcpy(
+                fin + WORDS, st[2] + WORDS, (KECCAKF_LANES - WORDS) * 8);
+            zisk_keccakf(reinterpret_cast<uint64_t(*)[KECCAKF_LANES]>(fin));
+            std::memcpy(out, fin, 32);
+            return;
+        }
+    }
+    else if constexpr (F == Filing::None && Entry == SpongeEntry::Plain) {
         if (MONAD_LIKELY(!look) && len == FULL_BRANCH - RATE) {
             // The miss permuted keccakf_apart in place: `post` is `pre`.
             uint64_t *st = pre;
@@ -841,7 +883,23 @@ static void keccak256_memo_sponge(
         p += RATE;
         len -= RATE;
     }
-    if constexpr (Room) {
+    if constexpr (Entry == SpongeEntry::Prime) {
+        // Each whole block in the state after `pre`, from `pre`'s.
+        while (len >= RATE) {
+            pre += KECCAKF_LANES;
+            asm("" : "+r"(pre));
+            for (size_t i = 0; i < WORDS; ++i) {
+                pre[i] = post[i] ^ load64(p + 8 * i);
+            }
+            std::memcpy(pre + WORDS, post + WORDS, (KECCAKF_LANES - WORDS) * 8);
+            zisk_keccakf(reinterpret_cast<uint64_t(*)[KECCAKF_LANES]>(pre));
+            post = pre;
+            p += RATE;
+            len -= RATE;
+        }
+        hot->keccakf_fresh = pre + KECCAKF_LANES;
+    }
+    else if constexpr (Room) {
         // Every permutation from here files at `pre` and advances `used` by
         // one, so the next scratch is the entry after `pre`. While `look`
         // holds every permutation so far hit, and `pre` is still the scratch.
@@ -903,7 +961,8 @@ static void keccak256_memo_sponge(
     // miss, which published its slot -- so nothing is cleared after it. A hit
     // left its pre-state in the scratch, and a full table permutes the spare
     // where it lies: those build the last block there and clear it, as before.
-    // None ran every block apart.
+    // None ran every block apart, and a prime builds its last one there from
+    // the last state it kept, which is never `pre`.
     //
     // With Room the scratch is `pre` already, and every filing went below
     // capacity: NotFinal builds its last block apart after any miss.
@@ -981,11 +1040,17 @@ lanes0:
         }
     }
     pre[whole] = post[whole] ^ lane;
-    if (F != Filing::None || post != pre) {
+    if (F != Filing::None || Entry == SpongeEntry::Prime || post != pre) {
         std::memcpy(
             pre + whole + 1, post + whole + 1, (KECCAKF_LANES - 1 - whole) * 8);
     }
     pre[16] ^= uint64_t{0x80} << 56;
+    if constexpr (Entry == SpongeEntry::Prime) {
+        // Nothing filed and the scratch untouched: `used` stands.
+        zisk_keccakf(reinterpret_cast<uint64_t(*)[KECCAKF_LANES]>(pre));
+        std::memcpy(out, pre, 32);
+        return;
+    }
     if constexpr (Room) {
         // A filing advances `used` past `pre`, to an unwritten slot: the
         // scratch is left in use only by a final hit, or, under NotFinal, by
@@ -1467,34 +1532,52 @@ void monad_zkvm_keccak256_trie_patch(
 // place past its leading blocks: the patched digest starts from the state the
 // priming hash left after them instead of asking for each of them again, a
 // hint request and a 200-byte compare a block.
+//
+// Those states are kept where the prime permuted them, one a whole block, in
+// fresh states handed out from the front as keccak256_one_block_fresh's are,
+// and the mark is the first's address. None of them is filed: the resume reads
+// its state there, not through a hint, and a patched digest that does not
+// resume has nearly always changed the blocks they hold. A whole block's state
+// is 200 bytes for 136 of input, so room for twice the input's length holds
+// all of them; with less left, the node is primed as
+// monad_zkvm_keccak256_trie_prime primes it, and the mark is zero.
 void monad_zkvm_keccak256_trie_prime_mark(
     void const *const in, size_t const len, uint8_t out[32],
     uint64_t *const mark)
 {
-    keccak256_trie_entry<Filing::NotFinal, SpongeEntry::Prime>(
-        in, len, out, mark);
+    uint64_t *const states = hot->keccakf_fresh;
+    if (MONAD_UNLIKELY(
+            reinterpret_cast<uintptr_t>(hot->keccakf_fresh_end) -
+                reinterpret_cast<uintptr_t>(states) <
+            2 * len)) {
+        *mark = 0;
+        monad_zkvm_keccak256_trie_prime(in, len, out);
+        return;
+    }
+    *mark = reinterpret_cast<uintptr_t>(states);
+    keccak256_trie_entry<Filing::None, SpongeEntry::Prime>(
+        in, len, out, states);
 }
 
-// SOUNDNESS. The mark is guest memory the prime wrote, not a hint, and the
-// state it names is checked the way a hint's index is: below
-// `keccakf_memo_used`, so inside the table this execution has written, whose
-// entries never change once counted. The prime filed its whole blocks in
-// consecutive slots from mark - 1, and a slot past the table's end is never
-// below the count, so a slot that passes is the prime's own state after
-// `blocks` blocks: the real permutations of those bytes, which the caller
-// vouches are this input's first `blocks` blocks.
+// SOUNDNESS. The mark is guest memory the prime wrote, not a hint: zero, or the
+// address of the states it kept after the input's whole blocks. Those were
+// handed out to that prime alone, which left the cursor past them, and nothing
+// writes them after it, so the state `blocks` - 1 past the first is the
+// prime's own state after `blocks` blocks: the real permutations of those
+// bytes, which the caller vouches are this input's first `blocks` blocks, and
+// no more blocks than the input held whole when primed.
 void monad_zkvm_keccak256_trie_resume(
     void const *const in, size_t const len, uint8_t out[32],
     uint64_t const mark, size_t const blocks)
 {
-    uint64_t const at = mark - 1 + blocks - 1;
-    if (mark != 0 && at < hot->keccakf_memo_used) {
+    if (mark != 0) {
         size_t const skip = blocks * 136;
         keccak256_trie_entry<Filing::None, SpongeEntry::Resume>(
             static_cast<unsigned char const *>(in) + skip,
             len - skip,
             out,
-            static_cast<uint64_t const *>(hot->keccakf_memo[at].out));
+            reinterpret_cast<uint64_t const *>(mark) +
+                (blocks - 1) * KECCAKF_LANES);
         return;
     }
     keccak256_trie<Filing::None>(in, len, out);

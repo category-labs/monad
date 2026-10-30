@@ -39,7 +39,10 @@
 }:
 
 let
-  tag = "zisk-4.0.0";
+  # The newest zisk-<major>.x.y release at the time of the ziskos bump, the
+  # one `cargo-zisk toolchain install` would pick. zisk-build-env.nix checks
+  # the major against the ZisK release the guest pins.
+  tag = "zisk-4.1.0";
   host = "x86_64-unknown-linux-gnu";
 in
 stdenv.mkDerivation {
@@ -48,7 +51,7 @@ stdenv.mkDerivation {
 
   src = fetchurl {
     url = "https://github.com/0xPolygonHermez/rust/releases/download/${tag}/rust-toolchain-${host}.tar.gz";
-    hash = "sha256-xMRLVhLdAl9jDC+YSuX4qGK4hcSxS/xXyYDrgHO4z2I=";
+    hash = "sha256-mpkhpVjKZS38RuUEOpKqcKjvjsG+G7sPPDkt18C1z+E=";
   };
   # The archive unpacks bin/ and lib/ directly, with no top-level directory.
   sourceRoot = ".";

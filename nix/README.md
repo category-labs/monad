@@ -66,7 +66,10 @@ install time, so two machines can hold different compilers without any
 record of it. The ZisK source names only the major of the toolchain it
 wants, so `zisk-rust-toolchain.nix` pins the release tag and the archive
 hash itself and relinks the binaries for nix. To bump it, change `tag`
-and replace the hash with the one the first build reports.
+and replace the hash with the one the first build reports. Evaluation
+fails if the tag's major is not the one the pinned ZisK release asks for,
+so a ziskos bump that moves to a new toolchain major, or a toolchain bump
+ahead of ziskos, is caught before anything is built.
 
 ```shell
 nix build .#zisk-rust-toolchain
@@ -83,9 +86,9 @@ its native build inputs; the script explains what it rewrites and why.
 `zisk-elf` builds the reference guest, the ELF that published benchmarks
 and releases must come from. Its inputs are all fixed by this
 flake: the patched cross GCC above, the ZisK Rust toolchain, the linker
-script `cargo-zisk` would supply, which `zisk-linker-script.nix` takes
-from the ZisK release `zkvm/zisk/Cargo.lock` pins `ziskos` to and adds to
-the guest's rustflags through its setup hook, and the source commit,
+script `cargo-zisk` would supply, which `zisk.nix` takes from the
+ZisK release `zkvm/zisk/Cargo.lock` pins `ziskos` to and adds to the
+guest's rustflags through its setup hook, and the source commit,
 submodules included.
 Build it from a clean checkout:
 

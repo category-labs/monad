@@ -38,7 +38,7 @@
 let
   cargoRoot = "zkvm/zisk";
   lockFile = ../${cargoRoot}/Cargo.lock;
-  ziskLinkerScript = callPackage ./zisk-linker-script.nix { inherit lockFile; };
+  zisk = callPackage ./zisk.nix { inherit lockFile; };
   # bindgen generates Rust bindings from ZisK's C headers for RISC-V.
   # This hook tells it to use clang's built-in headers. The standard nixpkgs
   # hook also adds host glibc headers, which are incompatible with this target.
@@ -49,11 +49,18 @@ let
       export BINDGEN_EXTRA_CLANG_ARGS="-ffreestanding $(< ${llvmPackages.clang}/nix-support/cc-cflags)"
     ''
   );
+  toolchainMajor = lib.toInt (lib.versions.major zisk-rust-toolchain.version);
 in
+# ZisK states only the major of the Rust toolchain it needs (zisk.nix),
+# so this is the one compatibility check available without running the guest.
+assert lib.assertMsg (toolchainMajor == zisk.toolchainMajor) ''
+  zisk-rust-toolchain ${zisk-rust-toolchain.version} has major ${toString toolchainMajor},
+  but ziskos ${zisk.tag} wants toolchain major ${toString zisk.toolchainMajor}.
+  Bump the tag in nix/zisk-rust-toolchain.nix or the ziskos pin in zkvm/zisk/Cargo.lock.'';
 {
   nativeBuildInputs = lib.optional vendorCargoDeps rustPlatform.cargoSetupHook ++ [
     zisk-rust-toolchain
-    ziskLinkerScript
+    zisk
     bindgenHook
     cmake
     python3
@@ -76,7 +83,7 @@ in
   }
   // lib.optionalAttrs (rev != "") { MONAD_ZKVM_GIT_COMMIT = rev; };
 
-  inherit ziskLinkerScript;
+  inherit zisk;
 }
 // lib.optionalAttrs vendorCargoDeps {
   inherit cargoRoot;

@@ -24,8 +24,10 @@
 #include <category/mpt/config.hpp>
 #include <category/mpt/nibbles_view.hpp>
 
+#include <compare>
 #include <concepts>
-#include <tuple>
+#include <cstdint>
+#include <utility>
 
 MONAD_MPT_NAMESPACE_BEGIN
 
@@ -102,12 +104,6 @@ struct virtual_chunk_offset_t
                offset == o.offset;
     }
 
-    constexpr auto operator<=>(virtual_chunk_offset_t const &o) const noexcept
-    {
-        return std::tuple{is_in_fast_list, count, offset} <=>
-               std::tuple{o.is_in_fast_list, o.count, o.offset};
-    }
-
     constexpr bool in_fast_list() const noexcept
     {
         return is_in_fast_list;
@@ -153,9 +149,16 @@ struct virtual_chunk_offset_t_hasher
 class compact_virtual_chunk_offset_t
 {
     static constexpr unsigned most_significant_bits = sizeof(uint32_t) * 8;
+
+public:
     static constexpr unsigned bits_to_truncate =
         virtual_chunk_offset_t::OFFSET_BITS +
         virtual_chunk_offset_t::COUNT_BITS - most_significant_bits;
+    //! Width of what is left of the chunk offset, below the count.
+    static constexpr unsigned TRUNCATED_OFFSET_BITS =
+        most_significant_bits - virtual_chunk_offset_t::COUNT_BITS;
+
+private:
     uint32_t v_{0};
 
     struct prevent_public_construction_tag
@@ -198,8 +201,23 @@ public:
                (most_significant_bits - virtual_chunk_offset_t::COUNT_BITS);
     }
 
-    // NOLINTNEXTLINE(google-explicit-constructor)
-    constexpr operator uint32_t() const noexcept
+    constexpr uint32_t get_truncated_offset() const noexcept
+    {
+        return v_ & ((1u << TRUNCATED_OFFSET_BITS) - 1);
+    }
+
+    static constexpr compact_virtual_chunk_offset_t
+    from_count_and_truncated_offset(
+        uint32_t const count, uint32_t const truncated_offset) noexcept
+    {
+        MONAD_ASSERT(count < virtual_chunk_offset_t::MAX_COUNT);
+        MONAD_ASSERT((truncated_offset >> TRUNCATED_OFFSET_BITS) == 0);
+        return {
+            prevent_public_construction_tag{},
+            (count << TRUNCATED_OFFSET_BITS) | truncated_offset};
+    }
+
+    constexpr explicit operator uint32_t() const noexcept
     {
         return v_;
     }
@@ -208,25 +226,6 @@ public:
     operator==(compact_virtual_chunk_offset_t const &o) const noexcept
     {
         return v_ == o.v_;
-    }
-
-    constexpr auto
-    operator<=>(compact_virtual_chunk_offset_t const &o) const noexcept
-    {
-        return v_ <=> o.v_;
-    }
-
-    constexpr compact_virtual_chunk_offset_t
-    operator-(compact_virtual_chunk_offset_t const &o) const noexcept
-    {
-        return {prevent_public_construction_tag{}, v_ - o.v_};
-    }
-
-    constexpr compact_virtual_chunk_offset_t &
-    operator+=(compact_virtual_chunk_offset_t const &o)
-    {
-        v_ += o.v_;
-        return *this;
     }
 };
 
@@ -247,19 +246,6 @@ struct compact_offset_pair
     compact_virtual_chunk_offset_t fast{INVALID_COMPACT_VIRTUAL_OFFSET};
     compact_virtual_chunk_offset_t slow{INVALID_COMPACT_VIRTUAL_OFFSET};
 
-    // Returns true if either component is below the corresponding threshold
-    constexpr bool any_below(compact_offset_pair const threshold) const noexcept
-    {
-        return fast < threshold.fast || slow < threshold.slow;
-    }
-
-    // Returns true if the fast component is below the threshold
-    constexpr bool
-    fast_below(compact_offset_pair const threshold) const noexcept
-    {
-        return fast < threshold.fast;
-    }
-
     byte_string serialize() const;
 
     static compact_offset_pair deserialize(byte_string_view bytes);
@@ -270,6 +256,254 @@ struct compact_offset_pair
 
 static_assert(sizeof(compact_offset_pair) == 8);
 static_assert(alignof(compact_offset_pair) == 4);
+
+//! Fast and slow insertion counts run 0, 1, ..., INSERTION_COUNT_PERIOD, 1,
+//! ...: 0 names only the first chunk of an empty list and MAX_COUNT is never
+//! assigned. So no live offset compacts to INVALID_COMPACT_VIRTUAL_OFFSET,
+//! and only offsets in the first 64 KiB of a count-0 chunk compact to
+//! MIN_COMPACT_VIRTUAL_OFFSET, which they sort equal to.
+inline constexpr uint32_t INSERTION_COUNT_PERIOD =
+    virtual_chunk_offset_t::MAX_COUNT - 1;
+
+constexpr uint32_t next_insertion_count(uint32_t const count) noexcept
+{
+    MONAD_ASSERT(count <= INSERTION_COUNT_PERIOD);
+    return count == INSERTION_COUNT_PERIOD ? 1 : count + 1;
+}
+
+//! Distance between two compact offsets of one chunk list, in units of
+//! 1 << compact_virtual_chunk_offset_t::bits_to_truncate bytes.
+enum class compact_distance : uint32_t
+{
+};
+
+constexpr uint32_t units(compact_distance const d) noexcept
+{
+    return std::to_underlying(d);
+}
+
+constexpr uint64_t bytes(compact_distance const d) noexcept
+{
+    return uint64_t{units(d)}
+           << compact_virtual_chunk_offset_t::bits_to_truncate;
+}
+
+//! Orders one chunk list's offsets by their distance from the list's head
+//! chunk, which stays correct once the list's insertion counts wrap. Only
+//! offsets at or after the head compare meaningfully, and the order is stale
+//! once a chunk is released from the head.
+class chunk_list_order
+{
+    uint32_t head_count_;
+
+    static constexpr uint32_t residue_(uint32_t const count) noexcept
+    {
+        return count % INSERTION_COUNT_PERIOD;
+    }
+
+    constexpr uint32_t count_at_rank_(uint32_t const chunk_rank) const noexcept
+    {
+        if (chunk_rank == 0) {
+            return head_count_;
+        }
+        uint32_t const r =
+            (residue_(head_count_) + chunk_rank) % INSERTION_COUNT_PERIOD;
+        return r == 0 ? INSERTION_COUNT_PERIOD : r;
+    }
+
+public:
+    explicit constexpr chunk_list_order(uint32_t const head_count) noexcept
+        : head_count_{head_count}
+    {
+        MONAD_ASSERT(head_count <= INSERTION_COUNT_PERIOD);
+    }
+
+    constexpr uint32_t head_count() const noexcept
+    {
+        return head_count_;
+    }
+
+    //! Chunks between the head and the chunk with insertion count `count`.
+    constexpr uint32_t rank(uint32_t const count) const noexcept
+    {
+        MONAD_ASSERT(count <= INSERTION_COUNT_PERIOD);
+        return (residue_(count) + INSERTION_COUNT_PERIOD -
+                residue_(head_count_)) %
+               INSERTION_COUNT_PERIOD;
+    }
+
+    //! MIN sorts at or below, and INVALID above, every live offset.
+    constexpr uint32_t
+    key(compact_virtual_chunk_offset_t const x) const noexcept
+    {
+        if (x == INVALID_COMPACT_VIRTUAL_OFFSET) {
+            return UINT32_MAX;
+        }
+        if (x == MIN_COMPACT_VIRTUAL_OFFSET) {
+            return 0;
+        }
+        return (rank(x.get_count())
+                << compact_virtual_chunk_offset_t::TRUNCATED_OFFSET_BITS) |
+               x.get_truncated_offset();
+    }
+
+    constexpr bool less(
+        compact_virtual_chunk_offset_t const a,
+        compact_virtual_chunk_offset_t const b) const noexcept
+    {
+        return key(a) < key(b);
+    }
+
+    constexpr compact_virtual_chunk_offset_t
+    min(compact_virtual_chunk_offset_t const a,
+        compact_virtual_chunk_offset_t const b) const noexcept
+    {
+        return less(b, a) ? b : a;
+    }
+
+    //! Whole chunks before `x`'s chunk: what a GC boundary at `x` frees.
+    constexpr uint32_t
+    chunks_before(compact_virtual_chunk_offset_t const x) const noexcept
+    {
+        MONAD_ASSERT(x != INVALID_COMPACT_VIRTUAL_OFFSET);
+        return key(x) >> compact_virtual_chunk_offset_t::TRUNCATED_OFFSET_BITS;
+    }
+
+    //! Whether `x` is in the list's first `chunks` chunks.
+    constexpr bool contains(
+        compact_virtual_chunk_offset_t const x,
+        uint32_t const chunks) const noexcept
+    {
+        MONAD_ASSERT(x != INVALID_COMPACT_VIRTUAL_OFFSET);
+        // rank() aliases count 0 with INSERTION_COUNT_PERIOD, and count 0
+        // only ever names a list's first chunk.
+        if (x.get_count() == 0) {
+            return head_count_ == 0;
+        }
+        return rank(x.get_count()) < chunks;
+    }
+
+    constexpr compact_distance distance(
+        compact_virtual_chunk_offset_t const from,
+        compact_virtual_chunk_offset_t const to) const noexcept
+    {
+        MONAD_ASSERT(
+            from != INVALID_COMPACT_VIRTUAL_OFFSET &&
+            to != INVALID_COMPACT_VIRTUAL_OFFSET);
+        return compact_distance{key(to) - key(from)};
+    }
+
+    constexpr compact_virtual_chunk_offset_t advance(
+        compact_virtual_chunk_offset_t const from,
+        compact_distance const d) const noexcept
+    {
+        MONAD_ASSERT(from != INVALID_COMPACT_VIRTUAL_OFFSET);
+        constexpr unsigned bits =
+            compact_virtual_chunk_offset_t::TRUNCATED_OFFSET_BITS;
+        uint64_t const k = uint64_t{key(from)} + units(d);
+        uint64_t const chunk_rank = k >> bits;
+        MONAD_ASSERT(chunk_rank < INSERTION_COUNT_PERIOD);
+        return compact_virtual_chunk_offset_t::from_count_and_truncated_offset(
+            count_at_rank_(static_cast<uint32_t>(chunk_rank)),
+            static_cast<uint32_t>(k) & ((1u << bits) - 1));
+    }
+};
+
+//! The fast and slow lists' orders, as they stood when taken.
+struct offset_order
+{
+    chunk_list_order fast;
+    chunk_list_order slow;
+
+    constexpr chunk_list_order const &
+    list(bool const in_fast_list) const noexcept
+    {
+        return in_fast_list ? fast : slow;
+    }
+
+    constexpr bool any_below(
+        compact_offset_pair const x,
+        compact_offset_pair const threshold) const noexcept
+    {
+        return fast.less(x.fast, threshold.fast) ||
+               slow.less(x.slow, threshold.slow);
+    }
+
+    constexpr bool fast_below(
+        compact_offset_pair const x,
+        compact_offset_pair const threshold) const noexcept
+    {
+        return fast.less(x.fast, threshold.fast);
+    }
+
+    //! Whether `x` is below the component of `threshold` for its own list.
+    constexpr bool below(
+        virtual_chunk_offset_t const x,
+        compact_offset_pair const threshold) const noexcept
+    {
+        MONAD_ASSERT(x != INVALID_VIRTUAL_OFFSET);
+        bool const in_fast = x.in_fast_list();
+        return list(in_fast).less(
+            compact_virtual_chunk_offset_t{x},
+            in_fast ? threshold.fast : threshold.slow);
+    }
+
+    constexpr compact_offset_pair
+    min(compact_offset_pair const a, compact_offset_pair const b) const noexcept
+    {
+        return {fast.min(a.fast, b.fast), slow.min(a.slow, b.slow)};
+    }
+
+    //! Slow-list offsets order before fast-list ones.
+    constexpr std::strong_ordering compare(
+        virtual_chunk_offset_t const a,
+        virtual_chunk_offset_t const b) const noexcept
+    {
+        MONAD_ASSERT(
+            a != INVALID_VIRTUAL_OFFSET && b != INVALID_VIRTUAL_OFFSET);
+        if (a.in_fast_list() != b.in_fast_list()) {
+            return a.in_fast_list() <=> b.in_fast_list();
+        }
+        auto const &l = list(a.in_fast_list());
+        uint32_t const rank_a = l.rank(static_cast<uint32_t>(a.count));
+        uint32_t const rank_b = l.rank(static_cast<uint32_t>(b.count));
+        if (rank_a != rank_b) {
+            return rank_a <=> rank_b;
+        }
+        return static_cast<file_offset_t>(a.offset) <=>
+               static_cast<file_offset_t>(b.offset);
+    }
+};
+
+//! Insertion counts of one chunk list's head and tail chunks.
+struct chunk_list_counts
+{
+    uint32_t head;
+    uint32_t tail;
+};
+
+struct fast_slow_list_counts
+{
+    chunk_list_counts fast;
+    chunk_list_counts slow;
+};
+
+//! A chunk list's tail chunk id and that chunk's whole metadata word.
+struct chunk_list_tail_state
+{
+    uint32_t id;
+    uint64_t chunk_info;
+
+    bool operator==(chunk_list_tail_state const &) const = default;
+};
+
+struct fast_slow_tail_states
+{
+    chunk_list_tail_state fast;
+    chunk_list_tail_state slow;
+
+    bool operator==(fast_slow_tail_states const &) const = default;
+};
 
 constexpr unsigned bitmask_index(uint16_t const mask, unsigned const i) noexcept
 {

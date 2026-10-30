@@ -27,9 +27,9 @@
 }:
 
 let
-  ziskos = lib.findFirst (p: p.name == "ziskos") (throw "ziskos is missing from ${toString lockFile}") (
-    builtins.fromTOML (builtins.readFile lockFile)
-  ).package;
+  ziskos =
+    lib.findFirst (p: p.name == "ziskos") (throw "ziskos is missing from ${toString lockFile}")
+      (builtins.fromTOML (builtins.readFile lockFile)).package;
   # "git+<url>?tag=<tag>#<rev>"
   source = builtins.match "git\\+([^?]*)\\?tag=([^#]*)#([0-9a-f]*)" ziskos.source;
   rev = builtins.elemAt source 2;

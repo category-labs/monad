@@ -408,6 +408,77 @@ TEST_F(EthCallFixture, simple_success_call)
     monad_executor_destroy(executor);
 }
 
+TEST_F(EthCallFixture, destroy_with_queued_calls)
+{
+    for (uint64_t i = 0; i < 256; ++i) {
+        commit_sequential(tdb, StateDeltas({}), {}, BlockHeader{.number = i});
+    }
+
+    static constexpr auto from{
+        0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
+    static constexpr auto to{
+        0x5353535353535353535353535353535353535353_address};
+
+    // PUSH0 PUSH0 REVERT: every call reverts in the low gas pool and is
+    // retried in the high gas pool.
+    byte_string const code{0x5f, 0x5f, 0xfd};
+    auto const code_hash = to_bytes(keccak256(code));
+    Transaction const tx{
+        .gas_limit = 2 * MONAD_ETH_CALL_LOW_GAS_LIMIT,
+        .to = to,
+        .type = TransactionType::eip1559};
+    BlockHeader const header{.number = 256};
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {to,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.balance = 0, .code_hash = code_hash}}}}},
+        Code{{code_hash, vm::make_shared_intercode(code)}},
+        header);
+
+    auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_sender =
+        to_vec(rlp::encode_address(std::make_optional(from)));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    auto *executor = create_executor(dbname.string());
+    auto *state_override = monad_state_override_create();
+
+    std::array<callback_context, 32> ctxs{};
+    for (auto &ctx : ctxs) {
+        monad_executor_eth_call_submit(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_tx.data(),
+            rlp_tx.size(),
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_sender.data(),
+            rlp_sender.size(),
+            header.number,
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            state_override,
+            complete_callback,
+            (void *)&ctx,
+            NOOP_TRACER,
+            call_tracer_max_size,
+            false);
+    }
+    monad_executor_destroy(executor);
+
+    for (auto const &ctx : ctxs) {
+        EXPECT_EQ(ctx.result->status_code, EVMC_REVERT);
+    }
+
+    monad_state_override_destroy(state_override);
+}
+
 TEST_F(EthCallFixture, insufficient_balance)
 {
     for (uint64_t i = 0; i < 256; ++i) {

@@ -386,6 +386,11 @@ private:
         return memoised(address);
     }
 
+    // The memo put back on the running frame's row for the account, which
+    // its Context keeps (see sload_into).
+    [[gnu::always_inline]] inline void
+    memoise_row(Address const &, AccountState &);
+
     // sload_into past its first part, each in a frame of its own: a cold
     // slot of the memoised account, one that neither of its rows holds, a
     // warm one whose value the block's state has to give, and every other
@@ -403,9 +408,12 @@ private:
         Address const &, bytes32_t const &key, uint256_t &out,
         OriginalAccountState &);
 
+    // On the frame's row when it has one, or the row it finds becomes the
+    // frame's: see sload_into.
     template <Traits traits>
     [[gnu::noinline]] monad_access_status sload_full(
-        Address const &, bytes32_t const &key, bool read_cold, uint256_t &out);
+        Address const &, bytes32_t const &key, bool read_cold, uint256_t &out,
+        void *&row);
 
     // current_storage_into's read for SLOAD, written in the stack's word
     // order from where the value is kept.
@@ -542,17 +550,19 @@ public:
 
 #if defined(MONAD_ZKVM_ZISK)
     // SLOAD's access_storage and get_storage_into, with one lookup of the
-    // account: see vm::Host::sload_into.
+    // account: see vm::Host::sload_into. `row` is the running frame's row
+    // for the account, null until one is found: its Context's state_row.
     template <Traits traits>
     monad_access_status sload_into(
-        Address const &, bytes32_t const &key, bool read_cold, uint256_t &out);
+        Address const &, bytes32_t const &key, bool read_cold, uint256_t &out,
+        void *&row);
 
     // SSTORE's access_storage and set_storage, with one lookup of the
-    // account: see vm::runtime::guest_sstore_into.
+    // account: see vm::runtime::guest_sstore_into. `row` as in sload_into.
     template <Traits traits>
     vm::runtime::SstoreStatus sstore_into(
         Address const &, bytes32_t const &key, bytes32_t const &value,
-        bool write_cold);
+        bool write_cold, void *&row);
 #endif
 
     monad_page_storage_status update_page(

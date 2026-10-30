@@ -353,10 +353,10 @@ namespace monad::vm::runtime
     template <Traits traits>
     evmc_access_status guest_sload_into(
         Host &host, evmc::address const &addr, evmc::bytes32 const &key,
-        bool const read_cold, uint256_t &value) noexcept
+        bool const read_cold, uint256_t &value, void *&row) noexcept
     {
         return static_cast<EvmcHost<traits> &>(host)
-            .EvmcHost<traits>::sload_into(addr, key, read_cold, value);
+            .EvmcHost<traits>::sload_into(addr, key, read_cold, value, row);
     }
 
     EXPLICIT_EVM_TRAITS(guest_sload_into);
@@ -364,10 +364,10 @@ namespace monad::vm::runtime
     template <Traits traits>
     SstoreStatus guest_sstore_into(
         Host &host, evmc::address const &addr, evmc::bytes32 const &key,
-        evmc::bytes32 const &value, bool const write_cold) noexcept
+        evmc::bytes32 const &value, bool const write_cold, void *&row) noexcept
     {
         return static_cast<EvmcHost<traits> &>(host)
-            .EvmcHost<traits>::sstore_into(addr, key, value, write_cold);
+            .EvmcHost<traits>::sstore_into(addr, key, value, write_cold, row);
     }
 
     EXPLICIT_EVM_TRAITS(guest_sstore_into);

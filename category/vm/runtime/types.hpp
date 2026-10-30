@@ -344,6 +344,15 @@ namespace monad::vm::runtime
         // The stack top across such a call, stored before it and read back.
         uint256_t *frame_stack_top = nullptr;
 
+        // The State's row for env.recipient, once SLOAD or SSTORE has found
+        // it, or null: the frame's later ones take it from here, where the
+        // State's one-entry memo compares the address, and misses after
+        // every call the frame makes. Without dirty-account lists, a
+        // DELEGATECALL or CALLCODE frame, of its caller's recipient, starts
+        // with its caller's (VM::execute). Untyped: the row is the State's
+        // (see State::sload_into).
+        void *state_row = nullptr;
+
         // The capacity is a multiple of 32, so a store at an offset below
         // the result ends inside it, rounded up to the word. Saturated at
         // both ends: a frame's capacity is often 0, and the result must stay

@@ -40,6 +40,7 @@
 
 #pragma once
 
+#include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #if defined(MONAD_ZKVM_VARCODE_CACHE)
     #include <ankerl/unordered_dense.h>
@@ -186,6 +187,20 @@ namespace monad::vm
                 icode->code_span());
 
             auto *const prev_rt_ctx = host.set_runtime_context(&rt_ctx);
+#if defined(MONAD_ZKVM_ZISK) && defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
+            // A DELEGATECALL or CALLCODE runs on the account of its caller,
+            // whose context the host held until now: it starts with the row
+            // its caller found (runtime::Context::state_row). Only without
+            // dirty-account lists: finding the row enters the account in the
+            // running frame's list, which a row handed down would skip.
+            if ((msg->kind == EVMC_DELEGATECALL ||
+                 msg->kind == EVMC_CALLCODE) &&
+                prev_rt_ctx != nullptr) {
+                MONAD_DEBUG_ASSERT(
+                    prev_rt_ctx->env.recipient == rt_ctx.env.recipient);
+                rt_ctx.state_row = prev_rt_ctx->state_row;
+            }
+#endif
             auto const stack_ptr = stack_allocator_.allocate();
             interpreter::execute<traits>(rt_ctx, *icode, stack_ptr.get());
             auto result = rt_ctx.template copy_to_evmc_result<traits>();

@@ -47,7 +47,8 @@ namespace monad::vm::runtime
                 host_shim::addr(&ctx->env.recipient),
                 host_shim::word(&key),
                 ctx->gas_remaining >= traits::cold_storage_cost(),
-                *result_ptr) == EVMC_ACCESS_COLD) {
+                *result_ptr,
+                ctx->state_row) == EVMC_ACCESS_COLD) {
             ctx->deduct_gas(traits::cold_storage_cost());
         }
     }
@@ -107,8 +108,8 @@ namespace monad::vm::runtime
                     host_shim::addr(&ctx->env.recipient),
                     host_shim::word(&key),
                     host_shim::word(&value),
-                    ctx->gas_remaining >=
-                        traits::cold_storage_cost() + min_gas);
+                    ctx->gas_remaining >= traits::cold_storage_cost() + min_gas,
+                    ctx->state_row);
             if (access_status == MONAD_ACCESS_COLD) {
                 ctx->deduct_gas(traits::cold_storage_cost() + min_gas);
             }

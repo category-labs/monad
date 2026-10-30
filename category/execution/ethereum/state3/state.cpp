@@ -517,8 +517,7 @@ void State::pop_reject()
     log_marks_.pop_back();
 #endif
 
-    // Rollback may erase and move map entries, invalidating the cached
-    // pointer.
+    // Rollback erases the rows the frame made, the cached one perhaps.
     memo_val_ = nullptr;
 
     // Replay backwards to restore the earliest values last.
@@ -541,6 +540,14 @@ void State::pop_reject()
 #endif
         Undo &u = undo_.back();
         if (u.kind == Undo::Kind::Created) {
+#if defined(MONAD_ZKVM_ZISK)
+            // Every row made in a frame has its record, in the order made:
+            // the frame's rows go youngest first, each then the map's last
+            // value, and its erase moves no other row. A running frame's
+            // runtime::Context::state_row relies on it (see sload_into).
+            MONAD_DEBUG_ASSERT(
+                !current_.empty() && current_.values().back().first == u.addr);
+#endif
             current_.erase(u.addr);
             undo_.pop_back();
             continue;
@@ -1184,14 +1191,43 @@ State::access_storage(Address const &address, bytes32_t const &key)
 EXPLICIT_TRAITS_MEMBER(State::access_storage);
 
 #if defined(MONAD_ZKVM_ZISK)
+// A call the frame made leaves the memo on another account, or clears it:
+// put back on the frame's row, it is where the reads that reuse the memo
+// (TLOAD, SELFBALANCE) and current_account_state (the debit of the frame's
+// next call) find the account, as they did after the search the row saves.
+// A row the frame found itself is already in its dirty list, and a row is
+// handed down only without the lists, so the epoch is the frame's.
+inline void State::memoise_row(Address const &address, AccountState &row)
+{
+    MONAD_DEBUG_ASSERT(current_.contains(address));
+    MONAD_DEBUG_ASSERT(&current_.find(address)->second == &row);
+    if (MONAD_UNLIKELY(memo_val_ != &row)) {
+        memo_addr_ = address;
+        memo_val_ = &row;
+    #if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
+        memo_epoch_ = frame_epoch_;
+    #endif
+    }
+}
+
 // access_storage leaves the account in current_, where get_storage_into
-// would find it again: the value is read from the row just looked up.
+// would find it again: the value is read from the row just looked up. The
+// frame's row, when it has one, is the account's: under MIP-8, where
+// sload_into's first part is compiled out, every SLOAD comes here.
 template <Traits traits>
 monad_access_status State::sload_full(
     Address const &address, bytes32_t const &key, bool const read_cold,
-    uint256_t &out)
+    uint256_t &out, void *&row)
 {
-    auto &account_state = current_account_state(address);
+    AccountState *cur = static_cast<AccountState *>(row);
+    if (MONAD_UNLIKELY(cur == nullptr)) {
+        cur = &current_account_state(address);
+        row = cur;
+    }
+    else {
+        memoise_row(address, *cur);
+    }
+    auto &account_state = *cur;
     monad_access_status const status =
         access_storage_of<traits>(account_state, address, key);
     if (status == MONAD_ACCESS_WARM || read_cold) {
@@ -1260,18 +1296,36 @@ monad_access_status State::sload_read(
     return MONAD_ACCESS_WARM;
 }
 
-// A warm slot of the memoised account whose value the state holds, about
+// A warm slot of the frame's account whose value the state holds, about
 // half of all SLOADs, is answered with no call, so with no frame to save and
 // restore registers in. Every other case goes on by a tail call: into
 // sload_cold or sload_cold_absent with the account found, into sload_read
 // with its original row, or into sload_full.
+//
+// The account is the running call's row: found by its first SLOAD or SSTORE,
+// in the memo or by current_account_state, or, without dirty-account lists,
+// its caller's for a DELEGATECALL or CALLCODE (vm::VM::execute), and taken
+// from its Context by the later ones. They compared the address with the
+// memo, which every call the frame makes leaves on another account:
+// memoise_row puts it back on the row. The row stays where it is until the
+// call returns. Only pop_reject erases rows: those its frame made, youngest
+// first, each then the map's last value, whose erase moves no other. They are
+// younger than the call's row, made by a call begun after it was found, or in
+// the call's own frame, which pops after the call returns.
 template <Traits traits>
 monad_access_status State::sload_into(
     Address const &address, bytes32_t const &key, bool const read_cold,
-    uint256_t &out)
+    uint256_t &out, void *&row)
 {
     if constexpr (!traits::mip_8_active()) {
-        AccountState *const cur = memoised_current(address);
+        AccountState *cur = static_cast<AccountState *>(row);
+        if (MONAD_UNLIKELY(cur == nullptr)) {
+            cur = memoised_current(address);
+            row = cur;
+        }
+        else {
+            memoise_row(address, *cur);
+        }
         if (MONAD_LIKELY(cur != nullptr)) {
             auto const &account = cur->account_;
             OriginalAccountState *const orig = cur->orig_;
@@ -1332,7 +1386,7 @@ monad_access_status State::sload_into(
             }
         }
     }
-    return sload_full<traits>(address, key, read_cold, out);
+    return sload_full<traits>(address, key, read_cold, out, row);
 }
 
 EXPLICIT_TRAITS_MEMBER(State::sload_into);
@@ -1342,9 +1396,18 @@ EXPLICIT_TRAITS_MEMBER(State::sload_into);
 template <Traits traits>
 vm::runtime::SstoreStatus State::sstore_into(
     Address const &address, bytes32_t const &key, bytes32_t const &value,
-    bool const write_cold)
+    bool const write_cold, void *&row)
 {
-    auto &account_state = current_account_state(address);
+    // The frame's row, as in sload_into.
+    AccountState *cur = static_cast<AccountState *>(row);
+    if (MONAD_UNLIKELY(cur == nullptr)) {
+        cur = &current_account_state(address);
+        row = cur;
+    }
+    else {
+        memoise_row(address, *cur);
+    }
+    auto &account_state = *cur;
     if constexpr (!traits::mip_8_active()) {
         // set_storage_of's two searches first: a slot either row holds is
         // warm while the original row says so, as in sload_into, and its

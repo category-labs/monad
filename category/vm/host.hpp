@@ -68,10 +68,11 @@ namespace monad::vm
         /// cannot exits before reading, as it did between the two calls.
         /// It is written in the stack's word order, straight from where the
         /// state keeps it: through a big-endian copy, each SLOAD copied it
-        /// twice.
+        /// twice. `row` is the frame's runtime::Context::state_row, which
+        /// the state reads when it is set and sets when it is not.
         virtual evmc_access_status sload_into(
             evmc::address const &addr, evmc::bytes32 const &key, bool read_cold,
-            ::monad::uint256_t &value) noexcept = 0;
+            ::monad::uint256_t &value, void *&row) noexcept = 0;
 
         /// EIP-7702's delegate of `addr`, read where its code is kept: through
         /// copy_code, the code's first bytes were copied out, at a run-time
@@ -325,7 +326,7 @@ namespace monad::vm::runtime
     template <Traits traits>
     evmc_access_status guest_sload_into(
         Host &, evmc::address const &, evmc::bytes32 const &, bool,
-        ::monad::uint256_t &) noexcept;
+        ::monad::uint256_t &, void *&row) noexcept;
 
     // SSTORE's two statuses from its one host call, as the State gives them:
     // a conversion between the two calls would keep the host's from being a
@@ -339,11 +340,12 @@ namespace monad::vm::runtime
     // SSTORE's access_storage and set_storage, with one lookup of the
     // account. The slot is written when it was warm, or when `write_cold`
     // says the caller can pay for a cold access: one that cannot exits before
-    // the write, as it did between the two calls.
+    // the write, as it did between the two calls. `row` as in
+    // Host::sload_into.
     template <Traits traits>
     SstoreStatus guest_sstore_into(
         Host &, evmc::address const &, evmc::bytes32 const &,
-        evmc::bytes32 const &, bool write_cold) noexcept;
+        evmc::bytes32 const &, bool write_cold, void *&row) noexcept;
 
     template <Traits traits>
     evmc_access_status

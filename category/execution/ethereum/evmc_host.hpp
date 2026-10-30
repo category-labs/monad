@@ -309,12 +309,12 @@ struct EvmcHost final : public EvmcHostBase
 #if defined(MONAD_ZKVM_ZISK)
     virtual evmc_access_status sload_into(
         evmc::address const &address, evmc::bytes32 const &key,
-        bool const read_cold, uint256_t &value) noexcept override
+        bool const read_cold, uint256_t &value, void *&row) noexcept override
     {
         MONAD_TRY
         {
             return to_evmc_access_status(state_.sload_into<traits>(
-                as_monad(address), as_monad(key), read_cold, value));
+                as_monad(address), as_monad(key), read_cold, value, row));
         }
         MONAD_CATCH(...)
         {
@@ -326,12 +326,16 @@ struct EvmcHost final : public EvmcHostBase
     // See vm::runtime::guest_sstore_into, its only caller.
     vm::runtime::SstoreStatus sstore_into(
         evmc::address const &address, evmc::bytes32 const &key,
-        evmc::bytes32 const &value, bool const write_cold) noexcept
+        evmc::bytes32 const &value, bool const write_cold, void *&row) noexcept
     {
         MONAD_TRY
         {
             return state_.sstore_into<traits>(
-                as_monad(address), as_monad(key), as_monad(value), write_cold);
+                as_monad(address),
+                as_monad(key),
+                as_monad(value),
+                write_cold,
+                row);
         }
         MONAD_CATCH(...)
         {

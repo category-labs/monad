@@ -76,7 +76,8 @@ namespace monad::vm
         template <Traits traits>
         evmc::Result execute(
             Host &host, evmc_message const *const msg,
-            bytes32_t const & /*code_hash*/, SharedVarcode const &vcode)
+            bytes32_t const & /*code_hash*/, SharedVarcode const &vcode,
+            uint64_t * /*growth_gas_ptr*/)
         {
             auto const &icode = vcode->intercode();
             auto rt_ctx = runtime::Context::from(
@@ -96,9 +97,17 @@ namespace monad::vm
         }
 
         template <Traits traits>
+        evmc::Result execute(
+            Host &host, evmc_message const *const msg,
+            bytes32_t const &code_hash, SharedVarcode const &vcode)
+        {
+            return execute<traits>(host, msg, code_hash, vcode, nullptr);
+        }
+
+        template <Traits traits>
         evmc::Result execute_bytecode(
             Host &host, evmc_message const *const msg,
-            std::span<uint8_t const> const code)
+            std::span<uint8_t const> const code, uint64_t * /*growth_gas_ptr*/)
         {
             auto rt_ctx = runtime::Context::from(
                 &host.get_interface(), host.to_context(), msg, code);
@@ -112,6 +121,14 @@ namespace monad::vm
             (void)host.set_runtime_context(prev_rt_ctx);
             host.rethrow_on_active_exception();
             return result;
+        }
+
+        template <Traits traits>
+        evmc::Result execute_bytecode(
+            Host &host, evmc_message const *const msg,
+            std::span<uint8_t const> const code)
+        {
+            return execute_bytecode<traits>(host, msg, code, nullptr);
         }
     };
 }

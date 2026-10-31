@@ -79,6 +79,13 @@ struct BlockCacheEntry
 using BlockCache =
     ankerl::unordered_dense::segmented_map<bytes32_t, BlockCacheEntry>;
 
+struct BlockTimes
+{
+    std::chrono::system_clock::time_point block_start;
+    std::chrono::steady_clock::time_point block_begin;
+    std::chrono::microseconds blr_time;
+};
+
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-variable"
 #pragma GCC diagnostic ignored "-Wunused-parameter"
@@ -184,10 +191,8 @@ Result<BlockExecOutput> propose_block(
     vm::VM &vm, fiber::PriorityPool &priority_pool, bool const is_first_block,
     bool const enable_tracing, BlockCache &block_cache,
     ExecutionEventRecorder *const exec_recorder,
-    RunloopMonadOverride const runloop_override)
+    RunloopMonadOverride const runloop_override, BlockTimes const &block_times)
 {
-    [[maybe_unused]] auto const block_start = std::chrono::system_clock::now();
-    auto const block_begin = std::chrono::steady_clock::now();
     auto const &block_hash_buffer =
         block_hash_chain.find_chain(consensus_header.parent_id());
 
@@ -366,34 +371,41 @@ Result<BlockExecOutput> propose_block(
     // Emit the block metrics log line
     [[maybe_unused]] auto const block_time =
         std::chrono::duration_cast<std::chrono::microseconds>(
-            std::chrono::steady_clock::now() - block_begin);
+            std::chrono::steady_clock::now() - block_times.block_begin);
     LOG_INFO(
         "__exec_block,bl={:8},id={},ts={}"
         ",tx={:5},rt={:4},rtp={:5.2f}%"
-        ",sr={:>7},txe={:>8},cmt={:>8},tot={:>8},tpse={:5},tps={:5}"
-        ",gas={:9},gpse={:4},gps={:3}{}{}{}",
+        ",blr={:>7},sr={:>7},txe={:>8},cmt={:>8},etot={:>8},tot={:>8}"
+        ",tpse={:5},tps={:5}"
+        ",gase={:9},gasu={:9},gasc={:9},gas={:9},gasl={:9},gpse={:4},gps={:4}{}"
+        "{}{}",
         block.header.number,
         block_id,
         std::chrono::duration_cast<std::chrono::milliseconds>(
-            block_start.time_since_epoch())
+            block_times.block_start.time_since_epoch())
             .count(),
         block.transactions.size(),
         block_metrics.num_retries,
         100.0 * (double)block_metrics.num_retries /
             std::max(1.0, (double)block.transactions.size()),
+        block_times.blr_time,
         sender_recovery_time,
         block_metrics.tx_exec_time,
         commit_time,
+        block_time,
         block_time,
         block.transactions.size() * 1'000'000 /
             (uint64_t)std::max(1L, block_metrics.tx_exec_time.count()),
         block.transactions.size() * 1'000'000 /
             (uint64_t)std::max(1L, block_time.count()),
+        block_metrics.gas_exec,
+        block_metrics.gas_used,
         exec_output.eth_header.gas_used,
-        exec_output.eth_header.gas_used /
+        exec_output.eth_header.gas_used,
+        block_metrics.sum_tx_gas_limit,
+        block_metrics.gas_exec /
             (uint64_t)std::max(1L, block_metrics.tx_exec_time.count()),
-        exec_output.eth_header.gas_used /
-            (uint64_t)std::max(1L, block_time.count()),
+        block_metrics.gas_exec / (uint64_t)std::max(1L, block_time.count()),
         db.print_stats(),
         vm.print_and_reset_block_counts(),
         vm.print_compiler_stats());
@@ -641,13 +653,18 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
              runloop_override](
                 bytes32_t const &block_id,
                 auto const &header) -> Result<std::pair<uint64_t, uint64_t>> {
-            auto const block_time_start = std::chrono::steady_clock::now();
+            auto const block_start = std::chrono::system_clock::now();
+            auto const block_begin = std::chrono::steady_clock::now();
 
             db.update_voted_metadata(header.seqno - 1, header.parent_id());
             record_block_qc(exec_recorder, header, last_finalized_block_number);
 
             uint64_t const block_number = header.execution_inputs.number;
+            auto const blr_begin = std::chrono::steady_clock::now();
             auto body = read_body(header.block_body_id, body_dir);
+            auto const blr_time =
+                std::chrono::duration_cast<std::chrono::microseconds>(
+                    std::chrono::steady_clock::now() - blr_begin);
             auto const ntxns = body.transactions.size();
 
             auto const &block_hash_buffer =
@@ -696,7 +713,11 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                     enable_tracing,
                     block_cache,
                     exec_recorder,
-                    runloop_override);
+                    runloop_override,
+                    BlockTimes{
+                        .block_start = block_start,
+                        .block_begin = block_begin,
+                        .blr_time = blr_time});
                 MONAD_ABORT_PRINTF("handled rev value %d", rev);
             };
             BOOST_OUTCOME_TRY(
@@ -710,7 +731,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                 block_id,
                 ntxns,
                 exec_output.eth_header.gas_used,
-                block_time_start);
+                block_begin);
 
             return outcome::success();
         };
@@ -724,6 +745,9 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
         }
 
         for (auto const &[block, block_id, verified_blocks] : to_finalize) {
+            [[maybe_unused]] auto const fin_start =
+                std::chrono::system_clock::now();
+            auto const fin_begin = std::chrono::steady_clock::now();
             LOG_INFO(
                 "Processing finalization for block {} with block_id {}",
                 block,
@@ -738,6 +762,18 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                 db.update_verified_block(verified_blocks.back());
             }
             record_block_verified(exec_recorder, verified_blocks);
+
+            [[maybe_unused]] auto const fin_time =
+                std::chrono::duration_cast<std::chrono::microseconds>(
+                    std::chrono::steady_clock::now() - fin_begin);
+            LOG_INFO(
+                "__finalize,bl={:8},id={},ts={},dur={:>7}",
+                block,
+                block_id,
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    fin_start.time_since_epoch())
+                    .count(),
+                fin_time);
         }
 
         if (!to_finalize.empty()) {

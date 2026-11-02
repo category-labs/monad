@@ -2220,8 +2220,7 @@ monad_executor *monad_executor_create(
     MONAD_ASSERT(dbpath);
     std::string const triedb_path{dbpath};
 
-    init_trusted_setup();
-    MONAD_ASSERT(check_trusted_setup());
+    MONAD_ASSERT(init_trusted_setup());
 
     monad_executor *const e = new monad_executor(
         low_pool_conf,

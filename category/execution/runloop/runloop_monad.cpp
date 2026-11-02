@@ -590,6 +590,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
             [&raw_db, &to_execute, &to_finalize](
                 bytes32_t const &id, auto const &header) {
                 std::vector<uint64_t> verified_blocks;
+                verified_blocks.reserve(
+                    header.delayed_execution_results.size());
                 for (BlockHeader const &h : header.delayed_execution_results) {
                     verified_blocks.push_back(h.number);
                 }

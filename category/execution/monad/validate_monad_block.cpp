@@ -127,8 +127,9 @@ Result<void> static_validate_monad_body(
             return SyscallKind::OnEpochChange;
         case staking::selector::REWARD:
             return SyscallKind::Reward;
+        default:
+            return SyscallKind::Other;
         }
-        return SyscallKind::Other;
     };
 
     std::array<bool, 3> seen{};

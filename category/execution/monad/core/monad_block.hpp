@@ -27,6 +27,7 @@
 #include <utility>
 #include <vector>
 
+// NOLINTBEGIN(bugprone-macro-parentheses)
 #define EXPLICIT_MONAD_CONSENSUS_BLOCK_HEADER(f)                               \
     template decltype(f<MonadConsensusBlockHeaderV0>)                          \
         f<MonadConsensusBlockHeaderV0>;                                        \
@@ -34,6 +35,7 @@
         f<MonadConsensusBlockHeaderV1>;                                        \
     template decltype(f<MonadConsensusBlockHeaderV2>)                          \
         f<MonadConsensusBlockHeaderV2>;
+// NOLINTEND(bugprone-macro-parentheses)
 
 MONAD_NAMESPACE_BEGIN
 

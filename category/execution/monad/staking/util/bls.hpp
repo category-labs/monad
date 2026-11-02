@@ -31,7 +31,7 @@ class BlsPubkey
     BLST_ERROR parse_result_;
 
 public:
-    BlsPubkey(byte_string_fixed<48> const &compressed)
+    explicit BlsPubkey(byte_string_fixed<48> const &compressed)
     {
         parse_result_ = blst_p1_uncompress(&pubkey_, compressed.data());
     }
@@ -65,7 +65,7 @@ class BlsSignature
     BLST_ERROR parse_result_;
 
 public:
-    BlsSignature(byte_string_fixed<96> const &compressed)
+    explicit BlsSignature(byte_string_fixed<96> const &compressed)
     {
         parse_result_ = blst_p2_uncompress(&sig_, compressed.data());
     }

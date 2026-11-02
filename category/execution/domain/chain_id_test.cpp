@@ -13,17 +13,21 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/core/int.hpp>
+#include <category/core/runtime/uint256.hpp>
 #include <category/execution/domain/chain_id.hpp>
+#include <category/execution/ethereum/core/signature.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/ethereum/validate_transaction_error.hpp>
+#include <category/vm/evm/monad/revision.h>
 #include <category/vm/evm/traits.hpp>
 
 #include <gtest/gtest.h>
 
 #include <cstdint>
 #include <limits>
+#include <optional>
 
 using namespace monad;
 using namespace monad::domain;

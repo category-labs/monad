@@ -164,14 +164,15 @@ struct StakeTraits : public MonadTraitsTest<MonadRevisionT>
         contract.vars.epoch.store(start_epoch);
     }
 
-    void post_call(bool const err)
+    template <class T>
+    Result<void> post_call(Result<T> &res)
     {
-        if (!err) {
-            state.pop_accept();
-        }
-        else {
+        if (res.has_error()) {
             state.pop_reject();
+            return std::move(res).as_failure();
         }
+        state.pop_accept();
+        return outcome::success();
     }
 
     void inc_epoch()
@@ -230,9 +231,7 @@ struct StakeTraits : public MonadTraitsTest<MonadRevisionT>
     {
         state.push();
         auto res = contract.syscall_snapshot({}, 0);
-        post_call(res.has_error());
-        BOOST_OUTCOME_TRYV(std::move(res));
-        return outcome::success();
+        return post_call(res);
     }
 
     Result<void> syscall_on_epoch_change(uint64_t const epoch)
@@ -240,9 +239,7 @@ struct StakeTraits : public MonadTraitsTest<MonadRevisionT>
         auto const input = abi_encode_uint<u64_be>(epoch);
         state.push();
         auto res = contract.syscall_on_epoch_change(input, 0);
-        post_call(res.has_error());
-        BOOST_OUTCOME_TRYV(std::move(res));
-        return outcome::success();
+        return post_call(res);
     }
 
     Result<void>
@@ -251,9 +248,7 @@ struct StakeTraits : public MonadTraitsTest<MonadRevisionT>
         auto const input = abi_encode_address(address);
         state.push();
         auto res = contract.syscall_reward<Trait>(input, raw_reward);
-        post_call(res.has_error());
-        BOOST_OUTCOME_TRYV(std::move(res));
-        return outcome::success();
+        return post_call(res);
     }
 
     Result<ValResult> add_validator(
@@ -267,8 +262,8 @@ struct StakeTraits : public MonadTraitsTest<MonadRevisionT>
         state.push();
         auto res = contract.precompile_add_validator<Trait>(
             input, auth_address, msg_value);
-        post_call(res.has_error());
-        BOOST_OUTCOME_TRY(auto const id_output, std::move(res));
+        BOOST_OUTCOME_TRYV(post_call(res));
+        auto const &id_output = res.value();
         u64_be val_id = 0;
         state.add_to_balance(STAKING_CA, stake);
         std::memcpy(val_id.bytes, id_output.data() + 24, 8);
@@ -283,8 +278,7 @@ struct StakeTraits : public MonadTraitsTest<MonadRevisionT>
         state.push();
         auto res =
             contract.precompile_delegate<Trait>(input, del_address, msg_value);
-        post_call(res.has_error());
-        BOOST_OUTCOME_TRYV(std::move(res));
+        BOOST_OUTCOME_TRYV(post_call(res));
         state.add_to_balance(STAKING_CA, stake);
         return outcome::success();
     }
@@ -297,9 +291,7 @@ struct StakeTraits : public MonadTraitsTest<MonadRevisionT>
             craft_undelegate_input(val_id, amount, withdrawal_id);
         state.push();
         auto res = contract.precompile_undelegate<Trait>(input, address, {});
-        post_call(res.has_error());
-        BOOST_OUTCOME_TRYV(std::move(res));
-        return outcome::success();
+        return post_call(res);
     }
 
     Result<void> withdraw(
@@ -308,9 +300,7 @@ struct StakeTraits : public MonadTraitsTest<MonadRevisionT>
         auto const input = craft_withdraw_input(val_id, withdrawal_id);
         state.push();
         auto res = contract.precompile_withdraw<Trait>(input, address, {});
-        post_call(res.has_error());
-        BOOST_OUTCOME_TRYV(std::move(res));
-        return outcome::success();
+        return post_call(res);
     }
 
     Result<void> compound(u64_be const val_id, Address const &address)
@@ -318,9 +308,7 @@ struct StakeTraits : public MonadTraitsTest<MonadRevisionT>
         auto const input = abi_encode_uint<u64_be>(val_id);
         state.push();
         auto res = contract.precompile_compound<Trait>(input, address, {});
-        post_call(res.has_error());
-        BOOST_OUTCOME_TRYV(std::move(res));
-        return outcome::success();
+        return post_call(res);
     }
 
     Result<void> claim_rewards(u64_be const val_id, Address const &address)
@@ -328,9 +316,7 @@ struct StakeTraits : public MonadTraitsTest<MonadRevisionT>
         auto const input = abi_encode_uint<u64_be>(val_id);
         state.push();
         auto res = contract.precompile_claim_rewards<Trait>(input, address, {});
-        post_call(res.has_error());
-        BOOST_OUTCOME_TRYV(std::move(res));
-        return outcome::success();
+        return post_call(res);
     }
 
     Result<void> change_commission(
@@ -339,9 +325,7 @@ struct StakeTraits : public MonadTraitsTest<MonadRevisionT>
         auto const input = craft_change_commission_input(val_id, commission);
         state.push();
         auto res = contract.precompile_change_commission(input, sender, {});
-        post_call(res.has_error());
-        BOOST_OUTCOME_TRYV(std::move(res));
-        return outcome::success();
+        return post_call(res);
     }
 
     Result<void> external_reward(
@@ -352,10 +336,9 @@ struct StakeTraits : public MonadTraitsTest<MonadRevisionT>
         state.push();
         auto res =
             contract.precompile_external_reward(input, sender, msg_value);
-        post_call(res.has_error());
+        auto result = post_call(res);
         state.add_to_balance(STAKING_CA, reward);
-        BOOST_OUTCOME_TRYV(std::move(res));
-        return outcome::success();
+        return result;
     }
 
     Result<byte_string> get_valset(uint32_t const start_index)

@@ -216,14 +216,13 @@ namespace
                         total_read - total_processed},
                     updates);
                 if (MONAD_UNLIKELY((total_read + CHUNK_SIZE) > buf_size_)) {
-                    fwrite(std::move(updates));
+                    fwrite(std::exchange(updates, {}));
                     std::memmove(
                         buf_.get(),
                         buf_.get() + total_processed,
                         total_read - total_processed);
                     total_read -= total_processed;
                     total_processed = 0;
-                    updates.clear();
                 }
             }
 

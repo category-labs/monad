@@ -14,13 +14,16 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/assert.h>
-#include <category/core/int.hpp>
 #include <category/core/likely.h>
+#include <category/core/result.hpp>
+#include <category/core/runtime/uint256.hpp>
 #include <category/execution/domain/chain_id.hpp>
 #include <category/execution/domain/config.hpp>
 #include <category/execution/ethereum/validate_transaction_error.hpp>
 
+#include <cstdint>
 #include <limits>
+#include <optional>
 
 MONAD_DOMAIN_NAMESPACE_BEGIN
 

@@ -112,9 +112,9 @@ namespace
     oracle_storage_leaf(std::vector<uint8_t> const &nibs, bytes32_t v)
     {
         mpt::Nibbles const p = nibs_to_path(nibs);
-        unsigned char cbuf[33];
-        auto const compact =
-            mpt::compact_encode(cbuf, mpt::NibblesView{p}, /*term=*/true);
+        unsigned char cbuf[33]{};
+        auto const compact = mpt::compact_encode(
+            cbuf, mpt::NibblesView{p}, /*terminating=*/true);
         byte_string const trie_val = rlp::encode_string2(
             rlp::zeroless_view(to_byte_string_view(v.bytes)));
         return rlp::encode_list2(
@@ -137,8 +137,9 @@ namespace
     byte_string oracle_account_leaf(
         mpt::NibblesView const path, byte_string const &acct_rlp)
     {
-        unsigned char cbuf[33];
-        auto const compact = mpt::compact_encode(cbuf, path, /*term=*/true);
+        unsigned char cbuf[33]{};
+        auto const compact =
+            mpt::compact_encode(cbuf, path, /*terminating=*/true);
         return rlp::encode_list2(
             rlp::encode_string2(compact),
             rlp::encode_string2(byte_string_view{acct_rlp}));

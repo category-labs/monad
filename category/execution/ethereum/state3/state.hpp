@@ -540,6 +540,14 @@ public:
     void get_storage_into(
         evmc_address const &, bytes32_t const &key, evmc_bytes32 &out);
 
+    // get_storage for a caller with another source to fall back on: nullopt,
+    // with nothing asserted or warmed, when the witness does not resolve the
+    // account, the account does not exist, or the witness lacks the slot.
+    // Only a value it holds is cached. The native state resolves everything,
+    // and answers nullopt only for an account that does not exist.
+    std::optional<bytes32_t>
+    try_get_storage(evmc_address const &, bytes32_t const &key);
+
     bytes32_t get_transient_storage(evmc_address const &, bytes32_t const &key);
 
     bool is_touched(evmc_address const &);
@@ -661,9 +669,12 @@ public:
     bool defer_beneficiary_credit(uint256_t const &);
 
     // A CALL's access_account and delegate_of, with one lookup of the
-    // account: see vm::runtime::guest_call_target.
+    // account: see vm::runtime::guest_call_target. The delegate is read
+    // when the access found the account cold and `read_cold` holds, or
+    // warm and `read_warm` holds; otherwise it is null, and the account's
+    // code is left unread.
     vm::runtime::CallTarget
-    call_target(evmc_address const &, bool can_pay_cold_access);
+    call_target(evmc_address const &, bool read_cold, bool read_warm);
 
     // The same for a target that is warm without its row, a precompile: its
     // delegate only. With both in the State, the host jumps to either: a

@@ -35,6 +35,10 @@ class AccountSubstate
     bool destructed_{false}; // A_s
     bool touched_{false}; // A_t
     bool accessed_{false}; // A_a
+    // False on a placeholder row for an account the witness does not resolve:
+    // the row carries warmth and frame rollback, and nothing else of it may
+    // be read or written. Native state always resolves.
+    bool resolved_{true};
     Set accessed_storage_{}; // A_K
 
 #ifdef MONAD_ZKVM_ZISK
@@ -65,6 +69,16 @@ public:
     Set const &get_accessed_storage() const
     {
         return accessed_storage_;
+    }
+
+    [[nodiscard]] bool is_resolved() const
+    {
+        return resolved_;
+    }
+
+    void mark_unresolved()
+    {
+        resolved_ = false;
     }
 
     // A_s

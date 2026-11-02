@@ -36,6 +36,7 @@
 #include <bit>
 #include <cstdint>
 #include <cstring>
+#include <optional>
 #include <span>
 #include <type_traits>
 #include <utility>
@@ -586,7 +587,7 @@ public:
 };
 
 template <class... Fs>
-[[gnu::always_inline]] decltype(auto) match(NodeViewBase n, Fs &&...fs)
+[[gnu::always_inline]] inline decltype(auto) match(NodeViewBase n, Fs &&...fs)
 {
     Cases const v{std::forward<Fs>(fs)...};
     switch (n.tag()) {
@@ -881,6 +882,12 @@ public:
     // leaf view if the key is present, else `NullView`. Aborts on a Digest
     // (incomplete witness). Traverses through the view accessors via match.
     NodeViewBase find_original(NodeId id, NibblesView key) const;
+
+    // As find_original, but a Digest on the path yields nullopt instead of
+    // aborting: the witness cannot say whether the key is present. For
+    // callers that have another verified source to fall back on.
+    std::optional<NodeViewBase>
+    try_find_original(NodeId id, NibblesView key) const;
 
     NodeId put_branch(NodeId, std::array<node_id_wire_t, 16> const &);
     NodeId put_ext(NodeId, NibblesView, NodeId);

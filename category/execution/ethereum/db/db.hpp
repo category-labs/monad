@@ -46,6 +46,24 @@ struct Db
     virtual bytes32_t
     read_storage(evmc_address const &, Incarnation, bytes32_t const &key) = 0;
 
+    // The fallible reads a partial store (a witness) answers with nullopt
+    // when it cannot resolve the account or slot; an engaged outer optional
+    // holding nullopt is a proven absence. A complete store resolves
+    // everything, which these defaults say.
+    virtual std::optional<std::optional<Account>>
+    try_read_account(evmc_address const &address)
+    {
+        return std::optional<std::optional<Account>>{
+            std::in_place, read_account(address)};
+    }
+
+    virtual std::optional<bytes32_t> try_read_storage(
+        evmc_address const &address, Incarnation const incarnation,
+        bytes32_t const &key)
+    {
+        return read_storage(address, incarnation, key);
+    }
+
     virtual storage_page_t read_storage_page(
         Address const &, Incarnation, bytes32_t const &page_key) = 0;
 

@@ -64,13 +64,28 @@ MONAD_NAMESPACE_BEGIN
 
 std::optional<Account> PartialTrieDb::read_account(evmc_address const &addr)
 {
+    auto const account = try_read_account(addr);
+    if (MONAD_UNLIKELY(!account)) {
+        MONAD_ABORT("incomplete witness: account lookup hit a Digest");
+    }
+    return *account;
+}
+
+std::optional<std::optional<Account>>
+PartialTrieDb::try_read_account(evmc_address const &addr)
+{
     auto const key = keccak256(addr.bytes);
+    auto const node =
+        trie_.try_find_original(trie_.root, mpt::NibblesView{key});
+    if (MONAD_UNLIKELY(!node)) {
+        return std::nullopt;
+    }
     // This descent already reaches the account's leaf, and the leaf carries its
     // storage root -- so prime the one-entry cache with it.
     return match(
-        trie_.find_original(trie_.root, mpt::NibblesView{key}),
+        *node,
         Cases{
-            [&](mpt::NullView) -> std::optional<Account> {
+            [&](mpt::NullView) -> std::optional<std::optional<Account>> {
                 // An absent account is worth caching too, and NULL_ID is what
                 // read_storage would have concluded: otherwise every storage
                 // read against it re-descends to find the same nothing.
@@ -80,19 +95,80 @@ std::optional<Account> PartialTrieDb::read_account(evmc_address const &addr)
 #ifdef MONAD_ZKVM_ZISK
                 sroots_.try_emplace(addr, mpt::NULL_ID);
 #endif
-                return std::nullopt;
+                return std::optional<std::optional<Account>>{
+                    std::in_place, std::nullopt};
             },
-            [&](mpt::AccountLeafView l) -> std::optional<Account> {
+            [&](mpt::AccountLeafView l)
+                -> std::optional<std::optional<Account>> {
                 static_cast<evmc_address &>(sroot_addr_) = addr;
                 sroot_id_ = l.storage();
                 sroot_valid_ = true;
 #ifdef MONAD_ZKVM_ZISK
                 sroots_.try_emplace(addr, sroot_id_);
 #endif
-                return l.account();
+                return std::optional<std::optional<Account>>{
+                    std::in_place, l.account()};
             },
-            [](auto) -> std::optional<Account> {
+            [](auto) -> std::optional<std::optional<Account>> {
                 MONAD_ABORT("incorrect node type returned in read_account");
+            }});
+}
+
+// read_storage with the two descents fallible: the storage root's lookup is
+// cached as read_storage caches it, only when it resolved.
+std::optional<bytes32_t> PartialTrieDb::try_read_storage(
+    evmc_address const &addr, Incarnation, bytes32_t const &slot)
+{
+    mpt::NodeId sroot;
+    if (sroot_valid_ && address_equal(sroot_addr_, addr)) {
+        sroot = sroot_id_;
+    }
+#ifdef MONAD_ZKVM_ZISK
+    else if (auto const it = sroots_.find(addr); it != sroots_.end()) {
+        sroot = it->second;
+        static_cast<evmc_address &>(sroot_addr_) = addr;
+        sroot_id_ = sroot;
+        sroot_valid_ = true;
+    }
+#endif
+    else {
+        auto const akey = keccak256(addr.bytes);
+        auto const node =
+            trie_.try_find_original(trie_.root, mpt::NibblesView{akey});
+        if (MONAD_UNLIKELY(!node)) {
+            return std::nullopt;
+        }
+        sroot = match(
+            *node,
+            Cases{
+                [](mpt::NullView) { return mpt::NULL_ID; },
+                [](mpt::AccountLeafView l) { return l.storage(); },
+                [](auto) -> mpt::NodeId {
+                    MONAD_ABORT("incorrect node type returned in read_storage");
+                }});
+        static_cast<evmc_address &>(sroot_addr_) = addr;
+        sroot_id_ = sroot;
+        sroot_valid_ = true;
+#ifdef MONAD_ZKVM_ZISK
+        sroots_.try_emplace(addr, sroot);
+#endif
+    }
+
+    if (sroot == mpt::NULL_ID) {
+        return bytes32_t{};
+    }
+    auto const skey = keccak256(slot.bytes);
+    auto const leaf = trie_.try_find_original(sroot, mpt::NibblesView{skey});
+    if (MONAD_UNLIKELY(!leaf)) {
+        return std::nullopt;
+    }
+    return match(
+        *leaf,
+        Cases{
+            [](mpt::NullView) { return bytes32_t{}; },
+            [](mpt::StorageLeafView l) { return l.value(); },
+            [](auto) -> bytes32_t {
+                MONAD_ABORT("incorrect node type returned in read_storage");
             }});
 }
 

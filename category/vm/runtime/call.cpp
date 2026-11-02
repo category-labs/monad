@@ -91,6 +91,17 @@ namespace monad::vm::runtime
 
         auto const dest_address = address_from_uint256(address);
 
+        // The value transfer's cost, and the exits it brings, come before
+        // the EIP-7702 delegation lookup below, which reads the callee's
+        // code. revm charges it first and does not load a cold callee the
+        // frame cannot pay for, so a witness built from revm has no proof for
+        // that account. Gas totals are unchanged by the order: the early
+        // exit reverts the frame, which also rolls back the delegate's
+        // warm-up the old order performed before failing.
+        bool const static_violation = has_value && call_kind == EVMC_CALL &&
+                                      (ctx->env.evmc_flags & EVMC_STATIC) != 0;
+        int64_t const value_cost = has_value ? 9000 : 0;
+
 #if defined(MONAD_ZKVM_ZISK)
         // The message's addresses bound where they lie, not copied into
         // locals of their own before being copied into the message: a
@@ -99,14 +110,26 @@ namespace monad::vm::runtime
         // current authority; the delegate is the address where it lies in
         // the code, which the host returns. From Prague the access and the
         // delegate come from one host call, with one lookup of the account.
-        // A cold access that the gas left cannot pay for exits below, before
-        // the target's code is read, as it did between them.
+        // A cold access that the gas left cannot pay for, a transfer it
+        // cannot pay for, or one a static frame forbids, exits below, before
+        // the target's code is read, as it did between them: the host is
+        // told, for a cold and for a warm target, whether the call goes on.
         Address const *delegate_address = nullptr;
         if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
+            bool const read_warm =
+                !static_violation &&
+                ctx->gas_remaining - value_cost + remaining_block_base_gas >= 0;
+            bool const read_cold =
+                read_warm &&
+                ctx->gas_remaining >= traits::cold_account_cost() &&
+                ctx->gas_remaining - traits::cold_account_cost() - value_cost +
+                        remaining_block_base_gas >=
+                    0;
             auto const target = guest_call_target<traits>(
                 host_of(*ctx),
                 host_shim::addr(&dest_address),
-                ctx->gas_remaining >= traits::cold_account_cost());
+                read_cold,
+                read_warm);
             if (target.access == MONAD_ACCESS_COLD) {
                 ctx->deduct_gas(traits::cold_account_cost());
             }
@@ -126,6 +149,17 @@ namespace monad::vm::runtime
             ctx->deduct_gas(traits::cold_account_cost());
         }
 #endif
+
+        if (has_value) {
+            ctx->gas_remaining -= value_cost;
+            if (MONAD_UNLIKELY(
+                    ctx->gas_remaining + remaining_block_base_gas < 0)) {
+                ctx->exit(StatusCode::OutOfGas);
+            }
+            if (MONAD_UNLIKELY(static_violation)) {
+                ctx->exit(StatusCode::Error);
+            }
+        }
 
 #if defined(MONAD_ZKVM_ZISK)
         Address const *code_address_p = &dest_address;
@@ -178,20 +212,7 @@ namespace monad::vm::runtime
                                 : ctx->env.recipient;
 #endif
 
-        if (has_value) {
-            ctx->gas_remaining -= 9000;
-        }
-
         if (call_kind == EVMC_CALL) {
-            if (MONAD_UNLIKELY(
-                    has_value && (ctx->env.evmc_flags & EVMC_STATIC))) {
-                auto const error_code =
-                    ctx->gas_remaining + remaining_block_base_gas < 0
-                        ? StatusCode::OutOfGas
-                        : StatusCode::Error;
-                ctx->exit(error_code);
-            }
-
             if (has_value &&
                 !ctx->host->account_exists(ctx->context, &dest_address)) {
                 ctx->gas_remaining -= 25000;

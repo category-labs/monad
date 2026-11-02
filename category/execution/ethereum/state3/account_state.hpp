@@ -228,11 +228,13 @@ public:
 
     [[nodiscard]] bool has_account() const
     {
+        MONAD_ASSERT(is_resolved());
         return account_.has_value();
     }
 
     [[nodiscard]] bytes32_t get_code_hash() const
     {
+        MONAD_ASSERT(is_resolved());
         if (MONAD_LIKELY(account_.has_value())) {
             return account_->code_hash;
         }
@@ -241,6 +243,7 @@ public:
 
     [[nodiscard]] uint64_t get_nonce() const
     {
+        MONAD_ASSERT(is_resolved());
         if (MONAD_LIKELY(account_.has_value())) {
             return account_->nonce;
         }
@@ -249,6 +252,7 @@ public:
 
     [[nodiscard]] std::optional<Incarnation> get_incarnation() const
     {
+        MONAD_ASSERT(is_resolved());
         if (MONAD_LIKELY(account_.has_value())) {
             return account_->incarnation;
         }
@@ -257,6 +261,7 @@ public:
 
     bytes32_t get_transient_storage(bytes32_t const &key) const
     {
+        MONAD_ASSERT(is_resolved());
         if (auto const *const it = transient_storage_.find(key);
             MONAD_LIKELY(it)) {
             return *it;
@@ -270,6 +275,7 @@ public:
         bytes32_t const &key, bytes32_t const &value,
         bytes32_t const &original_value, bytes32_t const *const prev)
     {
+        MONAD_ASSERT(is_resolved());
 #ifdef MONAD_ZKVM_ZISK
         // Borrow the current value instead of copying its 32 bytes.
         bytes32_t const &current_value = prev ? *prev : original_value;
@@ -284,6 +290,7 @@ public:
 
     void set_transient_storage(bytes32_t const &key, bytes32_t const &value)
     {
+        MONAD_ASSERT(is_resolved());
         transient_storage_.upsert(key, value);
     }
 };
@@ -384,7 +391,9 @@ public:
 #ifdef MONAD_ZKVM_ZISK
     // The block's entry for the account, which the row was read from: the
     // slot reads and the merge reach it without looking the address up.
-    // The block state never erases an entry or moves one.
+    // The block state never erases an entry or moves one. Null on an
+    // unresolved row, which has no entry: the witness does not resolve the
+    // account, and the block state caches nothing for it.
     StateDelta *delta_{nullptr};
 
     // Nonzero once the account's current row or this row may hold a slot
@@ -410,8 +419,9 @@ public:
     }
 
 #ifdef MONAD_ZKVM_ZISK
-    // Copy the block's current account and retain a pointer to its delta.
-    explicit OriginalAccountState(StateDelta &delta);
+    // Copy the block's current account and retain a pointer to its delta; a
+    // null delta makes the unresolved placeholder row.
+    explicit OriginalAccountState(StateDelta *delta);
 #endif
 
     [[nodiscard]] bool validate_exact_balance() const
@@ -431,6 +441,7 @@ public:
 
     uint256_t get_balance_pessimistic()
     {
+        MONAD_ASSERT(is_resolved());
         set_validate_exact_balance();
         if (account_.has_value()) {
             return account_->balance;

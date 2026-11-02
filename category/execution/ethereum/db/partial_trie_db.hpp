@@ -91,6 +91,16 @@ public:
     bytes32_t
     read_storage(evmc_address const &, Incarnation, bytes32_t const &) override;
 
+    // Outer nullopt: the witness does not resolve the account, which the
+    // caller must not cache as absent. An engaged outer optional holding
+    // nullopt is a proven absence.
+    std::optional<std::optional<Account>>
+    try_read_account(evmc_address const &) override;
+
+    // Nullopt when the account or the slot lies behind a digest.
+    std::optional<bytes32_t> try_read_storage(
+        evmc_address const &, Incarnation, bytes32_t const &) override;
+
     storage_page_t
     read_storage_page(Address const &, Incarnation, bytes32_t const &) override
     {

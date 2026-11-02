@@ -70,10 +70,13 @@ namespace
 }
 
 #ifdef MONAD_ZKVM_ZISK
-OriginalAccountState::OriginalAccountState(StateDelta &delta)
-    : AccountState{delta.account.second}
-    , delta_{&delta}
+OriginalAccountState::OriginalAccountState(StateDelta *const delta)
+    : AccountState{delta ? delta->account.second : std::nullopt}
+    , delta_{delta}
 {
+    if (MONAD_UNLIKELY(delta == nullptr)) {
+        mark_unresolved();
+    }
 }
 #endif
 
@@ -93,11 +96,13 @@ OriginalAccountState &State::original_account_state(evmc_address const &address)
         evmc_address const &address;
 
         // If the row is missing, try_emplace constructs OriginalAccountState.
-        // Its constructor needs StateDelta&, so C++ invokes this conversion.
+        // Its constructor needs StateDelta*, so C++ invokes this conversion.
         // An existing row requires no construction and never calls this code.
-        operator StateDelta &() const
+        // Null, for an account the witness does not resolve, makes the
+        // placeholder row.
+        operator StateDelta *() const
         {
-            return block_state.read_account_delta(address);
+            return block_state.try_read_account_delta(address);
         }
     };
 
@@ -113,8 +118,12 @@ OriginalAccountState &State::original_account_state(evmc_address const &address)
     auto it = original_.find(address);
     if (it == original_.end()) {
         // block state
-        auto const account = block_state_.read_account(address);
+        bool resolved;
+        auto const account = block_state_.read_account(address, resolved);
         it = original_.try_emplace(address, account).first;
+        if (MONAD_UNLIKELY(!resolved)) {
+            it->second.mark_unresolved();
+        }
     }
     return it->second;
 #endif
@@ -123,15 +132,19 @@ OriginalAccountState &State::original_account_state(evmc_address const &address)
 AccountState const &State::recent_account_state(evmc_address const &address)
 {
     if (AccountState *const m = memoised(address); m != nullptr) {
+        MONAD_ASSERT(m->is_resolved());
         return *m;
     }
     // current
     auto const it = current_.find(address);
     if (it != current_.end()) {
+        MONAD_ASSERT(it->second.is_resolved());
         return it->second;
     }
     // original
-    return original_account_state(address);
+    auto const &orig = original_account_state(address);
+    MONAD_ASSERT(orig.is_resolved());
+    return orig;
 }
 
 AccountState &State::current_account_state(evmc_address const &address)
@@ -168,6 +181,10 @@ AccountState &State::current_account_state(evmc_address const &address)
         // Construct empty containers directly; original slots stay in
         // prestate_storage_ and remain accessible through orig_.
         it = current_.try_emplace(address, account_state.account_).first;
+        // The placeholder's row is a placeholder too.
+        if (MONAD_UNLIKELY(!account_state.is_resolved())) {
+            it->second.mark_unresolved();
+        }
 #else
         it = current_.try_emplace(address, account_state).first;
 #endif
@@ -696,10 +713,12 @@ State::RowPair State::rows_for_read(evmc_address const &address)
     auto const it = current_.find(address);
     if (it != current_.end()) {
         MONAD_ASSERT(it->second.orig_ != nullptr);
+        MONAD_ASSERT(it->second.is_resolved());
         return {&it->second, it->second.orig_};
     }
     // No current row: the original row IS the row a read sees.
     auto &orig = original_account_state(address);
+    MONAD_ASSERT(orig.is_resolved());
     return {&orig, &orig};
 }
 
@@ -712,6 +731,7 @@ void State::set_original_nonce(
     evmc_address const &address, uint64_t const nonce)
 {
     auto &account_state = original_account_state(address);
+    MONAD_ASSERT(account_state.is_resolved());
     auto &account = account_state.account_;
     if (!account.has_value()) {
         account = Account{};
@@ -767,7 +787,9 @@ uint256_t State::get_balance(evmc_address const &address)
 
 uint256_t State::get_original_balance(evmc_address const &address)
 {
-    return original_account_state(address).get_balance_pessimistic();
+    auto &account_state = original_account_state(address);
+    MONAD_ASSERT(account_state.is_resolved());
+    return account_state.get_balance_pessimistic();
 }
 
 bytes32_t State::get_code_hash(evmc_address const &address)
@@ -798,6 +820,7 @@ inline void State::current_storage_into(
     AccountState const &account_state, evmc_address const &address,
     bytes32_t const &key, evmc_bytes32 &out)
 {
+    MONAD_ASSERT(account_state.is_resolved());
     auto const &account = account_state.account_;
     MONAD_ASSERT(account.has_value());
     auto const &storage = account_state.storage_;
@@ -840,6 +863,7 @@ inline void State::current_storage_load(
     AccountState const &account_state, evmc_address const &address,
     bytes32_t const &key, uint256_t &out)
 {
+    MONAD_ASSERT(account_state.is_resolved());
     auto const &account = account_state.account_;
     MONAD_ASSERT(account.has_value());
     auto const &storage = account_state.storage_;
@@ -886,6 +910,7 @@ void State::get_storage_into(
         auto const it2 = original_.find(address);
         MONAD_ASSERT(it2 != original_.end());
         auto &account_state = it2->second;
+        MONAD_ASSERT(account_state.is_resolved());
         auto const &account = account_state.account_;
         MONAD_ASSERT(account.has_value());
         auto &storage = account_state.prestate_storage_;
@@ -915,6 +940,66 @@ void State::get_storage_into(
     }
 }
 
+std::optional<bytes32_t>
+State::try_get_storage(evmc_address const &address, bytes32_t const &key)
+{
+    // The slot's value in the block's state, cached in the original row when
+    // the witness holds it; read for an original row the account's current
+    // incarnation came from.
+    auto const read =
+        [&](OriginalAccountState &orig,
+            Incarnation const incarnation) -> std::optional<bytes32_t> {
+        if (auto const *const it = orig.prestate_storage_.find(key); it) {
+            return *it;
+        }
+#ifdef MONAD_ZKVM_ZISK
+        auto const value = block_state_.try_read_storage(
+            *orig.delta_, address, incarnation, key);
+        if (value) {
+            // Read without being warmed, as get_storage_into has it.
+            orig.rows_unwarmed_ = 1;
+        }
+#else
+        auto const value =
+            block_state_.try_read_storage(address, incarnation, key);
+#endif
+        if (value) {
+            orig.prestate_storage_.insert(key, *value);
+        }
+        return value;
+    };
+
+    AccountState const *cur = memoised(address);
+    if (cur == nullptr) {
+        auto const it = current_.find(address);
+        if (it != current_.end()) {
+            cur = &it->second;
+        }
+    }
+    if (cur == nullptr) {
+        auto &orig = original_account_state(address);
+        if (!orig.is_resolved() || !orig.account_.has_value()) {
+            return std::nullopt;
+        }
+        return read(orig, orig.account_->incarnation);
+    }
+    if (!cur->is_resolved() || !cur->account_.has_value()) {
+        return std::nullopt;
+    }
+    if (auto const *const it = cur->storage_.find(key); it) {
+        return *it;
+    }
+    MONAD_ASSERT(cur->orig_ != nullptr);
+    auto &orig = *cur->orig_;
+    auto const &original_account = orig.account_;
+    Incarnation const incarnation = cur->account_->incarnation;
+    if (!original_account.has_value() ||
+        incarnation != original_account->incarnation) {
+        return bytes32_t{};
+    }
+    return read(orig, incarnation);
+}
+
 bytes32_t
 State::get_transient_storage(evmc_address const &address, bytes32_t const &key)
 {
@@ -930,6 +1015,7 @@ bool State::is_touched(evmc_address const &address)
 void State::set_nonce(evmc_address const &address, uint64_t const nonce)
 {
     auto &account_state = current_account_state(address);
+    MONAD_ASSERT(account_state.is_resolved());
     auto &account = account_state.account_;
     if (MONAD_UNLIKELY(!account.has_value())) {
         journal_account(address, account_state);
@@ -944,6 +1030,7 @@ void State::set_nonce(evmc_address const &address, uint64_t const nonce)
 void State::add_to_balance(evmc_address const &address, uint256_t const &delta)
 {
     auto &account_state = current_account_state(address);
+    MONAD_ASSERT(account_state.is_resolved());
     auto &account = account_state.account_;
     if (MONAD_UNLIKELY(!account.has_value())) {
         journal_account(address, account_state);
@@ -972,6 +1059,7 @@ void State::subtract_from_balance(
     evmc_address const &address, uint256_t const &delta)
 {
     auto &account_state = current_account_state(address);
+    MONAD_ASSERT(account_state.is_resolved());
     auto &account = account_state.account_;
     if (MONAD_UNLIKELY(!account.has_value())) {
         journal_account(address, account_state);
@@ -1027,6 +1115,7 @@ inline monad_storage_status State::set_storage_found(
     bytes32_t const &key, bytes32_t const &value, bytes32_t const *const prev,
     bytes32_t const *const original)
 {
+    MONAD_ASSERT(account_state.is_resolved());
     MONAD_ASSERT(account_state.account_);
     // Where the original value lies, in the original row or the block: a
     // local was zeroed, then assigned from one of them.
@@ -1044,6 +1133,7 @@ inline monad_storage_status State::set_storage_found(
 #else
     bytes32_t original_value;
     auto &account_state = current_account_state(address);
+    MONAD_ASSERT(account_state.is_resolved());
     MONAD_ASSERT(account_state.account_);
     // Reuse one lookup for journaling, status computation and the write.
     // The pre-state lookup below uses a separate container, preserving prev.
@@ -1078,6 +1168,7 @@ void State::set_transient_storage(
     evmc_address const &address, bytes32_t const &key, bytes32_t const &value)
 {
     auto &account_state = current_account_state(address);
+    MONAD_ASSERT(account_state.is_resolved());
 #ifdef MONAD_ZKVM_ZISK
     // One search of the account's transient rows: the value the journal keeps
     // and the place the new one goes are the same row.
@@ -1103,6 +1194,7 @@ void State::set_transient_storage(
 void State::touch(evmc_address const &address)
 {
     auto &account_state = current_account_state(address);
+    MONAD_ASSERT(account_state.is_resolved());
     if (account_state.touch()) {
         journal_flag(address, Undo::Kind::FlagTouched);
     }
@@ -1347,6 +1439,7 @@ monad_page_storage_status State::update_page(
     monad_storage_status const status)
 {
     auto &account_state = current_account_state(address);
+    MONAD_ASSERT(account_state.is_resolved());
     journal_pages(address, account_state);
     return account_state.page_tracker_.update_page(key, status);
 }
@@ -1573,6 +1666,7 @@ State::CodeRef State::code_ref_of(evmc_address const &address)
 inline State::CodeRef
 State::code_ref_in(AccountState const &row, OriginalAccountState *const orig)
 {
+    MONAD_ASSERT(row.is_resolved());
     auto const &account = row.account_;
     if (MONAD_UNLIKELY(!account.has_value())) {
         return {NULL_HASH, read_code_ref(NULL_HASH)};
@@ -1606,16 +1700,19 @@ Address const *State::delegate_of(evmc_address const &address)
     return vm::evm::delegate_in(vcode->intercode()->code_span());
 }
 
-vm::runtime::CallTarget
-State::call_target(evmc_address const &address, bool const can_pay_cold_access)
+vm::runtime::CallTarget State::call_target(
+    evmc_address const &address, bool const read_cold, bool const read_warm)
 {
     auto &account_state = current_account_state(address);
     auto const status = account_state.access();
     if (status == MONAD_ACCESS_COLD) {
         journal_flag(address, Undo::Kind::FlagAccessed);
-        if (!can_pay_cold_access) {
+        if (!read_cold) {
             return {status, nullptr};
         }
+    }
+    else if (!read_warm) {
+        return {status, nullptr};
     }
     // delegate_of's, from the row just looked up.
     vm::SharedVarcode const &vcode =
@@ -1649,6 +1746,7 @@ void State::set_code(evmc_address const &address, byte_string_view const code)
 void State::create_contract(evmc_address const &address)
 {
     auto &account_state = current_account_state(address);
+    MONAD_ASSERT(account_state.is_resolved());
     auto &account = account_state.account_;
     // Save account_ to restore presence and incarnation on rollback.
     journal_account(address, account_state);
@@ -1679,6 +1777,7 @@ void State::create_contract(evmc_address const &address)
 void State::create_account_no_rollback(evmc_address const &address)
 {
     auto &account_state = current_account_state(address);
+    MONAD_ASSERT(account_state.is_resolved());
     auto &account = account_state.account_;
     // The name refers to SELFDESTRUCT protection; frame rejection still
     // restores the previous account.
@@ -1714,6 +1813,7 @@ void State::store_log(Receipt::Log &&log)
 void State::set_to_state_incarnation(evmc_address const &address)
 {
     auto &account_state = current_account_state(address);
+    MONAD_ASSERT(account_state.is_resolved());
     auto &account = account_state.account_;
     journal_account(address, account_state);
     if (MONAD_UNLIKELY(!account.has_value())) {

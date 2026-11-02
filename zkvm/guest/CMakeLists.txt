@@ -677,6 +677,16 @@ else()
     target_link_libraries(monad-zkvm-x86-test-runner
         PRIVATE monad-zkvm-guest monad_execution zkevm-standards)
 
+    # The partial-state semantics the guest relies on (placeholder rows for
+    # accounts the witness does not resolve, fallible slot reads, the
+    # BLOCKHASH fallback), exercised through PartialTrieDb on the host build.
+    add_executable(monad-zkvm-state-test
+        "${CMAKE_CURRENT_SOURCE_DIR}/state_test.cpp")
+    monad_compile_options(monad-zkvm-state-test)
+    target_link_libraries(monad-zkvm-state-test
+        PRIVATE monad_execution GTest::gtest GTest::gmock GTest::gtest_main)
+    add_test(NAME monad-zkvm-state COMMAND monad-zkvm-state-test)
+
     add_executable(monad-zkvm-keccak-test
         keccak_accel.cpp
         test/keccak_accel_test.cpp

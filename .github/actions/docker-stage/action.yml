@@ -11,7 +11,9 @@ inputs:
     description: Extra build arguments, one per line.
     default: ''
   cache-from:
-    description: Layer caches to read, one per line.
+    description: >-
+      Layer caches to read, one per line. Never list two caches that hold the
+      same layers: BuildKit then misses the later stages at random.
     default: ''
   cache-to:
     description: Layer cache to write.
@@ -39,12 +41,15 @@ runs:
 
     - name: Set up Docker Buildx
       if: inputs.setup == 'true'
-      uses: docker/setup-buildx-action@v3
+      uses: docker/setup-buildx-action@v4
       with:
         cleanup: false
 
     - name: Build `${{ inputs.target }}` stage
-      uses: docker/build-push-action@v5
+      uses: docker/build-push-action@v7
+      env:
+        DOCKER_BUILD_RECORD_UPLOAD: false
+        DOCKER_BUILD_SUMMARY: false
       with:
         context: .
         file: docker/Dockerfile

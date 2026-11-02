@@ -4131,6 +4131,102 @@ TEST(Emitter, MemoryRepeatedOffset)
     memory_repeated_offset_test_impl<runtime::Memory::Version::MIP3>();
 }
 
+template <runtime::Memory::Version memory_version>
+static void memory_repeated_literal_offset_test_impl()
+{
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from(
+        {PUSH1,    1,     PUSH1, 64,       MSTORE, PUSH1, 2,     PUSH1, 32,
+         MSTORE,   PUSH1, 64,    MLOAD,    PUSH1,  96,    MLOAD, ADD,   MSIZE,
+         PUSH1,    27,    JUMP,  JUMPDEST, PUSH2,  1,     0,     MLOAD, STOP,
+         JUMPDEST, PUSH1, 160,   MLOAD,    POP,    RETURN});
+
+    asmjit::JitRuntime rt;
+    TestEmitter emit{rt, ir.codesize};
+    for (auto const &[k, _] : ir.jump_dests()) {
+        emit.add_jump_dest(k);
+    }
+    (void)emit.begin_new_block(ir.blocks().at(0));
+    emit.push(1);
+    emit.push(64);
+    emit.mstore<memory_version>();
+    emit.push(2);
+    emit.push(32);
+    emit.mstore<memory_version>();
+    emit.push(64);
+    emit.mload<memory_version>();
+    emit.push(96);
+    emit.mload<memory_version>();
+    emit.add();
+    emit.msize();
+    emit.push(27);
+    emit.jump();
+    (void)emit.begin_new_block(ir.blocks().at(1));
+    emit.push(256);
+    emit.mload<memory_version>();
+    emit.stop();
+    (void)emit.begin_new_block(ir.blocks().at(2));
+    emit.push(160);
+    emit.mload<memory_version>();
+    emit.pop();
+    emit.return_();
+
+    entrypoint_t entry = emit.finish_contract(rt);
+    evmc_tx_context tx_context{};
+    auto ctx = test_context(&tx_context);
+    auto const &ret = ctx->result;
+    auto stack_memory = test_stack_memory();
+    entry(&*ctx, stack_memory.get());
+
+    ASSERT_EQ(ret.status, runtime::StatusCode::Success);
+    ASSERT_EQ(load_le<uint256_t>(ret.offset), 128);
+    ASSERT_EQ(load_le<uint256_t>(ret.size), 1);
+    ASSERT_EQ(ctx->memory.size, 192);
+}
+
+template <runtime::Memory::Version memory_version>
+static void memory_literal_offset_kept_fallthrough_test_impl()
+{
+    static constexpr std::array<uint8_t, 3> offsets{32, 32, 80};
+    std::vector<uint8_t> bytecode{PUSH1, 64, MLOAD, POP, PUSH0, PUSH0, JUMPI};
+    for (auto const off : offsets) {
+        bytecode.insert(bytecode.end(), {PUSH1, off, MLOAD, POP});
+    }
+    bytecode.push_back(STOP);
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from(bytecode);
+
+    asmjit::JitRuntime const rt;
+    TestEmitter emit{rt, ir.codesize};
+    (void)emit.begin_new_block(ir.blocks().at(0));
+    emit.push(64);
+    emit.mload<memory_version>();
+    emit.pop();
+    emit.push(0);
+    emit.push(0);
+    emit.jumpi(ir.blocks().at(1));
+    (void)emit.begin_new_block(ir.blocks().at(1));
+    std::vector<size_t> sizes{emit.estimate_size()};
+    for (auto const off : offsets) {
+        emit.push(off);
+        emit.mload<memory_version>();
+        emit.pop();
+        sizes.push_back(emit.estimate_size());
+    }
+    emit.stop();
+
+    ASSERT_EQ(sizes[1] - sizes[0], sizes[2] - sizes[1]);
+    ASSERT_GT(sizes[3] - sizes[2], sizes[2] - sizes[1]);
+}
+
+TEST(Emitter, MemoryRepeatedLiteralOffset)
+{
+    memory_repeated_literal_offset_test_impl<runtime::Memory::Version::V1>();
+    memory_repeated_literal_offset_test_impl<runtime::Memory::Version::MIP3>();
+    memory_literal_offset_kept_fallthrough_test_impl<
+        runtime::Memory::Version::V1>();
+    memory_literal_offset_kept_fallthrough_test_impl<
+        runtime::Memory::Version::MIP3>();
+}
+
 TEST(Emitter, calldataload)
 {
     evmc_tx_context tx_context{};
@@ -4648,7 +4744,22 @@ TEST(Emitter, AsmLogLabelsEachInstruction)
     auto const path = std::filesystem::temp_directory_path() /
                       "monad_vm_asm_log_labels_each_instruction.s";
     std::vector<uint8_t> const bytecode{
-        CALLVALUE, PUSH1, 0x06, JUMPI, CALLVALUE, STOP, JUMPDEST, STOP};
+        CALLVALUE,
+        PUSH1,
+        0x0e,
+        JUMPI,
+        CALLVALUE,
+        CALLVALUE,
+        MSTORE,
+        CALLVALUE,
+        CALLDATALOAD,
+        CALLVALUE,
+        SLOAD,
+        CALLVALUE,
+        CALLVALUE,
+        JUMP,
+        JUMPDEST,
+        STOP};
     auto const ir = basic_blocks::BasicBlocksIR::unsafe_from(bytecode);
 
     asmjit::JitRuntime rt;
@@ -4668,14 +4779,35 @@ TEST(Emitter, AsmLogLabelsEachInstruction)
 
     std::vector<std::string> const expected{
         "//   0x00:",
+        "// stack bound check",
+        "// gas decrement",
         "//       0x00: CALLVALUE",
-        "//       0x01: PUSH1 0x6",
+        "//       0x01: PUSH1 0xe",
         "//     0x03: JumpI 1",
         "//   0x04:",
+        "// stack bound check",
+        "// gas decrement",
         "//       0x04: CALLVALUE",
-        "//     0x05: Stop",
-        "//   0x06:",
-        "//     0x07: Stop"};
+        "//       0x05: CALLVALUE",
+        "//       0x06: MSTORE",
+        "// offset bound check",
+        "// memory expansion check",
+        "//       0x07: CALLVALUE",
+        "//       0x08: CALLDATALOAD",
+        "// offset bound check",
+        "//       0x09: CALLVALUE",
+        "//       0x0a: SLOAD",
+        "// runtime call",
+        "//       0x0b: CALLVALUE",
+        "//       0x0c: CALLVALUE",
+        "//     0x0d: Jump",
+        "// write to final stack offsets",
+        "// adjust by stack delta",
+        "// jump table lookup",
+        "//   0x0e:",
+        "// gas decrement",
+        "//     0x0f: Stop",
+        "// calldataload bounded loads"};
     EXPECT_EQ(labels, expected);
 }
 

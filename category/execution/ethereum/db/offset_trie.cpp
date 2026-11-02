@@ -21,6 +21,7 @@
 #include <category/core/cases.hpp>
 #include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
+#include <category/core/likely.h>
 #include <category/core/nibble.h>
 #include <category/core/rlp/encode.hpp>
 #include <category/execution/ethereum/core/account.hpp>
@@ -434,7 +435,18 @@ namespace
 }
 #endif
 
-NodeViewBase OffsetTrie::find_original(NodeId id, NibblesView key) const
+NodeViewBase
+OffsetTrie::find_original(NodeId const id, NibblesView const key) const
+{
+    auto const found = try_find_original(id, key);
+    if (MONAD_UNLIKELY(!found)) {
+        MONAD_ABORT("incomplete witness: lookup hit a Digest");
+    }
+    return *found;
+}
+
+std::optional<NodeViewBase>
+OffsetTrie::try_find_original(NodeId id, NibblesView key) const
 {
 #if defined(MONAD_ZKVM_ZISK)
     // Keep the full key for realigning a leaf comparison at an odd depth.
@@ -444,7 +456,7 @@ NodeViewBase OffsetTrie::find_original(NodeId id, NibblesView key) const
             ? key.data()
             : nullptr;
 #endif
-    NodeViewBase found = empty();
+    std::optional<NodeViewBase> found = empty();
     // Validate the entry ID; an overlay ID is not a valid original root.
     // Descendant IDs were already validated by the blob constructor.
     NodeViewBase node = get_original(id);
@@ -530,8 +542,10 @@ NodeViewBase OffsetTrie::find_original(NodeId id, NibblesView key) const
                         }
                         return NULL_ID;
                     },
-                    [](DigestView) -> NodeId {
-                        MONAD_ABORT("incomplete witness: lookup hit a Digest");
+                    [&](DigestView) -> NodeId {
+                        // The witness cannot say whether the key is present.
+                        found = std::nullopt;
+                        return NULL_ID;
                     },
                     [](NullView) -> NodeId {
                         // There is only a single NullView node, namely the

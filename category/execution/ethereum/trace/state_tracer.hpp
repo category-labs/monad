@@ -22,8 +22,10 @@
 #include <category/vm/evm/traits.hpp>
 
 #include <ankerl/unordered_dense.h>
+
 #include <immer/map.hpp>
 #include <nlohmann/json_fwd.hpp>
+#include <type_traits>
 
 #include <memory>
 #include <span>
@@ -36,8 +38,12 @@ struct Transaction;
 
 namespace trace
 {
+    // The State's maps, whose address keys compare through AddressEqual.
     template <typename Key, typename Elem>
-    using Map = ankerl::unordered_dense::segmented_map<Key, Elem>;
+    using Map = ankerl::unordered_dense::segmented_map<
+        Key, Elem, ankerl::unordered_dense::hash<Key>,
+        std::conditional_t<
+            std::is_same_v<Key, Address>, AddressEqual, std::equal_to<Key>>>;
 
     template <class Key>
     using Set = ankerl::unordered_dense::set<Key>;

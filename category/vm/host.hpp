@@ -298,7 +298,10 @@ namespace monad::vm
             ::monad::vm::host_shim::update_page,
         };
         // An omitted trailing callback becomes null; require update_page.
-        static_assert(interface.update_page != nullptr);
+        // Compared with the shim rather than null: GCC's -Waddress rejects a
+        // function's address tested against null as always true.
+        static_assert(
+            interface.update_page == &::monad::vm::host_shim::update_page);
         return interface;
     }
 }
@@ -382,12 +385,14 @@ namespace monad::vm::runtime
     };
 
     // access_account and delegate_of, with one lookup of the account. The
-    // delegate is read when the target was warm, or when `read_cold` says the
-    // caller can pay for a cold access: one that cannot exits before the
-    // read, as it did between the two calls, and the witness holds only the
-    // code that execution read.
+    // delegate is read when the target was found cold and `read_cold` holds,
+    // or warm and `read_warm` holds: each says whether the call goes on past
+    // the exits that follow the access (a cold access or a value transfer
+    // the caller cannot pay for, a transfer in a static frame). A call that
+    // exits does so before the read, as it did between the two calls, and
+    // the witness holds only the code that execution read.
     template <Traits traits>
-    CallTarget
-    guest_call_target(Host &, evmc::address const &, bool read_cold) noexcept;
+    CallTarget guest_call_target(
+        Host &, evmc::address const &, bool read_cold, bool read_warm) noexcept;
 }
 #endif

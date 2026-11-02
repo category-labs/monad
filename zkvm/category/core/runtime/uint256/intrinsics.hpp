@@ -35,6 +35,8 @@ namespace monad::uint256::intrinsics
     using portable::subb;
     using portable::truncating_mul;
 
+    [[gnu::always_inline]] constexpr void keep_live(uint64_t) noexcept {}
+
     [[gnu::always_inline]] constexpr uint64_t
     force(uint64_t const expr) noexcept
     {

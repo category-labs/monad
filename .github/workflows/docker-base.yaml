@@ -16,9 +16,10 @@ concurrency:
 jobs:
   build-base:
     runs-on: ubuntu-26.04-32
+    timeout-minutes: 90
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Build and cache `base` stage
         uses: ./.github/actions/docker-stage
@@ -30,9 +31,10 @@ jobs:
 
   cache-fixtures:
     runs-on: ubuntu-26.04-32
+    timeout-minutes: 90
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Build and cache `test_fixtures` stage
         uses: ./.github/actions/docker-stage
@@ -43,28 +45,26 @@ jobs:
           cache-to: type=gha,scope=test_fixtures
 
   cache-rust:
-    needs: build-base
     runs-on: ubuntu-26.04-32
+    timeout-minutes: 90
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Build and cache `base_rust` stage
         uses: ./.github/actions/docker-stage
         with:
           target: base_rust
           setup: true
-          cache-from: |
-            type=gha,scope=base_rust
-            type=gha,scope=base
+          cache-from: type=gha,scope=base_rust
           cache-to: type=gha,scope=base_rust
 
   cache-ocaml:
-    needs: build-base
     runs-on: ubuntu-26.04-32
+    timeout-minutes: 90
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Checkout monad-execution-specs
         run: git submodule update --init third_party/monad-execution-specs
@@ -74,24 +74,20 @@ jobs:
         with:
           target: base_vm_test
           setup: true
-          cache-from: |
-            type=gha,scope=base_vm_test
-            type=gha,scope=base
+          cache-from: type=gha,scope=base_vm_test
           cache-to: type=gha,scope=base_vm_test
 
   cache-riscv:
-    needs: build-base
     runs-on: ubuntu-26.04-32
+    timeout-minutes: 90
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Build and cache `base_riscv_toolchain` stage
         uses: ./.github/actions/docker-stage
         with:
           target: base_riscv_toolchain
           setup: true
-          cache-from: |
-            type=gha,scope=riscv-toolchain
-            type=gha,scope=base
+          cache-from: type=gha,scope=riscv-toolchain
           cache-to: type=gha,mode=max,scope=riscv-toolchain

@@ -36,6 +36,40 @@ namespace monad::vm::fuzzing
         }
     }
 
+    static bool is_cached_read(
+        State const &s, Address const &k, bytes32_t const &key,
+        bytes32_t const &value)
+    {
+        auto const it = s.original().find(k);
+        if (it == s.original().end()) {
+            return false;
+        }
+        auto const *const original = it->second.storage_.find(key);
+        return original && *original == value;
+    }
+
+    // A frame the compiler fails early can skip reads that the other side
+    // makes before failing; their cached originals reach the storage map
+    // when the account is next written.
+    static void assert_equal_storage(
+        Address const &k, State const &a, AccountState const &as,
+        State const &b, AccountState const &bs)
+    {
+        for (auto const &[key, v] : as.storage_) {
+            if (auto const *const found = bs.storage_.find(key)) {
+                MONAD_ASSERT(*found == v);
+            }
+            else {
+                MONAD_ASSERT(is_cached_read(a, k, key, v));
+            }
+        }
+        for (auto const &[key, v] : bs.storage_) {
+            if (!as.storage_.find(key)) {
+                MONAD_ASSERT(is_cached_read(b, k, key, v));
+            }
+        }
+    }
+
     void assert_equal(
         Address const &k, State &a, AccountState const &as, State &b,
         AccountState const &bs)
@@ -51,7 +85,7 @@ namespace monad::vm::fuzzing
             a.is_current_incarnation(k) == b.is_current_incarnation(k));
         MONAD_ASSERT(a.is_touched(k) == b.is_touched(k));
 
-        assert_equal(as.storage_, bs.storage_);
+        assert_equal_storage(k, a, as, b, bs);
         assert_equal(as.transient_storage_, bs.transient_storage_);
         MONAD_ASSERT(as.get_accessed_storage() == bs.get_accessed_storage());
     }

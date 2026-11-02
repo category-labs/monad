@@ -67,7 +67,7 @@ struct quick_status_code_from_enum<monad::MonadBlockError>
 {
     static constexpr auto const domain_name = "Monad Block Error";
     static constexpr auto const domain_uuid =
-        "6eb636da00ddd479646eeb39b8168c814cb4";
+        "7d665b7a-094f-4eeb-b8f6-6cd7c3acb558";
 
     static std::initializer_list<mapping> const &value_mappings();
 };

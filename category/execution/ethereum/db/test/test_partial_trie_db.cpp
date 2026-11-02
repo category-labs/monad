@@ -28,6 +28,7 @@
 #include <category/execution/ethereum/db/partial_trie_db.hpp>
 #include <category/mpt/nibbles_view.hpp>
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include <cstdint>
@@ -130,6 +131,32 @@ TEST(PartialTrieDb, Read_EmptyTrie)
     TestDb db{empty_blob()};
     EXPECT_EQ(db->read_account(ADDR_X), std::nullopt);
     EXPECT_EQ(db->read_storage(ADDR_X, Incarnation{0, 0}, SLOT_1), bytes32_t{});
+    // Proven absence: resolved, and absent.
+    auto const account = db->try_read_account(ADDR_X);
+    ASSERT_TRUE(account.has_value());
+    EXPECT_EQ(*account, std::nullopt);
+    EXPECT_EQ(
+        db->try_read_storage(ADDR_X, Incarnation{0, 0}, SLOT_1), bytes32_t{});
+}
+
+TEST(PartialTrieDb, Read_DigestRootIsUnresolved)
+{
+    // A root that is a digest resolves nothing: the fallible reads say so,
+    // the strict ones abort.
+    byte_string buf = empty_blob();
+    uint32_t const root_off = static_cast<uint32_t>(buf.size());
+    mpt::append_digest(buf, VAL_1);
+    std::memcpy(buf.data() + 4, &root_off, sizeof(root_off));
+    TestDb db{std::move(buf)};
+    EXPECT_FALSE(db->try_read_account(ADDR_X).has_value());
+    EXPECT_FALSE(
+        db->try_read_storage(ADDR_X, Incarnation{0, 0}, SLOT_1).has_value());
+    EXPECT_DEATH(
+        (void)db->read_account(ADDR_X),
+        testing::HasSubstr("incomplete witness"));
+    EXPECT_DEATH(
+        (void)db->read_storage(ADDR_X, Incarnation{0, 0}, SLOT_1),
+        testing::HasSubstr("incomplete witness"));
 }
 
 TEST(PartialTrieDb, Read_LeafWitness_FoundAndAbsent)

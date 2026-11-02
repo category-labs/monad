@@ -81,27 +81,38 @@ BlockState::BlockState(Db &db, vm::VM &monad_vm)
 #ifdef MONAD_ZKVM_ZISK
 StateDelta &BlockState::read_account_delta(evmc_address const &address)
 {
-    // Find or insert in one lookup; read the DB only when creating an entry.
-    struct Read
-    {
-        Db &db;
-        evmc_address const &address;
+    StateDelta *const delta = try_read_account_delta(address);
+    if (MONAD_UNLIKELY(delta == nullptr)) {
+        MONAD_ABORT("incomplete witness: account lookup hit a Digest");
+    }
+    return *delta;
+}
 
-        operator StateDelta() const
-        {
-            auto const result = guest_db(db).read_account(address);
-            return StateDelta{.account = {result, result}, .storage = {}};
-        }
-    };
-
+StateDelta *BlockState::try_read_account_delta(evmc_address const &address)
+{
     MONAD_ASSERT(state_);
-    auto &entry = *state_->try_emplace(address, Read{db_, address}).first;
+    auto it = state_->find(address);
+    if (it == state_->end()) {
+        // An entry is made only for an account the witness resolves: an
+        // unresolved one must not read as absent later, and the map's
+        // entries never move, so a wrong entry could not be taken back.
+        auto const result = guest_db(db_).try_read_account(address);
+        if (MONAD_UNLIKELY(!result)) {
+            return nullptr;
+        }
+        it = state_
+                 ->try_emplace(
+                     address,
+                     StateDelta{.account = {*result, *result}, .storage = {}})
+                 .first;
+    }
+    auto &entry = *it;
     // Every row of an account is built from this entry, so crediting the
     // pending fees here is crediting them before anyone sees the account.
     if (MONAD_UNLIKELY(address == beneficiary_) && pending_) {
         apply_beneficiary_credit(entry.second);
     }
-    return entry.second;
+    return &entry.second;
 }
 
 void BlockState::defer_beneficiary_credit(
@@ -150,6 +161,27 @@ std::optional<Account> BlockState::read_account(evmc_address const &address)
 #ifdef MONAD_ZKVM_ZISK
     return read_account_delta(address).account.second;
 #else
+    bool resolved;
+    auto const account = read_account(address, resolved);
+    if (MONAD_UNLIKELY(!resolved)) {
+        MONAD_ABORT("incomplete witness: account lookup hit a Digest");
+    }
+    return account;
+#endif
+}
+
+std::optional<Account>
+BlockState::read_account(evmc_address const &address, bool &resolved)
+{
+    resolved = true;
+#ifdef MONAD_ZKVM_ZISK
+    StateDelta const *const delta = try_read_account_delta(address);
+    if (MONAD_UNLIKELY(delta == nullptr)) {
+        resolved = false;
+        return std::nullopt;
+    }
+    return delta->account.second;
+#else
     Address const owned_address{address};
     // block state
     {
@@ -161,16 +193,18 @@ std::optional<Account> BlockState::read_account(evmc_address const &address)
     }
     // database
     {
-    #if defined(MONAD_ZKVM_ZISK)
-        auto const result = guest_db(db_).read_account(owned_address);
-    #else
-        auto const result = db_.read_account(owned_address);
-    #endif
+        auto const result = db_.try_read_account(owned_address);
+        if (MONAD_UNLIKELY(!result)) {
+            // Nothing is cached: the witness lacks the account, which is not
+            // its absence.
+            resolved = false;
+            return std::nullopt;
+        }
         StateDeltas::const_accessor it{};
         state_->emplace(
             it,
             owned_address,
-            StateDelta{.account = {result, result}, .storage = {}});
+            StateDelta{.account = {*result, *result}, .storage = {}});
         return it->second.account.second;
     }
 #endif
@@ -234,6 +268,34 @@ bytes32_t const &BlockState::read_storage(
                 incarnation,
                 key,
                 orig_account && incarnation == orig_account->incarnation})
+        .first->second.second;
+}
+
+std::optional<bytes32_t> BlockState::try_read_storage(
+    StateDelta &delta, evmc_address const &address,
+    Incarnation const incarnation, bytes32_t const &key)
+{
+    auto const &account = delta.account.second;
+    if (!account || incarnation != account->incarnation) {
+        return bytes32_t{};
+    }
+    if (auto const it = delta.storage.find(key); it != delta.storage.end()) {
+        return it->second.second;
+    }
+    bytes32_t result{};
+    auto const &orig_account = delta.account.first;
+    if (orig_account && incarnation == orig_account->incarnation) {
+        auto const value =
+            guest_db(db_).try_read_storage(address, incarnation, key);
+        if (MONAD_UNLIKELY(!value)) {
+            return std::nullopt;
+        }
+        result = *value;
+    }
+    if (MONAD_UNLIKELY(delta.storage.bucket_count() == 0)) {
+        delta.storage.reserve(64);
+    }
+    return delta.storage.try_emplace(key, StorageDelta{result, result})
         .first->second.second;
 }
 #endif
@@ -300,6 +362,66 @@ bytes32_t BlockState::read_storage(
 #endif
 }
 
+std::optional<bytes32_t> BlockState::try_read_storage(
+    evmc_address const &address, Incarnation const incarnation,
+    bytes32_t const &key)
+{
+#ifdef MONAD_ZKVM_ZISK
+    MONAD_ASSERT(state_);
+    auto const it = state_->find(address);
+    MONAD_ASSERT(it != state_->end());
+    return try_read_storage(it->second, address, incarnation, key);
+#else
+    Address const owned_address{address};
+    bool read_storage = false;
+    // block state
+    {
+        StateDeltas::const_accessor it{};
+        MONAD_ASSERT(state_);
+        MONAD_ASSERT(state_->find(it, owned_address));
+        auto const &account = it->second.account.second;
+        if (!account || incarnation != account->incarnation) {
+            return bytes32_t{};
+        }
+        auto const &storage = it->second.storage;
+        {
+            StorageDeltas::const_accessor it2{};
+            if (MONAD_LIKELY(storage.find(it2, key))) {
+                return it2->second.second;
+            }
+        }
+        auto const &orig_account = it->second.account.first;
+        if (orig_account && incarnation == orig_account->incarnation) {
+            read_storage = true;
+        }
+    }
+    // database
+    {
+        bytes32_t result{};
+        if (read_storage) {
+            auto const value =
+                db_.try_read_storage(owned_address, incarnation, key);
+            if (MONAD_UNLIKELY(!value)) {
+                return std::nullopt;
+            }
+            result = *value;
+        }
+        StateDeltas::accessor it{};
+        MONAD_ASSERT(state_->find(it, owned_address));
+        auto const &account = it->second.account.second;
+        if (!account || incarnation != account->incarnation) {
+            return result;
+        }
+        auto &storage = it->second.storage;
+        {
+            StorageDeltas::const_accessor it2{};
+            storage.emplace(it2, key, std::make_pair(result, result));
+            return it2->second.second;
+        }
+    }
+#endif
+}
+
 #if defined(MONAD_ZKVM_VARCODE_CACHE)
 vm::SharedVarcode const &BlockState::read_code_ref(bytes32_t const &code_hash)
 #else
@@ -349,6 +471,11 @@ bool BlockState::can_merge(State &state) const
     for (auto &kv : original) {
         Address const &address = kv.first;
         OriginalAccountState const &account_state = kv.second;
+        // An unresolved row has no entry to agree with: nothing of it was
+        // read.
+        if (!account_state.is_resolved()) {
+            continue;
+        }
         auto const &account = account_state.account_;
         // Validate cached original slot values; the inherited storage_ is
         // empty.
@@ -396,6 +523,9 @@ void BlockState::merge(State const &state)
             break;
         }
 #endif
+        if (!account_state.is_resolved()) {
+            continue;
+        }
         auto const &account = account_state.account_;
         if (account.has_value()) {
             auto const it = code.find(account.value().code_hash);
@@ -409,6 +539,11 @@ void BlockState::merge(State const &state)
 
     MONAD_ASSERT(state_);
     for (auto const &[address, account_state] : current) {
+        // An unresolved row carries warmth only, which ends with the
+        // transaction: the block learns nothing of the account from it.
+        if (!account_state.is_resolved()) {
+            continue;
+        }
         auto const &account = account_state.account_;
         auto const &storage = account_state.storage_;
 #ifdef MONAD_ZKVM_ZISK

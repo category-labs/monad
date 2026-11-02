@@ -345,8 +345,9 @@ struct EvmcHost final : public EvmcHostBase
 
     // See vm::runtime::guest_call_target, its only caller. A precompile is
     // warm, as access_account has it, and its row is left alone.
-    vm::runtime::CallTarget
-    call_target(evmc::address const &address, bool const read_cold) noexcept
+    vm::runtime::CallTarget call_target(
+        evmc::address const &address, bool const read_cold,
+        bool const read_warm) noexcept
     {
         MONAD_TRY
         {
@@ -356,7 +357,7 @@ struct EvmcHost final : public EvmcHostBase
                 is_precompile<traits>(as_monad(address))) {
                 return state_.warm_call_target(as_monad(address));
             }
-            return state_.call_target(as_monad(address), read_cold);
+            return state_.call_target(as_monad(address), read_cold, read_warm);
         }
         MONAD_CATCH(...)
         {

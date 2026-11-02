@@ -428,10 +428,11 @@ namespace monad::vm::runtime
 
     template <Traits traits>
     CallTarget guest_call_target(
-        Host &host, evmc::address const &addr, bool const read_cold) noexcept
+        Host &host, evmc::address const &addr, bool const read_cold,
+        bool const read_warm) noexcept
     {
         return static_cast<EvmcHost<traits> &>(host)
-            .EvmcHost<traits>::call_target(addr, read_cold);
+            .EvmcHost<traits>::call_target(addr, read_cold, read_warm);
     }
 
     EXPLICIT_EVM_TRAITS(guest_call_target);

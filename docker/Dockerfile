@@ -71,10 +71,12 @@ ARG CXX
 ARG CMAKE_BUILD_TYPE
 ARG TOOLCHAIN
 ARG GIT_COMMIT_HASH
+# Builds and tests the x86 zkVM guest; costly, so CI enables it on one runner.
+ARG MONAD_ZKVM_X86_GUEST=OFF
 
 ENV GIT_COMMIT_HASH=$GIT_COMMIT_HASH
 
-RUN cd src && CC=${CC:?} CXX=${CXX:?} CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:?} CMAKE_TOOLCHAIN_FILE=category/core/toolchains/${TOOLCHAIN:?}.cmake ./scripts/configure.sh
+RUN cd src && CC=${CC:?} CXX=${CXX:?} CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:?} CMAKE_TOOLCHAIN_FILE=category/core/toolchains/${TOOLCHAIN:?}.cmake MONAD_ZKVM_X86_GUEST=${MONAD_ZKVM_X86_GUEST} ./scripts/configure.sh
 
 RUN cd src && ./scripts/build.sh
 
@@ -123,7 +125,8 @@ RUN cd src && CMAKE_TOOLCHAIN_FILE=category/core/toolchains/gcc-avx2.cmake cmake
   -DMONAD_COMPILER_BENCHMARKS=On       \
   -DMONAD_COMPILER_TESTING=On          \
   -DMONAD_COMPILER_STATS=On            \
-  -DMONAD_COMPILER_HOT_PATH_STATS=On
+  -DMONAD_COMPILER_HOT_PATH_STATS=On   \
+  -DMONAD_ZKVM_X86_GUEST=On
 
 RUN cd src && cmake --build build -t ConstCorrectnessChecks
 RUN cd src && ./scripts/check-clang-tidy.sh

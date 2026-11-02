@@ -86,8 +86,18 @@ public:
 
     std::optional<Account> read_account(evmc_address const &);
 
+    // Sets resolved on every return. Nullopt with resolved == true is a
+    // proven absence; resolved == false means the witness lacks the account,
+    // and nothing is cached for it.
+    std::optional<Account> read_account(evmc_address const &, bool &resolved);
+
     bytes32_t
     read_storage(evmc_address const &, Incarnation, bytes32_t const &key);
+
+    // read_storage, with nullopt where the witness lacks the slot, which is
+    // then not cached either.
+    std::optional<bytes32_t>
+    try_read_storage(evmc_address const &, Incarnation, bytes32_t const &key);
 
 #ifdef MONAD_ZKVM_ZISK
     // The account's entry, read from the database if the block has none, and
@@ -96,10 +106,20 @@ public:
     // values never move (a segmented map's).
     StateDelta &read_account_delta(evmc_address const &);
 
+    // read_account_delta, with null for an account the witness does not
+    // resolve: no entry is made for it, so that its absence is never taken
+    // as proven.
+    StateDelta *try_read_account_delta(evmc_address const &);
+
     // Read using the supplied delta, without copying the returned slot value.
     // The reference points into block storage, or to a static zero value;
     // use it before that slot is modified or erased.
     bytes32_t const &read_storage(
+        StateDelta &, evmc_address const &, Incarnation, bytes32_t const &key);
+
+    // The same read, with nullopt for a slot the witness lacks, which is not
+    // cached.
+    std::optional<bytes32_t> try_read_storage(
         StateDelta &, evmc_address const &, Incarnation, bytes32_t const &key);
 
     // The beneficiary whose fees defer_beneficiary_credit holds back. Set

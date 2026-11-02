@@ -2,13 +2,14 @@
 
 A private domain is a chain whose blocks are derived from the L1. Domain blocks advance in lock-step with the L1: an L1 block yields a block for a domain exactly when it registers the domain or carries at least one of the domain's hub events, and never more than one. Replaying a domain's blocks from genesis rebuilds its state.
 
-This document specifies derivation:
+This document specifies derivation and execution:
 
 - `derive(l1_block, l1_receipts, previous_header, domain_config) -> Option<DomainBlock>`: what goes in a domain block. It needs no domain state.
+- `execute(domain_block, parent_state, l1_header) -> (state, FinalizedDomainHeader, receipts)`: what a domain block does.
 
-Derivation produces each block's proposed header and its transactions; the sequence of `DomainBlock`s is the domain's canonical history. Anyone holding the domain key and configuration can derive it, and all of a domain's replicas must use the same configuration. Nodes configured for a domain derive and store its blocks with every L1 block.
+Derivation produces each block's proposed header and its transactions; the sequence of `DomainBlock`s is the domain's canonical history. Anyone holding the domain key and configuration can derive it, and all of a domain's replicas must use the same configuration. Nodes configured for a domain derive, execute and store its blocks with every L1 block.
 
-What a block does when it executes, and how its result is attested on L1, are not specified here yet.
+How a block's result is attested on L1 is not specified here yet.
 
 # Chain IDs
 
@@ -178,6 +179,102 @@ pub fn system_transaction(msg) -> TransactionSigned {
 /// any ciphertext.
 ```
 
+# Execution
+
+A node configured for a domain executes each domain block right after deriving it, and commits the result with the L1 block it was derived from. A block that fails to execute (an internal error, not a transaction that fails validation) stops the node, like an L1 block that does.
+
+```rust
+/// A domain block executes against the domain's state after its previous block (empty
+/// before genesis), at the EVM revision of the L1 block it was derived from, under the
+/// L1's rules except:
+///   - gasless: no balance is checked for fees, nothing is deducted or refunded, and no
+///     priority fee or beneficiary is paid. Gas is still metered and limited, and receipts
+///     carry it
+///   - a transaction with value fails validation: a domain has no native token (MON
+///     arrives as bridged WMON), so every balance is 0
+///   - a transaction that fails validation (bad nonce, sender with code, value, ...)
+///     stays in the block with a receipt of status 0, gas_used 0 and no logs, so the body
+///     is fixed by derivation alone
+///   - a transaction from DOMAIN_SYSTEM_RELAYER skips validation and does not change the
+///     relayer's nonce, which is the hub's message nonce. The spoke orders deliveries
+///   - no reserve balance checks, and no staking or reserve balance precompiles: their
+///     addresses are empty accounts
+///   - no system calls around the transactions (EIP-4788, EIP-2935, ...), no withdrawals
+///     and no block reward
+///
+/// The block's environment comes from the domain, never from L1 state:
+///   CHAINID      = domain_chain_id
+///   NUMBER       = proposed.number
+///   TIMESTAMP, PREVRANDAO, GASLIMIT, BASEFEE = proposed.timestamp, mix_hash, gas_limit,
+///                  base_fee_per_gas
+///   COINBASE     = 0
+///   BLOCKHASH(n) = the hash of domain block n for the previous 256 domain blocks, else 0
+```
+
+Genesis state is empty. The spoke is deployed by a sequenced transaction at the address the domain is configured with; until then, a delivery is a call to an empty account and does nothing.
+
+## FinalizedDomainHeader
+
+```rust
+/// Execution's output: a standard Ethereum header, in the L1 header's field order, so
+/// Ethereum tooling reads domain blocks unchanged. The domain block hash is
+/// keccak256(rlp(FinalizedDomainHeader)).
+#[derive(RlpEncodable, RlpDecodable)]
+pub struct FinalizedDomainHeader {
+    /// hash of the previous domain block; [0_u8; 32] for genesis
+    pub parent_hash: [u8; 32],
+    /// always EMPTY_OMMER_ROOT_HASH
+    pub ommers_hash: [u8; 32],
+    /// always [0_u8; 20]: fees are paid on L1, with the hub call that sequenced the
+    /// transaction or message
+    pub beneficiary: [u8; 20],
+    /// root of the domain's state trie after the block
+    pub state_root: [u8; 32],
+    /// = proposed.transactions_root
+    pub transactions_root: [u8; 32],
+    /// ordered trie root of the block's receipts
+    pub receipts_root: [u8; 32],
+    pub logs_bloom: [u8; 256],
+    /// always 0
+    pub difficulty: u256,
+    /// = proposed.number
+    pub number: u64,
+    /// = proposed.gas_limit
+    pub gas_limit: u64,
+    /// gas used by the block's transactions, metered but not charged
+    pub gas_used: u64,
+    /// = proposed.timestamp
+    pub timestamp: u64,
+    /// always 32 zero bytes
+    pub extra_data: Bytes,
+    /// = proposed.mix_hash
+    pub mix_hash: [u8; 32],
+    /// always [0_u8; 8]
+    pub nonce: [u8; 8],
+    /// = proposed.base_fee_per_gas
+    pub base_fee_per_gas: Option<u256>,
+    /// Each fork field is present iff the L1 block's header has it, with the value of a
+    /// block without withdrawals, blobs or requests: EMPTY_ROOT_HASH, 0, 0, [0_u8; 32],
+    /// sha256("") and [0_u8; 32]. slot_number is the L1 block's
+    pub withdrawals_root: Option<[u8; 32]>,
+    pub blob_gas_used: Option<u64>,
+    pub excess_blob_gas: Option<u64>,
+    pub parent_beacon_block_root: Option<[u8; 32]>,
+    pub requests_hash: Option<[u8; 32]>,
+    pub block_access_list_hash: Option<[u8; 32]>,
+    pub slot_number: Option<u64>,
+}
+```
+
+## Domain state
+
+```rust
+/// Each domain has a state trie of its own, laid out like the L1's at the same revision:
+/// an account trie with a storage trie per account, holding slots, or pages once MIP-8
+/// is active. state_root is the root of the domain's account trie. The L1's state root
+/// does not cover domain state, and statesync serves none of it, contract code included.
+```
+
 # Encryption
 
 Sequenced transactions are the only thing the protocol decrypts in derivation. L1 → domain messages are plaintext; an application that needs to hide a message's content seals it inside the message data itself.
@@ -238,4 +335,6 @@ pub const TRANSACTION_AD_LABEL: &str = "monad-transaction-encryption-v1";
 - **Lock-step and genesis.** Counting every hub event toward block existence, even one whose payload is dropped, makes block numbering depend only on what the hub saw. Putting the registration block's other events into block 0 means no paid-for event is ever dropped for timing.
 - **Fees buy gas, at a fixed base fee.** A transaction may use at most the gas its fee bought, and the hub caps the gas sold per domain per L1 block. Setting the base fee to `DOMAIN_GAS_PRICE` instead of copying the L1's means a signer always knows the floor its transaction is validated against.
 - **No protocol encryption for L1 → domain messages.** The hub's L1 side is public, and a message's sender is authenticated by the hub, so the protocol has nothing to hide there; an application that needs privacy seals its own data. This removes a second decryption path, and the attacks where a copied ciphertext is resent from another sender.
+- **Execution right after derivation.** Executing each domain block in the L1 runloop, against the domain's state as of the L1 parent, versions domain state with the L1 block, so proposals, forks and finalization handle it as they handle L1 state. The cost is that a node executes its domains' blocks with every L1 block, up to `DOMAIN_BLOCK_GAS_LIMIT` per domain.
+- **Failed transactions keep their place.** Recording a status-0 receipt for a transaction that fails validation, instead of dropping it, keeps the body, and so `transactions_root`, a function of derivation alone.
 - **X25519 rather than P-256.** None of the design documents fixes a curve. X25519 has the same security level, is the most widely used HPKE KEM, and needs no point validation; above all, AWS-LC's HPKE supports it, so the client uses a reviewed implementation rather than one assembled from primitives. P-256 would only matter if domain keys had to live in FIPS modules, HSMs or cloud key services, which they do not today.

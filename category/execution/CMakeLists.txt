@@ -197,6 +197,7 @@ add_library(
   "ethereum/state3/page_tracker.hpp"
   "ethereum/state3/state.cpp"
   "ethereum/state3/state.hpp"
+  "ethereum/state3/state_interface.hpp"
   "ethereum/state3/version_stack.hpp"
   # ethereum/test
   "ethereum/test/test_traits_state.hpp"

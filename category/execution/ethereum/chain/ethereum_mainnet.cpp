@@ -13,7 +13,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/assert.h>
+#include <category/execution/ethereum/chain/blob_schedule.hpp>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
+#include <category/vm/evm/revision.hpp>
 
 #include <category/core/config.hpp>
 #include <category/core/hex.hpp>

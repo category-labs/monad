@@ -20,18 +20,13 @@
 #include <category/core/likely.h>
 #include <category/core/log.hpp>
 #include <category/execution/ethereum/core/account.hpp>
-#include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
-#include <category/execution/ethereum/core/receipt.hpp>
-#include <category/execution/ethereum/core/transaction.hpp>
-#include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state2/fmt/state_deltas_fmt.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
-#include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/vm/code.hpp>
 #include <category/vm/vm.hpp>
@@ -43,7 +38,6 @@
 #include <memory>
 #include <optional>
 #include <utility>
-#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -153,7 +147,7 @@ bool BlockState::can_merge(State &state) const
 {
     MONAD_ASSERT(state_);
     auto const &original = state.original();
-    for (auto &kv : original) {
+    for (auto const &kv : original) {
         Address const &address = kv.first;
         OriginalAccountState const &account_state = kv.second;
         auto const &account = account_state.account_;

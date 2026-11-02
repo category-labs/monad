@@ -13,10 +13,14 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
+#include <category/core/event/event_recorder.hpp>
 #include <category/execution/ethereum/event/exec_event_ctypes.h>
 #include <category/execution/ethereum/event/exec_event_recorder.hpp>
 #include <category/execution/ethereum/event/record_consensus_events.hpp>
+
+#include <cstdint>
 
 MONAD_NAMESPACE_BEGIN
 

@@ -13,32 +13,47 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
+#include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/int.hpp>
+#include <category/core/keccak.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/block_hash_history.hpp>
+#include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
+#include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/state_host.hpp>
+#include <category/execution/ethereum/trace/call_tracer.hpp>
+#include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/mpt/db.hpp>
+#include <category/vm/evm/call_status.hpp>
 #include <category/vm/evm/message.hpp>
+#include <category/vm/evm/monad/revision.h>
 #include <category/vm/evm/result.hpp>
+#include <category/vm/evm/revision.hpp>
 #include <category/vm/evm/traits.hpp>
-#include <category/vm/utils/evm-as.hpp>
+#include <category/vm/evm/tx_context.hpp>
+#include <category/vm/utils/evm-as.hpp> // IWYU pragma: keep
+#include <category/vm/utils/evm-as/builder.hpp>
+#include <category/vm/vm.hpp>
 #include <monad/test/traits_test.hpp>
-#include <test_resource_data.h>
 
 #include <gtest/gtest.h>
 
+#include <concepts>
 #include <cstdint>
+#include <cstring>
 #include <memory>
+#include <variant>
+#include <vector>
 
 using namespace monad;
-using namespace monad::test;
 
 namespace
 {
@@ -272,7 +287,7 @@ TYPED_TEST(BlockHashHistoryTraitsTest, ring_buffer)
 
     // Check blocks inside the current window.
     for (uint64_t i = 0; i < window_size; i++) {
-        uint64_t number = window_size + i;
+        uint64_t const number = window_size + i;
         bytes32_t const actual = get_block_hash_history(this->state, number);
         auto const expected = [number] {
             if constexpr (!TestFixture::records_history) {
@@ -408,16 +423,16 @@ TYPED_TEST(BlockHashHistoryTraitsTest, read_write_block_hash_history_contract)
 
     // Fill the buffer again, partially.
     for (uint64_t i = 0; i < window_size / 2; i++) {
-        uint64_t number = window_size + i;
+        uint64_t const number = window_size + i;
         set(number, to_bytes(number - 1));
     }
 
     // Values inside the serve window.
     {
-        uint64_t current_block_number = window_size + (window_size / 2);
+        uint64_t const current_block_number = window_size + (window_size / 2);
         for (uint64_t i = 0; i < window_size; i++) {
             if (i < window_size / 2) {
-                uint64_t number = window_size + i;
+                uint64_t const number = window_size + i;
                 get(true, number - 1, current_block_number);
             }
             else {
@@ -439,7 +454,7 @@ TYPED_TEST(BlockHashHistoryTraitsTest, unauthorized_set)
                 0xfffffffffffffffffffffffffffffffffffffffe_address) -> void {
         BlockHashBufferFinalized const buffer{};
 
-        vm::Result result = TestFixture::call(
+        vm::Result const result = TestFixture::call(
             block_number,
             sender,
             BLOCK_HISTORY_ADDRESS,

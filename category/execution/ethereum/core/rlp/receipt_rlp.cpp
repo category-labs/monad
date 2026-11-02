@@ -100,8 +100,8 @@ Result<std::vector<bytes32_t>> decode_topics(byte_string_view &enc)
     topics.reserve(list_space / topic_size);
 
     while (payload.size() > 0) {
-        BOOST_OUTCOME_TRY(auto topic, decode_bytes32(payload));
-        topics.emplace_back(std::move(topic));
+        BOOST_OUTCOME_TRY(auto const topic, decode_bytes32(payload));
+        topics.emplace_back(topic);
     }
 
     if (MONAD_UNLIKELY(!payload.empty())) {

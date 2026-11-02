@@ -15,6 +15,7 @@
 
 #include <category/async/config.hpp>
 #include <category/async/util.hpp>
+#include <category/core/address.hpp>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/int.hpp>
@@ -22,16 +23,18 @@
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
+#include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
-#include <category/execution/ethereum/db/test/commit_simple.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/trie_rodb.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
+#include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/state_host.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
+#include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
@@ -39,6 +42,9 @@
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/mpt/util.hpp>
 #include <category/vm/evm/access_status.hpp>
+#include <category/vm/evm/monad/revision.h>
+#include <category/vm/evm/traits.hpp>
+#include <category/vm/evm/tx_context.hpp>
 #include <category/vm/vm.hpp>
 
 #include <monad/test/traits_test.hpp>
@@ -50,8 +56,12 @@
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <memory>
+#include <optional>
 #include <string>
+#include <variant>
 
+#include <stdlib.h>
 #include <unistd.h>
 
 using namespace monad;
@@ -168,7 +178,7 @@ TYPED_TEST(TraitsTest, emit_log)
     State state{bs, Incarnation{0, 0}};
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
-    Transaction tx{};
+    Transaction const tx{};
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t base_fee{0};
@@ -204,7 +214,7 @@ TYPED_TEST(TraitsTest, access_precompile)
     State state{bs, Incarnation{0, 0}};
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
-    Transaction tx{};
+    Transaction const tx{};
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t base_fee{0};
@@ -252,14 +262,14 @@ TEST(StateHostTest, host_methods_rethrow_pruned_read)
         TrieDb write_db{db};
         Address const beneficiary =
             0x5353535353535353535353535353535353535353_address;
-        StateDeltas initial_state{
+        StateDeltas const initial_state{
             {beneficiary,
              StateDelta{
                  .account = {
                      std::nullopt, Account{.balance = 1, .nonce = 0}}}}};
 
         monad::test::commit_sequential(
-            write_db, std::move(initial_state), {}, BlockHeader{.number = 0});
+            write_db, initial_state, {}, BlockHeader{.number = 0});
         for (uint64_t block = 1; block < mpt::MIN_HISTORY_LENGTH; ++block) {
             monad::test::commit_sequential(
                 write_db, {}, {}, BlockHeader{.number = block});
@@ -280,7 +290,7 @@ TEST(StateHostTest, host_methods_rethrow_pruned_read)
         State state{block_state, Incarnation{0, 0}};
         BlockHashBufferFinalized const block_hash_buffer;
         NoopCallTracer call_tracer;
-        Transaction tx{};
+        Transaction const tx{};
         auto const chain_ctx = ChainContext<traits>::debug_empty();
         trace::StateTracer noop_state_tracer = std::monostate{};
         StateHost<traits> host{

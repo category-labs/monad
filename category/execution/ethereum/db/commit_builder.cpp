@@ -15,7 +15,10 @@
 
 #include "commit_builder.hpp"
 
+#include <category/core/address.hpp>
 #include <category/core/assert.h>
+#include <category/core/byte_string.hpp>
+#include <category/core/config.hpp>
 #include <category/core/keccak.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
@@ -35,10 +38,16 @@
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/mpt/nibbles_view.hpp>
+#include <category/mpt/node.hpp>
 #include <category/mpt/update.hpp>
 #include <category/mpt/util.hpp>
 
+#include <cstddef>
+#include <cstdint>
 #include <limits>
+#include <optional>
+#include <utility>
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 

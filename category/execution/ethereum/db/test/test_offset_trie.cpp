@@ -18,8 +18,10 @@
 
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/cases.hpp>
 #include <category/core/keccak.hpp>
 #include <category/core/nibble.h>
+#include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/rlp/account_rlp.hpp>
 #include <category/execution/ethereum/db/offset_trie.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
@@ -31,6 +33,7 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <utility>
 #include <vector>
 
 using namespace monad;

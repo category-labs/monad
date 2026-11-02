@@ -275,7 +275,7 @@ blake2bf_impl(byte_string_view const input, std::span<uint8_t, 64> const out)
     auto const *const proof =
         reinterpret_cast<KZGProof const *>(input.substr(144).data());
 
-    KZGCommitment commitment{*commitment_data};
+    KZGCommitment const commitment{*commitment_data};
     if (versioned_hash != kzg_to_version_hashed(commitment)) {
         return PrecompileImplResult::failure();
     }

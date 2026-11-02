@@ -17,6 +17,7 @@
 #include <category/core/address.hpp>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/bytes32.h>
 #include <category/core/runtime/uint256.hpp>
 #include <category/execution/ethereum/core/contract/abi_decode.hpp>
 #include <category/execution/ethereum/core/contract/abi_decode_error.hpp>
@@ -39,7 +40,7 @@ TYPED_TEST_SUITE(UintDecodeTest, UintTypes);
 
 TYPED_TEST(UintDecodeTest, uint)
 {
-    TypeParam expected{255};
+    TypeParam const expected{255};
     bytes32_t const encoded = abi_encode_uint<TypeParam>(expected);
     byte_string_view input{encoded};
     auto const decoded_res = abi_decode_fixed<TypeParam>(input);
@@ -50,7 +51,7 @@ TYPED_TEST(UintDecodeTest, uint)
 
 TYPED_TEST(UintDecodeTest, input_too_short)
 {
-    TypeParam expected{255};
+    TypeParam const expected{255};
     bytes32_t const encoded = abi_encode_uint<TypeParam>(expected);
     byte_string_view input = byte_string_view{encoded}.substr(1);
     auto const decoded_res = abi_decode_fixed<TypeParam>(input);

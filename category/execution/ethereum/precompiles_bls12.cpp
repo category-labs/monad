@@ -29,6 +29,7 @@
 #include <cstring>
 #include <memory>
 #include <optional>
+#include <span>
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN

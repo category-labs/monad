@@ -23,6 +23,7 @@
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/evm/tx_context.hpp>
 
 #include <cstdint>
 

@@ -16,7 +16,6 @@
 #include <category/core/address.hpp>
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
-#include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
@@ -29,14 +28,15 @@
 #include <category/execution/ethereum/reserve_balance.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/state_host.hpp>
+#include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/vm/evm/call_status.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/message.hpp>
 #include <category/vm/evm/result.hpp>
+#include <category/vm/evm/revision.hpp>
 #include <category/vm/evm/traits.hpp>
 
 #include <cstdint>
-#include <limits>
 #include <optional>
 #include <utility>
 

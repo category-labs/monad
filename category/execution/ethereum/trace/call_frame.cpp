@@ -14,11 +14,11 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/assert.h>
-#include <category/core/basic_formatter.hpp>
 #include <category/core/config.hpp>
 #include <category/core/hex.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
+#include <category/core/log.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/vm/evm/call_status.hpp>
 #include <category/vm/evm/message.hpp>

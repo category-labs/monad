@@ -26,21 +26,12 @@
 #include <category/execution/ethereum/core/fmt/address_fmt.hpp>
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
 #include <category/execution/ethereum/core/fmt/int_fmt.hpp>
-#include <category/execution/ethereum/core/receipt.hpp>
-#include <category/execution/ethereum/core/rlp/address_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
-#include <category/execution/ethereum/core/rlp/bytes_rlp.hpp>
-#include <category/execution/ethereum/core/rlp/int_rlp.hpp>
-#include <category/execution/ethereum/core/rlp/receipt_rlp.hpp>
-#include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
-#include <category/execution/ethereum/core/rlp/withdrawal_rlp.hpp>
+#include <category/execution/ethereum/db/commit_builder.hpp>
+#include <category/execution/ethereum/db/db_cache.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
-#include <category/execution/ethereum/rlp/encode2.hpp>
-#include <category/execution/ethereum/state2/proposal_post_state.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
-#include <category/execution/ethereum/trace/call_tracer.hpp>
-#include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/monad/db/page_commit_builder.hpp>
@@ -51,25 +42,24 @@
 #include <category/mpt/node.hpp>
 #include <category/mpt/state_machine_kind.hpp>
 #include <category/mpt/traverse.hpp>
-#include <category/mpt/update.hpp>
 #include <category/mpt/util.hpp>
+#include <category/vm/code.hpp>
 
 #include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
 
-#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <format>
+#include <functional>
 #include <limits>
 #include <memory>
 #include <optional>
 #include <span>
 #include <string>
 #include <utility>
-#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 

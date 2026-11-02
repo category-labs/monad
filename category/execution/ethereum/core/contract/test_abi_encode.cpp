@@ -133,7 +133,7 @@ TEST(AbiEncode, empty_array)
             "000000000000000000000000000000000000000000000000000000000000002000"
             "00000000000000000000000000000000000000000000000000000000000000")
             .value();
-    std::vector<u64_be> arr{};
+    std::vector<u64_be> const arr{};
     AbiEncoder encoder;
     encoder.add_uint_array(arr);
     auto const output = encoder.encode_final();
@@ -142,7 +142,7 @@ TEST(AbiEncode, empty_array)
 
 TEST(AbiEncode, array_tuple)
 {
-    std::vector<u64_be> arr{2, 4, 20'000, 40'000};
+    std::vector<u64_be> const arr{2, 4, 20'000, 40'000};
 
     byte_string const expected =
         from_hex(
@@ -163,7 +163,7 @@ TEST(AbiEncode, array_tuple)
 
 TEST(AbiEncode, array_address)
 {
-    std::vector<Address> arr{
+    std::vector<Address> const arr{
         0x1111111111111111111111111111111111111111_address,
         0x2222222222222222222222222222222222222222_address,
         0x3333333333333333333333333333333333333333_address,

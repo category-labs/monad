@@ -13,15 +13,24 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
 #include <category/core/assert.h>
+#include <category/core/byte_string.hpp>
+#include <category/core/config.hpp>
+#include <category/core/likely.h>
+#include <category/core/result.hpp>
+#include <category/core/rlp/decode_error.hpp>
 #include <category/core/rlp/encode.hpp>
 #include <category/execution/ethereum/rlp/decode.hpp>
 #include <category/execution/ethereum/rlp/execution_witness.hpp>
+
+#include <ankerl/unordered_dense.h>
 
 #include <boost/outcome/try.hpp>
 
 #include <algorithm>
 #include <cstring>
+#include <span>
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN

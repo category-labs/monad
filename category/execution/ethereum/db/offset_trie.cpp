@@ -13,13 +13,13 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/crypto/keccak.h>
 #include <category/execution/ethereum/db/offset_trie.hpp>
 
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/cases.hpp>
-#include <category/core/keccak.hpp>
 #include <category/core/nibble.h>
 #include <category/core/rlp/encode.hpp>
 #include <category/execution/ethereum/core/account.hpp>
@@ -102,7 +102,7 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
         if (c == NULL_ID) {
             return;
         }
-        uint64_t child_offset = static_cast<uint64_t>(c);
+        uint64_t const child_offset = static_cast<uint64_t>(c);
         MONAD_ASSERT(
             child_offset < blob_.size() &&
             (node_offsets[child_offset >> 6] &
@@ -114,7 +114,7 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
     while (node.bytes() < region_end) {
         // checked_end asserts that the current node does not reach past the end
         // of the region
-        auto next_offset =
+        auto const next_offset =
             static_cast<uint64_t>(node.checked_end(region_end) - base);
 
         match(

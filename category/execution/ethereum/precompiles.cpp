@@ -27,10 +27,18 @@
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/message.hpp>
 #include <category/vm/evm/result.hpp>
+#include <category/vm/evm/revision.hpp>
+#include <category/vm/evm/traits.hpp>
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
+#include <cstdlib>
+#include <cstring>
+#include <limits>
 #include <optional>
+#include <span>
+#include <string>
 #include <utility>
 
 MONAD_NAMESPACE_BEGIN
@@ -288,7 +296,7 @@ PrecompileResult expmod_execute(byte_string_view const input)
             ? std::numeric_limits<size_t>::max()
             : static_cast<size_t>(padded_size_64);
     std::basic_string<uint8_t> padded_input(padded_size, '\0');
-    size_t terms_size = input.size() < 96 ? 0 : input.size() - 96;
+    size_t const terms_size = input.size() < 96 ? 0 : input.size() - 96;
     if (terms_size != 0) {
         std::memcpy(
             padded_input.data(),

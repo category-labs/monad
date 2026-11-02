@@ -26,14 +26,21 @@
 #include <ankerl/unordered_dense.h>
 #include <blake3.h>
 
+#include <array>
+#include <asm-generic/mman-common.h>
 #include <cerrno>
+#include <cstdint>
 #include <cstring>
 #include <fcntl.h>
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <ios>
 #include <linux/mman.h>
+#include <sstream>
+#include <string>
 #include <sys/mman.h>
+#include <tuple>
 #include <unistd.h>
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN

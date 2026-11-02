@@ -15,10 +15,10 @@
 
 #include <category/core/address.hpp>
 #include <category/core/assert.h>
-#include <category/core/basic_formatter.hpp>
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
+#include <category/core/log.hpp>
 #include <category/core/monad_exception.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
@@ -332,7 +332,7 @@ void CallTracer::on_self_destruct(
         return;
     }
 
-    auto &parent = frames_stack_.top_frame();
+    auto const &parent = frames_stack_.top_frame();
 
     frames_stack_.push_selfdestruct_frame(CallFrame{
         .type = CallType::SELFDESTRUCT,

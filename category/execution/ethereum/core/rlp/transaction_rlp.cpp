@@ -34,9 +34,9 @@
 #include <boost/outcome/try.hpp>
 
 #include <cassert>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <functional>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -194,8 +194,8 @@ Result<std::vector<bytes32_t>> decode_access_entry_keys(byte_string_view &enc)
     keys.reserve(list_space / key_size);
 
     while (payload.size() > 0) {
-        BOOST_OUTCOME_TRY(auto key, decode_bytes32(payload));
-        keys.emplace_back(std::move(key));
+        BOOST_OUTCOME_TRY(auto const key, decode_bytes32(payload));
+        keys.emplace_back(key);
     }
 
     if (MONAD_UNLIKELY(!payload.empty())) {

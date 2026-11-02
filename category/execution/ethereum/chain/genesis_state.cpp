@@ -25,7 +25,7 @@
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
-#include <category/execution/ethereum/core/withdrawal.hpp>
+#include <category/execution/ethereum/db/commit_builder.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
@@ -35,7 +35,9 @@
 
 #include <nlohmann/json.hpp>
 
+#include <memory>
 #include <optional>
+#include <string>
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN

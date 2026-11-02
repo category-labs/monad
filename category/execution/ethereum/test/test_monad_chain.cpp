@@ -13,8 +13,13 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
+#include <category/core/assert.h>
+#include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/hex.hpp>
 #include <category/core/keccak.hpp>
+#include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/chain/genesis_state.hpp>
 #include <category/execution/ethereum/chain/hive_net.hpp>
@@ -23,10 +28,12 @@
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/core/units.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
+#include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/execution_modalities.hpp>
 #include <category/execution/ethereum/reserve_balance.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
@@ -41,10 +48,20 @@
 #include <category/execution/monad/validate_monad_transaction.hpp>
 #include <category/mpt/db.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/revision.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/vm.hpp>
 #include <monad/test/traits_test.hpp>
 
+#include <ankerl/unordered_dense.h>
+
 #include <bitset>
+#include <cstdint>
+#include <limits>
+#include <memory>
+#include <optional>
+#include <variant>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -271,7 +288,7 @@ void run_revert_transaction_test(
     ankerl::unordered_dense::segmented_set<Address> const
         senders_and_authorities = {SENDER};
 
-    ChainContext<traits> chain_context{
+    ChainContext<traits> const chain_context{
         .grandparent_senders_and_authorities =
             grandparent_senders_and_authorities,
         .parent_senders_and_authorities = parent_senders_and_authorities,
@@ -293,7 +310,7 @@ void run_revert_transaction_test(
         state.subtract_from_balance(SENDER, gas_fee);
         uint256_t const value = uint256_t{value_mon} * ETHER;
         state.subtract_from_balance(SENDER, value);
-        bool should_revert = revert_transaction<traits>(
+        bool const should_revert = revert_transaction<traits>(
             SENDER,
             tx,
             BASE_FEE_PER_GAS,
@@ -301,7 +318,8 @@ void run_revert_transaction_test(
             state,
             noop_state_tracer,
             chain_context);
-        bool should_revert_cached = revert_transaction_cached<traits>(state);
+        bool const should_revert_cached =
+            revert_transaction_cached<traits>(state);
 
         EXPECT_EQ(should_revert, expected)
             << std::bitset<64>{prevent_dip_bitset};

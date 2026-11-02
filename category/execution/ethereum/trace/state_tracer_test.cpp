@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/keccak.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/block_reward.hpp>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
@@ -35,6 +36,8 @@
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/chain/monad_testnet.hpp>
 #include <category/execution/monad/reserve_balance.hpp>
+#include <category/vm/code.hpp>
+#include <category/vm/evm/access_status.hpp>
 #include <monad/test/traits_test.hpp>
 
 #include <category/core/address.hpp>
@@ -55,16 +58,19 @@
 #include <boost/fiber/future/promise.hpp>
 
 #include <ankerl/unordered_dense.h>
-#include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
+
+#include <gtest/gtest.h>
 
 #include <test_resource_data.h>
 
 #include <algorithm>
-#include <bit>
+#include <cstddef>
 #include <cstdint>
 #include <format>
+#include <memory>
 #include <optional>
+#include <span>
 #include <vector>
 
 using namespace monad;
@@ -140,7 +146,7 @@ TEST(PrestateTracer, pre_state_to_json)
     BlockState bs(tdb, vm);
     State s(bs, Incarnation{0, 0});
 
-    auto const json_str = R"(
+    auto const *const json_str = R"(
     {
         "0x0000000000000000000000000000000000000100":{
             "balance":"0x3e8",
@@ -163,7 +169,7 @@ TEST(PrestateTracer, pre_state_to_json)
 TEST(PrestateTracer, zero_nonce)
 {
     Account const a{.balance = 1000, .code_hash = NULL_HASH, .nonce = 0};
-    OriginalAccountState as{a};
+    OriginalAccountState const as{a};
 
     trace::Map<Address, OriginalAccountState> prestate{};
     prestate.emplace(ADDR_A, as);
@@ -178,7 +184,7 @@ TEST(PrestateTracer, zero_nonce)
     BlockState bs(tdb, vm);
     State s(bs, Incarnation{0, 0});
 
-    auto const json_str = R"(
+    auto const *const json_str = R"(
     {
         "0x0000000000000000000000000000000000000100":{
             "balance":"0x3e8"
@@ -199,7 +205,7 @@ TEST(PrestateTracer, state_deltas_to_json)
     TrieDb tdb{db};
     vm::VM vm;
 
-    StateDeltas state_deltas{
+    StateDeltas const state_deltas{
         {ADDR_A,
          StateDelta{
              .account = {std::nullopt, a},
@@ -217,7 +223,7 @@ TEST(PrestateTracer, state_deltas_to_json)
     BlockState bs(tdb, vm);
     State s(bs, Incarnation{0, 0});
 
-    auto const json_str = R"(
+    auto const *const json_str = R"(
     {
         "post":{
             "0x0000000000000000000000000000000000000100":{
@@ -245,7 +251,7 @@ TEST(PrestateTracer, statediff_account_creation)
     TrieDb tdb{db};
     vm::VM vm;
 
-    StateDeltas state_deltas{
+    StateDeltas const state_deltas{
         {ADDR_A, StateDelta{.account = {std::nullopt, a}, .storage = {}}}};
 
     commit_sequential(
@@ -257,7 +263,7 @@ TEST(PrestateTracer, statediff_account_creation)
     BlockState bs(tdb, vm);
     State s(bs, Incarnation{0, 0});
 
-    auto const json_str = R"(
+    auto const *const json_str = R"(
     {
         "post":{
             "0x0000000000000000000000000000000000000100":{
@@ -284,7 +290,7 @@ TEST(PrestateTracer, statediff_balance_nonce_update)
     TrieDb tdb{db};
     vm::VM vm;
 
-    StateDeltas state_deltas{
+    StateDeltas const state_deltas{
         {ADDR_A, StateDelta{.account = {a, b}, .storage = {}}}};
 
     commit_sequential(
@@ -296,7 +302,7 @@ TEST(PrestateTracer, statediff_balance_nonce_update)
     BlockState bs(tdb, vm);
     State s(bs, Incarnation{0, 0});
 
-    auto const json_str = R"(
+    auto const *const json_str = R"(
     {
         "post":{
             "0x0000000000000000000000000000000000000100":{
@@ -328,12 +334,12 @@ TEST(PrestateTracer, statediff_delete_storage)
     TrieDb tdb{db};
     vm::VM vm;
 
-    StateDeltas state_deltas1{
+    StateDeltas const state_deltas1{
         {ADDR_A,
          StateDelta{
              .account = {a, b}, .storage = {{key1, {bytes32_t{}, value1}}}}}};
 
-    StateDeltas state_deltas2{
+    StateDeltas const state_deltas2{
         {ADDR_A,
          StateDelta{
              .account = {a, b}, .storage = {{key1, {value1, bytes32_t{}}}}}}};
@@ -350,7 +356,7 @@ TEST(PrestateTracer, statediff_delete_storage)
     BlockState bs(tdb, vm);
     State s(bs, Incarnation{0, 0});
 
-    auto const json_str = R"(
+    auto const *const json_str = R"(
     {
         "post":{
             "0x0000000000000000000000000000000000000100":{
@@ -384,7 +390,7 @@ TEST(PrestateTracer, statediff_multiple_fields_update)
     TrieDb tdb{db};
     vm::VM vm;
 
-    StateDeltas state_deltas{
+    StateDeltas const state_deltas{
         {ADDR_A,
          StateDelta{
              .account = {a, b},
@@ -404,7 +410,7 @@ TEST(PrestateTracer, statediff_multiple_fields_update)
     BlockState bs(tdb, vm);
     State s(bs, Incarnation{0, 0});
 
-    auto const json_str = R"(
+    auto const *const json_str = R"(
     {
         "post":{
             "0x0000000000000000000000000000000000000100":{
@@ -442,14 +448,14 @@ TEST(PrestateTracer, statediff_account_deletion)
     TrieDb tdb{db};
     vm::VM vm;
 
-    StateDeltas state_deltas1{
+    StateDeltas const state_deltas1{
         {ADDR_A, StateDelta{.account = {std::nullopt, a}, .storage = {}}},
     };
 
     commit_sequential(
         tdb, StateDeltas(state_deltas1), Code{}, BlockHeader{.number = 0});
 
-    StateDeltas state_deltas2{
+    StateDeltas const state_deltas2{
         {ADDR_A, StateDelta{.account = {a, std::nullopt}, .storage = {}}},
     };
 
@@ -459,7 +465,7 @@ TEST(PrestateTracer, statediff_account_deletion)
     BlockState bs(tdb, vm);
     State s(bs, Incarnation{0, 0});
 
-    auto const json_str = R"(
+    auto const *const json_str = R"(
     {
         "post":{
         },
@@ -490,14 +496,14 @@ TEST(PrestateTracer, geth_example_prestate)
 
     Account const b{
         .balance = 0x7a48734599f7284, .code_hash = NULL_HASH, .nonce = 1133};
-    OriginalAccountState bs{b};
+    OriginalAccountState const bs{b};
     Account const c{
         .balance = uint256_t::from_string("0x2638035a26d133809"),
         .code_hash = NULL_HASH,
         .nonce = 0};
-    OriginalAccountState cs{c};
+    OriginalAccountState const cs{c};
     Account const d{.balance = 0x0, .code_hash = NULL_HASH, .nonce = 0};
-    OriginalAccountState ds{d};
+    OriginalAccountState const ds{d};
 
     trace::Map<Address, OriginalAccountState> prestate{};
     prestate.emplace(addr1, ds);
@@ -519,7 +525,7 @@ TEST(PrestateTracer, geth_example_prestate)
     BlockState bs0(tdb, vm);
     State s(bs0, Incarnation{0, 0});
 
-    auto const json_str = R"(
+    auto const *const json_str = R"(
     {
         "0x0000000000000000000000000000000000000002":{
             "balance":"0x0"
@@ -556,7 +562,7 @@ TEST(PrestateTracer, geth_example_statediff)
     Account const b{
         .balance = 0x7a48429e177130a, .code_hash = NULL_HASH, .nonce = 1135};
 
-    StateDeltas state_deltas{
+    StateDeltas const state_deltas{
         {addr3, StateDelta{.account = {a, b}, .storage = {}}},
     };
 
@@ -571,7 +577,7 @@ TEST(PrestateTracer, geth_example_statediff)
     BlockState bs0(tdb, vm);
     State s(bs0, Incarnation{0, 0});
 
-    auto const json_str = R"(
+    auto const *const json_str = R"(
     {
         "post":{
             "0x35a9f94af726f07b5162df7e828cc9dc8439e7d0":{
@@ -592,7 +598,7 @@ TEST(PrestateTracer, geth_example_statediff)
 
 TEST(PrestateTracer, prestate_empty)
 {
-    trace::Map<Address, OriginalAccountState> prestate{};
+    trace::Map<Address, OriginalAccountState> const prestate{};
 
     // The State setup is only used to get code
     mpt::Db db{std::make_unique<InMemoryMachine>()};
@@ -604,7 +610,7 @@ TEST(PrestateTracer, prestate_empty)
     BlockState bs(tdb, vm);
     State s(bs, Incarnation{0, 0});
 
-    auto const json_str = R"({})";
+    auto const *const json_str = R"({})";
 
     EXPECT_EQ(
         state_to_json(prestate, s, Address{}), nlohmann::json::parse(json_str));
@@ -612,7 +618,7 @@ TEST(PrestateTracer, prestate_empty)
 
 TEST(PrestateTracer, statediff_empty)
 {
-    StateDeltas state_deltas{};
+    StateDeltas const state_deltas{};
 
     // The State setup is only used to get code
     mpt::Db db{std::make_unique<InMemoryMachine>()};
@@ -625,7 +631,7 @@ TEST(PrestateTracer, statediff_empty)
     BlockState bs(tdb, vm);
     State s(bs, Incarnation{0, 0});
 
-    auto const json_str = R"(
+    auto const *const json_str = R"(
     {
         "post":{
         },
@@ -639,7 +645,7 @@ TEST(PrestateTracer, statediff_empty)
 
 TYPED_TEST(TraitsTest, access_list_empty)
 {
-    StateDeltas state_deltas{};
+    StateDeltas const state_deltas{};
 
     mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
@@ -707,7 +713,7 @@ TYPED_TEST(TraitsTest, access_list_records_rejected_frame_storage)
 
     run_tracer<typename TestFixture::Trait>(tracer, s);
 
-    auto const json_str = R"(
+    auto const *const json_str = R"(
         [
             {
                 "address" : "0xc8ba32cab1757528daf49033e3673fae77dcf05d",
@@ -744,7 +750,7 @@ TYPED_TEST(TraitsTest, access_list_records_rejected_frame_regular_account)
 
     run_tracer<typename TestFixture::Trait>(tracer, s);
 
-    auto const json_str = R"(
+    auto const *const json_str = R"(
         [
             {
                 "address" : "0xc8ba32cab1757528daf49033e3673fae77dcf05d",
@@ -758,7 +764,7 @@ TYPED_TEST(TraitsTest, access_list_records_rejected_frame_regular_account)
 
 TYPED_TEST(TraitsTest, access_list_write)
 {
-    StateDeltas state_deltas{};
+    StateDeltas const state_deltas{};
 
     mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
@@ -784,7 +790,7 @@ TYPED_TEST(TraitsTest, access_list_write)
     AccessListTracer tracer{storage, addr1, addr4, to, authorities};
     tracer.encode<typename TestFixture::Trait>(s);
 
-    auto const json_str = R"(
+    auto const *const json_str = R"(
         [
             {
                 "address": "0x008b3b2f992c0e14edaa6e2c662bec549caa8df1",
@@ -830,7 +836,7 @@ TYPED_TEST(TraitsTest, access_list_regular_account)
         AccessListTracer tracer{storage, addr1, addr2, to, authorities};
         tracer.encode<typename TestFixture::Trait>(s);
 
-        auto const json_str = R"(
+        auto const *const json_str = R"(
             [
                 {
                     "address" : "0xc8ba32cab1757528daf49033e3673fae77dcf05d",
@@ -859,7 +865,7 @@ TYPED_TEST(TraitsTest, access_list_regular_account)
         AccessListTracer tracer{storage, addr1, addr2, to, authorities};
         tracer.encode<typename TestFixture::Trait>(s);
 
-        auto const json_str = R"(
+        auto const *const json_str = R"(
             [
                 {
                     "address" : "0xc8ba32cab1757528daf49033e3673fae77dcf05d",
@@ -917,7 +923,7 @@ TYPED_TEST(TraitsTest, access_list_sender)
         AccessListTracer tracer{storage, addr1, addr2, to, authorities};
         tracer.encode<typename TestFixture::Trait>(s);
 
-        auto const json_str = R"(
+        auto const *const json_str = R"(
             [
                 {
                     "address" : "0x0000000000000000000000000000000000000002",
@@ -975,7 +981,7 @@ TYPED_TEST(TraitsTest, access_list_beneficiary)
         AccessListTracer tracer{storage, addr1, addr2, to, authorities};
         tracer.encode<typename TestFixture::Trait>(s);
 
-        auto const json_str = R"(
+        auto const *const json_str = R"(
             [
                 {
                     "address" : "0x008b3b2f992c0e14edaa6e2c662bec549caa8df1",
@@ -1033,7 +1039,7 @@ TYPED_TEST(TraitsTest, access_list_recipient)
         AccessListTracer tracer{storage, addr1, addr2, to, authorities};
         tracer.encode<typename TestFixture::Trait>(s);
 
-        auto const json_str = R"(
+        auto const *const json_str = R"(
             [
                 {
                     "address" : "0x35a9f94af726f07b5162df7e828cc9dc8439e7d0",
@@ -1098,7 +1104,7 @@ TYPED_TEST(TraitsTest, access_list_authorities)
         AccessListTracer tracer{storage, addr1, addr2, to, authorities};
         tracer.encode<typename TestFixture::Trait>(s);
 
-        auto const json_str = R"(
+        auto const *const json_str = R"(
             [
                 {
                     "address" : "0xc8ba32cab1757528daf49033e3673fae77dcf05d",
@@ -1254,7 +1260,7 @@ TYPED_TEST(TraitsTest, statediff_selfdestruct_same_tx_preserved)
     auto const key = std::format("0x{}", to_hex(created));
     EXPECT_FALSE(diff["pre"].contains(key)) << diff.dump();
     if constexpr (TestFixture::Trait::eip_8246_active()) {
-        auto const json_str = R"({"balance":"0xde0b6b3a7640000"})";
+        auto const *const json_str = R"({"balance":"0xde0b6b3a7640000"})";
         EXPECT_EQ(
             diff["post"].value(key, nlohmann::json{}),
             nlohmann::json::parse(json_str))
@@ -1304,7 +1310,7 @@ TEST(PrestateTracer, prestate_access_storage)
         trace::PrestateTracer tracer{trace, ADDR_A};
         tracer.encode(s.original(), s);
 
-        auto const json_str = R"(
+        auto const *const json_str = R"(
         {
             "0x0000000000000000000000000000000000000100": {
                 "balance": "0x0",
@@ -1326,7 +1332,7 @@ TEST(PrestateTracer, prestate_access_storage)
 
         // We only read the storage, so no changes are recorded in the
         // statediff.
-        auto const json_str = R"(
+        auto const *const json_str = R"(
         {
             "post": {},
             "pre": {}
@@ -1368,7 +1374,7 @@ TEST(PrestateTracer, prestate_access_zero_storage)
         trace::PrestateTracer tracer{trace, ADDR_A};
         tracer.encode(s.original(), s);
 
-        auto const json_str = R"(
+        auto const *const json_str = R"(
         {
             "0x0000000000000000000000000000000000000100": {
                 "balance": "0x0",
@@ -1390,7 +1396,7 @@ TEST(PrestateTracer, prestate_access_zero_storage)
 
         // We only read the storage, so no changes are recorded in the
         // statediff.
-        auto const json_str = R"(
+        auto const *const json_str = R"(
         {
             "post": {},
             "pre": {}
@@ -1431,7 +1437,7 @@ TEST(PrestateTracer, prestate_retain_beneficiary_set_storage)
         trace::PrestateTracer tracer{trace, ADDR_A};
         tracer.encode(s.original(), s);
 
-        auto const json_str = R"(
+        auto const *const json_str = R"(
         {
             "0x0000000000000000000000000000000000000100":{
                 "balance": "0x0",
@@ -1452,7 +1458,7 @@ TEST(PrestateTracer, prestate_retain_beneficiary_set_storage)
         trace::StateDiffTracer tracer{trace};
         tracer.encode(tracer.trace(s), s);
 
-        auto const json_str = R"(
+        auto const *const json_str = R"(
         {
             "post": {
                 "0x0000000000000000000000000000000000000100": {
@@ -1506,7 +1512,7 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_storage)
         trace::PrestateTracer tracer{trace, ADDR_A};
         tracer.encode(s.original(), s);
 
-        auto const json_str = R"(
+        auto const *const json_str = R"(
         {
             "0x0000000000000000000000000000000000000100":{
                 "balance":"0x0",
@@ -1526,7 +1532,7 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_storage)
         trace::StateDiffTracer tracer{trace};
         tracer.encode(tracer.trace(s), s);
 
-        auto const json_str = R"(
+        auto const *const json_str = R"(
         {
             "post": {
                 "0x0000000000000000000000000000000000000100": {
@@ -1583,7 +1589,7 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_balance)
         // Run tracer
         tracer.encode(s.original(), s);
 
-        auto const json_str = R"(
+        auto const *const json_str = R"(
         {
             "0x0000000000000000000000000000000000000100":{
                 "balance":"0x0",
@@ -1603,7 +1609,7 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_balance)
         // Run tracer
         tracer.encode(tracer.trace(s), s);
 
-        auto const json_str = R"(
+        auto const *const json_str = R"(
         {
             "post": {
                 "0x0000000000000000000000000000000000000100":{
@@ -1653,7 +1659,7 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_nonce)
         trace::PrestateTracer tracer{trace, ADDR_A};
         tracer.encode(s.original(), s);
 
-        auto const json_str = R"(
+        auto const *const json_str = R"(
         {
             "0x0000000000000000000000000000000000000100":{
                 "balance":"0x0",
@@ -1671,7 +1677,7 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_nonce)
         trace::StateDiffTracer tracer{trace};
         tracer.encode(tracer.trace(s), s);
 
-        auto const json_str = R"(
+        auto const *const json_str = R"(
         {
             "post": {
                 "0x0000000000000000000000000000000000000100": {
@@ -1722,7 +1728,7 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_code_hash)
         trace::PrestateTracer tracer{trace, ADDR_A};
         tracer.encode(s.original(), s);
 
-        auto const json_str = R"(
+        auto const *const json_str = R"(
         {
             "0x0000000000000000000000000000000000000100":{
                 "balance":"0x0",
@@ -1740,7 +1746,7 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_code_hash)
         trace::StateDiffTracer tracer{trace};
         tracer.encode(tracer.trace(s), s);
 
-        auto const json_str = R"(
+        auto const *const json_str = R"(
         {
             "post": {
                 "0x0000000000000000000000000000000000000100": {
@@ -1800,7 +1806,7 @@ TEST(PrestateTracer, prestate_retain_beneficiary_access_storage)
         trace::PrestateTracer tracer{trace, ADDR_A};
         tracer.encode(s.original(), s);
 
-        auto const json_str = R"(
+        auto const *const json_str = R"(
         {
             "0x0000000000000000000000000000000000000100": {
                 "balance": "0x0",
@@ -1822,7 +1828,7 @@ TEST(PrestateTracer, prestate_retain_beneficiary_access_storage)
 
         // We only read the storage, so no changes are recorded in the
         // statediff.
-        auto const json_str = R"(
+        auto const *const json_str = R"(
         {
             "post": {},
             "pre": {}
@@ -1866,7 +1872,7 @@ TEST(PrestateTracer, prestate_omit_beneficiary)
         trace::PrestateTracer tracer{trace, ADDR_A};
         tracer.encode(s.original(), s);
 
-        auto const json_str = "null";
+        auto const *const json_str = "null";
 
         EXPECT_EQ(trace, nlohmann::json::parse(json_str));
     }
@@ -1877,7 +1883,7 @@ TEST(PrestateTracer, prestate_omit_beneficiary)
         trace::StateDiffTracer tracer{trace};
         tracer.encode(tracer.trace(s), s);
 
-        auto const json_str = R"(
+        auto const *const json_str = R"(
         {
             "post": {},
             "pre": {}
@@ -1894,7 +1900,7 @@ TEST(PrestateTracer, prestate_empty_block_no_reward)
     TrieDb tdb{db};
     vm::VM vm;
 
-    BlockHeader header{.number = 0, .beneficiary = ADDR_A};
+    BlockHeader const header{.number = 0, .beneficiary = ADDR_A};
     Block const block{header, {}, {}};
 
     // Block 0
@@ -1914,7 +1920,7 @@ TEST(PrestateTracer, prestate_empty_block_no_reward)
         trace::PrestateTracer tracer{trace, ADDR_A};
         tracer.encode(s.original(), s);
 
-        auto const json_str = "null";
+        auto const *const json_str = "null";
 
         EXPECT_EQ(trace, nlohmann::json::parse(json_str));
     }
@@ -1925,7 +1931,7 @@ TEST(PrestateTracer, prestate_empty_block_no_reward)
         trace::StateDiffTracer tracer{trace};
         tracer.encode(tracer.trace(s), s);
 
-        auto const json_str = R"(
+        auto const *const json_str = R"(
         {
             "post": {},
             "pre": {}
@@ -1995,7 +2001,7 @@ TYPED_TEST(TraitsTest, code_tracer_records_extcodesize)
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t const base_fee{0};
     trace::StateTracer state_tracer = trace::CodeTracer{};
-    StateHost<typename TestFixture::Trait> host{
+    StateHost<typename TestFixture::Trait> const host{
         call_tracer,
         state_tracer,
         EMPTY_TX_CONTEXT,
@@ -2044,7 +2050,7 @@ TYPED_TEST(TraitsTest, code_tracer_records_extcodecopy)
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t const base_fee{0};
     trace::StateTracer state_tracer = trace::CodeTracer{};
-    StateHost<typename TestFixture::Trait> host{
+    StateHost<typename TestFixture::Trait> const host{
         call_tracer,
         state_tracer,
         EMPTY_TX_CONTEXT,
@@ -2463,7 +2469,7 @@ TYPED_TEST(MonadTraitsTest, access_list_page_dedup_same_page)
     AccessListTracer tracer{storage, addr1, addr2, to, authorities};
     tracer.encode<typename TestFixture::Trait>(s);
 
-    auto const json_str = R"([
+    auto const *const json_str = R"([
         {
             "address": "0xc8ba32cab1757528daf49033e3673fae77dcf05d",
             "storageKeys": [
@@ -2508,7 +2514,7 @@ TYPED_TEST(MonadTraitsTest, access_list_page_dedup_same_page_three_slots)
     AccessListTracer tracer{storage, addr1, addr2, to, authorities};
     tracer.encode<typename TestFixture::Trait>(s);
 
-    auto const json_str = R"([
+    auto const *const json_str = R"([
         {
             "address": "0xc8ba32cab1757528daf49033e3673fae77dcf05d",
             "storageKeys": [
@@ -2558,7 +2564,7 @@ TYPED_TEST(MonadTraitsTest, access_list_mip8_passthrough_two_addresses)
         return a["address"] < b["address"];
     });
 
-    auto const json_str = R"([
+    auto const *const json_str = R"([
         {
             "address": "0xc8ba32cab1757528daf49033e3673fae77dcf05d",
             "storageKeys": [

@@ -27,6 +27,8 @@
 #include <category/execution/ethereum/state_host.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
+#include <category/vm/evm/storage_status.hpp>
+#include <category/vm/evm/tx_context.hpp>
 
 #include <cstddef>
 #include <cstdint>

@@ -70,7 +70,7 @@ bytes32_t head_pointer_to_id(std::filesystem::path const &symlink)
         "Link not hex encoded %s -> %s",
         symlink.c_str(),
         resolved);
-    byte_string const hex = decode_res.value();
+    byte_string const &hex = decode_res.value();
     return to_bytes(hex);
 }
 

@@ -94,7 +94,7 @@ namespace monad::staking::test
                      digest.bytes,
                      seckey.bytes,
                      secp256k1_nonce_function_default,
-                     NULL));
+                     nullptr));
 
         byte_string_fixed<64> serialized;
         MONAD_ASSERT(
@@ -150,11 +150,11 @@ namespace monad::staking::test
         auto const [secp_pubkey, secp_seckey] = gen_secp_keypair(secret);
 
         auto const secp_pubkey_serialized = serialize_secp_pubkey(secp_pubkey);
-        auto const bls_pubkey_serialized = [&bls_pubkey] {
+        auto const bls_pubkey_serialized = [](blst_p1 const &pubkey) {
             byte_string_fixed<48> serialized;
-            blst_p1_compress(serialized.data(), &bls_pubkey);
+            blst_p1_compress(serialized.data(), &pubkey);
             return serialized;
-        }();
+        }(bls_pubkey);
 
         auto const sign_address = address_from_secpkey(
             serialize_secp_pubkey_uncompressed(secp_pubkey));

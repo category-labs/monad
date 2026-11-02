@@ -239,7 +239,7 @@ void run_revert_transaction_test(
         senders.push_back(SENDER);
     }
     else {
-        senders.push_back(Address{2});
+        senders.emplace_back(2);
     }
     senders.emplace_back(SENDER);
     std::vector<std::vector<std::optional<Address>>> authorities = {};
@@ -247,13 +247,13 @@ void run_revert_transaction_test(
         authorities.push_back({SENDER});
     }
     else {
-        authorities.push_back({});
+        authorities.emplace_back();
     }
     if (prevent_dip_bitset & (1 << AuthorityInTransaction)) {
         authorities.push_back({SENDER});
     }
     else {
-        authorities.push_back({});
+        authorities.emplace_back();
     }
 
     // Create sets for the new ChainContext structure

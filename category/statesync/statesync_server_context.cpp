@@ -31,10 +31,10 @@
 #include <category/vm/code.hpp>
 
 #include <algorithm>
-#include <cstddef>
 #include <cstdint>
 #include <deque>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <utility>
@@ -101,7 +101,7 @@ void on_finalize(
 
     MONAD_ASSERT(it->block_number == block_number);
 
-    ctx.deletions.write(block_number, it->deletions);
+    ctx.deletions.write(block_number, std::move(it->deletions));
 
     // gc proposals of older blocks than finalized block
     std::erase_if(proposals, [block_number](ProposedDeletions const &p) {
@@ -113,108 +113,52 @@ MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
 
-void FinalizedDeletions::set_entry(
-    uint64_t const i, uint64_t const block_number,
-    std::vector<Deletion> const &deletions)
+FinalizedDeletions::Entry FinalizedDeletions::find(uint64_t const block_number)
 {
-    auto &entry = entries_[i];
-    std::lock_guard const lock{entry.mutex};
-    MONAD_ASSERT(entry.block_number == INVALID_BLOCK_NUM);
-    entry.block_number = block_number;
-    entry.idx = free_start_;
-    entry.size = deletions.size();
-    for (auto const &deletion : deletions) {
-        deletions_[free_start_++ % MAX_DELETIONS] = deletion;
+    std::lock_guard const lock{mutex_};
+    if (block_number < start_block_number_ ||
+        block_number - start_block_number_ >= entries_.size()) {
+        return nullptr;
     }
-    LOG_DEBUG(
-        "deletions buffer write i={} "
-        "FinalizedDeletionsEntry{{block_number={} idx={} "
-        "size={}}}",
-        i,
-        entry.block_number,
-        entry.idx,
-        entry.size);
-}
-
-void FinalizedDeletions::clear_entry(uint64_t const i)
-{
-    auto &entry = entries_[i];
-    if (entry.block_number == INVALID_BLOCK_NUM) {
-        return;
-    }
-    LOG_DEBUG(
-        "deletions buffer clear i={} "
-        "FinalizedDeletionsEntry{{block_number={} idx={} "
-        "size={}}}",
-        i,
-        entry.block_number,
-        entry.idx,
-        entry.size);
-    free_end_ += entry.size;
-    MONAD_ASSERT(entry.block_number == start_block_number_);
-    ++start_block_number_;
-    std::lock_guard const lock{entry.mutex};
-    entry.block_number = INVALID_BLOCK_NUM;
-    entry.idx = 0;
-    entry.size = 0;
-}
-
-bool FinalizedDeletions::for_each(
-    uint64_t const block_number, std::function<void(Deletion const &)> const fn)
-{
-    auto &entry = entries_[block_number % MAX_ENTRIES];
-    std::lock_guard const lock{entry.mutex};
-    if (entry.block_number != block_number) {
-        return false;
-    }
-    for (size_t i = 0; i < entry.size; ++i) {
-        auto const idx = (entry.idx + i) % MAX_DELETIONS;
-        fn(deletions_[idx]);
-    }
-    return true;
+    return entries_[block_number - start_block_number_];
 }
 
 void FinalizedDeletions::write(
-    uint64_t const block_number, std::vector<Deletion> const &deletions)
+    uint64_t const block_number, std::vector<Deletion> deletions)
 {
     MONAD_ASSERT(block_number != INVALID_BLOCK_NUM);
-    MONAD_ASSERT(
-        end_block_number_ == INVALID_BLOCK_NUM ||
-        (end_block_number_ + 1) == block_number);
+    auto entry =
+        std::make_shared<std::vector<Deletion> const>(std::move(deletions));
 
-    auto const free_deletions = [this] { return free_end_ - free_start_; };
+    std::lock_guard const lock{mutex_};
+    if (MONAD_UNLIKELY(start_block_number_ == INVALID_BLOCK_NUM)) {
+        start_block_number_ = block_number;
+    }
+    MONAD_ASSERT(start_block_number_ + entries_.size() == block_number);
 
-    end_block_number_ = block_number;
-
-    if (MONAD_UNLIKELY(deletions.size() > MAX_DELETIONS)) { // blow away
+    if (MONAD_UNLIKELY(entry->size() > MAX_DELETIONS)) {
         LOG_WARNING(
-            "dropping deletions due to exessive size block_number={} size={}",
+            "dropping deletions due to excessive size block_number={} size={}",
             block_number,
-            deletions.size());
-        for (uint64_t i = 0; i < MAX_ENTRIES; ++i) {
-            clear_entry(i);
-        }
-        start_block_number_ = INVALID_BLOCK_NUM;
-        MONAD_ASSERT(free_deletions() == MAX_DELETIONS);
+            entry->size());
+        entries_.clear();
+        num_deletions_ = 0;
+        start_block_number_ = block_number + 1;
+        return;
     }
-    else {
-        if (MONAD_UNLIKELY(start_block_number_ == INVALID_BLOCK_NUM)) {
-            start_block_number_ = end_block_number_;
-        }
-        auto const target_idx = end_block_number_ % MAX_ENTRIES;
-        clear_entry(target_idx);
-        while (free_deletions() < deletions.size()) {
-            MONAD_ASSERT(start_block_number_ < end_block_number_);
-            clear_entry(start_block_number_ % MAX_ENTRIES);
-        }
-        set_entry(target_idx, end_block_number_, deletions);
+    while (entries_.size() == MAX_ENTRIES ||
+           num_deletions_ + entry->size() > MAX_DELETIONS) {
+        num_deletions_ -= entries_.front()->size();
+        entries_.pop_front();
+        ++start_block_number_;
     }
+    num_deletions_ += entry->size();
+    entries_.push_back(std::move(entry));
     LOG_DEBUG(
-        "deletions buffer range={} free_deletions={}",
-        start_block_number_ == INVALID_BLOCK_NUM
-            ? "EMPTY"
-            : fmt::format("[{}, {}]", start_block_number_, end_block_number_),
-        free_deletions());
+        "deletions buffer range=[{}, {}] num_deletions={}",
+        start_block_number_,
+        block_number,
+        num_deletions_);
 }
 
 MONAD_NAMESPACE_END

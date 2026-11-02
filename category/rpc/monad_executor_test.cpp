@@ -6143,6 +6143,388 @@ TEST_F(EthCallFixture, eth_simulate_v1_block_override_no_synthetic_gaps)
     monad_executor_destroy(executor);
 }
 
+TEST_F(EthCallFixture, eth_simulate_v1_timestamp_overflow)
+{
+    for (uint64_t i = 0; i < 256; ++i) {
+        commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
+    }
+
+    auto *executor = create_executor(dbname.string());
+
+    Address const sender = 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266_address;
+    auto const enc_sender = rlp::encode_address(std::make_optional(sender));
+    auto const rlp_senders = to_vec(rlp::encode_list2(
+        rlp::encode_list2(enc_sender), rlp::encode_list2(enc_sender)));
+
+    Transaction const tx{
+        .gas_limit = 200'000'000,
+        .value = 1_ether,
+        .to = 0xdeadbeef00000000000000000000000000000000_address,
+        .type = TransactionType::eip1559,
+    };
+    auto const enc_tx = rlp::encode_string2(rlp::encode_transaction(tx));
+    auto const rlp_calls = to_vec(rlp::encode_list2(
+        rlp::encode_list2(enc_tx), rlp::encode_list2(enc_tx)));
+
+    BlockHeader const header{
+        .number = 255,
+        .gas_limit = 200'000'000,
+    };
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    auto *const so_overrides = monad_state_override_vec_create(2);
+    auto *const bo_overrides = monad_block_override_vec_create(2);
+    set_block_override_time_at(
+        bo_overrides, 0, std::numeric_limits<uint64_t>::max());
+
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+
+    monad_executor_eth_simulate_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_senders.data(),
+        rlp_senders.size(),
+        rlp_calls.data(),
+        rlp_calls.size(),
+        255,
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        rlp_finalized_id.data(),
+        rlp_finalized_id.size(),
+        simulate_gas_limit,
+        simulate_max_calls,
+        simulate_max_output_size,
+        so_overrides,
+        bo_overrides,
+        false,
+        complete_callback,
+        (void *)&ctx);
+    f.get();
+
+    ASSERT_EQ(ctx.result->status_code, EVMC_INTERNAL_ERROR);
+    ASSERT_STREQ(
+        ctx.result->message,
+        "block timestamps must be monotonically increasing");
+
+    monad_block_override_vec_destroy(bo_overrides);
+    monad_state_override_vec_destroy(so_overrides);
+    monad_executor_destroy(executor);
+}
+
+TEST_F(EthCallFixture, eth_simulate_v1_timestamp_overflow_synthetic_gap)
+{
+    for (uint64_t i = 0; i < 256; ++i) {
+        commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
+    }
+
+    auto *executor = create_executor(dbname.string());
+
+    Address const sender = 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266_address;
+    auto const enc_sender = rlp::encode_address(std::make_optional(sender));
+    auto const rlp_senders = to_vec(rlp::encode_list2(
+        rlp::encode_list2(enc_sender), rlp::encode_list2(enc_sender)));
+
+    Transaction const tx{
+        .gas_limit = 200'000'000,
+        .value = 1_ether,
+        .to = 0xdeadbeef00000000000000000000000000000000_address,
+        .type = TransactionType::eip1559,
+    };
+    auto const enc_tx = rlp::encode_string2(rlp::encode_transaction(tx));
+    auto const rlp_calls = to_vec(rlp::encode_list2(
+        rlp::encode_list2(enc_tx), rlp::encode_list2(enc_tx)));
+
+    BlockHeader const header{
+        .number = 255,
+        .gas_limit = 200'000'000,
+    };
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    auto *const so_overrides = monad_state_override_vec_create(2);
+    auto *const bo_overrides = monad_block_override_vec_create(2);
+    set_block_override_time_at(
+        bo_overrides, 0, std::numeric_limits<uint64_t>::max());
+    // Blocks 257 and 258 are synthetic.
+    set_block_override_number_at(bo_overrides, 1, 259);
+    set_block_override_time_at(
+        bo_overrides, 1, std::numeric_limits<uint64_t>::max());
+
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+
+    monad_executor_eth_simulate_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_senders.data(),
+        rlp_senders.size(),
+        rlp_calls.data(),
+        rlp_calls.size(),
+        255,
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        rlp_finalized_id.data(),
+        rlp_finalized_id.size(),
+        simulate_gas_limit,
+        simulate_max_calls,
+        simulate_max_output_size,
+        so_overrides,
+        bo_overrides,
+        false,
+        complete_callback,
+        (void *)&ctx);
+    f.get();
+
+    ASSERT_EQ(ctx.result->status_code, EVMC_INTERNAL_ERROR);
+    ASSERT_STREQ(
+        ctx.result->message,
+        "block timestamps must be monotonically increasing");
+
+    monad_block_override_vec_destroy(bo_overrides);
+    monad_state_override_vec_destroy(so_overrides);
+    monad_executor_destroy(executor);
+}
+
+TEST_F(EthCallFixture, eth_simulate_v1_timestamp_max)
+{
+    for (uint64_t i = 0; i < 256; ++i) {
+        commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
+    }
+
+    auto *executor = create_executor(dbname.string());
+
+    Address const sender = 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266_address;
+    auto const enc_sender = rlp::encode_address(std::make_optional(sender));
+    auto const rlp_senders = to_vec(rlp::encode_list2(
+        rlp::encode_list2(enc_sender), rlp::encode_list2(enc_sender)));
+
+    Transaction const tx{
+        .gas_limit = 200'000'000,
+        .value = 1_ether,
+        .to = 0xdeadbeef00000000000000000000000000000000_address,
+        .type = TransactionType::eip1559,
+    };
+    auto const enc_tx = rlp::encode_string2(rlp::encode_transaction(tx));
+    auto const rlp_calls = to_vec(rlp::encode_list2(
+        rlp::encode_list2(enc_tx), rlp::encode_list2(enc_tx)));
+
+    BlockHeader const header{
+        .number = 255,
+        .gas_limit = 200'000'000,
+    };
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    auto *const so_overrides = monad_state_override_vec_create(2);
+    auto *const bo_overrides = monad_block_override_vec_create(2);
+    set_block_override_time_at(
+        bo_overrides, 0, std::numeric_limits<uint64_t>::max() - 1);
+
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+
+    monad_executor_eth_simulate_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_senders.data(),
+        rlp_senders.size(),
+        rlp_calls.data(),
+        rlp_calls.size(),
+        255,
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        rlp_finalized_id.data(),
+        rlp_finalized_id.size(),
+        simulate_gas_limit,
+        simulate_max_calls,
+        simulate_max_output_size,
+        so_overrides,
+        bo_overrides,
+        false,
+        complete_callback,
+        (void *)&ctx);
+    f.get();
+
+    ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    ASSERT_TRUE(ctx.result->encoded_trace_len > 0);
+
+    nlohmann::json const output = nlohmann::json::from_cbor(
+        ctx.result->encoded_trace,
+        ctx.result->encoded_trace + ctx.result->encoded_trace_len);
+
+    ASSERT_EQ(output.size(), 2);
+    EXPECT_EQ(output[0]["timestamp"], "0xfffffffffffffffe");
+    EXPECT_EQ(output[1]["timestamp"], "0xffffffffffffffff");
+
+    monad_block_override_vec_destroy(bo_overrides);
+    monad_state_override_vec_destroy(so_overrides);
+    monad_executor_destroy(executor);
+}
+
+TEST_F(EthCallFixture, eth_simulate_v1_timestamp_max_synthetic_gap)
+{
+    for (uint64_t i = 0; i < 256; ++i) {
+        commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
+    }
+
+    auto *executor = create_executor(dbname.string());
+
+    Address const sender = 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266_address;
+    auto const enc_sender = rlp::encode_address(std::make_optional(sender));
+    auto const rlp_senders = to_vec(rlp::encode_list2(
+        rlp::encode_list2(enc_sender), rlp::encode_list2(enc_sender)));
+
+    Transaction const tx{
+        .gas_limit = 200'000'000,
+        .value = 1_ether,
+        .to = 0xdeadbeef00000000000000000000000000000000_address,
+        .type = TransactionType::eip1559,
+    };
+    auto const enc_tx = rlp::encode_string2(rlp::encode_transaction(tx));
+    auto const rlp_calls = to_vec(rlp::encode_list2(
+        rlp::encode_list2(enc_tx), rlp::encode_list2(enc_tx)));
+
+    BlockHeader const header{
+        .number = 255,
+        .gas_limit = 200'000'000,
+    };
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    auto *const so_overrides = monad_state_override_vec_create(2);
+    auto *const bo_overrides = monad_block_override_vec_create(2);
+    set_block_override_time_at(
+        bo_overrides, 0, std::numeric_limits<uint64_t>::max() - 2);
+    // Blocks 257 and 258 are synthetic.
+    set_block_override_number_at(bo_overrides, 1, 259);
+    set_block_override_time_at(
+        bo_overrides, 1, std::numeric_limits<uint64_t>::max());
+
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+
+    monad_executor_eth_simulate_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_senders.data(),
+        rlp_senders.size(),
+        rlp_calls.data(),
+        rlp_calls.size(),
+        255,
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        rlp_finalized_id.data(),
+        rlp_finalized_id.size(),
+        simulate_gas_limit,
+        simulate_max_calls,
+        simulate_max_output_size,
+        so_overrides,
+        bo_overrides,
+        false,
+        complete_callback,
+        (void *)&ctx);
+    f.get();
+
+    ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    ASSERT_TRUE(ctx.result->encoded_trace_len > 0);
+
+    nlohmann::json const output = nlohmann::json::from_cbor(
+        ctx.result->encoded_trace,
+        ctx.result->encoded_trace + ctx.result->encoded_trace_len);
+
+    ASSERT_EQ(output.size(), 4);
+    EXPECT_EQ(output[0]["timestamp"], "0xfffffffffffffffd");
+    EXPECT_EQ(output[1]["timestamp"], "0xfffffffffffffffe");
+    EXPECT_EQ(output[2]["timestamp"], "0xffffffffffffffff");
+    EXPECT_EQ(output[3]["timestamp"], "0xffffffffffffffff");
+
+    monad_block_override_vec_destroy(bo_overrides);
+    monad_state_override_vec_destroy(so_overrides);
+    monad_executor_destroy(executor);
+}
+
+TEST_F(EthCallFixture, eth_simulate_v1_block_number_too_far_ahead)
+{
+    for (uint64_t i = 0; i < 256; ++i) {
+        commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
+    }
+
+    auto *executor = create_executor(dbname.string());
+
+    Address const sender = 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266_address;
+    auto const enc_sender = rlp::encode_address(std::make_optional(sender));
+    auto const rlp_senders = to_vec(rlp::encode_list2(
+        rlp::encode_list2(enc_sender), rlp::encode_list2(enc_sender)));
+
+    Transaction const tx{
+        .gas_limit = 200'000'000,
+        .value = 1_ether,
+        .to = 0xdeadbeef00000000000000000000000000000000_address,
+        .type = TransactionType::eip1559,
+    };
+    auto const enc_tx = rlp::encode_string2(rlp::encode_transaction(tx));
+    auto const rlp_calls = to_vec(rlp::encode_list2(
+        rlp::encode_list2(enc_tx), rlp::encode_list2(enc_tx)));
+
+    BlockHeader const header{
+        .number = 255,
+        .gas_limit = 200'000'000,
+    };
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    auto *const so_overrides = monad_state_override_vec_create(2);
+    auto *const bo_overrides = monad_block_override_vec_create(2);
+    // Makes block 1's timestamp overflow too, so the error order matters.
+    set_block_override_time_at(bo_overrides, 0, 1000);
+    set_block_override_number_at(
+        bo_overrides, 1, std::numeric_limits<uint64_t>::max());
+
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+
+    monad_executor_eth_simulate_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_senders.data(),
+        rlp_senders.size(),
+        rlp_calls.data(),
+        rlp_calls.size(),
+        255,
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        rlp_finalized_id.data(),
+        rlp_finalized_id.size(),
+        simulate_gas_limit,
+        simulate_max_calls,
+        simulate_max_output_size,
+        so_overrides,
+        bo_overrides,
+        false,
+        complete_callback,
+        (void *)&ctx);
+    f.get();
+
+    ASSERT_EQ(ctx.result->status_code, EVMC_INTERNAL_ERROR);
+    ASSERT_STREQ(ctx.result->message, "invalid input");
+
+    monad_block_override_vec_destroy(bo_overrides);
+    monad_state_override_vec_destroy(so_overrides);
+    monad_executor_destroy(executor);
+}
+
 TEST_F(EthCallFixture, eth_simulate_v1_stress_queue_rejection)
 {
     for (uint64_t i = 0; i < 256; ++i) {

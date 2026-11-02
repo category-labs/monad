@@ -551,40 +551,38 @@ namespace
             if (MONAD_UNLIKELY(block_number <= header.number)) {
                 return SimulationError::BlockNumbersNotIncreasing;
             }
+            if (MONAD_UNLIKELY(
+                    block_number - base_header.number > max_simulate_blocks)) {
+                return SimulationError::InvalidInput;
+            }
             uint64_t const gap = block_number - header.number;
             // Possible block number override has been validated; we can
             // partially update our loop carried header.
             header.number = block_number;
 
+            // > Time must either increase or remain constant
+            // > relative to the previous block. If time is not
+            // > specified, it's incremented by one for each block.
+
+            // Each of the gap - 1 skipped numbers gets a synthetic block.
+            uint64_t const steps = bo.time.has_value() ? gap - 1 : gap;
+            uint64_t advance;
+            if (MONAD_UNLIKELY(
+                    __builtin_mul_overflow(
+                        steps, default_timestamp_increment, &advance) ||
+                    __builtin_add_overflow(
+                        header.timestamp, advance, &header.timestamp))) {
+                return SimulationError::BlockTimestampsNotMonotonic;
+            }
             if (bo.time.has_value()) {
-                // > Time must either increase or remain constant
-                // > relative to the previous block. If time is not
-                // > specified, it's incremented by one for each block.
-
-                // If a gap is wide, then we need to count the synthetic
-                // timestamps before validating the possible block timestamp
-                // override.
-                if (gap > 1) {
-                    // There are `(gap - 1)` synthetic blocks between
-                    // the current block and the previous block.
-                    header.timestamp += (gap - 1) * default_timestamp_increment;
-                }
-
                 if (MONAD_UNLIKELY(header.timestamp > *bo.time)) {
                     return SimulationError::BlockTimestampsNotMonotonic;
                 }
                 header.timestamp = *bo.time;
             }
-            else {
-                header.timestamp += gap * default_timestamp_increment;
-            }
         }
         if (MONAD_UNLIKELY(header.number <= base_header.number)) {
             return SimulationError::SimulationHeaderNotAfterBase;
-        }
-        size_t const num_blocks = header.number - base_header.number;
-        if (MONAD_UNLIKELY(num_blocks > max_simulate_blocks)) {
-            return SimulationError::InvalidInput;
         }
         return outcome::success();
     }

@@ -328,24 +328,21 @@ ExecuteTransaction<traits>::ExecuteTransaction(
 template <Traits traits>
 Result<vm::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
 {
-    auto const validate_lambda = [this, &state] {
-        auto result = validate_transaction<traits>(
-            tx_,
-            sender_,
-            state,
-            header_.base_fee_per_gas.value_or(0),
-            authorities_,
-            state_tracer_,
-            chain_ctx_.mode);
-        if (!result) {
-            // RELAXED MERGE
-            // if transaction validation fails using current values, require
-            // exact match during merge as a precaution
-            state.original_account_state(sender_).set_validate_exact_balance();
-        }
-        return result;
-    };
-    BOOST_OUTCOME_TRY(validate_lambda());
+    auto validation = validate_transaction<traits>(
+        tx_,
+        sender_,
+        state,
+        header_.base_fee_per_gas.value_or(0),
+        authorities_,
+        state_tracer_,
+        chain_ctx_.mode);
+    if (!validation) {
+        // RELAXED MERGE
+        // if transaction validation fails using current values, require
+        // exact match during merge as a precaution
+        state.original_account_state(sender_).set_validate_exact_balance();
+        return std::move(validation).as_failure();
+    }
 
     auto const tx_context = get_tx_context<traits>(
         tx_,
@@ -418,7 +415,7 @@ Receipt ExecuteTransaction<traits>::execute_final(
         .gas_used = gas_used,
         .type = tx_.type};
     for (auto const &log : state.logs()) {
-        receipt.add_log(std::move(log));
+        receipt.add_log(log);
     }
 
     call_tracer_.on_finish(receipt.gas_used);

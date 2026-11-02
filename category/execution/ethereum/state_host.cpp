@@ -190,7 +190,7 @@ void StateHostBase::emit_log(
     {
         Receipt::Log log{.data = {data, data_size}, .address = address};
         for (auto i = 0u; i < num_topics; ++i) {
-            log.topics.push_back({topics[i]});
+            log.topics.emplace_back(topics[i]);
         }
         state_.store_log(log);
         call_tracer_.on_log(std::move(log));

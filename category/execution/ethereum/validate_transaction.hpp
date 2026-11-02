@@ -20,6 +20,7 @@
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/core/result.hpp>
+#include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
@@ -54,7 +55,7 @@ Result<void> validate_transaction(
     Transaction const &tx, Address const &sender, State &state,
     uint256_t const &base_fee_per_gas,
     std::span<std::optional<Address> const> const authorities,
-    trace::StateTracer &state_tracer);
+    trace::StateTracer &state_tracer, ChainContext<traits> const &);
 
 template <Traits traits>
 [[gnu::always_inline]] inline Result<void> validate_ethereum_transaction(

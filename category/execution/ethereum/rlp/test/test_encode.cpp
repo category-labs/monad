@@ -26,9 +26,9 @@ using namespace monad::rlp;
 
 TEST(Rlp, ToBigEndianCompacted)
 {
-    auto bytes_1 = to_big_compact(uint16_t{1024});
-    auto bytes_2 = to_big_compact(unsigned{1024});
-    auto bytes_3 = to_big_compact(uint64_t{1024});
+    auto const bytes_1 = to_big_compact(uint16_t{1024});
+    auto const bytes_2 = to_big_compact(unsigned{1024});
+    auto const bytes_3 = to_big_compact(uint64_t{1024});
 
     EXPECT_EQ(bytes_1, monad::byte_string({0x04, 0x00}));
     EXPECT_EQ(bytes_1, bytes_2);

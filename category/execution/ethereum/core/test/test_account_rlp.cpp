@@ -15,11 +15,9 @@
 
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
-#include <category/core/int.hpp>
+#include <category/core/runtime/uint256.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/rlp/account_rlp.hpp>
-
-#include <evmc/evmc.hpp>
 
 #include <gtest/gtest.h>
 

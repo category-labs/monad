@@ -15,15 +15,20 @@
 
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
-#include <category/core/event/event_recorder.h>
-#include <category/core/event/event_ring.h>
+#include <category/core/event/event_recorder.hpp>
+#include <category/core/result.hpp>
+#include <category/core/runtime/uint128.hpp>
+#include <category/core/runtime/uint256.hpp>
+#include <category/execution/ethereum/core/base_ctypes.h>
 #include <category/execution/ethereum/event/exec_event_ctypes.h>
 #include <category/execution/ethereum/event/exec_event_recorder.hpp>
 #include <category/execution/ethereum/event/record_block_events.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 
 #include <bit>
+#include <cstdint>
 #include <cstring>
+#include <iterator>
 #include <optional>
 
 MONAD_NAMESPACE_BEGIN

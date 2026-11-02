@@ -13,17 +13,19 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
 #include <category/core/byte_string.hpp>
+#include <category/core/bytes.hpp>
 #include <category/core/int.hpp>
+#include <category/core/rlp/decode_error.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/execution/ethereum/core/rlp/address_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/bytes_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/int_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/rlp/decode.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
-
-#include <evmc/evmc.hpp>
 
 #include <gtest/gtest.h>
 
@@ -39,7 +41,7 @@ TEST(Rlp_Transaction, DecodeEncodeAccessList)
 {
     // Empty List
     monad::AccessList const a{};
-    auto encoded_access_list1 = encode_access_list(a);
+    auto const encoded_access_list1 = encode_access_list(a);
     auto const empty_access_list = monad::byte_string({0xc0});
     EXPECT_EQ(encoded_access_list1, empty_access_list);
 
@@ -543,7 +545,7 @@ TEST(Rlp_Transaction, ParseListMetadataLengthOverflow)
         0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
         0xff, 0xff, 0x0d, 0x93, 0x44, 0x00, 0xc0};
     byte_string_view enc{input};
-    auto result = decode_transaction(enc);
+    auto const result = decode_transaction(enc);
     EXPECT_TRUE(result.has_error());
 }
 

@@ -19,20 +19,29 @@
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
+#include <category/core/runtime/uint256.hpp>
 #include <category/execution/ethereum/core/ecrecover/impl.hpp>
 #include <category/execution/ethereum/core/signature.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/precompiles_impl.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/revision.h>
 #include <category/vm/evm/status_code.h>
+#include <category/vm/evm/traits.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 #include <evmc/helpers.h>
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
+#include <cstdlib>
+#include <cstring>
+#include <limits>
 #include <optional>
+#include <span>
+#include <string>
 #include <utility>
 
 MONAD_NAMESPACE_BEGIN
@@ -291,7 +300,7 @@ PrecompileResult expmod_execute(byte_string_view const input)
             ? std::numeric_limits<size_t>::max()
             : static_cast<size_t>(padded_size_64);
     std::basic_string<uint8_t> padded_input(padded_size, '\0');
-    size_t terms_size = input.size() < 96 ? 0 : input.size() - 96;
+    size_t const terms_size = input.size() < 96 ? 0 : input.size() - 96;
     if (terms_size != 0) {
         std::memcpy(
             padded_input.data(),

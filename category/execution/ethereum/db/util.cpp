@@ -17,11 +17,11 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
-#include <category/core/int.hpp>
 #include <category/core/likely.h>
 #include <category/core/log.hpp>
 #include <category/core/result.hpp>
 #include <category/core/rlp/decode_error.hpp>
+#include <category/core/runtime/uint256.hpp>
 #include <category/core/runtime/unaligned.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/block.hpp>
@@ -69,8 +69,6 @@
 #include <istream>
 #include <memory>
 #include <optional>
-#include <span>
-#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -778,7 +776,7 @@ decode_storage_db_raw(byte_string_view &enc)
 
 Result<std::pair<bytes32_t, bytes32_t>> decode_storage_db(byte_string_view &enc)
 {
-    BOOST_OUTCOME_TRY(auto res, decode_storage_db_raw(enc));
+    BOOST_OUTCOME_TRY(auto const res, decode_storage_db_raw(enc));
     if (!enc.empty()) {
         return rlp::DecodeError::InputTooLong;
     }

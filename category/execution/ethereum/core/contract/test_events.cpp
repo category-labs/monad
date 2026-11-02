@@ -15,13 +15,13 @@
 
 #include <category/core/address.hpp>
 #include <category/core/byte_string.hpp>
+#include <category/core/bytes.hpp>
 #include <category/core/hex.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
 #include <category/execution/ethereum/core/contract/big_endian.hpp>
 #include <category/execution/ethereum/core/contract/events.hpp>
 
-#include <evmc/evmc.hpp>
 #include <gtest/gtest.h>
 
 using namespace monad;

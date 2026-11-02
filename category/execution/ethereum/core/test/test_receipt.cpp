@@ -13,10 +13,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
 #include <category/core/byte_string.hpp>
+#include <category/core/bytes.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
-
-#include <evmc/evmc.hpp>
 
 #include <gtest/gtest.h>
 

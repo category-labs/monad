@@ -35,11 +35,10 @@
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/mpt/util.hpp>
 #include <category/vm/code.hpp>
+#include <category/vm/evm/access_status.h>
+#include <category/vm/evm/storage_status.h>
 #include <category/vm/vm.hpp>
 #include <monad/test/traits_test.hpp>
-
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 
 #include <quill/std/Optional.h>
 
@@ -2449,7 +2448,7 @@ TYPED_TEST(OnDiskCachedTestSuite, undecided_proposals)
 
     LOG_INFO("block 10 round 100");
     // b10 r100        a 10   b 20 v1 v2   c 30 v1 v2
-    std::unique_ptr<StateDeltas> state_deltas{new StateDeltas{
+    std::unique_ptr<StateDeltas> const state_deltas{new StateDeltas{
         {a, StateDelta{.account = {std::nullopt, Account{.balance = 10'000}}}},
         {b,
          StateDelta{
@@ -2989,7 +2988,7 @@ namespace
             finalized_proposal_seed_ = proposal_seed;
             // remove block and proposals
             for (auto const r : s1) {
-                auto it3 = proposals_.find(r);
+                auto const it3 = proposals_.find(r);
                 MONAD_ASSERT(it3 != proposals_.end());
                 proposals_.erase(it3);
             }
@@ -3003,7 +3002,7 @@ namespace
                 if (it3->second.first > block) {
                     MONAD_ASSERT(blocks_.contains(it3->second.first));
                     auto &s2 = blocks_[it3->second.first];
-                    auto it4 = s2.find(it3->first);
+                    auto const it4 = s2.find(it3->first);
                     MONAD_ASSERT(it4 != s2.end());
                     s2.erase(it4);
                 }
@@ -3016,7 +3015,7 @@ namespace
             for (uint8_t const i : ADDR) {
                 Address const addr(i);
                 auto account1 = db1_.read_account(addr);
-                auto account2 = db2_.read_account(addr);
+                auto const account2 = db2_.read_account(addr);
                 if (account1) {
                     LOG_INFO(
                         "Check_account_ a_{} {:08} {}",

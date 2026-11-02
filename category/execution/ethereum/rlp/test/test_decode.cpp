@@ -29,7 +29,7 @@ TEST(Rlp, DecodeAfterEncodeString)
 {
     {
         std::string const empty_string = "";
-        auto encoding = encode_string2(to_byte_string_view(empty_string));
+        auto const encoding = encode_string2(to_byte_string_view(empty_string));
 
         byte_string_view encoded_string_view{encoding};
         auto const decoded_string = decode_string(encoded_string_view);
@@ -40,7 +40,7 @@ TEST(Rlp, DecodeAfterEncodeString)
 
     {
         std::string const short_string = "hello world";
-        auto encoding = encode_string2(to_byte_string_view(short_string));
+        auto const encoding = encode_string2(to_byte_string_view(short_string));
 
         byte_string_view encoded_string_view{encoding};
         auto const decoded_string = decode_string(encoded_string_view);
@@ -52,7 +52,7 @@ TEST(Rlp, DecodeAfterEncodeString)
     {
         std::string const long_string =
             "Lorem ipsum dolor sit amet, consectetur adipisicing elit";
-        auto encoding = encode_string2(to_byte_string_view(long_string));
+        auto const encoding = encode_string2(to_byte_string_view(long_string));
 
         byte_string_view encoded_string_view2{encoding};
         auto const decoded_string = decode_string(encoded_string_view2);
@@ -66,7 +66,7 @@ TEST(Rlp, ParseMetadata)
 {
     // String payload
     {
-        auto encoding = encode_string2(to_byte_string_view("dog"));
+        auto const encoding = encode_string2(to_byte_string_view("dog"));
         byte_string_view enc{encoding};
 
         auto const result = parse_metadata(enc);
@@ -80,7 +80,7 @@ TEST(Rlp, ParseMetadata)
     {
         auto const inner =
             byte_string({0x83, 'c', 'a', 't', 0x83, 'd', 'o', 'g'});
-        auto encoding = encode_list2(
+        auto const encoding = encode_list2(
             encode_string2(to_byte_string_view("cat")),
             encode_string2(to_byte_string_view("dog")));
         byte_string_view enc{encoding};
@@ -192,7 +192,7 @@ TEST(Rlp, ParseMetadata)
 
     // parse_string_metadata on a list-prefix input -> TypeUnexpected
     {
-        auto encoding = encode_list2(
+        auto const encoding = encode_list2(
             encode_string2(to_byte_string_view("cat")),
             encode_string2(to_byte_string_view("dog")));
         byte_string_view enc{encoding};
@@ -204,7 +204,7 @@ TEST(Rlp, ParseMetadata)
 
     // parse_list_metadata on a string-prefix input -> TypeUnexpected
     {
-        auto encoding = encode_string2(to_byte_string_view("hello"));
+        auto const encoding = encode_string2(to_byte_string_view("hello"));
         byte_string_view enc{encoding};
 
         auto const result = parse_list_metadata(enc);
@@ -215,7 +215,7 @@ TEST(Rlp, ParseMetadata)
     // parse_list_metadata_raw returns the full list encoding, header
     // included (unlike parse_list_metadata which strips it).
     {
-        auto encoding = encode_list2(
+        auto const encoding = encode_list2(
             encode_string2(to_byte_string_view("cat")),
             encode_string2(to_byte_string_view("dog")));
         byte_string_view enc{encoding};

@@ -14,11 +14,11 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/int.hpp>
+#include <category/core/runtime/uint256.hpp>
 #include <category/execution/ethereum/core/contract/big_endian.hpp>
 
 #include <gtest/gtest.h>
 
-#include <cstddef>
 #include <cstdint>
 #include <cstring>
 

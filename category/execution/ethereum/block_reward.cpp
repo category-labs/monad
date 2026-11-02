@@ -15,15 +15,14 @@
 
 #include <category/core/assert.h>
 #include <category/core/config.hpp>
-#include <category/core/int.hpp>
 #include <category/core/likely.h>
+#include <category/core/runtime/uint256.hpp>
 #include <category/execution/ethereum/block_reward.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/revision.h>
 #include <category/vm/evm/traits.hpp>
-
-#include <evmc/evmc.h>
 
 #include <cstddef>
 #include <cstdint>

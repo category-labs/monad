@@ -22,17 +22,21 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/keccak.hpp>
-#include <category/execution/ethereum/core/rlp/account_rlp.hpp>
+#include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/db/commit_builder.hpp>
 #include <category/execution/ethereum/db/offset_trie.hpp>
 #include <category/execution/ethereum/db/partial_trie_db.hpp>
+#include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/mpt/nibbles_view.hpp>
+#include <category/vm/code.hpp>
 
 #include <gtest/gtest.h>
 
 #include <cstdint>
 #include <cstring>
 #include <functional>
+#include <initializer_list>
+#include <optional>
 #include <utility>
 
 using namespace monad;

@@ -36,11 +36,14 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
+#include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/vm/code.hpp>
+#include <category/vm/evm/revision.h>
 #include <category/vm/evm/status_code.h>
-#include <category/vm/utils/evm-as.hpp>
+#include <category/vm/utils/evm-as.hpp> // IWYU pragma: keep
+#include <category/vm/utils/evm-as/builder.hpp>
 #include <category/vm/vm.hpp>
 #include <monad/test/traits_test.hpp>
 
@@ -56,9 +59,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <span>
 #include <utility>
+#include <variant>
 #include <vector>
 
 using namespace monad;
@@ -87,7 +92,7 @@ namespace
 
 TEST(CallFrame, to_json)
 {
-    CallFrame call_frame{
+    CallFrame const call_frame{
         .type = CallType::CALL,
         .from = a,
         .to = std::make_optional(b),
@@ -98,7 +103,7 @@ TEST(CallFrame, to_json)
         .status = MONAD_STATUS_SUCCESS,
     };
 
-    auto const json_str = R"(
+    auto const *const json_str = R"(
     {
         "from":"0x5353535353535353535353535353535353535353",
         "gas":"0x186a0",
@@ -143,7 +148,7 @@ TEST(CallTrace, initial_capacity_is_bounded_by_size_limit)
 {
     constexpr size_t max_size = 2 * sizeof(CallFrame);
     std::vector<CallFrame> call_frames;
-    CallTracer call_tracer{tx, call_frames, max_size};
+    CallTracer const call_tracer{tx, call_frames, max_size};
 
     EXPECT_GE(call_frames.capacity(), 2);
     EXPECT_LT(call_frames.capacity(), 128);
@@ -152,7 +157,7 @@ TEST(CallTrace, initial_capacity_is_bounded_by_size_limit)
 TEST(CallTrace, unlimited_size_uses_target_initial_capacity)
 {
     std::vector<CallFrame> call_frames;
-    CallTracer call_tracer{tx, call_frames};
+    CallTracer const call_tracer{tx, call_frames};
 
     EXPECT_LE(call_frames.capacity(), 128);
 }
@@ -228,7 +233,7 @@ TEST(CallTrace, output_size_limit_throws_on_check)
 
 TEST(CallTrace, log_size_limit_throws_on_check)
 {
-    evmc_message msg{.input_data = input, .input_size = sizeof(input)};
+    evmc_message const msg{.input_data = input, .input_size = sizeof(input)};
 
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames, sizeof(CallFrame) + sizeof(input)};
@@ -244,7 +249,7 @@ TEST(CallTrace, log_size_limit_throws_on_check)
 
 TEST(CallTrace, self_destruct_size_limit_throws_on_check)
 {
-    evmc_message msg{.input_data = input, .input_size = sizeof(input)};
+    evmc_message const msg{.input_data = input, .input_size = sizeof(input)};
 
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames, sizeof(CallFrame) + sizeof(input)};
@@ -284,7 +289,7 @@ TEST(CallTrace, callbacks_after_size_limit_exceeded_are_ignored)
 
 TEST(CallTrace, reset_clears_size_limit_exceeded)
 {
-    evmc_message msg{.input_data = input, .input_size = sizeof(input)};
+    evmc_message const msg{.input_data = input, .input_size = sizeof(input)};
     evmc::Result res{};
     res.status_code = EVMC_SUCCESS;
     res.gas_left = 9'000;
@@ -315,7 +320,7 @@ TEST(CallTrace, reset_clears_size_limit_exceeded)
 
 TEST(CallTrace, exact_size_limit_succeeds)
 {
-    evmc_message msg{.input_data = input, .input_size = sizeof(input)};
+    evmc_message const msg{.input_data = input, .input_size = sizeof(input)};
     evmc::Result res{};
     res.status_code = EVMC_SUCCESS;
     res.gas_left = 9'000;
@@ -480,7 +485,7 @@ TYPED_TEST(TraitsTest, execute_success)
     auto const &beneficiary = ADDR_A;
 
     evmc_tx_context const tx_context{};
-    BlockHashBufferFinalized buffer{};
+    BlockHashBufferFinalized const buffer{};
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
     auto const chain_ctx =
@@ -583,7 +588,7 @@ TYPED_TEST(TraitsTest, execute_reverted_insufficient_balance)
     auto const &beneficiary = ADDR_A;
 
     evmc_tx_context const tx_context{};
-    BlockHashBufferFinalized buffer{};
+    BlockHashBufferFinalized const buffer{};
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
     auto const chain_ctx =
@@ -612,7 +617,7 @@ TYPED_TEST(TraitsTest, execute_reverted_insufficient_balance)
     EXPECT_TRUE(result.status_code == EVMC_INSUFFICIENT_BALANCE);
     ASSERT_TRUE(call_frames.size() == 1);
 
-    CallFrame expected{
+    CallFrame const expected{
         .type = CallType::CALL,
         .flags = 0,
         .from = sender,
@@ -673,7 +678,7 @@ TYPED_TEST(TraitsTest, create_call_trace)
     auto const &beneficiary = ADDR_A;
 
     evmc_tx_context const tx_context{};
-    BlockHashBufferFinalized buffer{};
+    BlockHashBufferFinalized const buffer{};
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
     auto const chain_ctx =
@@ -797,7 +802,7 @@ TYPED_TEST(TraitsTest, selfdestruct_logs)
     auto const &beneficiary = ADDR_A;
 
     evmc_tx_context const tx_context{};
-    BlockHashBufferFinalized buffer{};
+    BlockHashBufferFinalized const buffer{};
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
     auto const chain_ctx =
@@ -885,7 +890,7 @@ TYPED_TEST(TraitsTest, selfdestruct_logs_value)
     auto const &beneficiary = ADDR_C;
 
     evmc_tx_context const tx_context{};
-    BlockHashBufferFinalized buffer{};
+    BlockHashBufferFinalized const buffer{};
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
     auto const chain_ctx =
@@ -983,7 +988,7 @@ TYPED_TEST(TraitsTest, selfdestruct_depth)
     auto const &beneficiary = ADDR_A;
 
     evmc_tx_context const tx_context{};
-    BlockHashBufferFinalized buffer{};
+    BlockHashBufferFinalized const buffer{};
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
     auto const chain_ctx =
@@ -1063,7 +1068,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace)
     auto const &beneficiary = ADDR_A;
 
     evmc_tx_context const tx_context{};
-    BlockHashBufferFinalized buffer{};
+    BlockHashBufferFinalized const buffer{};
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
 
@@ -1176,7 +1181,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct)
     auto const &beneficiary = ADDR_C;
 
     evmc_tx_context const tx_context{};
-    BlockHashBufferFinalized buffer{};
+    BlockHashBufferFinalized const buffer{};
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
 
@@ -1283,7 +1288,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct_zero_balance)
     auto const &beneficiary = ADDR_C;
 
     evmc_tx_context const tx_context{};
-    BlockHashBufferFinalized buffer{};
+    BlockHashBufferFinalized const buffer{};
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
 
@@ -1427,7 +1432,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs)
     };
 
     evmc_tx_context const tx_context{};
-    BlockHashBufferFinalized buffer{};
+    BlockHashBufferFinalized const buffer{};
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
 
@@ -1489,7 +1494,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs)
     // `SELFDESTRUCT_CONTRACT_ADDR` to `INTERMEDIARY_CONTRACT_ADDR` with value
     // 1'000'000 due to the selfdestruct.
     {
-        std::vector<bytes32_t> expected_topics{
+        std::vector<bytes32_t> const expected_topics{
             transfer_signature,
             abi_encode_address(SELFDESTRUCT_CONTRACT_ADDR),
             abi_encode_address(INTERMEDIARY_CONTRACT_ADDR),
@@ -1514,7 +1519,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs)
     // `INTERMEDIARY_CONTRACT_ADDR` to `SELFDESTRUCT_CONTRACT_ADDR` with value
     // 1'000'000 due to the call, which revives the selfdestruct contract.
     {
-        std::vector<bytes32_t> expected_topics{
+        std::vector<bytes32_t> const expected_topics{
             transfer_signature,
             abi_encode_address(INTERMEDIARY_CONTRACT_ADDR),
             abi_encode_address(SELFDESTRUCT_CONTRACT_ADDR)};
@@ -1535,7 +1540,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs)
     // `SELFDESTRUCT_CONTRACT_ADDR` to `INTERMEDIARY_CONTRACT_ADDR` with value
     // 1'000'000 due to the selfdestruct.
     {
-        std::vector<bytes32_t> expected_topics{
+        std::vector<bytes32_t> const expected_topics{
             transfer_signature,
             abi_encode_address(SELFDESTRUCT_CONTRACT_ADDR),
             abi_encode_address(INTERMEDIARY_CONTRACT_ADDR),
@@ -1828,7 +1833,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_transfers)
             .data = calldata};
 
         evmc_tx_context const tx_context{};
-        BlockHashBufferFinalized buffer{};
+        BlockHashBufferFinalized const buffer{};
         std::vector<CallFrame> call_frames;
         CallTracer call_tracer{tx, call_frames};
 
@@ -1873,7 +1878,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_transfers)
             ASSERT_TRUE(call_frames[1].logs.has_value());
             ASSERT_EQ(call_frames[1].logs->size(), 1);
 
-            std::vector<bytes32_t> expected_topics{
+            std::vector<bytes32_t> const expected_topics{
                 abi_encode_event_signature("Transfer(address,address,uint256)"),
                 abi_encode_address(ADDR_A),
                 abi_encode_address(ADDR_B)};

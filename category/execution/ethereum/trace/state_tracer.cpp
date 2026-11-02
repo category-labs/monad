@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
@@ -20,10 +21,8 @@
 #include <category/core/config.hpp>
 #include <category/core/hex.hpp>
 #include <category/core/int.hpp>
-#include <category/core/keccak.hpp>
 #include <category/core/likely.h>
-#include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
-#include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/state3/account_state.hpp>

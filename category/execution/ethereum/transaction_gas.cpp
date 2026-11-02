@@ -14,20 +14,21 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/assert.h>
+#include <category/core/checked_math.hpp>
 #include <category/core/config.hpp>
-#include <category/core/int.hpp>
+#include <category/core/runtime/uint256.hpp>
+#include <category/execution/ethereum/chain/blob_schedule.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
-#include <category/vm/evm/switch_traits.hpp>
+#include <category/vm/evm/revision.h>
 #include <category/vm/evm/traits.hpp>
-
-#include <evmc/evmc.h>
 
 #include <algorithm>
 #include <cstdint>
 #include <iterator>
+#include <utility>
 
 MONAD_NAMESPACE_BEGIN
 

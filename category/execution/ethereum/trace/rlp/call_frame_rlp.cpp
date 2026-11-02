@@ -18,6 +18,7 @@
 #include <category/core/result.hpp>
 #include <category/core/rlp/config.hpp>
 #include <category/core/rlp/decode_error.hpp>
+#include <category/core/runtime/uint256.hpp>
 #include <category/execution/ethereum/core/rlp/address_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/int_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/receipt_rlp.hpp>
@@ -28,7 +29,10 @@
 
 #include <boost/outcome/try.hpp>
 
+#include <cstddef>
+#include <cstdint>
 #include <span>
+#include <utility>
 #include <vector>
 
 MONAD_RLP_NAMESPACE_BEGIN

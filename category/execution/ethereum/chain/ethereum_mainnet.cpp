@@ -13,7 +13,11 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/assert.h>
+#include <category/core/runtime/uint256.hpp>
+#include <category/execution/ethereum/chain/blob_schedule.hpp>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
+#include <category/vm/evm/revision.h>
 
 #include <category/core/config.hpp>
 #include <category/core/hex.hpp>
@@ -24,8 +28,6 @@
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
-
-#include <evmc/evmc.h>
 
 #include <boost/outcome/config.hpp>
 #include <boost/outcome/success_failure.hpp>

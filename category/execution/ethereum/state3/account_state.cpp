@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/execution/ethereum/state3/account_state.hpp>
+#include <category/vm/evm/storage_status.h>
 
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>

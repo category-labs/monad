@@ -13,16 +13,17 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
 #include <category/core/byte_string.hpp>
-#include <category/execution/ethereum/core/block.hpp>
+#include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
 #include <category/vm/evm/status_code.h>
 
-#include <evmc/evmc.hpp>
-
 #include <gtest/gtest.h>
 
+#include <cstdint>
+#include <optional>
 #include <vector>
 
 using namespace monad;
@@ -49,7 +50,7 @@ TEST(Rlp_CallFrame, encode_decode_call_frame)
         .depth = 0,
     };
 
-    byte_string encoding = rlp::encode_call_frame(call_frame);
+    byte_string const encoding = rlp::encode_call_frame(call_frame);
     byte_string_view encoding_view{encoding};
     auto const decoded_call_frame = rlp::decode_call_frame(encoding_view);
     ASSERT_FALSE(decoded_call_frame.has_error());
@@ -112,7 +113,7 @@ TEST(Rlp_CallFrame, encode_decode_call_frames)
 
     std::vector<CallFrame> const call_frames{call_frame1, call_frame2};
 
-    byte_string encoding = rlp::encode_call_frames(call_frames);
+    byte_string const encoding = rlp::encode_call_frames(call_frames);
     byte_string_view encoding_view{encoding};
     auto const decoded_call_frames = rlp::decode_call_frames(encoding_view);
     ASSERT_FALSE(decoded_call_frames.has_error());

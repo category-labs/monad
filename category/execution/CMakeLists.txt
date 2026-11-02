@@ -208,6 +208,8 @@ add_library(
   # monad/db
   "monad/db/commit_block.cpp"
   "monad/db/commit_block.hpp"
+  "monad/db/domain_db.cpp"
+  "monad/db/domain_db.hpp"
   "monad/db/page_commit_builder.hpp"
   "monad/db/page_commit_builder.cpp"
   "monad/db/state_machine_init.cpp"

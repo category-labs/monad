@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/execution/ethereum/core/contract/abi_signatures.hpp>
+#include <category/execution/monad/staking/config.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
 
 MONAD_STAKING_NAMESPACE_BEGIN

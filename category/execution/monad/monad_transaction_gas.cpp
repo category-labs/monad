@@ -13,9 +13,13 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/execution/monad/min_base_fee.h>
+#include <category/core/config.hpp>
+#include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/monad/monad_transaction_gas.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/traits.hpp>
+
+#include <cstdint>
 
 MONAD_NAMESPACE_BEGIN
 

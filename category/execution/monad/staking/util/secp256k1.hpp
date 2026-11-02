@@ -88,7 +88,7 @@ public:
     verify(Secp256k1Pubkey const &pubkey, byte_string_view const message) const
     {
         bytes32_t const digest = to_bytes(blake3(message));
-        int res = secp256k1_ecdsa_verify(
+        int const res = secp256k1_ecdsa_verify(
             get_secp_context(), &sig_, digest.bytes, &pubkey.get());
         return res == 1;
     }

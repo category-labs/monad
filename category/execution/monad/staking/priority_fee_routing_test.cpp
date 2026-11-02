@@ -16,9 +16,12 @@
 #include <category/core/address.hpp>
 #include <category/core/int.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
+#include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/core/units.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
+#include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
@@ -28,12 +31,17 @@
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
+#include <category/mpt/db.hpp>
 #include <category/vm/vm.hpp>
 #include <monad/test/traits_test.hpp>
 
 #include <boost/fiber/future/promise.hpp>
 
 #include <gtest/gtest.h>
+
+#include <cstdint>
+#include <memory>
+#include <variant>
 
 using namespace monad;
 

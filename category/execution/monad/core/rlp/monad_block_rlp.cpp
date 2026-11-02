@@ -13,7 +13,14 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/byte_string.hpp>
+#include <category/core/int.hpp>
+#include <category/core/likely.h>
+#include <category/core/result.hpp>
+#include <category/core/rlp/config.hpp>
 #include <category/core/rlp/decode_error.hpp>
+#include <category/core/runtime/uint128.hpp>
+#include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/rlp/address_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/bytes_rlp.hpp>
@@ -21,9 +28,12 @@
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/withdrawal_rlp.hpp>
 #include <category/execution/ethereum/rlp/decode.hpp>
+#include <category/execution/monad/core/monad_block.hpp>
 #include <category/execution/monad/core/rlp/monad_block_rlp.hpp>
 
+#include <concepts>
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 MONAD_RLP_ANONYMOUS_NAMESPACE_BEGIN

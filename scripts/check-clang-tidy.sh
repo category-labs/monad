@@ -54,7 +54,9 @@ mapfile -d '' -t inputs < <(\
     -g '*.cpp' -g '*.c' \
     category/async \
     category/core  \
+    category/crypto \
     category/event \
+    category/execution \
     category/mpt   \
     category/rpc   \
     category/statesync \

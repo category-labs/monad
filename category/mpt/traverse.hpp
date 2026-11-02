@@ -297,6 +297,11 @@ namespace detail
         async::erased_connected_operation *const traverse_state,
         Node const &node)
     {
+        // False positive: preorder_traverse_ondisk allocates the sender with
+        // `new auto(async::connect(...))`, and the analyzer does not model the
+        // copy elision into the non-movable operation state, so it treats
+        // this counter as never initialized.
+        // NOLINTNEXTLINE(clang-analyzer-core.uninitialized.Assign)
         sender.within_recursion_count++;
         async_parallel_preorder_traverse_impl(
             sender, traverse_state, node, *sender.machine, INVALID_BRANCH);

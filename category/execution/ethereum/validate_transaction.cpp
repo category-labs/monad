@@ -14,19 +14,21 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/address.hpp>
-#include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
 #include <category/core/result.hpp>
+#include <category/execution/ethereum/chain/blob_schedule.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/execution_modalities.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
-#include <category/vm/evm/delegation.hpp>
+#include <category/execution/ethereum/validate_transaction_error.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
-#include <category/vm/evm/switch_traits.hpp>
+#include <category/vm/evm/revision.hpp>
 #include <category/vm/evm/traits.hpp>
 
 #include <boost/outcome/config.hpp>
@@ -36,6 +38,7 @@
 #include <cstdint>
 #include <limits>
 #include <optional>
+#include <span>
 
 MONAD_NAMESPACE_BEGIN
 

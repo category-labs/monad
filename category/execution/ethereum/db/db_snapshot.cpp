@@ -13,13 +13,17 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
+#include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
-#include <category/core/endian.hpp> // little endian
+#include <category/core/keccak.hpp>
 #include <category/core/log.hpp>
 #include <category/core/nibble.h>
 #include <category/core/runtime/unaligned.hpp>
+#include <category/crypto/hash256.h>
+#include <category/crypto/keccak.h>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/db_snapshot.h>
 #include <category/execution/ethereum/db/state_machine_init.hpp>
@@ -28,14 +32,24 @@
 #include <category/execution/monad/db/state_machine_init.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
 #include <category/mpt/db.hpp>
+#include <category/mpt/detail/timeline.hpp>
+#include <category/mpt/nibbles_view.hpp>
+#include <category/mpt/node.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
+#include <category/mpt/state_machine_kind.hpp>
+#include <category/mpt/update.hpp>
+#include <category/mpt/util.hpp>
 
 #include <ankerl/unordered_dense.h>
 
+#include <array>
+#include <cstddef>
+#include <cstdint>
 #include <deque>
 #include <limits>
 #include <memory>
 #include <optional>
+#include <utility>
 
 struct monad_db_snapshot_loader
 {

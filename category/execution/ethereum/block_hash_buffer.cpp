@@ -23,6 +23,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -118,7 +119,7 @@ void BlockHashChain::finalize(bytes32_t const &block_id)
 {
     auto const to_finalize = buf_.n();
 
-    auto winner_it = std::find_if(
+    auto const winner_it = std::find_if(
         proposals_.begin(), proposals_.end(), [&block_id](Proposal const &p) {
             return p.block_id == block_id;
         });
@@ -136,7 +137,7 @@ void BlockHashChain::finalize(bytes32_t const &block_id)
 BlockHashBuffer const &
 BlockHashChain::find_chain(bytes32_t const &block_id) const
 {
-    auto it = std::find_if(
+    auto const it = std::find_if(
         proposals_.begin(), proposals_.end(), [&block_id](Proposal const &p) {
             return p.block_id == block_id;
         });

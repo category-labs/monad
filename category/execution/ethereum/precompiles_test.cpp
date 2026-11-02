@@ -14,28 +14,40 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/address.hpp>
+#include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/hex.hpp>
+#include <category/execution/ethereum/db/trie_db.hpp>
+#include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
+#include <category/mpt/db.hpp>
+#include <category/vm/evm/call_status.hpp>
 #include <category/vm/evm/message.hpp>
 #include <category/vm/evm/result.hpp>
+#include <category/vm/evm/revision.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/vm.hpp>
 #include <monad/test/traits_test.hpp>
 
 #include <gtest/gtest.h>
 
 #include <nlohmann/json.hpp>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
-#include <iterator>
 #include <limits>
+#include <memory>
+#include <optional>
+#include <span>
+#include <string>
 #include <string_view>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -157,10 +169,10 @@ namespace
     void from_json(nlohmann::json const &j, test_case &t)
     {
         t.name = j.at("Name");
-        std::string input = j.at("Input");
+        std::string const input = j.at("Input");
         t.input = from_hex(std::string_view{input}).value();
         if (j.contains("Expected")) {
-            std::string expected = j.at("Expected");
+            std::string const expected = j.at("Expected");
             t.expected = from_hex(std::string_view{expected}).value();
         }
         else {
@@ -197,7 +209,7 @@ namespace
     transform_test_cases(std::span<test_case const> source, Callable &&f)
     {
         auto res = std::vector<test_case>{};
-        for (auto &t : source) {
+        for (auto const &t : source) {
             test_case copy{t};
             f(copy);
             res.emplace_back(std::move(copy));

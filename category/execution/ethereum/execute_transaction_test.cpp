@@ -13,9 +13,11 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/hex.hpp>
 #include <category/core/int.hpp>
+#include <category/core/result.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
@@ -31,14 +33,20 @@
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
-#include <category/execution/ethereum/validate_transaction.hpp>
+#include <category/execution/ethereum/validate_transaction_error.hpp>
+#include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/execution/monad/chain/monad_testnet.hpp>
+#include <category/vm/evm/call_status.hpp>
+#include <category/vm/evm/revision.hpp>
 #include <category/vm/vm.hpp>
 #include <monad/test/traits_test.hpp>
+
+#include <ankerl/unordered_dense.h>
 
 #include <boost/fiber/future/future.hpp>
 #include <boost/fiber/future/promise.hpp>
@@ -46,9 +54,12 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <exception>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <variant>
+#include <vector>
 
 using namespace monad;
 

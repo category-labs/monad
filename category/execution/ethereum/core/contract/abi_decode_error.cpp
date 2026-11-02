@@ -15,6 +15,8 @@
 
 #include <category/execution/ethereum/core/contract/abi_decode_error.hpp>
 
+#include <initializer_list>
+
 BOOST_OUTCOME_SYSTEM_ERROR2_NAMESPACE_BEGIN
 
 std::initializer_list<

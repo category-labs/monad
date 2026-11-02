@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/byte_string.hpp>
+#include <category/core/int.hpp>
 #include <category/core/likely.h>
 #include <category/core/result.hpp>
 #include <category/core/rlp/config.hpp>
@@ -23,8 +24,6 @@
 #include <category/execution/ethereum/core/signature.hpp>
 
 #include <boost/outcome/try.hpp>
-
-#include <cstdint>
 
 MONAD_RLP_NAMESPACE_BEGIN
 

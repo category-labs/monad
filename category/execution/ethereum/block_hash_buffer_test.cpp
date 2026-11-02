@@ -13,7 +13,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/async/config.hpp>
 #include <category/async/util.hpp>
+#include <category/core/assert.h>
 #include <category/core/blake3.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/keccak.hpp>
@@ -23,7 +25,7 @@
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
-#include <category/execution/monad/core/monad_block.hpp>
+#include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/mpt/util.hpp>
@@ -33,7 +35,9 @@
 #include <stdlib.h>
 #include <unistd.h> // for ftruncate
 
+#include <cstdint>
 #include <filesystem>
+#include <memory>
 
 using namespace monad;
 using namespace monad::test;

@@ -14,6 +14,9 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/vm/evm/access_status.hpp>
+#include <category/vm/evm/page_storage_status.hpp>
+#include <category/vm/evm/storage_status.hpp>
 
 #include <category/core/address.hpp>
 #include <category/core/assert.h>
@@ -38,7 +41,6 @@
 #include <immer/map_transient.hpp>
 #include <immer/vector.hpp>
 
-#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -137,7 +139,7 @@ void State::pop_accept()
     MONAD_ASSERT(version_);
     MONAD_ASSERT(dirty_.size() == version_);
 
-    auto accounts = std::move(dirty_.back());
+    auto const accounts = std::move(dirty_.back());
     dirty_.pop_back();
     for (auto const &dirty_address : accounts) {
         auto const it = current_.find(dirty_address);
@@ -159,7 +161,7 @@ void State::pop_reject()
     MONAD_ASSERT(dirty_.size() == version_);
 
     std::vector<Address> removals;
-    auto accounts = std::move(dirty_.back());
+    auto const accounts = std::move(dirty_.back());
     dirty_.pop_back();
     for (auto const &dirty_address : accounts) {
         auto const it = current_.find(dirty_address);

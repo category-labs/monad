@@ -13,44 +13,55 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/async/config.hpp>
 #include <category/async/util.hpp>
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
+#include <category/core/bytes.hpp>
+#include <category/core/keccak.hpp>
 #include <category/core/runtime/unaligned.hpp>
 #include <category/crypto/keccak.h>
+#include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/db/db_snapshot.h>
 #include <category/execution/ethereum/db/db_snapshot_filesystem.h>
+#include <category/execution/ethereum/db/test/commit_simple.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
+#include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
-#include <category/execution/monad/core/monad_block.hpp>
 #include <category/execution/monad/db/page_commit_builder.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/db_metadata_context.hpp>
 #include <category/mpt/detail/timeline.hpp>
+#include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/mpt/state_machine_kind.hpp>
 #include <category/mpt/traverse.hpp>
 #include <category/mpt/trie.hpp>
+#include <category/mpt/util.hpp>
 #include <category/vm/code.hpp>
 
-#include <test_resource_data.h>
-
-#include <ankerl/unordered_dense.h>
 #include <gtest/gtest.h>
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <ios>
+#include <memory>
+#include <optional>
 #include <set>
 #include <sstream>
 #include <string>
+#include <system_error>
 #include <utility>
 #include <vector>
+
+#include <stdlib.h>
+#include <unistd.h>
 
 namespace monad::mpt::test
 {
@@ -98,7 +109,7 @@ namespace
 
         TempDir()
         {
-            std::filesystem::path tmpl =
+            std::filesystem::path const tmpl =
                 MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
                 "monad_snapshot_test_XXXXXX";
             char *const result = ::mkdtemp((char *)tmpl.native().data());

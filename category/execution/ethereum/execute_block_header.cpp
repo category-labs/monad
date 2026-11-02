@@ -14,9 +14,8 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/address.hpp>
-#include <category/core/assert.h>
 #include <category/core/bytes.hpp>
-#include <category/core/endian.hpp>
+#include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/core/monad_exception.hpp>
 #include <category/execution/ethereum/block_hash_history.hpp>
@@ -30,6 +29,7 @@
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/monad/staking/execute_block_prelude.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/revision.hpp>
 #include <category/vm/evm/traits.hpp>
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
@@ -44,9 +44,10 @@ void set_beacon_root(State &state, BlockHeader const &header)
     constexpr uint256_t HISTORY_BUFFER_LENGTH{8191};
 
     if (state.account_exists(BEACON_ROOTS_ADDRESS)) {
-        uint256_t timestamp{header.timestamp};
-        bytes32_t k1{store_be_as<bytes32_t>(timestamp % HISTORY_BUFFER_LENGTH)};
-        bytes32_t k2{store_be_as<bytes32_t>(
+        uint256_t const timestamp{header.timestamp};
+        bytes32_t const k1{
+            store_be_as<bytes32_t>(timestamp % HISTORY_BUFFER_LENGTH)};
+        bytes32_t const k2{store_be_as<bytes32_t>(
             timestamp % HISTORY_BUFFER_LENGTH + HISTORY_BUFFER_LENGTH)};
         state.set_storage(
             BEACON_ROOTS_ADDRESS, k1, store_be_as<bytes32_t>(timestamp));

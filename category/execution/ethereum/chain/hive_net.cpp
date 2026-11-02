@@ -17,8 +17,14 @@
 #include <category/core/config.hpp>
 #include <category/core/hex.hpp>
 #include <category/core/int.hpp>
+#include <category/execution/ethereum/chain/blob_schedule.hpp>
+#include <category/execution/ethereum/chain/genesis_state.hpp>
 #include <category/execution/ethereum/chain/hive_net.hpp>
 #include <category/execution/ethereum/chain/hive_net_alloc.hpp>
+#include <category/execution/ethereum/core/block.hpp>
+#include <category/vm/evm/revision.hpp>
+
+#include <cstdint>
 
 MONAD_NAMESPACE_BEGIN
 

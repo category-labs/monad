@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/byte_string.hpp>
+#include <category/core/int.hpp>
 #include <category/core/likely.h>
 #include <category/core/result.hpp>
 #include <category/core/rlp/config.hpp>
@@ -28,7 +29,10 @@
 
 #include <boost/outcome/try.hpp>
 
+#include <cstddef>
+#include <cstdint>
 #include <span>
+#include <utility>
 #include <vector>
 
 MONAD_RLP_NAMESPACE_BEGIN

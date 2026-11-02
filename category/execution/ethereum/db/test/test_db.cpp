@@ -13,25 +13,37 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/async/config.hpp>
+#include <category/async/util.hpp>
 #include <category/core/address.hpp>
+#include <category/core/assert.h>
+#include <category/core/byte_string.hpp>
+#include <category/core/bytes.hpp>
+#include <category/core/hex.hpp>
+#include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
+#include <category/crypto/hash256.h>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
-#include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/int_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/db/test/commit_simple.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
+#include <category/execution/ethereum/state2/state_deltas.hpp>
+#include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
+#include <category/mpt/db.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/mpt/test/test_fixtures_gtest.hpp>
-#include <category/mpt/traverse.hpp>
 #include <category/mpt/traverse_util.hpp>
+#include <category/mpt/util.hpp>
 #include <category/vm/evm/call_status.hpp>
+#include <category/vm/vm.hpp>
 
 #include <nlohmann/json.hpp>
 
@@ -41,11 +53,14 @@
 #include <test_resource_data.h>
 
 #include <algorithm>
-#include <bit>
+#include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <memory>
+#include <numeric>
 #include <optional>
 #include <set>
 #include <string>
@@ -745,7 +760,7 @@ TEST_F(OnDiskTrieDbWithFileFixture, get_transactions)
     std::vector<Receipt> receipts;
     receipts.resize(transactions.size());
     call_frames.resize(receipts.size());
-    std::vector<Address> senders = recover_senders(transactions);
+    std::vector<Address> const senders = recover_senders(transactions);
     commit_sequential(
         tdb,
         StateDeltas({}),
@@ -893,7 +908,7 @@ TYPED_TEST(DBTest, load_from_binary)
 {
     std::ifstream accounts(test_resource::checkpoint_dir / "accounts");
     std::ifstream code(test_resource::checkpoint_dir / "code");
-    auto root = load_from_binary(this->db, accounts, code);
+    auto const root = load_from_binary(this->db, accounts, code);
     TrieDb tdb{this->db};
     tdb.reset_root(root, 0);
     EXPECT_EQ(

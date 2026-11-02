@@ -16,18 +16,23 @@
 #include <category/core/address.hpp>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/hex.hpp>
 #include <category/core/int.hpp>
 #include <category/core/runtime/uint256.hpp>
+#include <category/execution/ethereum/chain/blob_schedule.hpp>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
-#include <category/execution/ethereum/db/trie_db.hpp>
+#include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/execution/ethereum/db/util.hpp>
+#include <category/execution/ethereum/execution_modalities.hpp>
 #include <category/execution/ethereum/test/test_traits_state.hpp>
+#include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
-#include <category/vm/evm/traits.hpp>
+#include <category/execution/ethereum/validate_transaction_error.hpp>
+#include <category/vm/evm/revision.hpp>
 #include <monad/test/config.hpp>
 #include <monad/test/traits_test.hpp>
 
@@ -36,7 +41,8 @@
 #include <cstdint>
 #include <limits>
 #include <optional>
-#include <type_traits>
+#include <variant>
+#include <vector>
 
 using namespace monad;
 
@@ -592,7 +598,7 @@ TYPED_TEST(TraitsTest, validate_excess_blob_gas_against_parent)
         auto const blob_schedule = chain.get_blob_schedule(timestamp);
         auto const target_blob_gas = target_blob_gas_per_block(blob_schedule);
 
-        BlockHeader parent{
+        BlockHeader const parent{
             .blob_gas_used = target_blob_gas + GAS_PER_BLOB,
             .excess_blob_gas = target_blob_gas};
         uint64_t const expected_excess_blob_gas =

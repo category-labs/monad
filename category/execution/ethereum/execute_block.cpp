@@ -15,7 +15,6 @@
 
 #include <category/core/address.hpp>
 #include <category/core/assert.h>
-#include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/core/fiber/fiber_group.hpp>
 #include <category/core/fiber/priority_pool.hpp>
@@ -49,6 +48,7 @@
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/monad/staking/priority_fee.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/revision.hpp>
 #include <category/vm/evm/traits.hpp>
 
 #include <boost/fiber/future/promise.hpp>
@@ -92,7 +92,7 @@ std::vector<std::optional<Address>> recover_senders(
 {
     std::vector<std::optional<Address>> senders{transactions.size()};
 
-    std::shared_ptr<boost::fibers::promise<void>[]> promises{
+    std::shared_ptr<boost::fibers::promise<void>[]> const promises{
         new boost::fibers::promise<void>[transactions.size()]};
 
     for (unsigned i = 0; i < transactions.size(); ++i) {
@@ -168,9 +168,9 @@ Result<std::vector<Receipt>> execute_block_transactions(
     MONAD_ASSERT(senders.size() == call_tracers.size());
     MONAD_ASSERT(senders.size() == state_tracers.size());
 
-    std::shared_ptr<boost::fibers::promise<void>[]> promises{
+    std::shared_ptr<boost::fibers::promise<void>[]> const promises{
         new boost::fibers::promise<void>[transactions.size() + 1]};
-    std::shared_ptr<boost::fibers::future<void>[]> futures{
+    std::shared_ptr<boost::fibers::future<void>[]> const futures{
         new boost::fibers::future<void>[transactions.size() + 1]};
     for (auto i = 0u; i < transactions.size() + 1; ++i) {
         futures[i] = promises[i].get_future();

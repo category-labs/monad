@@ -35,14 +35,10 @@ MONAD_NAMESPACE_BEGIN
 class State;
 struct CallTracerBase;
 
-// Loads the embedded KZG trusted setup. Idempotent and safe to call from
-// multiple threads; a failed load is retried on the next call.
-void init_trusted_setup();
-
-// True once init_trusted_setup has loaded the setup. Only meaningful after
-// init_trusted_setup has returned on the calling thread; it takes no lock,
-// matching the unlocked read in the point evaluation precompile.
-bool check_trusted_setup();
+// Loads the embedded KZG trusted setup on first call and returns whether it
+// loaded. Idempotent and safe to call from multiple threads; the outcome of
+// the first load is cached, so a failed load is not retried.
+bool init_trusted_setup();
 
 inline constexpr Address ripemd_address{3};
 

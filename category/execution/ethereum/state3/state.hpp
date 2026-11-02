@@ -23,6 +23,7 @@
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/reserve_balance.hpp>
 #include <category/execution/ethereum/state3/account_state.hpp>
+#include <category/execution/ethereum/state3/state_interface.hpp>
 #include <category/execution/ethereum/state3/version_stack.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/monad/reserve_balance.hpp>
@@ -45,8 +46,10 @@ MONAD_NAMESPACE_BEGIN
 
 class BlockState;
 
-class State
+class State : public StateBase<State>
 {
+    friend class StateBase<State>;
+
     template <typename K, typename V>
     using Map = ankerl::unordered_dense::segmented_map<K, V>;
 
@@ -89,15 +92,21 @@ private:
 
     AccountState &current_account_state(Address const &);
 
-    // Whether SELFDESTRUCT to the account itself destroys the balance.
-    template <Traits traits>
-    bool selfdestruct_to_self_burns(Address const &);
-
     void zero_storage(Address const &, AccountState &);
 
     std::optional<Account> const &recent_account(Address const &);
 
     std::optional<Account> &current_account(Address const &);
+
+    template <bool page>
+    AccessStatus access_storage_impl(Address const &, bytes32_t const &key);
+
+    template <SelfdestructRule rule>
+    std::pair<bool, uint256_t>
+    selfdestruct_impl(Address const &, Address const &beneficiary);
+
+    template <SelfdestructRule rule>
+    void destruct_suicides_impl();
 
 public:
     State(BlockState &, Incarnation, bool relaxed_validation = false);
@@ -134,19 +143,9 @@ public:
 
     ////////////////////////////////////////
 
-    bool account_exists(Address const &);
-
-    bool account_is_dead(Address const &);
-
-    bool account_has_code_or_nonce(Address const &);
-
-    uint64_t get_nonce(Address const &);
-
     uint256_t get_balance(Address const &);
 
     uint256_t get_original_balance(Address const &);
-
-    bytes32_t get_code_hash(Address const &);
 
     bool is_destructed(Address const &);
 
@@ -176,21 +175,10 @@ public:
 
     AccessStatus access_account(Address const &);
 
-    template <Traits traits>
-    AccessStatus access_storage(Address const &, bytes32_t const &key);
-
     PageStorageStatus
     update_page(Address const &, bytes32_t const &key, StorageStatus status);
 
     ////////////////////////////////////////
-
-    template <Traits traits>
-    std::pair<bool, uint256_t>
-    selfdestruct(Address const &, Address const &beneficiary);
-
-    // YP (87)
-    template <Traits traits>
-    void destruct_suicides();
 
     // YP (88)
     void destruct_touched_dead();
@@ -254,5 +242,7 @@ public:
     bool record_balance_constraint_for_debit(
         Address const &, uint256_t const &debit);
 };
+
+static_assert(StateInterface<State>);
 
 MONAD_NAMESPACE_END

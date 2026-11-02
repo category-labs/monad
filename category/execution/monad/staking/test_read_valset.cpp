@@ -38,7 +38,10 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <memory>
 #include <optional>
+#include <string>
+#include <utility>
 
 using namespace monad;
 using namespace monad::staking;

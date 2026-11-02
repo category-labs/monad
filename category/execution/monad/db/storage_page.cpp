@@ -19,12 +19,13 @@ extern "C"
 #include <blake3_impl.h>
 }
 
+#include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/config.hpp>
 #include <category/core/likely.h>
 #include <category/core/result.hpp>
 #include <category/core/rlp/decode_error.hpp>
 #include <category/execution/ethereum/core/rlp/bytes_rlp.hpp>
-#include <category/execution/ethereum/rlp/decode.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
 
 #include <boost/outcome/try.hpp>

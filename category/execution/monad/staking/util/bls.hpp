@@ -79,7 +79,7 @@ public:
 
     bool verify(BlsPubkey const &pubkey, byte_string_view const message)
     {
-        BLST_ERROR valid_signature = blst_core_verify_pk_in_g1(
+        BLST_ERROR const valid_signature = blst_core_verify_pk_in_g1(
             &pubkey.get(), // Public key in G1
             &sig_, // Signature in G2
             true, // hash-to-curve

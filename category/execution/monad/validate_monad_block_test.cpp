@@ -22,8 +22,11 @@
 #include <category/execution/monad/staking/util/constants.hpp>
 #include <category/execution/monad/system_sender.hpp>
 #include <category/execution/monad/validate_monad_block.hpp>
+#include <category/vm/evm/monad/revision.h>
 #include <monad/test/traits_test.hpp>
 
+#include <cstddef>
+#include <cstdint>
 #include <string_view>
 #include <vector>
 

@@ -13,7 +13,14 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
+#include <category/core/assert.h>
+#include <category/core/byte_string.hpp>
+#include <category/core/keccak.hpp>
+#include <category/execution/monad/staking/config.hpp>
 #include <category/execution/monad/staking/util/secp256k1.hpp>
+
+#include <secp256k1.h>
 
 #include <algorithm>
 #include <memory>
@@ -24,7 +31,7 @@ Address address_from_secpkey(byte_string_fixed<65> const &serialized_pubkey)
 {
     Address eth_address{};
     MONAD_ASSERT(serialized_pubkey[0] == 4);
-    byte_string_view view{serialized_pubkey.data() + 1, 64};
+    byte_string_view const view{serialized_pubkey.data() + 1, 64};
     auto const hash = keccak256(view);
     std::copy_n(hash.bytes + 12, sizeof(Address), eth_address.bytes);
     return eth_address;

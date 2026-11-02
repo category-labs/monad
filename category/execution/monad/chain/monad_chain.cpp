@@ -13,25 +13,21 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
 #include <category/core/assert.h>
 #include <category/core/config.hpp>
-#include <category/core/result.hpp>
-#include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
-#include <category/execution/ethereum/core/block.hpp>
-#include <category/execution/ethereum/execute_transaction.hpp>
-#include <category/execution/ethereum/precompiles.hpp>
-#include <category/execution/ethereum/state2/block_state.hpp>
-#include <category/execution/ethereum/state3/state.hpp>
-#include <category/execution/ethereum/transaction_gas.hpp>
-#include <category/execution/ethereum/validate_block.hpp>
-#include <category/execution/ethereum/validate_transaction.hpp>
+#include <category/execution/ethereum/chain/blob_schedule.hpp>
+#include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
-#include <category/execution/monad/monad_precompiles.hpp>
-#include <category/execution/monad/reserve_balance.h>
-#include <category/execution/monad/reserve_balance.hpp>
-#include <category/execution/monad/system_sender.hpp>
-#include <category/execution/monad/validate_monad_transaction.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/revision.hpp>
+
+#include <ankerl/unordered_dense.h>
+
+#include <cstdint>
+#include <optional>
+#include <span>
+#include <vector>
 
 namespace
 {

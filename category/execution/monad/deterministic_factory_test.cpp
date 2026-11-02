@@ -25,6 +25,7 @@
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/create_contract_address.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
+#include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/state_host.hpp>
@@ -35,14 +36,15 @@
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/mpt/db.hpp>
-#include <category/vm/code.hpp>
 #include <category/vm/evm/call_status.hpp>
 #include <category/vm/evm/message.hpp>
 #include <category/vm/evm/monad/revision.h>
 #include <category/vm/evm/result.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/evm/tx_context.hpp>
-#include <category/vm/utils/evm-as.hpp>
+#include <category/vm/utils/evm-as/builder.hpp>
+#include <category/vm/utils/evm-as/compiler.hpp>
+#include <category/vm/utils/evm-as/validator.hpp>
 #include <category/vm/vm.hpp>
 
 #include <gtest/gtest.h>
@@ -50,6 +52,7 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <variant>
 #include <vector>
 
 using namespace monad;

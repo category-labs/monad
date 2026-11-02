@@ -13,29 +13,52 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
+#include <category/core/assert.h>
+#include <category/core/bytes.hpp>
+#include <category/core/config.hpp>
 #include <category/core/fiber/priority_pool.hpp>
+#include <category/core/int.hpp>
+#include <category/core/likely.h>
 #include <category/core/log.hpp>
 #include <category/core/monad_exception.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/block_hash_buffer/util.hpp>
+#include <category/execution/ethereum/chain/genesis_state.hpp>
+#include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
 #include <category/execution/ethereum/db/block_db.hpp>
+#include <category/execution/ethereum/db/commit_builder.hpp>
 #include <category/execution/ethereum/db/state_machine_init.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
-#include <category/execution/ethereum/state2/block_state.hpp>
-#include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/state2/state_deltas.hpp>
+#include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/execution/monad/chain/monad_mainnet.hpp>
 #include <category/execution/monad/chain/monad_testnet.hpp>
 #include <category/execution/monad/db/state_machine_init.hpp>
+#include <category/execution/monad/db/storage_page.hpp>
 #include <category/execution/runloop/runloop_interface_monad.h>
 #include <category/execution/runloop/runloop_monad.hpp>
+#include <category/execution/runloop/runloop_monad_override.hpp>
 #include <category/mpt/db.hpp>
+#include <category/vm/code.hpp>
 #include <category/vm/vm.hpp>
 
+#include <bit>
+#include <csignal>
+#include <cstdint>
+#include <exception>
 #include <filesystem>
+#include <functional>
+#include <iostream>
 #include <memory>
+#include <optional>
+#include <ostream>
+#include <string>
+#include <unordered_map>
+#include <utility>
 
 #include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
@@ -266,11 +289,11 @@ MonadRunloopImpl::MonadRunloopImpl(
 
     mpt::AsyncIOContext io_ctx{mpt::ReadOnlyOnDiskDbConfig{
         .sq_thread_cpu = sq_thread_cpu, .dbname_path = {fs::path{db_path}}}};
-    mpt::Db rodb{io_ctx};
+    mpt::Db const rodb{io_ctx};
     bool const have_headers =
         init_block_hash_buffer_from_triedb(rodb, block_num, block_hash_buffer);
     if (!have_headers) {
-        BlockDb block_db{ledger_path};
+        BlockDb const block_db{ledger_path};
         MONAD_ASSERT(chain_id == mainnet_chain_id);
         MONAD_ASSERT(init_block_hash_buffer_from_blockdb(
             block_db, block_num, block_hash_buffer));
@@ -324,7 +347,7 @@ public:
     {
         auto new_sds = std::make_unique<StateDeltas>();
         for (auto const &[a, sd] : **state_deltas) {
-            auto over_it = account_override_.find(a);
+            auto const over_it = account_override_.find(a);
             if (over_it == account_override_.end()) {
                 new_sds->emplace(a, sd);
             }
@@ -337,7 +360,7 @@ public:
                     return std::make_optional<Account>();
                 }();
                 AccountDelta const ad{orig_delta, sd.account.second};
-                StateDelta new_sd{ad, sd.storage};
+                StateDelta const new_sd{ad, sd.storage};
                 new_sds->emplace(a, new_sd);
                 account_override_.erase(over_it);
             }
@@ -396,7 +419,7 @@ try {
         runloop->start_block_num,
         runloop->account_override,
         runloop->runloop_db};
-    RunloopMonadOverride runloop_override{&override_methods};
+    RunloopMonadOverride const runloop_override{&override_methods};
 
     sig_atomic_t const stop = 0;
     auto const result = runloop_monad(

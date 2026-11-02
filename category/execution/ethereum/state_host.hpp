@@ -240,7 +240,7 @@ struct StateHost final : public StateHostBase
         if constexpr (traits::mip_8_active()) {
             MONAD_TRY
             {
-                return state_.update_page(address, key, status);
+                return state_.update_page<traits>(address, key, status);
             }
             MONAD_CATCH(...)
             {

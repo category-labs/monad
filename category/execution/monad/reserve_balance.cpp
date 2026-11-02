@@ -197,11 +197,9 @@ bool ReserveBalance::subject_account(Address const &address)
         return false;
     }
 
-    OriginalAccountState const &orig_state =
-        state_->original_account_state(address);
-    bytes32_t const effective_code_hash = use_recent_code_hash_
-                                              ? state_->get_code_hash(address)
-                                              : orig_state.get_code_hash();
+    bytes32_t const effective_code_hash =
+        use_recent_code_hash_ ? state_->get_code_hash(address)
+                              : state_->get_original_code_hash(address);
     if (effective_code_hash == NULL_HASH) {
         return true;
     }
@@ -359,9 +357,8 @@ void ReserveBalance::init_from_tx(
     allow_init_selfdestruct_exemption_ =
         traits::reserve_balance_skips_init_selfdestruct();
     bytes32_t const sender_code_hash =
-        use_recent_code_hash_
-            ? state_->get_code_hash(sender)
-            : state_->original_account_state(sender).get_code_hash();
+        use_recent_code_hash_ ? state_->get_code_hash(sender)
+                              : state_->get_original_code_hash(sender);
     bool const sender_can_dip = can_sender_dip_into_reserve<traits>(
         sender, i, is_delegated(*state_, sender_code_hash, state_tracer), ctx);
     tracking_enabled_ = true;

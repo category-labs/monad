@@ -340,7 +340,7 @@ Result<vm::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
         // RELAXED MERGE
         // if transaction validation fails using current values, require
         // exact match during merge as a precaution
-        state.original_account_state(sender_).set_validate_exact_balance();
+        state.set_validate_exact_balance(sender_);
         return std::move(validation).as_failure();
     }
 

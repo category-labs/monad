@@ -51,6 +51,7 @@ struct ChainContext<T>
         &senders_and_authorities;
     std::vector<Address> const &senders;
     std::vector<std::vector<std::optional<Address>>> const &authorities;
+    bool private_domain{false};
 
     ExecutionMode mode{};
 

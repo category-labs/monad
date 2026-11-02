@@ -20,6 +20,7 @@
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/core/result.hpp>
+#include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/execution_modalities.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
@@ -54,7 +55,7 @@ Result<void> validate_transaction(
     Transaction const &tx, Address const &sender, State &state,
     uint256_t const &base_fee_per_gas,
     std::span<std::optional<Address> const> const authorities,
-    trace::StateTracer &state_tracer, ExecutionMode const &mode);
+    trace::StateTracer &state_tracer, ChainContext<traits> const &);
 
 // Validates `tx` against the sender's state. The sender checks depend on `mode`
 // (see `sender_nonce_check` and `sender_eoa_check`). The sender's state-nonce

@@ -50,6 +50,13 @@ struct ChainContext<T>
         &senders_and_authorities;
     std::vector<Address> const &senders;
     std::vector<std::vector<std::optional<Address>>> const &authorities;
+    // Set when executing a private domain block. Its transactions pay no gas
+    // and must carry no value, a transaction that fails validation is skipped
+    // with a status-0 receipt, the Monad precompiles and reserve balance
+    // checks are off, and DOMAIN_SYSTEM_RELAYER's deliveries, which carry the
+    // hub's message nonce, skip validation and leave its nonce unchanged.
+    // See PROTOCOL.md in category-labs/monad-domains.
+    bool private_domain{false};
 
     // Returns an empty ChainContext for unit testing purposes.
     // Not intended for production use.

@@ -74,6 +74,24 @@ ChainContext<T> const &ChainContext<T>::debug_empty()
 
 EXPLICIT_MONAD_TRAITS_STRUCT(ChainContext);
 
+template <Traits traits>
+bool is_private_domain(ChainContext<traits> const &ctx)
+{
+    return ctx.private_domain;
+}
+
+EXPLICIT_MONAD_TRAITS(is_private_domain);
+
+template <Traits traits>
+bool is_domain_system_relayer(
+    ChainContext<traits> const &ctx, Address const &sender)
+{
+    // DOMAIN_SYSTEM_RELAYER is the L1 system sender.
+    return ctx.private_domain && sender == SYSTEM_SENDER;
+}
+
+EXPLICIT_MONAD_TRAITS(is_domain_system_relayer);
+
 ankerl::unordered_dense::segmented_set<Address> combine_senders_and_authorities(
     std::span<Address const> const senders,
     std::span<std::vector<std::optional<Address>> const> const authorities)

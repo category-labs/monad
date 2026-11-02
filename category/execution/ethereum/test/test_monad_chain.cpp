@@ -838,7 +838,13 @@ TYPED_TEST(MonadTraitsTest, system_transaction_sender_is_authority)
 
     trace::StateTracer noop_state_tracer = std::monostate{};
     auto const res = validate_transaction<typename TestFixture::Trait>(
-        {}, {}, state, 0, authorities, noop_state_tracer);
+        {},
+        {},
+        state,
+        0,
+        authorities,
+        noop_state_tracer,
+        ChainContext<typename TestFixture::Trait>::debug_empty());
     if constexpr (!TestFixture::Trait::staking_active()) {
         EXPECT_TRUE(res.has_value());
     }

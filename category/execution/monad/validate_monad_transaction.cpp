@@ -18,6 +18,7 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
+#include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/system_sender.hpp>
 #include <category/execution/monad/validate_monad_transaction.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
@@ -34,11 +35,27 @@ Result<void> validate_transaction(
     Transaction const &tx, Address const &sender, State &state,
     uint256_t const &base_fee_per_gas,
     std::span<std::optional<Address> const> const authorities,
-    trace::StateTracer &state_tracer)
+    trace::StateTracer &state_tracer, ChainContext<traits> const &ctx)
 {
+    if (is_domain_system_relayer(ctx, sender)) {
+        // Its nonce is the hub's message nonce, and nobody can delegate it.
+        return outcome::success();
+    }
     auto res =
         validate_ethereum_transaction<traits>(tx, sender, state, state_tracer);
-    if constexpr (traits::reserve_balance_active()) {
+    if (MONAD_UNLIKELY(ctx.private_domain)) {
+        // Nothing is charged on a private domain, so only value needs a
+        // balance, and it has no native token to pay value with.
+        // InsufficientBalance is the last check above.
+        if (res.has_error() &&
+            res.error() != TransactionError::InsufficientBalance) {
+            return res;
+        }
+        if (MONAD_UNLIKELY(tx.value != 0)) {
+            return TransactionError::InsufficientBalance;
+        }
+    }
+    else if constexpr (traits::reserve_balance_active()) {
         if (res.has_error() &&
             res.error() != TransactionError::InsufficientBalance) {
             return res;

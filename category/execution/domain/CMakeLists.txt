@@ -23,6 +23,8 @@ add_library(
   "config.hpp"
   "derivation.cpp"
   "derivation.hpp"
+  "execution.cpp"
+  "execution.hpp"
   "hpke.cpp"
   "hpke.hpp"
   "inputs.hpp"

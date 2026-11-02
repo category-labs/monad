@@ -183,7 +183,7 @@ public:
                 u8_be ns;
                 Address address;
                 uint8_t slots[11];
-            } key{
+            } const key{
                 .ns = Namespace::ValIdSecp,
                 .address = secp_eth_address,
                 .slots = {}};
@@ -202,7 +202,7 @@ public:
                 u8_be ns;
                 Address address;
                 uint8_t slots[11];
-            } key{
+            } const key{
                 .ns = Namespace::ValIdBls,
                 .address = bls_eth_address,
                 .slots = {}};
@@ -223,7 +223,7 @@ public:
                 u8_be ns;
                 u64_be bucket;
                 uint8_t slots[23];
-            } key{
+            } const key{
                 .ns = Namespace::ValBitset,
                 .bucket = (val_id.native() >> 8),
                 .slots = {}};
@@ -243,7 +243,8 @@ public:
                 u8_be ns;
                 u64_be val_id;
                 uint8_t slots[23];
-            } key{.ns = Namespace::ValExecution, .val_id = id, .slots = {}};
+            } const key{
+                .ns = Namespace::ValExecution, .val_id = id, .slots = {}};
 
             return {state_, STAKING_CA, std::bit_cast<bytes32_t>(key)};
         }
@@ -260,7 +261,8 @@ public:
                 u8_be ns;
                 u64_be val_id;
                 uint8_t slots[23];
-            } key{.ns = Namespace::ConsensusStake, .val_id = id, .slots = {}};
+            } const key{
+                .ns = Namespace::ConsensusStake, .val_id = id, .slots = {}};
 
             return {state_, STAKING_CA, std::bit_cast<bytes32_t>(key)};
         }
@@ -276,7 +278,8 @@ public:
                 u8_be ns;
                 u64_be val_id;
                 uint8_t slots[23];
-            } key{.ns = Namespace::SnapshotStake, .val_id = id, .slots = {}};
+            } const key{
+                .ns = Namespace::SnapshotStake, .val_id = id, .slots = {}};
 
             return {state_, STAKING_CA, std::bit_cast<bytes32_t>(key)};
         }
@@ -306,7 +309,7 @@ public:
                 u64_be val_id;
                 Address address;
                 uint8_t slots[3];
-            } key{
+            } const key{
                 .ns = Namespace::Delegator,
                 .val_id = val_id,
                 .address = address,
@@ -332,7 +335,7 @@ public:
                 Address address;
                 u8_be withdrawal_id;
                 uint8_t slots[2];
-            } key{
+            } const key{
                 .ns = Namespace::WithdrawalRequest,
                 .val_id = val_id,
                 .address = delegator,
@@ -358,7 +361,7 @@ public:
                 u64_be epoch;
                 u64_be val_id;
                 uint8_t slots[15];
-            } key{
+            } const key{
                 .ns = Namespace::Accumulator,
                 .epoch = epoch,
                 .val_id = val_id,

@@ -16,6 +16,7 @@
 #include <category/core/address.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/int.hpp>
+#include <category/core/runtime/uint256.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/monad/staking/config.hpp>
 #include <category/execution/monad/staking/util/consensus_view.hpp>

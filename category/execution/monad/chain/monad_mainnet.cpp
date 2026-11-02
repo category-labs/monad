@@ -16,12 +16,15 @@
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/core/hex.hpp>
-#include <category/core/int.hpp>
 #include <category/core/likely.h>
+#include <category/core/runtime/uint256.hpp>
+#include <category/execution/ethereum/chain/genesis_state.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/monad/chain/monad_mainnet.hpp>
 #include <category/execution/monad/chain/monad_mainnet_alloc.hpp>
 #include <category/vm/evm/monad/revision.h>
+
+#include <cstdint>
 
 MONAD_NAMESPACE_BEGIN
 

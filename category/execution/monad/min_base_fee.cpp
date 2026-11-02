@@ -13,7 +13,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/execution/monad/reserve_balance.h>
+#include <category/vm/evm/monad/revision.h>
+
+#include <cstdint>
 
 extern "C" uint64_t monad_min_base_fee_wei(monad_revision)
 {

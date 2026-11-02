@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/rlp/decode_error.hpp>
 #include <category/execution/ethereum/db/util.hpp>
@@ -20,11 +21,13 @@
 
 #include <gtest/gtest.h>
 
+#include <cstdint>
+
 using namespace monad;
 
 TEST(PageEncoding, empty_page)
 {
-    storage_page_t page{};
+    storage_page_t const page{};
     auto const enc = encode_storage_page(page);
     EXPECT_TRUE(enc.empty());
     EXPECT_EQ(decode_storage_page(enc).value(), page);
@@ -73,7 +76,7 @@ TEST(PageEncoding, decode_rejects_zero_value)
 {
     // RLP empty string (0x80) decodes to the zero bytes32, which must not
     // appear as a pair value.
-    byte_string enc = {0x00, 0x80};
+    byte_string const enc = {0x00, 0x80};
     auto const result = decode_storage_page(enc);
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.assume_error(), rlp::DecodeError::NonCanonical);
@@ -83,7 +86,7 @@ TEST(PageEncoding, decode_rejects_leading_zero_in_value)
 {
     // 0x82 0x00 0x05 encodes value 5 with a leading zero byte; the
     // canonical compact form is the single byte 0x05.
-    byte_string enc = {0x00, 0x82, 0x00, 0x05};
+    byte_string const enc = {0x00, 0x82, 0x00, 0x05};
     auto const result = decode_storage_page(enc);
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.assume_error(), rlp::DecodeError::NonCanonical);
@@ -92,7 +95,7 @@ TEST(PageEncoding, decode_rejects_leading_zero_in_value)
 TEST(PageEncoding, decode_rejects_out_of_order_indices)
 {
     // Index 5 followed by index 3 violates strictly ascending order.
-    byte_string enc = {0x05, 0x01, 0x03, 0x02};
+    byte_string const enc = {0x05, 0x01, 0x03, 0x02};
     auto const result = decode_storage_page(enc);
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.assume_error(), rlp::DecodeError::NonCanonical);
@@ -101,7 +104,7 @@ TEST(PageEncoding, decode_rejects_out_of_order_indices)
 TEST(PageEncoding, decode_rejects_duplicate_index)
 {
     // The same index appearing twice is not strictly ascending.
-    byte_string enc = {0x05, 0x01, 0x05, 0x02};
+    byte_string const enc = {0x05, 0x01, 0x05, 0x02};
     auto const result = decode_storage_page(enc);
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.assume_error(), rlp::DecodeError::NonCanonical);
@@ -110,7 +113,7 @@ TEST(PageEncoding, decode_rejects_duplicate_index)
 TEST(PageEncoding, decode_rejects_out_of_range_index)
 {
     // Index 128 (0x80) equals SLOTS and is out of range.
-    byte_string enc = {0x80, 0x01};
+    byte_string const enc = {0x80, 0x01};
     auto const result = decode_storage_page(enc);
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.assume_error(), rlp::DecodeError::NonCanonical);
@@ -131,7 +134,7 @@ TEST(PageEncoding, decode_rejects_oversized_slot)
 TEST(PageEncoding, decode_rejects_truncated_pair)
 {
     // Index byte with no following value bytes.
-    byte_string enc = {0x00};
+    byte_string const enc = {0x00};
     auto const result = decode_storage_page(enc);
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.assume_error(), rlp::DecodeError::InputTooShort);

@@ -13,15 +13,21 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/byte_string.hpp>
 #include <category/execution/ethereum/block_hash_history.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
+#include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
-#include <category/vm/utils/evm-as.hpp>
+#include <category/mpt/db.hpp>
+#include <category/vm/evm/monad/revision.h>
+#include <category/vm/vm.hpp>
 #include <monad/test/traits_test.hpp>
 
-#include <evmc/evmc.h>
 #include <gtest/gtest.h>
+
+#include <cstddef>
+#include <memory>
 
 using namespace monad;
 

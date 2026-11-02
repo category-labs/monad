@@ -17,6 +17,7 @@
 #include <category/core/config.hpp>
 #include <category/core/hex.hpp>
 #include <category/core/int.hpp>
+#include <category/core/runtime/uint256.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/chain/genesis_state.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>

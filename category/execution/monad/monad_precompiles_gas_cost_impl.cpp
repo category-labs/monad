@@ -17,7 +17,11 @@
 #include <category/core/config.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/revision.h>
 #include <category/vm/evm/traits.hpp>
+
+#include <cstdint>
+#include <optional>
 
 MONAD_NAMESPACE_BEGIN
 

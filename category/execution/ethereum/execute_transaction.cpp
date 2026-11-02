@@ -69,11 +69,16 @@ template <Traits traits>
 constexpr void irrevocable_change(
     State &state, Transaction const &tx, Address const &sender,
     uint256_t const &base_fee_per_gas, uint64_t const excess_blob_gas,
-    BlobSchedule const &blob_schedule)
+    BlobSchedule const &blob_schedule, ChainContext<traits> const &chain_ctx)
 {
-    if (tx.to) { // EVM will increment if new contract
+    // EVM will increment if new contract
+    if (tx.to && !is_domain_system_relayer(chain_ctx, sender)) {
         auto const nonce = state.get_nonce(sender);
         state.set_nonce(sender, nonce + 1);
+    }
+
+    if (is_private_domain(chain_ctx)) {
+        return; // gasless
     }
 
     uint256_t blob_gas = 0;
@@ -252,7 +257,8 @@ vm::Result ExecuteTransactionNoValidation<traits>::operator()(
         sender_,
         header_.base_fee_per_gas.value_or(0),
         header_.excess_blob_gas.value_or(0),
-        chain_.get_blob_schedule(header_.timestamp));
+        chain_.get_blob_schedule(header_.timestamp),
+        host.chain_ctx_);
 
     uint64_t auth_refund = 0u;
     if constexpr (traits::eip_7702_active()) {
@@ -335,7 +341,7 @@ Result<vm::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
         header_.base_fee_per_gas.value_or(0),
         authorities_,
         state_tracer_,
-        chain_ctx_.mode);
+        chain_ctx_);
     if (!validation) {
         // RELAXED MERGE
         // if transaction validation fails using current values, require
@@ -381,9 +387,13 @@ Receipt ExecuteTransaction<traits>::execute_final(
         tx_,
         static_cast<uint64_t>(result.gas_left),
         static_cast<uint64_t>(result.gas_refund));
+    // Gas is metered on a private domain but not paid for.
+    bool const gasless = is_private_domain(chain_ctx_);
     auto const gas_cost =
         gas_price<traits>(tx_, header_.base_fee_per_gas.value_or(0));
-    state.add_to_balance(sender_, gas_cost * gas_refund);
+    if (!gasless) {
+        state.add_to_balance(sender_, gas_cost * gas_refund);
+    }
 
     auto gas_used = tx_.gas_limit - gas_refund;
 
@@ -391,19 +401,23 @@ Receipt ExecuteTransaction<traits>::execute_final(
         auto const floor_gas = floor_data_gas<traits>(tx_);
         if (gas_used < floor_gas) {
             auto const delta = floor_gas - gas_used;
-            state.subtract_from_balance(sender_, gas_cost * delta);
+            if (!gasless) {
+                state.subtract_from_balance(sender_, gas_cost * delta);
+            }
 
             gas_used = floor_gas;
         }
     }
 
-    uint256_t const reward = calculate_txn_award<traits>(
-        tx_, header_.base_fee_per_gas.value_or(0), gas_used);
-    if constexpr (traits::mip_11_active()) {
-        staking::collect_priority_fee(state, reward);
-    }
-    else {
-        state.add_to_balance(header_.beneficiary, reward);
+    if (!gasless) {
+        uint256_t const reward = calculate_txn_award<traits>(
+            tx_, header_.base_fee_per_gas.value_or(0), gas_used);
+        if constexpr (traits::mip_11_active()) {
+            staking::collect_priority_fee(state, reward);
+        }
+        else {
+            state.add_to_balance(header_.beneficiary, reward);
+        }
     }
 
     // finalize state, Eqn. 77-79
@@ -452,7 +466,9 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
         TRACE_TXN_EVENT(StartExecution);
 
         State state{block_state_, Incarnation{header_.number, i_ + 1}};
-        state.set_original_nonce(sender_, tx_.nonce);
+        if (!is_domain_system_relayer(chain_ctx_, sender_)) {
+            state.set_original_nonce(sender_, tx_.nonce);
+        }
 
         call_tracer_.reset();
         trace::reset(state_tracer_);

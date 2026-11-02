@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/address.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
@@ -65,5 +66,15 @@ struct ChainContext<T>
         return ctx;
     }
 };
+
+// Whether the context is a private domain block's, and whether a transaction
+// in it is from DOMAIN_SYSTEM_RELAYER. Only Monad has private domains: see
+// the Monad ChainContext and PROTOCOL.md in category-labs/monad-domains.
+template <Traits traits>
+bool is_private_domain(ChainContext<traits> const &);
+
+template <Traits traits>
+bool is_domain_system_relayer(
+    ChainContext<traits> const &, Address const &sender);
 
 MONAD_NAMESPACE_END

@@ -132,7 +132,7 @@ ACCESS_TARGET_RUNTIME = b"\x33\x60\x00\x55\x00"  # sstore(0, caller)
 # keccak of the pinned DomainSpoke runtime as deployed on DOMAIN_A by the committed
 # parent, i.e. with the immutables (DOMAIN_A, DEVNET_CHAIN_ID, HUB).
 ACCESS_SPOKE_CODE_HASH_DOMAIN_A = bytes.fromhex(
-    "4070a9c0dccd003c949555388da5450b81a1ad6ca14677d1104426a30f37cf76"
+    "fea5acebba2318b48b4ec9417ea373e02cd7d3ccdd5c34e872a00dba14c2f636"
 )
 # Balance of every dev account in MONAD_DEVNET_ALLOC.
 GENESIS_BALANCE = 10**38

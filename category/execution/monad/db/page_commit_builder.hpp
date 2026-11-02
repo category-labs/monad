@@ -27,14 +27,17 @@ class PageCommitBuilder final : public CommitBuilder
 {
     Db &db_;
 
+protected:
+    // Materializes pages from slot deltas, reading each from the L1's or the
+    // domain's state in `db_`, writes per-page updates, and populates the
+    // inherited `proposal_post_state_` with page-keyed storage_page_t
+    // entries for the L1. Use `take_proposal_post_state()` after
+    // `add_state_deltas` to consume the result.
+    mpt::UpdateList account_updates(
+        StateDeltas const &, std::optional<uint64_t> domain) override;
+
 public:
     PageCommitBuilder(uint64_t block_number, Db &db);
-
-    // Materializes pages from slot deltas, writes per-page updates, and
-    // populates the inherited `proposal_post_state_` with page-keyed
-    // storage_page_t entries. Use `take_proposal_post_state()` after this to
-    // consume the result.
-    CommitBuilder &add_state_deltas(StateDeltas const &) override;
 };
 
 // Selects the builder matching the db encoding: PageCommitBuilder for a

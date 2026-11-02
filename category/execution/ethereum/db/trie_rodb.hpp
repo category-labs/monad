@@ -241,6 +241,37 @@ public:
         }
     }
 
+    // The receipts of the domain's block derived from the current block;
+    // empty if the current block derived none or did not execute it.
+    std::vector<Receipt> read_domain_receipts(uint64_t const domain_chain_id)
+    {
+        std::vector<Receipt> receipts;
+        for (uint32_t index = 0;; ++index) {
+            auto const encoded = find_domain_value(
+                DOMAIN_RECEIPT_NIBBLE,
+                domain_chain_id,
+                rlp::encode_unsigned(index));
+            if (!encoded.has_value()) {
+                return receipts;
+            }
+            byte_string_view view{*encoded};
+            auto decoded = decode_receipt_db(view);
+            MONAD_ASSERT(decoded.has_value() && view.empty());
+            receipts.push_back(std::move(decoded.value().first));
+        }
+    }
+
+    virtual std::optional<byte_string> read_domain_finalized_header(
+        uint64_t const domain_chain_id, uint64_t const number) override
+    {
+        byte_string_fixed<8> number_key;
+        store_be(number_key.data(), number);
+        return find_domain_value(
+            DOMAIN_FINALIZED_HEADER_NIBBLE,
+            domain_chain_id,
+            byte_string{number_key.data(), number_key.size()});
+    }
+
     // The L1 block number a domain block was derived from.
     std::optional<uint64_t>
     read_domain_block_l1_number(uint64_t const domain_chain_id, uint64_t number)

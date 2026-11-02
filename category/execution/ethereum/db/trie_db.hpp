@@ -97,6 +97,16 @@ public:
     virtual BlockHeader read_eth_header() override;
     virtual std::optional<byte_string>
     read_domain_block_header(uint64_t domain_chain_id) override;
+    virtual std::optional<Account>
+    read_domain_account(uint64_t domain_chain_id, Address const &) override;
+    virtual storage_page_t read_domain_storage(
+        uint64_t domain_chain_id, Address const &,
+        bytes32_t const &lookup_key) override;
+    virtual vm::SharedIntercode
+    read_domain_code(uint64_t domain_chain_id, bytes32_t const &) override;
+    virtual bytes32_t read_domain_state_root(uint64_t domain_chain_id) override;
+    virtual std::optional<byte_string> read_domain_finalized_header(
+        uint64_t domain_chain_id, uint64_t number) override;
     // Whether the current block has private domain tables, which only a node
     // that derives private domains writes.
     bool has_domain_tables();
@@ -146,6 +156,10 @@ private:
     }
 
     bytes32_t merkle_root(mpt::Nibbles const &);
+
+    // The node at `key` below the domain's key in one of the domain tables.
+    Result<mpt::NodeCursor> find_domain_node(
+        unsigned char table, uint64_t domain_chain_id, mpt::NibblesView key);
 
     // read the storage page from disk, inserting into the cache on a resolved
     // miss

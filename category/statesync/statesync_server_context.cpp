@@ -271,6 +271,38 @@ monad_statesync_server_context::read_domain_block_header(
     return rw.read_domain_block_header(domain_chain_id);
 }
 
+std::optional<Account> monad_statesync_server_context::read_domain_account(
+    uint64_t const domain_chain_id, Address const &addr)
+{
+    return rw.read_domain_account(domain_chain_id, addr);
+}
+
+storage_page_t monad_statesync_server_context::read_domain_storage(
+    uint64_t const domain_chain_id, Address const &addr,
+    bytes32_t const &lookup_key)
+{
+    return rw.read_domain_storage(domain_chain_id, addr, lookup_key);
+}
+
+vm::SharedIntercode monad_statesync_server_context::read_domain_code(
+    uint64_t const domain_chain_id, bytes32_t const &code_hash)
+{
+    return rw.read_domain_code(domain_chain_id, code_hash);
+}
+
+bytes32_t monad_statesync_server_context::read_domain_state_root(
+    uint64_t const domain_chain_id)
+{
+    return rw.read_domain_state_root(domain_chain_id);
+}
+
+std::optional<byte_string>
+monad_statesync_server_context::read_domain_finalized_header(
+    uint64_t const domain_chain_id, uint64_t const number)
+{
+    return rw.read_domain_finalized_header(domain_chain_id, number);
+}
+
 bytes32_t monad_statesync_server_context::state_root()
 {
     return rw.state_root();

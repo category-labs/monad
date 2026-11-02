@@ -24,6 +24,7 @@
 #include <category/mpt/update.hpp>
 
 #include <deque>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -45,6 +46,21 @@ struct DomainBlockCommit
     byte_string_view encoded_header;
     std::span<Transaction const> transactions;
     std::span<Address const> senders;
+    // What executing the block changed in the domain's state, and one receipt
+    // per transaction. Null and empty for a block committed unexecuted.
+    StateDeltas const *state_deltas{nullptr};
+    Code const *code{nullptr};
+    std::span<Receipt const> receipts{};
+};
+
+// The finalized header of a private domain block, committed in the second
+// commit stage, once the first has computed the domain's state root.
+struct DomainHeaderCommit
+{
+    uint64_t domain_chain_id;
+    uint64_t number;
+    // rlp(FinalizedDomainHeader)
+    byte_string_view encoded_header;
 };
 
 class CommitBuilder
@@ -61,11 +77,21 @@ protected:
     // page keyed by storage page key.
     ProposalPostState proposal_post_state_;
 
+    // The account trie updates for `state_deltas`: the L1's when `domain` is
+    // nullopt, else that private domain's. Only the L1's are recorded in
+    // proposal_post_state_, which feeds the TrieDb's read cache.
+    virtual mpt::UpdateList account_updates(
+        StateDeltas const &state_deltas, std::optional<uint64_t> domain);
+
+    mpt::Update &leaf_update(mpt::NibblesView key, byte_string_view value);
+    mpt::Update &
+    node_update(mpt::NibblesView key, bool incarnation, mpt::UpdateList);
+
 public:
     explicit CommitBuilder(uint64_t block_number);
     virtual ~CommitBuilder() = default;
 
-    virtual CommitBuilder &add_state_deltas(StateDeltas const &);
+    CommitBuilder &add_state_deltas(StateDeltas const &);
 
     CommitBuilder &add_code(Code const &);
 
@@ -86,6 +112,11 @@ public:
     // domain. Called with every block, with or without domain blocks, by
     // nodes that derive private domains, and by no others.
     CommitBuilder &add_domain_blocks(std::span<DomainBlockCommit const>);
+
+    // The finalized headers of the private domain blocks passed to
+    // add_domain_blocks, added between the two commit stages.
+    CommitBuilder &
+        add_domain_finalized_headers(std::span<DomainHeaderCommit const>);
 
     // Consumes updates_ but preserves the backing deque storage. New updates
     // can be added after a build() call (e.g. add_block_header between the

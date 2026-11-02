@@ -119,6 +119,22 @@ struct monad_statesync_server_context final : public monad::Db
     virtual std::optional<monad::byte_string>
     read_domain_block_header(uint64_t domain_chain_id) override;
 
+    virtual std::optional<monad::Account> read_domain_account(
+        uint64_t domain_chain_id, monad::Address const &) override;
+
+    virtual monad::storage_page_t read_domain_storage(
+        uint64_t domain_chain_id, monad::Address const &,
+        monad::bytes32_t const &lookup_key) override;
+
+    virtual monad::vm::SharedIntercode read_domain_code(
+        uint64_t domain_chain_id, monad::bytes32_t const &) override;
+
+    virtual monad::bytes32_t
+    read_domain_state_root(uint64_t domain_chain_id) override;
+
+    virtual std::optional<monad::byte_string> read_domain_finalized_header(
+        uint64_t domain_chain_id, uint64_t number) override;
+
     virtual monad::bytes32_t state_root() override;
 
     virtual monad::bytes32_t receipts_root() override;

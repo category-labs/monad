@@ -18,6 +18,7 @@
 #include <category/core/assert.h>
 #include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
+#include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/rlp/address_rlp.hpp>
@@ -68,14 +69,46 @@ CommitBuilder::CommitBuilder(uint64_t const block_number)
 {
 }
 
+Update &
+CommitBuilder::leaf_update(NibblesView const key, byte_string_view const value)
+{
+    return update_alloc_.emplace_back(Update{
+        .key = key,
+        .value = value,
+        .incarnation = false,
+        .next = UpdateList{},
+        .version = static_cast<int64_t>(block_number_)});
+}
+
+Update &CommitBuilder::node_update(
+    NibblesView const key, bool const incarnation, UpdateList children)
+{
+    return update_alloc_.emplace_back(Update{
+        .key = key,
+        .value = byte_string_view{},
+        .incarnation = incarnation,
+        .next = std::move(children),
+        .version = static_cast<int64_t>(block_number_)});
+}
+
 CommitBuilder &CommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
 {
-    UpdateList account_updates;
+    updates_.push_front(node_update(
+        state_nibbles, false, account_updates(state_deltas, std::nullopt)));
+    return *this;
+}
+
+UpdateList CommitBuilder::account_updates(
+    StateDeltas const &state_deltas, std::optional<uint64_t> const domain)
+{
+    UpdateList updates;
     for (auto const &[addr, delta] : state_deltas) {
         UpdateList storage_updates;
         std::optional<byte_string_view> value;
         auto const &account = delta.account.second;
-        proposal_post_state_.accounts[addr] = account;
+        if (!domain.has_value()) {
+            proposal_post_state_.accounts[addr] = account;
+        }
         if (account.has_value()) {
             auto const inc = account->incarnation;
             for (auto const &[key, delta] : delta.storage) {
@@ -93,8 +126,11 @@ CommitBuilder &CommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
                             .incarnation = false,
                             .next = UpdateList{},
                             .version = static_cast<int64_t>(block_number_)}));
-                    proposal_post_state_.storage[StorageKey{addr, inc, key}] =
-                        storage_page_t{delta.second};
+                    if (!domain.has_value()) {
+                        proposal_post_state_
+                            .storage[StorageKey{addr, inc, key}] =
+                            storage_page_t{delta.second};
+                    }
                 }
             }
             value = bytes_alloc_.emplace_back(
@@ -105,7 +141,7 @@ CommitBuilder &CommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
             bool const incarnation =
                 account.has_value() && delta.account.first.has_value() &&
                 delta.account.first->incarnation != account->incarnation;
-            account_updates.push_front(update_alloc_.emplace_back(Update{
+            updates.push_front(update_alloc_.emplace_back(Update{
                 .key = hash_alloc_.emplace_back(
                     keccak256({addr.bytes, sizeof(addr.bytes)})),
                 .value = value,
@@ -114,15 +150,7 @@ CommitBuilder &CommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
                 .version = static_cast<int64_t>(block_number_)}));
         }
     }
-
-    updates_.push_front(update_alloc_.emplace_back(Update{
-        .key = state_nibbles,
-        .value = byte_string_view{},
-        .incarnation = false,
-        .next = std::move(account_updates),
-        .version = static_cast<int64_t>(block_number_)}));
-
-    return *this;
+    return updates;
 }
 
 CommitBuilder &CommitBuilder::add_code(Code const &code)
@@ -238,29 +266,12 @@ CommitBuilder &CommitBuilder::add_domain_blocks(
     UpdateList header_updates;
     UpdateList transaction_updates;
     UpdateList number_updates;
+    UpdateList state_updates;
+    UpdateList code_updates;
+    UpdateList receipt_updates;
     // Referenced by the number index leaves, so it must live in bytes_alloc_.
     auto const &encoded_block_number =
         bytes_alloc_.emplace_back(rlp::encode_unsigned(block_number_));
-    auto const version = static_cast<int64_t>(block_number_);
-    auto const leaf = [&](NibblesView const key,
-                          byte_string_view const value) -> Update & {
-        return update_alloc_.emplace_back(Update{
-            .key = key,
-            .value = value,
-            .incarnation = false,
-            .next = UpdateList{},
-            .version = version});
-    };
-    auto const node = [&](NibblesView const key,
-                          bool const incarnation,
-                          UpdateList children) -> Update & {
-        return update_alloc_.emplace_back(Update{
-            .key = key,
-            .value = byte_string_view{},
-            .incarnation = incarnation,
-            .next = std::move(children),
-            .version = version});
-    };
 
     for (size_t i = 0; i < blocks.size(); ++i) {
         auto const &block = blocks[i];
@@ -270,50 +281,136 @@ CommitBuilder &CommitBuilder::add_domain_blocks(
         MONAD_ASSERT(block.transactions.size() == block.senders.size());
         MONAD_ASSERT(
             block.transactions.size() <= std::numeric_limits<uint32_t>::max());
+        MONAD_ASSERT(
+            block.receipts.empty() ||
+            block.receipts.size() == block.transactions.size());
 
         auto const key = domain_key(block.domain_chain_id);
         NibblesView const domain{
             bytes_alloc_.emplace_back(key.data(), key.size())};
 
         UpdateList txs;
+        UpdateList receipts;
+        size_t log_index_begin = 0;
         for (uint32_t index = 0;
              index < static_cast<uint32_t>(block.transactions.size());
              ++index) {
             auto const &rlp_index =
                 bytes_alloc_.emplace_back(rlp::encode_unsigned(index));
-            txs.push_front(leaf(
+            txs.push_front(leaf_update(
                 NibblesView{rlp_index},
                 bytes_alloc_.emplace_back(encode_transaction_db(
                     rlp::encode_transaction(block.transactions[index]),
                     block.senders[index]))));
+            if (!block.receipts.empty()) {
+                auto const &receipt = block.receipts[index];
+                receipts.push_front(leaf_update(
+                    NibblesView{rlp_index},
+                    bytes_alloc_.emplace_back(
+                        encode_receipt_db(receipt, log_index_begin))));
+                log_index_begin += receipt.logs.size();
+            }
         }
 
         byte_string_fixed<8> number_key;
         store_be(number_key.data(), block.number);
         UpdateList number;
-        number.push_front(leaf(
+        number.push_front(leaf_update(
             NibblesView{bytes_alloc_.emplace_back(
                 number_key.data(), number_key.size())},
             encoded_block_number));
 
-        header_updates.push_front(
-            leaf(domain, bytes_alloc_.emplace_back(block.encoded_header)));
-        transaction_updates.push_front(node(domain, false, std::move(txs)));
-        number_updates.push_front(node(domain, false, std::move(number)));
+        header_updates.push_front(leaf_update(
+            domain, bytes_alloc_.emplace_back(block.encoded_header)));
+        transaction_updates.push_front(
+            node_update(domain, false, std::move(txs)));
+        receipt_updates.push_front(
+            node_update(domain, false, std::move(receipts)));
+        number_updates.push_front(
+            node_update(domain, false, std::move(number)));
+
+        if (block.state_deltas != nullptr) {
+            // The domain key's node is where the domain's state root is
+            // computed, so it is written even when no account changed.
+            state_updates.push_front(node_update(
+                domain,
+                false,
+                account_updates(*block.state_deltas, block.domain_chain_id)));
+        }
+        if (block.code != nullptr && !block.code->empty()) {
+            UpdateList code;
+            for (auto const &[hash, icode] : *block.code) {
+                MONAD_ASSERT(icode);
+                code.push_front(leaf_update(
+                    NibblesView{to_byte_string_view(hash.bytes)},
+                    {icode->code(), icode->size()}));
+            }
+            code_updates.push_front(
+                node_update(domain, false, std::move(code)));
+        }
     }
 
     // Every table is written with every L1 block, even one without domain
     // blocks, so that the domain subtrie is compacted like the L1 tables.
     UpdateList tables;
+    tables.push_front(node_update(
+        domain_block_header_nibbles, false, std::move(header_updates)));
+    // Replaced as a whole, like the L1 transaction and receipt tables: they
+    // hold the domain blocks of this L1 block only.
+    tables.push_front(node_update(
+        domain_transaction_nibbles, true, std::move(transaction_updates)));
     tables.push_front(
-        node(domain_block_header_nibbles, false, std::move(header_updates)));
-    // Replaced as a whole, like the L1 transaction table: it holds the domain
-    // blocks of this L1 block only.
+        node_update(domain_receipt_nibbles, true, std::move(receipt_updates)));
+    tables.push_front(node_update(
+        domain_block_number_nibbles, false, std::move(number_updates)));
     tables.push_front(
-        node(domain_transaction_nibbles, true, std::move(transaction_updates)));
+        node_update(domain_state_nibbles, false, std::move(state_updates)));
     tables.push_front(
-        node(domain_block_number_nibbles, false, std::move(number_updates)));
-    updates_.push_front(node(domain_nibbles, false, std::move(tables)));
+        node_update(domain_code_nibbles, false, std::move(code_updates)));
+    tables.push_front(
+        node_update(domain_finalized_header_nibbles, false, UpdateList{}));
+    updates_.push_front(node_update(domain_nibbles, false, std::move(tables)));
+    return *this;
+}
+
+CommitBuilder &CommitBuilder::add_domain_finalized_headers(
+    std::span<DomainHeaderCommit const> const headers)
+{
+    if (headers.empty()) {
+        return *this;
+    }
+    UpdateList header_updates;
+    for (auto const &header : headers) {
+        auto const key = domain_key(header.domain_chain_id);
+        auto const number_key = [this](uint64_t const number) {
+            byte_string_fixed<8> be_number;
+            store_be(be_number.data(), number);
+            return NibblesView{
+                bytes_alloc_.emplace_back(be_number.data(), be_number.size())};
+        };
+        UpdateList numbers;
+        numbers.push_front(leaf_update(
+            number_key(header.number),
+            bytes_alloc_.emplace_back(header.encoded_header)));
+        // Only the last BlockHashBuffer::N headers are kept: what BLOCKHASH
+        // reads must not depend on how much history a node keeps.
+        if (header.number >= BlockHashBuffer::N) {
+            numbers.push_front(update_alloc_.emplace_back(Update{
+                .key = number_key(header.number - BlockHashBuffer::N),
+                .value = std::nullopt,
+                .incarnation = false,
+                .next = UpdateList{},
+                .version = static_cast<int64_t>(block_number_)}));
+        }
+        header_updates.push_front(node_update(
+            NibblesView{bytes_alloc_.emplace_back(key.data(), key.size())},
+            false,
+            std::move(numbers)));
+    }
+    UpdateList tables;
+    tables.push_front(node_update(
+        domain_finalized_header_nibbles, false, std::move(header_updates)));
+    updates_.push_front(node_update(domain_nibbles, false, std::move(tables)));
     return *this;
 }
 

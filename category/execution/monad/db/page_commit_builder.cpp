@@ -46,15 +46,17 @@ make_commit_builder(uint64_t const block_number, monad::Db &db)
     return std::make_unique<CommitBuilder>(block_number);
 }
 
-CommitBuilder &
-PageCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
+UpdateList PageCommitBuilder::account_updates(
+    StateDeltas const &state_deltas, std::optional<uint64_t> const domain)
 {
-    UpdateList account_updates;
+    UpdateList updates;
     for (auto const &[addr, delta] : state_deltas) {
         UpdateList storage_updates;
         std::optional<byte_string_view> value;
         auto const &account = delta.account.second;
-        proposal_post_state_.accounts[addr] = account;
+        if (!domain.has_value()) {
+            proposal_post_state_.accounts[addr] = account;
+        }
         // reincarnated account starts with empty storage.
         bool const reincarnated =
             account.has_value() && delta.account.first.has_value() &&
@@ -80,10 +82,17 @@ PageCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
                     if (inserted) {
                         // On reincarnation, start from an empty page rather
                         // than read_storage_page
-                        it->second =
-                            reincarnated
-                                ? storage_page_t{}
-                                : db_.read_storage_page(addr, inc, pg_key);
+                        if (reincarnated) {
+                            it->second = storage_page_t{};
+                        }
+                        else if (domain.has_value()) {
+                            it->second =
+                                db_.read_domain_storage(*domain, addr, pg_key);
+                        }
+                        else {
+                            it->second =
+                                db_.read_storage_page(addr, inc, pg_key);
+                        }
                     }
                     it->second.set(slot_off, slot_delta.second);
                 }
@@ -94,8 +103,10 @@ PageCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
                 // Record the post-commit page for the proposal cache. An empty
                 // page is still stored (entry present, all slots zero); the
                 // trie gets a deletion (nullopt) since it holds no empty leaf.
-                StorageKey const sk{addr, inc, page_key};
-                proposal_post_state_.storage[sk] = page;
+                if (!domain.has_value()) {
+                    StorageKey const sk{addr, inc, page_key};
+                    proposal_post_state_.storage[sk] = page;
+                }
                 storage_updates.push_front(update_alloc_.emplace_back(Update{
                     .key = hash_alloc_.emplace_back(
                         keccak256({page_key.bytes, sizeof(page_key.bytes)})),
@@ -113,7 +124,7 @@ PageCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
         }
 
         if (!storage_updates.empty() || delta.account.first != account) {
-            account_updates.push_front(update_alloc_.emplace_back(Update{
+            updates.push_front(update_alloc_.emplace_back(Update{
                 .key = hash_alloc_.emplace_back(
                     keccak256({addr.bytes, sizeof(addr.bytes)})),
                 .value = value,
@@ -122,15 +133,7 @@ PageCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
                 .version = static_cast<int64_t>(block_number_)}));
         }
     }
-
-    updates_.push_front(update_alloc_.emplace_back(Update{
-        .key = state_nibbles,
-        .value = byte_string_view{},
-        .incarnation = false,
-        .next = std::move(account_updates),
-        .version = static_cast<int64_t>(block_number_)}));
-
-    return *this;
+    return updates;
 }
 
 MONAD_NAMESPACE_END

@@ -422,6 +422,94 @@ TrieDb::read_domain_block_header(uint64_t const domain_chain_id)
     return byte_string{res.value().node->value()};
 }
 
+Result<NodeCursor> TrieDb::find_domain_node(
+    unsigned char const table, uint64_t const domain_chain_id,
+    NibblesView const key)
+{
+    auto const domain = domain_key(domain_chain_id);
+    return db_.find(
+        curr_root_,
+        concat(
+            prefix_,
+            DOMAIN_NIBBLE,
+            table,
+            NibblesView{byte_string_view{domain.data(), domain.size()}},
+            key),
+        block_number_);
+}
+
+std::optional<Account>
+TrieDb::read_domain_account(uint64_t const domain_chain_id, Address const &addr)
+{
+    auto const res = find_domain_node(
+        DOMAIN_STATE_NIBBLE,
+        domain_chain_id,
+        NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})});
+    if (res.has_error()) {
+        return std::nullopt;
+    }
+    auto encoded_account = res.value().node->value();
+    return decode_account_db_ignore_address(encoded_account).value();
+}
+
+storage_page_t TrieDb::read_domain_storage(
+    uint64_t const domain_chain_id, Address const &addr,
+    bytes32_t const &lookup_key)
+{
+    auto const res = find_domain_node(
+        DOMAIN_STATE_NIBBLE,
+        domain_chain_id,
+        concat(
+            NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
+            NibblesView{
+                keccak256({lookup_key.bytes, sizeof(lookup_key.bytes)})}));
+    if (res.has_error()) {
+        return storage_page_t{};
+    }
+    return decode_storage_leaf_to_page(
+        res.value().node->value(), page_encoded_);
+}
+
+vm::SharedIntercode TrieDb::read_domain_code(
+    uint64_t const domain_chain_id, bytes32_t const &code_hash)
+{
+    auto const res = find_domain_node(
+        DOMAIN_CODE_NIBBLE,
+        domain_chain_id,
+        NibblesView{to_byte_string_view(code_hash.bytes)});
+    if (res.has_error()) {
+        return vm::make_shared_intercode({});
+    }
+    return vm::make_shared_intercode(res.value().node->value());
+}
+
+bytes32_t TrieDb::read_domain_state_root(uint64_t const domain_chain_id)
+{
+    auto const res =
+        find_domain_node(DOMAIN_STATE_NIBBLE, domain_chain_id, NibblesView{});
+    if (!res.has_value() || res.value().node->data().empty()) {
+        return NULL_ROOT;
+    }
+    auto const data = res.value().node->data();
+    MONAD_ASSERT(data.size() == sizeof(bytes32_t));
+    return to_bytes(data);
+}
+
+std::optional<byte_string> TrieDb::read_domain_finalized_header(
+    uint64_t const domain_chain_id, uint64_t const number)
+{
+    byte_string_fixed<8> number_key;
+    store_be(number_key.data(), number);
+    auto const res = find_domain_node(
+        DOMAIN_FINALIZED_HEADER_NIBBLE,
+        domain_chain_id,
+        NibblesView{byte_string_view{number_key.data(), number_key.size()}});
+    if (res.has_error()) {
+        return std::nullopt;
+    }
+    return byte_string{res.value().node->value()};
+}
+
 bool TrieDb::has_domain_tables()
 {
     return db_.find(curr_root_, concat(prefix_, DOMAIN_NIBBLE), block_number_)

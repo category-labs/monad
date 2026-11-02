@@ -82,6 +82,10 @@ struct MachineBase : public mpt::StateMachine
         DomainBlockHeader,
         DomainTransaction,
         DomainBlockNumber,
+        DomainState,
+        DomainCode,
+        DomainReceipt,
+        DomainFinalizedHeader,
     };
 
     uint8_t depth{0};
@@ -97,7 +101,12 @@ struct MachineBase : public mpt::StateMachine
 
     constexpr uint8_t max_depth(uint8_t const prefix_length) const
     {
-        return prefix_length + sizeof(bytes32_t) * 2 + sizeof(bytes32_t) * 2;
+        // A domain table key starts with its table nibble and domain key.
+        size_t const domain_prefix_length =
+            table > TableType::Domain ? 1 + sizeof(uint64_t) * 2 : 0;
+        return static_cast<uint8_t>(
+            prefix_length + domain_prefix_length + sizeof(bytes32_t) * 2 +
+            sizeof(bytes32_t) * 2);
     }
 
 protected:
@@ -171,11 +180,24 @@ inline constexpr unsigned char CALL_FRAME_NIBBLE = 9;
 //   DOMAIN_TRANSACTION: domain || rlp(index) -> encode_transaction_db. Holds
 //     the domain blocks derived from this L1 block only.
 //   DOMAIN_BLOCK_NUMBER: domain || be64(number) -> rlp(l1_block_number)
+//   DOMAIN_STATE: domain || <the STATE table layout>. The domain key's node
+//     holds the Merkle root of the domain's account trie: its state root.
+//   DOMAIN_CODE: domain || code hash -> code. Kept out of the L1 code table,
+//     which statesync serves to any peer.
+//   DOMAIN_RECEIPT: domain || rlp(index) -> encoded receipt. Holds the
+//     domain blocks derived from this L1 block only, like DOMAIN_TRANSACTION.
+//   DOMAIN_FINALIZED_HEADER: domain || be64(number) ->
+//     rlp(FinalizedDomainHeader) of the domain's last BlockHashBuffer::N
+//     blocks. Never expires; each block deletes the one N blocks before it.
 // Only nodes that derive private domains write them.
 inline constexpr unsigned char DOMAIN_NIBBLE = 10;
 inline constexpr unsigned char DOMAIN_BLOCK_HEADER_NIBBLE = 0;
 inline constexpr unsigned char DOMAIN_TRANSACTION_NIBBLE = 1;
 inline constexpr unsigned char DOMAIN_BLOCK_NUMBER_NIBBLE = 2;
+inline constexpr unsigned char DOMAIN_STATE_NIBBLE = 3;
+inline constexpr unsigned char DOMAIN_CODE_NIBBLE = 4;
+inline constexpr unsigned char DOMAIN_RECEIPT_NIBBLE = 5;
+inline constexpr unsigned char DOMAIN_FINALIZED_HEADER_NIBBLE = 6;
 inline constexpr unsigned char INVALID_NIBBLE = 255;
 inline mpt::Nibbles const state_nibbles = mpt::concat(STATE_NIBBLE);
 inline mpt::Nibbles const code_nibbles = mpt::concat(CODE_NIBBLE);
@@ -196,6 +218,13 @@ inline mpt::Nibbles const domain_transaction_nibbles =
     mpt::concat(DOMAIN_TRANSACTION_NIBBLE);
 inline mpt::Nibbles const domain_block_number_nibbles =
     mpt::concat(DOMAIN_BLOCK_NUMBER_NIBBLE);
+inline mpt::Nibbles const domain_state_nibbles =
+    mpt::concat(DOMAIN_STATE_NIBBLE);
+inline mpt::Nibbles const domain_code_nibbles = mpt::concat(DOMAIN_CODE_NIBBLE);
+inline mpt::Nibbles const domain_receipt_nibbles =
+    mpt::concat(DOMAIN_RECEIPT_NIBBLE);
+inline mpt::Nibbles const domain_finalized_header_nibbles =
+    mpt::concat(DOMAIN_FINALIZED_HEADER_NIBBLE);
 
 // Big-endian domain chain id, the part of every domain table key after the
 // table nibble.

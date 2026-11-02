@@ -484,6 +484,26 @@ mpt::Compute &MachineBase::get_compute() const
             return storage_compute();
         }
     }
+    else if (table == TableType::DomainState) {
+        // The STATE table layout below the domain key, whose node computes
+        // the domain's state root as the STATE table node computes the L1's.
+        auto const domain_depth = prefix_length + 1 + 2 * sizeof(uint64_t);
+        if (depth < domain_depth) {
+            return empty_compute;
+        }
+        else if (depth == domain_depth) {
+            return account_root_compute;
+        }
+        else if (depth < domain_depth + 2 * sizeof(bytes32_t)) {
+            return account_compute;
+        }
+        else if (depth == domain_depth + 2 * sizeof(bytes32_t)) {
+            return storage_root_compute();
+        }
+        else {
+            return storage_compute();
+        }
+    }
     else if (table == TableType::Receipt) {
         return depth == prefix_length ? receipt_root_compute : receipt_compute;
     }
@@ -502,7 +522,8 @@ mpt::Compute &MachineBase::get_compute() const
 
 bool MachineBase::is_variable_length() const
 {
-    if (table == TableType::DomainTransaction) {
+    if (table == TableType::DomainTransaction ||
+        table == TableType::DomainReceipt) {
         // rlp(index) keys below the table nibble and the domain key
         return depth > prefix_len() + 1 + sizeof(uint64_t) * 2;
     }
@@ -540,7 +561,7 @@ void MachineBase::down(unsigned char const nibble)
     else if (MONAD_UNLIKELY(table == TableType::Domain)) {
         MONAD_ASSERT(depth == prefix_length + 1);
         MONAD_ASSERT_PRINTF(
-            nibble <= DOMAIN_BLOCK_NUMBER_NIBBLE,
+            nibble <= DOMAIN_FINALIZED_HEADER_NIBBLE,
             "Invalid domain table nibble %u",
             static_cast<unsigned>(nibble));
         table = static_cast<TableType>(
@@ -662,7 +683,9 @@ bool OnDiskMachine::cache() const
             (table == TableType::State || table == TableType::Code ||
              table == TableType::TxHash || table == TableType::BlockHash ||
              table == TableType::Domain ||
-             table == TableType::DomainBlockHeader));
+             table == TableType::DomainBlockHeader ||
+             table == TableType::DomainState ||
+             table == TableType::DomainCode));
 }
 
 bool OnDiskMachine::compact() const

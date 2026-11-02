@@ -62,6 +62,41 @@ struct Db
         MONAD_ABORT("private domain blocks are not supported by this Db");
     }
 
+    // A private domain's state as of the current block, read from the
+    // domain's own tries and never from a cache. The storage leaf at
+    // `lookup_key` is one slot, or one page on a page-encoded db.
+    virtual std::optional<Account>
+    read_domain_account(uint64_t /* domain_chain_id */, Address const &)
+    {
+        MONAD_ABORT("private domain state is not supported by this Db");
+    }
+
+    virtual storage_page_t read_domain_storage(
+        uint64_t /* domain_chain_id */, Address const &,
+        bytes32_t const & /* lookup_key */)
+    {
+        MONAD_ABORT("private domain state is not supported by this Db");
+    }
+
+    virtual vm::SharedIntercode
+    read_domain_code(uint64_t /* domain_chain_id */, bytes32_t const &)
+    {
+        MONAD_ABORT("private domain state is not supported by this Db");
+    }
+
+    virtual bytes32_t read_domain_state_root(uint64_t /* domain_chain_id */)
+    {
+        MONAD_ABORT("private domain state is not supported by this Db");
+    }
+
+    // rlp(FinalizedDomainHeader) of a domain block, if it is one of the
+    // domain's last BlockHashBuffer::N blocks as of the current block.
+    virtual std::optional<byte_string> read_domain_finalized_header(
+        uint64_t /* domain_chain_id */, uint64_t /* number */)
+    {
+        MONAD_ABORT("private domain state is not supported by this Db");
+    }
+
     virtual bytes32_t state_root() = 0;
     virtual bytes32_t receipts_root() = 0;
     virtual bytes32_t transactions_root() = 0;

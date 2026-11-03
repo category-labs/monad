@@ -145,7 +145,11 @@ int allocate_event_ring_file(
         return saved_errno;
     }
     if (int const rc = monad_event_ring_init_simple(
-            &simple_cfg, *init_ring_fd, 0, init_path.c_str())) {
+            &simple_cfg,
+            MONAD_EVENT_INIT_NO_ZERO_FILL,
+            *init_ring_fd,
+            0,
+            init_path.c_str())) {
         LOG_ERROR(
             "event library error -- {}", monad_event_ring_get_last_error());
         return rc;

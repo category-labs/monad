@@ -21,7 +21,9 @@ add_executable(
   monad
   monad/main.cpp
   monad/event.cpp
-  monad/event.hpp)
+  monad/event.hpp
+  monad/storage_filter.cpp
+  monad/storage_filter.hpp)
 
 monad_compile_options(monad)
 

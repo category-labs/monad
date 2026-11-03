@@ -101,6 +101,19 @@ Node::SharedPtr const &TrieDb::get_root() const
     return curr_root_;
 }
 
+void TrieDb::set_storage_filter(std::shared_ptr<StorageFilter> filter)
+{
+    MONAD_ASSERT(!filter || filter->is_page_encoded() == page_encoded_);
+    storage_filter_ = std::move(filter);
+}
+
+bool TrieDb::storage_filter_usable() const
+{
+    return storage_filter_ &&
+           block_number_ >= storage_filter_->base_block_number() &&
+           storage_filter_->is_ready();
+}
+
 std::optional<Account> TrieDb::read_account(Address const &addr)
 {
     std::optional<Account> result;
@@ -170,23 +183,32 @@ storage_page_t TrieDb::load_storage_page(
     Address const &addr, Incarnation const incarnation,
     bytes32_t const &lookup_key, CacheReadStatus const status)
 {
-    auto const res = db_.find(
-        curr_root_,
-        concat(
-            prefix_,
-            STATE_NIBBLE,
-            NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
-            NibblesView{
-                keccak256({lookup_key.bytes, sizeof(lookup_key.bytes)})}),
-        block_number_);
+    auto const address_hash = keccak256({addr.bytes, sizeof(addr.bytes)});
+    auto const key_hash =
+        keccak256({lookup_key.bytes, sizeof(lookup_key.bytes)});
     storage_page_t page;
-    if (res.has_error()) {
-        stats_storage_no_value();
+    if (storage_filter_usable() &&
+        !storage_filter_->may_contain(address_hash, key_hash)) {
+        // no such leaf: an empty slot, or an empty page
+        stats_storage_filtered();
     }
     else {
-        stats_storage_value();
-        page = decode_storage_leaf_to_page(
-            res.value().node->value(), page_encoded_);
+        auto const res = db_.find(
+            curr_root_,
+            concat(
+                prefix_,
+                STATE_NIBBLE,
+                NibblesView{address_hash},
+                NibblesView{key_hash}),
+            block_number_);
+        if (res.has_error()) {
+            stats_storage_no_value();
+        }
+        else {
+            stats_storage_value();
+            page = decode_storage_leaf_to_page(
+                res.value().node->value(), page_encoded_);
+        }
     }
     if (cache_ && status == CacheReadStatus::MissResolved) {
         cache_->insert_storage_page(addr, incarnation, lookup_key, page);
@@ -210,9 +232,32 @@ vm::SharedIntercode TrieDb::read_code(bytes32_t const &code_hash)
     return vm::make_shared_intercode(res.value().node->value());
 }
 
+void TrieDb::insert_new_storage_leaves(StateDeltas const &state_deltas)
+{
+    for (auto const &[addr, delta] : state_deltas) {
+        std::optional<monad_hash256> address_hash;
+        for (auto const &[key, slot] : delta.storage) {
+            // A leaf comes into existence only through a slot that was zero
+            // before the block: a page that already held a nonzero slot is in
+            // the filter already, and so is a slot that only changes from
+            // one nonzero value to another (under a new incarnation too).
+            if (slot.first != bytes32_t{} || slot.second == bytes32_t{}) {
+                continue;
+            }
+            if (!address_hash.has_value()) {
+                address_hash = keccak256({addr.bytes, sizeof(addr.bytes)});
+            }
+            bytes32_t const lookup_key = storage_lookup_key(key);
+            storage_filter_->insert(
+                address_hash.value(),
+                keccak256({lookup_key.bytes, sizeof(lookup_key.bytes)}));
+        }
+    }
+}
+
 void TrieDb::commit(
     bytes32_t const &block_id, CommitBuilder &builder,
-    BlockHeader const &header, StateDeltas const & /*state_deltas*/,
+    BlockHeader const &header, StateDeltas const &state_deltas,
     std::function<void(BlockHeader &)> const populate_header_fn)
 {
     // The builder must be a PageCommitBuilder iff this db is page-encoded;
@@ -224,6 +269,12 @@ void TrieDb::commit(
         "builder is of wrong type",
         header.number,
         is_page_encoded());
+
+    // Before any later read can see this block's state. The commit builder
+    // has already read the block's pages as they were before the block.
+    if (storage_filter_) {
+        insert_new_storage_leaves(state_deltas);
+    }
 
     auto const block_number = header.number;
     MONAD_ASSERT(block_number <= std::numeric_limits<int64_t>::max());
@@ -417,6 +468,12 @@ std::string TrieDb::print_stats()
     n_account_value_.store(0, std::memory_order_release);
     n_storage_no_value_.store(0, std::memory_order_release);
     n_storage_value_.store(0, std::memory_order_release);
+    if (storage_filter_) {
+        // storage reads the filter answered without a find
+        ret += std::format(
+            ",sf={:4}", n_storage_filtered_.load(std::memory_order_acquire));
+        n_storage_filtered_.store(0, std::memory_order_release);
+    }
     if (cache_) {
         ret += ",ac=" + cache_->accounts_stats() +
                ",sc=" + cache_->storage_stats();

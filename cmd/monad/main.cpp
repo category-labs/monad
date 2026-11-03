@@ -14,9 +14,11 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "event.hpp"
+#include "storage_filter.hpp"
 
 #include <category/core/assert.h>
 #include <category/core/basic_formatter.hpp>
+#include <category/core/blocked_bloom_filter.hpp>
 #include <category/core/cli/help_formatter.hpp>
 #include <category/core/config.hpp>
 #include <category/core/event/owned_event_ring.hpp>
@@ -154,6 +156,8 @@ try {
     std::optional<unsigned> ro_sq_thread_cpu;
     fs::path dbname_path;
     fs::path db_stats_file;
+    bool storage_filter = false;
+    StorageFilterOptions storage_filter_options;
     fs::path snapshot;
     fs::path dump_snapshot;
     std::string statesync;
@@ -206,6 +210,46 @@ try {
            "filesystem shared with that process; a tmpfs avoids writing it "
            "back to disk")
         ->needs(db_option);
+    auto *const storage_filter_flag =
+        cli.add_flag(
+               "--storage-filter",
+               storage_filter,
+               "Keep a bloom filter over the storage leaves of the state, so "
+               "that a read of storage that does not exist skips the trie. "
+               "Loaded from --storage-filter-file when that holds one for the "
+               "starting block, otherwise built from the db")
+            ->needs(db_option);
+    cli.add_option(
+           "--storage-filter-mb",
+           storage_filter_options.size_mb,
+           "Storage filter size in MiB (default: 512 for page-encoded "
+           "storage, 2048 for slot-encoded storage)")
+        ->needs(storage_filter_flag);
+    cli.add_option(
+           "--storage-filter-probes",
+           storage_filter_options.num_probes,
+           "Bits each storage leaf sets in the filter (default: 8 for "
+           "page-encoded storage, 6 for slot-encoded storage)")
+        ->check(CLI::Range(1u, BlockedBloomFilter::MAX_PROBES))
+        ->needs(storage_filter_flag);
+    cli.add_option(
+           "--storage-filter-file",
+           storage_filter_options.file,
+           "File to load the storage filter from at startup, and to save it "
+           "to after building it and at exit")
+        ->needs(storage_filter_flag);
+    cli.add_option(
+           "--storage-filter-build-threads",
+           storage_filter_options.build_threads,
+           "Threads that build the storage filter from the db")
+        ->check(CLI::Range(1u, 16u))
+        ->needs(storage_filter_flag);
+    cli.add_flag(
+           "--storage-filter-wait",
+           storage_filter_options.wait_for_build,
+           "Build the storage filter before executing the first block, "
+           "instead of in the background")
+        ->needs(storage_filter_flag);
     cli.add_option(
         "--dump-snapshot,--dump_snapshot",
         dump_snapshot,
@@ -422,6 +466,12 @@ try {
 
     uint64_t const start_block_num = init_block_num + 1;
 
+    std::optional<StorageFilterSetup> storage_filter_setup;
+    if (storage_filter) {
+        storage_filter_setup.emplace(
+            raw_db, triedb, dbname_path, storage_filter_options);
+    }
+
     LOG_INFO(
         "Running with block_db = {}, start block number = {}, "
         "number blocks = {}",
@@ -576,6 +626,7 @@ try {
     }
 
     sync_server.reset();
+    storage_filter_setup.reset();
 
     if (!dump_snapshot.empty()) {
         LOG_INFO("Dump db of block: {}", block_num);

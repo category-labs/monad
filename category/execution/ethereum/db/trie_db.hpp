@@ -24,6 +24,7 @@
 #include <category/execution/ethereum/db/commit_builder.hpp>
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/db_cache.hpp>
+#include <category/execution/ethereum/db/storage_filter.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/mpt/compute.hpp>
@@ -58,6 +59,10 @@ class TrieDb final : public ::monad::Db
     // True iff this trie reads / writes page-encoded storage (MIP-8).
     // Set at construction; immutable. Exposed via is_page_encoded().
     bool const page_encoded_;
+    // Optional membership filter over storage leaves (storage_filter.hpp):
+    // a storage read that misses the cache skips the trie when the filter
+    // proves the leaf absent, and commit adds every leaf a block creates.
+    std::shared_ptr<StorageFilter> storage_filter_;
 
 public:
     explicit TrieDb(mpt::Db &, bool enable_multiblock_cache = false);
@@ -70,6 +75,12 @@ public:
 
     void reset_root(::monad::mpt::Node::SharedPtr root, uint64_t block_number);
     ::monad::mpt::Node::SharedPtr const &get_root() const;
+
+    // Attaches a storage filter (nullptr detaches it). From now on every
+    // storage leaf a committed block creates is inserted into it, so attach
+    // it before the first block that follows its base block; reads use it
+    // once it is ready.
+    void set_storage_filter(std::shared_ptr<StorageFilter>);
 
     virtual std::optional<Account> read_account(Address const &) override;
     virtual bytes32_t
@@ -119,6 +130,7 @@ private:
     std::atomic<uint64_t> n_account_value_{0};
     std::atomic<uint64_t> n_storage_no_value_{0};
     std::atomic<uint64_t> n_storage_value_{0};
+    std::atomic<uint64_t> n_storage_filtered_{0};
 
     void stats_account_no_value()
     {
@@ -140,7 +152,20 @@ private:
         n_storage_value_.fetch_add(1, std::memory_order_release);
     }
 
+    void stats_storage_filtered()
+    {
+        n_storage_filtered_.fetch_add(1, std::memory_order_release);
+    }
+
     bytes32_t merkle_root(mpt::Nibbles const &);
+
+    // Whether reads may ask the storage filter: it is complete for the
+    // version being read
+    bool storage_filter_usable() const;
+
+    // Inserts the storage leaves the block creates: the leaf of every slot
+    // that goes from zero to nonzero (a page leaf on a page-encoded db)
+    void insert_new_storage_leaves(StateDeltas const &);
 
     // read the storage page from disk, inserting into the cache on a resolved
     // miss

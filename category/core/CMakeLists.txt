@@ -113,6 +113,8 @@ add_library(
   "backtrace.hpp"
   "basic_formatter.hpp"
   "blake3.hpp"
+  "blocked_bloom_filter.cpp"
+  "blocked_bloom_filter.hpp"
   "byte_string.hpp"
   "bytes.hpp"
   "bytes32.h"

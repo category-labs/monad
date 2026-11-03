@@ -243,6 +243,9 @@ std::vector<bytes32_t> get_proposal_block_ids(mpt::Db &, uint64_t block_number);
 Result<std::vector<Transaction>> get_transactions(
     mpt::Db &, uint64_t block_number, bytes32_t const &block_id = {});
 
+Result<std::vector<Receipt>>
+get_receipts(mpt::Db &, uint64_t block_number, bytes32_t const &block_id = {});
+
 bool for_each_code(
     mpt::Db &, uint64_t block,
     std::function<void(bytes32_t const &, byte_string_view)>);

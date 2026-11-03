@@ -462,6 +462,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         "dispatch_transaction.cpp"
         "execute_system_transaction.cpp"
         "event/record_consensus_events.cpp"
+        "private_domain_l1_source.cpp"
         "private_domain_hpke.cpp"
         "private_domain_system_transaction.cpp"
     )

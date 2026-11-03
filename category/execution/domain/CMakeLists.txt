@@ -25,6 +25,8 @@ add_library(
   "config.hpp"
   "derivation.cpp"
   "derivation.hpp"
+  "deriver.cpp"
+  "deriver.hpp"
   "domain_block.cpp"
   "domain_block.hpp"
   "hpke.cpp"

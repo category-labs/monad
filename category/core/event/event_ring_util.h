@@ -69,6 +69,16 @@ int monad_event_ring_init_simple(
     struct monad_event_ring_simple_config const *, int ring_fd,
     off_t ring_offset, char const *error_name);
 
+/// "All in one" convenience function for allocating temporary "anonymous"
+/// event rings which have no filesystem identity and thus are not shared with
+/// external processes; the file is created as if by the Linux system call
+/// memfd_create(2); the user must close(2) it whenever *ring_fd != -1; `*ring`
+/// is mapped into this process' address space with PROT_READ | PROT_WRITE
+int monad_event_ring_create_ephemeral(
+    struct monad_event_ring_simple_config const *, char const *error_name,
+    unsigned memfd_create_flags, int mmap_extra_flags, int *ring_fd,
+    struct monad_event_ring *ring);
+
 /// Check that the event ring content type and schema hash match the assumed
 /// values
 int monad_event_ring_check_content_type(

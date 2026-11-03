@@ -13,26 +13,28 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// The Db interface over an offset-format witness trie. Node-layout and
+// The concrete database over an offset-format witness trie. Node-layout and
 // mutation-primitive coverage lives in test_offset_trie.cpp; this file
-// exercises what PartialTrieDb adds on top — reads, commit, and the header
-// accessors.
+// exercises what PartialTrieDb adds on top — reads and commit.
 
 #include <category/core/address.hpp>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/keccak.hpp>
-#include <category/execution/ethereum/core/rlp/account_rlp.hpp>
-#include <category/execution/ethereum/db/commit_builder.hpp>
+#include <category/execution/ethereum/core/account.hpp>
+#include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/db/offset_trie.hpp>
 #include <category/execution/ethereum/db/partial_trie_db.hpp>
+#include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/mpt/nibbles_view.hpp>
+#include <category/vm/code.hpp>
 
 #include <gtest/gtest.h>
 
 #include <cstdint>
 #include <cstring>
-#include <functional>
+#include <initializer_list>
+#include <optional>
 #include <utility>
 
 using namespace monad;
@@ -88,12 +90,9 @@ namespace
         }
     };
 
-    void commit_with(
-        TestDb &db, BlockHeader const &header, StateDeltas deltas,
-        std::function<void(BlockHeader &)> populate = [](BlockHeader &) {})
+    void commit_with(TestDb &db, BlockHeader const &header, StateDeltas deltas)
     {
-        CommitBuilder builder(header.number);
-        db->commit(bytes32_t{}, builder, header, deltas, std::move(populate));
+        db->commit(header, deltas);
     }
 
     /// state_root of a trie holding exactly one account, built from a blob
@@ -128,7 +127,9 @@ namespace
 TEST(PartialTrieDb, Read_EmptyTrie)
 {
     TestDb db{empty_blob()};
-    EXPECT_EQ(db->read_account(ADDR_X), std::nullopt);
+    auto const account = db->try_read_account(ADDR_X);
+    ASSERT_TRUE(account.has_value());
+    EXPECT_EQ(*account, std::nullopt);
     EXPECT_EQ(db->read_storage(ADDR_X, Incarnation{0, 0}, SLOT_1), bytes32_t{});
 }
 
@@ -137,14 +138,17 @@ TEST(PartialTrieDb, Read_LeafWitness_FoundAndAbsent)
     Account const acct{.balance = 1234, .nonce = 7};
     TestDb db{account_blob(ADDR_X, acct)};
 
-    auto const found = db->read_account(ADDR_X);
+    auto const found = db->try_read_account(ADDR_X);
     ASSERT_TRUE(found.has_value());
-    EXPECT_EQ(found->balance, acct.balance);
-    EXPECT_EQ(found->nonce, acct.nonce);
+    ASSERT_TRUE(found->has_value());
+    EXPECT_EQ(found->value().balance, acct.balance);
+    EXPECT_EQ(found->value().nonce, acct.nonce);
 
     // A different address misses the single leaf — the trie is fully resolved,
     // so the lookup terminates as absent rather than hitting a Digest.
-    EXPECT_EQ(db->read_account(ADDR_Y), std::nullopt);
+    auto const absent = db->try_read_account(ADDR_Y);
+    ASSERT_TRUE(absent.has_value());
+    EXPECT_EQ(*absent, std::nullopt);
     EXPECT_EQ(db->read_storage(ADDR_X, Incarnation{0, 0}, SLOT_1), bytes32_t{});
 }
 
@@ -352,38 +356,10 @@ TEST(PartialTrieDb, Commit_StorageZeroToZeroIsNoOp)
     EXPECT_EQ(db->state_root(), single_account_root(ADDR_X, acct));
 }
 
-TEST(PartialTrieDb, Commit_PopulatesHeaderRoots)
+TEST(PartialTrieDb, Commit_UpdatesBlockNumber)
 {
     TestDb db{empty_blob()};
-
-    constexpr auto receipts =
-        0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_bytes32;
-    constexpr auto txns =
-        0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb_bytes32;
-    constexpr auto withdrawals =
-        0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc_bytes32;
-
-    commit_with(
-        db, BlockHeader{.number = 42}, StateDeltas{}, [&](BlockHeader &h) {
-            h.receipts_root = receipts;
-            h.transactions_root = txns;
-            h.withdrawals_root = withdrawals;
-        });
-
-    EXPECT_EQ(db->receipts_root(), receipts);
-    EXPECT_EQ(db->transactions_root(), txns);
-    ASSERT_TRUE(db->withdrawals_root().has_value());
-    EXPECT_EQ(*db->withdrawals_root(), withdrawals);
-
-    // commit_simple-style consumers expect the populated header to be readable
-    // back through read_eth_header.
-    auto const stored = db->read_eth_header();
-    EXPECT_EQ(stored.number, 42u);
-    EXPECT_EQ(stored.receipts_root, receipts);
-    EXPECT_EQ(stored.transactions_root, txns);
-    ASSERT_TRUE(stored.withdrawals_root.has_value());
-    EXPECT_EQ(*stored.withdrawals_root, withdrawals);
-
+    commit_with(db, BlockHeader{.number = 42}, StateDeltas{});
     EXPECT_EQ(db->get_block_number(), 42u);
 }
 

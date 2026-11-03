@@ -26,7 +26,7 @@
 MONAD_NAMESPACE_BEGIN
 
 class BlockHashBuffer;
-struct Db;
+class PartialTrieDb;
 struct Block;
 
 namespace vm
@@ -40,7 +40,7 @@ template <Traits traits>
     requires(is_evm_trait_v<traits>)
 Result<bytes32_t> execute_block_zkvm(
     Chain const &chain, Block const &block,
-    std::span<byte_string_view const> raw_transactions, Db &pdb, vm::VM &vm,
-    BlockHashBuffer const &block_hash_buffer);
+    std::span<byte_string_view const> raw_transactions, PartialTrieDb &pdb,
+    vm::VM &vm, BlockHashBuffer const &block_hash_buffer);
 
 MONAD_NAMESPACE_END

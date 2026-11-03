@@ -295,6 +295,33 @@ TEST(OffsetTrie, TryFindOriginalReportsDigestAsUnproven)
                      .has_value());
 }
 
+TEST(OffsetTrie, IdOfInvertsGetOriginal)
+{
+    BlobBuilder bb;
+    uint32_t const leaf = bb.storage_leaf({0xa}, bytes32_t{});
+    std::array<uint32_t, 16> ch{};
+    ch[3] = leaf;
+    uint32_t const br = bb.branch(ch);
+    byte_string const blob = bb.finalize(br);
+    OffsetTrie const store{blob};
+
+    EXPECT_EQ(store.id_of(store.get_original(store.root)), store.root);
+    EXPECT_EQ(store.id_of(store.get_original(NodeId{leaf})), NodeId{leaf});
+}
+
+TEST(OffsetTrieDeathTest, IdOfAbortsOnOverlayView)
+{
+    byte_string const blob = empty_blob();
+    OffsetTrie store{blob};
+
+    bytes32_t const key = make_key(0x12, 0x34);
+    auto const [leaf, path] = upsert_account(store, key_view(key));
+    store.put_acct(leaf, mpt::NibblesView{path}, Account{}, NULL_ID);
+
+    // the leaf lives in the overlay, which has no blob offset
+    EXPECT_DEATH((void)store.id_of(store.get_current(leaf)), "");
+}
+
 TEST(OffsetTrieDeathTest, FindOriginalAbortsOnDigest)
 {
     BlobBuilder bb;

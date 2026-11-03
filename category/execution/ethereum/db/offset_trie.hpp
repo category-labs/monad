@@ -552,6 +552,20 @@ public:
         return NodeViewBase{blob_.data() + static_cast<uint64_t>(id)};
     }
 
+    // The id of a view the blob holds, i.e. one from get_original or
+    // find_original: its offset. The overlay is not addressable this way,
+    // and a view into it aborts.
+    NodeId id_of(NodeViewBase const v) const
+    {
+        // Compared as integers: a view outside the blob points into another
+        // array, where pointer subtraction is undefined.
+        auto const p = reinterpret_cast<uintptr_t>(v.bytes());
+        // NOLINTNEXTLINE(bugprone-suspicious-stringview-data-usage)
+        auto const base = reinterpret_cast<uintptr_t>(blob_.data());
+        MONAD_ASSERT(p >= base && p - base < blob_.size());
+        return NodeId{p - base};
+    }
+
     // Current bytes for `id` — overlay entry if present, else the blob.
     // put_node shadows a rewritten blob node under its own blob id, so the
     // overlay has to be consulted for every id, not just fresh ones. A

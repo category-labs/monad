@@ -20,13 +20,7 @@
 #include <boost/outcome/experimental/status_result.hpp>
 #include <boost/outcome/try.hpp>
 
-// TODO unstable paths between versions
-#if __has_include(                                                             \
-    <boost/outcome/experimental/status-code/system_code_from_exception.hpp>)
-    #include <boost/outcome/experimental/status-code/system_code_from_exception.hpp>
-#else
-    #include <boost/outcome/experimental/status-code/status-code/system_code_from_exception.hpp>
-#endif
+#include <boost/outcome/experimental/status-code/system_code_from_exception.hpp>
 
 #include <type_traits>
 

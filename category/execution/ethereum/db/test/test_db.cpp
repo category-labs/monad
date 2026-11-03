@@ -798,6 +798,49 @@ TEST_F(OnDiskTrieDbWithFileFixture, get_transactions)
     }
 }
 
+TEST_F(OnDiskTrieDbWithFileFixture, get_receipts)
+{
+    TrieDb tdb{this->db};
+
+    constexpr uint64_t block_number = 0;
+    constexpr unsigned total_receipts = 300;
+    std::vector<Receipt> receipts;
+    receipts.reserve(total_receipts);
+    std::vector<Transaction> transactions;
+    transactions.reserve(total_receipts);
+    for (unsigned i = 0; i < total_receipts; ++i) {
+        receipts.emplace_back(
+            Receipt{.status = i % 2, .gas_used = 21'000 * (i + 1)});
+        transactions.emplace_back(Transaction{.nonce = i});
+    }
+    std::vector<std::vector<CallFrame>> const call_frames(receipts.size());
+    std::vector<Address> const senders(receipts.size());
+    commit_sequential(
+        tdb,
+        StateDeltas({}),
+        Code{},
+        BlockHeader{.number = block_number},
+        receipts,
+        call_frames,
+        senders,
+        transactions);
+
+    auto verify_receipts = [&](auto &db) {
+        auto const read = get_receipts(db, block_number);
+        ASSERT_TRUE(read.has_value());
+        EXPECT_EQ(read.value(), receipts);
+    };
+
+    // RWDb
+    verify_receipts(this->db);
+
+    { // nonblocking RODb
+        mpt::RODb rodb{
+            mpt::ReadOnlyOnDiskDbConfig{.dbname_path = this->dbname}};
+        verify_receipts(rodb);
+    }
+}
+
 TYPED_TEST(DBTest, to_json)
 {
     // TODO: typed test doesn't really make sense here, split to two different

@@ -19,6 +19,7 @@ zkvm/
 │   ├── x86_test_runner.cpp
 │   └── CMakeLists.txt
 ├── build-support/        # shared Cargo/CMake build helpers
+├── test/precompile_tests/ # precompile vectors and guest entry points
 ├── zisk/                 # ZisK guest crate
 └── sp1/                  # SP1 cargo workspace
     ├── program/          #   C guest entry (main.c)
@@ -153,3 +154,83 @@ xxd -p /tmp/zkvm-output.bin
 
 The host runner accepts raw witness bytes and writes the block hash as binary
 to `--output`, or to stdout if omitted.
+
+## Testing
+
+The [precompile test guest](test/precompile_tests/precompile_test.cpp) checks
+precompile outputs against go-ethereum vectors and extra ecrecover edge cases.
+On ZisK and SP1, these calls exercise the accelerator shims. No witness is needed.
+
+### 1. Generate the vector blob
+
+[`gen_precompile_vectors.py`](test/precompile_tests/gen_precompile_vectors.py)
+serializes the vectors into a shared input blob:
+
+```sh
+python3 zkvm/test/precompile_tests/gen_precompile_vectors.py \
+    third_party/go-ethereum/core/vm/testdata/precompiles \
+    /tmp/pt-vectors.bin
+```
+
+The generator reports the case count. Add `--exclude 0x09,0x11` to skip
+specific precompile addresses.
+
+### 2. Run on SP1
+
+The `precompile-test` cargo feature swaps the witness executor for the test
+guest (see [SP1](#sp1) above); the input is the vector blob:
+
+```sh
+cd zkvm/sp1/script
+cargo run --release --features precompile-test -- --input /tmp/pt-vectors.bin
+```
+
+### 3. Run on ZisK
+
+ZisK builds the test guest as a separate binary
+(`monad-zkvm-zisk-precompile-test`) and takes the same length-prefixed framing
+as the witness run:
+
+```sh
+cd zkvm/zisk
+cargo-zisk build --release --bin monad-zkvm-zisk-precompile-test
+
+# Frame with the 8-byte LE length prefix (zero-padded to an 8-byte multiple).
+python3 -c "
+import struct, sys
+p = open(sys.argv[1],'rb').read()
+f = struct.pack('<Q', len(p)) + p
+f += b'\x00' * ((-len(f)) % 8)
+open(sys.argv[2],'wb').write(f)
+" /tmp/pt-vectors.bin /tmp/pt-vectors.framed.bin
+
+ziskemu \
+    -e target/elf/riscv64ima-zisk-zkvm-elf/release/monad-zkvm-zisk-precompile-test \
+    -i /tmp/pt-vectors.framed.bin \
+    -o /tmp/pt-out.bin
+xxd -p /tmp/pt-out.bin
+```
+
+### 4. Run on the host
+
+With the main build configured:
+
+```sh
+cmake --build build --target monad-zkvm-x86-precompile-test --parallel
+build/zkvm/guest/monad-zkvm-x86-precompile-test \
+    --input /tmp/pt-vectors.bin --output /tmp/pt-out.bin
+xxd -p /tmp/pt-out.bin
+```
+
+### Reading the result
+
+All runners emit a `PR01` summary (little-endian):
+
+```
+"PR01" | total u32 | passed u32 | failed u32 | logged u32 |
+    logged * { index u32 | addr u16 | got_status u8 }
+```
+
+A full pass has `total == passed` and `failed == 0`. Up to 32 failure records
+identify the vector index, precompile address, and returned status. Check this
+summary: a failed vector does not make the test guest exit with an error.

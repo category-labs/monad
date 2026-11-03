@@ -30,6 +30,7 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
+#include <category/execution/monad/reserve_balance/reserve_balance_contract.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 
@@ -137,7 +138,7 @@ namespace trace
             storage_);
     }
 
-    StorageDeltas StateDiffTracer::generate_storage_deltas(
+    StorageDeltas generate_storage_deltas(
         AccountState::StorageMap const &original,
         AccountState::StorageMap const &current)
     {
@@ -199,6 +200,7 @@ namespace trace
         std::span<std::optional<Address> const> const authorities)
         : storage_(storage)
     {
+        excluded_addresses_.insert(RESERVE_BALANCE_CA);
         excluded_addresses_.insert(sender);
         excluded_addresses_.insert(beneficiary);
 
@@ -404,6 +406,50 @@ namespace trace
         return res;
     }
 
+    json PrestateTracer::reserve_balance_state_to_json(
+        OriginalAccountState const &original_reserve_balance_state,
+        State &state)
+    {
+        json result; // initially (json) `null`.
+        // Exclude the reserve balance contract from the prestate trace if there
+        // were no storage changes.
+        auto const curr_it = state.current().find(RESERVE_BALANCE_CA);
+        if (curr_it == state.current().end()) {
+            return result;
+        }
+
+        AccountState const &current_state = curr_it->second.recent();
+        StorageDeltas const storage_deltas = generate_storage_deltas(
+            original_reserve_balance_state.storage_, current_state.storage_);
+
+        // If there are no storage deltas, then return `null`.
+        if (storage_deltas.empty()) {
+            return result;
+        }
+
+        for (auto const &[key, values] : storage_deltas) {
+            auto const &[original_value, _] = values;
+            if (original_value == bytes32_t{}) {
+                // Zero values should not appear in the output.
+                continue;
+            }
+            auto const key_json = bytes_to_hex(key.bytes);
+            result["storage"][key_json] = bytes_to_hex(original_value.bytes);
+        }
+
+        // If the original storage values were all zeroes, then return the
+        // `null`.
+        if (result.is_null()) {
+            return result;
+        }
+
+        // Otherwise construct the reserve balance contract entry.
+        json entry = account_to_json(
+            get_account_for_trace(original_reserve_balance_state), state);
+        entry["storage"] = std::move(result["storage"]);
+        return entry;
+    }
+
     void PrestateTracer::state_to_json(
         Map<Address, OriginalAccountState> const &trace, State &state,
         std::optional<Address> const &beneficiary, json &result)
@@ -413,6 +459,17 @@ namespace trace
             if (address == beneficiary) {
                 continue;
             }
+
+            // We handle the reserve balance contract specially
+            if (address == RESERVE_BALANCE_CA) {
+                if (auto entry =
+                        reserve_balance_state_to_json(account_state, state);
+                    !entry.is_null()) {
+                    result[bytes_to_hex(RESERVE_BALANCE_CA.bytes)] = entry;
+                }
+                continue;
+            }
+
             // TODO: Because this address is "touched". Should we keep this for
             // monad?
             if (MONAD_UNLIKELY(address == monad::ripemd_address)) {
@@ -452,7 +509,17 @@ namespace trace
         json pre = json::object();
         json post = json::object();
         for (auto const &[address, state_delta] : state_deltas) {
+            if (address == RESERVE_BALANCE_CA && state_delta.storage.empty()) {
+                // Skip the reserve balance contract, if there are no storage
+                // changes. This has the effect that creation/deletion of the
+                // reserve balance contract do not show up in the statediff
+                // trace, but this is OK, since it is a built-in write-only
+                // contract.
+                continue;
+            }
+
             auto const address_key = bytes_to_hex(address.bytes);
+
             // Account
             {
                 auto const &original_account = state_delta.account.first;

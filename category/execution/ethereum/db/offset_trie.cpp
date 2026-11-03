@@ -475,9 +475,19 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
                 // A digest is pre-state only, put_node never shadows a digest
                 // id and its original bytes are still its current bytes which
                 // is why we can memcpy from the blob_ directly below.
+                //
+                // Priming uses validated blob IDs. During mutation, reject
+                // overlay IDs before reading the original blob; get_original
+                // checks bounds.
                 auto const digest_at = [this](node_id_wire_t const w) {
-                    return w != 0 && w < OVERLAY_BASE &&
-                           get_original(NodeId{w}).tag() == Tag::DIGEST;
+                    if constexpr (priming_pass) {
+                        return w != 0 &&
+                               get_original(NodeId{w}).tag() == Tag::DIGEST;
+                    }
+                    else {
+                        return w != 0 && w < OVERLAY_BASE &&
+                               get_original(NodeId{w}).tag() == Tag::DIGEST;
+                    }
                 };
 
                 auto const consecutive_digest = [](node_id_wire_t const a,

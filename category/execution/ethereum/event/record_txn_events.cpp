@@ -49,11 +49,11 @@ MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
 // Initializes the TXN_HEADER_START event payload
 void init_txn_header_start(
-    Transaction const &txn, Address const &sender,
+    Transaction const &txn, Address const &sender, bytes32_t const &txn_hash,
     monad_exec_txn_header_start *const event)
 {
     *event = monad_exec_txn_header_start{
-        .txn_hash = to_bytes(keccak256(rlp::encode_transaction(txn))),
+        .txn_hash = txn_hash,
         .sender = sender,
         .txn_header = {
             .txn_type = std::bit_cast<monad_c_transaction_type>(txn.type),
@@ -303,6 +303,10 @@ void record_txn_header_events(
         return;
     }
 
+    // Encode and hash before reserving to avoid blocking readers.
+    auto const txn_hash =
+        to_bytes(keccak256(rlp::encode_transaction(transaction)));
+
     // TXN_HEADER_START
     ReservedEvent const txn_header_start =
         exec_recorder->reserve_txn_event<monad_exec_txn_header_start>(
@@ -310,7 +314,8 @@ void record_txn_header_events(
             txn_num,
             as_bytes(std::span{transaction.data}),
             as_bytes(std::span{transaction.blob_versioned_hashes}));
-    init_txn_header_start(transaction, sender, txn_header_start.payload);
+    init_txn_header_start(
+        transaction, sender, txn_hash, txn_header_start.payload);
     exec_recorder->commit(txn_header_start);
 
     // TXN_ACCESS_LIST_ENTRY

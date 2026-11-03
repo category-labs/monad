@@ -19,6 +19,7 @@
 #include <category/core/hex.hpp>
 #include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
+#include <category/core/runtime/uint256.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
@@ -36,7 +37,7 @@
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/vm/code.hpp>
-#include <category/vm/evm/monad/revision.h>
+#include <category/vm/evm/revision.h>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
 #include <monad/test/traits_test.hpp>
@@ -53,9 +54,11 @@
 #include <cstdint>
 #include <cstring>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 using namespace monad;
@@ -119,7 +122,7 @@ TYPED_TEST(TraitsTest, create_with_insufficient)
 
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
-    Transaction tx{};
+    Transaction const tx{};
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t base_fee{0};
@@ -262,7 +265,7 @@ TYPED_TEST(TraitsTest, create_revert_preserves_access_list_trace)
 
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
-    Transaction tx{};
+    Transaction const tx{};
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t base_fee{0};
@@ -279,7 +282,7 @@ TYPED_TEST(TraitsTest, create_revert_preserves_access_list_trace)
     init_rb_for_test<typename TestFixture::Trait>(s, h, from);
 
     auto msg_memory = vm.message_memory_ref();
-    evmc_message m{
+    evmc_message const m{
         .kind = EVMC_CREATE,
         .depth = 1,
         .gas = 1'000'000,
@@ -352,7 +355,7 @@ TYPED_TEST(TraitsTest, eip684_existing_code)
 
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
-    Transaction tx{};
+    Transaction const tx{};
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t base_fee{0};
@@ -388,7 +391,7 @@ TYPED_TEST(TraitsTest, create_nonce_out_of_range)
 
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
-    Transaction tx{};
+    Transaction const tx{};
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t base_fee{0};
@@ -452,7 +455,7 @@ TYPED_TEST(TraitsTest, static_precompile_execution)
 
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
-    Transaction tx{};
+    Transaction const tx{};
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t base_fee{0};
@@ -522,7 +525,7 @@ TYPED_TEST(TraitsTest, out_of_gas_static_precompile_execution)
 
     BlockHashBufferFinalized const block_hash_buffer;
     NoopCallTracer call_tracer;
-    Transaction tx{};
+    Transaction const tx{};
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t base_fee{0};
@@ -634,7 +637,7 @@ TYPED_TEST(TraitsTest, create_op_max_initcode_size)
 
     auto s = State{bs, Incarnation{0, 0}};
 
-    Transaction tx{};
+    Transaction const tx{};
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t base_fee{0};
@@ -657,7 +660,7 @@ TYPED_TEST(TraitsTest, create_op_max_initcode_size)
         std::numeric_limits<size_t>::max()) {
         static_assert(TestFixture::Trait::max_initcode_size() < 0xFFFFFF);
         auto msg_memory = vm.message_memory_ref();
-        evmc_message m{
+        evmc_message const m{
             .kind = EVMC_CALL,
             .gas = 1'000'000,
             .recipient = good_code_address,
@@ -677,7 +680,7 @@ TYPED_TEST(TraitsTest, create_op_max_initcode_size)
         TestFixture::Trait::max_initcode_size() <
         std::numeric_limits<size_t>::max()) {
         auto msg_memory = vm.message_memory_ref();
-        evmc_message m{
+        evmc_message const m{
             .kind = EVMC_CALL,
             .gas = 1'000'000,
             .recipient = bad_code_address,
@@ -758,7 +761,7 @@ TYPED_TEST(TraitsTest, create2_op_max_initcode_size)
 
     auto s = State{bs, Incarnation{0, 0}};
 
-    Transaction tx{};
+    Transaction const tx{};
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t base_fee{0};
@@ -781,7 +784,7 @@ TYPED_TEST(TraitsTest, create2_op_max_initcode_size)
         std::numeric_limits<size_t>::max()) {
         static_assert(TestFixture::Trait::max_initcode_size() < 0xFFFFFF);
         auto msg_memory = vm.message_memory_ref();
-        evmc_message m{
+        evmc_message const m{
             .kind = EVMC_CALL,
             .gas = 1'000'000,
             .recipient = good_code_address,
@@ -801,7 +804,7 @@ TYPED_TEST(TraitsTest, create2_op_max_initcode_size)
         TestFixture::Trait::max_initcode_size() <
         std::numeric_limits<size_t>::max()) {
         auto msg_memory = vm.message_memory_ref();
-        evmc_message m{
+        evmc_message const m{
             .kind = EVMC_CALL,
             .gas = 1'000'000,
             .recipient = bad_code_address,
@@ -1251,7 +1254,7 @@ TYPED_TEST(TraitsTest, nested_call_to_delegated_precompile)
     if constexpr (TestFixture::Trait::eip_7702_active()) {
         BlockHashBufferFinalized const block_hash_buffer;
         NoopCallTracer call_tracer;
-        Transaction tx{};
+        Transaction const tx{};
         auto const chain_ctx =
             ChainContext<typename TestFixture::Trait>::debug_empty();
         uint256_t base_fee{0};
@@ -1394,7 +1397,7 @@ TYPED_TEST(TraitsTest, defensive_delegation_check)
     static constexpr auto correctly_delegated{
         0x00000000000000000000000000000000dddddddd_address};
 
-    uint8_t bad_code[50] = {0xEF, 0x01, 0x00, 0xFE};
+    uint8_t const bad_code[50] = {0xEF, 0x01, 0x00, 0xFE};
     auto const bad_icode = vm::make_shared_intercode(bad_code);
     auto const bad_code_hash = to_bytes(keccak256(bad_code));
 
@@ -1403,7 +1406,7 @@ TYPED_TEST(TraitsTest, defensive_delegation_check)
     auto const bad_icode2 = vm::make_shared_intercode(bad_code2);
     auto const bad_code_hash2 = to_bytes(keccak256(bad_code2));
 
-    uint8_t short_code[3] = {0xEF, 0x01, 0x00};
+    uint8_t const short_code[3] = {0xEF, 0x01, 0x00};
     auto const short_icode = vm::make_shared_intercode(short_code);
     auto const short_code_hash = to_bytes(keccak256(short_code));
 
@@ -1454,12 +1457,12 @@ TYPED_TEST(TraitsTest, defensive_delegation_check)
             {good_code_hash, good_icode}},
         BlockHeader{});
 
-    Transaction tx{};
+    Transaction const tx{};
     auto const chain_ctx =
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t base_fee{0};
     trace::StateTracer noop_state_tracer = std::monostate{};
-    EvmcHost<typename TestFixture::Trait> h{
+    EvmcHost<typename TestFixture::Trait> const h{
         call_tracer,
         noop_state_tracer,
         EMPTY_TX_CONTEXT,

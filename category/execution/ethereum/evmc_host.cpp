@@ -27,6 +27,7 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
+#include <category/vm/evm/storage_status.h>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>

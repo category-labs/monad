@@ -13,15 +13,13 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
 #include <category/core/byte_string.hpp>
-#include <category/core/int.hpp>
+#include <category/core/bytes.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
-#include <category/vm/evm/traits.hpp>
+#include <category/vm/evm/revision.h>
 #include <monad/test/traits_test.hpp>
-
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 
 #include <gtest/gtest.h>
 
@@ -34,7 +32,7 @@ TYPED_TEST(TraitsTest, intrinsic_gas)
     static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_BERLIN);
 
     {
-        Transaction t{};
+        Transaction const t{};
         EXPECT_EQ(
             intrinsic_gas<typename TestFixture::Trait>(t), 21'000 + 32'000);
     }

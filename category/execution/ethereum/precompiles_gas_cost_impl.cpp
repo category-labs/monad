@@ -14,15 +14,20 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/byte_string.hpp>
-#include <category/core/int.hpp>
+#include <category/core/config.hpp>
 #include <category/core/likely.h>
+#include <category/core/runtime/uint256.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/precompiles_bls12.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/revision.h>
+#include <category/vm/evm/traits.hpp>
 
 #include <algorithm>
+#include <cstdint>
 #include <cstring>
 #include <limits>
+#include <optional>
 
 namespace
 {

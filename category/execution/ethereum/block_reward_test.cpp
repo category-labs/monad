@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
 #include <category/execution/ethereum/block_reward.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/block.hpp>
@@ -22,15 +23,14 @@
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/mpt/db.hpp>
+#include <category/vm/evm/revision.h>
 #include <category/vm/vm.hpp>
 #include <monad/test/traits_test.hpp>
 #include <test_resource_data.h>
 
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
-
 #include <gtest/gtest.h>
 
+#include <memory>
 #include <optional>
 
 using namespace monad;

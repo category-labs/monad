@@ -29,14 +29,15 @@
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/reserve_balance.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/revision.h>
 #include <category/vm/evm/traits.hpp>
 
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
 #include <cstdint>
-#include <limits>
 #include <optional>
 #include <utility>
 

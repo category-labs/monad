@@ -18,7 +18,7 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/fiber/priority_pool.hpp>
-#include <category/core/int.hpp>
+#include <category/core/hex.hpp>
 #include <category/core/keccak.hpp>
 #include <category/core/monad_exception.hpp>
 #include <category/core/result.hpp>
@@ -45,7 +45,7 @@
 #include <category/mpt/traverse_util.hpp>
 #include <category/mpt/util.hpp>
 #include <category/vm/code.hpp>
-#include <category/vm/evm/monad/revision.h>
+#include <category/vm/evm/revision.h>
 #include <category/vm/evm/status_code.h>
 #include <category/vm/vm.hpp>
 #include <monad/test/traits_test.hpp>
@@ -572,7 +572,8 @@ TYPED_TEST(TraitsTest, fibers_join_exception)
     // failed.
     boost::fibers::promise<void> unblock_first;
     boost::fibers::promise<void> last_transaction_failed;
-    auto last_transaction_failed_future = last_transaction_failed.get_future();
+    auto const last_transaction_failed_future =
+        last_transaction_failed.get_future();
     std::vector<std::unique_ptr<CallTracerBase>> call_tracers;
     call_tracers.emplace_back(std::make_unique<ResetCallTracer>(
         [future = unblock_first.get_future()] mutable { future.wait(); }));
@@ -839,7 +840,7 @@ TYPED_TEST(TraitsTest, call_frames_refund)
             }
         }
     }();
-    CallFrame expected{
+    CallFrame const expected{
         .type = CallType::CALL,
         .flags = 0,
         .from = from,

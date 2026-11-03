@@ -13,8 +13,13 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
 #include <category/core/byte_string.hpp>
+#include <category/core/bytes.hpp>
+#include <category/core/config.hpp>
 #include <category/core/int.hpp>
+#include <category/core/likely.h>
+#include <category/core/result.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/block.hpp>
@@ -27,6 +32,7 @@
 #include <category/execution/ethereum/process_requests.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
+#include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
@@ -34,11 +40,15 @@
 
 #include <category/crypto/silkpre_vendor/sha256.h>
 
+#include <evmc/evmc.h>
+
 #include <boost/outcome/success_failure.hpp>
 #include <boost/outcome/try.hpp>
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
+#include <span>
 #include <utility>
 #include <vector>
 

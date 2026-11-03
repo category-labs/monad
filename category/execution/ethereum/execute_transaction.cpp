@@ -21,6 +21,7 @@
 #include <category/core/likely.h>
 #include <category/core/monad_exception.hpp>
 #include <category/core/result.hpp>
+#include <category/core/runtime/uint256.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/block.hpp>
@@ -42,7 +43,7 @@
 #include <category/execution/monad/staking/priority_fee.hpp>
 #include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
-#include <category/vm/evm/switch_traits.hpp>
+#include <category/vm/evm/revision.h>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/memory_pool.hpp>
 #include <evmc/evmc.h>

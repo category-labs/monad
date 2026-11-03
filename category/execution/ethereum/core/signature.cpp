@@ -14,9 +14,11 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/config.hpp>
-#include <category/core/int.hpp>
 #include <category/core/monad_exception.hpp>
+#include <category/core/runtime/uint256.hpp>
 #include <category/execution/ethereum/core/signature.hpp>
+
+#include <limits>
 MONAD_NAMESPACE_BEGIN
 
 void SignatureAndChain::from_v(uint256_t const &v)

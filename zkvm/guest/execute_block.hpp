@@ -26,21 +26,20 @@
 MONAD_NAMESPACE_BEGIN
 
 class BlockHashBuffer;
-struct Db;
 struct Block;
+class State;
 
-namespace vm
-{
-    class VM;
-}
-
-// Sequential mirror of execute_block<traits> for the zkVM guest. Drops the
-// fiber pool, dispatch_transaction indirection, tracers, and block-metrics
+// The guest's block loop: the sequential mirror of execute_block<traits>,
+// driving the one guest State the witness built. The block prologue, every
+// transaction and the post-block steps run against `state` in order, then
+// commit writes the result to the trie and the post-state root comes back.
+// Drops the fiber pool, the per-transaction State and merge, the tracers
+// and the metrics of the native path.
 template <Traits traits>
     requires(is_evm_trait_v<traits>)
 Result<bytes32_t> execute_block_zkvm(
     Chain const &chain, Block const &block,
-    std::span<byte_string_view const> raw_transactions, Db &pdb, vm::VM &vm,
+    std::span<byte_string_view const> raw_transactions, State &state,
     BlockHashBuffer const &block_hash_buffer);
 
 MONAD_NAMESPACE_END

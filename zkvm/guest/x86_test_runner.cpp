@@ -20,13 +20,19 @@
 // directly into the executable alongside zkvm/guest/ffi.cpp; no intermediate
 // static library.
 
+#include <category/core/byte_string.hpp>
+#include <category/core/keccak.hpp>
+#include <category/crypto/hash256.h>
+#include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
+#include <category/execution/ethereum/rlp/execution_witness.hpp>
 #include <io-interface/zkvm_io.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <ios>
 #include <iterator>
@@ -44,11 +50,15 @@ namespace
     // harness), and reopening would truncate the earlier chunks.
     std::FILE *g_out = nullptr;
     bool g_output_failed = false;
+    // Everything the guest wrote, for --check.
+    std::vector<std::uint8_t> g_output;
 
     void usage(char const *const prog)
     {
         std::fprintf(
-            stderr, "Usage: %s --input <path> [--output <path>]\n", prog);
+            stderr,
+            "Usage: %s --input <path> [--output <path>] [--check]\n",
+            prog);
     }
 }
 
@@ -65,12 +75,51 @@ write_output(std::uint8_t const *const output, std::size_t const size)
     if (std::fwrite(output, 1, size, g_out) != size) {
         g_output_failed = true;
     }
+    g_output.insert(g_output.end(), output, output + size);
+}
+
+// --check: the guest's public value must be the hash of the witness's own
+// block header, which is to say the computed post-state root must be the one
+// the block commits to. A test aid for the host runner only; the guest never
+// assumes the header it is given is honest.
+bool output_matches_witness()
+{
+    auto const witness = monad::parse_execution_witness(
+        monad::byte_string_view{g_input.data(), g_input.size()});
+    if (!witness.has_value()) {
+        std::fprintf(stderr, "--check: the witness does not parse\n");
+        return false;
+    }
+    monad::byte_string_view block_view = witness.value().block_rlp;
+    std::vector<monad::byte_string_view> raw_transactions;
+    auto const block = monad::rlp::decode_block(block_view, raw_transactions);
+    if (!block.has_value()) {
+        std::fprintf(stderr, "--check: the block does not decode\n");
+        return false;
+    }
+    monad_hash256 const want =
+        monad::keccak256(monad::rlp::encode_block_header(block.value().header));
+    if (g_output.size() == sizeof(want.bytes) &&
+        std::memcmp(g_output.data(), want.bytes, sizeof(want.bytes)) == 0) {
+        return true;
+    }
+    std::fprintf(stderr, "--check: block hash mismatch\n  want ");
+    for (unsigned char const b : want.bytes) {
+        std::fprintf(stderr, "%02x", b);
+    }
+    std::fprintf(stderr, "\n  got  ");
+    for (unsigned char const b : g_output) {
+        std::fprintf(stderr, "%02x", b);
+    }
+    std::fprintf(stderr, "\n");
+    return false;
 }
 
 int main(int const argc, char **const argv)
 {
     std::string input_path;
     std::string output_path;
+    bool check = false;
     for (int i = 1; i < argc; ++i) {
         std::string_view const arg{argv[i]};
         if ((arg == "--input" || arg == "-i") && i + 1 < argc) {
@@ -78,6 +127,9 @@ int main(int const argc, char **const argv)
         }
         else if ((arg == "--output" || arg == "-o") && i + 1 < argc) {
             output_path = argv[++i];
+        }
+        else if (arg == "--check") {
+            check = true;
         }
         else {
             usage(argv[0]);
@@ -128,6 +180,9 @@ int main(int const argc, char **const argv)
     }
     if (g_output_failed) {
         std::fprintf(stderr, "failed to write output\n");
+        return 1;
+    }
+    if (check && !output_matches_witness()) {
         return 1;
     }
     return 0;

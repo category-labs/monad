@@ -2,13 +2,14 @@
 
 A private domain is a chain whose blocks are derived from the L1. Domain blocks advance in lock-step with the L1: an L1 block yields a block for a domain exactly when it registers the domain or carries at least one of the domain's hub events, and never more than one. Replaying a domain's blocks from genesis rebuilds its state.
 
-This document specifies derivation:
+This document specifies derivation and execution:
 
 - `derive(l1_block, l1_receipts, previous_header, domain_config) -> Option<DomainBlock>`: what goes in a domain block. It needs no domain state.
+- `execute(domain_block, parent_state) -> (state, FinalizedDomainHeader, receipts)`: what a domain block does.
 
 Derivation produces each block's proposed header and its transactions; the sequence of `DomainBlock`s is the domain's canonical history. Anyone holding the domain key and configuration can derive it, and all of a domain's replicas must use the same configuration. Derivation is defined over the blocks of an L1 chain, in order; which chain a node follows is up to the node (see [Node](#node)).
 
-What a block does when it executes, and how its result is attested on L1, are not specified here yet.
+How a block's result is attested on L1 is not specified here yet.
 
 # Chain IDs
 
@@ -180,6 +181,103 @@ pub fn system_transaction(msg) -> TransactionSigned {
 /// any ciphertext.
 ```
 
+# Execution
+
+`execute` is a function of the domain block and the domain's state after its previous block alone. It reads nothing from the L1.
+
+```rust
+/// A domain block executes against the domain's state after its previous block (empty
+/// before genesis), at the L1's EVM revision at proposed.timestamp, under the L1's rules
+/// except:
+///   - gasless: no balance is checked for fees, nothing is deducted or refunded, and no
+///     priority fee or beneficiary is paid. Gas is still metered and limited, and receipts
+///     carry it
+///   - a transaction with value fails validation: a domain has no native token (MON
+///     arrives as bridged WMON), so every balance is 0
+///   - a transaction that fails validation (bad nonce, sender with code, value, ...)
+///     stays in the block with a receipt of status 0, gas_used 0 and no logs, so the body
+///     is fixed by derivation alone
+///   - a transaction from DOMAIN_SYSTEM_RELAYER skips validation and does not change the
+///     relayer's nonce, which is the hub's message nonce. The spoke orders deliveries
+///   - no reserve balance checks, and no staking or reserve balance precompiles: their
+///     addresses are empty accounts
+///   - no system calls around the transactions (EIP-4788, EIP-2935, ...), no withdrawals
+///     and no block reward
+///
+/// The block's environment comes from its proposed header, never from L1 state:
+///   CHAINID      = domain_chain_id
+///   NUMBER       = proposed.number
+///   TIMESTAMP, PREVRANDAO, GASLIMIT, BASEFEE, SLOTNUM = proposed.timestamp, mix_hash,
+///                  gas_limit, base_fee_per_gas, slot_number
+///   COINBASE     = 0
+///   BLOCKHASH(n) = the hash of domain block n for the previous 256 domain blocks, else 0
+```
+
+Genesis state is empty. The spoke is deployed by a sequenced transaction at the address the domain is configured with; until then, a delivery is a call to an empty account and does nothing.
+
+## FinalizedDomainHeader
+
+```rust
+/// Execution's output: a standard Ethereum header, in the L1 header's field order, so
+/// Ethereum tooling reads domain blocks unchanged. The domain block hash is
+/// keccak256(rlp(FinalizedDomainHeader)).
+#[derive(RlpEncodable, RlpDecodable)]
+pub struct FinalizedDomainHeader {
+    /// hash of the previous domain block; [0_u8; 32] for genesis
+    pub parent_hash: [u8; 32],
+    /// always EMPTY_OMMER_ROOT_HASH
+    pub ommers_hash: [u8; 32],
+    /// always [0_u8; 20]: fees are paid on L1, with the hub call that sequenced the
+    /// transaction or message
+    pub beneficiary: [u8; 20],
+    /// root of the domain's state trie after the block
+    pub state_root: [u8; 32],
+    /// = proposed.transactions_root
+    pub transactions_root: [u8; 32],
+    /// ordered trie root of the block's receipts
+    pub receipts_root: [u8; 32],
+    pub logs_bloom: [u8; 256],
+    /// always 0
+    pub difficulty: u256,
+    /// = proposed.number
+    pub number: u64,
+    /// = proposed.gas_limit
+    pub gas_limit: u64,
+    /// gas used by the block's transactions, metered but not charged
+    pub gas_used: u64,
+    /// = proposed.timestamp
+    pub timestamp: u64,
+    /// always 32 zero bytes
+    pub extra_data: Bytes,
+    /// = proposed.mix_hash
+    pub mix_hash: [u8; 32],
+    /// always [0_u8; 8]
+    pub nonce: [u8; 8],
+    /// = proposed.base_fee_per_gas
+    pub base_fee_per_gas: Option<u256>,
+    /// Each fork field is present iff the revision the block executes at has it, as for
+    /// an L1 header, with the value of a block without withdrawals, blobs or requests:
+    /// EMPTY_ROOT_HASH, 0, 0, [0_u8; 32], sha256("") and [0_u8; 32].
+    /// slot_number = proposed.slot_number
+    pub withdrawals_root: Option<[u8; 32]>,
+    pub blob_gas_used: Option<u64>,
+    pub excess_blob_gas: Option<u64>,
+    pub parent_beacon_block_root: Option<[u8; 32]>,
+    pub requests_hash: Option<[u8; 32]>,
+    pub block_access_list_hash: Option<[u8; 32]>,
+    pub slot_number: Option<u64>,
+}
+```
+
+## Domain state
+
+```rust
+/// Each domain has a state trie of its own, laid out like the L1's at the same revision:
+/// an account trie with a storage trie per account, holding slots, or pages once MIP-8
+/// is active. state_root is the root of the domain's account trie. The L1 node holds
+/// none of it.
+```
+
 # Encryption
 
 Sequenced transactions are the only thing the protocol decrypts in derivation. L1 → domain messages are plaintext; an application that needs to hide a message's content seals it inside the message data itself.
@@ -240,12 +338,15 @@ pub const TRANSACTION_AD_LABEL: &str = "monad-transaction-encryption-v1";
 - The store holds finalized domain blocks only, in order, so it never forks; it is the domain's history from genesis. A cursor records the last L1 block derived, since most L1 blocks yield no domain block.
 - Derivation is deterministic, so a restart continues after the cursor and redoing a block rewrites the same bytes.
 - On an empty store it starts from a configured L1 block, at or before the domain's registration.
+- It executes each stored block in order into a triedb of its own, with an L1 node's layout: the domain's state, code, receipts, transactions and finalized headers. A block that fails to execute (an internal error, not a transaction that fails validation) stops it, as an L1 block that fails stops an L1 node.
 - It stops with an error if the next L1 block has already left the L1 node's history, or if a hub event of its domain is malformed. Neither affects the L1 node.
 
 # Design choices
 
 - **Derivation never reads domain state.** The system transaction nonce comes from the hub, so domain blocks can be built and stored by a node that never executes them, and execution can run separately, later, or on another machine.
 - **Derivation outside the L1 node.** Reading the L1 node's triedb instead of running in its runloop means the L1 stores nothing for domains, a domain can neither stop nor slow it, and the domain key never reaches it. Following only finalized blocks keeps the store linear; since derivation is defined on any L1 chain, following proposed blocks later changes the node, not the protocol. The cost is that `monad-domain` can fall behind: an L1 block that leaves the L1 node's history before it is derived has to come from elsewhere.
+- **A triedb of the domain's own, laid out like the L1's.** Domain state, receipts and headers live where an L1 node keeps its own, so execution commits through the L1's commit path, `BLOCKHASH` reads the domain's own headers, and the L1's tools read a domain's db unchanged. Each block is committed and finalized at once, under an id known before execution, `keccak256(rlp(ProposedDomainHeader))`, so following proposed L1 blocks later only delays finalization.
+- **Failed transactions keep their place.** Recording a status-0 receipt for a transaction that fails validation, instead of dropping it, keeps the body, and so `transactions_root`, a function of derivation alone.
 - **The L1 block hash, not its consensus block id,** anchors a domain block: it can be read from the triedb and over RPC, and it is what L1 contracts see through `BLOCKHASH`.
 - **Deriving from events instead of calldata** handles reverted and nested `sequenceToDomain` calls with no special cases. The cost is that derivation needs the L1 receipts, so it must run after L1 execution.
 - **Lock-step and genesis.** Counting every hub event toward block existence, even one whose payload is dropped, makes block numbering depend only on what the hub saw. Putting the registration block's other events into block 0 means no paid-for event is ever dropped for timing.

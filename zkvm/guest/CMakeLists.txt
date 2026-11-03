@@ -464,6 +464,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         "event/record_consensus_events.cpp"
         "private_domain_l1_source.cpp"
         "private_domain_block_store.cpp"
+        "private_domain_deriver.cpp"
         "private_domain_hpke.cpp"
         "private_domain_system_transaction.cpp"
         "private_domain_derivation.cpp"

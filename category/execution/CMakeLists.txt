@@ -257,6 +257,8 @@ add_library(
   "monad/private_domain_block_store.hpp"
   "monad/private_domain_derivation.cpp"
   "monad/private_domain_derivation.hpp"
+  "monad/private_domain_deriver.cpp"
+  "monad/private_domain_deriver.hpp"
   "monad/private_domain_hpke.cpp"
   "monad/private_domain_hpke.hpp"
   "monad/private_domain_l1_source.cpp"

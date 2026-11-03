@@ -237,6 +237,7 @@ impl MonadExecutor {
                 block_overrides.as_mut_ptr(),
                 validation,
                 emit_native_transfer_logs,
+                std::ptr::null(),
                 Some(eth_simulate_v1_submit_callback),
                 Box::into_raw(sender_ctx) as *mut std::ffi::c_void,
             );

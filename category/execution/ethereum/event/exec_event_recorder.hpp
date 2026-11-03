@@ -88,6 +88,10 @@ public:
     /// Mark that the current block has ended
     void end_current_block();
 
+    /// Return the sequence number of the BLOCK_START event associated with the
+    /// current open block; if no block is being recorded, return zero
+    uint64_t get_block_start_seqno() const;
+
     /// Record a block-level event with no payload in one step; this returns
     /// the event sequence number in case the caller wants to refer to the
     /// event location, e.g., in a related data stream
@@ -163,6 +167,11 @@ ReservedEvent<T> ExecutionEventRecorder::reserve_block_event(
 inline void ExecutionEventRecorder::end_current_block()
 {
     cur_block_start_seqno_ = 0;
+}
+
+inline uint64_t ExecutionEventRecorder::get_block_start_seqno() const
+{
+    return cur_block_start_seqno_;
 }
 
 inline uint64_t ExecutionEventRecorder::record_block_marker_event(

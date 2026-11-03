@@ -121,6 +121,15 @@ enum monad_event_content_type : uint16_t
     MONAD_EVENT_CONTENT_TYPE_COUNT  ///< Total number of content types
 };
 
+/// Bit flags that control the behavior of the `monad_event_ring_init_file`
+/// function
+enum monad_event_ring_init_flag : unsigned
+{
+    MONAD_EVENT_INIT_DEFAULT = 0b0,      ///< Default initialization behavior
+    MONAD_EVENT_INIT_NO_ZERO_FILL = 0b1, ///< Assume zero-filled already
+    MONAD_EVENT_INIT_ALL_FLAGS = 0b1,    ///< All valid bit flags
+};
+
 // clang-format on
 
 /// Return an initialized event ring size structure, after performing checks
@@ -139,8 +148,8 @@ size_t monad_event_ring_calc_storage(struct monad_event_ring_size const *);
 /// ring data structures at the given offset within that file
 int monad_event_ring_init_file(
     struct monad_event_ring_size const *, enum monad_event_content_type,
-    uint8_t const *schema_hash, int ring_fd, off_t ring_offset,
-    char const *error_name);
+    uint8_t const *schema_hash, unsigned init_flags, int ring_fd,
+    off_t ring_offset, char const *error_name);
 
 /// Given an open file descriptor which contains an initialized event ring at
 /// `ring_offset`, mmap the event ring into our address space; mmap_extra_flags

@@ -250,7 +250,8 @@ static int decompress_snap_fd_to_temp_file(
 
 int monad_event_ring_init_simple(
     struct monad_event_ring_simple_config const *const ring_config,
-    int const ring_fd, off_t const ring_offset, char const *const error_name)
+    unsigned const init_flags, int const ring_fd, off_t const ring_offset,
+    char const *const error_name)
 {
     struct monad_event_ring_size ring_size;
     int rc = monad_event_ring_init_size(
@@ -274,9 +275,78 @@ int monad_event_ring_init_simple(
         &ring_size,
         ring_config->content_type,
         ring_config->schema_hash,
+        init_flags,
         ring_fd,
         ring_offset,
         error_name);
+}
+
+int monad_event_ring_create_ephemeral(
+    struct monad_event_ring_simple_config const *const ring_config,
+    char const *const error_name, unsigned const memfd_create_flags,
+    int const mmap_extra_flags, int *const ring_fd,
+    struct monad_event_ring *const ring)
+{
+    struct monad_event_ring_size ring_size;
+    *ring_fd = -1;
+    int rc = monad_event_ring_init_size(
+        ring_config->descriptors_shift,
+        ring_config->payload_buf_shift,
+        ring_config->context_large_pages,
+        &ring_size);
+    if (rc != 0) {
+        return rc;
+    }
+    size_t const ring_bytes = monad_event_ring_calc_storage(&ring_size);
+    *ring_fd = memfd_create(error_name, memfd_create_flags);
+    if (*ring_fd == -1) {
+        return FORMAT_ERRC(
+            errno,
+            "memfd_create failed for ephemeral event ring `%s`, size %lu",
+            error_name,
+            ring_bytes);
+    }
+    // We want to prevent the system from faulting in all the unused pages, so
+    // we get the demand-paging behavior we want. The normal path (in
+    // monad_event_ring_init_simple) calls posix_fallocate(2), which commits
+    // all the zero'ed-out pages upon allocation. The Linux-specific syscall
+    // fallocate(2) does this also. ftruncate(2) does not, so we use that and
+    // perform the rest of the setup ourselves.
+    rc = ftruncate(*ring_fd, (off_t)ring_bytes);
+    if (rc != 0) {
+        rc = FORMAT_ERRC(
+            errno,
+            "ftruncate failed for event ring file `%s`, size %lu",
+            error_name,
+            ring_bytes);
+        goto Error;
+    }
+    rc = monad_event_ring_init_file(
+        &ring_size,
+        ring_config->content_type,
+        ring_config->schema_hash,
+        MONAD_EVENT_INIT_NO_ZERO_FILL,
+        *ring_fd,
+        0,
+        error_name);
+    if (rc != 0) {
+        goto Error;
+    }
+    rc = monad_event_ring_mmap(
+        ring,
+        PROT_READ | PROT_WRITE,
+        mmap_extra_flags,
+        *ring_fd,
+        0,
+        error_name);
+    if (rc != 0) {
+        goto Error;
+    }
+    return 0;
+Error:
+    (void)close(*ring_fd);
+    *ring_fd = -1;
+    return rc;
 }
 
 int monad_event_ring_check_content_type(

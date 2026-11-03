@@ -117,7 +117,13 @@ static void open_event_ring_file(
         .content_type = MONAD_EVENT_CONTENT_TYPE_TEST,
         .schema_hash = g_monad_test_event_schema_hash};
     ASSERT_EQ(
-        0, monad_event_ring_init_simple(&ring_config, ring_fd, 0, error_name));
+        0,
+        monad_event_ring_init_simple(
+            &ring_config,
+            MONAD_EVENT_INIT_NO_ZERO_FILL,
+            ring_fd,
+            0,
+            error_name));
     ASSERT_EQ(
         0,
         monad_event_ring_mmap(

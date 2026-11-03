@@ -25,6 +25,8 @@ add_library(
   "domain_block.hpp"
   "hpke.cpp"
   "hpke.hpp"
+  "l1_source.cpp"
+  "l1_source.hpp"
   "system_transaction.cpp"
   "system_transaction.hpp"
   # domain/rlp

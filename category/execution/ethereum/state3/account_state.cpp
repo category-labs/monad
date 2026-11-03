@@ -15,8 +15,10 @@
 
 #include <category/execution/ethereum/state3/account_state.hpp>
 
+#include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
+#include <category/vm/evm/storage_status.h>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -24,6 +26,7 @@ monad_storage_status AccountState::zero_out_key(
     bytes32_t const &key, bytes32_t const &original_value,
     bytes32_t const &current_value)
 {
+    MONAD_ASSERT(is_resolved());
     auto const status = [&] {
         if (current_value == bytes32_t{}) {
             return MONAD_STORAGE_ASSIGNED;
@@ -46,6 +49,7 @@ monad_storage_status AccountState::set_current_value(
     bytes32_t const &key, bytes32_t const &value,
     bytes32_t const &original_value, bytes32_t const &current_value)
 {
+    MONAD_ASSERT(is_resolved());
     auto const status = [&] {
         if (current_value == bytes32_t{}) {
             if (original_value == bytes32_t{}) {

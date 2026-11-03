@@ -31,6 +31,8 @@ add_library(
   "domain_block.hpp"
   "execution.cpp"
   "execution.hpp"
+  "executor.cpp"
+  "executor.hpp"
   "hpke.cpp"
   "hpke.hpp"
   "l1_source.cpp"

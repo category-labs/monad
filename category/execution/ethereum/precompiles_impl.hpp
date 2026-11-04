@@ -114,6 +114,9 @@ MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
 
+// The zkVM guest swaps in its own copy of this header, so the definition can't
+// move to precompiles.cpp.
+// NOLINTNEXTLINE(misc-definitions-in-headers)
 bool init_trusted_setup()
 {
     return trusted_setup().has_value();

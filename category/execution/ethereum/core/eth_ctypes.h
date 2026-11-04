@@ -62,7 +62,7 @@ struct monad_c_auth_list_entry
     monad_c_uint256_ne chain_id; ///< Chain where authorization is valid
     monad_address address;       ///< Delegation contract address
     uint64_t nonce;              ///< Nonce of signing authority
-    bool y_parity;               ///< y parity of authority ECDSA signature
+    uint8_t y_parity;            ///< y parity of authority ECDSA signature
     monad_c_uint256_ne r;        ///< r of authority ECDSA signature
     monad_c_uint256_ne s;        ///< s of authority ECDSA signature
 };

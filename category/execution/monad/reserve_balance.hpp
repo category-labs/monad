@@ -20,6 +20,8 @@
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
+#include <category/execution/ethereum/state3/account_state.hpp>
+#include <category/execution/ethereum/state3/version_stack.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/vm/evm/monad/revision.h>
 #include <category/vm/evm/traits.hpp>
@@ -31,6 +33,8 @@
 #include <cstdint>
 #include <functional>
 #include <optional>
+#include <span>
+#include <utility>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -76,7 +80,7 @@ public:
     void on_credit(Address const &);
     void on_debit(Address const &);
 
-    void on_pop_reject(FailedSet const &accounts);
+    void on_pop_reject(std::span<Address const> accounts);
 
     void on_set_code(Address const &address, byte_string_view code);
 

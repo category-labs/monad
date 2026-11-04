@@ -19,10 +19,20 @@
 #include <category/core/config.hpp>
 
 #include <deque>
+#include <iterator>
 #include <utility>
 
 MONAD_NAMESPACE_BEGIN
 
+/// A stack of versions of a value, one per frame that modified it.
+///
+/// Each entry is labelled with the version of the frame that created it.
+/// State hands out versions in increasing order as frames are pushed and
+/// never reuses one, so an entry belongs to the deepest open frame whose
+/// version is at most its label. Accepting a frame therefore needs no work
+/// on the stack: its entries simply belong to the parent from then on. Only
+/// a reject pops entries, and compact() merges the entries of one frame
+/// when the owner is known.
 template <class T>
 class VersionStack
 {
@@ -44,6 +54,23 @@ public:
         return stack_.size();
     }
 
+    /// An emptied stack stands for an account that a rejected frame
+    /// re-seeded after an earlier reject; State erases entries only from the
+    /// back of its map, so such an entry stays, empty.
+    bool empty() const
+    {
+        return stack_.empty();
+    }
+
+    /// Re-seed an emptied stack with a base entry labelled `version`.
+    void reset(T value, unsigned const version)
+    {
+        MONAD_ASSERT(stack_.empty());
+
+        stack_.emplace_back(version, std::move(value));
+    }
+
+    /// Label of the top entry: the version of the frame that created it.
     unsigned version() const
     {
         MONAD_ASSERT(stack_.size());
@@ -77,33 +104,36 @@ public:
         return stack_.back().second;
     }
 
-    void pop_accept(unsigned const version)
+    /// Merge every entry belonging to `version` into one entry labelled
+    /// `version`. The caller guarantees that no open frame has a version in
+    /// (version, version()], i.e. that all entries labelled at or beyond
+    /// `version` belong to it.
+    void compact(unsigned const version)
     {
-        MONAD_ASSERT(version);
+        MONAD_ASSERT(stack_.size());
 
-        auto const size = stack_.size();
-        MONAD_ASSERT(size);
-
-        if (version == stack_.back().first) {
-            if (size > 1 &&
-                stack_[size - 2].first + 1 == stack_[size - 1].first) {
-                stack_[size - 2].second = std::move(stack_[size - 1].second);
-                stack_.pop_back();
-            }
-            else {
-                stack_.back().first = version - 1;
-            }
+        if (stack_.back().first <= version) {
+            return;
         }
+        auto const most_recent = std::prev(stack_.end());
+        auto lowest = most_recent;
+        while (lowest != stack_.begin() &&
+               std::prev(lowest)->first >= version) {
+            --lowest;
+        }
+
+        if (lowest != most_recent) {
+            lowest->second = std::move(most_recent->second);
+            stack_.erase(std::next(lowest), stack_.end());
+        }
+        lowest->first = version;
     }
 
     bool pop_reject(unsigned const version)
     {
         MONAD_ASSERT(version);
 
-        auto const size = stack_.size();
-        MONAD_ASSERT(size);
-
-        if (version == stack_.back().first) {
+        while (!stack_.empty() && stack_.back().first >= version) {
             stack_.pop_back();
         }
 

@@ -18,6 +18,7 @@
 #include <zkvm/guest/witness_block_hash_buffer.hpp>
 
 #include <category/core/assert.h>
+#include <category/core/bit_primitives.hpp>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/keccak.hpp>
@@ -58,6 +59,21 @@ extern "C" void monad_zkvm_execute_witness(void)
         monad::byte_string_view{input, input_len});
     MONAD_ASSERT(witness.has_value());
 
+    monad::byte_string_view block_view = witness.value().block_rlp;
+    // Keep each transaction's original bytes to verify transactions_root
+    // without re-encoding the decoded transaction.
+    std::vector<monad::byte_string_view> raw_transactions;
+    auto block_result = monad::rlp::decode_block(block_view, raw_transactions);
+    MONAD_ASSERT(block_result.has_value());
+    MONAD_ASSERT(block_view.empty());
+    auto const &block = block_result.value();
+
+    // Seed maps before insertion with the canonical block hash. Reuse it as
+    // output only after checking the computed state root against this header.
+    monad_hash256 const block_hash =
+        monad::keccak256(monad::rlp::encode_block_header(block.header));
+    monad::bits::set_map_keys(block_hash.bytes);
+
     monad::CodeIndex code_index;
     {
         monad::byte_string_view codes = witness.value().encoded_codes;
@@ -96,15 +112,6 @@ extern "C" void monad_zkvm_execute_witness(void)
     // signifies an empty trie.
     MONAD_ASSERT(!monad::mpt::is_overlay_id(trie.root));
     monad::PartialTrieDb pdb{std::move(trie), std::move(code_index)};
-
-    monad::byte_string_view block_view = witness.value().block_rlp;
-    // Keep each transaction's original bytes to verify transactions_root
-    // without re-encoding the decoded transaction.
-    std::vector<monad::byte_string_view> raw_transactions;
-    auto block_result = monad::rlp::decode_block(block_view, raw_transactions);
-    MONAD_ASSERT(block_result.has_value());
-    MONAD_ASSERT(block_view.empty());
-    auto const &block = block_result.value();
 
     monad::WitnessBlockHashBuffer block_hash_buffer;
     monad::bytes32_t pre_state_root{};
@@ -175,16 +182,7 @@ extern "C" void monad_zkvm_execute_witness(void)
     }();
     MONAD_ASSERT(root_result.has_value());
 
-    monad::bytes32_t const &state_root = root_result.value();
-
-    auto sealed_header = block.header;
-    // commit to the computed state root
-    sealed_header.state_root = state_root;
-    monad::byte_string const header_rlp =
-        monad::rlp::encode_block_header(sealed_header);
-    monad_hash256 const block_hash = monad::keccak256(header_rlp);
-
-    // Public value: the block hash alone is sufficient as the computed root is
-    // sealed into the header it hashes
+    // Bind execution to the header hashed above before publishing its hash.
+    MONAD_ASSERT(root_result.value() == block.header.state_root);
     write_output(block_hash.bytes, sizeof(block_hash.bytes));
 }

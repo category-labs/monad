@@ -388,7 +388,7 @@ impl ExecutedTxn {
                             )),
                             nonce: *nonce,
                         },
-                        if *y_parity { 1 } else { 0 },
+                        *y_parity,
                         alloy_primitives::U256::from_limbs(r.limbs),
                         alloy_primitives::U256::from_limbs(s.limbs),
                     )
@@ -557,7 +557,7 @@ pub struct ExecutedTxnSignedAuthorization {
     pub address: monad_address,
     pub nonce: u64,
 
-    pub y_parity: bool,
+    pub y_parity: u8,
     pub r: monad_c_uint256_ne,
     pub s: monad_c_uint256_ne,
 }

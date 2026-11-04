@@ -342,7 +342,7 @@ void record_txn_header_events(
                     .chain_id = e.sc.chain_id.value_or(0),
                     .address = e.address,
                     .nonce = e.nonce,
-                    .y_parity = e.sc.signature.y_parity == 1,
+                    .y_parity = e.sc.signature.y_parity,
                     .r = e.sc.signature.r,
                     .s = e.sc.signature.s,
                 },

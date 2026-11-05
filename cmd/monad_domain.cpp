@@ -15,13 +15,15 @@
 
 // monad-domain derives one private domain's blocks from the finalized chain
 // of an L1 node, reading the node's triedb read-only, into a block store of
-// its own. See PROTOCOL.md in category-labs/monad-domains.
+// its own, and executes them into a triedb of the domain's own. See
+// PROTOCOL.md in category-labs/monad-domains.
 
 #include <category/core/address.hpp>
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/cli/help_formatter.hpp>
 #include <category/core/config.hpp>
+#include <category/core/fiber/priority_pool.hpp>
 #include <category/core/hex.hpp>
 #include <category/core/int.hpp>
 #include <category/core/log.hpp>
@@ -29,16 +31,24 @@
 #include <category/execution/domain/chain_id.hpp>
 #include <category/execution/domain/deriver.hpp>
 #include <category/execution/domain/domain_block.hpp>
+#include <category/execution/domain/executor.hpp>
 #include <category/execution/domain/hpke.hpp>
 #include <category/execution/domain/l1_source.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/log_level_map.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/db/state_machine_init.hpp>
+#include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/monad/chain/chain_factory.hpp>
+#include <category/execution/monad/chain/monad_chain.hpp>
+#include <category/execution/monad/db/state_machine_init.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/db_error.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
+#include <category/mpt/state_machine.hpp>
+#include <category/vm/evm/traits.hpp>
+#include <category/vm/vm.hpp>
 
 #include <CLI/CLI.hpp>
 #include <nlohmann/json.hpp>
@@ -50,6 +60,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -61,6 +72,9 @@ MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
 // How often to look for a newly finalized L1 block once caught up.
 constexpr auto POLL_INTERVAL = std::chrono::milliseconds{20};
+// Threads and fibers of the priority pool domain blocks execute on.
+constexpr unsigned EXECUTION_THREADS = 4;
+constexpr unsigned EXECUTION_FIBERS = 256;
 
 sig_atomic_t volatile stop;
 
@@ -139,7 +153,8 @@ int main(int const argc, char const *argv[])
 try {
     CLI::App cli{
         "Derive one private domain's blocks from the finalized chain of an L1 "
-        "node, reading its triedb read-only, into a block store.",
+        "node, reading its triedb read-only, into a block store, and with "
+        "--domain-db execute them.",
         "monad-domain"};
     monad::cli::HelpFormatter{GIT_COMMIT_HASH}.install(cli);
 
@@ -149,6 +164,7 @@ try {
     std::string hub_hex;
     fs::path store_dir;
     std::optional<uint64_t> start_l1_block;
+    fs::path domain_db_path;
     bool dump = false;
     auto log_level = quill::LogLevel::Info;
 
@@ -194,6 +210,11 @@ try {
         start_l1_block,
         "L1 block to start from on an empty store, at or before the domain's "
         "registration");
+    cli.add_option(
+        "--domain-db",
+        domain_db_path,
+        "the domain's own triedb, created once the domain's genesis is "
+        "derived: with it, monad-domain also executes the domain's blocks");
     cli.add_option("--log-level", log_level, "level of logging")
         ->transform(CLI::CheckedTransformer(log_level_map, CLI::ignore_case));
     for (auto *const option :
@@ -229,7 +250,7 @@ try {
     }
 
     auto const &[domain_chain_id, spoke_hex, key_path] = domain;
-    auto const chain = make_chain(chain_config);
+    auto const chain = make_monad_chain(chain_config);
     auto const network_chain_id = chain->get_chain_id();
     auto const domain_id = domain::domain_from_chain_id(
         uint256_t{domain_chain_id}, network_chain_id);
@@ -271,6 +292,55 @@ try {
 
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
+    // The domain db is created for the revision of the domain's genesis, so
+    // that it has the encoding the blocks commit with.
+    std::optional<fiber::PriorityPool> priority_pool;
+    std::optional<vm::VM> vm;
+    std::optional<mpt::Db> domain_db;
+    std::optional<domain::PrivateDomainExecutor> executor;
+    // Opened as the L1 node opens its db, with compaction and a rewind of
+    // anything committed past the last finalized block, but without an SQPOLL
+    // kernel thread, which would spin on a CPU beside the L1 node's.
+    auto const domain_db_config = [&](bool const append) {
+        return mpt::OnDiskDbConfig{
+            .append = append,
+            .compaction = true,
+            .rewind_to_latest_finalized = true,
+            .sq_thread_cpu = std::nullopt,
+            .dbname_path = domain_db_path};
+    };
+    auto const open_executor = [&] {
+        if (fs::exists(domain_db_path)) {
+            register_ethereum_state_machines();
+            register_monad_state_machines();
+            domain_db.emplace(domain_db_config(true));
+        }
+        else {
+            auto const genesis = store.get(0);
+            if (!genesis.has_value()) {
+                return;
+            }
+            std::unique_ptr<mpt::StateMachine> machine;
+            if (mip_8_active(
+                    chain->get_monad_revision(genesis->header.timestamp))) {
+                machine = std::make_unique<MonadOnDiskMachine>();
+            }
+            else {
+                machine = std::make_unique<OnDiskMachine>();
+            }
+            domain_db.emplace(std::move(machine), domain_db_config(false));
+        }
+        priority_pool.emplace(EXECUTION_THREADS, EXECUTION_FIBERS);
+        vm.emplace();
+        executor.emplace(
+            *chain, domain_chain_id, store, *domain_db, *vm, *priority_pool);
+        LOG_INFO(
+            "executing private domain {} into {}, from domain block {}",
+            domain_chain_id,
+            domain_db_path,
+            executor->next_block());
+    };
+
     while (!stop) {
         auto const tip = store.tip().has_value()
                              ? std::optional{store.tip()->header.number}
@@ -293,10 +363,6 @@ try {
             }
             return EXIT_FAILURE;
         }
-        if (!derived.value()) {
-            std::this_thread::sleep_for(POLL_INTERVAL);
-            continue;
-        }
         if (store.tip().has_value() &&
             (!tip.has_value() || store.tip()->header.number != *tip)) {
             LOG_INFO(
@@ -304,6 +370,29 @@ try {
                 store.tip()->header.number,
                 store.tip()->header.l1_block_number,
                 store.tip()->transactions.size());
+        }
+
+        bool executed = false;
+        if (!domain_db_path.empty() && !executor.has_value()) {
+            open_executor();
+        }
+        if (executor.has_value()) {
+            auto const result = executor->execute_next();
+            if (result.has_error()) {
+                LOG_ERROR(
+                    "executing domain block {} failed: {}",
+                    executor->next_block(),
+                    result.assume_error().message().c_str());
+                return EXIT_FAILURE;
+            }
+            executed = result.value();
+            if (executed) {
+                LOG_INFO(
+                    "executed domain block {}", executor->next_block() - 1);
+            }
+        }
+        if (!derived.value() && !executed) {
+            std::this_thread::sleep_for(POLL_INTERVAL);
         }
     }
     LOG_INFO("stopped at L1 block {}", deriver.next_l1_block());

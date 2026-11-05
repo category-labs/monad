@@ -1,0 +1,313 @@
+// Copyright (C) 2025-26 Category Labs, Inc.
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+#include <category/execution/domain/executor.hpp>
+
+#include <category/async/config.hpp>
+#include <category/async/util.hpp>
+#include <category/core/address.hpp>
+#include <category/core/byte_string.hpp>
+#include <category/core/bytes.hpp>
+#include <category/core/fiber/priority_pool.hpp>
+#include <category/core/hex.hpp>
+#include <category/core/keccak.hpp>
+#include <category/execution/domain/block_store.hpp>
+#include <category/execution/domain/chain_id.hpp>
+#include <category/execution/domain/derivation.hpp>
+#include <category/execution/domain/domain_block.hpp>
+#include <category/execution/domain/l1_source.hpp>
+#include <category/execution/domain/system_transaction.hpp>
+#include <category/execution/ethereum/chain/genesis_state.hpp>
+#include <category/execution/ethereum/core/block.hpp>
+#include <category/execution/ethereum/core/rlp/block_rlp.hpp>
+#include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
+#include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/db/ordered_trie.hpp>
+#include <category/execution/ethereum/db/trie_db.hpp>
+#include <category/execution/ethereum/db/util.hpp>
+#include <category/execution/monad/chain/monad_chain.hpp>
+#include <category/mpt/db.hpp>
+#include <category/mpt/ondisk_db_config.hpp>
+#include <category/vm/evm/monad/revision.h>
+#include <category/vm/evm/traits.hpp>
+#include <category/vm/vm.hpp>
+
+#include <gtest/gtest.h>
+
+#include <cstdint>
+#include <filesystem>
+#include <memory>
+#include <optional>
+#include <string>
+#include <vector>
+
+#include <fcntl.h>
+#include <unistd.h>
+
+using namespace monad;
+using namespace monad::domain;
+using namespace monad::literals;
+
+namespace
+{
+    constexpr uint64_t DOMAIN = 0x510000004eaf;
+    constexpr monad_revision REVISION = MONAD_TEN;
+    constexpr Address SPOKE =
+        0x5FbDB2315678afecb367f032d93F642f64180aa3_address;
+    // Signs the transaction below.
+    constexpr Address SENDER =
+        0x6f4c950442e1Af093BcfF730381E63Ae9171b87a_address;
+
+    // An EIP-1559 transaction of DOMAIN (nonce 0, gas 100'000, to 0xabc,
+    // data 0x0102) signed by secp256k1 key 0x42, by eth-account.
+    Transaction signed_transaction()
+    {
+        auto const encoded = *from_hex(
+            "02f87086510000004eaf8080850ba43b7400830186a094000000000000000000"
+            "0000000000000000000abc80820102c080a03524410eec196ed020b64c6e2b16"
+            "b18249621686c02655d096b510644ee71a27a05400ac6a0ec2d6bee704ab7aff"
+            "e172fe9b86521a26d164b21bc8966dc9569f05");
+        byte_string_view view{encoded};
+        return rlp::decode_transaction(view).value();
+    }
+
+    Transaction delivery(uint64_t const nonce)
+    {
+        return make_domain_system_transaction(
+            DOMAIN,
+            SPOKE,
+            DOMAIN_GAS_PRICE,
+            300'000,
+            DOMAIN & NETWORK_CHAIN_ID_MASK,
+            Address{0x1111},
+            Address{0x2222},
+            byte_string{0xca, 0xfe},
+            nonce);
+    }
+
+    DomainBlock block(
+        uint64_t const number, std::vector<Transaction> txs,
+        bytes32_t const &parent_id)
+    {
+        std::vector<byte_string> encoded;
+        for (auto const &tx : txs) {
+            encoded.push_back(rlp::encode_transaction(tx));
+        }
+        return DomainBlock{
+            .header =
+                {.parent_id = parent_id,
+                 .number = number,
+                 .l1_block_number = 10 + number,
+                 .l1_block_hash = bytes32_t{number + 1},
+                 .timestamp = 1'000 + number,
+                 .mix_hash = bytes32_t{0x77},
+                 .gas_limit = DOMAIN_BLOCK_GAS_LIMIT,
+                 .base_fee_per_gas = DOMAIN_GAS_PRICE,
+                 .transactions_root = ordered_trie_root(encoded)},
+            .transactions = std::move(txs)};
+    }
+
+    struct TestL1Chain final : MonadChain
+    {
+        uint256_t get_chain_id() const override
+        {
+            return DOMAIN & NETWORK_CHAIN_ID_MASK;
+        }
+
+        monad_revision get_monad_revision(uint64_t) const override
+        {
+            return REVISION;
+        }
+
+        GenesisState get_genesis_state() const override
+        {
+            return GenesisState{};
+        }
+    };
+
+    class PrivateDomainExecutorTest : public ::testing::Test
+    {
+    protected:
+        std::filesystem::path dir_;
+        std::string db_path_;
+        std::optional<mpt::Db> db_;
+        std::optional<DomainBlockStore> store_;
+        TestL1Chain l1_chain_;
+        vm::VM vm_;
+        fiber::PriorityPool pool_{1, 1};
+
+        void SetUp() override
+        {
+            std::string pattern =
+                (MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
+                 "private_domain_executor_XXXXXX")
+                    .string();
+            ASSERT_NE(::mkdtemp(pattern.data()), nullptr);
+            dir_ = pattern;
+            db_path_ = (dir_ / "domain.db").string();
+            {
+                int const fd = ::open(
+                    db_path_.c_str(), O_CREAT | O_WRONLY | O_CLOEXEC, 0644);
+                ASSERT_NE(fd, -1);
+                ASSERT_NE(
+                    ::ftruncate(
+                        fd, static_cast<off_t>(8ULL * 1024 * 1024 * 1024)),
+                    -1);
+                ::close(fd);
+            }
+            open_db(false);
+            store_.emplace(dir_ / "store");
+        }
+
+        void TearDown() override
+        {
+            store_.reset();
+            db_.reset();
+            std::filesystem::remove_all(dir_);
+        }
+
+        void open_db(bool const append)
+        {
+            db_.reset();
+            std::unique_ptr<mpt::StateMachine> machine;
+            if (mip_8_active(REVISION)) {
+                machine = std::make_unique<MonadOnDiskMachine>();
+            }
+            else {
+                machine = std::make_unique<OnDiskMachine>();
+            }
+            db_.emplace(
+                std::move(machine),
+                mpt::OnDiskDbConfig{
+                    .append = append,
+                    .dbname_path = db_path_,
+                    .chunk_capacity = 24});
+        }
+
+        // Appends a block with these transactions after the store's tip.
+        void append(std::vector<Transaction> txs)
+        {
+            auto const &tip = store_->tip();
+            store_->append(block(
+                tip.has_value() ? tip->header.number + 1 : 0,
+                std::move(txs),
+                tip.has_value() ? domain_block_id(tip->header) : bytes32_t{}));
+        }
+
+        void execute_all(PrivateDomainExecutor &executor)
+        {
+            while (true) {
+                auto const executed = executor.execute_next();
+                ASSERT_TRUE(executed.has_value());
+                if (!executed.value()) {
+                    return;
+                }
+            }
+        }
+
+        // The block's header and receipts as committed to the domain's db.
+        L1Block read(uint64_t const number)
+        {
+            auto block = TrieDbL1Source{*db_}.read_finalized(number);
+            EXPECT_TRUE(block.has_value());
+            return std::move(block).value();
+        }
+
+        std::vector<uint64_t> statuses(uint64_t const number)
+        {
+            std::vector<uint64_t> result;
+            for (auto const &receipt : read(number).receipts) {
+                result.push_back(receipt.status);
+            }
+            return result;
+        }
+
+        std::optional<Account> account(Address const &address)
+        {
+            TrieDb db{*db_};
+            return db.read_account(address);
+        }
+    };
+}
+
+TEST_F(PrivateDomainExecutorTest, executes_the_stored_blocks_in_order)
+{
+    append({});
+    append({signed_transaction()});
+    // The second transaction fails validation on its nonce and keeps its
+    // place with a status-0 receipt.
+    append({delivery(0), signed_transaction()});
+
+    PrivateDomainExecutor executor{
+        l1_chain_, DOMAIN, *store_, *db_, vm_, pool_};
+    EXPECT_EQ(executor.next_block(), 0);
+    execute_all(executor);
+    EXPECT_EQ(executor.next_block(), 3);
+    EXPECT_EQ(db_->get_latest_finalized_version(), 2);
+
+    auto const genesis = read(0);
+    auto const first = read(1);
+    auto const second = read(2);
+    EXPECT_EQ(genesis.header.parent_hash, bytes32_t{});
+    EXPECT_EQ(first.header.parent_hash, genesis.hash);
+    EXPECT_EQ(second.header.parent_hash, first.hash);
+    EXPECT_EQ(first.header.number, 1);
+    EXPECT_EQ(first.header.timestamp, 1'001);
+    EXPECT_EQ(first.header.beneficiary, Address{});
+    EXPECT_EQ(
+        second.header.transactions_root,
+        store_->get(2)->header.transactions_root);
+    EXPECT_NE(first.header.state_root, genesis.header.state_root);
+    EXPECT_EQ(first.receipts.size(), 1);
+    EXPECT_EQ(statuses(1), (std::vector<uint64_t>{1}));
+    EXPECT_EQ(statuses(2), (std::vector<uint64_t>{1, 0}));
+    EXPECT_EQ(second.header.gas_used, second.receipts.back().gas_used);
+
+    ASSERT_TRUE(account(SENDER).has_value());
+    EXPECT_EQ(account(SENDER)->nonce, 1);
+    EXPECT_EQ(account(SENDER)->balance, 0);
+}
+
+TEST_F(PrivateDomainExecutorTest, continues_after_a_restart)
+{
+    append({});
+    append({signed_transaction()});
+    {
+        PrivateDomainExecutor executor{
+            l1_chain_, DOMAIN, *store_, *db_, vm_, pool_};
+        execute_all(executor);
+    }
+    auto const before = read(1);
+
+    open_db(true);
+    append({});
+    PrivateDomainExecutor executor{
+        l1_chain_, DOMAIN, *store_, *db_, vm_, pool_};
+    EXPECT_EQ(executor.next_block(), 2);
+    execute_all(executor);
+    EXPECT_EQ(read(1).hash, before.hash);
+    EXPECT_EQ(read(2).header.parent_hash, before.hash);
+    EXPECT_EQ(read(2).header.state_root, before.header.state_root);
+}
+
+TEST_F(PrivateDomainExecutorTest, waits_for_the_next_block)
+{
+    PrivateDomainExecutor executor{
+        l1_chain_, DOMAIN, *store_, *db_, vm_, pool_};
+    auto const executed = executor.execute_next();
+    ASSERT_TRUE(executed.has_value());
+    EXPECT_FALSE(executed.value());
+    EXPECT_EQ(db_->get_latest_finalized_version(), mpt::INVALID_BLOCK_NUM);
+}

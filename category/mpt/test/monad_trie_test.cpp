@@ -797,7 +797,8 @@ int main(int const argc, char *argv[])
                     uint64_t ops{0};
                     bool signal_done{false};
                     AsyncInflightNodes inflights;
-                    NodeCache node_cache{1000 * NodeCache::AVERAGE_NODE_SIZE};
+                    NodeCache node_cache{
+                        1000 * NodeCache::AVERAGE_NODE_SIZE, aux};
                     std::vector<std::unique_ptr<connected_state_type>> states;
                     states.reserve(random_read_benchmark_threads);
                     std::shared_ptr<Node> const start_node = state_start.node;

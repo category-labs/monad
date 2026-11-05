@@ -514,7 +514,7 @@ private:
         void rodb_run(size_t const node_lru_max_mem)
         {
             inflight_map_owning_t inflight;
-            NodeCache node_cache{node_lru_max_mem};
+            NodeCache node_cache{node_lru_max_mem, aux};
 
             Comms request;
             unsigned did_nothing_count = 0;
@@ -1588,7 +1588,7 @@ uint64_t Db::get_history_length() const
 AsyncContext::AsyncContext(Db &db, size_t const node_lru_max_mem)
     : aux(db.impl_->aux())
     , tid(db.impl_->tid())
-    , node_cache(node_lru_max_mem)
+    , node_cache(node_lru_max_mem, aux)
 {
 }
 

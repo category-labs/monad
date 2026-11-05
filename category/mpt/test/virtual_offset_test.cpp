@@ -19,20 +19,23 @@
 
 #include <gtest/gtest.h>
 
+#include <compare>
+
 using namespace monad::mpt;
 
 TEST(VirtualOffsetTest, compare)
 {
-    EXPECT_GT(virtual_chunk_offset_t(2, 0, 1), virtual_chunk_offset_t(2, 0, 0));
-    EXPECT_GT(
-        virtual_chunk_offset_t(3, 1024, 1), virtual_chunk_offset_t(3, 10, 1));
-    EXPECT_GT(
-        virtual_chunk_offset_t(3, 10, 1), virtual_chunk_offset_t(2, 10, 1));
-
-    EXPECT_LT(
-        virtual_chunk_offset_t(4, 50, 0), virtual_chunk_offset_t(2, 10, 1));
-    EXPECT_GT(
-        virtual_chunk_offset_t(2, 10, 1), virtual_chunk_offset_t(4, 50, 0));
+    offset_order const order{chunk_list_order{0}, chunk_list_order{0}};
+    EXPECT_TRUE(std::is_gt(order.compare(
+        virtual_chunk_offset_t(2, 0, 1), virtual_chunk_offset_t(2, 0, 0))));
+    EXPECT_TRUE(std::is_gt(order.compare(
+        virtual_chunk_offset_t(3, 1024, 1), virtual_chunk_offset_t(3, 10, 1))));
+    EXPECT_TRUE(std::is_gt(order.compare(
+        virtual_chunk_offset_t(3, 10, 1), virtual_chunk_offset_t(2, 10, 1))));
+    EXPECT_TRUE(std::is_lt(order.compare(
+        virtual_chunk_offset_t(4, 50, 0), virtual_chunk_offset_t(2, 10, 1))));
+    EXPECT_TRUE(std::is_gt(order.compare(
+        virtual_chunk_offset_t(2, 10, 1), virtual_chunk_offset_t(4, 50, 0))));
 }
 
 TEST(VirtualOffsetTest, use_virtual_offset_as_map_key)
@@ -72,7 +75,7 @@ TEST(VirtualOffsetTest, compact_conversion)
     EXPECT_NE(c1, c4);
     EXPECT_EQ(c4.get_count(), 6U);
 
-    EXPECT_GT(c4, c1);
+    EXPECT_TRUE(chunk_list_order{0}.less(c1, c4));
 
     // spare and is_in_fast_list do not affect compact conversion.
     virtual_chunk_offset_t const v5(5, 0x1234567, 1, 100);
@@ -80,9 +83,8 @@ TEST(VirtualOffsetTest, compact_conversion)
     EXPECT_EQ(c1, c5);
 
     // max virtual offset's compact representation collides with
-    // INVALID_COMPACT_VIRTUAL_OFFSET. This is why the insertion count assertion
-    // in db_metadata::append_() uses strict less-than to prevent
-    // insertion_count from reaching MAX_COUNT.
+    // INVALID_COMPACT_VIRTUAL_OFFSET, which is why next_insertion_count()
+    // never assigns MAX_COUNT.
     virtual_chunk_offset_t const v6(
         virtual_chunk_offset_t::MAX_COUNT,
         virtual_chunk_offset_t::MAX_OFFSET,

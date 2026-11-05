@@ -43,6 +43,7 @@ impl ChainId {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct PreStateTracerConfig {
     pub diff_mode: bool,
+    pub disable_code: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -64,10 +65,16 @@ impl MonadTracer {
     }
 
     fn to_ffi_prestate_tracer_config(self) -> ffi::monad_prestate_tracer_config {
-        let PreStateTracerConfig { diff_mode } = match self {
+        let PreStateTracerConfig {
+            diff_mode,
+            disable_code,
+        } = match self {
             Self::PreStateTracer(config) => config,
             _ => PreStateTracerConfig::default(),
         };
-        ffi::monad_prestate_tracer_config { diff_mode }
+        ffi::monad_prestate_tracer_config {
+            diff_mode,
+            disable_code,
+        }
     }
 }

@@ -29,6 +29,7 @@
 #include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
+#include <category/execution/ethereum/trace/tracer_config.h>
 #include <category/execution/monad/db/storage_page.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
@@ -134,7 +135,8 @@ namespace trace
             state,
             retain_beneficiary(state) ? std::nullopt
                                       : std::optional<Address>{beneficiary_},
-            storage_);
+            storage_,
+            config_);
     }
 
     StorageDeltas StateDiffTracer::generate_storage_deltas(
@@ -190,7 +192,7 @@ namespace trace
 
     void StateDiffTracer::encode(StateDeltas const &state_deltas, State &state)
     {
-        state_deltas_to_json(state_deltas, state, storage_);
+        state_deltas_to_json(state_deltas, state, storage_, config_);
     }
 
     AccessListTracer::AccessListTracer(
@@ -362,7 +364,23 @@ namespace trace
         return res;
     }
 
-    json account_to_json(std::optional<Account> const &account, State &state)
+    void add_code_or_hash(
+        json &account, bytes32_t const &code_hash, State &state,
+        monad_prestate_tracer_config const &config)
+    {
+        if (config.disable_code) {
+            account["codeHash"] = bytes_to_hex(code_hash.bytes);
+            return;
+        }
+        // TODO: Also report codeHash, as geth does.
+        auto const icode = state.read_code(code_hash)->intercode();
+        account["code"] = byte_string_to_hex(
+            byte_string_view(icode->code(), *icode->code_size()));
+    }
+
+    json account_to_json(
+        std::optional<Account> const &account, State &state,
+        monad_prestate_tracer_config const &config)
     {
         json res = json::object();
         if (MONAD_UNLIKELY(!account.has_value())) {
@@ -373,10 +391,7 @@ namespace trace
             res["balance"] =
                 std::format("0x{}", to_string(account->balance, 16));
             if (account->code_hash != NULL_HASH) {
-                auto const icode =
-                    state.read_code(account->code_hash)->intercode();
-                res["code"] = byte_string_to_hex(
-                    byte_string_view(icode->code(), *icode->code_size()));
+                add_code_or_hash(res, account->code_hash, state, config);
             }
             // nonce == 0 is not included in the output.
             if (account->nonce != 0) {
@@ -387,11 +402,12 @@ namespace trace
     }
 
     json PrestateTracer::account_state_to_json(
-        OriginalAccountState const &as, State &state)
+        OriginalAccountState const &as, State &state,
+        monad_prestate_tracer_config const &config)
     {
         auto const &account = get_account_for_trace(as);
         auto const &storage = as.storage_;
-        json res = account_to_json(account, state);
+        json res = account_to_json(account, state, config);
         if (!storage.empty() && account.has_value()) {
             json storage_result = storage_to_json(storage);
             // It is possible for `storage_to_json(storage)` to return an empty
@@ -406,7 +422,8 @@ namespace trace
 
     void PrestateTracer::state_to_json(
         Map<Address, OriginalAccountState> const &trace, State &state,
-        std::optional<Address> const &beneficiary, json &result)
+        std::optional<Address> const &beneficiary, json &result,
+        monad_prestate_tracer_config const &config)
     {
         for (auto const &[address, account_state] : trace) {
             // Skip beneficiary account, if present
@@ -419,35 +436,32 @@ namespace trace
                 continue;
             }
             auto const key = bytes_to_hex(address.bytes);
-            result[key] = account_state_to_json(account_state, state);
+            result[key] = account_state_to_json(account_state, state, config);
         }
-    }
-
-    json PrestateTracer::state_to_json(
-        Map<Address, OriginalAccountState> const &trace, State &state,
-        std::optional<Address> const &beneficiary)
-    {
-        json result = json::object();
-        state_to_json(trace, state, beneficiary, result);
-        return result;
     }
 
     void state_to_json(
         Map<Address, OriginalAccountState> const &trace, State &state,
-        std::optional<Address> const &beneficiary, json &result)
+        std::optional<Address> const &beneficiary, json &result,
+        monad_prestate_tracer_config const &config)
     {
-        PrestateTracer::state_to_json(trace, state, beneficiary, result);
+        PrestateTracer::state_to_json(
+            trace, state, beneficiary, result, config);
     }
 
     json state_to_json(
         Map<Address, OriginalAccountState> const &trace, State &state,
-        std::optional<Address> const &beneficiary)
+        std::optional<Address> const &beneficiary,
+        monad_prestate_tracer_config const &config)
     {
-        return PrestateTracer::state_to_json(trace, state, beneficiary);
+        json result = json::object();
+        state_to_json(trace, state, beneficiary, result, config);
+        return result;
     }
 
     void state_deltas_to_json(
-        StateDeltas const &state_deltas, State &state, json &result)
+        StateDeltas const &state_deltas, State &state, json &result,
+        monad_prestate_tracer_config const &config)
     {
         json pre = json::object();
         json post = json::object();
@@ -491,13 +505,15 @@ namespace trace
                 if (!original_account.has_value() &&
                     current_account.has_value()) {
                     // Case: Account created.
-                    post[address_key] = account_to_json(current_account, state);
+                    post[address_key] =
+                        account_to_json(current_account, state, config);
                 }
                 else if (
                     original_account.has_value() &&
                     !current_account.has_value()) {
                     // Case: Account deleted.
-                    pre[address_key] = account_to_json(original_account, state);
+                    pre[address_key] =
+                        account_to_json(original_account, state, config);
                 }
                 else {
                     // SAFETY: By construction of StateDeltas (assuming they
@@ -512,14 +528,12 @@ namespace trace
                     }
                     if (original_account->code_hash !=
                         current_account->code_hash) {
-                        auto const icode =
-                            state.read_code(current_account->code_hash)
-                                ->intercode();
-                        post[address_key]["code"] =
-                            byte_string_to_hex(byte_string_view(
-                                icode->code(), *icode->code_size()));
+                        add_code_or_hash(
+                            post[address_key],
+                            current_account->code_hash,
+                            state,
+                            config);
                     }
-                    // TODO: Geth has begun including code_hash aswell.
                     if (original_account->nonce != current_account->nonce) {
                         post[address_key]["nonce"] = current_account->nonce;
                     }
@@ -528,7 +542,8 @@ namespace trace
                         !post.contains(address_key)) {
                         continue;
                     }
-                    pre[address_key] = account_to_json(original_account, state);
+                    pre[address_key] =
+                        account_to_json(original_account, state, config);
                 }
             }
             // Storage
@@ -560,10 +575,12 @@ namespace trace
         result["post"] = std::move(post);
     }
 
-    json state_deltas_to_json(StateDeltas const &state_deltas, State &state)
+    json state_deltas_to_json(
+        StateDeltas const &state_deltas, State &state,
+        monad_prestate_tracer_config const &config)
     {
         json result = json::object();
-        state_deltas_to_json(state_deltas, state, result);
+        state_deltas_to_json(state_deltas, state, result, config);
         return result;
     }
 }

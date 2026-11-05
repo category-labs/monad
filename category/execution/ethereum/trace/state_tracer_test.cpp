@@ -114,6 +114,12 @@ namespace
     constexpr auto addr3 = 0x35a9f94af726f07b5162df7e828cc9dc8439e7d0_address;
     constexpr auto addr4 = 0xc8ba32cab1757528daf49033e3673fae77dcf05d_address;
     constexpr auto addr5 = 0xe02ad958162c9acb9c3eb90f67b02db21b10d3e0_address;
+
+    void use_code_hash(nlohmann::json &account, bytes32_t const &code_hash)
+    {
+        account.erase("code");
+        account["codeHash"] = std::format("0x{}", to_hex(code_hash));
+    }
 }
 
 TEST(PrestateTracer, pre_state_to_json)
@@ -272,6 +278,14 @@ TEST(PrestateTracer, statediff_account_creation)
 
     EXPECT_EQ(
         state_deltas_to_json(state_deltas, s), nlohmann::json::parse(json_str));
+
+    auto expected = nlohmann::json::parse(json_str);
+    use_code_hash(
+        expected["post"]["0x0000000000000000000000000000000000000100"],
+        A_CODE_HASH);
+    EXPECT_EQ(
+        state_deltas_to_json(state_deltas, s, {.disable_code = true}),
+        expected);
 }
 
 TEST(PrestateTracer, statediff_balance_nonce_update)
@@ -433,11 +447,142 @@ TEST(PrestateTracer, statediff_multiple_fields_update)
 
     EXPECT_EQ(
         state_deltas_to_json(state_deltas, s), nlohmann::json::parse(json_str));
+
+    auto expected = nlohmann::json::parse(json_str);
+    use_code_hash(
+        expected["pre"]["0x0000000000000000000000000000000000000100"],
+        A_CODE_HASH);
+    use_code_hash(
+        expected["post"]["0x0000000000000000000000000000000000000100"],
+        B_CODE_HASH);
+    EXPECT_EQ(
+        state_deltas_to_json(state_deltas, s, {.disable_code = true}),
+        expected);
+}
+
+TEST(PrestateTracer, statediff_code_cleared)
+{
+    Account const a{.balance = 500, .code_hash = A_CODE_HASH, .nonce = 1};
+    Account const b{.balance = 500, .code_hash = NULL_HASH, .nonce = 1};
+
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
+    TrieDb tdb{db};
+    vm::VM vm;
+
+    StateDeltas state_deltas{
+        {ADDR_A, StateDelta{.account = {a, b}, .storage = {}}},
+    };
+
+    commit_sequential(
+        tdb,
+        StateDeltas(state_deltas),
+        Code{{A_CODE_HASH, A_ICODE}},
+        BlockHeader{.number = 0});
+
+    BlockState bs(tdb, vm);
+    State s(bs, Incarnation{0, 0});
+
+    auto const json_str = R"(
+    {
+        "post":{
+            "0x0000000000000000000000000000000000000100":{
+                "code":"0x"
+            }
+        },
+        "pre":{
+            "0x0000000000000000000000000000000000000100":{
+                "balance":"0x1f4",
+                "code":"0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0160005500",
+                "nonce":1
+            }
+        }
+    })";
+
+    EXPECT_EQ(
+        state_deltas_to_json(state_deltas, s), nlohmann::json::parse(json_str));
+
+    auto expected = nlohmann::json::parse(json_str);
+    use_code_hash(
+        expected["pre"]["0x0000000000000000000000000000000000000100"],
+        A_CODE_HASH);
+    // As geth does, post reports the hash of the empty code.
+    use_code_hash(
+        expected["post"]["0x0000000000000000000000000000000000000100"],
+        NULL_HASH);
+    EXPECT_EQ(
+        state_deltas_to_json(state_deltas, s, {.disable_code = true}),
+        expected);
+}
+
+TEST(PrestateTracerDeathTest, disable_code_reads_no_code)
+{
+    // The database holds neither code, so reading either fails an assert.
+    Account const a{.balance = 500, .code_hash = A_CODE_HASH, .nonce = 1};
+    Account const b{.balance = 42, .code_hash = B_CODE_HASH, .nonce = 2};
+
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
+    TrieDb tdb{db};
+    vm::VM vm;
+
+    commit_sequential(tdb, StateDeltas({}), Code{}, BlockHeader{.number = 0});
+
+    BlockState bs(tdb, vm);
+    State s(bs, Incarnation{0, 0});
+
+    trace::Map<Address, OriginalAccountState> prestate{};
+    prestate.emplace(ADDR_A, OriginalAccountState{a});
+
+    auto expected_prestate = nlohmann::json::parse(R"(
+    {
+        "0x0000000000000000000000000000000000000100":{
+            "balance":"0x1f4",
+            "nonce":1
+        }
+    })");
+    use_code_hash(
+        expected_prestate["0x0000000000000000000000000000000000000100"],
+        A_CODE_HASH);
+    EXPECT_EQ(
+        state_to_json(prestate, s, std::nullopt, {.disable_code = true}),
+        expected_prestate);
+
+    StateDeltas const state_deltas{
+        {ADDR_A, StateDelta{.account = {a, b}, .storage = {}}},
+    };
+
+    auto expected_diff = nlohmann::json::parse(R"(
+    {
+        "post":{
+            "0x0000000000000000000000000000000000000100":{
+                "balance":"0x2a",
+                "nonce":2
+            }
+        },
+        "pre":{
+            "0x0000000000000000000000000000000000000100":{
+                "balance":"0x1f4",
+                "nonce":1
+            }
+        }
+    })");
+    use_code_hash(
+        expected_diff["pre"]["0x0000000000000000000000000000000000000100"],
+        A_CODE_HASH);
+    use_code_hash(
+        expected_diff["post"]["0x0000000000000000000000000000000000000100"],
+        B_CODE_HASH);
+    EXPECT_EQ(
+        state_deltas_to_json(state_deltas, s, {.disable_code = true}),
+        expected_diff);
+
+    // Without the option, the tracer reads the code and fails that assert.
+    GTEST_FLAG_SET(death_test_style, "threadsafe");
+    EXPECT_DEATH(state_to_json(prestate, s, std::nullopt), "code size 0");
 }
 
 TEST(PrestateTracer, statediff_account_deletion)
 {
-    Account a{.balance = 32, .code_hash = NULL_HASH, .nonce = 1};
+    Account a{.balance = 32, .code_hash = A_CODE_HASH, .nonce = 1};
 
     mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb tdb{db};
@@ -448,7 +593,10 @@ TEST(PrestateTracer, statediff_account_deletion)
     };
 
     commit_sequential(
-        tdb, StateDeltas(state_deltas1), Code{}, BlockHeader{.number = 0});
+        tdb,
+        StateDeltas(state_deltas1),
+        Code{{A_CODE_HASH, A_ICODE}},
+        BlockHeader{.number = 0});
 
     StateDeltas state_deltas2{
         {ADDR_A, StateDelta{.account = {a, std::nullopt}, .storage = {}}},
@@ -467,6 +615,7 @@ TEST(PrestateTracer, statediff_account_deletion)
         "pre":{
             "0x0000000000000000000000000000000000000100":{
                 "balance":"0x20",
+                "code":"0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0160005500",
                 "nonce":1
             }
         }
@@ -475,6 +624,14 @@ TEST(PrestateTracer, statediff_account_deletion)
     EXPECT_EQ(
         state_deltas_to_json(state_deltas2, s),
         nlohmann::json::parse(json_str));
+
+    auto expected = nlohmann::json::parse(json_str);
+    use_code_hash(
+        expected["pre"]["0x0000000000000000000000000000000000000100"],
+        A_CODE_HASH);
+    EXPECT_EQ(
+        state_deltas_to_json(state_deltas2, s, {.disable_code = true}),
+        expected);
 }
 
 TEST(PrestateTracer, geth_example_prestate)
@@ -548,6 +705,13 @@ TEST(PrestateTracer, geth_example_prestate)
     EXPECT_EQ(
         state_to_json(prestate, s, std::nullopt),
         nlohmann::json::parse(json_str));
+
+    auto expected = nlohmann::json::parse(json_str);
+    use_code_hash(
+        expected["0xc8ba32cab1757528daf49033e3673fae77dcf05d"], A_CODE_HASH);
+    EXPECT_EQ(
+        state_to_json(prestate, s, std::nullopt, {.disable_code = true}),
+        expected);
 }
 
 TEST(PrestateTracer, geth_example_statediff)
@@ -1223,7 +1387,7 @@ TYPED_TEST(TraitsTest, statediff_selfdestruct_same_tx_preserved)
 
     NoopCallTracer noop_call_tracer;
     nlohmann::json diff;
-    StateTracer state_tracer = StateDiffTracer{diff};
+    StateTracer state_tracer = StateDiffTracer{diff, {}};
 
     boost::fibers::promise<void> prev_promise{};
     auto prev = prev_promise.get_future();
@@ -1302,7 +1466,7 @@ TEST(PrestateTracer, prestate_access_storage)
     {
         // Run prestate tracer
         nlohmann::json trace;
-        trace::PrestateTracer tracer{trace, ADDR_A};
+        trace::PrestateTracer tracer{trace, ADDR_A, {}};
         tracer.encode(s.original(), s);
 
         auto const json_str = R"(
@@ -1322,7 +1486,7 @@ TEST(PrestateTracer, prestate_access_storage)
     {
         // Run statediff tracer
         nlohmann::json trace;
-        trace::StateDiffTracer tracer{trace};
+        trace::StateDiffTracer tracer{trace, {}};
         tracer.encode(tracer.trace(s), s);
 
         // We only read the storage, so no changes are recorded in the
@@ -1366,7 +1530,7 @@ TEST(PrestateTracer, prestate_access_zero_storage)
     {
         // Run prestate tracer
         nlohmann::json trace;
-        trace::PrestateTracer tracer{trace, ADDR_A};
+        trace::PrestateTracer tracer{trace, ADDR_A, {}};
         tracer.encode(s.original(), s);
 
         auto const json_str = R"(
@@ -1386,7 +1550,7 @@ TEST(PrestateTracer, prestate_access_zero_storage)
     {
         // Run statediff tracer
         nlohmann::json trace;
-        trace::StateDiffTracer tracer{trace};
+        trace::StateDiffTracer tracer{trace, {}};
         tracer.encode(tracer.trace(s), s);
 
         // We only read the storage, so no changes are recorded in the
@@ -1429,7 +1593,7 @@ TEST(PrestateTracer, prestate_retain_beneficiary_set_storage)
     {
         // Run pretracer
         nlohmann::json trace;
-        trace::PrestateTracer tracer{trace, ADDR_A};
+        trace::PrestateTracer tracer{trace, ADDR_A, {}};
         tracer.encode(s.original(), s);
 
         auto const json_str = R"(
@@ -1450,7 +1614,7 @@ TEST(PrestateTracer, prestate_retain_beneficiary_set_storage)
     {
         // Run statediff tracer
         nlohmann::json trace;
-        trace::StateDiffTracer tracer{trace};
+        trace::StateDiffTracer tracer{trace, {}};
         tracer.encode(tracer.trace(s), s);
 
         auto const json_str = R"(
@@ -1504,7 +1668,7 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_storage)
     {
         // Run prestate tracer
         nlohmann::json trace;
-        trace::PrestateTracer tracer{trace, ADDR_A};
+        trace::PrestateTracer tracer{trace, ADDR_A, {}};
         tracer.encode(s.original(), s);
 
         auto const json_str = R"(
@@ -1524,7 +1688,7 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_storage)
     {
         // Run statediff tracer
         nlohmann::json trace;
-        trace::StateDiffTracer tracer{trace};
+        trace::StateDiffTracer tracer{trace, {}};
         tracer.encode(tracer.trace(s), s);
 
         auto const json_str = R"(
@@ -1579,7 +1743,7 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_balance)
     {
         // Run prestate tracer
         nlohmann::json trace;
-        trace::PrestateTracer tracer{trace, ADDR_A};
+        trace::PrestateTracer tracer{trace, ADDR_A, {}};
 
         // Run tracer
         tracer.encode(s.original(), s);
@@ -1599,7 +1763,7 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_balance)
     {
         // Run statediff tracer
         nlohmann::json trace;
-        trace::StateDiffTracer tracer{trace};
+        trace::StateDiffTracer tracer{trace, {}};
 
         // Run tracer
         tracer.encode(tracer.trace(s), s);
@@ -1651,7 +1815,7 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_nonce)
     {
         // Run prestate tracer
         nlohmann::json trace;
-        trace::PrestateTracer tracer{trace, ADDR_A};
+        trace::PrestateTracer tracer{trace, ADDR_A, {}};
         tracer.encode(s.original(), s);
 
         auto const json_str = R"(
@@ -1669,7 +1833,7 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_nonce)
     {
         // Run statediff tracer
         nlohmann::json trace;
-        trace::StateDiffTracer tracer{trace};
+        trace::StateDiffTracer tracer{trace, {}};
         tracer.encode(tracer.trace(s), s);
 
         auto const json_str = R"(
@@ -1720,7 +1884,7 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_code_hash)
     {
         // Run prestate tracer
         nlohmann::json trace;
-        trace::PrestateTracer tracer{trace, ADDR_A};
+        trace::PrestateTracer tracer{trace, ADDR_A, {}};
         tracer.encode(s.original(), s);
 
         auto const json_str = R"(
@@ -1738,7 +1902,7 @@ TEST(PrestateTracer, prestate_retain_beneficiary_modified_code_hash)
     {
         // Run statediff tracer
         nlohmann::json trace;
-        trace::StateDiffTracer tracer{trace};
+        trace::StateDiffTracer tracer{trace, {}};
         tracer.encode(tracer.trace(s), s);
 
         auto const json_str = R"(
@@ -1798,7 +1962,7 @@ TEST(PrestateTracer, prestate_retain_beneficiary_access_storage)
     {
         // Run prestate tracer
         nlohmann::json trace;
-        trace::PrestateTracer tracer{trace, ADDR_A};
+        trace::PrestateTracer tracer{trace, ADDR_A, {}};
         tracer.encode(s.original(), s);
 
         auto const json_str = R"(
@@ -1818,7 +1982,7 @@ TEST(PrestateTracer, prestate_retain_beneficiary_access_storage)
     {
         // Run statediff tracer
         nlohmann::json trace;
-        trace::StateDiffTracer tracer{trace};
+        trace::StateDiffTracer tracer{trace, {}};
         tracer.encode(tracer.trace(s), s);
 
         // We only read the storage, so no changes are recorded in the
@@ -1864,7 +2028,7 @@ TEST(PrestateTracer, prestate_omit_beneficiary)
     {
         // Run prestate tracer
         nlohmann::json trace;
-        trace::PrestateTracer tracer{trace, ADDR_A};
+        trace::PrestateTracer tracer{trace, ADDR_A, {}};
         tracer.encode(s.original(), s);
 
         auto const json_str = "null";
@@ -1875,7 +2039,7 @@ TEST(PrestateTracer, prestate_omit_beneficiary)
     {
         // Run statediff tracer
         nlohmann::json trace;
-        trace::StateDiffTracer tracer{trace};
+        trace::StateDiffTracer tracer{trace, {}};
         tracer.encode(tracer.trace(s), s);
 
         auto const json_str = R"(
@@ -1912,7 +2076,7 @@ TEST(PrestateTracer, prestate_empty_block_no_reward)
     {
         // Run prestate tracer
         nlohmann::json trace;
-        trace::PrestateTracer tracer{trace, ADDR_A};
+        trace::PrestateTracer tracer{trace, ADDR_A, {}};
         tracer.encode(s.original(), s);
 
         auto const json_str = "null";
@@ -1923,7 +2087,7 @@ TEST(PrestateTracer, prestate_empty_block_no_reward)
     {
         // Run statediff tracer
         nlohmann::json trace;
-        trace::StateDiffTracer tracer{trace};
+        trace::StateDiffTracer tracer{trace, {}};
         tracer.encode(tracer.trace(s), s);
 
         auto const json_str = R"(

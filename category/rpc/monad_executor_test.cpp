@@ -225,6 +225,23 @@ namespace
         c->promise.set_value();
     }
 
+    nlohmann::json replace_code_with_code_hash(nlohmann::json trace)
+    {
+        if (!trace.is_structured()) {
+            return trace;
+        }
+        for (auto &value : trace) {
+            value = replace_code_with_code_hash(std::move(value));
+        }
+        if (auto const it = trace.find("code"); it != trace.end()) {
+            auto const code = from_hex(it->get<std::string>()).value();
+            trace.erase(it);
+            trace["codeHash"] =
+                std::format("0x{}", to_hex(to_bytes(keccak256(code))));
+        }
+        return trace;
+    }
+
     template <class Machine>
     void EthCallEncodingFixture<Machine>::test_transfer_call_with_trace(
         bool const gas_specified)
@@ -2868,6 +2885,158 @@ TEST_F(EthCallFixture, trace_transaction_with_prestate)
         EXPECT_EQ(
             nlohmann::json::parse(expected_2),
             nlohmann::json::from_cbor(encoded_state_diff_trace_2));
+    }
+
+    monad_executor_destroy(executor);
+}
+
+TEST_F(EthCallFixture, prestate_disable_code)
+{
+    // sstore(0, 1), so the statediff tracer reports the contract too.
+    static constexpr Address contract =
+        0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_address;
+    byte_string const code = 0x6001600055_bytes;
+    auto const code_hash = to_bytes(keccak256(code));
+    commit_sequential(
+        tdb,
+        StateDeltas(
+            {{contract,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{.code_hash = code_hash, .nonce = 1}}}}}),
+        Code{{code_hash, vm::make_shared_intercode(code)}},
+        BlockHeader{.number = 0});
+    for (uint64_t i = 1; i < 255; ++i) {
+        commit_sequential(tdb, StateDeltas({}), {}, BlockHeader{.number = i});
+    }
+
+    Transaction tx;
+    tx.gas_limit = 200000u;
+    tx.nonce = 1;
+    tx.to = contract;
+    tx.sc = SignatureAndChain{{1, 1, 1}, MonadDevnet{}.get_chain_id()};
+    auto const sender = recover_sender(tx);
+    ASSERT_TRUE(sender.has_value());
+    commit_sequential(
+        tdb,
+        StateDeltas(
+            {{*sender,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .balance = std::numeric_limits<uint256_t>::max(),
+                           .nonce = tx.nonce}}}}}),
+        {},
+        BlockHeader{.number = 255});
+
+    BlockHeader const header{.number = 256};
+    std::vector<Transaction> const transactions{tx};
+    std::vector<Address> const senders{*sender};
+    std::vector<Receipt> const receipts{
+        Receipt{.status = 1, .gas_used = 50000u}};
+    std::vector<std::vector<CallFrame>> const call_frames(transactions.size());
+    commit_sequential(
+        tdb,
+        StateDeltas({}),
+        {},
+        header,
+        receipts,
+        call_frames,
+        senders,
+        transactions);
+
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+    auto const rlp_parent_id = to_vec(rlp::encode_bytes32(bytes32_t{255}));
+    auto const rlp_grandparent_id = to_vec(rlp::encode_bytes32(bytes32_t{254}));
+    auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
+    auto const rlp_sender =
+        to_vec(rlp::encode_address(std::make_optional(Address{})));
+
+    auto *executor = create_executor(dbname.string());
+
+    auto const decode = [](callback_context const &ctx) {
+        EXPECT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+        return nlohmann::json::from_cbor(
+            ctx.result->encoded_trace,
+            ctx.result->encoded_trace + ctx.result->encoded_trace_len);
+    };
+
+    // The executor's thread can still be inside promise.set_value() when
+    // f.get() returns, so keep every context until monad_executor_destroy.
+    std::deque<callback_context> contexts;
+
+    auto const run_transactions =
+        [&](int64_t const transaction_index,
+            monad_prestate_tracer_config const config) {
+            auto &ctx = contexts.emplace_back();
+            auto f = ctx.promise.get_future();
+            monad_executor_run_transactions(
+                executor,
+                CHAIN_CONFIG_MONAD_DEVNET,
+                rlp_header.data(),
+                rlp_header.size(),
+                header.number,
+                rlp_block_id.data(),
+                rlp_block_id.size(),
+                rlp_parent_id.data(),
+                rlp_parent_id.size(),
+                rlp_grandparent_id.data(),
+                rlp_grandparent_id.size(),
+                transaction_index,
+                complete_callback,
+                (void *)&ctx,
+                PRESTATE_TRACER,
+                config);
+            f.get();
+            return decode(ctx);
+        };
+
+    auto const eth_call = [&](monad_prestate_tracer_config const config) {
+        auto *state_override = monad_state_override_create();
+        auto &ctx = contexts.emplace_back();
+        auto f = ctx.promise.get_future();
+        monad_executor_eth_call_submit(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_tx.data(),
+            rlp_tx.size(),
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_sender.data(),
+            rlp_sender.size(),
+            header.number,
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            state_override,
+            complete_callback,
+            (void *)&ctx,
+            PRESTATE_TRACER,
+            call_tracer_max_size,
+            config,
+            true);
+        f.get();
+        monad_state_override_destroy(state_override);
+        return decode(ctx);
+    };
+
+    auto const expect_code_hashes = [](nlohmann::json const &with_code,
+                                       nlohmann::json const &without_code) {
+        EXPECT_NE(without_code, with_code);
+        EXPECT_EQ(without_code, replace_code_with_code_hash(with_code));
+    };
+    for (bool const diff_mode : {false, true}) {
+        monad_prestate_tracer_config const defaults{.diff_mode = diff_mode};
+        monad_prestate_tracer_config const no_code{
+            .diff_mode = diff_mode, .disable_code = true};
+        for (int64_t const transaction_index : {-1, 0}) {
+            expect_code_hashes(
+                run_transactions(transaction_index, defaults),
+                run_transactions(transaction_index, no_code));
+        }
+        expect_code_hashes(eth_call(defaults), eth_call(no_code));
     }
 
     monad_executor_destroy(executor);

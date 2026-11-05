@@ -377,9 +377,9 @@ namespace
         Address const &beneficiary)
     {
         if (config.diff_mode) {
-            return trace::StateDiffTracer{output};
+            return trace::StateDiffTracer{output, config};
         }
-        return trace::PrestateTracer{output, beneficiary};
+        return trace::PrestateTracer{output, beneficiary, config};
     }
 
     trace::StateTracer make_prestate_tracer(

@@ -25,8 +25,14 @@ enum monad_tracer_config
     NOOP_TRACER = 0,
     CALL_TRACER = 1,
     PRESTATE_TRACER = 2,
-    STATEDIFF_TRACER = 3,
     ACCESS_LIST_TRACER = 4,
+};
+
+// Options for geth's prestateTracer. A zeroed struct gives geth's defaults,
+// and tracers other than PRESTATE_TRACER ignore it.
+struct monad_prestate_tracer_config
+{
+    bool diff_mode;
 };
 
 #ifdef __cplusplus

@@ -40,7 +40,7 @@ class BlockState;
 struct CallTracerBase;
 struct Chain;
 template <Traits traits>
-struct EvmcHost;
+struct StateHost;
 class ExecutionEventRecorder;
 class State;
 struct Transaction;
@@ -51,7 +51,7 @@ class ExecuteTransactionNoValidation
     vm::Message to_message(
         vm::MemoryPool::Ref &msg_memory, uint32_t msg_memory_capacity) const;
 
-    uint64_t process_authorizations(State &, EvmcHost<traits> &);
+    uint64_t process_authorizations(State &, StateHost<traits> &);
 
 protected:
     Chain const &chain_;
@@ -65,7 +65,7 @@ public:
         Chain const &, Transaction const &, Address const &,
         std::span<std::optional<Address> const>, BlockHeader const &);
 
-    vm::Result operator()(State &, EvmcHost<traits> &);
+    vm::Result operator()(State &, StateHost<traits> &);
 };
 
 template <Traits traits>

@@ -20,7 +20,6 @@
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/core/units.hpp>
 #include <category/execution/ethereum/create_contract_address.hpp>
-#include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/execute_message.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
@@ -28,6 +27,7 @@
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/state_host.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
@@ -1944,8 +1944,8 @@ TEST(PrestateTracer, prestate_empty_block_no_reward)
 // asserts that the recorded codes map contains the (code_hash, intercode)
 // pair that the site is responsible for. The sites are:
 //
-//   1. EvmcHostBase::get_code_size  (EXTCODESIZE host hook)
-//   2. EvmcHostBase::copy_code       (EXTCODECOPY host hook)
+//   1. StateHostBase::get_code_size  (EXTCODESIZE host hook)
+//   2. StateHostBase::copy_code       (EXTCODECOPY host hook)
 //   3. execute_call_message          (called contract code, per CALL)
 //   4. system_call (via process_requests, EIP-7002/7251)
 //   5. validate_ethereum_transaction (EIP-7702 sender code check)
@@ -1970,7 +1970,7 @@ namespace
         monad::vm::make_shared_intercode(SYSTEM_STUB_CODE);
 }
 
-// Site 1: EvmcHostBase::get_code_size
+// Site 1: StateHostBase::get_code_size
 TYPED_TEST(TraitsTest, code_tracer_records_extcodesize)
 {
     mpt::Db db{std::make_unique<InMemoryMachine>()};
@@ -1997,7 +1997,7 @@ TYPED_TEST(TraitsTest, code_tracer_records_extcodesize)
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t const base_fee{0};
     trace::StateTracer state_tracer = trace::CodeTracer{};
-    EvmcHost<typename TestFixture::Trait> host{
+    StateHost<typename TestFixture::Trait> host{
         call_tracer,
         state_tracer,
         EMPTY_TX_CONTEXT,
@@ -2019,7 +2019,7 @@ TYPED_TEST(TraitsTest, code_tracer_records_extcodesize)
         byte_string_view(A_ICODE->code(), A_ICODE->size()));
 }
 
-// Site 2: EvmcHostBase::copy_code
+// Site 2: StateHostBase::copy_code
 TYPED_TEST(TraitsTest, code_tracer_records_extcodecopy)
 {
     mpt::Db db{std::make_unique<InMemoryMachine>()};
@@ -2046,7 +2046,7 @@ TYPED_TEST(TraitsTest, code_tracer_records_extcodecopy)
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t const base_fee{0};
     trace::StateTracer state_tracer = trace::CodeTracer{};
-    EvmcHost<typename TestFixture::Trait> host{
+    StateHost<typename TestFixture::Trait> host{
         call_tracer,
         state_tracer,
         EMPTY_TX_CONTEXT,
@@ -2105,7 +2105,7 @@ TYPED_TEST(TraitsTest, code_tracer_records_called_contract_code)
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t const base_fee{0};
     trace::StateTracer state_tracer = trace::CodeTracer{};
-    EvmcHost<typename TestFixture::Trait> host{
+    StateHost<typename TestFixture::Trait> host{
         call_tracer,
         state_tracer,
         EMPTY_TX_CONTEXT,
@@ -2310,7 +2310,7 @@ TYPED_TEST(EvmTraitsTest, code_tracer_records_authorization_code)
             ChainContext<typename TestFixture::Trait>::debug_empty();
         uint256_t const base_fee{0};
         trace::StateTracer state_tracer = trace::CodeTracer{};
-        EvmcHost<typename TestFixture::Trait> host{
+        StateHost<typename TestFixture::Trait> host{
             call_tracer,
             state_tracer,
             EMPTY_TX_CONTEXT,

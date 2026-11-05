@@ -22,10 +22,10 @@
 #include <category/execution/ethereum/core/contract/big_endian.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
-#include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/native_transfer_log.hpp>
 #include <category/execution/ethereum/process_requests.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/state_host.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
@@ -112,7 +112,7 @@ Result<byte_string> system_call(
 
     NoopCallTracer noop_tracer;
     Transaction const empty_tx{};
-    EvmcHost<traits> host{
+    StateHost<traits> host{
         noop_tracer,
         state_tracer,
         tx_context,

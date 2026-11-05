@@ -23,12 +23,12 @@
 #include <category/core/likely.h>
 #include <category/core/runtime/uint256.hpp>
 #include <category/execution/ethereum/create_contract_address.hpp>
-#include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/execute_message.hpp>
 #include <category/execution/ethereum/native_transfer_log.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/reserve_balance.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/state_host.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/message.hpp>
 #include <category/vm/evm/result.hpp>
@@ -56,7 +56,7 @@ namespace
 
     template <Traits traits>
     void transfer_balances(
-        State &state, EvmcHost<traits> &host, vm::Message const &msg,
+        State &state, StateHost<traits> &host, vm::Message const &msg,
         Address const &to)
     {
         uint256_t const value = load_be<uint256_t>(msg.value);
@@ -112,7 +112,7 @@ EXPLICIT_TRAITS(deploy_contract_code);
 
 template <Traits traits>
 std::optional<vm::Result>
-pre_call(EvmcHost<traits> &host, vm::Message const &msg, State &state)
+pre_call(StateHost<traits> &host, vm::Message const &msg, State &state)
 {
     state.push();
 
@@ -146,7 +146,7 @@ pre_call(EvmcHost<traits> &host, vm::Message const &msg, State &state)
 }
 
 template <Traits traits>
-void reject_frame(EvmcHost<traits> &host, State &state)
+void reject_frame(StateHost<traits> &host, State &state)
 {
     // Successful frames remain in State and are captured when the state tracer
     // is encoded. Failed frames are about to be rolled back, so the state
@@ -168,7 +168,7 @@ void reject_frame(EvmcHost<traits> &host, State &state)
 }
 
 template <Traits traits>
-void post_call(EvmcHost<traits> &host, State &state, vm::Result const &result)
+void post_call(StateHost<traits> &host, State &state, vm::Result const &result)
 {
     MONAD_ASSERT(
         result.status_code == MONAD_STATUS_SUCCESS || result.gas_refund == 0);
@@ -188,7 +188,7 @@ void post_call(EvmcHost<traits> &host, State &state, vm::Result const &result)
 
 template <Traits traits>
 vm::Result execute_create_message(
-    EvmcHost<traits> *const host, State &state, vm::Message const &msg)
+    StateHost<traits> *const host, State &state, vm::Message const &msg)
 {
     static_assert(traits::evm_rev() >= MONAD_ETH_SPURIOUS_DRAGON);
 
@@ -315,7 +315,7 @@ EXPLICIT_TRAITS(execute_create_message);
 
 template <Traits traits>
 vm::Result execute_call_message(
-    EvmcHost<traits> *const host, State &state, vm::Message const &msg)
+    StateHost<traits> *const host, State &state, vm::Message const &msg)
 {
     MONAD_ASSERT(
         msg.kind == vm::CallKind::DelegateCall ||

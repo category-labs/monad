@@ -235,7 +235,7 @@ static vm::Result message_call(
         authorities,
         block_header,
         chain};
-    auto &host = test_host.get_evmc_host();
+    auto &host = test_host.get_state_host();
     return host.call(msg);
 }
 

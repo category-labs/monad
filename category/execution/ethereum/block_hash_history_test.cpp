@@ -19,9 +19,9 @@
 #include <category/execution/ethereum/block_hash_history.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
-#include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/state_host.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/mpt/db.hpp>
@@ -112,7 +112,7 @@ namespace
 
             uint256_t base_fee{0};
             trace::StateTracer noop_state_tracer = std::monostate{};
-            EvmcHost<Trait> host{
+            StateHost<Trait> host{
                 call_tracer,
                 noop_state_tracer,
                 tx_context,

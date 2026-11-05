@@ -124,7 +124,7 @@ public:
             authorities,
             block_header,
             chain};
-        vm::Host &host = test_host.get_evmc_host();
+        vm::Host &host = test_host.get_state_host();
 
         std::vector<uint8_t> empty_code{};
         auto code_span = std::span<uint8_t const>{empty_code.data(), 0};

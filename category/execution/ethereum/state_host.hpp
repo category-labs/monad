@@ -48,7 +48,7 @@ static_assert(alignof(vm::Host) == 8);
 
 class BlockHashBuffer;
 
-class EvmcHostBase : public vm::Host
+class StateHostBase : public vm::Host
 {
     BlockHashBuffer const &block_hash_buffer_;
 
@@ -61,11 +61,11 @@ public:
     bool const log_native_transfers_;
     trace::StateTracer &state_tracer_;
 
-    EvmcHostBase(
+    StateHostBase(
         CallTracerBase &, trace::StateTracer &, vm::TxContext const &,
         BlockHashBuffer const &, State &, bool log_native_transfers) noexcept;
 
-    virtual ~EvmcHostBase() noexcept = default;
+    virtual ~StateHostBase() noexcept = default;
 
     virtual bytes32_t
     get_storage(Address const &, bytes32_t const &key) const override;
@@ -98,25 +98,25 @@ public:
         Address const &, bytes32_t const &key, bytes32_t const &value) override;
 };
 
-static_assert(sizeof(EvmcHostBase) == 72);
-static_assert(alignof(EvmcHostBase) == 8);
+static_assert(sizeof(StateHostBase) == 72);
+static_assert(alignof(StateHostBase) == 8);
 
 template <Traits traits>
-struct EvmcHost final : public EvmcHostBase
+struct StateHost final : public StateHostBase
 {
     Transaction const &tx_;
     std::optional<uint256_t> base_fee_per_gas_;
     uint64_t i_;
     ChainContext<traits> const &chain_ctx_;
 
-    EvmcHost(
+    StateHost(
         CallTracerBase &call_tracer, trace::StateTracer &state_tracer,
         vm::TxContext const &tx_context,
         BlockHashBuffer const &block_hash_buffer, State &state,
         Transaction const &tx, std::optional<uint256_t> const base_fee_per_gas,
         uint64_t const i, ChainContext<traits> const &chain_ctx,
         bool const log_native_transfers = false) noexcept
-        : EvmcHostBase{call_tracer, state_tracer, tx_context, block_hash_buffer, state, log_native_transfers}
+        : StateHostBase{call_tracer, state_tracer, tx_context, block_hash_buffer, state, log_native_transfers}
         , tx_{tx}
         , base_fee_per_gas_{base_fee_per_gas}
         , i_{i}
@@ -124,7 +124,7 @@ struct EvmcHost final : public EvmcHostBase
     {
     }
 
-    EvmcHost(
+    StateHost(
         CallTracerBase &, trace::StateTracer &, vm::TxContext const &,
         BlockHashBuffer const &, State &, Transaction const &,
         std::optional<uint256_t>, uint64_t, ChainContext<traits> const &&,
@@ -260,10 +260,10 @@ struct EvmcHost final : public EvmcHostBase
 };
 
 static_assert(
-    sizeof(EvmcHost<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>) == 136);
+    sizeof(StateHost<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>) == 136);
 static_assert(
-    alignof(EvmcHost<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>) == 8);
-static_assert(sizeof(EvmcHost<MonadTraits<MONAD_NEXT>>) == 136);
-static_assert(alignof(EvmcHost<MonadTraits<MONAD_NEXT>>) == 8);
+    alignof(StateHost<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>) == 8);
+static_assert(sizeof(StateHost<MonadTraits<MONAD_NEXT>>) == 136);
+static_assert(alignof(StateHost<MonadTraits<MONAD_NEXT>>) == 8);
 
 MONAD_NAMESPACE_END

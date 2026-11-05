@@ -23,8 +23,8 @@
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/block_hash_history.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
-#include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/state_host.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 
@@ -34,7 +34,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
-EvmcHostBase::EvmcHostBase(
+StateHostBase::StateHostBase(
     CallTracerBase &call_tracer, trace::StateTracer &state_tracer,
     vm::TxContext const &tx_context, BlockHashBuffer const &block_hash_buffer,
     State &state, bool const log_native_transfers) noexcept
@@ -48,7 +48,7 @@ EvmcHostBase::EvmcHostBase(
 }
 
 bytes32_t
-EvmcHostBase::get_storage(Address const &address, bytes32_t const &key) const
+StateHostBase::get_storage(Address const &address, bytes32_t const &key) const
 {
     MONAD_TRY
     {
@@ -61,7 +61,7 @@ EvmcHostBase::get_storage(Address const &address, bytes32_t const &key) const
     stack_unwind();
 }
 
-monad_storage_status EvmcHostBase::set_storage(
+monad_storage_status StateHostBase::set_storage(
     Address const &address, bytes32_t const &key, bytes32_t const &value)
 {
     MONAD_TRY
@@ -75,7 +75,7 @@ monad_storage_status EvmcHostBase::set_storage(
     stack_unwind();
 }
 
-bytes32_t EvmcHostBase::get_balance(Address const &address) const
+bytes32_t StateHostBase::get_balance(Address const &address) const
 {
     MONAD_TRY
     {
@@ -88,7 +88,7 @@ bytes32_t EvmcHostBase::get_balance(Address const &address) const
     stack_unwind();
 }
 
-size_t EvmcHostBase::get_code_size(Address const &address) const
+size_t StateHostBase::get_code_size(Address const &address) const
 {
     MONAD_TRY
     {
@@ -111,7 +111,7 @@ size_t EvmcHostBase::get_code_size(Address const &address) const
     stack_unwind();
 }
 
-bytes32_t EvmcHostBase::get_code_hash(Address const &address) const
+bytes32_t StateHostBase::get_code_hash(Address const &address) const
 {
     MONAD_TRY
     {
@@ -127,7 +127,7 @@ bytes32_t EvmcHostBase::get_code_hash(Address const &address) const
     stack_unwind();
 }
 
-size_t EvmcHostBase::copy_code(
+size_t StateHostBase::copy_code(
     Address const &address, size_t const offset, uint8_t *const data,
     size_t const size) const
 {
@@ -152,7 +152,7 @@ size_t EvmcHostBase::copy_code(
     stack_unwind();
 }
 
-vm::TxContext const *EvmcHostBase::get_tx_context() const noexcept
+vm::TxContext const *StateHostBase::get_tx_context() const noexcept
 {
     return &tx_context_;
 }
@@ -160,7 +160,7 @@ vm::TxContext const *EvmcHostBase::get_tx_context() const noexcept
 // This attempts to read from the contract first before falling back to the
 // block hash buffer. This is currently only called by the BLOCKHASH
 // implementation which guarantees that the block_number is in range.
-bytes32_t EvmcHostBase::get_block_hash(int64_t const block_number) const
+bytes32_t StateHostBase::get_block_hash(int64_t const block_number) const
 {
     MONAD_TRY
     {
@@ -182,7 +182,7 @@ bytes32_t EvmcHostBase::get_block_hash(int64_t const block_number) const
     stack_unwind();
 }
 
-void EvmcHostBase::emit_log(
+void StateHostBase::emit_log(
     Address const &address, uint8_t const *const data, size_t const data_size,
     bytes32_t const topics[], size_t const num_topics)
 {
@@ -203,7 +203,7 @@ void EvmcHostBase::emit_log(
     stack_unwind();
 }
 
-bytes32_t EvmcHostBase::get_transient_storage(
+bytes32_t StateHostBase::get_transient_storage(
     Address const &address, bytes32_t const &key) const
 {
     MONAD_TRY
@@ -217,7 +217,7 @@ bytes32_t EvmcHostBase::get_transient_storage(
     stack_unwind();
 }
 
-void EvmcHostBase::set_transient_storage(
+void StateHostBase::set_transient_storage(
     Address const &address, bytes32_t const &key, bytes32_t const &value)
 {
     MONAD_TRY

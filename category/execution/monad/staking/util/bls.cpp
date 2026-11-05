@@ -13,14 +13,13 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/core/assert.h>
-#include <category/core/bytes.hpp>
-#include <category/core/config.hpp>
+#include <category/core/address.hpp>
+#include <category/core/byte_string.hpp>
 #include <category/core/keccak.hpp>
+#include <category/execution/monad/staking/config.hpp>
 #include <category/execution/monad/staking/util/bls.hpp>
 
 #include <algorithm>
-#include <memory>
 
 MONAD_STAKING_NAMESPACE_BEGIN
 

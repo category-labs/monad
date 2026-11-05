@@ -13,13 +13,18 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/core/hex.hpp>
-#include <category/core/int.hpp>
 #include <category/core/likely.h>
+#include <category/core/runtime/uint256.hpp>
+#include <category/execution/ethereum/chain/genesis_state.hpp>
+#include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/monad/chain/monad_testnet.hpp>
 #include <category/execution/monad/chain/monad_testnet_alloc.hpp>
 #include <category/vm/evm/monad/revision.h>
+
+#include <cstdint>
 
 MONAD_NAMESPACE_BEGIN
 

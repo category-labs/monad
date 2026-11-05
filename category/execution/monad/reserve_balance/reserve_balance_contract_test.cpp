@@ -20,6 +20,7 @@
 #include <category/core/hex.hpp>
 #include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
+#include <category/core/runtime/uint256.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/contract/abi_signatures.hpp>
@@ -65,6 +66,7 @@
 #include <optional>
 #include <span>
 #include <utility>
+#include <variant>
 #include <vector>
 
 using namespace monad;
@@ -257,7 +259,7 @@ void run_dipped_into_reserve_test(
     BlockState bs{tdb, vm};
     NoopCallTracer call_tracer;
     evmc_tx_context const tx_context{};
-    BlockHashBufferFinalized block_hash_buffer{};
+    BlockHashBufferFinalized const block_hash_buffer{};
 
     ASSERT_EQ(monad_default_max_reserve_balance_mon(traits::monad_rev()), 10);
 
@@ -308,13 +310,13 @@ void run_dipped_into_reserve_test(
     authorities.push_back({});
 
     // Create sets for the new MonadChainContext structure
-    ankerl::unordered_dense::segmented_set<Address>
+    ankerl::unordered_dense::segmented_set<Address> const
         grandparent_senders_and_authorities;
-    ankerl::unordered_dense::segmented_set<Address>
+    ankerl::unordered_dense::segmented_set<Address> const
         parent_senders_and_authorities;
     ankerl::unordered_dense::segmented_set<Address> const
         senders_and_authorities = {EOA};
-    ChainContext<traits> chain_context{
+    ChainContext<traits> const chain_context{
         .grandparent_senders_and_authorities =
             grandparent_senders_and_authorities,
         .parent_senders_and_authorities = parent_senders_and_authorities,
@@ -354,7 +356,7 @@ void run_dipped_into_reserve_test(
 
         auto const &code_hash =
             to_bytes(keccak256(byte_string_view{entrypoint_code}));
-        auto icode =
+        auto const icode =
             make_shared_intercode(std::span<uint8_t const>{entrypoint_code});
 
         evmc_status_code expected;
@@ -370,7 +372,7 @@ void run_dipped_into_reserve_test(
             break;
         }
 
-        auto result = vm.execute<traits>(
+        auto const result = vm.execute<traits>(
             host, &msg, code_hash, make_shared<Varcode>(icode));
         EXPECT_EQ(expected, result.status_code);
     }
@@ -675,7 +677,7 @@ TYPED_TEST(
     // clang-format on
 
     uint8_t const *s = selector.bytes;
-    std::vector<std::vector<uint8_t>> calldata_variants = {
+    std::vector<std::vector<uint8_t>> const calldata_variants = {
         {s[0], s[1], s[2]}, // too short
         {s[0], s[1], s[2], s[3]}, // correct selector
         {s[0], s[1], s[2], s[3], 0x00}, // too long
@@ -757,13 +759,14 @@ TYPED_TEST(
         std::array<uint8_t, 2> short2 = {s[0], s[1]};
         std::array<uint8_t, 1> short1 = {s[0]};
         std::array<uint8_t, 0> short0 = {};
-        std::vector<std::pair<uint8_t *, size_t>> short_calldata_variants = {
-            {short3.data(), short3.size()},
-            {short2.data(), short2.size()},
-            {short1.data(), short1.size()},
-            {short0.data(), short0.size()},
-            {nullptr, 0},
-        };
+        std::vector<std::pair<uint8_t *, size_t>> const
+            short_calldata_variants = {
+                {short3.data(), short3.size()},
+                {short2.data(), short2.size()},
+                {short1.data(), short1.size()},
+                {short0.data(), short0.size()},
+                {nullptr, 0},
+            };
         for (auto const &[data, size] : short_calldata_variants) {
             msg.input_data = data;
             msg.input_size = size;
@@ -785,7 +788,7 @@ TYPED_TEST(
 
         std::array<uint8_t, 4> wrong_selector = {0xFF, 0xFF, 0xFF, 0xFF};
         std::array<uint8_t, 5> wrong_too_long = {s[0], s[1], s[2], 0xFF, 0x00};
-        std::vector<std::pair<uint8_t *, size_t>> wrong_calldata = {
+        std::vector<std::pair<uint8_t *, size_t>> const wrong_calldata = {
             {wrong_selector.data(), wrong_selector.size()},
             {wrong_too_long.data(), wrong_too_long.size()},
         };
@@ -811,7 +814,7 @@ TYPED_TEST(
 
         std::array<uint8_t, 4> selector = {s[0], s[1], s[2], s[3]};
         std::array<uint8_t, 5> too_long = {s[0], s[1], s[2], s[3], 0x00};
-        std::vector<std::pair<uint8_t *, size_t>> wrong_calldata = {
+        std::vector<std::pair<uint8_t *, size_t>> const wrong_calldata = {
             {selector.data(), selector.size()},
             {too_long.data(), too_long.size()},
         };
@@ -837,7 +840,7 @@ TYPED_TEST(
 
     // Case 7: A well-formed call that should be accepted.
     {
-        evmc_message msg = make_msg();
+        evmc_message const msg = make_msg();
 
         init_reserve_balance_context<MonadTraits<MONAD_NEXT>>(
             this->state,
@@ -850,7 +853,7 @@ TYPED_TEST(
 
         std::array<uint8_t, 32> expected_message{};
 
-        std::string_view expected_message_view{
+        std::string_view const expected_message_view{
             reinterpret_cast<char const *>(expected_message.data()),
             expected_message.size(),
         };

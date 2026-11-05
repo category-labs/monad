@@ -15,15 +15,17 @@
 
 #include <category/core/address.hpp>
 #include <category/core/assert.h>
+#include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
-#include <category/core/int.hpp>
-#include <category/core/monad_exception.hpp>
+#include <category/core/likely.h>
+#include <category/core/runtime/uint256.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/core/units.hpp>
 #include <category/execution/ethereum/reserve_balance.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/reserve_balance.h>
@@ -195,7 +197,8 @@ bool ReserveBalance::subject_account(Address const &address)
         return false;
     }
 
-    OriginalAccountState &orig_state = state_->original_account_state(address);
+    OriginalAccountState const &orig_state =
+        state_->original_account_state(address);
     bytes32_t const effective_code_hash = use_recent_code_hash_
                                               ? state_->get_code_hash(address)
                                               : orig_state.get_code_hash();

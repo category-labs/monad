@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
 #include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
@@ -22,13 +23,16 @@
 #include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/execution/ethereum/db/commit_builder.hpp>
 #include <category/execution/ethereum/db/db.hpp>
+#include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/monad/db/commit_block.hpp>
 #include <category/execution/monad/db/page_commit_builder.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
-#include <category/vm/evm/monad/revision.h>
 #include <category/vm/evm/traits.hpp>
+
+#include <optional>
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 

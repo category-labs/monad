@@ -40,8 +40,10 @@
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <evmc/evmc.h>
+#include <evmc/evmc.hpp>
 
 #include <cstdint>
+#include <utility>
 
 #include <optional>
 

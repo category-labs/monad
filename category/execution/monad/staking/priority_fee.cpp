@@ -13,13 +13,15 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/core/int.hpp>
 #include <category/core/log.hpp>
 #include <category/core/monad_exception.hpp>
+#include <category/core/runtime/uint256.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
+#include <category/execution/monad/staking/config.hpp>
 #include <category/execution/monad/staking/priority_fee.hpp>
 #include <category/execution/monad/staking/staking_contract.hpp>
+#include <category/execution/monad/staking/util/constants.hpp>
 #include <category/execution/monad/staking/util/staking_error.hpp>
 
 MONAD_STAKING_NAMESPACE_BEGIN

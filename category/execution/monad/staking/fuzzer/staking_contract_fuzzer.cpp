@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/assert.h>
 #include <category/execution/monad/staking/fuzzer/staking_contract_machine.hpp>
 #include <category/execution/monad/staking/test/input_generation.hpp>
 #include <category/vm/evm/monad/revision.h>
@@ -21,7 +22,14 @@
 
 #include <CLI/CLI.hpp>
 
-#include <evmc/evmc.hpp>
+#include <chrono>
+#include <cstddef>
+#include <cstdint>
+#include <cstdlib>
+#include <iostream>
+#include <limits>
+#include <map>
+#include <ostream>
 
 using namespace monad;
 using namespace monad::staking;

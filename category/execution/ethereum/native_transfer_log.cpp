@@ -47,6 +47,7 @@ namespace detail
                          .add_topic(abi_encode_address(to))
                          .add_data(abi_encode_uint(u256_be{value}))
                          .build();
+        event.trace_transfer = log_address == SIMULATE_NATIVE_TOKEN_LOG_ADDRESS;
 
         state.store_log(event);
         call_tracer.on_log(std::move(event));

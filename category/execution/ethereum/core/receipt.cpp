@@ -48,7 +48,9 @@ void populate_bloom(Receipt::Bloom &bloom, Receipt::Log const &log)
 void Receipt::add_log(Receipt::Log const &log)
 {
     logs.push_back(log);
-    populate_bloom(bloom, log);
+    if (!log.trace_transfer) {
+        populate_bloom(bloom, log);
+    }
 }
 
 MONAD_NAMESPACE_END

@@ -1121,6 +1121,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace)
                 .address = TestFixture::Trait::eip_7708_active()
                                ? ETH_SYSTEM_ADDRESS
                                : SIMULATE_NATIVE_TOKEN_LOG_ADDRESS,
+                .trace_transfer = !TestFixture::Trait::eip_7708_active(),
             },
             0,
         }},
@@ -1230,6 +1231,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct)
             .address = TestFixture::Trait::eip_7708_active()
                            ? ETH_SYSTEM_ADDRESS
                            : SIMULATE_NATIVE_TOKEN_LOG_ADDRESS,
+            .trace_transfer = !TestFixture::Trait::eip_7708_active(),
         },
         1, // position: after the selfdestruct sub-frame
     };

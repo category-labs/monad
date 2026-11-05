@@ -20,39 +20,68 @@
 #include <category/core/int.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
+#include <category/execution/ethereum/trace/commands/call_trace.hpp>
 
 #include <evmc/evmc.hpp>
 
 #include <cstdint>
+#include <limits>
 #include <span>
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
 struct Transaction;
 
-struct CallTracerBase
+struct CallTracer
 {
-    void on_enter(evmc_message const &) noexcept {}
+    using Signature = monad::trace::CallTraceSignature;
 
-    void on_exit(evmc::Result const &) noexcept {}
+    explicit CallTracer(Transaction const &, std::vector<CallFrame> &) {}
 
-    void on_log(Receipt::Log) noexcept {}
-
-    void on_self_destruct(
-        Address const &, Address const &, uint256_t const &) noexcept
+    explicit CallTracer(
+        Transaction const &, std::vector<CallFrame> &, size_t const)
     {
     }
 
-    void on_finish(uint64_t) noexcept {}
+    void check_size_limit() const noexcept {}
 
-    void reset() noexcept {}
-
-    std::span<CallFrame const> get_call_frames() const noexcept
+    void operator()(monad::trace::Enter const &op)
     {
-        return {};
+        (void)op;
     }
+
+    void operator()(monad::trace::Exit const &op)
+    {
+        (void)op;
+    }
+
+    void operator()(monad::trace::Log const &op)
+    {
+        (void)op;
+    }
+
+    void operator()(monad::trace::SelfDestruct const &op)
+    {
+        (void)op;
+    }
+
+    void operator()(monad::trace::Finish const &op)
+    {
+        (void)op;
+    }
+
+    void operator()(monad::trace::GetCallFrames const &op)
+    {
+        *op.call_frames = std::span<CallFrame const>{};
+    }
+
+    void operator()(monad::trace::NativeTransfer const &op)
+    {
+        (void)op;
+    }
+
+    void reset() {}
 };
-
-using NoopCallTracer = CallTracerBase;
 
 MONAD_NAMESPACE_END

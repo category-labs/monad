@@ -23,7 +23,6 @@
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
-#include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 
@@ -33,7 +32,6 @@ namespace monad::test
     class TestHost
     {
         uint64_t tx_index_;
-        NoopCallTracer noop_call_tracer_;
         State &state_;
         evmc_tx_context tx_context_;
         std::vector<Address> chain_context_senders_;
@@ -42,7 +40,7 @@ namespace monad::test
         ankerl::unordered_dense::segmented_set<Address>
             chain_context_senders_and_authorities_;
         ChainContext<traits> chain_context_;
-        trace::StateTracer noop_state_tracer_;
+        TxTraceContext const tx_trace_context_;
         EvmcHost<traits> host_;
 
         ChainContext<traits> make_chain_context()
@@ -74,7 +72,6 @@ namespace monad::test
             std::vector<std::optional<Address>> const &authorities,
             BlockHeader const &header, Chain const &chain)
             : tx_index_{}
-            , noop_call_tracer_{}
             , state_{state}
             , tx_context_{get_tx_context<traits>(
                   tx, sender, header, chain.get_chain_id(),
@@ -84,17 +81,16 @@ namespace monad::test
             , chain_context_senders_and_authorities_{combine_senders_and_authorities(
                   chain_context_senders_, chain_context_authorities_)}
             , chain_context_{make_chain_context()}
-            , noop_state_tracer_{std::monostate{}}
+            , tx_trace_context_{}
             , host_{
-                  noop_call_tracer_,
-                  noop_state_tracer_,
                   tx_context_,
                   block_hash_buffer,
                   state,
                   tx,
                   base_fee_per_gas,
                   tx_index_,
-                  chain_context_}
+                  chain_context_,
+                  tx_trace_context_}
         {
         }
 

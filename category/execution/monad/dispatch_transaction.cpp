@@ -28,9 +28,9 @@ Result<Receipt> dispatch_transaction(
     std::vector<std::optional<Address>> const &authorities,
     BlockHeader const &header, BlockHashBuffer const &block_hash_buffer,
     BlockState &block_state, BlockMetrics &block_metrics,
-    boost::fibers::future<void> &prev, CallTracerBase &call_tracer,
-    trace::StateTracer &state_tracer, ChainContext<traits> const &chain_ctx,
-    ExecutionEventRecorder *const exec_recorder, bool const trace_transfers)
+    boost::fibers::future<void> &prev, ChainContext<traits> const &chain_ctx,
+    ExecutionEventRecorder *const exec_recorder,
+    TxTraceContext const &tx_trace_context)
 {
     if (traits::staking_active() && sender == SYSTEM_SENDER) {
         // System transactions is a concept used in Monad for consensus to
@@ -45,9 +45,8 @@ Result<Receipt> dispatch_transaction(
             block_state,
             block_metrics,
             prev,
-            call_tracer,
-            state_tracer,
-            exec_recorder}();
+            exec_recorder,
+            tx_trace_context}();
     }
     else {
         return ExecuteTransaction<traits>{
@@ -61,11 +60,9 @@ Result<Receipt> dispatch_transaction(
             block_state,
             block_metrics,
             prev,
-            call_tracer,
-            state_tracer,
             chain_ctx,
             exec_recorder,
-            trace_transfers}();
+            tx_trace_context}();
     }
 }
 

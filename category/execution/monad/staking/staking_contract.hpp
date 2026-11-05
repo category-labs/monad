@@ -23,7 +23,7 @@
 #include <category/execution/ethereum/core/contract/big_endian.hpp>
 #include <category/execution/ethereum/core/contract/storage_array.hpp>
 #include <category/execution/ethereum/core/contract/storage_variable.hpp>
-#include <category/execution/ethereum/trace/call_tracer.hpp>
+#include <category/execution/ethereum/trace/trace_context.hpp>
 #include <category/execution/monad/staking/config.hpp>
 #include <category/execution/monad/staking/util/consensus_view.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
@@ -50,12 +50,10 @@ using namespace monad::literals;
 class StakingContract
 {
     State &state_;
-    CallTracerBase &call_tracer_;
-    bool const log_native_transfers_;
+    TxTraceContext const tx_trace_context_;
 
 public:
-    StakingContract(
-        State &, CallTracerBase &, bool log_native_transfers = false);
+    StakingContract(State &, TxTraceContext const);
 
     struct WithdrawalRequest
     {

@@ -57,7 +57,7 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
-#include <category/execution/ethereum/trace/state_tracer.hpp>
+#include <category/execution/ethereum/trace/trace_context.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
@@ -352,21 +352,12 @@ Result<BlockExecOutput> execute(
         }
     }
 
-    std::vector<std::unique_ptr<CallTracerBase>> call_tracers{
-        block.transactions.size()};
     call_frames.resize(block.transactions.size());
-    std::vector<std::unique_ptr<trace::StateTracer>> state_tracers(
-        block.transactions.size());
-    trace::StateTracer system_call_state_tracer{std::monostate{}};
+    std::vector<CallTracer> call_tracers;
     for (unsigned i = 0; i < block.transactions.size(); ++i) {
-        call_tracers[i] =
-            enable_tracing
-                ? std::unique_ptr<CallTracerBase>{std::make_unique<CallTracer>(
-                      block.transactions[i], call_frames[i])}
-                : std::unique_ptr<CallTracerBase>{
-                      std::make_unique<NoopCallTracer>()};
-        state_tracers[i] =
-            std::make_unique<trace::StateTracer>(std::monostate{});
+        if (enable_tracing) {
+            call_tracers.emplace_back(block.transactions[i], call_frames[i]);
+        }
     }
 
     senders_and_authorities_map[block.header.number] =
@@ -392,6 +383,11 @@ Result<BlockExecOutput> execute(
         }
     }();
 
+    BlockTraceContext block_trace_context(block.transactions.size());
+    if (enable_tracing) {
+        block_trace_context.with_tracers(std::span{call_tracers});
+    }
+
     BOOST_OUTCOME_TRY(
         receipts,
         execute_block<traits>(
@@ -403,11 +399,9 @@ Result<BlockExecOutput> execute(
             block_hash_buffer,
             pool_->fiber_group(),
             metrics,
-            call_tracers,
-            state_tracers,
-            system_call_state_tracer,
             chain_context,
-            exec_recorder));
+            exec_recorder,
+            block_trace_context));
 
     block_state.log_debug();
     auto [state, code, _] = std::move(block_state).release();

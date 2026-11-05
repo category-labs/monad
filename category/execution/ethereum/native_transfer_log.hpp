@@ -19,12 +19,18 @@
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
+#include <category/execution/ethereum/core/contract/abi_encode.hpp>
+#include <category/execution/ethereum/core/contract/abi_signatures.hpp>
+#include <category/execution/ethereum/core/contract/events.hpp>
+#include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/trace/commands/call_trace.hpp>
+#include <category/execution/ethereum/trace/trace_context.hpp>
 #include <category/vm/evm/traits.hpp>
 
 MONAD_NAMESPACE_BEGIN
 
 class State;
-struct CallTracerBase;
+class TxTraceContext;
 
 // Sender for the EIP-7002/EIP-7251 system calls; emitter for EIP-7708's logs.
 inline constexpr Address ETH_SYSTEM_ADDRESS =
@@ -36,18 +42,32 @@ inline constexpr Address SIMULATE_NATIVE_TOKEN_LOG_ADDRESS =
 
 namespace detail
 {
-    void emit_native_transfer_log(
-        State &, CallTracerBase &, Address const &log_address,
-        Address const &from, Address const &to, uint256_t const &value);
+    inline Receipt::Log make_native_transfer_log(
+        Address const &log_address, Address const &from, Address const &to,
+        uint256_t const &value)
+    {
+        static constexpr bytes32_t signature =
+            abi_encode_event_signature("Transfer(address,address,uint256)");
+        static_assert(
+            signature ==
+            bytes32_from_hex("ddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a"
+                             "11628f55a4df523b3ef"));
+
+        return EventBuilder(log_address, signature)
+            .add_topic(abi_encode_address(from))
+            .add_topic(abi_encode_address(to))
+            .add_data(abi_encode_uint(u256_be{value}))
+            .build();
+    }
 }
 
 template <Traits traits>
 void emit_native_transfer_logs(
-    State &state, CallTracerBase &call_tracer, Address const &from,
-    Address const &to, uint256_t const &value, bool const log_native_transfers)
+    State &state, TxTraceContext const &trace_ctx, Address const &from,
+    Address const &to, uint256_t const &value)
 {
     if constexpr (!traits::eip_7708_active()) {
-        if (MONAD_LIKELY(!log_native_transfers)) {
+        if (MONAD_LIKELY(trace_ctx.size() == 0)) {
             return;
         }
     }
@@ -56,16 +76,17 @@ void emit_native_transfer_logs(
         return;
     }
 
-    // eth_simulate's traceTransfers adds nothing where EIP-7708 already logs
-    // the transfer.
     if constexpr (traits::eip_7708_active()) {
-        detail::emit_native_transfer_log(
-            state, call_tracer, ETH_SYSTEM_ADDRESS, from, to, value);
+        // Canonical logs must not depend on the tracing configuration.
+        auto const event = detail::make_native_transfer_log(
+            ETH_SYSTEM_ADDRESS, from, to, value);
+        state.store_log(event);
+        trace::emit<trace::Log>(trace_ctx, event);
     }
     else {
-        detail::emit_native_transfer_log(
+        trace::emit<trace::NativeTransfer>(
+            trace_ctx,
             state,
-            call_tracer,
             SIMULATE_NATIVE_TOKEN_LOG_ADDRESS,
             from,
             to,

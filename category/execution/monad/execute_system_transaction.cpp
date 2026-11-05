@@ -23,14 +23,14 @@
 #include <category/core/likely.h>
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
+#include <category/execution/ethereum/core/contract/abi_signatures.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/event/record_txn_events.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
-#include <category/execution/ethereum/trace/call_tracer.hpp>
+#include <category/execution/ethereum/trace/commands/state_trace.hpp>
 #include <category/execution/ethereum/trace/event_trace.hpp>
-#include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/execute_system_transaction.hpp>
 #include <category/execution/monad/staking/staking_contract.hpp>
@@ -54,8 +54,8 @@ ExecuteSystemTransaction<traits>::ExecuteSystemTransaction(
     Chain const &chain, uint64_t const i, Transaction const &tx,
     Address const &sender, BlockHeader const &header, BlockState &block_state,
     BlockMetrics &block_metrics, boost::fibers::future<void> &prev,
-    CallTracerBase &call_tracer, trace::StateTracer &state_tracer,
-    ExecutionEventRecorder *const exec_recorder)
+    ExecutionEventRecorder *const exec_recorder,
+    TxTraceContext const &tx_trace_context)
     : chain_{chain}
     , i_{i}
     , tx_{tx}
@@ -64,9 +64,8 @@ ExecuteSystemTransaction<traits>::ExecuteSystemTransaction(
     , block_state_{block_state}
     , block_metrics_{block_metrics}
     , prev_{prev}
-    , call_tracer_{call_tracer}
-    , state_tracer_{state_tracer}
     , exec_recorder_{exec_recorder}
+    , tx_trace_context_{tx_trace_context}
 {
     record_txn_header_events(
         exec_recorder_, static_cast<uint32_t>(i), tx, sender, {});
@@ -105,8 +104,7 @@ Result<Receipt> ExecuteSystemTransaction<traits>::operator()()
         State state{block_state_, Incarnation{header_.number, i_ + 1}};
         state.set_original_nonce(sender_, tx_.nonce);
 
-        call_tracer_.reset();
-        trace::reset(state_tracer_);
+        tx_trace_context_.reset();
 
         auto result = execute(state);
 
@@ -130,8 +128,7 @@ Result<Receipt> ExecuteSystemTransaction<traits>::operator()()
 
         State state{block_state_, Incarnation{header_.number, i_ + 1}};
 
-        call_tracer_.reset();
-        trace::reset(state_tracer_);
+        tx_trace_context_.reset();
 
         auto result = execute(state);
 
@@ -178,9 +175,9 @@ Result<void> ExecuteSystemTransaction<traits>::execute(State &state)
     state.set_nonce(sender_, nonce + 1);
 
     state.push();
-    call_tracer_.on_enter(to_message());
+    trace::emit<trace::Enter>(tx_trace_context_, to_message());
     BOOST_OUTCOME_TRY(execute_staking_syscall(state, tx_.data, tx_.value));
-    call_tracer_.on_exit(evmc::Result{EVMC_SUCCESS});
+    trace::emit<trace::Exit>(tx_trace_context_, evmc::Result{EVMC_SUCCESS});
     state.pop_accept();
 
     return success();
@@ -194,13 +191,15 @@ Receipt ExecuteSystemTransaction<traits>::execute_final(State &state)
     for (auto const &log : state.logs()) {
         receipt.add_log(std::move(log));
     }
-    call_tracer_.on_finish(receipt.gas_used);
-    trace::run_tracer<traits>(state_tracer_, state);
+    trace::emit<trace::Finish>(tx_trace_context_, receipt.gas_used);
+    trace::emit<trace::PostState>(tx_trace_context_, state);
+    std::span<CallFrame const> call_frames{};
+    trace::emit<trace::GetCallFrames>(tx_trace_context_, &call_frames);
     record_txn_output_events(
         exec_recorder_,
         static_cast<uint32_t>(this->i_),
         receipt,
-        call_tracer_.get_call_frames(),
+        call_frames,
         state);
     return receipt;
 }
@@ -212,7 +211,7 @@ Result<void> ExecuteSystemTransaction<traits>::execute_staking_syscall(
     // creates staking account in state if it doesn't exist
     state.add_to_balance(staking::STAKING_CA, 0);
 
-    staking::StakingContract contract(state, call_tracer_);
+    staking::StakingContract contract(state, tx_trace_context_);
     if (MONAD_UNLIKELY(calldata.size() < 4)) {
         return staking::StakingError::InvalidInput;
     }

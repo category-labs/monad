@@ -18,6 +18,8 @@ project(monad_domain_execution)
 add_library(
   monad_domain_execution OBJECT
   # domain
+  "block_store.cpp"
+  "block_store.hpp"
   "chain_id.cpp"
   "chain_id.hpp"
   "config.hpp"

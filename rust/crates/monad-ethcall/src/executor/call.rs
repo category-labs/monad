@@ -244,8 +244,9 @@ impl MonadExecutor {
                 override_ctx,
                 Some(eth_call_submit_callback),
                 Box::into_raw(sender_ctx) as *mut std::ffi::c_void,
-                tracer.into(),
+                tracer.to_ffi_tracer_config(),
                 call_tracer_max_size,
+                tracer.to_ffi_prestate_tracer_config(),
                 gas_specified,
             )
         };
@@ -260,11 +261,11 @@ impl MonadExecutor {
             EthCallError::InternalError
         })?;
 
-        let tracer_cval: u32 = tracer.into();
+        let is_noop = matches!(tracer, MonadTracer::NoopTracer);
 
         match result.status_code() {
             ETH_CALL_SUCCESS => {
-                let output_data = if tracer_cval == ffi::monad_tracer_config_NOOP_TRACER {
+                let output_data = if is_noop {
                     result.output_data().map_err(|_| {
                         warn!("execution error `eth_call` failed: output data pointer is null");
                         EthCallError::InternalError
@@ -283,7 +284,7 @@ impl MonadExecutor {
                 })
             }
             EVMC_MONAD_RESERVE_BALANCE_VIOLATION => {
-                if tracer_cval == ffi::monad_tracer_config_NOOP_TRACER {
+                if is_noop {
                     Err(EthCallError::ReserveBalanceViolation {
                         gas_used: result.gas_used(),
                         gas_refund: result.gas_refund(),
@@ -300,7 +301,7 @@ impl MonadExecutor {
                 Ok(message) => Err(EthCallError::Other { message }),
                 Err(MessageError::NullPointerError) => {
                     // This means execution reverted, not a validation error
-                    if tracer_cval == ffi::monad_tracer_config_NOOP_TRACER {
+                    if is_noop {
                         let output_data = result.output_data().map_err(|_| {
                             warn!("execution error `eth_call` failed: output data pointer is null");
                             EthCallError::InternalError

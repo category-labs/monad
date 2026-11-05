@@ -40,24 +40,34 @@ impl ChainId {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct PreStateTracerConfig {
+    pub diff_mode: bool,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[repr(u32)]
 pub enum MonadTracer {
-    NoopTracer = 0,
+    NoopTracer,
     CallTracer,
-    PreStateTracer,
-    StateDiffTracer,
+    PreStateTracer(PreStateTracerConfig),
     AccessListTracer,
 }
 
-impl From<MonadTracer> for u32 {
-    fn from(tracer: MonadTracer) -> u32 {
-        match tracer {
-            MonadTracer::NoopTracer => 0,
-            MonadTracer::CallTracer => 1,
-            MonadTracer::PreStateTracer => 2,
-            MonadTracer::StateDiffTracer => 3,
-            MonadTracer::AccessListTracer => 4,
+impl MonadTracer {
+    fn to_ffi_tracer_config(self) -> ffi::monad_tracer_config {
+        match self {
+            Self::NoopTracer => ffi::monad_tracer_config_NOOP_TRACER,
+            Self::CallTracer => ffi::monad_tracer_config_CALL_TRACER,
+            Self::PreStateTracer(_) => ffi::monad_tracer_config_PRESTATE_TRACER,
+            Self::AccessListTracer => ffi::monad_tracer_config_ACCESS_LIST_TRACER,
         }
+    }
+
+    fn to_ffi_prestate_tracer_config(self) -> ffi::monad_prestate_tracer_config {
+        let PreStateTracerConfig { diff_mode } = match self {
+            Self::PreStateTracer(config) => config,
+            _ => PreStateTracerConfig::default(),
+        };
+        ffi::monad_prestate_tracer_config { diff_mode }
     }
 }

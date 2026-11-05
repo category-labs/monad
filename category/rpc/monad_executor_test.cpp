@@ -122,6 +122,7 @@ namespace
     constexpr size_t simulate_max_blocks = 256;
     constexpr size_t simulate_max_output_size = 1024 * 1024; // 1 MB
     constexpr size_t call_tracer_max_size = 1024 * 1024; // 1 MB
+    constexpr monad_prestate_tracer_config prestate_tracer_config{};
     constexpr bytes32_t transfer_sig =
         abi_encode_event_signature("Transfer(address,address,uint256)");
 
@@ -325,6 +326,7 @@ namespace
             (void *)&ctx,
             CALL_TRACER,
             call_tracer_max_size,
+            prestate_tracer_config,
             gas_specified);
         f.get();
 
@@ -436,6 +438,7 @@ TEST_F(EthCallFixture, simple_success_call)
         (void *)&ctx,
         NOOP_TRACER,
         call_tracer_max_size,
+        prestate_tracer_config,
         true);
     f.get();
 
@@ -508,6 +511,7 @@ TEST_F(EthCallFixture, destroy_with_queued_calls)
             (void *)&ctx,
             NOOP_TRACER,
             call_tracer_max_size,
+            prestate_tracer_config,
             false);
     }
     monad_executor_destroy(executor);
@@ -568,6 +572,7 @@ TEST_F(EthCallFixture, insufficient_balance)
         (void *)&ctx,
         NOOP_TRACER,
         call_tracer_max_size,
+        prestate_tracer_config,
         true);
     f.get();
 
@@ -628,6 +633,7 @@ TEST_F(EthCallFixture, on_proposed_block)
         (void *)&ctx,
         NOOP_TRACER,
         call_tracer_max_size,
+        prestate_tracer_config,
         true);
     f.get();
 
@@ -722,6 +728,7 @@ TEST_F(EthCallFixture, eth_call_slot_number)
         (void *)&ctx,
         NOOP_TRACER,
         call_tracer_max_size,
+        prestate_tracer_config,
         true);
     f.get();
 
@@ -804,6 +811,7 @@ TEST_F(EthCallFixture, blockhash_before_fork)
         (void *)&ctx,
         NOOP_TRACER,
         call_tracer_max_size,
+        prestate_tracer_config,
         true);
     f.get();
 
@@ -882,6 +890,7 @@ TEST_F(EthCallFixture, failed_to_read)
         (void *)&ctx,
         NOOP_TRACER,
         call_tracer_max_size,
+        prestate_tracer_config,
         true);
     f.get();
 
@@ -940,6 +949,7 @@ TEST_F(EthCallFixture, contract_deployment_success)
         (void *)&ctx,
         NOOP_TRACER,
         call_tracer_max_size,
+        prestate_tracer_config,
         true);
     f.get();
 
@@ -1025,6 +1035,7 @@ TEST_F(EthCallFixture, assertion_exception_depth1)
         (void *)&ctx,
         NOOP_TRACER,
         call_tracer_max_size,
+        prestate_tracer_config,
         true);
     f.get();
 
@@ -1123,6 +1134,7 @@ TEST_F(EthCallFixture, assertion_exception_depth2)
         (void *)&ctx,
         NOOP_TRACER,
         call_tracer_max_size,
+        prestate_tracer_config,
         true);
     f.get();
 
@@ -1210,6 +1222,7 @@ TEST_F(EthCallFixture, state_override_oversized_code_fails_gracefully)
         (void *)&ctx,
         NOOP_TRACER,
         call_tracer_max_size,
+        prestate_tracer_config,
         true);
     f.get();
 
@@ -1276,6 +1289,7 @@ TEST_F(EthCallFixture, loop_out_of_gas)
         (void *)&ctx,
         NOOP_TRACER,
         call_tracer_max_size,
+        prestate_tracer_config,
         true);
     f.get();
 
@@ -1399,6 +1413,7 @@ TEST_F(EthCallFixture, expensive_read_out_of_gas)
         (void *)&ctx,
         NOOP_TRACER,
         call_tracer_max_size,
+        prestate_tracer_config,
         true);
     f.get();
 
@@ -1465,6 +1480,7 @@ TEST_F(EthCallFixture, from_contract_account)
         (void *)&ctx,
         NOOP_TRACER,
         call_tracer_max_size,
+        prestate_tracer_config,
         true);
     f.get();
 
@@ -1549,6 +1565,7 @@ TEST_F(EthCallFixture, concurrent_eth_calls)
             (void *)ctx.get(),
             NOOP_TRACER,
             call_tracer_max_size,
+            prestate_tracer_config,
             true);
     }
 
@@ -1695,6 +1712,7 @@ TEST_F(EthCallFixture, call_trace_with_logs)
         (void *)&ctx,
         CALL_TRACER,
         call_tracer_max_size,
+        prestate_tracer_config,
         true);
     f.get();
 
@@ -1880,6 +1898,7 @@ TEST_F(EthCallFixture, static_precompile_OOG_with_call_trace)
         (void *)&ctx,
         CALL_TRACER,
         call_tracer_max_size,
+        prestate_tracer_config,
         true);
     f.get();
 
@@ -2006,6 +2025,7 @@ TEST_F(EthCallFixture, point_evaluation_precompile_with_call_trace)
         (void *)&ctx,
         CALL_TRACER,
         call_tracer_max_size,
+        prestate_tracer_config,
         true);
     f.get();
 
@@ -2100,6 +2120,7 @@ TEST_F(EthCallFixture, transfer_success_with_state_trace)
             (void *)&prestate_ctx,
             PRESTATE_TRACER,
             call_tracer_max_size,
+            prestate_tracer_config,
             true);
         f.get();
 
@@ -2147,8 +2168,9 @@ TEST_F(EthCallFixture, transfer_success_with_state_trace)
             state_override,
             complete_callback,
             (void *)&statediff_ctx,
-            STATEDIFF_TRACER,
+            PRESTATE_TRACER,
             call_tracer_max_size,
+            {.diff_mode = true},
             true);
         f.get();
 
@@ -2243,6 +2265,7 @@ TEST_F(EthCallFixture, contract_deployment_success_with_state_trace)
             (void *)&prestate_ctx,
             PRESTATE_TRACER,
             call_tracer_max_size,
+            prestate_tracer_config,
             true);
         f.get();
 
@@ -2286,8 +2309,9 @@ TEST_F(EthCallFixture, contract_deployment_success_with_state_trace)
             state_override,
             complete_callback,
             (void *)&statediff_ctx,
-            STATEDIFF_TRACER,
+            PRESTATE_TRACER,
             call_tracer_max_size,
+            {.diff_mode = true},
             true);
         f.get();
 
@@ -2436,7 +2460,8 @@ TEST_F(EthCallFixture, trace_block_with_prestate)
             -1,
             complete_callback,
             (void *)&prestate_ctx,
-            PRESTATE_TRACER);
+            PRESTATE_TRACER,
+            prestate_tracer_config);
         f.get();
 
         ASSERT_TRUE(
@@ -2499,7 +2524,8 @@ TEST_F(EthCallFixture, trace_block_with_prestate)
             -1,
             complete_callback,
             (void *)&statediff_ctx,
-            STATEDIFF_TRACER);
+            PRESTATE_TRACER,
+            {.diff_mode = true});
         f.get();
 
         ASSERT_TRUE(
@@ -2670,7 +2696,8 @@ TEST_F(EthCallFixture, trace_block_slot_number)
         -1,
         complete_callback,
         (void *)&ctx,
-        STATEDIFF_TRACER);
+        PRESTATE_TRACER,
+        {.diff_mode = true});
     f.get();
 
     ASSERT_TRUE(
@@ -2807,7 +2834,8 @@ TEST_F(EthCallFixture, trace_transaction_with_prestate)
             0,
             complete_callback,
             (void *)&prestate_ctx_1,
-            PRESTATE_TRACER);
+            PRESTATE_TRACER,
+            prestate_tracer_config);
         f_1.get();
 
         ASSERT_TRUE(
@@ -2850,7 +2878,8 @@ TEST_F(EthCallFixture, trace_transaction_with_prestate)
             1,
             complete_callback,
             (void *)&prestate_ctx_2,
-            PRESTATE_TRACER);
+            PRESTATE_TRACER,
+            prestate_tracer_config);
         f_2.get();
 
         ASSERT_TRUE(
@@ -2896,7 +2925,8 @@ TEST_F(EthCallFixture, trace_transaction_with_prestate)
             0,
             complete_callback,
             (void *)&statediff_ctx_1,
-            STATEDIFF_TRACER);
+            PRESTATE_TRACER,
+            {.diff_mode = true});
         f_1.get();
 
         ASSERT_TRUE(
@@ -2952,7 +2982,8 @@ TEST_F(EthCallFixture, trace_transaction_with_prestate)
             1,
             complete_callback,
             (void *)&statediff_ctx_2,
-            STATEDIFF_TRACER);
+            PRESTATE_TRACER,
+            {.diff_mode = true});
         f_2.get();
 
         ASSERT_TRUE(
@@ -3197,7 +3228,8 @@ TEST_F(EthCallFixture, monad_executor_run_reserve_balance)
             0,
             complete_callback,
             (void *)&statediff_ctx_1,
-            STATEDIFF_TRACER);
+            PRESTATE_TRACER,
+            {.diff_mode = true});
         f_1.get();
 
         // TODO(dhil): this should really be EMVC_REVERT, but currently
@@ -3324,7 +3356,8 @@ TEST_F(EthCallFixture, prestate_trace_near_genesis)
             -1,
             complete_callback,
             (void *)&genesis_prestate_ctx,
-            PRESTATE_TRACER);
+            PRESTATE_TRACER,
+            prestate_tracer_config);
         f.get();
 
         ASSERT_TRUE(
@@ -3376,7 +3409,8 @@ TEST_F(EthCallFixture, prestate_trace_near_genesis)
             0,
             complete_callback,
             (void *)&block1_prestate_ctx,
-            PRESTATE_TRACER);
+            PRESTATE_TRACER,
+            prestate_tracer_config);
         f.get();
 
         ASSERT_TRUE(
@@ -3441,7 +3475,8 @@ TEST_F(EthCallFixture, prestate_trace_near_genesis)
             0,
             complete_callback,
             (void *)&block2_prestate_ctx,
-            PRESTATE_TRACER);
+            PRESTATE_TRACER,
+            prestate_tracer_config);
         f.get();
 
         ASSERT_TRUE(
@@ -3548,6 +3583,7 @@ TEST_F(EthCallFixture, access_list_trace)
             (void *)&ctx,
             ACCESS_LIST_TRACER,
             call_tracer_max_size,
+            prestate_tracer_config,
             true);
         f.get();
 
@@ -3654,6 +3690,7 @@ TEST_F(EthCallFixture, access_list_trace_reverted_call)
             (void *)&ctx,
             ACCESS_LIST_TRACER,
             call_tracer_max_size,
+            prestate_tracer_config,
             true);
         f.get();
 
@@ -3763,6 +3800,7 @@ TEST_F(EthCallFixture, access_list_trace_page_dedup)
             (void *)&ctx,
             ACCESS_LIST_TRACER,
             call_tracer_max_size,
+            prestate_tracer_config,
             true);
         f.get();
 
@@ -3869,6 +3907,7 @@ TEST_F(EthCallFixture, access_list_trace_empty)
             (void *)&ctx,
             ACCESS_LIST_TRACER,
             call_tracer_max_size,
+            prestate_tracer_config,
             true);
         f.get();
 
@@ -3966,6 +4005,7 @@ TEST_F(EthCallFixture, access_list_trace_nested)
         (void *)&ctx,
         ACCESS_LIST_TRACER,
         call_tracer_max_size,
+        prestate_tracer_config,
         true);
     f.get();
 
@@ -4083,6 +4123,7 @@ TEST_F(EthCallFixture, access_list_trace_nested_reverted_call)
         (void *)&ctx,
         ACCESS_LIST_TRACER,
         call_tracer_max_size,
+        prestate_tracer_config,
         true);
     f.get();
 
@@ -4180,6 +4221,7 @@ TEST_F(EthCallFixture, prestate_state_overrides)
             (void *)&prestate_ctx,
             PRESTATE_TRACER,
             call_tracer_max_size,
+            prestate_tracer_config,
             true);
         f.get();
 
@@ -4225,8 +4267,9 @@ TEST_F(EthCallFixture, prestate_state_overrides)
             state_override,
             complete_callback,
             (void *)&statediff_ctx,
-            STATEDIFF_TRACER,
+            PRESTATE_TRACER,
             call_tracer_max_size,
+            {.diff_mode = true},
             true);
         f.get();
 
@@ -4391,6 +4434,7 @@ TYPED_TEST(EthCallEncodingFixture, prestate_override_state)
             (void *)&ctx_state,
             PRESTATE_TRACER,
             call_tracer_max_size,
+            prestate_tracer_config,
             true);
         f.get();
 
@@ -4477,6 +4521,7 @@ TYPED_TEST(EthCallEncodingFixture, prestate_override_state)
             (void *)&ctx_statediff,
             PRESTATE_TRACER,
             call_tracer_max_size,
+            prestate_tracer_config,
             true);
         f.get();
 
@@ -4651,6 +4696,7 @@ TEST_F(EthCallFixture, eth_call_reserve_balance)
         (void *)&ctx,
         NOOP_TRACER,
         call_tracer_max_size,
+        prestate_tracer_config,
         true);
     f.get();
 
@@ -4735,6 +4781,7 @@ TEST_F(EthCallFixture, eth_call_reserve_balance_emptying)
         (void *)&ctx,
         NOOP_TRACER,
         call_tracer_max_size,
+        prestate_tracer_config,
         true);
     f.get();
 
@@ -4847,6 +4894,7 @@ TEST_F(EthCallFixture, eth_call_reserve_balance_assertion)
         (void *)&ctx,
         NOOP_TRACER,
         call_tracer_max_size,
+        prestate_tracer_config,
         true);
     f.get();
 
@@ -4987,7 +5035,8 @@ TEST_F(EthCallFixture, trace_transaction_with_rewards_prestate)
             0,
             complete_callback,
             (void *)&prestate_ctx_1,
-            PRESTATE_TRACER);
+            PRESTATE_TRACER,
+            prestate_tracer_config);
         f_1.get();
 
         ASSERT_TRUE(
@@ -5034,7 +5083,8 @@ TEST_F(EthCallFixture, trace_transaction_with_rewards_prestate)
             1,
             complete_callback,
             (void *)&prestate_ctx_2,
-            PRESTATE_TRACER);
+            PRESTATE_TRACER,
+            prestate_tracer_config);
         f_2.get();
 
         ASSERT_TRUE(
@@ -5084,7 +5134,8 @@ TEST_F(EthCallFixture, trace_transaction_with_rewards_prestate)
             0,
             complete_callback,
             (void *)&statediff_ctx_1,
-            STATEDIFF_TRACER);
+            PRESTATE_TRACER,
+            {.diff_mode = true});
         f_1.get();
 
         ASSERT_TRUE(
@@ -5147,7 +5198,8 @@ TEST_F(EthCallFixture, trace_transaction_with_rewards_prestate)
             1,
             complete_callback,
             (void *)&statediff_ctx_2,
-            STATEDIFF_TRACER);
+            PRESTATE_TRACER,
+            {.diff_mode = true});
         f_2.get();
 
         ASSERT_TRUE(
@@ -10041,6 +10093,7 @@ TEST_F(EthCallFixture, eth_call_empty_state_override_zeros_storage)
         &ctx,
         NOOP_TRACER,
         call_tracer_max_size,
+        prestate_tracer_config,
         true);
     future.get();
 
@@ -10160,6 +10213,71 @@ TEST_F(EthCallFixture, eth_simulate_v1_empty_state_override_zeros_storage)
     monad_executor_destroy(executor);
 }
 
+namespace
+{
+    constexpr Address gas_sensitive_sender =
+        0x00000000000000000000000000000000deadbeef_address;
+    constexpr Address gas_sensitive_contract =
+        0x00000000000000000000000000000000feedface_address;
+    constexpr uint256_t gas_sensitive_sender_balance =
+        std::numeric_limits<uint256_t>::max();
+    constexpr uint64_t gas_sensitive_threshold = 9'000'000;
+    static_assert(MONAD_ETH_CALL_LOW_GAS_LIMIT < gas_sensitive_threshold);
+
+    void commit_gas_sensitive_contract(
+        TrieDb &tdb, BlockHeader const &header, size_t const revert_data_size)
+    {
+        using namespace monad::vm::utils;
+
+        // The code constructed below is roughly equivalent to the following
+        // Solidity contract:
+        //
+        // contract GasSensitiveTrace {
+        //   fallback() external {
+        //     assembly {
+        //       if lt(gas(), gas_sensitive_threshold) {
+        //         revert(0, revert_data_size)
+        //       }
+        //       return(0, 0)
+        //     }
+        //   }
+        // }
+        auto const eb = evm_as::latest()
+                            .push(gas_sensitive_threshold)
+                            .gas()
+                            .lt()
+                            .jumpi("low_gas")
+                            .push0()
+                            .push0()
+                            .return_()
+                            .jumpdest("low_gas")
+                            .push(revert_data_size)
+                            .push0()
+                            .revert();
+        ASSERT_TRUE(evm_as::validate(eb));
+        std::vector<uint8_t> code{};
+        evm_as::compile(eb, code);
+        byte_string_view const code_view{code.data(), code.size()};
+        auto const code_hash = to_bytes(keccak256(code_view));
+
+        commit_sequential(
+            tdb,
+            StateDeltas{
+                {gas_sensitive_sender,
+                 StateDelta{
+                     .account =
+                         {std::nullopt,
+                          Account{.balance = gas_sensitive_sender_balance}}}},
+                {gas_sensitive_contract,
+                 StateDelta{
+                     .account =
+                         {std::nullopt,
+                          Account{.balance = 0, .code_hash = code_hash}}}}},
+            Code{{code_hash, vm::make_shared_intercode(code_view)}},
+            header);
+    }
+}
+
 // This test demonstrates that call trace size is not monotonic in the gas
 // limit. This test exercises an eth_call that materializes a too large output
 // in the low gas scenario, but materializes a small output in the high gas
@@ -10167,73 +10285,18 @@ TEST_F(EthCallFixture, eth_simulate_v1_empty_state_override_zeros_storage)
 // after both low gas and high gas tries.
 TEST_F(EthCallFixture, eth_call_discards_oversized_low_gas_trace_on_retry)
 {
-    using namespace monad::vm::utils;
-
-    static constexpr Address sender =
-        0x00000000000000000000000000000000deadbeef_address;
-    static constexpr Address contract =
-        0x00000000000000000000000000000000feedface_address;
-    static constexpr uint64_t gas_threshold = 9'000'000;
     static constexpr uint64_t high_gas_limit = 20'000'000;
     static constexpr size_t revert_data_size = 1024 * 1024;
-    static_assert(MONAD_ETH_CALL_LOW_GAS_LIMIT < gas_threshold);
-    static_assert(gas_threshold < high_gas_limit - 21'000);
-
-    // The code constructed below is roughly equivalent to the following
-    // Solidity contract:
-    //
-    // contract GasSensitiveTrace {
-    //   fallback() external {
-    //     assembly {
-    //       if lt(gas(), gas_threshold) {
-    //         revert(0, revert_data_size)
-    //       }
-    //       return(0, 0)
-    //     }
-    //   }
-    // }
-    auto const eb = evm_as::latest()
-                        .push(gas_threshold)
-                        .gas()
-                        .lt()
-                        .jumpi("low_gas")
-                        .push0()
-                        .push0()
-                        .return_()
-                        .jumpdest("low_gas")
-                        .push(revert_data_size)
-                        .push0()
-                        .revert();
-    ASSERT_TRUE(evm_as::validate(eb));
-    std::vector<uint8_t> code{};
-    evm_as::compile(eb, code);
-    byte_string_view const code_view{code.data(), code.size()};
-    auto const code_hash = to_bytes(keccak256(code_view));
-    auto const compiled_code = vm::make_shared_intercode(code_view);
+    static_assert(gas_sensitive_threshold < high_gas_limit - 21'000);
 
     BlockHeader const header{.number = 0};
-    commit_sequential(
-        tdb,
-        StateDeltas{
-            {sender,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{
-                          .balance = std::numeric_limits<uint256_t>::max()}}}},
-            {contract,
-             StateDelta{
-                 .account =
-                     {std::nullopt,
-                      Account{.balance = 0, .code_hash = code_hash}}}}},
-        Code{{code_hash, compiled_code}},
-        header);
+    commit_gas_sensitive_contract(tdb, header, revert_data_size);
 
     auto *executor = create_executor(dbname.string());
     auto *state_override = monad_state_override_create();
     auto const rlp_header = to_vec(rlp::encode_block_header(header));
     auto const rlp_sender =
-        to_vec(rlp::encode_address(std::make_optional(sender)));
+        to_vec(rlp::encode_address(std::make_optional(gas_sensitive_sender)));
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
     auto const submit = [&](uint64_t const gas_limit,
@@ -10243,7 +10306,7 @@ TEST_F(EthCallFixture, eth_call_discards_oversized_low_gas_trace_on_retry)
         Transaction const tx{
             .max_fee_per_gas = 1,
             .gas_limit = gas_limit,
-            .to = contract,
+            .to = gas_sensitive_contract,
         };
         auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
         auto future = ctx.promise.get_future();
@@ -10264,6 +10327,7 @@ TEST_F(EthCallFixture, eth_call_discards_oversized_low_gas_trace_on_retry)
             &ctx,
             CALL_TRACER,
             trace_limit,
+            prestate_tracer_config,
             gas_specified);
         future.get();
     };
@@ -10319,6 +10383,80 @@ TEST_F(EthCallFixture, eth_call_discards_oversized_low_gas_trace_on_retry)
     EXPECT_TRUE(retry_frames.value().front().output.empty());
 }
 
+// An eth_call that fails in the low gas pool is retried in the high gas pool,
+// and the retry must keep the prestate tracer's options.
+TEST_F(EthCallFixture, eth_call_keeps_prestate_tracer_config_on_retry)
+{
+    static constexpr uint64_t gas_limit = 20'000'000;
+    static_assert(gas_sensitive_threshold < gas_limit - 21'000);
+
+    BlockHeader const header{.number = 0};
+    commit_gas_sensitive_contract(tdb, header, /*revert_data_size=*/0);
+
+    Transaction const tx{
+        .max_fee_per_gas = 1,
+        .gas_limit = gas_limit,
+        .to = gas_sensitive_contract,
+    };
+    auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_sender =
+        to_vec(rlp::encode_address(std::make_optional(gas_sensitive_sender)));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    auto *executor = create_executor(dbname.string());
+    auto *state_override = monad_state_override_create();
+
+    callback_context ctx;
+    auto future = ctx.promise.get_future();
+    monad_executor_eth_call_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_tx.data(),
+        rlp_tx.size(),
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_sender.data(),
+        rlp_sender.size(),
+        header.number,
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        state_override,
+        complete_callback,
+        &ctx,
+        PRESTATE_TRACER,
+        call_tracer_max_size,
+        {.diff_mode = true},
+        false);
+    future.get();
+
+    monad_state_override_destroy(state_override);
+    monad_executor_destroy(executor);
+
+    ASSERT_EQ(ctx.result->status_code, std::to_underlying(CallStatus::Success));
+
+    std::vector<uint8_t> const encoded_state_delta_trace(
+        ctx.result->encoded_trace,
+        ctx.result->encoded_trace + ctx.result->encoded_trace_len);
+
+    // monad charges gas_limit
+    StateDeltas const expected{
+        {gas_sensitive_sender,
+         StateDelta{
+             .account =
+                 {Account{.balance = gas_sensitive_sender_balance},
+                  Account{
+                      .balance = gas_sensitive_sender_balance - gas_limit,
+                      .nonce = 1}}}},
+    };
+
+    BlockState bs{tdb, this->vm};
+    State s{bs, Incarnation{0, 0}};
+    EXPECT_EQ(
+        state_deltas_to_json(expected, s),
+        nlohmann::json::from_cbor(encoded_state_delta_trace));
+}
+
 namespace
 {
     monad_executor *create_executor_without_db()
@@ -10358,6 +10496,7 @@ namespace
             &ctx,
             NOOP_TRACER,
             call_tracer_max_size,
+            prestate_tracer_config,
             true);
         f.get();
     }
@@ -10697,7 +10836,8 @@ TEST(EthCallFixtureNoDb, trace_is_rejected)
         -1,
         complete_callback,
         (void *)&ctx,
-        PRESTATE_TRACER);
+        PRESTATE_TRACER,
+        prestate_tracer_config);
     f.get();
 
     EXPECT_EQ(
@@ -11386,6 +11526,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_validation_false_matches_eth_call)
             &call_ctx,
             CALL_TRACER,
             call_tracer_max_size,
+            prestate_tracer_config,
             true);
         call_future.get();
 
@@ -11564,6 +11705,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_max_sender_nonce_differs_from_eth_call)
         &call_ctx,
         NOOP_TRACER,
         call_tracer_max_size,
+        prestate_tracer_config,
         true);
     call_future.get();
 

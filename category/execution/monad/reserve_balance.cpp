@@ -42,6 +42,7 @@
 #include <cstdint>
 #include <optional>
 #include <ranges>
+#include <span>
 
 unsigned monad_default_max_reserve_balance_mon(enum monad_revision)
 {
@@ -67,12 +68,12 @@ bool dipped_into_reserve(
     uint256_t const gas_fees =
         uint256_t{tx.gas_limit} * gas_price<traits>(tx, base_fee_per_gas);
     auto const &orig = state.original();
-    for (auto const &[addr, cur_account] : state.current()) {
+    for (auto const &[addr, cur_account] : state.current().items()) {
         MONAD_ASSERT(orig.contains(addr));
         bytes32_t const orig_code_hash = orig.at(addr).get_code_hash();
         bytes32_t const effective_code_hash =
             traits::reserve_balance_uses_recent_code_hash()
-                ? cur_account.recent().get_code_hash()
+                ? cur_account.get_code_hash()
                 : orig_code_hash;
         bool effective_is_delegated = false;
 
@@ -290,7 +291,7 @@ void ReserveBalance::on_debit(Address const &address)
     update_violation_status(address);
 }
 
-void ReserveBalance::on_pop_reject(FailedSet const &accounts)
+void ReserveBalance::on_pop_reject(std::span<Address const> const accounts)
 {
     if (!tracking_enabled_) {
         return;

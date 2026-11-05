@@ -31,14 +31,12 @@
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
-#include <category/execution/ethereum/state3/version_stack.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 
 #include <bit>
 #include <cstddef>
 #include <cstdint>
-#include <memory>
 #include <optional>
 #include <span>
 #include <utility>
@@ -275,11 +273,8 @@ void record_account_access_events_internal(
 
     auto const &current_state_map = state.current();
     for (uint32_t index = 0; auto const &[address, prestate] : prestate_map) {
-        AccountState const *current_state = nullptr;
-        if (auto const i = current_state_map.find(address);
-            i != end(current_state_map)) {
-            current_state = std::addressof(i->second.recent());
-        }
+        AccountState const *const current_state =
+            current_state_map.find(address);
         record_account_events(
             exec_recorder,
             ctx,

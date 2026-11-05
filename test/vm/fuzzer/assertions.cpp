@@ -96,15 +96,15 @@ namespace monad::vm::fuzzing
 
         // Deep copy to prevent mutation of the given account maps:
         std::unordered_map<Address, AccountState> a_accs;
-        for (auto const &[k, v] : a.current()) {
-            MONAD_ASSERT(v.size() == 1);
-            auto const [_, is_new] = a_accs.insert({k, v.recent()});
+        MONAD_ASSERT(!a.current().depth());
+        for (auto const &[k, v] : a.current().items()) {
+            auto const [_, is_new] = a_accs.insert({k, v});
             MONAD_ASSERT(is_new);
         }
         std::unordered_map<Address, AccountState> b_accs;
-        for (auto const &[k, v] : b.current()) {
-            MONAD_ASSERT(v.size() == 1);
-            auto const [_, is_new] = b_accs.insert({k, v.recent()});
+        MONAD_ASSERT(!b.current().depth());
+        for (auto const &[k, v] : b.current().items()) {
+            auto const [_, is_new] = b_accs.insert({k, v});
             MONAD_ASSERT(is_new);
         }
 

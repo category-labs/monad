@@ -16,14 +16,15 @@
 #pragma once
 
 #include <category/core/address.hpp>
+#include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
+#include <category/core/journal.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/reserve_balance.hpp>
 #include <category/execution/ethereum/state3/account_state.hpp>
-#include <category/execution/ethereum/state3/version_stack.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/monad/reserve_balance.hpp>
 #include <category/vm/evm/access_status.h>
@@ -38,7 +39,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <deque>
 #include <optional>
 
 MONAD_NAMESPACE_BEGIN
@@ -50,24 +50,17 @@ class State
     template <typename K, typename V>
     using Map = ankerl::unordered_dense::segmented_map<K, V>;
 
-    template <typename K>
-    using Set = ankerl::unordered_dense::segmented_set<K>;
-
     BlockState &block_state_;
 
     Incarnation const incarnation_;
 
     Map<Address, OriginalAccountState> original_{};
 
-    Map<Address, VersionStack<AccountState>> current_{};
+    JournaledMap<Address, AccountState> current_{};
 
-    VersionStack<immer::vector<Receipt::Log>> logs_{{}};
+    JournaledValue<immer::vector<Receipt::Log>> logs_{};
 
     Map<bytes32_t, vm::SharedVarcode> code_{};
-
-    unsigned version_{0};
-
-    std::deque<Set<Address>> dirty_;
 
     bool const relaxed_validation_{false};
     ReserveBalance rb_;
@@ -109,7 +102,7 @@ public:
 
     Map<Address, OriginalAccountState> const &original() const;
 
-    Map<Address, VersionStack<AccountState>> const &current() const;
+    JournaledMap<Address, AccountState> const &current() const;
 
     Map<bytes32_t, vm::SharedVarcode> const &code() const;
 
@@ -122,8 +115,13 @@ public:
     // Return addresses marked dirty (including touched/accessed accounts) in
     // the currently pushed frame. Intended for observers that must inspect
     // frame-local metadata immediately before pop_accept() or pop_reject();
-    // callers must not retain references beyond the frame pop.
-    Set<Address> const &current_frame_dirty_accounts() const;
+    // an address may appear more than once.
+    auto current_frame_dirty_accounts() const
+    {
+        MONAD_ASSERT(current_.depth());
+
+        return current_.keys_since_checkpoint();
+    }
 
     ////////////////////////////////////////
 

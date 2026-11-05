@@ -74,14 +74,13 @@ namespace trace
         // First check that the beneficiary is in the `original` accounts and
         // `current` accounts. If not, then just return.
         auto const orig_it = state.original().find(beneficiary_);
-        auto const curr_it = state.current().find(beneficiary_);
-        if (orig_it == state.original().end() ||
-            curr_it == state.current().end()) {
+        auto const *const curr_state = state.current().find(beneficiary_);
+        if (orig_it == state.original().end() || curr_state == nullptr) {
             return true;
         }
 
         OriginalAccountState const &original_state = orig_it->second;
-        AccountState const &current_state = curr_it->second.recent();
+        AccountState const &current_state = *curr_state;
 
         // If the original state has no account, then the beneficiary was
         // created during the block and if the current state has an account,
@@ -107,8 +106,7 @@ namespace trace
 
         Account const &original =
             get_account_for_trace(orig_it->second).value();
-        Account const &current =
-            get_account_for_trace(curr_it->second.recent()).value();
+        Account const &current = get_account_for_trace(current_state).value();
 
         // If `original` and `current` are the same and *have* empty storages,
         // then it must be that the beneficiary did not participate in the block
@@ -159,12 +157,11 @@ namespace trace
         auto const &current = state.current();
         auto const &original = state.original();
 
-        for (auto const &[address, current_stack] : current) {
+        for (auto const &[address, current_account_state] : current.items()) {
             auto const it = original.find(address);
             MONAD_ASSERT(it != original.end());
 
             // Possible diff.
-            auto const &current_account_state = current_stack.recent();
             auto const &current_account =
                 get_account_for_trace(current_account_state);
             auto const &current_storage = current_account_state.storage_;
@@ -224,8 +221,8 @@ namespace trace
 
     void AccessListTracer::capture_accesses(State const &state)
     {
-        for (auto const &[address, current_stack] : state.current()) {
-            capture_accesses(address, current_stack.recent());
+        for (auto const &[address, account_state] : state.current().items()) {
+            capture_accesses(address, account_state);
         }
     }
 
@@ -233,9 +230,9 @@ namespace trace
     {
         auto const &current = state.current();
         for (auto const &address : state.current_frame_dirty_accounts()) {
-            auto const it = current.find(address);
-            MONAD_ASSERT(it != current.end());
-            capture_accesses(address, it->second.recent());
+            auto const *const account_state = current.find(address);
+            MONAD_ASSERT(account_state != nullptr);
+            capture_accesses(address, *account_state);
         }
     }
 

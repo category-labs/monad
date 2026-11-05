@@ -3,7 +3,7 @@ Run tests for the monad C++ project.
 ## Arguments
 
 The user may pass arguments like:
-- A test filter string — passed as `-R <filter>` to ctest (e.g., `monad_trie`, `EvmcHost`)
+- A test filter string — passed as `-R <filter>` to ctest (e.g., `monad_trie`, `StateHost`)
 - No arguments — run all tests
 
 ## Instructions

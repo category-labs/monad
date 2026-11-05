@@ -414,7 +414,7 @@ static double execute_iteration(
         authorities,
         header,
         chain};
-    auto &host = test_host.get_evmc_host();
+    auto &host = test_host.get_state_host();
 
     auto msg_memory = memory_pool.alloc_ref();
     vm::Message msg{

@@ -46,7 +46,6 @@
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/trie_rodb.hpp>
 #include <category/execution/ethereum/db/util.hpp>
-#include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/execute_block.hpp>
 #include <category/execution/ethereum/execute_block_header.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
@@ -54,6 +53,7 @@
 #include <category/execution/ethereum/rlp/decode.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/state_host.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
@@ -312,7 +312,7 @@ namespace
             chain.get_chain_id(),
             chain.get_blob_schedule(header.timestamp));
 
-        EvmcHost<traits> host{
+        StateHost<traits> host{
             call_tracer,
             state_tracer,
             tx_context,

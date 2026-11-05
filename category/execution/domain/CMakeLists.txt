@@ -20,7 +20,12 @@ add_library(
   # domain
   "chain_id.cpp"
   "chain_id.hpp"
-  "config.hpp")
+  "config.hpp"
+  "domain_block.cpp"
+  "domain_block.hpp"
+  # domain/rlp
+  "rlp/domain_block_rlp.cpp"
+  "rlp/domain_block_rlp.hpp")
 
 target_link_libraries(
   monad_domain_execution

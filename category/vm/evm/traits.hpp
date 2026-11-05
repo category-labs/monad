@@ -417,7 +417,7 @@ namespace monad
     {
         static consteval monad_eth_revision evm_rev() noexcept
         {
-            if constexpr (Rev >= MONAD_NEXT) {
+            if constexpr (Rev == MONAD_NEXT_AMSTERDAM) {
                 return MONAD_ETH_AMSTERDAM;
             }
             if constexpr (Rev >= MONAD_NINE) {
@@ -661,7 +661,7 @@ namespace monad
 
         static consteval bool mip_12_active() noexcept
         {
-            return Rev >= MONAD_NEXT;
+            return Rev == MONAD_NEXT;
         }
 
         // Pricing version 1 activates the changes in:

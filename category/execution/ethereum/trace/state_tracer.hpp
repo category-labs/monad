@@ -19,6 +19,7 @@
 #include <category/core/config.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/state3/account_state.hpp>
+#include <category/execution/ethereum/trace/tracer_config.h>
 #include <category/vm/evm/traits.hpp>
 
 #include <ankerl/unordered_dense.h>
@@ -42,43 +43,49 @@ namespace trace
     template <class Key>
     using Set = ankerl::unordered_dense::set<Key>;
 
+    // PrestateTracer and StateDiffTracer are geth's prestateTracer without
+    // and with diffMode. Since diff_mode picks between them, neither reads it.
     struct PrestateTracer
     {
         explicit PrestateTracer(
-            nlohmann::json &storage, Address const &beneficiary)
+            nlohmann::json &storage, Address const &beneficiary,
+            monad_prestate_tracer_config const &config)
             : storage_(storage)
             , beneficiary_(beneficiary)
+            , config_(config)
         {
         }
 
-        PrestateTracer(nlohmann::json &, Address const &&) = delete;
+        PrestateTracer(
+            nlohmann::json &, Address const &&,
+            monad_prestate_tracer_config const &) = delete;
 
         void encode(Map<Address, OriginalAccountState> const &, State &);
 
     private:
         bool retain_beneficiary(State const &state) const;
-        static nlohmann::json
-        account_state_to_json(OriginalAccountState const &, State &);
+        static nlohmann::json account_state_to_json(
+            OriginalAccountState const &, State &,
+            monad_prestate_tracer_config const &);
         static void state_to_json(
             Map<Address, OriginalAccountState> const &, State &,
-            std::optional<Address> const &, nlohmann::json &);
-        static nlohmann::json state_to_json(
-            Map<Address, OriginalAccountState> const &, State &,
-            std::optional<Address> const &);
+            std::optional<Address> const &, nlohmann::json &,
+            monad_prestate_tracer_config const &);
         friend void state_to_json(
             Map<Address, OriginalAccountState> const &, State &,
-            std::optional<Address> const &, nlohmann::json &);
-        friend nlohmann::json state_to_json(
-            Map<Address, OriginalAccountState> const &, State &,
-            std::optional<Address> const &);
+            std::optional<Address> const &, nlohmann::json &,
+            monad_prestate_tracer_config const &);
         nlohmann::json &storage_;
         Address const &beneficiary_;
+        monad_prestate_tracer_config config_;
     };
 
     struct StateDiffTracer
     {
-        explicit StateDiffTracer(nlohmann::json &storage)
+        explicit StateDiffTracer(
+            nlohmann::json &storage, monad_prestate_tracer_config const &config)
             : storage_(storage)
+            , config_(config)
         {
         }
 
@@ -89,6 +96,7 @@ namespace trace
         StorageDeltas generate_storage_deltas(
             AccountState::StorageMap const &, AccountState::StorageMap const &);
         nlohmann::json &storage_;
+        monad_prestate_tracer_config config_;
     };
 
     struct AccessListTracer
@@ -170,12 +178,18 @@ namespace trace
 
     nlohmann::json state_to_json(
         Map<Address, OriginalAccountState> const &, State &,
-        std::optional<Address> const &);
+        std::optional<Address> const &,
+        monad_prestate_tracer_config const & = {});
     void state_to_json(
         Map<Address, OriginalAccountState> const &, State &,
-        std::optional<Address> const &, nlohmann::json &);
-    nlohmann::json state_deltas_to_json(StateDeltas const &, State &);
-    void state_deltas_to_json(StateDeltas const &, State &, nlohmann::json &);
+        std::optional<Address> const &, nlohmann::json &,
+        monad_prestate_tracer_config const &);
+    nlohmann::json state_deltas_to_json(
+        StateDeltas const &, State &,
+        monad_prestate_tracer_config const & = {});
+    void state_deltas_to_json(
+        StateDeltas const &, State &, nlohmann::json &,
+        monad_prestate_tracer_config const &);
 }
 
 MONAD_NAMESPACE_END

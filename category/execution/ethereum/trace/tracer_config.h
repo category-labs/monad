@@ -33,6 +33,8 @@ enum monad_tracer_config
 struct monad_prestate_tracer_config
 {
     bool diff_mode;
+    // geth's disableCode: accounts with code report codeHash but not code.
+    bool disable_code;
 };
 
 #ifdef __cplusplus

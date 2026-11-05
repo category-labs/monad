@@ -29,6 +29,8 @@ add_library(
   "deriver.hpp"
   "domain_block.cpp"
   "domain_block.hpp"
+  "execution.cpp"
+  "execution.hpp"
   "hpke.cpp"
   "hpke.hpp"
   "l1_source.cpp"

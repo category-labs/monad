@@ -86,7 +86,7 @@ TEST(FromHexChar, returns_nullopt_for_null_terminator)
 TEST(ParseHexByte, decodes_two_character_pair_and_advances_view)
 {
     auto in = "1a2b"sv;
-    uint8_t byte;
+    uint8_t byte{};
     EXPECT_TRUE(parse_hex_byte(in, byte));
     EXPECT_EQ(byte, 0x1a);
     EXPECT_EQ(in, "2b"sv);

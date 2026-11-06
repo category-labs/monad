@@ -65,21 +65,20 @@ namespace
     std::string
     print_trace(monad::stack_backtrace const &trace, bool const symbolize)
     {
-        auto const close_file = [](FILE *const file) { std::fclose(file); };
-        std::unique_ptr<FILE, decltype(close_file)> const output{
-            std::tmpfile(), close_file};
+        FILE *const output = std::tmpfile();
         EXPECT_NE(output, nullptr);
         if (!output) {
             return {};
         }
-        trace.print(fileno(output.get()), 0, symbolize);
-        EXPECT_EQ(std::fseek(output.get(), 0, SEEK_SET), 0);
+        trace.print(fileno(output), 0, symbolize);
+        EXPECT_EQ(std::fseek(output, 0, SEEK_SET), 0);
         std::string result;
         char line[1024];
-        while (std::fgets(line, sizeof(line), output.get())) {
+        while (std::fgets(line, sizeof(line), output)) {
             result += line;
         }
-        EXPECT_EQ(std::ferror(output.get()), 0);
+        EXPECT_EQ(std::ferror(output), 0);
+        std::fclose(output);
         return result;
     }
 

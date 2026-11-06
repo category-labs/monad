@@ -213,6 +213,11 @@ inline MONAD_ASYNC_NAMESPACE::result<void> find_request_sender<T>::operator()(
 
     for (;;) {
         unsigned prefix_index = 0;
+        // False positive: DbGetSender in db.cpp allocates this sender with
+        // `new auto(async::connect(...))`, and the analyzer does not model the
+        // copy elision into the non-movable operation state, so it treats
+        // root_ as never initialized.
+        // NOLINTNEXTLINE(clang-analyzer-core.uninitialized.Assign)
         unsigned node_prefix_index = root_.prefix_index;
         MONAD_ASSERT(root_.is_valid());
         auto *node = root_.node.get();

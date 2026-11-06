@@ -67,18 +67,18 @@ Start each section's commands from the repository root unless stated otherwise.
 ZisK input is an 8-byte little-endian payload length followed by the witness,
 zero-padded to an 8-byte boundary.
 
-Published benchmarks and releases use the [reference Nix build](../nix/README.md#zisk-guest-elf):
+Published benchmarks and releases use the [reference Nix build](../nix/zisk/README.md#zisk-guest-elf):
 
 ```sh
 nix build --option sandbox true --option sandbox-fallback false '.?submodules=1#zisk-elf'
 # result/monad-zkvm-zisk and result/monad-zkvm-zisk.build.json
 ```
 
-It pins the source and toolchains and checks the allocator assumptions and
-linked ELF. Keep the manifest with the artifact. It requires an x86_64 Linux
+It pins the source and toolchains and writes a manifest of the build's inputs
+and the ELF hash beside the ELF. Keep the manifest with the artifact. It requires an x86_64 Linux
 builder. Reproducibility must still be checked by independent rebuilds.
 
-For incremental development on x86_64 Linux, use the [Nix development shell](../nix/README.md#development-shell):
+For incremental development on x86_64 Linux, use the [Nix development shell](../nix/zisk/README.md#development-shell):
 
 ```sh
 nix develop .#zisk

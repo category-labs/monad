@@ -171,7 +171,8 @@ FROM nixos/nix@sha256:377d4887aca98f0dfa12971c1ea6d6a625a435d8b610d4c95a436843da
 COPY flake.nix flake.lock /nix-src/
 COPY nix /nix-src/nix
 
-# Keep the package definitions and compiler probes inside the flake source.
+# Keep the package definitions, compiler probes and GCC patches inside the
+# flake source during pure evaluation.
 RUN git init -q /nix-src && git -C /nix-src add flake.nix flake.lock nix
 
 # Garbage-collect the build-time closure (GCC sources, stdenv, the stage-1

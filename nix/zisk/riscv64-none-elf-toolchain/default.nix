@@ -24,7 +24,7 @@
   path,
   stdenv,
   buildEnv,
-  fetchFromGitHub,
+  fetchurl,
 }:
 
 let
@@ -45,35 +45,36 @@ let
     };
   };
 
-  # GCC 15.2.0 with the two opt-in ZisK backend changes. Keep the revision
-  # and content hash pinned; compiler implementation changes live in the fork.
-  ziskGccSource = fetchFromGitHub {
-    owner = "anne-laure-s";
-    repo = "gcc";
-    rev = "93353bc300d688e7a929d4bfb2768e3465289e34";
-    hash = "sha256-0fXyEdpaCOhBHBLjtRtRRHvKG+YFajXOXNrmHpFNJ6M=";
+  # The ZisK guest relies on -mzisk-dma and -mzisk-clean-byte-stores, which
+  # exist only in the patched compiler; README.md beside this file describes
+  # the patches. The DMA lowering patch is ZisK's own, taken from
+  # the ziskethone C++ guest at a pinned commit; the clean-byte-stores patch
+  # is vendored and applies on top of it. Both come after nixpkgs's own GCC
+  # patches.
+  ziskDmaPatch = fetchurl {
+    url = "https://raw.githubusercontent.com/0xPolygonHermez/ziskethone/8bede62c7c9e843d1c2163eb05c56794ce706552/cpp-guest/patches/gcc/gcc-15.2.0/0001-riscv-zisk-dma-lowering.patch";
+    hash = "sha256-nbjLPySX/x5ZymCTuNLIqoegkmSKe7jjyAGzqBMthPk=";
   };
+  ziskPatches = [
+    ziskDmaPatch
+    ./patches/riscv-zisk-clean-byte-stores-15.2.0.diff
+  ];
 
   ziskProbes = lib.fileset.toSource {
-    root = ./gcc-probes;
+    root = ./tests;
     fileset = lib.fileset.fileFilter (
       file: file.hasExt "sh" || file.hasExt "c"
-    ) ./gcc-probes;
+    ) ./tests;
   };
 
   # buildPackages is the build -> target package set, i.e. the cross
   # compiler itself. gcc15 is the wrapped compiler, which knows where the
   # target's newlib headers and libc.a live; gcc15.cc is the bare one,
-  # which does not. Replace the bare compiler source and wrap it again the way
+  # which does not. Patch the bare compiler and wrap it again the way
   # nixpkgs wraps gcc15, so the wrapper keeps that knowledge.
   cc = pkgs.buildPackages.wrapCC (
     pkgs.buildPackages.gcc15.cc.overrideAttrs (old: {
-      src = ziskGccSource;
-      # Git sources omit generated parsers shipped in GCC release tarballs.
-      nativeBuildInputs = old.nativeBuildInputs ++ [
-        pkgs.buildPackages.flex
-        pkgs.buildPackages.bison
-      ];
+      patches = old.patches ++ ziskPatches;
     })
   );
   bintools = pkgs.buildPackages.binutils;
@@ -92,7 +93,7 @@ buildEnv {
   # Check that each patched option changes the generated code, not only
   # that it parses: a compiler accepting -mzisk-dma while still emitting
   # memcpy calls would build a slower guest without any error. The probes
-  # and the check remain here as the guest's toolchain contract.
+  # and the check live in tests/ beside this file.
   postBuild = ''
     bash ${ziskProbes}/check-probes.sh $out/bin/riscv64-none-elf-gcc
   '';

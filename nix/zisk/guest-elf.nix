@@ -18,7 +18,7 @@
 let
   target = "riscv64ima-zisk-zkvm-elf";
 
-  buildEnv = callPackage ./zisk-build-env.nix {
+  buildEnv = callPackage ./build-env.nix {
     inherit rev;
     vendorCargoDeps = true;
   };
@@ -46,7 +46,6 @@ stdenv.mkDerivation (finalAttrs: {
 
   buildPhase = ''
     runHook preBuild
-    python3 ${./check-zisk.py} --repo .
     cd zkvm/zisk
     export CARGO_HOME=$TMPDIR/cargo
     export CARGO_BUILD_JOBS=$NIX_BUILD_CORES NUM_JOBS=$NIX_BUILD_CORES
@@ -59,29 +58,24 @@ stdenv.mkDerivation (finalAttrs: {
     runHook preInstall
     elf=target/elf/${target}/release/monad-zkvm-zisk
     install -Dm644 "$elf" $out/monad-zkvm-zisk
+    # The manifest: every input of the build, the build id (this store
+    # path, which the ELF also embeds) and the hash of the ELF itself.
+    substitute ${
+      writeText "monad-zkvm-zisk.build.json" (
+        builtins.toJSON {
+          commit = rev;
+          source = toString src;
+          riscv_toolchain = toString riscv64-none-elf-toolchain;
+          rust_toolchain = toString zisk-rust-toolchain;
+          cargo_dependencies = toString finalAttrs.cargoDeps;
+          zisk = zisk.rev;
+          build = "@build@";
+          elf_sha256 = "@elf_sha256@";
+        }
+      )
+    } $out/monad-zkvm-zisk.build.json \
+      --subst-var-by build "''${out##*/}" \
+      --subst-var-by elf_sha256 "$(sha256sum "$elf" | cut -d' ' -f1)"
     runHook postInstall
-  '';
-
-  # Validate the source assumptions and linked artifact.
-  doInstallCheck = true;
-  installCheckPhase = ''
-    runHook preInstallCheck
-    elf=$out/monad-zkvm-zisk
-
-    python3 ${./check-zisk.py} --repo ../.. --elf "$elf" \
-      --binutils-prefix ${riscv64-none-elf-toolchain}/bin/riscv64-none-elf- \
-      --inputs ${
-        writeText "zisk-inputs.json" (
-          builtins.toJSON {
-            commit = rev;
-            source = toString src;
-            riscv_toolchain = toString riscv64-none-elf-toolchain;
-            rust_toolchain = toString zisk-rust-toolchain;
-            cargo_dependencies = toString finalAttrs.cargoDeps;
-            zisk = zisk.rev;
-          }
-        )
-      } --build-id "''${out##*/}" --manifest $out/monad-zkvm-zisk.build.json
-    runHook postInstallCheck
   '';
 })

@@ -37,12 +37,11 @@ Result<void> validate_transaction(
     std::span<std::optional<Address> const> const authorities,
     trace::StateTracer &state_tracer, ExecutionMode const &mode)
 {
-    bool const strict = strict_validation(mode);
-    if (!strict) {
-        BOOST_OUTCOME_TRY(validate_relaxed_sender_nonce(sender, state));
+    if (state_nonce_bound(mode)) {
+        BOOST_OUTCOME_TRY(validate_simulation_sender_nonce(sender, state));
     }
     auto res = validate_ethereum_transaction<traits>(
-        tx, sender, state, state_tracer, strict);
+        tx, sender, state, state_tracer, strict_validation(mode));
 
     if constexpr (traits::reserve_balance_active()) {
         if (res.has_error() &&

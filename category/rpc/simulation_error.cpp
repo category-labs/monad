@@ -51,7 +51,7 @@ namespace
         case SimulationError::InvalidBlockGap:
         case SimulationError::GasLimitExceeded:
             return EVMC_INTERNAL_ERROR;
-        case SimulationError::UnsupportedMode:
+        case SimulationError::UnsupportedChainConfig:
             return EVMC_REJECTED;
         }
         return EVMC_INTERNAL_ERROR;
@@ -143,7 +143,9 @@ quick_status_code_from_enum<monad::SimulationError>::value_mappings()
          "the block gap must be exactly 1 after filling in synthetic blocks",
          {}},
         {SimulationError::GasLimitExceeded, "gas limit exceeded", {}},
-        {SimulationError::UnsupportedMode, "ethereum mode is unsupported", {}},
+        {SimulationError::UnsupportedChainConfig,
+         "only Monad chain configurations are supported",
+         {}},
     };
 
     return v;

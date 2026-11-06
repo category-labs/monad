@@ -15,7 +15,6 @@
 
 #pragma once
 
-#include <category/core/assert.h>
 #include <category/core/config.hpp>
 
 #include <type_traits>
@@ -74,6 +73,14 @@ constexpr bool strict_validation(ExecutionMode const &execution_mode)
     return std::visit(
         [](auto const &mode) { return mode.strict_validation(); },
         execution_mode);
+}
+
+// Determines whether to bound the sender's state nonce below 2^64 - 1 directly.
+// Simulation assigns transaction nonces itself, so strict validation's nonce
+// check no longer implies the bound (see `validate_simulation_sender_nonce`).
+constexpr bool state_nonce_bound(ExecutionMode const &execution_mode)
+{
+    return std::holds_alternative<Simulation>(execution_mode);
 }
 
 //

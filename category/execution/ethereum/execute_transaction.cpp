@@ -455,9 +455,7 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
         TRACE_TXN_EVENT(StartExecution);
 
         State state{block_state_, Incarnation{header_.number, i_ + 1}};
-        if (strict_validation(chain_ctx_.mode)) {
-            state.set_original_nonce(sender_, tx_.nonce);
-        }
+        state.set_original_nonce(sender_, tx_.nonce);
 
         call_tracer_.reset();
         trace::reset(state_tracer_);

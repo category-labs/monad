@@ -803,9 +803,9 @@ namespace
         trace::StateTracer system_call_state_tracer{std::monostate{}};
         auto chain_context =
             context_buffer.advance<traits>(senders, authorities);
-        if constexpr (is_monad_trait_v<traits>) {
-            chain_context.mode = execution_mode;
-        }
+
+        static_assert(is_monad_trait_v<traits>);
+        chain_context.mode = execution_mode;
 
         return execute_block<traits>(
             chain,
@@ -836,48 +836,29 @@ namespace
         ChainContextBuffer &context_buffer,
         bool const emit_native_transfer_logs, Simulation const &execution_mode)
     {
-        if constexpr (is_monad_trait_v<base_traits>) {
-            auto const *const monad_chain =
-                dynamic_cast<MonadChain const *>(&chain);
-            MONAD_ASSERT(monad_chain);
-            auto const rev =
-                monad_chain->get_monad_revision(block.header.timestamp);
-            SWITCH_MONAD_TRAITS(
-                eth_simulate_execute_block,
-                chain,
-                parent,
-                block,
-                senders,
-                authorities,
-                block_state,
-                block_hash_buffer,
-                tx_exec_pool,
-                call_tracers,
-                state_tracers,
-                context_buffer,
-                emit_native_transfer_logs,
-                execution_mode);
-        }
-        else {
-            monad_eth_revision const rev =
-                chain.get_revision(block.header.number, block.header.timestamp);
-            SWITCH_EVM_TRAITS(
-                eth_simulate_execute_block,
-                chain,
-                parent,
-                block,
-                senders,
-                authorities,
-                block_state,
-                block_hash_buffer,
-                tx_exec_pool,
-                call_tracers,
-                state_tracers,
-                context_buffer,
-                emit_native_transfer_logs,
-                execution_mode);
-        }
-        MONAD_ASSERT(false);
+        static_assert(is_monad_trait_v<base_traits>);
+        auto const *const monad_chain =
+            dynamic_cast<MonadChain const *>(&chain);
+        MONAD_ASSERT_THROW(monad_chain, "Failed to cast chain to MonadChain");
+        auto const rev =
+            monad_chain->get_monad_revision(block.header.timestamp);
+        SWITCH_MONAD_TRAITS(
+            eth_simulate_execute_block,
+            chain,
+            parent,
+            block,
+            senders,
+            authorities,
+            block_state,
+            block_hash_buffer,
+            tx_exec_pool,
+            call_tracers,
+            state_tracers,
+            context_buffer,
+            emit_native_transfer_logs,
+            execution_mode);
+        MONAD_ASSERT_THROW(
+            false, "Unreachable code reached in eth_simulate_dispatch_block");
     }
 
     template <Traits traits>
@@ -1133,13 +1114,6 @@ namespace
                     // Update tx.nonce to match the expected nonce in the
                     // current block state.
                     tx.nonce = state.get_nonce(senders[block_idx][tx_idx]);
-                    // NOTE(dhil): Unlike eth_call, eth_simulateV1 always
-                    // performs the max nonce check.
-                    if (MONAD_UNLIKELY(
-                            tx.nonce == std::numeric_limits<uint64_t>::max())) {
-                        return Result<nlohmann::json>::error_type{
-                            TransactionError::NonceExceedsMax};
-                    }
                     state.set_nonce(senders[block_idx][tx_idx], tx.nonce + 1);
                 }
             }
@@ -2171,7 +2145,7 @@ struct monad_executor
                         if (chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET ||
                             chain_config == CHAIN_CONFIG_HIVE_NET) {
                             return Result<nlohmann::json>::error_type{
-                                SimulationError::UnsupportedMode};
+                                SimulationError::UnsupportedChainConfig};
                         }
                         else {
                             auto const rev =

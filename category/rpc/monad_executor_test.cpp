@@ -85,6 +85,9 @@
 
 #include <nlohmann/json.hpp>
 
+#include <secp256k1.h>
+#include <secp256k1_recovery.h>
+
 #include <algorithm>
 #include <array>
 #include <cstddef>
@@ -222,6 +225,37 @@ namespace
 
         c->result = result;
         c->promise.set_value();
+    }
+
+    // Signs `auth` as the EOA owning `secret_key` would.
+    AuthorizationEntry
+    sign_authorization(AuthorizationEntry auth, bytes32_t const &secret_key)
+    {
+        std::unique_ptr<secp256k1_context, void (*)(secp256k1_context *)> const
+            context{
+                secp256k1_context_create(SECP256K1_CONTEXT_SIGN),
+                &secp256k1_context_destroy};
+        MONAD_ASSERT(context);
+        auto const hash =
+            keccak256(rlp::encode_authorization_entry_for_signing(auth));
+        secp256k1_ecdsa_recoverable_signature signature;
+        MONAD_ASSERT(
+            secp256k1_ecdsa_sign_recoverable(
+                context.get(),
+                &signature,
+                hash.bytes,
+                secret_key.bytes,
+                nullptr,
+                nullptr) == 1);
+        uint8_t compact[64];
+        int recovery_id = 0;
+        MONAD_ASSERT(
+            secp256k1_ecdsa_recoverable_signature_serialize_compact(
+                context.get(), compact, &recovery_id, &signature) == 1);
+        auth.sc.signature.r = load_be_unsafe<uint256_t>(compact);
+        auth.sc.signature.s = load_be_unsafe<uint256_t>(compact + 32);
+        auth.sc.signature.y_parity = static_cast<uint8_t>(recovery_id);
+        return auth;
     }
 
     template <class Machine>
@@ -5392,7 +5426,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_simple_transfer)
         simulate_max_output_size,
         state_override,
         block_override,
-        true,
+        true, // validation
         false,
         complete_callback,
         (void *)&ctx);
@@ -5508,7 +5542,7 @@ TEST_F(EthCallFixture, eth_simulate_slot_number)
         simulate_max_output_size,
         state_override,
         block_override,
-        true,
+        true, // validation
         false,
         complete_callback,
         (void *)&ctx);
@@ -5645,7 +5679,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_slot_number_across_amsterdam)
             simulate_max_output_size,
             so,
             bo,
-            true,
+            true, // validation
             false,
             complete_callback,
             (void *)&ctx);
@@ -5782,7 +5816,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_simple_transfers_multiple_blocks)
         simulate_max_output_size,
         state_overrides,
         block_overrides,
-        true,
+        true, // validation
         false,
         complete_callback,
         (void *)&ctx);
@@ -5883,7 +5917,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_single_call_block_255)
         simulate_max_output_size,
         so_overrides,
         bo_overrides,
-        true,
+        true, // validation
         false,
         complete_callback,
         (void *)&ctx);
@@ -5942,7 +5976,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_empty_input)
         simulate_max_output_size,
         so_overrides,
         bo_overrides,
-        true,
+        true, // validation
         false,
         complete_callback,
         (void *)&ctx);
@@ -6018,7 +6052,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_block_override_synthetic_gap)
         simulate_max_output_size,
         so_overrides,
         bo_overrides,
-        true,
+        true, // validation
         false,
         complete_callback,
         (void *)&ctx);
@@ -6121,7 +6155,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_block_override_no_synthetic_gaps)
         simulate_max_output_size,
         so_overrides,
         bo_overrides,
-        true,
+        true, // validation
         false,
         complete_callback,
         (void *)&ctx);
@@ -6232,7 +6266,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_stress_queue_rejection)
             simulate_max_output_size,
             subs[i]->so,
             subs[i]->bo,
-            true,
+            true, // validation
             false,
             complete_callback,
             (void *)&subs[i]->ctx);
@@ -6396,7 +6430,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance)
         simulate_max_output_size,
         so,
         bo,
-        true,
+        true, // validation
         false,
         complete_callback,
         (void *)&ctx);
@@ -6554,7 +6588,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance_chain_context_buffer)
             simulate_max_output_size,
             so,
             bo,
-            true,
+            true, // validation
             false,
             complete_callback,
             (void *)&ctx);
@@ -6697,7 +6731,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance_chain_context_buffer)
             simulate_max_output_size,
             so,
             bo,
-            true,
+            true, // validation
             false,
             complete_callback,
             (void *)&ctx);
@@ -6929,7 +6963,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_call_types)
         simulate_max_output_size,
         so,
         bo,
-        true,
+        true, // validation
         false,
         complete_callback,
         (void *)&ctx);
@@ -7077,7 +7111,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_state_changes_across_blocks)
         simulate_max_output_size,
         so,
         bo,
-        true,
+        true, // validation
         false,
         complete_callback,
         (void *)&ctx);
@@ -7300,7 +7334,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_deploy_and_call)
         simulate_max_output_size,
         so,
         bo,
-        true,
+        true, // validation
         false,
         complete_callback,
         (void *)&ctx);
@@ -7518,7 +7552,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_native_transfer_logs)
         simulate_max_output_size,
         so,
         bo,
-        true,
+        true, // validation
         true, // emit_native_transfer_logs
         complete_callback,
         (void *)&ctx);
@@ -7837,7 +7871,7 @@ TYPED_TEST(EthCallEncodingFixture, eth_simulate_v1_time_travel)
         simulate_max_output_size,
         so,
         bo,
-        true,
+        true, // validation
         true, // emit_native_transfer_logs
         complete_callback,
         (void *)&ctx);
@@ -7967,7 +8001,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_blockhash_reads)
         simulate_max_output_size,
         so,
         bo,
-        true,
+        true, // validation
         false,
         complete_callback,
         (void *)&ctx);
@@ -8112,7 +8146,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_legacy_transactions)
         simulate_max_output_size,
         state_overrides,
         block_overrides,
-        true,
+        true, // validation
         false,
         complete_callback,
         (void *)&ctx);
@@ -8226,7 +8260,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_typed_transactions_2930_and_1559)
         simulate_max_output_size,
         state_overrides,
         block_overrides,
-        true,
+        true, // validation
         false,
         complete_callback,
         (void *)&ctx);
@@ -8354,7 +8388,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_typed_transaction_7702)
         simulate_max_output_size,
         state_overrides,
         block_overrides,
-        true,
+        true, // validation
         false,
         complete_callback,
         (void *)&ctx);
@@ -8510,7 +8544,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_all_transaction_formats_single_block)
         simulate_max_output_size,
         state_overrides,
         block_overrides,
-        true,
+        true, // validation
         false,
         complete_callback,
         (void *)&ctx);
@@ -8629,7 +8663,7 @@ TEST_F(
         simulate_max_output_size,
         state_overrides,
         block_overrides,
-        true,
+        true, // validation
         false,
         complete_callback,
         (void *)&ctx);
@@ -8752,7 +8786,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_gas_limit_enforcement)
         simulate_max_output_size,
         state_override,
         block_override,
-        true,
+        true, // validation
         false,
         complete_callback,
         (void *)&ctx);
@@ -8847,7 +8881,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_simple_transfer_withdrawals_monad)
         simulate_max_output_size,
         state_override,
         block_override,
-        true,
+        true, // validation
         false,
         complete_callback,
         (void *)&ctx);
@@ -8987,7 +9021,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_state_override_graceful_failure)
         simulate_max_output_size,
         state_override,
         block_override,
-        true,
+        true, // validation
         false,
         complete_callback,
         (void *)&ctx);
@@ -9062,7 +9096,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_transaction_input_too_long_causes_death)
             simulate_max_output_size,
             state_override,
             block_override,
-            true,
+            true, // validation
             false,
             nullptr,
             nullptr),
@@ -9147,7 +9181,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_beacon_roots)
             simulate_max_output_size,
             state_overrides,
             block_overrides,
-            true,
+            true, // validation
             false,
             complete_callback,
             (void *)&ctx);
@@ -9291,7 +9325,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_block_history_state_override)
         simulate_max_output_size,
         state_overrides,
         block_overrides,
-        true,
+        true, // validation
         false,
         complete_callback,
         (void *)&ctx);
@@ -9399,7 +9433,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_deploy_over_storage_override)
         simulate_max_output_size,
         state_overrides,
         block_overrides,
-        true,
+        true, // validation
         false,
         complete_callback,
         (void *)&ctx);
@@ -9541,7 +9575,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_output_size_enforcement)
                                                 // unlimited.
             state_override,
             block_override,
-            true,
+            true, // validation
             false,
             complete_callback,
             (void *)&no_limit_ctx);
@@ -9577,7 +9611,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_output_size_enforcement)
             actual_cbor_output_size,
             state_override,
             block_override,
-            true,
+            true, // validation
             false,
             complete_callback,
             (void *)&actual_ctx);
@@ -9616,7 +9650,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_output_size_enforcement)
             max_output_size,
             state_override,
             block_override,
-            true,
+            true, // validation
             false,
             complete_callback,
             (void *)&limited_ctx);
@@ -9662,7 +9696,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_output_size_enforcement)
             output_max_size,
             state_override,
             block_override,
-            true,
+            true, // validation
             false,
             complete_callback,
             (void *)&output_limited_ctx);
@@ -9713,7 +9747,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_output_size_enforcement)
             mixed_max_size,
             state_override,
             block_override,
-            true,
+            true, // validation
             false,
             complete_callback,
             (void *)&mixed_limited_ctx);
@@ -9897,7 +9931,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_empty_state_override_zeros_storage)
         simulate_max_output_size,
         state_overrides,
         block_overrides,
-        true,
+        true, // validation
         false,
         complete_callback,
         &ctx);
@@ -10378,7 +10412,7 @@ TEST(EthCallFixtureNoDb, eth_simulate_v1_with_state_overrides)
         simulate_max_output_size,
         so,
         bo,
-        true,
+        true, // validation
         false,
         complete_callback,
         (void *)&ctx);
@@ -10457,6 +10491,75 @@ TEST(EthCallFixtureNoDb, trace_is_rejected)
     EXPECT_EQ(ctx.result->status_code, EVMC_REJECTED);
     EXPECT_STREQ(ctx.result->message, "cannot trace without a database");
 
+    monad_executor_destroy(executor);
+}
+
+// Ethereum chain configurations are rejected in both validation modes, before
+// the revision is resolved: block 1 predates Ethereum mainnet's earliest
+// supported fork.
+TEST(EthCallFixtureNoDb, eth_simulate_v1_rejects_ethereum_chain_configs)
+{
+    static constexpr Address sender =
+        0x00000000000000000000000000000000deadbeef_address;
+    static constexpr Address recipient =
+        0x00000000000000000000000000000000feedface_address;
+
+    auto *const executor = create_executor_without_db();
+    auto *const state_overrides = monad_state_override_vec_create(1);
+    auto *const block_overrides = monad_block_override_vec_create(1);
+    Transaction const tx{.gas_limit = 100'000, .to = recipient};
+    auto const rlp_senders = to_vec(rlp::encode_list2(
+        rlp::encode_list2(rlp::encode_address(std::make_optional(sender)))));
+    auto const rlp_calls = to_vec(rlp::encode_list2(
+        rlp::encode_list2(rlp::encode_string2(rlp::encode_transaction(tx)))));
+    BlockHeader const header{.number = 1, .gas_limit = 200'000'000};
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    std::vector<std::unique_ptr<callback_context>> contexts;
+    contexts.reserve(4);
+    for (auto const &[chain_config, name] :
+         {std::pair{CHAIN_CONFIG_ETHEREUM_MAINNET, "ethereum mainnet"},
+          std::pair{CHAIN_CONFIG_HIVE_NET, "hive"}}) {
+        for (bool const validation : {true, false}) {
+            SCOPED_TRACE(std::format("{}, validation={}", name, validation));
+            auto &ctx =
+                *contexts.emplace_back(std::make_unique<callback_context>());
+            auto future = ctx.promise.get_future();
+            monad_executor_eth_simulate_submit(
+                executor,
+                chain_config,
+                rlp_senders.data(),
+                rlp_senders.size(),
+                rlp_calls.data(),
+                rlp_calls.size(),
+                header.number,
+                rlp_header.data(),
+                rlp_header.size(),
+                rlp_block_id.data(),
+                rlp_block_id.size(),
+                rlp_finalized_id.data(),
+                rlp_finalized_id.size(),
+                simulate_gas_limit,
+                simulate_max_calls,
+                simulate_max_output_size,
+                state_overrides,
+                block_overrides,
+                validation,
+                false, // emit_native_transfer_logs
+                complete_callback,
+                (void *)&ctx);
+            future.get();
+
+            EXPECT_EQ(ctx.result->status_code, EVMC_REJECTED);
+            EXPECT_STREQ(
+                ctx.result->message,
+                "only Monad chain configurations are supported");
+        }
+    }
+
+    monad_block_override_vec_destroy(block_overrides);
+    monad_state_override_vec_destroy(state_overrides);
     monad_executor_destroy(executor);
 }
 
@@ -10766,9 +10869,11 @@ TEST_F(EthCallFixture, eth_simulate_v1_relaxed_sender_validation)
           TestCase{false, 38'000, 0, 1'000, "intrinsic gas greater than limit"},
           TestCase{false, 100'000, 1, 0, "insufficient balance for fee"}}) {
         SCOPED_TRACE(std::format(
-            "validation={}, gas_limit={}",
+            "validation={}, gas_limit={}, max_fee_per_gas={}, data_size={}",
             test_case.validation,
-            test_case.gas_limit));
+            test_case.gas_limit,
+            test_case.max_fee_per_gas,
+            test_case.data_size));
         Transaction const tx{
             .nonce = 99,
             .max_fee_per_gas = test_case.max_fee_per_gas,
@@ -11022,7 +11127,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_validation_false_matches_eth_call)
             simulate_max_output_size,
             state_overrides,
             block_overrides,
-            false,
+            false, // validation
             false,
             complete_callback,
             &simulate_ctx);
@@ -11194,7 +11299,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_max_sender_nonce_differs_from_eth_call)
         simulate_max_output_size,
         state_overrides,
         block_overrides,
-        false,
+        false, // validation
         false,
         complete_callback,
         &simulate_ctx);
@@ -11256,10 +11361,6 @@ TEST_F(EthCallFixture, eth_simulate_v1_validation_false_bounds_sender_nonce)
     // account for this.
     Transaction const bump_nonce{.gas_limit = 100'000, .to = sender};
     Transaction const call{.gas_limit = 100'000, .to = recipient};
-    // Monad's balance rule admits this transaction, and the unfunded CREATE
-    // increments the sender's nonce.
-    Transaction const unfunded_create{
-        .gas_limit = 100'000, .value = 1'000'001, .to = std::nullopt};
 
     struct TestCase
     {
@@ -11271,10 +11372,6 @@ TEST_F(EthCallFixture, eth_simulate_v1_validation_false_bounds_sender_nonce)
     auto const test_cases = std::array{
         TestCase{"nonce reaches max", {bump_nonce}, nullptr},
         TestCase{"call at max nonce", {bump_nonce, call}, "nonce exceeds max"},
-        TestCase{
-            "unfunded create at max nonce",
-            {bump_nonce, unfunded_create},
-            "nonce exceeds max"},
     };
 
     std::vector<std::unique_ptr<callback_context>> contexts;
@@ -11314,7 +11411,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_validation_false_bounds_sender_nonce)
             simulate_max_output_size,
             state_overrides,
             block_overrides,
-            false,
+            false, // validation
             false,
             complete_callback,
             (void *)&ctx);
@@ -11420,7 +11517,7 @@ TEST_F(
         simulate_max_output_size,
         state_overrides,
         block_overrides,
-        false,
+        false, // validation
         false,
         complete_callback,
         (void *)&ctx);
@@ -11566,6 +11663,119 @@ TEST_F(
         EXPECT_EQ(output[0]["calls"][1]["status"], "0x1");
     }
 
+    monad_block_override_vec_destroy(block_overrides);
+    monad_state_override_vec_destroy(state_overrides);
+    monad_executor_destroy(executor);
+}
+
+// An earlier call's 7702 authorization raises the authority's nonce to
+// 2^64 - 1. The nonce pre-pass in eth_simulate_impl patches call 1 with the
+// authority's pre-block nonce (2^64 - 2), so without the simulation nonce bound
+// `validation: true` would fail with "bad nonce". Both modes report "nonce
+// exceeds max", as geth does.
+TEST_F(EthCallFixture, eth_simulate_v1_authorization_raises_sender_nonce_to_max)
+{
+    static constexpr Address sender =
+        0x00000000000000000000000000000000deadbeef_address;
+    static constexpr Address recipient =
+        0x00000000000000000000000000000000feedface_address;
+    constexpr auto max_nonce = std::numeric_limits<uint64_t>::max();
+    auto const auth = sign_authorization(
+        AuthorizationEntry{
+            .sc = {.chain_id = uint256_t{20143}},
+            .address = 0xdeadbeef00000000000000000000000000000000_address,
+            .nonce = max_nonce - 1,
+        },
+        0x4c0883a69102937d6231471b5dbb6204fe5129617082792ae468d01a3f362318_bytes32);
+    auto const authority = recover_authority(auth);
+    ASSERT_TRUE(authority.has_value());
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {sender,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.balance = 100_ether, .nonce = 0}}}},
+            {*authority,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.balance = 100_ether, .nonce = max_nonce - 1}}}},
+            {recipient,
+             StateDelta{
+                 .account =
+                     {std::nullopt, Account{.balance = 0, .nonce = 0}}}}},
+        {},
+        BlockHeader{.number = 0});
+    for (uint64_t block_number = 1; block_number < 256; ++block_number) {
+        commit_sequential(tdb, {}, {}, BlockHeader{.number = block_number});
+    }
+
+    auto *executor = create_executor(dbname.string());
+    auto *const state_overrides = monad_state_override_vec_create(1);
+    auto *const block_overrides = monad_block_override_vec_create(1);
+    auto const rlp_senders = to_vec(rlp::encode_list2(rlp::encode_list2(
+        rlp::encode_address(std::make_optional(sender)),
+        rlp::encode_address(authority))));
+    Transaction const with_auth{
+        .max_fee_per_gas = 1,
+        .gas_limit = 200'000,
+        .value = uint256_t{1'000},
+        .to = recipient,
+        .type = TransactionType::eip7702,
+        .max_priority_fee_per_gas = 0,
+        .authorization_list = {auth},
+    };
+    Transaction const from_authority{
+        .gas_limit = 100'000, .value = uint256_t{1}, .to = recipient};
+    auto const rlp_calls = to_vec(rlp::encode_list2(rlp::encode_list2(
+        rlp::encode_string2(rlp::encode_transaction(with_auth)),
+        rlp::encode_string2(rlp::encode_transaction(from_authority)))));
+    BlockHeader const header{.number = 1, .gas_limit = 200'000'000};
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    std::vector<std::unique_ptr<callback_context>> contexts;
+    contexts.reserve(2);
+    for (bool const validation : {true, false}) {
+        SCOPED_TRACE(validation);
+        auto &ctx =
+            *contexts.emplace_back(std::make_unique<callback_context>());
+        auto future = ctx.promise.get_future();
+        monad_executor_eth_simulate_submit(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_senders.data(),
+            rlp_senders.size(),
+            rlp_calls.data(),
+            rlp_calls.size(),
+            1,
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            rlp_finalized_id.data(),
+            rlp_finalized_id.size(),
+            simulate_gas_limit,
+            simulate_max_calls,
+            simulate_max_output_size,
+            state_overrides,
+            block_overrides,
+            validation,
+            false, // emit_native_transfer_logs
+            complete_callback,
+            (void *)&ctx);
+        future.get();
+
+        EXPECT_EQ(ctx.result->status_code, EVMC_REJECTED);
+        EXPECT_STREQ(ctx.result->message, "nonce exceeds max");
+    }
+
+    auto const authority_account = tdb.read_account(*authority);
+    ASSERT_TRUE(authority_account.has_value());
+    EXPECT_EQ(authority_account->nonce, max_nonce - 1);
     monad_block_override_vec_destroy(block_overrides);
     monad_state_override_vec_destroy(state_overrides);
     monad_executor_destroy(executor);

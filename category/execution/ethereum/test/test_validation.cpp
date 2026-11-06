@@ -28,6 +28,7 @@
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <monad/test/config.hpp>
 #include <monad/test/traits_test.hpp>
 
 #include <gtest/gtest.h>
@@ -39,9 +40,26 @@
 
 using namespace monad;
 
+MONAD_TEST_NAMESPACE_BEGIN
+
+struct SimulationTestAccess
+{
+    static constexpr Simulation make(bool const strict_validation)
+    {
+        return Simulation{strict_validation};
+    }
+};
+
+MONAD_TEST_NAMESPACE_END
+
 namespace
 {
     using namespace ::monad::literals;
+
+    constexpr ExecutionMode live_execution{};
+    // Simulation skips the sender checks in both validation modes.
+    constexpr ExecutionMode simulation{
+        monad::test::SimulationTestAccess::make(false)};
 
     static constexpr auto r{
         0x5fd883bb01a10915ebc06621b925bd6d624cb6768976b73c0d468b31f657d15b_u256};
@@ -116,12 +134,12 @@ TYPED_TEST(InMemoryStateTraitsTest, validate_deployed_code)
     trace::StateTracer noop_state_tracer = std::monostate{};
     auto const result =
         validate_ethereum_transaction<typename TestFixture::Trait>(
-            tx, sender, this->state, noop_state_tracer, true);
+            tx, sender, this->state, noop_state_tracer, live_execution);
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.error(), TransactionError::SenderNotEoa);
 
     EXPECT_TRUE(validate_ethereum_transaction<typename TestFixture::Trait>(
-                    tx, sender, this->state, noop_state_tracer, false)
+                    tx, sender, this->state, noop_state_tracer, simulation)
                     .has_value());
 }
 
@@ -136,7 +154,7 @@ TYPED_TEST(InMemoryStateTraitsTest, validate_deployed_code_delegated)
     trace::StateTracer noop_state_tracer = std::monostate{};
     auto const result =
         validate_ethereum_transaction<typename TestFixture::Trait>(
-            tx, sender, this->state, noop_state_tracer, true);
+            tx, sender, this->state, noop_state_tracer, live_execution);
     if constexpr (TestFixture::Trait::eip_7702_active()) {
         EXPECT_TRUE(result.has_value());
     }
@@ -159,7 +177,7 @@ TYPED_TEST(InMemoryStateTraitsTest, validate_nonce)
     trace::StateTracer noop_state_tracer = std::monostate{};
     auto const result =
         validate_ethereum_transaction<typename TestFixture::Trait>(
-            tx, sender, this->state, noop_state_tracer, true);
+            tx, sender, this->state, noop_state_tracer, live_execution);
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.error(), TransactionError::BadNonce);
 }
@@ -173,11 +191,11 @@ TYPED_TEST(InMemoryStateTraitsTest, validate_nonce_relaxed)
     trace::StateTracer noop_state_tracer = std::monostate{};
     auto const result =
         validate_ethereum_transaction<typename TestFixture::Trait>(
-            tx, sender, this->state, noop_state_tracer, true);
+            tx, sender, this->state, noop_state_tracer, live_execution);
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.error(), TransactionError::BadNonce);
     EXPECT_TRUE(validate_ethereum_transaction<typename TestFixture::Trait>(
-                    tx, sender, this->state, noop_state_tracer, false)
+                    tx, sender, this->state, noop_state_tracer, simulation)
                     .has_value());
     EXPECT_TRUE(
         validate_simulation_sender_nonce(sender, this->state).has_value());
@@ -186,7 +204,7 @@ TYPED_TEST(InMemoryStateTraitsTest, validate_nonce_relaxed)
     this->state.set_nonce(sender, std::numeric_limits<uint64_t>::max());
     auto const overflow_result =
         validate_ethereum_transaction<typename TestFixture::Trait>(
-            tx, sender, this->state, noop_state_tracer, false);
+            tx, sender, this->state, noop_state_tracer, simulation);
     ASSERT_TRUE(overflow_result.has_value());
     auto const bound_result =
         validate_simulation_sender_nonce(sender, this->state);
@@ -202,19 +220,19 @@ TYPED_TEST(InMemoryStateTraitsTest, validate_nonce_relaxed_nonexistent_sender)
     trace::StateTracer noop_state_tracer = std::monostate{};
     auto const result =
         validate_ethereum_transaction<typename TestFixture::Trait>(
-            tx, sender, this->state, noop_state_tracer, true);
+            tx, sender, this->state, noop_state_tracer, live_execution);
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.error(), TransactionError::BadNonce);
     EXPECT_TRUE(validate_ethereum_transaction<typename TestFixture::Trait>(
-                    tx, sender, this->state, noop_state_tracer, false)
+                    tx, sender, this->state, noop_state_tracer, simulation)
                     .has_value());
 
-    // Relaxed validation still requires a nonexistent sender to afford the
+    // Without the nonce check, a nonexistent sender must still afford the
     // transaction.
     Transaction const value_tx{.nonce = 23, .gas_limit = 60'500, .value = 1};
     auto const relaxed_result =
         validate_ethereum_transaction<typename TestFixture::Trait>(
-            value_tx, sender, this->state, noop_state_tracer, false);
+            value_tx, sender, this->state, noop_state_tracer, simulation);
     ASSERT_TRUE(relaxed_result.has_error());
     EXPECT_EQ(relaxed_result.error(), TransactionError::InsufficientBalance);
 }
@@ -232,7 +250,7 @@ TYPED_TEST(InMemoryStateTraitsTest, validate_nonce_optimistically)
     trace::StateTracer noop_state_tracer = std::monostate{};
     auto const result =
         validate_ethereum_transaction<typename TestFixture::Trait>(
-            tx, sender, this->state, noop_state_tracer, true);
+            tx, sender, this->state, noop_state_tracer, live_execution);
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.error(), TransactionError::BadNonce);
 }
@@ -251,13 +269,13 @@ TYPED_TEST(InMemoryStateTraitsTest, validate_enough_balance)
     trace::StateTracer noop_state_tracer = std::monostate{};
     auto const result =
         validate_ethereum_transaction<typename TestFixture::Trait>(
-            tx, sender, this->state, noop_state_tracer, true);
+            tx, sender, this->state, noop_state_tracer, live_execution);
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.error(), TransactionError::InsufficientBalance);
 
     auto const relaxed_result =
         validate_ethereum_transaction<typename TestFixture::Trait>(
-            tx, sender, this->state, noop_state_tracer, false);
+            tx, sender, this->state, noop_state_tracer, simulation);
     ASSERT_TRUE(relaxed_result.has_error());
     EXPECT_EQ(relaxed_result.error(), TransactionError::InsufficientBalance);
 }
@@ -286,7 +304,7 @@ TYPED_TEST(InMemoryStateTraitsTest, successful_validation)
     trace::StateTracer noop_state_tracer = std::monostate{};
     auto const result2 =
         validate_ethereum_transaction<typename TestFixture::Trait>(
-            tx, sender, this->state, noop_state_tracer, true);
+            tx, sender, this->state, noop_state_tracer, live_execution);
     EXPECT_TRUE(result2.has_value());
 }
 
@@ -367,7 +385,7 @@ TYPED_TEST(InMemoryStateTraitsTest, insufficent_balance_overflow)
     trace::StateTracer noop_state_tracer = std::monostate{};
     auto const result =
         validate_ethereum_transaction<typename TestFixture::Trait>(
-            tx, sender, this->state, noop_state_tracer, true);
+            tx, sender, this->state, noop_state_tracer, live_execution);
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.error(), TransactionError::InsufficientBalance);
 }

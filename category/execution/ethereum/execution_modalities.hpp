@@ -24,6 +24,11 @@ struct monad_executor;
 
 MONAD_NAMESPACE_BEGIN
 
+namespace test
+{
+    struct SimulationTestAccess;
+}
+
 //
 // Modalities
 //
@@ -44,8 +49,9 @@ struct LiveExecution
 class Simulation
 {
     // Only RPC is allowed to instantiate the execution client in simulation
-    // mode.
+    // mode. Tests construct it through `test::SimulationTestAccess`.
     friend struct ::monad_executor;
+    friend struct test::SimulationTestAccess;
 
     bool strict_validation_;
 
@@ -75,12 +81,31 @@ constexpr bool strict_validation(ExecutionMode const &execution_mode)
         execution_mode);
 }
 
-// Determines whether to bound the sender's state nonce below 2^64 - 1 directly.
-// Simulation assigns transaction nonces itself, so strict validation's nonce
-// check no longer implies the bound (see `validate_simulation_sender_nonce`).
-constexpr bool state_nonce_bound(ExecutionMode const &execution_mode)
+// Determines whether to check that the sender's state nonce equals the
+// transaction nonce. Simulation assigns every transaction nonce itself, so a
+// stale assignment would fail the check spuriously; like geth for a call
+// without a nonce, simulation skips it in both validation modes.
+constexpr bool sender_nonce_check(ExecutionMode const &execution_mode)
 {
-    return std::holds_alternative<Simulation>(execution_mode);
+    return std::holds_alternative<LiveExecution>(execution_mode);
+}
+
+// Determines whether to check that the sender is an EOA (or a delegated EOA).
+// Per the eth_simulateV1 spec, simulation skips this check in both validation
+// modes.
+constexpr bool sender_eoa_check(ExecutionMode const &execution_mode)
+{
+    return std::holds_alternative<LiveExecution>(execution_mode);
+}
+
+// Determines whether a simulated block without a base fee override inherits
+// its parent's base fee. Like geth, eth_simulateV1 with `validation: true` uses
+// a real base fee, so calls must cover it; with `validation: false` the base
+// fee is 0. Monad's base fee is set by consensus, so the parent's base fee
+// stands in for geth's computed one.
+constexpr bool inherit_base_fee(ExecutionMode const &execution_mode)
+{
+    return strict_validation(execution_mode);
 }
 
 //
@@ -101,5 +126,8 @@ static_assert(
     std::is_default_constructible_v<ExecutionMode> &&
     std::holds_alternative<LiveExecution>(ExecutionMode{}) &&
     strict_validation(ExecutionMode{}));
+// Live execution must perform every sender check.
+static_assert(
+    sender_nonce_check(ExecutionMode{}) && sender_eoa_check(ExecutionMode{}));
 
 MONAD_NAMESPACE_END

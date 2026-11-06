@@ -208,7 +208,7 @@ namespace
 
         for (auto _ : bench_state) {
             auto const result = monad_vm.execute<MonadTraits<rev>>(
-                test_host.get_evmc_host(), &msg, code_hash, vcode);
+                test_host.get_state_host(), &msg, code_hash, vcode);
 
             MONAD_ASSERT(result.status_code == MONAD_STATUS_SUCCESS);
         }
@@ -271,9 +271,9 @@ namespace
             auto const result =
                 msg.kind == vm::CallKind::Create
                     ? monad_vm.execute_bytecode<MonadTraits<rev>>(
-                          test_host.get_evmc_host(), &msg, code->code_span())
+                          test_host.get_state_host(), &msg, code->code_span())
                     : monad_vm.execute<MonadTraits<rev>>(
-                          test_host.get_evmc_host(), &msg, code_hash, vcode);
+                          test_host.get_state_host(), &msg, code_hash, vcode);
 
             if (assert_success) {
                 MONAD_ASSERT(result.status_code == MONAD_STATUS_SUCCESS);

@@ -25,9 +25,9 @@
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/create_contract_address.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
-#include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/state_host.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
@@ -133,7 +133,7 @@ namespace
             trace::StateTracer noop_state_tracer = std::monostate{};
             BlockHashBufferFinalized const buffer{};
             uint256_t base_fee{0};
-            EvmcHost<Trait> host{
+            StateHost<Trait> host{
                 call_tracer,
                 noop_state_tracer,
                 tx_context,

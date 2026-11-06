@@ -26,12 +26,12 @@
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/event/record_txn_events.hpp>
-#include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/execute_message.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/state_host.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/event_trace.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
@@ -105,7 +105,7 @@ ExecuteTransactionNoValidation<traits>::ExecuteTransactionNoValidation(
 // EIP-7702
 template <Traits traits>
 uint64_t ExecuteTransactionNoValidation<traits>::process_authorizations(
-    State &state, EvmcHost<traits> &host)
+    State &state, StateHost<traits> &host)
 {
 
     MONAD_ASSERT(authorities_.size() == tx_.authorization_list.size());
@@ -231,7 +231,7 @@ vm::Message ExecuteTransactionNoValidation<traits>::to_message(
 
 template <Traits traits>
 vm::Result ExecuteTransactionNoValidation<traits>::operator()(
-    State &state, EvmcHost<traits> &host)
+    State &state, StateHost<traits> &host)
 {
     if constexpr (::monad::is_monad_trait_v<traits>) {
         init_reserve_balance_context<traits>(
@@ -350,7 +350,7 @@ Result<vm::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
         header_,
         chain_.get_chain_id(),
         chain_.get_blob_schedule(header_.timestamp));
-    EvmcHost<traits> host{
+    StateHost<traits> host{
         call_tracer_,
         state_tracer_,
         tx_context,

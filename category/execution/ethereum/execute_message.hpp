@@ -26,7 +26,7 @@
 MONAD_NAMESPACE_BEGIN
 
 template <Traits traits>
-struct EvmcHost;
+struct StateHost;
 
 class State;
 
@@ -35,10 +35,10 @@ vm::Result deploy_contract_code(State &, Address const &, vm::Result) noexcept;
 
 template <Traits traits>
 vm::Result
-execute_create_message(EvmcHost<traits> *, State &, vm::Message const &);
+execute_create_message(StateHost<traits> *, State &, vm::Message const &);
 
 template <Traits traits>
 vm::Result
-execute_call_message(EvmcHost<traits> *, State &, vm::Message const &);
+execute_call_message(StateHost<traits> *, State &, vm::Message const &);
 
 MONAD_NAMESPACE_END

@@ -28,9 +28,9 @@
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/trie_rodb.hpp>
 #include <category/execution/ethereum/db/util.hpp>
-#include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/state_host.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
@@ -180,7 +180,7 @@ TYPED_TEST(TraitsTest, emit_log)
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t base_fee{0};
     trace::StateTracer noop_state_tracer = std::monostate{};
-    EvmcHost<typename TestFixture::Trait> host{
+    StateHost<typename TestFixture::Trait> host{
         call_tracer,
         noop_state_tracer,
         EMPTY_TX_CONTEXT,
@@ -216,7 +216,7 @@ TYPED_TEST(TraitsTest, access_precompile)
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t base_fee{0};
     trace::StateTracer noop_state_tracer = std::monostate{};
-    EvmcHost<typename TestFixture::Trait> host{
+    StateHost<typename TestFixture::Trait> host{
         call_tracer,
         noop_state_tracer,
         EMPTY_TX_CONTEXT,
@@ -235,12 +235,12 @@ TYPED_TEST(TraitsTest, access_precompile)
         MONAD_ACCESS_COLD);
 }
 
-TEST(EvmcHostTest, host_methods_rethrow_pruned_read)
+TEST(StateHostTest, host_methods_rethrow_pruned_read)
 {
     using traits = MonadTraits<MONAD_NEXT>;
 
     std::string dbpath = (MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
-                          "evmc_host_pruned_read_XXXXXX")
+                          "state_host_pruned_read_XXXXXX")
                              .string();
     int const fd = ::mkstemp(dbpath.data());
     ASSERT_NE(fd, -1);
@@ -290,7 +290,7 @@ TEST(EvmcHostTest, host_methods_rethrow_pruned_read)
         Transaction tx{};
         auto const chain_ctx = ChainContext<traits>::debug_empty();
         trace::StateTracer noop_state_tracer = std::monostate{};
-        EvmcHost<traits> host{
+        StateHost<traits> host{
             call_tracer,
             noop_state_tracer,
             EMPTY_TX_CONTEXT,

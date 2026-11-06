@@ -79,7 +79,7 @@ namespace
         return {bytecode, hash};
     }
 
-    class HostMock : public Host
+    class UnwindTestHost : public Host
     {
         size_t calls_before_exception_;
         std::function<vm::Result(Host &, Message const &)> call_impl_;
@@ -91,7 +91,7 @@ namespace
             std::string message;
         };
 
-        HostMock(
+        UnwindTestHost(
             size_t const calls_before_exception,
             std::function<vm::Result(Host &, Message const &)> call_impl)
             : calls_before_exception_{calls_before_exception}
@@ -707,7 +707,8 @@ TEST(MonadVmInterface, execute)
 
     {
         VM vm;
-        HostMock host{0, [&](Host &, Message const &) { return vm::Result{}; }};
+        UnwindTestHost host{
+            0, [&](Host &, Message const &) { return vm::Result{}; }};
         std::vector<uint8_t> bytecode{};
         auto hash = std::bit_cast<bytes32_t>(
             keccak256({bytecode.data(), bytecode.size()}));
@@ -731,14 +732,15 @@ TEST(MonadVmInterface, execute)
             auto vcode = vm.try_insert_varcode(hash, icode);
             ASSERT_EQ(vcode->intercode(), icode);
             ASSERT_EQ(vcode->nativecode(), nullptr);
-            HostMock host{depth, [&](Host &host, Message const &m) {
-                              return vm.execute<EvmTraits<MONAD_ETH_PRAGUE>>(
-                                  host, &m, hash, vcode);
-                          }};
+            UnwindTestHost host{
+                depth, [&](Host &host, Message const &m) {
+                    return vm.execute<EvmTraits<MONAD_ETH_PRAGUE>>(
+                        host, &m, hash, vcode);
+                }};
             vm.execute<EvmTraits<MONAD_ETH_PRAGUE>>(host, &*msg, hash, vcode);
             ASSERT_TRUE(false);
         }
-        catch (HostMock::Exception const &e) {
+        catch (UnwindTestHost::Exception const &e) {
             ASSERT_EQ(e.message, std::string{"exception"});
         }
         catch (...) {
@@ -750,14 +752,15 @@ TEST(MonadVmInterface, execute)
             ASSERT_TRUE(vcode.has_value());
             ASSERT_EQ(vcode.value()->intercode(), icode);
             ASSERT_NE(vcode.value()->nativecode(), nullptr);
-            HostMock host{depth, [&](Host &host, Message const &m) {
-                              return vm.execute<EvmTraits<MONAD_ETH_PRAGUE>>(
-                                  host, &m, hash, *vcode);
-                          }};
+            UnwindTestHost host{
+                depth, [&](Host &host, Message const &m) {
+                    return vm.execute<EvmTraits<MONAD_ETH_PRAGUE>>(
+                        host, &m, hash, *vcode);
+                }};
             vm.execute<EvmTraits<MONAD_ETH_PRAGUE>>(host, &*msg, hash, *vcode);
             ASSERT_TRUE(false);
         }
-        catch (HostMock::Exception const &e) {
+        catch (UnwindTestHost::Exception const &e) {
             ASSERT_EQ(e.message, std::string{"exception"});
         }
         catch (...) {
@@ -777,7 +780,8 @@ TEST(MonadVmInterface, execute_bytecode)
     msg->gas = 100'000'000'000'000;
 
     {
-        HostMock host{0, [&](Host &, Message const &) { return vm::Result{}; }};
+        UnwindTestHost host{
+            0, [&](Host &, Message const &) { return vm::Result{}; }};
         std::vector<uint8_t> bytecode{};
         auto result = vm.execute_bytecode<EvmTraits<MONAD_ETH_PRAGUE>>(
             host, &*msg, bytecode);
@@ -790,7 +794,7 @@ TEST(MonadVmInterface, execute_bytecode)
 
     for (size_t const depth : std::initializer_list<size_t>{0, 1, 2, 1023}) {
         try {
-            HostMock host{
+            UnwindTestHost host{
                 depth, [&](Host &host, Message const &m) {
                     return vm.execute_bytecode<EvmTraits<MONAD_ETH_PRAGUE>>(
                         host, &m, bytecode);
@@ -799,7 +803,7 @@ TEST(MonadVmInterface, execute_bytecode)
                 host, &*msg, bytecode);
             ASSERT_TRUE(false);
         }
-        catch (HostMock::Exception const &e) {
+        catch (UnwindTestHost::Exception const &e) {
             ASSERT_EQ(e.message, std::string{"exception"});
         }
         catch (...) {

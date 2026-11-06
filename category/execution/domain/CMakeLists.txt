@@ -23,13 +23,16 @@ add_library(
   "config.hpp"
   "domain_block.cpp"
   "domain_block.hpp"
+  "hpke.cpp"
+  "hpke.hpp"
   # domain/rlp
   "rlp/domain_block_rlp.cpp"
   "rlp/domain_block_rlp.hpp")
 
 target_link_libraries(
   monad_domain_execution
-  PUBLIC monad_execution_native)
+  PUBLIC monad_execution_native
+  PRIVATE aws_lc::crypto)
 monad_compile_options(monad_domain_execution)
 
 file(GLOB_RECURSE domain_tests CONFIGURE_DEPENDS *_test.cpp)

@@ -27,7 +27,7 @@
 #include <category/vm/compiler/ir/x86/types.hpp>
 #include <category/vm/evm/traits.hpp>
 
-#include <asmjit/core/jitruntime.h>
+#include <asmjit/core/jit_runtime.h>
 
 #include <CLI/CLI.hpp>
 

@@ -30,6 +30,7 @@
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/traits.hpp>
 
 #include <category/crypto/silkpre_vendor/sha256.h>
@@ -66,7 +67,7 @@ Result<byte_string> system_call(
     trace::on_read_code(state_tracer, hash, code->intercode());
     auto const blob_schedule = chain.get_blob_schedule(header.timestamp);
 
-    evmc_tx_context const tx_context = {
+    vm::TxContext const tx_context = {
         .tx_gas_price = {},
         .tx_origin = ETH_SYSTEM_ADDRESS,
         .block_coinbase = header.beneficiary,
@@ -74,12 +75,12 @@ Result<byte_string> system_call(
         .block_timestamp = static_cast<int64_t>(header.timestamp),
         .block_gas_limit = static_cast<int64_t>(header.gas_limit),
         .block_prev_randao = header.difficulty
-                                 ? store_be_as<evmc_bytes32>(header.difficulty)
-                                 : to_evmc(header.prev_randao),
-        .chain_id = store_be_as<evmc_bytes32>(chain.get_chain_id()),
+                                 ? store_be_as<bytes32_t>(header.difficulty)
+                                 : header.prev_randao,
+        .chain_id = store_be_as<bytes32_t>(chain.get_chain_id()),
         .block_base_fee =
-            store_be_as<evmc_bytes32>(header.base_fee_per_gas.value_or(0)),
-        .blob_base_fee = store_be_as<evmc_bytes32>(get_base_fee_per_blob_gas(
+            store_be_as<bytes32_t>(header.base_fee_per_gas.value_or(0)),
+        .blob_base_fee = store_be_as<bytes32_t>(get_base_fee_per_blob_gas(
             header.excess_blob_gas.value_or(0), blob_schedule)),
         .blob_hashes = nullptr,
         .blob_hashes_count = 0,
@@ -89,8 +90,8 @@ Result<byte_string> system_call(
     };
 
     auto msg_memory = state.vm().message_memory_ref();
-    evmc_message const msg = {
-        .kind = EVMC_CALL,
+    vm::Message const msg = {
+        .kind = vm::CallKind::Call,
         .flags = 0,
         .depth = 0,
         .gas = 30'000'000, // as per eip-7002, eip-7251

@@ -19,7 +19,7 @@ use itertools::Itertools;
 #[cfg(feature = "alloy")]
 use crate::ffi;
 use crate::ffi::{
-    monad_bytes32, monad_c_address, monad_c_eth_txn_header, monad_c_eth_txn_receipt,
+    monad_address, monad_bytes32, monad_c_eth_txn_header, monad_c_eth_txn_receipt,
     monad_c_uint256_ne, monad_exec_block_end, monad_exec_block_start, monad_exec_txn_call_frame,
 };
 
@@ -310,7 +310,7 @@ impl ExecutedBlock {
 #[derive(Clone, Debug)]
 pub struct ExecutedTxn {
     pub hash: monad_bytes32,
-    pub sender: monad_c_address,
+    pub sender: monad_address,
     pub header: monad_c_eth_txn_header,
     pub input: Box<[u8]>,
     pub access_list: Box<[ExecutedTxnAccessListEntry]>,
@@ -510,7 +510,7 @@ impl ExecutedTxn {
 #[allow(missing_docs)]
 #[derive(Clone, Debug)]
 pub struct ExecutedTxnLog {
-    pub address: monad_c_address,
+    pub address: monad_address,
     pub topic: Box<[monad_bytes32]>,
     pub data: Box<[u8]>,
 }
@@ -545,7 +545,7 @@ pub struct ExecutedTxnCallFrame {
 #[allow(missing_docs)]
 #[derive(Clone, Debug)]
 pub struct ExecutedTxnAccessListEntry {
-    pub address: monad_c_address,
+    pub address: monad_address,
     pub storage_keys: Box<[monad_bytes32]>,
 }
 
@@ -554,7 +554,7 @@ pub struct ExecutedTxnAccessListEntry {
 #[derive(Clone, Debug)]
 pub struct ExecutedTxnSignedAuthorization {
     pub chain_id: monad_c_uint256_ne,
-    pub address: monad_c_address,
+    pub address: monad_address,
     pub nonce: u64,
 
     pub y_parity: bool,

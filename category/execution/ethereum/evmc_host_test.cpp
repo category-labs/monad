@@ -38,6 +38,7 @@
 #include <category/mpt/node_cache.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/mpt/util.hpp>
+#include <category/vm/evm/access_status.h>
 #include <category/vm/vm.hpp>
 
 #include <monad/test/traits_test.hpp>
@@ -60,34 +61,39 @@ using namespace monad;
 
 using db_t = TrieDb;
 
-bool operator==(evmc_tx_context const &lhs, evmc_tx_context const &rhs)
+namespace monad::vm
 {
-    return !std::memcmp(
-               lhs.tx_gas_price.bytes,
-               rhs.tx_gas_price.bytes,
-               sizeof(evmc_bytes32)) &&
-           !std::memcmp(
-               lhs.tx_origin.bytes,
-               rhs.tx_origin.bytes,
-               sizeof(evmc_address)) &&
-           !std::memcmp(
-               lhs.block_coinbase.bytes,
-               rhs.block_coinbase.bytes,
-               sizeof(evmc_address)) &&
-           lhs.block_number == rhs.block_number &&
-           lhs.block_timestamp == rhs.block_timestamp &&
-           lhs.block_gas_limit == rhs.block_gas_limit &&
-           !std::memcmp(
-               lhs.block_prev_randao.bytes,
-               rhs.block_prev_randao.bytes,
-               sizeof(evmc_bytes32)) &&
-           !std::memcmp(
-               lhs.chain_id.bytes, rhs.chain_id.bytes, sizeof(evmc_bytes32)) &&
-           !std::memcmp(
-               lhs.block_base_fee.bytes,
-               rhs.block_base_fee.bytes,
-               sizeof(evmc_bytes32)) &&
-           lhs.block_round == rhs.block_round;
+    bool operator==(TxContext const &lhs, TxContext const &rhs)
+    {
+        return !std::memcmp(
+                   lhs.tx_gas_price.bytes,
+                   rhs.tx_gas_price.bytes,
+                   sizeof(evmc_bytes32)) &&
+               !std::memcmp(
+                   lhs.tx_origin.bytes,
+                   rhs.tx_origin.bytes,
+                   sizeof(evmc_address)) &&
+               !std::memcmp(
+                   lhs.block_coinbase.bytes,
+                   rhs.block_coinbase.bytes,
+                   sizeof(evmc_address)) &&
+               lhs.block_number == rhs.block_number &&
+               lhs.block_timestamp == rhs.block_timestamp &&
+               lhs.block_gas_limit == rhs.block_gas_limit &&
+               !std::memcmp(
+                   lhs.block_prev_randao.bytes,
+                   rhs.block_prev_randao.bytes,
+                   sizeof(evmc_bytes32)) &&
+               !std::memcmp(
+                   lhs.chain_id.bytes,
+                   rhs.chain_id.bytes,
+                   sizeof(evmc_bytes32)) &&
+               !std::memcmp(
+                   lhs.block_base_fee.bytes,
+                   rhs.block_base_fee.bytes,
+                   sizeof(evmc_bytes32)) &&
+               lhs.block_round == rhs.block_round;
+    }
 }
 
 TYPED_TEST(TraitsTest, get_tx_context)
@@ -115,7 +121,7 @@ TYPED_TEST(TraitsTest, get_tx_context)
 
     auto const result = get_tx_context<typename TestFixture::Trait>(
         tx, from, hdr, 1, default_blob_schedule<typename TestFixture::Trait>());
-    evmc_tx_context ctx{
+    vm::TxContext ctx{
         .tx_origin = from,
         .block_coinbase = bene,
         .block_number = 15'000'000,
@@ -159,8 +165,7 @@ TYPED_TEST(TraitsTest, emit_log)
         0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c_bytes32};
     static constexpr auto topic1{
         0x0000000000000000000000000000000000000000000000000000000000000007_bytes32};
-    static constexpr evmc::bytes32 topics[] = {
-        to_evmc(topic0), to_evmc(topic1)};
+    static constexpr bytes32_t topics[] = {topic0, topic1};
     static byte_string const data = {0x00, 0x01, 0x02, 0x03, 0x04};
 
     mpt::Db db{std::make_unique<InMemoryMachine>()};
@@ -224,10 +229,10 @@ TYPED_TEST(TraitsTest, access_precompile)
 
     EXPECT_EQ(
         host.access_account(0x0000000000000000000000000000000000000001_address),
-        EVMC_ACCESS_WARM);
+        MONAD_ACCESS_WARM);
     EXPECT_EQ(
         host.access_account(0x5353535353535353535353535353535353535353_address),
-        EVMC_ACCESS_COLD);
+        MONAD_ACCESS_COLD);
 }
 
 TEST(EvmcHostTest, host_methods_rethrow_pruned_read)

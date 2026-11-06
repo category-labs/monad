@@ -35,7 +35,7 @@ namespace monad::test
         uint64_t tx_index_;
         NoopCallTracer noop_call_tracer_;
         State &state_;
-        evmc_tx_context tx_context_;
+        vm::TxContext tx_context_;
         std::vector<Address> chain_context_senders_;
         std::vector<std::vector<std::optional<Address>>>
             chain_context_authorities_;

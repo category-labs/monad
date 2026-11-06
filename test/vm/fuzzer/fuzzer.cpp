@@ -18,6 +18,7 @@
 #include "generator.hpp"
 
 #include <test/utils/test_state.hpp>
+#include <test/vm/utils/evmc_host_adapter.hpp>
 #include <test/vm/utils/test_block_hash_buffer.hpp>
 #include <test/vm/utils/test_host.hpp>
 
@@ -31,6 +32,7 @@
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/vm/compiler/ir/x86/types.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/evm/revision.h>
 #include <category/vm/fuzzing/choice.hpp>
@@ -47,6 +49,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <bits/chrono.h>
 #include <cassert>
 #include <chrono>
@@ -202,7 +205,7 @@ private:
 static constexpr auto block_gas_limit = 300'000'000;
 
 static Transaction
-tx_from(TransitionState &tstate, evmc_message const &msg) noexcept
+tx_from(TransitionState &tstate, vm::Message const &msg) noexcept
 {
     auto tx = Transaction{};
     tx.to = msg.recipient;
@@ -214,7 +217,7 @@ tx_from(TransitionState &tstate, evmc_message const &msg) noexcept
 template <Traits traits>
 static evmc::Result message_call(
     TransitionState &tstate, BlockHashBuffer const &block_hash_buffer,
-    Transaction const &tx, evmc_message const &msg,
+    Transaction const &tx, vm::Message const &msg,
     BlockHeader const &block_header)
 {
     std::optional<uint256_t> base_fee_per_gas{};
@@ -236,7 +239,7 @@ static evmc::Result message_call(
 
 template <Traits traits>
 static evmc::Result transition(
-    TransitionState &tstate, evmc_message const &msg,
+    TransitionState &tstate, vm::Message const &msg,
     BlockHashBuffer const &block_hash_buffer, BlockHeader const &block_header)
 {
     auto tx = tx_from(tstate, msg);
@@ -428,7 +431,7 @@ static arguments parse_args(int const argc, char **const argv)
 
 template <Traits traits>
 static evmc_status_code fuzz_iteration(
-    evmc_message const &msg, BlockHashBuffer const &block_hash_buffer,
+    vm::Message const &msg, BlockHashBuffer const &block_hash_buffer,
     FuzzerTestStateRef spec_state, FuzzerTestStateRef monad_state,
     BlockHeader const &block_header)
 {
@@ -609,14 +612,19 @@ static void do_run(
     // VM mode of spec_state is ignored by overriding execute:
     spec_state->vm.debug_set_execute_override(
         [&spec_vm](
-            auto const *const host,
-            auto *const context,
+            auto &host,
             auto const rev,
             auto const *const msg,
             auto const *const code,
             auto const code_size) -> evmc::Result {
+            vm::test::EvmcHostAdapter adapter{host};
             return spec_vm.execute(
-                *host, context, to_evmc_revision(rev), *msg, code, code_size);
+                adapter.get_interface(),
+                adapter.to_context(),
+                to_evmc_revision(rev),
+                std::bit_cast<evmc_message>(*msg),
+                code,
+                code_size);
         });
 
     auto monad_state = [&] {

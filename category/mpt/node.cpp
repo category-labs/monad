@@ -242,7 +242,7 @@ unsigned Node::child_data_len(unsigned const index) const
     return child_data_offset(index + 1) - child_data_offset(index);
 }
 
-unsigned Node::child_data_len()
+unsigned Node::child_data_len() const
 {
     return child_data_offset(number_of_children()) - child_data_offset(0);
 }
@@ -499,47 +499,77 @@ void ChildData::copy_old_child(Node *const old, unsigned const i)
     MONAD_ASSERT(is_valid());
 }
 
+namespace
+{
+
+    // Allocate a node with `from`'s mask, child metadata and data but the given
+    // path, value and version. Child pointers are default initialized; the
+    // caller fills them in.
+    Node::SharedPtr make_node_without_children_(
+        Node const &from, NibblesView const path,
+        std::optional<byte_string_view> const value, int64_t const version)
+    {
+        auto const value_size =
+            value.transform(&byte_string_view::size).value_or(0);
+        auto node = Node::make_shared(
+            calculate_node_size(
+                from.number_of_children(),
+                from.child_data_len(),
+                value_size,
+                path.data_size(),
+                from.data().size()),
+            from.mask,
+            value,
+            from.data().size(),
+            path,
+            version);
+
+        // fnext, min_count, child_data_offset
+        std::copy_n(
+            (byte_string::const_pointer)&from.fnext_data,
+            from.path_data() - (byte_string::const_pointer)&from.fnext_data,
+            (byte_string::pointer)&node->fnext_data);
+
+        // copy data and child data
+        std::copy_n(
+            from.data_data(),
+            from.data().size() + from.child_data_len(),
+            node->data_data());
+
+        // Must initialize child pointers after copying child_data_offset
+        auto const node_ptrs = node->child_next_data();
+        for (size_t i = 0; i < node_ptrs.size(); ++i) {
+            new (node_ptrs.data() + i) Node::SharedPtr();
+        }
+
+        return node;
+    }
+
+}
+
 Node::SharedPtr make_node(
     Node &from, NibblesView const path,
     std::optional<byte_string_view> const value, int64_t const version)
 {
-    auto const value_size =
-        value.transform(&byte_string_view::size).value_or(0);
-    auto node = Node::make_shared(
-        calculate_node_size(
-            from.number_of_children(),
-            from.child_data_len(),
-            value_size,
-            path.data_size(),
-            from.data().size()),
-        from.mask,
-        value,
-        from.data().size(),
-        path,
-        version);
-
-    // fnext, min_count, child_data_offset
-    std::copy_n(
-        (byte_string::pointer)&from.fnext_data,
-        from.path_data() - (byte_string::pointer)&from.fnext_data,
-        (byte_string::pointer)&node->fnext_data);
-
-    // copy data and child data
-    std::copy_n(
-        from.data_data(),
-        from.data().size() + from.child_data_len(),
-        node->data_data());
-
-    // Must initialize child pointers after copying child_data_offset
+    auto node = make_node_without_children_(from, path, value, version);
     auto const node_ptrs = node->child_next_data();
-    for (size_t i = 0; i < node_ptrs.size(); ++i) {
-        new (node_ptrs.data() + i) Node::SharedPtr();
-    }
     auto const from_ptrs = from.child_next_data();
     for (unsigned i = 0; i < from_ptrs.size(); ++i) {
         node_ptrs[i] = std::move(from_ptrs[i]);
     }
+    return node;
+}
 
+Node::SharedPtr make_node_copy_children(
+    Node const &from, NibblesView const path,
+    std::optional<byte_string_view> const value, int64_t const version)
+{
+    auto node = make_node_without_children_(from, path, value, version);
+    auto const node_ptrs = node->child_next_data();
+    auto const from_ptrs = from.child_next_data();
+    for (unsigned i = 0; i < from_ptrs.size(); ++i) {
+        node_ptrs[i] = from_ptrs[i];
+    }
     return node;
 }
 

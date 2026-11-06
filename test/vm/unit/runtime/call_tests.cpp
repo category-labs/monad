@@ -15,16 +15,17 @@
 
 #include "fixture.hpp"
 
+#include <category/vm/evm/access_status.h>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/runtime/call.hpp>
 #include <category/vm/runtime/keccak.hpp>
 #include <category/vm/runtime/transmute.hpp>
-
-#include <evmc/evmc.h>
 
 #include <gtest/gtest.h>
 
 #include <cstdint>
 #include <limits>
+#include <utility>
 
 using namespace monad;
 using namespace monad::vm;
@@ -271,7 +272,7 @@ TYPED_TEST(RuntimeTraitsTest, DelegatedCall)
     ASSERT_EQ(res, 1);
     ASSERT_EQ(
         this->host_.access_account(address_from_uint256(0xC0FFEE)),
-        EVMC_ACCESS_WARM);
+        MONAD_ACCESS_WARM);
     TestFixture::assert_delegated(delegate_addr);
 }
 
@@ -299,7 +300,7 @@ TYPED_TEST(RuntimeTraitsTest, DelegatedStaticCall)
     ASSERT_EQ(res, 1);
     ASSERT_EQ(
         this->host_.access_account(address_from_uint256(0xC0FFEE)),
-        EVMC_ACCESS_WARM);
+        MONAD_ACCESS_WARM);
     TestFixture::assert_delegated(delegate_addr);
 }
 
@@ -327,7 +328,7 @@ TYPED_TEST(RuntimeTraitsTest, DelegatedDelegateCall)
     ASSERT_EQ(res, 1);
     ASSERT_EQ(
         this->host_.access_account(address_from_uint256(0xC0FFEE)),
-        EVMC_ACCESS_WARM);
+        MONAD_ACCESS_WARM);
     TestFixture::assert_delegated(delegate_addr);
 }
 
@@ -355,7 +356,7 @@ TYPED_TEST(RuntimeTraitsTest, DelegatedCallcode)
     ASSERT_EQ(res, 1);
     ASSERT_EQ(
         this->host_.access_account(address_from_uint256(0xC0FFEE)),
-        EVMC_ACCESS_WARM);
+        MONAD_ACCESS_WARM);
     TestFixture::assert_delegated(delegate_addr);
 }
 
@@ -379,20 +380,20 @@ TYPED_TEST(RuntimeTraitsTest, DelegatedCallPrecompile)
     ASSERT_EQ(this->ctx_.result.status, StatusCode::Success);
     ASSERT_EQ(
         this->host_.access_account(address_from_uint256(0xC0FFEE)),
-        EVMC_ACCESS_WARM);
+        MONAD_ACCESS_WARM);
     ASSERT_EQ(this->host_.recorded_calls.size(), 1);
 
     if constexpr (TestFixture::Trait::eip_7702_active()) {
         ASSERT_EQ(
             this->host_.recorded_calls[0].flags &
-                static_cast<uint32_t>(EVMC_DELEGATED),
-            static_cast<uint32_t>(EVMC_DELEGATED));
+                std::to_underlying(CallFlags::Delegated),
+            std::to_underlying(CallFlags::Delegated));
     }
     else {
         ASSERT_NE(
             this->host_.recorded_calls[0].flags &
-                static_cast<uint32_t>(EVMC_DELEGATED),
-            static_cast<uint32_t>(EVMC_DELEGATED));
+                std::to_underlying(CallFlags::Delegated),
+            std::to_underlying(CallFlags::Delegated));
     }
 }
 
@@ -415,7 +416,7 @@ TYPED_TEST(RuntimeTraitsTest, DelegatedCallBadCode1)
     ASSERT_EQ(this->host_.recorded_calls.size(), 1);
     ASSERT_EQ(
         this->host_.recorded_calls[0].flags &
-            static_cast<uint32_t>(EVMC_DELEGATED),
+            std::to_underlying(CallFlags::Delegated),
         0);
 }
 
@@ -436,6 +437,6 @@ TYPED_TEST(RuntimeTraitsTest, DelegatedCallBadCode2)
     ASSERT_EQ(this->host_.recorded_calls.size(), 1);
     ASSERT_EQ(
         this->host_.recorded_calls[0].flags &
-            static_cast<uint32_t>(EVMC_DELEGATED),
+            std::to_underlying(CallFlags::Delegated),
         0);
 }

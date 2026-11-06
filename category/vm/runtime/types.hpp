@@ -20,7 +20,9 @@
 #include <category/core/bytes.hpp>
 #include <category/core/runtime/non_temporal_memory.hpp>
 #include <category/core/runtime/uint256.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/evm/tx_context.hpp>
 #include <category/vm/runtime/bin.hpp>
 #include <category/vm/runtime/exit.hpp>
 #include <category/vm/runtime/transmute.hpp>
@@ -57,7 +59,7 @@ namespace monad::vm::runtime
 
     struct Environment
     {
-        uint32_t evmc_flags;
+        uint32_t flags;
         int32_t depth;
         Address recipient;
         Address sender;
@@ -72,7 +74,7 @@ namespace monad::vm::runtime
         uint32_t code_size;
         size_t return_data_size;
 
-        evmc_tx_context const *tx_context;
+        TxContext const *tx_context;
 
         ~Environment()
         {
@@ -232,7 +234,7 @@ namespace monad::vm::runtime
     struct Context
     {
         static Context from(
-            Host &host, evmc_message const *msg,
+            Host &host, Message const *msg,
             std::span<uint8_t const> code) noexcept;
 
         static Context

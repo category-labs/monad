@@ -16,6 +16,7 @@
 #include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
 #include <category/vm/code.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/host.hpp>
 #include <category/vm/runtime/allocator.hpp>
@@ -82,8 +83,8 @@ namespace
     class HostMock : public Host
     {
         size_t calls_before_exception_;
-        std::function<evmc::Result(Host &, evmc_message const &)> call_impl_;
-        evmc_tx_context tx_context_{};
+        std::function<evmc::Result(Host &, Message const &)> call_impl_;
+        TxContext tx_context_{};
 
     public:
         struct Exception
@@ -93,60 +94,57 @@ namespace
 
         HostMock(
             size_t const calls_before_exception,
-            std::function<evmc::Result(Host &, evmc_message const &)> call_impl)
+            std::function<evmc::Result(Host &, Message const &)> call_impl)
             : calls_before_exception_{calls_before_exception}
             , call_impl_{std::move(call_impl)}
         {
         }
 
-        bool account_exists(evmc::address const &) const noexcept override
+        bool account_exists(Address const &) const noexcept override
         {
             return false;
         }
 
-        evmc::bytes32 get_storage(evmc::address const &, evmc::bytes32 const &)
-            const noexcept override
+        bytes32_t
+        get_storage(Address const &, bytes32_t const &) const noexcept override
         {
-            return evmc::bytes32{};
+            return bytes32_t{};
         }
 
-        evmc_storage_status set_storage(
-            evmc::address const &, evmc::bytes32 const &,
-            evmc::bytes32 const &) noexcept override
+        monad_storage_status set_storage(
+            Address const &, bytes32_t const &,
+            bytes32_t const &) noexcept override
         {
-            return evmc_storage_status{};
+            return monad_storage_status{};
         }
 
-        evmc::uint256be
-        get_balance(evmc::address const &) const noexcept override
+        bytes32_t get_balance(Address const &) const noexcept override
         {
-            return evmc::uint256be{};
+            return bytes32_t{};
         }
 
-        size_t get_code_size(evmc::address const &) const noexcept override
-        {
-            return 0;
-        }
-
-        evmc::bytes32
-        get_code_hash(evmc::address const &) const noexcept override
-        {
-            return evmc::bytes32{};
-        }
-
-        size_t copy_code(evmc::address const &, size_t, uint8_t *, size_t)
-            const noexcept override
+        size_t get_code_size(Address const &) const noexcept override
         {
             return 0;
         }
 
-        bool selfdestruct(
-            evmc::address const &, evmc::address const &) noexcept override
+        bytes32_t get_code_hash(Address const &) const noexcept override
+        {
+            return bytes32_t{};
+        }
+
+        size_t copy_code(
+            Address const &, size_t, uint8_t *, size_t) const noexcept override
+        {
+            return 0;
+        }
+
+        bool selfdestruct(Address const &, Address const &) noexcept override
         {
             return false;
         }
 
-        evmc::Result call(evmc_message const &msg) noexcept override
+        evmc::Result call(Message const &msg) noexcept override
         {
             try {
                 if (calls_before_exception_-- == 0) {
@@ -160,50 +158,48 @@ namespace
             stack_unwind();
         }
 
-        evmc_tx_context const *get_tx_context() const noexcept override
+        TxContext const *get_tx_context() const noexcept override
         {
             return &tx_context_;
         }
 
-        evmc::bytes32 get_block_hash(int64_t) const noexcept override
+        bytes32_t get_block_hash(int64_t) const noexcept override
         {
-            return evmc::bytes32{};
+            return bytes32_t{};
         }
 
         void emit_log(
-            evmc::address const &, uint8_t const *, size_t,
-            evmc::bytes32 const *, size_t) noexcept override
+            Address const &, uint8_t const *, size_t, bytes32_t const *,
+            size_t) noexcept override
         {
         }
 
-        evmc_access_status
-        access_account(evmc::address const &) noexcept override
+        monad_access_status access_account(Address const &) noexcept override
         {
-            return evmc_access_status{};
+            return monad_access_status{};
         }
 
-        evmc_access_status access_storage(
-            evmc::address const &, evmc::bytes32 const &) noexcept override
+        monad_access_status
+        access_storage(Address const &, bytes32_t const &) noexcept override
         {
-            return evmc_access_status{};
+            return monad_access_status{};
         }
 
-        evmc::bytes32 get_transient_storage(
-            evmc::address const &,
-            evmc::bytes32 const &) const noexcept override
+        bytes32_t get_transient_storage(
+            Address const &, bytes32_t const &) const noexcept override
         {
-            return evmc::bytes32{};
+            return bytes32_t{};
         }
 
         void set_transient_storage(
-            evmc::address const &, evmc::bytes32 const &,
-            evmc::bytes32 const &) noexcept override
+            Address const &, bytes32_t const &,
+            bytes32_t const &) noexcept override
         {
         }
 
-        evmc_page_storage_status update_page(
-            evmc::address const &, evmc::bytes32 const &,
-            evmc_storage_status) noexcept override
+        monad_page_storage_status update_page(
+            Address const &, bytes32_t const &,
+            monad_storage_status) noexcept override
         {
             return {};
         }
@@ -713,7 +709,7 @@ TEST(MonadVmInterface, execute)
     {
         VM vm;
         HostMock host{
-            0, [&](Host &, evmc_message const &) { return evmc::Result{}; }};
+            0, [&](Host &, Message const &) { return evmc::Result{}; }};
         std::vector<uint8_t> bytecode{};
         auto hash = std::bit_cast<bytes32_t>(
             keccak256({bytecode.data(), bytecode.size()}));
@@ -737,7 +733,7 @@ TEST(MonadVmInterface, execute)
             auto vcode = vm.try_insert_varcode(hash, icode);
             ASSERT_EQ(vcode->intercode(), icode);
             ASSERT_EQ(vcode->nativecode(), nullptr);
-            HostMock host{depth, [&](Host &host, evmc_message const &m) {
+            HostMock host{depth, [&](Host &host, Message const &m) {
                               return vm.execute<EvmTraits<MONAD_ETH_PRAGUE>>(
                                   host, &m, hash, vcode);
                           }};
@@ -756,7 +752,7 @@ TEST(MonadVmInterface, execute)
             ASSERT_TRUE(vcode.has_value());
             ASSERT_EQ(vcode.value()->intercode(), icode);
             ASSERT_NE(vcode.value()->nativecode(), nullptr);
-            HostMock host{depth, [&](Host &host, evmc_message const &m) {
+            HostMock host{depth, [&](Host &host, Message const &m) {
                               return vm.execute<EvmTraits<MONAD_ETH_PRAGUE>>(
                                   host, &m, hash, *vcode);
                           }};
@@ -784,7 +780,7 @@ TEST(MonadVmInterface, execute_bytecode)
 
     {
         HostMock host{
-            0, [&](Host &, evmc_message const &) { return evmc::Result{}; }};
+            0, [&](Host &, Message const &) { return evmc::Result{}; }};
         std::vector<uint8_t> bytecode{};
         auto result = vm.execute_bytecode<EvmTraits<MONAD_ETH_PRAGUE>>(
             host, &*msg, bytecode);
@@ -798,7 +794,7 @@ TEST(MonadVmInterface, execute_bytecode)
     for (size_t const depth : std::initializer_list<size_t>{0, 1, 2, 1023}) {
         try {
             HostMock host{
-                depth, [&](Host &host, evmc_message const &m) {
+                depth, [&](Host &host, Message const &m) {
                     return vm.execute_bytecode<EvmTraits<MONAD_ETH_PRAGUE>>(
                         host, &m, bytecode);
                 }};

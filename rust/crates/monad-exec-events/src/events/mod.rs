@@ -14,13 +14,16 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use monad_event_ring::{
-    ffi::{monad_event_content_type, monad_event_record_error, MONAD_EVENT_CONTENT_TYPE_EXEC},
+    ffi::{
+        monad_event_content_type, monad_event_content_version_table_entry,
+        monad_event_record_error, MONAD_EVENT_CONTENT_TYPE_EXEC,
+    },
     EventDecoder, EventDescriptorInfo,
 };
 
 use self::bytes::{ref_from_bytes, ref_from_bytes_with_trailing};
 use crate::ffi::{
-    self, g_monad_exec_event_schema_hash, monad_exec_account_access,
+    self, g_monad_exec_event_schema_hash, g_monad_exec_event_versions, monad_exec_account_access,
     monad_exec_account_access_list_header, monad_exec_block_end, monad_exec_block_finalized,
     monad_exec_block_qc, monad_exec_block_reject, monad_exec_block_start,
     monad_exec_block_verified, monad_exec_event_type, monad_exec_evm_error,
@@ -297,6 +300,10 @@ impl EventDecoder for ExecEventDecoder {
 
     fn ring_schema_hash() -> &'static [u8; 32] {
         unsafe { &g_monad_exec_event_schema_hash }
+    }
+
+    fn ring_version_table() -> &'static [monad_event_content_version_table_entry] {
+        unsafe { g_monad_exec_event_versions.as_slice() }
     }
 
     type FlowInfo = ExecEventRingFlowInfo;

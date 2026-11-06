@@ -41,11 +41,18 @@ impl RawEventRing {
         .map(|inner| Self { inner })
     }
 
-    pub(crate) fn check_type<D>(&self) -> Result<(), String>
+    pub(crate) fn check_hash<D>(&self) -> Result<(), String>
     where
         D: EventDecoder,
     {
-        D::check_ring_content_type(&self.inner)
+        D::check_ring_content_hash(&self.inner)
+    }
+
+    pub(crate) fn check_version<D>(&self) -> Result<(), String>
+    where
+        D: EventDecoder,
+    {
+        D::check_ring_content_version(&self.inner)
     }
 }
 

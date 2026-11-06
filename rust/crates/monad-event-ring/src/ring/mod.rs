@@ -77,7 +77,7 @@ where
     }
 
     pub(crate) fn new_from_raw(raw: RawEventRing) -> Result<Self, String> {
-        raw.check_type::<D>()?;
+        raw.check_version::<D>()?;
 
         Ok(Self {
             raw,

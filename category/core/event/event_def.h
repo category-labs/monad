@@ -22,6 +22,7 @@
  * structure (event_ring.h) and the event capture library (evcap)
  */
 
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -43,6 +44,36 @@ typedef enum monad_event_content_type : uint16_t
     MONAD_EVENT_CONTENT_TYPE_COUNT  ///< Total number of content types
 } monad_event_content_type_t;
 
+/// Event content types, e.g. execution events, can opt into a less strict
+/// versioning scheme where only major version changes are ABI-breaking
+struct monad_event_content_version
+{
+    unsigned major; ///< Incremented when schema changes are ABI-breaking
+    unsigned minor; ///< Within same major version, changes are ABI-compatible
+
+#ifdef __cplusplus
+    friend constexpr bool operator==(
+        monad_event_content_version const&,
+        monad_event_content_version const&) noexcept = default;
+#endif
+};
+
+/// Each version table entry associates a content version with its schema
+/// hash; an array of these (the "version table") is used to look up the
+/// version tag for a particular schema hash
+struct monad_event_content_version_table_entry
+{
+    struct monad_event_content_version version;
+    uint8_t schema_hash[32];
+};
+
+/// A pair of the content version array and its size
+struct monad_event_content_version_table
+{
+    struct monad_event_content_version_table_entry const *entries;
+    size_t count;
+};
+
 /// Descriptor for an event; this fixed-size object describes the common
 /// attributes of an event, and is broadcast to other threads via a shared
 /// memory ring buffer (the threads are potentially in different processes).
@@ -63,6 +94,10 @@ struct monad_event_descriptor
 // clang-format on
 
 static_assert(sizeof(struct monad_event_descriptor) == 64);
+
+/// Look up the content version associated with the given schema hash
+struct monad_event_content_version const *monad_event_content_lookup_version(
+    uint8_t const (*schema_hash)[32], struct monad_event_content_version_table);
 
 /// Array of human-readable names for the event ring content types
 extern char const

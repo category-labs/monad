@@ -21,8 +21,10 @@
  * Definitions of events used with the TEST event ring
  */
 
+#include <stddef.h>
 #include <stdint.h>
 
+#include <category/core/event/event_def.h>
 #include <category/core/event/event_metadata.h>
 
 #ifdef __cplusplus
@@ -56,7 +58,16 @@ struct monad_test_event_vlt
 extern struct monad_event_metadata const g_monad_test_event_metadata[4];
 extern uint8_t const g_monad_test_event_schema_hash[32];
 
-#define MONAD_EVENT_DEFAULT_TEST_FILE_NAME "event-recorder-test"
+constexpr char MONAD_EVENT_DEFAULT_TEST_FILE_NAME[] = "event-recorder-test";
+
+constexpr size_t MONAD_TEST_EVENT_VERSION_COUNT = 4;
+extern struct monad_event_content_version_table_entry const
+    g_monad_test_event_versions[MONAD_TEST_EVENT_VERSION_COUNT];
+
+static struct monad_event_content_version_table const
+    g_monad_test_event_version_table = {
+        .entries = g_monad_test_event_versions,
+        .count = MONAD_TEST_EVENT_VERSION_COUNT};
 
 #ifdef __cplusplus
 } // extern "C"

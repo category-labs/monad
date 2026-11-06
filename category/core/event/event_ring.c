@@ -152,11 +152,13 @@ size_t monad_event_ring_calc_storage(
 int monad_event_ring_init_file(
     struct monad_event_ring_size const *const ring_size,
     monad_event_content_type_t const content_type,
-    uint8_t const (*const schema_hash)[32], int const ring_fd,
-    off_t const ring_offset, char const *error_name)
+    uint8_t const (*const schema_hash)[32],
+    struct monad_event_content_version_table const version_table,
+    int const ring_fd, off_t const ring_offset, char const *error_name)
 {
     int rc;
     size_t ring_bytes;
+    size_t version_table_extent;
     void *map_base;
     struct stat ring_stat;
     struct monad_event_ring_header header;
@@ -201,6 +203,28 @@ int monad_event_ring_init_file(
     memcpy(header.schema_hash, schema_hash, sizeof header.schema_hash);
     header.content_type = content_type;
     header.size = *ring_size;
+    if (version_table.entries != nullptr) {
+        // Event ring creator provided a version table; after mmap(2), we'll
+        // copy this table into the end of the 2MB header page, so that we have
+        // room to extend the header without needing to break its ABI.
+        version_table_extent =
+            sizeof(struct monad_event_content_version_table_entry) *
+            version_table.count;
+        if (version_table_extent + sizeof(header) > HEADER_REGION_SIZE) {
+            // This is EINVAL because there is no way a valid version table
+            // could possibly be this large: we assume a corrupted argument.
+            return FORMAT_ERRC(
+                EINVAL,
+                "content version table is too large (%lu bytes)",
+                version_table_extent);
+        }
+        header.version_table_count = version_table.count;
+    }
+    else {
+        version_table_extent = 0;
+    }
+    header.version_table_offset =
+        (off_t)(HEADER_REGION_SIZE - version_table_extent);
 
     // Map the file and copy the header into it
     map_base =
@@ -217,6 +241,14 @@ int monad_event_ring_init_file(
         (uint8_t *)map_base + sizeof header,
         0,
         HEADER_REGION_SIZE - sizeof header);
+
+    // Copy the version table, if we have one.
+    if (version_table.entries != nullptr) {
+        memcpy(
+            (uint8_t *)map_base + header.version_table_offset,
+            version_table.entries,
+            version_table_extent);
+    }
 
     // To function correctly, all event descriptor's sequence number fields
     // need to be zero'ed out when creating a new event ring. Because we may
@@ -285,7 +317,7 @@ int monad_event_ring_mmap(
             (int)sizeof header->magic,
             header->magic,
             (int)sizeof header->magic,
-            MONAD_EVENT_RING_HEADER_VERSION);
+            (char const *)MONAD_EVENT_RING_HEADER_VERSION);
         goto Error;
     }
 
@@ -303,6 +335,29 @@ int monad_event_ring_mmap(
             "event ring file `%s` cannot hold total event ring size %lu",
             error_name,
             ring_bytes);
+        goto Error;
+    }
+    // Check that the version table structure (if present) doesn't point inside
+    // the header itself, point outside the header region, or have other
+    // problems (misalignment, negative offset, etc.)
+    if (header->version_table_count != 0 &&
+        (header->version_table_offset < 0 ||
+         header->version_table_count > UINT16_MAX ||
+         (size_t)header->version_table_offset < sizeof *header ||
+         (size_t)header->version_table_offset +
+                 header->version_table_count *
+                     sizeof(struct monad_event_content_version_table_entry) >
+             HEADER_REGION_SIZE ||
+         (size_t)header->version_table_offset %
+                 alignof(struct monad_event_content_version_table_entry) !=
+             0)) {
+        rc = FORMAT_ERRC(
+            EPROTO,
+            "event ring file `%s` version table (offset %ld, count %lu) is "
+            "corrupt",
+            error_name,
+            header->version_table_offset,
+            header->version_table_count);
         goto Error;
     }
 
@@ -474,9 +529,3 @@ char const *monad_event_ring_get_last_error()
 {
     return _g_monad_event_ring_error_buf;
 }
-
-char const *g_monad_event_content_type_names[MONAD_EVENT_CONTENT_TYPE_COUNT] = {
-    [MONAD_EVENT_CONTENT_TYPE_NONE] = "none",
-    [MONAD_EVENT_CONTENT_TYPE_TEST] = "test",
-    [MONAD_EVENT_CONTENT_TYPE_EXEC] = "exec",
-};

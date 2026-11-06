@@ -35,6 +35,7 @@ extern "C"
 {
 #endif
 
+struct monad_event_content_version_table;
 struct monad_event_descriptor;
 struct monad_event_recorder;
 struct monad_event_ring_header;
@@ -86,6 +87,8 @@ struct monad_event_ring_header
     uint8_t schema_hash[32];                 ///< Ensure event definitions match
     struct monad_event_ring_size size;       ///< Size of following structures
     struct monad_event_ring_control control; ///< Tracks ring's state/status
+    off_t version_table_offset;              ///< Offset to schema version table
+    size_t version_table_count;              ///< Schema version tbl array size
 };
 
 /// Result of trying to read an event descriptor from an event ring
@@ -114,8 +117,8 @@ size_t monad_event_ring_calc_storage(struct monad_event_ring_size const *);
 /// ring data structures at the given offset within that file
 int monad_event_ring_init_file(
     struct monad_event_ring_size const *, monad_event_content_type_t,
-    uint8_t const (*schema_hash)[32], int ring_fd, off_t ring_offset,
-    char const *error_name);
+    uint8_t const (*schema_hash)[32], struct monad_event_content_version_table,
+    int ring_fd, off_t ring_offset, char const *error_name);
 
 /// Given an open file descriptor which contains an initialized event ring at
 /// `ring_offset`, mmap the event ring into our address space; mmap_extra_flags

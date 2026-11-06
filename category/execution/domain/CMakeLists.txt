@@ -18,13 +18,33 @@ project(monad_domain_execution)
 add_library(
   monad_domain_execution OBJECT
   # domain
+  "block_store.cpp"
+  "block_store.hpp"
   "chain_id.cpp"
   "chain_id.hpp"
-  "config.hpp")
+  "config.hpp"
+  "derivation.cpp"
+  "derivation.hpp"
+  "deriver.cpp"
+  "deriver.hpp"
+  "domain_block.cpp"
+  "domain_block.hpp"
+  "hpke.cpp"
+  "hpke.hpp"
+  "l1_source.cpp"
+  "l1_source.hpp"
+  "scanner.cpp"
+  "scanner.hpp"
+  "system_transaction.cpp"
+  "system_transaction.hpp"
+  # domain/rlp
+  "rlp/domain_block_rlp.cpp"
+  "rlp/domain_block_rlp.hpp")
 
 target_link_libraries(
   monad_domain_execution
-  PUBLIC monad_execution_native)
+  PUBLIC monad_execution_native
+  PRIVATE aws_lc::crypto)
 monad_compile_options(monad_domain_execution)
 
 file(GLOB_RECURSE domain_tests CONFIGURE_DEPENDS *_test.cpp)

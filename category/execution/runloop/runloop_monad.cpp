@@ -712,15 +712,19 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                 exec_output.eth_header.gas_used,
                 block_time_start);
 
-            return outcome::success();
+            return std::pair{ntxns, exec_output.eth_header.gas_used};
         };
 
         for (auto const &[block_id, consensus_header] : to_execute) {
-            BOOST_OUTCOME_TRY(std::visit(
-                [&block_id, handle_to_execute](auto const &header) {
-                    return handle_to_execute(block_id, header);
-                },
-                consensus_header));
+            BOOST_OUTCOME_TRY(
+                auto const executed,
+                std::visit(
+                    [&block_id, handle_to_execute](auto const &header) {
+                        return handle_to_execute(block_id, header);
+                    },
+                    consensus_header));
+            ntxs += executed.first;
+            total_gas += executed.second;
         }
 
         for (auto const &[block, block_id, verified_blocks] : to_finalize) {

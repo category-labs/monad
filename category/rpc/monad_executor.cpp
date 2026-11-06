@@ -234,7 +234,8 @@ namespace
         std::vector<std::optional<Address>> const &authorities, Db &db,
         vm::VM &vm, BlockHashBuffer const &buffer,
         monad_state_override const &state_overrides,
-        CallTracerBase &call_tracer, trace::StateTracer &state_tracer)
+        CallTracerBase &call_tracer, trace::StateTracer &state_tracer,
+        Simulation const &execution_mode)
     {
         Transaction enriched_txn{txn};
 
@@ -264,7 +265,7 @@ namespace
         {
             State state{block_state, incarnation};
             BOOST_OUTCOME_TRY(validate_ethereum_transaction<traits>(
-                enriched_txn, sender, state, state_tracer, false));
+                enriched_txn, sender, state, state_tracer, execution_mode));
         }
 
         auto const senders = std::vector{sender};
@@ -287,6 +288,7 @@ namespace
                     .senders_and_authorities = senders_and_authorities,
                     .senders = senders,
                     .authorities = authorities_vec,
+                    .mode = execution_mode,
                 };
             }
             else {
@@ -777,6 +779,20 @@ namespace
         return carried_size;
     }
 
+    // Returns the base fee of a simulated block whose parent is `parent`.
+    std::optional<uint256_t> simulated_base_fee(
+        std::optional<uint256_t> const &base_fee_override,
+        BlockHeader const &parent, Simulation const &execution_mode)
+    {
+        if (base_fee_override.has_value()) {
+            return base_fee_override;
+        }
+        if (inherit_base_fee(execution_mode)) {
+            return parent.base_fee_per_gas;
+        }
+        return std::nullopt;
+    }
+
     // Executes one simulated block under the fork rules active at its
     // header. Fork-dependent header fields are populated here.
     template <Traits traits>
@@ -1003,6 +1019,8 @@ namespace
                             // NOTE(dhil): Synthetic blocks carry forward the
                             // block beneficiary.
                             .beneficiary = header.beneficiary,
+                            .base_fee_per_gas = simulated_base_fee(
+                                std::nullopt, header, execution_mode),
                             // TODO(dhil): The simulation does not compute roots
                             // at this time.
                             .parent_beacon_block_root = bytes32_t{},
@@ -1082,7 +1100,8 @@ namespace
                 .timestamp = bo.time.value_or(
                     header.timestamp + DEFAULT_TIMESTAMP_INCREMENT),
                 .beneficiary = bo.fee_recipient.value_or(header.beneficiary),
-                .base_fee_per_gas = bo.base_fee_per_gas,
+                .base_fee_per_gas = simulated_base_fee(
+                    bo.base_fee_per_gas, header, execution_mode),
                 // TODO(dhil): The simulation does not compute roots at this
                 // time.
                 .parent_beacon_block_root = bytes32_t{},
@@ -1545,6 +1564,7 @@ struct monad_executor
              call_tracer_max_size = call_tracer_max_size,
              tracer_config = tracer_config,
              gas_specified = gas_specified,
+             execution_mode = Simulation{false},
              active_pool = &active_pool] {
                 active_pool->queued_count.fetch_sub(
                     1, std::memory_order_relaxed);
@@ -1641,7 +1661,8 @@ struct monad_executor
                                 block_hash_buffer,
                                 *state_overrides,
                                 *call_tracer,
-                                state_tracer);
+                                state_tracer,
+                                execution_mode);
                             MONAD_ASSERT(false);
                         }
                         else {
@@ -1663,7 +1684,8 @@ struct monad_executor
                                 block_hash_buffer,
                                 *state_overrides,
                                 *call_tracer,
-                                state_tracer);
+                                state_tracer,
+                                execution_mode);
                             MONAD_ASSERT(false);
                         }
                     }();

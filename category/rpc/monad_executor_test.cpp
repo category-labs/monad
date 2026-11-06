@@ -10862,8 +10862,10 @@ TEST_F(EthCallFixture, eth_simulate_v1_relaxed_sender_validation)
 
     std::vector<std::unique_ptr<callback_context>> contexts;
     contexts.reserve(5);
+    // Per the eth_simulateV1 spec, neither validation mode rejects a contract
+    // sender.
     for (auto const &test_case :
-         {TestCase{true, 100'000, 0, 0, "sender not eoa"},
+         {TestCase{true, 100'000, 0, 0, nullptr},
           TestCase{false, 100'000, 0, 0, nullptr},
           TestCase{false, 20'999, 0, 0, "intrinsic gas greater than limit"},
           TestCase{false, 38'000, 0, 1'000, "intrinsic gas greater than limit"},
@@ -11440,8 +11442,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_validation_false_bounds_sender_nonce)
     monad_executor_destroy(executor);
 }
 
-// Relaxed validation skips the check that the sender's state nonce equals
-// `tx.nonce`, so it bounds the state nonce separately: a sender can reach
+// Simulation skips the check that the sender's state nonce equals `tx.nonce`,
+// so it bounds the state nonce separately: a sender can reach
 // 2^64-1 inside a simulated block. Here contract C starts at 2^64-2, call 0
 // runs C's CREATE (C -> 2^64-1), and call 1 is an unfunded top-level CREATE
 // from C. Monad's balance rule admits call 1, so without the bound it would
@@ -11531,17 +11533,12 @@ TEST_F(
     monad_executor_destroy(executor);
 }
 
-// The nonce relaxation is observable when an earlier call's 7702
-// authorization moves a later sender's nonce. The nonce pre-pass in
-// eth_simulate_impl patches call 1 with the authority's pre-block nonce (0),
-// but it is 1 by the time call 1 runs.
-//
-// `validation: false` succeeds. `validation: true` fails with "bad nonce",
-// whereas geth accepts the same request because it fills each nonce when the
-// call runs.
-TEST_F(
-    EthCallFixture,
-    eth_simulate_v1_validation_false_nonce_moved_by_earlier_authorization)
+// An earlier call's 7702 authorization moves a later sender's nonce. The nonce
+// pre-pass in eth_simulate_impl patches call 1 with the authority's pre-block
+// nonce (0), but it is 1 by the time call 1 runs. Simulation does not check
+// sender nonces, so both validation modes succeed, as in geth, which fills
+// each nonce when the call runs.
+TEST_F(EthCallFixture, eth_simulate_v1_nonce_moved_by_earlier_authorization)
 {
     static constexpr Address sender =
         0x00000000000000000000000000000000deadbeef_address;
@@ -11650,11 +11647,6 @@ TEST_F(
             (void *)&ctx);
         future.get();
 
-        if (validation) {
-            EXPECT_EQ(ctx.result->status_code, EVMC_REJECTED);
-            EXPECT_STREQ(ctx.result->message, "bad nonce");
-            continue;
-        }
         ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
         auto const output = nlohmann::json::from_cbor(
             ctx.result->encoded_trace,
@@ -11669,10 +11661,9 @@ TEST_F(
 }
 
 // An earlier call's 7702 authorization raises the authority's nonce to
-// 2^64 - 1. The nonce pre-pass in eth_simulate_impl patches call 1 with the
-// authority's pre-block nonce (2^64 - 2), so without the simulation nonce bound
-// `validation: true` would fail with "bad nonce". Both modes report "nonce
-// exceeds max", as geth does.
+// 2^64 - 1. Simulation does not check sender nonces, so without the state nonce
+// bound call 1 would run and wrap the authority's nonce to 0. Both validation
+// modes report "nonce exceeds max", as geth does.
 TEST_F(EthCallFixture, eth_simulate_v1_authorization_raises_sender_nonce_to_max)
 {
     static constexpr Address sender =
@@ -11778,5 +11769,187 @@ TEST_F(EthCallFixture, eth_simulate_v1_authorization_raises_sender_nonce_to_max)
     EXPECT_EQ(authority_account->nonce, max_nonce - 1);
     monad_block_override_vec_destroy(block_overrides);
     monad_state_override_vec_destroy(state_overrides);
+    monad_executor_destroy(executor);
+}
+
+// Like geth, `validation: true` gives a simulated block without a base fee
+// override its parent's base fee, so calls must cover it, whereas
+// `validation: false` uses a base fee of 0. Synthetic blocks follow the same
+// rule, and an explicit override applies in both modes.
+TEST_F(EthCallFixture, eth_simulate_v1_validation_controls_base_fee)
+{
+    static constexpr Address sender =
+        0x00000000000000000000000000000000deadbeef_address;
+    static constexpr Address recipient =
+        0x00000000000000000000000000000000feedface_address;
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {sender,
+             StateDelta{
+                 .account =
+                     {std::nullopt,
+                      Account{.balance = 100_ether, .nonce = 0}}}}},
+        {},
+        BlockHeader{.number = 0});
+    for (uint64_t block_number = 1; block_number < 256; ++block_number) {
+        commit_sequential(tdb, {}, {}, BlockHeader{.number = block_number});
+    }
+
+    auto *executor = create_executor(dbname.string());
+    auto const rlp_senders = to_vec(rlp::encode_list2(
+        rlp::encode_list2(rlp::encode_address(std::make_optional(sender)))));
+    BlockHeader const header{
+        .number = 1, .gas_limit = 200'000'000, .base_fee_per_gas = 100};
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+    Transaction const unpriced{.gas_limit = 100'000, .to = recipient};
+    Transaction const priced{
+        .max_fee_per_gas = 100, .gas_limit = 100'000, .to = recipient};
+
+    struct TestCase
+    {
+        char const *name;
+        bool validation;
+        Transaction tx;
+        std::optional<uint64_t> block_number;
+        std::optional<uint8_t> base_fee;
+        char const *error;
+        std::vector<char const *> base_fees;
+    };
+
+    auto const test_cases = std::array{
+        TestCase{
+            "unpriced call",
+            true,
+            unpriced,
+            std::nullopt,
+            std::nullopt,
+            "max fee less than base",
+            {}},
+        TestCase{
+            "unpriced call",
+            false,
+            unpriced,
+            std::nullopt,
+            std::nullopt,
+            nullptr,
+            {"0x0"}},
+        TestCase{
+            "priced call",
+            true,
+            priced,
+            std::nullopt,
+            std::nullopt,
+            nullptr,
+            {"0x64"}},
+        TestCase{
+            "priced call",
+            false,
+            priced,
+            std::nullopt,
+            std::nullopt,
+            nullptr,
+            {"0x0"}},
+        TestCase{
+            "base fee override",
+            true,
+            priced,
+            std::nullopt,
+            7,
+            nullptr,
+            {"0x7"}},
+        TestCase{
+            "base fee override",
+            false,
+            priced,
+            std::nullopt,
+            7,
+            nullptr,
+            {"0x7"}},
+        TestCase{
+            "synthetic blocks",
+            true,
+            priced,
+            4,
+            std::nullopt,
+            nullptr,
+            {"0x64", "0x64", "0x64"}},
+        TestCase{
+            "synthetic blocks",
+            false,
+            priced,
+            4,
+            std::nullopt,
+            nullptr,
+            {"0x0", "0x0", "0x0"}},
+    };
+
+    std::vector<std::unique_ptr<callback_context>> contexts;
+    contexts.reserve(test_cases.size());
+    for (auto const &test_case : test_cases) {
+        SCOPED_TRACE(std::format(
+            "{}, validation={}", test_case.name, test_case.validation));
+        auto const rlp_calls = to_vec(rlp::encode_list2(rlp::encode_list2(
+            rlp::encode_string2(rlp::encode_transaction(test_case.tx)))));
+        auto *const state_overrides = monad_state_override_vec_create(1);
+        auto *const block_overrides = monad_block_override_vec_create(1);
+        if (test_case.block_number.has_value()) {
+            set_block_override_number_at(
+                block_overrides, 0, *test_case.block_number);
+        }
+        if (test_case.base_fee.has_value()) {
+            uint8_t base_fee[32] = {};
+            base_fee[31] = *test_case.base_fee;
+            set_block_override_base_fee_per_gas_at(
+                block_overrides, 0, base_fee, sizeof(base_fee));
+        }
+
+        auto &ctx =
+            *contexts.emplace_back(std::make_unique<callback_context>());
+        auto future = ctx.promise.get_future();
+        monad_executor_eth_simulate_submit(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_senders.data(),
+            rlp_senders.size(),
+            rlp_calls.data(),
+            rlp_calls.size(),
+            header.number,
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            rlp_finalized_id.data(),
+            rlp_finalized_id.size(),
+            simulate_gas_limit,
+            simulate_max_calls,
+            simulate_max_output_size,
+            state_overrides,
+            block_overrides,
+            test_case.validation,
+            false, // emit_native_transfer_logs
+            complete_callback,
+            (void *)&ctx);
+        future.get();
+        monad_block_override_vec_destroy(block_overrides);
+        monad_state_override_vec_destroy(state_overrides);
+
+        if (test_case.error != nullptr) {
+            ASSERT_EQ(ctx.result->status_code, EVMC_REJECTED);
+            EXPECT_STREQ(ctx.result->message, test_case.error);
+            continue;
+        }
+        ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+        auto const output = nlohmann::json::from_cbor(
+            ctx.result->encoded_trace,
+            ctx.result->encoded_trace + ctx.result->encoded_trace_len);
+        ASSERT_EQ(output.size(), test_case.base_fees.size());
+        for (size_t i = 0; i < output.size(); ++i) {
+            EXPECT_EQ(output[i]["baseFeePerGas"], test_case.base_fees[i]);
+        }
+        EXPECT_EQ(output.back()["calls"][0]["status"], "0x1");
+    }
+
     monad_executor_destroy(executor);
 }

@@ -18,7 +18,6 @@
   lib,
   callPackage,
   cmake,
-  python3,
   boost,
   libclang,
   llvmPackages,
@@ -37,7 +36,7 @@
 }:
 let
   cargoRoot = "zkvm/zisk";
-  lockFile = ../${cargoRoot}/Cargo.lock;
+  lockFile = ../../${cargoRoot}/Cargo.lock;
   zisk = callPackage ./zisk.nix { inherit lockFile; };
   # bindgen generates Rust bindings from ZisK's C headers for RISC-V.
   # This hook tells it to use clang's built-in headers. The standard nixpkgs
@@ -56,14 +55,13 @@ in
 assert lib.assertMsg (toolchainMajor == zisk.toolchainMajor) ''
   zisk-rust-toolchain ${zisk-rust-toolchain.version} has major ${toString toolchainMajor},
   but ziskos ${zisk.tag} wants toolchain major ${toString zisk.toolchainMajor}.
-  Bump the tag in nix/zisk-rust-toolchain.nix or the ziskos pin in zkvm/zisk/Cargo.lock.'';
+  Bump the tag in nix/zisk/rust-toolchain/default.nix or the ziskos pin in zkvm/zisk/Cargo.lock.'';
 {
   nativeBuildInputs = lib.optional vendorCargoDeps rustPlatform.cargoSetupHook ++ [
     zisk-rust-toolchain
     zisk
     bindgenHook
     cmake
-    python3
   ];
   buildInputs = [ boost ];
   hardeningDisable = [ "all" ];

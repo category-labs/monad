@@ -1,0 +1,59 @@
+--- a/gcc/config/riscv/riscv.opt
++++ b/gcc/config/riscv/riscv.opt
+@@ -685,3 +685,7 @@ Enable (default) or disable generation of vector segment load/store instructions
+ mzisk-dma
+ Target Var(TARGET_ZISK_DMA) Init(0)
+ Lower block memory operations to ZisK zkVM DMA precompile markers.
++
++mzisk-clean-byte-stores
++Target Var(TARGET_ZISK_CLEAN_BYTE_STORES) Init(0)
++Prefer zero-extended constants and additions for ZisK byte stores.
+--- a/gcc/config/riscv/riscv.cc
++++ b/gcc/config/riscv/riscv.cc
+@@ -3675,6 +3675,18 @@ riscv_legitimize_move (machine_mode mode, rtx dest, rtx src)
+     {
+       rtx reg;
+ 
++      if (GET_CODE (src) == CONST_INT
++	  && TARGET_ZISK_CLEAN_BYTE_STORES
++	  && mode == QImode)
++	{
++	  /* Load byte constants as 0..255 to avoid ZisK's byte-store surcharge.
++	     Every byte fits an addi immediate, so zero-extension needs no
++	     extra instruction.  */
++	  reg = force_reg (word_mode, GEN_INT (INTVAL (src) & 0xff));
++	  riscv_emit_move (dest, gen_lowpart (QImode, reg));
++	  return true;
++	}
++
+       if (GET_CODE (src) == CONST_INT)
+ 	{
+ 	  /* Apply the equivalent of PROMOTE_MODE here for constants to
+--- a/gcc/config/riscv/riscv.md
++++ b/gcc/config/riscv/riscv.md
+@@ -729,6 +729,25 @@
+     }
+ })
+ 
++;; Add in 64 bits with a zero-extended immediate, preserving the result
++;; modulo 256. Small nonnegative operands can use ZisK's FROP path;
++;; stores are cheaper when the full result also fits in one byte.
++;; This does not clear upper bits in register operands or overflowing sums.
++(define_expand "addqi3"
++  [(set (match_operand:QI          0 "register_operand")
++	(plus:QI (match_operand:QI 1 "register_operand")
++		 (match_operand:QI 2 "arith_operand")))]
++  "TARGET_64BIT && TARGET_ZISK_CLEAN_BYTE_STORES"
++{
++  rtx t = gen_reg_rtx (DImode);
++  rtx op2 = CONST_INT_P (operands[2])
++	    ? GEN_INT (INTVAL (operands[2]) & 0xff)
++	    : gen_lowpart (DImode, operands[2]);
++  emit_insn (gen_adddi3 (t, gen_lowpart (DImode, operands[1]), op2));
++  emit_move_insn (operands[0], gen_lowpart (QImode, t));
++  DONE;
++})
++
+ (define_insn "adddi3"
+   [(set (match_operand:DI          0 "register_operand" "=r,r")
+ 	(plus:DI (match_operand:DI 1 "register_operand" " r,r")

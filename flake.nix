@@ -50,7 +50,7 @@
             inherit system;
             overlays = [ self.overlays.default ];
           };
-          zisk = pkgs.callPackage ./nix/zisk-dev-shell.nix { };
+          zisk = pkgs.callPackage ./nix/zisk/dev-shell.nix { };
         in
         {
           inherit zisk;
@@ -71,7 +71,7 @@
           default = pkgs.riscv64-none-elf-toolchain;
           # The reference guest ELF, from a clean checkout with submodules:
           #   nix build '.?submodules=1#zisk-elf'
-          zisk-elf = pkgs.callPackage ./nix/zisk-elf.nix {
+          zisk-elf = pkgs.callPackage ./nix/zisk/guest-elf.nix {
             src = guestSource;
             rev =
               self.rev

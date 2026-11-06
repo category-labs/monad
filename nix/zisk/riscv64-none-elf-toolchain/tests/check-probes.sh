@@ -14,8 +14,9 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-# Check that the external GCC emits the code the guest relies on,
-# not merely that it accepts the ZisK options:
+# Check that a GCC carrying the ZisK patches (see ../README.md) changes
+# generated code the way the guest relies on, not merely that it accepts the
+# options:
 # compile each probe with its option and require the assembly the probe
 # documents.
 #

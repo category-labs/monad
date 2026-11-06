@@ -70,6 +70,17 @@ TEST(SimulationErrorTest, SimulationDomain)
     }
 }
 
+TEST(SimulationErrorTest, UnsupportedChainConfig)
+{
+    Result<void>::error_type const error =
+        SimulationError::UnsupportedChainConfig;
+
+    auto const info = simulation_error_info(error);
+
+    EXPECT_EQ(info.status_code, EVMC_REJECTED);
+    EXPECT_EQ(info.message, "only Monad chain configurations are supported");
+}
+
 TEST(SimulationErrorTest, BlockDomain)
 {
     Result<void>::error_type const error = BlockError::GasAboveLimit;

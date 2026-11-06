@@ -19,6 +19,7 @@
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
+#include <category/execution/ethereum/execution_modalities.hpp>
 #include <category/vm/evm/monad/revision.h>
 #include <category/vm/evm/revision.h>
 
@@ -51,6 +52,8 @@ struct ChainContext<T>
         &senders_and_authorities;
     std::vector<Address> const &senders;
     std::vector<std::vector<std::optional<Address>>> const &authorities;
+
+    ExecutionMode mode{};
 
     // Returns an empty ChainContext for unit testing purposes.
     // Not intended for production use.

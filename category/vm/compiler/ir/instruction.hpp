@@ -104,6 +104,7 @@ namespace monad::vm::compiler
         Dup = 0x80,
         Swap = 0x90,
         Log = 0xA0,
+        Extension = 0xAE,
         DupN = 0xE6,
         SwapN = 0xE7,
         Exchange = 0xE8,
@@ -432,6 +433,8 @@ namespace monad::vm::compiler
             return "SWAP";
         case Log:
             return "LOG";
+        case Extension:
+            return "EXTENSION";
         case DupN:
             return "DUPN";
         case SwapN:

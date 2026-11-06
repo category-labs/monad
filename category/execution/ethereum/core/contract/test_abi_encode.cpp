@@ -127,6 +127,23 @@ TEST(AbiEncode, tuple)
     EXPECT_EQ(output, expected);
 }
 
+TEST(AbiEncode, transaction_associated_data)
+{
+    // Known-answer fixture from the private-domain HPKE transaction tests.
+    auto const expected =
+        from_hex(
+            "0000000000000000000000000000000000000000000000000000000000000040"
+            "0000000000000000000000000000000000000000000000000000510000004eaf"
+            "000000000000000000000000000000000000000000000000000000000000001f"
+            "6d6f6e61642d7472616e73616374696f6e2d656e6372797074696f6e2d763100")
+            .value();
+
+    AbiEncoder encoder;
+    encoder.add_string("monad-transaction-encryption-v1");
+    encoder.add_uint(u64_be{0x510000004eaf});
+    EXPECT_EQ(encoder.encode_final(), expected);
+}
+
 TEST(AbiEncode, empty_array)
 {
     byte_string const expected =

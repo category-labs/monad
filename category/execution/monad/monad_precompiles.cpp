@@ -16,6 +16,7 @@
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
+#include <category/execution/monad/ale/application_encryption_contract.hpp>
 #include <category/execution/monad/monad_precompiles.hpp>
 #include <category/execution/monad/reserve_balance/reserve_balance_contract.hpp>
 #include <category/execution/monad/staking/staking_contract.hpp>
@@ -78,7 +79,8 @@ bool is_precompile(Address const &address)
     // in.
     return is_eth_precompile<traits>(address) ||
            (address == staking::STAKING_CA) ||
-           (traits::mip_4_active() && address == RESERVE_BALANCE_CA);
+           (traits::mip_4_active() && address == RESERVE_BALANCE_CA) ||
+           (traits::ale_active() && address == ALE_CA);
 }
 
 EXPLICIT_MONAD_TRAITS(is_precompile);

@@ -72,10 +72,32 @@
 #define MONAD_VM_NEXT_PUSH(OP) MONAD_VM_NEXT_N(OP, ((OP) - PUSH0) + 1)
 #define MONAD_VM_NEXT_IMM(OP) MONAD_VM_NEXT_N(OP, 2)
 
+#define MONAD_VM_NEXT_EXTENSION(SELECTOR)                                      \
+    do {                                                                       \
+        static constexpr auto delta =                                          \
+            compiler::extension_opcode_table<traits>[(SELECTOR)]               \
+                .stack_increase -                                              \
+            compiler::extension_opcode_table<traits>[(SELECTOR)].min_stack;    \
+                                                                               \
+        instr_ptr += 2;                                                        \
+        if constexpr (debug_enabled) {                                         \
+            trace(analysis, gas_remaining, instr_ptr);                         \
+        }                                                                      \
+        MONAD_VM_MUST_TAIL return instruction_table<traits>[*instr_ptr](       \
+            ctx,                                                               \
+            analysis,                                                          \
+            stack_bottom,                                                      \
+            stack_top + delta,                                                 \
+            gas_remaining,                                                     \
+            instr_ptr);                                                        \
+    }                                                                          \
+    while (false);
+
 namespace monad::vm::interpreter
 {
     using enum runtime::StatusCode;
     using enum compiler::EvmOpCode;
+    using enum compiler::ExtensionSelector;
 
     template <Traits traits>
     consteval InstrTable make_instruction_table()
@@ -370,14 +392,32 @@ namespace monad::vm::interpreter
     template <Traits traits>
     consteval InstrTable make_extension_instruction_table()
     {
+        constexpr auto avail = [](compiler::ExtensionSelector const selector,
+                                  InstrEval impl) {
+            return !compiler::is_unknown_opcode_info<traits>(
+                       compiler::extension_opcode_table<traits>[selector])
+                       ? impl
+                       : invalid;
+        };
+
         InstrTable table{};
         table.fill(invalid);
+        table[CALLSTACKDEPTH] = avail(CALLSTACKDEPTH, callstackdepth<traits>);
+        table[CALLERN] = avail(CALLERN, callern<traits>);
         return table;
     }
 
     template <Traits traits>
-    constexpr InstrTable extension_instruction_table =
-        make_extension_instruction_table<traits>();
+    constexpr InstrTable extension_instruction_table = [] {
+        auto const table = make_extension_instruction_table<traits>();
+        for (size_t i = 0; i < table.size(); ++i) {
+            MONAD_ASSERT(
+                (table[i] == invalid) ==
+                compiler::is_unknown_opcode_info<traits>(
+                    compiler::extension_opcode_table<traits>[i]));
+        }
+        return table;
+    }();
 
     // Instruction implementations
     template <uint8_t Opcode, Traits traits, typename... FnArgs>
@@ -1684,6 +1724,32 @@ namespace monad::vm::interpreter
             ctx, analysis, stack_bottom, stack_top, gas_remaining, instr_ptr);
     }
 
+    template <Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void callstackdepth(
+        runtime::Context &ctx, Intercode const &analysis,
+        uint256_t const *const stack_bottom, StackTop const stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr)
+    {
+        check_requirements<CALLSTACKDEPTH, traits>(
+            ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        push(stack_top, static_cast<uint64_t>(ctx.env.depth));
+
+        MONAD_VM_NEXT_EXTENSION(CALLSTACKDEPTH);
+    }
+
+    template <Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void callern(
+        runtime::Context &ctx, Intercode const &analysis,
+        uint256_t const *const stack_bottom, StackTop const stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr)
+    {
+        check_requirements<CALLERN, traits>(
+            ctx, analysis, stack_bottom, stack_top, gas_remaining);
+        call_runtime(runtime::callern, ctx, stack_top, gas_remaining);
+
+        MONAD_VM_NEXT_EXTENSION(CALLERN);
+    }
+
     // Call & Create
     template <Traits traits>
     MONAD_VM_INSTRUCTION_CALL void create(
@@ -1878,3 +1944,4 @@ namespace monad::vm::interpreter
 #undef MONAD_VM_NEXT
 #undef MONAD_VM_NEXT_PUSH
 #undef MONAD_VM_NEXT_IMM
+#undef MONAD_VM_NEXT_EXTENSION

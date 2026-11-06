@@ -58,43 +58,33 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     string(APPEND CMAKE_CXX_FLAGS
         " -mcmodel=medany -nostartfiles -nostdlib++ -fno-exceptions -fno-rtti")
 
-    # ZisK-only codegen tuning, duplicated from Polygon's ziskethone guest
-    # (github.com/0xPolygonHermez/ziskethone, cpp-guest/zisk/toolchain.cmake +
-    # cpp-guest/zisk/CMakeLists.txt).
-    #  - -march adds Zbb/Zbs/Zbkb, transpiled natively by ZisK >= v1.2.0-alpha.
-    #  - -mtune=size was ziskethone's dominant single win (-13% block cost);
-    #    -funroll-loops + the widened inliner --params cut call/loop overhead
-    #    on hot paths; -fno-schedule-insns* drops scheduling that only helps
-    #    real pipelines; -fno-jump-tables avoids indirect jumps. Combined
-    #    measurement upstream: -16% block cost / -21.6% steps. -flto was
-    #    rejected there (marginal gain, overran the ZisK RAM ceiling).
-    #  - -fno-pic: cmake-rs injects cc-rs's -fPIC, but the guest is a
-    #    statically linked fixed-address ELF, so PIC only buys GOT
-    #    indirections on global accesses.
+    # ZisK supports Zba/Zbb/Zbs/Zbkb.
+    # The fixed-address guest needs no PIC/GOT indirections.
+    # -mtune=size favors direct unaligned word accesses over byte-wise loads.
+    # The interpreter keeps -mtune=generic-ooo, which runs fewer steps in its
+    # PUSH and DIV handlers.
     #
-    # These are appended (not set via CMAKE_*_FLAGS_INIT) because cmake-rs
-    # overrides CMAKE_*_FLAGS, and the -march must land after cc-rs's
-    # -march=rv64ima — the last flag wins.
+    # Append after cmake-rs's flags: the last -march wins.
     if(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
-        set(_zisk_march "-march=rv64ima_zicsr_zbb_zbs_zbkb -mabi=lp64")
-        string(JOIN " " _zisk_opt
-            "-fno-pic"
-            "-mtune=size"
-            "-funroll-loops"
-            "--param=max-inline-insns-single=1600"
-            "--param=max-inline-insns-auto=533"
-            "--param=inline-unit-growth=266"
-            "--param=max-inline-recursive-depth=6"
-            "--param=max-completely-peeled-insns=400"
-            "--param=large-function-growth=280"
-            "--param=large-unit-insns=30000"
-            "-fno-schedule-insns"
-            "-fno-schedule-insns2"
-            "-fno-jump-tables")
-        string(APPEND CMAKE_C_FLAGS " ${_zisk_march} ${_zisk_opt}")
-        string(APPEND CMAKE_CXX_FLAGS " ${_zisk_march} ${_zisk_opt}")
+        set(_zisk_march "-march=rv64ima_zicsr_zba_zbb_zbs_zbkb -mabi=lp64")
+        # Override the Nix GCC wrapper's default frame pointers on both build paths.
+        string(APPEND CMAKE_C_FLAGS " ${_zisk_march} -fno-pic -mtune=size -fomit-frame-pointer")
+        string(APPEND CMAKE_CXX_FLAGS " ${_zisk_march} -fno-pic -mtune=size -fomit-frame-pointer")
         string(APPEND CMAKE_ASM_FLAGS " ${_zisk_march}")
+        set(_monad_zkvm_interpreter_tune "-mtune=generic-ooo")
     endif()
+
+    # Tune C++ inlining for both guests to reduce call overhead.
+    # Allow more overall growth while limiting individual inlining candidates.
+    # Unroll eligible loops to reduce comparisons and branches.
+    string(APPEND CMAKE_CXX_FLAGS
+        " --param inline-unit-growth=800"
+        " --param large-function-growth=1500"
+        " --param max-inline-insns-auto=200"
+        " --param max-inline-insns-single=800"
+        " --param inline-min-speedup=1"
+        " -finline-functions"
+        " -funroll-loops")
 
     set(_guest_target "monad-zkvm-guest-${MONAD_ZKVM_GUEST_TARGET}")
 
@@ -105,7 +95,62 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         add_compile_definitions(MONAD_ZKVM_SP1)
     elseif(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
         add_compile_definitions(MONAD_ZKVM_ZISK)
+
+        # Lower eligible block memory operations, including struct copies,
+        # directly to ZisK DMA. Requires Zicsr and the patched GCC.
+        # Nix checks the emitted markers when building the toolchain.
+        option(MONAD_ZKVM_ZISK_DMA
+               "lower block mem* to the ZisK DMA precompile" OFF)
+        if(MONAD_ZKVM_ZISK_DMA)
+            string(APPEND CMAKE_C_FLAGS " -mzisk-dma")
+            string(APPEND CMAKE_CXX_FLAGS " -mzisk-dma")
+        endif()
+
+        # Prefer zero-extended byte constants and addition immediates to reduce
+        # ZisK byte-store costs. Requires the patched GCC.
+        option(MONAD_ZKVM_ZISK_CLEAN_BYTE_STORES
+               "zero-extend the sources of byte stores for ZisK" OFF)
+        if(MONAD_ZKVM_ZISK_CLEAN_BYTE_STORES)
+            string(APPEND CMAKE_C_FLAGS " -mzisk-clean-byte-stores")
+            string(APPEND CMAKE_CXX_FLAGS " -mzisk-clean-byte-stores")
+        endif()
+
+        # Optimize across translation units. Cargo links the archive with
+        # rust-lld, which cannot run GCC's LTO plugin, so the archive is
+        # partially linked below into one native object before it reaches
+        # Cargo. Every C and C++ object carries GIMPLE for that step. This
+        # also lets callers see that operator delete and free
+        # (zkvm/core/libstdcxx.cpp, zkvm/core/libc.cpp) are empty, so the
+        # calls and their argument setup disappear.
+        option(MONAD_ZKVM_ZISK_LTO
+               "link-time optimize the ZisK guest archive with GCC" OFF)
+        if(MONAD_ZKVM_ZISK_LTO)
+            string(APPEND CMAKE_C_FLAGS " -flto")
+            string(APPEND CMAKE_CXX_FLAGS " -flto")
+        endif()
     endif()
+
+    if(DEFINED MONAD_ZKVM_GIT_COMMIT AND NOT MONAD_ZKVM_GIT_COMMIT STREQUAL "")
+        string(LENGTH "${MONAD_ZKVM_GIT_COMMIT}" _git_commit_length)
+        if(NOT _git_commit_length EQUAL 40 OR
+           NOT MONAD_ZKVM_GIT_COMMIT MATCHES "^[0-9a-f]+$")
+            message(FATAL_ERROR
+                "MONAD_ZKVM_GIT_COMMIT must be a full lowercase Git SHA")
+        endif()
+        set(_monad_zkvm_build_commit "${MONAD_ZKVM_GIT_COMMIT}")
+    else()
+        set(_monad_zkvm_build_commit "none")
+    endif()
+    # Free-form: the reference build passes its nix store path, which names
+    # every input the ELF was built from.
+    if(DEFINED MONAD_ZKVM_BUILD_ID)
+        set(_monad_zkvm_build_id "${MONAD_ZKVM_BUILD_ID}")
+    else()
+        set(_monad_zkvm_build_id "none")
+    endif()
+    set(_monad_zkvm_stamp_defs
+        "MONAD_ZKVM_BUILD_COMMIT=\"${_monad_zkvm_build_commit}\""
+        "MONAD_ZKVM_BUILD_ID=\"${_monad_zkvm_build_id}\"")
 
     # Repo + third-party paths.
     set(MONAD_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")
@@ -150,6 +195,10 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     get_target_property(_boost_inc Boost::headers INTERFACE_INCLUDE_DIRECTORIES)
 
     add_subdirectory("${THIRD_PARTY_DIR}/unordered_dense" unordered_dense)
+
+    # Use the fork's fixed 4/5 load factor to avoid soft-float capacity calculations.
+    target_compile_definitions(unordered_dense INTERFACE
+        ANKERL_UNORDERED_DENSE_FIXED_LOAD_FACTOR=1)
 
     # cthash — header-only constexpr hashing, used by abi_signatures.hpp
     # for compile-time ABI selector derivation. Has its own add_subdirectory
@@ -215,6 +264,10 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     add_subdirectory("${MONAD_ROOT}/category/vm/evm" evm)
     add_subdirectory("${MONAD_ROOT}/category/vm/runtime" runtime)
     add_subdirectory("${MONAD_ROOT}/category/vm/interpreter" interpreter)
+    if(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
+        target_compile_options(monad-vm-interpreter PRIVATE
+                               ${_monad_zkvm_interpreter_tune})
+    endif()
 
     # Strip x86-only assembly from the otherwise shared targets.
     monad_zkvm_drop_sources(monad-vm-runtime
@@ -237,8 +290,12 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
 
     # ---- Extract setjmp/longjmp from the compiler's newlib libc.a ----
 
+    # Match the guest's -march/-mabi when selecting multilib libraries.
+    # The compiler default may otherwise select incompatible RV32 objects.
+    separate_arguments(_arch_query UNIX_COMMAND "${CMAKE_C_FLAGS}")
+
     execute_process(
-        COMMAND ${CMAKE_C_COMPILER} -print-file-name=libc.a
+        COMMAND ${CMAKE_C_COMPILER} ${_arch_query} -print-file-name=libc.a
         OUTPUT_VARIABLE _libc_a
         OUTPUT_STRIP_TRAILING_WHITESPACE
     )
@@ -279,7 +336,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # and symbols by machine mode si = 32, di = 64, ti = 128 bits
     # where risvc64 word is 64 bits, hence __popcount*di*2
     execute_process(
-        COMMAND ${CMAKE_C_COMPILER} -print-libgcc-file-name
+        COMMAND ${CMAKE_C_COMPILER} ${_arch_query} -print-libgcc-file-name
         OUTPUT_VARIABLE _libgcc_a
         OUTPUT_STRIP_TRAILING_WHITESPACE
     )
@@ -299,6 +356,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         message(FATAL_ERROR
             "libgcc.a not found via compiler query")
     endif()
+
 
     # ---- Bare-metal libc / libstdc++ stubs ----
 
@@ -390,6 +448,12 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
 
     # validate_block.cpp carries the validators and the BlockError
     # value_mappings() the shadow used to provide alone.
+
+    # Keep changing build stamps isolated from the other guest objects.
+    if(_monad_zkvm_stamp_defs)
+        set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/build_identity.cpp"
+            PROPERTIES COMPILE_DEFINITIONS "${_monad_zkvm_stamp_defs}")
+    endif()
 
     # Reduced guest deps not present in the inherited host link list.
     target_link_libraries(monad_execution_ethereum
@@ -491,6 +555,32 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     monad_compile_options(${_guest_target})
     monad_riscv_compile_options(${_guest_target})
 
+    # Replace the archive of GIMPLE objects with one holding a single native
+    # object. GCC runs the whole-program optimization during this partial
+    # link (-r), with the same flags the objects were compiled with, and
+    # -flinker-output=nolto-rel makes it emit machine code instead of
+    # GIMPLE. The newlib and libgcc objects pass through as they are.
+    # Per-function sections let the final link's --gc-sections still drop
+    # unreferenced code from the merged object.
+    if(MONAD_ZKVM_ZISK_LTO)
+        separate_arguments(_lto_flags UNIX_COMMAND
+            "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_RELEASE}")
+        set(_lto_merged "$<TARGET_FILE_DIR:${_guest_target}>/lto-merged.o")
+        add_custom_command(TARGET ${_guest_target} POST_BUILD
+            COMMAND ${CMAKE_CXX_COMPILER} ${_lto_flags}
+                -flto=auto -flinker-output=nolto-rel
+                -ffunction-sections -fdata-sections
+                -r -nostdlib -nostartfiles
+                -o "${_lto_merged}"
+                -Wl,--whole-archive "$<TARGET_FILE:${_guest_target}>"
+                -Wl,--no-whole-archive
+            COMMAND ${CMAKE_COMMAND} -E rm -f "$<TARGET_FILE:${_guest_target}>"
+            COMMAND ${CMAKE_AR} rcs "$<TARGET_FILE:${_guest_target}>"
+                "${_lto_merged}"
+            COMMENT "Link-time optimizing ${_guest_target}"
+            VERBATIM)
+    endif()
+
 else()
     # ---- Host x86 mode ----
     # Reached via add_subdirectory(zkvm/guest) from the root host CMakeLists.
@@ -507,10 +597,7 @@ else()
 endif()
 
 # ---- Guest sources, shared by both modes ----
-# The witness pipeline itself. Defined once, after the mode split: the two
-# modes differ only in what these sources compile against — the adapted
-# bare-metal targets on RISC-V, the host's monad_execution on x86 — so only
-# the dependency edge is conditional, never the target or its file list.
+# Both modes share the witness pipeline; only guests carry an ELF build stamp.
 add_library(monad-zkvm-guest OBJECT
     "${CMAKE_CURRENT_SOURCE_DIR}/execute_block.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/execute_witness.cpp"
@@ -519,6 +606,8 @@ add_library(monad-zkvm-guest OBJECT
 monad_compile_options(monad-zkvm-guest)
 target_link_libraries(monad-zkvm-guest PRIVATE zkevm-standards)
 if(DEFINED MONAD_ZKVM_GUEST_TARGET)
+    target_sources(monad-zkvm-guest PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/build_identity.cpp")
     monad_riscv_compile_options(monad-zkvm-guest)
     target_link_libraries(monad-zkvm-guest
         PRIVATE monad-core monad_execution_ethereum)

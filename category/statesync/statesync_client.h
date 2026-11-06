@@ -27,6 +27,8 @@ extern unsigned const MONAD_SQPOLL_DISABLED;
 struct monad_statesync_client;
 struct monad_statesync_client_context;
 
+void monad_statesync_client_set_hash_seed();
+
 // The primary timeline of the db at dbname_path must be page-encoded; a
 // secondary timeline, if active, is ignored.
 struct monad_statesync_client_context *monad_statesync_client_context_create(

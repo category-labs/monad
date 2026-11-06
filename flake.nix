@@ -1,10 +1,10 @@
 {
   description = "Toolchains and the reference guest build for the monad zkVM";
 
-  # Pinned to a release branch: nixos-26.05 ships GCC 15.2.0, matching both
-  # the Ubuntu host gcc-15 and the GCC that riscv-gnu-toolchain 2026.05.06
-  # used to build. flake.lock pins the exact revision; bumping it rebuilds
-  # the toolchain, so check the GCC version still matches (see README.md).
+  # Pinned to a release branch: nixos-26.05 ships GCC 15.2.0, matching the
+  # Ubuntu host gcc-15 that scripts/ubuntu-build/toolchain.env pins.
+  # flake.lock pins the exact revision; bumping it rebuilds the toolchain,
+  # which refuses to evaluate if the GCC major no longer matches that pin.
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
 
   outputs =
@@ -50,7 +50,7 @@
             inherit system;
             overlays = [ self.overlays.default ];
           };
-          zisk = pkgs.callPackage ./nix/zisk-dev-shell.nix { };
+          zisk = pkgs.callPackage ./nix/zisk/dev-shell.nix { };
         in
         {
           inherit zisk;
@@ -71,7 +71,7 @@
           default = pkgs.riscv64-none-elf-toolchain;
           # The reference guest ELF, from a clean checkout with submodules:
           #   nix build '.?submodules=1#zisk-elf'
-          zisk-elf = pkgs.callPackage ./nix/zisk-elf.nix {
+          zisk-elf = pkgs.callPackage ./nix/zisk/guest-elf.nix {
             src = guestSource;
             rev =
               self.rev

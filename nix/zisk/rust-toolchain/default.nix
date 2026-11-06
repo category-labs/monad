@@ -40,7 +40,7 @@
 
 let
   # The newest zisk-<major>.x.y release at the time of the ziskos bump, the
-  # one `cargo-zisk toolchain install` would pick. zisk-build-env.nix checks
+  # one `cargo-zisk toolchain install` would pick. build-env.nix checks
   # the major against the ZisK release the guest pins.
   tag = "zisk-4.1.0";
   host = "x86_64-unknown-linux-gnu";
@@ -86,7 +86,7 @@ stdenv.mkDerivation {
     cp -r bin lib $out/
     autoPatchelf $out/bin $out/lib/*.so* $out/lib/rustlib/x86_64-unknown-linux-gnu
     # For builds that must not depend on their build directory; see the script.
-    install -m755 ${./zisk-rustc-wrapper.sh} $out/bin/zisk-rustc-wrapper
+    install -m755 ${./rustc-wrapper.sh} $out/bin/zisk-rustc-wrapper
     runHook postInstall
   '';
 

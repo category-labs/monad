@@ -13,8 +13,8 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-# RISC-V cross compiler (GCC 15) with soft-float newlib and the ZisK
-# backend patches.
+# RISC-V cross compiler (GCC 15) with soft-float newlib and the ZisK DMA
+# lowering patch.
 #
 # Produces a riscv64-none-elf toolchain targeting rv64ima / lp64 (no FPU).
 # Newlib is shipped unmodified; zkvm/guest/CMakeLists.txt extracts only the
@@ -24,7 +24,7 @@
   path,
   stdenv,
   buildEnv,
-  fetchFromGitHub,
+  fetchurl,
 }:
 
 let
@@ -45,55 +45,43 @@ let
     };
   };
 
-  # GCC 15.2.0 with the two opt-in ZisK backend changes. Keep the revision
-  # and content hash pinned; compiler implementation changes live in the fork.
-  ziskGccSource = fetchFromGitHub {
-    owner = "anne-laure-s";
-    repo = "gcc";
-    rev = "93353bc300d688e7a929d4bfb2768e3465289e34";
-    hash = "sha256-0fXyEdpaCOhBHBLjtRtRRHvKG+YFajXOXNrmHpFNJ6M=";
-  };
+  hostGccMajor = (import ../../toolchain-env.nix { inherit lib; }).GCC_VERSION;
 
-  ziskProbes = lib.fileset.toSource {
-    root = ./gcc-probes;
-    fileset = lib.fileset.fileFilter (
-      file: file.hasExt "sh" || file.hasExt "c"
-    ) ./gcc-probes;
+  ziskDmaPatch = fetchurl {
+    url = "https://raw.githubusercontent.com/0xPolygonHermez/ziskethone/8bede62c7c9e843d1c2163eb05c56794ce706552/cpp-guest/patches/gcc/gcc-15.2.0/0001-riscv-zisk-dma-lowering.patch";
+    hash = "sha256-nbjLPySX/x5ZymCTuNLIqoegkmSKe7jjyAGzqBMthPk=";
   };
 
   # buildPackages is the build -> target package set, i.e. the cross
   # compiler itself. gcc15 is the wrapped compiler, which knows where the
   # target's newlib headers and libc.a live; gcc15.cc is the bare one,
-  # which does not. Replace the bare compiler source and wrap it again the way
+  # which does not. Patch the bare compiler and wrap it again the way
   # nixpkgs wraps gcc15, so the wrapper keeps that knowledge.
   cc = pkgs.buildPackages.wrapCC (
     pkgs.buildPackages.gcc15.cc.overrideAttrs (old: {
-      src = ziskGccSource;
-      # Git sources omit generated parsers shipped in GCC release tarballs.
-      nativeBuildInputs = old.nativeBuildInputs ++ [
-        pkgs.buildPackages.flex
-        pkgs.buildPackages.bison
-      ];
+      patches = old.patches ++ [ ziskDmaPatch ];
     })
   );
-  bintools = pkgs.buildPackages.binutils;
 in
-# Symlink farm providing a stable <prefix>/bin layout, so the tree can be
-# handed to cmake as -DRISCV_TOOLCHAIN_DIR without callers having to know
-# the hash-named store paths.
+
 assert cc.version == "15.2.0";
+assert lib.assertMsg (lib.versions.major cc.version == hostGccMajor)
+  "riscv64-none-elf GCC ${cc.version} is not the GCC ${hostGccMajor} pinned in scripts/ubuntu-build/toolchain.env";
 buildEnv {
   name = "riscv64-none-elf-toolchain";
   paths = [
     cc
-    bintools
+    pkgs.buildPackages.binutils
   ];
 
-  # Check that each patched option changes the generated code, not only
-  # that it parses: a compiler accepting -mzisk-dma while still emitting
-  # memcpy calls would build a slower guest without any error. The probes
-  # and the check remain here as the guest's toolchain contract.
+  # Check that the patched option changes the generated code.
   postBuild = ''
-    bash ${ziskProbes}/check-probes.sh $out/bin/riscv64-none-elf-gcc
+    $out/bin/riscv64-none-elf-gcc -O2 -march=rv64ima_zicsr -mabi=lp64 \
+      -mcmodel=medany -mzisk-dma -S -o probe-dma.s ${./probe-dma.c}
+    if ! grep -Eq 'csrs?[[:space:]]+.*0x813' probe-dma.s; then
+      cat probe-dma.s
+      echo "-mzisk-dma emits no DMA marker for a block memcpy" >&2
+      exit 1
+    fi
   '';
 }

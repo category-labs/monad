@@ -1,10 +1,9 @@
 # zkVM toolchains and guest
 
 Builds the `riscv64-none-elf` GCC used to cross-compile the zkVM guest
-(`zkvm/guest`) from the pinned
-[ZisK GCC fork](https://github.com/anne-laure-s/gcc/tree/zisk/gcc-15.2.0),
-the Rust toolchain that links the ZisK guest, and the reference ZisK guest
-ELF itself. CI consumes the GCC
+(`zkvm/guest`), with the ZisK DMA lowering patch applied, the Rust
+toolchain that links the ZisK guest, and the reference ZisK guest ELF
+itself. CI consumes the GCC
 from `docker/Dockerfile`; the same outputs work locally.
 
 Flakes are not enabled in a stock Nix install. Either add
@@ -28,33 +27,31 @@ cmake -B build-zkvm -S zkvm/guest \
 Both toolchains are ordinary packages added by `overlay.nix`, which the
 flake exports as `overlays.default` for other package sets to apply.
 
-The flake lives at the repository root and its packages and compiler probes
-in `nix/`. A toolchain-only build needs `flake.nix`, `flake.lock` and `nix/`,
-as copied by `docker/Dockerfile`.
+The flake lives at the repository root, its overlay in `nix/` beside
+`toolchain-env.nix`, which reads the repository's compiler pins from
+`scripts/ubuntu-build/toolchain.env`, and the ZisK packages in `nix/zisk/`.
+The flake must be evaluated from a tree that holds all of them: the
+repository itself, or a copy of `flake.nix`, `flake.lock`, `nix/` and
+`scripts/ubuntu-build/toolchain.env` built as a Git flake
+(`git+file://<copy>#riscv64-none-elf-toolchain`), as `docker/Dockerfile`
+does.
 
-## ZisK GCC dependency
+## ZisK patch
 
-`riscv64-none-elf-toolchain.nix` pins the fork by commit and source hash.
-It is based on GCC 15.2.0 and adds two options, both disabled by default:
+`riscv64-none-elf-toolchain/default.nix` takes GCC 15.2.0 from the pinned nixpkgs
+and applies ZisK's DMA lowering patch after nixpkgs's own, fetched from
+[ziskethone](https://github.com/0xPolygonHermez/ziskethone/tree/develop/cpp-guest/patches/gcc/gcc-15.2.0)
+at a pinned commit and hash. It adds `-mzisk-dma`, disabled by default, which
+lowers block memory operations to ZisK DMA markers.
 
-- `-mzisk-dma` lowers block memory operations to ZisK DMA markers.
-- `-mzisk-clean-byte-stores` prefers zero-extended byte constants and additions.
+The reference guest build explicitly enables it. After the symlink farm is
+assembled, the derivation compiles `riscv64-none-elf-toolchain/probe-dma.c`
+with `-mzisk-dma` and requires the DMA marker (`csrs 0x813`) for a block
+`memcpy`, so an unpatched or mis-patched compiler fails to build rather than
+quietly building a slower guest.
 
-The reference guest build explicitly enables both. Nix retains its own GCC
-packaging patches, binutils and soft-float newlib; the ZisK backend changes
-are maintained in the fork, not applied from this repository.
-
-After building the toolchain, `gcc-probes/check-probes.sh` checks the generated
-assembly for both options. This catches a compiler that accepts the flags
-without emitting the expected instructions. To check an externally installed
-compiler, run:
-
-```sh
-bash nix/gcc-probes/check-probes.sh /path/to/riscv64-none-elf-gcc
-```
-
-When updating the dependency, update both its revision and hash, then rebuild
-the toolchain and guest. Do not infer ELF identity from a passing probe.
+When changing the pinned ziskethone commit, rebuild the toolchain
+and guest. Do not infer ELF identity from a passing probe.
 
 ## ZisK Rust toolchain
 
@@ -64,7 +61,7 @@ Rust entry point: 0xPolygonHermez's rustc fork with the
 the same prebuilt archive but takes the newest `zisk-4.x.y` release at
 install time, so two machines can hold different compilers without any
 record of it. The ZisK source names only the major of the toolchain it
-wants, so `zisk-rust-toolchain.nix` pins the release tag and the archive
+wants, so `rust-toolchain/default.nix` pins the release tag and the archive
 hash itself and relinks the binaries for nix. To bump it, change `tag`
 and replace the hash with the one the first build reports. Evaluation
 fails if the tag's major is not the one the pinned ZisK release asks for,
@@ -109,14 +106,6 @@ initialised (`git submodule update --init --recursive`). Only the trees the
 guest reads are copied into the store; the test-vector submodules are left
 out, so a build copies a few hundred megabytes rather than the whole tree.
 
-Before the ELF is kept, the derivation checks what the guest build
-promises about it: the commit marker, the Zba/Zbb/Zbs/Zbkb ISA attributes,
-and that every `operator delete` or `free` symbol that survived linking is
-a bare return. The guest never deallocates, and link-time optimization
-inlines these bodies into every caller, so the checks also inspect the
-allocator source definitions, including functions removed by optimization,
-and verify the actual return instruction encoding.
-
 `nix build --rebuild '.?submodules=1#zisk-elf'` builds the ELF again and fails if the
 result differs. Run it to check reproducibility rather than assuming it.
 
@@ -139,8 +128,8 @@ Local edits are supported, and Cargo/CMake keep their incremental artifacts.
 
 Use `nix develop`, rather than plain `nix shell`: the environment needs setup
 hooks for the Rust wrapper, the linker script and the bindgen flags, plus
-cross-compiler settings. `zisk-build-env.nix` shares these settings with the
-reference build, including explicit DMA and clean byte stores. The shell clears
+cross-compiler settings. `build-env.nix` shares these settings with the
+reference build, including explicit DMA lowering. The shell clears
 inherited host compiler flags and global Rust flags so they cannot reach the
 RISC-V compiler or override the target-specific ZisK cfg and linker script.
 This shell does not require a
@@ -168,10 +157,13 @@ full `riscv-gnu-toolchain` bootstrap would.
 
 ## Pinning
 
-The root `flake.lock` pins nixpkgs. The pin is chosen so GCC is **15.2.0**, matching
-both the Ubuntu host `gcc-15` and the GCC that `riscv-gnu-toolchain`
-2026.05.06 built. Keeping the cross and host compilers in lockstep is
-deliberate; check it after bumping:
+The root `flake.lock` pins nixpkgs. The pin is chosen so GCC is **15.2.0**,
+matching the Ubuntu host `gcc-15` that `scripts/ubuntu-build/toolchain.env`
+pins for every build. Keeping the cross and host compilers in lockstep is
+deliberate: `riscv64-none-elf-toolchain/default.nix` refuses to evaluate
+unless the nixpkgs GCC has the major that file names, and the Docker image
+checks the full version against the installed host GCC. After bumping either
+pin, rebuild and compare:
 
 ```shell
 nix build .#riscv64-none-elf-toolchain
@@ -182,7 +174,7 @@ nix flake update                                     # to bump
 ## Soft float
 
 The stock `pkgsCross.riscv64-embedded` target is `lp64d` (hard float), which
-the zkVM's no-FPU environment cannot use. `riscv64-none-elf-toolchain.nix` declares
+the zkVM's no-FPU environment cannot use. `riscv64-none-elf-toolchain/default.nix` declares
 `rv64ima` / `lp64` explicitly so newlib is rebuilt for that ABI too. Verify
 with:
 
@@ -195,7 +187,7 @@ Local development remains available with locally installed tools. The
 unordered_dense fork remains pinned by the repository's gitlink and
 `.gitmodules`.
 
-Benchmark drivers invoking Cargo directly must pass `MONAD_ZKVM_ZISK_DMA=ON`,
-`MONAD_ZKVM_ZISK_CLEAN_BYTE_STORES=ON` and `MONAD_ZKVM_ZISK_LTO=ON`.
+Benchmark drivers invoking Cargo directly must pass `MONAD_ZKVM_ZISK_DMA=ON`
+and `MONAD_ZKVM_ZISK_LTO=ON`.
 `MONAD_ZKVM_OFFICIAL_PROFILE` is no longer used. The commit and build stamps
 are supplied separately with `MONAD_ZKVM_GIT_COMMIT` and `MONAD_ZKVM_BUILD_ID`.

@@ -67,18 +67,18 @@ Start each section's commands from the repository root unless stated otherwise.
 ZisK input is an 8-byte little-endian payload length followed by the witness,
 zero-padded to an 8-byte boundary.
 
-Published benchmarks and releases use the [reference Nix build](../nix/README.md#zisk-guest-elf):
+Published benchmarks and releases use the [reference Nix build](../nix/zisk/README.md#zisk-guest-elf):
 
 ```sh
 nix build --option sandbox true --option sandbox-fallback false '.?submodules=1#zisk-elf'
 # result/monad-zkvm-zisk and result/monad-zkvm-zisk.build.json
 ```
 
-It pins the source and toolchains and checks the allocator assumptions and
-linked ELF. Keep the manifest with the artifact. It requires an x86_64 Linux
+It pins the source and toolchains and writes a manifest of the build's inputs
+and the ELF hash beside the ELF. Keep the manifest with the artifact. It requires an x86_64 Linux
 builder. Reproducibility must still be checked by independent rebuilds.
 
-For incremental development on x86_64 Linux, use the [Nix development shell](../nix/README.md#development-shell):
+For incremental development on x86_64 Linux, use the [Nix development shell](../nix/zisk/README.md#development-shell):
 
 ```sh
 nix develop .#zisk
@@ -86,9 +86,8 @@ cd zkvm/zisk
 cargo build --release --locked --target riscv64ima-zisk-zkvm-elf --target-dir target/elf --bin monad-zkvm-zisk
 ```
 
-It supplies the pinned compilers and linker configuration, enables DMA, clean
-byte stores and link-time optimization, and builds local edits without
-`cargo-zisk`.
+It supplies the pinned compilers and linker configuration, enables DMA and
+link-time optimization, and builds local edits without `cargo-zisk`.
 
 The development shell selects the pinned toolchain through `RISCV_TOOLCHAIN_DIR`.
 Toolchain-selection `-D` overrides are rejected so CMake and cmake-rs use the
@@ -96,8 +95,8 @@ same tools. The cache key includes the compiler path, build flags and CMake
 configuration. Nix toolchain paths are immutable, so executable fingerprinting
 is unnecessary.
 
-Override `MONAD_ZKVM_ZISK_DMA`, `MONAD_ZKVM_ZISK_CLEAN_BYTE_STORES` or
-`MONAD_ZKVM_ZISK_LTO` in the shell to compare build options. Further CMake
+Override `MONAD_ZKVM_ZISK_DMA` or `MONAD_ZKVM_ZISK_LTO` in the shell to
+compare build options. Further CMake
 options go in `MONAD_ZKVM_CMAKE_ARGS` as shell-quoted `-DNAME=VALUE` words.
 Each compiler and configuration keeps its own CMake build under Cargo's
 `OUT_DIR`, so switching between them reuses their objects.

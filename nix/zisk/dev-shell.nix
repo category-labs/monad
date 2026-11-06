@@ -20,7 +20,7 @@
   gitMinimal,
 }:
 let
-  buildEnv = callPackage ./zisk-build-env.nix { };
+  buildEnv = callPackage ./build-env.nix { };
 in
 mkShell {
   inherit (buildEnv)

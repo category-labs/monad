@@ -25,6 +25,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <string_view>
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN
@@ -154,6 +155,13 @@ public:
     void add_bytes(byte_string_view const data)
     {
         add_dynamic(abi_encode_bytes(data));
+    }
+
+    void add_string(std::string_view const data)
+    {
+        add_bytes(
+            {reinterpret_cast<unsigned char const *>(data.data()),
+             data.size()});
     }
 
     byte_string encode_final()

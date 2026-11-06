@@ -258,6 +258,11 @@ add_library(
   "monad/validate_monad_transaction.hpp"
   "monad/validate_system_transaction.cpp"
   "monad/validate_system_transaction.hpp"
+  # monad/ale
+  "monad/ale/application_encryption_contract.cpp"
+  "monad/ale/application_encryption_contract.hpp"
+  "monad/ale/application_encryption_error.cpp"
+  "monad/ale/application_encryption_error.hpp"
   # monad/reserve_balance
   "monad/reserve_balance/reserve_balance_contract.cpp"
   "monad/reserve_balance/reserve_balance_contract.hpp"

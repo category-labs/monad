@@ -87,7 +87,7 @@ TEST(SystemTransaction, prestate_trace_staking_epoch_change)
     {
         nlohmann::json trace;
         trace::StateTracer prestate_tracer =
-            trace::PrestateTracer{trace, beneficiary};
+            trace::PrestateTracer{trace, beneficiary, {}};
 
         // Fulfil this promise such that ExecuteSystemTransaction doesn't wait
         // indefinitely.
@@ -126,7 +126,7 @@ TEST(SystemTransaction, prestate_trace_staking_epoch_change)
     {
         nlohmann::json trace;
         trace::StateTracer prestate_tracer =
-            trace::PrestateTracer{trace, beneficiary};
+            trace::PrestateTracer{trace, beneficiary, {}};
 
         boost::fibers::promise<void> promise;
         auto prev = promise.get_future();
@@ -200,7 +200,7 @@ TEST(SystemTransaction, statediff_trace_staking_epoch_change)
 
     {
         nlohmann::json trace;
-        trace::StateTracer statediff_tracer = trace::StateDiffTracer{trace};
+        trace::StateTracer statediff_tracer = trace::StateDiffTracer{trace, {}};
 
         boost::fibers::promise<void> promise;
         auto prev = promise.get_future();
@@ -243,7 +243,7 @@ TEST(SystemTransaction, statediff_trace_staking_epoch_change)
 
     {
         nlohmann::json trace;
-        trace::StateTracer statediff_tracer = trace::StateDiffTracer{trace};
+        trace::StateTracer statediff_tracer = trace::StateDiffTracer{trace, {}};
 
         boost::fibers::promise<void> promise;
         auto prev = promise.get_future();

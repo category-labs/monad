@@ -61,8 +61,7 @@ struct ExecutionEvents
 
 // After a block is executed, iterate through the recorded events and
 // populate the ExecutionEvents structure with any events discovered
-void find_execution_events(
-    monad_event_ring const *, monad_event_iterator *, ExecutionEvents *);
+void find_execution_events(monad_event_ring_iter *, ExecutionEvents *);
 
 std::unique_ptr<OwnedEventRing>
 init_exec_event_ring(std::string event_ring_path);

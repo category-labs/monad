@@ -14,14 +14,14 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use crate::{
-    ffi::{monad_event_iterator, monad_event_ring_iterator_init},
+    ffi::{monad_event_ring_iter, monad_event_ring_iterator_init},
     ring::RawEventRing,
     EventNextResult, RawEventDescriptor,
 };
 
 #[derive(Debug)]
 pub(crate) struct RawEventReader<'ring> {
-    pub(crate) inner: monad_event_iterator,
+    pub(crate) inner: monad_event_ring_iter,
     pub(crate) event_ring: &'ring RawEventRing,
 }
 

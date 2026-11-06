@@ -25,8 +25,8 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
-#include <category/core/event/event_iterator.h>
 #include <category/core/event/event_ring.h>
+#include <category/core/event/event_ring_iter.h>
 #include <category/core/fiber/priority_pool.hpp>
 #include <category/core/hex.hpp>
 #include <category/core/int.hpp>
@@ -72,9 +72,6 @@
 #include <category/vm/evm/traits.hpp>
 
 #include <monad/test/config.hpp>
-
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 
 #include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
@@ -581,16 +578,12 @@ void process_test(
         if (exec_event_ring != nullptr) {
             // Event recording is enabled; rewind the iterator to the
             // BLOCK_START event for the given block number
-            monad_event_iterator iter;
+            monad_event_ring_iter iter;
             ASSERT_EQ(
                 monad_event_ring_init_iterator(exec_event_ring, &iter), 0);
             ASSERT_TRUE(monad_exec_iter_block_number_prev(
-                &iter,
-                exec_event_ring,
-                curr_block_number,
-                MONAD_EXEC_BLOCK_START,
-                nullptr));
-            find_execution_events(exec_event_ring, &iter, &exec_events);
+                &iter, curr_block_number, MONAD_EXEC_BLOCK_START, nullptr));
+            find_execution_events(&iter, &exec_events);
             check_exec_events = true;
         }
 

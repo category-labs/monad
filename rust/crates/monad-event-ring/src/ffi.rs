@@ -23,13 +23,13 @@ use std::{
 };
 
 pub(crate) use self::bindings::{
-    g_monad_event_content_type_names, monad_event_iter_result, MONAD_EVENT_CONTENT_TYPE_COUNT,
-    MONAD_EVENT_CONTENT_TYPE_NONE, MONAD_EVENT_GAP, MONAD_EVENT_NOT_READY, MONAD_EVENT_SUCCESS,
+    g_monad_event_content_type_names, monad_event_ring_result, MONAD_EVENT_CONTENT_TYPE_COUNT,
+    MONAD_EVENT_CONTENT_TYPE_NONE, MONAD_EVENT_RING_GAP, MONAD_EVENT_RING_NOT_READY,
+    MONAD_EVENT_RING_SUCCESS,
 };
 pub use self::bindings::{
-    monad_event_content_type, monad_event_descriptor, monad_event_iterator,
-    monad_event_record_error, monad_event_ring, MONAD_EVENT_CONTENT_TYPE_EXEC,
-    MONAD_EVENT_CONTENT_TYPE_TEST,
+    monad_event_content_type, monad_event_descriptor, monad_event_record_error, monad_event_ring,
+    monad_event_ring_iter, MONAD_EVENT_CONTENT_TYPE_EXEC, MONAD_EVENT_CONTENT_TYPE_TEST,
 };
 
 #[allow(dead_code, missing_docs, non_camel_case_types, non_upper_case_globals)]
@@ -93,7 +93,7 @@ pub(crate) fn monad_event_ring_check_content_type(
         self::bindings::monad_event_ring_check_content_type(
             c_event_ring,
             c_event_content_type,
-            schema_hash.as_ptr(),
+            schema_hash,
         )
     };
 
@@ -108,8 +108,8 @@ pub(crate) fn monad_event_ring_unmap(c_event_ring: &mut monad_event_ring) {
 
 pub(crate) fn monad_event_ring_iterator_init(
     c_event_ring: &monad_event_ring,
-) -> Result<monad_event_iterator, String> {
-    let mut c_event_iterator: monad_event_iterator = unsafe { std::mem::zeroed() };
+) -> Result<monad_event_ring_iter, String> {
+    let mut c_event_iterator: monad_event_ring_iter = unsafe { std::mem::zeroed() };
 
     let r = unsafe {
         self::bindings::monad_event_ring_init_iterator(c_event_ring, &mut c_event_iterator)
@@ -119,20 +119,20 @@ pub(crate) fn monad_event_ring_iterator_init(
 }
 
 #[inline]
-pub(crate) fn monad_event_iterator_try_next(
-    c_event_iterator: &mut monad_event_iterator,
-) -> (monad_event_iter_result, monad_event_descriptor) {
+pub(crate) fn monad_event_ring_iter_try_next(
+    c_event_iterator: &mut monad_event_ring_iter,
+) -> (monad_event_ring_result, monad_event_descriptor) {
     let mut c_event_descriptor: monad_event_descriptor = unsafe { std::mem::zeroed() };
 
-    let c_event_iter_result: monad_event_iter_result = unsafe {
-        self::bindings::monad_event_iterator_try_next(c_event_iterator, &mut c_event_descriptor)
+    let c_event_iter_result: monad_event_ring_result = unsafe {
+        self::bindings::monad_event_ring_iter_try_next(c_event_iterator, &mut c_event_descriptor)
     };
 
     (c_event_iter_result, c_event_descriptor)
 }
 
-pub(crate) fn monad_event_iterator_reset(c_event_iterator: &mut monad_event_iterator) {
-    unsafe { self::bindings::monad_event_iterator_reset(c_event_iterator) };
+pub(crate) fn monad_event_ring_iter_reset(c_event_iterator: &mut monad_event_ring_iter) {
+    unsafe { self::bindings::monad_event_ring_iter_reset(c_event_iterator) };
 }
 
 #[inline]

@@ -351,6 +351,16 @@ TYPED_TEST(TraitsTest, invalid_gas_limit)
     EXPECT_EQ(result.error(), BlockError::InvalidGasLimit);
 }
 
+TYPED_TEST(TraitsTest, header_gas_used_above_limit)
+{
+    BlockHeader const header{.gas_limit = 5000, .gas_used = 5001};
+
+    auto const result =
+        static_validate_header<typename TestFixture::Trait>(header);
+    ASSERT_TRUE(result.has_error());
+    EXPECT_EQ(result.error(), BlockError::GasAboveLimit);
+}
+
 #define TEST_OPTIONAL_FIELD(f, default_val, ACTIVE)                            \
     {                                                                          \
         if constexpr (ACTIVE) {                                                \
@@ -510,6 +520,8 @@ TYPED_TEST(TraitsTest, validate_excess_blob_gas_against_parent)
         auto const target_blob_gas = target_blob_gas_per_block(blob_schedule);
 
         BlockHeader parent{
+            .gas_limit = 10000,
+            .base_fee_per_gas = uint256_t{},
             .blob_gas_used = target_blob_gas + GAS_PER_BLOB,
             .excess_blob_gas = target_blob_gas};
         uint64_t const expected_excess_blob_gas =
@@ -545,6 +557,249 @@ TYPED_TEST(TraitsTest, validate_excess_blob_gas_against_parent)
         ASSERT_TRUE(result.has_error());
         EXPECT_EQ(result.error(), BlockError::InvalidExcessBlobGas);
     }
+}
+
+TYPED_TEST(TraitsTest, parent_validation_uses_chain_rules)
+{
+    using Trait = typename TestFixture::Trait;
+    EthereumMainnet const chain;
+    BlockHeader parent{
+        .gas_limit = 30'000'000,
+        .gas_used = 15'000'000,
+        .timestamp = 1746612311};
+    if constexpr (Trait::evm_rev() >= MONAD_ETH_LONDON) {
+        parent.base_fee_per_gas = uint256_t{1'000'000'000};
+    }
+    Block block{.header = parent};
+    block.header.number = 1;
+    block.header.timestamp += 12;
+    if constexpr (Trait::evm_rev() >= MONAD_ETH_SHANGHAI) {
+        block.header.withdrawals_root = bytes32_t{};
+        block.withdrawals = std::vector<Withdrawal>{};
+    }
+    if constexpr (Trait::evm_rev() >= MONAD_ETH_CANCUN) {
+        block.header.blob_gas_used = 0;
+        block.header.excess_blob_gas = 0;
+        block.header.parent_beacon_block_root = bytes32_t{};
+    }
+    if constexpr (Trait::evm_rev() >= MONAD_ETH_PRAGUE) {
+        block.header.requests_hash = bytes32_t{};
+    }
+    ASSERT_TRUE(static_validate_block_with_parent<Trait>(chain, block, parent)
+                    .has_value());
+    auto const valid_header = block.header;
+
+    auto expect_ethereum_error = [&](BlockError const error) {
+        auto const result =
+            static_validate_block_with_parent<Trait>(chain, block, parent);
+        if constexpr (is_monad_trait_v<Trait>) {
+            EXPECT_TRUE(result.has_value());
+        }
+        else {
+            ASSERT_TRUE(result.has_error());
+            EXPECT_EQ(result.error(), error);
+        }
+    };
+
+    block.header.timestamp = parent.timestamp;
+    expect_ethereum_error(BlockError::InvalidTimestamp);
+    block.header = valid_header;
+
+    block.header.gas_limit *= 2;
+    expect_ethereum_error(BlockError::InvalidGasLimit);
+    block.header = valid_header;
+
+    if constexpr (Trait::evm_rev() >= MONAD_ETH_LONDON) {
+        block.header.base_fee_per_gas = parent.base_fee_per_gas.value() + 1;
+        expect_ethereum_error(BlockError::InvalidBaseFeePerGas);
+        block.header = valid_header;
+    }
+
+    // Both chains still enforce the block's own gas budget.
+    block.header.gas_used = block.header.gas_limit + 1;
+    auto const result =
+        static_validate_block_with_parent<Trait>(chain, block, parent);
+    ASSERT_TRUE(result.has_error());
+    EXPECT_EQ(result.error(), BlockError::GasAboveLimit);
+}
+
+// A parent every rule below accepts: the gas used sits exactly on the
+// elasticity target, so the EIP-1559 formula reproduces its own base fee.
+static BlockHeader parent_for_header_rules()
+{
+    return BlockHeader{
+        .gas_limit = 30'000'000,
+        .gas_used = 15'000'000,
+        .timestamp = 1000,
+        .base_fee_per_gas = uint256_t{1'000'000'000}};
+}
+
+static BlockHeader child_of(BlockHeader const &parent)
+{
+    return BlockHeader{
+        .gas_limit = parent.gas_limit,
+        .timestamp = parent.timestamp + 12,
+        .base_fee_per_gas = parent.base_fee_per_gas};
+}
+
+TYPED_TEST(EvmTraitsTest, header_timestamp_strictly_after_parent)
+{
+    BlockHeader const parent = parent_for_header_rules();
+    BlockHeader header = child_of(parent);
+
+    EXPECT_TRUE(static_validate_ethereum_header_with_parent<
+                    typename TestFixture::Trait>(header, parent)
+                    .has_value());
+
+    for (uint64_t const t : {parent.timestamp, parent.timestamp - 1}) {
+        header.timestamp = t;
+        auto const result = static_validate_ethereum_header_with_parent<
+            typename TestFixture::Trait>(header, parent);
+        ASSERT_TRUE(result.has_error());
+        EXPECT_EQ(result.error(), BlockError::InvalidTimestamp);
+    }
+}
+
+TYPED_TEST(EvmTraitsTest, header_gas_limit_within_a_1024th_of_parent)
+{
+    BlockHeader const parent = parent_for_header_rules();
+    BlockHeader header = child_of(parent);
+    uint64_t const bound = parent.gas_limit / 1024;
+
+    // The bound is exclusive on both sides.
+    for (uint64_t const g :
+         {parent.gas_limit + bound - 1, parent.gas_limit - bound + 1}) {
+        header.gas_limit = g;
+        EXPECT_TRUE(static_validate_ethereum_header_with_parent<
+                        typename TestFixture::Trait>(header, parent)
+                        .has_value());
+    }
+    for (uint64_t const g :
+         {parent.gas_limit + bound, parent.gas_limit - bound}) {
+        header.gas_limit = g;
+        auto const result = static_validate_ethereum_header_with_parent<
+            typename TestFixture::Trait>(header, parent);
+        ASSERT_TRUE(result.has_error());
+        EXPECT_EQ(result.error(), BlockError::InvalidGasLimit);
+    }
+}
+
+TYPED_TEST(EvmTraitsTest, header_base_fee_recomputed_from_parent)
+{
+    if constexpr (!TestFixture::Trait::eip_1559_active()) {
+        GTEST_SKIP() << "EIP-1559 is not active";
+    }
+
+    BlockHeader const parent = parent_for_header_rules();
+    BlockHeader header = child_of(parent);
+
+    EXPECT_TRUE(static_validate_ethereum_header_with_parent<
+                    typename TestFixture::Trait>(header, parent)
+                    .has_value());
+
+    header.base_fee_per_gas = parent.base_fee_per_gas.value() + 1;
+    auto const result = static_validate_ethereum_header_with_parent<
+        typename TestFixture::Trait>(header, parent);
+    ASSERT_TRUE(result.has_error());
+    EXPECT_EQ(result.error(), BlockError::InvalidBaseFeePerGas);
+}
+
+TYPED_TEST(EvmTraitsTest, header_with_parent_missing_base_fee)
+{
+    if constexpr (!TestFixture::Trait::eip_1559_active()) {
+        GTEST_SKIP() << "EIP-1559 is not active";
+    }
+
+    BlockHeader const parent = parent_for_header_rules();
+    BlockHeader header = child_of(parent);
+    header.base_fee_per_gas = std::nullopt;
+
+    auto const result = static_validate_ethereum_header_with_parent<
+        typename TestFixture::Trait>(header, parent);
+    ASSERT_TRUE(result.has_error());
+    EXPECT_EQ(result.error(), BlockError::MissingField);
+}
+
+TYPED_TEST(EvmTraitsTest, header_base_fee_wide_arithmetic)
+{
+    if constexpr (!TestFixture::Trait::eip_1559_active()) {
+        GTEST_SKIP() << "EIP-1559 is not active";
+    }
+
+    BlockHeader parent = parent_for_header_rules();
+    parent.base_fee_per_gas = (uint256_t{1} << 240) + 7;
+    BlockHeader header = child_of(parent);
+    auto const fee = parent.base_fee_per_gas.value();
+
+    // Full and empty blocks change the fee by floor(fee / 8).
+    // Both products overflow 256 bits, but both final fees fit.
+    for (bool const increasing : {false, true}) {
+        parent.gas_used = increasing ? parent.gas_limit : 0;
+        header.base_fee_per_gas = increasing ? fee + fee / 8 : fee - fee / 8;
+        EXPECT_TRUE(static_validate_ethereum_header_with_parent<
+                        typename TestFixture::Trait>(header, parent)
+                        .has_value());
+
+        auto const target = parent.gas_limit / 2;
+        auto const wrapped_delta = fee * uint256_t{target} / target / 8;
+        header.base_fee_per_gas =
+            increasing ? fee + wrapped_delta : fee - wrapped_delta;
+        auto const result = static_validate_ethereum_header_with_parent<
+            typename TestFixture::Trait>(header, parent);
+        ASSERT_TRUE(result.has_error());
+        EXPECT_EQ(result.error(), BlockError::InvalidBaseFeePerGas);
+    }
+
+    // A one-wei fee still increases by at least one wei.
+    parent.base_fee_per_gas = uint256_t{1};
+    parent.gas_used = parent.gas_limit / 2 + 1;
+    header.base_fee_per_gas = uint256_t{2};
+    EXPECT_TRUE(static_validate_ethereum_header_with_parent<
+                    typename TestFixture::Trait>(header, parent)
+                    .has_value());
+
+    // Reject overflow of the final addition, including its wrapped value.
+    parent.base_fee_per_gas = std::numeric_limits<uint256_t>::max();
+    parent.gas_used = parent.gas_limit;
+    auto const max_fee = parent.base_fee_per_gas.value();
+    header.base_fee_per_gas = max_fee + max_fee / 8;
+    auto const result = static_validate_ethereum_header_with_parent<
+        typename TestFixture::Trait>(header, parent);
+    ASSERT_TRUE(result.has_error());
+    EXPECT_EQ(result.error(), BlockError::InvalidBaseFeePerGas);
+
+    // An unchecked parent can also produce a delta wider than 256 bits.
+    parent.gas_used = std::numeric_limits<uint64_t>::max();
+    auto const oversized = static_validate_ethereum_header_with_parent<
+        typename TestFixture::Trait>(header, parent);
+    ASSERT_TRUE(oversized.has_error());
+    EXPECT_EQ(oversized.error(), BlockError::InvalidBaseFeePerGas);
+}
+
+TYPED_TEST(EvmTraitsTest, header_at_london_activation)
+{
+    if constexpr (!TestFixture::Trait::eip_1559_active()) {
+        GTEST_SKIP() << "EIP-1559 is not active";
+    }
+
+    // A pre-London parent: no base fee, and a gas limit that doubles.
+    BlockHeader parent = parent_for_header_rules();
+    parent.base_fee_per_gas = std::nullopt;
+
+    BlockHeader header{
+        .gas_limit = parent.gas_limit * 2,
+        .timestamp = parent.timestamp + 12,
+        .base_fee_per_gas = uint256_t{1'000'000'000}};
+    EXPECT_TRUE(static_validate_ethereum_header_with_parent<
+                    typename TestFixture::Trait>(header, parent)
+                    .has_value());
+
+    // Measured against the parent's own limit it would be refused.
+    header.gas_limit = parent.gas_limit;
+    auto const result = static_validate_ethereum_header_with_parent<
+        typename TestFixture::Trait>(header, parent);
+    ASSERT_TRUE(result.has_error());
+    EXPECT_EQ(result.error(), BlockError::InvalidGasLimit);
 }
 
 TYPED_TEST(TraitsTest, invalid_nonce)

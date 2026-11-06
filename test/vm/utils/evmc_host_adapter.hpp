@@ -22,6 +22,8 @@
 #include <category/vm/evm/storage_status.h>
 #include <category/vm/host.hpp>
 
+#include <test/vm/utils/evmc_result.hpp>
+
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
@@ -98,7 +100,7 @@ namespace monad::vm::test
 
         evmc::Result call(evmc_message const &msg) noexcept override
         {
-            return host_.call(std::bit_cast<Message>(msg));
+            return to_evmc_result(host_.call(std::bit_cast<Message>(msg)));
         }
 
         evmc_tx_context const *get_tx_context() const noexcept override

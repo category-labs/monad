@@ -63,8 +63,9 @@ pkg_check_modules(zstd REQUIRED IMPORTED_TARGET libzstd)
 set(ASMJIT_STATIC ON)
 add_subdirectory(third_party/asmjit)
 
-# AWS-LC, for P256VERIFY. Always static and never re-exported, so that its
-# OpenSSL-named API cannot clash with another libcrypto in the same process.
+# AWS-LC, for P256VERIFY. Always static and global symbols are exported with
+# an AWS_ prefix, so that its OpenSSL-named API cannot clash with another
+# libcrypto in the same process.
 block()
   set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
   set(BUILD_SHARED_LIBS OFF)
@@ -75,10 +76,16 @@ block()
   set(DISABLE_PERL ON)
   set(ENABLE_SOURCE_MODIFICATION OFF)
   set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+  set(CMAKE_C_ARCHIVE_FINISH
+      "sh ${CMAKE_CURRENT_SOURCE_DIR}/cmake/prefix_symbols.sh ${CMAKE_NM} ${CMAKE_OBJCOPY} <TARGET> AWS"
+      "<CMAKE_RANLIB> <TARGET>")
   add_subdirectory(third_party/aws-lc EXCLUDE_FROM_ALL SYSTEM)
 endblock()
+# Override the OUTPUT_NAME aws-lc sets; if we link libmonad_execution
+# statically (e.g., from Rust) we'll need to specify this library again on the
+# final link line, and don't want it accidentally finding the system libcrypto
+set_target_properties(crypto PROPERTIES OUTPUT_NAME aws_lc_crypto)
 add_library(aws_lc::crypto ALIAS crypto)
-target_link_options(crypto INTERFACE "LINKER:--exclude-libs,libcrypto.a")
 
 # BLAKE3
 add_subdirectory(third_party/BLAKE3/c)

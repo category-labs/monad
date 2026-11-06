@@ -15,6 +15,75 @@
 
 #pragma once
 
+/*
+ * AWS libcrypto name mangling section
+ * -----------------------------------
+ *
+ * We use the AWS libcrypto implementation, where extern "C" symbols are spelled
+ * the same as in the system libcrypto.so, but may not be ABI compatible with
+ * them. To avoid compatibility errors (e.g., if some downstream build process
+ * tries to link both libraries), we follow this model:
+ *
+ *   - After building the AWS `libcrypto.a`, all the defined global symbols are
+ *     mangled with an `AWS_` prefix, e.g., `BN_cmp` will become `AWS_BN_cmp`
+ *
+ *   - Users of the libcrypto API in the source code continue to use the
+ *     original function names from the header files, which are not modified in
+ *     any way
+ *
+ *   - In the section below, `MONAD_AWS_RENAME(foo)` expands to the compiler
+ *     directive:
+ *
+ *         `#pragma redefine_extname foo AWS_foo`
+ *
+ *     which tells the object file that the linkage name is different than
+ *     source code name, i.e., the linker will record references to the
+ *     symbol `foo` as the symbol `AWS_foo` instead
+ *
+ *   - If you need to use new functions from AWS libcrypto that were not
+ *     used before, you will need to add a `MONAD_AWS_RENAME` below manually;
+ *     if you do not, your use of `new_function` will cause a linker error,
+ *     because its name was mangled to `AWS_new_function` and you did not
+ *     introduce a linkage alias for it
+ *
+ *   - This section must come before the `#include <openssl/...>` directives;
+ *     GCC silently ignores `redefine_extname` for a function that has already
+ *     been declared in a system header (we consider whether the build system
+ *     uses -I or -isystem to be something we cannot control)
+ */
+
+#define MONAD_AWS_PRAGMA(x) _Pragma(#x)
+#define MONAD_AWS_RENAME(name)                                                 \
+    MONAD_AWS_PRAGMA(redefine_extname name AWS_##name)
+
+MONAD_AWS_RENAME(BN_bin2bn)
+MONAD_AWS_RENAME(BN_cmp)
+MONAD_AWS_RENAME(BN_is_zero)
+MONAD_AWS_RENAME(BN_free)
+MONAD_AWS_RENAME(BN_new)
+
+MONAD_AWS_RENAME(EC_group_p256)
+MONAD_AWS_RENAME(EC_GROUP_get_curve_GFp)
+MONAD_AWS_RENAME(EC_GROUP_get0_order)
+
+MONAD_AWS_RENAME(EC_KEY_free)
+MONAD_AWS_RENAME(EC_KEY_new_by_curve_name)
+MONAD_AWS_RENAME(EC_KEY_set_public_key)
+
+MONAD_AWS_RENAME(EC_POINT_free)
+MONAD_AWS_RENAME(EC_POINT_new)
+MONAD_AWS_RENAME(EC_POINT_set_affine_coordinates_GFp)
+
+MONAD_AWS_RENAME(ECDSA_SIG_free)
+MONAD_AWS_RENAME(ECDSA_SIG_new)
+MONAD_AWS_RENAME(ECDSA_SIG_set0)
+MONAD_AWS_RENAME(ECDSA_do_verify)
+
+MONAD_AWS_RENAME(ERR_clear_error)
+
+#undef MONAD_AWS_RENAME
+#undef MONAD_AWS_PRAGMA
+
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
@@ -35,6 +104,7 @@
 #include <openssl/ec_key.h>
 #include <openssl/ecdsa.h>
 #include <openssl/err.h>
+#include <openssl/is_awslc.h>
 #include <openssl/nid.h>
 
 #include <c-kzg-4844/trusted_setup.hpp>

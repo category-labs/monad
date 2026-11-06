@@ -264,15 +264,16 @@ Result<std::vector<Receipt>> execute_block_transactions(
     for (unsigned i = 0; i < transactions.size(); ++i) {
         MONAD_ASSERT_THROW(
             results[i].has_value(), "missing transaction result");
-        if (MONAD_UNLIKELY(results[i].value().has_error())) {
+        auto &result = results[i].value();
+        if (MONAD_UNLIKELY(result.has_error())) {
             LOG_ERROR(
                 "tx {} {} validation failed: {}",
                 i,
                 transactions[i],
-                results[i].value().assume_error().message().c_str());
+                result.assume_error().message().c_str());
+            return std::move(result).as_failure();
         }
-        BOOST_OUTCOME_TRY(auto retval, std::move(results[i].value()));
-        retvals.push_back(std::move(retval));
+        retvals.push_back(std::move(result).assume_value());
     }
 
     // YP eq. 22

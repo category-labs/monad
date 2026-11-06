@@ -216,7 +216,9 @@ CallTracer::CallTracer(
 
 void CallTracer::on_enter(vm::Message const &msg)
 {
-    if (!(size_ += sizeof(CallFrame)) || !(size_ += msg.input_size)) {
+    size_ += sizeof(CallFrame);
+    size_ += msg.input_size;
+    if (!size_) {
         return;
     }
 
@@ -279,7 +281,8 @@ void CallTracer::on_exit(evmc::Result const &res)
         res.status_code == EVMC_SUCCESS || res.status_code == EVMC_REVERT
             ? res.output_size
             : 0;
-    if (!(size_ += output_size)) {
+    size_ += output_size;
+    if (!size_) {
         return;
     }
 
@@ -306,13 +309,13 @@ void CallTracer::on_exit(evmc::Result const &res)
 
 void CallTracer::on_log(Receipt::Log log)
 {
-    if (!(size_ += sizeof(CallFrame::Log)) || !(size_ += log.data.size())) {
-        return;
-    }
+    size_ += sizeof(CallFrame::Log);
+    size_ += log.data.size();
     for (auto const &topic : log.topics) {
-        if (!(size_ += sizeof(topic))) {
-            return;
-        }
+        size_ += sizeof(topic);
+    }
+    if (!size_) {
+        return;
     }
 
     auto &frame = frames_stack_.top_frame();
@@ -326,7 +329,8 @@ void CallTracer::on_self_destruct(
     Address const &from, Address const &to,
     uint256_t const &transferred_balance)
 {
-    if (!(size_ += sizeof(CallFrame))) {
+    size_ += sizeof(CallFrame);
+    if (!size_) {
         return;
     }
 

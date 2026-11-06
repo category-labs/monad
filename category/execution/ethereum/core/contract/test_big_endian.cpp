@@ -41,7 +41,7 @@ TYPED_TEST(BigEndianEncodeTest, uint_max)
     constexpr NativeType native = [] {
         NativeType v{};
         // generate a sequence that has a different big endian representation
-        for (uint8_t i = 1; i <= sizeof(NativeType); ++i) {
+        for (size_t i = 1; i <= sizeof(NativeType); ++i) {
             v = static_cast<NativeType>((v << 8) | i);
         }
         return v;

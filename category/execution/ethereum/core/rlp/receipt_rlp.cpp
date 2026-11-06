@@ -68,7 +68,7 @@ byte_string encode_receipt(Receipt const &receipt)
         log_result += encode_log(i);
     }
 
-    auto const receipt_bytes = encode_list2(
+    auto receipt_bytes = encode_list2(
         encode_unsigned(receipt.status),
         encode_unsigned(receipt.gas_used),
         encode_bloom(receipt.bloom),
@@ -78,7 +78,8 @@ byte_string encode_receipt(Receipt const &receipt)
         receipt.type == TransactionType::eip2930 ||
         receipt.type == TransactionType::eip4844 ||
         receipt.type == TransactionType::eip7702) {
-        return static_cast<unsigned char>(receipt.type) + receipt_bytes;
+        receipt_bytes.insert(
+            receipt_bytes.begin(), static_cast<unsigned char>(receipt.type));
     }
     return receipt_bytes;
 }

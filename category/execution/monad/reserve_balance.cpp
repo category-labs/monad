@@ -23,7 +23,9 @@
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/core/units.hpp>
 #include <category/execution/ethereum/reserve_balance.hpp>
+#include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/state3/version_stack.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/reserve_balance.h>
@@ -42,6 +44,8 @@
 #include <cstdint>
 #include <optional>
 #include <ranges>
+#include <span>
+#include <utility>
 
 unsigned monad_default_max_reserve_balance_mon(enum monad_revision)
 {
@@ -290,7 +294,7 @@ void ReserveBalance::on_debit(Address const &address)
     update_violation_status(address);
 }
 
-void ReserveBalance::on_pop_reject(FailedSet const &accounts)
+void ReserveBalance::on_pop_reject(std::span<Address const> const accounts)
 {
     if (!tracking_enabled_) {
         return;

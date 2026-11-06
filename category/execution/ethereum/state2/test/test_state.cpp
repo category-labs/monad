@@ -38,6 +38,8 @@
 #include <category/vm/vm.hpp>
 #include <monad/test/traits_test.hpp>
 
+#include <ankerl/unordered_dense.h>
+
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
@@ -45,6 +47,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -55,6 +58,7 @@
 #include <set>
 #include <string>
 #include <utility>
+#include <vector>
 
 using namespace monad;
 using namespace monad::test;
@@ -230,6 +234,95 @@ TEST_F(InMemoryStateTest, access_account)
     EXPECT_EQ(s.access_account(a), MONAD_ACCESS_WARM);
     EXPECT_EQ(s.access_account(b), MONAD_ACCESS_COLD);
     EXPECT_EQ(s.access_account(b), MONAD_ACCESS_WARM);
+}
+
+TEST_F(InMemoryStateTest, reject_accepted_descendants_preserves_outer_frame)
+{
+    BlockState bs{this->tdb, this->vm};
+    State s{bs, Incarnation{1, 1}};
+    s.add_to_balance(a, 10);
+    s.add_to_balance(b, 20);
+
+    s.push();
+    s.add_to_balance(a, 1);
+    s.push();
+    s.add_to_balance(b, 2);
+    s.push();
+    s.add_to_balance(b, 3);
+    s.pop_accept();
+    s.push();
+    s.add_to_balance(c, 4);
+    EXPECT_EQ(s.access_account(c), MONAD_ACCESS_COLD);
+    s.pop_accept();
+
+    // The rejected frame has duplicate entries for b before the entry for c.
+    // Rolling it back must restore both and preserve the outer change to a.
+    s.pop_reject();
+    EXPECT_EQ(s.get_balance(a), 11);
+    EXPECT_EQ(s.get_balance(b), 20);
+    EXPECT_EQ(s.get_balance(c), 0);
+    EXPECT_FALSE(s.current().contains(c));
+
+    // Reuse the emptied stack in a sibling frame, then reject the outer frame.
+    s.push();
+    EXPECT_EQ(s.access_account(c), MONAD_ACCESS_COLD);
+    s.add_to_balance(b, 5);
+    s.pop_reject();
+    EXPECT_EQ(s.get_balance(b), 20);
+    EXPECT_FALSE(s.current().contains(c));
+    s.pop_reject();
+    EXPECT_EQ(s.get_balance(a), 10);
+    EXPECT_EQ(s.get_balance(b), 20);
+    EXPECT_EQ(s.current().size(), 2);
+}
+
+TEST(CurrentMap, entries_stay_put_under_growth_and_tail_erase)
+{
+    // State keeps raw pointers to the entries of its current-account map in
+    // the dirty log, and pop_reject erases the entries appended since the
+    // frame was pushed. Both rely on the segmented map never moving an entry
+    // on growth, and on erasing the back entry moving nothing either.
+    auto const address = [](uint64_t const i) {
+        Address a{};
+        std::memcpy(a.bytes + 12, &i, sizeof i);
+        return a;
+    };
+    constexpr uint64_t kept = 10;
+    // Enough to cross several 4096-entry segments and bucket rehashes.
+    constexpr uint64_t appended = 20'000;
+
+    ankerl::unordered_dense::segmented_map<Address, uint64_t> map;
+    std::vector<std::pair<Address, uint64_t> const *> entries;
+    for (uint64_t i = 0; i < kept; ++i) {
+        entries.push_back(
+            std::addressof(*map.try_emplace(address(i), i).first));
+    }
+    auto const mark = static_cast<std::ptrdiff_t>(map.size());
+    for (uint64_t i = kept; i < kept + appended; ++i) {
+        map.try_emplace(address(i), i);
+    }
+    ASSERT_EQ(map.size(), kept + appended);
+
+    auto const expect_kept_in_place = [&] {
+        for (uint64_t i = 0; i < kept; ++i) {
+            EXPECT_EQ(entries[i], std::addressof(*map.find(address(i))));
+            EXPECT_EQ(entries[i]->second, i);
+        }
+    };
+    expect_kept_in_place();
+
+    // Entries are stored in insertion order, so the appended ones are the tail.
+    EXPECT_EQ((map.cbegin() + mark)->first, address(kept));
+    map.erase(map.cbegin() + mark, map.cend());
+    ASSERT_EQ(map.size(), kept);
+    expect_kept_in_place();
+    EXPECT_EQ(map.find(address(kept)), map.end());
+
+    // Erasing any entry but the back moves the back entry into its slot,
+    // which is why pop_reject only ever erases the tail.
+    map.erase(address(0));
+    ASSERT_EQ(map.size(), kept - 1);
+    EXPECT_EQ(entries[0]->first, address(kept - 1));
 }
 
 TEST_F(InMemoryStateTest, account_exists)

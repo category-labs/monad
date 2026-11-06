@@ -165,12 +165,11 @@ Result<void> validate_transaction(
     trace::StateTracer &state_tracer, ExecutionMode const &mode)
 {
     static_assert(is_evm_trait_v<traits>);
-    bool const strict = strict_validation(mode);
-    if (!strict) {
-        BOOST_OUTCOME_TRY(validate_relaxed_sender_nonce(sender, state));
+    if (state_nonce_bound(mode)) {
+        BOOST_OUTCOME_TRY(validate_simulation_sender_nonce(sender, state));
     }
     return validate_ethereum_transaction<traits>(
-        tx, sender, state, state_tracer, strict);
+        tx, sender, state, state_tracer, strict_validation(mode));
 }
 
 EXPLICIT_EVM_TRAITS(validate_transaction);

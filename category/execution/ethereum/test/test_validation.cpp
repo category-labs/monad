@@ -179,7 +179,8 @@ TYPED_TEST(InMemoryStateTraitsTest, validate_nonce_relaxed)
     EXPECT_TRUE(validate_ethereum_transaction<typename TestFixture::Trait>(
                     tx, sender, this->state, noop_state_tracer, false)
                     .has_value());
-    EXPECT_TRUE(validate_relaxed_sender_nonce(sender, this->state).has_value());
+    EXPECT_TRUE(
+        validate_simulation_sender_nonce(sender, this->state).has_value());
     EXPECT_EQ(this->state.get_nonce(sender), 24);
 
     this->state.set_nonce(sender, std::numeric_limits<uint64_t>::max());
@@ -188,9 +189,34 @@ TYPED_TEST(InMemoryStateTraitsTest, validate_nonce_relaxed)
             tx, sender, this->state, noop_state_tracer, false);
     ASSERT_TRUE(overflow_result.has_value());
     auto const bound_result =
-        validate_relaxed_sender_nonce(sender, this->state);
+        validate_simulation_sender_nonce(sender, this->state);
     ASSERT_TRUE(bound_result.has_error());
     EXPECT_EQ(bound_result.error(), TransactionError::NonceExceedsMax);
+}
+
+TYPED_TEST(InMemoryStateTraitsTest, validate_nonce_relaxed_nonexistent_sender)
+{
+    ASSERT_FALSE(this->state.account_exists(sender));
+    Transaction const tx{.nonce = 23, .gas_limit = 60'500};
+
+    trace::StateTracer noop_state_tracer = std::monostate{};
+    auto const result =
+        validate_ethereum_transaction<typename TestFixture::Trait>(
+            tx, sender, this->state, noop_state_tracer, true);
+    ASSERT_TRUE(result.has_error());
+    EXPECT_EQ(result.error(), TransactionError::BadNonce);
+    EXPECT_TRUE(validate_ethereum_transaction<typename TestFixture::Trait>(
+                    tx, sender, this->state, noop_state_tracer, false)
+                    .has_value());
+
+    // Relaxed validation still requires a nonexistent sender to afford the
+    // transaction.
+    Transaction const value_tx{.nonce = 23, .gas_limit = 60'500, .value = 1};
+    auto const relaxed_result =
+        validate_ethereum_transaction<typename TestFixture::Trait>(
+            value_tx, sender, this->state, noop_state_tracer, false);
+    ASSERT_TRUE(relaxed_result.has_error());
+    EXPECT_EQ(relaxed_result.error(), TransactionError::InsufficientBalance);
 }
 
 TYPED_TEST(InMemoryStateTraitsTest, validate_nonce_optimistically)

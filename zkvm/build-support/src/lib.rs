@@ -326,12 +326,13 @@ fn sp1_zkevm_dir() -> PathBuf {
 }
 
 /// ZisK build options accepted directly from the environment and their defaults.
-const ZISK_OPTIONS: [(&str, &str); 6] = [
+const ZISK_OPTIONS: [(&str, &str); 7] = [
     ("MONAD_ZKVM_ZISK_DMA", "OFF"),
     ("MONAD_ZKVM_ZISK_LTO", "OFF"),
     ("MONAD_ZKVM_FUSE_DUP", "ON"),
     ("MONAD_ZKVM_FUSE_SWAP1", "ON"),
     ("MONAD_ZKVM_FUSE_SOLIDITY_SELECTOR", "ON"),
+    ("MONAD_ZKVM_FUSE_SOLIDITY_ALLOC_FINALIZE", "ON"),
     ("MONAD_ZKVM_FUSE_SOLIDITY_COPY_LOOP", "ON"),
 ];
 

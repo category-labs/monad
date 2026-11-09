@@ -84,6 +84,11 @@ namespace monad::vm::interpreter
     #endif
     inline constexpr unsigned lag_count = fuse_dup ? 6 : 7;
 
+    #if defined(MONAD_ZKVM_NO_SOLIDITY_ALLOC_FINALIZE_FUSION)
+    inline constexpr bool fuse_solidity_alloc_finalize = false;
+    #else
+    inline constexpr bool fuse_solidity_alloc_finalize = true;
+    #endif
     #if defined(MONAD_ZKVM_NO_SOLIDITY_SELECTOR_FUSION)
     inline constexpr bool fuse_solidity_selector = false;
     #else
@@ -3714,7 +3719,10 @@ namespace monad::vm::interpreter
         // Code padding makes lookahead safe. Reuse the follower opcode
         // for fusion checks, prefix dispatch and ordinary dispatch.
         [[maybe_unused]] uint8_t next_opcode = 0;
-        if constexpr (N == 1 || N == 2 || N == 4 || N == 8 || N == 20) {
+        constexpr bool reads_follower =
+            N == 1 || N == 2 || N == 4 || N == 20 ||
+            (N == 8 && fuse_solidity_alloc_finalize);
+        if constexpr (reads_follower) {
             next_opcode = *(instr_ptr + N + 1);
         }
         if constexpr (N == 1 && has_slots<traits>) {
@@ -3849,7 +3857,7 @@ namespace monad::vm::interpreter
         }
         // Check the full allocation suffix in a separate helper.
     #if !defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
-        if constexpr (N == 8) {
+        if constexpr (N == 8 && fuse_solidity_alloc_finalize) {
             if (next_opcode == static_cast<std::uint8_t>(DUP3)) {
                 MONAD_VM_MUST_TAIL return push8_alloc<traits>(
                     ctx,
@@ -3878,7 +3886,7 @@ namespace monad::vm::interpreter
         push_impl<N, traits>::push(stack_top, instr_ptr);
 
 #if defined(MONAD_ZKVM_ZISK)
-        if constexpr (N == 1 || N == 2 || N == 4 || N == 8 || N == 20) {
+        if constexpr (reads_follower) {
             MONAD_VM_NEXT_PUSH_OP(PUSH0 + N, next_opcode);
         }
 #endif

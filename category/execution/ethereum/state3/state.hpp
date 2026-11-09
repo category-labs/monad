@@ -38,8 +38,11 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <deque>
+#include <iterator>
+#include <memory>
 #include <optional>
+#include <span>
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -50,8 +53,7 @@ class State
     template <typename K, typename V>
     using Map = ankerl::unordered_dense::segmented_map<K, V>;
 
-    template <typename K>
-    using Set = ankerl::unordered_dense::segmented_set<K>;
+    using CurrentMap = Map<Address, VersionStack<AccountState>>;
 
     BlockState &block_state_;
 
@@ -59,15 +61,34 @@ class State
 
     Map<Address, OriginalAccountState> original_{};
 
-    Map<Address, VersionStack<AccountState>> current_{};
+    // An account that a rejected frame created is erased again on reject.
+    CurrentMap current_{};
 
     VersionStack<immer::vector<Receipt::Log>> logs_{{}};
 
     Map<bytes32_t, vm::SharedVarcode> code_{};
 
     unsigned version_{0};
+    unsigned version_counter_{0};
 
-    std::deque<Set<Address>> dirty_;
+    struct FrameMark
+    {
+        size_t dirty_size;
+        unsigned version;
+    };
+
+    // Accounts dirtied by the open frames, as addresses, in the order their
+    // versions were created. An address is appended whenever an open frame
+    // creates a new version of an account. Each push saves the parent's
+    // state in a FrameMark: the size of dirty_ and the version that was
+    // current. The records of the current frame are the tail of dirty_ from
+    // frame_stack_.back().dirty_size.
+    // Accepting a frame drops its frame marker; its records then belong to the
+    // parent's tail, therefore, an account that was dirtied in several nested
+    // frames may appear multiple times in dirty_. Rejecting a frame truncates
+    // dirty_ back to the size of its parent.
+    std::vector<Address> dirty_;
+    std::vector<FrameMark> frame_stack_;
 
     bool const relaxed_validation_{false};
     ReserveBalance rb_;
@@ -89,6 +110,15 @@ private:
 
     AccountState &current_account_state(Address const &);
 
+    // The account's version stack, or nullptr when the account is absent or
+    // its stack is empty.
+    VersionStack<AccountState> *find_current(Address const &);
+    VersionStack<AccountState> const *find_current(Address const &) const;
+
+    // Version of the *open* frame that owns the given version, which must be
+    // below the current one.
+    unsigned owner_frame(unsigned version) const;
+
     // Whether SELFDESTRUCT to the account itself destroys the balance.
     template <Traits traits>
     bool selfdestruct_to_self_burns(Address const &);
@@ -109,7 +139,7 @@ public:
 
     Map<Address, OriginalAccountState> const &original() const;
 
-    Map<Address, VersionStack<AccountState>> const &current() const;
+    CurrentMap const &current() const;
 
     Map<bytes32_t, vm::SharedVarcode> const &code() const;
 
@@ -119,11 +149,11 @@ public:
 
     void pop_reject();
 
-    // Return addresses marked dirty (including touched/accessed accounts) in
-    // the currently pushed frame. Intended for observers that must inspect
-    // frame-local metadata immediately before pop_accept() or pop_reject();
-    // callers must not retain references beyond the frame pop.
-    Set<Address> const &current_frame_dirty_accounts() const;
+    // Return the distinct accounts marked dirty (including touched/accessed
+    // accounts) in the currently pushed frame. Intended for observers that
+    // must inspect frame-local metadata immediately before pop_accept() or
+    // pop_reject().
+    ankerl::unordered_dense::set<Address> current_frame_dirty_accounts() const;
 
     ////////////////////////////////////////
 

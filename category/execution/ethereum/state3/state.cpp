@@ -35,15 +35,19 @@
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
 
+#include <ankerl/unordered_dense.h>
+
 #include <immer/map_transient.hpp>
 #include <immer/vector.hpp>
 
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <limits>
 #include <memory>
 #include <optional>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -60,12 +64,30 @@ OriginalAccountState &State::original_account_state(Address const &address)
     return it->second;
 }
 
+VersionStack<AccountState> *State::find_current(Address const &address)
+{
+    auto const it = current_.find(address);
+    if (it == current_.end() || it->second.empty()) {
+        return nullptr;
+    }
+    return &it->second;
+}
+
+VersionStack<AccountState> const *
+State::find_current(Address const &address) const
+{
+    auto const it = current_.find(address);
+    if (it == current_.end() || it->second.empty()) {
+        return nullptr;
+    }
+    return &it->second;
+}
+
 AccountState const &State::recent_account_state(Address const &address)
 {
     // current
-    auto const it = current_.find(address);
-    if (it != current_.end()) {
-        return it->second.recent();
+    if (auto const *const stack = find_current(address)) {
+        return stack->recent();
     }
     // original
     return original_account_state(address);
@@ -75,15 +97,43 @@ AccountState &State::current_account_state(Address const &address)
 {
     // current
     auto it = current_.find(address);
+    bool new_version;
     if (MONAD_UNLIKELY(it == current_.end())) {
         // original
         auto const &account_state = original_account_state(address);
         it = current_.try_emplace(address, account_state, version_).first;
+        new_version = true;
     }
-    if (!dirty_.empty()) {
-        dirty_.back().emplace(address);
+    else {
+        auto &stack = it->second;
+        new_version = stack.version() < version_;
+        if (new_version && stack.size() > 1) {
+            // fold any accepted versions into their owner version before
+            // stacking a new version on top.
+            stack.compact(owner_frame(stack.version()));
+        }
+    }
+    if (new_version && !frame_stack_.empty()) {
+        dirty_.push_back(address);
     }
     return it->second.current(version_);
+}
+
+unsigned State::owner_frame(unsigned const version) const
+{
+    MONAD_ASSERT(version < version_);
+
+    // The marks hold the versions of every open frame but the current one,
+    // starting with the base version 0.
+    auto const it = std::upper_bound(
+        frame_stack_.begin(),
+        frame_stack_.end(),
+        version,
+        [](unsigned const v, FrameMark const &mark) {
+            return v < mark.version;
+        });
+    MONAD_ASSERT(it != frame_stack_.begin());
+    return std::prev(it)->version;
 }
 
 std::optional<Account> &State::current_account(Address const &address)
@@ -106,7 +156,7 @@ State::Map<Address, OriginalAccountState> const &State::original() const
     return original_;
 }
 
-State::Map<Address, VersionStack<AccountState>> const &State::current() const
+State::CurrentMap const &State::current() const
 {
     return current_;
 }
@@ -116,69 +166,82 @@ State::Map<bytes32_t, vm::SharedVarcode> const &State::code() const
     return code_;
 }
 
-State::Set<Address> const &State::current_frame_dirty_accounts() const
+ankerl::unordered_dense::set<Address>
+State::current_frame_dirty_accounts() const
 {
-    MONAD_ASSERT(version_);
-    MONAD_ASSERT(dirty_.size() == version_);
+    MONAD_ASSERT(!frame_stack_.empty());
 
-    return dirty_.back();
+    // The tail can hold several records for one account (one per version
+    // the frame or its accepted descendants created); the set keeps the
+    // first and iterates in insertion order.
+    auto const tail = std::span{dirty_}.subspan(frame_stack_.back().dirty_size);
+    return {tail.begin(), tail.end()};
 }
 
 void State::push()
 {
-    MONAD_ASSERT(dirty_.size() == version_);
-
-    ++version_;
-    dirty_.emplace_back();
+    frame_stack_.push_back({dirty_.size(), version_});
+    version_ = ++version_counter_;
 }
 
 void State::pop_accept()
 {
-    MONAD_ASSERT(version_);
-    MONAD_ASSERT(dirty_.size() == version_);
+    MONAD_ASSERT(!frame_stack_.empty());
 
-    auto accounts = std::move(dirty_.back());
-    dirty_.pop_back();
-    for (auto const &dirty_address : accounts) {
-        auto const it = current_.find(dirty_address);
-        MONAD_ASSERT(it != current_.end());
-        it->second.pop_accept(version_);
-        if (!dirty_.empty()) {
-            dirty_.back().emplace(dirty_address);
+    unsigned const parent_version = frame_stack_.back().version;
+    frame_stack_.pop_back();
+
+    // The frame's account versions now belong to the parent; nothing to do
+    // per account until a reject or the next version. With no parent left,
+    // fold every dirtied account down to a single base version.
+    if (frame_stack_.empty()) {
+        for (auto const &address : dirty_) {
+            auto const it = current_.find(address);
+            if (it != current_.end()) {
+                it->second.compact(0);
+            }
         }
+        dirty_.clear();
     }
 
-    logs_.pop_accept(version_);
+    logs_.compact(parent_version);
 
-    --version_;
+    version_ = parent_version;
 }
 
 void State::pop_reject()
 {
-    MONAD_ASSERT(version_);
-    MONAD_ASSERT(dirty_.size() == version_);
+    MONAD_ASSERT(!frame_stack_.empty());
 
-    std::vector<Address> removals;
-    auto accounts = std::move(dirty_.back());
-    dirty_.pop_back();
-    for (auto const &dirty_address : accounts) {
-        auto const it = current_.find(dirty_address);
-        MONAD_ASSERT(it != current_.end());
-        if (it->second.pop_reject(version_)) {
-            removals.push_back(it->first);
+    auto const [parent_dirty_size, parent_version] = frame_stack_.back();
+    auto const rejected = std::span{dirty_}.subspan(parent_dirty_size);
+
+    // An account has one record per version the rejected frame or its
+    // accepted descendants created, so it can appear more than once. On the
+    // first visit its top entry belongs to the rejected frame and is popped;
+    // any later record then sees a top below the rejected version, or no
+    // entry at all once it was erased, and is skipped. The first visits are
+    // the distinct accounts, compacted into the rejected tail itself.
+    size_t first_visits = 0;
+    for (auto const &address : rejected) {
+        auto const it = current_.find(address);
+        if (it == current_.end() || it->second.version() < version_) {
+            continue;
         }
+        if (it->second.pop_reject(version_)) {
+            // Stack completely emptied, meaning the account is deleted
+            current_.erase(it);
+        }
+        rejected[first_visits++] = address;
     }
 
     logs_.pop_reject(version_);
 
-    while (removals.size()) {
-        current_.erase(removals.back());
-        removals.pop_back();
-    }
+    rb_.on_pop_reject(rejected.first(first_visits));
 
-    rb_.on_pop_reject(accounts);
-
-    --version_;
+    dirty_.resize(parent_dirty_size);
+    version_ = parent_version;
+    frame_stack_.pop_back();
 }
 
 vm::VM &State::vm()
@@ -272,8 +335,8 @@ bool State::is_current_incarnation(Address const &address)
 
 bytes32_t State::get_storage(Address const &address, bytes32_t const &key)
 {
-    auto const it = current_.find(address);
-    if (it == current_.end()) {
+    auto const *const stack = find_current(address);
+    if (stack == nullptr) {
         auto const it2 = original_.find(address);
         MONAD_ASSERT(it2 != original_.end());
         auto &account_state = it2->second;
@@ -291,7 +354,7 @@ bytes32_t State::get_storage(Address const &address, bytes32_t const &key)
         }
     }
     else {
-        auto const &account_state = it->second.recent();
+        auto const &account_state = stack->recent();
         auto const &account = account_state.account_;
         MONAD_ASSERT(account.has_value());
         auto const &storage = account_state.storage_;
@@ -328,8 +391,8 @@ State::get_transient_storage(Address const &address, bytes32_t const &key)
 
 bool State::is_touched(Address const &address)
 {
-    auto const it = current_.find(address);
-    return it != current_.end() && it->second.recent().is_touched();
+    auto const *const stack = find_current(address);
+    return stack != nullptr && stack->recent().is_touched();
 }
 
 void State::set_nonce(Address const &address, uint64_t const nonce)
@@ -502,10 +565,13 @@ void State::zero_storage(Address const &address, AccountState &account_state)
 template <Traits traits>
 void State::destruct_suicides()
 {
-    MONAD_ASSERT(!version_);
+    MONAD_ASSERT(frame_stack_.empty());
 
     for (auto &it : current_) {
         auto &stack = it.second;
+        if (stack.empty()) {
+            continue;
+        }
         MONAD_ASSERT(stack.size() == 1);
         MONAD_ASSERT(stack.version() == 0);
         auto &account_state = stack.current(0);
@@ -546,10 +612,13 @@ EXPLICIT_TRAITS_MEMBER(State::destruct_suicides);
 // YP (88)
 void State::destruct_touched_dead()
 {
-    MONAD_ASSERT(!version_);
+    MONAD_ASSERT(frame_stack_.empty());
 
     for (auto &it : current_) {
         auto &stack = it.second;
+        if (stack.empty()) {
+            continue;
+        }
         MONAD_ASSERT(stack.size() == 1);
         MONAD_ASSERT(stack.version() == 0);
         auto &account_state = stack.current(0);
@@ -726,10 +795,9 @@ bool State::try_fix_account_mismatch(
         return false;
     }
     // adjust balances
-    auto const current_it = current_.find(address);
-    if (current_it != current_.end()) {
-        MONAD_ASSERT(current_it->second.size() == 1);
-        auto &recent_state = current_it->second.recent();
+    if (auto *const current_stack = find_current(address)) {
+        MONAD_ASSERT(current_stack->size() == 1);
+        auto &recent_state = current_stack->recent();
         auto &recent = recent_state.account_;
         if (!recent) {
             return false;

@@ -19,8 +19,6 @@
 #include <category/vm/evm/revision.h>
 #include <monad/test/config.hpp>
 
-#include <evmc/evmc.h>
-
 #include <string>
 #include <unordered_map>
 #include <variant>

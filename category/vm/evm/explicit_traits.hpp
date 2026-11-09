@@ -20,8 +20,6 @@
 #include <category/core/concat.h>
 #include <category/vm/evm/traits.hpp>
 
-#include <evmc/evmc.h>
-
 // Template free functions
 
 #define EXPLICIT_EVM_TRAITS(f)                                                 \

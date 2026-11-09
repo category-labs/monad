@@ -22,8 +22,6 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <monad/test/config.hpp>
 
-#include <evmc/evmc.h>
-
 #include <category/core/int.hpp>
 
 #include <nlohmann/json.hpp>

@@ -22,8 +22,6 @@
 #include <category/vm/runtime/data.hpp>
 #include <category/vm/runtime/transmute.hpp>
 
-#include <evmc/evmc.h>
-
 #include <cstdint>
 #include <limits>
 

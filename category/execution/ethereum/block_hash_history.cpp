@@ -25,8 +25,6 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 
-#include <evmc/evmc.h>
-
 #include <cstdint>
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN

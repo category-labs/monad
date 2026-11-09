@@ -53,8 +53,6 @@
 
 #include <boost/fiber/future/promise.hpp>
 #include <boost/outcome/try.hpp>
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 
 #include <quill/std/Optional.h>
 

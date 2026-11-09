@@ -22,8 +22,6 @@
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/node.hpp>
 
-#include <evmc/evmc.hpp>
-
 #include <gtest/gtest.h>
 
 #include <array>

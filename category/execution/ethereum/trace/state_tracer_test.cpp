@@ -51,8 +51,6 @@
 #include <category/vm/evm/monad/revision.h>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 
 #include <boost/fiber/future/promise.hpp>
 

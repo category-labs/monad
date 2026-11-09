@@ -22,7 +22,6 @@
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/vm/evm/status_code.h>
 
-#include <evmc/evmc.hpp>
 #include <nlohmann/json_fwd.hpp>
 
 #include <cstdint>

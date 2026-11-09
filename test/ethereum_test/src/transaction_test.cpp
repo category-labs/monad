@@ -30,9 +30,6 @@
 #include <category/vm/evm/traits.hpp>
 #include <monad/test/config.hpp>
 
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
-
 #include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
 

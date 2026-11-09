@@ -23,8 +23,6 @@
 #include <category/vm/utils/log_utils.hpp>
 #include <category/vm/varcode_cache.hpp>
 
-#include <evmc/evmc.h>
-
 #include <tbb/concurrent_hash_map.h>
 #include <tbb/concurrent_queue.h>
 

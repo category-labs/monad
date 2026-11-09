@@ -18,8 +18,6 @@
 #include <category/core/assert.h>
 #include <category/vm/evm/traits.hpp>
 
-#include <evmc/evmc.hpp>
-
 #include <array>
 #include <cstdint>
 #include <string_view>

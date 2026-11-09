@@ -40,7 +40,6 @@ target_include_directories(monad-vm-compiler
 
 target_link_libraries(monad-vm-compiler
     PUBLIC asmjit::asmjit
-    PUBLIC evmc::evmc
     PUBLIC monad-vm::monad-vm-evm
     PUBLIC monad-vm::monad-vm-runtime
     PUBLIC monad-vm::monad-vm-utils

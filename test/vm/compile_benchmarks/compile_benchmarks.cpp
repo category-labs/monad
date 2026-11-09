@@ -22,8 +22,6 @@
 
 #include <benchmark/benchmark.h>
 
-#include <evmc/evmc.h>
-
 #include <algorithm>
 #include <array>
 #include <cstddef>

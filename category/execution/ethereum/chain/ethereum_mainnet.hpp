@@ -22,8 +22,6 @@
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/chain/genesis_state.hpp>
 
-#include <evmc/evmc.h>
-
 #include <cstdint>
 #include <span>
 

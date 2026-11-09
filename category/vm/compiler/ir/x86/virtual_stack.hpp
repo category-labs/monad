@@ -18,8 +18,6 @@
 #include <category/vm/compiler/ir/basic_blocks.hpp>
 #include <category/vm/utils/rc_ptr.hpp>
 
-#include <evmc/evmc.hpp>
-
 #include <compare>
 #include <cstdint>
 #include <optional>

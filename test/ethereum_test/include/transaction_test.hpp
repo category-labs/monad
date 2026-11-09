@@ -19,7 +19,6 @@
 #include <category/vm/evm/revision.h>
 #include <monad/test/config.hpp>
 
-#include <evmc/evmc.hpp>
 #include <gtest/gtest.h>
 
 #include <filesystem>

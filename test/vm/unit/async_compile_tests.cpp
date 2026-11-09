@@ -23,9 +23,6 @@
 
 #include <test/vm/utils/test_context.hpp>
 
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
-
 #include <gtest/gtest.h>
 
 #include <algorithm>

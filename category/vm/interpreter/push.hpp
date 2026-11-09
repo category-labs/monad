@@ -26,8 +26,6 @@
 #include <category/vm/interpreter/types.hpp>
 #include <category/vm/runtime/types.hpp>
 
-#include <evmc/evmc.h>
-
 #ifdef __AVX2__
     #include <immintrin.h>
 #endif

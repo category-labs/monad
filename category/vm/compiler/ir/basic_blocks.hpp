@@ -23,8 +23,6 @@
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/interpreter/intercode.hpp>
 
-#include <evmc/evmc.h>
-
 #include <limits>
 #include <unordered_map>
 #include <utility>

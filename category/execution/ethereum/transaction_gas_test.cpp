@@ -20,9 +20,6 @@
 #include <category/vm/evm/traits.hpp>
 #include <monad/test/traits_test.hpp>
 
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
-
 #include <gtest/gtest.h>
 
 #include <cstdint>

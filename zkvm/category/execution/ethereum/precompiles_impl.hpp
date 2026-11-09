@@ -26,9 +26,6 @@
 
 #include <c-interface-accelerators/zkvm_accelerators.h>
 
-#include <evmc/evmc.hpp>
-#include <evmc/hex.hpp>
-
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>

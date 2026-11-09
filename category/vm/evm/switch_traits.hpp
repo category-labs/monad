@@ -19,8 +19,6 @@
 
 #include <category/vm/evm/traits.hpp>
 
-#include <evmc/evmc.h>
-
 #define SWITCH_EVM_TRAITS(f, ...)                                              \
     switch (rev) {                                                             \
     case MONAD_ETH_AMSTERDAM:                                                  \

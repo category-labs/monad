@@ -44,8 +44,6 @@
 #include <common/bytes.h>
 #include <common/ret.h>
 
-#include <evmc/evmc.h>
-
 #include <setup/settings.h>
 #include <setup/setup.h>
 

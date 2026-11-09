@@ -18,8 +18,6 @@
 #include <category/core/address.hpp>
 #include <category/core/runtime/uint256.hpp>
 
-#include <evmc/evmc.h>
-
 #include <bit>
 
 namespace monad::vm::utils::evm_as

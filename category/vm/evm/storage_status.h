@@ -15,21 +15,12 @@
 
 #pragma once
 
-#include <evmc/evmc.h>
-
 #ifdef __cplusplus
 extern "C"
 {
 #endif
 
-// Monad's in-tree EIP-1283/2200 storage status enum. This is a drop-in
-// replacement for evmc's `evmc_storage_status`: the enumerators mirror
-// `evmc_storage_status` 1:1 (same underlying integer values), which keeps the
-// gas/refund table lookups in store_cost numerically unchanged. The 1:1
-// correspondence is enforced by static_assert in storage_status.cpp.
-//
-// The enum itself carries no evmc dependency. The conversions below are used
-// only by the test-only EvmcHostAdapter.
+// EIP-1283/2200 storage status; indexes the gas/refund tables in store_cost.
 enum monad_storage_status
 {
     MONAD_STORAGE_ASSIGNED = 0,
@@ -42,12 +33,6 @@ enum monad_storage_status
     MONAD_STORAGE_ADDED_DELETED = 7,
     MONAD_STORAGE_MODIFIED_RESTORED = 8
 };
-
-// Convert between monad_storage_status and evmc's evmc_storage_status.
-enum evmc_storage_status
-to_evmc_storage_status(enum monad_storage_status status);
-enum monad_storage_status
-from_evmc_storage_status(enum evmc_storage_status status);
 
 #ifdef __cplusplus
 } // extern "C"

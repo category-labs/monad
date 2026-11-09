@@ -102,11 +102,6 @@ static_assert(alignof(bytes32_t) == 1);
 
 using uint256_be_t = bytes32_t;
 
-constexpr evmc_bytes32 to_evmc(monad_bytes32 const &b) noexcept
-{
-    return std::bit_cast<evmc_bytes32>(b);
-}
-
 constexpr bytes32_t to_bytes(uint256_t const &n) noexcept
 {
     return std::bit_cast<bytes32_t>(n);

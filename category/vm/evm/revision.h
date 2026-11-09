@@ -15,28 +15,12 @@
 
 #pragma once
 
-#include <evmc/evmc.h>
-
 #ifdef __cplusplus
 extern "C"
 {
 #endif
 
-// Monad's in-tree EVM fork revision enum. This is a drop-in replacement for
-// evmc's `evmc_revision`: the enumerators through MONAD_ETH_OSAKA mirror
-// `evmc_revision` 1:1 (same underlying integer values), which keeps ordering
-// comparisons between revisions unchanged. That 1:1 correspondence is
-// enforced by static_assert in revision.cpp.
-//
-// MONAD_ETH_AMSTERDAM and above have no `evmc_revision` counterpart in the
-// bundled evmc — they are the first future forks grown on this side of the
-// boundary, so they are not (and cannot be) asserted equal to any EVMC_* value.
-//
-// The enum itself carries no evmc dependency. The only tie to evmc is the pair
-// of conversion functions below, which are needed solely at the remaining
-// evmc/evmone boundaries (test and benchmark paths); they — together with the
-// <evmc/evmc.h> include — are removable in one step once evmone is gone, after
-// which these enumerators can diverge from evmc and grow future forks freely.
+// EVM fork revisions, ordered so that later forks compare greater.
 enum monad_eth_revision
 {
     MONAD_ETH_FRONTIER = 0,
@@ -65,11 +49,6 @@ enum monad_eth_revision
 };
 
 char const *monad_eth_revision_to_string(enum monad_eth_revision rev);
-
-// Convert between monad_eth_revision and evmc's evmc_revision. Needed only at
-// the remaining evmc/evmone boundaries (see the note above).
-enum evmc_revision to_evmc_revision(enum monad_eth_revision rev);
-enum monad_eth_revision from_evmc_revision(enum evmc_revision rev);
 
 #ifdef __cplusplus
 } // extern "C"

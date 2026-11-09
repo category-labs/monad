@@ -85,8 +85,6 @@ Result<byte_string> system_call(
             header.excess_blob_gas.value_or(0), blob_schedule)),
         .blob_hashes = nullptr,
         .blob_hashes_count = 0,
-        .initcodes = nullptr,
-        .initcodes_count = 0,
         .block_round = header.slot_number.value_or(0),
     };
 

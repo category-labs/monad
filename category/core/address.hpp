@@ -99,11 +99,6 @@ static_assert(alignof(Address) == 1);
 static_assert(std::is_standard_layout_v<Address>);
 static_assert(std::is_trivially_copyable_v<Address>);
 
-constexpr evmc_address to_evmc(monad_address const &a) noexcept
-{
-    return std::bit_cast<evmc_address>(a);
-}
-
 constexpr bool is_zero(Address const &addr)
 {
     return std::ranges::all_of(addr.bytes, [](auto const b) { return b == 0; });

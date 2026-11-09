@@ -39,8 +39,6 @@ inline constexpr vm::TxContext EMPTY_TX_CONTEXT{
     .blob_base_fee{},
     .blob_hashes = nullptr,
     .blob_hashes_count = 0,
-    .initcodes = nullptr,
-    .initcodes_count = 0,
     .block_round = 0};
 
 template <Traits traits>

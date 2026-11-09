@@ -135,44 +135,22 @@ namespace
             bytes.size()};
     }
 
-    // Load a snapshot directory the way monad_db_snapshot_load_filesystem does,
-    // but with a caller-chosen flush threshold: the smaller it is, the more
-    // often the loader writes what it holds mid-shard. A threshold this low is
-    // safe to ask for whatever the stream, because the loader ignores it for
-    // storage it cannot close page by page. Skips the blake3 verification the
-    // filesystem loader does.
+    // The smaller flush_bytes is, the more often the loader writes what it
+    // holds mid-shard. A threshold as low as 1 is safe to ask for whatever the
+    // stream, because the loader ignores it for storage it cannot close page by
+    // page.
     void load_snapshot(
         std::string const &dbname, std::filesystem::path const &root,
         uint64_t const block, uint64_t const flush_bytes,
         bool const load_to_secondary)
     {
-        char const *const dbname_path = dbname.c_str();
-        auto *const loader = monad_db_snapshot_loader_create(
-            block, dbname_path, static_cast<unsigned>(-1), load_to_secondary);
-        monad_db_snapshot_loader_set_flush_bytes(loader, flush_bytes);
-        for (auto const &dir : std::filesystem::directory_iterator{
-                 root / std::to_string(block)}) {
-            uint64_t const shard = std::stoull(dir.path().stem());
-            auto const eth_header = read_file(dir.path() / "eth_header");
-            auto const account = read_file(dir.path() / "account");
-            auto const storage = read_file(dir.path() / "storage");
-            auto const code = read_file(dir.path() / "code");
-            auto const ptr = [](monad::byte_string const &b) {
-                return b.empty() ? nullptr : b.data();
-            };
-            monad_db_snapshot_loader_load(
-                loader,
-                shard,
-                ptr(eth_header),
-                eth_header.size(),
-                ptr(account),
-                account.size(),
-                ptr(storage),
-                storage.size(),
-                ptr(code),
-                code.size());
-        }
-        monad_db_snapshot_loader_destroy(loader);
+        monad_db_snapshot_load_filesystem(
+            dbname.c_str(),
+            static_cast<unsigned>(-1),
+            root.c_str(),
+            block,
+            load_to_secondary,
+            flush_bytes);
     }
 
     // Assert the header is well formed and of `kind`, then remove it, leaving
@@ -351,7 +329,8 @@ TEST(DbBinarySnapshot, Basic)
             static_cast<unsigned>(-1),
             snapshot_dir.path.c_str(),
             100,
-            /*load_to_secondary=*/false);
+            /*load_to_secondary=*/false,
+            MONAD_SNAPSHOT_DEFAULT_FLUSH_BYTES);
     }
 
     {
@@ -512,7 +491,8 @@ TEST(DbBinarySnapshot, MultipleShards)
             static_cast<unsigned>(-1),
             combined_root.path.c_str(),
             100,
-            /*load_to_secondary=*/false);
+            /*load_to_secondary=*/false,
+            MONAD_SNAPSHOT_DEFAULT_FLUSH_BYTES);
     }
     {
         AsyncIOContext io_context{
@@ -686,7 +666,8 @@ TEST(DbBinarySnapshot, LoadPageModeOnSecondaryDb)
             static_cast<unsigned>(-1),
             snapshot_dir.path.c_str(),
             BLOCK,
-            /*load_to_secondary=*/true);
+            /*load_to_secondary=*/true,
+            MONAD_SNAPSHOT_DEFAULT_FLUSH_BYTES);
     }
 
     // Verify secondary db is page-encoded and round-trip slot reads match.
@@ -1173,7 +1154,8 @@ TEST(DbBinarySnapshot, SnapshotFormatV0OmitsStreamHeaders)
         static_cast<unsigned>(-1),
         v0_dir.path.c_str(),
         PAGE_BLOCK,
-        /*load_to_secondary=*/true);
+        /*load_to_secondary=*/true,
+        MONAD_SNAPSHOT_DEFAULT_FLUSH_BYTES);
     verify_page_restore(page_db.path, source_root);
 }
 
@@ -1258,7 +1240,8 @@ TEST(DbBinarySnapshot, PageToPageRestoreIndependentOfFlushThreshold)
         static_cast<unsigned>(-1),
         snapshot_dir.path.c_str(),
         PAGE_BLOCK,
-        /*load_to_secondary=*/true);
+        /*load_to_secondary=*/true,
+        MONAD_SNAPSHOT_DEFAULT_FLUSH_BYTES);
     verify_page_restore(per_shard_db.path, source_root);
 }
 
@@ -1485,7 +1468,8 @@ TEST(DbBinarySnapshot, DumpFromSecondaryPageDb)
             static_cast<unsigned>(-1),
             snapshot_dir.path.c_str(),
             BLOCK,
-            /*load_to_secondary=*/false);
+            /*load_to_secondary=*/false,
+            MONAD_SNAPSHOT_DEFAULT_FLUSH_BYTES);
     }
 
     verify_slots(dest_db.path);

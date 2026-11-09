@@ -73,11 +73,16 @@ namespace monad::vm::interpreter
     // Dispatch computes base + (opcode << slot_shift), without a pointer lookup.
     inline constexpr size_t slot_shift = 12;
 
-    // Six copies encode the distance from register a5 to the current opcode:
-    // actual instruction = a5 + lag. For a short instruction, dispatch can
-    // select copy lag + length without advancing a5. At lag 6 or beyond,
+    // Handler copies encode the distance from register a5 to the current
+    // opcode: actual instruction = a5 + lag. For a short instruction, dispatch
+    // can select copy lag + length without advancing a5. When the group ends,
     // advance a5 and return to copy 0. The offsets fit jalr's immediate.
-    inline constexpr unsigned lag_count = 6;
+    #if defined(MONAD_ZKVM_NO_DUP_FUSION)
+    inline constexpr bool fuse_dup = false;
+    #else
+    inline constexpr bool fuse_dup = true;
+    #endif
+    inline constexpr unsigned lag_count = fuse_dup ? 6 : 7;
 
     #if defined(MONAD_ZKVM_NO_SOLIDITY_SELECTOR_FUSION)
     inline constexpr bool fuse_solidity_selector = false;
@@ -89,12 +94,19 @@ namespace monad::vm::interpreter
     #else
     inline constexpr bool fuse_swap1 = true;
     #endif
-    inline constexpr int copy_zero_start = 1368;
-    inline constexpr int copy_prefix_bytes = fuse_swap1 ? 144 : 104;
+    inline constexpr int copy_zero_start =
+        fuse_dup ? 1368 : (fuse_swap1 ? 1760 : 1752);
+    inline constexpr int copy_prefix_bytes =
+        64 + (fuse_swap1 ? 40 : 0) + (fuse_dup ? 40 : 0);
 
     consteval int lag_offset(unsigned const lag) noexcept
     {
-        constexpr int copy_starts[lag_count] = {
+        if constexpr (!fuse_dup) {
+            constexpr int starts[] = {
+                copy_zero_start, 2336, 2920, 3504, 0, 584, 1168};
+            return starts[lag] - copy_zero_start;
+        }
+        constexpr int copy_starts[] = {
             copy_zero_start, 2048, 2728, 3412, 0, 684};
         return copy_starts[lag] - copy_zero_start;
     }
@@ -139,9 +151,9 @@ namespace monad::vm::interpreter
     template <class T>
     using base_traits = typename T::base;
 
-    // Where copy 0's handler sits in its slot, after copies 4 and 5 and its
-    // own heads: the base the handlers carry points there, at opcode 0's
-    // copy 0, and the other copies are lag_offset away.
+    // The dispatch base points to opcode 0's copy 0, just past its prefixes.
+    // Other opcodes use the same offset in their slots. lag_offset locates
+    // each additional copy relative to this handler.
     inline constexpr size_t slot_handler_offset =
         copy_zero_start + copy_prefix_bytes;
 
@@ -161,7 +173,7 @@ namespace monad::vm::interpreter
         return prefix_back_offset(copy, num_args) - lag_offset(copy);
     }
 
-    // SWAP1 enters after the follower's 40-byte DUP prefix.
+    // The SWAP1 entry is 104 bytes before its handler in both layouts.
     consteval int swap1_prefix_offset(unsigned const follower_lag) noexcept
     {
         return 104 - lag_offset(follower_lag);
@@ -4008,7 +4020,7 @@ namespace monad::vm::interpreter
         else {
             MONAD_VM_CHECK_OWN_OVERFLOW(DUP1 + (N - 1));
 
-            if constexpr (lag_dispatch<traits>) {
+            if constexpr (fuse_dup && lag_dispatch<traits>) {
                 constexpr unsigned follower_lag = (traits::lag + 1) % lag_count;
                 MONAD_VM_PREFIX_DISPATCH(
                     copy_prefix_bytes - lag_offset(follower_lag),
@@ -4054,7 +4066,7 @@ namespace monad::vm::interpreter
 
 #if defined(MONAD_ZKVM_ZISK)
         if constexpr (N == 1 && fuse_swap1 && lag_dispatch<traits>) {
-            // Enter the follower's SWAP1 prefix. At lag 5 the follower
+            // Enter the follower's SWAP1 prefix. At the last lag the follower
             // starts a new group, so pass its actual address in a5.
             constexpr unsigned follower_lag = (traits::lag + 1) % lag_count;
             MONAD_VM_PREFIX_DISPATCH(

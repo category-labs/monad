@@ -179,14 +179,25 @@ impl Backend {
             if !enabled("MONAD_ZKVM_SELFTEST") || enabled("MONAD_ZKVM_GAS_SELFTEST") {
                 let out_dir = PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR unset"));
                 let slots_ld = out_dir.join("slots.ld");
-                let swap1 = std::fs::read_to_string(build_dir.join("swap1-prefix.enabled"))
-                    .expect("read SWAP1 prefix configuration from the guest build");
-                let fuse_swap1 = match swap1.trim() {
-                    "1" => true,
-                    "0" => false,
-                    other => panic!("invalid SWAP1 prefix configuration: {other:?}"),
+                let prefix_enabled = |file| {
+                    let path = build_dir.join(file);
+                    match std::fs::read_to_string(&path).as_deref() {
+                        Ok("1") => true,
+                        Ok("0") => false,
+                        other => panic!(
+                            "invalid prefix configuration in {}: {other:?}",
+                            path.display()
+                        ),
+                    }
                 };
-                std::fs::write(&slots_ld, zisk_slots_ld(fuse_swap1)).expect("write slots.ld");
+                std::fs::write(
+                    &slots_ld,
+                    zisk_slots_ld(
+                        prefix_enabled("swap1-prefix.enabled"),
+                        prefix_enabled("dup-prefix.enabled"),
+                    ),
+                )
+                .expect("write slots.ld");
                 println!(
                     "cargo:rustc-link-arg-bin=monad-zkvm-zisk=-T{}",
                     slots_ld.display()
@@ -315,9 +326,10 @@ fn sp1_zkevm_dir() -> PathBuf {
 }
 
 /// ZisK build options accepted directly from the environment and their defaults.
-const ZISK_OPTIONS: [(&str, &str); 5] = [
+const ZISK_OPTIONS: [(&str, &str); 6] = [
     ("MONAD_ZKVM_ZISK_DMA", "OFF"),
     ("MONAD_ZKVM_ZISK_LTO", "OFF"),
+    ("MONAD_ZKVM_FUSE_DUP", "ON"),
     ("MONAD_ZKVM_FUSE_SWAP1", "ON"),
     ("MONAD_ZKVM_FUSE_SOLIDITY_SELECTOR", "ON"),
     ("MONAD_ZKVM_FUSE_SOLIDITY_COPY_LOOP", "ON"),
@@ -330,24 +342,35 @@ fn manifest_dir() -> PathBuf {
     PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR unset"))
 }
 
-/// Lay out 4-KiB opcode slots, newest revision first. Six handler copies
-/// encode instruction-pointer lags 0..5, in address order 4, 5, 0, 1, 2, 3.
-/// Each has 104 prefix bytes plus 40 when SWAP1 fusion is enabled.
+/// Lay out 4-KiB opcode slots, newest revision first. Each enabled follower family adds
+/// 40 prefix bytes. Disabling DUP restores the seventh handler copy.
 /// Fused pairs and oversized handlers follow the slots. The linker rejects
 /// misplaced entries and copies that exceed their region.
-fn zisk_slots_ld(fuse_swap1: bool) -> String {
+fn zisk_slots_ld(fuse_swap1: bool, fuse_dup: bool) -> String {
     const SLOT: usize = 0x1000;
     // Prefix-region offset, prefix-section suffix, and handler-section suffix.
     // Keep these offsets in sync with instruction_table.hpp::lag_offset.
-    let copies = [
-        (0, "_4", "4"),
-        (684, "_5", "5"),
-        (1368, "", ""),
-        (2048, "_1", "1"),
-        (2728, "_2", "2"),
-        (3412, "_3", "3"),
-    ];
-    let prefix_size = if fuse_swap1 { 144 } else { 104 };
+    let copies: &[(usize, &str, &str)] = if fuse_dup {
+        &[
+            (0, "_4", "4"),
+            (684, "_5", "5"),
+            (1368, "", ""),
+            (2048, "_1", "1"),
+            (2728, "_2", "2"),
+            (3412, "_3", "3"),
+        ]
+    } else {
+        &[
+            (0, "_4", "4"),
+            (584, "_5", "5"),
+            (1168, "_6", "6"),
+            (if fuse_swap1 { 1760 } else { 1752 }, "", ""),
+            (2336, "_1", "1"),
+            (2920, "_2", "2"),
+            (3504, "_3", "3"),
+        ]
+    };
+    let prefix_size = 64 + 40 * usize::from(fuse_swap1) + 40 * usize::from(fuse_dup);
     let mut ld = String::from(
         "SECTIONS {\n    .monad_vm_slots : ALIGN(0x400) {\n        \
          FILL(0x13000000)\n        monad_vm_slots = .;\n",
@@ -355,7 +378,7 @@ fn zisk_slots_ld(fuse_swap1: bool) -> String {
     for (rank, rev) in (8..=15).rev().enumerate() {
         for op in 0..256 {
             let slot_address = (rank * 256 + op) * SLOT;
-            for (copy_offset, prefix_suffix, handler_suffix) in copies {
+            for &(copy_offset, prefix_suffix, handler_suffix) in copies {
                 let prefix_address = slot_address + copy_offset;
                 let handler_address = prefix_address + prefix_size;
                 let symbol_suffix = if handler_suffix.is_empty() {

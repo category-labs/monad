@@ -97,7 +97,8 @@ impl MonadExecutor {
                 transaction_index,
                 Some(eth_trace_block_or_transaction_submit_callback),
                 Box::into_raw(sender_ctx) as *mut std::ffi::c_void,
-                tracer.into(),
+                tracer.to_ffi_tracer_config(),
+                tracer.to_ffi_prestate_tracer_config(),
             )
         };
 

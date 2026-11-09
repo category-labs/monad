@@ -123,8 +123,7 @@ namespace
     char const *const TIMEOUT_ERR_MSG =
         "failure to execute eth_call: queuing time exceeded timeout threshold";
     char const *const PRESTATE_TRACER_SUPPORT_ERR_MSG =
-        "only the prestate tracer and the statediff "
-        "tracer are supported";
+        "only the prestate tracer is supported";
     char const *const CANNOT_TRACE_GENESIS_ERR_MSG =
         "cannot trace genesis block";
     char const *const CANNOT_TRACE_WITHOUT_DB_ERR_MSG =
@@ -372,6 +371,20 @@ namespace
         return {std::move(senders), authorities};
     }
 
+    trace::StateTracer make_prestate_tracer(
+        monad_prestate_tracer_config const config, nlohmann::json &output,
+        Address const &beneficiary)
+    {
+        if (config.diff_mode) {
+            return trace::StateDiffTracer{output, config};
+        }
+        return trace::PrestateTracer{output, beneficiary, config};
+    }
+
+    trace::StateTracer make_prestate_tracer(
+        monad_prestate_tracer_config, nlohmann::json &,
+        Address const &&) = delete;
+
     template <Traits traits>
     Result<nlohmann::json> eth_trace_block_or_transaction_impl(
         Chain const &chain,
@@ -386,7 +399,8 @@ namespace
         BlockHeader const &header, std::vector<Transaction> const &transactions,
         bool const trace_transaction, uint64_t const transaction_index,
         BlockState &block_state, LazyBlockHash const &buffer,
-        fiber::FiberGroup &tx_exec_pool, enum monad_tracer_config tracer_config)
+        fiber::FiberGroup &tx_exec_pool,
+        monad_prestate_tracer_config const prestate_config)
     {
         MONAD_ASSERT_THROW(
             transactions.size() == senders.size(),
@@ -459,11 +473,8 @@ namespace
 
             nlohmann::json trace{};
             state_tracers.emplace_back(
-                tracer_config == PRESTATE_TRACER
-                    ? std::make_unique<trace::StateTracer>(
-                          trace::PrestateTracer{trace, header.beneficiary})
-                    : std::make_unique<trace::StateTracer>(
-                          trace::StateDiffTracer{trace}));
+                std::make_unique<trace::StateTracer>(make_prestate_tracer(
+                    prestate_config, trace, header.beneficiary)));
 
             std::span<std::unique_ptr<trace::StateTracer>> const
                 state_tracers_view{state_tracers.data(), transactions_size};
@@ -503,17 +514,11 @@ namespace
             traces.reserve(transactions_size);
             for (size_t i = 0; i < transactions_size; ++i) {
                 traces.emplace_back(trace_entry(i));
-                if (tracer_config == PRESTATE_TRACER) {
-                    state_tracers.emplace_back(
-                        std::make_unique<trace::StateTracer>(
-                            trace::PrestateTracer{
-                                traces[i]["result"], header.beneficiary}));
-                }
-                else {
-                    state_tracers.emplace_back(
-                        std::make_unique<trace::StateTracer>(
-                            trace::StateDiffTracer{traces[i]["result"]}));
-                }
+                state_tracers.emplace_back(
+                    std::make_unique<trace::StateTracer>(make_prestate_tracer(
+                        prestate_config,
+                        traces[i]["result"],
+                        header.beneficiary)));
             }
 
             std::span<std::unique_ptr<trace::StateTracer>> const
@@ -1501,7 +1506,9 @@ struct monad_executor
         monad_state_override const *const overrides,
         void (*complete)(monad_executor_result *, void *user), void *const user,
         monad_tracer_config const tracer_config,
-        size_t const call_tracer_max_size, bool const gas_specified)
+        size_t const call_tracer_max_size,
+        monad_prestate_tracer_config const prestate_config,
+        bool const gas_specified)
     {
         monad_executor_result *const result = new monad_executor_result();
 
@@ -1522,6 +1529,7 @@ struct monad_executor
             user,
             tracer_config,
             call_tracer_max_size,
+            prestate_config,
             gas_specified,
             std::chrono::steady_clock::now(),
             call_seq_no_.fetch_add(1, std::memory_order_relaxed),
@@ -1536,7 +1544,9 @@ struct monad_executor
         monad_state_override const *const overrides,
         void (*complete)(monad_executor_result *, void *user), void *const user,
         monad_tracer_config const tracer_config,
-        size_t const call_tracer_max_size, bool const gas_specified,
+        size_t const call_tracer_max_size,
+        monad_prestate_tracer_config const prestate_config,
+        bool const gas_specified,
         std::chrono::steady_clock::time_point const call_begin,
         uint64_t const eth_call_seq_no, monad_executor_result *const result,
         Pool &active_pool)
@@ -1567,6 +1577,7 @@ struct monad_executor
              state_overrides = overrides,
              call_tracer_max_size = call_tracer_max_size,
              tracer_config = tracer_config,
+             prestate_config = prestate_config,
              gas_specified = gas_specified,
              active_pool = &active_pool] {
                 active_pool->queued_count.fetch_sub(
@@ -1630,10 +1641,10 @@ struct monad_executor
                         case CALL_TRACER:
                             return std::monostate{};
                         case PRESTATE_TRACER:
-                            return trace::PrestateTracer{
-                                state_trace, block_header.beneficiary};
-                        case STATEDIFF_TRACER:
-                            return trace::StateDiffTracer{state_trace};
+                            return make_prestate_tracer(
+                                prestate_config,
+                                state_trace,
+                                block_header.beneficiary);
                         case ACCESS_LIST_TRACER:
                             return trace::AccessListTracer{
                                 state_trace,
@@ -1710,6 +1721,7 @@ struct monad_executor
                             user,
                             tracer_config,
                             call_tracer_max_size,
+                            prestate_config,
                             call_begin,
                             eth_call_seq_no,
                             result);
@@ -1809,6 +1821,7 @@ struct monad_executor
         void (*complete)(monad_executor_result *, void *user), void *const user,
         monad_tracer_config const tracer_config,
         size_t const call_tracer_max_size,
+        monad_prestate_tracer_config const prestate_config,
         std::chrono::steady_clock::time_point const call_begin,
         auto const eth_call_seq_no, monad_executor_result *const result)
     {
@@ -1829,6 +1842,7 @@ struct monad_executor
             user,
             tracer_config,
             call_tracer_max_size,
+            prestate_config,
             false /* gas_specified */,
             call_begin,
             eth_call_seq_no,
@@ -1842,12 +1856,12 @@ struct monad_executor
         bytes32_t const &parent_id, bytes32_t const &grandparent_id,
         bool const trace_transaction, uint64_t const transaction_index,
         void (*complete)(monad_executor_result *, void *user), void *const user,
-        monad_tracer_config const tracer_config)
+        monad_tracer_config const tracer_config,
+        monad_prestate_tracer_config const prestate_config)
     {
         monad_executor_result *const result = new monad_executor_result();
 
-        if (tracer_config != PRESTATE_TRACER &&
-            tracer_config != STATEDIFF_TRACER) {
+        if (tracer_config != PRESTATE_TRACER) {
             result->status_code = EVMC_REJECTED;
             result->message = strdup(PRESTATE_TRACER_SUPPORT_ERR_MSG);
             MONAD_ASSERT(result->message);
@@ -1895,7 +1909,7 @@ struct monad_executor
              grandparent_id = grandparent_id,
              parent_id = parent_id,
              result = result,
-             tracer_config = tracer_config,
+             prestate_config = prestate_config,
              trace_transaction = trace_transaction,
              transaction_index = transaction_index,
              user = user]() {
@@ -2001,7 +2015,7 @@ struct monad_executor
                                 block_state,
                                 block_hash_buffer,
                                 *tx_exec_group->group,
-                                tracer_config);
+                                prestate_config);
                             MONAD_ASSERT(false);
                         }
                         else {
@@ -2029,7 +2043,7 @@ struct monad_executor
                                 block_state,
                                 block_hash_buffer,
                                 *tx_exec_group->group,
-                                tracer_config);
+                                prestate_config);
                             // NOLINTEND(clang-analyzer-core.CallAndMessage)
                             MONAD_ASSERT(false);
                         }
@@ -2300,7 +2314,9 @@ void monad_executor_eth_call_submit(
     size_t const rlp_block_id_len, monad_state_override const *const overrides,
     void (*complete)(monad_executor_result *result, void *user),
     void *const user, monad_tracer_config const tracer_config,
-    size_t const call_tracer_max_size, bool const gas_specified)
+    size_t const call_tracer_max_size,
+    monad_prestate_tracer_config const prestate_config,
+    bool const gas_specified)
 {
     MONAD_ASSERT(executor);
 
@@ -2343,6 +2359,7 @@ void monad_executor_eth_call_submit(
         user,
         tracer_config,
         call_tracer_max_size,
+        prestate_config,
         gas_specified);
 }
 
@@ -2366,7 +2383,8 @@ void monad_executor_run_transactions(
     uint8_t const *const rlp_grandparent_block_id,
     size_t const rlp_grandparent_block_id_len, int64_t const transaction_index,
     void (*complete)(monad_executor_result *, void *user), void *const user,
-    enum monad_tracer_config const tracer_config)
+    enum monad_tracer_config const tracer_config,
+    monad_prestate_tracer_config const prestate_config)
 {
     MONAD_ASSERT(executor);
 
@@ -2414,7 +2432,8 @@ void monad_executor_run_transactions(
         static_cast<uint64_t>(transaction_index),
         complete,
         user,
-        tracer_config);
+        tracer_config,
+        prestate_config);
 }
 
 namespace

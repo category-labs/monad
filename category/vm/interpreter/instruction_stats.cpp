@@ -20,8 +20,6 @@
     #include <category/vm/interpreter/instruction_stats.hpp>
     #include <category/vm/utils/scope_exit.hpp>
 
-    #include <evmc/evmc.h>
-
     #include <array>
     #include <bits/chrono.h>
     #include <chrono>

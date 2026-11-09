@@ -20,8 +20,6 @@
 #include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/runtime/types.hpp>
 
-#include <evmc/evmc.h>
-
 namespace monad::vm::interpreter
 {
     constexpr auto debug_enabled = false;

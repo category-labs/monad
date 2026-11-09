@@ -22,8 +22,6 @@
 #include <category/execution/ethereum/rlp/decode.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
 
-#include <evmc/evmc.hpp>
-
 #include <gtest/gtest.h>
 
 #include <algorithm>

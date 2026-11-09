@@ -22,7 +22,6 @@
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/db/block_db.hpp>
 
-#include <evmc/evmc.hpp>
 #include <gtest/gtest.h>
 
 #include <test_resource_data.h>

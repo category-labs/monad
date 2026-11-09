@@ -23,8 +23,6 @@
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 
-#include <evmc/evmc.h>
-
 #include <cstddef>
 #include <cstdint>
 #include <limits>

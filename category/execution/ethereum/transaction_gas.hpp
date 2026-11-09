@@ -22,8 +22,6 @@
 #include <category/execution/ethereum/chain/blob_schedule.hpp>
 #include <category/vm/evm/traits.hpp>
 
-#include <evmc/evmc.h>
-
 #include <cstdint>
 
 MONAD_NAMESPACE_BEGIN

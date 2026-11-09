@@ -21,7 +21,6 @@
 #include <category/execution/ethereum/core/contract/big_endian.hpp>
 #include <category/execution/ethereum/core/contract/events.hpp>
 
-#include <evmc/evmc.hpp>
 #include <gtest/gtest.h>
 
 using namespace monad;

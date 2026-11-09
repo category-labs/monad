@@ -20,8 +20,6 @@
 #include <category/core/likely.h>
 #include <category/core/throw.hpp>
 
-#include <evmc/evmc.h>
-
 #include <unistd.h>
 
 MONAD_NAMESPACE_BEGIN

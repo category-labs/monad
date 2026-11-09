@@ -19,8 +19,6 @@
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/evm/traits.hpp>
 
-#include <evmc/evmc.h>
-
 #include <gtest/gtest.h>
 
 #include <cstdint>

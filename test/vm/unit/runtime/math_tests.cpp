@@ -19,8 +19,6 @@
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/runtime/math.hpp>
 
-#include <evmc/evmc.h>
-
 #include <gtest/gtest.h>
 
 #include <cstdint>

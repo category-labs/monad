@@ -25,8 +25,6 @@
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 
-#include <evmc/evmc.h>
-
 #include <boost/outcome/config.hpp>
 #include <boost/outcome/success_failure.hpp>
 #include <boost/outcome/try.hpp>

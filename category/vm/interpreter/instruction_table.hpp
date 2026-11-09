@@ -30,8 +30,6 @@
 #include <category/vm/runtime/types.hpp>
 #include <category/vm/utils/debug.hpp>
 
-#include <evmc/evmc.h>
-
 #include <array>
 #include <cstddef>
 #include <cstdint>

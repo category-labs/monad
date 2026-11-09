@@ -28,8 +28,6 @@
 #include <category/vm/utils/evm-as/resolver.hpp>
 #include <category/vm/utils/evm-as/utils.hpp>
 
-#include <evmc/evmc.hpp>
-
 #include <concepts>
 #include <cstddef>
 #include <cstdint>

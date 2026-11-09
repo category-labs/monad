@@ -29,8 +29,6 @@
 #include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/traits.hpp>
 
-#include <evmc/evmc.h>
-
 #include <boost/outcome/config.hpp>
 #include <boost/outcome/success_failure.hpp>
 #include <boost/outcome/try.hpp>

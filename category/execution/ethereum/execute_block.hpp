@@ -25,8 +25,6 @@
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/vm/evm/traits.hpp>
 
-#include <evmc/evmc.h>
-
 #include <memory>
 #include <optional>
 #include <span>

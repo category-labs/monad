@@ -36,8 +36,6 @@
 
 #include <CLI/CLI.hpp>
 
-#include <evmc/evmc.h>
-
 #include <category/vm/compiler/ir/x86.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/interpreter/intercode.hpp>

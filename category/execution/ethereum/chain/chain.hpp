@@ -23,9 +23,6 @@
 #include <category/execution/ethereum/chain/genesis_state.hpp>
 #include <category/vm/evm/traits.hpp>
 
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
-
 #include <optional>
 #include <span>
 

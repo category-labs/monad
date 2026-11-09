@@ -54,8 +54,6 @@
 #include <category/mpt/update.hpp>
 #include <category/mpt/util.hpp>
 
-#include <evmc/evmc.hpp>
-
 #include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
 

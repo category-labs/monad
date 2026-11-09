@@ -22,8 +22,6 @@
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/vm/evm/traits.hpp>
 
-#include <evmc/evmc.h>
-
 #include <cstdint>
 #include <optional>
 

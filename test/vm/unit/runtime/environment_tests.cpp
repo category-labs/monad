@@ -19,8 +19,6 @@
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/runtime/environment.hpp>
 
-#include <evmc/evmc.hpp>
-
 using namespace monad::vm::runtime;
 using monad::operator""_u256;
 using namespace monad::vm::test;

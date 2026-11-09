@@ -17,7 +17,9 @@
 
 #include <category/vm/evm/opcodes.hpp>
 
+#include <algorithm>
 #include <array>
+#include <vector>
 
 namespace monad::vm::fuzzing
 {

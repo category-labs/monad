@@ -17,8 +17,6 @@
 #include <category/core/keccak.hpp>
 #include <category/execution/ethereum/create_contract_address.hpp>
 
-#include <evmc/evmc.hpp>
-
 #include <gtest/gtest.h>
 
 #include <cstdint>

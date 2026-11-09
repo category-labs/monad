@@ -17,6 +17,7 @@
 
 import importlib.util
 from pathlib import Path
+import runpy
 import shutil
 import os
 import subprocess
@@ -170,6 +171,16 @@ class ManualJumpChecks(unittest.TestCase):
         for jump in ("jr\t-32(a5)", "jr\t-56(a5)", "jalr\tzero,-32(a5)"):
             self.assertEqual(self.audit([jump]), 1)
 
+    def test_collects_all_unsafe_handlers_without_weakening_normal_audit(self):
+        code = self.assembly(["addi\tsp,sp,-16", "jr\t-32(a5)"])
+        code += self.assembly(["li\ts0,42", "jr\t-56(a5)"], "monad_vm_slot_12_55_4", start=0x200)
+        violations = set()
+        check.check_hand_made_jumps(
+            code, {0x104, 0x204}, on_violation=lambda name, reason: violations.add(name))
+        self.assertEqual(violations, {"monad_vm_slot_15_60", "monad_vm_slot_12_55_4"})
+        with self.assertRaises(ValueError):
+            check.check_hand_made_jumps(code, {0x104, 0x204})
+
     def test_function_size_excludes_slot_padding(self):
         code = ["addi\tsp,sp,-16", "jal\t200 <noreturn_exit>",
                 "nop", "jr\t-32(a5)"]
@@ -248,6 +259,33 @@ class ManualJumpChecks(unittest.TestCase):
                                ({0x104, 0x108}, "unchecked")):
             with self.subTest(markers=markers), self.assertRaisesRegex(ValueError, error):
                 check.check_hand_made_jumps(code, markers)
+
+
+class FramePolicyGeneration(unittest.TestCase):
+    tool = runpy.run_path(str(REPO / "nix/regenerate-frame-opcodes.py"))
+
+    def test_reaudits_and_combines_the_two_deferred_configurations(self):
+        names = {1: "ADD", 2: "MUL", 3: "SUB"}
+        # SUB first appears in the eager probe, then also in production
+        # after the compiler has seen the first round of exclusions.
+        answers = iter([{1}, {2}, {3}, {3}, set(), set(), set(), set(), set()])
+        observed = []
+
+        def measure(mode, policy):
+            observed.append((mode, policy))
+            return next(answers)
+
+        policy = self.tool["converge"](names, measure)
+        self.assertEqual([mode for mode, _ in observed], list(self.tool["MODES"]) * 3)
+        self.assertEqual([text for _, text in observed[-3:]], [policy] * 3)
+        self.assertEqual(policy, self.tool["BANNER"] +
+                         "case SUB:\n    return true;\n" +
+                         "#if !defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)\n" +
+                         "case ADD:\ncase MUL:\n    return true;\n#endif\n")
+
+    def test_refuses_an_unsafe_handler_already_excluded(self):
+        with self.assertRaisesRegex(ValueError, "persists"):
+            self.tool["converge"]({1: "ADD"}, lambda mode, policy: {1})
 
 
 if __name__ == "__main__":

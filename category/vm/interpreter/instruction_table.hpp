@@ -102,41 +102,16 @@ namespace monad::vm::interpreter
     template <class T>
     using compiler_dispatch_traits = Lagged<typename T::base, T::lag, false>;
 
-    // The opcodes whose handlers keep a frame on such a path, read off the
-    // objdump: the runtime's calls, the environment's, and the arithmetic
-    // that calls out. The official-build audit fails an ELF in which a jump
-    // made by hand still leaves with a frame open (check_hand_made_jumps).
+    // The ELF audit found an open frame or unrestored register at a manual
+    // jump in at least one copy of these handlers. Let GCC emit their exits.
     consteval bool keeps_frame(uint8_t const op) noexcept
     {
         using enum compiler::EvmOpCode;
-    #if defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
-        // Extra checks make these handlers retain native frame/register state.
-        if (op == DUP1 || op == SLOTNUM) {
-            return true;
+        switch (op) {
+    #include <category/vm/interpreter/frame_opcodes.inc>
+        default:
+            return false;
         }
-    #endif
-        constexpr uint8_t ops[] = {MUL,          DIV,          SDIV,
-                                   MOD,          SMOD,         ADDMOD,
-                                   MULMOD,       EXP,          BYTE,
-                                   SAR,          SHA3,         ADDRESS,
-                                   BALANCE,      ORIGIN,       CALLER,
-                                   CALLDATALOAD, CALLDATACOPY, CODECOPY,
-                                   EXTCODESIZE,  EXTCODECOPY,  RETURNDATACOPY,
-                                   EXTCODEHASH,  BLOCKHASH,    COINBASE,
-                                   SELFBALANCE,  BLOBHASH,     MSTORE8,
-                                   SLOAD,        SSTORE,       TLOAD,
-                                   TSTORE,       MCOPY,        LOG0,
-                                   LOG1,         LOG2,         LOG3,
-                                   LOG4,         CREATE,       CALL,
-                                   CALLCODE,     DELEGATECALL, CREATE2,
-                                   STATICCALL,   DUPN,         SWAPN,
-                                   EXCHANGE};
-        for (uint8_t const opcode : ops) {
-            if (opcode == op) {
-                return true;
-            }
-        }
-        return false;
     }
 
     // The followers whose PUSH1 pair keeps a frame on such a path.

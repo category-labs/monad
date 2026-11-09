@@ -156,7 +156,7 @@ NO_DESTINATION = BRANCHES | {
 }
 
 
-def check_hand_made_jumps(disassembly: str, marked_jumps, function_sizes=None) -> int:
+def check_hand_made_jumps(disassembly: str, marked_jumps, function_sizes=None, *, on_violation=None) -> int:
     """Check marked tail jumps for open frames and unrestored saved registers.
 
     Prefix and lag dispatch mark their own jalr. GCC does not insert a
@@ -164,6 +164,8 @@ def check_hand_made_jumps(disassembly: str, marked_jumps, function_sizes=None) -
     return to its entry value and s0-s11 must retain their caller's values.
     Recognize restores only from matching stack saves. This is a code-drift
     check for the emitted instruction patterns, not a general ABI proof.
+    The policy generator supplies on_violation to collect all unsafe handlers;
+    the reference build fails on the first violation.
     """
     if not marked_jumps:
         fail("ELF has no manual jump markers")
@@ -261,7 +263,9 @@ def check_hand_made_jumps(disassembly: str, marked_jumps, function_sizes=None) -
                     reason = ("with its frame open or unknown" if stack_offset != 0
                               else f"with {', '.join(sorted(modified))} written and not restored")
                     message = f"{name} takes a manual jump at {address:x} {reason}"
-                    fail(message)
+                    if on_violation is None:
+                        fail(message)
+                    on_violation(name, message)
             if address in noreturn_calls:
                 successors = []
             elif mnemonic == "j":

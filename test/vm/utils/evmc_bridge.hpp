@@ -18,12 +18,12 @@
 #include <category/core/address.hpp>
 #include <category/core/assert.h>
 #include <category/core/bytes.hpp>
-#include <category/vm/evm/access_status.h>
+#include <category/vm/evm/access_status.hpp>
 #include <category/vm/evm/message.hpp>
 #include <category/vm/evm/page_storage_status.h>
 #include <category/vm/evm/revision.h>
 #include <category/vm/evm/status_code.h>
-#include <category/vm/evm/storage_status.h>
+#include <category/vm/evm/storage_status.hpp>
 #include <category/vm/evm/tx_context.hpp>
 
 #include <evmc/evmc.h>
@@ -41,23 +41,23 @@ namespace monad::vm::test
         static_cast<long long>(std::to_underlying(monad_value)) ==             \
         static_cast<long long>(std::to_underlying(evmc_value)))
 
-    MONAD_ASSERT_ENUM_EQ(MONAD_ACCESS_COLD, EVMC_ACCESS_COLD);
-    MONAD_ASSERT_ENUM_EQ(MONAD_ACCESS_WARM, EVMC_ACCESS_WARM);
+    MONAD_ASSERT_ENUM_EQ(AccessStatus::Cold, EVMC_ACCESS_COLD);
+    MONAD_ASSERT_ENUM_EQ(AccessStatus::Warm, EVMC_ACCESS_WARM);
 
-    MONAD_ASSERT_ENUM_EQ(MONAD_STORAGE_ASSIGNED, EVMC_STORAGE_ASSIGNED);
-    MONAD_ASSERT_ENUM_EQ(MONAD_STORAGE_ADDED, EVMC_STORAGE_ADDED);
-    MONAD_ASSERT_ENUM_EQ(MONAD_STORAGE_DELETED, EVMC_STORAGE_DELETED);
-    MONAD_ASSERT_ENUM_EQ(MONAD_STORAGE_MODIFIED, EVMC_STORAGE_MODIFIED);
+    MONAD_ASSERT_ENUM_EQ(StorageStatus::Assigned, EVMC_STORAGE_ASSIGNED);
+    MONAD_ASSERT_ENUM_EQ(StorageStatus::Added, EVMC_STORAGE_ADDED);
+    MONAD_ASSERT_ENUM_EQ(StorageStatus::Deleted, EVMC_STORAGE_DELETED);
+    MONAD_ASSERT_ENUM_EQ(StorageStatus::Modified, EVMC_STORAGE_MODIFIED);
     MONAD_ASSERT_ENUM_EQ(
-        MONAD_STORAGE_DELETED_ADDED, EVMC_STORAGE_DELETED_ADDED);
+        StorageStatus::DeletedAdded, EVMC_STORAGE_DELETED_ADDED);
     MONAD_ASSERT_ENUM_EQ(
-        MONAD_STORAGE_MODIFIED_DELETED, EVMC_STORAGE_MODIFIED_DELETED);
+        StorageStatus::ModifiedDeleted, EVMC_STORAGE_MODIFIED_DELETED);
     MONAD_ASSERT_ENUM_EQ(
-        MONAD_STORAGE_DELETED_RESTORED, EVMC_STORAGE_DELETED_RESTORED);
+        StorageStatus::DeletedRestored, EVMC_STORAGE_DELETED_RESTORED);
     MONAD_ASSERT_ENUM_EQ(
-        MONAD_STORAGE_ADDED_DELETED, EVMC_STORAGE_ADDED_DELETED);
+        StorageStatus::AddedDeleted, EVMC_STORAGE_ADDED_DELETED);
     MONAD_ASSERT_ENUM_EQ(
-        MONAD_STORAGE_MODIFIED_RESTORED, EVMC_STORAGE_MODIFIED_RESTORED);
+        StorageStatus::ModifiedRestored, EVMC_STORAGE_MODIFIED_RESTORED);
 
     MONAD_ASSERT_ENUM_EQ(MONAD_STATUS_SUCCESS, EVMC_SUCCESS);
     MONAD_ASSERT_ENUM_EQ(MONAD_STATUS_FAILURE, EVMC_FAILURE);
@@ -127,21 +127,21 @@ namespace monad::vm::test
     }
 
     inline evmc_access_status
-    to_evmc_access_status(monad_access_status const s) noexcept
+    to_evmc_access_status(AccessStatus const s) noexcept
     {
         return static_cast<evmc_access_status>(std::to_underlying(s));
     }
 
     inline evmc_storage_status
-    to_evmc_storage_status(monad_storage_status const s) noexcept
+    to_evmc_storage_status(StorageStatus const s) noexcept
     {
         return static_cast<evmc_storage_status>(std::to_underlying(s));
     }
 
-    inline monad_storage_status
+    inline StorageStatus
     from_evmc_storage_status(evmc_storage_status const s) noexcept
     {
-        return static_cast<monad_storage_status>(std::to_underlying(s));
+        return static_cast<StorageStatus>(std::to_underlying(s));
     }
 
     inline evmc_page_storage_status

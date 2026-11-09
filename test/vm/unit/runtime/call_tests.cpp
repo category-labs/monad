@@ -15,7 +15,7 @@
 
 #include "fixture.hpp"
 
-#include <category/vm/evm/access_status.h>
+#include <category/vm/evm/access_status.hpp>
 #include <category/vm/evm/message.hpp>
 #include <category/vm/runtime/call.hpp>
 #include <category/vm/runtime/keccak.hpp>
@@ -272,7 +272,7 @@ TYPED_TEST(RuntimeTraitsTest, DelegatedCall)
     ASSERT_EQ(res, 1);
     ASSERT_EQ(
         this->host_.access_account(address_from_uint256(0xC0FFEE)),
-        MONAD_ACCESS_WARM);
+        AccessStatus::Warm);
     TestFixture::assert_delegated(delegate_addr);
 }
 
@@ -300,7 +300,7 @@ TYPED_TEST(RuntimeTraitsTest, DelegatedStaticCall)
     ASSERT_EQ(res, 1);
     ASSERT_EQ(
         this->host_.access_account(address_from_uint256(0xC0FFEE)),
-        MONAD_ACCESS_WARM);
+        AccessStatus::Warm);
     TestFixture::assert_delegated(delegate_addr);
 }
 
@@ -328,7 +328,7 @@ TYPED_TEST(RuntimeTraitsTest, DelegatedDelegateCall)
     ASSERT_EQ(res, 1);
     ASSERT_EQ(
         this->host_.access_account(address_from_uint256(0xC0FFEE)),
-        MONAD_ACCESS_WARM);
+        AccessStatus::Warm);
     TestFixture::assert_delegated(delegate_addr);
 }
 
@@ -356,7 +356,7 @@ TYPED_TEST(RuntimeTraitsTest, DelegatedCallcode)
     ASSERT_EQ(res, 1);
     ASSERT_EQ(
         this->host_.access_account(address_from_uint256(0xC0FFEE)),
-        MONAD_ACCESS_WARM);
+        AccessStatus::Warm);
     TestFixture::assert_delegated(delegate_addr);
 }
 
@@ -380,7 +380,7 @@ TYPED_TEST(RuntimeTraitsTest, DelegatedCallPrecompile)
     ASSERT_EQ(this->ctx_.result.status, StatusCode::Success);
     ASSERT_EQ(
         this->host_.access_account(address_from_uint256(0xC0FFEE)),
-        MONAD_ACCESS_WARM);
+        AccessStatus::Warm);
     ASSERT_EQ(this->host_.recorded_calls.size(), 1);
 
     if constexpr (TestFixture::Trait::eip_7702_active()) {

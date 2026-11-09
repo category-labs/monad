@@ -110,11 +110,11 @@ namespace
             return bytes32_t{};
         }
 
-        monad_storage_status set_storage(
+        StorageStatus set_storage(
             Address const &, bytes32_t const &,
             bytes32_t const &) noexcept override
         {
-            return monad_storage_status{};
+            return StorageStatus{};
         }
 
         uint256_t get_balance(Address const &) const noexcept override
@@ -173,15 +173,15 @@ namespace
         {
         }
 
-        monad_access_status access_account(Address const &) noexcept override
+        AccessStatus access_account(Address const &) noexcept override
         {
-            return monad_access_status{};
+            return AccessStatus{};
         }
 
-        monad_access_status
+        AccessStatus
         access_storage(Address const &, bytes32_t const &) noexcept override
         {
-            return monad_access_status{};
+            return AccessStatus{};
         }
 
         bytes32_t get_transient_storage(
@@ -197,8 +197,7 @@ namespace
         }
 
         monad_page_storage_status update_page(
-            Address const &, bytes32_t const &,
-            monad_storage_status) noexcept override
+            Address const &, bytes32_t const &, StorageStatus) noexcept override
         {
             return {};
         }

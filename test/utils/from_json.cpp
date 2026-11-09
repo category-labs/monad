@@ -189,7 +189,7 @@ namespace nlohmann
                     MONAD_ASSERT(
                         state.set_storage(
                             account_address, key_bytes32, value_bytes32) ==
-                        MONAD_STORAGE_ADDED);
+                        monad::StorageStatus::Added);
                 }
             }
         }

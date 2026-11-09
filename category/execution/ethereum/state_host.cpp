@@ -61,7 +61,7 @@ StateHostBase::get_storage(Address const &address, bytes32_t const &key) const
     stack_unwind();
 }
 
-monad_storage_status StateHostBase::set_storage(
+StorageStatus StateHostBase::set_storage(
     Address const &address, bytes32_t const &key, bytes32_t const &value)
 {
     MONAD_TRY

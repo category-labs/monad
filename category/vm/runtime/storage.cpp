@@ -17,7 +17,7 @@
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
 #include <category/core/runtime/uint256.hpp>
-#include <category/vm/evm/access_status.h>
+#include <category/vm/evm/access_status.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/message.hpp>
 #include <category/vm/evm/revision.h>
@@ -44,7 +44,7 @@ namespace monad::vm::runtime
 
         auto const access_status =
             ctx->host->access_storage(ctx->env.recipient, key);
-        if (access_status == MONAD_ACCESS_COLD) {
+        if (access_status == AccessStatus::Cold) {
             ctx->deduct_gas(traits::cold_storage_cost());
         }
 
@@ -80,7 +80,7 @@ namespace monad::vm::runtime
         if constexpr (traits::mip_8_active()) {
             auto const access_status =
                 ctx->host->access_storage(ctx->env.recipient, key);
-            if (access_status == MONAD_ACCESS_COLD) {
+            if (access_status == AccessStatus::Cold) {
                 ctx->deduct_gas(traits::cold_storage_cost());
             }
 
@@ -104,7 +104,7 @@ namespace monad::vm::runtime
         else {
             auto const access_status =
                 ctx->host->access_storage(ctx->env.recipient, key);
-            if (access_status == MONAD_ACCESS_COLD) {
+            if (access_status == AccessStatus::Cold) {
                 ctx->deduct_gas(traits::cold_storage_cost() + min_gas);
             }
 

@@ -146,6 +146,8 @@ public:
 
     uint256_t get_original_balance(Address const &);
 
+    bool balance_decreased(Address const &);
+
     bytes32_t get_code_hash(Address const &);
 
     bool is_destructed(Address const &);

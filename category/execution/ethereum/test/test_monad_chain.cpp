@@ -25,7 +25,9 @@
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/reserve_balance.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
+#include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
@@ -44,6 +46,7 @@
 #include <monad/test/traits_test.hpp>
 
 #include <bitset>
+#include <variant>
 
 #include <gtest/gtest.h>
 
@@ -825,6 +828,314 @@ TYPED_TEST(MonadTraitsTest, reserve_checks_prefunded_init_selfdestruct)
         EXPECT_TRUE(should_revert);
         EXPECT_TRUE(should_revert_cached);
     }
+}
+
+TYPED_TEST(MonadTraitsTest, reserve_skips_code_of_unchanged_balance)
+{
+    using traits = typename TestFixture::Trait;
+    if constexpr (!traits::reserve_balance_active()) {
+        GTEST_SKIP() << "reserve-balance checks are disabled before MONAD_FOUR";
+    }
+
+    static constexpr Address SENDER{1};
+    static constexpr Address CONTRACT{2};
+    static constexpr Address DELEGATED{3};
+    static constexpr uint64_t BASE_FEE_PER_GAS = 10;
+
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
+    TrieDb tdb{db};
+    vm::VM vm;
+    BlockState bs{tdb, vm};
+
+    byte_string const delegation_code{
+        0xef, 0x01, 0x00, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04,
+        0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04,
+    };
+
+    {
+        State init_state{bs, Incarnation{0, 0}};
+        init_state.add_to_balance(SENDER, 20_ether);
+        init_state.add_to_balance(CONTRACT, 20_ether);
+        init_state.set_code(CONTRACT, byte_string{0x60, 0x00});
+        init_state.add_to_balance(DELEGATED, 20_ether);
+        init_state.set_code(DELEGATED, delegation_code);
+        MONAD_ASSERT(bs.can_merge(init_state));
+        bs.merge(init_state);
+    }
+
+    Transaction const tx{
+        .max_fee_per_gas = BASE_FEE_PER_GAS,
+        .gas_limit = 1,
+        .type = TransactionType::legacy,
+        .max_priority_fee_per_gas = 0,
+    };
+    uint256_t const gas_cost =
+        uint256_t{BASE_FEE_PER_GAS} * uint256_t{tx.gas_limit};
+
+    ankerl::unordered_dense::segmented_set<Address> const
+        empty_grandparent_senders_and_authorities;
+    ankerl::unordered_dense::segmented_set<Address> const
+        empty_parent_senders_and_authorities;
+    std::vector<Address> const senders = {SENDER};
+    std::vector<std::vector<std::optional<Address>>> const authorities = {{}};
+    ankerl::unordered_dense::segmented_set<Address> senders_and_authorities;
+    senders_and_authorities.insert(SENDER);
+    ChainContext<traits> const context{
+        .grandparent_senders_and_authorities =
+            empty_grandparent_senders_and_authorities,
+        .parent_senders_and_authorities = empty_parent_senders_and_authorities,
+        .senders_and_authorities = senders_and_authorities,
+        .senders = senders,
+        .authorities = authorities};
+
+    State state{bs, Incarnation{1, 1}};
+    trace::StateTracer state_tracer = trace::CodeTracer{};
+    init_reserve_balance_context<traits>(
+        state, SENDER, tx, BASE_FEE_PER_GAS, 0, state_tracer, context);
+    state.subtract_from_balance(SENDER, gas_cost);
+
+    // The tracker re-checks the accounts a rejected frame touched
+    state.push();
+    state.access_account(CONTRACT);
+    state.access_account(DELEGATED);
+    state.pop_reject();
+
+    EXPECT_FALSE(revert_transaction_cached<traits>(state));
+    EXPECT_TRUE(std::get<trace::CodeTracer>(state_tracer).codes.empty());
+
+    // dipped_into_reserve iterates state.current()
+    std::get<trace::CodeTracer>(state_tracer).codes.clear();
+    state.access_account(CONTRACT);
+    state.access_account(DELEGATED);
+
+    EXPECT_FALSE(revert_transaction<traits>(
+        SENDER, tx, BASE_FEE_PER_GAS, 0, state, state_tracer, context));
+    EXPECT_TRUE(std::get<trace::CodeTracer>(state_tracer).codes.empty());
+
+    // Neither check requires an exact balance for them
+    EXPECT_FALSE(state.original().at(CONTRACT).validate_exact_balance());
+    EXPECT_FALSE(state.original().at(DELEGATED).validate_exact_balance());
+}
+
+TYPED_TEST(MonadTraitsTest, reserve_flags_delegated_account_that_dips)
+{
+    using traits = typename TestFixture::Trait;
+    if constexpr (!traits::reserve_balance_active()) {
+        GTEST_SKIP() << "reserve-balance checks are disabled before MONAD_FOUR";
+    }
+
+    static constexpr Address SENDER{1};
+    static constexpr Address DELEGATED{3};
+    static constexpr uint64_t BASE_FEE_PER_GAS = 10;
+
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
+    TrieDb tdb{db};
+    vm::VM vm;
+    BlockState bs{tdb, vm};
+
+    byte_string const delegation_code{
+        0xef, 0x01, 0x00, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04,
+        0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04,
+    };
+
+    {
+        State init_state{bs, Incarnation{0, 0}};
+        init_state.add_to_balance(SENDER, 20_ether);
+        init_state.add_to_balance(DELEGATED, 20_ether);
+        init_state.set_code(DELEGATED, delegation_code);
+        MONAD_ASSERT(bs.can_merge(init_state));
+        bs.merge(init_state);
+    }
+
+    Transaction const tx{
+        .max_fee_per_gas = BASE_FEE_PER_GAS,
+        .gas_limit = 1,
+        .type = TransactionType::legacy,
+        .max_priority_fee_per_gas = 0,
+    };
+    uint256_t const gas_cost =
+        uint256_t{BASE_FEE_PER_GAS} * uint256_t{tx.gas_limit};
+
+    ankerl::unordered_dense::segmented_set<Address> const
+        empty_grandparent_senders_and_authorities;
+    ankerl::unordered_dense::segmented_set<Address> const
+        empty_parent_senders_and_authorities;
+    std::vector<Address> const senders = {SENDER};
+    std::vector<std::vector<std::optional<Address>>> const authorities = {{}};
+    ankerl::unordered_dense::segmented_set<Address> senders_and_authorities;
+    senders_and_authorities.insert(SENDER);
+    ChainContext<traits> const context{
+        .grandparent_senders_and_authorities =
+            empty_grandparent_senders_and_authorities,
+        .parent_senders_and_authorities = empty_parent_senders_and_authorities,
+        .senders_and_authorities = senders_and_authorities,
+        .senders = senders,
+        .authorities = authorities};
+
+    State state{bs, Incarnation{1, 1}};
+    trace::StateTracer noop_state_tracer = std::monostate{};
+    init_reserve_balance_context<traits>(
+        state, SENDER, tx, BASE_FEE_PER_GAS, 0, noop_state_tracer, context);
+    state.subtract_from_balance(SENDER, gas_cost);
+
+    state.push();
+    state.subtract_from_balance(DELEGATED, 15_ether);
+    state.pop_reject();
+
+    EXPECT_FALSE(revert_transaction<traits>(
+        SENDER, tx, BASE_FEE_PER_GAS, 0, state, noop_state_tracer, context));
+    EXPECT_FALSE(revert_transaction_cached<traits>(state));
+
+    state.subtract_from_balance(DELEGATED, 15_ether);
+
+    state.push();
+    state.access_account(DELEGATED);
+    state.pop_reject();
+
+    EXPECT_TRUE(revert_transaction<traits>(
+        SENDER, tx, BASE_FEE_PER_GAS, 0, state, noop_state_tracer, context));
+    EXPECT_TRUE(revert_transaction_cached<traits>(state));
+}
+
+TYPED_TEST(MonadTraitsTest, reserve_skips_contract_that_dips)
+{
+    using traits = typename TestFixture::Trait;
+    if constexpr (!traits::reserve_balance_active()) {
+        GTEST_SKIP() << "reserve-balance checks are disabled before MONAD_FOUR";
+    }
+
+    static constexpr Address SENDER{1};
+    static constexpr Address CONTRACT{2};
+    static constexpr uint64_t BASE_FEE_PER_GAS = 10;
+
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
+    TrieDb tdb{db};
+    vm::VM vm;
+    BlockState bs{tdb, vm};
+
+    {
+        State init_state{bs, Incarnation{0, 0}};
+        init_state.add_to_balance(SENDER, 20_ether);
+        init_state.add_to_balance(CONTRACT, 20_ether);
+        init_state.set_code(CONTRACT, byte_string{0x60, 0x00});
+        MONAD_ASSERT(bs.can_merge(init_state));
+        bs.merge(init_state);
+    }
+
+    Transaction const tx{
+        .max_fee_per_gas = BASE_FEE_PER_GAS,
+        .gas_limit = 1,
+        .type = TransactionType::legacy,
+        .max_priority_fee_per_gas = 0,
+    };
+    uint256_t const gas_cost =
+        uint256_t{BASE_FEE_PER_GAS} * uint256_t{tx.gas_limit};
+
+    ankerl::unordered_dense::segmented_set<Address> const
+        empty_grandparent_senders_and_authorities;
+    ankerl::unordered_dense::segmented_set<Address> const
+        empty_parent_senders_and_authorities;
+    std::vector<Address> const senders = {SENDER};
+    std::vector<std::vector<std::optional<Address>>> const authorities = {{}};
+    ankerl::unordered_dense::segmented_set<Address> senders_and_authorities;
+    senders_and_authorities.insert(SENDER);
+    ChainContext<traits> const context{
+        .grandparent_senders_and_authorities =
+            empty_grandparent_senders_and_authorities,
+        .parent_senders_and_authorities = empty_parent_senders_and_authorities,
+        .senders_and_authorities = senders_and_authorities,
+        .senders = senders,
+        .authorities = authorities};
+
+    State state{bs, Incarnation{1, 1}};
+    trace::StateTracer noop_state_tracer = std::monostate{};
+    init_reserve_balance_context<traits>(
+        state, SENDER, tx, BASE_FEE_PER_GAS, 0, noop_state_tracer, context);
+    state.subtract_from_balance(SENDER, gas_cost);
+
+    state.push();
+    state.access_account(CONTRACT);
+    state.pop_reject();
+
+    state.subtract_from_balance(CONTRACT, 15_ether);
+
+    state.push();
+    state.access_account(CONTRACT);
+    state.pop_reject();
+
+    EXPECT_FALSE(revert_transaction<traits>(
+        SENDER, tx, BASE_FEE_PER_GAS, 0, state, noop_state_tracer, context));
+    EXPECT_FALSE(revert_transaction_cached<traits>(state));
+}
+
+TYPED_TEST(
+    MonadTraitsTest, reserve_checks_delegated_sender_with_unchanged_balance)
+{
+    using traits = typename TestFixture::Trait;
+    if constexpr (!traits::reserve_balance_active()) {
+        GTEST_SKIP() << "reserve-balance checks are disabled before MONAD_FOUR";
+    }
+
+    static constexpr Address SENDER{1};
+    static constexpr uint256_t BASE_FEE_PER_GAS = 10;
+
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
+    TrieDb tdb{db};
+    vm::VM vm;
+    BlockState bs{tdb, vm};
+
+    byte_string const delegation_code{
+        0xef, 0x01, 0x00, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04,
+        0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04,
+    };
+
+    {
+        State init_state{bs, Incarnation{0, 0}};
+        init_state.add_to_balance(SENDER, 20_ether);
+        init_state.set_code(SENDER, delegation_code);
+        MONAD_ASSERT(bs.can_merge(init_state));
+        bs.merge(init_state);
+    }
+
+    uint256_t const sender_gas_fee = 11_ether; // reserve is capped at 10 MON
+    uint256_t const gas_limit_u256 = sender_gas_fee / BASE_FEE_PER_GAS;
+    MONAD_ASSERT(
+        (sender_gas_fee % BASE_FEE_PER_GAS) == 0 &&
+        gas_limit_u256 <= std::numeric_limits<uint64_t>::max());
+
+    Transaction const tx{
+        .max_fee_per_gas = BASE_FEE_PER_GAS,
+        .gas_limit = static_cast<uint64_t>(gas_limit_u256),
+        .type = TransactionType::legacy,
+        .max_priority_fee_per_gas = 0,
+    };
+
+    ankerl::unordered_dense::segmented_set<Address> const
+        empty_grandparent_senders_and_authorities;
+    ankerl::unordered_dense::segmented_set<Address> const
+        empty_parent_senders_and_authorities;
+    std::vector<Address> const senders = {SENDER};
+    std::vector<std::vector<std::optional<Address>>> const authorities = {{}};
+    ankerl::unordered_dense::segmented_set<Address> senders_and_authorities;
+    senders_and_authorities.insert(SENDER);
+    ChainContext<traits> const context{
+        .grandparent_senders_and_authorities =
+            empty_grandparent_senders_and_authorities,
+        .parent_senders_and_authorities = empty_parent_senders_and_authorities,
+        .senders_and_authorities = senders_and_authorities,
+        .senders = senders,
+        .authorities = authorities};
+
+    State state{bs, Incarnation{1, 1}};
+    trace::StateTracer noop_state_tracer = std::monostate{};
+    init_reserve_balance_context<traits>(
+        state, SENDER, tx, BASE_FEE_PER_GAS, 0, noop_state_tracer, context);
+    state.subtract_from_balance(SENDER, sender_gas_fee);
+    state.add_to_balance(SENDER, sender_gas_fee);
+
+    EXPECT_TRUE(revert_transaction<traits>(
+        SENDER, tx, BASE_FEE_PER_GAS, 0, state, noop_state_tracer, context));
+    EXPECT_TRUE(revert_transaction_cached<traits>(state));
 }
 
 TYPED_TEST(MonadTraitsTest, system_transaction_sender_is_authority)

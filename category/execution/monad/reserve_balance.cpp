@@ -69,6 +69,10 @@ bool dipped_into_reserve(
     auto const &orig = state.original();
     for (auto const &[addr, cur_account] : state.current()) {
         MONAD_ASSERT(orig.contains(addr));
+        // A non-sender only dips into its reserve if its balance decreased
+        if (addr != sender && !state.balance_decreased(addr)) {
+            continue;
+        }
         bytes32_t const orig_code_hash = orig.at(addr).get_code_hash();
         bytes32_t const effective_code_hash =
             traits::reserve_balance_uses_recent_code_hash()
@@ -229,6 +233,11 @@ void ReserveBalance::update_violation_status(Address const &address)
     }
 
     if (!violation_threshold.has_value()) {
+        // A non-sender only dips into its reserve if its balance decreased
+        if (address != sender_ && !state_->balance_decreased(address)) {
+            failed_.erase(address);
+            return;
+        }
         if (!subject_account(address)) {
             violation_threshold = uint256_t{0};
             failed_.erase(address);

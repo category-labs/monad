@@ -101,10 +101,16 @@ namespace monad::vm::interpreter
     #else
     inline constexpr bool fuse_swap1 = true;
     #endif
+    #if defined(MONAD_ZKVM_NO_SWAPN_FUSION)
+    inline constexpr bool fuse_swapn = false;
+    #else
+    inline constexpr bool fuse_swapn = true;
+    #endif
+    inline constexpr int swapn_prefix_bytes = fuse_swapn ? 40 : 0;
     inline constexpr int copy_zero_start =
         fuse_dup ? 1368 : (fuse_swap1 ? 1760 : 1752);
     inline constexpr int copy_prefix_bytes =
-        104 + (fuse_swap1 ? 40 : 0) + (fuse_dup ? 40 : 0);
+        64 + (fuse_swap1 ? 40 : 0) + (fuse_dup ? 40 : 0) + swapn_prefix_bytes;
 
     consteval int lag_offset(unsigned const lag) noexcept
     {
@@ -4157,7 +4163,8 @@ namespace monad::vm::interpreter
             if constexpr (fuse_dup && lag_dispatch<traits>) {
                 constexpr unsigned follower_lag = (traits::lag + 1) % lag_count;
                 MONAD_VM_PREFIX_DISPATCH(
-                    copy_prefix_bytes - 40 - lag_offset(follower_lag),
+                    copy_prefix_bytes - swapn_prefix_bytes -
+                        lag_offset(follower_lag),
                     instr_ptr[1],
                     stack_top,
                     gas_remaining,
@@ -4199,7 +4206,7 @@ namespace monad::vm::interpreter
         MONAD_VM_CHECK(SWAP1 + (N - 1));
 
 #if defined(MONAD_ZKVM_ZISK)
-        if constexpr (N >= 2 && lag_dispatch<traits>) {
+        if constexpr (N >= 2 && fuse_swapn && lag_dispatch<traits>) {
             constexpr unsigned follower_lag = (traits::lag + 1) % lag_count;
             MONAD_VM_PREFIX_DISPATCH(
                 copy_prefix_bytes - lag_offset(follower_lag),

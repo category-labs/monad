@@ -195,6 +195,7 @@ impl Backend {
                     zisk_slots_ld(
                         prefix_enabled("swap1-prefix.enabled"),
                         prefix_enabled("dup-prefix.enabled"),
+                        prefix_enabled("swapn-prefix.enabled"),
                     ),
                 )
                 .expect("write slots.ld");
@@ -326,10 +327,11 @@ fn sp1_zkevm_dir() -> PathBuf {
 }
 
 /// ZisK build options accepted directly from the environment and their defaults.
-const ZISK_OPTIONS: [(&str, &str); 7] = [
+const ZISK_OPTIONS: [(&str, &str); 8] = [
     ("MONAD_ZKVM_ZISK_DMA", "OFF"),
     ("MONAD_ZKVM_ZISK_LTO", "OFF"),
     ("MONAD_ZKVM_FUSE_DUP", "ON"),
+    ("MONAD_ZKVM_FUSE_SWAPN", "ON"),
     ("MONAD_ZKVM_FUSE_SWAP1", "ON"),
     ("MONAD_ZKVM_FUSE_SOLIDITY_SELECTOR", "ON"),
     ("MONAD_ZKVM_FUSE_SOLIDITY_ALLOC_FINALIZE", "ON"),
@@ -343,11 +345,11 @@ fn manifest_dir() -> PathBuf {
     PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR unset"))
 }
 
-/// Lay out 4-KiB opcode slots, newest revision first. SWAP2–SWAP16 reserve 40 prefix
-/// bytes per copy. DUP and SWAP1 each add another 40 when enabled.
+/// Lay out 4-KiB opcode slots, newest revision first. Each enabled swap or DUP family
+/// reserves 40 prefix bytes per copy. Only DUP changes the number of copies.
 /// Fused pairs and oversized handlers follow the slots. The linker rejects
 /// misplaced entries and copies that exceed their region.
-fn zisk_slots_ld(fuse_swap1: bool, fuse_dup: bool) -> String {
+fn zisk_slots_ld(fuse_swap1: bool, fuse_dup: bool, fuse_swapn: bool) -> String {
     const SLOT: usize = 0x1000;
     // Prefix-region offset, prefix-section suffix, and handler-section suffix.
     // Keep these offsets in sync with instruction_table.hpp::lag_offset.
@@ -371,7 +373,10 @@ fn zisk_slots_ld(fuse_swap1: bool, fuse_dup: bool) -> String {
             (3504, "_3", "3"),
         ]
     };
-    let prefix_size = 104 + 40 * usize::from(fuse_swap1) + 40 * usize::from(fuse_dup);
+    let prefix_size = 64
+        + 40 * usize::from(fuse_swapn)
+        + 40 * usize::from(fuse_swap1)
+        + 40 * usize::from(fuse_dup);
     let mut ld = String::from(
         "SECTIONS {\n    .monad_vm_slots : ALIGN(0x400) {\n        \
          FILL(0x13000000)\n        monad_vm_slots = .;\n",

@@ -101,6 +101,7 @@ Cargo caches each configuration separately under `OUT_DIR`.
 | --- | --- | --- | --- | --- |
 | `MONAD_ZKVM_FUSE_DUP` | ON | ON | Environment | Pass the source of DUP2–DUP16 to the following opcode. OFF removes the 40-byte DUP prefix and restores seven handler copies per slot. |
 | `MONAD_ZKVM_FUSE_SWAP1` | ON | ON | Environment | Use SWAP1 follower prefixes and fused pairs. OFF frees 40 bytes per handler copy. PUSH1 followed by SWAP1 belongs to the PUSH1 family. |
+| `MONAD_ZKVM_FUSE_SWAPN` | ON | ON | Environment | Use follower prefixes for SWAP2–SWAP16. OFF restores ordinary swaps and frees 40 bytes per handler copy. DUP controls the copy count. |
 | `MONAD_ZKVM_FUSE_SOLIDITY_SELECTOR` | ON | ON | Environment | Fuse the calldata-size prologue, selector extraction and EQ/GT selector tests. ABI argument bounds checks are independent. |
 | `MONAD_ZKVM_FUSE_SOLIDITY_ALLOC_FINALIZE` | ON | ON | Environment | Fuse Solidity’s successful allocation finalization: check the new free-memory pointer, store it at 0x40 and jump back to the caller. |
 | `MONAD_ZKVM_FUSE_SOLIDITY_COPY_LOOP` | ON | ON | Environment | Batch Solidity memory-copy loops that advance by 32 bytes per iteration. |

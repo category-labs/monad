@@ -79,6 +79,11 @@ namespace monad::vm::interpreter
     // advance a5 and return to copy 0. The offsets fit jalr's immediate.
     inline constexpr unsigned lag_count = 6;
 
+    #if defined(MONAD_ZKVM_NO_SOLIDITY_SELECTOR_FUSION)
+    inline constexpr bool fuse_solidity_selector = false;
+    #else
+    inline constexpr bool fuse_solidity_selector = true;
+    #endif
     #if defined(MONAD_ZKVM_NO_SWAP1_PREFIX)
     inline constexpr bool fuse_swap1 = false;
     #else
@@ -2115,7 +2120,8 @@ namespace monad::vm::interpreter
         // Solidity reads the calldata's size for two idioms, each with a
         // twin: the dispatch prologue (LT follows) and the ABI decoder's
         // bound (SUB follows).
-        if (instr_ptr[1] == static_cast<std::uint8_t>(LT)) {
+        if (fuse_solidity_selector &&
+            instr_ptr[1] == static_cast<std::uint8_t>(LT)) {
             MONAD_VM_MUST_TAIL return calldata_selector<traits>(
                 ctx,
                 MONAD_VM_DISPATCH_STATE_ARG,
@@ -3894,7 +3900,8 @@ namespace monad::vm::interpreter
             next_opcode = *(instr_ptr + 1);
             // Check PUSH4 first; Intercode's tail padding makes lookahead
             // through instr_ptr[10] safe.
-            if (next_opcode == static_cast<std::uint8_t>(PUSH4) &&
+            if (fuse_solidity_selector &&
+                next_opcode == static_cast<std::uint8_t>(PUSH4) &&
                 *(instr_ptr + 6) == static_cast<std::uint8_t>(EQ) &&
                 *(instr_ptr + 7) == static_cast<std::uint8_t>(PUSH2) &&
                 *(instr_ptr + 10) == static_cast<std::uint8_t>(JUMPI)) {
@@ -3963,7 +3970,8 @@ namespace monad::vm::interpreter
             //   DUP1  PUSH4  [pivot] GT  PUSH2  [destination] JUMPI
             // GT compares the top (pivot) with the value below (selector),
             // so the jump is taken when selector < pivot.
-            if (next_opcode == static_cast<std::uint8_t>(PUSH4) &&
+            if (fuse_solidity_selector &&
+                next_opcode == static_cast<std::uint8_t>(PUSH4) &&
                 *(instr_ptr + 6) == static_cast<std::uint8_t>(GT) &&
                 *(instr_ptr + 7) == static_cast<std::uint8_t>(PUSH2) &&
                 *(instr_ptr + 10) == static_cast<std::uint8_t>(JUMPI)) {
@@ -4414,7 +4422,8 @@ namespace monad::vm::interpreter
             static_cast<uint64_t>(instr_ptr - MONAD_VM_CODE_VIEW.code()));
         MONAD_VM_CHECK(JUMPDEST);
 
-#if defined(MONAD_ZKVM_ZISK) && !defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
+#if defined(MONAD_ZKVM_ZISK) && !defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE) && \
+    !defined(MONAD_ZKVM_NO_SOLIDITY_COPY_LOOP_FUSION)
         // Falling through into DUP4 DUP2 may enter a memory copy loop, which
         // copy_loop runs whole: the dispatch's target, as push1_mask's.
         instr_ptr += 1;

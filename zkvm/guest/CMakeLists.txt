@@ -141,6 +141,8 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     elseif(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
         add_compile_definitions(MONAD_ZKVM_ZISK)
         option(MONAD_ZKVM_FUSE_SWAP1 "Enable the SWAP1 follower prefixes and pairs" ON)
+        option(MONAD_ZKVM_FUSE_SOLIDITY_SELECTOR "Fuse Solidity selector extraction and dispatch" ON)
+        option(MONAD_ZKVM_FUSE_SOLIDITY_COPY_LOOP "Batch Solidity word-copy loops" ON)
         # The Rust linker-script generator needs the same effective CMake setting.
         file(GENERATE OUTPUT "${CMAKE_BINARY_DIR}/swap1-prefix.enabled"
              CONTENT "$<BOOL:${MONAD_ZKVM_FUSE_SWAP1}>")
@@ -325,6 +327,11 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     endif()
 
     if(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
+        foreach(family IN ITEMS SOLIDITY_SELECTOR SOLIDITY_COPY_LOOP)
+            if(NOT MONAD_ZKVM_FUSE_${family})
+                target_compile_definitions(monad-vm-interpreter PRIVATE MONAD_ZKVM_NO_${family}_FUSION)
+            endif()
+        endforeach()
         target_compile_options(monad-vm-interpreter PRIVATE
                                ${_monad_zkvm_interpreter_tune})
     endif()

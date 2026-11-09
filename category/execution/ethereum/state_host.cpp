@@ -75,11 +75,11 @@ monad_storage_status StateHostBase::set_storage(
     stack_unwind();
 }
 
-bytes32_t StateHostBase::get_balance(Address const &address) const
+uint256_t StateHostBase::get_balance(Address const &address) const
 {
     MONAD_TRY
     {
-        return store_be_as<bytes32_t>(state_.get_balance(address));
+        return state_.get_balance(address);
     }
     MONAD_CATCH(...)
     {

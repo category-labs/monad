@@ -52,8 +52,7 @@ namespace monad::vm::runtime
 
     void selfbalance(Context *const ctx, uint256_t *const result_ptr)
     {
-        auto const balance = ctx->host->get_balance(ctx->env.recipient);
-        *result_ptr = load_be<uint256_t>(balance);
+        *result_ptr = ctx->host->get_balance(ctx->env.recipient);
     }
 
     void blobhash(

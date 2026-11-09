@@ -117,9 +117,9 @@ namespace
             return monad_storage_status{};
         }
 
-        bytes32_t get_balance(Address const &) const noexcept override
+        uint256_t get_balance(Address const &) const noexcept override
         {
-            return bytes32_t{};
+            return uint256_t{};
         }
 
         size_t get_code_size(Address const &) const noexcept override

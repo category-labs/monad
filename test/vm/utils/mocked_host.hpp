@@ -192,12 +192,13 @@ namespace monad::vm::test
             return status;
         }
 
-        bytes32_t get_balance(Address const &addr) const noexcept override
+        uint256_t get_balance(Address const &addr) const noexcept override
         {
             record_account_access(addr);
             auto const account = accounts.find(addr);
-            return account == accounts.end() ? bytes32_t{}
-                                             : account->second.balance;
+            return account == accounts.end()
+                       ? uint256_t{}
+                       : load_be<uint256_t>(account->second.balance);
         }
 
         size_t get_code_size(Address const &addr) const noexcept override

@@ -61,7 +61,9 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <format>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <numeric>
 #include <ranges>
@@ -833,6 +835,7 @@ int main(int const argc, char *argv[])
     bool interactive = false;
     std::optional<std::filesystem::path> dump_binary_snapshot;
     std::optional<std::filesystem::path> load_binary_snapshot;
+    uint64_t load_buffer_size = MONAD_SNAPSHOT_DEFAULT_FLUSH_BYTES;
     std::string version;
     unsigned dump_concurrency_limit = 2048;
     bool use_secondary = false;
@@ -913,13 +916,29 @@ int main(int const argc, char *argv[])
         ->transform(
             CLI::CheckedTransformer(snapshot_format_map, CLI::ignore_case))
         ->needs(dump_binary_snapshot_option);
+    auto *const load_binary_snapshot_option =
+        cli_group
+            ->add_option(
+                "--load-binary-snapshot,--load_binary_snapshot",
+                load_binary_snapshot,
+                "Load a binary snapshot to db")
+            ->check(CLI::ExistingDirectory)
+            ->excludes(dump_binary_snapshot_option);
     cli_group
         ->add_option(
-            "--load-binary-snapshot,--load_binary_snapshot",
-            load_binary_snapshot,
-            "Load a binary snapshot to db")
-        ->check(CLI::ExistingDirectory)
-        ->excludes(dump_binary_snapshot_option);
+            "--load-buffer-size,--load_buffer_size",
+            load_buffer_size,
+            std::format(
+                "Snapshot bytes --load-binary-snapshot reads between "
+                "intermediate writes, with an optional unit such as 2GiB "
+                "(default {}GiB). Lowering it lowers the load's peak memory "
+                "at the cost of extra writes, except for the storage of a v0 "
+                "or v1 snapshot loaded into a page-encoded db, which is held "
+                "a whole shard at a time.",
+                MONAD_SNAPSHOT_DEFAULT_FLUSH_BYTES >> 30))
+        ->transform(CLI::AsSizeValue{false})
+        ->check(CLI::Range(uint64_t{1}, std::numeric_limits<uint64_t>::max()))
+        ->needs(load_binary_snapshot_option);
     cli.add_flag(
         "--secondary",
         use_secondary,
@@ -932,10 +951,7 @@ int main(int const argc, char *argv[])
     try {
         cli.parse(argc, argv);
     }
-    catch (CLI::CallForHelp const &e) {
-        return cli.exit(e);
-    }
-    catch (CLI::RequiredError const &e) {
+    catch (CLI::ParseError const &e) {
         return cli.exit(e);
     }
 
@@ -1087,13 +1103,15 @@ int main(int const argc, char *argv[])
             sq_thread_cpu.value_or(std::numeric_limits<unsigned>::max()),
             load_binary_snapshot.value().c_str(),
             resolved_version,
-            use_secondary);
+            use_secondary,
+            load_buffer_size);
         LOG_INFO(
             "snapshot version={} load_binary_snapshot={} load_to_secondary={} "
-            "elapsed={}",
+            "load_buffer_size={} elapsed={}",
             resolved_version,
             load_binary_snapshot.value(),
             use_secondary,
+            load_buffer_size,
             std::chrono::steady_clock::now() - begin);
     }
     return 0;

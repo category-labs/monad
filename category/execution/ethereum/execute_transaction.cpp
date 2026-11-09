@@ -257,10 +257,6 @@ vm::Result ExecuteTransactionNoValidation<traits>::operator()(
         auth_refund = process_authorizations(state, host);
     }
 
-    if constexpr (traits::eip_3651_active()) {
-        host.access_account(header_.beneficiary);
-    }
-
     state.access_account(sender_);
     for (auto const &ae : tx_.access_list) {
         state.access_account(ae.a);

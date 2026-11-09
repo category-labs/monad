@@ -67,9 +67,11 @@ namespace trace
     bool PrestateTracer::retain_beneficiary(State const &state) const
     {
         // The following logic determines whether to include the beneficiary in
-        // the prestate trace. Since the Shanghai revision, we access the
-        // beneficiary before execution, which causes the beneficiary to show up
-        // in the prestate trace, even if it did not participate in the block.
+        // the prestate trace. In block execution, the priority fee is credited
+        // to the beneficiary after every transaction, even when the fee is 0,
+        // so the beneficiary shows up in State even if the transaction never
+        // used it. In simulation (debug_traceCall) there is no such credit, and
+        // the beneficiary is present only if the call used it.
 
         // First check that the beneficiary is in the `original` accounts and
         // `current` accounts. If not, then just return.
@@ -111,9 +113,8 @@ namespace trace
             get_account_for_trace(curr_it->second.recent()).value();
 
         // If `original` and `current` are the same and *have* empty storages,
-        // then it must be that the beneficiary did not participate in the block
-        // and show up here because of the pre-execution access. Therefore we
-        // can omit the beneficiary account from the prestate trace.
+        // then assume the beneficiary is here only because of a zero priority
+        // fee credit, and omit it from the prestate trace.
         if (original == current &&
             // NOTE(dhil): We piggyback on the fact that the `storage_`
             // is lazily populated, i.e. a slot binding appears only if

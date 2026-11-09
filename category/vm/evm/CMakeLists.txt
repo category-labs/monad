@@ -18,7 +18,7 @@ add_library(monad-vm-evm OBJECT)
 set_target_properties(monad-vm-evm PROPERTIES LINKER_LANGUAGE CXX)
 
 target_sources(monad-vm-evm PRIVATE
-    "access_status.h"
+    "access_status.hpp"
     "delegation.cpp"
     "delegation.hpp"
     "explicit_traits.hpp"
@@ -30,7 +30,7 @@ target_sources(monad-vm-evm PRIVATE
     "revision.cpp"
     "revision.h"
     "status_code.h"
-    "storage_status.h"
+    "storage_status.hpp"
     "switch_traits.hpp"
     "traits.hpp"
     "tx_context.hpp"

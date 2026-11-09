@@ -18,12 +18,12 @@
 #include <category/core/address.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/int.hpp>
-#include <category/vm/evm/access_status.h>
+#include <category/vm/evm/access_status.hpp>
 #include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/message.hpp>
 #include <category/vm/evm/page_storage_status.h>
 #include <category/vm/evm/result.hpp>
-#include <category/vm/evm/storage_status.h>
+#include <category/vm/evm/storage_status.hpp>
 #include <category/vm/evm/tx_context.hpp>
 #include <category/vm/runtime/types.hpp>
 
@@ -50,7 +50,7 @@ namespace monad::vm
         virtual bytes32_t
         get_storage(Address const &, bytes32_t const &key) const = 0;
 
-        virtual monad_storage_status set_storage(
+        virtual StorageStatus set_storage(
             Address const &, bytes32_t const &key, bytes32_t const &value) = 0;
 
         virtual uint256_t get_balance(Address const &) const = 0;
@@ -76,9 +76,9 @@ namespace monad::vm
             Address const &, uint8_t const *data, size_t data_size,
             bytes32_t const topics[], size_t num_topics) = 0;
 
-        virtual monad_access_status access_account(Address const &) = 0;
+        virtual AccessStatus access_account(Address const &) = 0;
 
-        virtual monad_access_status
+        virtual AccessStatus
         access_storage(Address const &, bytes32_t const &key) = 0;
 
         virtual bytes32_t
@@ -87,8 +87,8 @@ namespace monad::vm
         virtual void set_transient_storage(
             Address const &, bytes32_t const &key, bytes32_t const &value) = 0;
 
-        virtual monad_page_storage_status update_page(
-            Address const &, bytes32_t const &key, monad_storage_status) = 0;
+        virtual monad_page_storage_status
+        update_page(Address const &, bytes32_t const &key, StorageStatus) = 0;
 
         /// Capture `std::current_exception()`.
         /// IMPORTANT: Make sure to call this from inside a `catch` block.

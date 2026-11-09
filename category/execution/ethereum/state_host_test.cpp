@@ -38,7 +38,7 @@
 #include <category/mpt/node_cache.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/mpt/util.hpp>
-#include <category/vm/evm/access_status.h>
+#include <category/vm/evm/access_status.hpp>
 #include <category/vm/vm.hpp>
 
 #include <monad/test/traits_test.hpp>
@@ -222,10 +222,10 @@ TYPED_TEST(TraitsTest, access_precompile)
 
     EXPECT_EQ(
         host.access_account(0x0000000000000000000000000000000000000001_address),
-        MONAD_ACCESS_WARM);
+        AccessStatus::Warm);
     EXPECT_EQ(
         host.access_account(0x5353535353535353535353535353535353535353_address),
-        MONAD_ACCESS_COLD);
+        AccessStatus::Cold);
 }
 
 TEST(StateHostTest, host_methods_rethrow_pruned_read)

@@ -16,10 +16,11 @@
 #pragma once
 
 #include <category/vm/evm/opcodes.hpp>
-#include <category/vm/evm/storage_status.h>
+#include <category/vm/evm/storage_status.hpp>
 #include <category/vm/evm/traits.hpp>
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 
 namespace monad::vm::runtime
@@ -51,9 +52,10 @@ namespace monad::vm::runtime
     }
 
     template <Traits traits>
-    constexpr StoreCost store_cost(monad_storage_status const status)
+    constexpr StoreCost store_cost(StorageStatus const status)
     {
-        return StorageCostTable<traits>::costs[status];
+        return StorageCostTable<traits>::costs[static_cast<std::size_t>(
+            status)];
     }
 
     template <>

@@ -15,7 +15,7 @@
 
 #include <category/core/likely.h>
 #include <category/core/runtime/uint256.hpp>
-#include <category/vm/evm/access_status.h>
+#include <category/vm/evm/access_status.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/message.hpp>
 #include <category/vm/evm/revision.h>
@@ -42,7 +42,7 @@ namespace monad::vm::runtime
         auto const address = address_from_uint256(*address_ptr);
 
         auto const access_status = ctx->host->access_account(address);
-        if (access_status == MONAD_ACCESS_COLD) {
+        if (access_status == AccessStatus::Cold) {
             // +100 for the warm account access cost.
             ctx->deduct_gas(traits::cold_account_cost() + 100);
         }

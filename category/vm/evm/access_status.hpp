@@ -15,25 +15,15 @@
 
 #pragma once
 
-#ifdef __cplusplus
-extern "C"
-{
-#endif
+#include <category/core/config.hpp>
 
-// EIP-1283/2200 storage status; indexes the gas/refund tables in store_cost.
-enum monad_storage_status
+MONAD_NAMESPACE_BEGIN
+
+// EIP-2929 access status.
+enum class AccessStatus
 {
-    MONAD_STORAGE_ASSIGNED = 0,
-    MONAD_STORAGE_ADDED = 1,
-    MONAD_STORAGE_DELETED = 2,
-    MONAD_STORAGE_MODIFIED = 3,
-    MONAD_STORAGE_DELETED_ADDED = 4,
-    MONAD_STORAGE_MODIFIED_DELETED = 5,
-    MONAD_STORAGE_DELETED_RESTORED = 6,
-    MONAD_STORAGE_ADDED_DELETED = 7,
-    MONAD_STORAGE_MODIFIED_RESTORED = 8
+    Cold = 0,
+    Warm = 1
 };
 
-#ifdef __cplusplus
-} // extern "C"
-#endif
+MONAD_NAMESPACE_END

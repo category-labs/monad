@@ -18,7 +18,7 @@
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
 #include <category/core/runtime/uint256.hpp>
-#include <category/vm/evm/access_status.h>
+#include <category/vm/evm/access_status.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/message.hpp>
 #include <category/vm/evm/result.hpp>
@@ -84,7 +84,7 @@ namespace monad::vm::runtime
         auto const dest_address = address_from_uint256(address);
 
         auto const access_status = ctx->host->access_account(dest_address);
-        if (access_status == MONAD_ACCESS_COLD) {
+        if (access_status == AccessStatus::Cold) {
             ctx->deduct_gas(traits::cold_account_cost());
         }
 
@@ -97,7 +97,7 @@ namespace monad::vm::runtime
                         ctx->host->resolve_delegation(dest_address)) {
                     auto const access_status =
                         ctx->host->access_account(*delegate_address);
-                    ctx->gas_remaining -= (access_status == MONAD_ACCESS_COLD
+                    ctx->gas_remaining -= (access_status == AccessStatus::Cold
                                                ? traits::cold_account_cost()
                                                : 0) +
                                           100;

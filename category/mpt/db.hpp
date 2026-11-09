@@ -42,6 +42,7 @@ struct OnDiskDbConfig;
 struct ReadOnlyOnDiskDbConfig;
 struct StateMachine;
 struct TraverseMachine;
+struct OrderedTraverseMachine;
 struct AsyncContext;
 
 namespace test
@@ -156,6 +157,12 @@ public:
     // Blocking traverse never wait on a fiber future.
     bool
     traverse_blocking(NodeCursor const &, TraverseMachine &, uint64_t block_id);
+
+    // Parallel traversal that visits nodes in key order. Read-only Db only:
+    // the traversal drives AsyncIO on the calling thread.
+    bool traverse_ordered(
+        NodeCursor const &, OrderedTraverseMachine &, uint64_t block_id,
+        size_t concurrency_limit = 4096);
 
     // Variant that lets the caller supply a `children_of(mask) -> range`
     // factory controlling the order in which a node's children are visited.

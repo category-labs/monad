@@ -99,6 +99,7 @@ Cargo caches each configuration separately under `OUT_DIR`.
 
 | Option | Default | Reference | Set via | Effect when ON |
 | --- | --- | --- | --- | --- |
+| `MONAD_ZKVM_FUSE_COMPARISON` | ON | ON | Environment | Pass comparison results to the following opcode in a register. OFF frees 28 bytes per handler copy and preserves the existing EQ/ISZERO + PUSH2 JUMPI and DUPn + LT/GT fusions. |
 | `MONAD_ZKVM_FUSE_DUP` | ON | ON | Environment | Pass the source of DUP2–DUP16 to the following opcode. OFF removes the 40-byte DUP prefix and restores seven handler copies per slot. |
 | `MONAD_ZKVM_FUSE_SWAP1` | ON | ON | Environment | Use SWAP1 follower prefixes and fused pairs. OFF frees 40 bytes per handler copy. PUSH1 followed by SWAP1 belongs to the PUSH1 family. |
 | `MONAD_ZKVM_FUSE_SWAPN` | ON | ON | Environment | Use follower prefixes for SWAP2–SWAP16. OFF restores ordinary swaps and frees 40 bytes per handler copy. DUP controls the copy count. |

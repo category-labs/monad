@@ -109,7 +109,12 @@ namespace monad::vm::interpreter
     inline constexpr int swapn_prefix_bytes = fuse_swapn ? 40 : 0;
     inline constexpr int copy_zero_start =
         fuse_dup ? 1368 : (fuse_swap1 ? 1760 : 1752);
-    inline constexpr int comparison_prefix_bytes = 28;
+    #if defined(MONAD_ZKVM_NO_COMPARISON_FUSION)
+    inline constexpr bool fuse_comparison = false;
+    #else
+    inline constexpr bool fuse_comparison = true;
+    #endif
+    inline constexpr int comparison_prefix_bytes = fuse_comparison ? 28 : 0;
     inline constexpr int copy_prefix_bytes =
         comparison_prefix_bytes + 64 + (fuse_swap1 ? 40 : 0) +
         (fuse_dup ? 40 : 0) + swapn_prefix_bytes;
@@ -1349,7 +1354,7 @@ namespace monad::vm::interpreter
         MONAD_VM_LAUNDER(next);
         stack_top = StackTop{next};
         bool const result = *(stack_top + 1) < *stack_top;
-        if constexpr (lag_dispatch<traits>) {
+        if constexpr (fuse_comparison && lag_dispatch<traits>) {
             MONAD_VM_COMPARISON_DISPATCH(instr_ptr[1], stack_top, result);
         }
         *stack_top = result;
@@ -1377,7 +1382,7 @@ namespace monad::vm::interpreter
         MONAD_VM_LAUNDER(next);
         stack_top = StackTop{next};
         bool const result = *(stack_top + 1) > *stack_top;
-        if constexpr (lag_dispatch<traits>) {
+        if constexpr (fuse_comparison && lag_dispatch<traits>) {
             MONAD_VM_COMPARISON_DISPATCH(instr_ptr[1], stack_top, result);
         }
         *stack_top = result;
@@ -1405,7 +1410,7 @@ namespace monad::vm::interpreter
         MONAD_VM_LAUNDER(next);
         stack_top = StackTop{next};
         bool const result = slt(*(stack_top + 1), *stack_top);
-        if constexpr (lag_dispatch<traits>) {
+        if constexpr (fuse_comparison && lag_dispatch<traits>) {
             MONAD_VM_COMPARISON_DISPATCH(instr_ptr[1], stack_top, result);
         }
         *stack_top = result;
@@ -1433,7 +1438,7 @@ namespace monad::vm::interpreter
         MONAD_VM_LAUNDER(next);
         stack_top = StackTop{next};
         bool const result = slt(*stack_top, *(stack_top + 1));
-        if constexpr (lag_dispatch<traits>) {
+        if constexpr (fuse_comparison && lag_dispatch<traits>) {
             MONAD_VM_COMPARISON_DISPATCH(instr_ptr[1], stack_top, result);
         }
         *stack_top = result;
@@ -1488,7 +1493,7 @@ namespace monad::vm::interpreter
 #endif
         MONAD_VM_CHECK(EQ);
 #if defined(MONAD_ZKVM_ZISK)
-        if constexpr (lag_dispatch<traits>) {
+        if constexpr (fuse_comparison && lag_dispatch<traits>) {
             MONAD_VM_COMPARISON_DISPATCH(
                 next_opcode, stack_top - 1, *stack_top == stack_top[-1]);
         }
@@ -1535,7 +1540,7 @@ namespace monad::vm::interpreter
 #endif
         MONAD_VM_CHECK(ISZERO);
 #if defined(MONAD_ZKVM_ZISK)
-        if constexpr (lag_dispatch<traits>) {
+        if constexpr (fuse_comparison && lag_dispatch<traits>) {
             MONAD_VM_COMPARISON_DISPATCH(next_opcode, stack_top, !*stack_top);
         }
 #endif
@@ -4620,7 +4625,11 @@ namespace monad::vm::interpreter
             else if constexpr (OP == LT || OP == GT) {
                 bool const result = OP == LT ? *dup_source < *stack_top
                                              : *dup_source > *stack_top;
-                MONAD_VM_COMPARISON_DISPATCH(instr_ptr[1], stack_top, result);
+                if constexpr (fuse_comparison) {
+                    MONAD_VM_COMPARISON_DISPATCH(
+                        instr_ptr[1], stack_top, result);
+                }
+                *stack_top = result;
             }
             else {
                 static_assert(OP == AND);

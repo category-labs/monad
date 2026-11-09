@@ -66,7 +66,8 @@ namespace monad::vm::test
         evmc::uint256be
         get_balance(evmc::address const &addr) const noexcept override
         {
-            return to_evmc(host_.get_balance(from_evmc(addr)));
+            return to_evmc(
+                store_be_as<bytes32_t>(host_.get_balance(from_evmc(addr))));
         }
 
         size_t get_code_size(evmc::address const &addr) const noexcept override

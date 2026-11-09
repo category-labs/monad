@@ -73,7 +73,7 @@ public:
     virtual monad_storage_status set_storage(
         Address const &, bytes32_t const &key, bytes32_t const &value) override;
 
-    virtual bytes32_t get_balance(Address const &) const override;
+    virtual uint256_t get_balance(Address const &) const override;
 
     virtual size_t get_code_size(Address const &) const override;
 

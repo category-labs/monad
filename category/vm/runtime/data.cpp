@@ -44,8 +44,7 @@ namespace monad::vm::runtime
             ctx->deduct_gas(traits::cold_account_cost());
         }
 
-        auto const balance = ctx->host->get_balance(address);
-        *result_ptr = load_be<uint256_t>(balance);
+        *result_ptr = ctx->host->get_balance(address);
     }
 
     EXPLICIT_TRAITS(balance);

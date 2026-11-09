@@ -17,6 +17,7 @@
 
 #include <category/core/address.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/int.hpp>
 #include <category/vm/evm/access_status.h>
 #include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/message.hpp>
@@ -52,7 +53,7 @@ namespace monad::vm
         virtual monad_storage_status set_storage(
             Address const &, bytes32_t const &key, bytes32_t const &value) = 0;
 
-        virtual bytes32_t get_balance(Address const &) const = 0;
+        virtual uint256_t get_balance(Address const &) const = 0;
 
         virtual size_t get_code_size(Address const &) const = 0;
 

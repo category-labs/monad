@@ -15,29 +15,17 @@
 
 #pragma once
 
-#include <evmc/evmc.h>
-
 #ifdef __cplusplus
 extern "C"
 {
 #endif
 
-// Monad's in-tree EIP-2929 access status enum. This is a drop-in replacement
-// for evmc's `evmc_access_status`: the enumerators mirror `evmc_access_status`
-// 1:1 (same underlying integer values), which keeps the cold/warm comparisons
-// numerically unchanged. The 1:1 correspondence is enforced by static_assert in
-// access_status.cpp.
-//
-// The enum itself carries no evmc dependency. The conversion below is used
-// only by the test-only EvmcHostAdapter.
+// EIP-2929 access status.
 enum monad_access_status
 {
     MONAD_ACCESS_COLD = 0,
     MONAD_ACCESS_WARM = 1
 };
-
-// Convert monad_access_status to evmc's evmc_access_status.
-enum evmc_access_status to_evmc_access_status(enum monad_access_status status);
 
 #ifdef __cplusplus
 } // extern "C"

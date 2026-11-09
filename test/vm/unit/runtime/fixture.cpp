@@ -57,8 +57,6 @@ namespace monad::vm::test
                 .blob_base_fee = store_be_as<bytes32_t>(uint256_t{98988}),
                 .blob_hashes = blob_hashes_.data(),
                 .blob_hashes_count = blob_hashes_.size(),
-                .initcodes = nullptr,
-                .initcodes_count = 0,
                 .block_round = 0,
             };
 

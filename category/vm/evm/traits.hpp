@@ -21,7 +21,6 @@
 #include <category/vm/evm/revision.h>
 
 #include <cstddef>
-#include <evmc/evmc.h>
 
 #include <concepts>
 #include <cstdint>
@@ -39,7 +38,7 @@ namespace monad
         // infrastructure — explicit instantiations, switch cases, opcode and
         // storage tables — is in place) but are not yet wired up behaviorally.
         // Such forks are excluded from the typed-revision test matrices and
-        // must not be run through evmone (see to_evmc_revision()).
+        // must not be run through the reference VM.
         inline constexpr monad_eth_revision LATEST_SUPPORTED_EVM_FORK =
             MONAD_ETH_AMSTERDAM;
 

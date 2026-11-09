@@ -23,8 +23,6 @@
 
 namespace monad::vm
 {
-    // Mirrors evmc_tx_context field-for-field, including the category-labs
-    // fork's block_round; layout equality is asserted in tx_context.cpp.
     struct TxContext
     {
         bytes32_t tx_gas_price;
@@ -39,9 +37,6 @@ namespace monad::vm
         bytes32_t blob_base_fee;
         bytes32_t const *blob_hashes;
         size_t blob_hashes_count;
-        // EOF TXCREATE initcodes: never populated; kept for evmc layout parity.
-        void const *initcodes;
-        size_t initcodes_count;
         uint64_t block_round;
     };
 }

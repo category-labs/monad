@@ -15,6 +15,8 @@
 
 #include <category/vm/evm/status_code.h>
 
+#include <test/vm/utils/evmc_bridge.hpp>
+
 #include <evmc/evmc.h>
 
 #include <gtest/gtest.h>
@@ -39,7 +41,8 @@ TEST(StatusCode, MirrorsEvmcValues)
 {
     for (auto const evmc_code : evmc_status_codes) {
         EXPECT_EQ(
-            std::to_underlying(from_evmc_status_code(evmc_code)),
+            std::to_underlying(
+                monad::vm::test::from_evmc_status_code(evmc_code)),
             std::to_underlying(evmc_code));
     }
 }
@@ -48,8 +51,8 @@ TEST(StatusCode, RoundTripsThroughEvmc)
 {
     for (auto const code : monad_status_codes) {
         EXPECT_EQ(
-            std::to_underlying(
-                from_evmc_status_code(to_evmc_status_code(code))),
+            std::to_underlying(monad::vm::test::from_evmc_status_code(
+                monad::vm::test::to_evmc_status_code(code))),
             std::to_underlying(code));
     }
 }

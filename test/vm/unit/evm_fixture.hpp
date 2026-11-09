@@ -162,7 +162,7 @@ namespace monad::vm::test
                     host.get_interface(),
                     host.to_context(),
                     to_evmc_revision(TraitsTest<T>::Trait::evm_rev()),
-                    std::bit_cast<evmc_message>(msg_),
+                    to_evmc(msg_),
                     code.data(),
                     code.size()));
             }

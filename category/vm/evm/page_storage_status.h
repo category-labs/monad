@@ -15,8 +15,6 @@
 
 #pragma once
 
-#include <evmc/evmc.h>
-
 #include <stdbool.h>
 
 #ifdef __cplusplus
@@ -24,17 +22,12 @@ extern "C"
 {
 #endif
 
-// In-tree mirror of the fork-only `evmc_page_storage_status` (MIP-8 SSTORE page
-// accounting). Converted to the evmc struct only in the test-only
-// EvmcHostAdapter.
+// MIP-8 SSTORE page accounting.
 struct monad_page_storage_status
 {
     bool first_page_write;
     bool grew_state;
 };
-
-struct evmc_page_storage_status
-to_evmc_page_storage_status(struct monad_page_storage_status status);
 
 #ifdef __cplusplus
 } // extern "C"

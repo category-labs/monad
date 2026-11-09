@@ -19,6 +19,8 @@
 #include <category/vm/evm/result.hpp>
 #include <category/vm/evm/status_code.h>
 
+#include <test/vm/utils/evmc_bridge.hpp>
+
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 
@@ -54,7 +56,7 @@ namespace monad::vm::test
             result.gas_refund,
             result.output_data,
             result.output_size};
-        out.create_address = result.create_address;
+        out.create_address = from_evmc(result.create_address);
         return out;
     }
 }

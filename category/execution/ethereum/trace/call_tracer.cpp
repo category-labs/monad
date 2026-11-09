@@ -251,8 +251,6 @@ void CallTracer::on_enter(vm::Message const &msg)
                     return CallType::CREATE;
                 case vm::CallKind::Create2:
                     return CallType::CREATE2;
-                case vm::CallKind::EofCreate:
-                    MONAD_ABORT(); // unsupported
                 }
                 MONAD_ABORT(); // unreachable
             }(),

@@ -15,8 +15,6 @@
 
 #pragma once
 
-#include <evmc/evmc.h>
-
 #ifdef __cplusplus
 extern "C"
 {
@@ -39,19 +37,13 @@ enum monad_status_code : int
     MONAD_STATUS_PRECOMPILE_FAILURE = 12,
     MONAD_STATUS_CONTRACT_VALIDATION_FAILURE = 13,
     MONAD_STATUS_ARGUMENT_OUT_OF_RANGE = 14,
-    MONAD_STATUS_WASM_UNREACHABLE_INSTRUCTION = 15,
-    MONAD_STATUS_WASM_TRAP = 16,
     MONAD_STATUS_INSUFFICIENT_BALANCE = 17,
-    // Fork-only: no upstream evmc counterpart.
     MONAD_STATUS_RESERVE_BALANCE_VIOLATION = 18,
 
     MONAD_STATUS_INTERNAL_ERROR = -1,
     MONAD_STATUS_REJECTED = -2,
     MONAD_STATUS_OUT_OF_MEMORY = -3
 };
-
-enum evmc_status_code to_evmc_status_code(enum monad_status_code code);
-enum monad_status_code from_evmc_status_code(enum evmc_status_code code);
 
 #ifdef __cplusplus
 } // extern "C"

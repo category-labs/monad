@@ -1448,6 +1448,7 @@ dependencies = [
  "hex",
  "monad-build",
  "monad-cxx",
+ "monad-exec-events",
  "serde",
  "tracing",
 ]

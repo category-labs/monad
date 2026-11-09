@@ -17,6 +17,7 @@ use alloy_consensus::{Header, TxEnvelope};
 use alloy_primitives::Address;
 use alloy_rlp::Encodable;
 use futures::channel::oneshot::channel;
+use monad_exec_events::ExecEphemeralEventRing;
 use tracing::warn;
 
 use super::{MessageError, MonadExecutor, MonadExecutorResult, ETH_CALL_SUCCESS};
@@ -89,6 +90,7 @@ impl MonadExecutor {
         max_calls: usize,
         max_output_size: usize,
         emit_native_transfer_logs: bool,
+        event_ring: Option<&ExecEphemeralEventRing>,
         overrides: &[(&BlockOverride, &StateOverrideSet)],
     ) -> Result<EthSimulateSuccess, EthSimulateError> {
         if (calls.len() != overrides.len()) || (calls.len() != senders.len()) {
@@ -214,31 +216,50 @@ impl MonadExecutor {
             block_override_vec_ctx: block_overrides.as_mut_ptr() as *mut std::ffi::c_void,
         });
 
-        unsafe {
-            ffi::monad_executor_eth_simulate_submit(
-                self.eth_call_executor,
-                chain_config,
-                rlp_encoded_senders.as_ptr(),
-                rlp_encoded_senders.len(),
-                rlp_encoded_txns.as_ptr(),
-                rlp_encoded_txns.len(),
-                block_number,
-                rlp_encoded_block_header.as_ptr(),
-                rlp_encoded_block_header.len(),
-                rlp_encoded_block_id.as_ptr(),
-                rlp_encoded_block_id.len(),
-                rlp_encoded_grandparent_id.as_ptr(),
-                rlp_encoded_grandparent_id.len(),
-                gas_limit,
-                max_calls,
-                max_output_size,
-                state_overrides.as_mut_ptr(),
-                block_overrides.as_mut_ptr(),
-                emit_native_transfer_logs,
-                std::ptr::null(),
-                Some(eth_simulate_v1_submit_callback),
-                Box::into_raw(sender_ctx) as *mut std::ffi::c_void,
-            );
+        let submit = |event_ring: *mut ffi::monad_event_ring| {
+            let event_record_options = ffi::monad_executor_event_record_options {
+                exec_event_ring: event_ring,
+                emit_mock_consensus_events: false,
+            };
+
+            unsafe {
+                ffi::monad_executor_eth_simulate_submit(
+                    self.eth_call_executor,
+                    chain_config,
+                    rlp_encoded_senders.as_ptr(),
+                    rlp_encoded_senders.len(),
+                    rlp_encoded_txns.as_ptr(),
+                    rlp_encoded_txns.len(),
+                    block_number,
+                    rlp_encoded_block_header.as_ptr(),
+                    rlp_encoded_block_header.len(),
+                    rlp_encoded_block_id.as_ptr(),
+                    rlp_encoded_block_id.len(),
+                    rlp_encoded_grandparent_id.as_ptr(),
+                    rlp_encoded_grandparent_id.len(),
+                    gas_limit,
+                    max_calls,
+                    max_output_size,
+                    state_overrides.as_mut_ptr(),
+                    block_overrides.as_mut_ptr(),
+                    emit_native_transfer_logs,
+                    if event_ring.is_null() {
+                        std::ptr::null()
+                    } else {
+                        &event_record_options
+                    },
+                    Some(eth_simulate_v1_submit_callback),
+                    Box::into_raw(sender_ctx) as *mut std::ffi::c_void,
+                );
+            }
+        };
+
+        match event_ring {
+            Some(event_ring) => unsafe {
+                event_ring
+                    .with_raw_ptr(|event_ring| submit(event_ring as *mut ffi::monad_event_ring));
+            },
+            None => submit(std::ptr::null_mut()),
         }
 
         std::mem::forget(state_overrides);

@@ -16,9 +16,10 @@
 use std::marker::PhantomData;
 
 pub(crate) use self::raw::RawEventRing;
-pub use self::snapshot::SnapshotEventRing;
+pub use self::{ephemeral::EphemeralEventRing, snapshot::SnapshotEventRing};
 use crate::{EventDecoder, EventReader, EventRingPath, RawEventReader};
 
+mod ephemeral;
 mod raw;
 mod snapshot;
 

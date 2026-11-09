@@ -86,7 +86,7 @@
 //! [`CommitStateBlockBuilder`] which produces a block along with its current commit state every time
 //! the block's commit state changes. See [`CommitStateBlockBuilder`] for more details.
 
-use monad_event_ring::{EventRing, SnapshotEventRing};
+use monad_event_ring::{EphemeralEventRing, EventRing, SnapshotEventRing};
 
 pub use self::{block::*, block_builder::*, events::*, reader::*};
 
@@ -98,6 +98,9 @@ mod reader;
 
 /// A type alias for an event ring that produces monad execution events.
 pub type ExecEventRing = EventRing<ExecEventDecoder>;
+
+/// A type alias for an ephemeral event ring that produces monad execution events.
+pub type ExecEphemeralEventRing = EphemeralEventRing<ExecEventDecoder>;
 
 /// A type alias for a snapshot event ring that produces monad execution events.
 pub type ExecSnapshotEventRing = SnapshotEventRing<ExecEventDecoder>;

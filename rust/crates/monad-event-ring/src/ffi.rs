@@ -18,7 +18,7 @@
 
 use std::{
     ffi::{CStr, CString},
-    os::fd::{AsRawFd, FromRawFd},
+    os::fd::{AsRawFd, FromRawFd, OwnedFd},
     path::{Path, PathBuf},
 };
 
@@ -28,8 +28,8 @@ pub(crate) use self::bindings::{
 };
 pub use self::bindings::{
     monad_event_content_type, monad_event_descriptor, monad_event_iterator,
-    monad_event_record_error, monad_event_ring, MONAD_EVENT_CONTENT_TYPE_EXEC,
-    MONAD_EVENT_CONTENT_TYPE_TEST,
+    monad_event_record_error, monad_event_ring, monad_event_ring_simple_config,
+    MONAD_EVENT_CONTENT_TYPE_EXEC, MONAD_EVENT_CONTENT_TYPE_TEST,
 };
 
 #[allow(dead_code, missing_docs, non_camel_case_types, non_upper_case_globals)]
@@ -57,6 +57,33 @@ fn get_last_ring_library_error(r: libc::c_int) -> Result<(), String> {
 #[inline]
 fn error_name_to_cstring(str_ref: impl AsRef<str>) -> Result<CString, String> {
     CString::new(str_ref.as_ref()).map_err(|nul_err| nul_err.to_string())
+}
+
+pub(crate) fn monad_event_ring_create_ephemeral(
+    config: &bindings::monad_event_ring_simple_config,
+    error_name: &str,
+) -> Result<(monad_event_ring, OwnedFd), String> {
+    let mut c_event_ring: monad_event_ring = unsafe { std::mem::zeroed() };
+    let mut ring_fd = -1;
+
+    let error_name_cstring = error_name_to_cstring(error_name)?;
+
+    let r = unsafe {
+        self::bindings::monad_event_ring_create_ephemeral(
+            config,
+            error_name_cstring.as_ptr(),
+            0,
+            0,
+            &mut ring_fd,
+            &mut c_event_ring,
+        )
+    };
+
+    get_last_ring_library_error(r)?;
+
+    let ring_fd = unsafe { OwnedFd::from_raw_fd(ring_fd) };
+
+    Ok((c_event_ring, ring_fd))
 }
 
 pub(crate) fn monad_event_ring_mmap(

@@ -79,8 +79,6 @@
 
 #include <boost/fiber/future/promise.hpp>
 
-#include <evmc/evmc.h>
-
 #include <gtest/gtest.h>
 
 #include <nlohmann/json.hpp>
@@ -294,7 +292,7 @@ namespace
             gas_specified);
         f.get();
 
-        EXPECT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+        EXPECT_EQ(ctx.result->status_code, MONAD_STATUS_SUCCESS);
 
         byte_string const rlp_call_frames(
             ctx.result->encoded_trace, ctx.result->encoded_trace_len);
@@ -399,7 +397,7 @@ TEST_F(EthCallFixture, simple_success_call)
         true);
     f.get();
 
-    EXPECT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    EXPECT_EQ(ctx.result->status_code, MONAD_STATUS_SUCCESS);
     EXPECT_EQ(ctx.result->encoded_trace_len, 0);
     EXPECT_EQ(ctx.result->gas_refund, 0);
     EXPECT_EQ(ctx.result->gas_used, 21000);
@@ -459,7 +457,7 @@ TEST_F(EthCallFixture, insufficient_balance)
         true);
     f.get();
 
-    EXPECT_TRUE(ctx.result->status_code == EVMC_REJECTED);
+    EXPECT_TRUE(ctx.result->status_code == MONAD_STATUS_REJECTED);
     EXPECT_TRUE(std::strcmp(ctx.result->message, "insufficient balance") == 0);
     EXPECT_TRUE(ctx.result->encoded_trace_len == 0);
     EXPECT_EQ(ctx.result->gas_refund, 0);
@@ -518,7 +516,7 @@ TEST_F(EthCallFixture, on_proposed_block)
         true);
     f.get();
 
-    EXPECT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    EXPECT_EQ(ctx.result->status_code, MONAD_STATUS_SUCCESS);
     EXPECT_EQ(ctx.result->encoded_trace_len, 0);
     EXPECT_EQ(ctx.result->gas_refund, 0);
     EXPECT_EQ(ctx.result->gas_used, 21000);
@@ -609,7 +607,7 @@ TEST_F(EthCallFixture, eth_call_slot_number)
         true);
     f.get();
 
-    ASSERT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
+    ASSERT_TRUE(ctx.result->status_code == MONAD_STATUS_SUCCESS);
     ASSERT_EQ(ctx.result->output_data_len, sizeof(bytes32_t));
 
     bytes32_t result;
@@ -690,7 +688,7 @@ TEST_F(EthCallFixture, blockhash_before_fork)
         true);
     f.get();
 
-    EXPECT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    EXPECT_EQ(ctx.result->status_code, MONAD_STATUS_SUCCESS);
     ASSERT_EQ(ctx.result->output_data_len, output_buffer_size);
 
     // BLOCKHASH outputs are packed in a buffer, 32 bytes each. Iterate over and
@@ -768,7 +766,7 @@ TEST_F(EthCallFixture, failed_to_read)
         true);
     f.get();
 
-    EXPECT_EQ(ctx.result->status_code, EVMC_INTERNAL_ERROR);
+    EXPECT_EQ(ctx.result->status_code, MONAD_STATUS_INTERNAL_ERROR);
     EXPECT_STREQ(ctx.result->message, "blockhash: error querying DB");
     EXPECT_EQ(ctx.result->encoded_trace_len, 0);
     EXPECT_EQ(ctx.result->gas_refund, 0);
@@ -832,7 +830,7 @@ TEST_F(EthCallFixture, contract_deployment_success)
         deployed_code_bytes.data(),
         deployed_code_bytes.data() + deployed_code_bytes.size()};
 
-    EXPECT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
+    EXPECT_TRUE(ctx.result->status_code == MONAD_STATUS_SUCCESS);
 
     std::vector<uint8_t> const returned_code_vec(
         ctx.result->output_data,
@@ -909,7 +907,7 @@ TEST_F(EthCallFixture, assertion_exception_depth1)
         true);
     f.get();
 
-    EXPECT_EQ(ctx.result->status_code, EVMC_INTERNAL_ERROR);
+    EXPECT_EQ(ctx.result->status_code, MONAD_STATUS_INTERNAL_ERROR);
     EXPECT_TRUE(std::strcmp(ctx.result->message, "balance overflow") == 0);
     EXPECT_EQ(ctx.result->output_data_len, 0);
     EXPECT_EQ(ctx.result->encoded_trace_len, 0);
@@ -1006,7 +1004,7 @@ TEST_F(EthCallFixture, assertion_exception_depth2)
         true);
     f.get();
 
-    EXPECT_EQ(ctx.result->status_code, EVMC_INTERNAL_ERROR);
+    EXPECT_EQ(ctx.result->status_code, MONAD_STATUS_INTERNAL_ERROR);
     EXPECT_TRUE(std::strcmp(ctx.result->message, "balance overflow") == 0);
     EXPECT_EQ(ctx.result->output_data_len, 0);
     EXPECT_EQ(ctx.result->encoded_trace_len, 0);
@@ -1021,8 +1019,8 @@ TEST_F(EthCallFixture, assertion_exception_depth2)
 // account's code directly, bypassing the max-code-size checks that normally
 // run during contract creation. Overriding an account's code with something
 // larger than Intercode's representable size limit must fail gracefully
-// (EVMC_INTERNAL_ERROR) rather than aborting the whole executor process. See
-// Intercode::pad's MONAD_ASSERT_THROW.
+// (MONAD_STATUS_INTERNAL_ERROR) rather than aborting the whole executor
+// process. See Intercode::pad's MONAD_ASSERT_THROW.
 TEST_F(EthCallFixture, state_override_oversized_code_fails_gracefully)
 {
     auto const from = ADDR_A;
@@ -1092,7 +1090,7 @@ TEST_F(EthCallFixture, state_override_oversized_code_fails_gracefully)
         true);
     f.get();
 
-    EXPECT_EQ(ctx.result->status_code, EVMC_INTERNAL_ERROR);
+    EXPECT_EQ(ctx.result->status_code, MONAD_STATUS_INTERNAL_ERROR);
     EXPECT_STREQ(
         ctx.result->message, "Code size exceeds maximum representable value");
     EXPECT_EQ(ctx.result->output_data_len, 0);
@@ -1157,7 +1155,7 @@ TEST_F(EthCallFixture, loop_out_of_gas)
         true);
     f.get();
 
-    EXPECT_TRUE(ctx.result->status_code == EVMC_OUT_OF_GAS);
+    EXPECT_TRUE(ctx.result->status_code == MONAD_STATUS_OUT_OF_GAS);
     EXPECT_EQ(ctx.result->output_data_len, 0);
     EXPECT_EQ(ctx.result->encoded_trace_len, 0);
     EXPECT_EQ(ctx.result->gas_refund, 0);
@@ -1279,7 +1277,7 @@ TEST_F(EthCallFixture, expensive_read_out_of_gas)
         true);
     f.get();
 
-    EXPECT_TRUE(ctx.result->status_code == EVMC_OUT_OF_GAS);
+    EXPECT_TRUE(ctx.result->status_code == MONAD_STATUS_OUT_OF_GAS);
     EXPECT_EQ(ctx.result->output_data_len, 0);
     EXPECT_EQ(ctx.result->encoded_trace_len, 0);
     EXPECT_EQ(ctx.result->gas_refund, 0);
@@ -1344,7 +1342,7 @@ TEST_F(EthCallFixture, from_contract_account)
         true);
     f.get();
 
-    EXPECT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
+    EXPECT_TRUE(ctx.result->status_code == MONAD_STATUS_SUCCESS);
     EXPECT_EQ(ctx.result->output_data_len, 0);
     EXPECT_EQ(ctx.result->encoded_trace_len, 0);
     EXPECT_EQ(ctx.result->gas_refund, 0);
@@ -1431,7 +1429,7 @@ TEST_F(EthCallFixture, concurrent_eth_calls)
          std::views::zip(ctxs, futures, state_overrides)) {
         f.get();
 
-        EXPECT_TRUE(ctx->result->status_code == EVMC_SUCCESS);
+        EXPECT_TRUE(ctx->result->status_code == MONAD_STATUS_SUCCESS);
         EXPECT_EQ(ctx->result->output_data_len, 0);
         EXPECT_EQ(ctx->result->encoded_trace_len, 0);
         EXPECT_EQ(ctx->result->gas_refund, 0);
@@ -1571,7 +1569,7 @@ TEST_F(EthCallFixture, call_trace_with_logs)
         true);
     f.get();
 
-    EXPECT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
+    EXPECT_TRUE(ctx.result->status_code == MONAD_STATUS_SUCCESS);
 
     byte_string const rlp_call_frames(
         ctx.result->encoded_trace, ctx.result->encoded_trace_len);
@@ -1755,7 +1753,7 @@ TEST_F(EthCallFixture, static_precompile_OOG_with_call_trace)
         true);
     f.get();
 
-    EXPECT_TRUE(ctx.result->status_code == EVMC_OUT_OF_GAS);
+    EXPECT_TRUE(ctx.result->status_code == MONAD_STATUS_OUT_OF_GAS);
 
     byte_string const rlp_call_frames(
         ctx.result->encoded_trace, ctx.result->encoded_trace_len);
@@ -1880,7 +1878,7 @@ TEST_F(EthCallFixture, point_evaluation_precompile_with_call_trace)
         true);
     f.get();
 
-    ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS)
+    ASSERT_EQ(ctx.result->status_code, MONAD_STATUS_SUCCESS)
         << (ctx.result->message ? ctx.result->message : "");
     EXPECT_EQ(
         byte_string(ctx.result->output_data, ctx.result->output_data_len),
@@ -1974,7 +1972,7 @@ TEST_F(EthCallFixture, transfer_success_with_state_trace)
             true);
         f.get();
 
-        ASSERT_EQ(prestate_ctx.result->status_code, EVMC_SUCCESS);
+        ASSERT_EQ(prestate_ctx.result->status_code, MONAD_STATUS_SUCCESS);
 
         std::vector<uint8_t> const encoded_pre_state_trace(
             prestate_ctx.result->encoded_trace,
@@ -2021,7 +2019,7 @@ TEST_F(EthCallFixture, transfer_success_with_state_trace)
             true);
         f.get();
 
-        ASSERT_EQ(statediff_ctx.result->status_code, EVMC_SUCCESS);
+        ASSERT_EQ(statediff_ctx.result->status_code, MONAD_STATUS_SUCCESS);
 
         std::vector<uint8_t> const encoded_state_delta_trace(
             statediff_ctx.result->encoded_trace,
@@ -2113,7 +2111,7 @@ TEST_F(EthCallFixture, contract_deployment_success_with_state_trace)
             true);
         f.get();
 
-        ASSERT_TRUE(prestate_ctx.result->status_code == EVMC_SUCCESS);
+        ASSERT_TRUE(prestate_ctx.result->status_code == MONAD_STATUS_SUCCESS);
 
         std::vector<uint8_t> const encoded_pre_state_trace(
             prestate_ctx.result->encoded_trace,
@@ -2156,7 +2154,7 @@ TEST_F(EthCallFixture, contract_deployment_success_with_state_trace)
             true);
         f.get();
 
-        ASSERT_TRUE(statediff_ctx.result->status_code == EVMC_SUCCESS);
+        ASSERT_TRUE(statediff_ctx.result->status_code == MONAD_STATUS_SUCCESS);
 
         std::vector<uint8_t> const encoded_state_deltas_trace(
             statediff_ctx.result->encoded_trace,
@@ -2302,7 +2300,7 @@ TEST_F(EthCallFixture, trace_block_with_prestate)
             PRESTATE_TRACER);
         f.get();
 
-        ASSERT_TRUE(prestate_ctx.result->status_code == EVMC_SUCCESS);
+        ASSERT_TRUE(prestate_ctx.result->status_code == MONAD_STATUS_SUCCESS);
 
         std::vector<uint8_t> const encoded_pre_state_trace(
             prestate_ctx.result->encoded_trace,
@@ -2363,7 +2361,7 @@ TEST_F(EthCallFixture, trace_block_with_prestate)
             STATEDIFF_TRACER);
         f.get();
 
-        ASSERT_TRUE(statediff_ctx.result->status_code == EVMC_SUCCESS);
+        ASSERT_TRUE(statediff_ctx.result->status_code == MONAD_STATUS_SUCCESS);
 
         std::vector<uint8_t> const encoded_state_diff_trace(
             statediff_ctx.result->encoded_trace,
@@ -2486,7 +2484,7 @@ TEST_F(EthCallFixture, trace_block_slot_number)
     uint64_t const round = 1234;
     BlockHeader const header = slotnum_header(256, round);
     std::vector<Receipt> const receipts = {
-        Receipt{.status = EVMC_SUCCESS, .gas_used = 20000u}};
+        Receipt{.status = MONAD_STATUS_SUCCESS, .gas_used = 20000u}};
     std::vector<std::vector<CallFrame>> const call_frames = {{}};
     std::vector<Transaction> const transactions = {tx};
     std::vector<Address> const senders = {*sender};
@@ -2529,7 +2527,7 @@ TEST_F(EthCallFixture, trace_block_slot_number)
         STATEDIFF_TRACER);
     f.get();
 
-    ASSERT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
+    ASSERT_TRUE(ctx.result->status_code == MONAD_STATUS_SUCCESS);
 
     std::vector<uint8_t> const encoded_trace(
         ctx.result->encoded_trace,
@@ -2665,7 +2663,7 @@ TEST_F(EthCallFixture, trace_transaction_with_prestate)
             PRESTATE_TRACER);
         f_1.get();
 
-        ASSERT_TRUE(prestate_ctx_1.result->status_code == EVMC_SUCCESS);
+        ASSERT_TRUE(prestate_ctx_1.result->status_code == MONAD_STATUS_SUCCESS);
 
         std::vector<uint8_t> const encoded_pre_state_trace_1(
             prestate_ctx_1.result->encoded_trace,
@@ -2706,7 +2704,7 @@ TEST_F(EthCallFixture, trace_transaction_with_prestate)
             PRESTATE_TRACER);
         f_2.get();
 
-        ASSERT_TRUE(prestate_ctx_2.result->status_code == EVMC_SUCCESS);
+        ASSERT_TRUE(prestate_ctx_2.result->status_code == MONAD_STATUS_SUCCESS);
 
         std::vector<uint8_t> const encoded_pre_state_trace_2(
             prestate_ctx_2.result->encoded_trace,
@@ -2750,7 +2748,8 @@ TEST_F(EthCallFixture, trace_transaction_with_prestate)
             STATEDIFF_TRACER);
         f_1.get();
 
-        ASSERT_TRUE(statediff_ctx_1.result->status_code == EVMC_SUCCESS);
+        ASSERT_TRUE(
+            statediff_ctx_1.result->status_code == MONAD_STATUS_SUCCESS);
 
         std::vector<uint8_t> const encoded_state_diff_trace_1(
             statediff_ctx_1.result->encoded_trace,
@@ -2804,7 +2803,8 @@ TEST_F(EthCallFixture, trace_transaction_with_prestate)
             STATEDIFF_TRACER);
         f_2.get();
 
-        ASSERT_TRUE(statediff_ctx_2.result->status_code == EVMC_SUCCESS);
+        ASSERT_TRUE(
+            statediff_ctx_2.result->status_code == MONAD_STATUS_SUCCESS);
 
         std::vector<uint8_t> const encoded_state_diff_trace_2(
             statediff_ctx_2.result->encoded_trace,
@@ -3048,10 +3048,10 @@ TEST_F(EthCallFixture, monad_executor_run_reserve_balance)
         f_1.get();
 
         // TODO(dhil): this should really be EMVC_REVERT, but currently
-        // `monad_executor` returns `EVMC_SUCCESS` if the `Result`-object
-        // returned by `execute_transaction` is constructed using the success
-        // constructor.
-        EXPECT_EQ(statediff_ctx_1.result->status_code, EVMC_SUCCESS)
+        // `monad_executor` returns `MONAD_STATUS_SUCCESS` if the
+        // `Result`-object returned by `execute_transaction` is constructed
+        // using the success constructor.
+        EXPECT_EQ(statediff_ctx_1.result->status_code, MONAD_STATUS_SUCCESS)
             << statediff_ctx_1.result->message;
 
         std::vector<uint8_t> const encoded_state_diff_trace_1(
@@ -3172,7 +3172,8 @@ TEST_F(EthCallFixture, prestate_trace_near_genesis)
             PRESTATE_TRACER);
         f.get();
 
-        ASSERT_TRUE(genesis_prestate_ctx.result->status_code == EVMC_REJECTED);
+        ASSERT_TRUE(
+            genesis_prestate_ctx.result->status_code == MONAD_STATUS_REJECTED);
 
         char const *const expected_message = "cannot trace genesis block";
 
@@ -3222,7 +3223,8 @@ TEST_F(EthCallFixture, prestate_trace_near_genesis)
             PRESTATE_TRACER);
         f.get();
 
-        ASSERT_TRUE(block1_prestate_ctx.result->status_code == EVMC_SUCCESS);
+        ASSERT_TRUE(
+            block1_prestate_ctx.result->status_code == MONAD_STATUS_SUCCESS);
 
         std::vector<uint8_t> const encoded_pre_state_trace(
             block1_prestate_ctx.result->encoded_trace,
@@ -3285,7 +3287,8 @@ TEST_F(EthCallFixture, prestate_trace_near_genesis)
             PRESTATE_TRACER);
         f.get();
 
-        ASSERT_TRUE(block2_prestate_ctx.result->status_code == EVMC_SUCCESS);
+        ASSERT_TRUE(
+            block2_prestate_ctx.result->status_code == MONAD_STATUS_SUCCESS);
 
         std::vector<uint8_t> const encoded_pre_state_trace(
             block2_prestate_ctx.result->encoded_trace,
@@ -3390,7 +3393,7 @@ TEST_F(EthCallFixture, access_list_trace)
             true);
         f.get();
 
-        ASSERT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
+        ASSERT_TRUE(ctx.result->status_code == MONAD_STATUS_SUCCESS);
 
         std::vector<uint8_t> const encoded_trace(
             ctx.result->encoded_trace,
@@ -3495,7 +3498,7 @@ TEST_F(EthCallFixture, access_list_trace_reverted_call)
             true);
         f.get();
 
-        ASSERT_TRUE(ctx.result->status_code == EVMC_REVERT);
+        ASSERT_TRUE(ctx.result->status_code == MONAD_STATUS_REVERT);
         ASSERT_NE(ctx.result->encoded_trace, nullptr);
         ASSERT_GT(ctx.result->encoded_trace_len, 0);
 
@@ -3603,7 +3606,7 @@ TEST_F(EthCallFixture, access_list_trace_page_dedup)
             true);
         f.get();
 
-        ASSERT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
+        ASSERT_TRUE(ctx.result->status_code == MONAD_STATUS_SUCCESS);
 
         std::vector<uint8_t> const encoded_trace(
             ctx.result->encoded_trace,
@@ -3708,7 +3711,7 @@ TEST_F(EthCallFixture, access_list_trace_empty)
             true);
         f.get();
 
-        ASSERT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
+        ASSERT_TRUE(ctx.result->status_code == MONAD_STATUS_SUCCESS);
         EXPECT_EQ(ctx.result->encoded_trace, nullptr);
         EXPECT_EQ(ctx.result->encoded_trace_len, 0);
     }
@@ -3804,7 +3807,7 @@ TEST_F(EthCallFixture, access_list_trace_nested)
         true);
     f.get();
 
-    EXPECT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
+    EXPECT_TRUE(ctx.result->status_code == MONAD_STATUS_SUCCESS);
 
     std::vector<uint8_t> const encoded_trace(
         ctx.result->encoded_trace,
@@ -3920,7 +3923,7 @@ TEST_F(EthCallFixture, access_list_trace_nested_reverted_call)
         true);
     f.get();
 
-    EXPECT_TRUE(ctx.result->status_code == EVMC_SUCCESS);
+    EXPECT_TRUE(ctx.result->status_code == MONAD_STATUS_SUCCESS);
     ASSERT_NE(ctx.result->encoded_trace, nullptr);
     ASSERT_GT(ctx.result->encoded_trace_len, 0);
 
@@ -4016,7 +4019,7 @@ TEST_F(EthCallFixture, prestate_state_overrides)
             true);
         f.get();
 
-        ASSERT_TRUE(prestate_ctx.result->status_code == EVMC_SUCCESS);
+        ASSERT_TRUE(prestate_ctx.result->status_code == MONAD_STATUS_SUCCESS);
 
         std::vector<uint8_t> const encoded_pre_state_trace(
             prestate_ctx.result->encoded_trace,
@@ -4061,7 +4064,7 @@ TEST_F(EthCallFixture, prestate_state_overrides)
             true);
         f.get();
 
-        ASSERT_TRUE(statediff_ctx.result->status_code == EVMC_SUCCESS);
+        ASSERT_TRUE(statediff_ctx.result->status_code == MONAD_STATUS_SUCCESS);
 
         std::vector<uint8_t> const encoded_state_deltas_trace(
             statediff_ctx.result->encoded_trace,
@@ -4223,7 +4226,7 @@ TYPED_TEST(EthCallEncodingFixture, prestate_override_state)
             true);
         f.get();
 
-        ASSERT_TRUE(ctx_state.result->status_code == EVMC_SUCCESS);
+        ASSERT_TRUE(ctx_state.result->status_code == MONAD_STATUS_SUCCESS);
         ASSERT_EQ(ctx_state.result->output_data_len, sizeof(bytes32_t));
 
         bytes32_t result;
@@ -4307,7 +4310,7 @@ TYPED_TEST(EthCallEncodingFixture, prestate_override_state)
             true);
         f.get();
 
-        ASSERT_TRUE(ctx_statediff.result->status_code == EVMC_SUCCESS);
+        ASSERT_TRUE(ctx_statediff.result->status_code == MONAD_STATUS_SUCCESS);
         ASSERT_EQ(ctx_statediff.result->output_data_len, sizeof(bytes32_t));
 
         bytes32_t result;
@@ -4479,7 +4482,7 @@ TEST_F(EthCallFixture, eth_call_reserve_balance)
         true);
     f.get();
 
-    EXPECT_EQ(ctx.result->status_code, EVMC_MONAD_RESERVE_BALANCE_VIOLATION);
+    EXPECT_EQ(ctx.result->status_code, MONAD_STATUS_RESERVE_BALANCE_VIOLATION);
 
     monad_executor_destroy(executor);
     monad_state_override_destroy(state_override);
@@ -4561,7 +4564,7 @@ TEST_F(EthCallFixture, eth_call_reserve_balance_emptying)
         true);
     f.get();
 
-    EXPECT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    EXPECT_EQ(ctx.result->status_code, MONAD_STATUS_SUCCESS);
 
     monad_executor_destroy(executor);
     monad_state_override_destroy(state_override);
@@ -4673,7 +4676,7 @@ TEST_F(EthCallFixture, eth_call_reserve_balance_assertion)
         true);
     f.get();
 
-    EXPECT_EQ(ctx.result->status_code, EVMC_MONAD_RESERVE_BALANCE_VIOLATION);
+    EXPECT_EQ(ctx.result->status_code, MONAD_STATUS_RESERVE_BALANCE_VIOLATION);
     EXPECT_EQ(ctx.result->message, nullptr);
 
     monad_executor_destroy(executor);
@@ -4811,7 +4814,7 @@ TEST_F(EthCallFixture, trace_transaction_with_rewards_prestate)
             PRESTATE_TRACER);
         f_1.get();
 
-        ASSERT_TRUE(prestate_ctx_1.result->status_code == EVMC_SUCCESS);
+        ASSERT_TRUE(prestate_ctx_1.result->status_code == MONAD_STATUS_SUCCESS);
 
         std::vector<uint8_t> const encoded_pre_state_trace_1(
             prestate_ctx_1.result->encoded_trace,
@@ -4856,7 +4859,7 @@ TEST_F(EthCallFixture, trace_transaction_with_rewards_prestate)
             PRESTATE_TRACER);
         f_2.get();
 
-        ASSERT_TRUE(prestate_ctx_2.result->status_code == EVMC_SUCCESS);
+        ASSERT_TRUE(prestate_ctx_2.result->status_code == MONAD_STATUS_SUCCESS);
 
         std::vector<uint8_t> const encoded_pre_state_trace_2(
             prestate_ctx_2.result->encoded_trace,
@@ -4904,7 +4907,8 @@ TEST_F(EthCallFixture, trace_transaction_with_rewards_prestate)
             STATEDIFF_TRACER);
         f_1.get();
 
-        ASSERT_TRUE(statediff_ctx_1.result->status_code == EVMC_SUCCESS);
+        ASSERT_TRUE(
+            statediff_ctx_1.result->status_code == MONAD_STATUS_SUCCESS);
 
         std::vector<uint8_t> const encoded_state_diff_trace_1(
             statediff_ctx_1.result->encoded_trace,
@@ -4965,7 +4969,8 @@ TEST_F(EthCallFixture, trace_transaction_with_rewards_prestate)
             STATEDIFF_TRACER);
         f_2.get();
 
-        ASSERT_TRUE(statediff_ctx_2.result->status_code == EVMC_SUCCESS);
+        ASSERT_TRUE(
+            statediff_ctx_2.result->status_code == MONAD_STATUS_SUCCESS);
 
         std::vector<uint8_t> const encoded_state_diff_trace_2(
             statediff_ctx_2.result->encoded_trace,
@@ -5397,7 +5402,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_simple_transfer)
         (void *)&ctx);
     f.get();
 
-    ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    ASSERT_EQ(ctx.result->status_code, MONAD_STATUS_SUCCESS);
     ASSERT_TRUE(ctx.result->encoded_trace_len > 0);
 
     nlohmann::json output = nlohmann::json::from_cbor(
@@ -5512,7 +5517,7 @@ TEST_F(EthCallFixture, eth_simulate_slot_number)
         (void *)&ctx);
     f.get();
 
-    ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    ASSERT_EQ(ctx.result->status_code, MONAD_STATUS_SUCCESS);
     ASSERT_TRUE(ctx.result->encoded_trace_len > 0);
 
     nlohmann::json output = nlohmann::json::from_cbor(
@@ -5649,7 +5654,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_slot_number_across_amsterdam)
         f.get();
 
         int const code = [&] {
-            if (ctx.result->status_code != EVMC_SUCCESS ||
+            if (ctx.result->status_code != MONAD_STATUS_SUCCESS ||
                 ctx.result->encoded_trace_len == 0) {
                 return 3;
             }
@@ -5784,7 +5789,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_simple_transfers_multiple_blocks)
         (void *)&ctx);
     f.get();
 
-    ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    ASSERT_EQ(ctx.result->status_code, MONAD_STATUS_SUCCESS);
     ASSERT_TRUE(ctx.result->encoded_trace_len > 0);
 
     nlohmann::json output = nlohmann::json::from_cbor(
@@ -5884,7 +5889,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_single_call_block_255)
         (void *)&ctx);
     f.get();
 
-    ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    ASSERT_EQ(ctx.result->status_code, MONAD_STATUS_SUCCESS);
 
     monad_block_override_vec_destroy(bo_overrides);
     monad_state_override_vec_destroy(so_overrides);
@@ -5942,7 +5947,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_empty_input)
         (void *)&ctx);
     f.get();
 
-    ASSERT_EQ(ctx.result->status_code, EVMC_INTERNAL_ERROR);
+    ASSERT_EQ(ctx.result->status_code, MONAD_STATUS_INTERNAL_ERROR);
     ASSERT_STREQ(ctx.result->message, "invalid input");
 
     monad_block_override_vec_destroy(bo_overrides);
@@ -6017,7 +6022,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_block_override_synthetic_gap)
         (void *)&ctx);
     f.get();
 
-    ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    ASSERT_EQ(ctx.result->status_code, MONAD_STATUS_SUCCESS);
     ASSERT_TRUE(ctx.result->encoded_trace_len > 0);
 
     nlohmann::json output = nlohmann::json::from_cbor(
@@ -6119,7 +6124,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_block_override_no_synthetic_gaps)
         (void *)&ctx);
     f.get();
 
-    ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS) << std::format(
+    ASSERT_EQ(ctx.result->status_code, MONAD_STATUS_SUCCESS) << std::format(
         "trace length {}: {}",
         ctx.result->encoded_trace_len,
         ctx.result->message);
@@ -6235,7 +6240,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_stress_queue_rejection)
     for (auto &s : subs) {
         s->future.get();
 
-        if (s->ctx.result->status_code == EVMC_REJECTED) {
+        if (s->ctx.result->status_code == MONAD_STATUS_REJECTED) {
             EXPECT_STREQ(
                 s->ctx.result->message,
                 "failure to submit eth_simulateV1 to thread pool: queue size "
@@ -6243,7 +6248,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_stress_queue_rejection)
             ++rejected;
         }
         else {
-            EXPECT_EQ(s->ctx.result->status_code, EVMC_SUCCESS);
+            EXPECT_EQ(s->ctx.result->status_code, MONAD_STATUS_SUCCESS);
             ASSERT_TRUE(s->ctx.result->encoded_trace_len > 0);
             nlohmann::json output = nlohmann::json::from_cbor(
                 s->ctx.result->encoded_trace,
@@ -6392,7 +6397,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance)
         (void *)&ctx);
     f.get();
 
-    ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    ASSERT_EQ(ctx.result->status_code, MONAD_STATUS_SUCCESS);
     ASSERT_TRUE(ctx.result->encoded_trace_len > 0);
 
     nlohmann::json output = nlohmann::json::from_cbor(
@@ -6549,7 +6554,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance_chain_context_buffer)
             (void *)&ctx);
         f.get();
 
-        ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+        ASSERT_EQ(ctx.result->status_code, MONAD_STATUS_SUCCESS);
         ASSERT_TRUE(ctx.result->encoded_trace_len > 0);
 
         nlohmann::json output = nlohmann::json::from_cbor(
@@ -6691,7 +6696,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance_chain_context_buffer)
             (void *)&ctx);
         f.get();
 
-        ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+        ASSERT_EQ(ctx.result->status_code, MONAD_STATUS_SUCCESS);
         ASSERT_TRUE(ctx.result->encoded_trace_len > 0);
 
         nlohmann::json output = nlohmann::json::from_cbor(
@@ -6922,7 +6927,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_call_types)
         (void *)&ctx);
     f.get();
 
-    ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    ASSERT_EQ(ctx.result->status_code, MONAD_STATUS_SUCCESS);
     ASSERT_TRUE(ctx.result->encoded_trace_len > 0);
 
     nlohmann::json output = nlohmann::json::from_cbor(
@@ -7069,7 +7074,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_state_changes_across_blocks)
         (void *)&ctx);
     f.get();
 
-    ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    ASSERT_EQ(ctx.result->status_code, MONAD_STATUS_SUCCESS);
     ASSERT_TRUE(ctx.result->encoded_trace_len > 0);
 
     nlohmann::json output = nlohmann::json::from_cbor(
@@ -7291,7 +7296,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_deploy_and_call)
         (void *)&ctx);
     f.get();
 
-    ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    ASSERT_EQ(ctx.result->status_code, MONAD_STATUS_SUCCESS);
     ASSERT_TRUE(ctx.result->encoded_trace_len > 0);
 
     nlohmann::json output = nlohmann::json::from_cbor(
@@ -7508,7 +7513,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_native_transfer_logs)
         (void *)&ctx);
     f.get();
 
-    ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    ASSERT_EQ(ctx.result->status_code, MONAD_STATUS_SUCCESS);
     ASSERT_TRUE(ctx.result->encoded_trace_len > 0);
 
     nlohmann::json output = nlohmann::json::from_cbor(
@@ -7654,7 +7659,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_trace_transfers_across_amsterdam)
         f.get();
 
         int const code = [&] {
-            if (ctx.result->status_code != EVMC_SUCCESS ||
+            if (ctx.result->status_code != MONAD_STATUS_SUCCESS ||
                 ctx.result->encoded_trace_len == 0) {
                 return 3;
             }
@@ -7825,7 +7830,7 @@ TYPED_TEST(EthCallEncodingFixture, eth_simulate_v1_time_travel)
         (void *)&ctx);
     f.get();
 
-    ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    ASSERT_EQ(ctx.result->status_code, MONAD_STATUS_SUCCESS);
     ASSERT_TRUE(ctx.result->encoded_trace_len > 0);
 
     nlohmann::json output = nlohmann::json::from_cbor(
@@ -7954,7 +7959,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_blockhash_reads)
         (void *)&ctx);
     f.get();
 
-    ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    ASSERT_EQ(ctx.result->status_code, MONAD_STATUS_SUCCESS);
     ASSERT_TRUE(ctx.result->encoded_trace_len > 0);
 
     nlohmann::json output = nlohmann::json::from_cbor(
@@ -8098,7 +8103,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_legacy_transactions)
         (void *)&ctx);
     f.get();
 
-    ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    ASSERT_EQ(ctx.result->status_code, MONAD_STATUS_SUCCESS);
     ASSERT_TRUE(ctx.result->encoded_trace_len > 0);
 
     nlohmann::json output = nlohmann::json::from_cbor(
@@ -8211,7 +8216,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_typed_transactions_2930_and_1559)
         (void *)&ctx);
     f.get();
 
-    ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    ASSERT_EQ(ctx.result->status_code, MONAD_STATUS_SUCCESS);
     ASSERT_TRUE(ctx.result->encoded_trace_len > 0);
 
     nlohmann::json output = nlohmann::json::from_cbor(
@@ -8338,7 +8343,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_typed_transaction_7702)
         (void *)&ctx);
     f.get();
 
-    ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    ASSERT_EQ(ctx.result->status_code, MONAD_STATUS_SUCCESS);
     ASSERT_TRUE(ctx.result->encoded_trace_len > 0);
 
     nlohmann::json output = nlohmann::json::from_cbor(
@@ -8493,7 +8498,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_all_transaction_formats_single_block)
         (void *)&ctx);
     f.get();
 
-    ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    ASSERT_EQ(ctx.result->status_code, MONAD_STATUS_SUCCESS);
     ASSERT_TRUE(ctx.result->encoded_trace_len > 0);
 
     nlohmann::json output = nlohmann::json::from_cbor(
@@ -8611,7 +8616,7 @@ TEST_F(
         (void *)&ctx);
     f.get();
 
-    ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    ASSERT_EQ(ctx.result->status_code, MONAD_STATUS_SUCCESS);
     ASSERT_TRUE(ctx.result->encoded_trace_len > 0);
 
     nlohmann::json output = nlohmann::json::from_cbor(
@@ -8735,7 +8740,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_gas_limit_enforcement)
 
     // This simulation should exceed `total_gas_limit` after cumulative gas
     // accounting overflows the 64-bit boundary, and must be rejected.
-    EXPECT_EQ(ctx.result->status_code, EVMC_INTERNAL_ERROR);
+    EXPECT_EQ(ctx.result->status_code, MONAD_STATUS_INTERNAL_ERROR);
     ASSERT_NE(ctx.result->message, nullptr);
     EXPECT_STREQ(ctx.result->message, "gas limit exceeded");
 
@@ -8827,7 +8832,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_simple_transfer_withdrawals_monad)
         (void *)&ctx);
     f.get();
 
-    ASSERT_EQ(ctx.result->status_code, EVMC_INTERNAL_ERROR);
+    ASSERT_EQ(ctx.result->status_code, MONAD_STATUS_INTERNAL_ERROR);
     ASSERT_NE(ctx.result->message, nullptr);
     EXPECT_STREQ(ctx.result->message, "Withdrawals are not supported on Monad");
 
@@ -8966,7 +8971,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_state_override_graceful_failure)
         (void *)&ctx);
     f.get();
 
-    ASSERT_EQ(ctx.result->status_code, EVMC_INTERNAL_ERROR);
+    ASSERT_EQ(ctx.result->status_code, MONAD_STATUS_INTERNAL_ERROR);
     ASSERT_NE(ctx.result->message, nullptr);
     EXPECT_STREQ(ctx.result->message, "failed to apply state override");
 
@@ -9129,7 +9134,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_beacon_roots)
     // Baseline sanity check: no override, call succeeds.
     callback_context baseline_ctx;
     submit_simulation(baseline_ctx);
-    ASSERT_EQ(baseline_ctx.result->status_code, EVMC_SUCCESS);
+    ASSERT_EQ(baseline_ctx.result->status_code, MONAD_STATUS_SUCCESS);
 
     // Inject an account on the beacon-roots address.
     add_override_address_at(
@@ -9145,7 +9150,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_beacon_roots)
     callback_context overridden_ctx;
     submit_simulation(overridden_ctx);
 
-    ASSERT_EQ(overridden_ctx.result->status_code, EVMC_SUCCESS);
+    ASSERT_EQ(overridden_ctx.result->status_code, MONAD_STATUS_SUCCESS);
     ASSERT_TRUE(overridden_ctx.result->encoded_trace_len > 0);
     nlohmann::json output = nlohmann::json::from_cbor(
         overridden_ctx.result->encoded_trace,
@@ -9267,7 +9272,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_block_history_state_override)
         (void *)&ctx);
     f.get();
 
-    ASSERT_EQ(ctx.result->status_code, EVMC_INTERNAL_ERROR);
+    ASSERT_EQ(ctx.result->status_code, MONAD_STATUS_INTERNAL_ERROR);
     ASSERT_NE(ctx.result->message, nullptr);
     EXPECT_STREQ(ctx.result->message, "block state cannot be merged");
 
@@ -9374,7 +9379,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_deploy_over_storage_override)
         (void *)&ctx);
     f.get();
 
-    ASSERT_EQ(ctx.result->status_code, EVMC_INTERNAL_ERROR);
+    ASSERT_EQ(ctx.result->status_code, MONAD_STATUS_INTERNAL_ERROR);
     ASSERT_NE(ctx.result->message, nullptr);
     EXPECT_STREQ(ctx.result->message, "block state cannot be merged");
 
@@ -9516,7 +9521,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_output_size_enforcement)
         f.get();
     }
 
-    ASSERT_EQ(no_limit_ctx.result->status_code, EVMC_SUCCESS);
+    ASSERT_EQ(no_limit_ctx.result->status_code, MONAD_STATUS_SUCCESS);
     size_t const actual_cbor_output_size =
         no_limit_ctx.result->encoded_trace_len;
 
@@ -9551,7 +9556,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_output_size_enforcement)
         f.get();
     }
 
-    ASSERT_EQ(actual_ctx.result->status_code, EVMC_SUCCESS);
+    ASSERT_EQ(actual_ctx.result->status_code, MONAD_STATUS_SUCCESS);
     EXPECT_EQ(actual_ctx.result->encoded_trace_len, actual_cbor_output_size);
 
     // Now submit the same request with a max output size smaller than the
@@ -9589,7 +9594,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_output_size_enforcement)
         f.get();
     }
 
-    ASSERT_EQ(limited_ctx.result->status_code, EVMC_INTERNAL_ERROR);
+    ASSERT_EQ(limited_ctx.result->status_code, MONAD_STATUS_INTERNAL_ERROR);
     ASSERT_STREQ(
         limited_ctx.result->message,
         "call trace size exceeds maximum allowed size");
@@ -9634,7 +9639,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_output_size_enforcement)
         f.get();
     }
 
-    ASSERT_EQ(output_limited_ctx.result->status_code, EVMC_INTERNAL_ERROR);
+    ASSERT_EQ(
+        output_limited_ctx.result->status_code, MONAD_STATUS_INTERNAL_ERROR);
     ASSERT_STREQ(
         output_limited_ctx.result->message,
         "output size exceeds maximum allowed size");
@@ -9684,7 +9690,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_output_size_enforcement)
         f.get();
     }
 
-    ASSERT_EQ(mixed_limited_ctx.result->status_code, EVMC_INTERNAL_ERROR);
+    ASSERT_EQ(
+        mixed_limited_ctx.result->status_code, MONAD_STATUS_INTERNAL_ERROR);
     ASSERT_STREQ(
         mixed_limited_ctx.result->message,
         "call trace size exceeds maximum allowed size");
@@ -9768,7 +9775,7 @@ TEST_F(EthCallFixture, eth_call_empty_state_override_zeros_storage)
         true);
     future.get();
 
-    ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    ASSERT_EQ(ctx.result->status_code, MONAD_STATUS_SUCCESS);
     ASSERT_EQ(ctx.result->output_data_len, sizeof(bytes32_t));
     EXPECT_TRUE(std::ranges::all_of(
         std::span{ctx.result->output_data, ctx.result->output_data_len},
@@ -9866,7 +9873,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_empty_state_override_zeros_storage)
         &ctx);
     future.get();
 
-    ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    ASSERT_EQ(ctx.result->status_code, MONAD_STATUS_SUCCESS);
     ASSERT_GT(ctx.result->encoded_trace_len, 0);
     auto const output = nlohmann::json::from_cbor(
         ctx.result->encoded_trace,
@@ -10009,7 +10016,7 @@ TEST_F(EthCallFixture, eth_call_discards_oversized_low_gas_trace_on_retry)
     monad_state_override_destroy(state_override);
     monad_executor_destroy(executor);
 
-    ASSERT_EQ(low_gas_ctx.result->status_code, EVMC_REVERT);
+    ASSERT_EQ(low_gas_ctx.result->status_code, MONAD_STATUS_REVERT);
     EXPECT_EQ(low_gas_ctx.result->output_data_len, revert_data_size);
     byte_string_view low_gas_view{
         low_gas_ctx.result->encoded_trace,
@@ -10019,13 +10026,14 @@ TEST_F(EthCallFixture, eth_call_discards_oversized_low_gas_trace_on_retry)
     ASSERT_EQ(low_gas_frames.value().size(), 1);
     EXPECT_EQ(low_gas_frames.value().front().output.size(), revert_data_size);
 
-    EXPECT_EQ(limited_low_gas_ctx.result->status_code, EVMC_INTERNAL_ERROR);
+    EXPECT_EQ(
+        limited_low_gas_ctx.result->status_code, MONAD_STATUS_INTERNAL_ERROR);
     EXPECT_STREQ(
         limited_low_gas_ctx.result->message,
         "call trace size exceeds maximum allowed size");
     EXPECT_EQ(limited_low_gas_ctx.result->encoded_trace_len, 0);
 
-    ASSERT_EQ(retry_ctx.result->status_code, EVMC_SUCCESS);
+    ASSERT_EQ(retry_ctx.result->status_code, MONAD_STATUS_SUCCESS);
     EXPECT_EQ(retry_ctx.result->output_data_len, 0);
     byte_string_view retry_view{
         retry_ctx.result->encoded_trace, retry_ctx.result->encoded_trace_len};
@@ -10133,7 +10141,7 @@ TEST(EthCallFixtureNoDb, call_with_code_and_storage_overrides)
         state_override,
         ctx);
 
-    ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    ASSERT_EQ(ctx.result->status_code, MONAD_STATUS_SUCCESS);
     ASSERT_EQ(ctx.result->output_data_len, sizeof(bytes32_t));
     EXPECT_EQ(
         std::memcmp(
@@ -10177,7 +10185,7 @@ TEST(EthCallFixtureNoDb, transfer_to_absent_account)
         state_override,
         ctx);
 
-    EXPECT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    EXPECT_EQ(ctx.result->status_code, MONAD_STATUS_SUCCESS);
     EXPECT_EQ(ctx.result->gas_used, 21000);
 
     monad_state_override_destroy(state_override);
@@ -10228,7 +10236,7 @@ TEST(EthCallFixtureNoDb, blockhash_is_unavailable)
         state_override,
         ctx);
 
-    EXPECT_EQ(ctx.result->status_code, EVMC_INTERNAL_ERROR);
+    EXPECT_EQ(ctx.result->status_code, MONAD_STATUS_INTERNAL_ERROR);
     EXPECT_STREQ(
         ctx.result->message, "blockhash: unavailable without a database");
 
@@ -10346,7 +10354,7 @@ TEST(EthCallFixtureNoDb, eth_simulate_v1_with_state_overrides)
         (void *)&ctx);
     f.get();
 
-    ASSERT_EQ(ctx.result->status_code, EVMC_SUCCESS);
+    ASSERT_EQ(ctx.result->status_code, MONAD_STATUS_SUCCESS);
     ASSERT_TRUE(ctx.result->encoded_trace_len > 0);
 
     nlohmann::json const output = nlohmann::json::from_cbor(
@@ -10416,7 +10424,7 @@ TEST(EthCallFixtureNoDb, trace_is_rejected)
         PRESTATE_TRACER);
     f.get();
 
-    EXPECT_EQ(ctx.result->status_code, EVMC_REJECTED);
+    EXPECT_EQ(ctx.result->status_code, MONAD_STATUS_REJECTED);
     EXPECT_STREQ(ctx.result->message, "cannot trace without a database");
 
     monad_executor_destroy(executor);

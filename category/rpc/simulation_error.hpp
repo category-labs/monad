@@ -18,7 +18,7 @@
 #include <category/core/config.hpp>
 #include <category/core/result.hpp>
 
-#include <evmc/evmc.h>
+#include <category/vm/evm/status_code.h>
 
 #if __has_include(<boost/outcome/experimental/status-code/status-code/config.hpp>)
     #include <boost/outcome/experimental/status-code/status-code/config.hpp>
@@ -50,7 +50,7 @@ enum class SimulationError
 
 struct SimulationErrorResponse
 {
-    evmc_status_code status_code;
+    monad_status_code status_code;
     std::string message;
 };
 

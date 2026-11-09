@@ -108,7 +108,6 @@
 #include <string.h>
 
 #include <ankerl/unordered_dense.h>
-#include <evmc/evmc.h>
 #include <nlohmann/json.hpp>
 
 using namespace monad;
@@ -1542,7 +1541,7 @@ struct monad_executor
         Pool &active_pool)
     {
         if (!active_pool.try_enqueue()) {
-            result->status_code = EVMC_REJECTED;
+            result->status_code = MONAD_STATUS_REJECTED;
             result->message = strdup(EXCEED_QUEUE_SIZE_ERR_MSG);
             MONAD_ASSERT(result->message);
             complete(result, user);
@@ -1582,7 +1581,7 @@ struct monad_executor
                     // check for timeout
                     if (std::chrono::steady_clock::now() - call_begin >
                         active_pool->timeout) {
-                        result->status_code = EVMC_REJECTED;
+                        result->status_code = MONAD_STATUS_REJECTED;
                         result->message = strdup(TIMEOUT_ERR_MSG);
                         MONAD_ASSERT(result->message);
                         complete(result, user);
@@ -1716,7 +1715,7 @@ struct monad_executor
                         return;
                     }
                     if (MONAD_UNLIKELY(res.has_error())) {
-                        result->status_code = EVMC_REJECTED;
+                        result->status_code = MONAD_STATUS_REJECTED;
                         result->message = strdup(res.error().message().c_str());
                         MONAD_ASSERT(result->message);
                         complete(result, user);
@@ -1736,13 +1735,13 @@ struct monad_executor
                         state_trace);
                 }
                 catch (MonadException const &e) {
-                    result->status_code = EVMC_INTERNAL_ERROR;
+                    result->status_code = MONAD_STATUS_INTERNAL_ERROR;
                     result->message = strdup(e.message());
                     MONAD_ASSERT(result->message);
                     complete(result, user);
                 }
                 catch (...) {
-                    result->status_code = EVMC_INTERNAL_ERROR;
+                    result->status_code = MONAD_STATUS_INTERNAL_ERROR;
                     result->message = strdup(UNEXPECTED_EXCEPTION_ERR_MSG);
                     MONAD_ASSERT(result->message);
                     complete(result, user);
@@ -1848,7 +1847,7 @@ struct monad_executor
 
         if (tracer_config != PRESTATE_TRACER &&
             tracer_config != STATEDIFF_TRACER) {
-            result->status_code = EVMC_REJECTED;
+            result->status_code = MONAD_STATUS_REJECTED;
             result->message = strdup(PRESTATE_TRACER_SUPPORT_ERR_MSG);
             MONAD_ASSERT(result->message);
             complete(result, user);
@@ -1856,7 +1855,7 @@ struct monad_executor
         }
 
         if (block_number == 0) {
-            result->status_code = EVMC_REJECTED;
+            result->status_code = MONAD_STATUS_REJECTED;
             result->message = strdup(CANNOT_TRACE_GENESIS_ERR_MSG);
             MONAD_ASSERT(result->message);
             complete(result, user);
@@ -1864,7 +1863,7 @@ struct monad_executor
         }
 
         if (db_ == nullptr) {
-            result->status_code = EVMC_REJECTED;
+            result->status_code = MONAD_STATUS_REJECTED;
             result->message = strdup(CANNOT_TRACE_WITHOUT_DB_ERR_MSG);
             MONAD_ASSERT(result->message);
             complete(result, user);
@@ -1872,7 +1871,7 @@ struct monad_executor
         }
 
         if (!trace_block_group_.try_enqueue()) {
-            result->status_code = EVMC_REJECTED;
+            result->status_code = MONAD_STATUS_REJECTED;
             result->message = strdup(EXCEED_QUEUE_SIZE_ERR_MSG);
             MONAD_ASSERT(result->message);
             complete(result, user);
@@ -2036,7 +2035,7 @@ struct monad_executor
                     }();
 
                     if (MONAD_UNLIKELY(res.has_error())) {
-                        result->status_code = EVMC_REJECTED;
+                        result->status_code = MONAD_STATUS_REJECTED;
                         result->message = strdup(res.error().message().c_str());
                         MONAD_ASSERT(result->message);
                         complete(result, user);
@@ -2063,13 +2062,13 @@ struct monad_executor
                     complete(result, user);
                 }
                 catch (MonadException const &e) {
-                    result->status_code = EVMC_INTERNAL_ERROR;
+                    result->status_code = MONAD_STATUS_INTERNAL_ERROR;
                     result->message = strdup(e.message());
                     MONAD_ASSERT(result->message);
                     complete(result, user);
                 }
                 catch (...) {
-                    result->status_code = EVMC_INTERNAL_ERROR;
+                    result->status_code = MONAD_STATUS_INTERNAL_ERROR;
                     result->message = strdup(UNEXPECTED_EXCEPTION_ERR_MSG);
                     MONAD_ASSERT(result->message);
                     complete(result, user);
@@ -2092,7 +2091,7 @@ struct monad_executor
         monad_executor_result *const result = new monad_executor_result();
 
         if (!trace_block_group_.try_enqueue()) {
-            result->status_code = EVMC_REJECTED;
+            result->status_code = MONAD_STATUS_REJECTED;
             result->message = strdup(ETH_SIMULATE_EXCEED_QUEUE_SIZE_ERR_MSG);
             MONAD_ASSERT(result->message);
             complete(result, user);
@@ -2238,13 +2237,13 @@ struct monad_executor
                     complete(result, user);
                 }
                 catch (MonadException const &e) {
-                    result->status_code = EVMC_INTERNAL_ERROR;
+                    result->status_code = MONAD_STATUS_INTERNAL_ERROR;
                     result->message = strdup(e.message());
                     MONAD_ASSERT(result->message);
                     complete(result, user);
                 }
                 catch (...) {
-                    result->status_code = EVMC_INTERNAL_ERROR;
+                    result->status_code = MONAD_STATUS_INTERNAL_ERROR;
                     result->message = strdup(UNEXPECTED_EXCEPTION_ERR_MSG);
                     MONAD_ASSERT(result->message);
                     complete(result, user);

@@ -88,6 +88,15 @@ Cargo caches CMake builds by compiler path and configuration under
 `OUT_DIR`. Nix's immutable compiler paths identify the toolchains.
 Development builds default to `monad-zkvm;commit=none;build=none`.
 
+To measure the SWAP1 fusion family, build once with the default
+`MONAD_ZKVM_FUSE_SWAP1=ON` and once with `MONAD_ZKVM_FUSE_SWAP1=OFF`.
+OFF executes ordinary SWAP1 and removes the 40-byte SWAP1 entry before each
+handler copy. PUSH1 followed by SWAP1 still belongs to the PUSH1 family.
+Keep the other families enabled in both builds. Compare aggregate COST on
+the same witnesses, checking each public block hash. Report the fixed corpus
+and a recent block sample separately.
+
+
 ```sh
 # 1. Build the guest ELF in the development shell.
 nix develop .#zisk

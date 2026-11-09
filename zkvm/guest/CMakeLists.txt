@@ -140,6 +140,11 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         add_compile_definitions(MONAD_ZKVM_SP1)
     elseif(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
         add_compile_definitions(MONAD_ZKVM_ZISK)
+        option(MONAD_ZKVM_FUSE_SWAP1 "Enable the SWAP1 follower prefixes and pairs" ON)
+        # The Rust linker-script generator needs the same effective CMake setting.
+        file(GENERATE OUTPUT "${CMAKE_BINARY_DIR}/swap1-prefix.enabled"
+             CONTENT "$<BOOL:${MONAD_ZKVM_FUSE_SWAP1}>")
+
         # Cache Keccak-f states using an executor-supplied index.
         # Uses 100 MiB of .bss; OFF removes the table and lookup path.
         option(MONAD_ZKVM_KECCAKF_MEMO "memoise Keccak-f via the ZisK executor index" ON)
@@ -315,6 +320,10 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     add_subdirectory("${MONAD_ROOT}/category/vm/evm" evm)
     add_subdirectory("${MONAD_ROOT}/category/vm/runtime" runtime)
     add_subdirectory("${MONAD_ROOT}/category/vm/interpreter" interpreter)
+    if(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk" AND NOT MONAD_ZKVM_FUSE_SWAP1)
+        target_compile_definitions(monad-vm-interpreter PRIVATE MONAD_ZKVM_NO_SWAP1_PREFIX)
+    endif()
+
     if(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
         target_compile_options(monad-vm-interpreter PRIVATE
                                ${_monad_zkvm_interpreter_tune})

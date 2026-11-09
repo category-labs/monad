@@ -77,11 +77,11 @@ impl Backend {
             ("CMAKE_PREFIX_PATH".into(), prefix_path),
         ];
         if let Self::Zisk = self {
-            for option in ZISK_OPTIONS {
+            for (option, default) in ZISK_OPTIONS {
                 println!("cargo:rerun-if-env-changed={option}");
                 defines.push((
                     option.into(),
-                    env::var(option).unwrap_or_else(|_| "OFF".into()),
+                    env::var(option).unwrap_or_else(|_| default.into()),
                 ));
             }
         }
@@ -179,7 +179,14 @@ impl Backend {
             if !enabled("MONAD_ZKVM_SELFTEST") || enabled("MONAD_ZKVM_GAS_SELFTEST") {
                 let out_dir = PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR unset"));
                 let slots_ld = out_dir.join("slots.ld");
-                std::fs::write(&slots_ld, zisk_slots_ld()).expect("write slots.ld");
+                let swap1 = std::fs::read_to_string(build_dir.join("swap1-prefix.enabled"))
+                    .expect("read SWAP1 prefix configuration from the guest build");
+                let fuse_swap1 = match swap1.trim() {
+                    "1" => true,
+                    "0" => false,
+                    other => panic!("invalid SWAP1 prefix configuration: {other:?}"),
+                };
+                std::fs::write(&slots_ld, zisk_slots_ld(fuse_swap1)).expect("write slots.ld");
                 println!(
                     "cargo:rustc-link-arg-bin=monad-zkvm-zisk=-T{}",
                     slots_ld.display()
@@ -307,9 +314,12 @@ fn sp1_zkevm_dir() -> PathBuf {
     zkevm
 }
 
-/// The ZisK compiler options, read from the environment and OFF by default.
-/// The reference Nix build turns all of them on.
-const ZISK_OPTIONS: [&str; 2] = ["MONAD_ZKVM_ZISK_DMA", "MONAD_ZKVM_ZISK_LTO"];
+/// ZisK build options accepted directly from the environment and their defaults.
+const ZISK_OPTIONS: [(&str, &str); 3] = [
+    ("MONAD_ZKVM_ZISK_DMA", "OFF"),
+    ("MONAD_ZKVM_ZISK_LTO", "OFF"),
+    ("MONAD_ZKVM_FUSE_SWAP1", "ON"),
+];
 
 /// Environment variables cmake-rs reads for the guest build.
 const CMAKE_ENV: [&str; 3] = ["CMAKE", "CMAKE_GENERATOR", "CMAKE_PREFIX_PATH"];
@@ -320,14 +330,14 @@ fn manifest_dir() -> PathBuf {
 
 /// Lay out 4-KiB opcode slots, newest revision first. Six handler copies
 /// encode instruction-pointer lags 0..5, in address order 4, 5, 0, 1, 2, 3.
-/// Each has a 104-byte prefix region. Fused pairs and oversized handlers follow
-/// the slots. Linker assertions reject missing or misplaced entries; moving
-/// the location counter backwards rejects a copy that exceeds its region.
-fn zisk_slots_ld() -> String {
+/// Each has 64 prefix bytes plus 40 when SWAP1 fusion is enabled.
+/// Fused pairs and oversized handlers follow the slots. The linker rejects
+/// misplaced entries and copies that exceed their region.
+fn zisk_slots_ld(fuse_swap1: bool) -> String {
     const SLOT: usize = 0x1000;
     // Prefix-region offset, prefix-section suffix, and handler-section suffix.
     // Keep these offsets in sync with instruction_table.hpp::lag_offset.
-    const COPIES: [(usize, &str, &str); 6] = [
+    let copies = [
         (0, "_4", "4"),
         (684, "_5", "5"),
         (1368, "", ""),
@@ -335,7 +345,7 @@ fn zisk_slots_ld() -> String {
         (2728, "_2", "2"),
         (3412, "_3", "3"),
     ];
-    const PREFIX_SIZE: usize = 104;
+    let prefix_size = if fuse_swap1 { 104 } else { 64 };
     let mut ld = String::from(
         "SECTIONS {\n    .monad_vm_slots : ALIGN(0x400) {\n        \
          FILL(0x13000000)\n        monad_vm_slots = .;\n",
@@ -343,9 +353,9 @@ fn zisk_slots_ld() -> String {
     for (rank, rev) in (8..=15).rev().enumerate() {
         for op in 0..256 {
             let slot_address = (rank * 256 + op) * SLOT;
-            for (copy_offset, prefix_suffix, handler_suffix) in COPIES {
+            for (copy_offset, prefix_suffix, handler_suffix) in copies {
                 let prefix_address = slot_address + copy_offset;
-                let handler_address = prefix_address + PREFIX_SIZE;
+                let handler_address = prefix_address + prefix_size;
                 let symbol_suffix = if handler_suffix.is_empty() {
                     String::new()
                 } else {

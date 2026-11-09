@@ -79,11 +79,19 @@ namespace monad::vm::interpreter
     // advance a5 and return to copy 0. The offsets fit jalr's immediate.
     inline constexpr unsigned lag_count = 6;
 
+    #if defined(MONAD_ZKVM_NO_SWAP1_PREFIX)
+    inline constexpr bool fuse_swap1 = false;
+    #else
+    inline constexpr bool fuse_swap1 = true;
+    #endif
+    inline constexpr int copy_zero_start = 1368;
+    inline constexpr int copy_prefix_bytes = fuse_swap1 ? 104 : 64;
+
     consteval int lag_offset(unsigned const lag) noexcept
     {
-        constexpr int handler_offsets[lag_count] = {
-            0, 680, 1360, 2044, -1368, -684};
-        return handler_offsets[lag];
+        constexpr int copy_starts[lag_count] = {
+            copy_zero_start, 2048, 2728, 3412, 0, 684};
+        return copy_starts[lag] - copy_zero_start;
     }
 
     // Each handler copy carries its EVM revision, instruction-pointer lag,
@@ -129,7 +137,8 @@ namespace monad::vm::interpreter
     // Where copy 0's handler sits in its slot, after copies 4 and 5 and its
     // own heads: the base the handlers carry points there, at opcode 0's
     // copy 0, and the other copies are lag_offset away.
-    inline constexpr size_t slot_handler_offset = 1472;
+    inline constexpr size_t slot_handler_offset =
+        copy_zero_start + copy_prefix_bytes;
 
     // Distance from a copy's handler to its PUSH1/PUSH2 prefix. Copies 0 and
     // 1 need an extra instruction to advance a5, so their prefixes are longer.
@@ -148,8 +157,6 @@ namespace monad::vm::interpreter
     }
 
     // SWAP1 enters the first prefix of its follower's copy.
-    inline constexpr int copy_prefix_bytes = 104;
-
     consteval int swap1_prefix_offset(unsigned const follower_lag) noexcept
     {
         return copy_prefix_bytes - lag_offset(follower_lag);
@@ -3891,7 +3898,8 @@ namespace monad::vm::interpreter
                 static constexpr auto requirements =
                     fused_requirements<traits, DUP1, PUSH4, EQ, PUSH2, JUMPI>();
                 if (MONAD_UNLIKELY(!MONAD_VM_FUSED_CHARGE_PURE(requirements))) {
-    #if defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
+    #if defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE) ||                          \
+        defined(MONAD_ZKVM_NO_SWAP1_PREFIX)
                     gas_remaining += requirements.gas;
                     MONAD_VM_CHECK(DUP1);
                     MONAD_VM_CHECK_AT(PUSH4, 1);
@@ -3959,7 +3967,8 @@ namespace monad::vm::interpreter
                 static constexpr auto requirements =
                     fused_requirements<traits, DUP1, PUSH4, GT, PUSH2, JUMPI>();
                 if (MONAD_UNLIKELY(!MONAD_VM_FUSED_CHARGE_PURE(requirements))) {
-    #if defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
+    #if defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE) ||                          \
+        defined(MONAD_ZKVM_NO_SWAP1_PREFIX)
                     gas_remaining += requirements.gas;
                     MONAD_VM_CHECK(DUP1);
                     MONAD_VM_CHECK_AT(PUSH4, 1);
@@ -4034,7 +4043,7 @@ namespace monad::vm::interpreter
         MONAD_VM_CHECK(SWAP1 + (N - 1));
 
 #if defined(MONAD_ZKVM_ZISK)
-        if constexpr (N == 1 && lag_dispatch<traits>) {
+        if constexpr (N == 1 && fuse_swap1 && lag_dispatch<traits>) {
             // Enter the follower's SWAP1 prefix. At lag 5 the follower
             // starts a new group, so pass its actual address in a5.
             constexpr unsigned follower_lag = (traits::lag + 1) % lag_count;

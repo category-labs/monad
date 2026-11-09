@@ -46,8 +46,20 @@ namespace monad::vm::interpreter
     #endif
     #undef MONAD_VM_DEFINE_SWAP_SCRATCH_OFFSET
 
+    #if defined(MONAD_ZKVM_NO_SWAP1_PREFIX)
+        #define MONAD_VM_SWAP1_SECTION(NAME, OP, COPY, SUFFIX) ""
+    #else
+        #define MONAD_VM_SWAP1_SECTION(NAME, OP, COPY, SUFFIX)                 \
+            ".type monad_vm_slot_" #NAME "_" #OP "_lead_swap1" #SUFFIX         \
+            ", @function\n"                                                    \
+            ".size monad_vm_slot_" #NAME "_" #OP "_lead_swap1" #SUFFIX         \
+            ", 40\n"                                                           \
+            "monad_vm_slot_" #NAME "_" #OP "_lead_swap1" #SUFFIX               \
+            ":\n" MONAD_VM_SWAP1_HEAD(NAME, OP, COPY, SUFFIX)
+    #endif
+
     // Each 4-KiB opcode slot holds six copies. Each copy starts with:
-    // [SWAP1: 40 bytes][overflow exit, PUSH2 and PUSH1: 64 bytes][handler].
+    // [optional SWAP1: 40 bytes][overflow, PUSH2, PUSH1: 64 bytes][handler].
     // Prefixes execute the pending stack operation or jump to a fused pair.
     // a3 points to the next free word; a1 is the limit, a4 the gas, a5 the
     // instruction address minus the copy's lag. Keep prefix offsets fixed.
@@ -56,13 +68,8 @@ namespace monad::vm::interpreter
         asm(".pushsection .monad_vm_lead" #SUFFIX "." #NAME "." #OP            \
             ",\"ax\",@progbits\n"                                              \
             ".option push\n"                                                   \
-            ".option norelax\n"                                                \
-            ".type monad_vm_slot_" #NAME "_" #OP "_lead_swap1" #SUFFIX         \
-            ", @function\n"                                                    \
-            ".size monad_vm_slot_" #NAME "_" #OP "_lead_swap1" #SUFFIX         \
-            ", 40\n"                                                           \
-            "monad_vm_slot_" #NAME "_" #OP "_lead_swap1" #SUFFIX               \
-            ":\n" MONAD_VM_SWAP1_HEAD(NAME, OP, COPY, SUFFIX) PAD              \
+            ".option norelax\n" MONAD_VM_SWAP1_SECTION(NAME, OP, COPY, SUFFIX) \
+                PAD                                                            \
             "1:\ttail monad_vm_stack_overflow\n"                               \
             ".type monad_vm_slot_" #NAME "_" #OP "_lead2" #SUFFIX              \
             ", @function\n"                                                    \
@@ -204,9 +211,13 @@ namespace monad::vm::interpreter
         MONAD_VM_SWAP1_THEN_IN(REV, NAME, OP, _5, 5)
     #define MONAD_VM_SWAP1_PAIR_PICK(KIND)                                     \
         MONAD_VM_LEAD_CAT(MONAD_VM_SWAP1_PAIR_, KIND)
-    #define MONAD_VM_SWAP1_PAIR(REV, NAME, OP)                                 \
-        MONAD_VM_SWAP1_PAIR_PICK(MONAD_VM_LEAD_KIND(                           \
-            MONAD_VM_SWAP1_OF_##OP, PLAIN, ~))(REV, NAME, OP)
+    #if defined(MONAD_ZKVM_NO_SWAP1_PREFIX)
+        #define MONAD_VM_SWAP1_PAIR(REV, NAME, OP)
+    #else
+        #define MONAD_VM_SWAP1_PAIR(REV, NAME, OP)                             \
+            MONAD_VM_SWAP1_PAIR_PICK(MONAD_VM_LEAD_KIND(                       \
+                MONAD_VM_SWAP1_OF_##OP, PLAIN, ~))(REV, NAME, OP)
+    #endif
 
     // PUSH2's stack test, leaving through EXIT, and its immediate in t3.
     #define MONAD_VM_PUSH2_READ_AT(EXIT, HIGH, LOW)                            \
@@ -329,7 +340,8 @@ namespace monad::vm::interpreter
         static_assert(                                                         \
             compiler::opcode_table<EvmTraits<REV>>[PUSH1].min_gas == 3 &&      \
             compiler::opcode_table<EvmTraits<REV>>[PUSH2].min_gas == 3 &&      \
-            sizeof(uint256_t) == 32 && slot_handler_offset == 1472 &&          \
+            sizeof(uint256_t) == 32 &&                                         \
+            slot_handler_offset == (fuse_swap1 ? 1472 : 1432) &&               \
             lag_offset(1) == 680 && lag_offset(2) == 1360 &&                   \
             lag_offset(3) == 2044 && lag_offset(4) == -1368 &&                 \
             lag_offset(5) == -684 && prefix_back_offset(0, 1) == 32 &&         \
@@ -676,6 +688,7 @@ namespace monad::vm::interpreter
     #undef MONAD_VM_SWAP1_POP_AT
     #undef MONAD_VM_SWAP1_PLAIN
     #undef MONAD_VM_LEADS
+    #undef MONAD_VM_SWAP1_SECTION
     #undef MONAD_VM_LEAD_SECTION
 #endif
 

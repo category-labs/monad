@@ -25,7 +25,7 @@
 #include <category/execution/monad/db/storage_page.hpp>
 #include <category/vm/evm/access_status.hpp>
 #include <category/vm/evm/message.hpp>
-#include <category/vm/evm/page_storage_status.h>
+#include <category/vm/evm/page_storage_status.hpp>
 #include <category/vm/evm/result.hpp>
 #include <category/vm/evm/storage_status.hpp>
 #include <category/vm/host.hpp>
@@ -81,7 +81,7 @@ namespace monad::vm::test
         std::set<PageKey> read_accessed_pages_;
         std::set<PageKey> write_accessed_pages_;
         std::map<PageKey, PageGrowth> growth_;
-        monad_page_storage_status last_write_page_status_{};
+        PageStorageStatus last_write_page_status_{};
 
         void record_account_access(Address const &addr) const noexcept
         {
@@ -320,7 +320,7 @@ namespace monad::vm::test
             accounts[addr].transient_storage[key] = value;
         }
 
-        monad_page_storage_status update_page(
+        PageStorageStatus update_page(
             Address const &, bytes32_t const &, StorageStatus) noexcept override
         {
             return last_write_page_status_;

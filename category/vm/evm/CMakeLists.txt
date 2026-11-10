@@ -25,7 +25,7 @@ target_sources(monad-vm-evm PRIVATE
     "message.hpp"
     "opcodes.hpp"
     "opcodes_xmacro.hpp"
-    "page_storage_status.h"
+    "page_storage_status.hpp"
     "result.hpp"
     "revision.cpp"
     "revision.h"

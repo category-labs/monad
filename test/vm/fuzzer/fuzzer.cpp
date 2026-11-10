@@ -36,7 +36,7 @@
 #include <category/vm/evm/message.hpp>
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/evm/result.hpp>
-#include <category/vm/evm/revision.h>
+#include <category/vm/evm/revision.hpp>
 #include <category/vm/fuzzing/choice.hpp>
 #include <category/vm/memory_pool.hpp>
 #include <category/vm/utils/debug.hpp>

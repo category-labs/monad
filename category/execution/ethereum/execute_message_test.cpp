@@ -223,7 +223,7 @@ TYPED_TEST(TraitsTest, create_insufficient_balance_nonce_bump)
 
 TYPED_TEST(TraitsTest, create_revert_preserves_access_list_trace)
 {
-    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_BERLIN);
+    static_assert(TestFixture::Trait::evm_rev() >= EvmRevision::Berlin);
 
     mpt::Db db{std::make_unique<InMemoryMachine>()};
     db_t tdb{db};
@@ -818,7 +818,7 @@ TYPED_TEST(TraitsTest, create2_op_max_initcode_size)
 
 TYPED_TEST(TraitsTest, deploy_contract_code_not_enough_of_gas)
 {
-    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_HOMESTEAD);
+    static_assert(TestFixture::Trait::evm_rev() >= EvmRevision::Homestead);
 
     static constexpr auto a{0xbebebebebebebebebebebebebebebebebebebebe_address};
 
@@ -863,7 +863,7 @@ TYPED_TEST(TraitsTest, deploy_contract_code_not_enough_of_gas)
 
 TYPED_TEST(TraitsTest, deploy_contract_code_max_code_size)
 {
-    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_SPURIOUS_DRAGON);
+    static_assert(TestFixture::Trait::evm_rev() >= EvmRevision::SpuriousDragon);
 
     static constexpr auto a{0xbebebebebebebebebebebebebebebebebebebebe_address};
 
@@ -1279,7 +1279,7 @@ TYPED_TEST(TraitsTest, nested_call_to_delegated_precompile)
 
 TYPED_TEST(TraitsTest, cold_account_access)
 {
-    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_BERLIN);
+    static_assert(TestFixture::Trait::evm_rev() >= EvmRevision::Berlin);
 
     mpt::Db db{std::make_unique<InMemoryMachine>()};
     db_t tdb{db};

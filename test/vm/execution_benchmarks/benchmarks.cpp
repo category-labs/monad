@@ -23,7 +23,7 @@
 #include <category/vm/compiler.hpp>
 #include <category/vm/evm/call_status.hpp>
 #include <category/vm/evm/message.hpp>
-#include <category/vm/evm/revision.h>
+#include <category/vm/evm/revision.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/vm.hpp>

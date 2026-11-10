@@ -20,7 +20,7 @@
 #include <category/core/config.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/vm/evm/monad/revision.h>
-#include <category/vm/evm/revision.h>
+#include <category/vm/evm/revision.hpp>
 
 #include <ankerl/unordered_dense.h>
 
@@ -58,7 +58,7 @@ struct ChainContext<T>
 
 struct MonadChain : Chain
 {
-    virtual monad_eth_revision
+    virtual EvmRevision
     get_revision(uint64_t block_number, uint64_t timestamp) const override;
 
     virtual BlobSchedule get_blob_schedule(uint64_t timestamp) const override;

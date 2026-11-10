@@ -22,7 +22,7 @@
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/event/exec_event_recorder.hpp>
 #include <category/vm/evm/monad/revision.h>
-#include <category/vm/evm/revision.h>
+#include <category/vm/evm/revision.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
 #include <monad/test/config.hpp>
@@ -49,8 +49,7 @@ MONAD_TEST_NAMESPACE_BEGIN
 class BlockchainTest : public testing::Test
 {
     std::filesystem::path const file_;
-    std::optional<std::variant<monad_eth_revision, monad_revision>> const
-        revision_;
+    std::optional<std::variant<EvmRevision, monad_revision>> const revision_;
     std::optional<vm::VM::Mode> fixed_vm_mode_;
     bool enable_tracing_;
     monad_event_ring const *exec_event_ring_;
@@ -61,7 +60,7 @@ public:
 
     BlockchainTest(
         std::filesystem::path const &file,
-        std::optional<std::variant<monad_eth_revision, monad_revision>> const
+        std::optional<std::variant<EvmRevision, monad_revision>> const
             &revision,
         std::optional<vm::VM::Mode> const fixed_vm_mode,
         bool const enable_tracing,
@@ -79,11 +78,11 @@ public:
 
 void register_blockchain_tests_path(
     std::filesystem::path const &,
-    std::optional<std::variant<monad_eth_revision, monad_revision>> const &,
+    std::optional<std::variant<EvmRevision, monad_revision>> const &,
     std::optional<vm::VM::Mode>, bool, monad_event_ring const *);
 
 void register_blockchain_tests(
-    std::optional<std::variant<monad_eth_revision, monad_revision>> const &,
+    std::optional<std::variant<EvmRevision, monad_revision>> const &,
     std::optional<vm::VM::Mode>, bool, monad_event_ring const *);
 
 MONAD_TEST_NAMESPACE_END

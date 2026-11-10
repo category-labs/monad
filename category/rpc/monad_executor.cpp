@@ -77,7 +77,7 @@
 #include <category/rpc/utils/response_size.hpp>
 #include <category/vm/evm/call_status.hpp>
 #include <category/vm/evm/result.hpp>
-#include <category/vm/evm/revision.h>
+#include <category/vm/evm/revision.hpp>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
@@ -865,7 +865,7 @@ namespace
                 emit_native_transfer_logs);
         }
         else {
-            monad_eth_revision const rev =
+            EvmRevision const rev =
                 chain.get_revision(block.header.number, block.header.timestamp);
             SWITCH_EVM_TRAITS(
                 eth_simulate_execute_block,
@@ -1649,7 +1649,7 @@ struct monad_executor
                     auto const res = [&]() -> Result<vm::Result> {
                         if (chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET ||
                             chain_config == CHAIN_CONFIG_HIVE_NET) {
-                            monad_eth_revision const rev = chain->get_revision(
+                            EvmRevision const rev = chain->get_revision(
                                 block_header.number, block_header.timestamp);
                             SWITCH_EVM_TRAITS(
                                 eth_call_impl,
@@ -1984,7 +1984,7 @@ struct monad_executor
                     auto const res = [&]() -> Result<nlohmann::json> {
                         if (chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET ||
                             chain_config == CHAIN_CONFIG_HIVE_NET) {
-                            monad_eth_revision const rev = chain->get_revision(
+                            EvmRevision const rev = chain->get_revision(
                                 block_header.number, block_header.timestamp);
                             SWITCH_EVM_TRAITS(
                                 eth_trace_block_or_transaction_impl,
@@ -2173,7 +2173,7 @@ struct monad_executor
 
                         if (chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET ||
                             chain_config == CHAIN_CONFIG_HIVE_NET) {
-                            monad_eth_revision const rev = chain->get_revision(
+                            EvmRevision const rev = chain->get_revision(
                                 block_header.number, block_header.timestamp);
                             SWITCH_EVM_TRAITS(
                                 eth_simulate_impl,

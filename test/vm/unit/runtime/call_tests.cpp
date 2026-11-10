@@ -34,7 +34,7 @@ using namespace monad::vm::test;
 
 TYPED_TEST(RuntimeTraitsTest, CallBasic)
 {
-    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_SPURIOUS_DRAGON);
+    static_assert(TestFixture::Trait::evm_rev() >= EvmRevision::SpuriousDragon);
 
     auto do_call = TestFixture::wrap(
         monad::vm::runtime::call<typename TestFixture::Trait>);
@@ -64,7 +64,7 @@ TYPED_TEST(RuntimeTraitsTest, CallBasic)
 
 TYPED_TEST(RuntimeTraitsTest, CallWithValueCold)
 {
-    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_BERLIN);
+    static_assert(TestFixture::Trait::evm_rev() >= EvmRevision::Berlin);
 
     auto do_call = TestFixture::wrap(
         monad::vm::runtime::call<typename TestFixture::Trait>);
@@ -90,7 +90,7 @@ TYPED_TEST(RuntimeTraitsTest, CallWithValueCold)
 
 TYPED_TEST(RuntimeTraitsTest, CallGasLimit)
 {
-    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_BERLIN);
+    static_assert(TestFixture::Trait::evm_rev() >= EvmRevision::Berlin);
 
     auto do_call = TestFixture::wrap(
         monad::vm::runtime::call<typename TestFixture::Trait>);
@@ -119,7 +119,7 @@ TYPED_TEST(RuntimeTraitsTest, CallGasLimit)
 
 TYPED_TEST(RuntimeTraitsTest, CallFailure)
 {
-    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_BERLIN);
+    static_assert(TestFixture::Trait::evm_rev() >= EvmRevision::Berlin);
 
     auto do_call = TestFixture::wrap(
         monad::vm::runtime::call<typename TestFixture::Trait>);
@@ -145,7 +145,7 @@ TYPED_TEST(RuntimeTraitsTest, CallFailure)
 
 TYPED_TEST(RuntimeTraitsTest, DelegateCall)
 {
-    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_BERLIN);
+    static_assert(TestFixture::Trait::evm_rev() >= EvmRevision::Berlin);
 
     auto do_call = TestFixture::wrap(
         monad::vm::runtime::delegatecall<typename TestFixture::Trait>);
@@ -170,7 +170,7 @@ TYPED_TEST(RuntimeTraitsTest, DelegateCall)
 
 TYPED_TEST(RuntimeTraitsTest, CallCode)
 {
-    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_BERLIN);
+    static_assert(TestFixture::Trait::evm_rev() >= EvmRevision::Berlin);
 
     auto do_call = TestFixture::wrap(
         monad::vm::runtime::callcode<typename TestFixture::Trait>);
@@ -198,7 +198,7 @@ TYPED_TEST(RuntimeTraitsTest, CallCode)
 
 TYPED_TEST(RuntimeTraitsTest, StaticCall)
 {
-    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_BERLIN);
+    static_assert(TestFixture::Trait::evm_rev() >= EvmRevision::Berlin);
 
     auto do_call = TestFixture::wrap(
         monad::vm::runtime::staticcall<typename TestFixture::Trait>);
@@ -226,7 +226,7 @@ TYPED_TEST(RuntimeTraitsTest, StaticCall)
 
 TYPED_TEST(RuntimeTraitsTest, CallTooDeep)
 {
-    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_BERLIN);
+    static_assert(TestFixture::Trait::evm_rev() >= EvmRevision::Berlin);
 
     auto do_call = TestFixture::wrap(
         monad::vm::runtime::call<typename TestFixture::Trait>);
@@ -278,7 +278,7 @@ TYPED_TEST(RuntimeTraitsTest, DelegatedCall)
 
 TYPED_TEST(RuntimeTraitsTest, DelegatedStaticCall)
 {
-    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_BYZANTIUM);
+    static_assert(TestFixture::Trait::evm_rev() >= EvmRevision::Byzantium);
 
     auto const delegate_addr = address_from_uint256(0xBEEF);
     std::vector<uint8_t> coffee_code = {0xef, 0x01, 0x00};
@@ -306,7 +306,7 @@ TYPED_TEST(RuntimeTraitsTest, DelegatedStaticCall)
 
 TYPED_TEST(RuntimeTraitsTest, DelegatedDelegateCall)
 {
-    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_BERLIN);
+    static_assert(TestFixture::Trait::evm_rev() >= EvmRevision::Berlin);
 
     auto const delegate_addr = address_from_uint256(0xBEEF);
     std::vector<uint8_t> coffee_code = {0xef, 0x01, 0x00};
@@ -334,7 +334,7 @@ TYPED_TEST(RuntimeTraitsTest, DelegatedDelegateCall)
 
 TYPED_TEST(RuntimeTraitsTest, DelegatedCallcode)
 {
-    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_BERLIN);
+    static_assert(TestFixture::Trait::evm_rev() >= EvmRevision::Berlin);
 
     auto const delegate_addr = address_from_uint256(0xBEEF);
     std::vector<uint8_t> coffee_code = {0xef, 0x01, 0x00};

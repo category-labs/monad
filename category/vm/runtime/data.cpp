@@ -18,7 +18,7 @@
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/access_status.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
-#include <category/vm/evm/revision.h>
+#include <category/vm/evm/revision.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/host.hpp>
 #include <category/vm/runtime/bin.hpp>
@@ -35,7 +35,7 @@ namespace monad::vm::runtime
     void
     balance(Context *ctx, uint256_t *result_ptr, uint256_t const *address_ptr)
     {
-        static_assert(traits::evm_rev() >= MONAD_ETH_BERLIN);
+        static_assert(traits::evm_rev() >= EvmRevision::Berlin);
 
         auto const address = address_from_uint256(*address_ptr);
 
@@ -118,7 +118,7 @@ namespace monad::vm::runtime
         uint256_t const *dest_offset_ptr, uint256_t const *offset_ptr,
         uint256_t const *size_ptr)
     {
-        static_assert(traits::evm_rev() >= MONAD_ETH_BERLIN);
+        static_assert(traits::evm_rev() >= EvmRevision::Berlin);
 
         auto const size = ctx->get_memory_offset(*size_ptr);
         Memory::Offset dest_offset;
@@ -191,7 +191,7 @@ namespace monad::vm::runtime
     void extcodehash(
         Context *ctx, uint256_t *result_ptr, uint256_t const *address_ptr)
     {
-        static_assert(traits::evm_rev() >= MONAD_ETH_BERLIN);
+        static_assert(traits::evm_rev() >= EvmRevision::Berlin);
 
         auto const address = address_from_uint256(*address_ptr);
 
@@ -210,7 +210,7 @@ namespace monad::vm::runtime
     void extcodesize(
         Context *ctx, uint256_t *result_ptr, uint256_t const *address_ptr)
     {
-        static_assert(traits::evm_rev() >= MONAD_ETH_BERLIN);
+        static_assert(traits::evm_rev() >= EvmRevision::Berlin);
 
         auto const address = address_from_uint256(*address_ptr);
 

@@ -65,7 +65,7 @@ uint64_t identity_gas_cost(byte_string_view const input)
 template <Traits traits>
 uint64_t ecadd_gas_cost(byte_string_view const)
 {
-    static_assert(traits::evm_rev() >= MONAD_ETH_ISTANBUL);
+    static_assert(traits::evm_rev() >= EvmRevision::Istanbul);
 
     return 150; // EIP-1108
 }
@@ -75,7 +75,7 @@ EXPLICIT_EVM_TRAITS(ecadd_gas_cost);
 template <Traits traits>
 uint64_t ecmul_gas_cost(byte_string_view const)
 {
-    static_assert(traits::evm_rev() >= MONAD_ETH_ISTANBUL);
+    static_assert(traits::evm_rev() >= EvmRevision::Istanbul);
 
     return 6'000; // EIP-1108
 }
@@ -101,7 +101,7 @@ EXPLICIT_EVM_TRAITS(blake2bf_gas_cost);
 template <Traits traits>
 static uint256_t mult_complexity(uint256_t const &max_len) noexcept
 {
-    static_assert(traits::evm_rev() >= MONAD_ETH_BERLIN);
+    static_assert(traits::evm_rev() >= EvmRevision::Berlin);
 
     if constexpr (traits::eip_7883_active()) {
         uint256_t const words{(max_len + 7) >> 3}; // ceil(max_len/8)
@@ -122,7 +122,7 @@ static uint256_t mult_complexity(uint256_t const &max_len) noexcept
 template <Traits traits>
 static uint256_t expmod_gas_denominator() noexcept
 {
-    static_assert(traits::evm_rev() >= MONAD_ETH_BERLIN);
+    static_assert(traits::evm_rev() >= EvmRevision::Berlin);
 
     if constexpr (traits::eip_7883_active()) {
         return 1;
@@ -151,7 +151,7 @@ uint256_t expmod_iteration_count(uint256_t exp_len256, size_t bit_len) noexcept
 template <Traits traits>
 constexpr uint64_t expmod_min_gas()
 {
-    static_assert(traits::evm_rev() >= MONAD_ETH_BERLIN);
+    static_assert(traits::evm_rev() >= EvmRevision::Berlin);
 
     if constexpr (traits::eip_7883_active()) {
         return 500;

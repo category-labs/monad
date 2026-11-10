@@ -77,7 +77,7 @@ template <Traits traits>
 vm::Result deploy_contract_code(
     State &state, Address const &address, vm::Result result) noexcept
 {
-    static_assert(traits::evm_rev() >= MONAD_ETH_SPURIOUS_DRAGON);
+    static_assert(traits::evm_rev() >= EvmRevision::SpuriousDragon);
 
     MONAD_ASSERT(result.status_code == CallStatus::Success);
 
@@ -190,7 +190,7 @@ template <Traits traits>
 vm::Result execute_create_message(
     StateHost<traits> *const host, State &state, vm::Message const &msg)
 {
-    static_assert(traits::evm_rev() >= MONAD_ETH_SPURIOUS_DRAGON);
+    static_assert(traits::evm_rev() >= EvmRevision::SpuriousDragon);
 
     MONAD_ASSERT(
         msg.kind == vm::CallKind::Create || msg.kind == vm::CallKind::Create2);

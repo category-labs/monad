@@ -57,7 +57,7 @@ namespace
 
 TYPED_TEST(TraitsTest, validate_enough_gas)
 {
-    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_HOMESTEAD);
+    static_assert(TestFixture::Trait::evm_rev() >= EvmRevision::Homestead);
 
     static Transaction const t{
         .sc = {.signature = {.r = r, .s = s}},
@@ -79,7 +79,7 @@ TYPED_TEST(TraitsTest, validate_enough_gas)
 
 TYPED_TEST(TraitsTest, validate_floor_gas)
 {
-    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_ISTANBUL);
+    static_assert(TestFixture::Trait::evm_rev() >= EvmRevision::Istanbul);
 
     static constexpr auto gas_limit = 300'000;
     Transaction const t{
@@ -310,7 +310,7 @@ TYPED_TEST(InMemoryStateTraitsTest, insufficent_balance_overflow)
 // EIP-3860
 TYPED_TEST(TraitsTest, init_code_exceed_limit)
 {
-    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_SPURIOUS_DRAGON);
+    static_assert(TestFixture::Trait::evm_rev() >= EvmRevision::SpuriousDragon);
 
     byte_string long_data;
     for (auto i = 0u; i <= 2 * TestFixture::Trait::max_code_size(); ++i) {

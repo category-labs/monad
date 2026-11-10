@@ -46,7 +46,7 @@ Result<void> static_validate_transaction(
     std::optional<uint64_t> const &excess_blob_gas, uint256_t const &chain_id,
     BlobSchedule const &blob_schedule)
 {
-    static_assert(traits::evm_rev() >= MONAD_ETH_BERLIN);
+    static_assert(traits::evm_rev() >= EvmRevision::Berlin);
 
     // EIP-155
     if (MONAD_LIKELY(tx.sc.chain_id.has_value())) {

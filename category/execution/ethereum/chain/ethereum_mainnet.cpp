@@ -43,29 +43,29 @@ uint256_t EthereumMainnet::get_chain_id() const
     return 1;
 };
 
-monad_eth_revision EthereumMainnet::get_revision(
+EvmRevision EthereumMainnet::get_revision(
     uint64_t const block_number, uint64_t const timestamp) const
 {
     if (MONAD_LIKELY(timestamp >= OSAKA_ACTIVATION_TIMESTAMP)) {
-        return MONAD_ETH_OSAKA;
+        return EvmRevision::Osaka;
     }
     else if (timestamp >= PRAGUE_ACTIVATION_TIMESTAMP) {
-        return MONAD_ETH_PRAGUE;
+        return EvmRevision::Prague;
     }
     else if (timestamp >= CANCUN_ACTIVATION_TIMESTAMP) {
-        return MONAD_ETH_CANCUN;
+        return EvmRevision::Cancun;
     }
     else if (timestamp >= SHANGHAI_ACTIVATION_TIMESTAMP) {
-        return MONAD_ETH_SHANGHAI;
+        return EvmRevision::Shanghai;
     }
     else if (block_number >= PARIS_ACTIVATION_BLOCK_NUMBER) {
-        return MONAD_ETH_PARIS;
+        return EvmRevision::Paris;
     }
     else if (block_number >= LONDON_ACTIVATION_BLOCK_NUMBER) {
-        return MONAD_ETH_LONDON;
+        return EvmRevision::London;
     }
     else if (block_number >= BERLIN_ACTIVATION_BLOCK_NUMBER) {
-        return MONAD_ETH_BERLIN;
+        return EvmRevision::Berlin;
     }
     MONAD_ASSERT(false, "unsupported fork");
 }

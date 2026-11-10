@@ -22,7 +22,7 @@
 #include <category/vm/evm/call_status.hpp>
 #include <category/vm/evm/message.hpp>
 #include <category/vm/evm/page_storage_status.hpp>
-#include <category/vm/evm/revision.h>
+#include <category/vm/evm/revision.hpp>
 #include <category/vm/evm/storage_status.hpp>
 #include <category/vm/evm/tx_context.hpp>
 
@@ -93,8 +93,8 @@ namespace monad::vm::test
     MONAD_ASSERT_ENUM_EQ(CallStatus::Rejected, EVMC_REJECTED);
     MONAD_ASSERT_ENUM_EQ(CallStatus::OutOfMemory, EVMC_OUT_OF_MEMORY);
 
-    MONAD_ASSERT_ENUM_EQ(MONAD_ETH_FRONTIER, EVMC_FRONTIER);
-    MONAD_ASSERT_ENUM_EQ(MONAD_ETH_OSAKA, EVMC_OSAKA);
+    MONAD_ASSERT_ENUM_EQ(EvmRevision::Frontier, EVMC_FRONTIER);
+    MONAD_ASSERT_ENUM_EQ(EvmRevision::Osaka, EVMC_OSAKA);
 
     MONAD_ASSERT_ENUM_EQ(CallKind::Call, EVMC_CALL);
     MONAD_ASSERT_ENUM_EQ(CallKind::DelegateCall, EVMC_DELEGATECALL);
@@ -162,16 +162,16 @@ namespace monad::vm::test
     }
 
     // Amsterdam and later have no evmc counterpart.
-    inline evmc_revision to_evmc_revision(monad_eth_revision const rev)
+    inline evmc_revision to_evmc_revision(EvmRevision const rev)
     {
-        MONAD_ASSERT(std::to_underlying(rev) <= std::to_underlying(EVMC_OSAKA));
+        MONAD_ASSERT(rev <= EvmRevision::Osaka);
         return static_cast<evmc_revision>(std::to_underlying(rev));
     }
 
-    inline monad_eth_revision from_evmc_revision(evmc_revision const rev)
+    inline EvmRevision from_evmc_revision(evmc_revision const rev)
     {
         MONAD_ASSERT(rev <= EVMC_OSAKA);
-        return static_cast<monad_eth_revision>(std::to_underlying(rev));
+        return static_cast<EvmRevision>(std::to_underlying(rev));
     }
 
     inline Message from_evmc(evmc_message const &m) noexcept

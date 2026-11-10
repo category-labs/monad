@@ -54,11 +54,11 @@ All execution code is templated on a `Traits` parameter that encodes the chain r
 
 There are two trait families, defined in `category/vm/evm/traits.hpp`:
 
-- **`EvmTraits<monad_eth_revision>`** — one per EVM fork (MONAD_ETH_BERLIN through MONAD_ETH_AMSTERDAM, 8 total)
+- **`EvmTraits<EvmRevision>`** — one per EVM fork (EvmRevision::Berlin through EvmRevision::Amsterdam, 8 total)
 - **`MonadTraits<monad_revision>`** — one per Monad revision (MONAD_ZERO through MONAD_NEXT, 12 total)
 
 Both satisfy the `Traits` concept, which exposes `consteval` methods for:
-- `evm_rev()` — the underlying EVM revision (MonadTraits maps to an EVM rev, e.g. MONAD_FOUR+ maps to MONAD_ETH_PRAGUE)
+- `evm_rev()` — the underlying EVM revision (MonadTraits maps to an EVM rev, e.g. MONAD_FOUR+ maps to EvmRevision::Prague)
 - Feature flags like `eip_7702_active()`, `eip_4844_active()`, `mip_3_active()`
 - Constants like `cold_account_cost()`, `max_code_size()`
 
@@ -69,14 +69,14 @@ Because all methods are `consteval`, `if constexpr` on trait queries is zero-cos
 Runtime revision values are mapped to the correct template instantiation via switch macros in `category/vm/evm/switch_traits.hpp`:
 
 ```cpp
-// At a call site that has a runtime monad_eth_revision:
+// At a call site that has a runtime EvmRevision:
 SWITCH_EVM_TRAITS(execute_transaction, chain, tx, header, ...);
 
 // At a call site that has a runtime monad_revision:
 SWITCH_MONAD_TRAITS(execute_transaction, chain, tx, header, ...);
 ```
 
-Each expands to a switch statement that calls `execute_transaction<EvmTraits<MONAD_ETH_OSAKA>>(...)`, `execute_transaction<EvmTraits<MONAD_ETH_PRAGUE>>(...)`, etc.
+Each expands to a switch statement that calls `execute_transaction<EvmTraits<EvmRevision::Osaka>>(...)`, `execute_transaction<EvmTraits<EvmRevision::Prague>>(...)`, etc.
 
 ### Explicit instantiation macros
 
@@ -135,7 +135,7 @@ EXPLICIT_MONAD_TRAITS(revert_transaction);
 The linker picks the right instantiation — EVM callers get the no-op, Monad callers get the real implementation. No `if constexpr (is_monad_trait_v<traits>)` needed in the shared code.
 
 **When branching IS acceptable:**
-- Using `if constexpr` on **feature flags** like `traits::eip_7702_active()` or `traits::evm_rev() >= MONAD_ETH_PRAGUE` is fine — these are per-revision decisions, not monad-vs-EVM decisions.
+- Using `if constexpr` on **feature flags** like `traits::eip_7702_active()` or `traits::evm_rev() >= EvmRevision::Prague` is fine — these are per-revision decisions, not monad-vs-EVM decisions.
 - Using `requires is_monad_trait_v<traits>` constraints on functions that only make sense for Monad (e.g. `can_sender_dip_into_reserve`) is fine — these aren't branches, they're compile-time constraints that prevent misuse.
 - **Pragmatic exceptions** exist in `ethereum/` where the separate-instantiation pattern would be unwieldy — e.g. `if constexpr (is_monad_trait_v<traits>)` guards in `execute_transaction.cpp` (`init_reserve_balance_context(...)`), `execute_block_header.cpp` and `block_hash_history.cpp`. Prefer the split-instantiation pattern for new code, but a guarded call is acceptable when the alternative would be splitting an entire function just to add one Monad-specific line.
 
@@ -154,11 +154,11 @@ Defined in `category/vm/evm/monad/revision.h`:
 
 | Revision | Underlying EVM | Notable changes |
 |----------|---------------|-----------------|
-| MONAD_ZERO–THREE | MONAD_ETH_CANCUN | Base Monad; MONAD_TWO raises max code size to 128KB |
-| MONAD_FOUR–EIGHT | MONAD_ETH_PRAGUE | EIP-7951 active; larger initcode; Monad pricing v1 at MONAD_SEVEN |
-| MONAD_NINE | MONAD_ETH_OSAKA | MIP-3 and MIP-4 active |
-| MONAD_TEN | MONAD_ETH_OSAKA | MIP-8 (page-encoded storage) active |
-| MONAD_NEXT | MONAD_ETH_AMSTERDAM | Future/development; MIP-12 active |
+| MONAD_ZERO–THREE | EvmRevision::Cancun | Base Monad; MONAD_TWO raises max code size to 128KB |
+| MONAD_FOUR–EIGHT | EvmRevision::Prague | EIP-7951 active; larger initcode; Monad pricing v1 at MONAD_SEVEN |
+| MONAD_NINE | EvmRevision::Osaka | MIP-3 and MIP-4 active |
+| MONAD_TEN | EvmRevision::Osaka | MIP-8 (page-encoded storage) active |
+| MONAD_NEXT | EvmRevision::Amsterdam | Future/development; MIP-12 active |
 
 Key differences from EVM traits: EIP-4844 (blob gas) is always disabled, cold account/storage costs are higher (Monad pricing), and code size limits are larger (128KB code, 256KB initcode). See the [Monad changelog](https://docs.monad.xyz/developer-essentials/changelog) for user-facing details of each revision.
 

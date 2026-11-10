@@ -48,7 +48,7 @@ MONAD_NAMESPACE_BEGIN
 
 using BOOST_OUTCOME_V2_NAMESPACE::success;
 
-monad_eth_revision MonadChain::get_revision(
+EvmRevision MonadChain::get_revision(
     uint64_t /*block_number*/, uint64_t /*timestamp*/) const
 {
     MONAD_ABORT("Monad chains dispatch on get_monad_revision");

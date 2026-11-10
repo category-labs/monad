@@ -14,45 +14,50 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/assert.h>
-#include <category/vm/evm/revision.h>
+#include <category/core/config.hpp>
+#include <category/vm/evm/revision.hpp>
 
-char const *monad_eth_revision_to_string(monad_eth_revision const rev)
+MONAD_NAMESPACE_BEGIN
+
+char const *to_string(EvmRevision const rev)
 {
     switch (rev) {
-    case MONAD_ETH_FRONTIER:
-        return "MONAD_ETH_FRONTIER";
-    case MONAD_ETH_HOMESTEAD:
-        return "MONAD_ETH_HOMESTEAD";
-    case MONAD_ETH_TANGERINE_WHISTLE:
-        return "MONAD_ETH_TANGERINE_WHISTLE";
-    case MONAD_ETH_SPURIOUS_DRAGON:
-        return "MONAD_ETH_SPURIOUS_DRAGON";
-    case MONAD_ETH_BYZANTIUM:
-        return "MONAD_ETH_BYZANTIUM";
-    case MONAD_ETH_CONSTANTINOPLE:
-        return "MONAD_ETH_CONSTANTINOPLE";
-    case MONAD_ETH_PETERSBURG:
-        return "MONAD_ETH_PETERSBURG";
-    case MONAD_ETH_ISTANBUL:
-        return "MONAD_ETH_ISTANBUL";
-    case MONAD_ETH_BERLIN:
-        return "MONAD_ETH_BERLIN";
-    case MONAD_ETH_LONDON:
-        return "MONAD_ETH_LONDON";
-    case MONAD_ETH_PARIS:
-        return "MONAD_ETH_PARIS";
-    case MONAD_ETH_SHANGHAI:
-        return "MONAD_ETH_SHANGHAI";
-    case MONAD_ETH_CANCUN:
-        return "MONAD_ETH_CANCUN";
-    case MONAD_ETH_PRAGUE:
-        return "MONAD_ETH_PRAGUE";
-    case MONAD_ETH_OSAKA:
-        return "MONAD_ETH_OSAKA";
-    case MONAD_ETH_AMSTERDAM:
-        return "MONAD_ETH_AMSTERDAM";
-    case MONAD_ETH_EXPERIMENTAL:
-        return "MONAD_ETH_EXPERIMENTAL";
+    case EvmRevision::Frontier:
+        return "Frontier";
+    case EvmRevision::Homestead:
+        return "Homestead";
+    case EvmRevision::TangerineWhistle:
+        return "TangerineWhistle";
+    case EvmRevision::SpuriousDragon:
+        return "SpuriousDragon";
+    case EvmRevision::Byzantium:
+        return "Byzantium";
+    case EvmRevision::Constantinople:
+        return "Constantinople";
+    case EvmRevision::Petersburg:
+        return "Petersburg";
+    case EvmRevision::Istanbul:
+        return "Istanbul";
+    case EvmRevision::Berlin:
+        return "Berlin";
+    case EvmRevision::London:
+        return "London";
+    case EvmRevision::Paris:
+        return "Paris";
+    case EvmRevision::Shanghai:
+        return "Shanghai";
+    case EvmRevision::Cancun:
+        return "Cancun";
+    case EvmRevision::Prague:
+        return "Prague";
+    case EvmRevision::Osaka:
+        return "Osaka";
+    case EvmRevision::Amsterdam:
+        return "Amsterdam";
+    case EvmRevision::Experimental:
+        return "Experimental";
     }
-    MONAD_ABORT("unhandled monad_eth_revision");
+    MONAD_ABORT("unhandled EvmRevision");
 }
+
+MONAD_NAMESPACE_END

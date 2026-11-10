@@ -285,7 +285,7 @@ namespace monad::vm::compiler
     template <Traits traits>
     consteval std::array<OpCodeInfo, 256> make_opcode_table()
     {
-        static_assert(traits::evm_rev() >= MONAD_ETH_BERLIN);
+        static_assert(traits::evm_rev() >= EvmRevision::Berlin);
 
         // clang-format off
         return {

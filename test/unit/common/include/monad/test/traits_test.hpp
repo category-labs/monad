@@ -16,7 +16,7 @@
 #pragma once
 
 #include <category/vm/evm/monad/revision.h>
-#include <category/vm/evm/revision.h>
+#include <category/vm/evm/revision.hpp>
 #include <category/vm/evm/traits.hpp>
 
 #include <gtest/gtest.h>
@@ -29,8 +29,8 @@ namespace detail
     template <monad_revision rev>
     using MonadRevisionConstant = std::integral_constant<monad_revision, rev>;
 
-    template <monad_eth_revision rev>
-    using EvmRevisionConstant = std::integral_constant<monad_eth_revision, rev>;
+    template <monad::EvmRevision rev>
+    using EvmRevisionConstant = std::integral_constant<monad::EvmRevision, rev>;
 
     template <std::size_t... Is>
     constexpr auto make_monad_revision_types(std::index_sequence<Is...>)
@@ -43,11 +43,12 @@ namespace detail
     constexpr auto make_evm_revision_types(std::index_sequence<Is...>)
     {
         return ::testing::Types<
-            EvmRevisionConstant<static_cast<monad_eth_revision>(
-                Is + monad::constants::EARLIEST_SUPPORTED_EVM_FORK)>...>{};
+            EvmRevisionConstant<static_cast<monad::EvmRevision>(
+                Is + std::to_underlying(
+                         monad::constants::EARLIEST_SUPPORTED_EVM_FORK))>...>{};
     }
 
-    template <monad_eth_revision Since, std::size_t... Is>
+    template <monad::EvmRevision Since, std::size_t... Is>
     constexpr auto make_evm_revision_types_since(std::index_sequence<Is...>)
     {
         constexpr auto filtered = [] {
@@ -57,7 +58,7 @@ namespace detail
             (
                 [&] {
                     constexpr auto evm_rev =
-                        static_cast<monad_eth_revision>(Is);
+                        static_cast<monad::EvmRevision>(Is);
                     if (evm_rev >= Since) {
                         result[count++] = Is;
                     }
@@ -69,11 +70,11 @@ namespace detail
 
         return [&]<std::size_t... Js>(std::index_sequence<Js...>) {
             return ::testing::Types<EvmRevisionConstant<
-                static_cast<monad_eth_revision>(filtered.first[Js])>...>{};
+                static_cast<monad::EvmRevision>(filtered.first[Js])>...>{};
         }(std::make_index_sequence<filtered.second>{});
     }
 
-    template <monad_eth_revision Since, std::size_t... Is>
+    template <monad::EvmRevision Since, std::size_t... Is>
     constexpr auto make_monad_revision_types_since(std::index_sequence<Is...>)
     {
         constexpr auto filtered = [] {
@@ -154,7 +155,7 @@ namespace detail
     using MonadRevisionTypes = decltype(make_monad_revision_types(
         std::make_index_sequence<MONAD_NEXT + 1>{}));
 
-    template <monad_eth_revision Since>
+    template <monad::EvmRevision Since>
     using MonadRevisionTypesSinceEvmRevision =
         decltype(make_monad_revision_types_since<Since>(
             std::make_index_sequence<MONAD_NEXT + 1>{}));
@@ -169,18 +170,21 @@ namespace detail
         decltype(make_monad_revision_types_before<Before>(
             std::make_index_sequence<MONAD_NEXT + 1>{}));
 
-    // Skip the unsupported early forks and the MONAD_ETH_MAX_REVISION /
-    // EXPERIMENTAL sentinel. Generate revisions in the closed range
+    // Skip the unsupported early forks and the EvmRevision::Max /
+    // Experimental sentinel. Generate revisions in the closed range
     // [EARLIEST_SUPPORTED_EVM_FORK, LATEST_SUPPORTED_EVM_FORK].
     using EvmRevisionTypes = decltype(make_evm_revision_types(
         std::make_index_sequence<
-            monad::constants::LATEST_SUPPORTED_EVM_FORK + 1 -
-            monad::constants::EARLIEST_SUPPORTED_EVM_FORK>{}));
+            std::to_underlying(monad::constants::LATEST_SUPPORTED_EVM_FORK) +
+            1 -
+            std::to_underlying(
+                monad::constants::EARLIEST_SUPPORTED_EVM_FORK)>{}));
 
-    template <monad_eth_revision Since>
+    template <monad::EvmRevision Since>
     using EvmRevisionTypesSince = decltype(make_evm_revision_types_since<Since>(
         std::make_index_sequence<
-            monad::constants::LATEST_SUPPORTED_EVM_FORK + 1>{}));
+            std::to_underlying(monad::constants::LATEST_SUPPORTED_EVM_FORK) +
+            1>{}));
 
     // Helper to concatenate two ::testing::Types
     template <typename... Ts>
@@ -199,7 +203,7 @@ namespace detail
     using MonadEvmRevisionTypes =
         concat_types_t<MonadRevisionTypes, EvmRevisionTypes>;
 
-    template <monad_eth_revision Since>
+    template <monad::EvmRevision Since>
     using MonadEvmRevisionTypesSince = concat_types_t<
         MonadRevisionTypesSinceEvmRevision<Since>,
         EvmRevisionTypesSince<Since>>;
@@ -214,7 +218,7 @@ namespace detail
                 return monad_revision_to_string(T::value);
             }
             else {
-                return monad_eth_revision_to_string(T::value);
+                return monad::to_string(T::value);
             }
         }
     };
@@ -250,7 +254,7 @@ DEFINE_MONAD_TRAITS_FIXTURE(MonadTraitsTest);
 template <typename EvmRevisionT>
 struct EvmTraitsTest : public ::testing::Test
 {
-    static constexpr monad_eth_revision REV = EvmRevisionT::value;
+    static constexpr monad::EvmRevision REV = EvmRevisionT::value;
     using Trait = monad::EvmTraits<REV>;
 };
 

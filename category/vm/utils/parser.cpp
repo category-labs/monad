@@ -17,7 +17,7 @@
 #include <category/core/cases.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/opcodes.hpp>
-#include <category/vm/evm/revision.h>
+#include <category/vm/evm/revision.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/utils/evm-as.hpp>
 #include <category/vm/utils/evm-as/builder.hpp>
@@ -175,7 +175,7 @@ namespace monad::vm::utils
     std::optional<uint8_t> find_opcode(std::string_view const op)
     {
         auto const &tbl = monad::vm::compiler::make_opcode_table<
-            EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>();
+            EvmTraits<EvmRevision::LatestStable>>();
         size_t i;
         for (i = 0; i < tbl.size(); ++i) {
             if (tbl[i].name == op) {
@@ -188,7 +188,7 @@ namespace monad::vm::utils
         return std::nullopt;
     }
 
-    using disasm_traits = EvmTraits<MONAD_ETH_MAX_REVISION>;
+    using disasm_traits = EvmTraits<EvmRevision::Max>;
 
     std::string show_opcodes(std::vector<uint8_t> const &opcodes)
     {
@@ -232,8 +232,7 @@ namespace monad::vm::utils
 
     std::vector<uint8_t> compile_tokens(
         parser_config const &config,
-        evm_as::EvmBuilder<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>> const
-            &eb)
+        evm_as::EvmBuilder<EvmTraits<EvmRevision::LatestStable>> const &eb)
     {
         std::vector<uint8_t> opcodes{};
         std::vector<evm_as::ValidationError> errors{};

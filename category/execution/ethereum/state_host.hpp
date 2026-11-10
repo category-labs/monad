@@ -132,7 +132,7 @@ struct StateHost final : public StateHostBase
 
     virtual bool account_exists(Address const &address) const override
     {
-        static_assert(traits::evm_rev() >= MONAD_ETH_SPURIOUS_DRAGON);
+        static_assert(traits::evm_rev() >= EvmRevision::SpuriousDragon);
 
         MONAD_TRY
         {
@@ -259,10 +259,8 @@ struct StateHost final : public StateHostBase
     }
 };
 
-static_assert(
-    sizeof(StateHost<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>) == 136);
-static_assert(
-    alignof(StateHost<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>) == 8);
+static_assert(sizeof(StateHost<EvmTraits<EvmRevision::LatestStable>>) == 136);
+static_assert(alignof(StateHost<EvmTraits<EvmRevision::LatestStable>>) == 8);
 static_assert(sizeof(StateHost<MonadTraits<MONAD_NEXT>>) == 136);
 static_assert(alignof(StateHost<MonadTraits<MONAD_NEXT>>) == 8);
 

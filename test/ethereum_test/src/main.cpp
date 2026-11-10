@@ -20,7 +20,7 @@
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/event_trace.hpp>
 #include <category/vm/evm/monad/revision.h>
-#include <category/vm/evm/revision.h>
+#include <category/vm/evm/revision.hpp>
 
 #include <blockchain_test.hpp>
 #include <event.hpp>
@@ -64,7 +64,7 @@ int main(int argc, char *argv[])
     auto log_level = quill::LogLevel::None;
     std::optional<std::string> fork_name;
     std::optional<std::string> vm_mode_name;
-    std::optional<std::variant<monad_eth_revision, monad_revision>> revision =
+    std::optional<std::variant<EvmRevision, monad_revision>> revision =
         std::nullopt;
     std::optional<size_t> txn_index = std::nullopt;
     std::string record_exec_events_path;

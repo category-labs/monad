@@ -34,11 +34,13 @@
 #include <fstream>
 #include <iterator>
 #include <ranges>
+#include <utility>
 #include <vector>
 
 namespace fs = std::filesystem;
 
 using monad::CallStatus;
+using monad::EvmRevision;
 using monad::EvmTraits;
 using monad::load_be_unsafe;
 using namespace monad::vm;
@@ -350,7 +352,7 @@ TYPED_TEST(VMTraitsTest, JumpiLiveDestDeferredComparisonBug)
 
 TYPED_TEST(VMTraitsTest, Cmov32BitBug)
 {
-    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_CONSTANTINOPLE);
+    static_assert(TestFixture::Trait::evm_rev() >= EvmRevision::Constantinople);
 
     TestFixture::execute(
         1000,
@@ -727,16 +729,16 @@ TYPED_TEST(VMTraitsTest, EthCallOutOfGas)
 
 namespace
 {
-    std::vector<std::variant<monad_eth_revision, monad_revision>>
-    monad_evm_revisions()
+    std::vector<std::variant<EvmRevision, monad_revision>> monad_evm_revisions()
     {
-        std::vector<std::variant<monad_eth_revision, monad_revision>> result;
+        std::vector<std::variant<EvmRevision, monad_revision>> result;
         // Only run regression tests for forks whose behavior is implemented
         // and have a corresponding reference implementation,
         for (auto evm_rev = 0;
-             evm_rev <= monad::constants::LATEST_REFERENCE_REVISION;
+             evm_rev <=
+             std::to_underlying(monad::constants::LATEST_REFERENCE_REVISION);
              ++evm_rev) {
-            result.push_back(static_cast<monad_eth_revision>(evm_rev));
+            result.push_back(static_cast<EvmRevision>(evm_rev));
         }
         for (auto monad_rev = 0; monad_rev <= MONAD_NEXT; ++monad_rev) {
             result.push_back(static_cast<monad_revision>(monad_rev));
@@ -750,16 +752,15 @@ namespace
             monad_evm_revisions()) |
         std::ranges::to<std::vector>();
 
-    std::string monad_evm_revision_name(
-        std::variant<monad_eth_revision, monad_revision> rev)
+    std::string
+    monad_evm_revision_name(std::variant<EvmRevision, monad_revision> rev)
     {
         std::string name;
         if (std::holds_alternative<monad_revision>(rev)) {
             name = monad_revision_to_string(std::get<monad_revision>(rev));
         }
         else {
-            name =
-                monad_eth_revision_to_string(std::get<monad_eth_revision>(rev));
+            name = to_string(std::get<EvmRevision>(rev));
         }
         std::replace(name.begin(), name.end(), ' ', '_');
         return name;

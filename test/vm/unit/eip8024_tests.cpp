@@ -17,7 +17,7 @@
 #include <category/vm/compiler/ir/instruction.hpp>
 #include <category/vm/evm/call_status.hpp>
 #include <category/vm/evm/opcodes.hpp>
-#include <category/vm/evm/revision.h>
+#include <category/vm/evm/revision.hpp>
 #include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/utils/evm-as.hpp>
 #include <category/vm/utils/evm-as/compiler.hpp>
@@ -39,6 +39,7 @@ using namespace monad::vm;
 using enum monad::vm::compiler::EvmOpCode;
 
 using monad::CallStatus;
+using monad::EvmRevision;
 using monad::EvmTraits;
 using monad::vm::compiler::eip8024_decode_pair;
 using monad::vm::compiler::eip8024_decode_single;
@@ -180,7 +181,7 @@ namespace
             EXCHANGE,
             eip8024_encode_pair(2, 3),
         };
-        auto const ir = unsafe_make_ir<EvmTraits<MONAD_ETH_AMSTERDAM>>(
+        auto const ir = unsafe_make_ir<EvmTraits<EvmRevision::Amsterdam>>(
             std::span<uint8_t const>{code});
         ASSERT_EQ(ir.blocks().size(), 1u);
         auto const &instrs = ir.blocks()[0].instrs;
@@ -205,7 +206,7 @@ namespace
         using monad::vm::compiler::basic_blocks::unsafe_make_ir;
 
         std::vector<uint8_t> const code{DUPN, JUMPDEST};
-        auto const ir = unsafe_make_ir<EvmTraits<MONAD_ETH_AMSTERDAM>>(
+        auto const ir = unsafe_make_ir<EvmTraits<EvmRevision::Amsterdam>>(
             std::span<uint8_t const>{code});
         ASSERT_FALSE(ir.blocks().empty());
         EXPECT_TRUE(ir.blocks()[0].instrs.empty());
@@ -215,7 +216,7 @@ namespace
 
     class Eip8024Test
         : public test::VMTraitsTestBase<
-              std::integral_constant<monad_eth_revision, MONAD_ETH_AMSTERDAM>>
+              std::integral_constant<EvmRevision, EvmRevision::Amsterdam>>
         , public ::testing::Test
     {
     protected:
@@ -642,7 +643,7 @@ namespace
 
     class Eip8024DormantTest
         : public test::VMTraitsTestBase<
-              std::integral_constant<monad_eth_revision, MONAD_ETH_OSAKA>>
+              std::integral_constant<EvmRevision, EvmRevision::Osaka>>
         , public ::testing::Test
     {
     protected:
@@ -663,6 +664,7 @@ namespace
             EXPECT_NE(run(c, Compiler), CallStatus::Success) << "op=" << +op;
         }
         EXPECT_TRUE(
-            compiler::is_unknown_opcode_info<EvmTraits<MONAD_ETH_OSAKA>>(DUPN));
+            compiler::is_unknown_opcode_info<EvmTraits<EvmRevision::Osaka>>(
+                DUPN));
     }
 }

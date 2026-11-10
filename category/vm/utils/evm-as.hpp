@@ -24,9 +24,9 @@
 namespace monad::vm::utils::evm_as
 {
 
-    inline EvmBuilder<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>> latest()
+    inline EvmBuilder<EvmTraits<EvmRevision::LatestStable>> latest()
     {
-        return EvmBuilder<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>{};
+        return EvmBuilder<EvmTraits<EvmRevision::LatestStable>>{};
     }
 
     inline EvmBuilder<EvmTraits<constants::EARLIEST_SUPPORTED_EVM_FORK>>
@@ -35,43 +35,43 @@ namespace monad::vm::utils::evm_as
         return EvmBuilder<EvmTraits<constants::EARLIEST_SUPPORTED_EVM_FORK>>{};
     }
 
-    inline EvmBuilder<EvmTraits<MONAD_ETH_BERLIN>> berlin()
+    inline EvmBuilder<EvmTraits<EvmRevision::Berlin>> berlin()
     {
-        return EvmBuilder<EvmTraits<MONAD_ETH_BERLIN>>{};
+        return EvmBuilder<EvmTraits<EvmRevision::Berlin>>{};
     }
 
-    inline EvmBuilder<EvmTraits<MONAD_ETH_LONDON>> london()
+    inline EvmBuilder<EvmTraits<EvmRevision::London>> london()
     {
-        return EvmBuilder<EvmTraits<MONAD_ETH_LONDON>>{};
+        return EvmBuilder<EvmTraits<EvmRevision::London>>{};
     }
 
-    inline EvmBuilder<EvmTraits<MONAD_ETH_PARIS>> paris()
+    inline EvmBuilder<EvmTraits<EvmRevision::Paris>> paris()
     {
-        return EvmBuilder<EvmTraits<MONAD_ETH_PARIS>>{};
+        return EvmBuilder<EvmTraits<EvmRevision::Paris>>{};
     }
 
-    inline EvmBuilder<EvmTraits<MONAD_ETH_SHANGHAI>> shanghai()
+    inline EvmBuilder<EvmTraits<EvmRevision::Shanghai>> shanghai()
     {
-        return EvmBuilder<EvmTraits<MONAD_ETH_SHANGHAI>>{};
+        return EvmBuilder<EvmTraits<EvmRevision::Shanghai>>{};
     }
 
-    inline EvmBuilder<EvmTraits<MONAD_ETH_CANCUN>> cancun()
+    inline EvmBuilder<EvmTraits<EvmRevision::Cancun>> cancun()
     {
-        return EvmBuilder<EvmTraits<MONAD_ETH_CANCUN>>{};
+        return EvmBuilder<EvmTraits<EvmRevision::Cancun>>{};
     }
 
-    inline EvmBuilder<EvmTraits<MONAD_ETH_PRAGUE>> prague()
+    inline EvmBuilder<EvmTraits<EvmRevision::Prague>> prague()
     {
-        return EvmBuilder<EvmTraits<MONAD_ETH_PRAGUE>>{};
+        return EvmBuilder<EvmTraits<EvmRevision::Prague>>{};
     }
 
-    inline EvmBuilder<EvmTraits<MONAD_ETH_OSAKA>> osaka()
+    inline EvmBuilder<EvmTraits<EvmRevision::Osaka>> osaka()
     {
-        return EvmBuilder<EvmTraits<MONAD_ETH_OSAKA>>{};
+        return EvmBuilder<EvmTraits<EvmRevision::Osaka>>{};
     }
 
-    inline EvmBuilder<EvmTraits<MONAD_ETH_AMSTERDAM>> amsterdam()
+    inline EvmBuilder<EvmTraits<EvmRevision::Amsterdam>> amsterdam()
     {
-        return EvmBuilder<EvmTraits<MONAD_ETH_AMSTERDAM>>{};
+        return EvmBuilder<EvmTraits<EvmRevision::Amsterdam>>{};
     }
 }

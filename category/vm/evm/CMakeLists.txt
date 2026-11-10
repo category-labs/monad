@@ -29,7 +29,7 @@ target_sources(monad-vm-evm PRIVATE
     "page_storage_status.hpp"
     "result.hpp"
     "revision.cpp"
-    "revision.h"
+    "revision.hpp"
     "storage_status.hpp"
     "switch_traits.hpp"
     "traits.hpp"

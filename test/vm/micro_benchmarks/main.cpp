@@ -23,7 +23,7 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/vm/evm/message.hpp>
 #include <category/vm/evm/result.hpp>
-#include <category/vm/evm/revision.h>
+#include <category/vm/evm/revision.hpp>
 #include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/utils/evm-as/kernel-builder.hpp>
 #include <category/vm/vm.hpp>
@@ -49,7 +49,7 @@ using namespace monad::vm;
 using namespace monad::vm::runtime;
 using namespace monad::vm::utils::evm_as;
 
-using traits = EvmTraits<MONAD_ETH_OSAKA>;
+using traits = EvmTraits<EvmRevision::Osaka>;
 
 enum class OutputFormat
 {

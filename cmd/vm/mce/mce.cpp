@@ -261,31 +261,31 @@ int main(int argc, char **argv)
     auto args = parse_args(argc, argv);
     std::string const rev = uppercase(args.revision);
     if (rev == "BERLIN") {
-        return mce_main<EvmTraits<MONAD_ETH_BERLIN>>(args);
+        return mce_main<EvmTraits<EvmRevision::Berlin>>(args);
     }
     else if (rev == "LONDON") {
-        return mce_main<EvmTraits<MONAD_ETH_LONDON>>(args);
+        return mce_main<EvmTraits<EvmRevision::London>>(args);
     }
     else if (rev == "PARIS") {
-        return mce_main<EvmTraits<MONAD_ETH_PARIS>>(args);
+        return mce_main<EvmTraits<EvmRevision::Paris>>(args);
     }
     else if (rev == "SHANGHAI") {
-        return mce_main<EvmTraits<MONAD_ETH_SHANGHAI>>(args);
+        return mce_main<EvmTraits<EvmRevision::Shanghai>>(args);
     }
     else if (rev == "CANCUN") {
-        return mce_main<EvmTraits<MONAD_ETH_CANCUN>>(args);
+        return mce_main<EvmTraits<EvmRevision::Cancun>>(args);
     }
     else if (rev == "PRAGUE") {
-        return mce_main<EvmTraits<MONAD_ETH_PRAGUE>>(args);
+        return mce_main<EvmTraits<EvmRevision::Prague>>(args);
     }
     else if (rev == "OSAKA") {
-        return mce_main<EvmTraits<MONAD_ETH_OSAKA>>(args);
+        return mce_main<EvmTraits<EvmRevision::Osaka>>(args);
     }
     else if (rev == "AMSTERDAM") {
-        return mce_main<EvmTraits<MONAD_ETH_AMSTERDAM>>(args);
+        return mce_main<EvmTraits<EvmRevision::Amsterdam>>(args);
     }
     else if (rev == "LATEST") {
-        return mce_main<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>(args);
+        return mce_main<EvmTraits<EvmRevision::LatestStable>>(args);
     }
     else {
         std::println(stderr, "unsupported revision '{}'", args.revision);

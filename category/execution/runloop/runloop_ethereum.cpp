@@ -51,6 +51,7 @@
 #include <algorithm>
 #include <chrono>
 #include <memory>
+#include <utility>
 #include <vector>
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
@@ -95,7 +96,7 @@ Result<void> process_ethereum_block(
     bytes32_t const &parent_block_id, bool const enable_tracing,
     ExecutionEventRecorder *const exec_recorder)
 {
-    static_assert(traits::evm_rev() >= MONAD_ETH_CONSTANTINOPLE);
+    static_assert(traits::evm_rev() >= EvmRevision::Constantinople);
 
     [[maybe_unused]] auto const block_start = std::chrono::system_clock::now();
     auto const block_begin = std::chrono::steady_clock::now();
@@ -311,7 +312,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
             block.header.number);
 
         bytes32_t const block_id = bytes32_t{block.header.number};
-        monad_eth_revision const rev =
+        EvmRevision const rev =
             chain.get_revision(block.header.number, block.header.timestamp);
 
         BOOST_OUTCOME_TRY([&] {
@@ -328,7 +329,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
                 parent_block_id,
                 enable_tracing,
                 exec_recorder);
-            MONAD_ABORT_PRINTF("unhandled rev switch case: %d", rev);
+            MONAD_ABORT_PRINTF(
+                "unhandled rev switch case: %d", std::to_underlying(rev));
         }());
 
         record_mock_consensus_events(exec_recorder, block_id, block_num);

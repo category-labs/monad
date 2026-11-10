@@ -76,7 +76,7 @@ namespace
 
         for (auto _ : state) {
             auto fn = monad::vm::compiler::native::compile<
-                monad::EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>(
+                monad::EvmTraits<monad::EvmRevision::LatestStable>>(
                 rt,
                 program.data(),
                 monad::vm::interpreter::code_size_t::unsafe_from(
@@ -117,7 +117,7 @@ namespace
 
         for (auto _ : state) {
             auto ncode = monad::vm::compiler::native::compile<
-                monad::EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>(
+                monad::EvmTraits<monad::EvmRevision::LatestStable>>(
                 rt,
                 program.data(),
                 monad::vm::interpreter::code_size_t::unsafe_from(

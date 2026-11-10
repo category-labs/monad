@@ -28,7 +28,7 @@ using namespace monad;
 
 TYPED_TEST(TraitsTest, intrinsic_gas)
 {
-    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_BERLIN);
+    static_assert(TestFixture::Trait::evm_rev() >= EvmRevision::Berlin);
 
     {
         Transaction t{};
@@ -135,7 +135,7 @@ TYPED_TEST(TraitsTest, intrinsic_gas)
 
 TYPED_TEST(TraitsTest, floor_data_gas)
 {
-    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_BERLIN);
+    static_assert(TestFixture::Trait::evm_rev() >= EvmRevision::Berlin);
 
     // EIP-7623
     static constexpr uint64_t zero_floor_token_cost = 10u;

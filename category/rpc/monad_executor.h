@@ -29,6 +29,10 @@ extern "C"
 
 static uint64_t const MONAD_ETH_CALL_LOW_GAS_LIMIT = 8'100'000;
 
+// The standard `monad_eth_simulate_config::revision`: the chain derives each
+// simulated block's fork.
+static int32_t const MONAD_ETH_SIMULATE_REVISION_DEFAULT = -1;
+
 struct monad_executor;
 
 typedef struct monad_executor_result
@@ -128,18 +132,43 @@ void monad_executor_run_transactions(
     void (*complete)(monad_executor_result *, void *user), void *user,
     enum monad_tracer_config);
 
+// Configurable knobs for an `eth_simulateV1` request. The caller is responsible
+// for initializing every field accordingly.
+struct monad_eth_simulate_config
+{
+    enum monad_chain_config chain_config;
+    // This field must be assigned either a valid `EvmRevision` or the
+    // special value `MONAD_ETH_SIMULATE_REVISION_DEFAULT`. The former enables
+    // pinning the chain config to a particular revision irrespectively of block
+    // number / timestamp. This is useful for testing. The latter derives the
+    // revision from the block number / timestamp.
+    int32_t revision;
+    // Maximum total gas used across all simulated blocks.
+    uint64_t gas_limit;
+    // Maximum number of simulated blocks, including synthetic gap blocks.
+    size_t max_calls;
+    // Maximum size in bytes of the CBOR response, enforced approximately via
+    // the size of the in-memory result.
+    size_t max_output_size;
+    // eth_simulateV1's `validation`: whether transactions are validated
+    // strictly. Without it, a block without a base fee override has a zero
+    // base fee rather than its parent's.
+    bool validation;
+    // Emit logs for native value transfers (eth_simulateV1 `traceTransfers`).
+    bool emit_native_transfer_logs;
+};
+
 void monad_executor_eth_simulate_submit(
-    struct monad_executor *, enum monad_chain_config,
+    struct monad_executor *,
+    struct monad_eth_simulate_config const *const config,
     uint8_t const *rlp_senders, size_t rlp_senders_len,
     uint8_t const *rlp_calls, size_t rlp_calls_len, uint64_t block_number,
     uint8_t const *rlp_header, size_t rlp_header_len,
     uint8_t const *rlp_block_id, size_t rlp_block_id_len,
     uint8_t const *rlp_grandparent_block_id,
-    size_t rlp_grandparent_block_id_len, uint64_t gas_limit, size_t max_calls,
-    size_t max_output_size,
+    size_t rlp_grandparent_block_id_len,
     struct monad_state_override_vec const *const state_overrides,
     struct monad_block_override_vec const *const block_overrides,
-    bool validation, bool emit_native_transfer_logs,
     void (*complete)(monad_executor_result *, void *user), void *user);
 
 #ifdef __cplusplus

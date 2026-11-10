@@ -21,7 +21,7 @@
 #include <category/vm/evm/access_status.hpp>
 #include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/message.hpp>
-#include <category/vm/evm/page_storage_status.h>
+#include <category/vm/evm/page_storage_status.hpp>
 #include <category/vm/evm/result.hpp>
 #include <category/vm/evm/storage_status.hpp>
 #include <category/vm/evm/tx_context.hpp>
@@ -87,7 +87,7 @@ namespace monad::vm
         virtual void set_transient_storage(
             Address const &, bytes32_t const &key, bytes32_t const &value) = 0;
 
-        virtual monad_page_storage_status
+        virtual PageStorageStatus
         update_page(Address const &, bytes32_t const &key, StorageStatus) = 0;
 
         /// Capture `std::current_exception()`.

@@ -196,7 +196,7 @@ namespace
         {
         }
 
-        monad_page_storage_status update_page(
+        PageStorageStatus update_page(
             Address const &, bytes32_t const &, StorageStatus) noexcept override
         {
             return {};

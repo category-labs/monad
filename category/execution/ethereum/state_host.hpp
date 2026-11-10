@@ -31,7 +31,7 @@
 #include <category/vm/evm/access_status.hpp>
 #include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/message.hpp>
-#include <category/vm/evm/page_storage_status.h>
+#include <category/vm/evm/page_storage_status.hpp>
 #include <category/vm/evm/result.hpp>
 #include <category/vm/evm/storage_status.hpp>
 #include <category/vm/evm/traits.hpp>
@@ -233,7 +233,7 @@ struct StateHost final : public StateHostBase
         stack_unwind();
     }
 
-    virtual monad_page_storage_status update_page(
+    virtual PageStorageStatus update_page(
         Address const &address, bytes32_t const &key,
         StorageStatus const status) override
     {

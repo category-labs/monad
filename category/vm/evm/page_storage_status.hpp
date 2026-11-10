@@ -15,20 +15,15 @@
 
 #pragma once
 
-#include <stdbool.h>
+#include <category/core/config.hpp>
 
-#ifdef __cplusplus
-extern "C"
-{
-#endif
+MONAD_NAMESPACE_BEGIN
 
 // MIP-8 SSTORE page accounting.
-struct monad_page_storage_status
+struct PageStorageStatus
 {
     bool first_page_write;
     bool grew_state;
 };
 
-#ifdef __cplusplus
-} // extern "C"
-#endif
+MONAD_NAMESPACE_END

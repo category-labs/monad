@@ -435,7 +435,7 @@ AccessStatus State::access_storage(Address const &address, bytes32_t const &key)
 
 EXPLICIT_TRAITS_MEMBER(State::access_storage);
 
-monad_page_storage_status State::update_page(
+PageStorageStatus State::update_page(
     Address const &address, bytes32_t const &key, StorageStatus const status)
 {
     auto &account_state = current_account_state(address);

@@ -20,7 +20,7 @@
 #include <category/core/bytes.hpp>
 #include <category/vm/evm/access_status.hpp>
 #include <category/vm/evm/message.hpp>
-#include <category/vm/evm/page_storage_status.h>
+#include <category/vm/evm/page_storage_status.hpp>
 #include <category/vm/evm/revision.h>
 #include <category/vm/evm/status_code.h>
 #include <category/vm/evm/storage_status.hpp>
@@ -145,7 +145,7 @@ namespace monad::vm::test
     }
 
     inline evmc_page_storage_status
-    to_evmc_page_storage_status(monad_page_storage_status const s) noexcept
+    to_evmc_page_storage_status(PageStorageStatus const s) noexcept
     {
         return {
             .first_page_write = s.first_page_write, .grew_state = s.grew_state};

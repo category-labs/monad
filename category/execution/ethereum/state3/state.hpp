@@ -27,7 +27,7 @@
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/monad/reserve_balance.hpp>
 #include <category/vm/evm/access_status.hpp>
-#include <category/vm/evm/page_storage_status.h>
+#include <category/vm/evm/page_storage_status.hpp>
 #include <category/vm/evm/storage_status.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
@@ -179,7 +179,7 @@ public:
     template <Traits traits>
     AccessStatus access_storage(Address const &, bytes32_t const &key);
 
-    monad_page_storage_status
+    PageStorageStatus
     update_page(Address const &, bytes32_t const &key, StorageStatus status);
 
     ////////////////////////////////////////

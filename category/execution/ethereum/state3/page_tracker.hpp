@@ -19,7 +19,7 @@
 #include <category/core/config.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
 #include <category/vm/evm/access_status.hpp>
-#include <category/vm/evm/page_storage_status.h>
+#include <category/vm/evm/page_storage_status.hpp>
 #include <category/vm/evm/storage_status.hpp>
 
 #pragma GCC diagnostic push
@@ -63,7 +63,7 @@ public:
         return AccessStatus::Cold;
     }
 
-    monad_page_storage_status
+    PageStorageStatus
     update_page(bytes32_t const &key, StorageStatus const status)
     {
         auto const pkey = compute_page_key(key);

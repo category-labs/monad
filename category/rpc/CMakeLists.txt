@@ -32,6 +32,8 @@ add_library(
   "overrides.cpp" 
   "overrides.h" 
   "overrides.hpp"
+  "simulate_chain.cpp"
+  "simulate_chain.hpp"
   "simulation_error.cpp"
   "simulation_error.hpp"
   # rpc/utils

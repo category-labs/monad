@@ -10,7 +10,7 @@
 #include <monad/core/rlp/transaction_rlp.hpp>
 #include <monad/core/transaction.hpp>
 #include <monad/db/trie_db.hpp>
-#include <monad/execution/block_hash_buffer.hpp>
+#include <monad/execution/block_hash_function.hpp>
 #include <monad/execution/evmc_host.hpp>
 #include <monad/execution/execute_transaction.hpp>
 #include <monad/execution/switch_evmc_revision.hpp>
@@ -63,7 +63,8 @@ namespace
         Chain const &chain, Transaction const &txn, BlockHeader const &header,
         uint64_t const block_number, uint64_t const round,
         Address const &sender, TrieDb &tdb,
-        std::shared_ptr<BlockHashBufferFinalized const> const buffer,
+        BlockHashFunction const& block_hash_function,
+        //std::shared_ptr<BlockHashFunction const> const buffer,
         monad_state_override const &state_overrides)
     {
         Transaction enriched_txn{txn};
@@ -188,7 +189,7 @@ namespace
             enriched_txn, sender, header, chain.get_chain_id());
         NoopCallTracer call_tracer;
         EvmcHost<rev> host{
-            call_tracer, tx_context, *buffer, state, max_code_size};
+            call_tracer, tx_context, block_hash_function, state, max_code_size};
         return execute_impl_no_validation<rev>(
             state,
             host,
@@ -203,7 +204,8 @@ namespace
         Chain const &chain, evmc_revision const rev, Transaction const &txn,
         BlockHeader const &header, uint64_t const block_number,
         uint64_t const round, Address const &sender, TrieDb &tdb,
-        std::shared_ptr<BlockHashBufferFinalized const> const buffer,
+        BlockHashFunction const& block_hash_function,
+        //std::shared_ptr<BlockHashFunctionFinalized const> const buffer,
         monad_state_override const &state_overrides)
     {
         SWITCH_EVMC_REVISION(
@@ -215,7 +217,7 @@ namespace
             round,
             sender,
             tdb,
-            buffer,
+            block_hash_function,
             state_overrides);
         MONAD_ASSERT(false);
     }
@@ -381,7 +383,7 @@ struct monad_eth_call_executor
     uint64_t last_latest_version_{0};
 
     BlockHashCache blockhash_cache_{7200};
-    std::shared_ptr<BlockHashBufferFinalized> last_buffer_{};
+    //std::shared_ptr<BlockHashFunctionFinalized> last_buffer_{};
     std::optional<uint64_t> last_block_number_{};
 
     monad_eth_call_executor(
@@ -450,11 +452,12 @@ struct monad_eth_call_executor
         promise->get_future().get();
     }
 
-    std::shared_ptr<BlockHashBufferFinalized const>
+/*
+    std::shared_ptr<BlockHashFunctionFinalized const>
     create_blockhash_buffer(uint64_t const block_number)
     {
         if (!last_block_number_ || *last_block_number_ != block_number) {
-            last_buffer_.reset(new BlockHashBufferFinalized{});
+            last_buffer_.reset(new BlockHashFunctionFinalized{});
             BlockHashCache::ConstAccessor acc;
             for (uint64_t b = block_number < 256 ? 0 : block_number - 256;
                  b < block_number;
@@ -499,6 +502,7 @@ struct monad_eth_call_executor
         }
         return last_buffer_;
     }
+*/
 
     void execute_eth_call(
         monad_chain_config const chain_config, Transaction const &txn,
@@ -513,6 +517,7 @@ struct monad_eth_call_executor
 
         monad_eth_call_result *const result = new monad_eth_call_result();
 
+/*
         auto const blk_hash_buffer = create_blockhash_buffer(block_number);
         if (blk_hash_buffer == nullptr) {
             result->status_code = EVMC_REJECTED;
@@ -523,6 +528,9 @@ struct monad_eth_call_executor
             complete(result, user);
             return;
         }
+*/
+
+        BlockHashFunction const block_hash_function{};
 
         pool_.submit(
             0,
@@ -533,7 +541,7 @@ struct monad_eth_call_executor
              block_round = block_round,
              sender = sender,
              tdb = block_number == last_latest_version_ ? latest_tdb_ : tdb_,
-             block_hash_buffer = blk_hash_buffer,
+             block_hash_function = block_hash_function,
              result = result,
              complete = complete,
              user = user,
@@ -562,7 +570,7 @@ struct monad_eth_call_executor
                     block_round,
                     sender,
                     *tdb,
-                    block_hash_buffer,
+                    block_hash_function,
                     *state_overrides);
 
                 if (MONAD_UNLIKELY(res.has_error())) {

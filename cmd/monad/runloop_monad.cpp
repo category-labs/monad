@@ -10,7 +10,7 @@
 #include <monad/core/rlp/block_rlp.hpp>
 #include <monad/db/db.hpp>
 #include <monad/db/util.hpp>
-#include <monad/execution/block_hash_buffer.hpp>
+#include <monad/execution/block_hash_function.hpp>
 #include <monad/execution/execute_block.hpp>
 #include <monad/execution/execute_transaction.hpp>
 #include <monad/execution/validate_block.hpp>
@@ -86,7 +86,7 @@ namespace
 
 Result<std::pair<bytes32_t, uint64_t>> on_proposal_event(
     MonadConsensusBlockHeader const &consensus_header, Block block,
-    BlockHashBuffer const &block_hash_buffer, Chain const &chain, Db &db,
+    BlockHashFunction const &block_hash_function, Chain const &chain, Db &db,
     fiber::PriorityPool &priority_pool, bool const is_first_block)
 {
     BOOST_OUTCOME_TRY(chain.static_validate_header(block.header));
@@ -105,7 +105,7 @@ Result<std::pair<bytes32_t, uint64_t>> on_proposal_event(
     BOOST_OUTCOME_TRY(
         auto results,
         execute_block(
-            chain, rev, block, block_state, block_hash_buffer, priority_pool));
+            chain, rev, block, block_state, block_hash_function, priority_pool));
 
     std::vector<Receipt> receipts(results.size());
     std::vector<std::vector<CallFrame>> call_frames(results.size());
@@ -168,7 +168,7 @@ bool validate_delayed_execution_results(
 
 Result<std::pair<uint64_t, uint64_t>> runloop_monad(
     Chain const &chain, std::filesystem::path const &ledger_dir,
-    mpt::Db &raw_db, Db &db, BlockHashBufferFinalized &block_hash_buffer,
+    mpt::Db &raw_db, Db &db, BlockHashFunction const &block_hash_function,
     fiber::PriorityPool &priority_pool, uint64_t &finalized_block_num,
     uint64_t const end_block_num, sig_atomic_t const volatile &stop)
 {
@@ -188,7 +188,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
             }
         }
     }
-    BlockHashChain block_hash_chain(block_hash_buffer);
+    //BlockHashChain block_hash_chain(block_hash_function);
 
     uint64_t total_gas = 0;
     uint64_t ntxs = 0;
@@ -206,8 +206,10 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
             auto const block_time_start = std::chrono::steady_clock::now();
 
             auto const ntxns = consensus_body.transactions.size();
-            auto const &block_hash_buffer =
+            /*
+            auto const &block_hash_function =
                 block_hash_chain.find_chain(consensus_header.parent_round());
+            */
             BOOST_OUTCOME_TRY(
                 auto const proposal_output,
                 on_proposal_event(
@@ -217,16 +219,18 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                         .transactions = std::move(consensus_body.transactions),
                         .ommers = std::move(consensus_body.ommers),
                         .withdrawals = std::move(consensus_body.withdrawals)},
-                    block_hash_buffer,
+                    block_hash_function,
                     chain,
                     db,
                     priority_pool,
                     block_number == start_block_num));
             auto const &[output_header, gas_used] = proposal_output;
+            /*
             block_hash_chain.propose(
                 output_header,
                 consensus_header.round,
                 consensus_header.parent_round());
+            */
             db.update_voted_metadata(
                 consensus_header.seqno - 1, consensus_header.qc.vote.round);
 
@@ -243,7 +247,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                 block_number,
                 consensus_header.round);
             db.finalize(block_number, consensus_header.round);
-            block_hash_chain.finalize(consensus_header.round);
+            //block_hash_chain.finalize(consensus_header.round);
 
             auto const &verified_blocks =
                 consensus_header.delayed_execution_results;

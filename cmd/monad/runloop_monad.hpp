@@ -2,6 +2,7 @@
 
 #include <monad/config.hpp>
 #include <monad/core/result.hpp>
+#include <monad/execution/block_hash_function.hpp>
 
 #include <cstdint>
 #include <filesystem>
@@ -13,7 +14,6 @@ MONAD_NAMESPACE_BEGIN
 
 struct Chain;
 struct Db;
-class BlockHashBufferFinalized;
 
 namespace mpt
 {
@@ -27,7 +27,7 @@ namespace fiber
 
 Result<std::pair<uint64_t, uint64_t>> runloop_monad(
     Chain const &, std::filesystem::path const &, mpt::Db &, Db &,
-    BlockHashBufferFinalized &, fiber::PriorityPool &, uint64_t &, uint64_t,
+    BlockHashFunction const&, fiber::PriorityPool &, uint64_t &, uint64_t,
     sig_atomic_t const volatile &);
 
 MONAD_NAMESPACE_END

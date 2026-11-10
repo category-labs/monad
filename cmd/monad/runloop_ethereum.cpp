@@ -63,7 +63,7 @@ namespace
 
 Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
     Chain const &chain, std::filesystem::path const &ledger_dir, Db &db,
-    BlockHashBufferFinalized &block_hash_buffer,
+    BlockHashFunction const& block_hash_function,
     fiber::PriorityPool &priority_pool, uint64_t &block_num,
     uint64_t const end_block_num, sig_atomic_t const volatile &stop)
 {
@@ -78,6 +78,24 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
 
     uint64_t const start_block_num = block_num;
     BlockDb block_db(ledger_dir);
+
+    /*
+    bool initialized_headers_from_triedb = false;
+    if (!db.) {
+        mpt::AsyncIOContext io_ctx{mpt::ReadOnlyOnDiskDbConfig{
+            .sq_thread_cpu = ro_sq_thread_cpu, .dbname_paths = dbname_paths}};
+        mpt::Db rodb{io_ctx};
+        initialized_headers_from_triedb = init_block_hash_buffer_from_triedb(
+            rodb, start_block_num, block_hash_buffer);
+    }
+    if (!initialized_headers_from_triedb) {
+        BlockDb block_db{block_db_path};
+        MONAD_ASSERT(chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET);
+        MONAD_ASSERT(init_block_hash_buffer_from_blockdb(
+            block_db, start_block_num, block_hash_buffer));
+    }
+    */
+
     while (block_num <= end_block_num && stop == 0) {
         Block block;
         MONAD_ASSERT_PRINTF(
@@ -107,7 +125,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
                 rev,
                 block,
                 block_state,
-                block_hash_buffer,
+                block_hash_function,
                 priority_pool));
 
         std::vector<Receipt> receipts(results.size());
@@ -136,9 +154,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
         db.finalize(block.header.number, block.header.number);
         db.update_verified_block(block.header.number);
 
-        auto const h =
-            to_bytes(keccak256(rlp::encode_block_header(output_header)));
-        block_hash_buffer.set(block_num, h);
+        // auto const h =
+        //     to_bytes(keccak256(rlp::encode_block_header(output_header)));
 
         ntxs += block.transactions.size();
         batch_num_txs += block.transactions.size();

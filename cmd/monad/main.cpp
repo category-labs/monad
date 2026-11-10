@@ -15,7 +15,7 @@
 #include <monad/db/block_db.hpp>
 #include <monad/db/db_cache.hpp>
 #include <monad/db/trie_db.hpp>
-#include <monad/execution/block_hash_buffer.hpp>
+#include <monad/execution/block_hash_function.hpp>
 #include <monad/execution/genesis.hpp>
 #include <monad/execution/trace/event_trace.hpp>
 #include <monad/fiber/priority_pool.hpp>
@@ -66,7 +66,6 @@ namespace fs = std::filesystem;
 
 int main(int const argc, char const *argv[])
 {
-
     CLI::App cli{"monad"};
     cli.option_defaults()->always_capture_default();
 
@@ -175,7 +174,6 @@ int main(int const argc, char const *argv[])
         "event_trace", quill::file_handler(trace_log, handler_cfg));
 #endif
 
-    auto const db_in_memory = dbname_paths.empty();
     [[maybe_unused]] auto const load_start_time =
         std::chrono::steady_clock::now();
 
@@ -185,7 +183,7 @@ int main(int const argc, char const *argv[])
     }
     std::unique_ptr<mpt::StateMachine> machine;
     mpt::Db db = [&] {
-        if (!db_in_memory) {
+        if (!dbname_paths.empty()) {
             machine = std::make_unique<OnDiskMachine>();
             return mpt::Db{
                 *machine,
@@ -294,22 +292,70 @@ int main(int const argc, char const *argv[])
         MONAD_ASSERT(false);
     }();
 
-    BlockHashBufferFinalized block_hash_buffer;
-    bool initialized_headers_from_triedb = false;
+    std::optional<BlockDb> block_db{};
+    if (!block_db_path.empty()) {
+        block_db.emplace(block_db_path);
+    }
 
-    if (!db_in_memory) {
-        mpt::AsyncIOContext io_ctx{mpt::ReadOnlyOnDiskDbConfig{
-            .sq_thread_cpu = ro_sq_thread_cpu, .dbname_paths = dbname_paths}};
-        mpt::Db rodb{io_ctx};
-        initialized_headers_from_triedb = init_block_hash_buffer_from_triedb(
-            rodb, start_block_num, block_hash_buffer);
+    std::optional<mpt::AsyncIOContext> io_ctx{};
+    std::optional<mpt::Db> rodb{};
+    if (db.is_on_disk()) {
+        io_ctx.emplace(mpt::ReadOnlyOnDiskDbConfig{
+            .sq_thread_cpu = ro_sq_thread_cpu, .dbname_paths = dbname_paths});
+        rodb.emplace(*io_ctx);
     }
-    if (!initialized_headers_from_triedb) {
-        BlockDb block_db{block_db_path};
-        MONAD_ASSERT(chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET);
-        MONAD_ASSERT(init_block_hash_buffer_from_blockdb(
-            block_db, start_block_num, block_hash_buffer));
+
+    // std::set<uint64_t, bytes32_t> block_hash_set{};
+    BlockHashFunction block_hash_function{};
+    if (chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET) {
+        block_hash_function = [&db,
+                               // block_db = BlockDb{block_db_path}](uint64_t
+                               // const block_number) {
+                               &rodb,
+                               &block_db](uint64_t const block_number) {
+            // bool initialized_headers_from_triedb = false;
+            if (db.is_on_disk()) {
+                LOG_INFO("trying on disk {}", block_number);
+                auto const header = rodb->get(
+                    mpt::concat(
+                        FINALIZED_NIBBLE,
+                        mpt::NibblesView{block_header_nibbles}),
+                    block_number);
+                if (header.has_value()) {
+                    auto const result = to_bytes(keccak256(header.value()));
+                    LOG_INFO("found on disk {}", block_number);
+                    // initialized_headers_from_triedb = true;
+                    return result;
+                }
+            }
+            // MONAD_ASSERT(block_db);
+            Block block;
+            MONAD_ASSERT_PRINTF(
+                block_db->get(block_number, block), "%lu", block_number);
+            auto const result =
+                to_bytes(keccak256(rlp::encode_block_header(block.header)));
+            return result;
+        };
     }
+    else {
+        MONAD_ASSERT(false);
+    }
+    /*
+        bool initialized_headers_from_triedb = false;
+        if (!db_in_memory) {
+            mpt::AsyncIOContext io_ctx{mpt::ReadOnlyOnDiskDbConfig{
+                .sq_thread_cpu = ro_sq_thread_cpu, .dbname_paths =
+       dbname_paths}}; mpt::Db rodb{io_ctx}; initialized_headers_from_triedb =
+       init_block_hash_buffer_from_triedb( rodb, start_block_num,
+       block_hash_buffer);
+        }
+        if (!initialized_headers_from_triedb) {
+            BlockDb block_db{block_db_path};
+            MONAD_ASSERT(chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET);
+            MONAD_ASSERT(init_block_hash_buffer_from_blockdb(
+                block_db, start_block_num, block_hash_buffer));
+        }
+    */
 
     signal(SIGINT, signal_handler);
     stop = 0;
@@ -328,7 +374,7 @@ int main(int const argc, char const *argv[])
                 *chain,
                 block_db_path,
                 db_cache,
-                block_hash_buffer,
+                block_hash_function,
                 priority_pool,
                 block_num,
                 end_block_num,
@@ -340,7 +386,7 @@ int main(int const argc, char const *argv[])
                 block_db_path,
                 db,
                 db_cache,
-                block_hash_buffer,
+                block_hash_function,
                 priority_pool,
                 block_num,
                 end_block_num,

@@ -99,62 +99,57 @@ namespace
         {
         }
 
-        bool account_exists(Address const &) const noexcept override
+        bool account_exists_impl(Address const &) const noexcept override
         {
             return false;
         }
 
-        bytes32_t
-        get_storage(Address const &, bytes32_t const &) const noexcept override
+        bytes32_t get_storage_impl(
+            Address const &, bytes32_t const &) const noexcept override
         {
             return bytes32_t{};
         }
 
-        StorageStatus set_storage(
+        StorageStatus set_storage_impl(
             Address const &, bytes32_t const &,
             bytes32_t const &) noexcept override
         {
             return StorageStatus{};
         }
 
-        uint256_t get_balance(Address const &) const noexcept override
+        uint256_t get_balance_impl(Address const &) const noexcept override
         {
             return uint256_t{};
         }
 
-        size_t get_code_size(Address const &) const noexcept override
+        size_t get_code_size_impl(Address const &) const noexcept override
         {
             return 0;
         }
 
-        bytes32_t get_code_hash(Address const &) const noexcept override
+        bytes32_t get_code_hash_impl(Address const &) const noexcept override
         {
             return bytes32_t{};
         }
 
-        size_t copy_code(
+        size_t copy_code_impl(
             Address const &, size_t, uint8_t *, size_t) const noexcept override
         {
             return 0;
         }
 
-        bool selfdestruct(Address const &, Address const &) noexcept override
+        bool
+        selfdestruct_impl(Address const &, Address const &) noexcept override
         {
             return false;
         }
 
-        vm::Result call(Message const &msg) noexcept override
+        vm::Result call_impl(Message const &msg) override
         {
-            try {
-                if (calls_before_exception_-- == 0) {
-                    throw Exception{"exception"};
-                }
-                return call_impl_(*this, msg);
+            if (calls_before_exception_-- == 0) {
+                throw Exception{"exception"};
             }
-            catch (...) {
-                capture_current_exception();
-            }
-            stack_unwind();
+            return call_impl_(*this, msg);
         }
 
         TxContext const *get_tx_context() const noexcept override
@@ -162,41 +157,41 @@ namespace
             return &tx_context_;
         }
 
-        bytes32_t get_block_hash(int64_t) const noexcept override
+        bytes32_t get_block_hash_impl(int64_t) const noexcept override
         {
             return bytes32_t{};
         }
 
-        void emit_log(
+        void emit_log_impl(
             Address const &, uint8_t const *, size_t, bytes32_t const *,
             size_t) noexcept override
         {
         }
 
-        AccessStatus access_account(Address const &) noexcept override
+        AccessStatus access_account_impl(Address const &) noexcept override
         {
             return AccessStatus{};
         }
 
-        AccessStatus
-        access_storage(Address const &, bytes32_t const &) noexcept override
+        AccessStatus access_storage_impl(
+            Address const &, bytes32_t const &) noexcept override
         {
             return AccessStatus{};
         }
 
-        bytes32_t get_transient_storage(
+        bytes32_t get_transient_storage_impl(
             Address const &, bytes32_t const &) const noexcept override
         {
             return bytes32_t{};
         }
 
-        void set_transient_storage(
+        void set_transient_storage_impl(
             Address const &, bytes32_t const &,
             bytes32_t const &) noexcept override
         {
         }
 
-        PageStorageStatus update_page(
+        PageStorageStatus update_page_impl(
             Address const &, bytes32_t const &, StorageStatus) noexcept override
         {
             return {};

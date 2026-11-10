@@ -132,13 +132,13 @@ namespace monad::vm::test
         std::unordered_map<Address, std::vector<Address>>
             recorded_selfdestructs;
 
-        bool account_exists(Address const &addr) const noexcept override
+        bool account_exists_impl(Address const &addr) const noexcept override
         {
             record_account_access(addr);
             return accounts.contains(addr);
         }
 
-        bytes32_t get_storage(
+        bytes32_t get_storage_impl(
             Address const &addr, bytes32_t const &key) const noexcept override
         {
             record_account_access(addr);
@@ -153,7 +153,7 @@ namespace monad::vm::test
             return slot->second.current;
         }
 
-        StorageStatus set_storage(
+        StorageStatus set_storage_impl(
             Address const &addr, bytes32_t const &key,
             bytes32_t const &value) noexcept override
         {
@@ -192,7 +192,7 @@ namespace monad::vm::test
             return status;
         }
 
-        uint256_t get_balance(Address const &addr) const noexcept override
+        uint256_t get_balance_impl(Address const &addr) const noexcept override
         {
             record_account_access(addr);
             auto const account = accounts.find(addr);
@@ -201,14 +201,15 @@ namespace monad::vm::test
                        : load_be<uint256_t>(account->second.balance);
         }
 
-        size_t get_code_size(Address const &addr) const noexcept override
+        size_t get_code_size_impl(Address const &addr) const noexcept override
         {
             record_account_access(addr);
             auto const account = accounts.find(addr);
             return account == accounts.end() ? 0 : account->second.code.size();
         }
 
-        bytes32_t get_code_hash(Address const &addr) const noexcept override
+        bytes32_t
+        get_code_hash_impl(Address const &addr) const noexcept override
         {
             record_account_access(addr);
             auto const account = accounts.find(addr);
@@ -216,7 +217,7 @@ namespace monad::vm::test
                                              : account->second.codehash;
         }
 
-        size_t copy_code(
+        size_t copy_code_impl(
             Address const &addr, size_t const code_offset,
             uint8_t *const buffer_data,
             size_t const buffer_size) const noexcept override
@@ -235,7 +236,7 @@ namespace monad::vm::test
             return n;
         }
 
-        bool selfdestruct(
+        bool selfdestruct_impl(
             Address const &addr, Address const &beneficiary) noexcept override
         {
             record_account_access(addr);
@@ -244,7 +245,7 @@ namespace monad::vm::test
             return beneficiaries.size() == 1;
         }
 
-        vm::Result call(Message const &msg) noexcept override
+        vm::Result call_impl(Message const &msg) noexcept override
         {
             record_account_access(msg.recipient);
             auto &rec = recorded_calls.emplace_back(msg);
@@ -265,13 +266,13 @@ namespace monad::vm::test
         }
 
         bytes32_t
-        get_block_hash(int64_t const block_number) const noexcept override
+        get_block_hash_impl(int64_t const block_number) const noexcept override
         {
             recorded_blockhashes.emplace_back(block_number);
             return block_hash;
         }
 
-        void emit_log(
+        void emit_log_impl(
             Address const &addr, uint8_t const *const data,
             size_t const data_size, bytes32_t const topics[],
             size_t const topics_count) noexcept override
@@ -280,7 +281,7 @@ namespace monad::vm::test
                 {addr, {data, data_size}, {topics, topics + topics_count}});
         }
 
-        AccessStatus access_account(Address const &addr) noexcept override
+        AccessStatus access_account_impl(Address const &addr) noexcept override
         {
             auto const already_accessed =
                 std::ranges::find(recorded_account_accesses, addr) !=
@@ -289,7 +290,7 @@ namespace monad::vm::test
             return already_accessed ? AccessStatus::Warm : AccessStatus::Cold;
         }
 
-        AccessStatus access_storage(
+        AccessStatus access_storage_impl(
             Address const &addr, bytes32_t const &key) noexcept override
         {
             auto const p = PageKey{addr, compute_page_key(key)};
@@ -297,7 +298,7 @@ namespace monad::vm::test
             return inserted ? AccessStatus::Cold : AccessStatus::Warm;
         }
 
-        bytes32_t get_transient_storage(
+        bytes32_t get_transient_storage_impl(
             Address const &addr, bytes32_t const &key) const noexcept override
         {
             record_account_access(addr);
@@ -312,7 +313,7 @@ namespace monad::vm::test
             return slot->second;
         }
 
-        void set_transient_storage(
+        void set_transient_storage_impl(
             Address const &addr, bytes32_t const &key,
             bytes32_t const &value) noexcept override
         {
@@ -320,7 +321,7 @@ namespace monad::vm::test
             accounts[addr].transient_storage[key] = value;
         }
 
-        PageStorageStatus update_page(
+        PageStorageStatus update_page_impl(
             Address const &, bytes32_t const &, StorageStatus) noexcept override
         {
             return last_write_page_status_;

@@ -20,6 +20,7 @@
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/runtime/bin.hpp>
+#include <category/vm/runtime/engine_timer.hpp>
 #include <category/vm/runtime/types.hpp>
 
 namespace monad::vm::runtime
@@ -41,6 +42,7 @@ namespace monad::vm::runtime
             ctx->deduct_gas(word_size * bin<6>);
         }
 
+        EngineTimer::Scope const timer{ctx->engine_timer, EngineTimer::Keccak};
         auto const hash = keccak256({ctx->memory.data + *offset, *size});
         *result_ptr = load_be<uint256_t>(hash);
     }

@@ -21,11 +21,17 @@ monad-build = { workspace = true, features = ["bindgen-static"] }
 
 [dev-dependencies]
 alloy-primitives = { workspace = true }
+alloy-rlp = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 criterion = { workspace = true }
+futures = { workspace = true }
 hex = { workspace = true }
+include_dir = { workspace = true }
+k256 = { workspace = true }
 lazy_static = { workspace = true }
+libtest-mimic = { workspace = true }
+monad-ethcall = { workspace = true }
 ratatui = { workspace = true }
 serde_json = { workspace = true }
 strum = { workspace = true }
@@ -37,3 +43,9 @@ alloy = ["dep:alloy-consensus", "dep:alloy-eips", "dep:alloy-primitives", "dep:a
 [[bench]]
 name = "snapshot_exec"
 harness = false
+
+[[test]]
+name = "monad_exec_events_ethereum_tests"
+path = "test/ethereum_tests.rs"
+harness = false
+required-features = ["alloy"]

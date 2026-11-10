@@ -1119,9 +1119,11 @@ namespace
                     header.timestamp + DEFAULT_TIMESTAMP_INCREMENT),
                 .beneficiary = bo.fee_recipient.value_or(header.beneficiary),
                 .base_fee_per_gas = bo.base_fee_per_gas,
-                // TODO(dhil): The simulation does not compute roots at this
-                // time.
-                .parent_beacon_block_root = bytes32_t{},
+                .withdrawals_root = header.withdrawals_root,
+                .blob_gas_used = header.blob_gas_used,
+                .excess_blob_gas = header.excess_blob_gas,
+                .parent_beacon_block_root = header.parent_beacon_block_root,
+                .requests_hash = header.requests_hash,
             };
 
             // Construct state

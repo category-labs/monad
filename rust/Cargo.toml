@@ -9,8 +9,6 @@ panic = "abort"
 
 [workspace.metadata.cargo-shear]
 ignored = [
-    "monad-ethcall",
-    "monad-exec-events",
     "monad-statesync",
     "monad-triedb",
 ]
@@ -24,9 +22,9 @@ monad-exec-events = { path = "./crates/monad-exec-events" }
 monad-statesync = { path = "./crates/monad-statesync" }
 monad-triedb = { path = "./crates/monad-triedb" }
 
-alloy-consensus  = { version = "2.0",     default-features = false }
+alloy-consensus  = { version = "2.0",     default-features = false, features = ["k256"] }
 alloy-eips       = { version = "2.0",     default-features = false }
-alloy-primitives = { version = "1.5",     default-features = false }
+alloy-primitives = { version = "=1.5.7",  default-features = false, features = ["k256"] }
 alloy-rlp        = { version = "0.3",     default-features = false }
 alloy-rpc-types  = { version = "2.0",     default-features = false, features = ["eth"] }
 alloy-sol-types  = { version = "1.5",     default-features = false }
@@ -38,11 +36,14 @@ chrono           = { version = "0.4.34",  default-features = false, features = [
 clap             = { version = "4.2",     default-features = false }
 cmake            = { version = "0.1",     default-features = false }
 criterion        = { version = "0.8",     default-features = false, features = ["html_reports"] }
-futures          = { version = "0.3.31",  default-features = false, features = ["std"] }
+futures          = { version = "0.3.31",  default-features = false, features = ["std", "executor"] }
 hex              = { version = "0.4",     default-features = false, features = ["std"] }
+include_dir      = { version = "=0.7.4",  default-features = false }
 itertools        = { version = "0.10",    default-features = false, features = ["use_std"] }
+k256             = { version = "0.13",    default-features = false, features = ["ecdsa"] }
 lazy_static      = { version = "1.5.0",   default-features = false }
 libc             = { version = "0.2.153", default-features = false }
+libtest-mimic    = { version = "=0.8.2",  default-features = false }
 ratatui          = { version = "0.30.0",  default-features = false, features = ["crossterm"] }
 serde            = { version = "1.0",     default-features = false, features = ["std"] }
 serde_json       = { version = "1.0",     default-features = false }

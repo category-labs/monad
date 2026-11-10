@@ -75,9 +75,9 @@
 #include <category/rpc/null_db.hpp>
 #include <category/rpc/simulation_error.hpp>
 #include <category/rpc/utils/response_size.hpp>
+#include <category/vm/evm/call_status.hpp>
 #include <category/vm/evm/result.hpp>
 #include <category/vm/evm/revision.h>
-#include <category/vm/evm/status_code.h>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
@@ -649,14 +649,14 @@ namespace
 
             call_result[eth_simulate_json::status] = std::format(
                 "0x{:x}",
-                call_frames[tx_idx][0].status == MONAD_STATUS_SUCCESS ? 1 : 0);
+                call_frames[tx_idx][0].status == CallStatus::Success ? 1 : 0);
             call_result[eth_simulate_json::return_data] =
                 format_hex(call_frames[tx_idx][0].output);
             call_result[eth_simulate_json::gas_used] =
                 std::format("0x{:x}", call_frames[tx_idx][0].gas_used);
 
             size_t log_index_value = 0;
-            if (call_frames[tx_idx][0].status == MONAD_STATUS_SUCCESS) {
+            if (call_frames[tx_idx][0].status == CallStatus::Success) {
                 call_result[eth_simulate_json::logs] = nlohmann::json::array();
                 for (auto const &log : receipts[tx_idx].logs) {
                     call_result[eth_simulate_json::logs].emplace_back(
@@ -1542,7 +1542,7 @@ struct monad_executor
         Pool &active_pool)
     {
         if (!active_pool.try_enqueue()) {
-            result->status_code = MONAD_STATUS_REJECTED;
+            result->status_code = std::to_underlying(CallStatus::Rejected);
             result->message = strdup(EXCEED_QUEUE_SIZE_ERR_MSG);
             MONAD_ASSERT(result->message);
             complete(result, user);
@@ -1582,7 +1582,8 @@ struct monad_executor
                     // check for timeout
                     if (std::chrono::steady_clock::now() - call_begin >
                         active_pool->timeout) {
-                        result->status_code = MONAD_STATUS_REJECTED;
+                        result->status_code =
+                            std::to_underlying(CallStatus::Rejected);
                         result->message = strdup(TIMEOUT_ERR_MSG);
                         MONAD_ASSERT(result->message);
                         complete(result, user);
@@ -1693,8 +1694,8 @@ struct monad_executor
 
                     if (override_with_low_gas_retry_if_oog &&
                         ((res.has_value() &&
-                          (res.value().status_code == MONAD_STATUS_OUT_OF_GAS ||
-                           res.value().status_code == MONAD_STATUS_REVERT)) ||
+                          (res.value().status_code == CallStatus::OutOfGas ||
+                           res.value().status_code == CallStatus::Revert)) ||
                          (res.has_error() &&
                           res.error() == TransactionError::
                                              IntrinsicGasGreaterThanLimit))) {
@@ -1716,7 +1717,8 @@ struct monad_executor
                         return;
                     }
                     if (MONAD_UNLIKELY(res.has_error())) {
-                        result->status_code = MONAD_STATUS_REJECTED;
+                        result->status_code =
+                            std::to_underlying(CallStatus::Rejected);
                         result->message = strdup(res.error().message().c_str());
                         MONAD_ASSERT(result->message);
                         complete(result, user);
@@ -1736,13 +1738,15 @@ struct monad_executor
                         state_trace);
                 }
                 catch (MonadException const &e) {
-                    result->status_code = MONAD_STATUS_INTERNAL_ERROR;
+                    result->status_code =
+                        std::to_underlying(CallStatus::InternalError);
                     result->message = strdup(e.message());
                     MONAD_ASSERT(result->message);
                     complete(result, user);
                 }
                 catch (...) {
-                    result->status_code = MONAD_STATUS_INTERNAL_ERROR;
+                    result->status_code =
+                        std::to_underlying(CallStatus::InternalError);
                     result->message = strdup(UNEXPECTED_EXCEPTION_ERR_MSG);
                     MONAD_ASSERT(result->message);
                     complete(result, user);
@@ -1757,7 +1761,7 @@ struct monad_executor
         std::vector<CallFrame> const &call_frames,
         nlohmann::json const &state_trace)
     {
-        result->status_code = res.status_code;
+        result->status_code = std::to_underlying(res.status_code);
         result->gas_used =
             static_cast<int64_t>(transaction.gas_limit) - res.gas_left;
         result->gas_refund = res.gas_refund;
@@ -1848,7 +1852,7 @@ struct monad_executor
 
         if (tracer_config != PRESTATE_TRACER &&
             tracer_config != STATEDIFF_TRACER) {
-            result->status_code = MONAD_STATUS_REJECTED;
+            result->status_code = std::to_underlying(CallStatus::Rejected);
             result->message = strdup(PRESTATE_TRACER_SUPPORT_ERR_MSG);
             MONAD_ASSERT(result->message);
             complete(result, user);
@@ -1856,7 +1860,7 @@ struct monad_executor
         }
 
         if (block_number == 0) {
-            result->status_code = MONAD_STATUS_REJECTED;
+            result->status_code = std::to_underlying(CallStatus::Rejected);
             result->message = strdup(CANNOT_TRACE_GENESIS_ERR_MSG);
             MONAD_ASSERT(result->message);
             complete(result, user);
@@ -1864,7 +1868,7 @@ struct monad_executor
         }
 
         if (db_ == nullptr) {
-            result->status_code = MONAD_STATUS_REJECTED;
+            result->status_code = std::to_underlying(CallStatus::Rejected);
             result->message = strdup(CANNOT_TRACE_WITHOUT_DB_ERR_MSG);
             MONAD_ASSERT(result->message);
             complete(result, user);
@@ -1872,7 +1876,7 @@ struct monad_executor
         }
 
         if (!trace_block_group_.try_enqueue()) {
-            result->status_code = MONAD_STATUS_REJECTED;
+            result->status_code = std::to_underlying(CallStatus::Rejected);
             result->message = strdup(EXCEED_QUEUE_SIZE_ERR_MSG);
             MONAD_ASSERT(result->message);
             complete(result, user);
@@ -2036,7 +2040,8 @@ struct monad_executor
                     }();
 
                     if (MONAD_UNLIKELY(res.has_error())) {
-                        result->status_code = MONAD_STATUS_REJECTED;
+                        result->status_code =
+                            std::to_underlying(CallStatus::Rejected);
                         result->message = strdup(res.error().message().c_str());
                         MONAD_ASSERT(result->message);
                         complete(result, user);
@@ -2063,13 +2068,15 @@ struct monad_executor
                     complete(result, user);
                 }
                 catch (MonadException const &e) {
-                    result->status_code = MONAD_STATUS_INTERNAL_ERROR;
+                    result->status_code =
+                        std::to_underlying(CallStatus::InternalError);
                     result->message = strdup(e.message());
                     MONAD_ASSERT(result->message);
                     complete(result, user);
                 }
                 catch (...) {
-                    result->status_code = MONAD_STATUS_INTERNAL_ERROR;
+                    result->status_code =
+                        std::to_underlying(CallStatus::InternalError);
                     result->message = strdup(UNEXPECTED_EXCEPTION_ERR_MSG);
                     MONAD_ASSERT(result->message);
                     complete(result, user);
@@ -2092,7 +2099,7 @@ struct monad_executor
         monad_executor_result *const result = new monad_executor_result();
 
         if (!trace_block_group_.try_enqueue()) {
-            result->status_code = MONAD_STATUS_REJECTED;
+            result->status_code = std::to_underlying(CallStatus::Rejected);
             result->message = strdup(ETH_SIMULATE_EXCEED_QUEUE_SIZE_ERR_MSG);
             MONAD_ASSERT(result->message);
             complete(result, user);
@@ -2219,7 +2226,8 @@ struct monad_executor
 
                     if (MONAD_UNLIKELY(res.has_error())) {
                         auto const error = simulation_error_info(res.error());
-                        result->status_code = error.status_code;
+                        result->status_code =
+                            std::to_underlying(error.status_code);
                         result->message = strdup(error.message.c_str());
                         MONAD_ASSERT(result->message);
                         complete(result, user);
@@ -2238,13 +2246,15 @@ struct monad_executor
                     complete(result, user);
                 }
                 catch (MonadException const &e) {
-                    result->status_code = MONAD_STATUS_INTERNAL_ERROR;
+                    result->status_code =
+                        std::to_underlying(CallStatus::InternalError);
                     result->message = strdup(e.message());
                     MONAD_ASSERT(result->message);
                     complete(result, user);
                 }
                 catch (...) {
-                    result->status_code = MONAD_STATUS_INTERNAL_ERROR;
+                    result->status_code =
+                        std::to_underlying(CallStatus::InternalError);
                     result->message = strdup(UNEXPECTED_EXCEPTION_ERR_MSG);
                     MONAD_ASSERT(result->message);
                     complete(result, user);

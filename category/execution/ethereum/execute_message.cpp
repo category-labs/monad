@@ -29,10 +29,10 @@
 #include <category/execution/ethereum/reserve_balance.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/state_host.hpp>
+#include <category/vm/evm/call_status.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/message.hpp>
 #include <category/vm/evm/result.hpp>
-#include <category/vm/evm/status_code.h>
 #include <category/vm/evm/traits.hpp>
 
 #include <cstdint>
@@ -79,16 +79,16 @@ vm::Result deploy_contract_code(
 {
     static_assert(traits::evm_rev() >= MONAD_ETH_SPURIOUS_DRAGON);
 
-    MONAD_ASSERT(result.status_code == MONAD_STATUS_SUCCESS);
+    MONAD_ASSERT(result.status_code == CallStatus::Success);
 
     if constexpr (traits::eip_3541_active()) {
         if (result.output_size > 0 && result.output_data[0] == 0xef) {
-            return vm::Result{MONAD_STATUS_CONTRACT_VALIDATION_FAILURE};
+            return vm::Result{CallStatus::ContractValidationFailure};
         }
     }
     // EIP-170
     if (result.output_size > traits::max_code_size()) {
-        return vm::Result{MONAD_STATUS_OUT_OF_GAS};
+        return vm::Result{CallStatus::OutOfGas};
     }
 
     auto const deploy_cost = static_cast<int64_t>(result.output_size) * 200;
@@ -98,7 +98,7 @@ vm::Result deploy_contract_code(
         // pay for the final gas fee for adding the contract code to
         // the state, the contract creation fails (ie. goes
         // out-of-gas) rather than leaving an empty contract.
-        result.status_code = MONAD_STATUS_OUT_OF_GAS;
+        result.status_code = CallStatus::OutOfGas;
     }
     else {
         result.create_address = address;
@@ -124,7 +124,7 @@ pre_call(StateHost<traits> &host, vm::Message const &msg, State &state)
             // The pushed frame exits before bytecode, account access, or
             // storage access, so there is no access-list metadata to capture.
             state.pop_reject();
-            return vm::Result{MONAD_STATUS_INSUFFICIENT_BALANCE, msg.gas};
+            return vm::Result{CallStatus::InsufficientBalance, msg.gas};
         }
         else if (!static_call) {
             transfer_balances<traits>(state, host, msg, msg.recipient);
@@ -171,14 +171,14 @@ template <Traits traits>
 void post_call(StateHost<traits> &host, State &state, vm::Result const &result)
 {
     MONAD_ASSERT(
-        result.status_code == MONAD_STATUS_SUCCESS || result.gas_refund == 0);
+        result.status_code == CallStatus::Success || result.gas_refund == 0);
     MONAD_ASSERT(
-        result.status_code == MONAD_STATUS_SUCCESS ||
-        result.status_code == MONAD_STATUS_REVERT ||
-        result.status_code == MONAD_STATUS_RESERVE_BALANCE_VIOLATION ||
+        result.status_code == CallStatus::Success ||
+        result.status_code == CallStatus::Revert ||
+        result.status_code == CallStatus::ReserveBalanceViolation ||
         result.gas_left == 0);
 
-    if (result.status_code == MONAD_STATUS_SUCCESS) {
+    if (result.status_code == CallStatus::Success) {
         state.pop_accept();
     }
     else {
@@ -215,7 +215,7 @@ vm::Result execute_create_message(
                 state.set_nonce(msg.sender, nonce + 1);
             }
         }
-        vm::Result result{MONAD_STATUS_INSUFFICIENT_BALANCE, msg.gas};
+        vm::Result result{CallStatus::InsufficientBalance, msg.gas};
         call_tracer.on_exit(result);
         return result;
     }
@@ -223,7 +223,7 @@ vm::Result execute_create_message(
     auto const nonce = state.get_nonce(msg.sender);
     if (nonce == UINT64_MAX) {
         // this overflow can only happen for msg.depth != 0
-        vm::Result result{MONAD_STATUS_ARGUMENT_OUT_OF_RANGE, msg.gas};
+        vm::Result result{CallStatus::ArgumentOutOfRange, msg.gas};
         call_tracer.on_exit(result);
         return result;
     }
@@ -244,7 +244,7 @@ vm::Result execute_create_message(
 
     // Prevent overwriting contracts - EIP-684
     if (state.account_has_code_or_nonce(contract_address)) {
-        vm::Result result{MONAD_STATUS_INVALID_INSTRUCTION};
+        vm::Result result{CallStatus::InvalidInstruction};
         call_tracer.on_exit(result);
         return result;
     }
@@ -277,7 +277,7 @@ vm::Result execute_create_message(
     auto result = state.vm().execute_bytecode<traits>(
         *host, &m_call, {msg.input_data, msg.input_size});
 
-    if (result.status_code == MONAD_STATUS_SUCCESS) {
+    if (result.status_code == CallStatus::Success) {
         result = deploy_contract_code<traits>(
             state, contract_address, std::move(result));
     }
@@ -291,16 +291,16 @@ vm::Result execute_create_message(
                 state,
                 host->state_tracer_,
                 host->chain_ctx_)) {
-            result.status_code = MONAD_STATUS_RESERVE_BALANCE_VIOLATION;
+            result.status_code = CallStatus::ReserveBalanceViolation;
         }
     }
 
-    if (result.status_code == MONAD_STATUS_SUCCESS) {
+    if (result.status_code == CallStatus::Success) {
         state.pop_accept();
     }
     else {
         result.gas_refund = 0;
-        if (result.status_code != MONAD_STATUS_REVERT) {
+        if (result.status_code != CallStatus::Revert) {
             result.gas_left = 0;
         }
         reject_frame(*host, state);
@@ -351,7 +351,7 @@ vm::Result execute_call_message(
                 state,
                 host->state_tracer_,
                 host->chain_ctx_)) {
-            result.status_code = MONAD_STATUS_RESERVE_BALANCE_VIOLATION;
+            result.status_code = CallStatus::ReserveBalanceViolation;
             result.gas_refund = 0;
         }
     }

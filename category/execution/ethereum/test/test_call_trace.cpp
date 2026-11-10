@@ -39,9 +39,9 @@
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/vm/code.hpp>
+#include <category/vm/evm/call_status.hpp>
 #include <category/vm/evm/message.hpp>
 #include <category/vm/evm/result.hpp>
-#include <category/vm/evm/status_code.h>
 #include <category/vm/utils/evm-as.hpp>
 #include <category/vm/vm.hpp>
 #include <monad/test/traits_test.hpp>
@@ -94,7 +94,7 @@ TEST(CallFrame, to_json)
         .gas = 100'000u,
         .gas_used = 21'000u,
         .input = byte_string{},
-        .status = MONAD_STATUS_SUCCESS,
+        .status = CallStatus::Success,
     };
 
     auto const json_str = R"(
@@ -163,7 +163,7 @@ TEST(CallTrace, size_limit_is_checked_explicitly)
     vm::Message const msg{};
 
     EXPECT_NO_THROW(tracer.on_enter(msg));
-    EXPECT_NO_THROW(tracer.on_exit(vm::Result{MONAD_STATUS_SUCCESS, 0, 0}));
+    EXPECT_NO_THROW(tracer.on_exit(vm::Result{CallStatus::Success, 0, 0}));
     EXPECT_NO_THROW(tracer.on_finish(0));
     EXPECT_THROW(tracer.check_size_limit(), MonadException);
     EXPECT_THROW(tracer.to_json(), MonadException);
@@ -206,8 +206,7 @@ TEST(CallTrace, zero_size_limit_throws_on_check)
 TEST(CallTrace, output_size_limit_throws_on_check)
 {
     vm::Message msg{.input_data = input, .input_size = sizeof(input)};
-    vm::Result const res{
-        MONAD_STATUS_SUCCESS, 9'000, 0, output, sizeof(output)};
+    vm::Result const res{CallStatus::Success, 9'000, 0, output, sizeof(output)};
 
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames, sizeof(CallFrame) + sizeof(input)};
@@ -254,7 +253,7 @@ TEST(CallTrace, self_destruct_size_limit_throws_on_check)
 TEST(CallTrace, callbacks_after_size_limit_exceeded_are_ignored)
 {
     vm::Message msg{.input_data = input, .input_size = sizeof(input)};
-    vm::Result const res{MONAD_STATUS_SUCCESS};
+    vm::Result const res{CallStatus::Success};
 
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames, sizeof(CallFrame) + sizeof(input)};
@@ -269,7 +268,7 @@ TEST(CallTrace, callbacks_after_size_limit_exceeded_are_ignored)
     EXPECT_NO_THROW(call_tracer.on_exit(res));
 
     ASSERT_EQ(call_frames.size(), 1);
-    EXPECT_EQ(call_frames.front().status, MONAD_STATUS_FAILURE);
+    EXPECT_EQ(call_frames.front().status, CallStatus::Failure);
     ASSERT_TRUE(call_frames.front().logs.has_value());
     EXPECT_TRUE(call_frames.front().logs->empty());
     EXPECT_NO_THROW(call_tracer.on_finish(1'000));
@@ -279,7 +278,7 @@ TEST(CallTrace, callbacks_after_size_limit_exceeded_are_ignored)
 TEST(CallTrace, reset_clears_size_limit_exceeded)
 {
     vm::Message msg{.input_data = input, .input_size = sizeof(input)};
-    vm::Result const res{MONAD_STATUS_SUCCESS, 9'000};
+    vm::Result const res{CallStatus::Success, 9'000};
 
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames, sizeof(CallFrame) + sizeof(input)};
@@ -297,7 +296,7 @@ TEST(CallTrace, reset_clears_size_limit_exceeded)
     EXPECT_NO_THROW(call_tracer.check_size_limit());
 
     ASSERT_EQ(call_frames.size(), 1);
-    EXPECT_EQ(call_frames.front().status, MONAD_STATUS_SUCCESS);
+    EXPECT_EQ(call_frames.front().status, CallStatus::Success);
     EXPECT_EQ(call_frames.front().gas_used, 1'000);
 
     call_tracer.on_enter(msg);
@@ -308,8 +307,7 @@ TEST(CallTrace, reset_clears_size_limit_exceeded)
 TEST(CallTrace, exact_size_limit_succeeds)
 {
     vm::Message msg{.input_data = input, .input_size = sizeof(input)};
-    vm::Result const res{
-        MONAD_STATUS_SUCCESS, 9'000, 0, output, sizeof(output)};
+    vm::Result const res{CallStatus::Success, 9'000, 0, output, sizeof(output)};
 
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{
@@ -327,8 +325,7 @@ TEST(CallTrace, exact_size_limit_succeeds)
 TEST(CallTrace, one_byte_over_size_limit_is_rejected)
 {
     vm::Message const msg{.input_data = input, .input_size = sizeof(input)};
-    vm::Result const res{
-        MONAD_STATUS_SUCCESS, 9'000, 0, output, sizeof(output)};
+    vm::Result const res{CallStatus::Success, 9'000, 0, output, sizeof(output)};
 
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{
@@ -352,8 +349,7 @@ TEST(CallTrace, input_size_overflow_is_rejected)
 
     EXPECT_NO_THROW(call_tracer.on_enter(msg));
     EXPECT_TRUE(call_frames.empty());
-    EXPECT_NO_THROW(
-        call_tracer.on_exit(vm::Result{MONAD_STATUS_SUCCESS, 0, 0}));
+    EXPECT_NO_THROW(call_tracer.on_exit(vm::Result{CallStatus::Success, 0, 0}));
     EXPECT_NO_THROW(call_tracer.on_finish(0));
     EXPECT_THROW(call_tracer.check_size_limit(), MonadException);
 }
@@ -361,7 +357,7 @@ TEST(CallTrace, input_size_overflow_is_rejected)
 TEST(CallTrace, output_size_overflow_is_rejected)
 {
     vm::Message const msg{};
-    vm::Result res{MONAD_STATUS_SUCCESS};
+    vm::Result res{CallStatus::Success};
     res.output_size = std::numeric_limits<size_t>::max();
 
     std::vector<CallFrame> call_frames;
@@ -378,7 +374,7 @@ TEST(CallTrace, output_size_overflow_is_rejected)
 TEST(CallTrace, exact_log_size_limit_succeeds)
 {
     vm::Message const msg{};
-    vm::Result const res{MONAD_STATUS_SUCCESS, 9'000};
+    vm::Result const res{CallStatus::Success, 9'000};
     Receipt::Log const log{
         .data = byte_string{output, sizeof(output)},
         .topics = {bytes32_t{}, bytes32_t{}},
@@ -405,7 +401,7 @@ TEST(CallTrace, exact_log_size_limit_succeeds)
 TEST(CallTrace, json_output_has_empty_calls_without_nested_frames)
 {
     vm::Message msg{.input_data = input, .input_size = sizeof(input)};
-    vm::Result const res{MONAD_STATUS_SUCCESS, 9'000};
+    vm::Result const res{CallStatus::Success, 9'000};
 
     std::vector<CallFrame> call_frames;
     CallTracer call_tracer{tx, call_frames};
@@ -488,7 +484,7 @@ TYPED_TEST(TraitsTest, execute_success)
             sender,
             authorities_empty,
             BlockHeader{.beneficiary = beneficiary})(s, host);
-    EXPECT_TRUE(result.status_code == MONAD_STATUS_SUCCESS);
+    EXPECT_TRUE(result.status_code == CallStatus::Success);
     ASSERT_TRUE(call_frames.size() == 1);
 
     CallFrame expected{
@@ -499,7 +495,7 @@ TYPED_TEST(TraitsTest, execute_success)
         .value = 0x10000,
         .gas = 0x100000,
         .gas_used = 0x5208,
-        .status = MONAD_STATUS_SUCCESS,
+        .status = CallStatus::Success,
         .depth = 0,
         .logs = std::vector<CallFrame::Log>{},
     };
@@ -591,7 +587,7 @@ TYPED_TEST(TraitsTest, execute_reverted_insufficient_balance)
             sender,
             authorities_empty,
             BlockHeader{.beneficiary = beneficiary})(s, host);
-    EXPECT_TRUE(result.status_code == MONAD_STATUS_INSUFFICIENT_BALANCE);
+    EXPECT_TRUE(result.status_code == CallStatus::InsufficientBalance);
     ASSERT_TRUE(call_frames.size() == 1);
 
     CallFrame expected{
@@ -602,7 +598,7 @@ TYPED_TEST(TraitsTest, execute_reverted_insufficient_balance)
         .value = 0x10000,
         .gas = 0x10000,
         .gas_used = 0x5208,
-        .status = MONAD_STATUS_INSUFFICIENT_BALANCE,
+        .status = CallStatus::InsufficientBalance,
         .depth = 0,
         .logs = std::vector<CallFrame::Log>{},
     };
@@ -681,7 +677,7 @@ TYPED_TEST(TraitsTest, create_call_trace)
             sender,
             authorities_empty,
             BlockHeader{.beneficiary = beneficiary})(s, host);
-    EXPECT_TRUE(result.status_code == MONAD_STATUS_SUCCESS);
+    EXPECT_TRUE(result.status_code == CallStatus::Success);
     ASSERT_TRUE(call_frames.size() == 2);
 
     // We don't care about the specific revision-dependent gas used in each call
@@ -695,7 +691,7 @@ TYPED_TEST(TraitsTest, create_call_trace)
     EXPECT_EQ(call_frames[0].value, 0u);
     EXPECT_EQ(call_frames[0].input, byte_string{});
     EXPECT_EQ(call_frames[0].output, byte_string{});
-    EXPECT_EQ(call_frames[0].status, MONAD_STATUS_SUCCESS);
+    EXPECT_EQ(call_frames[0].status, CallStatus::Success);
     EXPECT_EQ(call_frames[0].depth, 0u);
     EXPECT_EQ(call_frames[0].logs, std::vector<CallFrame::Log>{});
 
@@ -706,7 +702,7 @@ TYPED_TEST(TraitsTest, create_call_trace)
     EXPECT_EQ(call_frames[1].value, 0u);
     EXPECT_EQ(call_frames[1].input, 0xFE_bytes);
     EXPECT_EQ(call_frames[1].output, byte_string{});
-    EXPECT_EQ(call_frames[1].status, MONAD_STATUS_FAILURE);
+    EXPECT_EQ(call_frames[1].status, CallStatus::Failure);
     EXPECT_EQ(call_frames[1].depth, 1u);
     EXPECT_EQ(call_frames[1].logs, std::vector<CallFrame::Log>{});
 }
@@ -805,7 +801,7 @@ TYPED_TEST(TraitsTest, selfdestruct_logs)
             sender,
             authorities_empty,
             BlockHeader{.beneficiary = beneficiary})(s, host);
-    EXPECT_TRUE(result.status_code == MONAD_STATUS_SUCCESS);
+    EXPECT_TRUE(result.status_code == CallStatus::Success);
 
     EXPECT_EQ(call_frames.size(), 4);
     EXPECT_EQ(call_frames[0].type, CallType::CALL);
@@ -894,7 +890,7 @@ TYPED_TEST(TraitsTest, selfdestruct_logs_value)
             authorities_empty,
             BlockHeader{.beneficiary = beneficiary})(s, host);
 
-    EXPECT_TRUE(result.status_code == MONAD_STATUS_SUCCESS);
+    EXPECT_TRUE(result.status_code == CallStatus::Success);
 
     EXPECT_EQ(call_frames.size(), 2);
     EXPECT_EQ(call_frames[0].type, CallType::CALL);
@@ -991,7 +987,7 @@ TYPED_TEST(TraitsTest, selfdestruct_depth)
             sender,
             authorities_empty,
             BlockHeader{.beneficiary = beneficiary})(s, host);
-    EXPECT_TRUE(result.status_code == MONAD_STATUS_SUCCESS);
+    EXPECT_TRUE(result.status_code == CallStatus::Success);
 
     EXPECT_EQ(call_frames.size(), 4);
 
@@ -1077,7 +1073,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace)
             authorities_empty,
             BlockHeader{.beneficiary = beneficiary})(s, host);
 
-    EXPECT_TRUE(result.status_code == MONAD_STATUS_SUCCESS);
+    EXPECT_TRUE(result.status_code == CallStatus::Success);
     EXPECT_EQ(call_frames.size(), 1);
 
     CallFrame const expected{
@@ -1088,7 +1084,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace)
         .value = 1'000'000,
         .gas = 1'000'000,
         .gas_used = 21'000,
-        .status = MONAD_STATUS_SUCCESS,
+        .status = CallStatus::Success,
         .depth = 0,
         .logs = std::vector<CallFrame::Log>{{
             {
@@ -1190,7 +1186,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct)
             authorities_empty,
             BlockHeader{.beneficiary = beneficiary})(s, host);
 
-    EXPECT_TRUE(result.status_code == MONAD_STATUS_SUCCESS);
+    EXPECT_TRUE(result.status_code == CallStatus::Success);
     ASSERT_EQ(call_frames.size(), 2);
     EXPECT_EQ(call_frames[0].type, CallType::CALL);
     EXPECT_EQ(call_frames[1].type, CallType::SELFDESTRUCT);
@@ -1297,7 +1293,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_selfdestruct_zero_balance)
             authorities_empty,
             BlockHeader{.beneficiary = beneficiary})(s, host);
 
-    EXPECT_TRUE(result.status_code == MONAD_STATUS_SUCCESS);
+    EXPECT_TRUE(result.status_code == CallStatus::Success);
     ASSERT_EQ(call_frames.size(), 2);
     EXPECT_EQ(call_frames[0].type, CallType::CALL);
     EXPECT_EQ(call_frames[1].type, CallType::SELFDESTRUCT);
@@ -1441,7 +1437,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs)
             authorities_empty,
             BlockHeader{})(s, host);
 
-    EXPECT_EQ(result.status_code, MONAD_STATUS_SUCCESS);
+    EXPECT_EQ(result.status_code, CallStatus::Success);
 
     ASSERT_EQ(call_frames.size(), 5);
     ASSERT_TRUE(call_frames[0].logs.has_value());
@@ -1669,7 +1665,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_multiple_selfdestructs_recursive)
             authorities_empty,
             BlockHeader{})(s, host);
 
-    EXPECT_EQ(result.status_code, MONAD_STATUS_SUCCESS);
+    EXPECT_EQ(result.status_code, CallStatus::Success);
 
     // As in `simulate_v1_trace_multiple_selfdestructs`, there are 5 call
     // frames, but in this case no logs should be emitted because the sender and
@@ -1842,7 +1838,7 @@ TYPED_TEST(TraitsTest, simulate_v1_trace_transfers)
                 authorities_empty,
                 BlockHeader{})(s, host);
 
-        EXPECT_EQ(result.status_code, MONAD_STATUS_SUCCESS);
+        EXPECT_EQ(result.status_code, CallStatus::Success);
 
         if (i == 0) { // CALL
             ASSERT_EQ(call_frames.size(), 2);

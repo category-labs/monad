@@ -151,25 +151,25 @@ static void dump_result(arguments const &args, monad::vm::Result const &result)
         object["time"] = time;
     }
 
-    if (result.status_code == MONAD_STATUS_SUCCESS) {
+    if (result.status_code == CallStatus::Success) {
         object["result"] = json(monad::to_hex(
             monad::byte_string_view{result.output_data, result.output_size}));
     }
     else {
         switch (result.status_code) {
-        case MONAD_STATUS_FAILURE:
+        case CallStatus::Failure:
             object["error"] = json("failure");
             break;
-        case MONAD_STATUS_INTERNAL_ERROR:
+        case CallStatus::InternalError:
             object["error"] = json("internal error");
             break;
-        case MONAD_STATUS_OUT_OF_GAS:
+        case CallStatus::OutOfGas:
             object["error"] = json("out of gas");
             break;
-        case MONAD_STATUS_STACK_OVERFLOW:
+        case CallStatus::StackOverflow:
             object["error"] = json("stack overflow");
             break;
-        case MONAD_STATUS_STACK_UNDERFLOW:
+        case CallStatus::StackUnderflow:
             object["error"] = json("stack underflow");
             break;
         default:
@@ -244,7 +244,7 @@ int mce_main(arguments const &args)
 
     auto status_code = result.status_code;
 
-    return status_code == MONAD_STATUS_SUCCESS ? 0 : 1;
+    return status_code == CallStatus::Success ? 0 : 1;
 }
 
 static std::string uppercase(std::string s)

@@ -29,9 +29,9 @@
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
+#include <category/vm/evm/call_status.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/message.hpp>
-#include <category/vm/evm/status_code.h>
 #include <category/vm/evm/traits.hpp>
 
 #include <category/crypto/silkpre_vendor/sha256.h>
@@ -130,7 +130,7 @@ Result<byte_string> system_call(
         state.vm().template execute<traits>(host, &msg, hash, code);
 
     // "if the call fails or returns an error, the block MUST be invalidated"
-    if (MONAD_UNLIKELY(result.status_code != MONAD_STATUS_SUCCESS)) {
+    if (MONAD_UNLIKELY(result.status_code != CallStatus::Success)) {
         return BlockError::SystemCallFailed;
     }
 

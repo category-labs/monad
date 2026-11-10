@@ -382,7 +382,7 @@ static double execute_iteration(
     monad_vm.debug_set_execute_override(
         [](auto &, auto const, auto const *msg, auto const *, auto const)
             -> vm::Result {
-            return vm::Result{MONAD_STATUS_SUCCESS, msg->gas};
+            return vm::Result{CallStatus::Success, msg->gas};
         });
 
     Address const sender_address{200};
@@ -440,7 +440,7 @@ static double execute_iteration(
 
     auto const stop = std::chrono::steady_clock::now();
 
-    MONAD_ASSERT(result.status_code == MONAD_STATUS_SUCCESS);
+    MONAD_ASSERT(result.status_code == CallStatus::Success);
 
     return static_cast<double>((stop - start).count());
 }

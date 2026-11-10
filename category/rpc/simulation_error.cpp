@@ -17,7 +17,7 @@
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/rpc/simulation_error.hpp>
-#include <category/vm/evm/status_code.h>
+#include <category/vm/evm/call_status.hpp>
 
 // TODO unstable paths between versions
 #if __has_include(<boost/outcome/experimental/status-code/status-code/config.hpp>)
@@ -36,11 +36,11 @@ MONAD_NAMESPACE_BEGIN
 
 namespace
 {
-    monad_status_code simulation_status(SimulationError const error)
+    CallStatus simulation_status(SimulationError const error)
     {
         switch (error) {
         case SimulationError::Success:
-            return MONAD_STATUS_SUCCESS;
+            return CallStatus::Success;
         case SimulationError::InvalidInput:
         case SimulationError::InvalidData:
         case SimulationError::WithdrawalsNotSupported:
@@ -50,16 +50,16 @@ namespace
         case SimulationError::TransactionsContextUnavailable:
         case SimulationError::InvalidBlockGap:
         case SimulationError::GasLimitExceeded:
-            return MONAD_STATUS_INTERNAL_ERROR;
+            return CallStatus::InternalError;
         }
-        return MONAD_STATUS_INTERNAL_ERROR;
+        return CallStatus::InternalError;
     }
 
-    monad_status_code block_status(BlockError const error)
+    CallStatus block_status(BlockError const error)
     {
         switch (error) {
         case BlockError::Success:
-            return MONAD_STATUS_SUCCESS;
+            return CallStatus::Success;
         case BlockError::GasAboveLimit:
         case BlockError::InvalidGasLimit:
         case BlockError::ExtraDataTooLong:
@@ -80,16 +80,16 @@ namespace
         case BlockError::SystemCallFailed:
         case BlockError::InvalidRequestsHash:
         case BlockError::InvalidDepositLog:
-            return MONAD_STATUS_REJECTED;
+            return CallStatus::Rejected;
         }
-        return MONAD_STATUS_INTERNAL_ERROR;
+        return CallStatus::InternalError;
     }
 }
 
 SimulationErrorResponse
 simulation_error_info(Result<void>::error_type const &error)
 {
-    monad_status_code status_code = MONAD_STATUS_REJECTED;
+    CallStatus status_code = CallStatus::Rejected;
     if (error.domain() ==
         BOOST_OUTCOME_SYSTEM_ERROR2_NAMESPACE::
             quick_status_code_from_enum_domain<SimulationError>) {

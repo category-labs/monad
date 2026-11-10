@@ -20,10 +20,10 @@
 #include <category/core/likely.h>
 #include <category/core/runtime/non_temporal_memory.hpp>
 #include <category/core/runtime/uint256.hpp>
+#include <category/vm/evm/call_status.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/message.hpp>
 #include <category/vm/evm/result.hpp>
-#include <category/vm/evm/status_code.h>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/host.hpp>
 #include <category/vm/runtime/bin.hpp>
@@ -143,16 +143,16 @@ namespace monad::vm::runtime
     }
 
     template <Traits traits>
-    std::variant<std::span<uint8_t const>, monad_status_code>
+    std::variant<std::span<uint8_t const>, CallStatus>
     Context::copy_result_data()
     {
         if (gas_remaining < 0) {
-            return MONAD_STATUS_OUT_OF_GAS;
+            return CallStatus::OutOfGas;
         }
 
         auto const size_word = std::bit_cast<uint256_t>(result.size);
         if (!is_bounded_by_bits<Memory::offset_bits>(size_word)) {
-            return MONAD_STATUS_OUT_OF_GAS;
+            return CallStatus::OutOfGas;
         }
 
         auto const size =
@@ -163,7 +163,7 @@ namespace monad::vm::runtime
 
         auto const offset_word = std::bit_cast<uint256_t>(result.offset);
         if (!is_bounded_by_bits<Memory::offset_bits>(offset_word)) {
-            return MONAD_STATUS_OUT_OF_GAS;
+            return CallStatus::OutOfGas;
         }
 
         auto const offset =
@@ -191,7 +191,7 @@ namespace monad::vm::runtime
             if (MONAD_UNLIKELY(!is_memory_size_in_bound<traits>(memory_end))) {
                 // Return out-of-gas error code, similar to when an
                 // `is_bounded_by_bits` check fails.
-                return MONAD_STATUS_OUT_OF_GAS;
+                return CallStatus::OutOfGas;
             }
 
             auto const memory_cost =
@@ -200,7 +200,7 @@ namespace monad::vm::runtime
             gas_remaining -= memory_cost - memory.cost;
 
             if (gas_remaining < 0) {
-                return MONAD_STATUS_OUT_OF_GAS;
+                return CallStatus::OutOfGas;
             }
 
             output_buf = allocate_output_buf();
@@ -226,22 +226,22 @@ namespace monad::vm::runtime
         using enum StatusCode;
 
         if (MONAD_UNLIKELY(result.status == Error)) {
-            return vm::Result{MONAD_STATUS_FAILURE};
+            return vm::Result{CallStatus::Failure};
         }
         if (MONAD_UNLIKELY(result.status == OutOfGas)) {
-            return vm::Result{MONAD_STATUS_OUT_OF_GAS};
+            return vm::Result{CallStatus::OutOfGas};
         }
 
         MONAD_DEBUG_ASSERT(result.status == Success || result.status == Revert);
 
         return std::visit(
             Cases{
-                [](monad_status_code ec) { return vm::Result{ec}; },
+                [](CallStatus ec) { return vm::Result{ec}; },
                 [this](std::span<uint8_t const> output) {
                     return vm::Result{vm::RawResult{
                         .status_code = result.status == Success
-                                           ? MONAD_STATUS_SUCCESS
-                                           : MONAD_STATUS_REVERT,
+                                           ? CallStatus::Success
+                                           : CallStatus::Revert,
                         .gas_left = gas_remaining,
                         .gas_refund = result.status == Success ? gas_refund : 0,
                         .output_data = output.data(),

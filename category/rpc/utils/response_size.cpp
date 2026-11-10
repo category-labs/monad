@@ -23,7 +23,7 @@
 #include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/rpc/utils/response_size.hpp>
-#include <category/vm/evm/status_code.h>
+#include <category/vm/evm/call_status.hpp>
 
 #include <bit>
 #include <cstddef>
@@ -159,7 +159,7 @@ namespace rpc::eth_simulateV1
 
             // Calculate the size of each log entry
             size_t log_index_cnt = 0;
-            if (call_frames[tx_idx][0].status == MONAD_STATUS_SUCCESS) {
+            if (call_frames[tx_idx][0].status == CallStatus::Success) {
                 carried_size += eth_simulate_json::logs.size() +
                                 sizeof(nlohmann::json::array_t);
                 for (auto const &log : receipts[tx_idx].logs) {

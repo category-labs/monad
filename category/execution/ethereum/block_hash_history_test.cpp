@@ -308,7 +308,7 @@ TYPED_TEST(BlockHashHistoryTraitsTest, read_from_block_hash_history_contract)
             100'000,
             buffer);
         if (expect_success) {
-            ASSERT_EQ(result.status_code, MONAD_STATUS_SUCCESS);
+            ASSERT_EQ(result.status_code, CallStatus::Success);
             ASSERT_EQ(result.output_size, 32);
             bytes32_t const expected_from_state =
                 get_block_hash_history(this->state, block_number);
@@ -324,7 +324,7 @@ TYPED_TEST(BlockHashHistoryTraitsTest, read_from_block_hash_history_contract)
             ASSERT_EQ(actual, expected_from_state);
         }
         else {
-            ASSERT_EQ(result.status_code, MONAD_STATUS_REVERT);
+            ASSERT_EQ(result.status_code, CallStatus::Revert);
         }
     };
 
@@ -358,7 +358,7 @@ TYPED_TEST(BlockHashHistoryTraitsTest, read_write_block_hash_history_contract)
             32,
             30'000'000,
             buffer);
-        ASSERT_EQ(result.status_code, MONAD_STATUS_SUCCESS);
+        ASSERT_EQ(result.status_code, CallStatus::Success);
     };
 
     auto const get =
@@ -379,7 +379,7 @@ TYPED_TEST(BlockHashHistoryTraitsTest, read_write_block_hash_history_contract)
             100'000,
             buffer);
         if (expect_success) {
-            ASSERT_EQ(result.status_code, MONAD_STATUS_SUCCESS);
+            ASSERT_EQ(result.status_code, CallStatus::Success);
             ASSERT_EQ(result.output_size, 32);
             bytes32_t const expected = to_bytes(block_number);
             bytes32_t const expected_from_state =
@@ -390,7 +390,7 @@ TYPED_TEST(BlockHashHistoryTraitsTest, read_write_block_hash_history_contract)
             EXPECT_EQ(actual, expected_from_state);
         }
         else {
-            ASSERT_EQ(result.status_code, MONAD_STATUS_REVERT);
+            ASSERT_EQ(result.status_code, CallStatus::Revert);
         }
     };
 
@@ -448,10 +448,10 @@ TYPED_TEST(BlockHashHistoryTraitsTest, unauthorized_set)
             30'000'000,
             buffer);
         if (expect_success) {
-            ASSERT_EQ(result.status_code, MONAD_STATUS_SUCCESS);
+            ASSERT_EQ(result.status_code, CallStatus::Success);
         }
         else {
-            ASSERT_EQ(result.status_code, MONAD_STATUS_REVERT);
+            ASSERT_EQ(result.status_code, CallStatus::Revert);
         }
     };
 
@@ -473,7 +473,7 @@ TYPED_TEST(BlockHashHistoryTraitsTest, unauthorized_set)
             buffer);
 
         if (expect_success) {
-            ASSERT_EQ(result.status_code, MONAD_STATUS_SUCCESS);
+            ASSERT_EQ(result.status_code, CallStatus::Success);
             ASSERT_EQ(result.output_size, 32);
             bytes32_t const expected = to_bytes(0xFF);
             bytes32_t const expected_from_state =
@@ -484,7 +484,7 @@ TYPED_TEST(BlockHashHistoryTraitsTest, unauthorized_set)
             EXPECT_EQ(actual, expected_from_state);
         }
         else {
-            ASSERT_EQ(result.status_code, MONAD_STATUS_REVERT);
+            ASSERT_EQ(result.status_code, CallStatus::Revert);
         }
     };
 
@@ -528,7 +528,7 @@ TYPED_TEST(BlockHashHistoryTraitsTest, blockhash_opcode)
     // Initially the storage of the block history contract will be empty.
     for (uint64_t i = 0; i < 256; i++) {
         auto const result = TestFixture::call_blockhash_opcode(i, 256);
-        ASSERT_EQ(result.status_code, MONAD_STATUS_SUCCESS);
+        ASSERT_EQ(result.status_code, CallStatus::Success);
         ASSERT_EQ(result.output_size, 32);
         bytes32_t actual{};
         memcpy(actual.bytes, result.output_data, 32);
@@ -542,7 +542,7 @@ TYPED_TEST(BlockHashHistoryTraitsTest, blockhash_opcode)
     // some reads from the block hash buffer.
     for (uint64_t i = 0; i < 256; i++) {
         auto const result = TestFixture::call_blockhash_opcode(i, 256);
-        ASSERT_EQ(result.status_code, MONAD_STATUS_SUCCESS);
+        ASSERT_EQ(result.status_code, CallStatus::Success);
         ASSERT_EQ(result.output_size, 32);
         bytes32_t actual{};
         memcpy(actual.bytes, result.output_data, 32);
@@ -560,7 +560,7 @@ TYPED_TEST(BlockHashHistoryTraitsTest, blockhash_opcode)
     TestFixture::fill_history_fixed(128, 256, to_bytes(0xAA));
     for (uint64_t i = 0; i < 256; i++) {
         auto const result = TestFixture::call_blockhash_opcode(i, 256);
-        ASSERT_EQ(result.status_code, MONAD_STATUS_SUCCESS);
+        ASSERT_EQ(result.status_code, CallStatus::Success);
         ASSERT_EQ(result.output_size, 32);
         bytes32_t actual{};
         memcpy(actual.bytes, result.output_data, 32);
@@ -578,7 +578,7 @@ TYPED_TEST(BlockHashHistoryTraitsTest, blockhash_opcode)
         257, BLOCK_HISTORY_LENGTH * 3, to_bytes(0xCC));
     for (uint64_t i = 0; i < 256; i++) {
         auto const result = TestFixture::call_blockhash_opcode(i, 256);
-        ASSERT_EQ(result.status_code, MONAD_STATUS_SUCCESS);
+        ASSERT_EQ(result.status_code, CallStatus::Success);
         ASSERT_EQ(result.output_size, 32);
         bytes32_t actual{};
         memcpy(actual.bytes, result.output_data, 32);
@@ -594,7 +594,7 @@ TYPED_TEST(BlockHashHistoryTraitsTest, blockhash_opcode)
     // Check that the semantics of `blockhash` is unaltered.
     for (uint64_t i = 256; i < BLOCK_HISTORY_LENGTH; i++) {
         auto const result = TestFixture::call_blockhash_opcode(i, 256);
-        ASSERT_EQ(result.status_code, MONAD_STATUS_SUCCESS);
+        ASSERT_EQ(result.status_code, CallStatus::Success);
         ASSERT_EQ(result.output_size, 32);
         bytes32_t actual{};
         memcpy(actual.bytes, result.output_data, 32);
@@ -615,7 +615,7 @@ TYPED_TEST(BlockHashHistoryTraitsTest, blockhash_opcode_late_deploy)
     // Initially the storage of the block history contract will be empty.
     for (uint64_t i = 0; i < 256; i++) {
         auto const result = TestFixture::call_blockhash_opcode(i, 256);
-        ASSERT_EQ(result.status_code, MONAD_STATUS_SUCCESS);
+        ASSERT_EQ(result.status_code, CallStatus::Success);
         ASSERT_EQ(result.output_size, 32);
         bytes32_t actual{};
         memcpy(actual.bytes, result.output_data, 32);
@@ -631,7 +631,7 @@ TYPED_TEST(BlockHashHistoryTraitsTest, blockhash_opcode_late_deploy)
     // some reads from the block hash buffer.
     for (uint64_t i = 0; i < 256; i++) {
         auto const result = TestFixture::call_blockhash_opcode(i, 256);
-        ASSERT_EQ(result.status_code, MONAD_STATUS_SUCCESS);
+        ASSERT_EQ(result.status_code, CallStatus::Success);
         ASSERT_EQ(result.output_size, 32);
         bytes32_t actual{};
         memcpy(actual.bytes, result.output_data, 32);
@@ -650,7 +650,7 @@ TYPED_TEST(BlockHashHistoryTraitsTest, blockhash_opcode_late_deploy)
     TestFixture::fill_history_fixed(0, start_block, to_bytes(0xAA));
     for (uint64_t i = 0; i < 256; i++) {
         auto const result = TestFixture::call_blockhash_opcode(i, 256);
-        ASSERT_EQ(result.status_code, MONAD_STATUS_SUCCESS);
+        ASSERT_EQ(result.status_code, CallStatus::Success);
         ASSERT_EQ(result.output_size, 32);
         bytes32_t actual{};
         memcpy(actual.bytes, result.output_data, 32);
@@ -678,7 +678,7 @@ TYPED_TEST(
 
     for (uint64_t i = 0; i < 256; i++) {
         auto const result = TestFixture::call_blockhash_opcode(i, 256);
-        ASSERT_EQ(result.status_code, MONAD_STATUS_SUCCESS);
+        ASSERT_EQ(result.status_code, CallStatus::Success);
         ASSERT_EQ(result.output_size, 32);
         bytes32_t actual{};
         memcpy(actual.bytes, result.output_data, 32);
@@ -693,7 +693,7 @@ TYPED_TEST(
 
     for (uint64_t i = 0; i < 256; i++) {
         auto const result = TestFixture::call_blockhash_opcode(i, 256);
-        ASSERT_EQ(result.status_code, MONAD_STATUS_SUCCESS);
+        ASSERT_EQ(result.status_code, CallStatus::Success);
         ASSERT_EQ(result.output_size, 32);
         bytes32_t actual{};
         memcpy(actual.bytes, result.output_data, 32);
@@ -710,7 +710,7 @@ TYPED_TEST(
 
     for (uint64_t i = 0; i < 256; i++) {
         auto const result = TestFixture::call_blockhash_opcode(i, 256);
-        ASSERT_EQ(result.status_code, MONAD_STATUS_SUCCESS);
+        ASSERT_EQ(result.status_code, CallStatus::Success);
         ASSERT_EQ(result.output_size, 32);
         bytes32_t actual{};
         memcpy(actual.bytes, result.output_data, 32);

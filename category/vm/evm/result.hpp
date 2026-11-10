@@ -16,7 +16,7 @@
 #pragma once
 
 #include <category/core/address.hpp>
-#include <category/vm/evm/status_code.h>
+#include <category/vm/evm/call_status.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -28,7 +28,7 @@ namespace monad::vm
 {
     struct RawResult
     {
-        monad_status_code status_code;
+        CallStatus status_code;
         int64_t gas_left;
         int64_t gas_refund;
         uint8_t const *output_data;
@@ -50,23 +50,22 @@ namespace monad::vm
         using RawResult::status_code;
 
         explicit Result(
-            monad_status_code const code = MONAD_STATUS_INTERNAL_ERROR,
+            CallStatus const code = CallStatus::InternalError,
             int64_t const gas = 0, int64_t const refund = 0) noexcept
             : RawResult{code, gas, refund, nullptr, 0, {}}
         {
         }
 
         explicit Result(
-            monad_status_code const code, int64_t const gas,
-            int64_t const refund, Address const &address) noexcept
+            CallStatus const code, int64_t const gas, int64_t const refund,
+            Address const &address) noexcept
             : RawResult{code, gas, refund, nullptr, 0, address}
         {
         }
 
         explicit Result(
-            monad_status_code const code, int64_t const gas,
-            int64_t const refund, uint8_t const *const data,
-            size_t const size) noexcept
+            CallStatus const code, int64_t const gas, int64_t const refund,
+            uint8_t const *const data, size_t const size) noexcept
             : Result{code, gas, refund}
         {
             if (size == 0) {
@@ -75,7 +74,7 @@ namespace monad::vm
             auto *const buf = static_cast<uint8_t *>(std::malloc(size));
             if (buf == nullptr) {
                 static_cast<RawResult &>(*this) =
-                    RawResult{MONAD_STATUS_OUT_OF_MEMORY, 0, 0, nullptr, 0, {}};
+                    RawResult{CallStatus::OutOfMemory, 0, 0, nullptr, 0, {}};
                 return;
             }
             std::memcpy(buf, data, size);

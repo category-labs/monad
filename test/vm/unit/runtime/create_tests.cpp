@@ -77,8 +77,7 @@ TYPED_TEST(RuntimeTraitsTest, CreateSizeIsZero)
 
 TYPED_TEST(RuntimeTraitsTest, CreateFailure)
 {
-    this->host_.call_result =
-        TestFixture::failure_result(MONAD_STATUS_OUT_OF_GAS);
+    this->host_.call_result = TestFixture::failure_result(CallStatus::OutOfGas);
 
     auto do_create = TestFixture::wrap(create<typename TestFixture::Trait>);
 

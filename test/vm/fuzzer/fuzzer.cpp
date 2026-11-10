@@ -117,44 +117,44 @@ public:
     }
 };
 
-static constexpr std::string_view to_string(monad_status_code const sc) noexcept
+static constexpr std::string_view to_string(CallStatus const sc) noexcept
 {
     switch (sc) {
-    case MONAD_STATUS_SUCCESS:
+    case CallStatus::Success:
         return "SUCCESS";
-    case MONAD_STATUS_FAILURE:
+    case CallStatus::Failure:
         return "FAILURE";
-    case MONAD_STATUS_REVERT:
+    case CallStatus::Revert:
         return "REVERT";
-    case MONAD_STATUS_OUT_OF_GAS:
+    case CallStatus::OutOfGas:
         return "OUT_OF_GAS";
-    case MONAD_STATUS_INVALID_INSTRUCTION:
+    case CallStatus::InvalidInstruction:
         return "INVALID_INSTRUCTION";
-    case MONAD_STATUS_UNDEFINED_INSTRUCTION:
+    case CallStatus::UndefinedInstruction:
         return "UNDEFINED_INSTRUCTION";
-    case MONAD_STATUS_STACK_OVERFLOW:
+    case CallStatus::StackOverflow:
         return "STACK_OVERFLOW";
-    case MONAD_STATUS_STACK_UNDERFLOW:
+    case CallStatus::StackUnderflow:
         return "STACK_UNDERFLOW";
-    case MONAD_STATUS_BAD_JUMP_DESTINATION:
+    case CallStatus::BadJumpDestination:
         return "BAD_JUMP_DESTINATION";
-    case MONAD_STATUS_INVALID_MEMORY_ACCESS:
+    case CallStatus::InvalidMemoryAccess:
         return "INVALID_MEMORY_ACCESS";
-    case MONAD_STATUS_CALL_DEPTH_EXCEEDED:
+    case CallStatus::CallDepthExceeded:
         return "CALL_DEPTH_EXCEEDED";
-    case MONAD_STATUS_STATIC_MODE_VIOLATION:
+    case CallStatus::StaticModeViolation:
         return "STATIC_MODE_VIOLATION";
-    case MONAD_STATUS_PRECOMPILE_FAILURE:
+    case CallStatus::PrecompileFailure:
         return "PRECOMPILE_FAILURE";
-    case MONAD_STATUS_ARGUMENT_OUT_OF_RANGE:
+    case CallStatus::ArgumentOutOfRange:
         return "ARGUMENT_OUT_OF_RANGE";
-    case MONAD_STATUS_INSUFFICIENT_BALANCE:
+    case CallStatus::InsufficientBalance:
         return "INSUFFICIENT_BALANCE";
-    case MONAD_STATUS_INTERNAL_ERROR:
+    case CallStatus::InternalError:
         return "INTERNAL_ERROR";
-    case MONAD_STATUS_REJECTED:
+    case CallStatus::Rejected:
         return "REJECTED";
-    case MONAD_STATUS_OUT_OF_MEMORY:
+    case CallStatus::OutOfMemory:
         return "OUT_OF_MEMORY";
     default:
         return "OTHER";
@@ -432,7 +432,7 @@ static arguments parse_args(int const argc, char **const argv)
 }
 
 template <Traits traits>
-static monad_status_code fuzz_iteration(
+static CallStatus fuzz_iteration(
     vm::Message const &msg, BlockHashBuffer const &block_hash_buffer,
     FuzzerTestStateRef spec_state, FuzzerTestStateRef monad_state,
     BlockHeader const &block_header)
@@ -456,7 +456,7 @@ static monad_status_code fuzz_iteration(
 
     assert_equal(spec_tstate.state, monad_tstate.state);
 
-    if (monad_result.status_code == MONAD_STATUS_SUCCESS) {
+    if (monad_result.status_code == CallStatus::Success) {
         spec_tstate.accept(block_header.number);
         monad_tstate.accept(block_header.number);
     }
@@ -474,7 +474,7 @@ static monad_status_code fuzz_iteration(
 
 static void
 log(std::chrono::high_resolution_clock::time_point start, arguments const &args,
-    std::unordered_map<monad_status_code, std::size_t> const &exit_code_stats,
+    std::unordered_map<CallStatus, std::size_t> const &exit_code_stats,
     std::size_t const run_index, std::size_t const total_messages)
 {
     using namespace std::chrono;
@@ -645,7 +645,7 @@ static void do_run(
     auto contract_addresses = std::vector<Address>{};
     auto known_addresses = std::vector<Address>{};
 
-    auto exit_code_stats = std::unordered_map<monad_status_code, std::size_t>{};
+    auto exit_code_stats = std::unordered_map<CallStatus, std::size_t>{};
     auto total_messages = std::size_t{0};
 
     auto start_time = std::chrono::high_resolution_clock::now();

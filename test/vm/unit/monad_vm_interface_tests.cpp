@@ -421,7 +421,7 @@ TEST(MonadVmInterface, execute_bytecode_raw)
         host, &*msg, {bytecode0.data(), bytecode0.size()});
     auto result = vm.execute_bytecode_raw<TestTraits>(
         rt_ctx, {bytecode0.data(), bytecode0.size()});
-    ASSERT_EQ(result.status_code, MONAD_STATUS_SUCCESS);
+    ASSERT_EQ(result.status_code, CallStatus::Success);
     ASSERT_EQ(result.output_size, 0);
     ASSERT_EQ(result.gas_left, 4);
 }
@@ -440,7 +440,7 @@ TEST(MonadVmInterface, execute_intercode_raw)
     auto rt_ctx = runtime::Context::from(
         host, &*msg, {bytecode0.data(), bytecode0.size()});
     auto result = vm.execute_intercode_raw<TestTraits>(rt_ctx, icode0);
-    ASSERT_EQ(result.status_code, MONAD_STATUS_SUCCESS);
+    ASSERT_EQ(result.status_code, CallStatus::Success);
     ASSERT_EQ(result.output_size, 0);
     ASSERT_EQ(result.gas_left, 4);
 }
@@ -462,7 +462,7 @@ TEST(MonadVmInterface, execute_native_entrypoint_raw)
     auto rt_ctx = runtime::Context::from(
         host, &*msg, {bytecode0.data(), bytecode0.size()});
     auto result = vm.execute_native_entrypoint_raw<TestTraits>(rt_ctx, entry0);
-    ASSERT_EQ(result.status_code, MONAD_STATUS_SUCCESS);
+    ASSERT_EQ(result.status_code, CallStatus::Success);
     ASSERT_EQ(result.output_size, 0);
     ASSERT_EQ(result.gas_left, 4);
 }
@@ -489,7 +489,7 @@ static void test_execute_raw(VM::Mode const mode)
         auto const &icode = vcode->intercode();
         auto rt_ctx = runtime::Context::from(host, &*msg, icode->code_span());
         auto result = vm.execute_raw<traits>(rt_ctx, hash, vcode);
-        ASSERT_EQ(result.status_code, MONAD_STATUS_SUCCESS);
+        ASSERT_EQ(result.status_code, CallStatus::Success);
         ASSERT_EQ(result.output_size, 0);
     };
 
@@ -715,7 +715,7 @@ TEST(MonadVmInterface, execute)
         auto vcode = vm.try_insert_varcode(hash, icode);
         auto result =
             vm.execute<EvmTraits<MONAD_ETH_PRAGUE>>(host, &*msg, hash, vcode);
-        ASSERT_EQ(result.status_code, MONAD_STATUS_SUCCESS);
+        ASSERT_EQ(result.status_code, CallStatus::Success);
         ASSERT_EQ(result.output_size, 0);
     }
 
@@ -784,7 +784,7 @@ TEST(MonadVmInterface, execute_bytecode)
         std::vector<uint8_t> bytecode{};
         auto result = vm.execute_bytecode<EvmTraits<MONAD_ETH_PRAGUE>>(
             host, &*msg, bytecode);
-        ASSERT_EQ(result.status_code, MONAD_STATUS_SUCCESS);
+        ASSERT_EQ(result.status_code, CallStatus::Success);
         ASSERT_EQ(result.output_size, 0);
     }
 

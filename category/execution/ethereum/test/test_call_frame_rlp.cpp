@@ -17,7 +17,7 @@
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
-#include <category/vm/evm/status_code.h>
+#include <category/vm/evm/call_status.hpp>
 
 #include <gtest/gtest.h>
 
@@ -43,7 +43,7 @@ TEST(Rlp_CallFrame, encode_decode_call_frame)
         .gas_used = 21'000u,
         .input = byte_string{0xaa, 0xbb, 0xcc},
         .output = byte_string{},
-        .status = MONAD_STATUS_SUCCESS,
+        .status = CallStatus::Success,
         .depth = 0,
     };
 
@@ -66,7 +66,7 @@ TEST(Rlp_CallFrame, encode_decode_call_frames)
         .gas_used = 21'000u,
         .input = byte_string{0xaa, 0xbb, 0xcc},
         .output = byte_string{},
-        .status = MONAD_STATUS_SUCCESS,
+        .status = CallStatus::Success,
         .depth = 0,
         .logs = std::nullopt,
     };
@@ -81,7 +81,7 @@ TEST(Rlp_CallFrame, encode_decode_call_frames)
         .gas_used = 10'000u,
         .input = byte_string{0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0x01},
         .output = byte_string{0x01, 0x02},
-        .status = MONAD_STATUS_REVERT,
+        .status = CallStatus::Revert,
         .depth = 1,
         .logs = std::vector{
             CallFrame::Log{

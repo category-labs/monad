@@ -19,6 +19,7 @@ set_target_properties(monad-vm-evm PROPERTIES LINKER_LANGUAGE CXX)
 
 target_sources(monad-vm-evm PRIVATE
     "access_status.hpp"
+    "call_status.hpp"
     "delegation.cpp"
     "delegation.hpp"
     "explicit_traits.hpp"
@@ -29,7 +30,6 @@ target_sources(monad-vm-evm PRIVATE
     "result.hpp"
     "revision.cpp"
     "revision.h"
-    "status_code.h"
     "storage_status.hpp"
     "switch_traits.hpp"
     "traits.hpp"

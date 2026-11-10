@@ -19,11 +19,11 @@
 #include <category/core/likely.h>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/access_status.hpp>
+#include <category/vm/evm/call_status.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/message.hpp>
 #include <category/vm/evm/result.hpp>
 #include <category/vm/evm/revision.h>
-#include <category/vm/evm/status_code.h>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/host.hpp>
 #include <category/vm/runtime/bin.hpp>
@@ -190,7 +190,7 @@ namespace monad::vm::runtime
         std::copy_n(
             result.output_data, copy_size, ctx->memory.data + *ret_offset);
 
-        return (result.status_code == MONAD_STATUS_SUCCESS) ? 1 : 0;
+        return (result.status_code == CallStatus::Success) ? 1 : 0;
     }
 
     EXPLICIT_TRAITS(call_impl);

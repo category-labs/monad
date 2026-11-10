@@ -59,8 +59,7 @@ namespace monad::vm::test
             Address prog_addr, std::int64_t gas_left,
             std::int64_t gas_refund = 0);
 
-        vm::RawResult
-            failure_result(monad_status_code = MONAD_STATUS_INTERNAL_ERROR);
+        vm::RawResult failure_result(CallStatus = CallStatus::InternalError);
 
         // shim to be able to pass a function pointer to tests_trampoline
         // which will then correctly invoke the actual closure/lambda

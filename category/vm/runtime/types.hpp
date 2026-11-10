@@ -20,9 +20,9 @@
 #include <category/core/bytes.hpp>
 #include <category/core/runtime/non_temporal_memory.hpp>
 #include <category/core/runtime/uint256.hpp>
+#include <category/vm/evm/call_status.hpp>
 #include <category/vm/evm/message.hpp>
 #include <category/vm/evm/result.hpp>
-#include <category/vm/evm/status_code.h>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/evm/tx_context.hpp>
 #include <category/vm/runtime/bin.hpp>
@@ -400,8 +400,7 @@ namespace monad::vm::runtime
 
     private:
         template <Traits traits>
-        std::variant<std::span<uint8_t const>, monad_status_code>
-        copy_result_data();
+        std::variant<std::span<uint8_t const>, CallStatus> copy_result_data();
     };
 
     // Update context.S accordingly if these offsets change:

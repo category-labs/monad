@@ -137,7 +137,7 @@ TYPED_TEST(TraitsTest, create_with_insufficient)
     auto const result =
         execute_create_message<typename TestFixture::Trait>(&h, s, m);
 
-    EXPECT_EQ(result.status_code, MONAD_STATUS_INSUFFICIENT_BALANCE);
+    EXPECT_EQ(result.status_code, CallStatus::InsufficientBalance);
 }
 
 // Test that CREATE transactions that fail due to insufficient balance
@@ -202,7 +202,7 @@ TYPED_TEST(TraitsTest, create_insufficient_balance_nonce_bump)
     auto const result =
         execute_create_message<typename TestFixture::Trait>(&h, s, m);
 
-    EXPECT_EQ(result.status_code, MONAD_STATUS_INSUFFICIENT_BALANCE);
+    EXPECT_EQ(result.status_code, CallStatus::InsufficientBalance);
 
     auto const final_nonce = s.get_nonce(from);
     if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
@@ -293,7 +293,7 @@ TYPED_TEST(TraitsTest, create_revert_preserves_access_list_trace)
     auto const contract_address = create_contract_address(from, nonce);
     auto const result =
         execute_create_message<typename TestFixture::Trait>(&h, s, m);
-    ASSERT_EQ(result.status_code, MONAD_STATUS_REVERT);
+    ASSERT_EQ(result.status_code, CallStatus::Revert);
     EXPECT_FALSE(s.account_exists(contract_address));
 
     trace::run_tracer<typename TestFixture::Trait>(state_tracer, s);
@@ -369,7 +369,7 @@ TYPED_TEST(TraitsTest, eip684_existing_code)
     init_rb_for_test<typename TestFixture::Trait>(s, h, Address{m.sender});
     auto const result =
         execute_create_message<typename TestFixture::Trait>(&h, s, m);
-    EXPECT_EQ(result.status_code, MONAD_STATUS_INVALID_INSTRUCTION);
+    EXPECT_EQ(result.status_code, CallStatus::InvalidInstruction);
 }
 
 TYPED_TEST(TraitsTest, create_nonce_out_of_range)
@@ -433,7 +433,7 @@ TYPED_TEST(TraitsTest, create_nonce_out_of_range)
         execute_create_message<typename TestFixture::Trait>(&h, s, m);
 
     EXPECT_FALSE(s.account_exists(new_addr));
-    EXPECT_EQ(result.status_code, MONAD_STATUS_ARGUMENT_OUT_OF_RANGE);
+    EXPECT_EQ(result.status_code, CallStatus::ArgumentOutOfRange);
 }
 
 TYPED_TEST(TraitsTest, static_precompile_execution)
@@ -499,7 +499,7 @@ TYPED_TEST(TraitsTest, static_precompile_execution)
     auto const result =
         execute_call_message<typename TestFixture::Trait>(&h, s, m);
 
-    EXPECT_EQ(result.status_code, MONAD_STATUS_SUCCESS);
+    EXPECT_EQ(result.status_code, CallStatus::Success);
     EXPECT_EQ(result.gas_left, 382);
     ASSERT_EQ(result.output_size, data_size);
     EXPECT_EQ(std::memcmp(result.output_data, m.input_data, data_size), 0);
@@ -569,7 +569,7 @@ TYPED_TEST(TraitsTest, out_of_gas_static_precompile_execution)
     vm::Result const result =
         execute_call_message<typename TestFixture::Trait>(&h, s, m);
 
-    EXPECT_EQ(result.status_code, MONAD_STATUS_OUT_OF_GAS);
+    EXPECT_EQ(result.status_code, CallStatus::OutOfGas);
 }
 
 // Checks that the CREATE opcode respects the configured max code size for the
@@ -668,7 +668,7 @@ TYPED_TEST(TraitsTest, create_op_max_initcode_size)
 
         auto const result =
             execute_call_message<typename TestFixture::Trait>(&h, s, m);
-        ASSERT_EQ(result.status_code, MONAD_STATUS_SUCCESS);
+        ASSERT_EQ(result.status_code, CallStatus::Success);
     }
 
     // Initcode doesn't fit inside size limit
@@ -688,7 +688,7 @@ TYPED_TEST(TraitsTest, create_op_max_initcode_size)
 
         auto const result =
             execute_call_message<typename TestFixture::Trait>(&h, s, m);
-        ASSERT_EQ(result.status_code, MONAD_STATUS_OUT_OF_GAS);
+        ASSERT_EQ(result.status_code, CallStatus::OutOfGas);
     }
 }
 
@@ -792,7 +792,7 @@ TYPED_TEST(TraitsTest, create2_op_max_initcode_size)
 
         auto const result =
             execute_call_message<typename TestFixture::Trait>(&h, s, m);
-        ASSERT_EQ(result.status_code, MONAD_STATUS_SUCCESS);
+        ASSERT_EQ(result.status_code, CallStatus::Success);
     }
 
     // Initcode doesn't fit inside size limit
@@ -812,7 +812,7 @@ TYPED_TEST(TraitsTest, create2_op_max_initcode_size)
 
         auto const result =
             execute_call_message<typename TestFixture::Trait>(&h, s, m);
-        ASSERT_EQ(result.status_code, MONAD_STATUS_OUT_OF_GAS);
+        ASSERT_EQ(result.status_code, CallStatus::OutOfGas);
     }
 }
 
@@ -837,10 +837,10 @@ TYPED_TEST(TraitsTest, deploy_contract_code_not_enough_of_gas)
     {
         State s{bs, Incarnation{0, 0}};
         static constexpr int64_t gas = 10'000;
-        vm::Result r{MONAD_STATUS_SUCCESS, gas, 0, code, sizeof(code)};
+        vm::Result r{CallStatus::Success, gas, 0, code, sizeof(code)};
         auto const r2 = deploy_contract_code<typename TestFixture::Trait>(
             s, a, std::move(r));
-        EXPECT_EQ(r2.status_code, MONAD_STATUS_SUCCESS);
+        EXPECT_EQ(r2.status_code, CallStatus::Success);
         EXPECT_EQ(r2.gas_left, gas - 200 * sizeof(code));
         EXPECT_EQ(r2.create_address, a);
         auto const icode = s.get_code(a)->intercode();
@@ -851,12 +851,12 @@ TYPED_TEST(TraitsTest, deploy_contract_code_not_enough_of_gas)
 
     {
         State s{bs, Incarnation{0, 1}};
-        vm::Result r{MONAD_STATUS_SUCCESS, 700, 0, code, sizeof(code)};
+        vm::Result r{CallStatus::Success, 700, 0, code, sizeof(code)};
         auto const r2 = deploy_contract_code<typename TestFixture::Trait>(
             s, a, std::move(r));
         EXPECT_EQ(r2.gas_left, 700);
         // Fail to deploy code - out of gas (EIP-2)
-        EXPECT_EQ(r2.status_code, MONAD_STATUS_OUT_OF_GAS);
+        EXPECT_EQ(r2.status_code, CallStatus::OutOfGas);
         EXPECT_EQ(r2.create_address, 0x00_address);
     }
 }
@@ -884,14 +884,14 @@ TYPED_TEST(TraitsTest, deploy_contract_code_max_code_size)
     State s{bs, Incarnation{0, 0}};
 
     vm::Result r{
-        MONAD_STATUS_SUCCESS,
+        CallStatus::Success,
         std::numeric_limits<int64_t>::max(),
         0,
         code.data(),
         code.size()};
     auto const r2 =
         deploy_contract_code<typename TestFixture::Trait>(s, a, std::move(r));
-    EXPECT_EQ(r2.status_code, MONAD_STATUS_OUT_OF_GAS);
+    EXPECT_EQ(r2.status_code, CallStatus::OutOfGas);
     EXPECT_EQ(r2.gas_left, 0);
     EXPECT_EQ(r2.create_address, 0x00_address);
 }
@@ -916,7 +916,7 @@ TYPED_TEST(TraitsTest, deploy_contract_code_validation)
     State s{bs, Incarnation{0, 0}};
 
     vm::Result r{
-        MONAD_STATUS_SUCCESS,
+        CallStatus::Success,
         1'000,
         0,
         illegal_code.data(),
@@ -924,11 +924,11 @@ TYPED_TEST(TraitsTest, deploy_contract_code_validation)
     auto const r2 =
         deploy_contract_code<typename TestFixture::Trait>(s, a, std::move(r));
     if constexpr (!TestFixture::Trait::eip_3541_active()) {
-        EXPECT_EQ(r2.status_code, MONAD_STATUS_SUCCESS);
+        EXPECT_EQ(r2.status_code, CallStatus::Success);
         EXPECT_EQ(r2.create_address, a);
     }
     else {
-        EXPECT_EQ(r2.status_code, MONAD_STATUS_CONTRACT_VALIDATION_FAILURE);
+        EXPECT_EQ(r2.status_code, CallStatus::ContractValidationFailure);
         EXPECT_EQ(r2.gas_left, 0);
         EXPECT_EQ(r2.create_address, 0x00_address);
     }
@@ -1030,11 +1030,11 @@ TYPED_TEST(TraitsTest, create_inside_delegated_call)
         // CREATE should fail on Monad chains and succeed on Ethereum chains
         if constexpr (TestFixture::Trait::can_create_inside_delegated()) {
             static_assert(TestFixture::is_evm_trait());
-            EXPECT_EQ(result.status_code, MONAD_STATUS_SUCCESS);
+            EXPECT_EQ(result.status_code, CallStatus::Success);
         }
         else {
             static_assert(TestFixture::is_monad_trait());
-            EXPECT_EQ(result.status_code, MONAD_STATUS_FAILURE);
+            EXPECT_EQ(result.status_code, CallStatus::Failure);
         }
     }
 }
@@ -1161,11 +1161,11 @@ TYPED_TEST(TraitsTest, create2_inside_delegated_call_via_delegatecall)
         // CREATE2 should fail on Monad chains and succeed on Ethereum chains
         if constexpr (TestFixture::Trait::can_create_inside_delegated()) {
             static_assert(TestFixture::is_evm_trait());
-            EXPECT_EQ(result.status_code, MONAD_STATUS_SUCCESS);
+            EXPECT_EQ(result.status_code, CallStatus::Success);
         }
         else {
             static_assert(TestFixture::is_monad_trait());
-            EXPECT_EQ(result.status_code, MONAD_STATUS_FAILURE);
+            EXPECT_EQ(result.status_code, CallStatus::Failure);
         }
     }
 }
@@ -1273,7 +1273,7 @@ TYPED_TEST(TraitsTest, nested_call_to_delegated_precompile)
 
         auto const result = h.call(m);
 
-        EXPECT_EQ(result.status_code, MONAD_STATUS_SUCCESS);
+        EXPECT_EQ(result.status_code, CallStatus::Success);
     }
 }
 
@@ -1370,7 +1370,7 @@ TYPED_TEST(TraitsTest, cold_account_access)
         }
     }();
 
-    EXPECT_EQ(result.status_code, MONAD_STATUS_SUCCESS);
+    EXPECT_EQ(result.status_code, CallStatus::Success);
     EXPECT_EQ(gas_used, balance_gas + 3); // +3 for PUSH20
 }
 

@@ -23,8 +23,6 @@
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
 
-#include <evmc/evmc.hpp>
-
 #include <gtest/gtest.h>
 
 #include <cstddef>

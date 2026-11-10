@@ -29,8 +29,6 @@
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 
-#include <evmc/evmc.h>
-
 #include <boost/outcome/config.hpp>
 #include <boost/outcome/success_failure.hpp>
 

@@ -19,8 +19,6 @@
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
 #include <category/vm/evm/status_code.h>
 
-#include <evmc/evmc.hpp>
-
 #include <gtest/gtest.h>
 
 #include <vector>

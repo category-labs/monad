@@ -21,8 +21,6 @@
 
 #include <CLI/CLI.hpp>
 
-#include <evmc/evmc.hpp>
-
 using namespace monad;
 using namespace monad::staking;
 using namespace monad::staking::test;

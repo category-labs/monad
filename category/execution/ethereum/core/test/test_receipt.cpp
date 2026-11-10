@@ -16,8 +16,6 @@
 #include <category/core/byte_string.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 
-#include <evmc/evmc.hpp>
-
 #include <gtest/gtest.h>
 
 #include <vector>

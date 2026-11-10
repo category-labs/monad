@@ -22,8 +22,6 @@
 #include <category/vm/utils/evm-as/instruction.hpp>
 #include <category/vm/utils/evm-as/utils.hpp>
 
-#include <evmc/evmc.hpp>
-
 #include <map>
 
 namespace monad::vm::utils::evm_as

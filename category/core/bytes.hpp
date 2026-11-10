@@ -26,8 +26,6 @@
 #include <category/core/keccak.hpp>
 #include <category/core/seeded_fast_hash.hpp>
 
-#include <evmc/evmc.hpp>
-
 #include <ankerl/unordered_dense.h>
 
 #include <algorithm>
@@ -46,11 +44,6 @@ struct bytes32_t : monad_bytes32
 
     constexpr bytes32_t(bytes32_t const &) noexcept = default;
     constexpr bytes32_t &operator=(bytes32_t const &) noexcept = default;
-
-    explicit(false) constexpr bytes32_t(evmc_bytes32 const &b) noexcept
-        : monad_bytes32{std::bit_cast<monad_bytes32>(b)}
-    {
-    }
 
     explicit(false) constexpr bytes32_t(monad_bytes32 const &other) noexcept
         : monad_bytes32{other}
@@ -101,11 +94,6 @@ static_assert(sizeof(bytes32_t) == 32);
 static_assert(alignof(bytes32_t) == 1);
 
 using uint256_be_t = bytes32_t;
-
-constexpr evmc_bytes32 to_evmc(monad_bytes32 const &b) noexcept
-{
-    return std::bit_cast<evmc_bytes32>(b);
-}
 
 constexpr bytes32_t to_bytes(uint256_t const &n) noexcept
 {

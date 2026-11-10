@@ -28,8 +28,6 @@
 #include <revision_map.hpp>
 #include <transaction_test.hpp>
 
-#include <evmc/evmc.h>
-
 #include <quill/Frontend.h>
 #include <quill/sinks/NullSink.h>
 

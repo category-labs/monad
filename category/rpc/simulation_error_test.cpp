@@ -19,7 +19,7 @@
 
 #include <gtest/gtest.h>
 
-#include <evmc/evmc.h>
+#include <category/vm/evm/status_code.h>
 
 #include <array>
 #include <string_view>
@@ -65,7 +65,7 @@ TEST(SimulationErrorTest, SimulationDomain)
             static_cast<SimulationError>(test_case.error);
         auto const info = simulation_error_info(error);
 
-        EXPECT_EQ(info.status_code, EVMC_INTERNAL_ERROR);
+        EXPECT_EQ(info.status_code, MONAD_STATUS_INTERNAL_ERROR);
         EXPECT_EQ(info.message, test_case.message);
     }
 }
@@ -76,6 +76,6 @@ TEST(SimulationErrorTest, BlockDomain)
 
     auto const info = simulation_error_info(error);
 
-    EXPECT_EQ(info.status_code, EVMC_REJECTED);
+    EXPECT_EQ(info.status_code, MONAD_STATUS_REJECTED);
     EXPECT_EQ(info.message, "gas above limit");
 }

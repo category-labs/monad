@@ -17,7 +17,7 @@
 
 #include <category/core/address.hpp>
 #include <category/core/runtime/uint256.hpp>
-#include <category/vm/evm/access_status.h>
+#include <category/vm/evm/access_status.hpp>
 #include <category/vm/evm/message.hpp>
 #include <category/vm/evm/result.hpp>
 #include <category/vm/runtime/detail.hpp>
@@ -206,7 +206,7 @@ namespace monad::vm::test
 
             if constexpr (TraitsTest<T>::Trait::eip_7702_active()) {
                 ASSERT_EQ(
-                    host_.access_account(delegate_addr), MONAD_ACCESS_WARM);
+                    host_.access_account(delegate_addr), AccessStatus::Warm);
                 ASSERT_EQ(
                     host_.recorded_calls[0].flags &
                         std::to_underlying(CallFlags::Delegated),
@@ -214,7 +214,7 @@ namespace monad::vm::test
             }
             else {
                 ASSERT_EQ(
-                    host_.access_account(delegate_addr), MONAD_ACCESS_COLD);
+                    host_.access_account(delegate_addr), AccessStatus::Cold);
                 ASSERT_NE(
                     host_.recorded_calls[0].flags &
                         std::to_underlying(CallFlags::Delegated),

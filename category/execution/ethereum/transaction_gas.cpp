@@ -23,8 +23,6 @@
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 
-#include <evmc/evmc.h>
-
 #include <algorithm>
 #include <cstdint>
 #include <iterator>

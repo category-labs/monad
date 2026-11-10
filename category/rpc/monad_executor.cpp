@@ -108,7 +108,6 @@
 #include <string.h>
 
 #include <ankerl/unordered_dense.h>
-#include <evmc/evmc.h>
 #include <nlohmann/json.hpp>
 
 using namespace monad;
@@ -1403,19 +1402,9 @@ namespace
 
 struct monad_executor
 {
-    Pool low_gas_pool_;
-    Pool high_gas_pool_;
-
-    // Shared thread pool for trace operations (reduces thread count)
-    fiber::FiberThreadPool trace_thread_pool_;
-
-    // Fiber groups sharing the trace thread pool
-    Group trace_block_group_; // Limits concurrent trace requests
-    Group trace_tx_exec_group_; // Executes transactions within trace blocks
-
-    // Sequence number for each call. This is used as a priority of the request,
-    // requests started earlier have higher priority.
-    std::atomic<uint64_t> call_seq_no_{0};
+    // IMPORTANT: members are destroyed in reverse declaration order. Pools and
+    // fiber groups drain queued requests on destruction, so each is declared
+    // after every member those requests use (including other pools).
 
     // Null when the executor runs without a database, in which case requests
     // execute against an empty world (see `NullDb`).
@@ -1431,6 +1420,20 @@ struct monad_executor
     // interpreter rather than the compiler. If it uses the compiler, then
     // out-of-gas errors can be misreported as generic failures.
     vm::VM vm_{vm::VM::InterpreterOnly};
+
+    Pool high_gas_pool_;
+    Pool low_gas_pool_;
+
+    // Shared thread pool for trace operations (reduces thread count)
+    fiber::FiberThreadPool trace_thread_pool_;
+
+    // Fiber groups sharing the trace thread pool
+    Group trace_tx_exec_group_; // Executes transactions within trace blocks
+    Group trace_block_group_; // Limits concurrent trace requests
+
+    // Sequence number for each call. This is used as a priority of the request,
+    // requests started earlier have higher priority.
+    std::atomic<uint64_t> call_seq_no_{0};
 
     static mpt::ReadOnlyOnDiskDbConfig make_db_config(
         std::string const &triedb_path, uint64_t const node_lru_max_mem)
@@ -1468,26 +1471,23 @@ struct monad_executor
         monad_executor_pool_config const &block_pool_config,
         unsigned const tx_exec_num_fibers, uint64_t const node_lru_max_mem,
         std::optional<std::string> const &triedb_path)
-        : low_gas_pool_{Pool::Type::low, low_pool_config}
-        , high_gas_pool_{Pool::Type::high, high_pool_config}
-        , trace_thread_pool_{block_pool_config.num_threads, true}
-        , trace_block_group_{
-              block_pool_config.queue_limit,
-              std::chrono::seconds(block_pool_config.timeout_sec),
-              trace_thread_pool_.create_fiber_group(block_pool_config.num_fibers)}
-        , trace_tx_exec_group_{
-              block_pool_config.queue_limit,
-              std::chrono::seconds(block_pool_config.timeout_sec),
-              trace_thread_pool_.create_fiber_group(tx_exec_num_fibers)}
-        // create the db instances on the PriorityPool thread so all the
-        // thread local storage gets instantiated on the one thread its
-        // used
-        , db_{
+        : db_{
               triedb_path.has_value()
                   ? std::make_unique<mpt::RODb>(
                         make_db_config(*triedb_path, node_lru_max_mem))
                   : nullptr}
         , secondary_db_{db_ ? db_->open_secondary_timeline() : nullptr}
+        , high_gas_pool_{Pool::Type::high, high_pool_config}
+        , low_gas_pool_{Pool::Type::low, low_pool_config}
+        , trace_thread_pool_{block_pool_config.num_threads, true}
+        , trace_tx_exec_group_{
+              block_pool_config.queue_limit,
+              std::chrono::seconds(block_pool_config.timeout_sec),
+              trace_thread_pool_.create_fiber_group(tx_exec_num_fibers)}
+        , trace_block_group_{
+              block_pool_config.queue_limit,
+              std::chrono::seconds(block_pool_config.timeout_sec),
+              trace_thread_pool_.create_fiber_group(block_pool_config.num_fibers)}
     {
     }
 
@@ -1542,7 +1542,7 @@ struct monad_executor
         Pool &active_pool)
     {
         if (!active_pool.try_enqueue()) {
-            result->status_code = EVMC_REJECTED;
+            result->status_code = MONAD_STATUS_REJECTED;
             result->message = strdup(EXCEED_QUEUE_SIZE_ERR_MSG);
             MONAD_ASSERT(result->message);
             complete(result, user);
@@ -1582,7 +1582,7 @@ struct monad_executor
                     // check for timeout
                     if (std::chrono::steady_clock::now() - call_begin >
                         active_pool->timeout) {
-                        result->status_code = EVMC_REJECTED;
+                        result->status_code = MONAD_STATUS_REJECTED;
                         result->message = strdup(TIMEOUT_ERR_MSG);
                         MONAD_ASSERT(result->message);
                         complete(result, user);
@@ -1716,7 +1716,7 @@ struct monad_executor
                         return;
                     }
                     if (MONAD_UNLIKELY(res.has_error())) {
-                        result->status_code = EVMC_REJECTED;
+                        result->status_code = MONAD_STATUS_REJECTED;
                         result->message = strdup(res.error().message().c_str());
                         MONAD_ASSERT(result->message);
                         complete(result, user);
@@ -1736,13 +1736,13 @@ struct monad_executor
                         state_trace);
                 }
                 catch (MonadException const &e) {
-                    result->status_code = EVMC_INTERNAL_ERROR;
+                    result->status_code = MONAD_STATUS_INTERNAL_ERROR;
                     result->message = strdup(e.message());
                     MONAD_ASSERT(result->message);
                     complete(result, user);
                 }
                 catch (...) {
-                    result->status_code = EVMC_INTERNAL_ERROR;
+                    result->status_code = MONAD_STATUS_INTERNAL_ERROR;
                     result->message = strdup(UNEXPECTED_EXCEPTION_ERR_MSG);
                     MONAD_ASSERT(result->message);
                     complete(result, user);
@@ -1848,7 +1848,7 @@ struct monad_executor
 
         if (tracer_config != PRESTATE_TRACER &&
             tracer_config != STATEDIFF_TRACER) {
-            result->status_code = EVMC_REJECTED;
+            result->status_code = MONAD_STATUS_REJECTED;
             result->message = strdup(PRESTATE_TRACER_SUPPORT_ERR_MSG);
             MONAD_ASSERT(result->message);
             complete(result, user);
@@ -1856,7 +1856,7 @@ struct monad_executor
         }
 
         if (block_number == 0) {
-            result->status_code = EVMC_REJECTED;
+            result->status_code = MONAD_STATUS_REJECTED;
             result->message = strdup(CANNOT_TRACE_GENESIS_ERR_MSG);
             MONAD_ASSERT(result->message);
             complete(result, user);
@@ -1864,7 +1864,7 @@ struct monad_executor
         }
 
         if (db_ == nullptr) {
-            result->status_code = EVMC_REJECTED;
+            result->status_code = MONAD_STATUS_REJECTED;
             result->message = strdup(CANNOT_TRACE_WITHOUT_DB_ERR_MSG);
             MONAD_ASSERT(result->message);
             complete(result, user);
@@ -1872,7 +1872,7 @@ struct monad_executor
         }
 
         if (!trace_block_group_.try_enqueue()) {
-            result->status_code = EVMC_REJECTED;
+            result->status_code = MONAD_STATUS_REJECTED;
             result->message = strdup(EXCEED_QUEUE_SIZE_ERR_MSG);
             MONAD_ASSERT(result->message);
             complete(result, user);
@@ -2036,7 +2036,7 @@ struct monad_executor
                     }();
 
                     if (MONAD_UNLIKELY(res.has_error())) {
-                        result->status_code = EVMC_REJECTED;
+                        result->status_code = MONAD_STATUS_REJECTED;
                         result->message = strdup(res.error().message().c_str());
                         MONAD_ASSERT(result->message);
                         complete(result, user);
@@ -2063,13 +2063,13 @@ struct monad_executor
                     complete(result, user);
                 }
                 catch (MonadException const &e) {
-                    result->status_code = EVMC_INTERNAL_ERROR;
+                    result->status_code = MONAD_STATUS_INTERNAL_ERROR;
                     result->message = strdup(e.message());
                     MONAD_ASSERT(result->message);
                     complete(result, user);
                 }
                 catch (...) {
-                    result->status_code = EVMC_INTERNAL_ERROR;
+                    result->status_code = MONAD_STATUS_INTERNAL_ERROR;
                     result->message = strdup(UNEXPECTED_EXCEPTION_ERR_MSG);
                     MONAD_ASSERT(result->message);
                     complete(result, user);
@@ -2092,7 +2092,7 @@ struct monad_executor
         monad_executor_result *const result = new monad_executor_result();
 
         if (!trace_block_group_.try_enqueue()) {
-            result->status_code = EVMC_REJECTED;
+            result->status_code = MONAD_STATUS_REJECTED;
             result->message = strdup(ETH_SIMULATE_EXCEED_QUEUE_SIZE_ERR_MSG);
             MONAD_ASSERT(result->message);
             complete(result, user);
@@ -2238,13 +2238,13 @@ struct monad_executor
                     complete(result, user);
                 }
                 catch (MonadException const &e) {
-                    result->status_code = EVMC_INTERNAL_ERROR;
+                    result->status_code = MONAD_STATUS_INTERNAL_ERROR;
                     result->message = strdup(e.message());
                     MONAD_ASSERT(result->message);
                     complete(result, user);
                 }
                 catch (...) {
-                    result->status_code = EVMC_INTERNAL_ERROR;
+                    result->status_code = MONAD_STATUS_INTERNAL_ERROR;
                     result->message = strdup(UNEXPECTED_EXCEPTION_ERR_MSG);
                     MONAD_ASSERT(result->message);
                     complete(result, user);

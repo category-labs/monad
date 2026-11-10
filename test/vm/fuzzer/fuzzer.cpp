@@ -623,8 +623,8 @@ static void do_run(
             return vm::test::from_evmc_result(spec_vm.execute(
                 adapter.get_interface(),
                 adapter.to_context(),
-                to_evmc_revision(rev),
-                std::bit_cast<evmc_message>(*msg),
+                vm::test::to_evmc_revision(rev),
+                vm::test::to_evmc(*msg),
                 code,
                 code_size));
         });

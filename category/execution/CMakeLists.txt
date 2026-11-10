@@ -358,7 +358,6 @@ target_link_libraries(
   PUBLIC c-kzg-4844
   PRIVATE aws_lc::crypto
   PUBLIC ethash::keccak
-  PUBLIC evmc
   PUBLIC immer
   PUBLIC intx::intx
   PUBLIC nlohmann_json::nlohmann_json
@@ -378,7 +377,6 @@ target_link_libraries(
   PRIVATE monad_crypto
   PRIVATE PkgConfig::brotli
   PRIVATE secp256k1
-  PUBLIC evmc
   PUBLIC immer
   PUBLIC intx::intx
   PUBLIC nlohmann_json::nlohmann_json
@@ -395,7 +393,6 @@ target_link_libraries(
   PUBLIC monad_execution_ethereum
   PUBLIC monad_core
   PUBLIC monad_trie
-  PUBLIC evmc
   PUBLIC magic_enum::magic_enum
   PUBLIC secp256k1
   PUBLIC quill::quill)

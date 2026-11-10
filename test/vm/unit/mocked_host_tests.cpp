@@ -15,7 +15,7 @@
 
 #include <category/core/address.hpp>
 #include <category/core/bytes.hpp>
-#include <category/vm/evm/storage_status.h>
+#include <category/vm/evm/storage_status.hpp>
 #include <test/vm/utils/mocked_host.hpp>
 
 #include <gtest/gtest.h>
@@ -30,7 +30,7 @@ TEST(MockedHost, StorageStatus)
         bytes32_t original;
         bytes32_t current;
         bytes32_t value;
-        monad_storage_status status;
+        StorageStatus status;
     };
 
     auto const O = bytes32_t{};
@@ -39,21 +39,21 @@ TEST(MockedHost, StorageStatus)
     auto const Z = bytes32_t{3};
 
     Transition const transitions[] = {
-        {O, O, O, MONAD_STORAGE_ASSIGNED},
-        {X, O, O, MONAD_STORAGE_ASSIGNED},
-        {O, Y, Y, MONAD_STORAGE_ASSIGNED},
-        {X, Y, Y, MONAD_STORAGE_ASSIGNED},
-        {Y, Y, Y, MONAD_STORAGE_ASSIGNED},
-        {O, Y, Z, MONAD_STORAGE_ASSIGNED},
-        {X, Y, Z, MONAD_STORAGE_ASSIGNED},
-        {O, O, Z, MONAD_STORAGE_ADDED},
-        {X, X, O, MONAD_STORAGE_DELETED},
-        {X, X, Z, MONAD_STORAGE_MODIFIED},
-        {X, O, Z, MONAD_STORAGE_DELETED_ADDED},
-        {X, Y, O, MONAD_STORAGE_MODIFIED_DELETED},
-        {X, O, X, MONAD_STORAGE_DELETED_RESTORED},
-        {O, Y, O, MONAD_STORAGE_ADDED_DELETED},
-        {X, Y, X, MONAD_STORAGE_MODIFIED_RESTORED},
+        {O, O, O, StorageStatus::Assigned},
+        {X, O, O, StorageStatus::Assigned},
+        {O, Y, Y, StorageStatus::Assigned},
+        {X, Y, Y, StorageStatus::Assigned},
+        {Y, Y, Y, StorageStatus::Assigned},
+        {O, Y, Z, StorageStatus::Assigned},
+        {X, Y, Z, StorageStatus::Assigned},
+        {O, O, Z, StorageStatus::Added},
+        {X, X, O, StorageStatus::Deleted},
+        {X, X, Z, StorageStatus::Modified},
+        {X, O, Z, StorageStatus::DeletedAdded},
+        {X, Y, O, StorageStatus::ModifiedDeleted},
+        {X, O, X, StorageStatus::DeletedRestored},
+        {O, Y, O, StorageStatus::AddedDeleted},
+        {X, Y, X, StorageStatus::ModifiedRestored},
     };
 
     auto const addr = 0x00000000000000000000000000000000000000AA_address;

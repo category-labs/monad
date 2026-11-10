@@ -23,27 +23,21 @@
 
 namespace monad::vm
 {
-    // Mirrors evmc_call_kind 1:1; values asserted equal in message.cpp.
     enum class CallKind : uint32_t
     {
         Call = 0,
         DelegateCall = 1,
         CallCode = 2,
         Create = 3,
-        Create2 = 4,
-        EofCreate = 5
+        Create2 = 4
     };
 
-    // Mirrors evmc_flags 1:1; values asserted equal in message.cpp.
     enum class CallFlags : uint32_t
     {
         Static = 1,
         Delegated = 2
     };
 
-    // Mirrors the category-labs fork's evmc_message field-for-field (no
-    // code/code_size, memory-pool fields present); layout asserted in
-    // message.cpp.
     struct Message
     {
         CallKind kind;

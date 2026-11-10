@@ -21,8 +21,6 @@
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/vm/evm/traits.hpp>
 
-#include <evmc/evmc.h>
-
 // TODO unstable paths between versions
 #if __has_include(<boost/outcome/experimental/status-code/status-code/config.hpp>)
     #include <boost/outcome/experimental/status-code/status-code/config.hpp>

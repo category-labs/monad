@@ -22,8 +22,6 @@
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/vm/evm/monad/revision.h>
 
-#include <evmc/evmc.h>
-
 // TODO unstable paths between versions
 #if __has_include(<boost/outcome/experimental/status-code/status-code/config.hpp>)
     #include <boost/outcome/experimental/status-code/status-code/config.hpp>

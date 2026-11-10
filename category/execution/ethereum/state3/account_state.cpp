@@ -20,21 +20,21 @@
 
 MONAD_NAMESPACE_BEGIN
 
-monad_storage_status AccountState::zero_out_key(
+StorageStatus AccountState::zero_out_key(
     bytes32_t const &key, bytes32_t const &original_value,
     bytes32_t const &current_value)
 {
     auto const status = [&] {
         if (current_value == bytes32_t{}) {
-            return MONAD_STORAGE_ASSIGNED;
+            return StorageStatus::Assigned;
         }
         else if (original_value == current_value) {
-            return MONAD_STORAGE_DELETED;
+            return StorageStatus::Deleted;
         }
         else if (original_value == bytes32_t{}) {
-            return MONAD_STORAGE_ADDED_DELETED;
+            return StorageStatus::AddedDeleted;
         }
-        return MONAD_STORAGE_MODIFIED_DELETED;
+        return StorageStatus::ModifiedDeleted;
     }();
 
     storage_ = storage_.insert({key, bytes32_t{}});
@@ -42,27 +42,27 @@ monad_storage_status AccountState::zero_out_key(
     return status;
 }
 
-monad_storage_status AccountState::set_current_value(
+StorageStatus AccountState::set_current_value(
     bytes32_t const &key, bytes32_t const &value,
     bytes32_t const &original_value, bytes32_t const &current_value)
 {
     auto const status = [&] {
         if (current_value == bytes32_t{}) {
             if (original_value == bytes32_t{}) {
-                return MONAD_STORAGE_ADDED;
+                return StorageStatus::Added;
             }
             else if (value == original_value) {
-                return MONAD_STORAGE_DELETED_RESTORED;
+                return StorageStatus::DeletedRestored;
             }
-            return MONAD_STORAGE_DELETED_ADDED;
+            return StorageStatus::DeletedAdded;
         }
         else if (original_value == current_value && original_value != value) {
-            return MONAD_STORAGE_MODIFIED;
+            return StorageStatus::Modified;
         }
         else if (original_value == value && original_value != current_value) {
-            return MONAD_STORAGE_MODIFIED_RESTORED;
+            return StorageStatus::ModifiedRestored;
         }
-        return MONAD_STORAGE_ASSIGNED;
+        return StorageStatus::Assigned;
     }();
 
     storage_ = storage_.insert({key, value});

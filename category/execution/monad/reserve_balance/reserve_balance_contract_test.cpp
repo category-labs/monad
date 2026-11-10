@@ -689,8 +689,7 @@ TYPED_TEST(
               CallKind::DelegateCall,
               CallKind::CallCode,
               CallKind::Create,
-              CallKind::Create2,
-              CallKind::EofCreate}) {
+              CallKind::Create2}) {
 
             Message msg = make_msg();
             msg.kind = call_kind;

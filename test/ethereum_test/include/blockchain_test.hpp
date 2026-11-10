@@ -27,8 +27,6 @@
 #include <category/vm/vm.hpp>
 #include <monad/test/config.hpp>
 
-#include <evmc/evmc.hpp>
-
 #include <gtest/gtest.h>
 
 #include <nlohmann/json_fwd.hpp>

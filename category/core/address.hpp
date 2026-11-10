@@ -21,12 +21,9 @@
 #include <category/core/hex.hpp>
 #include <category/core/seeded_fast_hash.hpp>
 
-#include <evmc/evmc.h>
-
 #include <ankerl/unordered_dense.h>
 
 #include <algorithm>
-#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -43,11 +40,6 @@ struct Address : monad_address
 
     constexpr Address(Address const &) noexcept = default;
     constexpr Address &operator=(Address const &) noexcept = default;
-
-    explicit(false) constexpr Address(evmc_address const &a) noexcept
-        : monad_address{std::bit_cast<monad_address>(a)}
-    {
-    }
 
     explicit(false) constexpr Address(monad_address const &other) noexcept
         : monad_address{other}
@@ -98,11 +90,6 @@ static_assert(sizeof(Address) == 20);
 static_assert(alignof(Address) == 1);
 static_assert(std::is_standard_layout_v<Address>);
 static_assert(std::is_trivially_copyable_v<Address>);
-
-constexpr evmc_address to_evmc(monad_address const &a) noexcept
-{
-    return std::bit_cast<evmc_address>(a);
-}
 
 constexpr bool is_zero(Address const &addr)
 {

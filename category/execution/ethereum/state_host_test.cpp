@@ -38,15 +38,12 @@
 #include <category/mpt/node_cache.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/mpt/util.hpp>
-#include <category/vm/evm/access_status.h>
+#include <category/vm/evm/access_status.hpp>
 #include <category/vm/vm.hpp>
 
 #include <monad/test/traits_test.hpp>
 
 #include <test_resource_data.h>
-
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 
 #include <gtest/gtest.h>
 
@@ -68,30 +65,26 @@ namespace monad::vm
         return !std::memcmp(
                    lhs.tx_gas_price.bytes,
                    rhs.tx_gas_price.bytes,
-                   sizeof(evmc_bytes32)) &&
+                   sizeof(bytes32_t)) &&
                !std::memcmp(
-                   lhs.tx_origin.bytes,
-                   rhs.tx_origin.bytes,
-                   sizeof(evmc_address)) &&
+                   lhs.tx_origin.bytes, rhs.tx_origin.bytes, sizeof(Address)) &&
                !std::memcmp(
                    lhs.block_coinbase.bytes,
                    rhs.block_coinbase.bytes,
-                   sizeof(evmc_address)) &&
+                   sizeof(Address)) &&
                lhs.block_number == rhs.block_number &&
                lhs.block_timestamp == rhs.block_timestamp &&
                lhs.block_gas_limit == rhs.block_gas_limit &&
                !std::memcmp(
                    lhs.block_prev_randao.bytes,
                    rhs.block_prev_randao.bytes,
-                   sizeof(evmc_bytes32)) &&
+                   sizeof(bytes32_t)) &&
                !std::memcmp(
-                   lhs.chain_id.bytes,
-                   rhs.chain_id.bytes,
-                   sizeof(evmc_bytes32)) &&
+                   lhs.chain_id.bytes, rhs.chain_id.bytes, sizeof(bytes32_t)) &&
                !std::memcmp(
                    lhs.block_base_fee.bytes,
                    rhs.block_base_fee.bytes,
-                   sizeof(evmc_bytes32)) &&
+                   sizeof(bytes32_t)) &&
                lhs.block_round == rhs.block_round;
     }
 }
@@ -127,11 +120,11 @@ TYPED_TEST(TraitsTest, get_tx_context)
         .block_number = 15'000'000,
         .block_timestamp = 1677616016,
         .block_gas_limit = 50'000,
-        .block_prev_randao = evmc::uint256be{10'000'000u},
+        .block_prev_randao = uint256_be_t{10'000'000u},
     };
-    ctx.chain_id = store_be_as<evmc::uint256be>(uint256_t{chain_id});
-    ctx.tx_gas_price = store_be_as<evmc::uint256be>(gas_cost);
-    ctx.block_base_fee = store_be_as<evmc::uint256be>(base_fee_per_gas);
+    ctx.chain_id = store_be_as<uint256_be_t>(uint256_t{chain_id});
+    ctx.tx_gas_price = store_be_as<uint256_be_t>(gas_cost);
+    ctx.block_base_fee = store_be_as<uint256_be_t>(base_fee_per_gas);
     EXPECT_EQ(result, ctx);
 
     hdr.difficulty = 0;
@@ -229,10 +222,10 @@ TYPED_TEST(TraitsTest, access_precompile)
 
     EXPECT_EQ(
         host.access_account(0x0000000000000000000000000000000000000001_address),
-        MONAD_ACCESS_WARM);
+        AccessStatus::Warm);
     EXPECT_EQ(
         host.access_account(0x5353535353535353535353535353535353535353_address),
-        MONAD_ACCESS_COLD);
+        AccessStatus::Cold);
 }
 
 TEST(StateHostTest, host_methods_rethrow_pruned_read)

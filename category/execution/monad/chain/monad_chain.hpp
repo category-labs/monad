@@ -23,7 +23,6 @@
 #include <category/vm/evm/revision.h>
 
 #include <ankerl/unordered_dense.h>
-#include <evmc/evmc.h>
 
 #include <optional>
 #include <span>

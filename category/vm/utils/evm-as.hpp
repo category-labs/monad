@@ -21,8 +21,6 @@
 #include <category/vm/utils/evm-as/instruction.hpp>
 #include <category/vm/utils/evm-as/validator.hpp>
 
-#include <evmc/evmc.h>
-
 namespace monad::vm::utils::evm_as
 {
 

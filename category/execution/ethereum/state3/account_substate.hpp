@@ -17,7 +17,7 @@
 
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
-#include <category/vm/evm/access_status.h>
+#include <category/vm/evm/access_status.hpp>
 
 // TODO immer known to trigger incorrect warning
 #pragma GCC diagnostic push
@@ -78,24 +78,24 @@ public:
     }
 
     // A_a
-    monad_access_status access()
+    AccessStatus access()
     {
         bool const inserted = !accessed_;
         accessed_ = true;
         if (inserted) {
-            return MONAD_ACCESS_COLD;
+            return AccessStatus::Cold;
         }
-        return MONAD_ACCESS_WARM;
+        return AccessStatus::Warm;
     }
 
     // A_K
-    monad_access_status access_storage(bytes32_t const &key)
+    AccessStatus access_storage(bytes32_t const &key)
     {
         if (accessed_storage_.count(key) == 0) {
             accessed_storage_ = accessed_storage_.insert(key);
-            return MONAD_ACCESS_COLD;
+            return AccessStatus::Cold;
         }
-        return MONAD_ACCESS_WARM;
+        return AccessStatus::Warm;
     }
 };
 

@@ -32,8 +32,6 @@
 #include <category/execution/monad/staking/util/val_execution.hpp>
 #include <category/vm/evm/traits.hpp>
 
-#include <evmc/evmc.h>
-
 #include <cstdint>
 #include <optional>
 #include <string_view>

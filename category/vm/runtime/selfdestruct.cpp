@@ -13,10 +13,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/core/bytes.hpp>
 #include <category/core/likely.h>
 #include <category/core/runtime/uint256.hpp>
-#include <category/vm/evm/access_status.h>
+#include <category/vm/evm/access_status.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/message.hpp>
 #include <category/vm/evm/revision.h>
@@ -43,15 +42,13 @@ namespace monad::vm::runtime
         auto const address = address_from_uint256(*address_ptr);
 
         auto const access_status = ctx->host->access_account(address);
-        if (access_status == MONAD_ACCESS_COLD) {
+        if (access_status == AccessStatus::Cold) {
             // +100 for the warm account access cost.
             ctx->deduct_gas(traits::cold_account_cost() + 100);
         }
 
-        auto const non_zero_transfer = [ctx] {
-            auto const balance = ctx->host->get_balance(ctx->env.recipient);
-            return balance != bytes32_t{};
-        }();
+        auto const non_zero_transfer =
+            ctx->host->get_balance(ctx->env.recipient) != 0;
 
         if (non_zero_transfer) {
             auto const exists = ctx->host->account_exists(address);

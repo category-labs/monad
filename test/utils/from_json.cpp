@@ -22,8 +22,6 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <monad/test/config.hpp>
 
-#include <evmc/evmc.h>
-
 #include <category/core/int.hpp>
 
 #include <nlohmann/json.hpp>
@@ -191,7 +189,7 @@ namespace nlohmann
                     MONAD_ASSERT(
                         state.set_storage(
                             account_address, key_bytes32, value_bytes32) ==
-                        MONAD_STORAGE_ADDED);
+                        monad::StorageStatus::Added);
                 }
             }
         }

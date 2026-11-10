@@ -43,7 +43,7 @@ target_include_directories(triedb_driver PUBLIC ${PROJECT_SOURCE_DIR}/include)
 # but we won't build it
 target_link_libraries(triedb_driver INTERFACE monad_execution)
 target_link_libraries(triedb_driver PUBLIC monad_execution_local)
-target_link_libraries(triedb_driver PUBLIC asmjit::asmjit evmc intx 
+target_link_libraries(triedb_driver PUBLIC asmjit::asmjit intx
                       nlohmann_json::nlohmann_json quill unordered_dense)
 
 monad_compile_options(triedb_driver)

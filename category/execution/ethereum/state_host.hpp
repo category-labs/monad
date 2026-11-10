@@ -28,12 +28,12 @@
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
-#include <category/vm/evm/access_status.h>
+#include <category/vm/evm/access_status.hpp>
 #include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/message.hpp>
 #include <category/vm/evm/page_storage_status.h>
 #include <category/vm/evm/result.hpp>
-#include <category/vm/evm/storage_status.h>
+#include <category/vm/evm/storage_status.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/host.hpp>
 #include <category/vm/runtime/types.hpp>
@@ -70,10 +70,10 @@ public:
     virtual bytes32_t
     get_storage(Address const &, bytes32_t const &key) const override;
 
-    virtual monad_storage_status set_storage(
+    virtual StorageStatus set_storage(
         Address const &, bytes32_t const &key, bytes32_t const &value) override;
 
-    virtual bytes32_t get_balance(Address const &) const override;
+    virtual uint256_t get_balance(Address const &) const override;
 
     virtual size_t get_code_size(Address const &) const override;
 
@@ -203,12 +203,12 @@ struct StateHost final : public StateHostBase
         stack_unwind();
     }
 
-    virtual monad_access_status access_account(Address const &address) override
+    virtual AccessStatus access_account(Address const &address) override
     {
         MONAD_TRY
         {
             if (is_precompile<traits>(address)) {
-                return MONAD_ACCESS_WARM;
+                return AccessStatus::Warm;
             }
             return state_.access_account(address);
         }
@@ -219,7 +219,7 @@ struct StateHost final : public StateHostBase
         stack_unwind();
     }
 
-    virtual monad_access_status
+    virtual AccessStatus
     access_storage(Address const &address, bytes32_t const &key) override
     {
         MONAD_TRY
@@ -235,7 +235,7 @@ struct StateHost final : public StateHostBase
 
     virtual monad_page_storage_status update_page(
         Address const &address, bytes32_t const &key,
-        monad_storage_status const status) override
+        StorageStatus const status) override
     {
         if constexpr (traits::mip_8_active()) {
             MONAD_TRY

@@ -17,6 +17,7 @@
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/rpc/simulation_error.hpp>
+#include <category/vm/evm/status_code.h>
 
 // TODO unstable paths between versions
 #if __has_include(<boost/outcome/experimental/status-code/status-code/config.hpp>)
@@ -27,7 +28,6 @@
     #include <boost/outcome/experimental/status-code/config.hpp>
     #include <boost/outcome/experimental/status-code/quick_status_code_from_enum.hpp>
 #endif
-#include <evmc/evmc.h>
 
 #include <initializer_list>
 #include <string>
@@ -36,11 +36,11 @@ MONAD_NAMESPACE_BEGIN
 
 namespace
 {
-    evmc_status_code simulation_status(SimulationError const error)
+    monad_status_code simulation_status(SimulationError const error)
     {
         switch (error) {
         case SimulationError::Success:
-            return EVMC_SUCCESS;
+            return MONAD_STATUS_SUCCESS;
         case SimulationError::InvalidInput:
         case SimulationError::InvalidData:
         case SimulationError::WithdrawalsNotSupported:
@@ -50,16 +50,16 @@ namespace
         case SimulationError::TransactionsContextUnavailable:
         case SimulationError::InvalidBlockGap:
         case SimulationError::GasLimitExceeded:
-            return EVMC_INTERNAL_ERROR;
+            return MONAD_STATUS_INTERNAL_ERROR;
         }
-        return EVMC_INTERNAL_ERROR;
+        return MONAD_STATUS_INTERNAL_ERROR;
     }
 
-    evmc_status_code block_status(BlockError const error)
+    monad_status_code block_status(BlockError const error)
     {
         switch (error) {
         case BlockError::Success:
-            return EVMC_SUCCESS;
+            return MONAD_STATUS_SUCCESS;
         case BlockError::GasAboveLimit:
         case BlockError::InvalidGasLimit:
         case BlockError::ExtraDataTooLong:
@@ -80,16 +80,16 @@ namespace
         case BlockError::SystemCallFailed:
         case BlockError::InvalidRequestsHash:
         case BlockError::InvalidDepositLog:
-            return EVMC_REJECTED;
+            return MONAD_STATUS_REJECTED;
         }
-        return EVMC_INTERNAL_ERROR;
+        return MONAD_STATUS_INTERNAL_ERROR;
     }
 }
 
 SimulationErrorResponse
 simulation_error_info(Result<void>::error_type const &error)
 {
-    evmc_status_code status_code = EVMC_REJECTED;
+    monad_status_code status_code = MONAD_STATUS_REJECTED;
     if (error.domain() ==
         BOOST_OUTCOME_SYSTEM_ERROR2_NAMESPACE::
             quick_status_code_from_enum_domain<SimulationError>) {

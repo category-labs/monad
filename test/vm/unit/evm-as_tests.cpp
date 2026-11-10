@@ -19,7 +19,6 @@
 #include "category/vm/compiler/ir/x86/types.hpp"
 #include "category/vm/runtime//types.hpp"
 #include "category/vm/utils/evm-as/compiler.hpp"
-#include "evmc/evmc.hpp"
 #include <category/core/address.h>
 #include <category/core/address.hpp>
 #include <category/core/int.hpp>
@@ -39,7 +38,6 @@
 #include <test/vm/utils/evm-as_utils.hpp>
 #include <test/vm/utils/test_context.hpp>
 
-#include <evmc/evmc.h>
 #include <gtest/gtest.h>
 
 #include <cstddef>

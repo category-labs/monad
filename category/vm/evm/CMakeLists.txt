@@ -18,27 +18,21 @@ add_library(monad-vm-evm OBJECT)
 set_target_properties(monad-vm-evm PROPERTIES LINKER_LANGUAGE CXX)
 
 target_sources(monad-vm-evm PRIVATE
-    "access_status.cpp"
-    "access_status.h"
+    "access_status.hpp"
     "delegation.cpp"
     "delegation.hpp"
     "explicit_traits.hpp"
-    "message.cpp"
     "message.hpp"
     "opcodes.hpp"
     "opcodes_xmacro.hpp"
-    "page_storage_status.cpp"
     "page_storage_status.h"
     "result.hpp"
     "revision.cpp"
     "revision.h"
-    "status_code.cpp"
     "status_code.h"
-    "storage_status.cpp"
-    "storage_status.h"
+    "storage_status.hpp"
     "switch_traits.hpp"
     "traits.hpp"
-    "tx_context.cpp"
     "tx_context.hpp"
 
     # Monad specifics
@@ -50,7 +44,6 @@ target_include_directories(monad-vm-evm
 )
 
 target_link_libraries(monad-vm-evm
-    PUBLIC evmc::evmc
     PUBLIC monad_core
 )
 

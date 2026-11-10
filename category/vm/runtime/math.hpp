@@ -21,8 +21,6 @@
 #include <category/vm/runtime/math/intrinsics.hpp>
 #include <category/vm/runtime/types.hpp>
 
-#include <evmc/evmc.hpp>
-
 namespace monad::vm::runtime
 {
     constexpr void udiv(

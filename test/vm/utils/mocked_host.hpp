@@ -23,11 +23,11 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
-#include <category/vm/evm/access_status.h>
+#include <category/vm/evm/access_status.hpp>
 #include <category/vm/evm/message.hpp>
 #include <category/vm/evm/page_storage_status.h>
 #include <category/vm/evm/result.hpp>
-#include <category/vm/evm/storage_status.h>
+#include <category/vm/evm/storage_status.hpp>
 #include <category/vm/host.hpp>
 
 #include <algorithm>
@@ -88,35 +88,35 @@ namespace monad::vm::test
             recorded_account_accesses.emplace_back(addr);
         }
 
-        static monad_storage_status storage_status(
+        static StorageStatus storage_status(
             bytes32_t const &original, bytes32_t const &current,
             bytes32_t const &value) noexcept
         {
             auto const zero = bytes32_t{};
             if (current == value) {
-                return MONAD_STORAGE_ASSIGNED;
+                return StorageStatus::Assigned;
             }
             if (original == current) {
                 if (original == zero) {
-                    return MONAD_STORAGE_ADDED;
+                    return StorageStatus::Added;
                 }
-                return value == zero ? MONAD_STORAGE_DELETED
-                                     : MONAD_STORAGE_MODIFIED;
+                return value == zero ? StorageStatus::Deleted
+                                     : StorageStatus::Modified;
             }
             if (original != zero) {
                 if (current == zero) {
-                    return original == value ? MONAD_STORAGE_DELETED_RESTORED
-                                             : MONAD_STORAGE_DELETED_ADDED;
+                    return original == value ? StorageStatus::DeletedRestored
+                                             : StorageStatus::DeletedAdded;
                 }
                 if (value == zero) {
-                    return MONAD_STORAGE_MODIFIED_DELETED;
+                    return StorageStatus::ModifiedDeleted;
                 }
             }
             if (original == value) {
-                return original == zero ? MONAD_STORAGE_ADDED_DELETED
-                                        : MONAD_STORAGE_MODIFIED_RESTORED;
+                return original == zero ? StorageStatus::AddedDeleted
+                                        : StorageStatus::ModifiedRestored;
             }
-            return MONAD_STORAGE_ASSIGNED;
+            return StorageStatus::Assigned;
         }
 
     public:
@@ -153,7 +153,7 @@ namespace monad::vm::test
             return slot->second.current;
         }
 
-        monad_storage_status set_storage(
+        StorageStatus set_storage(
             Address const &addr, bytes32_t const &key,
             bytes32_t const &value) noexcept override
         {
@@ -192,12 +192,13 @@ namespace monad::vm::test
             return status;
         }
 
-        bytes32_t get_balance(Address const &addr) const noexcept override
+        uint256_t get_balance(Address const &addr) const noexcept override
         {
             record_account_access(addr);
             auto const account = accounts.find(addr);
-            return account == accounts.end() ? bytes32_t{}
-                                             : account->second.balance;
+            return account == accounts.end()
+                       ? uint256_t{}
+                       : load_be<uint256_t>(account->second.balance);
         }
 
         size_t get_code_size(Address const &addr) const noexcept override
@@ -279,22 +280,21 @@ namespace monad::vm::test
                 {addr, {data, data_size}, {topics, topics + topics_count}});
         }
 
-        monad_access_status
-        access_account(Address const &addr) noexcept override
+        AccessStatus access_account(Address const &addr) noexcept override
         {
             auto const already_accessed =
                 std::ranges::find(recorded_account_accesses, addr) !=
                 recorded_account_accesses.end();
             record_account_access(addr);
-            return already_accessed ? MONAD_ACCESS_WARM : MONAD_ACCESS_COLD;
+            return already_accessed ? AccessStatus::Warm : AccessStatus::Cold;
         }
 
-        monad_access_status access_storage(
+        AccessStatus access_storage(
             Address const &addr, bytes32_t const &key) noexcept override
         {
             auto const p = PageKey{addr, compute_page_key(key)};
             auto const [it, inserted] = read_accessed_pages_.insert(p);
-            return inserted ? MONAD_ACCESS_COLD : MONAD_ACCESS_WARM;
+            return inserted ? AccessStatus::Cold : AccessStatus::Warm;
         }
 
         bytes32_t get_transient_storage(
@@ -321,8 +321,7 @@ namespace monad::vm::test
         }
 
         monad_page_storage_status update_page(
-            Address const &, bytes32_t const &,
-            monad_storage_status) noexcept override
+            Address const &, bytes32_t const &, StorageStatus) noexcept override
         {
             return last_write_page_status_;
         }

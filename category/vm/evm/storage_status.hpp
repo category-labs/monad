@@ -13,17 +13,25 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/vm/evm/page_storage_status.h>
+#pragma once
 
-#include <evmc/evmc.h>
+#include <category/core/config.hpp>
 
-static_assert(
-    sizeof(monad_page_storage_status) == sizeof(evmc_page_storage_status));
+MONAD_NAMESPACE_BEGIN
 
-evmc_page_storage_status
-to_evmc_page_storage_status(monad_page_storage_status const status)
+// EIP-1283/2200 storage status; indexes the gas/refund tables in
+// store_cost.
+enum class StorageStatus
 {
-    return {
-        .first_page_write = status.first_page_write,
-        .grew_state = status.grew_state};
-}
+    Assigned = 0,
+    Added = 1,
+    Deleted = 2,
+    Modified = 3,
+    DeletedAdded = 4,
+    ModifiedDeleted = 5,
+    DeletedRestored = 6,
+    AddedDeleted = 7,
+    ModifiedRestored = 8
+};
+
+MONAD_NAMESPACE_END

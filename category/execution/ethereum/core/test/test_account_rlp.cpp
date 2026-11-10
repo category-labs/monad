@@ -19,8 +19,6 @@
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/rlp/account_rlp.hpp>
 
-#include <evmc/evmc.hpp>
-
 #include <gtest/gtest.h>
 
 using namespace monad;

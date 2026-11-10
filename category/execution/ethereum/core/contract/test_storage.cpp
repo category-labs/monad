@@ -30,7 +30,6 @@
 
 #include <test_resource_data.h>
 
-#include <evmc/evmc.hpp>
 #include <gtest/gtest.h>
 
 #include <cstdint>

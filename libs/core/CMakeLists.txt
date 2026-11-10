@@ -174,7 +174,7 @@ else()
   target_link_libraries(monad_core PRIVATE Boost::stacktrace_basic)
 endif()
 
-target_link_libraries(monad_core PUBLIC openssl_sha3 Boost::fiber TBB::tbb)
+target_link_libraries(monad_core PUBLIC openssl_sha3 Boost::context TBB::tbb)
 target_link_libraries(monad_core PUBLIC komihash)
 target_link_libraries(monad_core PUBLIC blake3)
 target_link_libraries(monad_core PUBLIC ethash::keccak)

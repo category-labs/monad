@@ -38,3 +38,10 @@ add_executable(
 )
 monad_compile_options(fiber_test)
 target_link_libraries(fiber_test PRIVATE monad_core PUBLIC quill::quill)
+
+add_executable(
+  thread_test
+  thread_test.cpp
+)
+monad_compile_options(thread_test)
+target_link_libraries(thread_test PRIVATE quill::quill)

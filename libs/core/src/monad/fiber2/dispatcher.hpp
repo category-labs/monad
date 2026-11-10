@@ -10,6 +10,7 @@
 #include <condition_variable>
 #include <deque>
 #include <mutex>
+#include <optional>
 #include <stop_token>
 #include <utility>
 
@@ -18,6 +19,7 @@ MONAD_FIBER_NAMESPACE_BEGIN
 static inline std::deque<boost::context::fiber> ready_queue_{};
 static inline std::mutex ready_queue_mutex_{};
 static inline std::condition_variable_any ready_queue_cv_{};
+// static inline std::condition_variable ready_queue_cv_{};
 inline thread_local boost::context::fiber dispatcher_{};
 
 void ready_queue_push(boost::context::fiber &&fiber)
@@ -31,10 +33,12 @@ void ready_queue_push(boost::context::fiber &&fiber)
 
 boost::context::fiber ready_queue_pop(std::stop_token const &stop_token)
 {
+    (void)stop_token;
     boost::context::fiber fiber{};
     std::unique_lock<std::mutex> lock{ready_queue_mutex_};
     if (ready_queue_cv_.wait(
             lock, stop_token, []() { return !ready_queue_.empty(); })) {
+        // lock, []() { return !ready_queue_.empty(); });
         fiber = std::move(ready_queue_.front());
         ready_queue_.pop_front();
     }
@@ -70,8 +74,8 @@ void run(std::stop_token const stop_token)
 void start(auto &&f)
 {
     boost::context::fiber fiber{
-        [f = std::move(f)](boost::context::fiber &&/*dispatcher*/) {
-            //dispatcher_ = std::move(dispatcher).resume();
+        [f = std::move(f)](boost::context::fiber && /*dispatcher*/) {
+            // dispatcher_ = std::move(dispatcher).resume();
             f();
             return std::move(dispatcher_);
         }};
@@ -134,6 +138,120 @@ public:
         Lock const lock{mutex_};
         MONAD_ASSERT(!flag_);
         flag_ = true;
+        if (fiber_) {
+            ready_queue_push(std::move(fiber_));
+        }
+    }
+};
+
+template <class T>
+class future
+{
+    std::optional<T> value_{};
+    using Mutex = boost::fibers::detail::spinlock;
+
+    Mutex mutex_{};
+    boost::context::fiber fiber_{};
+
+public:
+    void wait()
+    {
+        MONAD_ASSERT(dispatcher_);
+        MONAD_ASSERT(!fiber_);
+
+        {
+            std::lock_guard<Mutex> const lock{mutex_};
+            if (flag_) {
+                return;
+            }
+        }
+
+        boost::context::fiber next_fiber = ready_queue_pop_try();
+        if (!next_fiber) {
+            next_fiber = std::move(dispatcher_);
+        }
+
+        MONAD_ASSERT(
+            !std::move(next_fiber)
+                 .resume_with([this](boost::context::fiber &&this_fiber) {
+                     std::lock_guard<Mutex> const lock{mutex_};
+                     if (!value_) {
+                         fiber_ = std::move(this_fiber);
+                     }
+                     else {
+                         ready_queue_push(std::move(this_fiber));
+                     }
+                     return boost::context::fiber{};
+                 }));
+    }
+
+    void set_value(T const &value)
+    {
+        std::lock_guard<Mutex> const lock{mutex_};
+        MONAD_ASSERT(!value_);
+        value_ = value;
+        if (fiber_) {
+            ready_queue_push(std::move(fiber_));
+        }
+    }
+
+    void set_value(T &&value)
+    {
+        std::lock_guard<Mutex> const lock{mutex_};
+        MONAD_ASSERT(!value_);
+        value_ = std::move(value);
+        if (fiber_) {
+            ready_queue_push(std::move(fiber_));
+        }
+    }
+};
+
+template <>
+class future<void>
+{
+    bool set_{false};
+    using Mutex = boost::fibers::detail::spinlock;
+
+    Mutex mutex_{};
+    boost::context::fiber fiber_{};
+
+public:
+    void wait()
+    {
+        MONAD_ASSERT(dispatcher_);
+        MONAD_ASSERT(!fiber_);
+
+        {
+            std::lock_guard<Mutex> const lock{mutex_};
+            if (set_) {
+                return;
+            }
+        }
+
+        boost::context::fiber next_fiber = ready_queue_pop_try();
+        if (!next_fiber) {
+            next_fiber = std::move(dispatcher_);
+        }
+
+        MONAD_ASSERT(
+            !std::move(next_fiber)
+                 .resume_with([this](boost::context::fiber &&this_fiber) {
+                     std::lock_guard<Mutex> const lock{mutex_};
+                     if (!value_) {
+                         fiber_ = std::move(this_fiber);
+                     }
+                     else {
+                         ready_queue_push(std::move(this_fiber));
+                     }
+                     return boost::context::fiber{};
+                 }));
+    }
+
+    void set_value()
+    {
+        std::lock_guard<Mutex> const lock{mutex_};
+        MONAD_ASSERT(!value_);
+        set_ = true;
         if (fiber_) {
             ready_queue_push(std::move(fiber_));
         }

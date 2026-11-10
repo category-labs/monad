@@ -85,7 +85,7 @@ namespace
     {
         mutable size_t code_reads{};
 
-        size_t copy_code(
+        size_t copy_code_impl(
             Address const &, size_t, uint8_t *, size_t) const noexcept override
         {
             ++code_reads;

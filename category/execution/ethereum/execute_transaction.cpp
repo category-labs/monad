@@ -24,6 +24,10 @@
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
+#if defined(MONAD_ZKVM_ZISK) && !defined(MONAD_ZKVM_SELFTEST) &&               \
+    !defined(MONAD_ZKVM_GAS_SELFTEST)
+    #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
+#endif
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/event/record_txn_events.hpp>
@@ -90,6 +94,33 @@ constexpr void irrevocable_change(
 MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
+
+namespace
+{
+    // The ZisK witness entry point supplies EthereumMainnet for every block.
+    uint256_t transaction_chain_id(Chain const &chain)
+    {
+#if defined(MONAD_ZKVM_ZISK) && !defined(MONAD_ZKVM_SELFTEST) &&               \
+    !defined(MONAD_ZKVM_GAS_SELFTEST)
+        return static_cast<EthereumMainnet const &>(chain)
+            .EthereumMainnet::get_chain_id();
+#else
+        return chain.get_chain_id();
+#endif
+    }
+
+    BlobSchedule
+    transaction_blob_schedule(Chain const &chain, uint64_t timestamp)
+    {
+#if defined(MONAD_ZKVM_ZISK) && !defined(MONAD_ZKVM_SELFTEST) &&               \
+    !defined(MONAD_ZKVM_GAS_SELFTEST)
+        return static_cast<EthereumMainnet const &>(chain)
+            .EthereumMainnet::get_blob_schedule(timestamp);
+#else
+        return chain.get_blob_schedule(timestamp);
+#endif
+    }
+}
 
 template <Traits traits>
 ExecuteTransactionNoValidation<traits>::ExecuteTransactionNoValidation(
@@ -255,7 +286,7 @@ vm::Result ExecuteTransactionNoValidation<traits>::operator()(
         sender_,
         header_.base_fee_per_gas.value_or(0),
         header_.excess_blob_gas.value_or(0),
-        chain_.get_blob_schedule(header_.timestamp));
+        transaction_blob_schedule(chain_, header_.timestamp));
 
     uint64_t auth_refund = 0u;
     if constexpr (traits::eip_7702_active()) {
@@ -351,8 +382,8 @@ Result<vm::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
         tx_,
         sender_,
         header_,
-        chain_.get_chain_id(),
-        chain_.get_blob_schedule(header_.timestamp));
+        transaction_chain_id(chain_),
+        transaction_blob_schedule(chain_, header_.timestamp));
     StateHost<traits> host{
         call_tracer_,
         state_tracer_,
@@ -445,8 +476,8 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
             tx_,
             header_.base_fee_per_gas,
             header_.excess_blob_gas,
-            chain_.get_chain_id(),
-            chain_.get_blob_schedule(header_.timestamp),
+            transaction_chain_id(chain_),
+            transaction_blob_schedule(chain_, header_.timestamp),
             calldata_tokens_);
         if (validation_result.has_error()) {
             prev_.wait();

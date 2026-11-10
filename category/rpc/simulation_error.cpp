@@ -50,9 +50,10 @@ namespace
         case SimulationError::TransactionsContextUnavailable:
         case SimulationError::InvalidBlockGap:
         case SimulationError::GasLimitExceeded:
+        case SimulationError::RevisionPinningNotSupported:
+        case SimulationError::UnsupportedPinnedRevision:
+        case SimulationError::UnsupportedBaseRevision:
             return MONAD_STATUS_INTERNAL_ERROR;
-        case SimulationError::UnsupportedChainConfig:
-            return MONAD_STATUS_REJECTED;
         }
         return MONAD_STATUS_INTERNAL_ERROR;
     }
@@ -143,8 +144,14 @@ quick_status_code_from_enum<monad::SimulationError>::value_mappings()
          "the block gap must be exactly 1 after filling in synthetic blocks",
          {}},
         {SimulationError::GasLimitExceeded, "gas limit exceeded", {}},
-        {SimulationError::UnsupportedChainConfig,
-         "only Monad chain configurations are supported",
+        {SimulationError::RevisionPinningNotSupported,
+         "revision pinning is only supported on Ethereum chains",
+         {}},
+        {SimulationError::UnsupportedPinnedRevision,
+         "pinned revision is not supported",
+         {}},
+        {SimulationError::UnsupportedBaseRevision,
+         "the base block predates the earliest supported fork",
          {}},
     };
 

@@ -55,7 +55,7 @@ template <typename T>
     requires is_evm_trait_v<T>
 struct ChainContext<T>
 {
-    static constexpr ExecutionMode mode{};
+    ExecutionMode mode{};
 
     // Returns an empty ChainContext for unit testing purposes.
     // Not intended for production use.

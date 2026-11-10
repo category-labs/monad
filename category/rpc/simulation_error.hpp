@@ -46,7 +46,9 @@ enum class SimulationError
     TransactionsContextUnavailable,
     InvalidBlockGap,
     GasLimitExceeded,
-    UnsupportedChainConfig,
+    RevisionPinningNotSupported,
+    UnsupportedPinnedRevision,
+    UnsupportedBaseRevision,
 };
 
 struct SimulationErrorResponse

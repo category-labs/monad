@@ -108,6 +108,11 @@ constexpr bool inherit_base_fee(ExecutionMode const &execution_mode)
     return strict_validation(execution_mode);
 }
 
+constexpr bool skip_process_requests_hash(ExecutionMode const &mode)
+{
+    return std::holds_alternative<Simulation>(mode);
+}
+
 //
 // Safety checks
 //

@@ -25,6 +25,7 @@
 #include <category/core/runtime/uint256.hpp>
 #include <category/execution/ethereum/block_hash_history.hpp>
 #include <category/execution/ethereum/chain/chain_config.h>
+#include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
@@ -65,6 +66,7 @@
 #include <category/vm/code.hpp>
 #include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/monad/revision.h>
+#include <category/vm/evm/revision.h>
 #include <category/vm/evm/status_code.h>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/interpreter/intercode.hpp>
@@ -124,6 +126,19 @@ namespace
     constexpr size_t call_tracer_max_size = 1024 * 1024; // 1 MB
     constexpr bytes32_t transfer_sig =
         abi_encode_event_signature("Transfer(address,address,uint256)");
+
+    monad_eth_simulate_config
+    default_simulate_config(monad_chain_config const chain_config)
+    {
+        return monad_eth_simulate_config{
+            .chain_config = chain_config,
+            .revision = MONAD_ETH_SIMULATE_REVISION_DEFAULT,
+            .gas_limit = simulate_gas_limit,
+            .max_calls = simulate_max_calls,
+            .max_output_size = simulate_max_output_size,
+            .validation = true,
+            .emit_native_transfer_logs = false};
+    }
 
     auto create_executor(std::string const &dbname)
     {
@@ -5483,9 +5498,10 @@ TEST_F(EthCallFixture, eth_simulate_v1_simple_transfer)
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
+    auto const config = default_simulate_config(CHAIN_CONFIG_MONAD_DEVNET);
     monad_executor_eth_simulate_submit(
         executor,
-        CHAIN_CONFIG_MONAD_DEVNET,
+        &config,
         rlp_senders.data(),
         rlp_senders.size(),
         rlp_calls.data(),
@@ -5497,13 +5513,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_simple_transfer)
         rlp_block_id.size(),
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
-        simulate_gas_limit,
-        simulate_max_calls,
-        simulate_max_output_size,
         state_override,
         block_override,
-        true, // validation
-        false,
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -5599,9 +5610,10 @@ TEST_F(EthCallFixture, eth_simulate_slot_number)
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
+    auto const config = default_simulate_config(CHAIN_CONFIG_MONAD_DEVNET);
     monad_executor_eth_simulate_submit(
         executor,
-        CHAIN_CONFIG_MONAD_DEVNET,
+        &config,
         rlp_senders.data(),
         rlp_senders.size(),
         rlp_calls.data(),
@@ -5613,13 +5625,8 @@ TEST_F(EthCallFixture, eth_simulate_slot_number)
         rlp_block_id.size(),
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
-        simulate_gas_limit,
-        simulate_max_calls,
-        simulate_max_output_size,
         state_override,
         block_override,
-        true, // validation
-        false,
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -5736,9 +5743,10 @@ TEST_F(EthCallFixture, eth_simulate_v1_slot_number_across_amsterdam)
         struct callback_context ctx;
         boost::fibers::future<void> f = ctx.promise.get_future();
 
+        auto const config = default_simulate_config(CHAIN_CONFIG_MONAD_DEVNET);
         monad_executor_eth_simulate_submit(
             executor,
-            CHAIN_CONFIG_MONAD_DEVNET,
+            &config,
             rlp_senders.data(),
             rlp_senders.size(),
             rlp_calls.data(),
@@ -5750,13 +5758,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_slot_number_across_amsterdam)
             rlp_block_id.size(),
             rlp_finalized_id.data(),
             rlp_finalized_id.size(),
-            simulate_gas_limit,
-            simulate_max_calls,
-            simulate_max_output_size,
             so,
             bo,
-            true, // validation
-            false,
             complete_callback,
             (void *)&ctx);
         f.get();
@@ -5873,9 +5876,10 @@ TEST_F(EthCallFixture, eth_simulate_v1_simple_transfers_multiple_blocks)
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
+    auto const config = default_simulate_config(CHAIN_CONFIG_MONAD_DEVNET);
     monad_executor_eth_simulate_submit(
         executor,
-        CHAIN_CONFIG_MONAD_DEVNET,
+        &config,
         rlp_senders.data(),
         rlp_senders.size(),
         rlp_calls.data(),
@@ -5887,13 +5891,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_simple_transfers_multiple_blocks)
         rlp_block_id.size(),
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
-        simulate_gas_limit,
-        simulate_max_calls,
-        simulate_max_output_size,
         state_overrides,
         block_overrides,
-        true, // validation
-        false,
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -5974,9 +5973,10 @@ TEST_F(EthCallFixture, eth_simulate_v1_single_call_block_255)
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
+    auto const config = default_simulate_config(CHAIN_CONFIG_MONAD_DEVNET);
     monad_executor_eth_simulate_submit(
         executor,
-        CHAIN_CONFIG_MONAD_DEVNET,
+        &config,
         rlp_senders.data(),
         rlp_senders.size(),
         rlp_calls.data(),
@@ -5988,13 +5988,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_single_call_block_255)
         rlp_block_id.size(),
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
-        simulate_gas_limit,
-        simulate_max_calls,
-        simulate_max_output_size,
         so_overrides,
         bo_overrides,
-        true, // validation
-        false,
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -6033,9 +6028,10 @@ TEST_F(EthCallFixture, eth_simulate_v1_empty_input)
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
+    auto const config = default_simulate_config(CHAIN_CONFIG_MONAD_DEVNET);
     monad_executor_eth_simulate_submit(
         executor,
-        CHAIN_CONFIG_MONAD_DEVNET,
+        &config,
         rlp_senders.data(),
         rlp_senders.size(),
         rlp_calls.data(),
@@ -6047,13 +6043,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_empty_input)
         rlp_block_id.size(),
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
-        simulate_gas_limit,
-        simulate_max_calls,
-        simulate_max_output_size,
         so_overrides,
         bo_overrides,
-        true, // validation
-        false,
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -6109,9 +6100,10 @@ TEST_F(EthCallFixture, eth_simulate_v1_block_override_synthetic_gap)
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
+    auto const config = default_simulate_config(CHAIN_CONFIG_MONAD_DEVNET);
     monad_executor_eth_simulate_submit(
         executor,
-        CHAIN_CONFIG_MONAD_DEVNET,
+        &config,
         rlp_senders.data(),
         rlp_senders.size(),
         rlp_calls.data(),
@@ -6123,13 +6115,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_block_override_synthetic_gap)
         rlp_block_id.size(),
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
-        simulate_gas_limit,
-        simulate_max_calls,
-        simulate_max_output_size,
         so_overrides,
         bo_overrides,
-        true, // validation
-        false,
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -6212,9 +6199,10 @@ TEST_F(EthCallFixture, eth_simulate_v1_block_override_no_synthetic_gaps)
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
+    auto const config = default_simulate_config(CHAIN_CONFIG_MONAD_DEVNET);
     monad_executor_eth_simulate_submit(
         executor,
-        CHAIN_CONFIG_MONAD_DEVNET,
+        &config,
         rlp_senders.data(),
         rlp_senders.size(),
         rlp_calls.data(),
@@ -6226,13 +6214,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_block_override_no_synthetic_gaps)
         rlp_block_id.size(),
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
-        simulate_gas_limit,
-        simulate_max_calls,
-        simulate_max_output_size,
         so_overrides,
         bo_overrides,
-        true, // validation
-        false,
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -6323,9 +6306,10 @@ TEST_F(EthCallFixture, eth_simulate_v1_stress_queue_rejection)
         subs[i]->so = monad_state_override_vec_create(1);
         subs[i]->bo = monad_block_override_vec_create(1);
 
+        auto const config = default_simulate_config(CHAIN_CONFIG_MONAD_DEVNET);
         monad_executor_eth_simulate_submit(
             executor,
-            CHAIN_CONFIG_MONAD_DEVNET,
+            &config,
             rlp_senders.data(),
             rlp_senders.size(),
             rlp_calls.data(),
@@ -6337,13 +6321,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_stress_queue_rejection)
             rlp_block_id.size(),
             rlp_finalized_id.data(),
             rlp_finalized_id.size(),
-            simulate_gas_limit,
-            simulate_max_calls,
-            simulate_max_output_size,
             subs[i]->so,
             subs[i]->bo,
-            true, // validation
-            false,
             complete_callback,
             (void *)&subs[i]->ctx);
     }
@@ -6487,9 +6466,10 @@ TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance)
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
+    auto const config = default_simulate_config(CHAIN_CONFIG_MONAD_DEVNET);
     monad_executor_eth_simulate_submit(
         executor,
-        CHAIN_CONFIG_MONAD_DEVNET,
+        &config,
         rlp_senders.data(),
         rlp_senders.size(),
         rlp_calls.data(),
@@ -6501,13 +6481,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance)
         rlp_block_id.size(),
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
-        simulate_gas_limit,
-        simulate_max_calls,
-        simulate_max_output_size,
         so,
         bo,
-        true, // validation
-        false,
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -6645,9 +6620,10 @@ TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance_chain_context_buffer)
         struct callback_context ctx;
         boost::fibers::future<void> f = ctx.promise.get_future();
 
+        auto const config = default_simulate_config(CHAIN_CONFIG_MONAD_DEVNET);
         monad_executor_eth_simulate_submit(
             executor,
-            CHAIN_CONFIG_MONAD_DEVNET,
+            &config,
             rlp_senders.data(),
             rlp_senders.size(),
             rlp_calls.data(),
@@ -6659,13 +6635,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance_chain_context_buffer)
             rlp_block_id.size(),
             rlp_finalized_id.data(),
             rlp_finalized_id.size(),
-            simulate_gas_limit,
-            simulate_max_calls,
-            simulate_max_output_size,
             so,
             bo,
-            true, // validation
-            false,
             complete_callback,
             (void *)&ctx);
         f.get();
@@ -6788,9 +6759,10 @@ TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance_chain_context_buffer)
         struct callback_context ctx;
         boost::fibers::future<void> f = ctx.promise.get_future();
 
+        auto const config = default_simulate_config(CHAIN_CONFIG_MONAD_DEVNET);
         monad_executor_eth_simulate_submit(
             executor,
-            CHAIN_CONFIG_MONAD_DEVNET,
+            &config,
             rlp_senders.data(),
             rlp_senders.size(),
             rlp_calls.data(),
@@ -6802,13 +6774,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance_chain_context_buffer)
             rlp_block_id.size(),
             rlp_finalized_id.data(),
             rlp_finalized_id.size(),
-            simulate_gas_limit,
-            simulate_max_calls,
-            simulate_max_output_size,
             so,
             bo,
-            true, // validation
-            false,
             complete_callback,
             (void *)&ctx);
         f.get();
@@ -7020,9 +6987,10 @@ TEST_F(EthCallFixture, eth_simulate_v1_call_types)
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
+    auto const config = default_simulate_config(CHAIN_CONFIG_MONAD_DEVNET);
     monad_executor_eth_simulate_submit(
         executor,
-        CHAIN_CONFIG_MONAD_DEVNET,
+        &config,
         rlp_senders.data(),
         rlp_senders.size(),
         rlp_calls.data(),
@@ -7034,13 +7002,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_call_types)
         rlp_block_id.size(),
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
-        simulate_gas_limit,
-        simulate_max_calls,
-        simulate_max_output_size,
         so,
         bo,
-        true, // validation
-        false,
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -7168,9 +7131,10 @@ TEST_F(EthCallFixture, eth_simulate_v1_state_changes_across_blocks)
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
+    auto const config = default_simulate_config(CHAIN_CONFIG_MONAD_DEVNET);
     monad_executor_eth_simulate_submit(
         executor,
-        CHAIN_CONFIG_MONAD_DEVNET,
+        &config,
         rlp_senders.data(),
         rlp_senders.size(),
         rlp_calls.data(),
@@ -7182,13 +7146,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_state_changes_across_blocks)
         rlp_block_id.size(),
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
-        simulate_gas_limit,
-        simulate_max_calls,
-        simulate_max_output_size,
         so,
         bo,
-        true, // validation
-        false,
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -7391,9 +7350,10 @@ TEST_F(EthCallFixture, eth_simulate_v1_deploy_and_call)
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
+    auto const config = default_simulate_config(CHAIN_CONFIG_MONAD_DEVNET);
     monad_executor_eth_simulate_submit(
         executor,
-        CHAIN_CONFIG_MONAD_DEVNET,
+        &config,
         rlp_senders.data(),
         rlp_senders.size(),
         rlp_calls.data(),
@@ -7405,13 +7365,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_deploy_and_call)
         rlp_block_id.size(),
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
-        simulate_gas_limit,
-        simulate_max_calls,
-        simulate_max_output_size,
         so,
         bo,
-        true, // validation
-        false,
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -7609,9 +7564,17 @@ TEST_F(EthCallFixture, eth_simulate_v1_native_transfer_logs)
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
+    monad_eth_simulate_config const config{
+        .chain_config = CHAIN_CONFIG_MONAD_DEVNET,
+        .revision = MONAD_ETH_SIMULATE_REVISION_DEFAULT,
+        .gas_limit = simulate_gas_limit,
+        .max_calls = simulate_max_calls,
+        .max_output_size = simulate_max_output_size,
+        .validation = true,
+        .emit_native_transfer_logs = true};
     monad_executor_eth_simulate_submit(
         executor,
-        CHAIN_CONFIG_MONAD_DEVNET,
+        &config,
         rlp_senders.data(),
         rlp_senders.size(),
         rlp_calls.data(),
@@ -7623,13 +7586,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_native_transfer_logs)
         rlp_block_id.size(),
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
-        simulate_gas_limit,
-        simulate_max_calls,
-        simulate_max_output_size,
         so,
         bo,
-        true, // validation
-        true, // emit_native_transfer_logs
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -7755,9 +7713,17 @@ TEST_F(EthCallFixture, eth_simulate_v1_trace_transfers_across_amsterdam)
         struct callback_context ctx;
         boost::fibers::future<void> f = ctx.promise.get_future();
 
+        monad_eth_simulate_config const config{
+            .chain_config = CHAIN_CONFIG_MONAD_DEVNET,
+            .revision = MONAD_ETH_SIMULATE_REVISION_DEFAULT,
+            .gas_limit = simulate_gas_limit,
+            .max_calls = simulate_max_calls,
+            .max_output_size = simulate_max_output_size,
+            .validation = true,
+            .emit_native_transfer_logs = true};
         monad_executor_eth_simulate_submit(
             executor,
-            CHAIN_CONFIG_MONAD_DEVNET,
+            &config,
             rlp_senders.data(),
             rlp_senders.size(),
             rlp_calls.data(),
@@ -7769,13 +7735,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_trace_transfers_across_amsterdam)
             rlp_block_id.size(),
             rlp_finalized_id.data(),
             rlp_finalized_id.size(),
-            simulate_gas_limit,
-            simulate_max_calls,
-            simulate_max_output_size,
             so,
             bo,
-            true, // validation
-            true, // emit_native_transfer_logs
             complete_callback,
             (void *)&ctx);
         f.get();
@@ -7928,9 +7889,17 @@ TYPED_TEST(EthCallEncodingFixture, eth_simulate_v1_time_travel)
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
+    monad_eth_simulate_config const config{
+        .chain_config = CHAIN_CONFIG_MONAD_DEVNET,
+        .revision = MONAD_ETH_SIMULATE_REVISION_DEFAULT,
+        .gas_limit = simulate_gas_limit,
+        .max_calls = simulate_max_calls,
+        .max_output_size = simulate_max_output_size,
+        .validation = true,
+        .emit_native_transfer_logs = true};
     monad_executor_eth_simulate_submit(
         executor,
-        CHAIN_CONFIG_MONAD_DEVNET,
+        &config,
         rlp_senders.data(),
         rlp_senders.size(),
         rlp_calls.data(),
@@ -7942,13 +7911,8 @@ TYPED_TEST(EthCallEncodingFixture, eth_simulate_v1_time_travel)
         rlp_block_id.size(),
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
-        simulate_gas_limit,
-        simulate_max_calls,
-        simulate_max_output_size,
         so,
         bo,
-        true, // validation
-        true, // emit_native_transfer_logs
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -8058,9 +8022,10 @@ TEST_F(EthCallFixture, eth_simulate_v1_blockhash_reads)
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
+    auto const config = default_simulate_config(CHAIN_CONFIG_MONAD_DEVNET);
     monad_executor_eth_simulate_submit(
         executor,
-        CHAIN_CONFIG_MONAD_DEVNET,
+        &config,
         rlp_senders.data(),
         rlp_senders.size(),
         rlp_calls.data(),
@@ -8072,13 +8037,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_blockhash_reads)
         rlp_block_id.size(),
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
-        simulate_gas_limit,
-        simulate_max_calls,
-        simulate_max_output_size,
         so,
         bo,
-        true, // validation
-        false,
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -8203,9 +8163,10 @@ TEST_F(EthCallFixture, eth_simulate_v1_legacy_transactions)
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
+    auto const config = default_simulate_config(CHAIN_CONFIG_MONAD_DEVNET);
     monad_executor_eth_simulate_submit(
         executor,
-        CHAIN_CONFIG_MONAD_DEVNET,
+        &config,
         rlp_senders.data(),
         rlp_senders.size(),
         rlp_calls.data(),
@@ -8217,13 +8178,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_legacy_transactions)
         rlp_block_id.size(),
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
-        simulate_gas_limit,
-        simulate_max_calls,
-        simulate_max_output_size,
         state_overrides,
         block_overrides,
-        true, // validation
-        false,
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -8317,9 +8273,10 @@ TEST_F(EthCallFixture, eth_simulate_v1_typed_transactions_2930_and_1559)
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
+    auto const config = default_simulate_config(CHAIN_CONFIG_MONAD_DEVNET);
     monad_executor_eth_simulate_submit(
         executor,
-        CHAIN_CONFIG_MONAD_DEVNET,
+        &config,
         rlp_senders.data(),
         rlp_senders.size(),
         rlp_calls.data(),
@@ -8331,13 +8288,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_typed_transactions_2930_and_1559)
         rlp_block_id.size(),
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
-        simulate_gas_limit,
-        simulate_max_calls,
-        simulate_max_output_size,
         state_overrides,
         block_overrides,
-        true, // validation
-        false,
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -8445,9 +8397,10 @@ TEST_F(EthCallFixture, eth_simulate_v1_typed_transaction_7702)
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
+    auto const config = default_simulate_config(CHAIN_CONFIG_MONAD_DEVNET);
     monad_executor_eth_simulate_submit(
         executor,
-        CHAIN_CONFIG_MONAD_DEVNET,
+        &config,
         rlp_senders.data(),
         rlp_senders.size(),
         rlp_calls.data(),
@@ -8459,13 +8412,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_typed_transaction_7702)
         rlp_block_id.size(),
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
-        simulate_gas_limit,
-        simulate_max_calls,
-        simulate_max_output_size,
         state_overrides,
         block_overrides,
-        true, // validation
-        false,
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -8601,9 +8549,10 @@ TEST_F(EthCallFixture, eth_simulate_v1_all_transaction_formats_single_block)
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
+    auto const config = default_simulate_config(CHAIN_CONFIG_MONAD_DEVNET);
     monad_executor_eth_simulate_submit(
         executor,
-        CHAIN_CONFIG_MONAD_DEVNET,
+        &config,
         rlp_senders.data(),
         rlp_senders.size(),
         rlp_calls.data(),
@@ -8615,13 +8564,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_all_transaction_formats_single_block)
         rlp_block_id.size(),
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
-        simulate_gas_limit,
-        simulate_max_calls,
-        simulate_max_output_size,
         state_overrides,
         block_overrides,
-        true, // validation
-        false,
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -8720,9 +8664,10 @@ TEST_F(
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
+    auto const config = default_simulate_config(CHAIN_CONFIG_MONAD_DEVNET);
     monad_executor_eth_simulate_submit(
         executor,
-        CHAIN_CONFIG_MONAD_DEVNET,
+        &config,
         rlp_senders.data(),
         rlp_senders.size(),
         rlp_calls.data(),
@@ -8734,13 +8679,8 @@ TEST_F(
         rlp_block_id.size(),
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
-        simulate_gas_limit,
-        simulate_max_calls,
-        simulate_max_output_size,
         state_overrides,
         block_overrides,
-        true, // validation
-        false,
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -8843,9 +8783,17 @@ TEST_F(EthCallFixture, eth_simulate_v1_gas_limit_enforcement)
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
+    monad_eth_simulate_config const config{
+        .chain_config = CHAIN_CONFIG_MONAD_DEVNET,
+        .revision = MONAD_ETH_SIMULATE_REVISION_DEFAULT,
+        .gas_limit = total_gas_limit,
+        .max_calls = simulate_max_calls,
+        .max_output_size = simulate_max_output_size,
+        .validation = true,
+        .emit_native_transfer_logs = false};
     monad_executor_eth_simulate_submit(
         executor,
-        CHAIN_CONFIG_MONAD_DEVNET,
+        &config,
         rlp_senders.data(),
         rlp_senders.size(),
         rlp_calls.data(),
@@ -8857,13 +8805,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_gas_limit_enforcement)
         rlp_block_id.size(),
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
-        total_gas_limit,
-        simulate_max_calls,
-        simulate_max_output_size,
         state_override,
         block_override,
-        true, // validation
-        false,
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -8938,9 +8881,11 @@ TEST_F(EthCallFixture, eth_simulate_v1_simple_transfer_withdrawals_monad)
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
+    // Must be configured for Monad.
+    auto const config = default_simulate_config(CHAIN_CONFIG_MONAD_DEVNET);
     monad_executor_eth_simulate_submit(
         executor,
-        CHAIN_CONFIG_MONAD_DEVNET, // <- Must be configured for Monad.
+        &config,
         rlp_senders.data(),
         rlp_senders.size(),
         rlp_calls.data(),
@@ -8952,13 +8897,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_simple_transfer_withdrawals_monad)
         rlp_block_id.size(),
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
-        simulate_gas_limit,
-        simulate_max_calls,
-        simulate_max_output_size,
         state_override,
         block_override,
-        true, // validation
-        false,
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -9078,9 +9018,11 @@ TEST_F(EthCallFixture, eth_simulate_v1_state_override_graceful_failure)
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
+    // Must be configured for Monad.
+    auto const config = default_simulate_config(CHAIN_CONFIG_MONAD_DEVNET);
     monad_executor_eth_simulate_submit(
         executor,
-        CHAIN_CONFIG_MONAD_DEVNET, // <- Must be configured for Monad.
+        &config,
         rlp_senders.data(),
         rlp_senders.size(),
         rlp_calls.data(),
@@ -9092,13 +9034,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_state_override_graceful_failure)
         rlp_block_id.size(),
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
-        simulate_gas_limit,
-        simulate_max_calls,
-        simulate_max_output_size,
         state_override,
         block_override,
-        true, // validation
-        false,
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -9152,10 +9089,11 @@ TEST_F(EthCallFixture, eth_simulate_v1_transaction_input_too_long_causes_death)
     auto *const sentinel_executor =
         reinterpret_cast<struct monad_executor *>(uintptr_t{1});
 
+    auto const config = default_simulate_config(CHAIN_CONFIG_MONAD_DEVNET);
     EXPECT_DEATH(
         monad_executor_eth_simulate_submit(
             sentinel_executor,
-            CHAIN_CONFIG_MONAD_DEVNET,
+            &config,
             rlp_senders.data(),
             rlp_senders.size(),
             rlp_calls.data(),
@@ -9167,13 +9105,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_transaction_input_too_long_causes_death)
             rlp_block_id.size(),
             rlp_finalized_id.data(),
             rlp_finalized_id.size(),
-            simulate_gas_limit,
-            simulate_max_calls,
-            simulate_max_output_size,
             state_override,
             block_override,
-            true, // validation
-            false,
             nullptr,
             nullptr),
         "maybe_txns\\.has_value\\(\\)"); // Pattern match on the expected
@@ -9238,9 +9171,10 @@ TEST_F(EthCallFixture, eth_simulate_v1_beacon_roots)
     auto submit_simulation = [&](callback_context &ctx) {
         boost::fibers::future<void> f = ctx.promise.get_future();
 
+        auto const config = default_simulate_config(CHAIN_CONFIG_MONAD_DEVNET);
         monad_executor_eth_simulate_submit(
             executor,
-            CHAIN_CONFIG_MONAD_DEVNET,
+            &config,
             rlp_senders.data(),
             rlp_senders.size(),
             rlp_calls.data(),
@@ -9252,13 +9186,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_beacon_roots)
             rlp_block_id.size(),
             rlp_finalized_id.data(),
             rlp_finalized_id.size(),
-            simulate_gas_limit,
-            simulate_max_calls,
-            simulate_max_output_size,
             state_overrides,
             block_overrides,
-            true, // validation
-            false,
             complete_callback,
             (void *)&ctx);
 
@@ -9382,9 +9311,10 @@ TEST_F(EthCallFixture, eth_simulate_v1_block_history_state_override)
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
+    auto const config = default_simulate_config(CHAIN_CONFIG_MONAD_DEVNET);
     monad_executor_eth_simulate_submit(
         executor,
-        CHAIN_CONFIG_MONAD_DEVNET,
+        &config,
         rlp_senders.data(),
         rlp_senders.size(),
         rlp_calls.data(),
@@ -9396,13 +9326,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_block_history_state_override)
         rlp_block_id.size(),
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
-        simulate_gas_limit,
-        simulate_max_calls,
-        simulate_max_output_size,
         state_overrides,
         block_overrides,
-        true, // validation
-        false,
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -9490,9 +9415,10 @@ TEST_F(EthCallFixture, eth_simulate_v1_deploy_over_storage_override)
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
+    auto const config = default_simulate_config(CHAIN_CONFIG_MONAD_DEVNET);
     monad_executor_eth_simulate_submit(
         executor,
-        CHAIN_CONFIG_MONAD_DEVNET,
+        &config,
         rlp_senders.data(),
         rlp_senders.size(),
         rlp_calls.data(),
@@ -9504,13 +9430,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_deploy_over_storage_override)
         rlp_block_id.size(),
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
-        simulate_gas_limit,
-        simulate_max_calls,
-        simulate_max_output_size,
         state_overrides,
         block_overrides,
-        true, // validation
-        false,
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -9631,9 +9552,18 @@ TEST_F(EthCallFixture, eth_simulate_v1_output_size_enforcement)
     {
         boost::fibers::future<void> f = no_limit_ctx.promise.get_future();
 
+        monad_eth_simulate_config const config{
+            .chain_config = CHAIN_CONFIG_MONAD_DEVNET,
+            .revision = MONAD_ETH_SIMULATE_REVISION_DEFAULT,
+            .gas_limit = simulate_gas_limit,
+            .max_calls = simulate_max_calls,
+            // Virtually unlimited.
+            .max_output_size = std::numeric_limits<size_t>::max(),
+            .validation = true,
+            .emit_native_transfer_logs = false};
         monad_executor_eth_simulate_submit(
             executor,
-            CHAIN_CONFIG_MONAD_DEVNET,
+            &config,
             rlp_senders.data(),
             rlp_senders.size(),
             rlp_calls.data(),
@@ -9645,14 +9575,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_output_size_enforcement)
             rlp_block_id.size(),
             rlp_finalized_id.data(),
             rlp_finalized_id.size(),
-            simulate_gas_limit,
-            simulate_max_calls,
-            std::numeric_limits<size_t>::max(), // Max output size, virtually
-                                                // unlimited.
             state_override,
             block_override,
-            true, // validation
-            false,
             complete_callback,
             (void *)&no_limit_ctx);
         f.get();
@@ -9668,9 +9592,17 @@ TEST_F(EthCallFixture, eth_simulate_v1_output_size_enforcement)
     {
         boost::fibers::future<void> f = actual_ctx.promise.get_future();
 
+        monad_eth_simulate_config const config{
+            .chain_config = CHAIN_CONFIG_MONAD_DEVNET,
+            .revision = MONAD_ETH_SIMULATE_REVISION_DEFAULT,
+            .gas_limit = simulate_gas_limit,
+            .max_calls = simulate_max_calls,
+            .max_output_size = actual_cbor_output_size,
+            .validation = true,
+            .emit_native_transfer_logs = false};
         monad_executor_eth_simulate_submit(
             executor,
-            CHAIN_CONFIG_MONAD_DEVNET,
+            &config,
             rlp_senders.data(),
             rlp_senders.size(),
             rlp_calls.data(),
@@ -9682,13 +9614,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_output_size_enforcement)
             rlp_block_id.size(),
             rlp_finalized_id.data(),
             rlp_finalized_id.size(),
-            simulate_gas_limit,
-            simulate_max_calls,
-            actual_cbor_output_size,
             state_override,
             block_override,
-            true, // validation
-            false,
             complete_callback,
             (void *)&actual_ctx);
         f.get();
@@ -9707,9 +9634,17 @@ TEST_F(EthCallFixture, eth_simulate_v1_output_size_enforcement)
 
         boost::fibers::future<void> f = limited_ctx.promise.get_future();
 
+        monad_eth_simulate_config const config{
+            .chain_config = CHAIN_CONFIG_MONAD_DEVNET,
+            .revision = MONAD_ETH_SIMULATE_REVISION_DEFAULT,
+            .gas_limit = simulate_gas_limit,
+            .max_calls = simulate_max_calls,
+            .max_output_size = max_output_size,
+            .validation = true,
+            .emit_native_transfer_logs = false};
         monad_executor_eth_simulate_submit(
             executor,
-            CHAIN_CONFIG_MONAD_DEVNET,
+            &config,
             rlp_senders.data(),
             rlp_senders.size(),
             rlp_calls.data(),
@@ -9721,13 +9656,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_output_size_enforcement)
             rlp_block_id.size(),
             rlp_finalized_id.data(),
             rlp_finalized_id.size(),
-            simulate_gas_limit,
-            simulate_max_calls,
-            max_output_size,
             state_override,
             block_override,
-            true, // validation
-            false,
             complete_callback,
             (void *)&limited_ctx);
         f.get();
@@ -9753,9 +9683,17 @@ TEST_F(EthCallFixture, eth_simulate_v1_output_size_enforcement)
     {
         boost::fibers::future<void> f = output_limited_ctx.promise.get_future();
 
+        monad_eth_simulate_config const config{
+            .chain_config = CHAIN_CONFIG_MONAD_DEVNET,
+            .revision = MONAD_ETH_SIMULATE_REVISION_DEFAULT,
+            .gas_limit = simulate_gas_limit,
+            .max_calls = simulate_max_calls,
+            .max_output_size = output_max_size,
+            .validation = true,
+            .emit_native_transfer_logs = false};
         monad_executor_eth_simulate_submit(
             executor,
-            CHAIN_CONFIG_MONAD_DEVNET,
+            &config,
             rlp_senders.data(),
             rlp_senders.size(),
             rlp_calls.data(),
@@ -9767,13 +9705,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_output_size_enforcement)
             rlp_block_id.size(),
             rlp_finalized_id.data(),
             rlp_finalized_id.size(),
-            simulate_gas_limit,
-            simulate_max_calls,
-            output_max_size,
             state_override,
             block_override,
-            true, // validation
-            false,
             complete_callback,
             (void *)&output_limited_ctx);
         f.get();
@@ -9805,9 +9738,17 @@ TEST_F(EthCallFixture, eth_simulate_v1_output_size_enforcement)
     {
         boost::fibers::future<void> f = mixed_limited_ctx.promise.get_future();
 
+        monad_eth_simulate_config const config{
+            .chain_config = CHAIN_CONFIG_MONAD_DEVNET,
+            .revision = MONAD_ETH_SIMULATE_REVISION_DEFAULT,
+            .gas_limit = simulate_gas_limit,
+            .max_calls = simulate_max_calls,
+            .max_output_size = mixed_max_size,
+            .validation = true,
+            .emit_native_transfer_logs = false};
         monad_executor_eth_simulate_submit(
             executor,
-            CHAIN_CONFIG_MONAD_DEVNET,
+            &config,
             shared_rlp_senders.data(),
             shared_rlp_senders.size(),
             mixed_rlp_calls.data(),
@@ -9819,13 +9760,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_output_size_enforcement)
             rlp_block_id.size(),
             rlp_finalized_id.data(),
             rlp_finalized_id.size(),
-            simulate_gas_limit,
-            simulate_max_calls,
-            mixed_max_size,
             state_override,
             block_override,
-            true, // validation
-            false,
             complete_callback,
             (void *)&mixed_limited_ctx);
         f.get();
@@ -9990,9 +9926,10 @@ TEST_F(EthCallFixture, eth_simulate_v1_empty_state_override_zeros_storage)
     callback_context ctx;
     boost::fibers::future<void> future = ctx.promise.get_future();
 
+    auto const config = default_simulate_config(CHAIN_CONFIG_MONAD_DEVNET);
     monad_executor_eth_simulate_submit(
         executor,
-        CHAIN_CONFIG_MONAD_DEVNET,
+        &config,
         rlp_senders.data(),
         rlp_senders.size(),
         rlp_calls.data(),
@@ -10004,13 +9941,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_empty_state_override_zeros_storage)
         rlp_block_id.size(),
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
-        simulate_gas_limit,
-        simulate_max_calls,
-        simulate_max_output_size,
         state_overrides,
         block_overrides,
-        true, // validation
-        false,
         complete_callback,
         &ctx);
     future.get();
@@ -10472,9 +10404,10 @@ TEST(EthCallFixtureNoDb, eth_simulate_v1_with_state_overrides)
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
+    auto const config = default_simulate_config(CHAIN_CONFIG_MONAD_DEVNET);
     monad_executor_eth_simulate_submit(
         executor,
-        CHAIN_CONFIG_MONAD_DEVNET,
+        &config,
         rlp_senders.data(),
         rlp_senders.size(),
         rlp_calls.data(),
@@ -10486,13 +10419,8 @@ TEST(EthCallFixtureNoDb, eth_simulate_v1_with_state_overrides)
         rlp_block_id.size(),
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
-        simulate_gas_limit,
-        simulate_max_calls,
-        simulate_max_output_size,
         so,
         bo,
-        true, // validation
-        false,
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -10573,10 +10501,10 @@ TEST(EthCallFixtureNoDb, trace_is_rejected)
     monad_executor_destroy(executor);
 }
 
-// Ethereum chain configurations are rejected in both validation modes, before
-// the revision is resolved: block 1 predates Ethereum mainnet's earliest
-// supported fork.
-TEST(EthCallFixtureNoDb, eth_simulate_v1_rejects_ethereum_chain_configs)
+// Without a pinned revision, Ethereum mainnet derives each block's fork from
+// its number and timestamp, and block 1 predates the earliest supported fork.
+TEST(
+    EthCallFixtureNoDb, eth_simulate_v1_rejects_unsupported_ethereum_base_block)
 {
     static constexpr Address sender =
         0x00000000000000000000000000000000deadbeef_address;
@@ -10595,46 +10523,123 @@ TEST(EthCallFixtureNoDb, eth_simulate_v1_rejects_ethereum_chain_configs)
     auto const rlp_header = to_vec(rlp::encode_block_header(header));
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
+    // The executor may still be completing a context's promise after the waiter
+    // wakes, so contexts outlive the executor.
     std::vector<std::unique_ptr<callback_context>> contexts;
-    contexts.reserve(4);
-    for (auto const &[chain_config, name] :
-         {std::pair{CHAIN_CONFIG_ETHEREUM_MAINNET, "ethereum mainnet"},
-          std::pair{CHAIN_CONFIG_HIVE_NET, "hive"}}) {
-        for (bool const validation : {true, false}) {
-            SCOPED_TRACE(std::format("{}, validation={}", name, validation));
-            auto &ctx =
-                *contexts.emplace_back(std::make_unique<callback_context>());
-            auto future = ctx.promise.get_future();
-            monad_executor_eth_simulate_submit(
-                executor,
-                chain_config,
-                rlp_senders.data(),
-                rlp_senders.size(),
-                rlp_calls.data(),
-                rlp_calls.size(),
-                header.number,
-                rlp_header.data(),
-                rlp_header.size(),
-                rlp_block_id.data(),
-                rlp_block_id.size(),
-                rlp_finalized_id.data(),
-                rlp_finalized_id.size(),
-                simulate_gas_limit,
-                simulate_max_calls,
-                simulate_max_output_size,
-                state_overrides,
-                block_overrides,
-                validation,
-                false, // emit_native_transfer_logs
-                complete_callback,
-                (void *)&ctx);
-            future.get();
+    for (bool const validation : {true, false}) {
+        SCOPED_TRACE(std::format("validation={}", validation));
+        auto config = default_simulate_config(CHAIN_CONFIG_ETHEREUM_MAINNET);
+        config.validation = validation;
+        auto &ctx =
+            *contexts.emplace_back(std::make_unique<callback_context>());
+        boost::fibers::future<void> f = ctx.promise.get_future();
+        monad_executor_eth_simulate_submit(
+            executor,
+            &config,
+            rlp_senders.data(),
+            rlp_senders.size(),
+            rlp_calls.data(),
+            rlp_calls.size(),
+            header.number,
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            rlp_finalized_id.data(),
+            rlp_finalized_id.size(),
+            state_overrides,
+            block_overrides,
+            complete_callback,
+            (void *)&ctx);
+        f.get();
+        EXPECT_EQ(ctx.result->status_code, MONAD_STATUS_INTERNAL_ERROR);
+        EXPECT_STREQ(
+            ctx.result->message,
+            "the base block predates the earliest supported fork");
+    }
 
-            EXPECT_EQ(ctx.result->status_code, MONAD_STATUS_REJECTED);
-            EXPECT_STREQ(
-                ctx.result->message,
-                "only Monad chain configurations are supported");
-        }
+    monad_block_override_vec_destroy(block_overrides);
+    monad_state_override_vec_destroy(state_overrides);
+    monad_executor_destroy(executor);
+}
+
+// Ethereum simulations run in the simulation execution mode, which skips the
+// sender-is-EOA check (EIP-3607) in both validation modes.
+TEST(EthCallFixtureNoDb, eth_simulate_v1_ethereum_contract_sender)
+{
+    static constexpr Address sender =
+        0x000000000000000000000000000000000000c0de_address;
+    static constexpr Address recipient =
+        0x00000000000000000000000000000000feedface_address;
+    std::vector<uint8_t> const stop_code{0x00};
+    bytes32_t const balance = store_be_as<bytes32_t>(uint256_t{1_ether});
+
+    auto *const executor = create_executor_without_db();
+    auto *const state_overrides = monad_state_override_vec_create(1);
+    add_override_address_at(
+        state_overrides, 0, sender.bytes, sizeof(sender.bytes));
+    set_override_balance_at(
+        state_overrides,
+        0,
+        sender.bytes,
+        sizeof(sender.bytes),
+        balance.bytes,
+        sizeof(balance.bytes));
+    set_override_code_at(
+        state_overrides,
+        0,
+        sender.bytes,
+        sizeof(sender.bytes),
+        stop_code.data(),
+        stop_code.size());
+    auto *const block_overrides = monad_block_override_vec_create(1);
+    Transaction const tx{
+        .gas_limit = 100'000, .value = uint256_t{1'000}, .to = recipient};
+    auto const rlp_senders = to_vec(rlp::encode_list2(
+        rlp::encode_list2(rlp::encode_address(std::make_optional(sender)))));
+    auto const rlp_calls = to_vec(rlp::encode_list2(
+        rlp::encode_list2(rlp::encode_string2(rlp::encode_transaction(tx)))));
+    BlockHeader const header{.gas_limit = 200'000'000};
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    // The executor may still be completing a context's promise after the waiter
+    // wakes, so contexts outlive the executor.
+    std::vector<std::unique_ptr<callback_context>> contexts;
+    for (bool const validation : {true, false}) {
+        SCOPED_TRACE(std::format("validation={}", validation));
+        auto config = default_simulate_config(CHAIN_CONFIG_ETHEREUM_MAINNET);
+        config.revision = MONAD_ETH_CANCUN;
+        config.validation = validation;
+        auto &ctx =
+            *contexts.emplace_back(std::make_unique<callback_context>());
+        boost::fibers::future<void> f = ctx.promise.get_future();
+        monad_executor_eth_simulate_submit(
+            executor,
+            &config,
+            rlp_senders.data(),
+            rlp_senders.size(),
+            rlp_calls.data(),
+            rlp_calls.size(),
+            header.number,
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            rlp_finalized_id.data(),
+            rlp_finalized_id.size(),
+            state_overrides,
+            block_overrides,
+            complete_callback,
+            (void *)&ctx);
+        f.get();
+        ASSERT_EQ(ctx.result->status_code, MONAD_STATUS_SUCCESS);
+        nlohmann::json const output = nlohmann::json::from_cbor(
+            ctx.result->encoded_trace,
+            ctx.result->encoded_trace + ctx.result->encoded_trace_len);
+        ASSERT_EQ(output.size(), 1);
+        ASSERT_EQ(output[0]["calls"].size(), 1);
+        EXPECT_EQ(output[0]["calls"][0]["status"], "0x1");
     }
 
     monad_block_override_vec_destroy(block_overrides);
@@ -10690,9 +10695,17 @@ TEST_F(EthCallFixture, eth_simulate_v1_validation_modes_match_for_eoa)
         auto &ctx =
             *contexts.emplace_back(std::make_unique<callback_context>());
         auto future = ctx.promise.get_future();
+        monad_eth_simulate_config const config{
+            .chain_config = CHAIN_CONFIG_MONAD_DEVNET,
+            .revision = MONAD_ETH_SIMULATE_REVISION_DEFAULT,
+            .gas_limit = simulate_gas_limit,
+            .max_calls = simulate_max_calls,
+            .max_output_size = simulate_max_output_size,
+            .validation = validation,
+            .emit_native_transfer_logs = false};
         monad_executor_eth_simulate_submit(
             executor,
-            CHAIN_CONFIG_MONAD_DEVNET,
+            &config,
             rlp_senders.data(),
             rlp_senders.size(),
             rlp_calls.data(),
@@ -10704,13 +10717,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_validation_modes_match_for_eoa)
             rlp_block_id.size(),
             rlp_finalized_id.data(),
             rlp_finalized_id.size(),
-            simulate_gas_limit,
-            simulate_max_calls,
-            simulate_max_output_size,
             state_overrides,
             block_overrides,
-            validation,
-            false,
             complete_callback,
             (void *)&ctx);
         future.get();
@@ -10841,9 +10849,17 @@ TEST_F(
             auto &ctx =
                 *contexts.emplace_back(std::make_unique<callback_context>());
             auto future = ctx.promise.get_future();
+            monad_eth_simulate_config const config{
+                .chain_config = CHAIN_CONFIG_MONAD_DEVNET,
+                .revision = MONAD_ETH_SIMULATE_REVISION_DEFAULT,
+                .gas_limit = simulate_gas_limit,
+                .max_calls = simulate_max_calls,
+                .max_output_size = simulate_max_output_size,
+                .validation = validation,
+                .emit_native_transfer_logs = false};
             monad_executor_eth_simulate_submit(
                 executor,
-                CHAIN_CONFIG_MONAD_DEVNET,
+                &config,
                 rlp_senders.data(),
                 rlp_senders.size(),
                 rlp_calls.data(),
@@ -10855,13 +10871,8 @@ TEST_F(
                 rlp_block_id.size(),
                 rlp_finalized_id.data(),
                 rlp_finalized_id.size(),
-                simulate_gas_limit,
-                simulate_max_calls,
-                simulate_max_output_size,
                 state_overrides,
                 block_overrides,
-                validation,
-                false,
                 complete_callback,
                 (void *)&ctx);
             future.get();
@@ -10967,9 +10978,17 @@ TEST_F(EthCallFixture, eth_simulate_v1_relaxed_sender_validation)
         auto &ctx =
             *contexts.emplace_back(std::make_unique<callback_context>());
         auto future = ctx.promise.get_future();
+        monad_eth_simulate_config const config{
+            .chain_config = CHAIN_CONFIG_MONAD_DEVNET,
+            .revision = MONAD_ETH_SIMULATE_REVISION_DEFAULT,
+            .gas_limit = simulate_gas_limit,
+            .max_calls = simulate_max_calls,
+            .max_output_size = simulate_max_output_size,
+            .validation = test_case.validation,
+            .emit_native_transfer_logs = false};
         monad_executor_eth_simulate_submit(
             executor,
-            CHAIN_CONFIG_MONAD_DEVNET,
+            &config,
             rlp_senders.data(),
             rlp_senders.size(),
             rlp_calls.data(),
@@ -10981,13 +11000,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_relaxed_sender_validation)
             rlp_block_id.size(),
             rlp_finalized_id.data(),
             rlp_finalized_id.size(),
-            simulate_gas_limit,
-            simulate_max_calls,
-            simulate_max_output_size,
             state_overrides,
             block_overrides,
-            test_case.validation,
-            false,
             complete_callback,
             (void *)&ctx);
         future.get();
@@ -11189,9 +11203,17 @@ TEST_F(EthCallFixture, eth_simulate_v1_validation_false_matches_eth_call)
         auto &simulate_ctx =
             *contexts.emplace_back(std::make_unique<callback_context>());
         auto simulate_future = simulate_ctx.promise.get_future();
+        monad_eth_simulate_config const config{
+            .chain_config = CHAIN_CONFIG_MONAD_DEVNET,
+            .revision = MONAD_ETH_SIMULATE_REVISION_DEFAULT,
+            .gas_limit = simulate_gas_limit,
+            .max_calls = simulate_max_calls,
+            .max_output_size = simulate_max_output_size,
+            .validation = false,
+            .emit_native_transfer_logs = false};
         monad_executor_eth_simulate_submit(
             executor,
-            CHAIN_CONFIG_MONAD_DEVNET,
+            &config,
             rlp_senders.data(),
             rlp_senders.size(),
             rlp_calls.data(),
@@ -11203,13 +11225,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_validation_false_matches_eth_call)
             rlp_block_id.size(),
             rlp_finalized_id.data(),
             rlp_finalized_id.size(),
-            simulate_gas_limit,
-            simulate_max_calls,
-            simulate_max_output_size,
             state_overrides,
             block_overrides,
-            false, // validation
-            false,
             complete_callback,
             &simulate_ctx);
         simulate_future.get();
@@ -11361,9 +11378,17 @@ TEST_F(EthCallFixture, eth_simulate_v1_max_sender_nonce_differs_from_eth_call)
 
     callback_context simulate_ctx;
     auto simulate_future = simulate_ctx.promise.get_future();
+    monad_eth_simulate_config const config{
+        .chain_config = CHAIN_CONFIG_MONAD_DEVNET,
+        .revision = MONAD_ETH_SIMULATE_REVISION_DEFAULT,
+        .gas_limit = simulate_gas_limit,
+        .max_calls = simulate_max_calls,
+        .max_output_size = simulate_max_output_size,
+        .validation = false,
+        .emit_native_transfer_logs = false};
     monad_executor_eth_simulate_submit(
         executor,
-        CHAIN_CONFIG_MONAD_DEVNET,
+        &config,
         rlp_senders.data(),
         rlp_senders.size(),
         rlp_calls.data(),
@@ -11375,13 +11400,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_max_sender_nonce_differs_from_eth_call)
         rlp_block_id.size(),
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
-        simulate_gas_limit,
-        simulate_max_calls,
-        simulate_max_output_size,
         state_overrides,
         block_overrides,
-        false, // validation
-        false,
         complete_callback,
         &simulate_ctx);
     simulate_future.get();
@@ -11473,9 +11493,17 @@ TEST_F(EthCallFixture, eth_simulate_v1_validation_false_bounds_sender_nonce)
         auto &ctx =
             *contexts.emplace_back(std::make_unique<callback_context>());
         auto future = ctx.promise.get_future();
+        monad_eth_simulate_config const config{
+            .chain_config = CHAIN_CONFIG_MONAD_DEVNET,
+            .revision = MONAD_ETH_SIMULATE_REVISION_DEFAULT,
+            .gas_limit = simulate_gas_limit,
+            .max_calls = simulate_max_calls,
+            .max_output_size = simulate_max_output_size,
+            .validation = false,
+            .emit_native_transfer_logs = false};
         monad_executor_eth_simulate_submit(
             executor,
-            CHAIN_CONFIG_MONAD_DEVNET,
+            &config,
             rlp_senders.data(),
             rlp_senders.size(),
             rlp_calls.data(),
@@ -11487,13 +11515,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_validation_false_bounds_sender_nonce)
             rlp_block_id.size(),
             rlp_finalized_id.data(),
             rlp_finalized_id.size(),
-            simulate_gas_limit,
-            simulate_max_calls,
-            simulate_max_output_size,
             state_overrides,
             block_overrides,
-            false, // validation
-            false,
             complete_callback,
             (void *)&ctx);
         future.get();
@@ -11579,9 +11602,17 @@ TEST_F(
 
     callback_context ctx;
     auto future = ctx.promise.get_future();
+    monad_eth_simulate_config const config{
+        .chain_config = CHAIN_CONFIG_MONAD_DEVNET,
+        .revision = MONAD_ETH_SIMULATE_REVISION_DEFAULT,
+        .gas_limit = simulate_gas_limit,
+        .max_calls = simulate_max_calls,
+        .max_output_size = simulate_max_output_size,
+        .validation = false,
+        .emit_native_transfer_logs = false};
     monad_executor_eth_simulate_submit(
         executor,
-        CHAIN_CONFIG_MONAD_DEVNET,
+        &config,
         rlp_senders.data(),
         rlp_senders.size(),
         rlp_calls.data(),
@@ -11593,13 +11624,8 @@ TEST_F(
         rlp_block_id.size(),
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
-        simulate_gas_limit,
-        simulate_max_calls,
-        simulate_max_output_size,
         state_overrides,
         block_overrides,
-        false, // validation
-        false,
         complete_callback,
         (void *)&ctx);
     future.get();
@@ -11701,9 +11727,17 @@ TEST_F(EthCallFixture, eth_simulate_v1_nonce_moved_by_earlier_authorization)
         auto &ctx =
             *contexts.emplace_back(std::make_unique<callback_context>());
         auto future = ctx.promise.get_future();
+        monad_eth_simulate_config const config{
+            .chain_config = CHAIN_CONFIG_MONAD_DEVNET,
+            .revision = MONAD_ETH_SIMULATE_REVISION_DEFAULT,
+            .gas_limit = simulate_gas_limit,
+            .max_calls = simulate_max_calls,
+            .max_output_size = simulate_max_output_size,
+            .validation = validation,
+            .emit_native_transfer_logs = false};
         monad_executor_eth_simulate_submit(
             executor,
-            CHAIN_CONFIG_MONAD_DEVNET,
+            &config,
             rlp_senders.data(),
             rlp_senders.size(),
             rlp_calls.data(),
@@ -11715,13 +11749,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_nonce_moved_by_earlier_authorization)
             rlp_block_id.size(),
             rlp_finalized_id.data(),
             rlp_finalized_id.size(),
-            simulate_gas_limit,
-            simulate_max_calls,
-            simulate_max_output_size,
             state_overrides,
             block_overrides,
-            validation,
-            false,
             complete_callback,
             (void *)&ctx);
         future.get();
@@ -11814,9 +11843,17 @@ TEST_F(EthCallFixture, eth_simulate_v1_authorization_raises_sender_nonce_to_max)
         auto &ctx =
             *contexts.emplace_back(std::make_unique<callback_context>());
         auto future = ctx.promise.get_future();
+        monad_eth_simulate_config const config{
+            .chain_config = CHAIN_CONFIG_MONAD_DEVNET,
+            .revision = MONAD_ETH_SIMULATE_REVISION_DEFAULT,
+            .gas_limit = simulate_gas_limit,
+            .max_calls = simulate_max_calls,
+            .max_output_size = simulate_max_output_size,
+            .validation = validation,
+            .emit_native_transfer_logs = false};
         monad_executor_eth_simulate_submit(
             executor,
-            CHAIN_CONFIG_MONAD_DEVNET,
+            &config,
             rlp_senders.data(),
             rlp_senders.size(),
             rlp_calls.data(),
@@ -11828,13 +11865,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_authorization_raises_sender_nonce_to_max)
             rlp_block_id.size(),
             rlp_finalized_id.data(),
             rlp_finalized_id.size(),
-            simulate_gas_limit,
-            simulate_max_calls,
-            simulate_max_output_size,
             state_overrides,
             block_overrides,
-            validation,
-            false, // emit_native_transfer_logs
             complete_callback,
             (void *)&ctx);
         future.get();
@@ -11987,9 +12019,17 @@ TEST_F(EthCallFixture, eth_simulate_v1_validation_controls_base_fee)
         auto &ctx =
             *contexts.emplace_back(std::make_unique<callback_context>());
         auto future = ctx.promise.get_future();
+        monad_eth_simulate_config const config{
+            .chain_config = CHAIN_CONFIG_MONAD_DEVNET,
+            .revision = MONAD_ETH_SIMULATE_REVISION_DEFAULT,
+            .gas_limit = simulate_gas_limit,
+            .max_calls = simulate_max_calls,
+            .max_output_size = simulate_max_output_size,
+            .validation = test_case.validation,
+            .emit_native_transfer_logs = false};
         monad_executor_eth_simulate_submit(
             executor,
-            CHAIN_CONFIG_MONAD_DEVNET,
+            &config,
             rlp_senders.data(),
             rlp_senders.size(),
             rlp_calls.data(),
@@ -12001,13 +12041,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_validation_controls_base_fee)
             rlp_block_id.size(),
             rlp_finalized_id.data(),
             rlp_finalized_id.size(),
-            simulate_gas_limit,
-            simulate_max_calls,
-            simulate_max_output_size,
             state_overrides,
             block_overrides,
-            test_case.validation,
-            false, // emit_native_transfer_logs
             complete_callback,
             (void *)&ctx);
         future.get();
@@ -12037,7 +12072,9 @@ TEST_F(EthCallFixture, eth_simulate_v1_validation_controls_base_fee)
 // `pre` accounts become state overrides and its `env` becomes block overrides
 // on top of an empty world; zero-valued `pre` fields need no override. The
 // simulation output omits storage, so a second block swaps in code that reads
-// back the slot written by the fixture transaction.
+// back the slot written by the fixture transaction. Mainnet would derive a
+// pre-Berlin fork from the fixture's block 1 at timestamp 1000, so the
+// fixture's fork is pinned.
 TEST(EthCallFixtureNoDb, eth_simulate_v1_chain_id)
 {
     using namespace monad::vm::utils;
@@ -12140,9 +12177,17 @@ TEST(EthCallFixtureNoDb, eth_simulate_v1_chain_id)
     struct callback_context ctx;
     boost::fibers::future<void> f = ctx.promise.get_future();
 
+    monad_eth_simulate_config const config{
+        .chain_config = CHAIN_CONFIG_ETHEREUM_MAINNET,
+        .revision = MONAD_ETH_CANCUN,
+        .gas_limit = simulate_gas_limit,
+        .max_calls = simulate_max_calls,
+        .max_output_size = simulate_max_output_size,
+        .validation = true,
+        .emit_native_transfer_logs = false};
     monad_executor_eth_simulate_submit(
         executor,
-        CHAIN_CONFIG_MONAD_DEVNET,
+        &config,
         rlp_senders.data(),
         rlp_senders.size(),
         rlp_calls.data(),
@@ -12154,13 +12199,8 @@ TEST(EthCallFixtureNoDb, eth_simulate_v1_chain_id)
         rlp_block_id.size(),
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
-        simulate_gas_limit,
-        simulate_max_calls,
-        simulate_max_output_size,
         so,
         bo,
-        true,
-        false,
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -12186,17 +12226,100 @@ TEST(EthCallFixtureNoDb, eth_simulate_v1_chain_id)
     auto const &call = block["calls"][0];
     EXPECT_EQ(call["status"], "0x1");
     EXPECT_EQ(call["returnData"], "0x");
-    // Monad charges the full gas limit.
-    EXPECT_EQ(call["gasUsed"], std::format("0x{:x}", tx_gas_limit));
+    // Intrinsic 21000 + CHAINID 2 + PUSH1 3 + cold zero-to-nonzero SSTORE
+    // 22100.
+    EXPECT_EQ(call["gasUsed"], std::format("0x{:x}", 43'105));
     EXPECT_TRUE(call["logs"].empty());
 
     // CHAINID reports the chain the simulation runs on.
-    MonadDevnet const devnet;
+    EthereumMainnet const mainnet;
     auto const expected_chain_id = std::format(
-        "0x{}", to_hex(store_be_as<bytes32_t>(devnet.get_chain_id())));
+        "0x{}", to_hex(store_be_as<bytes32_t>(mainnet.get_chain_id())));
     ASSERT_EQ(output[1]["calls"].size(), 1);
     EXPECT_EQ(output[1]["calls"][0]["status"], "0x1");
     EXPECT_EQ(output[1]["calls"][0]["returnData"], expected_chain_id);
+
+    monad_block_override_vec_destroy(bo);
+    monad_state_override_vec_destroy(so);
+    monad_executor_destroy(executor);
+}
+
+TEST(EthCallFixtureNoDb, eth_simulate_v1_pinned_revision_validation)
+{
+    auto *const executor = create_executor_without_db();
+
+    // A single block without calls.
+    auto const rlp_senders =
+        to_vec(rlp::encode_list2(rlp::encode_list2(byte_string{})));
+    auto const rlp_calls =
+        to_vec(rlp::encode_list2(rlp::encode_list2(byte_string{})));
+    BlockHeader const header{};
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+    auto *const so = monad_state_override_vec_create(1);
+    auto *const bo = monad_block_override_vec_create(1);
+
+    // The executor may still be completing a context's promise after the waiter
+    // wakes, so contexts outlive the executor.
+    std::vector<std::unique_ptr<callback_context>> contexts;
+    auto const simulate = [&](monad_chain_config const chain_config,
+                              int32_t const revision) {
+        auto &ctx =
+            *contexts.emplace_back(std::make_unique<callback_context>());
+        boost::fibers::future<void> f = ctx.promise.get_future();
+        monad_eth_simulate_config const config{
+            .chain_config = chain_config,
+            .revision = revision,
+            .gas_limit = simulate_gas_limit,
+            .max_calls = simulate_max_calls,
+            .max_output_size = simulate_max_output_size,
+            .validation = true,
+            .emit_native_transfer_logs = false};
+        monad_executor_eth_simulate_submit(
+            executor,
+            &config,
+            rlp_senders.data(),
+            rlp_senders.size(),
+            rlp_calls.data(),
+            rlp_calls.size(),
+            header.number,
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            rlp_finalized_id.data(),
+            rlp_finalized_id.size(),
+            so,
+            bo,
+            complete_callback,
+            (void *)&ctx);
+        f.get();
+        return std::make_pair(
+            ctx.result->status_code,
+            std::string{
+                ctx.result->message == nullptr ? "" : ctx.result->message});
+    };
+
+    EXPECT_EQ(
+        simulate(CHAIN_CONFIG_MONAD_DEVNET, MONAD_ETH_SIMULATE_REVISION_DEFAULT)
+            .first,
+        MONAD_STATUS_SUCCESS);
+
+    auto const [monad_status, monad_message] =
+        simulate(CHAIN_CONFIG_MONAD_DEVNET, MONAD_ETH_CANCUN);
+    EXPECT_EQ(monad_status, MONAD_STATUS_INTERNAL_ERROR);
+    EXPECT_EQ(
+        monad_message, "revision pinning is only supported on Ethereum chains");
+
+    for (int32_t const rev :
+         {static_cast<int32_t>(MONAD_ETH_ISTANBUL),
+          static_cast<int32_t>(MONAD_ETH_EXPERIMENTAL),
+          1000}) {
+        auto const [status, message] =
+            simulate(CHAIN_CONFIG_ETHEREUM_MAINNET, rev);
+        EXPECT_EQ(status, MONAD_STATUS_INTERNAL_ERROR) << rev;
+        EXPECT_EQ(message, "pinned revision is not supported") << rev;
+    }
 
     monad_block_override_vec_destroy(bo);
     monad_state_override_vec_destroy(so);

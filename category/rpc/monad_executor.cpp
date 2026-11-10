@@ -36,6 +36,7 @@
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/chain/chain_config.h>
+#include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/rlp/address_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
@@ -74,6 +75,7 @@
 #include <category/rpc/eth_simulate_block_hash_buffer.hpp>
 #include <category/rpc/lazy_block_hash.hpp>
 #include <category/rpc/null_db.hpp>
+#include <category/rpc/simulate_chain.hpp>
 #include <category/rpc/simulation_error.hpp>
 #include <category/rpc/utils/response_size.hpp>
 #include <category/vm/evm/result.hpp>
@@ -817,8 +819,6 @@ namespace
         trace::StateTracer system_call_state_tracer{std::monostate{}};
         auto chain_context =
             context_buffer.advance<traits>(senders, authorities);
-
-        static_assert(is_monad_trait_v<traits>);
         chain_context.mode = execution_mode;
 
         return execute_block<traits>(
@@ -850,27 +850,48 @@ namespace
         ChainContextBuffer &context_buffer,
         bool const emit_native_transfer_logs, Simulation const &execution_mode)
     {
-        static_assert(is_monad_trait_v<base_traits>);
-        auto const *const monad_chain =
-            dynamic_cast<MonadChain const *>(&chain);
-        MONAD_ASSERT_THROW(monad_chain, "Failed to cast chain to MonadChain");
-        auto const rev =
-            monad_chain->get_monad_revision(block.header.timestamp);
-        SWITCH_MONAD_TRAITS(
-            eth_simulate_execute_block,
-            chain,
-            parent,
-            block,
-            senders,
-            authorities,
-            block_state,
-            block_hash_buffer,
-            tx_exec_pool,
-            call_tracers,
-            state_tracers,
-            context_buffer,
-            emit_native_transfer_logs,
-            execution_mode);
+        if constexpr (is_monad_trait_v<base_traits>) {
+            auto const *const monad_chain =
+                dynamic_cast<MonadChain const *>(&chain);
+            MONAD_ASSERT_THROW(
+                monad_chain, "Failed to cast chain to MonadChain");
+            auto const rev =
+                monad_chain->get_monad_revision(block.header.timestamp);
+            SWITCH_MONAD_TRAITS(
+                eth_simulate_execute_block,
+                chain,
+                parent,
+                block,
+                senders,
+                authorities,
+                block_state,
+                block_hash_buffer,
+                tx_exec_pool,
+                call_tracers,
+                state_tracers,
+                context_buffer,
+                emit_native_transfer_logs,
+                execution_mode);
+        }
+        else {
+            monad_eth_revision const rev =
+                chain.get_revision(block.header.number, block.header.timestamp);
+            SWITCH_EVM_TRAITS(
+                eth_simulate_execute_block,
+                chain,
+                parent,
+                block,
+                senders,
+                authorities,
+                block_state,
+                block_hash_buffer,
+                tx_exec_pool,
+                call_tracers,
+                state_tracers,
+                context_buffer,
+                emit_native_transfer_logs,
+                execution_mode);
+        }
         MONAD_ASSERT_THROW(
             false, "Unreachable code reached in eth_simulate_dispatch_block");
     }
@@ -886,8 +907,8 @@ namespace
         mpt::RODb *const db, vm::VM &vm, fiber::FiberGroup &tx_exec_pool,
         struct monad_state_override_vec const &state_overrides,
         struct monad_block_override_vec const &block_overrides,
-        uint64_t const gas_limit, size_t const max_calls, size_t const max_size,
-        Simulation const execution_mode, bool emit_native_transfer_logs)
+        monad_eth_simulate_config const &config,
+        Simulation const execution_mode)
     {
         // TODO(dhil): Decide on the default timestamp increment.
         static constexpr uint64_t DEFAULT_TIMESTAMP_INCREMENT = 1;
@@ -913,7 +934,7 @@ namespace
         // Validate the inputs before constructing the simulation objects. This
         // validation procedure returns an error on bad input.
         BOOST_OUTCOME_TRY(eth_simulate_validate_inputs(
-            max_calls,
+            config.max_calls,
             DEFAULT_TIMESTAMP_INCREMENT,
             calls,
             block_overrides,
@@ -923,7 +944,7 @@ namespace
 
         // Calculate the maximum size of the in-memory structures that we are
         // willing to materialize this simulation.
-        size_t const soft_max_size = padded_max_size(max_size);
+        size_t const soft_max_size = padded_max_size(config.max_output_size);
 
         StateDb state_db{db};
         state_db.get().set_block_and_prefix(base_block_number, block_id);
@@ -1048,7 +1069,7 @@ namespace
                         call_tracers,
                         state_tracers,
                         context_buffer,
-                        emit_native_transfer_logs,
+                        config.emit_native_transfer_logs,
                         execution_mode));
 
                 // NOTE(dhil): Synthetic blocks are free, so we don't update
@@ -1144,7 +1165,9 @@ namespace
             state_tracers.reserve(calls[block_idx].size());
 
             size_t const remaining_size =
-                max_size > carried_size ? max_size - carried_size : 0;
+                config.max_output_size > carried_size
+                    ? config.max_output_size - carried_size
+                    : 0;
             size_t const call_tracer_max_size = std::max<size_t>(
                 1UL, // 1 byte minimum.
                 remaining_size /
@@ -1179,7 +1202,7 @@ namespace
                     call_tracers,
                     state_tracers,
                     context_buffer,
-                    emit_native_transfer_logs,
+                    config.emit_native_transfer_logs,
                     execution_mode));
 
             for (auto const &call_tracer : call_tracers) {
@@ -1207,7 +1230,7 @@ namespace
             // No overflow. Add the consumed gas.
             gas_consumed_so_far += gas_used;
             // We may have exceeded the gas limit.
-            if (MONAD_UNLIKELY(gas_consumed_so_far > gas_limit)) {
+            if (MONAD_UNLIKELY(gas_consumed_so_far > config.gas_limit)) {
                 return Result<nlohmann::json>::error_type{
                     SimulationError::GasLimitExceeded};
             }
@@ -1248,6 +1271,44 @@ namespace
         }
 
         return result;
+    }
+
+    // Constructs the chain for an eth_simulateV1 request. A non-negative
+    // `config.revision` fixes the fork of every simulated block.
+    Result<std::unique_ptr<Chain>> make_eth_simulate_chain(
+        monad_eth_simulate_config const &config, BlockHeader const &base_header)
+    {
+        auto chain = make_chain(config.chain_config);
+        if (config.revision < 0) {
+            // EthereumMainnet::get_revision asserts on blocks before the
+            // earliest supported fork. Simulated blocks only move forward from
+            // the base block, so checking the base block suffices.
+            if (MONAD_UNLIKELY(
+                    config.chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET &&
+                    base_header.timestamp <
+                        eth_forks::SHANGHAI_ACTIVATION_TIMESTAMP &&
+                    base_header.number <
+                        constants::EARLIEST_SUPPORTED_ETH_BLOCK_NUMBER)) {
+                return SimulationError::UnsupportedBaseRevision;
+            }
+            return chain;
+        }
+        if (MONAD_UNLIKELY(
+                config.chain_config != CHAIN_CONFIG_ETHEREUM_MAINNET &&
+                config.chain_config != CHAIN_CONFIG_HIVE_NET)) {
+            return SimulationError::RevisionPinningNotSupported;
+        }
+        // Range-check before the cast: out-of-range enum values are undefined.
+        if (MONAD_UNLIKELY(
+                config.revision >
+                    static_cast<int32_t>(MONAD_ETH_MAX_REVISION) ||
+                !SimulateEvmChain::is_supported_revision(
+                    static_cast<monad_eth_revision>(config.revision)))) {
+            return SimulationError::UnsupportedPinnedRevision;
+        }
+        return std::unique_ptr<Chain>{std::make_unique<SimulateEvmChain>(
+            std::move(chain),
+            static_cast<monad_eth_revision>(config.revision))};
     }
 }
 
@@ -2076,15 +2137,13 @@ struct monad_executor
     }
 
     void submit_eth_simulate_to_pool(
-        monad_chain_config const chain_config,
+        monad_eth_simulate_config const *const config,
         std::vector<std::vector<Transaction>> calls,
         std::vector<std::vector<Address>> senders,
         struct monad_state_override_vec const *const state_overrides,
         struct monad_block_override_vec const *const block_overrides,
         BlockHeader const &block_header, uint64_t const block_number,
         bytes32_t const &block_id, bytes32_t const &grandparent_id,
-        uint64_t const gas_limit, size_t const max_calls, size_t const max_size,
-        bool const validation, bool emit_native_transfer_logs,
         void (*complete)(monad_executor_result *, void *user), void *const user)
     {
         monad_executor_result *const result = new monad_executor_result();
@@ -2109,13 +2168,9 @@ struct monad_executor
              base_block_number = block_number,
              block_id = block_id,
              grandparent_id = grandparent_id,
-             chain_config = chain_config,
+             config = *config,
              db = select_db(block_number),
-             gas_limit = gas_limit,
-             max_calls = max_calls,
-             max_size = max_size,
-             execution_mode = Simulation{validation},
-             emit_native_transfer_logs = emit_native_transfer_logs,
+             execution_mode = Simulation{config->validation},
              fiber_group = &trace_block_group_,
              tx_exec_group = &trace_tx_exec_group_,
              &vm = vm_,
@@ -2161,12 +2216,33 @@ struct monad_executor
                             }
                         }
 
-                        auto const chain = make_chain(chain_config);
+                        BOOST_OUTCOME_TRY(
+                            auto const chain,
+                            make_eth_simulate_chain(config, block_header));
 
-                        if (chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET ||
-                            chain_config == CHAIN_CONFIG_HIVE_NET) {
-                            return Result<nlohmann::json>::error_type{
-                                SimulationError::UnsupportedChainConfig};
+                        if (config.chain_config ==
+                                CHAIN_CONFIG_ETHEREUM_MAINNET ||
+                            config.chain_config == CHAIN_CONFIG_HIVE_NET) {
+                            monad_eth_revision const rev = chain->get_revision(
+                                block_header.number, block_header.timestamp);
+                            SWITCH_EVM_TRAITS(
+                                eth_simulate_impl,
+                                *chain,
+                                calls,
+                                block_header,
+                                base_block_number,
+                                block_id,
+                                grandparent_id,
+                                senders,
+                                authorities,
+                                db,
+                                vm,
+                                *tx_exec_group->group,
+                                *state_overrides,
+                                *block_overrides,
+                                config,
+                                execution_mode);
+                            MONAD_ASSERT(false);
                         }
                         else {
                             auto const rev =
@@ -2188,11 +2264,8 @@ struct monad_executor
                                 *tx_exec_group->group,
                                 *state_overrides,
                                 *block_overrides,
-                                gas_limit,
-                                max_calls,
-                                max_size,
-                                execution_mode,
-                                emit_native_transfer_logs);
+                                config,
+                                execution_mode);
                             MONAD_ASSERT(false);
                         }
                     }();
@@ -2451,21 +2524,21 @@ namespace
 }
 
 void monad_executor_eth_simulate_submit(
-    struct monad_executor *executor, enum monad_chain_config chain_config,
+    struct monad_executor *executor,
+    struct monad_eth_simulate_config const *const config,
     uint8_t const *const rlp_senders, size_t rlp_senders_len,
     uint8_t const *const rlp_calls, size_t rlp_calls_len, uint64_t block_number,
     uint8_t const *const rlp_header, size_t rlp_header_len,
     uint8_t const *const rlp_block_id, size_t rlp_block_id_len,
     uint8_t const *const rlp_grandparent_block_id,
-    size_t const rlp_grandparent_block_id_len, uint64_t gas_limit,
-    size_t max_calls, size_t max_output_size,
+    size_t const rlp_grandparent_block_id_len,
     struct monad_state_override_vec const *const state_overrides,
     struct monad_block_override_vec const *const block_overrides,
-    bool const validation, bool emit_native_transfer_logs,
     void (*complete)(monad_executor_result *, void *user), void *user)
 {
 
     MONAD_ASSERT(executor);
+    MONAD_ASSERT(config);
     MONAD_ASSERT(rlp_senders);
     MONAD_ASSERT(rlp_calls);
     MONAD_ASSERT(rlp_header);
@@ -2511,7 +2584,7 @@ void monad_executor_eth_simulate_submit(
     auto const grandparent_block_id = grandparent_block_id_result.value();
 
     executor->submit_eth_simulate_to_pool(
-        chain_config,
+        config,
         txns,
         senders,
         state_overrides,
@@ -2520,11 +2593,6 @@ void monad_executor_eth_simulate_submit(
         block_number,
         block_id,
         grandparent_block_id,
-        gas_limit,
-        max_calls,
-        max_output_size,
-        validation,
-        emit_native_transfer_logs,
         complete,
         user);
 }

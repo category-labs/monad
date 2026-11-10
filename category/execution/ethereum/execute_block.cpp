@@ -39,6 +39,7 @@
 #include <category/execution/ethereum/execute_block.hpp>
 #include <category/execution/ethereum/execute_block_header.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
+#include <category/execution/ethereum/execution_modalities.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/process_requests.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
@@ -332,22 +333,25 @@ Result<std::vector<Receipt>> execute_block(
     }
 
     if constexpr (traits::eip_7685_active()) {
-        MONAD_ASSERT_THROW(
-            block.header.requests_hash.has_value(),
-            "block header must have requests hash when EIP-7685 is active");
-        BOOST_OUTCOME_TRY(
-            auto const computed_requests_hash,
-            process_requests<traits>(
-                chain,
-                state,
-                block_hash_buffer,
-                block.header,
-                system_call_state_tracer,
-                chain_ctx,
-                retvals));
-        if (MONAD_UNLIKELY(
-                computed_requests_hash != block.header.requests_hash.value())) {
-            return BlockError::InvalidRequestsHash;
+        if (!skip_process_requests_hash(chain_ctx.mode)) {
+            MONAD_ASSERT_THROW(
+                block.header.requests_hash.has_value(),
+                "block header must have requests hash when EIP-7685 is active");
+            BOOST_OUTCOME_TRY(
+                auto const computed_requests_hash,
+                process_requests<traits>(
+                    chain,
+                    state,
+                    block_hash_buffer,
+                    block.header,
+                    system_call_state_tracer,
+                    chain_ctx,
+                    retvals));
+            if (MONAD_UNLIKELY(
+                    computed_requests_hash !=
+                    block.header.requests_hash.value())) {
+                return BlockError::InvalidRequestsHash;
+            }
         }
     }
 

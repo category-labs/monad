@@ -17,11 +17,11 @@
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
 #include <category/core/runtime/uint256.hpp>
+#include <category/vm/evm/call_status.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/message.hpp>
 #include <category/vm/evm/result.hpp>
 #include <category/vm/evm/revision.h>
-#include <category/vm/evm/status_code.h>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/host.hpp>
 #include <category/vm/runtime/bin.hpp>
@@ -124,7 +124,7 @@ namespace monad::vm::runtime
         ctx->deduct_gas(gas - result.gas_left);
         ctx->gas_refund += result.gas_refund;
 
-        return (result.status_code == MONAD_STATUS_SUCCESS)
+        return (result.status_code == CallStatus::Success)
                    ? uint256_from_address(result.create_address)
                    : 0;
     }

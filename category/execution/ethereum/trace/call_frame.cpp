@@ -20,9 +20,9 @@
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
 #include <category/execution/ethereum/trace/call_frame.hpp>
+#include <category/vm/evm/call_status.hpp>
 #include <category/vm/evm/message.hpp>
 #include <category/vm/evm/opcodes.hpp>
-#include <category/vm/evm/status_code.h>
 
 #include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
@@ -81,11 +81,11 @@ nlohmann::json to_json(CallFrame const &f)
     res["input"] = "0x" + to_hex(f.input);
     res["output"] = "0x" + to_hex(f.output);
 
-    // If status == MONAD_STATUS_SUCCESS, no error field is shown
-    if (f.status == MONAD_STATUS_REVERT) {
+    // If status == CallStatus::Success, no error field is shown
+    if (f.status == CallStatus::Revert) {
         res["error"] = "REVERT";
     }
-    else if (f.status != MONAD_STATUS_SUCCESS) {
+    else if (f.status != CallStatus::Success) {
         res["error"] = "ERROR";
     }
 

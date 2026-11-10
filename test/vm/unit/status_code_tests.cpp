@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/vm/evm/status_code.h>
+#include <category/vm/evm/call_status.hpp>
 
 #include <test/vm/utils/evmc_bridge.hpp>
 
@@ -33,8 +33,7 @@ namespace
 {
     constexpr auto evmc_status_codes =
         magic_enum::enum_values<evmc_status_code>();
-    constexpr auto monad_status_codes =
-        magic_enum::enum_values<monad_status_code>();
+    constexpr auto call_statuses = magic_enum::enum_values<monad::CallStatus>();
 }
 
 TEST(StatusCode, MirrorsEvmcValues)
@@ -49,7 +48,7 @@ TEST(StatusCode, MirrorsEvmcValues)
 
 TEST(StatusCode, RoundTripsThroughEvmc)
 {
-    for (auto const code : monad_status_codes) {
+    for (auto const code : call_statuses) {
         EXPECT_EQ(
             std::to_underlying(monad::vm::test::from_evmc_status_code(
                 monad::vm::test::to_evmc_status_code(code))),

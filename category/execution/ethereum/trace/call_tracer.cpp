@@ -26,9 +26,9 @@
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
+#include <category/vm/evm/call_status.hpp>
 #include <category/vm/evm/message.hpp>
 #include <category/vm/evm/result.hpp>
-#include <category/vm/evm/status_code.h>
 
 #include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
@@ -264,7 +264,7 @@ void CallTracer::on_enter(vm::Message const &msg)
                      ? byte_string{}
                      : byte_string{msg.input_data, msg.input_size},
         .output = {},
-        .status = MONAD_STATUS_FAILURE,
+        .status = CallStatus::Failure,
         .depth = depth,
         .logs = std::vector<CallFrame::Log>{},
     });
@@ -272,8 +272,8 @@ void CallTracer::on_enter(vm::Message const &msg)
 
 void CallTracer::on_exit(vm::Result const &res)
 {
-    size_t const output_size = res.status_code == MONAD_STATUS_SUCCESS ||
-                                       res.status_code == MONAD_STATUS_REVERT
+    size_t const output_size = res.status_code == CallStatus::Success ||
+                                       res.status_code == CallStatus::Revert
                                    ? res.output_size
                                    : 0;
     if (!(size_ += output_size)) {
@@ -287,8 +287,8 @@ void CallTracer::on_exit(vm::Result const &res)
         "Frame gas is less than remaining gas");
     frame.gas_used = frame.gas - static_cast<uint64_t>(res.gas_left);
 
-    if (res.status_code == MONAD_STATUS_SUCCESS ||
-        res.status_code == MONAD_STATUS_REVERT) {
+    if (res.status_code == CallStatus::Success ||
+        res.status_code == CallStatus::Revert) {
         frame.output = res.output_size == 0
                            ? byte_string{}
                            : byte_string{res.output_data, res.output_size};
@@ -340,7 +340,7 @@ void CallTracer::on_self_destruct(
         .gas_used = 0,
         .input = {},
         .output = {},
-        .status = MONAD_STATUS_SUCCESS, // TODO
+        .status = CallStatus::Success, // TODO
         .depth = parent.depth + 1,
         .logs = std::vector<CallFrame::Log>{},
     });

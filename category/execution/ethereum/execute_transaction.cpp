@@ -40,11 +40,11 @@
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/staking/priority_fee.hpp>
+#include <category/vm/evm/call_status.hpp>
 #include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/message.hpp>
 #include <category/vm/evm/result.hpp>
-#include <category/vm/evm/status_code.h>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/memory_pool.hpp>
@@ -411,7 +411,7 @@ Receipt ExecuteTransaction<traits>::execute_final(
     state.destruct_touched_dead();
 
     Receipt receipt{
-        .status = result.status_code == MONAD_STATUS_SUCCESS ? 1u : 0u,
+        .status = result.status_code == CallStatus::Success ? 1u : 0u,
         .gas_used = gas_used,
         .type = tx_.type};
     for (auto const &log : state.logs()) {

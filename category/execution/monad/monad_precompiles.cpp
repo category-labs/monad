@@ -20,10 +20,10 @@
 #include <category/execution/monad/reserve_balance/reserve_balance_contract.hpp>
 #include <category/execution/monad/staking/staking_contract.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
+#include <category/vm/evm/call_status.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/message.hpp>
 #include <category/vm/evm/result.hpp>
-#include <category/vm/evm/status_code.h>
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
@@ -38,14 +38,14 @@ std::optional<vm::Result> check_call_monad_precompile(
     }
 
     if (MONAD_UNLIKELY(msg.kind != vm::CallKind::Call) || (msg.flags != 0)) {
-        return vm::Result{MONAD_STATUS_REJECTED};
+        return vm::Result{CallStatus::Rejected};
     }
 
     byte_string_view input{msg.input_data, msg.input_size};
     auto const [method, cost] =
         Contract::template precompile_dispatch<traits>(input);
     if (MONAD_UNLIKELY(std::cmp_less(msg.gas, cost))) {
-        return vm::Result{MONAD_STATUS_OUT_OF_GAS};
+        return vm::Result{CallStatus::OutOfGas};
     }
 
     Contract contract = Contract{state, call_tracer, log_native_transfers};
@@ -54,14 +54,14 @@ std::optional<vm::Result> check_call_monad_precompile(
         int64_t const gas_left = msg.gas - static_cast<int64_t>(cost);
         int64_t const gas_refund = 0;
         return vm::Result(
-            MONAD_STATUS_SUCCESS,
+            CallStatus::Success,
             gas_left,
             gas_refund,
             res.value().data(),
             res.value().size());
     }
     return vm::Result(
-        MONAD_STATUS_REVERT,
+        CallStatus::Revert,
         0 /* gas left */,
         0 /* gas refund */,
         reinterpret_cast<uint8_t const *>(res.error().message().data()),

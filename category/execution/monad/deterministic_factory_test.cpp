@@ -36,10 +36,10 @@
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/mpt/db.hpp>
 #include <category/vm/code.hpp>
+#include <category/vm/evm/call_status.hpp>
 #include <category/vm/evm/message.hpp>
 #include <category/vm/evm/monad/revision.h>
 #include <category/vm/evm/result.hpp>
-#include <category/vm/evm/status_code.h>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/evm/tx_context.hpp>
 #include <category/vm/utils/evm-as.hpp>
@@ -180,7 +180,7 @@ TEST_F(DeterministicFactoryTest, create2_deploys_at_expected_address)
         FACTORY_ADDRESS, salt, keccak256(initcode_view));
 
     auto const result = call_factory(salt, initcode);
-    ASSERT_EQ(result.status_code, MONAD_STATUS_SUCCESS);
+    ASSERT_EQ(result.status_code, CallStatus::Success);
     ASSERT_EQ(result.output_size, sizeof(Address));
     Address actual{};
     memcpy(actual.bytes, result.output_data, sizeof(Address));
@@ -199,11 +199,11 @@ TEST_F(DeterministicFactoryTest, create2_collision_reverts)
     auto const initcode = trivial_initcode();
 
     auto const first = call_factory(salt, initcode);
-    ASSERT_EQ(first.status_code, MONAD_STATUS_SUCCESS);
+    ASSERT_EQ(first.status_code, CallStatus::Success);
 
     // Same salt and initcode: CREATE2 fails on the address collision and
     // the proxy reverts with no data.
     auto const second = call_factory(salt, initcode);
-    EXPECT_EQ(second.status_code, MONAD_STATUS_REVERT);
+    EXPECT_EQ(second.status_code, CallStatus::Revert);
     EXPECT_EQ(second.output_size, 0);
 }

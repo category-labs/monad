@@ -20,7 +20,7 @@
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
-#include <category/vm/evm/status_code.h>
+#include <category/vm/evm/call_status.hpp>
 
 #include <nlohmann/json_fwd.hpp>
 
@@ -81,7 +81,7 @@ struct CallFrame
     uint64_t gas_used{};
     byte_string input{};
     byte_string output{};
-    monad_status_code status{};
+    CallStatus status{};
     uint64_t depth{};
     std::optional<std::vector<Log>> logs{};
 

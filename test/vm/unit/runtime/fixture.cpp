@@ -101,7 +101,7 @@ namespace monad::vm::test
     {
         auto output_data = result_data();
         return {
-            .status_code = MONAD_STATUS_SUCCESS,
+            .status_code = CallStatus::Success,
             .gas_left = gas_left,
             .gas_refund = gas_refund,
             .output_data = output_data.data(),
@@ -116,7 +116,7 @@ namespace monad::vm::test
     {
         auto output_data = result_data();
         return {
-            .status_code = MONAD_STATUS_SUCCESS,
+            .status_code = CallStatus::Success,
             .gas_left = gas_left,
             .gas_refund = gas_refund,
             .output_data = output_data.data(),
@@ -125,7 +125,7 @@ namespace monad::vm::test
         };
     }
 
-    vm::RawResult RuntimeTestBase::failure_result(monad_status_code const sc)
+    vm::RawResult RuntimeTestBase::failure_result(CallStatus const sc)
     {
         auto output_data = result_data();
         return {

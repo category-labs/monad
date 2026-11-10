@@ -183,7 +183,7 @@ struct StateHost final : public StateHostBase
                     ::monad::execute_create_message<traits>(this, state_, msg);
 
                 // EIP-211
-                if (result.status_code != MONAD_STATUS_REVERT) {
+                if (result.status_code != CallStatus::Revert) {
                     result = vm::Result{
                         result.status_code,
                         result.gas_left,

@@ -233,13 +233,13 @@ namespace monad::vm::test
             auto expected = std::move(result_);
 
             switch (expected.status_code) {
-            case MONAD_STATUS_SUCCESS:
-            case MONAD_STATUS_REVERT:
+            case CallStatus::Success:
+            case CallStatus::Revert:
                 ASSERT_EQ(actual.status_code, expected.status_code);
                 break;
             default:
-                ASSERT_NE(actual.status_code, MONAD_STATUS_SUCCESS);
-                ASSERT_NE(actual.status_code, MONAD_STATUS_REVERT);
+                ASSERT_NE(actual.status_code, CallStatus::Success);
+                ASSERT_NE(actual.status_code, CallStatus::Revert);
                 break;
             }
 

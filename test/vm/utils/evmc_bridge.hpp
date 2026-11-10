@@ -19,10 +19,10 @@
 #include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/vm/evm/access_status.hpp>
+#include <category/vm/evm/call_status.hpp>
 #include <category/vm/evm/message.hpp>
 #include <category/vm/evm/page_storage_status.hpp>
 #include <category/vm/evm/revision.h>
-#include <category/vm/evm/status_code.h>
 #include <category/vm/evm/storage_status.hpp>
 #include <category/vm/evm/tx_context.hpp>
 
@@ -59,39 +59,39 @@ namespace monad::vm::test
     MONAD_ASSERT_ENUM_EQ(
         StorageStatus::ModifiedRestored, EVMC_STORAGE_MODIFIED_RESTORED);
 
-    MONAD_ASSERT_ENUM_EQ(MONAD_STATUS_SUCCESS, EVMC_SUCCESS);
-    MONAD_ASSERT_ENUM_EQ(MONAD_STATUS_FAILURE, EVMC_FAILURE);
-    MONAD_ASSERT_ENUM_EQ(MONAD_STATUS_REVERT, EVMC_REVERT);
-    MONAD_ASSERT_ENUM_EQ(MONAD_STATUS_OUT_OF_GAS, EVMC_OUT_OF_GAS);
+    MONAD_ASSERT_ENUM_EQ(CallStatus::Success, EVMC_SUCCESS);
+    MONAD_ASSERT_ENUM_EQ(CallStatus::Failure, EVMC_FAILURE);
+    MONAD_ASSERT_ENUM_EQ(CallStatus::Revert, EVMC_REVERT);
+    MONAD_ASSERT_ENUM_EQ(CallStatus::OutOfGas, EVMC_OUT_OF_GAS);
     MONAD_ASSERT_ENUM_EQ(
-        MONAD_STATUS_INVALID_INSTRUCTION, EVMC_INVALID_INSTRUCTION);
+        CallStatus::InvalidInstruction, EVMC_INVALID_INSTRUCTION);
     MONAD_ASSERT_ENUM_EQ(
-        MONAD_STATUS_UNDEFINED_INSTRUCTION, EVMC_UNDEFINED_INSTRUCTION);
-    MONAD_ASSERT_ENUM_EQ(MONAD_STATUS_STACK_OVERFLOW, EVMC_STACK_OVERFLOW);
-    MONAD_ASSERT_ENUM_EQ(MONAD_STATUS_STACK_UNDERFLOW, EVMC_STACK_UNDERFLOW);
+        CallStatus::UndefinedInstruction, EVMC_UNDEFINED_INSTRUCTION);
+    MONAD_ASSERT_ENUM_EQ(CallStatus::StackOverflow, EVMC_STACK_OVERFLOW);
+    MONAD_ASSERT_ENUM_EQ(CallStatus::StackUnderflow, EVMC_STACK_UNDERFLOW);
     MONAD_ASSERT_ENUM_EQ(
-        MONAD_STATUS_BAD_JUMP_DESTINATION, EVMC_BAD_JUMP_DESTINATION);
+        CallStatus::BadJumpDestination, EVMC_BAD_JUMP_DESTINATION);
     MONAD_ASSERT_ENUM_EQ(
-        MONAD_STATUS_INVALID_MEMORY_ACCESS, EVMC_INVALID_MEMORY_ACCESS);
+        CallStatus::InvalidMemoryAccess, EVMC_INVALID_MEMORY_ACCESS);
     MONAD_ASSERT_ENUM_EQ(
-        MONAD_STATUS_CALL_DEPTH_EXCEEDED, EVMC_CALL_DEPTH_EXCEEDED);
+        CallStatus::CallDepthExceeded, EVMC_CALL_DEPTH_EXCEEDED);
     MONAD_ASSERT_ENUM_EQ(
-        MONAD_STATUS_STATIC_MODE_VIOLATION, EVMC_STATIC_MODE_VIOLATION);
+        CallStatus::StaticModeViolation, EVMC_STATIC_MODE_VIOLATION);
     MONAD_ASSERT_ENUM_EQ(
-        MONAD_STATUS_PRECOMPILE_FAILURE, EVMC_PRECOMPILE_FAILURE);
+        CallStatus::PrecompileFailure, EVMC_PRECOMPILE_FAILURE);
     MONAD_ASSERT_ENUM_EQ(
-        MONAD_STATUS_CONTRACT_VALIDATION_FAILURE,
+        CallStatus::ContractValidationFailure,
         EVMC_CONTRACT_VALIDATION_FAILURE);
     MONAD_ASSERT_ENUM_EQ(
-        MONAD_STATUS_ARGUMENT_OUT_OF_RANGE, EVMC_ARGUMENT_OUT_OF_RANGE);
+        CallStatus::ArgumentOutOfRange, EVMC_ARGUMENT_OUT_OF_RANGE);
     MONAD_ASSERT_ENUM_EQ(
-        MONAD_STATUS_INSUFFICIENT_BALANCE, EVMC_INSUFFICIENT_BALANCE);
+        CallStatus::InsufficientBalance, EVMC_INSUFFICIENT_BALANCE);
     MONAD_ASSERT_ENUM_EQ(
-        MONAD_STATUS_RESERVE_BALANCE_VIOLATION,
+        CallStatus::ReserveBalanceViolation,
         EVMC_MONAD_RESERVE_BALANCE_VIOLATION);
-    MONAD_ASSERT_ENUM_EQ(MONAD_STATUS_INTERNAL_ERROR, EVMC_INTERNAL_ERROR);
-    MONAD_ASSERT_ENUM_EQ(MONAD_STATUS_REJECTED, EVMC_REJECTED);
-    MONAD_ASSERT_ENUM_EQ(MONAD_STATUS_OUT_OF_MEMORY, EVMC_OUT_OF_MEMORY);
+    MONAD_ASSERT_ENUM_EQ(CallStatus::InternalError, EVMC_INTERNAL_ERROR);
+    MONAD_ASSERT_ENUM_EQ(CallStatus::Rejected, EVMC_REJECTED);
+    MONAD_ASSERT_ENUM_EQ(CallStatus::OutOfMemory, EVMC_OUT_OF_MEMORY);
 
     MONAD_ASSERT_ENUM_EQ(MONAD_ETH_FRONTIER, EVMC_FRONTIER);
     MONAD_ASSERT_ENUM_EQ(MONAD_ETH_OSAKA, EVMC_OSAKA);
@@ -151,14 +151,14 @@ namespace monad::vm::test
             .first_page_write = s.first_page_write, .grew_state = s.grew_state};
     }
 
-    inline evmc_status_code to_evmc_status_code(monad_status_code const c)
+    inline evmc_status_code to_evmc_status_code(CallStatus const c)
     {
         return static_cast<evmc_status_code>(std::to_underlying(c));
     }
 
-    inline monad_status_code from_evmc_status_code(evmc_status_code const c)
+    inline CallStatus from_evmc_status_code(evmc_status_code const c)
     {
-        return static_cast<monad_status_code>(std::to_underlying(c));
+        return static_cast<CallStatus>(std::to_underlying(c));
     }
 
     // Amsterdam and later have no evmc counterpart.

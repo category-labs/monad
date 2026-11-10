@@ -130,15 +130,15 @@ namespace monad::vm::fuzzing
                 compiler_result.output_data, compiler_result.output_size)));
 
         switch (spec_result.status_code) {
-        case MONAD_STATUS_SUCCESS:
-        case MONAD_STATUS_REVERT:
+        case CallStatus::Success:
+        case CallStatus::Revert:
             MONAD_ASSERT(
                 spec_result.status_code == compiler_result.status_code);
             break;
-        case MONAD_STATUS_OUT_OF_GAS: {
+        case CallStatus::OutOfGas: {
             if (strict_out_of_gas) {
                 MONAD_ASSERT(
-                    compiler_result.status_code == MONAD_STATUS_OUT_OF_GAS);
+                    compiler_result.status_code == CallStatus::OutOfGas);
             }
             else {
                 // For the compiler, we allow a relaxed check for out-of-gas,
@@ -147,14 +147,14 @@ namespace monad::vm::fuzzing
                 // statically produce a generic error for code that would
                 // dynamically run out of gas.
                 MONAD_ASSERT(
-                    compiler_result.status_code == MONAD_STATUS_OUT_OF_GAS ||
-                    compiler_result.status_code == MONAD_STATUS_FAILURE);
+                    compiler_result.status_code == CallStatus::OutOfGas ||
+                    compiler_result.status_code == CallStatus::Failure);
             }
             break;
         }
         default:
-            MONAD_ASSERT(compiler_result.status_code != MONAD_STATUS_SUCCESS);
-            MONAD_ASSERT(compiler_result.status_code != MONAD_STATUS_REVERT);
+            MONAD_ASSERT(compiler_result.status_code != CallStatus::Success);
+            MONAD_ASSERT(compiler_result.status_code != CallStatus::Revert);
             break;
         }
     }

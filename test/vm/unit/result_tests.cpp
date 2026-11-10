@@ -14,8 +14,8 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/address.hpp>
+#include <category/vm/evm/call_status.hpp>
 #include <category/vm/evm/result.hpp>
-#include <category/vm/evm/status_code.h>
 
 #include <test/vm/utils/evmc_result.hpp>
 
@@ -26,6 +26,7 @@
 #include <cstring>
 #include <utility>
 
+using namespace monad;
 using namespace monad::vm;
 
 namespace
@@ -48,8 +49,8 @@ namespace
 
 TEST(Result, CopyingConstructorCopiesOutput)
 {
-    Result const r{MONAD_STATUS_SUCCESS, 5, 1, data, sizeof(data)};
-    EXPECT_EQ(r.status_code, MONAD_STATUS_SUCCESS);
+    Result const r{CallStatus::Success, 5, 1, data, sizeof(data)};
+    EXPECT_EQ(r.status_code, CallStatus::Success);
     EXPECT_EQ(r.gas_left, 5);
     EXPECT_EQ(r.gas_refund, 1);
     EXPECT_NE(r.output_data, data);
@@ -58,7 +59,7 @@ TEST(Result, CopyingConstructorCopiesOutput)
 
 TEST(Result, EmptyOutputIsNull)
 {
-    Result const r{MONAD_STATUS_SUCCESS, 0, 0, data, 0};
+    Result const r{CallStatus::Success, 0, 0, data, 0};
     EXPECT_EQ(r.output_data, nullptr);
     EXPECT_EQ(r.output_size, 0u);
 }
@@ -67,7 +68,7 @@ TEST(Result, AdoptingConstructorTakesOwnership)
 {
     auto *const buf = malloc_copy_of_data();
     Result const r{RawResult{
-        .status_code = MONAD_STATUS_REVERT,
+        .status_code = CallStatus::Revert,
         .gas_left = 7,
         .gas_refund = 0,
         .output_data = buf,
@@ -79,7 +80,7 @@ TEST(Result, AdoptingConstructorTakesOwnership)
 
 TEST(Result, MoveEmptiesSource)
 {
-    Result a{MONAD_STATUS_SUCCESS, 1, 0, data, sizeof(data)};
+    Result a{CallStatus::Success, 1, 0, data, sizeof(data)};
     auto const *const buf = a.output_data;
     Result const b{std::move(a)};
     EXPECT_EQ(b.output_data, buf);
@@ -89,18 +90,18 @@ TEST(Result, MoveEmptiesSource)
 
 TEST(Result, MoveAssignReplacesOutput)
 {
-    Result a{MONAD_STATUS_SUCCESS, 1, 0, data, sizeof(data)};
-    Result b{MONAD_STATUS_REVERT, 2, 0, data, sizeof(data)};
+    Result a{CallStatus::Success, 1, 0, data, sizeof(data)};
+    Result b{CallStatus::Revert, 2, 0, data, sizeof(data)};
     auto const *const buf = b.output_data;
     a = std::move(b);
-    EXPECT_EQ(a.status_code, MONAD_STATUS_REVERT);
+    EXPECT_EQ(a.status_code, CallStatus::Revert);
     EXPECT_EQ(a.output_data, buf);
     EXPECT_EQ(b.output_data, nullptr);
 }
 
 TEST(Result, SelfMoveAssignKeepsOutput)
 {
-    Result a{MONAD_STATUS_SUCCESS, 1, 0, data, sizeof(data)};
+    Result a{CallStatus::Success, 1, 0, data, sizeof(data)};
     auto const *const buf = a.output_data;
     auto &alias = a;
     a = std::move(alias);
@@ -110,7 +111,7 @@ TEST(Result, SelfMoveAssignKeepsOutput)
 
 TEST(Result, ReleaseRawGivesUpOwnership)
 {
-    Result r{MONAD_STATUS_SUCCESS, 3, 0, data, sizeof(data)};
+    Result r{CallStatus::Success, 3, 0, data, sizeof(data)};
     auto const raw = r.release_raw();
     EXPECT_EQ(r.output_data, nullptr);
     EXPECT_EQ(raw.gas_left, 3);
@@ -121,11 +122,11 @@ TEST(Result, ReleaseRawGivesUpOwnership)
 
 TEST(Result, EvmcRoundTripKeepsFields)
 {
-    Result in{MONAD_STATUS_REVERT, 9, 0, data, sizeof(data)};
+    Result in{CallStatus::Revert, 9, 0, data, sizeof(data)};
     in.create_address = monad::Address{0x42};
     auto const out =
         test::from_evmc_result(test::to_evmc_result(std::move(in)));
-    EXPECT_EQ(out.status_code, MONAD_STATUS_REVERT);
+    EXPECT_EQ(out.status_code, CallStatus::Revert);
     EXPECT_EQ(out.gas_left, 9);
     EXPECT_EQ(out.create_address, monad::Address{0x42});
     EXPECT_TRUE(holds_data(out));

@@ -16,8 +16,8 @@
 #pragma once
 
 #include <category/core/address.hpp>
+#include <category/vm/evm/call_status.hpp>
 #include <category/vm/evm/result.hpp>
-#include <category/vm/evm/status_code.h>
 
 #include <test/vm/utils/evmc_bridge.hpp>
 

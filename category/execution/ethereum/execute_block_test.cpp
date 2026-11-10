@@ -45,10 +45,10 @@
 #include <category/mpt/traverse_util.hpp>
 #include <category/mpt/util.hpp>
 #include <category/vm/code.hpp>
+#include <category/vm/evm/call_status.hpp>
 #include <category/vm/evm/message.hpp>
 #include <category/vm/evm/monad/revision.h>
 #include <category/vm/evm/result.hpp>
-#include <category/vm/evm/status_code.h>
 #include <category/vm/vm.hpp>
 #include <monad/test/traits_test.hpp>
 
@@ -846,7 +846,7 @@ TYPED_TEST(TraitsTest, call_frames_refund)
         .value = 0,
         .gas = 0x186a0,
         .gas_used = gas_used,
-        .status = MONAD_STATUS_SUCCESS,
+        .status = CallStatus::Success,
         .depth = 0,
         .logs = std::vector<CallFrame::Log>{},
     };

@@ -20,25 +20,29 @@
 #include <category/core/bytes.hpp>
 #include <category/core/runtime/non_temporal_memory.hpp>
 #include <category/core/runtime/uint256.hpp>
+#include <category/core/throw.hpp>
+#include <category/vm/evm/access_status.hpp>
 #include <category/vm/evm/call_status.hpp>
 #include <category/vm/evm/message.hpp>
+#include <category/vm/evm/page_storage_status.hpp>
 #include <category/vm/evm/result.hpp>
+#include <category/vm/evm/storage_status.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/evm/tx_context.hpp>
+#include <category/vm/host.hpp>
 #include <category/vm/runtime/bin.hpp>
+#include <category/vm/runtime/engine_timer.hpp>
 #include <category/vm/runtime/exit.hpp>
 #include <category/vm/runtime/transmute.hpp>
 
 #include <cstddef>
+#include <cstdint>
+#include <exception>
+#include <optional>
 #include <span>
 #include <type_traits>
 #include <variant>
 #include <vector>
-
-namespace monad::vm
-{
-    class Host;
-}
 
 namespace monad::vm::runtime
 {
@@ -231,6 +235,132 @@ namespace monad::vm::runtime
         }
     };
 
+    struct Context;
+
+    /// The VM's only way to call the host: each call is charged to the host
+    /// timer, and an exception unwinds the frame instead of VM code.
+    class GuardedHost
+    {
+    public:
+        explicit GuardedHost(Host *const host) noexcept
+            : host_{host}
+        {
+        }
+
+        bool account_exists(Address const &address)
+        {
+            return guard([&] { return host_->account_exists(address); });
+        }
+
+        bytes32_t get_storage(Address const &address, bytes32_t const &key)
+        {
+            return guard([&] { return host_->get_storage(address, key); });
+        }
+
+        StorageStatus set_storage(
+            Address const &address, bytes32_t const &key,
+            bytes32_t const &value)
+        {
+            return guard(
+                [&] { return host_->set_storage(address, key, value); });
+        }
+
+        uint256_t get_balance(Address const &address)
+        {
+            return guard([&] { return host_->get_balance(address); });
+        }
+
+        size_t get_code_size(Address const &address)
+        {
+            return guard([&] { return host_->get_code_size(address); });
+        }
+
+        bytes32_t get_code_hash(Address const &address)
+        {
+            return guard([&] { return host_->get_code_hash(address); });
+        }
+
+        size_t copy_code(
+            Address const &address, size_t const code_offset,
+            uint8_t *const buffer_data, size_t const buffer_size)
+        {
+            return guard([&] {
+                return host_->copy_code(
+                    address, code_offset, buffer_data, buffer_size);
+            });
+        }
+
+        bool selfdestruct(Address const &address, Address const &beneficiary)
+        {
+            return guard(
+                [&] { return host_->selfdestruct(address, beneficiary); });
+        }
+
+        vm::Result call(Message const &msg)
+        {
+            return guard([&] { return host_->call(msg); });
+        }
+
+        bytes32_t get_block_hash(int64_t const block_number)
+        {
+            return guard([&] { return host_->get_block_hash(block_number); });
+        }
+
+        void emit_log(
+            Address const &address, uint8_t const *const data,
+            size_t const data_size, bytes32_t const topics[],
+            size_t const num_topics)
+        {
+            guard([&] {
+                host_->emit_log(address, data, data_size, topics, num_topics);
+            });
+        }
+
+        AccessStatus access_account(Address const &address)
+        {
+            return guard([&] { return host_->access_account(address); });
+        }
+
+        AccessStatus
+        access_storage(Address const &address, bytes32_t const &key)
+        {
+            return guard([&] { return host_->access_storage(address, key); });
+        }
+
+        bytes32_t
+        get_transient_storage(Address const &address, bytes32_t const &key)
+        {
+            return guard(
+                [&] { return host_->get_transient_storage(address, key); });
+        }
+
+        void set_transient_storage(
+            Address const &address, bytes32_t const &key,
+            bytes32_t const &value)
+        {
+            guard([&] { host_->set_transient_storage(address, key, value); });
+        }
+
+        PageStorageStatus update_page(
+            Address const &address, bytes32_t const &key,
+            StorageStatus const status)
+        {
+            return guard(
+                [&] { return host_->update_page(address, key, status); });
+        }
+
+        std::optional<Address> resolve_delegation(Address const &address)
+        {
+            return guard([&] { return host_->resolve_delegation(address); });
+        }
+
+    private:
+        template <typename F>
+        auto guard(F const &f) -> decltype(f());
+
+        Host *host_;
+    };
+
     struct Context
     {
         static Context from(
@@ -240,7 +370,7 @@ namespace monad::vm::runtime
         static Context
         empty(uint8_t *memory_handle, uint32_t memory_capacity) noexcept;
 
-        Host *host;
+        GuardedHost host;
 
         int64_t gas_remaining;
         int64_t gas_refund;
@@ -253,6 +383,9 @@ namespace monad::vm::runtime
 
         exit_stack_ptr_t exit_stack_ptr = nullptr;
         bool is_stack_unwinding_active = false;
+
+        EngineTimer engine_timer{};
+        std::exception_ptr host_exception{};
 
         [[gnu::always_inline]]
         constexpr void deduct_gas(int64_t const gas) noexcept
@@ -404,6 +537,26 @@ namespace monad::vm::runtime
     };
 
     // Update context.S accordingly if these offsets change:
+    template <typename F>
+    [[gnu::always_inline]]
+    inline auto GuardedHost::guard(F const &f) -> decltype(f())
+    {
+        // `host` is the first member of `Context`, so they share an address.
+        auto &ctx = *reinterpret_cast<Context *>(this);
+        MONAD_TRY
+        {
+            EngineTimer::Scope const timer{ctx.engine_timer, EngineTimer::Host};
+            return f();
+        }
+        MONAD_CATCH(...)
+        {
+            ctx.host_exception = std::current_exception();
+        }
+        ctx.stack_unwind();
+    }
+
+    static_assert(std::is_standard_layout_v<Context>);
+    static_assert(offsetof(Context, host) == 0);
     static_assert(offsetof(Context, gas_remaining) == 8);
     static_assert(offsetof(Context, memory) == 256);
     static_assert(offsetof(Memory, size) == 0);

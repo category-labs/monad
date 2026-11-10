@@ -86,7 +86,6 @@ namespace monad::vm
             auto result = rt_ctx.template copy_to_result<traits>();
             rt_ctx.template return_to<traits>(prev_rt_ctx);
             (void)host.set_runtime_context(prev_rt_ctx);
-            host.rethrow_on_active_exception();
             return result;
         }
 
@@ -104,7 +103,6 @@ namespace monad::vm
             auto result = rt_ctx.template copy_to_result<traits>();
             rt_ctx.template return_to<traits>(prev_rt_ctx);
             (void)host.set_runtime_context(prev_rt_ctx);
-            host.rethrow_on_active_exception();
             return result;
         }
     };

@@ -39,12 +39,12 @@ namespace monad::vm::runtime
 
         auto const address = address_from_uint256(*address_ptr);
 
-        auto const access_status = ctx->host->access_account(address);
+        auto const access_status = ctx->host.access_account(address);
         if (access_status == AccessStatus::Cold) {
             ctx->deduct_gas(traits::cold_account_cost());
         }
 
-        *result_ptr = ctx->host->get_balance(address);
+        *result_ptr = ctx->host.get_balance(address);
     }
 
     EXPLICIT_TRAITS(balance);
@@ -134,7 +134,7 @@ namespace monad::vm::runtime
 
         auto const address = address_from_uint256(*address_ptr);
 
-        auto const access_status = ctx->host->access_account(address);
+        auto const access_status = ctx->host.access_account(address);
         if (access_status == AccessStatus::Cold) {
             ctx->deduct_gas(traits::cold_account_cost());
         }
@@ -144,7 +144,7 @@ namespace monad::vm::runtime
 
             auto *dest_ptr = ctx->memory.data + *dest_offset;
             auto const n =
-                ctx->host->copy_code(address, offset, dest_ptr, *size);
+                ctx->host.copy_code(address, offset, dest_ptr, *size);
 
             auto *begin = dest_ptr + static_cast<uint32_t>(n);
             auto *end = dest_ptr + *size;
@@ -195,12 +195,12 @@ namespace monad::vm::runtime
 
         auto const address = address_from_uint256(*address_ptr);
 
-        auto const access_status = ctx->host->access_account(address);
+        auto const access_status = ctx->host.access_account(address);
         if (access_status == AccessStatus::Cold) {
             ctx->deduct_gas(traits::cold_account_cost());
         }
 
-        auto const hash = ctx->host->get_code_hash(address);
+        auto const hash = ctx->host.get_code_hash(address);
         *result_ptr = load_be<uint256_t>(hash);
     }
 
@@ -214,12 +214,12 @@ namespace monad::vm::runtime
 
         auto const address = address_from_uint256(*address_ptr);
 
-        auto const access_status = ctx->host->access_account(address);
+        auto const access_status = ctx->host.access_account(address);
         if (access_status == AccessStatus::Cold) {
             ctx->deduct_gas(traits::cold_account_cost());
         }
 
-        *result_ptr = ctx->host->get_code_size(address);
+        *result_ptr = ctx->host.get_code_size(address);
     }
 
     EXPLICIT_TRAITS(extcodesize);

@@ -26,6 +26,7 @@
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/evm/tx_context.hpp>
 #include <category/vm/runtime/bin.hpp>
+#include <category/vm/runtime/engine_timer.hpp>
 #include <category/vm/runtime/exit.hpp>
 #include <category/vm/runtime/transmute.hpp>
 
@@ -253,6 +254,8 @@ namespace monad::vm::runtime
 
         exit_stack_ptr_t exit_stack_ptr = nullptr;
         bool is_stack_unwinding_active = false;
+
+        EngineTimer engine_timer{};
 
         [[gnu::always_inline]]
         constexpr void deduct_gas(int64_t const gas) noexcept

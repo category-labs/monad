@@ -22,6 +22,7 @@
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/host.hpp>
 #include <category/vm/runtime/bin.hpp>
+#include <category/vm/runtime/call_host.hpp>
 #include <category/vm/runtime/log.hpp>
 #include <category/vm/runtime/types.hpp>
 
@@ -49,7 +50,8 @@ namespace monad::vm::runtime
             ctx->deduct_gas(size * bin<8>);
         }
 
-        ctx->host->emit_log(
+        call_host<&Host::emit_log>(
+            ctx,
             ctx->env.recipient,
             ctx->memory.data + *offset,
             *size,

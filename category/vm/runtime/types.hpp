@@ -26,10 +26,12 @@
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/evm/tx_context.hpp>
 #include <category/vm/runtime/bin.hpp>
+#include <category/vm/runtime/engine_timer.hpp>
 #include <category/vm/runtime/exit.hpp>
 #include <category/vm/runtime/transmute.hpp>
 
 #include <cstddef>
+#include <exception>
 #include <span>
 #include <type_traits>
 #include <variant>
@@ -253,6 +255,9 @@ namespace monad::vm::runtime
 
         exit_stack_ptr_t exit_stack_ptr = nullptr;
         bool is_stack_unwinding_active = false;
+
+        EngineTimer engine_timer{};
+        std::exception_ptr host_exception{};
 
         [[gnu::always_inline]]
         constexpr void deduct_gas(int64_t const gas) noexcept

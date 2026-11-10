@@ -23,6 +23,7 @@
 #include <category/vm/evm/revision.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/host.hpp>
+#include <category/vm/runtime/call_host.hpp>
 #include <category/vm/runtime/storage.hpp>
 #include <category/vm/runtime/storage_costs.hpp>
 #include <category/vm/runtime/types.hpp>
@@ -43,12 +44,13 @@ namespace monad::vm::runtime
         auto const key = store_be_as<bytes32_t>(*key_ptr);
 
         auto const access_status =
-            ctx->host->access_storage(ctx->env.recipient, key);
+            call_host<&Host::access_storage>(ctx, ctx->env.recipient, key);
         if (access_status == AccessStatus::Cold) {
             ctx->deduct_gas(traits::cold_storage_cost());
         }
 
-        auto const value = ctx->host->get_storage(ctx->env.recipient, key);
+        auto const value =
+            call_host<&Host::get_storage>(ctx, ctx->env.recipient, key);
 
         *result_ptr = load_be<uint256_t>(value);
     }
@@ -79,16 +81,17 @@ namespace monad::vm::runtime
 
         if constexpr (traits::mip_8_active()) {
             auto const access_status =
-                ctx->host->access_storage(ctx->env.recipient, key);
+                call_host<&Host::access_storage>(ctx, ctx->env.recipient, key);
             if (access_status == AccessStatus::Cold) {
                 ctx->deduct_gas(traits::cold_storage_cost());
             }
 
-            auto const storage_status =
-                ctx->host->set_storage(ctx->env.recipient, key, value);
+            auto const storage_status = call_host<&Host::set_storage>(
+                ctx, ctx->env.recipient, key, value);
 
             auto const [first_page_write, grew_state] =
-                ctx->host->update_page(ctx->env.recipient, key, storage_status);
+                call_host<&Host::update_page>(
+                    ctx, ctx->env.recipient, key, storage_status);
 
             int64_t gas_used = traits::base_sstore_cost();
             if (first_page_write) {
@@ -103,13 +106,13 @@ namespace monad::vm::runtime
         }
         else {
             auto const access_status =
-                ctx->host->access_storage(ctx->env.recipient, key);
+                call_host<&Host::access_storage>(ctx, ctx->env.recipient, key);
             if (access_status == AccessStatus::Cold) {
                 ctx->deduct_gas(traits::cold_storage_cost() + min_gas);
             }
 
-            auto const storage_status =
-                ctx->host->set_storage(ctx->env.recipient, key, value);
+            auto const storage_status = call_host<&Host::set_storage>(
+                ctx, ctx->env.recipient, key, value);
 
             auto [gas_used, gas_refund] = store_cost<traits>(storage_status);
 
@@ -124,15 +127,15 @@ namespace monad::vm::runtime
 
 #ifdef MONAD_COMPILER_TESTING
     bool debug_tstore_stack(
-        Context const *ctx, uint256_t const *stack, uint64_t const stack_size,
+        Context *const ctx, uint256_t const *stack, uint64_t const stack_size,
         uint64_t const offset, uint64_t const base_offset)
     {
         auto const magic = uint256_t{0xdeb009};
         auto const base = (magic + base_offset) * 1024;
         if (offset == 0) {
             auto const base_key = store_be_as<bytes32_t>(base);
-            auto const base_value =
-                ctx->host->get_transient_storage(ctx->env.recipient, base_key);
+            auto const base_value = call_host<&Host::get_transient_storage>(
+                ctx, ctx->env.recipient, base_key);
             if (base_value != bytes32_t{}) {
                 // If this transient storage location has already been written,
                 // then we are likely in a loop. We return early in this case
@@ -147,13 +150,14 @@ namespace monad::vm::runtime
             // more likely to be noticed, due to zero being the default:
             auto const s = x < magic ? x + 1 : x;
             auto const value = store_be_as<bytes32_t>(s);
-            ctx->host->set_transient_storage(ctx->env.recipient, key, value);
+            call_host<&Host::set_transient_storage>(
+                ctx, ctx->env.recipient, key, value);
         }
         return true;
     }
 #else
     bool debug_tstore_stack(
-        Context const *, uint256_t const *, uint64_t const, uint64_t const,
+        Context *, uint256_t const *, uint64_t const, uint64_t const,
         uint64_t const)
     {
         std::terminate();

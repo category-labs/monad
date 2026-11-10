@@ -143,18 +143,12 @@ namespace
             return false;
         }
 
-        vm::Result call(Message const &msg) noexcept override
+        vm::Result call(Message const &msg) override
         {
-            try {
-                if (calls_before_exception_-- == 0) {
-                    throw Exception{"exception"};
-                }
-                return call_impl_(*this, msg);
+            if (calls_before_exception_-- == 0) {
+                throw Exception{"exception"};
             }
-            catch (...) {
-                capture_current_exception();
-            }
-            stack_unwind();
+            return call_impl_(*this, msg);
         }
 
         TxContext const *get_tx_context() const noexcept override

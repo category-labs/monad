@@ -19,7 +19,6 @@
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
-#include <category/core/throw.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/block_hash_history.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
@@ -52,106 +51,58 @@ StateHostBase::StateHostBase(
 bytes32_t
 StateHostBase::get_storage(Address const &address, bytes32_t const &key) const
 {
-    MONAD_TRY
-    {
-        return state_.get_storage(address, key);
-    }
-    MONAD_CATCH(...)
-    {
-        capture_current_exception();
-    }
-    stack_unwind();
+    return state_.get_storage(address, key);
 }
 
 StorageStatus StateHostBase::set_storage(
     Address const &address, bytes32_t const &key, bytes32_t const &value)
 {
-    MONAD_TRY
-    {
-        return state_.set_storage(address, key, value);
-    }
-    MONAD_CATCH(...)
-    {
-        capture_current_exception();
-    }
-    stack_unwind();
+    return state_.set_storage(address, key, value);
 }
 
 uint256_t StateHostBase::get_balance(Address const &address) const
 {
-    MONAD_TRY
-    {
-        return state_.get_balance(address);
-    }
-    MONAD_CATCH(...)
-    {
-        capture_current_exception();
-    }
-    stack_unwind();
+    return state_.get_balance(address);
 }
 
 size_t StateHostBase::get_code_size(Address const &address) const
 {
-    MONAD_TRY
-    {
-        if (MONAD_UNLIKELY(trace::is_code_tracer(state_tracer_))) {
-            bytes32_t const hash = state_.get_code_hash(address);
-            if (hash == NULL_HASH) {
-                return 0;
-            }
-            auto const vcode = state_.read_code(hash);
-            MONAD_ASSERT(vcode);
-            trace::on_read_code(state_tracer_, hash, vcode->intercode());
-            return vcode->intercode()->size();
+    if (MONAD_UNLIKELY(trace::is_code_tracer(state_tracer_))) {
+        bytes32_t const hash = state_.get_code_hash(address);
+        if (hash == NULL_HASH) {
+            return 0;
         }
-        return state_.get_code_size(address);
+        auto const vcode = state_.read_code(hash);
+        MONAD_ASSERT(vcode);
+        trace::on_read_code(state_tracer_, hash, vcode->intercode());
+        return vcode->intercode()->size();
     }
-    MONAD_CATCH(...)
-    {
-        capture_current_exception();
-    }
-    stack_unwind();
+    return state_.get_code_size(address);
 }
 
 bytes32_t StateHostBase::get_code_hash(Address const &address) const
 {
-    MONAD_TRY
-    {
-        if (state_.account_is_dead(address)) {
-            return bytes32_t{};
-        }
-        return state_.get_code_hash(address);
+    if (state_.account_is_dead(address)) {
+        return bytes32_t{};
     }
-    MONAD_CATCH(...)
-    {
-        capture_current_exception();
-    }
-    stack_unwind();
+    return state_.get_code_hash(address);
 }
 
 size_t StateHostBase::copy_code(
     Address const &address, size_t const offset, uint8_t *const data,
     size_t const size) const
 {
-    MONAD_TRY
-    {
-        if (MONAD_UNLIKELY(trace::is_code_tracer(state_tracer_))) {
-            bytes32_t const hash = state_.get_code_hash(address);
-            if (hash != NULL_HASH) {
-                auto const vcode = state_.read_code(hash);
-                MONAD_ASSERT(vcode);
-                trace::on_read_code(state_tracer_, hash, vcode->intercode());
-                return vcode->intercode()->copy_code(offset, data, size);
-            }
-            return 0;
+    if (MONAD_UNLIKELY(trace::is_code_tracer(state_tracer_))) {
+        bytes32_t const hash = state_.get_code_hash(address);
+        if (hash != NULL_HASH) {
+            auto const vcode = state_.read_code(hash);
+            MONAD_ASSERT(vcode);
+            trace::on_read_code(state_tracer_, hash, vcode->intercode());
+            return vcode->intercode()->copy_code(offset, data, size);
         }
-        return state_.copy_code(address, offset, data, size);
+        return 0;
     }
-    MONAD_CATCH(...)
-    {
-        capture_current_exception();
-    }
-    stack_unwind();
+    return state_.copy_code(address, offset, data, size);
 }
 
 vm::TxContext const *StateHostBase::get_tx_context() const noexcept
@@ -164,73 +115,40 @@ vm::TxContext const *StateHostBase::get_tx_context() const noexcept
 // implementation which guarantees that the block_number is in range.
 bytes32_t StateHostBase::get_block_hash(int64_t const block_number) const
 {
-    MONAD_TRY
-    {
-        MONAD_ASSERT(block_number >= 0);
-        if (bytes32_t const block_hash = get_block_hash_history(
-                state_, static_cast<uint64_t>(block_number));
-            block_hash != bytes32_t{}) {
-            return block_hash;
-        }
-        bytes32_t const block_hash =
-            block_hash_buffer_.get(static_cast<uint64_t>(block_number));
-        MONAD_ASSERT(block_hash != bytes32_t{});
+    MONAD_ASSERT(block_number >= 0);
+    if (bytes32_t const block_hash =
+            get_block_hash_history(state_, static_cast<uint64_t>(block_number));
+        block_hash != bytes32_t{}) {
         return block_hash;
     }
-    MONAD_CATCH(...)
-    {
-        capture_current_exception();
-    }
-    stack_unwind();
+    bytes32_t const block_hash =
+        block_hash_buffer_.get(static_cast<uint64_t>(block_number));
+    MONAD_ASSERT(block_hash != bytes32_t{});
+    return block_hash;
 }
 
 void StateHostBase::emit_log(
     Address const &address, uint8_t const *const data, size_t const data_size,
     bytes32_t const topics[], size_t const num_topics)
 {
-    MONAD_TRY
-    {
-        Receipt::Log log{.data = {data, data_size}, .address = address};
-        for (auto i = 0u; i < num_topics; ++i) {
-            log.topics.emplace_back(topics[i]);
-        }
-        state_.store_log(log);
-        call_tracer_.on_log(std::move(log));
-        return;
+    Receipt::Log log{.data = {data, data_size}, .address = address};
+    for (auto i = 0u; i < num_topics; ++i) {
+        log.topics.emplace_back(topics[i]);
     }
-    MONAD_CATCH(...)
-    {
-        capture_current_exception();
-    }
-    stack_unwind();
+    state_.store_log(log);
+    call_tracer_.on_log(std::move(log));
 }
 
 bytes32_t StateHostBase::get_transient_storage(
     Address const &address, bytes32_t const &key) const
 {
-    MONAD_TRY
-    {
-        return state_.get_transient_storage(address, key);
-    }
-    MONAD_CATCH(...)
-    {
-        capture_current_exception();
-    }
-    stack_unwind();
+    return state_.get_transient_storage(address, key);
 }
 
 void StateHostBase::set_transient_storage(
     Address const &address, bytes32_t const &key, bytes32_t const &value)
 {
-    MONAD_TRY
-    {
-        return state_.set_transient_storage(address, key, value);
-    }
-    MONAD_CATCH(...)
-    {
-        capture_current_exception();
-    }
-    stack_unwind();
+    return state_.set_transient_storage(address, key, value);
 }
 
 MONAD_NAMESPACE_END

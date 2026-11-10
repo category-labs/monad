@@ -28,6 +28,7 @@
 #include <category/vm/host.hpp>
 #include <category/vm/runtime/bin.hpp>
 #include <category/vm/runtime/call.hpp>
+#include <category/vm/runtime/call_host.hpp>
 #include <category/vm/runtime/transmute.hpp>
 #include <category/vm/runtime/types.hpp>
 
@@ -83,7 +84,8 @@ namespace monad::vm::runtime
 
         auto const dest_address = address_from_uint256(address);
 
-        auto const access_status = ctx->host->access_account(dest_address);
+        auto const access_status =
+            call_host<&Host::access_account>(ctx, dest_address);
         if (access_status == AccessStatus::Cold) {
             ctx->deduct_gas(traits::cold_account_cost());
         }
@@ -94,9 +96,10 @@ namespace monad::vm::runtime
                 // treat it as a delegated call in the context of the
                 // current authority.
                 if (auto delegate_address =
-                        ctx->host->resolve_delegation(dest_address)) {
-                    auto const access_status =
-                        ctx->host->access_account(*delegate_address);
+                        call_host<&Host::resolve_delegation>(
+                            ctx, dest_address)) {
+                    auto const access_status = call_host<&Host::access_account>(
+                        ctx, *delegate_address);
                     ctx->gas_remaining -= (access_status == AccessStatus::Cold
                                                ? traits::cold_account_cost()
                                                : 0) +
@@ -130,7 +133,8 @@ namespace monad::vm::runtime
                 ctx->exit(error_code);
             }
 
-            if (has_value && !ctx->host->account_exists(dest_address)) {
+            if (has_value &&
+                !call_host<&Host::account_exists>(ctx, dest_address)) {
                 ctx->gas_remaining -= 25000;
             }
         }
@@ -174,7 +178,7 @@ namespace monad::vm::runtime
             .memory_capacity = ctx->memory.capacity - ctx->memory.size,
         };
 
-        auto const result = ctx->host->call(message).release_raw();
+        auto const result = call_host<&Host::call>(ctx, message).release_raw();
 
         ctx->env.set_return_data(result.output_data, result.output_size);
 

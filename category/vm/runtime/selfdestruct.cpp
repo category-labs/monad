@@ -21,6 +21,7 @@
 #include <category/vm/evm/revision.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/host.hpp>
+#include <category/vm/runtime/call_host.hpp>
 #include <category/vm/runtime/selfdestruct.hpp>
 #include <category/vm/runtime/transmute.hpp>
 #include <category/vm/runtime/types.hpp>
@@ -41,17 +42,18 @@ namespace monad::vm::runtime
 
         auto const address = address_from_uint256(*address_ptr);
 
-        auto const access_status = ctx->host->access_account(address);
+        auto const access_status =
+            call_host<&Host::access_account>(ctx, address);
         if (access_status == AccessStatus::Cold) {
             // +100 for the warm account access cost.
             ctx->deduct_gas(traits::cold_account_cost() + 100);
         }
 
         auto const non_zero_transfer =
-            ctx->host->get_balance(ctx->env.recipient) != 0;
+            call_host<&Host::get_balance>(ctx, ctx->env.recipient) != 0;
 
         if (non_zero_transfer) {
-            auto const exists = ctx->host->account_exists(address);
+            auto const exists = call_host<&Host::account_exists>(ctx, address);
 
             if (!exists) {
                 ctx->deduct_gas(25000);
@@ -59,7 +61,7 @@ namespace monad::vm::runtime
         }
 
         auto const result =
-            ctx->host->selfdestruct(ctx->env.recipient, address);
+            call_host<&Host::selfdestruct>(ctx, ctx->env.recipient, address);
 
         if constexpr (!traits::eip_3529_active()) {
             if (result) {

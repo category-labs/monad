@@ -150,7 +150,7 @@ namespace
     }
 
     uint64_t runtime_store_input_stack_impl(
-        runtime::Context const *const ctx, uint256_t *const stack,
+        runtime::Context *const ctx, uint256_t *const stack,
         uint64_t const stack_size, uint64_t const offset,
         uint64_t const base_offset)
     {

@@ -22,6 +22,9 @@
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
 #include <category/execution/ethereum/db/db.hpp>
+#if defined(MONAD_ZKVM_ZISK) && !defined(MONAD_ZKVM_SELFTEST)
+    #include <category/execution/ethereum/db/partial_trie_db.hpp>
+#endif
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state2/fmt/state_deltas_fmt.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
@@ -40,6 +43,19 @@
 #include <utility>
 
 MONAD_NAMESPACE_BEGIN
+
+namespace
+{
+    // The ZisK witness uses PartialTrieDb. Self-tests also use a stub Db.
+    auto &read_db(Db &db) noexcept
+    {
+#if defined(MONAD_ZKVM_ZISK) && !defined(MONAD_ZKVM_SELFTEST)
+        return static_cast<PartialTrieDb &>(db);
+#else
+        return db;
+#endif
+    }
+}
 
 BlockState::BlockState(Db &db, vm::VM &monad_vm)
     : db_{db}
@@ -65,7 +81,7 @@ StateDelta &BlockState::read_account_delta(Address const &address)
 
         operator StateDelta() const
         {
-            auto const result = db.read_account(address);
+            auto const result = read_db(db).read_account(address);
             return StateDelta{.account = {result, result}, .storage = {}};
         }
     };
@@ -140,7 +156,8 @@ bytes32_t const &BlockState::read_storage(
                 return {};
             }
             bytes32_t const result =
-                block_state.db_.read_storage(address, incarnation, key);
+                read_db(block_state.db_)
+                    .read_storage(address, incarnation, key);
             return {result, result};
         }
     };
@@ -230,6 +247,8 @@ vm::SharedVarcode BlockState::read_code(bytes32_t const &code_hash)
     }
     // database
     {
+        // Inlining PartialTrieDb::read_code made GCC allocate a stack frame
+        // even on cache hits.
         auto const result = db_.read_code(code_hash);
         MONAD_ASSERT(result);
         MONAD_ASSERT_PRINTF(

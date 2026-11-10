@@ -280,6 +280,12 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     add_library(monad-vm-utils INTERFACE)
     add_library(monad-vm::monad-vm-utils ALIAS monad-vm-utils)
 
+    # Run rollback tests through the guest entry point instead of a witness.
+    option(MONAD_ZKVM_SELFTEST "guest entry runs the state self-test instead of a witness" OFF)
+    if(MONAD_ZKVM_SELFTEST)
+        add_compile_definitions(MONAD_ZKVM_SELFTEST)
+    endif()
+
     add_subdirectory("${MONAD_ROOT}/category/vm/evm" evm)
     add_subdirectory("${MONAD_ROOT}/category/vm/runtime" runtime)
     add_subdirectory("${MONAD_ROOT}/category/vm/interpreter" interpreter)
@@ -564,12 +570,6 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     monad_riscv_compile_options(monad_execution_native)
 
     # ---- Final guest static archive ----
-    # Run rollback tests through the guest entry point instead of a witness.
-    option(MONAD_ZKVM_SELFTEST "guest entry runs the state self-test instead of a witness" OFF)
-    if(MONAD_ZKVM_SELFTEST)
-        add_compile_definitions(MONAD_ZKVM_SELFTEST)
-    endif()
-
     # Keep test globals and the stub vtable out of normal guest archives:
     # section garbage collection alone did not remove them from the binary.
     set(_selftest_sources "")

@@ -12032,3 +12032,173 @@ TEST_F(EthCallFixture, eth_simulate_v1_validation_controls_base_fee)
 
     monad_executor_destroy(executor);
 }
+
+// Port of GeneralStateTests/stChainId/chainId.json::chainId. The fixture's
+// `pre` accounts become state overrides and its `env` becomes block overrides
+// on top of an empty world; zero-valued `pre` fields need no override. The
+// simulation output omits storage, so a second block swaps in code that reads
+// back the slot written by the fixture transaction.
+TEST(EthCallFixtureNoDb, eth_simulate_v1_chain_id)
+{
+    using namespace monad::vm::utils;
+
+    static constexpr Address coinbase =
+        0x2adc25665018aa1fe0e6bc666dac8fc2697ff9ba_address;
+    static constexpr Address contract =
+        0x1000000000000000000000000000000000000000_address;
+    static constexpr Address sender =
+        0xa94f5374fce5edbc8e2a8697c15331677e6ebf0b_address;
+    static constexpr bytes32_t prev_randao =
+        0x0000000000000000000000000000000000000000000000000000000000020000_bytes32;
+    static constexpr uint64_t block_gas_limit = 0x02540be400;
+    static constexpr uint64_t block_timestamp = 0x03e8;
+    static constexpr uint64_t tx_gas_limit = 0x05f5e100;
+
+    // CHAINID PUSH1 0x01 SSTORE STOP
+    auto const chain_id_code = from_hex("0x4660015500").value();
+
+    // Returns the value of storage slot 1.
+    auto const eb = evm_as::latest()
+                        .push(1)
+                        .sload()
+                        .push0()
+                        .mstore()
+                        .push(32)
+                        .push0()
+                        .return_();
+    ASSERT_TRUE(evm_as::validate(eb));
+    std::vector<uint8_t> read_slot_code{};
+    evm_as::compile(eb, read_slot_code);
+
+    bytes32_t const sender_balance =
+        store_be_as<bytes32_t>(0x3635c9adc5dea00000_u256);
+    bytes32_t const base_fee = store_be_as<bytes32_t>(uint256_t{0x0a});
+
+    auto *const executor = create_executor_without_db();
+
+    Transaction const chain_id_tx{
+        .max_fee_per_gas = 0x0a,
+        .gas_limit = tx_gas_limit,
+        .to = contract,
+    };
+    // Strict validation inherits the fixture block's base fee.
+    Transaction const read_slot_tx{
+        .max_fee_per_gas = 0x0a, .gas_limit = 100'000, .to = contract};
+
+    auto const enc_sender = rlp::encode_address(std::make_optional(sender));
+    auto const rlp_senders = to_vec(rlp::encode_list2(
+        rlp::encode_list2(enc_sender), rlp::encode_list2(enc_sender)));
+
+    auto const rlp_calls = to_vec(rlp::encode_list2(
+        rlp::encode_list2(
+            rlp::encode_string2(rlp::encode_transaction(chain_id_tx))),
+        rlp::encode_list2(
+            rlp::encode_string2(rlp::encode_transaction(read_slot_tx)))));
+
+    // The fixture block is block 1, so simulate on top of block 0.
+    BlockHeader const header{};
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    auto *const so = monad_state_override_vec_create(2);
+    add_override_address_at(so, 0, contract.bytes, sizeof(contract.bytes));
+    set_override_code_at(
+        so,
+        0,
+        contract.bytes,
+        sizeof(contract.bytes),
+        chain_id_code.data(),
+        chain_id_code.size());
+    add_override_address_at(so, 0, sender.bytes, sizeof(sender.bytes));
+    set_override_balance_at(
+        so,
+        0,
+        sender.bytes,
+        sizeof(sender.bytes),
+        sender_balance.bytes,
+        sizeof(sender_balance.bytes));
+    add_override_address_at(so, 1, contract.bytes, sizeof(contract.bytes));
+    set_override_code_at(
+        so,
+        1,
+        contract.bytes,
+        sizeof(contract.bytes),
+        read_slot_code.data(),
+        read_slot_code.size());
+
+    auto *const bo = monad_block_override_vec_create(2);
+    set_block_override_number_at(bo, 0, 1);
+    set_block_override_time_at(bo, 0, block_timestamp);
+    set_block_override_gas_limit_at(bo, 0, block_gas_limit);
+    set_block_override_fee_recipient_at(
+        bo, 0, coinbase.bytes, sizeof(coinbase.bytes));
+    set_block_override_prev_randao_at(
+        bo, 0, prev_randao.bytes, sizeof(prev_randao.bytes));
+    set_block_override_base_fee_per_gas_at(
+        bo, 0, base_fee.bytes, sizeof(base_fee.bytes));
+
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+
+    monad_executor_eth_simulate_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_senders.data(),
+        rlp_senders.size(),
+        rlp_calls.data(),
+        rlp_calls.size(),
+        header.number,
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        rlp_finalized_id.data(),
+        rlp_finalized_id.size(),
+        simulate_gas_limit,
+        simulate_max_calls,
+        simulate_max_output_size,
+        so,
+        bo,
+        true,
+        false,
+        complete_callback,
+        (void *)&ctx);
+    f.get();
+
+    ASSERT_EQ(ctx.result->status_code, MONAD_STATUS_SUCCESS);
+    ASSERT_TRUE(ctx.result->encoded_trace_len > 0);
+
+    nlohmann::json const output = nlohmann::json::from_cbor(
+        ctx.result->encoded_trace,
+        ctx.result->encoded_trace + ctx.result->encoded_trace_len);
+
+    ASSERT_EQ(output.size(), 2);
+
+    auto const &block = output[0];
+    EXPECT_EQ(block["number"], "0x1");
+    EXPECT_EQ(block["timestamp"], std::format("0x{:x}", block_timestamp));
+    EXPECT_EQ(block["gasLimit"], std::format("0x{:x}", block_gas_limit));
+    EXPECT_EQ(block["miner"], std::format("0x{}", to_hex(coinbase)));
+    EXPECT_EQ(block["mixHash"], std::format("0x{}", to_hex(prev_randao)));
+    EXPECT_EQ(block["baseFeePerGas"], "0xa");
+
+    ASSERT_EQ(block["calls"].size(), 1);
+    auto const &call = block["calls"][0];
+    EXPECT_EQ(call["status"], "0x1");
+    EXPECT_EQ(call["returnData"], "0x");
+    // Monad charges the full gas limit.
+    EXPECT_EQ(call["gasUsed"], std::format("0x{:x}", tx_gas_limit));
+    EXPECT_TRUE(call["logs"].empty());
+
+    // CHAINID reports the chain the simulation runs on.
+    MonadDevnet const devnet;
+    auto const expected_chain_id = std::format(
+        "0x{}", to_hex(store_be_as<bytes32_t>(devnet.get_chain_id())));
+    ASSERT_EQ(output[1]["calls"].size(), 1);
+    EXPECT_EQ(output[1]["calls"][0]["status"], "0x1");
+    EXPECT_EQ(output[1]["calls"][0]["returnData"], expected_chain_id);
+
+    monad_block_override_vec_destroy(bo);
+    monad_state_override_vec_destroy(so);
+    monad_executor_destroy(executor);
+}

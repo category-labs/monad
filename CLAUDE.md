@@ -143,10 +143,10 @@ The linker picks the right instantiation — EVM callers get the no-op, Monad ca
 
 `ChainContext<traits>` is the main type that differs between EVM and Monad. It's forward-declared in `ethereum/chain/chain.hpp` and specialized via `requires` constraints:
 
-- `ChainContext<T> requires is_evm_trait_v<T>` — empty struct (no extra context needed)
-- `ChainContext<T> requires is_monad_trait_v<T>` — contains sender sets, authorities, etc. (defined in `monad/chain/monad_chain.hpp`)
+- `ChainContext<T> requires is_evm_trait_v<T>` — carries only the execution mode (`mode`, live execution by default)
+- `ChainContext<T> requires is_monad_trait_v<T>` — contains sender sets, authorities, the execution mode, etc. (defined in `monad/chain/monad_chain.hpp`)
 
-Functions in `ethereum/` that take `ChainContext<traits> const &` work with both — for EVM traits it's an empty struct, for Monad traits it carries the Monad-specific data.
+Functions in `ethereum/` that take `ChainContext<traits> const &` work with both — for EVM traits it carries just the execution mode, for Monad traits it also carries the Monad-specific data.
 
 ### Monad revisions
 

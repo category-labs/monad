@@ -36,14 +36,19 @@
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/chain/chain_config.h>
+#include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/core/block.hpp>
+#include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/rlp/address_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/bytes_rlp.hpp>
+#include <category/execution/ethereum/core/rlp/receipt_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
+#include <category/execution/ethereum/core/rlp/withdrawal_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/execution/ethereum/db/db.hpp>
+#include <category/execution/ethereum/db/ordered_trie.hpp>
 #include <category/execution/ethereum/db/trie_rodb.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/execute_block.hpp>
@@ -60,6 +65,7 @@
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/trace/tracer_config.h>
+#include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
@@ -74,6 +80,7 @@
 #include <category/rpc/eth_simulate_block_hash_buffer.hpp>
 #include <category/rpc/lazy_block_hash.hpp>
 #include <category/rpc/null_db.hpp>
+#include <category/rpc/simulate_chain.hpp>
 #include <category/rpc/simulation_error.hpp>
 #include <category/rpc/utils/response_size.hpp>
 #include <category/vm/evm/call_status.hpp>
@@ -550,6 +557,16 @@ namespace
         }
 
         BlockHeader header = base_header;
+        // Advances the loop carried timestamp by `num_blocks` default
+        // increments. Returns false if the timestamp would overflow, as a
+        // wrapped timestamp would move backwards.
+        auto const advance_timestamp = [&](uint64_t num_blocks) {
+            uint64_t delta{};
+            return !__builtin_mul_overflow(
+                       num_blocks, default_timestamp_increment, &delta) &&
+                   !__builtin_add_overflow(
+                       header.timestamp, delta, &header.timestamp);
+        };
         for (size_t i = 0; i < block_overrides.size; ++i) {
             auto const &bo = block_overrides.overrides[i];
             // From the specification
@@ -573,11 +590,10 @@ namespace
 
                 // If a gap is wide, then we need to count the synthetic
                 // timestamps before validating the possible block timestamp
-                // override.
-                if (gap > 1) {
-                    // There are `(gap - 1)` synthetic blocks between
-                    // the current block and the previous block.
-                    header.timestamp += (gap - 1) * default_timestamp_increment;
+                // override. There are `(gap - 1)` synthetic blocks between
+                // the current block and the previous block.
+                if (MONAD_UNLIKELY(!advance_timestamp(gap - 1))) {
+                    return SimulationError::TimestampOverflow;
                 }
 
                 if (MONAD_UNLIKELY(header.timestamp > *bo.time)) {
@@ -585,8 +601,8 @@ namespace
                 }
                 header.timestamp = *bo.time;
             }
-            else {
-                header.timestamp += gap * default_timestamp_increment;
+            else if (MONAD_UNLIKELY(!advance_timestamp(gap))) {
+                return SimulationError::TimestampOverflow;
             }
         }
         if (MONAD_UNLIKELY(header.number <= base_header.number)) {
@@ -708,8 +724,8 @@ namespace
             entry[eth_simulate_json::size] =
                 std::format("0x{:x}", encoded.size());
         }
-        // TODO(dhil): We currently do not have a way to compute roots
-        // information in simulation mode.
+        // TODO(dhil): We currently do not have the means to compute the state
+        // root.
         entry[eth_simulate_json::state_root] =
             format_hex(block.header.state_root);
         entry[eth_simulate_json::transactions_root] =
@@ -719,11 +735,8 @@ namespace
         // In the absence of withdrawals we default to `NULL_HASH`.
         entry[eth_simulate_json::withdrawals_root] =
             format_hex(block.header.withdrawals_root.value_or(NULL_HASH));
-        {
-            Receipt::Bloom bloom = compute_bloom(receipts);
-            entry[eth_simulate_json::logs_bloom] =
-                format_hex(byte_string_view{bloom.data(), bloom.size()});
-        }
+        entry[eth_simulate_json::logs_bloom] = format_hex(byte_string_view{
+            block.header.logs_bloom.data(), block.header.logs_bloom.size()});
         entry[eth_simulate_json::difficulty] =
             std::format("0x{}", to_string(block.header.difficulty, 16));
         entry[eth_simulate_json::number] =
@@ -786,13 +799,115 @@ namespace
             return base_fee_override;
         }
         if (inherit_base_fee(execution_mode)) {
+            // On Ethereum configuration we ought to compute the base fee using
+            // the EIP-1559 formula for computing the base fee for the next
+            // block -- however, the code base does not implement this part of
+            // EIP-1559, so we use the Monad rule of inheriting the parent's
+            // base fee instead.
             return parent.base_fee_per_gas;
         }
         return std::nullopt;
     }
 
+    // Fills the fork-dependent fields of a simulated block header that
+    // do not depend on its execution, following geth's eth_simulateV1.
+    template <Traits traits>
+    void prepare_block_header(
+        Chain const &chain, BlockHeader const &parent, Block &block)
+    {
+        BlockHeader &header = block.header;
+
+        if constexpr (!traits::eip_3675_active()) {
+            header.difficulty = parent.difficulty;
+        }
+
+        if constexpr (traits::eip_1559_header_active()) {
+            if (!header.base_fee_per_gas.has_value()) {
+                header.base_fee_per_gas = uint256_t{0};
+            }
+        }
+        else {
+            header.base_fee_per_gas = std::nullopt;
+        }
+
+        if constexpr (traits::eip_4895_active()) {
+            if (!block.withdrawals.has_value()) {
+                block.withdrawals.emplace();
+            }
+            std::vector<byte_string> encoded_withdrawals;
+            encoded_withdrawals.reserve(block.withdrawals->size());
+            for (Withdrawal const &withdrawal : *block.withdrawals) {
+                encoded_withdrawals.emplace_back(
+                    rlp::encode_withdrawal(withdrawal));
+            }
+            header.withdrawals_root = ordered_trie_root(encoded_withdrawals);
+        }
+        else {
+            block.withdrawals = std::nullopt;
+            header.withdrawals_root = std::nullopt;
+        }
+
+        if constexpr (traits::eip_4844_header_active()) {
+            header.excess_blob_gas =
+                parent.excess_blob_gas.has_value()
+                    ? calc_excess_blob_gas<traits>(
+                          parent, chain.get_blob_schedule(header.timestamp))
+                    : 0;
+            uint64_t blob_gas_used = 0;
+            for (Transaction const &tx : block.transactions) {
+                blob_gas_used += get_total_blob_gas(tx);
+            }
+            header.blob_gas_used = blob_gas_used;
+        }
+
+        if constexpr (!traits::eip_4788_active()) {
+            header.parent_beacon_block_root = std::nullopt;
+        }
+
+        // The `execute_block` requires an Ethereum block to carry a requests
+        // hash. Simulation does not validate it (see
+        // `skip_requests_hash_validation`), so this placeholder is replaced by
+        // the computed hash after execution (see `complete_header`).
+        if constexpr (traits::eip_7685_header_active()) {
+            header.requests_hash = bytes32_t{};
+        }
+
+        if constexpr (traits::eip_7843_active()) {
+            // TODO(dhil): Compute block access list.
+            header.block_access_list_hash = bytes32_t{};
+            header.slot_number = parent.slot_number.has_value()
+                                     ? parent.slot_number.value() + 1
+                                     : 0;
+        }
+
+        std::vector<byte_string> encoded_transactions;
+        encoded_transactions.reserve(block.transactions.size());
+        for (Transaction const &tx : block.transactions) {
+            encoded_transactions.emplace_back(rlp::encode_transaction(tx));
+        }
+        header.transactions_root = ordered_trie_root(encoded_transactions);
+    }
+
+    // Finish the header by filling in the receipts root, logs bloom, and
+    // requests hash if available.
+    void complete_header(
+        BlockHeader &header, std::vector<Receipt> const &receipts,
+        std::optional<bytes32_t> const &requests_hash)
+    {
+        if (requests_hash.has_value()) {
+            header.requests_hash = requests_hash;
+        }
+        std::vector<byte_string> encoded_receipts;
+        encoded_receipts.reserve(receipts.size());
+        for (Receipt const &receipt : receipts) {
+            encoded_receipts.emplace_back(rlp::encode_receipt(receipt));
+        }
+        header.receipts_root = ordered_trie_root(encoded_receipts);
+        header.logs_bloom = compute_bloom(receipts);
+    }
+
     // Executes one simulated block under the fork rules active at its
-    // header. Fork-dependent header fields are populated here.
+    // header.
     template <Traits traits>
     Result<std::vector<Receipt>> eth_simulate_execute_block(
         Chain const &chain, BlockHeader const &parent, Block &block,
@@ -805,37 +920,37 @@ namespace
         ChainContextBuffer &context_buffer,
         bool const emit_native_transfer_logs, Simulation const &execution_mode)
     {
-        if constexpr (traits::eip_7843_active()) {
-            block.header.requests_hash = bytes32_t{};
-            block.header.block_access_list_hash = bytes32_t{};
-            block.header.slot_number = parent.slot_number.has_value()
-                                           ? parent.slot_number.value() + 1
-                                           : 0;
-        }
+        // Populate fork-dependent header fields.
+        prepare_block_header<traits>(chain, parent, block);
 
         auto block_metrics = BlockMetrics{};
         trace::StateTracer system_call_state_tracer{std::monostate{}};
         auto chain_context =
             context_buffer.advance<traits>(senders, authorities);
-
-        static_assert(is_monad_trait_v<traits>);
         chain_context.mode = execution_mode;
 
-        return execute_block<traits>(
-            chain,
-            block,
-            senders,
-            authorities,
-            block_state,
-            block_hash_buffer,
-            tx_exec_pool,
-            block_metrics,
-            call_tracers,
-            state_tracers,
-            system_call_state_tracer,
-            chain_context,
-            /*exec_recorder=*/nullptr,
-            emit_native_transfer_logs);
+        std::optional<bytes32_t> requests_hash;
+        BOOST_OUTCOME_TRY(
+            auto receipts,
+            execute_block<traits>(
+                chain,
+                block,
+                senders,
+                authorities,
+                block_state,
+                block_hash_buffer,
+                tx_exec_pool,
+                block_metrics,
+                call_tracers,
+                state_tracers,
+                system_call_state_tracer,
+                chain_context,
+                /*exec_recorder=*/nullptr,
+                emit_native_transfer_logs,
+                &requests_hash));
+
+        complete_header(block.header, receipts, requests_hash);
+        return receipts;
     }
 
     template <Traits base_traits>
@@ -850,27 +965,48 @@ namespace
         ChainContextBuffer &context_buffer,
         bool const emit_native_transfer_logs, Simulation const &execution_mode)
     {
-        static_assert(is_monad_trait_v<base_traits>);
-        auto const *const monad_chain =
-            dynamic_cast<MonadChain const *>(&chain);
-        MONAD_ASSERT_THROW(monad_chain, "Failed to cast chain to MonadChain");
-        auto const rev =
-            monad_chain->get_monad_revision(block.header.timestamp);
-        SWITCH_MONAD_TRAITS(
-            eth_simulate_execute_block,
-            chain,
-            parent,
-            block,
-            senders,
-            authorities,
-            block_state,
-            block_hash_buffer,
-            tx_exec_pool,
-            call_tracers,
-            state_tracers,
-            context_buffer,
-            emit_native_transfer_logs,
-            execution_mode);
+        if constexpr (is_monad_trait_v<base_traits>) {
+            auto const *const monad_chain =
+                dynamic_cast<MonadChain const *>(&chain);
+            MONAD_ASSERT_THROW(
+                monad_chain, "Failed to cast chain to MonadChain");
+            auto const rev =
+                monad_chain->get_monad_revision(block.header.timestamp);
+            SWITCH_MONAD_TRAITS(
+                eth_simulate_execute_block,
+                chain,
+                parent,
+                block,
+                senders,
+                authorities,
+                block_state,
+                block_hash_buffer,
+                tx_exec_pool,
+                call_tracers,
+                state_tracers,
+                context_buffer,
+                emit_native_transfer_logs,
+                execution_mode);
+        }
+        else {
+            auto const rev =
+                chain.get_revision(block.header.number, block.header.timestamp);
+            SWITCH_EVM_TRAITS(
+                eth_simulate_execute_block,
+                chain,
+                parent,
+                block,
+                senders,
+                authorities,
+                block_state,
+                block_hash_buffer,
+                tx_exec_pool,
+                call_tracers,
+                state_tracers,
+                context_buffer,
+                emit_native_transfer_logs,
+                execution_mode);
+        }
         MONAD_ASSERT_THROW(
             false, "Unreachable code reached in eth_simulate_dispatch_block");
     }
@@ -886,8 +1022,8 @@ namespace
         mpt::RODb *const db, vm::VM &vm, fiber::FiberGroup &tx_exec_pool,
         struct monad_state_override_vec const &state_overrides,
         struct monad_block_override_vec const &block_overrides,
-        uint64_t const gas_limit, size_t const max_calls, size_t const max_size,
-        Simulation const execution_mode, bool emit_native_transfer_logs)
+        monad_eth_simulate_config const &config,
+        Simulation const execution_mode)
     {
         // TODO(dhil): Decide on the default timestamp increment.
         static constexpr uint64_t DEFAULT_TIMESTAMP_INCREMENT = 1;
@@ -913,7 +1049,7 @@ namespace
         // Validate the inputs before constructing the simulation objects. This
         // validation procedure returns an error on bad input.
         BOOST_OUTCOME_TRY(eth_simulate_validate_inputs(
-            max_calls,
+            config.max_calls,
             DEFAULT_TIMESTAMP_INCREMENT,
             calls,
             block_overrides,
@@ -923,7 +1059,7 @@ namespace
 
         // Calculate the maximum size of the in-memory structures that we are
         // willing to materialize this simulation.
-        size_t const soft_max_size = padded_max_size(max_size);
+        size_t const soft_max_size = padded_max_size(config.max_output_size);
 
         StateDb state_db{db};
         state_db.get().set_block_and_prefix(base_block_number, block_id);
@@ -1019,8 +1155,6 @@ namespace
                             .beneficiary = header.beneficiary,
                             .base_fee_per_gas = simulated_base_fee(
                                 std::nullopt, header, execution_mode),
-                            // TODO(dhil): The simulation does not compute roots
-                            // at this time.
                             .parent_beacon_block_root = bytes32_t{},
                         },
                 };
@@ -1048,7 +1182,7 @@ namespace
                         call_tracers,
                         state_tracers,
                         context_buffer,
-                        emit_native_transfer_logs,
+                        config.emit_native_transfer_logs,
                         execution_mode));
 
                 // NOTE(dhil): Synthetic blocks are free, so we don't update
@@ -1100,8 +1234,6 @@ namespace
                 .beneficiary = bo.fee_recipient.value_or(header.beneficiary),
                 .base_fee_per_gas = simulated_base_fee(
                     bo.base_fee_per_gas, header, execution_mode),
-                // TODO(dhil): The simulation does not compute roots at this
-                // time.
                 .parent_beacon_block_root = bytes32_t{},
             };
 
@@ -1144,7 +1276,9 @@ namespace
             state_tracers.reserve(calls[block_idx].size());
 
             size_t const remaining_size =
-                max_size > carried_size ? max_size - carried_size : 0;
+                config.max_output_size > carried_size
+                    ? config.max_output_size - carried_size
+                    : 0;
             size_t const call_tracer_max_size = std::max<size_t>(
                 1UL, // 1 byte minimum.
                 remaining_size /
@@ -1179,7 +1313,7 @@ namespace
                     call_tracers,
                     state_tracers,
                     context_buffer,
-                    emit_native_transfer_logs,
+                    config.emit_native_transfer_logs,
                     execution_mode));
 
             for (auto const &call_tracer : call_tracers) {
@@ -1207,7 +1341,7 @@ namespace
             // No overflow. Add the consumed gas.
             gas_consumed_so_far += gas_used;
             // We may have exceeded the gas limit.
-            if (MONAD_UNLIKELY(gas_consumed_so_far > gas_limit)) {
+            if (MONAD_UNLIKELY(gas_consumed_so_far > config.gas_limit)) {
                 return Result<nlohmann::json>::error_type{
                     SimulationError::GasLimitExceeded};
             }
@@ -1248,6 +1382,42 @@ namespace
         }
 
         return result;
+    }
+
+    // Constructs the chain for an eth_simulateV1 request. A non-negative
+    // `config.revision` fixes the fork of every simulated block.
+    Result<std::unique_ptr<Chain>> make_eth_simulate_chain(
+        monad_eth_simulate_config const &config, BlockHeader const &base_header)
+    {
+        auto chain = make_chain(config.chain_config);
+        if (config.revision < 0) {
+            // EthereumMainnet::get_revision asserts on blocks before the
+            // earliest supported fork. Simulated blocks only move forward from
+            // the base block,  so checking the base block suffices.
+            if (MONAD_UNLIKELY(
+                    config.chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET &&
+                    base_header.timestamp <
+                        eth_forks::SHANGHAI_ACTIVATION_TIMESTAMP &&
+                    base_header.number <
+                        constants::EARLIEST_SUPPORTED_ETH_BLOCK_NUMBER)) {
+                return SimulationError::UnsupportedBaseRevision;
+            }
+            return chain;
+        }
+        if (MONAD_UNLIKELY(
+                config.chain_config != CHAIN_CONFIG_ETHEREUM_MAINNET &&
+                config.chain_config != CHAIN_CONFIG_HIVE_NET)) {
+            return SimulationError::RevisionPinningNotSupported;
+        }
+        // Range-check before the cast: out-of-range enum values are undefined.
+        if (MONAD_UNLIKELY(
+                config.revision > static_cast<int32_t>(EvmRevision::Max) ||
+                !SimulateEvmChain::is_supported_revision(
+                    static_cast<EvmRevision>(config.revision)))) {
+            return SimulationError::UnsupportedPinnedRevision;
+        }
+        return std::unique_ptr<Chain>{std::make_unique<SimulateEvmChain>(
+            std::move(chain), static_cast<EvmRevision>(config.revision))};
     }
 }
 
@@ -2083,15 +2253,13 @@ struct monad_executor
     }
 
     void submit_eth_simulate_to_pool(
-        monad_chain_config const chain_config,
+        monad_eth_simulate_config const *const config,
         std::vector<std::vector<Transaction>> calls,
         std::vector<std::vector<Address>> senders,
         struct monad_state_override_vec const *const state_overrides,
         struct monad_block_override_vec const *const block_overrides,
         BlockHeader const &block_header, uint64_t const block_number,
         bytes32_t const &block_id, bytes32_t const &grandparent_id,
-        uint64_t const gas_limit, size_t const max_calls, size_t const max_size,
-        bool const validation, bool emit_native_transfer_logs,
         void (*complete)(monad_executor_result *, void *user), void *const user)
     {
         monad_executor_result *const result = new monad_executor_result();
@@ -2116,13 +2284,9 @@ struct monad_executor
              base_block_number = block_number,
              block_id = block_id,
              grandparent_id = grandparent_id,
-             chain_config = chain_config,
+             config = *config,
              db = select_db(block_number),
-             gas_limit = gas_limit,
-             max_calls = max_calls,
-             max_size = max_size,
-             execution_mode = Simulation{validation},
-             emit_native_transfer_logs = emit_native_transfer_logs,
+             execution_mode = Simulation{config->validation},
              fiber_group = &trace_block_group_,
              tx_exec_group = &trace_tx_exec_group_,
              &vm = vm_,
@@ -2168,12 +2332,33 @@ struct monad_executor
                             }
                         }
 
-                        auto const chain = make_chain(chain_config);
+                        BOOST_OUTCOME_TRY(
+                            auto const chain,
+                            make_eth_simulate_chain(config, block_header));
 
-                        if (chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET ||
-                            chain_config == CHAIN_CONFIG_HIVE_NET) {
-                            return Result<nlohmann::json>::error_type{
-                                SimulationError::UnsupportedChainConfig};
+                        if (config.chain_config ==
+                                CHAIN_CONFIG_ETHEREUM_MAINNET ||
+                            config.chain_config == CHAIN_CONFIG_HIVE_NET) {
+                            auto const rev = chain->get_revision(
+                                block_header.number, block_header.timestamp);
+                            SWITCH_EVM_TRAITS(
+                                eth_simulate_impl,
+                                *chain,
+                                calls,
+                                block_header,
+                                base_block_number,
+                                block_id,
+                                grandparent_id,
+                                senders,
+                                authorities,
+                                db,
+                                vm,
+                                *tx_exec_group->group,
+                                *state_overrides,
+                                *block_overrides,
+                                config,
+                                execution_mode);
+                            MONAD_ASSERT(false);
                         }
                         else {
                             auto const rev =
@@ -2195,11 +2380,8 @@ struct monad_executor
                                 *tx_exec_group->group,
                                 *state_overrides,
                                 *block_overrides,
-                                gas_limit,
-                                max_calls,
-                                max_size,
-                                execution_mode,
-                                emit_native_transfer_logs);
+                                config,
+                                execution_mode);
                             MONAD_ASSERT(false);
                         }
                     }();
@@ -2461,21 +2643,21 @@ namespace
 }
 
 void monad_executor_eth_simulate_submit(
-    struct monad_executor *executor, enum monad_chain_config chain_config,
+    struct monad_executor *executor,
+    struct monad_eth_simulate_config const *const config,
     uint8_t const *const rlp_senders, size_t rlp_senders_len,
     uint8_t const *const rlp_calls, size_t rlp_calls_len, uint64_t block_number,
     uint8_t const *const rlp_header, size_t rlp_header_len,
     uint8_t const *const rlp_block_id, size_t rlp_block_id_len,
     uint8_t const *const rlp_grandparent_block_id,
-    size_t const rlp_grandparent_block_id_len, uint64_t gas_limit,
-    size_t max_calls, size_t max_output_size,
+    size_t const rlp_grandparent_block_id_len,
     struct monad_state_override_vec const *const state_overrides,
     struct monad_block_override_vec const *const block_overrides,
-    bool const validation, bool emit_native_transfer_logs,
     void (*complete)(monad_executor_result *, void *user), void *user)
 {
 
     MONAD_ASSERT(executor);
+    MONAD_ASSERT(config);
     MONAD_ASSERT(rlp_senders);
     MONAD_ASSERT(rlp_calls);
     MONAD_ASSERT(rlp_header);
@@ -2521,7 +2703,7 @@ void monad_executor_eth_simulate_submit(
     auto const grandparent_block_id = grandparent_block_id_result.value();
 
     executor->submit_eth_simulate_to_pool(
-        chain_config,
+        config,
         txns,
         senders,
         state_overrides,
@@ -2530,11 +2712,6 @@ void monad_executor_eth_simulate_submit(
         block_number,
         block_id,
         grandparent_block_id,
-        gas_limit,
-        max_calls,
-        max_output_size,
-        validation,
-        emit_native_transfer_logs,
         complete,
         user);
 }

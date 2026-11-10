@@ -20,7 +20,7 @@
 #include <category/vm/evm/access_status.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/message.hpp>
-#include <category/vm/evm/revision.h>
+#include <category/vm/evm/revision.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/host.hpp>
 #include <category/vm/runtime/storage.hpp>
@@ -38,7 +38,7 @@ namespace monad::vm::runtime
     template <Traits traits>
     void sload(Context *ctx, uint256_t *result_ptr, uint256_t const *key_ptr)
     {
-        static_assert(traits::evm_rev() >= MONAD_ETH_BERLIN);
+        static_assert(traits::evm_rev() >= EvmRevision::Berlin);
 
         auto const key = store_be_as<bytes32_t>(*key_ptr);
 
@@ -60,7 +60,7 @@ namespace monad::vm::runtime
         Context *ctx, uint256_t const *key_ptr, uint256_t const *value_ptr,
         int64_t const remaining_block_base_gas)
     {
-        static_assert(traits::evm_rev() >= MONAD_ETH_BERLIN);
+        static_assert(traits::evm_rev() >= EvmRevision::Berlin);
 
         if (MONAD_UNLIKELY(
                 ctx->env.flags & std::to_underlying(CallFlags::Static))) {

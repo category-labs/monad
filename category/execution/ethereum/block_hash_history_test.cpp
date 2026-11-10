@@ -223,7 +223,7 @@ namespace
 
 TYPED_TEST_SUITE(
     BlockHashHistoryTraitsTest,
-    ::detail::MonadEvmRevisionTypesSince<MONAD_ETH_PRAGUE>,
+    ::detail::MonadEvmRevisionTypesSince<EvmRevision::Prague>,
     ::detail::RevisionTestNameGenerator);
 
 TYPED_TEST(BlockHashHistoryTraitsTest, read_write_block_hash_history_storage)

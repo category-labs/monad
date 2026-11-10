@@ -60,7 +60,7 @@ namespace
     std::shared_ptr<monad::vm::compiler::native::Nativecode>
     compile(asmjit::JitRuntime &rt, std::vector<uint8_t> const &bytecode)
     {
-        using traits = EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>;
+        using traits = EvmTraits<EvmRevision::LatestStable>;
 
         monad::vm::compiler::native::CompilerConfig const config{};
         auto const ir = monad::vm::compiler::basic_blocks::BasicBlocksIR(
@@ -117,8 +117,7 @@ namespace
     struct jit
     {
         static uint256_t
-        run(evm_as::EvmBuilder<
-            EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>> const &eb)
+        run(evm_as::EvmBuilder<EvmTraits<EvmRevision::LatestStable>> const &eb)
         {
             std::vector<uint8_t> bytecode{};
             evm_as::compile(eb, bytecode);
@@ -1140,7 +1139,7 @@ TEST(EvmAs, Annotation7)
 
 TEST(EvmAs, KernelBuilderRepetitionCount)
 {
-    using traits = EvmTraits<MONAD_ETH_PRAGUE>;
+    using traits = EvmTraits<EvmRevision::Prague>;
     using KB = evm_as::KernelBuilder<traits>;
 
     auto seq = [&](size_t args_size, bool has_output) {
@@ -1205,7 +1204,7 @@ TEST(EvmAs, KernelBuilderRepetitionCount)
 
 TEST(EvmAs, KernelBuilderCalldata)
 {
-    using traits = EvmTraits<MONAD_ETH_PRAGUE>;
+    using traits = EvmTraits<EvmRevision::Prague>;
     using KB = evm_as::KernelBuilder<traits>;
 
     KB post_seq;

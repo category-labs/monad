@@ -69,10 +69,10 @@ TEST(HiveNet, ChainConfig)
     // Merged from genesis (PoS): Berlin/London/Paris/Shanghai active at
     // genesis, Cancun at timestamp 30, Prague at timestamp 60. Dispatch is
     // purely by timestamp.
-    EXPECT_EQ(chain.get_revision(0, 0), MONAD_ETH_SHANGHAI);
-    EXPECT_EQ(chain.get_revision(3, 30), MONAD_ETH_CANCUN);
-    EXPECT_EQ(chain.get_revision(5, 59), MONAD_ETH_CANCUN);
-    EXPECT_EQ(chain.get_revision(6, 60), MONAD_ETH_PRAGUE);
+    EXPECT_EQ(chain.get_revision(0, 0), EvmRevision::Shanghai);
+    EXPECT_EQ(chain.get_revision(3, 30), EvmRevision::Cancun);
+    EXPECT_EQ(chain.get_revision(5, 59), EvmRevision::Cancun);
+    EXPECT_EQ(chain.get_revision(6, 60), EvmRevision::Prague);
 
     GenesisState const genesis_state = chain.get_genesis_state();
     EXPECT_EQ(genesis_state.header.difficulty, uint256_t{0x20000});

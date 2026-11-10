@@ -51,7 +51,7 @@ namespace monad::vm::interpreter::stats
 
             for (auto i = 0u; i < data_table.size(); ++i) {
                 auto const &info =
-                    compiler::opcode_table<MONAD_ETH_LATEST_STABLE_REVISION>[i];
+                    compiler::opcode_table<EvmRevision::LatestStable>[i];
                 auto const &stats = data_table[i];
 
                 if (stats.count > 0) {

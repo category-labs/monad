@@ -832,8 +832,9 @@ TYPED_TEST(TraitsTest, call_frames_refund)
                 return 0x186a0;
             }
             else {
-                static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_BERLIN);
-                // same cost as >MONAD_ETH_BERLIN
+                static_assert(
+                    TestFixture::Trait::evm_rev() > EvmRevision::Berlin);
+                // same cost as >EvmRevision::Berlin
                 return static_cast<uint64_t>((10'000'000 - 9'631'760) / 10);
             }
         }

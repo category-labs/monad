@@ -23,7 +23,7 @@
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/message.hpp>
 #include <category/vm/evm/result.hpp>
-#include <category/vm/evm/revision.h>
+#include <category/vm/evm/revision.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/host.hpp>
 #include <category/vm/runtime/bin.hpp>
@@ -65,7 +65,7 @@ namespace monad::vm::runtime
         CallKind const call_kind, bool const static_call,
         int64_t const remaining_block_base_gas)
     {
-        static_assert(traits::evm_rev() >= MONAD_ETH_BERLIN);
+        static_assert(traits::evm_rev() >= EvmRevision::Berlin);
 
         ctx->env.clear_return_data();
 
@@ -276,7 +276,7 @@ namespace monad::vm::runtime
         uint256_t const *args_size_ptr, uint256_t const *ret_offset_ptr,
         uint256_t const *ret_size_ptr, int64_t const remaining_block_base_gas)
     {
-        static_assert(traits::evm_rev() >= MONAD_ETH_CONSTANTINOPLE);
+        static_assert(traits::evm_rev() >= EvmRevision::Constantinople);
 
         *result_ptr = call_impl<traits>(
             ctx,

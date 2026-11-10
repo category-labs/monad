@@ -296,7 +296,7 @@ Result<std::vector<Receipt>> execute_block(
     ChainContext<traits> const &chain_ctx,
     ExecutionEventRecorder *const exec_recorder, bool const trace_transfers)
 {
-    static_assert(traits::evm_rev() >= MONAD_ETH_SPURIOUS_DRAGON);
+    static_assert(traits::evm_rev() >= EvmRevision::SpuriousDragon);
 
     TRACE_BLOCK_EVENT(StartBlock);
 

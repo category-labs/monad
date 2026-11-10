@@ -369,7 +369,7 @@ template <Traits traits>
 Receipt ExecuteTransaction<traits>::execute_final(
     State &state, vm::Result const &result)
 {
-    static_assert(traits::evm_rev() >= MONAD_ETH_SPURIOUS_DRAGON);
+    static_assert(traits::evm_rev() >= EvmRevision::SpuriousDragon);
 
     MONAD_ASSERT(result.gas_left >= 0);
     MONAD_ASSERT(result.gas_refund >= 0);

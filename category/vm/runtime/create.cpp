@@ -21,7 +21,7 @@
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/message.hpp>
 #include <category/vm/evm/result.hpp>
-#include <category/vm/evm/revision.h>
+#include <category/vm/evm/revision.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/host.hpp>
 #include <category/vm/runtime/bin.hpp>
@@ -50,7 +50,7 @@ namespace monad::vm::runtime
         uint256_t const &size_word, uint256_t const &salt_word,
         CallKind const kind, int64_t const remaining_block_base_gas)
     {
-        static_assert(traits::evm_rev() >= MONAD_ETH_TANGERINE_WHISTLE);
+        static_assert(traits::evm_rev() >= EvmRevision::TangerineWhistle);
 
         if (MONAD_UNLIKELY(
                 ctx->env.flags & std::to_underlying(CallFlags::Static))) {

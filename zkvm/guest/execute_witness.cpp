@@ -33,7 +33,7 @@
 #include <category/execution/ethereum/rlp/execution_witness.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/vm/code.hpp>
-#include <category/vm/evm/revision.h>
+#include <category/vm/evm/revision.hpp>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/vm.hpp>
 
@@ -125,7 +125,7 @@ extern "C" void monad_zkvm_execute_witness(void)
     monad::vm::VM vm;
     pdb.set_block_and_prefix(block.header.number, monad::bytes32_t{});
 
-    monad_eth_revision const rev =
+    monad::EvmRevision const rev =
         chain.get_revision(block.header.number, block.header.timestamp);
     // The parent is the one the loop above authenticated: its hash is this
     // block's parent_hash and its state root is the pre-state trie's.

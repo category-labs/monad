@@ -21,7 +21,7 @@
 #include <category/vm/evm/message.hpp>
 #include <category/vm/evm/monad/revision.h>
 #include <category/vm/evm/result.hpp>
-#include <category/vm/evm/revision.h>
+#include <category/vm/evm/revision.hpp>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/runtime/allocator.hpp>
@@ -111,7 +111,8 @@ namespace monad::vm::test
             std::int64_t gas_limit,
             std::span<std::uint8_t const> calldata) noexcept
         {
-            static_assert(TraitsTest<T>::Trait::evm_rev() >= MONAD_ETH_BERLIN);
+            static_assert(
+                TraitsTest<T>::Trait::evm_rev() >= EvmRevision::Berlin);
 
             result_ = vm::Result();
             output_data_ = {};
@@ -278,8 +279,7 @@ namespace monad::vm::test
     class VMFileTest
         : public testing::Test
         , public testing::WithParamInterface<std::tuple<
-              fs::directory_entry,
-              std::variant<monad_eth_revision, monad_revision>>>
+              fs::directory_entry, std::variant<EvmRevision, monad_revision>>>
     {
     protected:
         template <Traits traits>
@@ -303,10 +303,10 @@ namespace monad::vm::test
 
         void execute_and_compare(
             std::int64_t gas_limit, std::span<std::uint8_t const> code,
-            std::variant<monad_eth_revision, monad_revision> rev_) noexcept
+            std::variant<EvmRevision, monad_revision> rev_) noexcept
         {
-            if (std::holds_alternative<monad_eth_revision>(rev_)) {
-                auto rev = std::get<monad_eth_revision>(rev_);
+            if (std::holds_alternative<EvmRevision>(rev_)) {
+                auto rev = std::get<EvmRevision>(rev_);
                 SWITCH_EVM_TRAITS(
                     VMFileTest::execute_and_compare_evm_rev, gas_limit, code);
             }

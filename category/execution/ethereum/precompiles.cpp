@@ -44,7 +44,7 @@ struct PrecompiledContract
 // TODO(Bruce): when we enable feature flags in traits rather than raw use of
 // the EVM version, refactor this code and the general precompile setup to use
 // it.
-template <monad_eth_revision First, monad_eth_revision Rev>
+template <EvmRevision First, EvmRevision Rev>
 static consteval std::optional<PrecompiledContract>
 since(PrecompiledContract impl)
 {
@@ -65,7 +65,7 @@ static std::optional<uint64_t> fmap_optional(byte_string_view const a)
 template <Traits traits>
 std::optional<PrecompiledContract> resolve_precompile(Address const &address)
 {
-    static_assert(traits::evm_rev() >= MONAD_ETH_ISTANBUL);
+    static_assert(traits::evm_rev() >= EvmRevision::Istanbul);
 
 #define CASE(addr, gas_cost, execute)                                          \
     do {                                                                       \

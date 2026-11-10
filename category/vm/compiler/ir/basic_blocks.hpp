@@ -212,12 +212,12 @@ namespace monad::vm::compiler::basic_blocks
         /**
          * Construct basic blocks from a bytecode program.
          */
-        template <Traits traits = EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>
+        template <Traits traits = EvmTraits<EvmRevision::LatestStable>>
         BasicBlocksIR(
             uint8_t const *, interpreter::code_size_t,
             ChainMarker<traits> = {});
 
-        template <Traits traits = EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>
+        template <Traits traits = EvmTraits<EvmRevision::LatestStable>>
         [[gnu::always_inline]]
         static constexpr BasicBlocksIR unsafe_from(
             std::initializer_list<uint8_t const> bytes,
@@ -231,7 +231,7 @@ namespace monad::vm::compiler::basic_blocks
                 rm);
         }
 
-        template <Traits traits = EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>
+        template <Traits traits = EvmTraits<EvmRevision::LatestStable>>
         [[gnu::always_inline]]
         static constexpr BasicBlocksIR
         unsafe_from(std::span<uint8_t const> bytes, ChainMarker<traits> rm = {})

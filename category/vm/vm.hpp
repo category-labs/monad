@@ -138,7 +138,7 @@ namespace monad::vm
         };
 
         using ExecuteOverride = std::function<Result(
-            Host &host, monad_eth_revision rev, Message const *msg,
+            Host &host, EvmRevision rev, Message const *msg,
             uint8_t const *code, size_t code_size)>;
 
     private:

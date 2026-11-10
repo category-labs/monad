@@ -18,7 +18,7 @@
 #include <category/vm/evm/access_status.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/message.hpp>
-#include <category/vm/evm/revision.h>
+#include <category/vm/evm/revision.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/host.hpp>
 #include <category/vm/runtime/selfdestruct.hpp>
@@ -32,7 +32,7 @@ namespace monad::vm::runtime
     template <Traits traits>
     void selfdestruct [[noreturn]] (Context *ctx, uint256_t const *address_ptr)
     {
-        static_assert(traits::evm_rev() >= MONAD_ETH_BERLIN);
+        static_assert(traits::evm_rev() >= EvmRevision::Berlin);
 
         if (MONAD_UNLIKELY(
                 ctx->env.flags & std::to_underlying(CallFlags::Static))) {

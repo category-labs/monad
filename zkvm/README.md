@@ -15,6 +15,7 @@ zkvm/
 ├── boost/, quill/        # replacements for host-only library headers
 ├── guest/                # shared C++ witness executor
 │   ├── execute_witness.cpp
+│   ├── build_identity.cpp  # the ELF's commit marker
 │   ├── execute_block.cpp
 │   ├── x86_test_runner.cpp
 │   └── CMakeLists.txt
@@ -36,8 +37,8 @@ for its runtime, I/O, and accelerators.
 
 - Initialize the repository's submodules with
   `git submodule update --init --recursive`.
-- Install CMake, a build tool such as Make or Ninja, and Boost headers with
-  their CMake package configuration.
+- Install CMake, Python 3.9 or later, a build tool such as Make or Ninja,
+  and Boost headers with their CMake package configuration.
 - Use a `riscv64-unknown-elf` or `riscv64-none-elf` GCC toolchain with newlib
   and C++23 support. Set `RISCV_TOOLCHAIN_DIR` in the environment or in a
   local, gitignored `zkvm/.cargo/config.toml`:
@@ -51,7 +52,7 @@ for its runtime, I/O, and accelerators.
   Cargo reads this configuration when invoked from either backend directory.
 - For ZisK, install `cargo-zisk` and `ziskemu` using
   [ziskup](https://github.com/0xPolygonHermez/zisk). The guest pins `ziskos`
-  to **v1.3.1-alpha** in [Cargo.toml](zisk/Cargo.toml); use matching tools.
+  to **v1.4.0-alpha** in [Cargo.toml](zisk/Cargo.toml); use matching tools.
 - For SP1, install the `succinct` Rust toolchain using
   [sp1up](https://docs.succinct.xyz/getting-started/install.html), and provide
   `ld.lld` on `PATH` or through that toolchain. The host SDK is **6.8.1**;
@@ -66,10 +67,49 @@ Start each section's commands from the repository root unless stated otherwise.
 ZisK input is an 8-byte little-endian payload length followed by the witness,
 zero-padded to an 8-byte boundary.
 
+Published benchmarks and releases use the [reference Nix build](../nix/README.md#zisk-guest-elf):
+
 ```sh
-# 1. Build the guest ELF.
+nix build --option sandbox true --option sandbox-fallback false '.?submodules=1#zisk-elf'
+# result/monad-zkvm-zisk and result/monad-zkvm-zisk.build.json
+```
+
+It pins the source and toolchains and checks the allocator assumptions and
+linked ELF. Keep the manifest with the artifact. It requires an x86_64 Linux
+builder. Reproducibility must still be checked by independent rebuilds.
+
+For incremental development on x86_64 Linux, use the [Nix development shell](../nix/README.md#development-shell):
+
+```sh
+nix develop .#zisk
 cd zkvm/zisk
-cargo-zisk build --release --bin monad-zkvm-zisk
+cargo build --release --locked --target riscv64ima-zisk-zkvm-elf --target-dir target/elf --bin monad-zkvm-zisk
+```
+
+It supplies the pinned compilers and linker configuration, enables DMA, clean
+byte stores and link-time optimization, and builds local edits without
+`cargo-zisk`.
+
+The development shell selects the pinned toolchain through `RISCV_TOOLCHAIN_DIR`.
+Toolchain-selection `-D` overrides are rejected so CMake and cmake-rs use the
+same tools. The cache key includes the compiler path, build flags and CMake
+configuration. Nix toolchain paths are immutable, so executable fingerprinting
+is unnecessary.
+
+Override `MONAD_ZKVM_ZISK_DMA`, `MONAD_ZKVM_ZISK_CLEAN_BYTE_STORES` or
+`MONAD_ZKVM_ZISK_LTO` in the shell to compare build options. Further CMake
+options go in `MONAD_ZKVM_CMAKE_ARGS` as shell-quoted `-DNAME=VALUE` words.
+Each compiler and configuration keeps its own CMake build under Cargo's
+`OUT_DIR`, so switching between them reuses their objects.
+Without explicit stamps, development ELFs carry
+`monad-zkvm;commit=none;build=none`. Initialize submodules recursively before
+using the Nix build.
+
+```sh
+# 1. Build the guest ELF in the development shell.
+nix develop .#zisk
+cd zkvm/zisk
+cargo build --release --locked --target riscv64ima-zisk-zkvm-elf --target-dir target/elf --bin monad-zkvm-zisk
 #  → target/elf/riscv64ima-zisk-zkvm-elf/release/monad-zkvm-zisk
 
 # 2. Wrap the witness with the 8-byte length prefix the emulator expects,

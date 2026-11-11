@@ -13,7 +13,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/core/address.hpp>
 #include <category/core/hex.hpp>
 #include <category/execution/ethereum/core/contract/abi_decode_error.hpp>
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
@@ -27,13 +26,27 @@
 #include <category/mpt/db.hpp>
 #include <category/vm/vm.hpp>
 
-#include <cstddef>
-#include <memory>
-#include <utility>
-
 #include <gtest/gtest.h>
 
+#include <cstddef>
+#include <memory>
+
 using namespace monad;
+
+namespace
+{
+    constexpr uint64_t DESTINATION_DOMAIN = 0x510000004eaf;
+
+    // Independently computed with cthash: Keccak-256 of these two ABI words,
+    // representing the destination domain and the mapping's root slot (7):
+    // 0000000000000000000000000000000000000000000000000000510000004eaf
+    // 0000000000000000000000000000000000000000000000000000000000000007
+    constexpr auto DESTINATION_KEY_SLOT =
+        0x7b4e93f8fe9bc472b1fac84156f4243b62a421ce301fbbe4cb12ff9ad4c799aa_bytes32;
+
+    constexpr auto DESTINATION_KEY =
+        0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f_bytes32;
+}
 
 struct ApplicationEncryptionContractTest : public ::testing::Test
 {
@@ -45,6 +58,114 @@ struct ApplicationEncryptionContractTest : public ::testing::Test
     NoopCallTracer call_tracer;
     ApplicationEncryptionContract contract{state, call_tracer};
 };
+
+TEST_F(ApplicationEncryptionContractTest, destination_key_rejects_missing_spoke)
+{
+    auto const result =
+        read_destination_key(state, SPOKE_CA, uint256_t{7}, DESTINATION_DOMAIN);
+    ASSERT_TRUE(result.has_error());
+    EXPECT_EQ(result.assume_error(), ApplicationEncryptionError::SpokeNotFound);
+}
+
+TEST_F(ApplicationEncryptionContractTest, destination_key_rejects_missing_key)
+{
+    state.set_nonce(SPOKE_CA, 1);
+
+    auto const result =
+        read_destination_key(state, SPOKE_CA, uint256_t{7}, DESTINATION_DOMAIN);
+    ASSERT_TRUE(result.has_error());
+    EXPECT_EQ(
+        result.assume_error(),
+        ApplicationEncryptionError::DestinationKeyNotFound);
+}
+
+TEST_F(
+    ApplicationEncryptionContractTest,
+    destination_key_uses_solidity_mapping_slot)
+{
+    state.set_nonce(SPOKE_CA, 1);
+    state.set_storage(SPOKE_CA, DESTINATION_KEY_SLOT, DESTINATION_KEY);
+
+    auto const result =
+        read_destination_key(state, SPOKE_CA, uint256_t{7}, DESTINATION_DOMAIN);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value(), DESTINATION_KEY);
+
+    auto const other_domain = read_destination_key(
+        state, SPOKE_CA, uint256_t{7}, DESTINATION_DOMAIN + 1);
+    ASSERT_TRUE(other_domain.has_error());
+    EXPECT_EQ(
+        other_domain.assume_error(),
+        ApplicationEncryptionError::DestinationKeyNotFound);
+
+    auto const other_slot =
+        read_destination_key(state, SPOKE_CA, uint256_t{8}, DESTINATION_DOMAIN);
+    ASSERT_TRUE(other_slot.has_error());
+    EXPECT_EQ(
+        other_slot.assume_error(),
+        ApplicationEncryptionError::DestinationKeyNotFound);
+
+    auto const other_spoke_address = Address{0x123456};
+    state.set_nonce(other_spoke_address, 1);
+    auto const other_spoke = read_destination_key(
+        state, other_spoke_address, uint256_t{7}, DESTINATION_DOMAIN);
+    ASSERT_TRUE(other_spoke.has_error());
+    EXPECT_EQ(
+        other_spoke.assume_error(),
+        ApplicationEncryptionError::DestinationKeyNotFound);
+}
+
+TEST_F(
+    ApplicationEncryptionContractTest,
+    destination_key_observes_updates_and_rollback)
+{
+    state.set_nonce(SPOKE_CA, 1);
+    state.set_storage(SPOKE_CA, DESTINATION_KEY_SLOT, DESTINATION_KEY);
+
+    state.push();
+    state.set_storage(SPOKE_CA, DESTINATION_KEY_SLOT, bytes32_t{0xff});
+    auto const changed =
+        read_destination_key(state, SPOKE_CA, uint256_t{7}, DESTINATION_DOMAIN);
+    ASSERT_TRUE(changed.has_value());
+    EXPECT_EQ(changed.value(), bytes32_t{0xff});
+
+    state.pop_reject();
+    auto const restored =
+        read_destination_key(state, SPOKE_CA, uint256_t{7}, DESTINATION_DOMAIN);
+    ASSERT_TRUE(restored.has_value());
+    EXPECT_EQ(restored.value(), DESTINATION_KEY);
+}
+
+TEST_F(ApplicationEncryptionContractTest, seal_reads_destination_key)
+{
+    AbiEncoder encoder;
+    encoder.add_bytes(byte_string{0xab});
+    encoder.add_uint(u64_be{DESTINATION_DOMAIN});
+    encoder.add_address(Address{0x1234});
+    encoder.add_bytes(byte_string{0xcd});
+    auto const input = encoder.encode_final();
+
+    auto const absent_spoke =
+        contract.precompile_seal(input, Address{0x4321}, {});
+    ASSERT_TRUE(absent_spoke.has_error());
+    EXPECT_EQ(
+        absent_spoke.assume_error(), ApplicationEncryptionError::SpokeNotFound);
+
+    state.set_nonce(SPOKE_CA, 1);
+    auto const absent_key =
+        contract.precompile_seal(input, Address{0x4321}, {});
+    ASSERT_TRUE(absent_key.has_error());
+    EXPECT_EQ(
+        absent_key.assume_error(),
+        ApplicationEncryptionError::DestinationKeyNotFound);
+
+    state.set_storage(SPOKE_CA, DESTINATION_KEY_SLOT, DESTINATION_KEY);
+    auto const installed = contract.precompile_seal(input, Address{0x4321}, {});
+    ASSERT_TRUE(installed.has_error());
+    // A successful lookup reaches the remaining encryption stub.
+    EXPECT_EQ(
+        installed.assume_error(), ApplicationEncryptionError::NotImplemented);
+}
 
 TEST_F(ApplicationEncryptionContractTest, unseal_decodes_dynamic_arguments)
 {

@@ -16,7 +16,7 @@
 // The guest State over witness blobs: what a row answers for an address or
 // slot the witness proves present, proves absent, or cannot prove at all.
 // Blobs are built with the production node writers, as in
-// test_partial_trie_db.cpp.
+// test_offset_trie.cpp.
 
 #include <zkvm/state/account_state.hpp>
 #include <zkvm/state/key_hash.hpp>

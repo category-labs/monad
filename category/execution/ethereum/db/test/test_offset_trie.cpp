@@ -182,7 +182,7 @@ namespace
         return bb.finalize(0);
     }
 
-    // Insert into the account trie, as PartialTrieDb::commit does: an empty
+    // Insert into the account trie, as the guest State's commit does: an empty
     // trie's root is NULL_ID, so the first leaf becomes the new root. Returns
     // the leaf id + path for the caller to put_acct.
     std::pair<NodeId, mpt::Nibbles>

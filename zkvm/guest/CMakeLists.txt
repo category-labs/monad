@@ -54,7 +54,6 @@ set(MONAD_ZKVM_DROPPED_EXECUTION_SOURCES
     "db_snapshot.cpp"
     "db_snapshot_filesystem.cpp"
     "file_db.cpp"
-    "partial_trie_db.cpp"
     "trie_db.cpp"
     "db/util.cpp"
     "db/commit_builder.cpp"

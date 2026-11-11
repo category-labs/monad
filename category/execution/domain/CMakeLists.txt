@@ -23,6 +23,8 @@ add_library(
   "config.hpp"
   "derivation.cpp"
   "derivation.hpp"
+  "deriver.cpp"
+  "deriver.hpp"
   "execution.cpp"
   "execution.hpp"
   "executor.cpp"

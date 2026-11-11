@@ -34,16 +34,19 @@
 #include <category/execution/ethereum/core/rlp/address_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/bytes_rlp.hpp>
+#include <category/execution/ethereum/core/rlp/receipt_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/signature.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/core/units.hpp>
 #include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/execution/ethereum/create_contract_address.hpp>
+#include <category/execution/ethereum/db/ordered_trie.hpp>
 #include <category/execution/ethereum/db/test/commit_simple.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/native_transfer_log.hpp>
+#include <category/execution/ethereum/process_requests.hpp>
 #include <category/execution/ethereum/reserve_balance.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
@@ -10129,6 +10132,28 @@ namespace
             conf, conf, conf, tx_exec_num_fibers, node_lru_max_mem, nullptr);
     }
 
+    // EIP-7002/7251 system contracts, which Ethereum request processing calls
+    // from Prague onwards. The empty world has neither.
+    constexpr Address withdrawal_request_address =
+        0x00000961ef480eb55e80d19ad83579a64c007002_address;
+    constexpr Address consolidation_request_address =
+        0x0000bbddc7ce488642fb579f8b00f3a590007251_address;
+
+    void set_code_override_at(
+        monad_state_override_vec *const so, size_t const index,
+        Address const &address, std::vector<uint8_t> const &code)
+    {
+        add_override_address_at(
+            so, index, address.bytes, sizeof(address.bytes));
+        set_override_code_at(
+            so,
+            index,
+            address.bytes,
+            sizeof(address.bytes),
+            code.data(),
+            code.size());
+    }
+
     void run_eth_call(
         monad_executor *const executor, Transaction const &tx,
         BlockHeader const &header, Address const &sender,
@@ -12231,8 +12256,48 @@ TEST(EthCallFixtureNoDb, eth_simulate_v1_chain_id)
     EXPECT_EQ(call["gasUsed"], std::format("0x{:x}", 43'105));
     EXPECT_TRUE(call["logs"].empty());
 
-    // CHAINID reports the chain the simulation runs on.
+    // The header is a complete Cancun header; only the state root is not
+    // computed in simulation. The simulated transaction carries the chain id
+    // and the placeholder signature that the simulator assigns.
     EthereumMainnet const mainnet;
+    auto const hex = [](bytes32_t const &bytes) {
+        return std::format("0x{}", to_hex(bytes));
+    };
+    Transaction simulated_tx = chain_id_tx;
+    simulated_tx.sc.chain_id = mainnet.get_chain_id();
+    simulated_tx.sc.signature.r = 1;
+    simulated_tx.sc.signature.s = 1;
+    byte_string const encoded_tx = rlp::encode_transaction(simulated_tx);
+    ASSERT_EQ(block["transactions"].size(), 1);
+    EXPECT_EQ(block["transactions"][0], hex(to_bytes(keccak256(encoded_tx))));
+    BlockHeader const expected_header{
+        .parent_hash = to_bytes(keccak256(rlp::encode_block_header(header))),
+        .transactions_root = ordered_trie_root(std::array{encoded_tx}),
+        .receipts_root = ordered_trie_root(std::array{
+            rlp::encode_receipt(Receipt{.status = 1, .gas_used = 43'105})}),
+        .prev_randao = prev_randao,
+        .number = 1,
+        .gas_limit = block_gas_limit,
+        .gas_used = 43'105,
+        .timestamp = block_timestamp,
+        .beneficiary = coinbase,
+        .base_fee_per_gas = uint256_t{0x0a},
+        .withdrawals_root = NULL_ROOT,
+        .blob_gas_used = 0,
+        .excess_blob_gas = 0,
+        .parent_beacon_block_root = bytes32_t{},
+    };
+    EXPECT_EQ(block["parentHash"], hex(expected_header.parent_hash));
+    EXPECT_EQ(block["sha3Uncles"], hex(NULL_LIST_HASH));
+    EXPECT_EQ(
+        block["transactionsRoot"], hex(expected_header.transactions_root));
+    EXPECT_EQ(block["receiptsRoot"], hex(expected_header.receipts_root));
+    EXPECT_EQ(block["withdrawalsRoot"], hex(NULL_ROOT));
+    EXPECT_EQ(
+        block["hash"],
+        hex(to_bytes(keccak256(rlp::encode_block_header(expected_header)))));
+
+    // CHAINID reports the chain the simulation runs on.
     auto const expected_chain_id = std::format(
         "0x{}", to_hex(store_be_as<bytes32_t>(mainnet.get_chain_id())));
     ASSERT_EQ(output[1]["calls"].size(), 1);
@@ -12324,4 +12389,192 @@ TEST(EthCallFixtureNoDb, eth_simulate_v1_pinned_revision_validation)
     monad_block_override_vec_destroy(bo);
     monad_state_override_vec_destroy(so);
     monad_executor_destroy(executor);
+}
+
+// A simulated Ethereum block carries exactly the header fields of its fork, so
+// its hash is that of the fork's canonical header. The state root is not
+// computed in simulation. The request system contracts are stubs that return no
+// requests, so blocks from Prague onwards carry the hash of an empty request
+// list.
+TEST(EthCallFixtureNoDb, eth_simulate_v1_ethereum_header_fields)
+{
+    auto *const executor = create_executor_without_db();
+
+    // A single block without calls.
+    auto const rlp_senders =
+        to_vec(rlp::encode_list2(rlp::encode_list2(byte_string{})));
+    auto const rlp_calls =
+        to_vec(rlp::encode_list2(rlp::encode_list2(byte_string{})));
+    BlockHeader const header{};
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+    auto *const so = monad_state_override_vec_create(1);
+    std::vector<uint8_t> const stop_code{0x00};
+    set_code_override_at(so, 0, withdrawal_request_address, stop_code);
+    set_code_override_at(so, 0, consolidation_request_address, stop_code);
+    auto *const bo = monad_block_override_vec_create(1);
+
+    BlockHeader const berlin{
+        .parent_hash = to_bytes(keccak256(rlp::encode_block_header(header))),
+        .number = 1,
+        .timestamp = 1,
+    };
+    BlockHeader london = berlin;
+    london.base_fee_per_gas = 0;
+    BlockHeader shanghai = london;
+    shanghai.withdrawals_root = NULL_ROOT;
+    BlockHeader cancun = shanghai;
+    cancun.blob_gas_used = 0;
+    cancun.excess_blob_gas = 0;
+    cancun.parent_beacon_block_root = bytes32_t{};
+    BlockHeader prague = cancun;
+    // sha256 of the empty request list.
+    prague.requests_hash =
+        0xe3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855_bytes32;
+
+    struct TestCase
+    {
+        monad_eth_revision revision;
+        BlockHeader expected;
+    };
+
+    std::array const test_cases{
+        TestCase{MONAD_ETH_BERLIN, berlin},
+        TestCase{MONAD_ETH_LONDON, london},
+        TestCase{MONAD_ETH_PARIS, london},
+        TestCase{MONAD_ETH_SHANGHAI, shanghai},
+        TestCase{MONAD_ETH_CANCUN, cancun},
+        TestCase{MONAD_ETH_PRAGUE, prague},
+        TestCase{MONAD_ETH_OSAKA, prague},
+    };
+
+    // The executor may still be completing a context's promise after the
+    // waiter wakes, so contexts outlive the executor.
+    std::vector<std::unique_ptr<callback_context>> contexts;
+    for (auto const &test_case : test_cases) {
+        SCOPED_TRACE(monad_eth_revision_to_string(test_case.revision));
+        auto config = default_simulate_config(CHAIN_CONFIG_ETHEREUM_MAINNET);
+        config.revision = test_case.revision;
+        auto &ctx =
+            *contexts.emplace_back(std::make_unique<callback_context>());
+        boost::fibers::future<void> f = ctx.promise.get_future();
+        monad_executor_eth_simulate_submit(
+            executor,
+            &config,
+            rlp_senders.data(),
+            rlp_senders.size(),
+            rlp_calls.data(),
+            rlp_calls.size(),
+            header.number,
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            rlp_finalized_id.data(),
+            rlp_finalized_id.size(),
+            so,
+            bo,
+            complete_callback,
+            (void *)&ctx);
+        f.get();
+
+        ASSERT_EQ(ctx.result->status_code, MONAD_STATUS_SUCCESS);
+        nlohmann::json const output = nlohmann::json::from_cbor(
+            ctx.result->encoded_trace,
+            ctx.result->encoded_trace + ctx.result->encoded_trace_len);
+        ASSERT_EQ(output.size(), 1);
+        EXPECT_EQ(
+            output[0]["hash"],
+            std::format(
+                "0x{}",
+                to_hex(to_bytes(
+                    keccak256(rlp::encode_block_header(test_case.expected))))));
+    }
+
+    monad_block_override_vec_destroy(bo);
+    monad_state_override_vec_destroy(so);
+    monad_executor_destroy(executor);
+}
+
+// Simulation processes EIP-7685 requests without validating the header's
+// requests hash, and the simulated header carries the computed hash.
+TEST(EthCallFixtureNoDb, eth_simulate_v1_ethereum_requests_hash)
+{
+    auto *const executor = create_executor_without_db();
+
+    // A single block without calls.
+    auto const rlp_senders =
+        to_vec(rlp::encode_list2(rlp::encode_list2(byte_string{})));
+    auto const rlp_calls =
+        to_vec(rlp::encode_list2(rlp::encode_list2(byte_string{})));
+    BlockHeader const header{};
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    // The withdrawal request contract returns the single byte 0x2a as its
+    // request data: PUSH1 0x2a PUSH1 0 MSTORE8 PUSH1 1 PUSH1 0 RETURN.
+    std::vector<uint8_t> const withdrawal_request_code{
+        0x60, 0x2a, 0x60, 0x00, 0x53, 0x60, 0x01, 0x60, 0x00, 0xf3};
+    std::vector<uint8_t> const stop_code{0x00};
+    auto *const so = monad_state_override_vec_create(1);
+    set_code_override_at(
+        so, 0, withdrawal_request_address, withdrawal_request_code);
+    set_code_override_at(so, 0, consolidation_request_address, stop_code);
+    auto *const bo = monad_block_override_vec_create(1);
+
+    std::array<BlockRequest, 1> const requests{
+        BlockRequest{.type = 0x01, .data = byte_string{0x2a}}};
+    bytes32_t const requests_hash = compute_requests_hash(requests);
+    ASSERT_NE(requests_hash, compute_requests_hash({}));
+    BlockHeader const expected{
+        .parent_hash = to_bytes(keccak256(rlp::encode_block_header(header))),
+        .number = 1,
+        .timestamp = 1,
+        .base_fee_per_gas = 0,
+        .withdrawals_root = NULL_ROOT,
+        .blob_gas_used = 0,
+        .excess_blob_gas = 0,
+        .parent_beacon_block_root = bytes32_t{},
+        .requests_hash = requests_hash,
+    };
+
+    auto config = default_simulate_config(CHAIN_CONFIG_ETHEREUM_MAINNET);
+    config.revision = MONAD_ETH_PRAGUE;
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+    monad_executor_eth_simulate_submit(
+        executor,
+        &config,
+        rlp_senders.data(),
+        rlp_senders.size(),
+        rlp_calls.data(),
+        rlp_calls.size(),
+        header.number,
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        rlp_finalized_id.data(),
+        rlp_finalized_id.size(),
+        so,
+        bo,
+        complete_callback,
+        (void *)&ctx);
+    f.get();
+    monad_executor_destroy(executor);
+
+    ASSERT_EQ(ctx.result->status_code, MONAD_STATUS_SUCCESS)
+        << ctx.result->message;
+    nlohmann::json const output = nlohmann::json::from_cbor(
+        ctx.result->encoded_trace,
+        ctx.result->encoded_trace + ctx.result->encoded_trace_len);
+    ASSERT_EQ(output.size(), 1);
+    EXPECT_EQ(
+        output[0]["hash"],
+        std::format(
+            "0x{}",
+            to_hex(to_bytes(keccak256(rlp::encode_block_header(expected))))));
+
+    monad_block_override_vec_destroy(bo);
+    monad_state_override_vec_destroy(so);
 }

@@ -108,7 +108,11 @@ constexpr bool inherit_base_fee(ExecutionMode const &execution_mode)
     return strict_validation(execution_mode);
 }
 
-constexpr bool skip_process_requests_hash(ExecutionMode const &mode)
+// Determines whether to skip validating the block header's EIP-7685 requests
+// hash against the hash computed from the block's requests. The requests are
+// processed either way; a simulated block has no given hash to validate, so
+// simulation reports the computed one instead.
+constexpr bool skip_requests_hash_validation(ExecutionMode const &mode)
 {
     return std::holds_alternative<Simulation>(mode);
 }
@@ -134,5 +138,8 @@ static_assert(
 // Live execution must perform every sender check.
 static_assert(
     sender_nonce_check(ExecutionMode{}) && sender_eoa_check(ExecutionMode{}));
+// Live execution must validate the requests hash in the block header (Ethereum
+// only).
+static_assert(!skip_requests_hash_validation(ExecutionMode{}));
 
 MONAD_NAMESPACE_END

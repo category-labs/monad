@@ -16,6 +16,7 @@
 #pragma once
 
 #include <category/core/address.hpp>
+#include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/core/fiber/priority_pool.hpp>
 #include <category/core/result.hpp>
@@ -65,7 +66,10 @@ Result<std::vector<Receipt>> execute_block(
     std::span<std::unique_ptr<trace::StateTracer>> state_tracers,
     trace::StateTracer &system_call_state_tracer,
     ChainContext<traits> const &chain_ctx, ExecutionEventRecorder *,
-    bool trace_transfers = false);
+    bool trace_transfers = false,
+    // If non-null, receives the block's computed EIP-7685 requests hash once
+    // requests are processed.
+    std::optional<bytes32_t> *requests_hash_out = nullptr);
 
 std::vector<std::optional<Address>>
 recover_senders(std::span<Transaction const>, fiber::PriorityPool &);

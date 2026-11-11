@@ -295,7 +295,8 @@ Result<std::vector<Receipt>> execute_block(
     std::span<std::unique_ptr<trace::StateTracer>> const state_tracers,
     trace::StateTracer &system_call_state_tracer,
     ChainContext<traits> const &chain_ctx,
-    ExecutionEventRecorder *const exec_recorder, bool const trace_transfers)
+    ExecutionEventRecorder *const exec_recorder, bool const trace_transfers,
+    std::optional<bytes32_t> *const requests_hash_out)
 {
     static_assert(traits::evm_rev() >= MONAD_ETH_SPURIOUS_DRAGON);
 
@@ -333,25 +334,26 @@ Result<std::vector<Receipt>> execute_block(
     }
 
     if constexpr (traits::eip_7685_active()) {
-        if (!skip_process_requests_hash(chain_ctx.mode)) {
-            MONAD_ASSERT_THROW(
-                block.header.requests_hash.has_value(),
-                "block header must have requests hash when EIP-7685 is active");
-            BOOST_OUTCOME_TRY(
-                auto const computed_requests_hash,
-                process_requests<traits>(
-                    chain,
-                    state,
-                    block_hash_buffer,
-                    block.header,
-                    system_call_state_tracer,
-                    chain_ctx,
-                    retvals));
-            if (MONAD_UNLIKELY(
-                    computed_requests_hash !=
-                    block.header.requests_hash.value())) {
-                return BlockError::InvalidRequestsHash;
-            }
+        MONAD_ASSERT_THROW(
+            block.header.requests_hash.has_value(),
+            "block header must have requests hash when EIP-7685 is active");
+        BOOST_OUTCOME_TRY(
+            auto const computed_requests_hash,
+            process_requests<traits>(
+                chain,
+                state,
+                block_hash_buffer,
+                block.header,
+                system_call_state_tracer,
+                chain_ctx,
+                retvals));
+        if (MONAD_UNLIKELY(
+                !skip_requests_hash_validation(chain_ctx.mode) &&
+                computed_requests_hash != block.header.requests_hash.value())) {
+            return BlockError::InvalidRequestsHash;
+        }
+        if (requests_hash_out != nullptr) {
+            *requests_hash_out = computed_requests_hash;
         }
     }
 

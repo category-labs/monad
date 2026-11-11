@@ -38,13 +38,17 @@
 #include <category/execution/ethereum/chain/chain_config.h>
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/core/block.hpp>
+#include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/rlp/address_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/bytes_rlp.hpp>
+#include <category/execution/ethereum/core/rlp/receipt_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
+#include <category/execution/ethereum/core/rlp/withdrawal_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/execution/ethereum/db/db.hpp>
+#include <category/execution/ethereum/db/ordered_trie.hpp>
 #include <category/execution/ethereum/db/trie_rodb.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/execute_block.hpp>
@@ -61,6 +65,7 @@
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/trace/tracer_config.h>
+#include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
@@ -710,8 +715,8 @@ namespace
             entry[eth_simulate_json::size] =
                 std::format("0x{:x}", encoded.size());
         }
-        // TODO(dhil): We currently do not have a way to compute roots
-        // information in simulation mode.
+        // TODO(dhil): We currently do not have the means to compute the state
+        // root.
         entry[eth_simulate_json::state_root] =
             format_hex(block.header.state_root);
         entry[eth_simulate_json::transactions_root] =
@@ -721,11 +726,8 @@ namespace
         // In the absence of withdrawals we default to `NULL_HASH`.
         entry[eth_simulate_json::withdrawals_root] =
             format_hex(block.header.withdrawals_root.value_or(NULL_HASH));
-        {
-            Receipt::Bloom bloom = compute_bloom(receipts);
-            entry[eth_simulate_json::logs_bloom] =
-                format_hex(byte_string_view{bloom.data(), bloom.size()});
-        }
+        entry[eth_simulate_json::logs_bloom] = format_hex(byte_string_view{
+            block.header.logs_bloom.data(), block.header.logs_bloom.size()});
         entry[eth_simulate_json::difficulty] =
             std::format("0x{}", to_string(block.header.difficulty, 16));
         entry[eth_simulate_json::number] =
@@ -788,13 +790,115 @@ namespace
             return base_fee_override;
         }
         if (inherit_base_fee(execution_mode)) {
+            // On Ethereum configuration we ought to compute the base fee using
+            // the EIP-1559 formula for computing the base fee for the next
+            // block -- however, the code base does not implement this part of
+            // EIP-1559, so we use the Monad rule of inheriting the parent's
+            // base fee instead.
             return parent.base_fee_per_gas;
         }
         return std::nullopt;
     }
 
+    // Fills the fork-dependent fields of a simulated block header that
+    // do not depend on its execution, following geth's eth_simulateV1.
+    template <Traits traits>
+    void prepare_block_header(
+        Chain const &chain, BlockHeader const &parent, Block &block)
+    {
+        BlockHeader &header = block.header;
+
+        if constexpr (!traits::eip_3675_active()) {
+            header.difficulty = parent.difficulty;
+        }
+
+        if constexpr (traits::eip_1559_header_active()) {
+            if (!header.base_fee_per_gas.has_value()) {
+                header.base_fee_per_gas = uint256_t{0};
+            }
+        }
+        else {
+            header.base_fee_per_gas = std::nullopt;
+        }
+
+        if constexpr (traits::eip_4895_active()) {
+            if (!block.withdrawals.has_value()) {
+                block.withdrawals.emplace();
+            }
+            std::vector<byte_string> encoded_withdrawals;
+            encoded_withdrawals.reserve(block.withdrawals->size());
+            for (Withdrawal const &withdrawal : *block.withdrawals) {
+                encoded_withdrawals.emplace_back(
+                    rlp::encode_withdrawal(withdrawal));
+            }
+            header.withdrawals_root = ordered_trie_root(encoded_withdrawals);
+        }
+        else {
+            block.withdrawals = std::nullopt;
+            header.withdrawals_root = std::nullopt;
+        }
+
+        if constexpr (traits::eip_4844_header_active()) {
+            header.excess_blob_gas =
+                parent.excess_blob_gas.has_value()
+                    ? calc_excess_blob_gas<traits>(
+                          parent, chain.get_blob_schedule(header.timestamp))
+                    : 0;
+            uint64_t blob_gas_used = 0;
+            for (Transaction const &tx : block.transactions) {
+                blob_gas_used += get_total_blob_gas(tx);
+            }
+            header.blob_gas_used = blob_gas_used;
+        }
+
+        if constexpr (!traits::eip_4788_active()) {
+            header.parent_beacon_block_root = std::nullopt;
+        }
+
+        // The `execute_block` requires an Ethereum block to carry a requests
+        // hash. Simulation does not validate it (see
+        // `skip_requests_hash_validation`), so this placeholder is replaced by
+        // the computed hash after execution (see `complete_header`).
+        if constexpr (traits::eip_7685_header_active()) {
+            header.requests_hash = bytes32_t{};
+        }
+
+        if constexpr (traits::eip_7843_active()) {
+            // TODO(dhil): Compute block access list.
+            header.block_access_list_hash = bytes32_t{};
+            header.slot_number = parent.slot_number.has_value()
+                                     ? parent.slot_number.value() + 1
+                                     : 0;
+        }
+
+        std::vector<byte_string> encoded_transactions;
+        encoded_transactions.reserve(block.transactions.size());
+        for (Transaction const &tx : block.transactions) {
+            encoded_transactions.emplace_back(rlp::encode_transaction(tx));
+        }
+        header.transactions_root = ordered_trie_root(encoded_transactions);
+    }
+
+    // Finish the header by filling in the receipts root, logs bloom, and
+    // requests hash if available.
+    void complete_header(
+        BlockHeader &header, std::vector<Receipt> const &receipts,
+        std::optional<bytes32_t> const &requests_hash)
+    {
+        if (requests_hash.has_value()) {
+            header.requests_hash = requests_hash;
+        }
+        std::vector<byte_string> encoded_receipts;
+        encoded_receipts.reserve(receipts.size());
+        for (Receipt const &receipt : receipts) {
+            encoded_receipts.emplace_back(rlp::encode_receipt(receipt));
+        }
+        header.receipts_root = ordered_trie_root(encoded_receipts);
+        header.logs_bloom = compute_bloom(receipts);
+    }
+
     // Executes one simulated block under the fork rules active at its
-    // header. Fork-dependent header fields are populated here.
+    // header.
     template <Traits traits>
     Result<std::vector<Receipt>> eth_simulate_execute_block(
         Chain const &chain, BlockHeader const &parent, Block &block,
@@ -807,13 +911,8 @@ namespace
         ChainContextBuffer &context_buffer,
         bool const emit_native_transfer_logs, Simulation const &execution_mode)
     {
-        if constexpr (traits::eip_7843_active()) {
-            block.header.requests_hash = bytes32_t{};
-            block.header.block_access_list_hash = bytes32_t{};
-            block.header.slot_number = parent.slot_number.has_value()
-                                           ? parent.slot_number.value() + 1
-                                           : 0;
-        }
+        // Populate fork-dependent header fields.
+        prepare_block_header<traits>(chain, parent, block);
 
         auto block_metrics = BlockMetrics{};
         trace::StateTracer system_call_state_tracer{std::monostate{}};
@@ -821,21 +920,28 @@ namespace
             context_buffer.advance<traits>(senders, authorities);
         chain_context.mode = execution_mode;
 
-        return execute_block<traits>(
-            chain,
-            block,
-            senders,
-            authorities,
-            block_state,
-            block_hash_buffer,
-            tx_exec_pool,
-            block_metrics,
-            call_tracers,
-            state_tracers,
-            system_call_state_tracer,
-            chain_context,
-            /*exec_recorder=*/nullptr,
-            emit_native_transfer_logs);
+        std::optional<bytes32_t> requests_hash;
+        BOOST_OUTCOME_TRY(
+            auto receipts,
+            execute_block<traits>(
+                chain,
+                block,
+                senders,
+                authorities,
+                block_state,
+                block_hash_buffer,
+                tx_exec_pool,
+                block_metrics,
+                call_tracers,
+                state_tracers,
+                system_call_state_tracer,
+                chain_context,
+                /*exec_recorder=*/nullptr,
+                emit_native_transfer_logs,
+                &requests_hash));
+
+        complete_header(block.header, receipts, requests_hash);
+        return receipts;
     }
 
     template <Traits base_traits>
@@ -1040,8 +1146,6 @@ namespace
                             .beneficiary = header.beneficiary,
                             .base_fee_per_gas = simulated_base_fee(
                                 std::nullopt, header, execution_mode),
-                            // TODO(dhil): The simulation does not compute roots
-                            // at this time.
                             .parent_beacon_block_root = bytes32_t{},
                         },
                 };
@@ -1121,8 +1225,6 @@ namespace
                 .beneficiary = bo.fee_recipient.value_or(header.beneficiary),
                 .base_fee_per_gas = simulated_base_fee(
                     bo.base_fee_per_gas, header, execution_mode),
-                // TODO(dhil): The simulation does not compute roots at this
-                // time.
                 .parent_beacon_block_root = bytes32_t{},
             };
 

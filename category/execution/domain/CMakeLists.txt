@@ -28,6 +28,8 @@ add_library(
   "domain_block.hpp"
   "execute_domain_block.cpp"
   "execute_domain_block.hpp"
+  "executor.cpp"
+  "executor.hpp"
   "hpke.cpp"
   "hpke.hpp"
   "inputs.hpp"

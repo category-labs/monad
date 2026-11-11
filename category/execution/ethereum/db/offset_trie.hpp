@@ -529,8 +529,8 @@ public:
 
     // Account-trie root, NULL_ID while the trie is empty. upsert_node and
     // erase_node keep a materialised root's id stable, so a caller only
-    // reassigns it across the empty/non-empty transitions — exactly as
-    // PartialTrieDb::commit already threads a storage sub-root.
+    // reassigns it across the empty/non-empty transitions — exactly as the
+    // guest State's commit threads a storage sub-root.
     NodeId root;
 
     NodeViewBase empty() const

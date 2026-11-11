@@ -25,6 +25,8 @@ add_library(
   "derivation_error.hpp"
   "derive_domain_block.cpp"
   "derive_domain_block.hpp"
+  "deriver.cpp"
+  "deriver.hpp"
   "domain_block.hpp"
   "execute_domain_block.cpp"
   "execute_domain_block.hpp"

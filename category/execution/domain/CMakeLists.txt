@@ -25,6 +25,8 @@ add_library(
   "derivation.hpp"
   "execution.cpp"
   "execution.hpp"
+  "executor.cpp"
+  "executor.hpp"
   "hpke.cpp"
   "hpke.hpp"
   "inputs.hpp"

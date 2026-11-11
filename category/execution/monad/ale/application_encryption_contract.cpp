@@ -13,22 +13,21 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/int.hpp>
+#include <category/core/keccak.hpp>
 #include <category/execution/ethereum/core/contract/abi_decode.hpp>
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
 #include <category/execution/ethereum/core/contract/abi_signatures.hpp>
+#include <category/execution/ethereum/core/contract/big_endian.hpp>
+#include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/monad/ale/application_encryption_contract.hpp>
-
-#include <category/core/int.hpp>
 #include <category/execution/monad/ale/application_encryption_error.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 
-#include <boost/outcome/success_failure.hpp>
 #include <boost/outcome/try.hpp>
 
 #include <algorithm>
-#include <cstdint>
 #include <string_view>
-#include <utility>
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
@@ -75,6 +74,27 @@ byte_string sealed_blob_ad(
     encoder.add_address(to);
     encoder.add_bytes(app_ctx);
     return encoder.encode_final();
+}
+
+Result<bytes32_t> read_destination_key(
+    State &state, Address const &spoke, uint256_t const &mapping_slot,
+    uint64_t destination_domain)
+{
+    if (!state.account_exists(spoke)) {
+        return ApplicationEncryptionError::SpokeNotFound;
+    }
+
+    AbiEncoder encoder;
+    encoder.add_uint(u64_be{destination_domain});
+    encoder.add_uint(u256_be{mapping_slot});
+    auto const storage_key = to_bytes(keccak256(encoder.encode_final()));
+    auto const public_key = state.get_storage(spoke, storage_key);
+
+    if (public_key == bytes32_t{}) {
+        return ApplicationEncryptionError::DestinationKeyNotFound;
+    }
+
+    return public_key;
 }
 
 ApplicationEncryptionContract::ApplicationEncryptionContract(
@@ -144,7 +164,11 @@ Result<byte_string> ApplicationEncryptionContract::precompile_seal(
     [[maybe_unused]] auto const ad =
         sealed_blob_ad(dest_domain.native(), to_addr, app_ctx);
 
-    // TODO: Look up epk[dest_domain] and derive deterministic randomness
+    BOOST_OUTCOME_TRY(
+        [[maybe_unused]] auto const key,
+        read_destination_key(
+            state_, SPOKE_CA, SPOKE_VIEWING_KEYS_SLOT, dest_domain.native()));
+    // TODO: derive deterministic randomness
     // from seed_D, the counter, msg.sender, tx_ctx, epk, ad and blob.
     // TODO: Seal the blob with ad, update the counter and encode the
     // ciphertext.

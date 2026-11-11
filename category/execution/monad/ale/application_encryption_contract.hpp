@@ -31,12 +31,22 @@ class State;
 struct CallTracerBase;
 
 // TODO(cmcl): Stub precompile address
-inline constexpr Address ALE_CA = Address{0x1A7E};
+constexpr Address ALE_CA = Address{0x1A7E};
+
+// TODO(cmcl): Hub and Spoke addresses to be fixed
+constexpr Address HUB_CA{0x485542};       // ASCII "HUB"
+constexpr Address SPOKE_CA{0x53504f4b45}; // ASCII "SPOKE"
 
 // Encoding the associated data
 // abi.encode("monad-sealed-blob-v1", dest_domain, to, app_ctx).
 byte_string sealed_blob_ad(
     uint64_t dest_domain, Address const &to, byte_string_view app_ctx);
+
+// Read a destination public key from the spoke's storage. The spoke address
+// and mapping slot must come from trusted execution configuration.
+Result<bytes32_t> read_destination_key(
+    State &state, Address const &spoke, uint256_t const &mapping_slot,
+    uint64_t destination_domain);
 
 class ApplicationEncryptionContract
 {
@@ -45,6 +55,8 @@ class ApplicationEncryptionContract
     [[maybe_unused]] bool log_native_transfers_;
 
 public:
+    static constexpr uint256_t SPOKE_VIEWING_KEYS_SLOT{7};
+
     ApplicationEncryptionContract(
         State &, CallTracerBase &, bool log_native_transfers = false);
 

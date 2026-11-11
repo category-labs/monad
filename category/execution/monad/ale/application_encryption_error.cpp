@@ -16,16 +16,10 @@
 #include <category/execution/monad/ale/application_encryption_error.hpp>
 
 #if __has_include(<boost/outcome/experimental/status-code/status-code/config.hpp>)
-    #include <boost/outcome/experimental/status-code/status-code/config.hpp>
     #include <boost/outcome/experimental/status-code/status-code/generic_code.hpp>
-    #include <boost/outcome/experimental/status-code/status-code/quick_status_code_from_enum.hpp>
 #else
-    #include <boost/outcome/experimental/status-code/config.hpp>
     #include <boost/outcome/experimental/status-code/generic_code.hpp>
-    #include <boost/outcome/experimental/status-code/quick_status_code_from_enum.hpp>
 #endif
-
-#include <initializer_list>
 
 BOOST_OUTCOME_SYSTEM_ERROR2_NAMESPACE_BEGIN
 
@@ -46,6 +40,12 @@ quick_status_code_from_enum<monad::ApplicationEncryptionError>::value_mappings()
          {}},
         {ApplicationEncryptionError::UnsealFailed,
          "application decryption failed",
+         {}},
+        {ApplicationEncryptionError::SpokeNotFound,
+         "spoke account not found",
+         {}},
+        {ApplicationEncryptionError::DestinationKeyNotFound,
+         "destination public key not found",
          {}},
     };
 

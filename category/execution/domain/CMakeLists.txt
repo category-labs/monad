@@ -21,6 +21,8 @@ add_library(
   "chain_id.cpp"
   "chain_id.hpp"
   "config.hpp"
+  "derivation.cpp"
+  "derivation.hpp"
   "hpke.cpp"
   "hpke.hpp"
   "inputs.hpp"

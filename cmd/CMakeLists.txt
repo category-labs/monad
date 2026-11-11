@@ -31,8 +31,15 @@ add_executable(monad-cli monad_cli.cpp)
 monad_compile_options(monad-cli)
 target_link_libraries(monad-cli PUBLIC monad_execution CLI11::CLI11)
 
+add_executable(monad-domain monad_domain.cpp)
+monad_compile_options(monad-domain)
+target_link_libraries(monad-domain PRIVATE monad_domain_execution
+                                           monad_execution CLI11::CLI11)
+
 target_compile_definitions(monad PRIVATE GIT_COMMIT_HASH="${GIT_COMMIT_HASH}")
 target_compile_definitions(monad-cli
+                           PRIVATE GIT_COMMIT_HASH="${GIT_COMMIT_HASH}")
+target_compile_definitions(monad-domain
                            PRIVATE GIT_COMMIT_HASH="${GIT_COMMIT_HASH}")
 
 add_subdirectory(vm/parser)

@@ -46,7 +46,7 @@ namespace monad::vm::interpreter
             }
         }
 
-        if constexpr (info.min_stack == 0 && info.stack_increase == 0) {
+        if constexpr (info.min_stack == 0 && info.stack_outputs == 0) {
             return;
         }
 
@@ -59,8 +59,8 @@ namespace monad::vm::interpreter
             }
         }
 
-        if constexpr (info.stack_increase > 0) {
-            static constexpr auto delta = info.stack_increase - info.min_stack;
+        if constexpr (info.stack_outputs > 0) {
+            static constexpr auto delta = info.stack_outputs - info.min_stack;
             static constexpr auto max_safe_size = 1024 - delta;
 
             // We only need to emit the overflow check if this instruction could
@@ -108,7 +108,7 @@ namespace monad::vm::interpreter
             ctx.exit(Error);
         }
 
-        static constexpr auto delta = info.stack_increase - info.min_stack;
+        static constexpr auto delta = info.stack_outputs - info.min_stack;
         if constexpr (delta > 0) {
             static constexpr auto max_safe_size = 1024 - delta;
             if (MONAD_UNLIKELY(stack_size > max_safe_size)) {

@@ -129,17 +129,17 @@ namespace monad::vm::utils::evm_as::internal
                         ctx.vstack.pop_back();
                     }
 
-                    if (info.stack_increase > 0) {
+                    if (info.stack_outputs > 0) {
                         if (plain.opcode == compiler::EvmOpCode::PUSH0) {
                             ctx.vstack.push_back("0");
                         }
                         else {
-                            for (size_t i = 0; i < info.stack_increase; i++) {
+                            for (size_t i = 0; i < info.stack_outputs; i++) {
                                 ctx.vstack.push_back(new_var(ctx));
                             }
                         }
                     }
-                    return info.min_stack > 0 || info.stack_increase > 0;
+                    return info.min_stack > 0 || info.stack_outputs > 0;
                 },
                 [&](PushI const &push) -> bool {
                     if (push.imm > std::numeric_limits<uint32_t>::max()) {

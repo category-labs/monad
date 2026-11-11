@@ -49,7 +49,7 @@
 #define MONAD_VM_NEXT_N(OP, ADV)                                               \
     do {                                                                       \
         static constexpr auto delta =                                          \
-            compiler::opcode_table<traits>[(OP)].stack_increase -              \
+            compiler::opcode_table<traits>[(OP)].stack_outputs -               \
             compiler::opcode_table<traits>[(OP)].min_stack;                    \
                                                                                \
         instr_ptr += (ADV);                                                    \

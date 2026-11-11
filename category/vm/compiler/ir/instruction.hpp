@@ -118,30 +118,31 @@ namespace monad::vm::compiler
     public:
         constexpr Instruction(
             uint32_t pc, OpCode opcode, uint32_t static_gas_cost,
-            uint8_t stack_args, uint8_t index, uint8_t stack_increase,
+            uint8_t stack_inputs, uint8_t index, uint8_t stack_outputs,
             bool dynamic_gas);
 
         constexpr Instruction(
             uint32_t pc, OpCode opcode, uint256_t immediate_value,
-            uint32_t static_gas_cost, uint8_t stack_args, uint8_t index,
-            uint8_t stack_increase, bool dynamic_gas);
+            uint32_t static_gas_cost, uint8_t stack_inputs, uint8_t index,
+            uint8_t stack_outputs, bool dynamic_gas);
 
         constexpr Instruction(
             uint32_t pc, OpCode opcode, uint32_t static_gas_cost,
-            uint8_t stack_args, std::pair<uint8_t, uint8_t> indices,
-            uint8_t stack_increase, bool dynamic_gas);
+            uint8_t stack_inputs, std::pair<uint8_t, uint8_t> indices,
+            uint8_t stack_outputs, bool dynamic_gas);
 
         constexpr uint256_t const &immediate_value() const noexcept;
         constexpr uint32_t pc() const noexcept;
         constexpr uint32_t static_gas_cost() const noexcept;
         constexpr OpCode opcode() const noexcept;
-        constexpr uint8_t stack_args() const noexcept;
+        constexpr uint8_t stack_inputs() const noexcept;
         // N for PUSHN, DUP1-16, SWAP1-16, LOGN, DUPN and SWAPN. EXCHANGE's pair
         // is exchange_indices().
         constexpr uint8_t index() const noexcept;
         constexpr std::pair<uint8_t, uint8_t> exchange_indices() const noexcept;
-        constexpr bool increases_stack() const noexcept;
-        constexpr uint8_t stack_increase() const noexcept;
+        // Outputs include preserved operands, not just newly computed values.
+        constexpr bool has_stack_outputs() const noexcept;
+        constexpr uint8_t stack_outputs() const noexcept;
         constexpr bool dynamic_gas() const noexcept;
 
         friend constexpr bool
@@ -154,9 +155,9 @@ namespace monad::vm::compiler
         uint32_t pc_;
         uint32_t static_gas_cost_;
         OpCode opcode_;
-        uint8_t stack_args_;
+        uint8_t stack_inputs_;
         std::pair<uint8_t, uint8_t> indices_;
-        uint8_t stack_increase_;
+        uint8_t stack_outputs_;
         bool dynamic_gas_;
     };
 
@@ -166,26 +167,26 @@ namespace monad::vm::compiler
 
     constexpr Instruction::Instruction(
         uint32_t const pc, OpCode const op, uint32_t const static_gas_cost,
-        uint8_t const stack_args, uint8_t const index,
-        uint8_t const stack_increase, bool const dynamic_gas)
+        uint8_t const stack_inputs, uint8_t const index,
+        uint8_t const stack_outputs, bool const dynamic_gas)
         : Instruction(
-              pc, op, 0, static_gas_cost, stack_args, index, stack_increase,
+              pc, op, 0, static_gas_cost, stack_inputs, index, stack_outputs,
               dynamic_gas)
     {
     }
 
     constexpr Instruction::Instruction(
         uint32_t const pc, OpCode const op, uint256_t const immediate_value,
-        uint32_t const static_gas_cost, uint8_t const stack_args,
-        uint8_t const index, uint8_t const stack_increase,
+        uint32_t const static_gas_cost, uint8_t const stack_inputs,
+        uint8_t const index, uint8_t const stack_outputs,
         bool const dynamic_gas)
         : immediate_value_(immediate_value)
         , pc_(pc)
         , static_gas_cost_(static_gas_cost)
         , opcode_(op)
-        , stack_args_(stack_args)
+        , stack_inputs_(stack_inputs)
         , indices_(index, 0)
-        , stack_increase_(stack_increase)
+        , stack_outputs_(stack_outputs)
         , dynamic_gas_(dynamic_gas)
     {
         MONAD_DEBUG_ASSERT(immediate_value == 0 || opcode() == OpCode::Push);
@@ -193,15 +194,15 @@ namespace monad::vm::compiler
 
     constexpr Instruction::Instruction(
         uint32_t const pc, OpCode const op, uint32_t const static_gas_cost,
-        uint8_t const stack_args, std::pair<uint8_t, uint8_t> const indices,
-        uint8_t const stack_increase, bool const dynamic_gas)
+        uint8_t const stack_inputs, std::pair<uint8_t, uint8_t> const indices,
+        uint8_t const stack_outputs, bool const dynamic_gas)
         : immediate_value_(0)
         , pc_(pc)
         , static_gas_cost_(static_gas_cost)
         , opcode_(op)
-        , stack_args_(stack_args)
+        , stack_inputs_(stack_inputs)
         , indices_(indices)
-        , stack_increase_(stack_increase)
+        , stack_outputs_(stack_outputs)
         , dynamic_gas_(dynamic_gas)
     {
         MONAD_DEBUG_ASSERT(op == OpCode::Exchange);
@@ -228,9 +229,9 @@ namespace monad::vm::compiler
         return opcode_;
     }
 
-    constexpr uint8_t Instruction::stack_args() const noexcept
+    constexpr uint8_t Instruction::stack_inputs() const noexcept
     {
-        return stack_args_;
+        return stack_inputs_;
     }
 
     constexpr uint8_t Instruction::index() const noexcept
@@ -249,14 +250,14 @@ namespace monad::vm::compiler
         return indices_;
     }
 
-    constexpr bool Instruction::increases_stack() const noexcept
+    constexpr bool Instruction::has_stack_outputs() const noexcept
     {
-        return stack_increase_ > 0;
+        return stack_outputs_ > 0;
     }
 
-    constexpr uint8_t Instruction::stack_increase() const noexcept
+    constexpr uint8_t Instruction::stack_outputs() const noexcept
     {
-        return stack_increase_;
+        return stack_outputs_;
     }
 
     constexpr bool Instruction::dynamic_gas() const noexcept
@@ -271,9 +272,9 @@ namespace monad::vm::compiler
             pc_,
             static_gas_cost_,
             opcode_,
-            stack_args_,
+            stack_inputs_,
             indices_,
-            stack_increase_,
+            stack_outputs_,
             dynamic_gas_);
     }
 

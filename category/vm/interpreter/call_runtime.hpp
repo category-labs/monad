@@ -40,7 +40,7 @@ namespace monad::vm::interpreter
             std::ranges::count(
                 std::array{use_context, use_result, use_base_gas}, true);
 
-        auto const stack_args =
+        auto const stack_inputs =
             [&]<std::ptrdiff_t... Is>(
                 std::integer_sequence<std::ptrdiff_t, Is...>) {
                 return std::tuple{(&stack_top[-Is])...};
@@ -53,12 +53,12 @@ namespace monad::vm::interpreter
                 }
                 else {
                     return std::tuple_cat(
-                        std::tuple(std::get<stack_arg_count - 1>(stack_args)),
-                        stack_args);
+                        std::tuple(std::get<stack_arg_count - 1>(stack_inputs)),
+                        stack_inputs);
                 }
             }
             else {
-                return stack_args;
+                return stack_inputs;
             }
         }();
 

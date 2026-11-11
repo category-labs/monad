@@ -45,10 +45,10 @@ namespace monad::vm::compiler::basic_blocks
         int32_t max_delta = 0;
 
         for (auto const &instr : instrs) {
-            delta -= instr.stack_args();
+            delta -= instr.stack_inputs();
             min_delta = std::min(delta, min_delta);
 
-            delta += instr.stack_increase();
+            delta += instr.stack_outputs();
             max_delta = std::max(delta, max_delta);
         }
 

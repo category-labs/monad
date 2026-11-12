@@ -249,6 +249,55 @@ TEST(OffsetTrie, VerifyOpenViewsFind)
         store.find_original(store.root, mpt::NibblesView{absent}).tag(), EMPTY);
 }
 
+TEST(OffsetTrie, TryFindOriginalReportsDigestAsUnproven)
+{
+    bytes32_t v1{};
+    v1.bytes[31] = 0x11;
+    bytes32_t hdig{};
+    for (auto &b : hdig.bytes) {
+        b = 0xab;
+    }
+
+    BlobBuilder bb;
+    uint32_t const leaf = bb.storage_leaf({0xa}, v1); // key tail = [a]
+    uint32_t const dig = bb.digest(hdig);
+    std::array<uint32_t, 16> ch{};
+    ch[3] = leaf;
+    ch[7] = dig;
+    uint32_t const br = bb.branch(ch);
+    byte_string const blob = bb.finalize(br);
+    OffsetTrie const store{blob};
+
+    // present: the leaf under [3, a]
+    mpt::Nibbles present{2};
+    present.set(0, 3);
+    present.set(1, 0xa);
+    auto const found =
+        store.try_find_original(store.root, mpt::NibblesView{present});
+    ASSERT_TRUE(found.has_value());
+    EXPECT_EQ(found->tag(), LEAF_STORAGE);
+    EXPECT_EQ(StorageLeafView{*found}.value(), v1);
+
+    // absent: the empty child under [4] proves there is no such key
+    mpt::Nibbles absent{2};
+    absent.set(0, 4);
+    absent.set(1, 0x0);
+    auto const missing =
+        store.try_find_original(store.root, mpt::NibblesView{absent});
+    ASSERT_TRUE(missing.has_value());
+    EXPECT_EQ(missing->tag(), EMPTY);
+
+    // unproven: the walk under [7] hits the digest
+    mpt::Nibbles hidden{2};
+    hidden.set(0, 7);
+    hidden.set(1, 0x0);
+    EXPECT_FALSE(store.try_find_original(store.root, mpt::NibblesView{hidden})
+                     .has_value());
+    EXPECT_DEATH(
+        (void)store.find_original(store.root, mpt::NibblesView{hidden}),
+        "incomplete witness");
+}
+
 TEST(OffsetTrieDeathTest, OutOfRangeChildAborts)
 {
     BlobBuilder bb;

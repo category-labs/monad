@@ -30,7 +30,6 @@
 #include <cstdint>
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
-using literals::operator""_bytes32;
 
 byte_string const BLOCK_HISTORY_CODE =
     from_hex(
@@ -38,9 +37,6 @@ byte_string const BLOCK_HISTORY_CODE =
         "35600143038111604257611fff81430311604257611fff9006545f5260205ff35b5f5f"
         "fd5b5f35611fff60014303065500")
         .value();
-
-constexpr auto BLOCK_HISTORY_CODE_HASH{
-    0x6e49e66782037c0555897870e29fa5e552daf4719552131a0abce779daec0a5d_bytes32};
 
 MONAD_ANONYMOUS_NAMESPACE_END
 
@@ -107,21 +103,5 @@ void set_block_hash_history(State &state, BlockHeader const &header)
 }
 
 EXPLICIT_TRAITS(set_block_hash_history);
-
-// Note: EIP-2935 says the get on the block hash history contract should revert
-// if the block number is outside of the block history. However, current usage
-// of this function guarantees that it is always valid.
-bytes32_t get_block_hash_history(State &state, uint64_t const block_number)
-{
-    if (MONAD_UNLIKELY(
-            state.get_code_hash(BLOCK_HISTORY_ADDRESS) !=
-            BLOCK_HISTORY_CODE_HASH)) {
-        return bytes32_t{};
-    }
-
-    uint256_t const index{block_number % BLOCK_HISTORY_LENGTH};
-    return state.get_storage(
-        BLOCK_HISTORY_ADDRESS, store_be_as<bytes32_t>(index));
-}
 
 MONAD_NAMESPACE_END

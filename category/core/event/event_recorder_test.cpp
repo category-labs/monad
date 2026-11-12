@@ -39,6 +39,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <category/core/assert.h>
 #include <category/core/event/event_iterator.h>
 #include <category/core/event/event_recorder.h>
 #include <category/core/event/event_recorder.hpp>
@@ -160,6 +161,7 @@ static void writer_main(
 
     uint64_t const writer_iterations =
         (1UL << PERF_ITER_SHIFT) / writer_thread_count;
+    MONAD_ASSERT(writer_iterations > 0);
     auto *const test_counter =
         reinterpret_cast<monad_test_event_counter *>(&local_payload_buf[0]);
     test_counter->writer_id = writer_id;

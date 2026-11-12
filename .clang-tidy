@@ -52,6 +52,9 @@
                     readability-isolate-declaration,
                     readability-qualified-auto'
   WarningsAsErrors: '*'
+  # Stepping into the standard library (mostly gtest's failure messages)
+  # exhausts the analyzer's budget before it finishes most test bodies.
+  ExtraArgs: ['-Xclang', '-analyzer-config', '-Xclang', 'c++-stdlib-inlining=false']
   CheckOptions:
     - key:          bugprone-assert-side-effect.AssertMacros
       value:        assert,MONAD_DEBUG_ASSERT

@@ -18,7 +18,16 @@
 #include <category/execution/monad/graph_eval/config.hpp>
 #include <category/execution/monad/graph_eval/tensor.hpp>
 
+#include <cstddef>
+#include <cstdint>
+
 MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
+
+// out = x * y for a rows x depth int8 matrix x and a depth-element int8 vector
+// y, into rows int32 elements: a dot product a row, as the lite compiler's
+// MatVecKernel computes it, but compiled for Zen 4, as all of matmul.cpp is
+void matvec_i8(
+    int8_t const *x, int8_t const *y, int32_t *out, size_t rows, size_t depth);
 
 // out = x * y, for an m x k int8 matrix x and a k x n int8 matrix y, into the
 // m x n int32 matrix out, all row-major. The products are exact: even 65535

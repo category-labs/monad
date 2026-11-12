@@ -18,10 +18,12 @@
 #include "category/core/result.hpp"
 #include "category/execution/ethereum/state3/state.hpp"
 #include "category/execution/monad/graph_eval/config.hpp"
+#include "category/execution/monad/graph_eval/constants.hpp"
 #include "category/execution/monad/graph_eval/graph.hpp"
 #include "category/execution/monad/graph_eval/graphcode.hpp"
 #include "category/execution/monad/graph_eval/references.hpp"
 #include "category/execution/monad/graph_eval/tensor.hpp"
+#include <array>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -74,18 +76,48 @@ public:
     std::string report() const;
 };
 
+// A graph's outputs, which point into the arena, in an array, so that returning
+// them allocates nothing
+struct GraphOutputs
+{
+    std::array<Tensor, MAX_GRAPH_OUTPUTS> tensors{};
+    size_t count = 0;
+
+    size_t size() const
+    {
+        return count;
+    }
+
+    Tensor const &operator[](size_t const i) const
+    {
+        return tensors[i];
+    }
+
+    Tensor const *begin() const
+    {
+        return tensors.data();
+    }
+
+    Tensor const *end() const
+    {
+        return tensors.data() + count;
+    }
+};
+
+// Runs a validated graph on its inputs, allocating nothing: each node's tensor
+// is its Graphcode allocation record's type at the record's offset in the
+// arena, the inputs are the caller's, and the outputs are returned in an array
 class Interpreter
 {
     Graphcode const &graphcode_;
     State &state_;
-    std::vector<TensorInput> inputs_;
+    std::span<TensorInput const> inputs_;
     // The caller's storage, for storage references, under DELEGATECALL only
     CallerStorage *const caller_storage_;
     // For evalGraphInto, its number of outputs, which must be the graph's
     std::optional<size_t> const output_count_;
 
     std::span<uint8_t const> code_span_;
-    std::vector<Tensor> node_values_;
 
     uint8_t *const arena_;
 
@@ -95,17 +127,25 @@ class Interpreter
     Result<void> check_magic_number();
     Result<void> check_inputs();
     Result<void> load_inputs();
-    Result<void> prepare_node_placement();
+
+    // A node's tensor in the arena
+    Tensor node(size_t const id) const
+    {
+        TensorAllocationRecord const &record =
+            graphcode_.tensor_allocation_records()[id];
+        return Tensor{record.type, arena_ + record.offset};
+    }
 
 public:
+    // The inputs must outlive the interpreter
     Interpreter(
-        State &state, std::vector<TensorInput> &&inputs,
+        State &state, std::span<TensorInput const> const inputs,
         CallerStorage *const caller_storage,
         std::optional<size_t> const output_count, Graphcode const &graphcode,
         uint8_t *const arena)
         : graphcode_(graphcode)
         , state_(state)
-        , inputs_(std::move(inputs))
+        , inputs_(inputs)
         , caller_storage_(caller_storage)
         , output_count_(output_count)
         , code_span_(graphcode.code(), graphcode.code_size())
@@ -127,7 +167,7 @@ public:
         node_times_ = times;
     }
 
-    Result<std::vector<Tensor>> run();
+    Result<GraphOutputs> run();
 };
 
 MONAD_GRAPH_EVAL_NAMESPACE_END

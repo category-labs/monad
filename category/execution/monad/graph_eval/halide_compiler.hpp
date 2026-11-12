@@ -181,6 +181,7 @@ class HalideCompiler
     halide_op(QInvSqrtOp const &, std::vector<Halide::Func> const &);
     Halide::Func halide_op(GatherOp const &, std::vector<Halide::Func> const &);
     Halide::Func halide_op(ConcatOp const &, std::vector<Halide::Func> const &);
+    Halide::Func halide_op(ISqrtOp const &, std::vector<Halide::Func> const &);
 
 public:
     // Compiles the graph with the hand-written schedule. If `ir` isn't null,

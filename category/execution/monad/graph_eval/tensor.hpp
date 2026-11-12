@@ -35,6 +35,11 @@
 
 MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
 
+struct BroadcastLoop
+{
+    std::array<uint64_t, MAX_RANK> strides;
+};
+
 struct Shape
 {
     constexpr Shape() noexcept
@@ -86,6 +91,30 @@ struct Shape
             }
         }
         return Shape(rank, dimensions, size);
+    }
+
+    [[gnu::always_inline]]
+    constexpr Result<BroadcastLoop> broadcast_to(Shape const &out_shape) const
+    {
+        uint8_t const in_rank = rank();
+        uint8_t const out_rank = out_shape.rank();
+        if (in_rank > out_rank) {
+            return GraphEvalError::ShapeError;
+        }
+        BroadcastLoop loop{};
+        uint64_t stride = 1;
+        for (size_t i = in_rank; i-- > 0;) {
+            size_t const d = out_rank - in_rank + i;
+            uint16_t const size = dimensions()[i];
+            if (size != 1) {
+                if (size != out_shape.dimensions()[d]) {
+                    return GraphEvalError::ShapeError;
+                }
+                loop.strides[d] = stride;
+            }
+            stride *= size;
+        }
+        return loop;
     }
 
 private:
@@ -141,6 +170,7 @@ struct TensorType
     {
         return dtype() == other.dtype() && shape() == other.shape();
     }
+
     constexpr bool operator!=(TensorType const &other) const noexcept = default;
 
 private:
@@ -189,7 +219,8 @@ public:
     template <typename T>
     constexpr std::span<T> elements() const
     {
-        MONAD_DEBUG_ASSERT(type().dtype() == dtype_of<std::remove_const_t<T>>());
+        MONAD_DEBUG_ASSERT(
+            type().dtype() == dtype_of<std::remove_const_t<T>>());
         return {reinterpret_cast<T *>(data()), type().shape().size()};
     }
 };

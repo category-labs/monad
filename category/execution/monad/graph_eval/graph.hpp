@@ -71,7 +71,8 @@ enum class Op : uint16_t
     QInvSqrt,
     Gather,
     Concat,
-    Last_valid_op = Concat,
+    ISqrt,
+    Last_valid_op = ISqrt,
 };
 
 inline char const *op_name(Op const op)
@@ -137,6 +138,8 @@ inline char const *op_name(Op const op)
         return "Gather";
     case Op::Concat:
         return "Concat";
+    case Op::ISqrt:
+        return "ISqrt";
     }
     MONAD_ABORT();
 }
@@ -145,23 +148,30 @@ inline char const *op_name(Op const op)
 // Reading graphcode. Each read_next<T> consumes a T from the front of its
 // input, which is in host byte order.
 //
-
 template <typename T>
-Result<T> read_next(std::span<uint8_t const> &);
+    requires(std::is_trivially_copyable_v<T> || std::is_void_v<T>)
+T read_next_unchecked(std::span<uint8_t const> &input)
+{
+    std::remove_cv_t<T> result{};
+    std::memcpy(&result, input.data(), sizeof(result));
+    input = input.subspan(sizeof(T));
+    return result;
+}
 
+// Deleted, so that read_next reads only what it's defined for: the dtypes,
+// tuples, ops, and the types it's specialized for, below and wherever those
+// types are defined
 template <typename T>
-    requires(std::integral<T>)
+Result<T> read_next(std::span<uint8_t const> &) = delete;
+
+template <dtype_t T>
 [[gnu::always_inline]]
 inline Result<T> read_next(std::span<uint8_t const> &input)
 {
     if (input.size() < sizeof(T)) {
         return GraphEvalError::GraphValidationError;
     }
-
-    std::remove_cv_t<T> result{};
-    std::memcpy(&result, input.data(), sizeof(result));
-    input = input.subspan(sizeof(T));
-    return result;
+    return read_next_unchecked<T>(input);
 }
 
 template <>
@@ -265,16 +275,25 @@ inline Result<T> read_next(std::span<uint8_t const> &input)
     }
 }
 
-// Consumes the next `size` bytes of `input`
-Result<std::span<uint8_t const>>
-read_bytes(std::span<uint8_t const> &input, uint64_t size);
+[[gnu::always_inline]]
+inline std::span<uint8_t const>
+read_bytes_unchecked(std::span<uint8_t const> &input, uint64_t const size)
+{
+    auto const bytes = input.first(static_cast<size_t>(size));
+    input = input.subspan(static_cast<size_t>(size));
+    return bytes;
+}
 
-// Literal parameters: a tensor header, then the data, packed row-major in the
-// same byte order as the rest of the graphcode. The data's length depends on
-// the header, so unlike other tuples this one isn't read element by element.
-// Reading the data here, before the op allocates anything, means a literal
-// can't claim more data than the graphcode holds and get that much memory
-// allocated
+[[gnu::always_inline]]
+inline Result<std::span<uint8_t const>>
+read_bytes(std::span<uint8_t const> &input, uint64_t const size)
+{
+    if (input.size() < size) {
+        return GraphEvalError::GraphValidationError;
+    }
+    return read_bytes_unchecked(input, size);
+}
+
 template <>
 [[gnu::always_inline]]
 inline Result<std::tuple<TensorType, std::span<uint8_t const>>>
@@ -284,6 +303,18 @@ read_next<std::tuple<TensorType, std::span<uint8_t const>>>(
     BOOST_OUTCOME_TRY(auto const type, read_next<TensorType>(input));
     BOOST_OUTCOME_TRY(auto const data, read_bytes(input, type.size_bytes()));
     return std::tuple{type, data};
+}
+
+template <auto expected>
+[[gnu::always_inline]]
+inline Result<void> expect_next(std::span<uint8_t const> &input)
+{
+    BOOST_OUTCOME_TRY(
+        decltype(expected) const item, read_next<decltype(expected)>(input));
+    if (item != expected) {
+        return GraphEvalError::GraphValidationError;
+    }
+    return outcome::success();
 }
 
 MONAD_GRAPH_EVAL_NAMESPACE_END

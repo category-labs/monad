@@ -40,7 +40,9 @@ using InputTypes = std::array<TensorType const *, Arity>;
 template <size_t Arity>
 using InputValues = std::array<Tensor const *, Arity>;
 
-struct GraphOpBase {};
+struct GraphOpBase
+{
+};
 
 template <typename P, size_t A>
 struct GraphOp : GraphOpBase
@@ -55,16 +57,16 @@ struct GraphOp : GraphOpBase
     virtual Result<TensorType>
     check_impl(InputTypes<ARITY> const &input_types) const = 0;
 
-    Result<void>
-    evaluate(Tensor &output, std::vector<Tensor> const &node_values) const
+    // Evaluates the op on its inputs, each the Tensor that `node` gives for
+    // its id, which validation has checked
+    template <typename NodeFn>
+    Result<void> evaluate(Tensor &output, NodeFn const &node) const
     {
+        std::array<Tensor, ARITY> values{};
         InputValues<ARITY> input_values{};
         for (size_t i = 0; i < ARITY; i++) {
-            auto const input_id = input_ids[i];
-            if (input_id >= node_values.size()) {
-                return GraphEvalError::GraphValidationError;
-            }
-            input_values[i] = &node_values[input_id];
+            values[i] = node(input_ids[i]);
+            input_values[i] = &values[i];
         }
         return evaluate_impl(output, input_values);
     }
@@ -702,6 +704,16 @@ struct MatMulOp final : GraphOp<std::monostate, 2>
     {
         Tensor const &x = *inputs[0];
         Tensor const &y = *inputs[1];
+        // A matrix times a vector, as the lite compiler computes it
+        if (y.type().shape().dimensions()[1] == 1) {
+            matvec_i8(
+                x.elements<int8_t const>().data(),
+                y.elements<int8_t const>().data(),
+                out.elements<int32_t>().data(),
+                x.type().shape().dimensions()[0],
+                x.type().shape().dimensions()[1]);
+            return outcome::success();
+        }
         matmul_i8(x, y, out);
         return outcome::success();
     }
@@ -790,6 +802,20 @@ struct ClipOp final : GraphOp<std::tuple<Dtype, uint64_t, uint64_t>, 1>
     }
 };
 
+// A row of CumSum's running sums after the first: the row above's plus the
+// input's. The restrict pointers let GCC vectorize it, which at -O2 it won't
+// do if it has to check at run time that the rows don't overlap
+template <typename T>
+[[gnu::always_inline]]
+inline void cumsum_row(
+    T const *__restrict const above, T const *__restrict const xs,
+    T *__restrict const outs, uint64_t const length)
+{
+    for (uint64_t i = 0; i < length; i++) {
+        outs[i] = WrappingAdd{}(above[i], xs[i]);
+    }
+}
+
 // CumSum: running sums along the axis given as its parameter, inclusive and in
 // increasing index order, wrapping on overflow like Add
 struct CumSumOp final : GraphOp<uint8_t, 1>
@@ -831,10 +857,16 @@ struct CumSumOp final : GraphOp<uint8_t, 1>
             for (uint64_t block = 0; block < outer; block++) {
                 for (uint64_t row = 0; row < length; row++) {
                     uint64_t const start = (block * length + row) * inner;
-                    for (uint64_t i = start; i < start + inner; i++) {
-                        outs[i] = row == 0
-                                      ? xs[i]
-                                      : WrappingAdd{}(outs[i - inner], xs[i]);
+                    if (row == 0) {
+                        std::copy_n(
+                            xs.data() + start, inner, outs.data() + start);
+                    }
+                    else {
+                        cumsum_row(
+                            outs.data() + start - inner,
+                            xs.data() + start,
+                            outs.data() + start,
+                            inner);
                     }
                 }
             }
@@ -1004,6 +1036,33 @@ struct QMatMulOp final : GraphOp<std::tuple<uint8_t, Dtype>, 2>
     }
 };
 
+// A reduction's partial results combined with one more row of its input, with
+// F. The restrict pointers let GCC vectorize it, which at -O2 it won't do if it
+// has to check at run time that the rows don't overlap
+template <typename T, typename F>
+[[gnu::always_inline]]
+inline void reduce_row(
+    T *__restrict const results, T const *__restrict const row,
+    uint64_t const length)
+{
+    for (uint64_t i = 0; i < length; i++) {
+        results[i] = F{}(results[i], row[i]);
+    }
+}
+
+// The reduction of `length` > 0 consecutive elements with F, kept in a
+// register rather than written back to memory after each element
+template <typename T, typename F>
+[[gnu::always_inline]]
+inline T reduce_contiguous(T const *const xs, uint64_t const length)
+{
+    T result = xs[0];
+    for (uint64_t i = 1; i < length; i++) {
+        result = F{}(result, xs[i]);
+    }
+    return result;
+}
+
 // Reduce: combines the input's elements along the axis given as its parameter
 // with F. The result keeps the axis, with length 1, so that it broadcasts
 // against the input. An empty axis reduces to 0 if `empty_is_zero`, and is a
@@ -1041,7 +1100,8 @@ struct ReduceOp final : GraphOp<uint8_t, 1>
 
         // The input as `outer` blocks of `length` rows of `inner` elements,
         // with the axis running down the rows, as in CumSum. Each block
-        // reduces to one row of the output
+        // reduces to one row of the output. With one element a row (every
+        // dimension after the axis is 1), each block is a contiguous run
         uint64_t outer = 1;
         for (size_t i = 0; i < axis; i++) {
             outer *= x.type().shape().dimensions()[i];
@@ -1055,16 +1115,18 @@ struct ReduceOp final : GraphOp<uint8_t, 1>
             T const *const xs = x.elements<T const>().data();
             T *const outs = out.elements<T>().data();
             for (uint64_t block = 0; block < outer; block++) {
-                T const *__restrict const rows = xs + block * length * inner;
-                T *__restrict const result = outs + block * inner;
+                T const *const rows = xs + block * length * inner;
+                T *const result = outs + block * inner;
                 if (length == 0) {
                     std::fill_n(result, inner, T{0});
-                    continue;
                 }
-                std::copy_n(rows, inner, result);
-                for (uint64_t row = 1; row < length; row++) {
-                    for (uint64_t i = 0; i < inner; i++) {
-                        result[i] = F{}(result[i], rows[row * inner + i]);
+                else if (inner == 1) {
+                    *result = reduce_contiguous<T, F>(rows, length);
+                }
+                else {
+                    std::copy_n(rows, inner, result);
+                    for (uint64_t row = 1; row < length; row++) {
+                        reduce_row<T, F>(result, rows + row * inner, inner);
                     }
                 }
             }
@@ -1161,6 +1223,43 @@ struct FixedPointInvSqrt
 
 using QExpOp = FixedPointOp1<Op::QExp, FixedPointExp>;
 using QInvSqrtOp = FixedPointOp1<Op::QInvSqrt, FixedPointInvSqrt>;
+
+// ISqrt: floor(sqrt(x)) of each element, as floor_sqrt computes it, in the
+// input's dtype and shape. Only unsigned dtypes, so it can't fail
+struct ISqrtOp final : GraphOp<std::monostate, 1>
+{
+    static constexpr Op OPCODE = Op::ISqrt;
+
+    Result<TensorType>
+    check_impl(InputTypes<1> const &input_types) const override
+    {
+        TensorType const &x = *input_types[0];
+        if (dtype_signed(x.dtype())) {
+            return GraphEvalError::TypeError;
+        }
+        return x;
+    }
+
+    Result<void>
+    evaluate_impl(Tensor &output, InputValues<1> const &inputs) const override
+    {
+        Tensor const &x = *inputs[0];
+        visit_dtype(x.type().dtype(), [&]<typename T>() {
+            if constexpr (std::is_unsigned_v<T>) {
+                auto const xs = x.elements<T const>();
+                auto const outs = output.elements<T>();
+                run_op1(xs.data(), outs.data(), outs.size(), true, [](T x) {
+                    return floor_sqrt(x);
+                });
+            }
+            else {
+                // Validation rejects signed dtypes
+                MONAD_ABORT();
+            }
+        });
+        return outcome::success();
+    }
+};
 
 // The product of a shape's dimensions in [begin, end), and of `size`
 inline uint64_t dimensions_product(
@@ -1405,6 +1504,8 @@ visit_next(std::span<uint8_t const> &graphcode, Fs &&...fs)
         return visit.template operator()<GatherOp>();
     case ConcatOp::OPCODE:
         return visit.template operator()<ConcatOp>();
+    case ISqrtOp::OPCODE:
+        return visit.template operator()<ISqrtOp>();
     }
     MONAD_ABORT();
 }
@@ -1413,7 +1514,7 @@ using AnyGraphOp = std::variant<
     LiteralOp, TensorRefOp, AddOp, SubOp, GreaterOp, GeOp, EqualOp, ReshapeOp,
     WhereOp, CumSumOp, SaturateOp, MatMulOp, ArgMaxOp, ArgMinOp, ClipOp, MaxOp,
     MinOp, MulOp, DivOp, CastOp, ExpandOp, QMulOp, QDivOp, QMatMulOp,
-    ReduceSumOp, ReduceMaxOp, QExpOp, QInvSqrtOp, GatherOp, ConcatOp>;
+    ReduceSumOp, ReduceMaxOp, QExpOp, QInvSqrtOp, GatherOp, ConcatOp, ISqrtOp>;
 
 inline Result<AnyGraphOp> read_next(std::span<uint8_t const> &graphcode)
 {

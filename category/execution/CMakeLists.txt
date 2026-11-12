@@ -274,6 +274,17 @@ add_library(
   "monad/graph_eval/interpreter.hpp"
   "monad/graph_eval/lite_compiler.cpp"
   "monad/graph_eval/lite_compiler.hpp"
+  "monad/graph_eval/fine.cpp"
+  "monad/graph_eval/fine.hpp"
+  "monad/graph_eval/fine_interpreter.cpp"
+  "monad/graph_eval/fine_interpreter.hpp"
+  "monad/graph_eval/fuse_claude.cpp"
+  "monad/graph_eval/fuse_claude.hpp"
+  "monad/graph_eval/fuse_interpreted.cpp"
+  "monad/graph_eval/fuse_interpreted.hpp"
+  "monad/graph_eval/fuse_kernels.hpp"
+  "monad/graph_eval/region_claude.cpp"
+  "monad/graph_eval/region_claude.hpp"
   "monad/graph_eval/references.cpp"
   "monad/graph_eval/references.hpp"
   "monad/graph_eval/types.hpp"
@@ -503,11 +514,33 @@ if(MONAD_GRAPH_EVAL_XLA)
   target_link_libraries(monad_execution_native PRIVATE monad_xla)
 endif()
 
-# The matmul kernel uses AVX-512 with VNNI. Every validator's CPU is a Zen 4,
-# which has them, although the rest of the build targets an older CPU. This
-# comes after the toolchain's -march, so it takes precedence
+# The graph kernels use AVX-512: the int8 matmul kernels with VNNI, the
+# interpreter's, Lite's and the fuse engines' with 64-bit multiplies and
+# 64-byte vectors. Every validator's CPU is a Zen 4, which has them, although
+# the rest of the build targets an older CPU. All of graph_eval gets it, not
+# only the kernels' sources: the op kernels are inline templates in ops.hpp,
+# which other graph_eval sources instantiate too, and the linker keeps any one
+# of the copies. This comes after the toolchain's -march, so it takes
+# precedence
 set_property(
-  SOURCE "monad/graph_eval/matmul.cpp"
+  SOURCE "monad/graph_eval/compiler.cpp"
+         "monad/graph_eval/fine.cpp"
+         "monad/graph_eval/fine_interpreter.cpp"
+         "monad/graph_eval/fuse_claude.cpp"
+         "monad/graph_eval/fuse_interpreted.cpp"
+         "monad/graph_eval/graph.cpp"
+         "monad/graph_eval/graph_eval.cpp"
+         "monad/graph_eval/graph_eval_error.cpp"
+         "monad/graph_eval/graphcode.cpp"
+         "monad/graph_eval/halide_compiler.cpp"
+         "monad/graph_eval/interpreter.cpp"
+         "monad/graph_eval/kernel.cpp"
+         "monad/graph_eval/lite_compiler.cpp"
+         "monad/graph_eval/matmul.cpp"
+         "monad/graph_eval/references.cpp"
+         "monad/graph_eval/region_claude.cpp"
+         "monad/graph_eval/tensor.cpp"
+         "monad/graph_eval/xla_compiler.cpp"
   APPEND PROPERTY COMPILE_OPTIONS "-march=znver4")
 
 target_link_libraries(

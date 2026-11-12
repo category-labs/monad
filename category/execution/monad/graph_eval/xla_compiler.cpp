@@ -22,6 +22,7 @@
 #include <category/execution/monad/graph_eval/graph_eval_error.hpp>
 #include <category/execution/monad/graph_eval/graphcode.hpp>
 #include <category/execution/monad/graph_eval/ops.hpp>
+#include <category/execution/monad/graph_eval/references.hpp>
 #include <category/execution/monad/graph_eval/tensor.hpp>
 #include <category/execution/monad/graph_eval/types.hpp>
 #include <category/execution/monad/graph_eval/xla/monad_xla/monad_xla.h>
@@ -34,7 +35,9 @@
 #include <cstdint>
 #include <cstring>
 #include <format>
+#include <functional>
 #include <iostream>
+#include <map>
 #include <span>
 #include <string>
 #include <string_view>
@@ -161,6 +164,75 @@ void append_elements(
     }
     out += '}';
 }
+
+// u64 instructions for the fixed-point lowerings, on tensors of one shape:
+// constants splatted to it, each made once, and the ops the lowerings use.
+// Every multiply and left shift is unsigned, and so is every comparison, as
+// the element type's default, as XLA_LOWERING.md's rules R1, R2 and R4 ask
+class U64Builder
+{
+    std::function<std::string(std::string_view, std::string_view)> append_;
+    std::function<std::string(uint64_t)> splat_;
+    std::string shape_;
+    std::string pred_shape_;
+    std::map<uint64_t, std::string> constants_;
+
+public:
+    U64Builder(
+        std::function<std::string(std::string_view, std::string_view)> append,
+        std::function<std::string(uint64_t)> splat, Shape const &shape)
+        : append_(std::move(append))
+        , splat_(std::move(splat))
+        , shape_(hlo_shape(Dtype::uint64, shape))
+        , pred_shape_(hlo_pred_shape(shape))
+    {
+    }
+
+    std::string constant(uint64_t const value)
+    {
+        auto const found = constants_.find(value);
+        if (found != constants_.end()) {
+            return found->second;
+        }
+        std::string name = splat_(value);
+        constants_.emplace(value, name);
+        return name;
+    }
+
+    std::string
+    op(std::string_view const name, std::string const &a, std::string const &b)
+    {
+        return append_(shape_, std::format("{}({}, {})", name, a, b));
+    }
+
+    std::string clz(std::string const &x)
+    {
+        return append_(shape_, std::format("count-leading-zeros({})", x));
+    }
+
+    std::string compare(
+        std::string const &a, std::string const &b,
+        std::string_view const direction)
+    {
+        return append_(
+            pred_shape_,
+            std::format("compare({}, {}), direction={}", a, b, direction));
+    }
+
+    std::string logic(
+        std::string_view const name, std::string const &a, std::string const &b)
+    {
+        return append_(pred_shape_, std::format("{}({}, {})", name, a, b));
+    }
+
+    std::string select(
+        std::string const &condition, std::string const &yes,
+        std::string const &no)
+    {
+        return append_(
+            shape_, std::format("select({}, {}, {})", condition, yes, no));
+    }
+};
 
 MONAD_GRAPH_EVAL_ANONYMOUS_NAMESPACE_END
 
@@ -310,6 +382,192 @@ std::string XlaCompiler::hlo_argmax_computation(Dtype const dtype)
     return name;
 }
 
+// Knuth's Algorithm D with 32-bit digits, as Hacker's Delight's divlu and
+// compiler.cpp's mlir_divide_narrow: the divisor and the dividend are shifted
+// until the divisor's top bit is set, and each quotient digit, estimated from
+// the top digits, is corrected at most twice. The divisor must be nonzero.
+// Every shift is by less than 64: the bits of `low` that shifting `high` moves
+// in are (low >> 1) >> (63 - shift), none for a shift of 0
+std::pair<std::string, std::string> XlaCompiler::hlo_divide_narrow(
+    std::string const &high, std::string const &low, std::string const &divisor,
+    Shape const &shape)
+{
+    U64Builder b{
+        [&](std::string_view const s, std::string_view const i) {
+            return hlo_append(s, i);
+        },
+        [&](uint64_t const value) {
+            return hlo_splat(Dtype::uint64, value, shape);
+        },
+        shape};
+    std::string const base = b.constant(uint64_t{1} << 32);
+    std::string const mask = b.constant(0xffffffff);
+    std::string const one = b.constant(1);
+    std::string const thirty_two = b.constant(32);
+
+    std::string const shift = b.clz(divisor);
+    std::string const v = b.op("shift-left", divisor, shift);
+    std::string const carried = b.op(
+        "shift-right-logical",
+        b.op("shift-right-logical", low, one),
+        b.op("subtract", b.constant(63), shift));
+    std::string const u32 =
+        b.op("or", b.op("shift-left", high, shift), carried);
+    std::string const u10 = b.op("shift-left", low, shift);
+    std::string const v1 = b.op("shift-right-logical", v, thirty_two);
+    std::string const v0 = b.op("and", v, mask);
+    std::string const u1 = b.op("shift-right-logical", u10, thirty_two);
+    std::string const u0 = b.op("and", u10, mask);
+
+    auto const digit = [&](std::string const &dividend,
+                           std::string const &next) {
+        std::string q = b.op("divide", dividend, v1);
+        std::string rhat = b.op("subtract", dividend, b.op("multiply", q, v1));
+        auto const too_large = [&] {
+            return b.logic(
+                "or",
+                b.compare(q, base, "GE"),
+                b.compare(
+                    b.op("multiply", q, v0),
+                    b.op("or", b.op("shift-left", rhat, thirty_two), next),
+                    "GT"));
+        };
+        std::string const first = too_large();
+        q = b.select(first, b.op("subtract", q, one), q);
+        rhat = b.select(first, b.op("add", rhat, v1), rhat);
+        std::string const second = b.logic(
+            "and",
+            b.logic("and", first, b.compare(rhat, base, "LT")),
+            too_large());
+        return b.select(second, b.op("subtract", q, one), q);
+    };
+
+    std::string const q1 = digit(u32, u1);
+    // What's left, below v, so computing it modulo 2^64 is exact
+    std::string const u21 = b.op(
+        "subtract",
+        b.op("or", b.op("shift-left", u32, thirty_two), u1),
+        b.op("multiply", q1, v));
+    std::string const q0 = digit(u21, u0);
+    std::string const quotient =
+        b.op("or", b.op("shift-left", q1, thirty_two), q0);
+    std::string const remainder = b.op(
+        "shift-right-logical",
+        b.op(
+            "subtract",
+            b.op("or", b.op("shift-left", u21, thirty_two), u0),
+            b.op("multiply", q0, v)),
+        shift);
+    return {quotient, remainder};
+}
+
+// floor(sqrt(n)), integer only, as XLA_LOWERING.md's isqrt64: Newton's method
+// from r = 2^ceil(width / 2), which is at least sqrt(n), each step
+// r = min(r, (r + n / r) / 2). From r >= floor(sqrt(n)), a step never goes
+// below it, and five reach it; the sixth is a margin. r + n / r can't
+// overflow, as r is at most 2^32 and, while r >= sqrt(n), n / r is at most
+// sqrt(n). For n = 0, r reaches 0, so each step divides by max(r, 1)
+std::string XlaCompiler::hlo_isqrt64(std::string const &n, Shape const &shape)
+{
+    U64Builder b{
+        [&](std::string_view const s, std::string_view const i) {
+            return hlo_append(s, i);
+        },
+        [&](uint64_t const value) {
+            return hlo_splat(Dtype::uint64, value, shape);
+        },
+        shape};
+    std::string const one = b.constant(1);
+    std::string const width = b.op("subtract", b.constant(64), b.clz(n));
+    std::string r = b.op(
+        "shift-left",
+        one,
+        b.op("shift-right-logical", b.op("add", width, one), one));
+    for (int step = 0; step < 6; step++) {
+        std::string const quotient = b.op("divide", n, b.op("maximum", r, one));
+        r = b.op(
+            "minimum",
+            r,
+            b.op("shift-right-logical", b.op("add", r, quotient), one));
+    }
+    return r;
+}
+
+std::string XlaCompiler::hlo_reduce_computation(
+    std::string_view const name, Dtype const dtype)
+{
+    std::string computation = std::format("{}_{}", name, hlo_type(dtype));
+    if (computation_names_.insert(computation).second) {
+        computations_ += std::format(
+            "{0} {{\n"
+            "  {0}_a = {1}[] parameter(0)\n"
+            "  {0}_b = {1}[] parameter(1)\n"
+            "  ROOT {0}_r = {1}[] {2}({0}_a, {0}_b)\n"
+            "}}\n\n",
+            computation,
+            hlo_type(dtype),
+            name);
+    }
+    return computation;
+}
+
+// XLA_LOWERING.md section 7: a reduce over the axis, whose init must be the
+// reducer's identity (rule R7), then a reshape that keeps the axis with
+// length 1. An empty axis gives the init
+std::string XlaCompiler::hlo_reduce_axis(
+    size_t const id, uint8_t const axis, std::string_view const name,
+    __int128 const init, std::vector<std::string> const &values)
+{
+    TensorType const &input = gc_.tensor_types()[id];
+    TensorType const &type = gc_.tensor_types()[values.size()];
+    Dtype const dtype = input.dtype();
+    std::vector<uint16_t> kept;
+    for (size_t i = 0; i < input.shape().rank(); i++) {
+        if (i != axis) {
+            kept.push_back(input.shape().dimensions()[i]);
+        }
+    }
+    std::string const reduced = hlo_append(
+        hlo_shape(hlo_type(dtype), kept),
+        std::format(
+            "reduce({}, {}), dimensions={{{}}}, to_apply={}",
+            values[id],
+            hlo_constant(dtype, init),
+            axis,
+            hlo_reduce_computation(name, dtype)));
+    return hlo_append(hlo_shape(type), std::format("reshape({})", reduced));
+}
+
+// The low bits of a 64-bit value: reinterpreted as uint64, truncated to the
+// unsigned dtype of `to`'s width, and reinterpreted as `to`, so that every
+// conversion is modulo 2^w
+std::string XlaCompiler::hlo_wrap64(
+    std::string const &value, Dtype const from, Dtype const to,
+    Shape const &shape)
+{
+    if (from == to) {
+        return value;
+    }
+    auto const bitcast = [&](std::string const &x, Dtype const t) {
+        return hlo_append(
+            hlo_shape(t, shape), std::format("bitcast-convert({})", x));
+    };
+    std::string const bits =
+        from == Dtype::uint64 ? value : bitcast(value, Dtype::uint64);
+    if (to == Dtype::uint64) {
+        return bits;
+    }
+    if (to == Dtype::int64) {
+        return bitcast(bits, to);
+    }
+    if (!dtype_signed(to)) {
+        return hlo_convert(bits, to, shape);
+    }
+    auto const same_width =
+        static_cast<Dtype>(static_cast<uint8_t>(to) + 1); // The unsigned one
+    return bitcast(hlo_convert(bits, same_width, shape), to);
+}
+
 std::vector<std::string> XlaCompiler::hlo_operands(
     std::span<size_t const> const input_ids,
     std::vector<std::string> const &values)
@@ -344,12 +602,21 @@ XlaCompiler::xla_op(LiteralOp const &op, std::vector<std::string> const &)
     return hlo_append(hlo_shape(type), std::format("constant({})", elements));
 }
 
-Result<std::string> XlaCompiler::xla_op(
-    TensorRefOp const &op, std::vector<std::string> const &values)
+// A constant, read from the account's code at lowering time, as
+// XLA_LOWERING.md section 5 does: a compiled graph keeps the code it was
+// compiled with
+Result<std::string>
+XlaCompiler::xla_op(TensorRefOp const &op, std::vector<std::string> const &)
 {
-    (void)op;
-    (void)values; // TODO: fill in
-    MONAD_ABORT();
+    auto const &[type, address, offset] = op.params;
+    std::vector<uint8_t> bytes(type.size_bytes());
+    Tensor tensor{type, bytes.data()};
+    BOOST_OUTCOME_TRY(load_code_tensor(
+        state_, CodeRef{address, offset}, ByteOrder::LittleEndian, tensor));
+    std::string elements;
+    size_t index = 0;
+    append_elements(elements, type, bytes, 0, index);
+    return hlo_append(hlo_shape(type), std::format("constant({})", elements));
 }
 
 // Add, Sub, Max and Min wrap, or compare by the dtype's signedness, as XLA's
@@ -388,20 +655,30 @@ XlaCompiler::xla_op(GreaterOp const &op, std::vector<std::string> const &values)
         });
 }
 
+// A comparison, by the dtype's signedness, then 0 or 1 as uint8
 std::string
 XlaCompiler::xla_op(GeOp const &op, std::vector<std::string> const &values)
 {
-    (void)op;
-    (void)values; // TODO: fill in
-    MONAD_ABORT();
+    return hlo_elementwise(
+        op.input_ids, values, [&](auto const &args, TensorType const &type) {
+            std::string const compare = hlo_append(
+                hlo_pred_shape(type.shape()),
+                std::format("compare({}, {}), direction=GE", args[0], args[1]));
+            return hlo_convert(compare, Dtype::uint8, type.shape());
+        });
 }
 
+// A comparison, by the dtype's signedness, then 0 or 1 as uint8
 std::string
 XlaCompiler::xla_op(EqualOp const &op, std::vector<std::string> const &values)
 {
-    (void)op;
-    (void)values; // TODO: fill in
-    MONAD_ABORT();
+    return hlo_elementwise(
+        op.input_ids, values, [&](auto const &args, TensorType const &type) {
+            std::string const compare = hlo_append(
+                hlo_pred_shape(type.shape()),
+                std::format("compare({}, {}), direction=EQ", args[0], args[1]));
+            return hlo_convert(compare, Dtype::uint8, type.shape());
+        });
 }
 
 // HLO's reshape is row-major, as graph_eval's tensors are
@@ -728,44 +1005,319 @@ XlaCompiler::xla_op(ExpandOp const &op, std::vector<std::string> const &values)
     return hlo_broadcast(values[id], gc_.tensor_types()[id], op.params);
 }
 
+// q_mul: floor(a * b / 2^bits), wrapping to the dtype, as XLA_LOWERING.md
+// section 11.2 lowers it. Up to 32 bits wide, the product is exact in 64
+// bits, signed or not, and an arithmetic or logical shift floors it. A 64-bit
+// product is on the u64 carrier (rule R2): its low word for 0 bits, else its
+// 128 bits, from 32-bit halves, with the signed fix-up hi -= (a < 0 ? b : 0) +
+// (b < 0 ? a : 0), and bits [bits, bits + 64) of it
 std::string
 XlaCompiler::xla_op(QMulOp const &op, std::vector<std::string> const &values)
 {
-    (void)op;
-    (void)values; // TODO: fill in
-    MONAD_ABORT();
+    unsigned const bits = op.params;
+    Dtype const dtype = gc_.tensor_types()[op.input_ids[0]].dtype();
+    bool const sign = dtype_signed(dtype);
+    return hlo_elementwise(
+        op.input_ids, values, [&](auto const &args, TensorType const &type) {
+            Shape const &shape = type.shape();
+            if (dtype_size(dtype) <= 4) {
+                Dtype const wide = sign ? Dtype::int64 : Dtype::uint64;
+                std::string const product = hlo_append(
+                    hlo_shape(wide, shape),
+                    std::format(
+                        "multiply({}, {})",
+                        hlo_convert(args[0], wide, shape),
+                        hlo_convert(args[1], wide, shape)));
+                std::string const shifted =
+                    bits == 0 ? product
+                              : hlo_append(
+                                    hlo_shape(wide, shape),
+                                    std::format(
+                                        "{}({}, {})",
+                                        sign ? "shift-right-arithmetic"
+                                             : "shift-right-logical",
+                                        product,
+                                        hlo_splat(wide, bits, shape)));
+                return hlo_wrap64(shifted, wide, dtype, shape);
+            }
+            U64Builder b{
+                [&](std::string_view const s, std::string_view const i) {
+                    return hlo_append(s, i);
+                },
+                [&](uint64_t const value) {
+                    return hlo_splat(Dtype::uint64, value, shape);
+                },
+                shape};
+            std::string const u64_shape = hlo_shape(Dtype::uint64, shape);
+            auto const carrier = [&](std::string const &x) {
+                return sign ? hlo_append(
+                                  u64_shape,
+                                  std::format("bitcast-convert({})", x))
+                            : x;
+            };
+            std::string const a = carrier(args[0]);
+            std::string const c = carrier(args[1]);
+            std::string const low = b.op("multiply", a, c);
+            if (bits == 0) {
+                return hlo_wrap64(low, Dtype::uint64, dtype, shape);
+            }
+            std::string const mask = b.constant(0xffffffff);
+            std::string const thirty_two = b.constant(32);
+            std::string const a0 = b.op("and", a, mask);
+            std::string const a1 = b.op("shift-right-logical", a, thirty_two);
+            std::string const c0 = b.op("and", c, mask);
+            std::string const c1 = b.op("shift-right-logical", c, thirty_two);
+            std::string const p00 = b.op("multiply", a0, c0);
+            std::string const p01 = b.op("multiply", a0, c1);
+            std::string const p10 = b.op("multiply", a1, c0);
+            std::string const p11 = b.op("multiply", a1, c1);
+            std::string const mid = b.op(
+                "add",
+                b.op(
+                    "add",
+                    b.op("shift-right-logical", p00, thirty_two),
+                    b.op("and", p01, mask)),
+                b.op("and", p10, mask));
+            std::string high = b.op(
+                "add",
+                b.op(
+                    "add",
+                    b.op(
+                        "add",
+                        p11,
+                        b.op("shift-right-logical", p01, thirty_two)),
+                    b.op("shift-right-logical", p10, thirty_two)),
+                b.op("shift-right-logical", mid, thirty_two));
+            if (sign) {
+                std::string const s64_zero = hlo_splat(Dtype::int64, 0, shape);
+                auto const negative = [&](std::string const &x) {
+                    return hlo_append(
+                        hlo_pred_shape(shape),
+                        std::format(
+                            "compare({}, {}), direction=LT", x, s64_zero));
+                };
+                std::string const zero = b.constant(0);
+                high = b.op(
+                    "subtract",
+                    high,
+                    b.op(
+                        "add",
+                        b.select(negative(args[0]), c, zero),
+                        b.select(negative(args[1]), a, zero)));
+            }
+            std::string const result = b.op(
+                "or",
+                b.op("shift-right-logical", low, b.constant(bits)),
+                b.op("shift-left", high, b.constant(64 - bits)));
+            return hlo_wrap64(result, Dtype::uint64, dtype, shape);
+        });
 }
 
+// q_div: a * 2^bits / b, truncated toward zero and wrapping to the dtype, as
+// fixed_point.hpp computes it, in two forms, as halide_compiler.cpp's:
+// - when a * 2^bits fits 64 bits, with room left in a signed one for its
+//   quotient by -1, a 64-bit division, which in XLA truncates toward zero;
+// - otherwise compiler.cpp's long division of the magnitudes in 64-bit words,
+//   as XLA_LOWERING.md section 11.3's wide path: |a| * 2^bits has a high and a
+//   low word, and the wrapping keeps only the quotient's low word, which is
+//   (high % |b|, low) / |b|, a division whose quotient fits 64 bits, by
+//   hlo_divide_narrow. That is negated if the signs differ.
+// Magnitudes are select(x < 0, 0 - x, x), never abs (rule R3).
+//
+// TODO: report a zero divisor, a DivisionByZero for the interpreter, as
+// section 12's error flag would. Here it's replaced by 1, as in the other
+// compilers, and the element is wrong
 std::string
 XlaCompiler::xla_op(QDivOp const &op, std::vector<std::string> const &values)
 {
-    (void)op;
-    (void)values; // TODO: fill in
-    MONAD_ABORT();
+    unsigned const bits = op.params;
+    Dtype const dtype = gc_.tensor_types()[op.input_ids[0]].dtype();
+    bool const sign = dtype_signed(dtype);
+    unsigned const width = static_cast<unsigned>(8 * dtype_size(dtype));
+    bool const narrow = sign ? width - 1 + bits <= 62 : width + bits <= 64;
+    return hlo_elementwise(
+        op.input_ids, values, [&](auto const &args, TensorType const &type) {
+            Shape const &shape = type.shape();
+            std::string const u64_shape = hlo_shape(Dtype::uint64, shape);
+            std::string const s64_shape = hlo_shape(Dtype::int64, shape);
+            Dtype const wide = sign ? Dtype::int64 : Dtype::uint64;
+            auto const extend = [&](std::string const &x) {
+                return dtype == wide ? x : hlo_convert(x, wide, shape);
+            };
+            auto const bitcast = [&](std::string const &x,
+                                     std::string const &to) {
+                return hlo_append(to, std::format("bitcast-convert({})", x));
+            };
+            auto const zero_to_one = [&](std::string const &x, Dtype const t) {
+                std::string const zero = hlo_splat(t, 0, shape);
+                std::string const is_zero = hlo_append(
+                    hlo_pred_shape(shape),
+                    std::format("compare({}, {}), direction=EQ", x, zero));
+                return hlo_append(
+                    hlo_shape(t, shape),
+                    std::format(
+                        "select({}, {}, {})",
+                        is_zero,
+                        hlo_splat(t, 1, shape),
+                        x));
+            };
+            // The 64-bit result, wrapped to the dtype
+            auto const narrowed = [&](std::string const &x, Dtype const from) {
+                if (from == dtype) {
+                    return x;
+                }
+                if (!sign) {
+                    return hlo_convert(x, dtype, shape);
+                }
+                // To the unsigned dtype of the same width, then reinterpreted
+                Dtype const same_width =
+                    static_cast<Dtype>(static_cast<uint8_t>(dtype) + 1);
+                std::string const as_unsigned =
+                    from == Dtype::uint64 ? x : bitcast(x, u64_shape);
+                if (dtype == Dtype::int64) {
+                    return bitcast(as_unsigned, hlo_shape(type));
+                }
+                return bitcast(
+                    hlo_convert(as_unsigned, same_width, shape),
+                    hlo_shape(type));
+            };
+
+            if (narrow) {
+                std::string dividend = extend(args[0]);
+                if (bits != 0) {
+                    std::string const carrier =
+                        sign ? bitcast(dividend, u64_shape) : dividend;
+                    std::string const shifted = hlo_append(
+                        u64_shape,
+                        std::format(
+                            "shift-left({}, {})",
+                            carrier,
+                            hlo_splat(Dtype::uint64, bits, shape)));
+                    dividend = sign ? bitcast(shifted, s64_shape) : shifted;
+                }
+                std::string const divisor = zero_to_one(extend(args[1]), wide);
+                std::string const quotient = hlo_append(
+                    hlo_shape(wide, shape),
+                    std::format("divide({}, {})", dividend, divisor));
+                return dtype == wide ? quotient
+                                     : hlo_convert(quotient, dtype, shape);
+            }
+
+            U64Builder b{
+                [&](std::string_view const s, std::string_view const i) {
+                    return hlo_append(s, i);
+                },
+                [&](uint64_t const value) {
+                    return hlo_splat(Dtype::uint64, value, shape);
+                },
+                shape};
+            std::string const s64_zero = hlo_splat(Dtype::int64, 0, shape);
+            // As unsigned: |INT64_MIN| is 2^63. And whether it's negative
+            auto const magnitude = [&](std::string const &x) {
+                std::string const extended = extend(x);
+                if (!sign) {
+                    return std::pair{extended, std::string{}};
+                }
+                std::string const bits64 = bitcast(extended, u64_shape);
+                std::string const negative = hlo_append(
+                    hlo_pred_shape(shape),
+                    std::format(
+                        "compare({}, {}), direction=LT", extended, s64_zero));
+                return std::pair{
+                    b.select(
+                        negative,
+                        b.op("subtract", b.constant(0), bits64),
+                        bits64),
+                    negative};
+            };
+            auto const [a, a_negative] = magnitude(args[0]);
+            auto const [divisor_magnitude, b_negative] = magnitude(args[1]);
+            std::string const divisor =
+                zero_to_one(divisor_magnitude, Dtype::uint64);
+            std::string const high =
+                bits == 0
+                    ? b.constant(0)
+                    : b.op("shift-right-logical", a, b.constant(64 - bits));
+            std::string const low =
+                bits == 0 ? a : b.op("shift-left", a, b.constant(bits));
+            std::string quotient =
+                hlo_divide_narrow(
+                    b.op("remainder", high, divisor), low, divisor, shape)
+                    .first;
+            if (sign) {
+                quotient = b.select(
+                    b.logic("xor", a_negative, b_negative),
+                    b.op("subtract", b.constant(0), quotient),
+                    quotient);
+            }
+            return narrowed(quotient, Dtype::uint64);
+        });
 }
 
+// q_matmul, as XLA_LOWERING.md section 8.3 lowers it when one 64-bit dot is
+// exact: for inputs up to 16 bits wide, whose sums are exact in 64 bits, and
+// when `bits` plus the output's width is at most 64, as only the sums' low 64
+// bits reach the output. Both operands extended to int64 or uint64, by the
+// input's signedness, one dot, which XLA:CPU runs as a wrapping LLVM IR loop
+// for 64-bit types (rule R6), a shift by `bits`, then the low bits, as the
+// output's dtype.
+//
+// TODO: the other cases, whose sums need 128 bits: section 8.3's one-sided
+// split for 32-bit inputs and 22-bit limbs for 64-bit ones
 std::string
 XlaCompiler::xla_op(QMatMulOp const &op, std::vector<std::string> const &values)
 {
-    (void)op;
-    (void)values; // TODO: fill in
-    MONAD_ABORT();
+    auto const [bits, out_dtype] = op.params;
+    TensorType const &x = gc_.tensor_types()[op.input_ids[0]];
+    TensorType const &y = gc_.tensor_types()[op.input_ids[1]];
+    TensorType const &type = gc_.tensor_types()[values.size()];
+    Dtype const dtype = x.dtype();
+    bool const sign = dtype_signed(dtype);
+    if (dtype_size(dtype) > 2 && bits + 8 * dtype_size(out_dtype) > 64) {
+        MONAD_ABORT();
+    }
+    Dtype const wide = sign ? Dtype::int64 : Dtype::uint64;
+    auto const extend = [&](size_t const id, TensorType const &t) {
+        return dtype == wide ? values[id]
+                             : hlo_convert(values[id], wide, t.shape());
+    };
+    Shape const &shape = type.shape();
+    std::string const sums = hlo_append(
+        hlo_shape(wide, shape),
+        std::format(
+            "dot({}, {}), lhs_contracting_dims={{1}}, "
+            "rhs_contracting_dims={{0}}",
+            extend(op.input_ids[0], x),
+            extend(op.input_ids[1], y)));
+    std::string const shifted =
+        bits == 0
+            ? sums
+            : hlo_append(
+                  hlo_shape(wide, shape),
+                  std::format(
+                      "{}({}, {})",
+                      sign ? "shift-right-arithmetic" : "shift-right-logical",
+                      sums,
+                      hlo_splat(wide, bits, shape)));
+    return hlo_wrap64(shifted, wide, out_dtype, shape);
 }
 
 std::string XlaCompiler::xla_op(
     ReduceSumOp const &op, std::vector<std::string> const &values)
 {
-    (void)op;
-    (void)values; // TODO: fill in
-    MONAD_ABORT();
+    return hlo_reduce_axis(op.input_ids[0], op.params, "add", 0, values);
 }
 
 std::string XlaCompiler::xla_op(
     ReduceMaxOp const &op, std::vector<std::string> const &values)
 {
-    (void)op;
-    (void)values; // TODO: fill in
-    MONAD_ABORT();
+    Dtype const dtype = gc_.tensor_types()[op.input_ids[0]].dtype();
+    return hlo_reduce_axis(
+        op.input_ids[0],
+        op.params,
+        "maximum",
+        dtype_range(dtype).first,
+        values);
 }
 
 std::string
@@ -784,20 +1336,85 @@ std::string XlaCompiler::xla_op(
     MONAD_ABORT();
 }
 
+// numpy's take along the axis, as XLA_LOWERING.md section 10 lowers it: each
+// index a slice of the data with 1 along the axis, collapsed, so the output's
+// dimensions are the data's before the axis, the indices', then the data's
+// after it. The indices keep their dtype.
+//
+// TODO: report an index out of range, an IndexError for the interpreter, as
+// section 12's error flag would. XLA clamps it, and the element is wrong. An
+// empty axis has nothing to read: its elements are 0
 std::string
 XlaCompiler::xla_op(GatherOp const &op, std::vector<std::string> const &values)
 {
-    (void)op;
-    (void)values; // TODO: fill in
-    MONAD_ABORT();
+    size_t const axis = op.params;
+    TensorType const &data = gc_.tensor_types()[op.input_ids[0]];
+    TensorType const &indices = gc_.tensor_types()[op.input_ids[1]];
+    TensorType const &type = gc_.tensor_types()[values.size()];
+    size_t const rank = data.shape().rank();
+    size_t const index_rank = indices.shape().rank();
+    if (data.shape().dimensions()[axis] == 0) {
+        return hlo_splat(type.dtype(), 0, type.shape());
+    }
+    auto const list = [](std::vector<size_t> const &xs) {
+        std::string text;
+        for (size_t const x : xs) {
+            text += std::format("{}{}", text.empty() ? "" : ",", x);
+        }
+        return text;
+    };
+    std::vector<size_t> offset_dims;
+    for (size_t i = 0; i < axis; i++) {
+        offset_dims.push_back(i);
+    }
+    for (size_t i = axis + index_rank; i + 1 < rank + index_rank; i++) {
+        offset_dims.push_back(i);
+    }
+    std::vector<size_t> slice_sizes;
+    for (size_t i = 0; i < rank; i++) {
+        slice_sizes.push_back(i == axis ? 1 : data.shape().dimensions()[i]);
+    }
+    return hlo_append(
+        hlo_shape(type),
+        std::format(
+            "gather({}, {}), offset_dims={{{}}}, collapsed_slice_dims={{{}}}, "
+            "start_index_map={{{}}}, index_vector_dim={}, slice_sizes={{{}}}",
+            values[op.input_ids[0]],
+            values[op.input_ids[1]],
+            list(offset_dims),
+            axis,
+            axis,
+            index_rank,
+            list(slice_sizes)));
 }
 
 std::string
 XlaCompiler::xla_op(ConcatOp const &op, std::vector<std::string> const &values)
 {
-    (void)op;
-    (void)values; // TODO: fill in
-    MONAD_ABORT();
+    TensorType const &type = gc_.tensor_types()[values.size()];
+    return hlo_append(
+        hlo_shape(type),
+        std::format(
+            "concatenate({}, {}), dimensions={{{}}}",
+            values[op.input_ids[0]],
+            values[op.input_ids[1]],
+            op.params));
+}
+
+// floor(sqrt(x)), for an unsigned x, by hlo_isqrt64 on its 64-bit extension;
+// the root of a w-bit value fits w bits
+std::string
+XlaCompiler::xla_op(ISqrtOp const &op, std::vector<std::string> const &values)
+{
+    return hlo_elementwise(
+        op.input_ids, values, [&](auto const &args, TensorType const &type) {
+            Shape const &shape = type.shape();
+            bool const wide = type.dtype() == Dtype::uint64;
+            std::string const n =
+                wide ? args[0] : hlo_convert(args[0], Dtype::uint64, shape);
+            std::string const root = hlo_isqrt64(n, shape);
+            return wide ? root : hlo_convert(root, type.dtype(), shape);
+        });
 }
 
 // The module's entry computation takes the graph's inputs as its parameters,

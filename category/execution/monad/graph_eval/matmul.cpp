@@ -269,6 +269,55 @@ template <typename Sum, typename T, typename Out>
     }
 }
 
+// out = (x * y) >> bits for an m x k matrix x and a k x 1 column y, with sums
+// in Sum, as matmul() chooses it: each row's dot product with the column, both
+// read contiguously, which GCC vectorizes. matmul_generic's one-column loop
+// reads y a stride of n apart, which GCC leaves scalar. Each product is in
+// Product: for types up to 16 bits wide an int32 or uint32, where it's exact,
+// as |x * y| is at most 2^30 signed and below 2^32 unsigned, then widened, as
+// matmul_generic's are in its Wide; for wider types Wide itself. So every sum
+// is matmul_generic's, and so is every element of out
+template <typename Sum, typename T, typename Out>
+[[gnu::noinline]] void matvec_generic(
+    T const *const x, T const *const y, size_t const m, size_t const k,
+    unsigned const bits, Out *const out)
+{
+    using Wide = std::conditional_t<
+        2 * sizeof(T) <= sizeof(Sum),
+        matmul_shift_t<Sum, T>,
+        Sum>;
+    using Product = std::conditional_t<
+        sizeof(T) <= 2,
+        std::conditional_t<std::is_signed_v<T>, int32_t, uint32_t>,
+        Wide>;
+    for (size_t i = 0; i < m; i++) {
+        T const *__restrict const row = x + i * k;
+        T const *__restrict const column = y;
+        Sum sum = 0;
+        for (size_t p = 0; p < k; p++) {
+            auto const product = static_cast<Product>(
+                static_cast<Product>(row[p]) * static_cast<Product>(column[p]));
+            sum += static_cast<Sum>(static_cast<Wide>(product));
+        }
+        out[i] =
+            static_cast<Out>(static_cast<matmul_shift_t<Sum, T>>(sum) >> bits);
+    }
+}
+
+// matvec_generic for a column, else matmul_generic
+template <typename Sum, typename T, typename Out>
+void matmul_any(
+    T const *const x, T const *const y, size_t const m, size_t const k,
+    size_t const n, unsigned const bits, Out *const out)
+{
+    if (n == 1) {
+        matvec_generic<Sum>(x, y, m, k, bits, out);
+    }
+    else {
+        matmul_generic<Sum>(x, y, m, k, n, bits, out);
+    }
+}
+
 MONAD_GRAPH_EVAL_ANONYMOUS_NAMESPACE_END
 
 MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
@@ -307,6 +356,20 @@ void matmul_i8(Tensor const &x, Tensor const &y, Tensor &out)
     }
 }
 
+void matvec_i8(
+    int8_t const *const x, int8_t const *const y, int32_t *const out,
+    size_t const rows, size_t const depth)
+{
+    for (size_t row = 0; row < rows; row++) {
+        // Can't overflow: at most 65535 products of magnitude 2^14
+        int32_t sum = 0;
+        for (size_t i = 0; i < depth; i++) {
+            sum += int32_t{x[row * depth + i]} * int32_t{y[i]};
+        }
+        out[row] = sum;
+    }
+}
+
 void matmul(Tensor const &x, Tensor const &y, unsigned const bits, Tensor &out)
 {
     size_t const m = x.type().shape().dimensions()[0];
@@ -331,15 +394,13 @@ void matmul(Tensor const &x, Tensor const &y, unsigned const bits, Tensor &out)
             T const *const y_data = y.elements<T const>().data();
             Out *const out_data = out.elements<Out>().data();
             if constexpr (sizeof(T) <= 2) {
-                matmul_generic<uint64_t>(
-                    x_data, y_data, m, k, n, bits, out_data);
+                matmul_any<uint64_t>(x_data, y_data, m, k, n, bits, out_data);
             }
             else if (bits + 8 * sizeof(Out) <= 64) {
-                matmul_generic<uint64_t>(
-                    x_data, y_data, m, k, n, bits, out_data);
+                matmul_any<uint64_t>(x_data, y_data, m, k, n, bits, out_data);
             }
             else {
-                matmul_generic<unsigned __int128>(
+                matmul_any<unsigned __int128>(
                     x_data, y_data, m, k, n, bits, out_data);
             }
         });

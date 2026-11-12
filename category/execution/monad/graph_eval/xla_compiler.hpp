@@ -31,6 +31,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
@@ -90,6 +91,24 @@ class XlaCompiler
         std::string const &value, TensorType const &type, Shape const &shape);
     std::string hlo_convert(std::string const &value, Dtype, Shape const &);
     std::string hlo_argmax_computation(Dtype);
+    // The fixed-point building blocks of XLA_LOWERING.md section 11.1, on u64
+    // tensors of `shape`: (high * 2^64 + low) / divisor and its remainder,
+    // for high < divisor; and floor(sqrt(n))
+    std::pair<std::string, std::string> hlo_divide_narrow(
+        std::string const &high, std::string const &low,
+        std::string const &divisor, Shape const &);
+    std::string hlo_isqrt64(std::string const &n, Shape const &);
+    // The computation a reduce applies: `name`, add or maximum, of two
+    // scalars of the dtype
+    std::string hlo_reduce_computation(std::string_view name, Dtype);
+    // The node's input `id` reduced along `axis` from `init`, kept with
+    // length 1
+    std::string hlo_reduce_axis(
+        size_t id, uint8_t axis, std::string_view name, __int128 init,
+        std::vector<std::string> const &values);
+    // A 64-bit value of `from`, int64 or uint64, wrapped to `to`
+    std::string
+    hlo_wrap64(std::string const &value, Dtype from, Dtype to, Shape const &);
     // The node's inputs, broadcast to its shape, and its type
     std::vector<std::string> hlo_operands(
         std::span<size_t const> input_ids,
@@ -130,6 +149,7 @@ class XlaCompiler
     std::string xla_op(QInvSqrtOp const &, std::vector<std::string> const &);
     std::string xla_op(GatherOp const &, std::vector<std::string> const &);
     std::string xla_op(ConcatOp const &, std::vector<std::string> const &);
+    std::string xla_op(ISqrtOp const &, std::vector<std::string> const &);
 
     // The graph as an HLO module, as text
     Result<std::string> hlo_module();

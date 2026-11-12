@@ -836,11 +836,7 @@ MlirValue Compiler::mlir_op(
     EqualOp const &op, MlirLocation loc, MlirBlock block,
     std::vector<MlirValue> const &values)
 {
-    (void)op;
-    (void)loc;
-    (void)block;
-    (void)values; // TODO: fill in
-    MONAD_ABORT();
+    return mlir_compare(loc, block, op.input_ids, values, CMPI_EQ, CMPI_EQ);
 }
 
 // tensor.reshape, to the output's shape as a constant operand, keeping the
@@ -2282,6 +2278,33 @@ MlirValue Compiler::mlir_op(
     mlirOperationStateAddResults(&concat, 1, &output_type);
     mlirOperationStateAddAttributes(&concat, 1, &dim);
     return mlirOperationGetResult(mlir_append(block, &concat), 0);
+}
+
+// floor(sqrt(x)), for an unsigned x: extended to 64 bits, rooted by mlir_isqrt
+// with a high word of 0, and truncated back, as the root of a w-bit value fits
+// w bits
+MlirValue Compiler::mlir_op(
+    ISqrtOp const &op, MlirLocation loc, MlirBlock block,
+    std::vector<MlirValue> const &values)
+{
+    return mlir_elementwise(
+        loc,
+        block,
+        op.input_ids,
+        values,
+        [&](MlirBlock const element, std::span<MlirValue const> const args) {
+            MlirType const type = mlirValueGetType(args[0]);
+            MlirType const i64 = mlirIntegerTypeGet(ctx_, 64);
+            bool const wide = mlirTypeEqual(type, i64);
+            MlirValue const x =
+                wide ? args[0]
+                     : mlir_value(loc, element, "arith.extui", {args[0]}, i64);
+            MlirValue const root = mlir_isqrt(
+                loc, element, mlir_constant(loc, element, i64, 0), x);
+            return wide
+                       ? root
+                       : mlir_value(loc, element, "arith.trunci", {root}, type);
+        });
 }
 
 MlirType Compiler::mlir_type(Dtype dtype)

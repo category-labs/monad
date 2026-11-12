@@ -24,15 +24,4 @@
 
 MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
 
-Result<std::span<uint8_t const>>
-read_bytes(std::span<uint8_t const> &input, uint64_t const size)
-{
-    if (input.size() < size) {
-        return GraphEvalError::GraphValidationError;
-    }
-    auto const bytes = input.first(static_cast<size_t>(size));
-    input = input.subspan(static_cast<size_t>(size));
-    return bytes;
-}
-
 MONAD_GRAPH_EVAL_NAMESPACE_END

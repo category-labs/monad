@@ -204,6 +204,9 @@ class Compiler
     MlirValue mlir_op(
         ConcatOp const &, MlirLocation, MlirBlock,
         std::vector<MlirValue> const &);
+    MlirValue mlir_op(
+        ISqrtOp const &, MlirLocation, MlirBlock,
+        std::vector<MlirValue> const &);
 
     Result<CompiledGraph> iree_compile(MlirModule, std::string *ir);
 

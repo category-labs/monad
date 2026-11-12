@@ -206,9 +206,10 @@ uint8_t *thread_arena()
 
 // Runs the graph in `graph_address`'s code on `inputs`, in the thread's arena.
 // For evalGraphInto, `output_count` is its number of output references
-Result<std::vector<Tensor>> run_graph(
+Result<GraphOutputs> run_graph(
     State &state, Address const &graph_address,
-    std::vector<TensorInput> &&inputs, CallerStorage *const caller_storage,
+    std::span<TensorInput const> const inputs,
+    CallerStorage *const caller_storage,
     std::optional<size_t> const output_count)
 {
     // Get a hold of the graphcode
@@ -221,7 +222,7 @@ Result<std::vector<Tensor>> run_graph(
     }
     Interpreter interpreter{
         state,
-        std::move(inputs),
+        inputs,
         caller_storage,
         output_count,
         *graphcode,
@@ -358,7 +359,7 @@ Result<byte_string> GraphEvalContract::precompile_eval_graph(
         run_graph(
             state_,
             graph_address,
-            std::move(inputs),
+            inputs,
             call.delegatecall ? &caller_storage : nullptr,
             std::nullopt));
 
@@ -439,7 +440,7 @@ Result<byte_string> GraphEvalContract::precompile_eval_graph_into(
         run_graph(
             state_,
             graph_address,
-            std::move(inputs),
+            inputs,
             call.delegatecall ? &caller_storage : nullptr,
             outputs.size()));
     // Stored outputs must not overlap

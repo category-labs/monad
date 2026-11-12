@@ -140,7 +140,7 @@ Result<void> Interpreter::load_inputs()
 {
     for (size_t i = 0; i < inputs_.size(); i++) {
         TensorInput const &input = inputs_[i];
-        Tensor &tensor = node_values_[i];
+        Tensor tensor = node(i);
         if (auto const *const data =
                 std::get_if<byte_string_view>(&input.source)) {
             copy_elements(
@@ -163,26 +163,14 @@ Result<void> Interpreter::load_inputs()
     return outcome::success();
 }
 
-Result<void> Interpreter::prepare_node_placement()
-{
-    if (graphcode_.validation_result() != GraphEvalError::Success) {
-        return graphcode_.validation_result();
-    }
-    auto const &allocs = graphcode_.tensor_allocation_records();
-    node_values_.reserve(allocs.size());
-    for (auto const alloc : allocs) {
-        Tensor tensor{alloc.type, arena_ + alloc.offset};
-        node_values_.push_back(tensor);
-    }
-    return outcome::success();
-}
-
-Result<std::vector<Tensor>> Interpreter::run()
+Result<GraphOutputs> Interpreter::run()
 {
     uint64_t const entry = node_times_ ? __rdtsc() : 0;
     BOOST_OUTCOME_TRY(check_magic_number());
     BOOST_OUTCOME_TRY(check_inputs());
-    BOOST_OUTCOME_TRY(prepare_node_placement());
+    if (graphcode_.validation_result() != GraphEvalError::Success) {
+        return graphcode_.validation_result();
+    }
 
     auto const n_inputs = inputs_.size();
     // Read output-tensor indices. TODO: constrain number of outputs
@@ -205,8 +193,7 @@ Result<std::vector<Tensor>> Interpreter::run()
     uint64_t op_start =
         node_times_ ? node_times_->start_ops(entry, n_inputs, n_ops) : 0;
     for (size_t i = 0; i < n_ops; i++) {
-        // OutputAllocator const output{allocator_, node_values_.size()};
-        Tensor &result = node_values_[n_inputs + i];
+        Tensor result = node(n_inputs + i);
         Op opcode{};
         BOOST_OUTCOME_TRY(
             visit_next(code_span_, [&]<typename OpT>(OpT const &op) {
@@ -216,7 +203,8 @@ Result<std::vector<Tensor>> Interpreter::run()
                     return evaluate_tensor_ref(state_, op, result);
                 }
                 else {
-                    return op.evaluate(result, node_values_);
+                    return op.evaluate(
+                        result, [this](size_t const id) { return node(id); });
                 }
             }));
 
@@ -227,13 +215,13 @@ Result<std::vector<Tensor>> Interpreter::run()
 
     // Output indices are read before the ops, so they can only be checked once
     // every node exists
-    std::vector<Tensor> output_values;
-    output_values.reserve(n_outputs);
+    GraphOutputs output_values;
+    output_values.count = n_outputs;
     for (size_t i = 0; i < n_outputs; i++) {
-        if (outputs[i] >= node_values_.size()) {
+        if (outputs[i] >= graphcode_.tensor_allocation_records().size()) {
             return GraphEvalError::GraphValidationError;
         }
-        output_values.push_back(node_values_[outputs[i]]);
+        output_values.tensors[i] = node(outputs[i]);
     }
     if (node_times_) {
         node_times_->end_run(entry, op_start);

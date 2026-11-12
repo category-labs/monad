@@ -15,7 +15,6 @@
 
 #pragma once
 
-#include <array>
 #include <category/core/assert.h>
 #include <category/execution/monad/graph_eval/config.hpp>
 #include <category/execution/monad/graph_eval/types.hpp>
@@ -106,9 +105,15 @@ inline auto visit_dtype(Dtype const dtype, F &&f)
     MONAD_ABORT();
 }
 
-// The Dtype for a C++ element type; the inverse of visit_dtype
 template <typename T>
-consteval Dtype dtype_of()
+concept dtype_t = std::is_same_v<T, uint8_t> || std::is_same_v<T, int8_t> ||
+                  std::is_same_v<T, uint16_t> || std::is_same_v<T, int16_t> ||
+                  std::is_same_v<T, uint32_t> || std::is_same_v<T, int32_t> ||
+                  std::is_same_v<T, uint64_t> || std::is_same_v<T, int64_t>;
+
+// The Dtype for a C++ element type; the inverse of visit_dtype
+template <dtype_t T>
+constexpr Dtype dtype_of()
 {
     if constexpr (std::same_as<T, int8_t>) {
         return Dtype::int8;

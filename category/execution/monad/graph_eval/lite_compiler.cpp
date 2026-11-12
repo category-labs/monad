@@ -21,12 +21,17 @@
 #include "category/execution/monad/graph_eval/interpreter.hpp"
 #include "category/execution/monad/graph_eval/matmul.hpp"
 #include "category/execution/monad/graph_eval/ops.hpp"
+#include "category/execution/monad/graph_eval/references.hpp"
 #include <category/execution/monad/graph_eval/lite_compiler.hpp>
 
 #include <algorithm>
+#include <array>
 #include <bit>
+#include <concepts>
 #include <cstdint>
+#include <functional>
 #include <set>
+#include <tuple>
 #include <type_traits>
 #include <variant>
 
@@ -119,7 +124,8 @@ MONAD_GRAPH_EVAL_ANONYMOUS_NAMESPACE_END
 
 MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
 
-Result<void> LiteCompiledGraph::run(std::span<uint8_t> scratch)
+Result<void>
+LiteCompiledGraph::run(std::span<uint8_t> const scratch, State &state)
 {
     uint64_t const entry = node_times_ ? __rdtsc() : 0;
     kernel_memory_arenas arenas{scratch.data(), data_blob_.data(), nullptr};
@@ -142,14 +148,15 @@ Result<void> LiteCompiledGraph::run(std::span<uint8_t> scratch)
             record_ops_until(kernel_ops_[k]);
         }
         // TODO: create a type alias for this
-        Result<size_t> (*eval_kernel)(uint8_t const *, kernel_memory_arenas &);
+        Result<size_t> (*eval_kernel)(
+            uint8_t const *, kernel_memory_arenas &, State &);
         std::memcpy(
             static_cast<void *>(&eval_kernel),
             kernels.data(),
             sizeof(eval_kernel));
         kernels = kernels.subspan(sizeof(eval_kernel));
         BOOST_OUTCOME_TRY(
-            auto const offset, eval_kernel(kernels.data(), arenas));
+            auto const offset, eval_kernel(kernels.data(), arenas, state));
         kernels = kernels.subspan(offset);
         if (node_times_) {
             record_ops_until(kernel_ops_[k] + 1);
@@ -173,15 +180,13 @@ struct Lifetime
     uint64_t last; // When its memory is last read, if it's its own
 };
 
-LiteCompiler::LiteCompiler(Graphcode const &gc, State &state)
+LiteCompiler::LiteCompiler(Graphcode const &gc)
     : gc_(gc)
-    , code_(gc.code_span())
-    , state_(state) {};
+    , code_(gc.code_span()) {};
 
-Result<LiteCompiledGraph>
-LiteCompiler::compile(Graphcode const &gc, State &state)
+Result<LiteCompiledGraph> LiteCompiler::compile(Graphcode const &gc)
 {
-    LiteCompiler compiler{gc, state};
+    LiteCompiler compiler{gc};
     BOOST_OUTCOME_TRY(compiler.read_graphcode());
     BOOST_OUTCOME_TRY(compiler.allocate_nodes());
     return compiler.lower();
@@ -279,7 +284,9 @@ inline Result<void> LiteCompiler::allocate_nodes()
             }
             if (id >= n_inputs_ &&
                 std::holds_alternative<LiteralOp>(ops_[id - n_inputs_])) {
-                // Literal nodes are allocated on the constants arena
+                // Literal nodes are allocated on the constants arena. A
+                // TensorRef's is in memory, as any other op's, since it's
+                // read on every run
                 next_literal_offset = round_up<uint32_t>(
                     next_literal_offset, TENSOR_DATA_ALIGNMENT);
                 node_placements_[id] =
@@ -316,17 +323,54 @@ inline Result<void> LiteCompiler::allocate_nodes()
     return outcome::success();
 }
 
+// The bytes a kernel's record takes in the kernel blob, after its eval_kernel
+// pointer. Both take a multiple of the pointer's alignment, and the blob's
+// allocation is aligned for any fundamental type, so every record stays
+// aligned, and can be read in place
+template <typename K>
+constexpr size_t kernel_record_size =
+    round_up<size_t>(sizeof(K), alignof(Result<size_t> (*)()));
+
+// Runs the kernel whose record is at kernel_ptr. Only a kernel whose eval
+// takes the state, a TensorRef's, is given it
 template <typename K>
     requires std::is_trivially_copyable_v<K>
-Result<size_t>
-eval_kernel(uint8_t const *kernel_ptr, kernel_memory_arenas &arenas)
+Result<size_t> eval_kernel(
+    uint8_t const *const kernel_ptr, kernel_memory_arenas &arenas, State &state)
 {
-    K k;
-    std::memcpy(&k, kernel_ptr, sizeof(K));
-    BOOST_OUTCOME_TRY(
-        auto const offset, k.eval(kernel_ptr + sizeof(K), arenas));
-    return sizeof(K) + offset;
+    static_assert(alignof(K) <= alignof(Result<size_t>(*)()));
+    MONAD_DEBUG_ASSERT(
+        reinterpret_cast<uintptr_t>(kernel_ptr) % alignof(K) == 0);
+    K const &k = *std::launder(reinterpret_cast<K const *>(kernel_ptr));
+    uint8_t const *const next = kernel_ptr + kernel_record_size<K>;
+    if constexpr (requires { k.eval(next, arenas, state); }) {
+        BOOST_OUTCOME_TRY(auto const offset, k.eval(next, arenas, state));
+        return kernel_record_size<K> + offset;
+    }
+    else {
+        BOOST_OUTCOME_TRY(auto const offset, k.eval(next, arenas));
+        return kernel_record_size<K> + offset;
+    }
 }
+
+// A TensorRef's tensor, copied out of the account's code into its node's
+// memory on every run, as the interpreter reads it. Its error, if any, is
+// load_code_tensor's
+struct TensorRefKernel
+{
+    TensorType type;
+    CodeRef ref;
+    Place out;
+
+    Result<size_t>
+    eval(uint8_t const *, kernel_memory_arenas &arenas, State &state) const
+    {
+        Tensor tensor{type, out.get_as<uint8_t>(arenas)};
+        BOOST_OUTCOME_TRY(
+            load_code_tensor(state, ref, ByteOrder::LittleEndian, tensor));
+        return 0;
+    }
+};
 
 template <typename T>
 struct CumSumKernel
@@ -337,7 +381,7 @@ struct CumSumKernel
     size_t length;
     size_t inner;
 
-    Result<size_t> eval(uint8_t const *, kernel_memory_arenas &arenas)
+    Result<size_t> eval(uint8_t const *, kernel_memory_arenas &arenas) const
     {
         auto const *const xs = x.get_as<T const>(arenas);
         auto *const outs = out.get_as<T>(arenas);
@@ -345,9 +389,12 @@ struct CumSumKernel
         for (uint64_t block = 0; block < outer; block++) {
             for (uint64_t row = 0; row < length; row++) {
                 uint64_t const start = (block * length + row) * inner;
-                for (uint64_t i = start; i < start + inner; i++) {
-                    outs[i] = row == 0 ? xs[i]
-                                       : WrappingAdd{}(outs[i - inner], xs[i]);
+                if (row == 0) {
+                    std::copy_n(xs + start, inner, outs + start);
+                }
+                else {
+                    cumsum_row(
+                        outs + start - inner, xs + start, outs + start, inner);
                 }
             }
         }
@@ -365,7 +412,7 @@ struct ElementwiseKernel2
 
     using Out_T = decltype(F(T(), T()));
 
-    Result<size_t> eval(uint8_t const *, kernel_memory_arenas &arenas)
+    Result<size_t> eval(uint8_t const *, kernel_memory_arenas &arenas) const
     {
         T const *const xs = x.get_as<T const>(arenas);
         T const *const ys = y.get_as<T const>(arenas);
@@ -411,6 +458,18 @@ using GreaterKernel =
                        })>;
 
 template <typename T>
+using GeKernel =
+    ElementwiseKernel2<T, ([](T const x, T const y) -> uint8_t {
+                           return uint8_t{std::greater_equal<T>()(x, y)};
+                       })>;
+
+template <typename T>
+using EqualKernel =
+    ElementwiseKernel2<T, ([](T const x, T const y) -> uint8_t {
+                           return uint8_t{std::equal_to<T>()(x, y)};
+                       })>;
+
+template <typename T>
 using MulKernel =
     ElementwiseKernel2<T, ([](T const x, T const y) -> widened_t<T> {
                            return WideningMul{}(x, y);
@@ -435,7 +494,7 @@ struct WhereKernel
     Place y;
     Place out;
 
-    Result<size_t> eval(uint8_t const *, kernel_memory_arenas &arenas)
+    Result<size_t> eval(uint8_t const *, kernel_memory_arenas &arenas) const
     {
         uint8_t const *const conds = cond.get_as<uint8_t const>(arenas);
         T const *const xs = x.get_as<T const>(arenas);
@@ -472,7 +531,7 @@ struct DivKernel
     size_t size;
     int64_t denominator;
 
-    Result<size_t> eval(uint8_t const *, kernel_memory_arenas &arenas)
+    Result<size_t> eval(uint8_t const *, kernel_memory_arenas &arenas) const
     {
         auto const *const xs = x.get_as<T const>(arenas);
         auto *const outs = out.get_as<T>(arenas);
@@ -510,7 +569,7 @@ struct DivPow2Kernel
     unsigned shift;
     T mask;
 
-    Result<size_t> eval(uint8_t const *, kernel_memory_arenas &arenas)
+    Result<size_t> eval(uint8_t const *, kernel_memory_arenas &arenas) const
     {
         auto const *const xs = x.get_as<T const>(arenas);
         auto *const outs = out.get_as<T>(arenas);
@@ -545,7 +604,7 @@ struct SaturateKernel
     Place out;
     size_t size;
 
-    Result<size_t> eval(uint8_t const *, kernel_memory_arenas &arenas)
+    Result<size_t> eval(uint8_t const *, kernel_memory_arenas &arenas) const
     {
         run_op1<SaturateOp::Impl<To>>(
             x.get_as<From const>(arenas), out.get_as<To>(arenas), size, true);
@@ -562,7 +621,7 @@ struct MatMulKernel
     Place y;
     Place out;
 
-    Result<size_t> eval(uint8_t const *, kernel_memory_arenas &arenas)
+    Result<size_t> eval(uint8_t const *, kernel_memory_arenas &arenas) const
     {
         Tensor out_tensor{out_type, out.get_as<uint8_t>(arenas)};
         matmul_i8(
@@ -581,7 +640,7 @@ struct MatVecKernel
     size_t rows;
     size_t depth;
 
-    Result<size_t> eval(uint8_t const *, kernel_memory_arenas &arenas)
+    Result<size_t> eval(uint8_t const *, kernel_memory_arenas &arenas) const
     {
         auto const *const xs = x.get_as<int8_t const>(arenas);
         auto const *const ys = y.get_as<int8_t const>(arenas);
@@ -605,7 +664,7 @@ struct ArgMaxKernel
     Place out;
     size_t size;
 
-    Result<size_t> eval(uint8_t const *, kernel_memory_arenas &arenas)
+    Result<size_t> eval(uint8_t const *, kernel_memory_arenas &arenas) const
     {
         auto const *const xs = x.get_as<T const>(arenas);
         size_t largest = 0;
@@ -615,6 +674,52 @@ struct ArgMaxKernel
             }
         }
         *out.get_as<T>(arenas) = static_cast<T>(largest);
+        return 0;
+    }
+};
+
+// The ops Lite computes by the reference interpreter's own evaluation, rather
+// than with kernels of its own
+template <typename OpT>
+concept ReferenceEvaluated =
+    std::same_as<OpT, QMulOp> || std::same_as<OpT, QDivOp> ||
+    std::same_as<OpT, QExpOp> || std::same_as<OpT, QInvSqrtOp> ||
+    std::same_as<OpT, QMatMulOp> || std::same_as<OpT, ReduceSumOp> ||
+    std::same_as<OpT, ReduceMaxOp> || std::same_as<OpT, GatherOp> ||
+    std::same_as<OpT, ConcatOp> || std::same_as<OpT, ISqrtOp>;
+
+// An op that the reference interpreter's OpT::evaluate_impl computes, on its
+// inputs' and its result's places, with OpT's parameters: none for ISqrt, an
+// axis or a number of fractional bits, and for QMatMul also its result's
+// dtype. Its error, if any, is the op's
+template <ReferenceEvaluated OpT>
+struct ReferenceKernel
+{
+    std::array<TensorType, OpT::ARITY> input_types;
+    std::array<Place, OpT::ARITY> inputs;
+    TensorType out_type;
+    Place out;
+    uint8_t param;
+    Dtype param_dtype;
+
+    Result<size_t> eval(uint8_t const *, kernel_memory_arenas &arenas) const
+    {
+        OpT op{};
+        if constexpr (std::same_as<OpT, QMatMulOp>) {
+            op.params = {param, param_dtype};
+        }
+        else if constexpr (std::same_as<typename OpT::Parameters, uint8_t>) {
+            op.params = param;
+        }
+        std::array<Tensor, OpT::ARITY> values{};
+        InputValues<OpT::ARITY> input_values{};
+        for (size_t i = 0; i < OpT::ARITY; i++) {
+            values[i] = Tensor{
+                input_types[i], inputs[i].template get_as<uint8_t>(arenas)};
+            input_values[i] = &values[i];
+        }
+        Tensor result{out_type, out.get_as<uint8_t>(arenas)};
+        BOOST_OUTCOME_TRY(op.evaluate_impl(result, input_values));
         return 0;
     }
 };
@@ -687,7 +792,8 @@ struct Lowering
     {
         std::vector<uint8_t> blob;
         auto const eval_ptr = &eval_kernel<K>;
-        blob.resize(sizeof(eval_ptr) + sizeof(kernel));
+        static_assert(sizeof(eval_ptr) == alignof(Result<size_t>(*)()));
+        blob.resize(sizeof(eval_ptr) + kernel_record_size<K>);
         std::memcpy(
             blob.data(),
             static_cast<void const *>(&eval_ptr),
@@ -708,6 +814,41 @@ struct Lowering
         std::vector<uint8_t> literal_data;
         literal_data.assign_range(span);
         data_bytes.emplace_back(std::move(literal_data));
+        return outcome::success();
+    }
+
+    Result<void> operator()(size_t const id, TensorRefOp const &ref)
+    {
+        // A TensorRef is read on every run, from the state the graph runs
+        // with, so that the compiled graph holds no copy of the tensors it
+        // reads
+        auto const &[type, address, offset] = ref.params;
+        TensorRefKernel k;
+        k.type = type;
+        k.ref = CodeRef{address, offset};
+        k.out = place_of(id);
+        add_kernel(k);
+        return outcome::success();
+    }
+
+    template <ReferenceEvaluated OpT>
+    Result<void> operator()(size_t id, OpT const &op)
+    {
+        ReferenceKernel<OpT> k{};
+        for (size_t i = 0; i < OpT::ARITY; i++) {
+            k.input_types[i] = type_of(op.input_ids[i]);
+            k.inputs[i] = place_of(op.input_ids[i]);
+        }
+        k.out_type = type_of(id);
+        k.out = place_of(id);
+        if constexpr (std::same_as<OpT, QMatMulOp>) {
+            k.param = std::get<0>(op.params);
+            k.param_dtype = std::get<1>(op.params);
+        }
+        else if constexpr (std::same_as<typename OpT::Parameters, uint8_t>) {
+            k.param = op.params;
+        }
+        add_kernel(k);
         return outcome::success();
     }
 
@@ -762,6 +903,40 @@ struct Lowering
             broadcast<2>({type_of(x_id).shape(), type_of(y_id).shape()}));
         return visit_dtype(type_of(x_id).dtype(), [&]<typename T>() {
             GreaterKernel<T> k;
+            k.broadcast_loops = loops;
+            k.x = place_of(x_id);
+            k.y = place_of(y_id);
+            k.out = place_of(id);
+            add_kernel(k);
+            return outcome::success();
+        });
+    }
+
+    Result<void> operator()(size_t id, GeOp const &ge)
+    {
+        auto const &[x_id, y_id] = ge.input_ids;
+        BOOST_OUTCOME_TRY(
+            auto const loops,
+            broadcast<2>({type_of(x_id).shape(), type_of(y_id).shape()}));
+        return visit_dtype(type_of(x_id).dtype(), [&]<typename T>() {
+            GeKernel<T> k;
+            k.broadcast_loops = loops;
+            k.x = place_of(x_id);
+            k.y = place_of(y_id);
+            k.out = place_of(id);
+            add_kernel(k);
+            return outcome::success();
+        });
+    }
+
+    Result<void> operator()(size_t id, EqualOp const &equal)
+    {
+        auto const &[x_id, y_id] = equal.input_ids;
+        BOOST_OUTCOME_TRY(
+            auto const loops,
+            broadcast<2>({type_of(x_id).shape(), type_of(y_id).shape()}));
+        return visit_dtype(type_of(x_id).dtype(), [&]<typename T>() {
+            EqualKernel<T> k;
             k.broadcast_loops = loops;
             k.x = place_of(x_id);
             k.y = place_of(y_id);

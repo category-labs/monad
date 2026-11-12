@@ -269,6 +269,72 @@ void make_serial(std::vector<Halide::Func> const &outputs)
     }
 }
 
+// (high * 2^64 + low) / divisor, and the remainder, for unsigned 64-bit
+// values with high < divisor, so that the quotient fits 64 bits, and a nonzero
+// divisor. Halide has no 128-bit integers, so this is compiler.cpp's
+// mlir_divide_narrow: Knuth's Algorithm D with 32-bit digits, as Hacker's
+// Delight's divlu, with the divisor and dividend shifted until the divisor's
+// top bit is set, and each quotient digit, estimated from the top digits, then
+// corrected at most twice. Every shift is by less than 64
+std::pair<Halide::Expr, Halide::Expr> divide_narrow(
+    Halide::Expr const &high, Halide::Expr const &low,
+    Halide::Expr const &divisor)
+{
+    Halide::Expr const base = u64(uint64_t{1} << 32);
+    Halide::Expr const digit_mask = u64(0xffffffff);
+    Halide::Expr const shift = Halide::count_leading_zeros(divisor);
+    Halide::Expr const v = divisor << shift;
+    // The bits of `low` that shifting `high` moves in; none for a shift of 0
+    Halide::Expr const carried =
+        Halide::select(shift == 0, u64(0), (low >> 1) >> (u64(63) - shift));
+    Halide::Expr const u32 = (high << shift) | carried;
+    Halide::Expr const u10 = low << shift;
+    Halide::Expr const v1 = v >> 32;
+    Halide::Expr const v0 = v & digit_mask;
+    Halide::Expr const u1 = u10 >> 32;
+    Halide::Expr const u0 = u10 & digit_mask;
+
+    // The quotient digit of dividend * 2^32 + next, for a dividend below
+    // v * 2^32, as mlir_divide_narrow computes it
+    auto const digit = [&](Halide::Expr const &dividend,
+                           Halide::Expr const &next) {
+        Halide::Expr q = dividend / v1;
+        Halide::Expr rhat = dividend - q * v1;
+        auto const too_large = [&] {
+            return q >= base || q * v0 > ((rhat << 32) | next);
+        };
+        Halide::Expr const first = too_large();
+        q = Halide::select(first, q - 1, q);
+        rhat = Halide::select(first, rhat + v1, rhat);
+        Halide::Expr const second = first && rhat < base && too_large();
+        return Halide::select(second, q - 1, q);
+    };
+
+    Halide::Expr const q1 = digit(u32, u1);
+    // What's left, below v, so computing it modulo 2^64 is exact
+    Halide::Expr const u21 = ((u32 << 32) | u1) - q1 * v;
+    Halide::Expr const q0 = digit(u21, u0);
+    Halide::Expr const quotient = (q1 << 32) | q0;
+    Halide::Expr const remainder = (((u21 << 32) | u0) - q0 * v) >> shift;
+    return {quotient, remainder};
+}
+
+// floor(sqrt(n)), for an unsigned 64-bit n, as XLA_LOWERING.md's isqrt64:
+// Newton's method from r = 2^ceil(width / 2), which is at least sqrt(n), each
+// step r = min(r, (r + n / r) / 2). From r >= floor(sqrt(n)), a step never goes
+// below it, and five reach it; the sixth is a margin. r + n / r can't
+// overflow, as r is at most 2^32 and, while r >= sqrt(n), n / r is at most
+// sqrt(n). For n = 0, r reaches 0, and Halide's 0 / 0 is 0
+Halide::Expr isqrt64(Halide::Expr const &n)
+{
+    Halide::Expr const width = u64(64) - Halide::count_leading_zeros(n);
+    Halide::Expr r = u64(1) << ((width + 1) / 2);
+    for (int step = 0; step < 6; step++) {
+        r = Halide::min(r, (r + n / r) >> 1);
+    }
+    return r;
+}
+
 MONAD_GRAPH_EVAL_ANONYMOUS_NAMESPACE_END
 
 MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
@@ -567,9 +633,10 @@ Halide::Func HalideCompiler::halide_op(
 Halide::Func HalideCompiler::halide_op(
     EqualOp const &op, std::vector<Halide::Func> const &values)
 {
-    (void)op;
-    (void)values; // TODO: fill in
-    MONAD_ABORT();
+    return halide_elementwise(
+        op.input_ids, values, [](std::span<Halide::Expr const> const args) {
+            return Halide::cast<uint8_t>(args[0] == args[1]);
+        });
 }
 
 // The same elements, in row-major order, in the output's shape: each element
@@ -886,14 +953,17 @@ Halide::Func HalideCompiler::halide_op(
 }
 
 // q_div: a * 2^bits / b, truncated toward zero and wrapping to the dtype, as
-// fixed_point.hpp computes it, when a * 2^bits fits 64 bits, with room left
-// in a signed one for its quotient by -1: a 64-bit division, rounding toward
-// zero, which for a signed dtype is div_round_to_zero's, as Halide's own
-// division rounds down.
+// fixed_point.hpp computes it. When a * 2^bits fits 64 bits, with room left in
+// a signed one for its quotient by -1, that's a 64-bit division, rounding
+// toward zero, which for a signed dtype is div_round_to_zero's, as Halide's own
+// division rounds down. Otherwise it's compiler.cpp's long division of the
+// magnitudes in 64-bit words: |a| * 2^bits has a high and a low word, and the
+// wrapping keeps only the quotient's low word, which is (high % |b|, low) /
+// |b|, a division whose quotient fits 64 bits, by divide_narrow. That is
+// negated if the signs differ.
 //
-// TODO: wider dividends, which need 128 bits; and report a zero divisor, a
-// DivisionByZero for the interpreter. Here it's replaced by 1, so that dividing
-// can't trap, and the element is wrong
+// TODO: report a zero divisor, a DivisionByZero for the interpreter. Here it's
+// replaced by 1, so that dividing can't trap, and the element is wrong
 Halide::Func HalideCompiler::halide_op(
     QDivOp const &op, std::vector<Halide::Func> const &values)
 {
@@ -901,10 +971,37 @@ Halide::Func HalideCompiler::halide_op(
     Dtype const dtype = gc_.tensor_types()[op.input_ids[0]].dtype();
     bool const sign = dtype_signed(dtype);
     unsigned const width = static_cast<unsigned>(8 * dtype_size(dtype));
-    if (sign ? width - 1 + bits > 62 : width + bits > 64) {
-        MONAD_ABORT();
-    }
     Halide::Type const wide = sign ? Halide::Int(64) : Halide::UInt(64);
+    if (sign ? width - 1 + bits > 62 : width + bits > 64) {
+        return halide_elementwise(
+            op.input_ids,
+            values,
+            [&](std::span<Halide::Expr const> const args) {
+                Halide::Type const unsigned64 = Halide::UInt(64);
+                // As unsigned: |INT64_MIN| is 2^63
+                auto const magnitude = [&](Halide::Expr const &x) {
+                    Halide::Expr const bits64 =
+                        Halide::reinterpret(unsigned64, Halide::cast(wide, x));
+                    return sign ? Halide::select(x < 0, u64(0) - bits64, bits64)
+                                : bits64;
+                };
+                Halide::Expr const a = magnitude(args[0]);
+                Halide::Expr const b = magnitude(args[1]);
+                Halide::Expr const divisor = Halide::select(b == 0, u64(1), b);
+                Halide::Expr const high =
+                    bits == 0 ? u64(0) : a >> static_cast<int>(64 - bits);
+                Halide::Expr const low = a << static_cast<int>(bits);
+                Halide::Expr quotient =
+                    divide_narrow(high % divisor, low, divisor).first;
+                if (sign) {
+                    quotient = Halide::select(
+                        (args[0] < 0) != (args[1] < 0),
+                        u64(0) - quotient,
+                        quotient);
+                }
+                return Halide::cast(args[0].type(), quotient);
+            });
+    }
     return halide_elementwise(
         op.input_ids, values, [&](std::span<Halide::Expr const> const args) {
             Halide::Type const type = args[0].type();
@@ -1252,6 +1349,19 @@ Halide::Func HalideCompiler::halide_op(
         values[op.input_ids[0]](in_a),
         values[op.input_ids[1]](in_b));
     return joined;
+}
+
+// floor(sqrt(x)), for an unsigned x, by isqrt64 on its 64-bit extension; the
+// root of a w-bit value fits w bits
+Halide::Func HalideCompiler::halide_op(
+    ISqrtOp const &op, std::vector<Halide::Func> const &values)
+{
+    return halide_elementwise(
+        op.input_ids, values, [&](std::span<Halide::Expr const> const args) {
+            return Halide::cast(
+                args[0].type(),
+                isqrt64(Halide::cast(Halide::UInt(64), args[0])));
+        });
 }
 
 // The graph as a Halide pipeline, unscheduled. Its arguments are an

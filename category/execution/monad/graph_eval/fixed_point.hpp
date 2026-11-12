@@ -155,6 +155,35 @@ inline uint64_t isqrt(unsigned __int128 const n)
     }
 }
 
+// floor(sqrt(x)), for an unsigned T, one bit of the root at a time from the
+// top: each step tries the next bit, and keeps it if the square so far still
+// fits in x. There is a step for every two bits of T, with no division and no
+// branch, and no sum can overflow T
+template <typename T>
+    requires std::is_unsigned_v<T>
+constexpr T floor_sqrt(T x)
+{
+    T root = 0;
+    T bit = static_cast<T>(T{1} << (8 * sizeof(T) - 2));
+    for (size_t step = 0; step < 4 * sizeof(T); step++) {
+        auto const trial = static_cast<T>(root + bit);
+        bool const fits = x >= trial;
+        x = fits ? static_cast<T>(x - trial) : x;
+        root = static_cast<T>((root >> 1) + (fits ? bit : T{0}));
+        bit = static_cast<T>(bit >> 2);
+    }
+    return root;
+}
+
+static_assert(floor_sqrt(uint8_t{255}) == 15);
+static_assert(floor_sqrt(uint16_t{65535}) == 255);
+static_assert(floor_sqrt(uint32_t{0xffffffff}) == 65535);
+static_assert(floor_sqrt(~uint64_t{0}) == 0xffffffff);
+static_assert(
+    floor_sqrt(uint64_t{0xfffffffe00000001}) == 0xffffffff); // (2^32 - 1)^2
+static_assert(floor_sqrt(uint64_t{0xfffffffe00000000}) == 0xfffffffe);
+static_assert(floor_sqrt(uint8_t{0}) == 0 && floor_sqrt(uint8_t{3}) == 1);
+
 // 2^bits / sqrt(x / 2^bits), rounded down, saturating at T's largest value, for
 // a positive x. That's floor(sqrt(2^(3 bits) / x)), which is also
 // floor(sqrt(floor(2^(3 bits) / x))), as computed here, exactly

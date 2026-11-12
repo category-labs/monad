@@ -60,8 +60,9 @@ public:
     // Morally const, but we provide data_blob_ as part of the
     // arenas array, which mixes up read-only and read-write areas
     // run assumes inputs have been written at input_offsets() by
-    // the caller
-    Result<void> run(std::span<uint8_t> scratch);
+    // the caller. TensorRef kernels read their tensors from accounts' code
+    // in `state`, on every run, as the interpreter does
+    Result<void> run(std::span<uint8_t> scratch, State &state);
 
     void time_kernels(NodeTimes *const times) noexcept
     {
@@ -90,7 +91,7 @@ struct Place
     uint32_t offset = 0;
 
     template <typename T>
-    T *get_as(kernel_memory_arenas &arenas)
+    T *get_as(kernel_memory_arenas &arenas) const
     {
         MONAD_DEBUG_ASSERT(arena != Arena::Invalid);
         return reinterpret_cast<T *>(
@@ -104,7 +105,6 @@ class LiteCompiler
 
     Graphcode const &gc_;
     std::span<uint8_t const> code_;
-    State &state_; // For fetching TensorRef nodes
 
     // The compiler loads the entire graphcode into memory
     // TODO: use a better representation than the huge variant
@@ -124,10 +124,10 @@ class LiteCompiler
     Result<void> allocate_nodes();
     Result<LiteCompiledGraph> lower();
 
-    LiteCompiler(Graphcode const &gc, State &state);
+    explicit LiteCompiler(Graphcode const &gc);
 
 public:
-    static Result<LiteCompiledGraph> compile(Graphcode const &gc, State &state);
+    static Result<LiteCompiledGraph> compile(Graphcode const &gc);
 
     LiteCompiler(LiteCompiler const &) = delete;
     LiteCompiler(LiteCompiler &&) = delete;

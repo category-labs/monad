@@ -15,14 +15,47 @@
 
 #pragma once
 
+#include <category/core/assert.h>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/utils/evm-as/builder.hpp>
 #include <category/vm/utils/evm-as/compiler.hpp>
 #include <category/vm/utils/evm-as/instruction.hpp>
 #include <category/vm/utils/evm-as/validator.hpp>
 
+#include <cstdint>
+#include <format>
+#include <string>
+#include <vector>
+
 namespace monad::vm::utils::evm_as
 {
+    // Assembles `eb` without validating it. Use for programs that are
+    // intentionally invalid (e.g. stack underflow, bad jump targets) but
+    // still expressible in evm-as.
+    template <Traits traits>
+    std::vector<uint8_t> assemble_unchecked(EvmBuilder<traits> const &eb)
+    {
+        std::vector<uint8_t> bytecode;
+        compile(eb, bytecode);
+        return bytecode;
+    }
+
+    // Validates and assembles `eb`, aborting with the validation errors if
+    // the program is invalid.
+    template <Traits traits>
+    std::vector<uint8_t> assemble(EvmBuilder<traits> const &eb)
+    {
+        std::vector<ValidationError> errors;
+        if (!validate(eb, errors)) {
+            std::string msg;
+            for (auto const &e : errors) {
+                msg += std::format("\n  offset {}: {}", e.offset, e.msg);
+            }
+            MONAD_ASSERT_PRINTF(
+                false, "evm_as::assemble: invalid program:%s", msg.c_str());
+        }
+        return assemble_unchecked(eb);
+    }
 
     inline EvmBuilder<EvmTraits<EvmRevision::LatestStable>> latest()
     {

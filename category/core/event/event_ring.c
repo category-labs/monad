@@ -25,9 +25,10 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include <category/core/event/event_iterator.h>
+#include <category/core/event/event_def.h>
 #include <category/core/event/event_recorder.h>
 #include <category/core/event/event_ring.h>
+#include <category/core/event/event_ring_iter.h>
 #include <category/core/format_err.h>
 #include <category/core/srcloc.h>
 
@@ -105,8 +106,8 @@ size_t monad_event_ring_calc_storage(
 //  .------------------.
 int monad_event_ring_init_file(
     struct monad_event_ring_size const *const ring_size,
-    enum monad_event_content_type const content_type,
-    uint8_t const *const schema_hash, int const ring_fd,
+    monad_event_content_type_t const content_type,
+    uint8_t const (*const schema_hash)[32], int const ring_fd,
     off_t const ring_offset, char const *error_name)
 {
     size_t ring_bytes;
@@ -245,8 +246,12 @@ int monad_event_ring_mmap(
             sizeof header->magic) != 0) {
         return FORMAT_ERRC(
             EPROTO,
-            "event ring file `%s` does not contain current magic number",
-            error_name);
+            "event ring file `%s` has version %.*s, library has version %.*s",
+            error_name,
+            (int)sizeof header->magic,
+            header->magic,
+            (int)sizeof header->magic,
+            MONAD_EVENT_RING_HEADER_VERSION);
     }
     event_ring->desc_capacity_mask =
         event_ring->header->size.descriptor_capacity - 1;
@@ -377,7 +382,7 @@ void monad_event_ring_unmap(struct monad_event_ring *const event_ring)
 
 int monad_event_ring_init_iterator(
     struct monad_event_ring const *const event_ring,
-    struct monad_event_iterator *const iter)
+    struct monad_event_ring_iter *const iter)
 {
     memset(iter, 0, sizeof *iter);
     struct monad_event_ring_header const *header = event_ring->header;
@@ -387,10 +392,8 @@ int monad_event_ring_init_iterator(
     if ((event_ring->mmap_prot & PROT_READ) == 0) {
         return FORMAT_ERRC(EACCES, "event_ring memory not mapped for reading");
     }
-    iter->descriptors = event_ring->descriptors;
-    iter->desc_capacity_mask = header->size.descriptor_capacity - 1;
-    iter->control = &header->control;
-    (void)monad_event_iterator_reset(iter);
+    iter->event_ring = event_ring;
+    (void)monad_event_ring_iter_reset(iter);
     return 0;
 }
 

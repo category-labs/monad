@@ -36,11 +36,12 @@ fn main() {
         .derive_copy()
         .derive_partialeq_eq(None)
         .allowlist_files([
-            "category/core/event/event_iterator_inline.h",
-            "category/core/event/event_iterator.h",
+            "category/core/event/event_def.h",
             "category/core/event/event_metadata.h",
             "category/core/event/event_ring_util.h",
             "category/core/event/event_ring.h",
+            "category/core/event/event_ring_inline.h",
+            "category/core/event/event_ring_iter.h",
         ])
         .no_prepend_enum_name()
         .generate_and_build_static("monad_event__wrap_static_fns");

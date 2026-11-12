@@ -18,7 +18,8 @@ use std::marker::PhantomData;
 pub(crate) use self::raw::RawEventReader;
 use crate::{
     ffi::{
-        monad_event_descriptor, monad_event_iterator, monad_event_iterator_reset, monad_event_ring,
+        monad_event_descriptor, monad_event_ring, monad_event_ring_iter,
+        monad_event_ring_iter_reset,
     },
     EventDecoder, EventDescriptor, EventNextResult, RawEventDescriptor,
 };
@@ -46,7 +47,7 @@ where
     }
 
     pub(crate) fn new_snapshot(mut raw: RawEventReader<'ring>) -> Self {
-        raw.inner.read_last_seqno = 0;
+        raw.inner.cur_seqno = 1;
 
         Self {
             raw,
@@ -61,13 +62,13 @@ where
 
     /// Resets the reader to the latest event in the ring.
     pub fn reset(&mut self) {
-        monad_event_iterator_reset(&mut self.raw.inner);
+        monad_event_ring_iter_reset(&mut self.raw.inner);
     }
 
     /// Exposes the underlying c-types.
     pub fn with_raw(
         &mut self,
-        f: impl FnOnce(&monad_event_ring, &mut monad_event_iterator) -> Option<monad_event_descriptor>,
+        f: impl FnOnce(&monad_event_ring, &mut monad_event_ring_iter) -> Option<monad_event_descriptor>,
     ) -> Option<EventDescriptor<'ring, D>> {
         let c_event_descriptor = f(&self.raw.event_ring.inner, &mut self.raw.inner)?;
 

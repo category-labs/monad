@@ -15,15 +15,14 @@
 
 #include "event.hpp"
 
-#include <category/core/assert.h>
 #include <category/core/cleanup.h> //NOLINT(misc-include-cleaner)
 #include <category/core/config.hpp>
+#include <category/core/event/event_def.h>
 #include <category/core/event/event_ring.h>
 #include <category/core/event/event_ring_util.h>
 #include <category/core/event/owned_event_ring.hpp>
 #include <category/core/log.hpp>
 #include <category/execution/ethereum/event/exec_event_ctypes.h>
-#include <category/execution/ethereum/event/exec_event_recorder.hpp>
 
 #include <charconv>
 #include <concepts>
@@ -237,7 +236,8 @@ int create_owned_event_ring_nointr(
 
 int init_owned_event_ring(
     EventRingConfig ring_config, monad_event_content_type const content_type,
-    uint8_t const *const schema_hash, uint8_t const default_descriptor_shift,
+    uint8_t const (*const schema_hash)[32],
+    uint8_t const default_descriptor_shift,
     uint8_t const default_payload_buf_shift,
     std::unique_ptr<OwnedEventRing> &owned_event_ring)
 {
@@ -392,7 +392,7 @@ int init_execution_event_ring(
     return init_owned_event_ring(
         std::move(ring_config),
         MONAD_EVENT_CONTENT_TYPE_EXEC,
-        g_monad_exec_event_schema_hash,
+        &g_monad_exec_event_schema_hash,
         DEFAULT_EXEC_RING_DESCRIPTORS_SHIFT,
         DEFAULT_EXEC_RING_PAYLOAD_BUF_SHIFT,
         ring);

@@ -31,12 +31,15 @@
 
 #include <category/core/cleanup.h> //NOLINT(misc-include-cleaner)
 
+constexpr size_t PAGE_2MB = 1UL << 21;
+
 #if __has_include(<linux/limits.h>)
     #include <linux/limits.h> // NOLINT(misc-include-cleaner)
 #else
     #define PATH_MAX 4096
 #endif
 
+#include <category/core/event/event_def.h>
 #include <category/core/event/event_ring.h>
 #include <category/core/event/event_ring_util.h>
 #include <category/core/format_err.h>
@@ -274,12 +277,13 @@ int monad_event_ring_init_simple(
         &ring_size,
         ring_config->content_type,
         ring_config->schema_hash,
+        ring_config->version_table,
         ring_fd,
         ring_offset,
         error_name);
 }
 
-int monad_event_ring_check_content_type(
+int monad_event_ring_check_content_hash(
     struct monad_event_ring const *const event_ring,
     monad_event_content_type_t const content_type,
     uint8_t const (*const schema_hash)[32])
@@ -299,6 +303,97 @@ int monad_event_ring_check_content_type(
             schema_hash,
             sizeof event_ring->header->schema_hash) != 0) {
         return FORMAT_ERRC(EPROTO, "event ring schema hash does not match");
+    }
+    return 0;
+}
+
+int monad_event_ring_check_content_version(
+    struct monad_event_ring const *const event_ring,
+    monad_event_content_type_t const content_type,
+    uint8_t const (*const schema_hash)[32],
+    struct monad_event_content_version_table const sdk_version_table,
+    struct monad_event_content_version const **const sdk_version_p,
+    struct monad_event_content_version const **const ring_version_p)
+{
+    struct monad_event_content_version const *sdk_version;
+    struct monad_event_content_version const *ring_version;
+    struct monad_event_content_version_table ring_version_table;
+
+    if (sdk_version_p != nullptr) {
+        *sdk_version_p = nullptr;
+    }
+    if (ring_version_p != nullptr) {
+        *ring_version_p = nullptr;
+    }
+    if (event_ring == nullptr || event_ring->header == nullptr) {
+        return FORMAT_ERRC(EFAULT, "event ring is not mapped");
+    }
+    if (event_ring->header->content_type != content_type) {
+        return FORMAT_ERRC(
+            EPROTO,
+            "required event ring content type is %hu, file contains %hu",
+            content_type,
+            event_ring->header->content_type);
+    }
+
+    // Look up the version our SDK knows about
+    sdk_version =
+        monad_event_content_lookup_version(schema_hash, sdk_version_table);
+    if (sdk_version == nullptr) {
+        return FORMAT_ERRC(
+            EINVAL, "schema version table does not contain the input hash");
+    }
+    if (sdk_version_p != nullptr) {
+        *sdk_version_p = sdk_version;
+    }
+
+    // Look up the version the event ring writer knows about, using the event
+    // ring's own version table.
+    if (event_ring->header->version_table_count == 0) {
+        // We treat not having a version table at all as a special case because
+        // the error message is better. This would occur for an old file or a
+        // schema which isn't versioned, which is expected to be more common
+        // than the version table being corrupt.
+        return FORMAT_ERRC(
+            EPROTO, "event ring file does not contain a version table");
+    }
+    ring_version_table.entries =
+        (struct monad_event_content_version_table_entry const
+             *)((uint8_t const *)event_ring->header +
+                event_ring->header->version_table_offset);
+    ring_version_table.count = event_ring->header->version_table_count;
+    ring_version = monad_event_content_lookup_version(
+        &event_ring->header->schema_hash, ring_version_table);
+    if (ring_version == nullptr) {
+        return FORMAT_ERRC(
+            EPROTO,
+            "event ring file version table is corrupt: does not describe its "
+            "own schema hash");
+    }
+    if (ring_version_p != nullptr) {
+        *ring_version_p = ring_version;
+    }
+
+    // Check for ABI compatibility
+    if (sdk_version->major != ring_version->major) {
+        return FORMAT_ERRC(
+            EPROTO,
+            "event ring major version %u is not ABI-compatible with SDK "
+            "major version %u",
+            ring_version->major,
+            sdk_version->major);
+    }
+    if (sdk_version->minor > ring_version->minor) {
+        // The reader's schema cannot be newer than the writer's, because then
+        // the extension fields won't actually be there and attempting to
+        // read them will read undefined data
+        return FORMAT_ERRC(
+            EPROTO,
+            "SDK version %u.%u more recent than event ring version %u.%u",
+            sdk_version->major,
+            sdk_version->minor,
+            ring_version->major,
+            ring_version->minor);
     }
     return 0;
 }
@@ -327,7 +422,7 @@ int monad_event_open_hugetlbfs_dir_fd(
     int *const dirfd, char *const pathbuf, size_t const pathbuf_size)
 {
     struct monad_hugetlbfs_resolve_params const params = {
-        .page_size = 1UL << 21,
+        .page_size = PAGE_2MB,
         .path_suffix = MONAD_EVENT_DEFAULT_RING_DIR,
         .create_dirs = true,
         .dir_create_mode = DIR_CREATE_MODE};

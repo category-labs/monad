@@ -28,6 +28,7 @@
 #include <utility>
 #include <vector>
 
+#include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
 #include <linux/limits.h>
@@ -116,7 +117,8 @@ static void open_event_ring_file(
         .payload_buf_shift = payload_buf_shift,
         .context_large_pages = 0,
         .content_type = MONAD_EVENT_CONTENT_TYPE_TEST,
-        .schema_hash = &g_monad_test_event_schema_hash};
+        .schema_hash = &g_monad_test_event_schema_hash,
+        .version_table = g_monad_test_event_version_table};
     ASSERT_EQ(
         0, monad_event_ring_init_simple(&ring_config, ring_fd, 0, error_name));
     ASSERT_EQ(
@@ -615,4 +617,70 @@ TEST_F(EventRecorderDefaultFixture, CxxOverflowError)
             std::data(truncated),
             written_error->truncated_payload_size - sizeof(*vlt_event.payload)),
         0);
+}
+
+TEST_F(EventRecorderDefaultFixture, SchemaVersionCheck)
+{
+    int rc;
+    monad_event_content_version const *ring_version;
+    monad_event_content_version const *sdk_version;
+
+    // The version table holds four versions: 0.0, 0.1, 0.2, and 1.0. Each has
+    // a fake all-zero schema hash except for the last two bytes, which hold a
+    // one byte major and minor version. The version written into the ring is
+    // 0.1.
+    //
+    // We should be able to check the ring against version 0.0 and 0.1, which
+    // are ABI compatible because they have the same major version number.
+    // Version 0.2 should fail, since the SDK can't be newer than the writer
+    // even when they have the same major version number. Version 1.0 should
+    // also fail, because the major version number is different.
+    uint8_t const(*const v00)[32] = &g_monad_test_event_versions[0].schema_hash;
+    uint8_t const(*const v01)[32] = &g_monad_test_event_versions[1].schema_hash;
+    uint8_t const(*const v02)[32] = &g_monad_test_event_versions[2].schema_hash;
+    uint8_t const(*const v10)[32] = &g_monad_test_event_versions[3].schema_hash;
+
+    rc = monad_event_ring_check_content_version(
+        &event_ring_,
+        MONAD_EVENT_CONTENT_TYPE_TEST,
+        v00,
+        g_monad_test_event_version_table,
+        &sdk_version,
+        &ring_version);
+    ASSERT_EQ(rc, 0);
+    ASSERT_EQ(*ring_version, (monad_event_content_version{0, 1}));
+    ASSERT_EQ(*sdk_version, (monad_event_content_version{0, 0}));
+
+    rc = monad_event_ring_check_content_version(
+        &event_ring_,
+        MONAD_EVENT_CONTENT_TYPE_TEST,
+        v01,
+        g_monad_test_event_version_table,
+        &sdk_version,
+        &ring_version);
+    ASSERT_EQ(rc, 0);
+    ASSERT_EQ(*ring_version, (monad_event_content_version{0, 1}));
+    ASSERT_EQ(*sdk_version, (monad_event_content_version{0, 1}));
+
+    rc = monad_event_ring_check_content_version(
+        &event_ring_,
+        MONAD_EVENT_CONTENT_TYPE_TEST,
+        v02,
+        g_monad_test_event_version_table,
+        &sdk_version,
+        &ring_version);
+    ASSERT_EQ(rc, EPROTO);
+    ASSERT_EQ(*ring_version, (monad_event_content_version{0, 1}));
+    ASSERT_EQ(*sdk_version, (monad_event_content_version{0, 2}));
+
+    rc = monad_event_ring_check_content_version(
+        &event_ring_,
+        MONAD_EVENT_CONTENT_TYPE_TEST,
+        v10,
+        g_monad_test_event_version_table,
+        &sdk_version,
+        &ring_version);
+    ASSERT_EQ(rc, EPROTO);
+    ASSERT_EQ(*ring_version, (monad_event_content_version{0, 1}));
+    ASSERT_EQ(*sdk_version, (monad_event_content_version{1, 0}));
 }

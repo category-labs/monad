@@ -434,11 +434,15 @@ int main(int const argc, char **const argv)
     // at the event ring that holds core execution events. The execution
     // process can expose other kinds of event rings for other purposes (e.g.,
     // performance tracing). Make sure we're looking at the right kind of
-    // event content.
-    if (monad_event_ring_check_content_type(
+    // event content, and that our version of the execution events schema
+    // is ABI-compatible with the version that the daemon is writing.
+    if (monad_event_ring_check_content_version(
             &exec_ring,
             MONAD_EVENT_CONTENT_TYPE_EXEC,
-            &g_monad_exec_event_schema_hash) != 0) {
+            &g_monad_exec_event_schema_hash,
+            g_monad_exec_event_version_table,
+            nullptr,
+            nullptr) != 0) {
         goto Error;
     }
 

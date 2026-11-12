@@ -237,6 +237,7 @@ int create_owned_event_ring_nointr(
 int init_owned_event_ring(
     EventRingConfig ring_config, monad_event_content_type const content_type,
     uint8_t const (*const schema_hash)[32],
+    monad_event_content_version_table const version_table,
     uint8_t const default_descriptor_shift,
     uint8_t const default_payload_buf_shift,
     std::unique_ptr<OwnedEventRing> &owned_event_ring)
@@ -289,7 +290,8 @@ int init_owned_event_ring(
         .payload_buf_shift = ring_config.payload_buf_shift,
         .context_large_pages = 0,
         .content_type = content_type,
-        .schema_hash = schema_hash};
+        .schema_hash = schema_hash,
+        .version_table = version_table};
 
     int ring_fd [[gnu::cleanup(cleanup_close)]] = -1;
     if (int const rc =
@@ -393,6 +395,7 @@ int init_execution_event_ring(
         std::move(ring_config),
         MONAD_EVENT_CONTENT_TYPE_EXEC,
         &g_monad_exec_event_schema_hash,
+        g_monad_exec_event_version_table,
         DEFAULT_EXEC_RING_DESCRIPTORS_SHIFT,
         DEFAULT_EXEC_RING_PAYLOAD_BUF_SHIFT,
         ring);

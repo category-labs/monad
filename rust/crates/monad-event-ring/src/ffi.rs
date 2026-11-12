@@ -23,13 +23,14 @@ use std::{
 };
 
 pub(crate) use self::bindings::{
-    g_monad_event_content_type_names, monad_event_ring_result, MONAD_EVENT_CONTENT_TYPE_COUNT,
-    MONAD_EVENT_CONTENT_TYPE_NONE, MONAD_EVENT_RING_GAP, MONAD_EVENT_RING_NOT_READY,
-    MONAD_EVENT_RING_SUCCESS,
+    g_monad_event_content_type_names, monad_event_content_version_table, monad_event_ring_result,
+    MONAD_EVENT_CONTENT_TYPE_COUNT, MONAD_EVENT_CONTENT_TYPE_NONE, MONAD_EVENT_RING_GAP,
+    MONAD_EVENT_RING_NOT_READY, MONAD_EVENT_RING_SUCCESS,
 };
 pub use self::bindings::{
-    monad_event_content_type, monad_event_descriptor, monad_event_record_error, monad_event_ring,
-    monad_event_ring_iter, MONAD_EVENT_CONTENT_TYPE_EXEC, MONAD_EVENT_CONTENT_TYPE_TEST,
+    monad_event_content_type, monad_event_content_version_table_entry, monad_event_descriptor,
+    monad_event_record_error, monad_event_ring, monad_event_ring_iter,
+    MONAD_EVENT_CONTENT_TYPE_EXEC, MONAD_EVENT_CONTENT_TYPE_TEST,
 };
 
 #[allow(dead_code, missing_docs, non_camel_case_types, non_upper_case_globals)]
@@ -84,16 +85,40 @@ pub(crate) fn monad_event_ring_mmap(
     get_last_ring_library_error(r).map(|()| c_event_ring)
 }
 
-pub(crate) fn monad_event_ring_check_content_type(
+pub(crate) fn monad_event_ring_check_content_hash(
     c_event_ring: &monad_event_ring,
     c_event_content_type: monad_event_content_type,
     schema_hash: &[u8; 32],
 ) -> Result<(), String> {
     let r = unsafe {
-        self::bindings::monad_event_ring_check_content_type(
+        self::bindings::monad_event_ring_check_content_hash(
             c_event_ring,
             c_event_content_type,
             schema_hash,
+        )
+    };
+
+    get_last_ring_library_error(r)
+}
+
+pub(crate) fn monad_event_ring_check_content_version(
+    c_event_ring: &monad_event_ring,
+    c_event_content_type: monad_event_content_type,
+    schema_hash: &[u8; 32],
+    version_table: &[monad_event_content_version_table_entry],
+) -> Result<(), String> {
+    let c_version_table = monad_event_content_version_table {
+        entries: version_table.as_ptr(),
+        count: version_table.len(),
+    };
+    let r = unsafe {
+        self::bindings::monad_event_ring_check_content_version(
+            c_event_ring,
+            c_event_content_type,
+            schema_hash,
+            c_version_table,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
         )
     };
 

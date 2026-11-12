@@ -2338,8 +2338,8 @@ TYPED_TEST(EvmTraitsTest, code_tracer_records_authorization_code)
 // init_reserve_balance_context calls is_delegated for the sender, which
 // reads and records the sender's code when sender_code_hash != NULL_HASH.
 // revert_transaction -> dipped_into_reserve iterates state.current() and
-// records each non-empty code there (the read happens before the
-// is_delegated short-circuit, so non-delegated accounts are still recorded).
+// records the non-empty code of the sender and of each account whose balance
+// decreased.
 //
 // We engineer the setup so each hash is attributable to exactly one site:
 //   - A_CODE_HASH: only recorded via is_delegated (sender is NOT in current())
@@ -2380,11 +2380,12 @@ TYPED_TEST(MonadTraitsTest, code_tracer_records_reserve_balance_code)
     BlockState bs{tdb, vm};
     State state{bs, Incarnation{0, 0}};
 
-    // Bring ADDR_B into state.current() so dipped_into_reserve iterates it.
+    // Debit ADDR_B so dipped_into_reserve reads its code. Do it before
+    // init_reserve_balance_context so the tracker doesn't read it too.
     // Sender is intentionally NOT accessed: init_reserve_balance_context's
     // is_delegated reads via state.get_code_hash / original_account_state,
     // neither of which inserts into current_.
-    state.access_account(ADDR_B);
+    state.subtract_from_balance(ADDR_B, 1);
 
     ankerl::unordered_dense::segmented_set<Address> const empty_neighbours;
     std::vector<Address> const senders = {SENDER};

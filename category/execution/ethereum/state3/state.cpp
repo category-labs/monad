@@ -246,6 +246,19 @@ uint256_t State::get_original_balance(Address const &address)
     return original_account_state(address).get_balance_pessimistic();
 }
 
+bool State::balance_decreased(Address const &address)
+{
+    // Don't call get_balance or get_original_balance here, as they can force
+    // a re-execution.
+    auto const &current = recent_account(address);
+    auto const &original = original_account_state(address).account_;
+    uint256_t const current_balance =
+        current.has_value() ? current.value().balance : 0;
+    uint256_t const original_balance =
+        original.has_value() ? original.value().balance : 0;
+    return current_balance < original_balance;
+}
+
 bytes32_t State::get_code_hash(Address const &address)
 {
     auto const &account = recent_account(address);

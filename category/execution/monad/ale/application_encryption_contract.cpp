@@ -35,20 +35,29 @@ constexpr std::string_view SEALED_BLOB_AD_LABEL = "monad-sealed-blob-v1";
 
 struct PrecompileSelector
 {
+    static constexpr uint32_t SEAL_MESSAGE =
+        abi_encode_selector("sealMessage(uint64,uint256,bytes)");
     static constexpr uint32_t SEAL_BLOB =
         abi_encode_selector("seal(bytes,uint64,address,bytes)");
     static constexpr uint32_t UNSEAL_BLOB =
         abi_encode_selector("unseal(bytes,bytes)");
 };
 
+static_assert(PrecompileSelector::SEAL_MESSAGE == 0x5760b04f);
 static_assert(PrecompileSelector::SEAL_BLOB == 0x607c42c9);
 static_assert(PrecompileSelector::UNSEAL_BLOB == 0x8f5b97f5);
 
 // TODO: Specify the actual costs, including input-length pricing for
-// seal/unseal, before assigning an address and registering.
+// message and blob encryption, before registering.
+constexpr uint64_t SEAL_MESSAGE_OP_COST = 100;
 constexpr uint64_t SEAL_BLOB_OP_COST = 100;
 constexpr uint64_t UNSEAL_BLOB_OP_COST = 100;
 constexpr uint64_t FALLBACK_COST = 100;
+
+uint64_t seal_message_gas_cost(byte_string_view const)
+{
+    return SEAL_MESSAGE_OP_COST;
+}
 
 uint64_t seal_blob_gas_cost(byte_string_view const)
 {
@@ -119,6 +128,10 @@ ApplicationEncryptionContract::precompile_dispatch(byte_string_view &input)
 
     switch (selector) {
     // The handler receives input with the four-byte selector removed.
+    case PrecompileSelector::SEAL_MESSAGE:
+        return {
+            &ApplicationEncryptionContract::precompile_seal_message,
+            seal_message_gas_cost(input)};
     case PrecompileSelector::SEAL_BLOB:
         return {
             &ApplicationEncryptionContract::precompile_seal,
@@ -134,6 +147,44 @@ ApplicationEncryptionContract::precompile_dispatch(byte_string_view &input)
 }
 
 EXPLICIT_MONAD_TRAITS(ApplicationEncryptionContract::precompile_dispatch);
+
+Result<byte_string> ApplicationEncryptionContract::precompile_seal_message(
+    byte_string_view input, Address const &, uint256_be_t const &msg_value)
+{
+    if (std::ranges::any_of(
+            msg_value.bytes, [](uint8_t const byte) { return byte != 0; })) {
+        return ApplicationEncryptionError::ValueNonZero;
+    }
+
+    BOOST_OUTCOME_TRY(
+        auto const destination_domain, abi_decode_fixed<u64_be>(input));
+    BOOST_OUTCOME_TRY(
+        [[maybe_unused]] auto const sequence_number,
+        abi_decode_fixed<u256_be>(input));
+
+    // Skip the plaintext offset and read its tail after the three-word head.
+    BOOST_OUTCOME_TRY(abi_decode_fixed<u256_be>(input));
+    BOOST_OUTCOME_TRY(
+        [[maybe_unused]] byte_string_view plaintext,
+        abi_decode_dynamic_bytes_tail(input));
+
+    BOOST_OUTCOME_TRY(
+        [[maybe_unused]] auto const key,
+        read_destination_key(
+            state_,
+            SPOKE_CA,
+            SPOKE_VIEWING_KEYS_SLOT,
+            destination_domain.native()));
+
+    // TODO: Obtain the source domain from execution context. Encode AD as
+    // abi.encode("monad-cross-domain-encryption-v1", source_domain,
+    // destination_domain, sequence_number), preserving the uint256 nonce.
+    // TODO: Derive randomness from the domain seed, sequence number, caller,
+    // transaction context, destination key, AD and plaintext.
+    // TODO: HPKE Seal the opaque plaintext and ABI-encode the ciphertext as
+    // bytes for IDomainEncryption. The spoke encodes (from, to, data).
+    return ApplicationEncryptionError::NotImplemented;
+}
 
 Result<byte_string> ApplicationEncryptionContract::precompile_seal(
     byte_string_view input, Address const &, uint256_be_t const &msg_value)

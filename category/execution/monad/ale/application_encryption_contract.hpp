@@ -68,6 +68,12 @@ public:
     static std::pair<PrecompileFunc, uint64_t>
     precompile_dispatch(byte_string_view &);
 
+    // IDomainEncryption.sealMessage(uint64,uint256,bytes) -> bytes.
+    // The spoke supplies its source nonce and the encoded message plaintext.
+    Result<byte_string> precompile_seal_message(
+        byte_string_view input, Address const &msg_sender,
+        uint256_be_t const &msg_value);
+
     Result<byte_string> precompile_seal(
         byte_string_view input, Address const &msg_sender,
         uint256_be_t const &msg_value);

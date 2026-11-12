@@ -29,10 +29,9 @@
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 
-#include <evmc/evmc.h>
-
 #include <boost/outcome/config.hpp>
 #include <boost/outcome/success_failure.hpp>
+#include <boost/outcome/try.hpp>
 
 #include <cstdint>
 #include <limits>
@@ -48,7 +47,7 @@ Result<void> static_validate_transaction(
     std::optional<uint64_t> const &excess_blob_gas, uint256_t const &chain_id,
     BlobSchedule const &blob_schedule)
 {
-    static_assert(traits::evm_rev() >= MONAD_ETH_BERLIN);
+    static_assert(traits::evm_rev() >= EvmRevision::Berlin);
 
     // EIP-155
     if (MONAD_LIKELY(tx.sc.chain_id.has_value())) {
@@ -57,53 +56,18 @@ Result<void> static_validate_transaction(
         }
     }
 
-    // EIP-4844
-    if constexpr (!traits::eip_4844_active()) {
-        if (MONAD_UNLIKELY(tx.type == TransactionType::eip4844)) {
-            return TransactionError::TypeNotSupported;
-        }
-    }
-
-    if (tx.type == TransactionType::monad) {
-        if (!is_monad_trait_v<traits> || chain_id != 20143 ||
-            !tx.sc.chain_id.has_value()) {
-            return TransactionError::TypeNotSupported;
-        }
-    }
-
-    // TODO: remove the below logic once we fully migrate over to traits
-    // EIP-1559
-    if constexpr (traits::evm_rev() < MONAD_ETH_LONDON) {
-        if (MONAD_UNLIKELY(
-                tx.type != TransactionType::legacy &&
-                tx.type != TransactionType::eip2930)) {
-            return TransactionError::TypeNotSupported;
-        }
-    }
-    else if constexpr (traits::evm_rev() < MONAD_ETH_CANCUN) {
-        if (MONAD_UNLIKELY(
-                tx.type != TransactionType::legacy &&
-                tx.type != TransactionType::eip2930 &&
-                tx.type != TransactionType::eip1559)) {
-            return TransactionError::TypeNotSupported;
-        }
-    }
-    else if constexpr (traits::evm_rev() < MONAD_ETH_PRAGUE) {
-        if (MONAD_UNLIKELY(
-                tx.type != TransactionType::legacy &&
-                tx.type != TransactionType::eip2930 &&
-                tx.type != TransactionType::eip1559 &&
-                tx.type != TransactionType::eip4844)) {
-            return TransactionError::TypeNotSupported;
-        }
-    }
-    else if (MONAD_UNLIKELY(
-                 tx.type != TransactionType::legacy &&
-                 tx.type != TransactionType::eip2930 &&
-                 tx.type != TransactionType::eip1559 &&
-                 tx.type != TransactionType::eip4844 &&
-                 tx.type != TransactionType::eip7702 &&
-                 tx.type != TransactionType::monad)) {
+    // EIP-2718
+    bool const type_supported =
+        tx.type == TransactionType::legacy ||
+        tx.type == TransactionType::eip2930 ||
+        (tx.type == TransactionType::eip1559 &&
+         traits::eip_1559_header_active()) ||
+        (tx.type == TransactionType::eip4844 && traits::eip_4844_active()) ||
+        (tx.type == TransactionType::eip7702 && traits::eip_7702_active()) ||
+        (tx.type == TransactionType::monad && is_monad_trait_v<traits> &&
+         traits::evm_rev() >= EvmRevision::Prague && chain_id == 20143 &&
+         tx.sc.chain_id.has_value());
+    if (MONAD_UNLIKELY(!type_supported)) {
         return TransactionError::TypeNotSupported;
     }
 
@@ -117,8 +81,7 @@ Result<void> static_validate_transaction(
         return TransactionError::PriorityFeeGreaterThanMax;
     }
 
-    // EIP-3860
-    if constexpr (traits::evm_rev() >= MONAD_ETH_SHANGHAI) {
+    if constexpr (traits::eip_3860_active()) {
         // In `MONAD_TWO`, the maximum code size for contracts was increased
         // without explicitly changing every corresponding check on initcode
         // size. This meant that in some places, the maximum initcode size was
@@ -141,13 +104,13 @@ Result<void> static_validate_transaction(
         return TransactionError::IntrinsicGasGreaterThanLimit;
     }
 
-    if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
-        // EIP-7623
+    if constexpr (traits::eip_7623_active()) {
         if (MONAD_UNLIKELY(floor_data_gas<traits>(tx) > tx.gas_limit)) {
             return TransactionError::IntrinsicGasGreaterThanLimit;
         }
+    }
 
-        // EIP-7702
+    if constexpr (traits::eip_7702_active()) {
         if (tx.type == TransactionType::eip7702) {
             if (MONAD_UNLIKELY(tx.authorization_list.empty())) {
                 return TransactionError::EmptyAuthorizationList;
@@ -170,7 +133,7 @@ Result<void> static_validate_transaction(
         return TransactionError::InvalidSignature;
     }
 
-    if constexpr (traits::evm_rev() >= MONAD_ETH_CANCUN) {
+    if constexpr (traits::eip_4844_active()) {
         if (tx.type == TransactionType::eip4844) {
             if (MONAD_UNLIKELY(tx.blob_versioned_hashes.empty())) {
                 return TransactionError::InvalidBlobHash;
@@ -202,11 +165,14 @@ Result<void> validate_transaction(
     Transaction const &tx, Address const &sender, State &state,
     uint256_t const & /*base_fee_per_gas*/,
     std::span<std::optional<Address> const> const /*authorities*/,
-    trace::StateTracer &state_tracer)
+    trace::StateTracer &state_tracer, ExecutionMode const &mode)
 {
     static_assert(is_evm_trait_v<traits>);
+    if (!sender_nonce_check(mode)) {
+        BOOST_OUTCOME_TRY(validate_simulation_sender_nonce(sender, state));
+    }
     return validate_ethereum_transaction<traits>(
-        tx, sender, state, state_tracer);
+        tx, sender, state, state_tracer, mode);
 }
 
 EXPLICIT_EVM_TRAITS(validate_transaction);

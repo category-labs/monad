@@ -43,7 +43,6 @@
 #include <category/mpt/util.hpp>
 
 #include <CLI/CLI.hpp>
-#include <evmc/evmc.hpp>
 
 #include <quill/std/Chrono.h>
 #include <quill/std/FilesystemPath.h>
@@ -61,7 +60,9 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <format>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <numeric>
 #include <ranges>
@@ -427,7 +428,7 @@ void do_version(DbStateMachine &sm, std::string_view const version)
 
 void do_proposal(DbStateMachine &sm, std::string_view const input)
 {
-    bytes32_t const block_id = evmc::literals::parse<bytes32_t>(input);
+    bytes32_t const block_id = from_hex<bytes32_t>(input).value_or(bytes32_t{});
     if (block_id == bytes32_t{}) {
         fmt::println(
             "Invalid block_id input: please input a 32-byte hex string.");
@@ -817,6 +818,8 @@ char const *snapshot_format_name(monad_snapshot_format const format)
         return "v0";
     case MONAD_SNAPSHOT_FORMAT_V1:
         return "v1";
+    case MONAD_SNAPSHOT_FORMAT_V2:
+        return "v2";
     }
     MONAD_ABORT("unhandled monad_snapshot_format");
 }
@@ -831,15 +834,18 @@ int main(int const argc, char *argv[])
     bool interactive = false;
     std::optional<std::filesystem::path> dump_binary_snapshot;
     std::optional<std::filesystem::path> load_binary_snapshot;
+    uint64_t load_buffer_size = MONAD_SNAPSHOT_DEFAULT_FLUSH_BYTES;
     std::string version;
     unsigned dump_concurrency_limit = 2048;
     bool use_secondary = false;
     uint64_t total_shards = 1;
     uint64_t shard_number = 0;
-    monad_snapshot_format snapshot_format = MONAD_SNAPSHOT_FORMAT_V0;
+    monad_snapshot_format snapshot_format = MONAD_SNAPSHOT_FORMAT_V1;
     std::unordered_map<std::string, monad_snapshot_format> const
         snapshot_format_map{
-            {"v0", MONAD_SNAPSHOT_FORMAT_V0}, {"v1", MONAD_SNAPSHOT_FORMAT_V1}};
+            {"v0", MONAD_SNAPSHOT_FORMAT_V0},
+            {"v1", MONAD_SNAPSHOT_FORMAT_V1},
+            {"v2", MONAD_SNAPSHOT_FORMAT_V2}};
 
     CLI::App cli{
         "Inspection and snapshot tooling for a Monad execution database.",
@@ -897,21 +903,41 @@ int main(int const argc, char *argv[])
         ->add_option(
             "--snapshot-format,--snapshot_format",
             snapshot_format,
-            "Stream layout to write: v0 (default) omits the per-stream header, "
-            "so the dump also restores on binaries that predate it; v1 writes "
-            "a versioned header per stream and restores only on binaries that "
-            "know it. A load detects the layout on disk, so this applies to "
+            "Stream layout to write: v0 omits the per-stream header, so the "
+            "dump also restores on binaries that predate it; v1 (default) "
+            "writes a versioned header per stream and restores only on "
+            "binaries that know it; v2 also groups a storage stream by source "
+            "leaf, which lets a page-encoded target restore it without "
+            "holding a whole shard, and restores only on binaries that know "
+            "grouping; a slot-encoded db has nothing to group and writes v1 "
+            "instead. A load detects the layout on disk, so this applies to "
             "dumps only.")
         ->transform(
             CLI::CheckedTransformer(snapshot_format_map, CLI::ignore_case))
         ->needs(dump_binary_snapshot_option);
+    auto *const load_binary_snapshot_option =
+        cli_group
+            ->add_option(
+                "--load-binary-snapshot,--load_binary_snapshot",
+                load_binary_snapshot,
+                "Load a binary snapshot to db")
+            ->check(CLI::ExistingDirectory)
+            ->excludes(dump_binary_snapshot_option);
     cli_group
         ->add_option(
-            "--load-binary-snapshot,--load_binary_snapshot",
-            load_binary_snapshot,
-            "Load a binary snapshot to db")
-        ->check(CLI::ExistingDirectory)
-        ->excludes(dump_binary_snapshot_option);
+            "--load-buffer-size,--load_buffer_size",
+            load_buffer_size,
+            std::format(
+                "Snapshot bytes --load-binary-snapshot reads between "
+                "intermediate writes, with an optional unit such as 2GiB "
+                "(default {}GiB). Lowering it lowers the load's peak memory "
+                "at the cost of extra writes, except for the storage of a v0 "
+                "or v1 snapshot loaded into a page-encoded db, which is held "
+                "a whole shard at a time.",
+                MONAD_SNAPSHOT_DEFAULT_FLUSH_BYTES >> 30))
+        ->transform(CLI::AsSizeValue{false})
+        ->check(CLI::Range(uint64_t{1}, std::numeric_limits<uint64_t>::max()))
+        ->needs(load_binary_snapshot_option);
     cli.add_flag(
         "--secondary",
         use_secondary,
@@ -924,10 +950,7 @@ int main(int const argc, char *argv[])
     try {
         cli.parse(argc, argv);
     }
-    catch (CLI::CallForHelp const &e) {
-        return cli.exit(e);
-    }
-    catch (CLI::RequiredError const &e) {
+    catch (CLI::ParseError const &e) {
         return cli.exit(e);
     }
 
@@ -1079,13 +1102,15 @@ int main(int const argc, char *argv[])
             sq_thread_cpu.value_or(std::numeric_limits<unsigned>::max()),
             load_binary_snapshot.value().c_str(),
             resolved_version,
-            use_secondary);
+            use_secondary,
+            load_buffer_size);
         LOG_INFO(
             "snapshot version={} load_binary_snapshot={} load_to_secondary={} "
-            "elapsed={}",
+            "load_buffer_size={} elapsed={}",
             resolved_version,
             load_binary_snapshot.value(),
             use_secondary,
+            load_buffer_size,
             std::chrono::steady_clock::now() - begin);
     }
     return 0;

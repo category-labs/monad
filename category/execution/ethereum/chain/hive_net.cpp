@@ -31,16 +31,16 @@ uint256_t HiveNet::get_chain_id() const
 // (proof-of-stake, no pre-Berlin blocks): Berlin, London, Paris and Shanghai
 // are all active at genesis (timestamp 0), Cancun activates at timestamp 30 and
 // Prague at timestamp 60. Dispatch is therefore purely by timestamp.
-monad_eth_revision HiveNet::get_revision(
+EvmRevision HiveNet::get_revision(
     uint64_t const /*block_number*/, uint64_t const timestamp) const
 {
     if (timestamp >= 60) {
-        return MONAD_ETH_PRAGUE;
+        return EvmRevision::Prague;
     }
     if (timestamp >= 30) {
-        return MONAD_ETH_CANCUN;
+        return EvmRevision::Cancun;
     }
-    return MONAD_ETH_SHANGHAI;
+    return EvmRevision::Shanghai;
 }
 
 BlobSchedule HiveNet::get_blob_schedule(uint64_t const timestamp) const

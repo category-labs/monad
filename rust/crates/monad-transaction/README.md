@@ -25,4 +25,6 @@ cargo test --manifest-path rust/Cargo.toml -p monad-transaction
 scripts/test-monad-type40.sh
 ```
 
-The C++ script runs the independent execution codecs and static validators on Linux x86-64/AVX2. Neither codec vectors nor static validation tests establish a live executed transaction. See the paired BFT branch's `docs/monad-type-40.md` for the required pre-NEXT devnet configuration and full integration boundaries.
+The C++ script runs the independent execution codecs and static validators on Linux x86-64/AVX2 with Clang 19 and C++26, matching the execution toolchain. Activation tests cover Monad revisions before and after Prague, reject Ethereum traits and unknown transaction types, and retain chain 20143 as the only enabled network. Neither codec vectors nor static validation tests establish a live executed transaction. See the paired BFT branch's `docs/monad-type-40.md` for the required pre-NEXT devnet configuration and full integration boundaries.
+
+Execution event producers and readers must use the same checkout and a fresh ring. The native access-list presence flag remains part of the event schema; its fingerprint is derived from the current `eth_ctypes.h`, `exec_event_ctypes.h` and `monad_ctypes.h` contents, in that order. The Rust bridge uses the current `monad_address`/`monad_bytes32` C types.

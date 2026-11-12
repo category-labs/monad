@@ -25,14 +25,12 @@
 #include <category/core/log.hpp>
 #include <category/vm/compiler/ir/basic_blocks.hpp>
 #include <category/vm/compiler/ir/x86/types.hpp>
+#include <category/vm/evm/result.hpp>
 #include <category/vm/evm/traits.hpp>
 
 #include <asmjit/core/jitruntime.h>
 
 #include <CLI/CLI.hpp>
-
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 
 #include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
@@ -136,7 +134,7 @@ static arguments parse_args(int const argc, char **const argv)
     return args;
 }
 
-static void dump_result(arguments const &args, evmc::Result const &result)
+static void dump_result(arguments const &args, monad::vm::Result const &result)
 {
     if (!args.report_result && !args.wall_clock_time) {
         // Nothing to report.
@@ -153,25 +151,25 @@ static void dump_result(arguments const &args, evmc::Result const &result)
         object["time"] = time;
     }
 
-    if (result.status_code == EVMC_SUCCESS) {
+    if (result.status_code == CallStatus::Success) {
         object["result"] = json(monad::to_hex(
             monad::byte_string_view{result.output_data, result.output_size}));
     }
     else {
         switch (result.status_code) {
-        case EVMC_FAILURE:
+        case CallStatus::Failure:
             object["error"] = json("failure");
             break;
-        case EVMC_INTERNAL_ERROR:
+        case CallStatus::InternalError:
             object["error"] = json("internal error");
             break;
-        case EVMC_OUT_OF_GAS:
+        case CallStatus::OutOfGas:
             object["error"] = json("out of gas");
             break;
-        case EVMC_STACK_OVERFLOW:
+        case CallStatus::StackOverflow:
             object["error"] = json("stack overflow");
             break;
-        case EVMC_STACK_UNDERFLOW:
+        case CallStatus::StackUnderflow:
             object["error"] = json("stack underflow");
             break;
         default:
@@ -231,7 +229,7 @@ int mce_main(arguments const &args)
         bin = compiler.compile<traits>(*ir, device);
     }
 
-    evmc::Result const result = [&]() {
+    monad::vm::Result const result = [&]() {
         if (args.instrument_execute) {
             InstrumentableVM<true> vm(rt);
             return vm.execute<traits>(bin, device);
@@ -246,7 +244,7 @@ int mce_main(arguments const &args)
 
     auto status_code = result.status_code;
 
-    return status_code == EVMC_SUCCESS ? 0 : 1;
+    return status_code == CallStatus::Success ? 0 : 1;
 }
 
 static std::string uppercase(std::string s)
@@ -263,31 +261,31 @@ int main(int argc, char **argv)
     auto args = parse_args(argc, argv);
     std::string const rev = uppercase(args.revision);
     if (rev == "BERLIN") {
-        return mce_main<EvmTraits<MONAD_ETH_BERLIN>>(args);
+        return mce_main<EvmTraits<EvmRevision::Berlin>>(args);
     }
     else if (rev == "LONDON") {
-        return mce_main<EvmTraits<MONAD_ETH_LONDON>>(args);
+        return mce_main<EvmTraits<EvmRevision::London>>(args);
     }
     else if (rev == "PARIS") {
-        return mce_main<EvmTraits<MONAD_ETH_PARIS>>(args);
+        return mce_main<EvmTraits<EvmRevision::Paris>>(args);
     }
     else if (rev == "SHANGHAI") {
-        return mce_main<EvmTraits<MONAD_ETH_SHANGHAI>>(args);
+        return mce_main<EvmTraits<EvmRevision::Shanghai>>(args);
     }
     else if (rev == "CANCUN") {
-        return mce_main<EvmTraits<MONAD_ETH_CANCUN>>(args);
+        return mce_main<EvmTraits<EvmRevision::Cancun>>(args);
     }
     else if (rev == "PRAGUE") {
-        return mce_main<EvmTraits<MONAD_ETH_PRAGUE>>(args);
+        return mce_main<EvmTraits<EvmRevision::Prague>>(args);
     }
     else if (rev == "OSAKA") {
-        return mce_main<EvmTraits<MONAD_ETH_OSAKA>>(args);
+        return mce_main<EvmTraits<EvmRevision::Osaka>>(args);
     }
     else if (rev == "AMSTERDAM") {
-        return mce_main<EvmTraits<MONAD_ETH_AMSTERDAM>>(args);
+        return mce_main<EvmTraits<EvmRevision::Amsterdam>>(args);
     }
     else if (rev == "LATEST") {
-        return mce_main<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>(args);
+        return mce_main<EvmTraits<EvmRevision::LatestStable>>(args);
     }
     else {
         std::println(stderr, "unsupported revision '{}'", args.revision);

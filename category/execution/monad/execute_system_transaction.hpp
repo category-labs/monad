@@ -18,9 +18,8 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/traits.hpp>
-
-#include <evmc/evmc.h>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -36,7 +35,7 @@ class ExecuteSystemTransaction
     BlockHeader const &header_;
     BlockState &block_state_;
     BlockMetrics &block_metrics_;
-    boost::fibers::promise<void> &prev_;
+    boost::fibers::future<void> &prev_;
     CallTracerBase &call_tracer_;
     trace::StateTracer &state_tracer_;
     ExecutionEventRecorder *exec_recorder_;
@@ -45,12 +44,12 @@ public:
     ExecuteSystemTransaction(
         Chain const &, uint64_t i, Transaction const &, Address const &,
         BlockHeader const &, BlockState &, BlockMetrics &,
-        boost::fibers::promise<void> &prev, CallTracerBase &,
+        boost::fibers::future<void> &prev, CallTracerBase &,
         trace::StateTracer &, ExecutionEventRecorder *);
 
     Result<Receipt> operator()();
 
-    evmc_message to_message() const;
+    vm::Message to_message() const;
     Result<void> execute(State &);
     Receipt execute_final(State &);
 

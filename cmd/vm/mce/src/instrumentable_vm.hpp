@@ -25,7 +25,10 @@
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/vm/compiler/ir/x86.hpp>
+#include <category/vm/evm/message.hpp>
+#include <category/vm/evm/result.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/host.hpp>
 #include <category/vm/memory_pool.hpp>
 #include <category/vm/runtime/allocator.hpp>
 #include <category/vm/vm.hpp>
@@ -37,8 +40,6 @@
 #include <test/vm/utils/test_host.hpp>
 
 #include <asmjit/x86.h>
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 #include <valgrind/cachegrind.h>
 
 #include <cstdint>
@@ -67,7 +68,7 @@ public:
     }
 
     template <monad::Traits traits>
-    evmc::Result execute(Binary &entry, InstrumentationDevice const device)
+    vm::Result execute(Binary &entry, InstrumentationDevice const device)
     {
         switch (device) {
         case InstrumentationDevice::Cachegrind:
@@ -79,11 +80,11 @@ public:
     }
 
     template <monad::Traits traits, InstrumentationDevice device>
-    evmc::Result execute(Binary &entry)
+    vm::Result execute(Binary &entry)
     {
         auto msg_memory = memory_pool_.alloc_ref();
-        auto msg = new evmc_message{
-            .kind = EVMC_CALL,
+        auto msg = new vm::Message{
+            .kind = vm::CallKind::Call,
             .flags = 0,
             .depth = 0,
             .gas = 150'000'000,
@@ -123,16 +124,12 @@ public:
             authorities,
             block_header,
             chain};
-        auto &host = test_host.get_evmc_host();
-
-        evmc_host_interface const *const interface = &host.get_interface();
-        evmc_host_context *const context = host.to_context();
+        vm::Host &host = test_host.get_state_host();
 
         std::vector<uint8_t> empty_code{};
         auto code_span = std::span<uint8_t const>{empty_code.data(), 0};
 
-        auto ctx =
-            vm::runtime::Context::from(interface, context, msg, code_span);
+        auto ctx = vm::runtime::Context::from(host, msg, code_span);
 
         auto stack_ptr = stack_allocator.allocate();
 
@@ -154,7 +151,7 @@ public:
 
         delete msg;
 
-        return ctx.copy_to_evmc_result<traits>();
+        return ctx.copy_to_result<traits>();
     }
 
     void dispatch_execute(

@@ -90,6 +90,14 @@ struct monad_executor_state
     struct monad_executor_pool_state trace_block_pool_state;
 };
 
+// A null `dbpath` creates an executor without a database (useful for testing).
+// Requests then execute against an empty world in which every account is
+// absent, so they only observe the state supplied by their state overrides
+// (intended for testing). In this mode `node_lru_max_mem` is ignored, the
+// parent and grandparent transaction contexts of `eth_simulateV1` are empty,
+// block hash lookups (e.g. the BLOCKHASH opcode) fail except for blocks
+// simulated by `eth_simulateV1` and its base block. Though,
+// `monad_executor_run_transactions` rejects all requests.
 struct monad_executor *monad_executor_create(
     struct monad_executor_pool_config low_pool_conf,
     struct monad_executor_pool_config high_pool_conf,
@@ -131,7 +139,7 @@ void monad_executor_eth_simulate_submit(
     size_t max_output_size,
     struct monad_state_override_vec const *const state_overrides,
     struct monad_block_override_vec const *const block_overrides,
-    bool emit_native_transfer_logs,
+    bool validation, bool emit_native_transfer_logs,
     void (*complete)(monad_executor_result *, void *user), void *user);
 
 #ifdef __cplusplus

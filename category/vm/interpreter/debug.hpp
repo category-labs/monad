@@ -20,8 +20,6 @@
 #include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/runtime/types.hpp>
 
-#include <evmc/evmc.h>
-
 #include <format>
 #include <iostream>
 

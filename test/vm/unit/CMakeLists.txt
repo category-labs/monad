@@ -26,8 +26,10 @@ target_sources(vm-unit-tests PRIVATE
     monad_vm_interface_tests.cpp
     monad_vm_memory_pool_tests.cpp
     mocked_host_tests.cpp
+    opcode_table_tests.cpp
     utils_tests.cpp
     uint256_tests.cpp
+    uint256_barrett_tests.cpp
     uint128_tests.cpp
     non_temporal_memory_tests.cpp
     rc_ptr_tests.cpp
@@ -36,6 +38,7 @@ target_sources(vm-unit-tests PRIVATE
     emitter_tests.cpp
     interpreter_tests.cpp
     lru_weight_cache_tests.cpp
+    result_tests.cpp
     status_code_tests.cpp
     test_params.cpp
     runtime/fixture.cpp
@@ -54,6 +57,7 @@ target_sources(vm-unit-tests PRIVATE
 
 if(MONAD_COMPILER_TESTING)
     target_sources(vm-unit-tests PRIVATE
+        eip8024_tests.cpp
         evm_fixture.hpp
         evm_tests.cpp
     )

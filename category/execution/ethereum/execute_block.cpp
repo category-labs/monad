@@ -53,8 +53,6 @@
 
 #include <boost/fiber/future/promise.hpp>
 #include <boost/outcome/try.hpp>
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 
 #include <quill/std/Optional.h>
 
@@ -172,6 +170,11 @@ Result<std::vector<Receipt>> execute_block_transactions(
 
     std::shared_ptr<boost::fibers::promise<void>[]> promises{
         new boost::fibers::promise<void>[transactions.size() + 1]};
+    std::shared_ptr<boost::fibers::future<void>[]> futures{
+        new boost::fibers::future<void>[transactions.size() + 1]};
+    for (auto i = 0u; i < transactions.size() + 1; ++i) {
+        futures[i] = promises[i].get_future();
+    }
     promises[0].set_value();
 
     std::shared_ptr<std::optional<Result<Receipt>>[]> const results{
@@ -186,6 +189,7 @@ Result<std::vector<Receipt>> execute_block_transactions(
              i = i,
              results = results,
              promises = promises,
+             futures = futures,
              &transaction = transactions[i],
              &sender = senders[i],
              &authorities = authorities[i],
@@ -200,6 +204,7 @@ Result<std::vector<Receipt>> execute_block_transactions(
              trace_transfers = trace_transfers] {
                 record_txn_marker_event(
                     exec_recorder, MONAD_EXEC_TXN_PERF_EVM_ENTER, i);
+                std::exception_ptr current_exception = nullptr;
                 try {
                     results[i] = dispatch_transaction<traits>(
                         chain,
@@ -211,7 +216,7 @@ Result<std::vector<Receipt>> execute_block_transactions(
                         block_hash_buffer,
                         block_state,
                         block_metrics,
-                        promises[i],
+                        futures[i],
                         call_tracer,
                         state_tracer,
                         chain_ctx,
@@ -223,18 +228,35 @@ Result<std::vector<Receipt>> execute_block_transactions(
                     }
                     record_txn_marker_event(
                         exec_recorder, MONAD_EXEC_TXN_PERF_EVM_EXIT, i);
-                    // Call promise.set_value/set_exception the last thing,
-                    // because this signals that the transaction is finished.
-                    promises[i + 1].set_value();
                 }
                 catch (...) {
-                    promises[i + 1].set_exception(std::current_exception());
+                    current_exception = std::current_exception();
+                }
+
+                // Call `promises[i + 1].set_{exception,value}` as the last
+                // thing, signalling that this transaction has finished.
+                if (MONAD_UNLIKELY(current_exception)) {
+                    // An exception occurred during the execution of this
+                    // transaction. We must wait on the predecessor transaction
+                    // here to maintain the invariant that execution of every
+                    // transaction has finished before processing the results.
+                    // We wait here rather than inside the catch block, because
+                    // Boost Fiber does not support suspending within an
+                    // exception handler.
+                    futures[i].wait();
+                    promises[i + 1].set_exception(current_exception);
+                }
+                else {
+                    promises[i + 1].set_value();
                 }
             });
     }
 
     auto const last = static_cast<ptrdiff_t>(transactions.size());
-    promises[last].get_future().get();
+    futures[last].wait();
+    for (ptrdiff_t i = 1; i <= last; ++i) {
+        futures[i].get();
+    }
     block_metrics.tx_exec_time =
         std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - tx_exec_begin);
@@ -243,15 +265,16 @@ Result<std::vector<Receipt>> execute_block_transactions(
     for (unsigned i = 0; i < transactions.size(); ++i) {
         MONAD_ASSERT_THROW(
             results[i].has_value(), "missing transaction result");
-        if (MONAD_UNLIKELY(results[i].value().has_error())) {
+        auto &result = results[i].value();
+        if (MONAD_UNLIKELY(result.has_error())) {
             LOG_ERROR(
                 "tx {} {} validation failed: {}",
                 i,
                 transactions[i],
-                results[i].value().assume_error().message().c_str());
+                result.assume_error().message().c_str());
+            return std::move(result).as_failure();
         }
-        BOOST_OUTCOME_TRY(auto retval, std::move(results[i].value()));
-        retvals.push_back(std::move(retval));
+        retvals.push_back(std::move(result).assume_value());
     }
 
     // YP eq. 22
@@ -277,7 +300,7 @@ Result<std::vector<Receipt>> execute_block(
     ChainContext<traits> const &chain_ctx,
     ExecutionEventRecorder *const exec_recorder, bool const trace_transfers)
 {
-    static_assert(traits::evm_rev() >= MONAD_ETH_SPURIOUS_DRAGON);
+    static_assert(traits::evm_rev() >= EvmRevision::SpuriousDragon);
 
     TRACE_BLOCK_EVENT(StartBlock);
 
@@ -308,7 +331,7 @@ Result<std::vector<Receipt>> execute_block(
     State state{
         block_state, Incarnation{block.header.number, Incarnation::LAST_TX}};
 
-    if constexpr (traits::evm_rev() >= MONAD_ETH_SHANGHAI) {
+    if constexpr (traits::eip_4895_active()) {
         process_withdrawal(state, block.withdrawals);
     }
 
@@ -330,6 +353,14 @@ Result<std::vector<Receipt>> execute_block(
                 computed_requests_hash != block.header.requests_hash.value())) {
             return BlockError::InvalidRequestsHash;
         }
+    }
+
+    if constexpr (traits::eip_7928_active()) {
+        MONAD_ASSERT_THROW(
+            block.header.block_access_list_hash.has_value(),
+            "block header must have block access list hash when EIP-7928 is "
+            "active");
+        // TODO(EIP-7928) compute and validate hash
     }
 
     apply_block_reward<traits>(state, block);

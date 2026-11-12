@@ -18,14 +18,18 @@
 #include <category/core/address.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/int.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/monad/revision.h>
-#include <category/vm/evm/revision.h>
+#include <category/vm/evm/result.hpp>
+#include <category/vm/evm/revision.hpp>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/runtime/allocator.hpp>
 #include <category/vm/runtime/types.hpp>
 #include <category/vm/vm.hpp>
 #include <monad/test/traits_test.hpp>
+#include <test/vm/utils/evmc_host_adapter.hpp>
+#include <test/vm/utils/evmc_result.hpp>
 #include <test/vm/utils/mocked_host.hpp>
 #include <test/vm/utils/test_message.hpp>
 
@@ -35,6 +39,7 @@
 
 #include <gtest/gtest.h>
 
+#include <bit>
 #include <cstdint>
 #include <filesystem>
 #include <span>
@@ -94,11 +99,11 @@ namespace monad::vm::test
         monad::vm::VM vm_{};
 
         TestMessage test_msg_;
-        evmc_message &msg_{*test_msg_};
+        Message &msg_{*test_msg_};
 
         MockedHost host_;
 
-        evmc::Result result_;
+        vm::Result result_;
 
         std::span<uint8_t const> output_data_{};
 
@@ -106,9 +111,10 @@ namespace monad::vm::test
             std::int64_t gas_limit,
             std::span<std::uint8_t const> calldata) noexcept
         {
-            static_assert(TraitsTest<T>::Trait::evm_rev() >= MONAD_ETH_BERLIN);
+            static_assert(
+                TraitsTest<T>::Trait::evm_rev() >= EvmRevision::Berlin);
 
-            result_ = evmc::Result();
+            result_ = vm::Result();
             output_data_ = {};
 
             host_.accounts[msg_.sender].balance =
@@ -132,15 +138,14 @@ namespace monad::vm::test
 
             auto icode = make_shared_intercode(code);
 
-            auto rt_ctx = runtime::Context::from(
-                &host_.get_interface(), host_.to_context(), &msg_, code);
+            auto rt_ctx = runtime::Context::from(host_, &msg_, code);
             if (impl == Compiler) {
                 auto ncode =
                     vm_.compiler().compile<typename TraitsTest<T>::Trait>(
                         icode);
 
                 ASSERT_TRUE(ncode->entrypoint() != nullptr);
-                result_ = evmc::Result{vm_.execute_native_entrypoint_raw<
+                result_ = vm::Result{vm_.execute_native_entrypoint_raw<
                     typename TraitsTest<T>::Trait>(
                     rt_ctx, ncode->entrypoint())};
             }
@@ -152,14 +157,15 @@ namespace monad::vm::test
             else {
                 MONAD_ASSERT(impl == Spec);
                 evmc::VM spec_vm{evmc_create_monadml_evm()};
+                EvmcHostAdapter host{host_};
 
-                result_ = spec_vm.execute(
-                    host_.get_interface(),
-                    host_.to_context(),
+                result_ = from_evmc_result(spec_vm.execute(
+                    host.get_interface(),
+                    host.to_context(),
                     to_evmc_revision(TraitsTest<T>::Trait::evm_rev()),
-                    msg_,
+                    to_evmc(msg_),
                     code.data(),
-                    code.size());
+                    code.size()));
             }
         }
 
@@ -168,7 +174,8 @@ namespace monad::vm::test
             std::span<std::uint8_t const> calldata = {},
             Implementation impl = Compiler) noexcept
         {
-            execute(gas_limit, std::span{code}, calldata, impl);
+            execute(
+                gas_limit, std::span<std::uint8_t const>{code}, calldata, impl);
         }
 
         void execute(
@@ -185,7 +192,7 @@ namespace monad::vm::test
             std::span<std::uint8_t const> calldata = {},
             Implementation impl = Compiler) noexcept
         {
-            execute(std::span{code}, calldata, impl);
+            execute(std::span<std::uint8_t const>{code}, calldata, impl);
         }
 
         bool has_empty_state() const noexcept
@@ -227,13 +234,13 @@ namespace monad::vm::test
             auto expected = std::move(result_);
 
             switch (expected.status_code) {
-            case EVMC_SUCCESS:
-            case EVMC_REVERT:
+            case CallStatus::Success:
+            case CallStatus::Revert:
                 ASSERT_EQ(actual.status_code, expected.status_code);
                 break;
             default:
-                ASSERT_NE(actual.status_code, EVMC_SUCCESS);
-                ASSERT_NE(actual.status_code, EVMC_REVERT);
+                ASSERT_NE(actual.status_code, CallStatus::Success);
+                ASSERT_NE(actual.status_code, CallStatus::Revert);
                 break;
             }
 
@@ -272,8 +279,7 @@ namespace monad::vm::test
     class VMFileTest
         : public testing::Test
         , public testing::WithParamInterface<std::tuple<
-              fs::directory_entry,
-              std::variant<monad_eth_revision, monad_revision>>>
+              fs::directory_entry, std::variant<EvmRevision, monad_revision>>>
     {
     protected:
         template <Traits traits>
@@ -297,10 +303,10 @@ namespace monad::vm::test
 
         void execute_and_compare(
             std::int64_t gas_limit, std::span<std::uint8_t const> code,
-            std::variant<monad_eth_revision, monad_revision> rev_) noexcept
+            std::variant<EvmRevision, monad_revision> rev_) noexcept
         {
-            if (std::holds_alternative<monad_eth_revision>(rev_)) {
-                auto rev = std::get<monad_eth_revision>(rev_);
+            if (std::holds_alternative<EvmRevision>(rev_)) {
+                auto rev = std::get<EvmRevision>(rev_);
                 SWITCH_EVM_TRAITS(
                     VMFileTest::execute_and_compare_evm_rev, gas_limit, code);
             }

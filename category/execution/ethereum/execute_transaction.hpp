@@ -21,11 +21,12 @@
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
+#include <category/vm/evm/message.hpp>
+#include <category/vm/evm/result.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
 
-#include <boost/fiber/future/promise.hpp>
-#include <evmc/evmc.hpp>
+#include <boost/fiber/future/future.hpp>
 
 #include <cstdint>
 #include <span>
@@ -39,7 +40,7 @@ class BlockState;
 struct CallTracerBase;
 struct Chain;
 template <Traits traits>
-struct EvmcHost;
+struct StateHost;
 class ExecutionEventRecorder;
 class State;
 struct Transaction;
@@ -47,10 +48,10 @@ struct Transaction;
 template <Traits traits>
 class ExecuteTransactionNoValidation
 {
-    evmc_message to_message(
+    vm::Message to_message(
         vm::MemoryPool::Ref &msg_memory, uint32_t msg_memory_capacity) const;
 
-    uint64_t process_authorizations(State &, EvmcHost<traits> &);
+    uint64_t process_authorizations(State &, StateHost<traits> &);
 
 protected:
     Chain const &chain_;
@@ -64,7 +65,7 @@ public:
         Chain const &, Transaction const &, Address const &,
         std::span<std::optional<Address> const>, BlockHeader const &);
 
-    evmc::Result operator()(State &, EvmcHost<traits> &);
+    vm::Result operator()(State &, StateHost<traits> &);
 };
 
 template <Traits traits>
@@ -81,23 +82,30 @@ class ExecuteTransaction : public ExecuteTransactionNoValidation<traits>
     BlockHashBuffer const &block_hash_buffer_;
     BlockState &block_state_;
     BlockMetrics &block_metrics_;
-    boost::fibers::promise<void> &prev_;
+    boost::fibers::future<void> &prev_;
     CallTracerBase &call_tracer_;
     trace::StateTracer &state_tracer_;
     ExecutionEventRecorder *exec_recorder_;
     bool trace_transfers_;
 
-    Result<evmc::Result> execute_impl2(State &);
-    Receipt execute_final(State &, evmc::Result const &);
+    Result<vm::Result> execute_impl2(State &);
+    Receipt execute_final(State &, vm::Result const &);
 
 public:
     ExecuteTransaction(
         Chain const &, uint64_t i, Transaction const &, Address const &,
         std::span<std::optional<Address> const>, BlockHeader const &,
         BlockHashBuffer const &, BlockState &, BlockMetrics &,
-        boost::fibers::promise<void> &prev, CallTracerBase &,
+        boost::fibers::future<void> &prev, CallTracerBase &,
         trace::StateTracer &, ChainContext<traits> const &chain_ctx,
         ExecutionEventRecorder *exec_recorder, bool trace_transfers = false);
+    ExecuteTransaction(
+        Chain const &, uint64_t, Transaction const &, Address const &,
+        std::span<std::optional<Address> const>, BlockHeader const &,
+        BlockHashBuffer const &, BlockState &, BlockMetrics &,
+        boost::fibers::future<void> &, CallTracerBase &, trace::StateTracer &,
+        ChainContext<traits> const &&, ExecutionEventRecorder *,
+        bool = false) = delete;
     ~ExecuteTransaction() = default;
 
     Result<Receipt> operator()();

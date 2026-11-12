@@ -22,6 +22,9 @@ RUN apt-get update && \
 
 FROM base AS base_rust
 
+ARG GCC_VERSION
+ENV CC=gcc-${GCC_VERSION} CXX=g++-${GCC_VERSION}
+
 RUN apt-get update && \
     apt-get install -y gcc rustup && \
     apt-get clean && \
@@ -30,7 +33,7 @@ RUN apt-get update && \
 
 RUN rustup toolchain install 1.91.1 --profile minimal --component clippy
 RUN rustup toolchain install nightly-2025-12-09 --profile minimal --component rustfmt
-RUN RUSTFLAGS="-C linker=gcc-15" cargo install cargo-shear@1.9.1
+RUN RUSTFLAGS="-C linker=${CC}" cargo install cargo-shear@1.9.1
 
 FROM base AS base_vm_test
 
@@ -55,11 +58,8 @@ ADD --checksum=sha256:3e2b02d49fe903eda4fd8caca5cbf0d139c470e97e1de9a85299b1b034
 ADD --checksum=sha256:c96c822d2e187e9168aa20f2c158c8a2de96ea076f6e6c473a1b6d3fc5c064df \
     https://github.com/monad-developers/execution-specs/releases/download/tests-monad@v1.2.2/fixtures_monad.tar.gz \
     /fixtures/
-ADD --checksum=sha256:20b2a55f49a4b777f1abc6c196dc0afad22475b0ac598a39cc94fc598e22619d \
-    https://github.com/monad-developers/execution-specs/releases/download/tests-monad_amsterdam@v0.2.0/fixtures_monad_amsterdam.tar.gz \
-    /fixtures/
-ADD --checksum=sha256:d624ec9c38c945c48f43ffb229c0a963660b8506d5bf4fe8068e13df4fdf0b8d \
-    https://github.com/monad-developers/execution-specs/releases/download/tests-monad_eip7981@v0.1.0/fixtures_monad_eip7981.tar.gz \
+ADD --checksum=sha256:9ee1075421aa620b08690c9df9a302a9c11654c0ef0eaed561f650936288f98e \
+    https://github.com/monad-developers/execution-specs/releases/download/tests-monad_eip7708%2B7843%2B7981%2B7997%2B8024%2B8246%40v0.3.1/fixtures_monad_eip7708+7843+7981+7997+8024+8246.tar.gz \
     /fixtures/
 
 FROM base AS build_and_test
@@ -104,8 +104,6 @@ FROM base_rust AS build_and_test_rust
 
 COPY . src
 
-ARG CC
-ARG CXX
 ENV TRIEDB_TARGET="triedb_driver"
 
 RUN cd src/rust && cargo update --workspace --locked
@@ -115,12 +113,15 @@ RUN cd src/rust && CC=${CC:?} CXX=${CXX:?} CFLAGS="-march=haswell" CXXFLAGS="-ma
 
 FROM base_vm_test AS code_quality
 
+ARG LLVM_VERSION
+ENV CC=clang-${LLVM_VERSION} CXX=clang++-${LLVM_VERSION}
+
 COPY . src
 
 RUN cd src && CMAKE_TOOLCHAIN_FILE=category/core/toolchains/gcc-avx2.cmake cmake -S . -B build  \
   -DCMAKE_BUILD_TYPE=Debug             \
-  -DCMAKE_C_COMPILER=clang-19          \
-  -DCMAKE_CXX_COMPILER=clang++-19      \
+  -DCMAKE_C_COMPILER=$CC               \
+  -DCMAKE_CXX_COMPILER=$CXX            \
   -DUTILS_CLANG_TIDY_AUTO_CONST=On     \
   -DCMAKE_EXPORT_COMPILE_COMMANDS=TRUE \
   -DMONAD_COMPILER_BENCHMARKS=On       \
@@ -193,8 +194,9 @@ COPY --from=riscv_toolchain_nix /nix/store /nix/store
 COPY --from=riscv_toolchain_nix /toolchain-path /tmp/toolchain-path
 RUN ln -s "$(cat /tmp/toolchain-path)" /riscv && rm /tmp/toolchain-path
 
+ARG GCC_VERSION
 COPY scripts/ubuntu-build/check-riscv-gcc.sh /tmp/check-riscv-gcc.sh
-RUN /tmp/check-riscv-gcc.sh && rm /tmp/check-riscv-gcc.sh
+RUN CC=gcc-${GCC_VERSION} /tmp/check-riscv-gcc.sh && rm /tmp/check-riscv-gcc.sh
 
 ENV PATH="/riscv/bin:${PATH}"
 
@@ -213,7 +215,8 @@ RUN cd src && cmake --build build-zkvm --target monad-zkvm-guest-zisk --parallel
 
 FROM base_vm_test AS vm_fuzz
 
-RUN apt-get update && apt-get install -y tmux
+ARG LLVM_VERSION
+ENV CC=clang-${LLVM_VERSION} CXX=clang++-${LLVM_VERSION}
 
 COPY . src
 
@@ -221,13 +224,13 @@ RUN cd src && CMAKE_TOOLCHAIN_FILE=category/core/toolchains/gcc-avx2.cmake cmake
   -GNinja \
   -DCMAKE_BUILD_TYPE=Release \
   -DMONAD_COMPILER_TESTING=On \
-  -DCMAKE_C_COMPILER=clang-19 \
-  -DCMAKE_CXX_COMPILER=clang++-19
+  -DCMAKE_C_COMPILER=$CC \
+  -DCMAKE_CXX_COMPILER=$CXX
 
 RUN cd src && cmake --build build -t monad-compiler-fuzzer
 ARG FUZZER_BASE_SEED
 ARG FUZZER_SECONDS
-RUN cd src && ./scripts/vm/ci-fuzzer.sh
+RUN cd src && ./scripts/vm/fuzz.sh -c 26 -i 5 -s "${FUZZER_BASE_SEED:-143}" -t "${FUZZER_SECONDS:-420}"
 
 FROM base AS runner
 COPY --from=build_and_test /src/build/category/mpt/monad-mpt /usr/local/bin/

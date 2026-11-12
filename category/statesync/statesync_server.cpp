@@ -168,7 +168,8 @@ bool send_deletion(
     };
 
     for (uint64_t i = rq.old_target + 1; i <= rq.target; ++i) {
-        if (!ctx.deletions.for_each(i, fn)) {
+        auto const deletions = ctx.deletions.find(i);
+        if (!deletions) {
             LOG_INFO(
                 "Request failed: deletion not found for block={} "
                 "(old_target={}, "
@@ -177,6 +178,9 @@ bool send_deletion(
                 rq.old_target,
                 rq.target);
             return false;
+        }
+        for (auto const &deletion : *deletions) {
+            fn(deletion);
         }
     }
     return true;

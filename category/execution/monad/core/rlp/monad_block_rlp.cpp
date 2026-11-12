@@ -13,7 +13,14 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/byte_string.hpp>
+#include <category/core/int.hpp>
+#include <category/core/likely.h>
+#include <category/core/result.hpp>
+#include <category/core/rlp/config.hpp>
 #include <category/core/rlp/decode_error.hpp>
+#include <category/core/runtime/uint128.hpp>
+#include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/rlp/address_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/bytes_rlp.hpp>
@@ -21,8 +28,12 @@
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/withdrawal_rlp.hpp>
 #include <category/execution/ethereum/rlp/decode.hpp>
+#include <category/execution/monad/core/monad_block.hpp>
 #include <category/execution/monad/core/rlp/monad_block_rlp.hpp>
 
+#include <concepts>
+#include <cstdint>
+#include <utility>
 #include <vector>
 
 MONAD_RLP_ANONYMOUS_NAMESPACE_BEGIN
@@ -52,10 +63,18 @@ Result<BlockHeader> decode_execution_inputs(byte_string_view &enc)
 
     // TODO: This backwards-compatible logic should be temporary. When explicit
     // versioning is added to this module, the following field needs to be
-    // parsed only if we're in a revision where MONAD_ETH_PRAGUE is active
+    // parsed only if we're in a revision where EvmRevision::Prague is active
     // (MONAD_FOUR and onwards).
     if (payload.size() > 0) {
         BOOST_OUTCOME_TRY(header.requests_hash, decode_bytes32(payload));
+    }
+
+    // Likewise, the following fields are for EvmRevision::Amsterdam
+    if (!payload.empty()) {
+        BOOST_OUTCOME_TRY(
+            header.block_access_list_hash, decode_bytes32(payload));
+        BOOST_OUTCOME_TRY(
+            header.slot_number, decode_unsigned<uint64_t>(payload));
     }
 
     if (MONAD_UNLIKELY(!payload.empty())) {

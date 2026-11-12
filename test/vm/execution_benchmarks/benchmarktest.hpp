@@ -24,8 +24,6 @@
 
 #include <test/utils/from_json.hpp>
 
-#include <evmc/evmc.hpp>
-
 #include <nlohmann/json.hpp>
 
 #include <memory>

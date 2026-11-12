@@ -22,8 +22,6 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <monad/test/config.hpp>
 
-#include <evmc/evmc.h>
-
 #include <category/core/int.hpp>
 
 #include <nlohmann/json.hpp>
@@ -122,6 +120,24 @@ monad::BlockHeader read_genesis_blockheader(nlohmann::json const &genesis_json)
             write_to.bytes);
     }
 
+    // Amsterdam fork
+    if (genesis_json.contains("blockAccessListHash")) {
+        auto const block_access_list_hash =
+            from_hex(genesis_json["blockAccessListHash"].get<std::string>());
+        MONAD_ASSERT(block_access_list_hash.has_value());
+        auto &write_to =
+            block_header.block_access_list_hash.emplace(bytes32_t{});
+        std::copy_n(
+            block_access_list_hash.value().begin(),
+            block_access_list_hash.value().length(),
+            write_to.bytes);
+    }
+
+    if (genesis_json.contains("slotNumber")) {
+        block_header.slot_number = std::stoull(
+            genesis_json["slotNumber"].get<std::string>(), nullptr, 0);
+    }
+
     return block_header;
 }
 
@@ -173,7 +189,7 @@ namespace nlohmann
                     MONAD_ASSERT(
                         state.set_storage(
                             account_address, key_bytes32, value_bytes32) ==
-                        MONAD_STORAGE_ADDED);
+                        monad::StorageStatus::Added);
                 }
             }
         }

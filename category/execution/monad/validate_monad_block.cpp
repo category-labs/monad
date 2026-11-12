@@ -13,19 +13,25 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
+#include <category/core/assert.h>
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
+#include <category/core/likely.h>
 #include <category/core/result.hpp>
 #include <category/execution/monad/core/monad_block.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
 #include <category/execution/monad/system_sender.hpp>
 #include <category/execution/monad/validate_monad_block.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/traits.hpp>
 
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <initializer_list>
 #include <optional>
+#include <span>
 
 // TODO unstable paths between versions
 #if __has_include(<boost/outcome/experimental/status-code/status-code/config.hpp>)
@@ -71,6 +77,13 @@ static_validate_consensus_header(MonadConsensusBlockHeader const &header)
         }
     }
 
+    if (header.execution_inputs.slot_number.has_value() &&
+        MONAD_UNLIKELY(
+            header.execution_inputs.slot_number.value() !=
+            header.block_round)) {
+        return MonadBlockError::SlotNumberMismatch;
+    }
+
     return outcome::success();
 }
 
@@ -83,7 +96,7 @@ Result<void> static_validate_monad_body(
 {
     MONAD_ASSERT(senders.size() == txns.size());
 
-    if constexpr (traits::monad_rev() < MONAD_FOUR) {
+    if constexpr (!traits::staking_active()) {
         return outcome::success();
     }
 
@@ -114,8 +127,9 @@ Result<void> static_validate_monad_body(
             return SyscallKind::OnEpochChange;
         case staking::selector::REWARD:
             return SyscallKind::Reward;
+        default:
+            return SyscallKind::Other;
         }
-        return SyscallKind::Other;
     };
 
     std::array<bool, 3> seen{};
@@ -162,6 +176,7 @@ quick_status_code_from_enum<monad::MonadBlockError>::value_mappings()
         {MonadBlockError::Success, "success", {errc::success}},
         {MonadBlockError::TimestampMismatch, "timestamp mismatch", {}},
         {MonadBlockError::BaseFeeMismatch, "base fee mismatch", {}},
+        {MonadBlockError::SlotNumberMismatch, "slot number mismatch", {}},
         {MonadBlockError::SystemTransactionNotFirstInBlock,
          "system transaction not first in block",
          {}},

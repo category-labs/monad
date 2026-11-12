@@ -28,11 +28,11 @@
 #include <category/execution/ethereum/core/units.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
-#include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/reserve_balance.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/state_host.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
@@ -42,17 +42,19 @@
 #include <category/execution/monad/reserve_balance.hpp>
 #include <category/execution/monad/reserve_balance/reserve_balance_contract.hpp>
 #include <category/vm/code.hpp>
+#include <category/vm/evm/call_status.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/monad/revision.h>
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/evm/tx_context.hpp>
 #include <category/vm/vm.hpp>
 
 #include <monad/test/traits_test.hpp>
 #include <test/vm/utils/test_message.hpp>
 
 #include <ankerl/unordered_dense.h>
-#include <evmc/evmc.h>
 
 #include <gtest/gtest.h>
 
@@ -65,6 +67,7 @@
 #include <optional>
 #include <span>
 #include <utility>
+#include <variant>
 #include <vector>
 
 using namespace monad;
@@ -116,7 +119,7 @@ struct ReserveBalanceEvm : public ReserveBalanceTest
         authorities};
 
     trace::StateTracer noop_state_tracer = std::monostate{};
-    EvmcHost<MonadTraits<MONAD_NEXT>> h{
+    StateHost<MonadTraits<MONAD_NEXT>> h{
         call_tracer,
         noop_state_tracer,
         EMPTY_TX_CONTEXT,
@@ -256,8 +259,8 @@ void run_dipped_into_reserve_test(
     vm::VM vm;
     BlockState bs{tdb, vm};
     NoopCallTracer call_tracer;
-    evmc_tx_context const tx_context{};
-    BlockHashBufferFinalized block_hash_buffer{};
+    vm::TxContext const tx_context{};
+    BlockHashBufferFinalized const block_hash_buffer{};
 
     ASSERT_EQ(monad_default_max_reserve_balance_mon(traits::monad_rev()), 10);
 
@@ -304,17 +307,17 @@ void run_dipped_into_reserve_test(
     senders.push_back(BUNDLER);
     senders.emplace_back(BUNDLER);
     std::vector<std::vector<std::optional<Address>>> authorities = {};
-    authorities.push_back({});
-    authorities.push_back({});
+    authorities.emplace_back();
+    authorities.emplace_back();
 
     // Create sets for the new MonadChainContext structure
-    ankerl::unordered_dense::segmented_set<Address>
+    ankerl::unordered_dense::segmented_set<Address> const
         grandparent_senders_and_authorities;
-    ankerl::unordered_dense::segmented_set<Address>
+    ankerl::unordered_dense::segmented_set<Address> const
         parent_senders_and_authorities;
     ankerl::unordered_dense::segmented_set<Address> const
         senders_and_authorities = {EOA};
-    ChainContext<traits> chain_context{
+    ChainContext<traits> const chain_context{
         .grandparent_senders_and_authorities =
             grandparent_senders_and_authorities,
         .parent_senders_and_authorities = parent_senders_and_authorities,
@@ -326,7 +329,7 @@ void run_dipped_into_reserve_test(
         State state{bs, Incarnation{1, 1}};
         trace::StateTracer noop_state_tracer = std::monostate{};
 
-        EvmcHost<traits> host{
+        StateHost<traits> host{
             call_tracer,
             noop_state_tracer,
             tx_context,
@@ -338,8 +341,9 @@ void run_dipped_into_reserve_test(
             chain_context};
 
         monad::vm::test::TestMessage test_msg_;
-        evmc_message msg{*test_msg_};
-        msg.gas = int64_t{GAS_LIMIT}, msg.recipient = ENTRYPOINT;
+        Message msg{*test_msg_};
+        msg.gas = int64_t{GAS_LIMIT};
+        msg.recipient = ENTRYPOINT;
         msg.sender = BUNDLER;
 
         init_reserve_balance_context<traits>(
@@ -353,23 +357,23 @@ void run_dipped_into_reserve_test(
 
         auto const &code_hash =
             to_bytes(keccak256(byte_string_view{entrypoint_code}));
-        auto icode =
+        auto const icode =
             make_shared_intercode(std::span<uint8_t const>{entrypoint_code});
 
-        evmc_status_code expected;
+        CallStatus expected;
         switch (outcome) {
         case WillRevert:
-            expected = EVMC_REVERT;
+            expected = CallStatus::Revert;
             break;
         case WontRevert:
-            expected = EVMC_SUCCESS;
+            expected = CallStatus::Success;
             break;
         case ContractMissing:
-            expected = EVMC_FAILURE;
+            expected = CallStatus::Failure;
             break;
         }
 
-        auto result = vm.execute<traits>(
+        auto const result = vm.execute<traits>(
             host, &msg, code_hash, make_shared<Varcode>(icode));
         EXPECT_EQ(expected, result.status_code);
     }
@@ -382,7 +386,7 @@ TEST_F(ReserveBalanceEvm, precompile_fallback)
     {
         auto input = std::array<uint8_t, 4>{};
 
-        auto const m = evmc_message{
+        auto const m = Message{
             .gas = 100,
             .recipient = RESERVE_BALANCE_CA,
             .sender = account_a,
@@ -401,7 +405,7 @@ TEST_F(ReserveBalanceEvm, precompile_fallback)
             h.chain_ctx_);
 
         auto const result = h.call(m);
-        EXPECT_EQ(result.status_code, EVMC_REVERT);
+        EXPECT_EQ(result.status_code, CallStatus::Revert);
         EXPECT_EQ(result.gas_left, 0);
         EXPECT_EQ(result.gas_refund, 0);
         EXPECT_EQ(result.output_size, 20);
@@ -415,7 +419,7 @@ TEST_F(ReserveBalanceEvm, precompile_fallback)
     {
         auto input = std::array<uint8_t, 4>{};
 
-        auto const m = evmc_message{
+        auto const m = Message{
             .gas = 99,
             .recipient = RESERVE_BALANCE_CA,
             .sender = account_a,
@@ -434,7 +438,7 @@ TEST_F(ReserveBalanceEvm, precompile_fallback)
             h.chain_ctx_);
 
         auto const result = h.call(m);
-        EXPECT_EQ(result.status_code, EVMC_OUT_OF_GAS);
+        EXPECT_EQ(result.status_code, CallStatus::OutOfGas);
         EXPECT_EQ(result.gas_left, 0);
         EXPECT_EQ(result.gas_refund, 0);
         EXPECT_EQ(result.output_size, 0);
@@ -447,7 +451,7 @@ TEST_F(ReserveBalanceEvm, precompile_dipped_into_reserve_present)
     auto const *s = selector.bytes;
     auto input = std::array<uint8_t, 4>{s[0], s[1], s[2], s[3]};
 
-    auto const m = evmc_message{
+    auto const m = Message{
         .gas = 100,
         .recipient = RESERVE_BALANCE_CA,
         .sender = account_a,
@@ -466,7 +470,7 @@ TEST_F(ReserveBalanceEvm, precompile_dipped_into_reserve_present)
         h.chain_ctx_);
 
     auto const result = h.call(m);
-    EXPECT_EQ(result.status_code, EVMC_SUCCESS);
+    EXPECT_EQ(result.status_code, CallStatus::Success);
     EXPECT_EQ(result.gas_left, 0);
     EXPECT_EQ(result.gas_refund, 0);
     EXPECT_EQ(result.output_size, 32);
@@ -478,7 +482,7 @@ TEST_F(ReserveBalanceEvm, precompile_dipped_into_reserve_oog)
     auto const *s = selector.bytes;
     auto input = std::array<uint8_t, 4>{s[0], s[1], s[2], s[3]};
 
-    auto const m = evmc_message{
+    auto const m = Message{
         .gas = 99,
         .recipient = RESERVE_BALANCE_CA,
         .sender = account_a,
@@ -497,7 +501,7 @@ TEST_F(ReserveBalanceEvm, precompile_dipped_into_reserve_oog)
         h.chain_ctx_);
 
     auto const result = h.call(m);
-    EXPECT_EQ(result.status_code, EVMC_OUT_OF_GAS);
+    EXPECT_EQ(result.status_code, CallStatus::OutOfGas);
     EXPECT_EQ(result.gas_left, 0);
     EXPECT_EQ(result.gas_refund, 0);
     EXPECT_EQ(result.output_size, 0);
@@ -509,7 +513,7 @@ TEST_F(ReserveBalanceEvm, precompile_dipped_into_reserve_with_argument)
     auto const *s = selector.bytes;
     auto input = std::array<uint8_t, 4 + 1>{s[0], s[1], s[2], s[3], 0};
 
-    auto const m = evmc_message{
+    auto const m = Message{
         .gas = 100,
         .recipient = RESERVE_BALANCE_CA,
         .sender = account_a,
@@ -528,7 +532,7 @@ TEST_F(ReserveBalanceEvm, precompile_dipped_into_reserve_with_argument)
         h.chain_ctx_);
 
     auto const result = h.call(m);
-    EXPECT_EQ(result.status_code, EVMC_REVERT);
+    EXPECT_EQ(result.status_code, CallStatus::Revert);
     EXPECT_EQ(result.gas_left, 0);
     EXPECT_EQ(result.gas_refund, 0);
     EXPECT_EQ(result.output_size, 16);
@@ -568,11 +572,12 @@ TYPED_TEST(MonadTraitsTest, reverttransaction_revert)
 template <Traits traits>
     requires is_monad_trait_v<traits>
 void run_check_call_precompile_test(
-    State &state, evmc_message const &msg, evmc_status_code expected_status,
+    State &state, Message const &msg, CallStatus expected_status,
     std::string_view expected_message = "")
 {
     NoopCallTracer call_tracer;
-    auto const result = check_call_precompile<traits>(state, call_tracer, msg);
+    auto const result =
+        check_call_precompile<traits>(state, call_tracer, msg, false);
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result->status_code, expected_status);
@@ -619,7 +624,7 @@ struct MonadPrecompileTest : public ::MonadTraitsTest<MonadRevisionT>
         authorities};
 
     trace::StateTracer noop_state_tracer = std::monostate{};
-    EvmcHost<MonadTraits<MONAD_NEXT>> h{
+    StateHost<MonadTraits<MONAD_NEXT>> h{
         call_tracer,
         noop_state_tracer,
         EMPTY_TX_CONTEXT,
@@ -639,9 +644,9 @@ TYPED_TEST(
     u32_be const selector = abi_encode_selector("dippedIntoReserve()");
     byte_string const calldata = {selector.bytes, 4};
     // Generates a basic OK message
-    auto const make_msg = [this, &calldata]() -> evmc_message {
-        return evmc_message{
-            .kind = EVMC_CALL,
+    auto const make_msg = [this, &calldata]() -> Message {
+        return Message{
+            .kind = CallKind::Call,
             .flags = 0,
             .gas = 100,
             .recipient = RESERVE_BALANCE_CA,
@@ -655,7 +660,7 @@ TYPED_TEST(
     if constexpr (!TestFixture::Trait::mip_4_active()) {
         NoopCallTracer call_tracer;
         auto const result = check_call_precompile<typename TestFixture::Trait>(
-            this->state, call_tracer, make_msg());
+            this->state, call_tracer, make_msg(), false);
         EXPECT_FALSE(result.has_value());
         return;
     }
@@ -673,7 +678,7 @@ TYPED_TEST(
     // clang-format on
 
     uint8_t const *s = selector.bytes;
-    std::vector<std::vector<uint8_t>> calldata_variants = {
+    std::vector<std::vector<uint8_t>> const calldata_variants = {
         {s[0], s[1], s[2]}, // too short
         {s[0], s[1], s[2], s[3]}, // correct selector
         {s[0], s[1], s[2], s[3], 0x00}, // too long
@@ -683,25 +688,24 @@ TYPED_TEST(
     // 1. Invocation method is not `CALL`: Reject with message ""
     {
         for (auto const call_kind :
-             {EVMC_CALL,
-              EVMC_DELEGATECALL,
-              EVMC_CALLCODE,
-              EVMC_CREATE,
-              EVMC_CREATE2,
-              EVMC_EOFCREATE}) {
+             {CallKind::Call,
+              CallKind::DelegateCall,
+              CallKind::CallCode,
+              CallKind::Create,
+              CallKind::Create2}) {
 
-            evmc_message msg = make_msg();
+            Message msg = make_msg();
             msg.kind = call_kind;
 
             for (int64_t const gas : std::initializer_list<int64_t>{99, 100}) {
                 msg.gas = gas;
                 for (uint8_t const flags : std::initializer_list<uint8_t>{
                          0u,
-                         static_cast<uint8_t>(EVMC_STATIC),
-                         static_cast<uint8_t>(EVMC_DELEGATED),
-                         static_cast<uint8_t>(EVMC_STATIC) |
-                             static_cast<uint8_t>(EVMC_DELEGATED)}) {
-                    if (call_kind == EVMC_CALL && flags == 0u) {
+                         static_cast<uint8_t>(CallFlags::Static),
+                         static_cast<uint8_t>(CallFlags::Delegated),
+                         static_cast<uint8_t>(CallFlags::Static) |
+                             static_cast<uint8_t>(CallFlags::Delegated)}) {
+                    if (call_kind == CallKind::Call && flags == 0u) {
                         // This is the valid CALL case, which should be
                         // accepted, so skip it in this loop and test it in the
                         // loops below.
@@ -720,7 +724,7 @@ TYPED_TEST(
 
                             run_check_call_precompile_test<
                                 typename TestFixture::Trait>(
-                                this->state, msg, EVMC_REJECTED);
+                                this->state, msg, CallStatus::Rejected);
                         }
                     }
                 }
@@ -730,7 +734,7 @@ TYPED_TEST(
 
     // 2. gas < 100: OOG with message ""
     {
-        evmc_message msg = make_msg();
+        Message msg = make_msg();
         msg.gas = 99;
 
         for (uint256_be_t const value :
@@ -742,26 +746,27 @@ TYPED_TEST(
                 msg.input_size = calldata_variant.size();
 
                 run_check_call_precompile_test<typename TestFixture::Trait>(
-                    this->state, msg, EVMC_OUT_OF_GAS);
+                    this->state, msg, CallStatus::OutOfGas);
             }
         }
     }
 
     // 3. len(calldata) < 4: Reject with message "method not supported"
     {
-        evmc_message msg = make_msg();
+        Message msg = make_msg();
 
         std::array<uint8_t, 3> short3 = {s[0], s[1], s[2]};
         std::array<uint8_t, 2> short2 = {s[0], s[1]};
         std::array<uint8_t, 1> short1 = {s[0]};
         std::array<uint8_t, 0> short0 = {};
-        std::vector<std::pair<uint8_t *, size_t>> short_calldata_variants = {
-            {short3.data(), short3.size()},
-            {short2.data(), short2.size()},
-            {short1.data(), short1.size()},
-            {short0.data(), short0.size()},
-            {nullptr, 0},
-        };
+        std::vector<std::pair<uint8_t *, size_t>> const
+            short_calldata_variants = {
+                {short3.data(), short3.size()},
+                {short2.data(), short2.size()},
+                {short1.data(), short1.size()},
+                {short0.data(), short0.size()},
+                {nullptr, 0},
+            };
         for (auto const &[data, size] : short_calldata_variants) {
             msg.input_data = data;
             msg.input_size = size;
@@ -771,7 +776,10 @@ TYPED_TEST(
                 msg.value = value;
 
                 run_check_call_precompile_test<typename TestFixture::Trait>(
-                    this->state, msg, EVMC_REVERT, "method not supported");
+                    this->state,
+                    msg,
+                    CallStatus::Revert,
+                    "method not supported");
             }
         }
     }
@@ -779,11 +787,11 @@ TYPED_TEST(
     // Case 4. calldata[:4] != dippedIntoReserve.selector: Reject with message
     // "method not supported"
     {
-        evmc_message msg = make_msg();
+        Message msg = make_msg();
 
         std::array<uint8_t, 4> wrong_selector = {0xFF, 0xFF, 0xFF, 0xFF};
         std::array<uint8_t, 5> wrong_too_long = {s[0], s[1], s[2], 0xFF, 0x00};
-        std::vector<std::pair<uint8_t *, size_t>> wrong_calldata = {
+        std::vector<std::pair<uint8_t *, size_t>> const wrong_calldata = {
             {wrong_selector.data(), wrong_selector.size()},
             {wrong_too_long.data(), wrong_too_long.size()},
         };
@@ -796,7 +804,10 @@ TYPED_TEST(
                 msg.input_data = data;
                 msg.input_size = size;
                 run_check_call_precompile_test<typename TestFixture::Trait>(
-                    this->state, msg, EVMC_REVERT, "method not supported");
+                    this->state,
+                    msg,
+                    CallStatus::Revert,
+                    "method not supported");
             }
         }
     }
@@ -804,12 +815,12 @@ TYPED_TEST(
     // Case 5. calldata[:4] == dippedIntoReserve.selector && value > 0: Reject
     // with message "value is nonzero"
     {
-        evmc_message msg = make_msg();
+        Message msg = make_msg();
         msg.value = 0x01_bytes32;
 
         std::array<uint8_t, 4> selector = {s[0], s[1], s[2], s[3]};
         std::array<uint8_t, 5> too_long = {s[0], s[1], s[2], s[3], 0x00};
-        std::vector<std::pair<uint8_t *, size_t>> wrong_calldata = {
+        std::vector<std::pair<uint8_t *, size_t>> const wrong_calldata = {
             {selector.data(), selector.size()},
             {too_long.data(), too_long.size()},
         };
@@ -818,24 +829,24 @@ TYPED_TEST(
             msg.input_data = data;
             msg.input_size = size;
             run_check_call_precompile_test<typename TestFixture::Trait>(
-                this->state, msg, EVMC_REVERT, "value is nonzero");
+                this->state, msg, CallStatus::Revert, "value is nonzero");
         }
     }
 
     // Case 6. calldata[:4] == dippedIntoReserve.selector && len(calldata) > 4:
     // Reject with message "input is invalid"
     {
-        evmc_message msg = make_msg();
+        Message msg = make_msg();
         std::array<uint8_t, 5> too_long = {s[0], s[1], s[2], s[3], 0x00};
         msg.input_data = too_long.data();
         msg.input_size = too_long.size();
         run_check_call_precompile_test<typename TestFixture::Trait>(
-            this->state, msg, EVMC_REVERT, "input is invalid");
+            this->state, msg, CallStatus::Revert, "input is invalid");
     }
 
     // Case 7: A well-formed call that should be accepted.
     {
-        evmc_message msg = make_msg();
+        Message const msg = make_msg();
 
         init_reserve_balance_context<MonadTraits<MONAD_NEXT>>(
             this->state,
@@ -848,12 +859,12 @@ TYPED_TEST(
 
         std::array<uint8_t, 32> expected_message{};
 
-        std::string_view expected_message_view{
+        std::string_view const expected_message_view{
             reinterpret_cast<char const *>(expected_message.data()),
             expected_message.size(),
         };
 
         run_check_call_precompile_test<typename TestFixture::Trait>(
-            this->state, msg, EVMC_SUCCESS, expected_message_view);
+            this->state, msg, CallStatus::Success, expected_message_view);
     }
 }

@@ -23,12 +23,10 @@
 #include <category/execution/ethereum/core/signature.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/precompiles_impl.hpp>
+#include <category/vm/evm/call_status.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
-#include <category/vm/evm/status_code.h>
-
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
-#include <evmc/helpers.h>
+#include <category/vm/evm/message.hpp>
+#include <category/vm/evm/result.hpp>
 
 #include <algorithm>
 #include <cstdint>
@@ -46,7 +44,7 @@ struct PrecompiledContract
 // TODO(Bruce): when we enable feature flags in traits rather than raw use of
 // the EVM version, refactor this code and the general precompile setup to use
 // it.
-template <monad_eth_revision First, monad_eth_revision Rev>
+template <EvmRevision First, EvmRevision Rev>
 static consteval std::optional<PrecompiledContract>
 since(PrecompiledContract impl)
 {
@@ -67,7 +65,7 @@ static std::optional<uint64_t> fmap_optional(byte_string_view const a)
 template <Traits traits>
 std::optional<PrecompiledContract> resolve_precompile(Address const &address)
 {
-    static_assert(traits::evm_rev() >= MONAD_ETH_ISTANBUL);
+    static_assert(traits::evm_rev() >= EvmRevision::Istanbul);
 
 #define CASE(addr, gas_cost, execute)                                          \
     do {                                                                       \
@@ -90,11 +88,11 @@ std::optional<PrecompiledContract> resolve_precompile(Address const &address)
 
     CASE(0x09, blake2bf_gas_cost<traits>, blake2bf_execute);
 
-    if constexpr (traits::evm_rev() >= MONAD_ETH_CANCUN) {
+    if constexpr (traits::eip_4844_precompile_active()) {
         CASE(0x0A, point_evaluation_gas_cost<traits>, point_evaluation_execute);
     }
 
-    if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
+    if constexpr (traits::eip_2537_active()) {
         CASE(0x0B, bls12_g1_add_gas_cost, bls12_g1_add_execute);
         CASE(0x0C, bls12_g1_msm_gas_cost, bls12_g1_msm_execute);
         CASE(0x0D, bls12_g2_add_gas_cost, bls12_g2_add_execute);
@@ -133,7 +131,7 @@ bool is_precompile(Address const &address)
 EXPLICIT_EVM_TRAITS(is_precompile);
 
 template <Traits traits>
-std::optional<evmc::Result> check_call_eth_precompile(evmc_message const &msg)
+std::optional<vm::Result> check_call_eth_precompile(vm::Message const &msg)
 {
     auto const &address = msg.code_address;
     auto const maybe_precompile = resolve_precompile<traits>(address);
@@ -142,12 +140,13 @@ std::optional<evmc::Result> check_call_eth_precompile(evmc_message const &msg)
         return std::nullopt;
     }
 
-    if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
+    if constexpr (traits::eip_7702_active()) {
         // EIP-7702 specifies that precompiles don't actually get called when
         // they're the target of a delegation.
-        auto const delegated = (msg.flags & EVMC_DELEGATED) != 0;
+        auto const delegated =
+            (msg.flags & std::to_underlying(vm::CallFlags::Delegated)) != 0;
         if (delegated) {
-            return evmc::Result{evmc_status_code::EVMC_SUCCESS, msg.gas};
+            return vm::Result{CallStatus::Success, msg.gas};
         }
     }
 
@@ -158,33 +157,31 @@ std::optional<evmc::Result> check_call_eth_precompile(evmc_message const &msg)
 
     // If cost is std::nullopt, the gas function got an invalid input.
     if (!cost.has_value()) {
-        return evmc::Result{evmc_status_code::EVMC_PRECOMPILE_FAILURE};
+        return vm::Result{CallStatus::PrecompileFailure};
     }
 
     if (MONAD_UNLIKELY(std::cmp_less(msg.gas, cost.value()))) {
-        return evmc::Result{evmc_status_code::EVMC_OUT_OF_GAS};
+        return vm::Result{CallStatus::OutOfGas};
     }
 
     auto const [status_code, output_buffer, output_size] = execute_func(input);
-    return evmc::Result{evmc_result{
-        .status_code = to_evmc_status_code(status_code),
-        .gas_left = (status_code == MONAD_STATUS_SUCCESS)
+    return vm::Result{vm::RawResult{
+        .status_code = status_code,
+        .gas_left = (status_code == CallStatus::Success)
                         ? msg.gas - static_cast<int64_t>(cost.value())
                         : 0,
         .gas_refund = 0,
         .output_data = output_buffer,
         .output_size = output_size,
-        .release = evmc_free_result_memory,
         .create_address = {},
-        .padding = {},
     }};
 }
 
 EXPLICIT_TRAITS(check_call_eth_precompile);
 
 template <Traits traits>
-std::optional<evmc::Result>
-check_call_precompile(State &, CallTracerBase &, evmc_message const &msg)
+std::optional<vm::Result>
+check_call_precompile(State &, CallTracerBase &, vm::Message const &msg, bool)
 {
     return check_call_eth_precompile<traits>(msg);
 }
@@ -202,9 +199,9 @@ from_impl_result(PrecompileImplResult result, uint8_t *out)
     }
     if (size == 0) {
         std::free(out);
-        return {MONAD_STATUS_SUCCESS, nullptr, size};
+        return {CallStatus::Success, nullptr, size};
     }
-    return {MONAD_STATUS_SUCCESS, data, size};
+    return {CallStatus::Success, data, size};
 }
 
 PrecompileResult ecrecover_execute(byte_string_view const input)
@@ -219,11 +216,11 @@ PrecompileResult ecrecover_execute(byte_string_view const input)
     auto const s{load_be_unsafe<uint256_t>(&d[96])};
 
     if (!Secp256k1Signature{r, s}.has_valid_range()) {
-        return {MONAD_STATUS_SUCCESS, nullptr, 0};
+        return {CallStatus::Success, nullptr, 0};
     }
 
     if (v != 27 && v != 28) {
-        return {MONAD_STATUS_SUCCESS, nullptr, 0};
+        return {CallStatus::Success, nullptr, 0};
     }
 
     uint8_t *out{static_cast<uint8_t *>(std::aligned_alloc(8, 32))};
@@ -236,10 +233,10 @@ PrecompileResult ecrecover_execute(byte_string_view const input)
             std::span<uint8_t const, 64>{&d[64], 64},
             v != 27)) {
         std::free(out);
-        return {MONAD_STATUS_SUCCESS, nullptr, 0};
+        return {CallStatus::Success, nullptr, 0};
     }
     else {
-        return {MONAD_STATUS_SUCCESS, out, 32};
+        return {CallStatus::Success, out, 32};
     }
 }
 
@@ -278,7 +275,7 @@ PrecompileResult expmod_execute(byte_string_view const input)
     uint64_t const mod_len = load_be_unsafe<uint64_t>(&header[88]);
 
     if (mod_len == 0) {
-        return {MONAD_STATUS_SUCCESS, nullptr, 0};
+        return {CallStatus::Success, nullptr, 0};
     }
 
     uint64_t const base_len = load_be_unsafe<uint64_t>(&header[24]);
@@ -421,21 +418,21 @@ PrecompileResult p256_verify_execute(byte_string_view const input)
         p256_verify_impl(input, std::span<uint8_t, 32>{out, 32});
     if (result.data == nullptr) {
         std::free(out);
-        return {MONAD_STATUS_SUCCESS, nullptr, 0};
+        return {CallStatus::Success, nullptr, 0};
     }
-    return {MONAD_STATUS_SUCCESS, result.data, result.size};
+    return {CallStatus::Success, result.data, result.size};
 }
 
 PrecompileResult identity_execute(byte_string_view const input)
 {
     if (input.empty()) {
-        return {MONAD_STATUS_SUCCESS, nullptr, 0};
+        return {CallStatus::Success, nullptr, 0};
     }
     auto *const out = static_cast<uint8_t *>(std::malloc(input.size()));
     MONAD_ASSERT(out != nullptr);
     auto const result =
         identity_impl(input, std::span<uint8_t>{out, input.size()});
-    return {MONAD_STATUS_SUCCESS, result.data, result.size};
+    return {CallStatus::Success, result.data, result.size};
 }
 
 MONAD_NAMESPACE_END

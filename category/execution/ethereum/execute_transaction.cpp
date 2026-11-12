@@ -26,12 +26,13 @@
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/event/record_txn_events.hpp>
-#include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/execute_message.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
+#include <category/execution/ethereum/execution_modalities.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/state_host.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/event_trace.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
@@ -39,16 +40,18 @@
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
+#include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/staking/priority_fee.hpp>
+#include <category/vm/evm/call_status.hpp>
 #include <category/vm/evm/delegation.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/message.hpp>
+#include <category/vm/evm/result.hpp>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/memory_pool.hpp>
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 
-#include <boost/fiber/future/promise.hpp>
+#include <boost/fiber/future/future.hpp>
 #include <boost/outcome/try.hpp>
 
 #include <algorithm>
@@ -74,7 +77,7 @@ constexpr void irrevocable_change(
     }
 
     uint256_t blob_gas = 0;
-    if constexpr (traits::evm_rev() >= MONAD_ETH_CANCUN) {
+    if constexpr (traits::eip_4844_active()) {
         blob_gas = (tx.type == TransactionType::eip4844)
                        ? calc_blob_fee(tx, excess_blob_gas, blob_schedule)
                        : 0;
@@ -104,7 +107,7 @@ ExecuteTransactionNoValidation<traits>::ExecuteTransactionNoValidation(
 // EIP-7702
 template <Traits traits>
 uint64_t ExecuteTransactionNoValidation<traits>::process_authorizations(
-    State &state, EvmcHost<traits> &host)
+    State &state, StateHost<traits> &host)
 {
 
     MONAD_ASSERT(authorities_.size() == tx_.authorization_list.size());
@@ -199,17 +202,17 @@ uint64_t ExecuteTransactionNoValidation<traits>::process_authorizations(
 }
 
 template <Traits traits>
-evmc_message ExecuteTransactionNoValidation<traits>::to_message(
+vm::Message ExecuteTransactionNoValidation<traits>::to_message(
     vm::MemoryPool::Ref &msg_memory, uint32_t const msg_memory_capacity) const
 {
     auto const to_address = [this] {
         if (tx_.to) {
-            return std::pair{EVMC_CALL, *tx_.to};
+            return std::pair{vm::CallKind::Call, *tx_.to};
         }
-        return std::pair{EVMC_CREATE, Address{}};
+        return std::pair{vm::CallKind::Create, Address{}};
     }();
 
-    evmc_message msg{
+    vm::Message msg{
         .kind = to_address.first,
         .flags = 0,
         .depth = 0,
@@ -218,7 +221,7 @@ evmc_message ExecuteTransactionNoValidation<traits>::to_message(
         .sender = sender_,
         .input_data = tx_.data.data(),
         .input_size = tx_.data.size(),
-        .value = store_be_as<evmc::uint256be>(tx_.value),
+        .value = store_be_as<bytes32_t>(tx_.value),
         .create2_salt = {},
         .code_address = to_address.second,
         .memory_handle = msg_memory.get(),
@@ -229,8 +232,8 @@ evmc_message ExecuteTransactionNoValidation<traits>::to_message(
 }
 
 template <Traits traits>
-evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
-    State &state, EvmcHost<traits> &host)
+vm::Result ExecuteTransactionNoValidation<traits>::operator()(
+    State &state, StateHost<traits> &host)
 {
     if constexpr (::monad::is_monad_trait_v<traits>) {
         init_reserve_balance_context<traits>(
@@ -251,14 +254,12 @@ evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
         header_.excess_blob_gas.value_or(0),
         chain_.get_blob_schedule(header_.timestamp));
 
-    // EIP-7702
     uint64_t auth_refund = 0u;
-    if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
+    if constexpr (traits::eip_7702_active()) {
         auth_refund = process_authorizations(state, host);
     }
 
-    // EIP-3651
-    if constexpr (traits::evm_rev() >= MONAD_ETH_SHANGHAI) {
+    if constexpr (traits::eip_3651_active()) {
         host.access_account(header_.beneficiary);
     }
 
@@ -276,20 +277,18 @@ evmc::Result ExecuteTransactionNoValidation<traits>::operator()(
     auto msg_memory = state.vm().message_memory_ref();
     auto msg = to_message(msg_memory, state.vm().message_memory_capacity());
 
-    // EIP-7702
-    if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
+    if constexpr (traits::eip_7702_active()) {
         if (tx_.to.has_value()) {
-            if (auto const delegate = vm::evm::resolve_delegation(
-                    &host.get_interface(), host.to_context(), *tx_.to)) {
+            if (auto const delegate = host.resolve_delegation(*tx_.to)) {
                 msg.code_address = *delegate;
-                msg.flags |= EVMC_DELEGATED;
+                msg.flags |= std::to_underlying(vm::CallFlags::Delegated);
                 state.access_account(*delegate);
             }
         }
     }
 
     auto result =
-        (msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2)
+        (msg.kind == vm::CallKind::Create || msg.kind == vm::CallKind::Create2)
             ? ::monad::execute_create_message<traits>(&host, state, msg)
             : ::monad::execute_call_message<traits>(&host, state, msg);
 
@@ -306,7 +305,7 @@ ExecuteTransaction<traits>::ExecuteTransaction(
     std::span<std::optional<Address> const> const authorities,
     BlockHeader const &header, BlockHashBuffer const &block_hash_buffer,
     BlockState &block_state, BlockMetrics &block_metrics,
-    boost::fibers::promise<void> &prev, CallTracerBase &call_tracer,
+    boost::fibers::future<void> &prev, CallTracerBase &call_tracer,
     trace::StateTracer &state_tracer, ChainContext<traits> const &chain_ctx,
     ExecutionEventRecorder *const exec_recorder, bool const trace_transfers)
     : ExecuteTransactionNoValidation<
@@ -327,25 +326,23 @@ ExecuteTransaction<traits>::ExecuteTransaction(
 }
 
 template <Traits traits>
-Result<evmc::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
+Result<vm::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
 {
-    auto const validate_lambda = [this, &state] {
-        auto result = validate_transaction<traits>(
-            tx_,
-            sender_,
-            state,
-            header_.base_fee_per_gas.value_or(0),
-            authorities_,
-            state_tracer_);
-        if (!result) {
-            // RELAXED MERGE
-            // if `validate_transaction` fails using current values, require
-            // exact match during merge as a precaution
-            state.original_account_state(sender_).set_validate_exact_balance();
-        }
-        return result;
-    };
-    BOOST_OUTCOME_TRY(validate_lambda());
+    auto validation = validate_transaction<traits>(
+        tx_,
+        sender_,
+        state,
+        header_.base_fee_per_gas.value_or(0),
+        authorities_,
+        state_tracer_,
+        chain_ctx_.mode);
+    if (!validation) {
+        // RELAXED MERGE
+        // if transaction validation fails using current values, require
+        // exact match during merge as a precaution
+        state.original_account_state(sender_).set_validate_exact_balance();
+        return std::move(validation).as_failure();
+    }
 
     auto const tx_context = get_tx_context<traits>(
         tx_,
@@ -353,7 +350,7 @@ Result<evmc::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
         header_,
         chain_.get_chain_id(),
         chain_.get_blob_schedule(header_.timestamp));
-    EvmcHost<traits> host{
+    StateHost<traits> host{
         call_tracer_,
         state_tracer_,
         tx_context,
@@ -370,9 +367,9 @@ Result<evmc::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
 
 template <Traits traits>
 Receipt ExecuteTransaction<traits>::execute_final(
-    State &state, evmc::Result const &result)
+    State &state, vm::Result const &result)
 {
-    static_assert(traits::evm_rev() >= MONAD_ETH_SPURIOUS_DRAGON);
+    static_assert(traits::evm_rev() >= EvmRevision::SpuriousDragon);
 
     MONAD_ASSERT(result.gas_left >= 0);
     MONAD_ASSERT(result.gas_refund >= 0);
@@ -390,8 +387,7 @@ Receipt ExecuteTransaction<traits>::execute_final(
 
     auto gas_used = tx_.gas_limit - gas_refund;
 
-    // EIP-7623
-    if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
+    if constexpr (traits::eip_7623_active()) {
         auto const floor_gas = floor_data_gas<traits>(tx_);
         if (gas_used < floor_gas) {
             auto const delta = floor_gas - gas_used;
@@ -415,11 +411,11 @@ Receipt ExecuteTransaction<traits>::execute_final(
     state.destruct_touched_dead();
 
     Receipt receipt{
-        .status = result.status_code == EVMC_SUCCESS ? 1u : 0u,
+        .status = result.status_code == CallStatus::Success ? 1u : 0u,
         .gas_used = gas_used,
         .type = tx_.type};
     for (auto const &log : state.logs()) {
-        receipt.add_log(std::move(log));
+        receipt.add_log(log);
     }
 
     call_tracer_.on_finish(receipt.gas_used);
@@ -447,7 +443,7 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
             chain_.get_chain_id(),
             chain_.get_blob_schedule(header_.timestamp));
         if (validation_result.has_error()) {
-            prev_.get_future().wait();
+            prev_.wait();
             return std::move(validation_result).as_failure();
         }
     }
@@ -465,7 +461,7 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
 
         {
             TRACE_TXN_EVENT(StartStall);
-            prev_.get_future().wait();
+            prev_.wait();
         }
 
         if (block_state_.can_merge(state)) {

@@ -22,8 +22,6 @@
 
 #include <blst.h>
 
-#include <evmc/evmc.h>
-
 #include <algorithm>
 #include <array>
 #include <cstdint>

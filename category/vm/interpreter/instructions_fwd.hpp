@@ -18,8 +18,6 @@
 #include <category/vm/interpreter/types.hpp>
 #include <category/vm/runtime/types.hpp>
 
-#include <evmc/evmc.h>
-
 #include <cstddef>
 #include <cstdint>
 
@@ -299,6 +297,11 @@ namespace monad::vm::interpreter
         runtime::Context &, Intercode const &, uint256_t const *, StackTop,
         int64_t, uint8_t const *);
 
+    template <Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void slotnum(
+        runtime::Context &, Intercode const &, uint256_t const *, StackTop,
+        int64_t, uint8_t const *);
+
     // Memory & Storage
     template <Traits traits>
     MONAD_VM_INSTRUCTION_CALL void mload(
@@ -377,6 +380,21 @@ namespace monad::vm::interpreter
     template <std::ptrdiff_t N, Traits traits>
         requires(N >= 1)
     MONAD_VM_INSTRUCTION_CALL void swap(
+        runtime::Context &, Intercode const &, uint256_t const *, StackTop,
+        int64_t, uint8_t const *);
+
+    template <Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void dupn(
+        runtime::Context &, Intercode const &, uint256_t const *, StackTop,
+        int64_t, uint8_t const *);
+
+    template <Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void swapn(
+        runtime::Context &, Intercode const &, uint256_t const *, StackTop,
+        int64_t, uint8_t const *);
+
+    template <Traits traits>
+    MONAD_VM_INSTRUCTION_CALL void exchange(
         runtime::Context &, Intercode const &, uint256_t const *, StackTop,
         int64_t, uint8_t const *);
 

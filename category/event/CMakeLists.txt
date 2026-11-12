@@ -40,7 +40,9 @@ target_sources(monad_event PUBLIC
   TYPE HEADERS
   BASE_DIRS ".."
   FILES
+  "../core/address.h"
   "../core/assert.h"
+  "../core/bytes32.h"
   "../core/cleanup.h"
   "../core/format_err.h"
   "../core/likely.h"

@@ -21,14 +21,13 @@
 #include <category/vm/compiler/ir/x86.hpp>
 #include <category/vm/compiler/ir/x86/types.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/message.hpp>
+#include <category/vm/evm/result.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/host.hpp>
 #include <category/vm/runtime/allocator.hpp>
 #include <category/vm/runtime/types.hpp>
 #include <category/vm/vm.hpp>
-
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 
 #include <algorithm>
 #include <array>
@@ -60,28 +59,20 @@ namespace monad::vm
     }
 
     template <Traits traits>
-    evmc::Result VM::execute(
-        Host &host, evmc_message const *msg, bytes32_t const &code_hash,
+    Result VM::execute(
+        Host &host, Message const *msg, bytes32_t const &code_hash,
         SharedVarcode const &vcode)
     {
-        auto const *const host_itf = &host.get_interface();
-        auto *const host_ctx = host.to_context();
         auto const &icode = vcode->intercode();
 
         if constexpr (enable_execute_override) {
             if (execute_override_) {
                 return execute_override_(
-                    host_itf,
-                    host_ctx,
-                    traits::evm_rev(),
-                    msg,
-                    icode->code(),
-                    icode->size());
+                    host, traits::evm_rev(), msg, icode->code(), icode->size());
             }
         }
 
-        auto rt_ctx =
-            runtime::Context::from(host_itf, host_ctx, msg, icode->code_span());
+        auto rt_ctx = runtime::Context::from(host, msg, icode->code_span());
 
         // Install new runtime context:
         auto *const prev_rt_ctx = host.set_runtime_context(&rt_ctx);
@@ -101,25 +92,17 @@ namespace monad::vm
     EXPLICIT_TRAITS_MEMBER(VM::execute);
 
     template <Traits traits>
-    evmc::Result VM::execute_bytecode(
-        Host &host, evmc_message const *msg, std::span<uint8_t const> code)
+    Result VM::execute_bytecode(
+        Host &host, Message const *msg, std::span<uint8_t const> code)
     {
-        auto const *const host_itf = &host.get_interface();
-        auto *const host_ctx = host.to_context();
-
         if constexpr (enable_execute_override) {
             if (execute_override_) {
                 return execute_override_(
-                    host_itf,
-                    host_ctx,
-                    traits::evm_rev(),
-                    msg,
-                    code.data(),
-                    code.size());
+                    host, traits::evm_rev(), msg, code.data(), code.size());
             }
         }
 
-        auto rt_ctx = runtime::Context::from(host_itf, host_ctx, msg, code);
+        auto rt_ctx = runtime::Context::from(host, msg, code);
 
         // Install new runtime context:
         auto *const prev_rt_ctx = host.set_runtime_context(&rt_ctx);
@@ -139,7 +122,7 @@ namespace monad::vm
     EXPLICIT_TRAITS_MEMBER(VM::execute_bytecode);
 
     template <Traits traits>
-    evmc::Result VM::execute_raw(
+    Result VM::execute_raw(
         runtime::Context &rt_ctx, bytes32_t const &code_hash,
         SharedVarcode const &vcode)
     {
@@ -192,7 +175,7 @@ namespace monad::vm
     EXPLICIT_TRAITS_MEMBER(VM::execute_raw);
 
     template <Traits traits>
-    evmc::Result VM::cached_compile_and_execute_raw(
+    Result VM::cached_compile_and_execute_raw(
         runtime::Context &rt_ctx, bytes32_t const &code_hash,
         SharedIntercode const &icode)
     {
@@ -215,7 +198,7 @@ namespace monad::vm
     EXPLICIT_TRAITS_MEMBER(VM::cached_compile_and_execute_raw);
 
     template <Traits traits>
-    evmc::Result VM::execute_bytecode_raw(
+    Result VM::execute_bytecode_raw(
         runtime::Context &rt_ctx, std::span<uint8_t const> code)
     {
         stats_.event_execute_bytecode();
@@ -223,13 +206,13 @@ namespace monad::vm
         auto const stack_ptr = stack_allocator_.allocate();
         interpreter::execute<traits>(rt_ctx, Intercode{code}, stack_ptr.get());
 
-        return rt_ctx.copy_to_evmc_result<traits>();
+        return rt_ctx.copy_to_result<traits>();
     }
 
     EXPLICIT_TRAITS_MEMBER(VM::execute_bytecode_raw);
 
     template <Traits traits>
-    evmc::Result VM::execute_intercode_raw(
+    Result VM::execute_intercode_raw(
         runtime::Context &rt_ctx, SharedIntercode const &icode)
     {
         stats_.event_execute_intercode();
@@ -237,13 +220,13 @@ namespace monad::vm
         auto const stack_ptr = stack_allocator_.allocate();
         interpreter::execute<traits>(rt_ctx, *icode, stack_ptr.get());
 
-        return rt_ctx.copy_to_evmc_result<traits>();
+        return rt_ctx.copy_to_result<traits>();
     }
 
     EXPLICIT_TRAITS_MEMBER(VM::execute_intercode_raw);
 
     template <Traits traits>
-    evmc::Result VM::execute_native_entrypoint_raw(
+    Result VM::execute_native_entrypoint_raw(
         runtime::Context &rt_ctx, compiler::native::entrypoint_t entry)
     {
         stats_.event_execute_native_entrypoint();
@@ -251,7 +234,7 @@ namespace monad::vm
         auto const stack_ptr = stack_allocator_.allocate();
         entry(&rt_ctx, stack_ptr.get());
 
-        return rt_ctx.copy_to_evmc_result<traits>();
+        return rt_ctx.copy_to_result<traits>();
     }
 
     EXPLICIT_TRAITS_MEMBER(VM::execute_native_entrypoint_raw);

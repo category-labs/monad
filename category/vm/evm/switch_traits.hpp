@@ -19,26 +19,32 @@
 
 #include <category/vm/evm/traits.hpp>
 
-#include <evmc/evmc.h>
-
 #define SWITCH_EVM_TRAITS(f, ...)                                              \
     switch (rev) {                                                             \
-    case MONAD_ETH_AMSTERDAM:                                                  \
-        return f<::monad::EvmTraits<MONAD_ETH_AMSTERDAM>>(__VA_ARGS__);        \
-    case MONAD_ETH_OSAKA:                                                      \
-        return f<::monad::EvmTraits<MONAD_ETH_OSAKA>>(__VA_ARGS__);            \
-    case MONAD_ETH_PRAGUE:                                                     \
-        return f<::monad::EvmTraits<MONAD_ETH_PRAGUE>>(__VA_ARGS__);           \
-    case MONAD_ETH_CANCUN:                                                     \
-        return f<::monad::EvmTraits<MONAD_ETH_CANCUN>>(__VA_ARGS__);           \
-    case MONAD_ETH_SHANGHAI:                                                   \
-        return f<::monad::EvmTraits<MONAD_ETH_SHANGHAI>>(__VA_ARGS__);         \
-    case MONAD_ETH_PARIS:                                                      \
-        return f<::monad::EvmTraits<MONAD_ETH_PARIS>>(__VA_ARGS__);            \
-    case MONAD_ETH_LONDON:                                                     \
-        return f<::monad::EvmTraits<MONAD_ETH_LONDON>>(__VA_ARGS__);           \
-    case MONAD_ETH_BERLIN:                                                     \
-        return f<::monad::EvmTraits<MONAD_ETH_BERLIN>>(__VA_ARGS__);           \
+    case ::monad::EvmRevision::Amsterdam:                                      \
+        return f<::monad::EvmTraits<::monad::EvmRevision::Amsterdam>>(         \
+            __VA_ARGS__);                                                      \
+    case ::monad::EvmRevision::Osaka:                                          \
+        return f<::monad::EvmTraits<::monad::EvmRevision::Osaka>>(             \
+            __VA_ARGS__);                                                      \
+    case ::monad::EvmRevision::Prague:                                         \
+        return f<::monad::EvmTraits<::monad::EvmRevision::Prague>>(            \
+            __VA_ARGS__);                                                      \
+    case ::monad::EvmRevision::Cancun:                                         \
+        return f<::monad::EvmTraits<::monad::EvmRevision::Cancun>>(            \
+            __VA_ARGS__);                                                      \
+    case ::monad::EvmRevision::Shanghai:                                       \
+        return f<::monad::EvmTraits<::monad::EvmRevision::Shanghai>>(          \
+            __VA_ARGS__);                                                      \
+    case ::monad::EvmRevision::Paris:                                          \
+        return f<::monad::EvmTraits<::monad::EvmRevision::Paris>>(             \
+            __VA_ARGS__);                                                      \
+    case ::monad::EvmRevision::London:                                         \
+        return f<::monad::EvmTraits<::monad::EvmRevision::London>>(            \
+            __VA_ARGS__);                                                      \
+    case ::monad::EvmRevision::Berlin:                                         \
+        return f<::monad::EvmTraits<::monad::EvmRevision::Berlin>>(            \
+            __VA_ARGS__);                                                      \
     default:                                                                   \
         break;                                                                 \
     }

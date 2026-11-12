@@ -13,35 +13,50 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.h>
 #include <category/core/address.hpp>
 #include <category/core/byte_string.hpp>
+#include <category/core/bytes.hpp>
 #include <category/core/checked_math.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
 #include <category/core/log.hpp>
 #include <category/core/monad_exception.hpp>
+#include <category/core/result.hpp>
 #include <category/core/runtime/unaligned.hpp>
 #include <category/execution/ethereum/core/contract/abi_decode.hpp>
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
 #include <category/execution/ethereum/core/contract/abi_signatures.hpp>
+#include <category/execution/ethereum/core/contract/big_endian.hpp>
 #include <category/execution/ethereum/core/contract/events.hpp>
 #include <category/execution/ethereum/core/contract/storage_array.hpp>
 #include <category/execution/ethereum/core/contract/storage_variable.hpp>
-#include <category/execution/ethereum/evmc_host.hpp>
+#include <category/execution/ethereum/core/receipt.hpp>
+#include <category/execution/ethereum/native_transfer_log.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/monad/staking/config.hpp>
 #include <category/execution/monad/staking/staking_contract.hpp>
+#include <category/execution/monad/staking/traits.hpp>
 #include <category/execution/monad/staking/util/bls.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
+#include <category/execution/monad/staking/util/delegator.hpp>
 #include <category/execution/monad/staking/util/secp256k1.hpp>
+#include <category/execution/monad/staking/util/staking_error.hpp>
 #include <category/execution/monad/system_sender.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/traits.hpp>
 
 #include <boost/outcome/success_failure.hpp>
 #include <boost/outcome/try.hpp>
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <cstring>
-#include <memory>
+#include <limits>
+#include <tuple>
+#include <utility>
+#include <vector>
 
 MONAD_STAKING_ANONYMOUS_NAMESPACE_BEGIN
 using namespace monad::literals;
@@ -324,7 +339,7 @@ static_assert(LINKED_LIST_GETTER_OP_COST == 814000);
 
 byte_string_view consume_bytes(byte_string_view &data, size_t const num_bytes)
 {
-    byte_string_view ret = data.substr(0, num_bytes);
+    byte_string_view const ret = data.substr(0, num_bytes);
     data.remove_prefix(num_bytes);
     return ret;
 }
@@ -371,9 +386,11 @@ MONAD_STAKING_ANONYMOUS_NAMESPACE_END
 
 MONAD_STAKING_NAMESPACE_BEGIN
 
-StakingContract::StakingContract(State &state, CallTracerBase &call_tracer)
+StakingContract::StakingContract(
+    State &state, CallTracerBase &call_tracer, bool const log_native_transfers)
     : state_{state}
     , call_tracer_{call_tracer}
+    , log_native_transfers_{log_native_transfers}
     , vars{state}
 {
 }
@@ -556,21 +573,25 @@ void StakingContract::mint_tokens(uint256_t const &amount)
     state_.add_to_balance(STAKING_CA, amount);
 }
 
+template <Traits traits>
 void StakingContract::send_tokens(Address const &to, uint256_t const &amount)
 {
     state_.add_to_balance(to, amount);
     state_.subtract_from_balance(STAKING_CA, amount);
+    emit_native_transfer_logs<traits>(
+        state_, call_tracer_, STAKING_CA, to, amount, log_native_transfers_);
 }
 
-uint64_t StakingContract::get_activation_epoch() const noexcept
+EXPLICIT_MONAD_TRAITS_MEMBER(StakingContract::send_tokens);
+
+uint64_t StakingContract::get_activation_epoch() const
 {
     auto const epoch = vars.epoch.load().native();
     return vars.in_epoch_delay_period.load_checked().has_value() ? epoch + 2
                                                                  : epoch + 1;
 }
 
-bool StakingContract::is_epoch_active(
-    uint64_t const active_epoch) const noexcept
+bool StakingContract::is_epoch_active(uint64_t const active_epoch) const
 {
     auto const current_epoch = vars.epoch.load().native();
     return active_epoch != 0 && active_epoch <= current_epoch;
@@ -700,7 +721,7 @@ StakingContract::pull_delegator_up_to_date(u64_be const val_id, Delegator &del)
             can_compound,
             "staking compound logic error"); // only set when user compounds
                                              // before and after block boundary
-        BOOST_OUTCOME_TRY(auto rewards, apply_compound(val_id, del));
+        BOOST_OUTCOME_TRY(auto const rewards, apply_compound(val_id, del));
         BOOST_OUTCOME_TRY(reward_invariant(val, rewards));
         BOOST_OUTCOME_TRY(
             u256_be const new_rewards,
@@ -708,7 +729,7 @@ StakingContract::pull_delegator_up_to_date(u64_be const val_id, Delegator &del)
         del.rewards().store(new_rewards);
     }
     if (MONAD_UNLIKELY(can_compound)) {
-        BOOST_OUTCOME_TRY(auto rewards, apply_compound(val_id, del));
+        BOOST_OUTCOME_TRY(auto const rewards, apply_compound(val_id, del));
         BOOST_OUTCOME_TRY(reward_invariant(val, rewards));
         BOOST_OUTCOME_TRY(
             u256_be const new_rewards,
@@ -807,11 +828,13 @@ StakingContract::precompile_dispatch(byte_string_view &input)
             &StakingContract::precompile_compound<traits>, COMPOUND_OP_COST};
     case PrecompileSelector::WITHDRAW:
         // [11, 6, 1, 0, 0, 1, 1]
-        return {&StakingContract::precompile_withdraw, WITHDRAW_OP_COST};
+        return {
+            &StakingContract::precompile_withdraw<traits>, WITHDRAW_OP_COST};
     case PrecompileSelector::CLAIM_REWARDS:
         // [16, 11, 2, 11, 1, 1, 1]
         return {
-            &StakingContract::precompile_claim_rewards, CLAIM_REWARDS_OP_COST};
+            &StakingContract::precompile_claim_rewards<traits>,
+            CLAIM_REWARDS_OP_COST};
     case PrecompileSelector::CHANGE_COMMISSION:
         // [0, 3, 0, 0, 1, 1, 0]
         return {
@@ -827,7 +850,7 @@ StakingContract::precompile_dispatch(byte_string_view &input)
         return {&StakingContract::precompile_get_epoch, GET_EPOCH_OP_COST};
     case PrecompileSelector::GET_PROPOSER_VAL_ID:
         // [0, 1, 0, 0, 0, 0, 0]
-        if constexpr (traits::tracks_proposer_val_id()) {
+        if constexpr (tracks_proposer_val_id<traits>()) {
             return {
                 &StakingContract::precompile_get_proposer_val_id,
                 GET_PROPOSER_VAL_ID_OP_COST};
@@ -1177,11 +1200,11 @@ Result<byte_string> StakingContract::precompile_add_validator(
     }
 
     // Verify SECP signature
-    Secp256k1Pubkey secp_pubkey(secp_pubkey_compressed);
+    Secp256k1Pubkey const secp_pubkey(secp_pubkey_compressed);
     if (MONAD_UNLIKELY(!secp_pubkey.is_valid())) {
         return StakingError::InvalidSecpPubkey;
     }
-    Secp256k1Signature secp_sig(secp_signature_compressed);
+    Secp256k1Signature const secp_sig(secp_signature_compressed);
     if (MONAD_UNLIKELY(!secp_sig.is_valid())) {
         return StakingError::InvalidSecpSignature;
     }
@@ -1191,7 +1214,7 @@ Result<byte_string> StakingContract::precompile_add_validator(
     }
 
     // Verify BLS signature
-    BlsPubkey bls_pubkey(bls_pubkey_compressed);
+    BlsPubkey const bls_pubkey(bls_pubkey_compressed);
     if (MONAD_UNLIKELY(!bls_pubkey.is_valid())) {
         return StakingError::InvalidBlsPubkey;
     }
@@ -1374,7 +1397,7 @@ Result<byte_string> StakingContract::precompile_undelegate(
         return StakingError::UnknownValidator;
     }
 
-    auto withdrawal_request =
+    auto const withdrawal_request =
         vars.withdrawal_request(val_id, msg_sender, withdrawal_id)
             .load_checked();
     if (MONAD_UNLIKELY(withdrawal_request.has_value())) {
@@ -1475,6 +1498,7 @@ Result<byte_string> StakingContract::precompile_compound(
 
 EXPLICIT_MONAD_TRAITS_MEMBER(StakingContract::precompile_compound);
 
+template <Traits traits>
 Result<byte_string> StakingContract::precompile_withdraw(
     byte_string_view input, Address const &msg_sender,
     uint256_be_t const &msg_value)
@@ -1501,7 +1525,7 @@ Result<byte_string> StakingContract::precompile_withdraw(
         return StakingError::WithdrawalNotReady;
     }
 
-    auto withdraw_acc =
+    auto const withdraw_acc =
         decrement_accumulator_refcount(withdrawal_request->epoch, val_id)
             .native();
     auto withdrawal_amount = withdrawal_request->amount.native();
@@ -1517,13 +1541,16 @@ Result<byte_string> StakingContract::precompile_withdraw(
     uint256_t const contract_balance = state_.get_balance(STAKING_CA);
     MONAD_ASSERT_THROW(
         contract_balance >= withdrawal_amount, "withdrawal insolvent");
-    send_tokens(msg_sender, withdrawal_amount);
+    send_tokens<traits>(msg_sender, withdrawal_amount);
 
     emit_withdraw_event(val_id, msg_sender, withdrawal_id, withdrawal_amount);
 
     return byte_string{abi_encode_bool(true)};
 }
 
+EXPLICIT_MONAD_TRAITS_MEMBER(StakingContract::precompile_withdraw);
+
+template <Traits traits>
 Result<byte_string> StakingContract::precompile_claim_rewards(
     byte_string_view input, Address const &msg_sender,
     uint256_be_t const &msg_value)
@@ -1539,13 +1566,15 @@ Result<byte_string> StakingContract::precompile_claim_rewards(
 
     auto const rewards = del.rewards().load();
     if (MONAD_LIKELY(rewards.native() != 0)) {
-        send_tokens(msg_sender, rewards.native());
+        send_tokens<traits>(msg_sender, rewards.native());
         del.rewards().clear();
         emit_claim_rewards_event(val_id, msg_sender, rewards);
     }
 
     return byte_string{abi_encode_bool(true)};
 }
+
+EXPLICIT_MONAD_TRAITS_MEMBER(StakingContract::precompile_claim_rewards);
 
 Result<byte_string> StakingContract::precompile_change_commission(
     byte_string_view input, Address const &msg_sender,
@@ -1594,7 +1623,7 @@ Result<byte_string> StakingContract::precompile_external_reward(
     }
 
     // 1. Only validators in the consensus set can invoke this method.
-    auto val_execution = vars.val_execution(val_id);
+    auto const val_execution = vars.val_execution(val_id);
     if (MONAD_UNLIKELY(!val_execution.exists())) {
         return StakingError::UnknownValidator;
     }
@@ -1713,7 +1742,7 @@ Result<void> StakingContract::syscall_reward(
     BOOST_OUTCOME_TRY(
         auto const split, split_commission(raw_reward, commission_rate));
     auto const &[commission, del_reward] = split;
-    auto val_execution = vars.val_execution(val_id.value());
+    auto const val_execution = vars.val_execution(val_id.value());
     auto auth = vars.delegator(val_id.value(), val_execution.auth_address());
     BOOST_OUTCOME_TRY(
         auto const auth_reward,
@@ -1725,7 +1754,7 @@ Result<void> StakingContract::syscall_reward(
         apply_reward(val_id.value(), SYSTEM_SENDER, del_reward, active_stake));
 
     // 5. Store the proposer validator id for other contracts to query.
-    if constexpr (traits::tracks_proposer_val_id()) {
+    if constexpr (tracks_proposer_val_id<traits>()) {
         vars.proposer_val_id.store(val_id.value());
     }
 
@@ -1846,7 +1875,7 @@ Result<void> StakingContract::distribute_priority_fees(uint256_t const &fees)
 {
     // 1. Validate the proposer is in the consensus set.
     u64_be const val_id = vars.proposer_val_id.load();
-    auto val_execution = vars.val_execution(val_id);
+    auto const val_execution = vars.val_execution(val_id);
     if (MONAD_UNLIKELY(!val_execution.exists())) {
         return StakingError::UnknownValidator;
     }
@@ -1965,9 +1994,9 @@ struct LinkedListTrait<u64_be, Address>
 
     static constexpr Ptr sentinel()
     {
-        return Ptr{{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-                    0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-                    0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}};
+        return monad_address{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+                             0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+                             0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
     }
 
     static constexpr Ptr empty()

@@ -19,7 +19,7 @@
 #include <category/core/hex.hpp>
 #include <category/core/runtime/bit.hpp>
 #include <category/core/runtime/uint128.hpp>
-#include <category/core/runtime/uint256.hpp>
+#include <category/core/runtime/uint256.hpp> // IWYU pragma: export
 
 #include <bit>
 #include <concepts>

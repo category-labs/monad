@@ -31,7 +31,7 @@
 #    x86_test_runner.cpp + monad-zkvm-guest, linked against the host's
 #    existing monad_execution target.
 
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.30)
 
 if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     # ---- Cross-compile mode ----
@@ -196,12 +196,6 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         target_include_directories(blst INTERFACE "${THIRD_PARTY_DIR}/blst/bindings")
     endif()
 
-    set(EVMC_INCLUDE_DIR "${THIRD_PARTY_DIR}/evmc/include")
-    add_library(evmc INTERFACE)
-    add_library(evmc::evmc ALIAS evmc)
-    target_compile_features(evmc INTERFACE c_std_99)
-    target_include_directories(evmc INTERFACE ${EVMC_INCLUDE_DIR})
-
     # ---- VM component libraries ----
 
     # Stub for monad-vm-utils — the interpreter unconditionally links it, but
@@ -326,7 +320,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     )
     monad_compile_options(monad-core)
     monad_riscv_compile_options(monad-core)
-    target_link_libraries(monad-core PUBLIC evmc komihash)
+    target_link_libraries(monad-core PUBLIC komihash)
     # decode_error.cpp pulls boost/outcome/experimental/status-code/...
     target_compile_options(monad-core PUBLIC "-idirafter${_boost_inc}")
 
@@ -369,7 +363,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         "hive_net.cpp"
     )
     # Host-only link deps — their targets don't exist (or aren't wanted) in
-    # the bare-metal guest. The shared deps (evmc, immer, unordered_dense,
+    # the bare-metal guest. The shared deps (immer, unordered_dense,
     # blst, nlohmann_json) are inherited as-is. monad_crypto (vendored
     # sha256/rmd160) is dropped — the guest only needs its headers, added
     # separately if/when a surviving TU actually calls those symbols.
@@ -382,7 +376,6 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         Boost::json
         c-kzg-4844
         PkgConfig::brotli
-        PkgConfig::crypto++
         PkgConfig::secp256k1
         intx::intx
         quill::quill
@@ -430,7 +423,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         monad_crypto
         c-kzg-4844
         ethash::keccak
-        PkgConfig::crypto++
+        aws_lc::crypto
         intx::intx
         silkpre)
     target_link_libraries(monad_precompiles
@@ -453,7 +446,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     monad_zkvm_drop_sources(monad_execution_native
         "db/storage_page.cpp"
         "db/page_commit_builder.cpp"
-        "db/commit_block_migration.cpp"
+        "db/commit_block.cpp"
         "staking/fuzzer/staking_contract_machine.cpp"
         "staking/fuzzer/staking_contract_model.cpp"
         "staking/test/input_generation.cpp"
@@ -468,7 +461,6 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         monad_core
         monad_crypto
         monad_trie
-        evmc
         magic_enum::magic_enum
         PkgConfig::secp256k1
         quill::quill)

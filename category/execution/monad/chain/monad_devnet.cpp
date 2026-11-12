@@ -50,7 +50,7 @@ monad_revision MonadDevnet::get_monad_revision(uint64_t const timestamp) const
             env);
         return value;
     }();
-    return timestamp >= next_at ? MONAD_NEXT : MONAD_NINE;
+    return timestamp >= next_at ? MONAD_NEXT : MONAD_LATEST_STABLE_REVISION;
 }
 
 uint256_t MonadDevnet::get_chain_id() const

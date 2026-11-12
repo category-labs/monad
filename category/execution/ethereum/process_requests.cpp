@@ -22,13 +22,16 @@
 #include <category/execution/ethereum/core/contract/big_endian.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
-#include <category/execution/ethereum/evmc_host.hpp>
+#include <category/execution/ethereum/native_transfer_log.hpp>
 #include <category/execution/ethereum/process_requests.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/state_host.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
+#include <category/vm/evm/call_status.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/traits.hpp>
 
 #include <category/crypto/silkpre_vendor/sha256.h>
@@ -55,9 +58,6 @@ Result<byte_string> system_call(
     BlockHeader const &header, Address const &contract_address,
     trace::StateTracer &state_tracer, ChainContext<traits> const &chain_ctx)
 {
-    constexpr auto SYSTEM_ADDRESS =
-        0xfffffffffffffffffffffffffffffffffffffffe_address;
-
     // Per EIP-7002/EIP-7251: if there is no code at the predeploy address,
     // the block MUST be marked invalid.
     auto const hash = state.get_code_hash(contract_address);
@@ -68,9 +68,9 @@ Result<byte_string> system_call(
     trace::on_read_code(state_tracer, hash, code->intercode());
     auto const blob_schedule = chain.get_blob_schedule(header.timestamp);
 
-    evmc_tx_context const tx_context = {
+    vm::TxContext const tx_context = {
         .tx_gas_price = {},
-        .tx_origin = SYSTEM_ADDRESS,
+        .tx_origin = ETH_SYSTEM_ADDRESS,
         .block_coinbase = header.beneficiary,
         .block_number = static_cast<int64_t>(header.number),
         .block_timestamp = static_cast<int64_t>(header.timestamp),
@@ -85,19 +85,17 @@ Result<byte_string> system_call(
             header.excess_blob_gas.value_or(0), blob_schedule)),
         .blob_hashes = nullptr,
         .blob_hashes_count = 0,
-        .initcodes = nullptr,
-        .initcodes_count = 0,
         .block_round = header.slot_number.value_or(0),
     };
 
     auto msg_memory = state.vm().message_memory_ref();
-    evmc_message const msg = {
-        .kind = EVMC_CALL,
+    vm::Message const msg = {
+        .kind = vm::CallKind::Call,
         .flags = 0,
         .depth = 0,
         .gas = 30'000'000, // as per eip-7002, eip-7251
         .recipient = contract_address,
-        .sender = SYSTEM_ADDRESS,
+        .sender = ETH_SYSTEM_ADDRESS,
         .input_data = nullptr,
         .input_size = 0,
         .value = {},
@@ -112,7 +110,7 @@ Result<byte_string> system_call(
 
     NoopCallTracer noop_tracer;
     Transaction const empty_tx{};
-    EvmcHost<traits> host{
+    StateHost<traits> host{
         noop_tracer,
         state_tracer,
         tx_context,
@@ -132,7 +130,7 @@ Result<byte_string> system_call(
         state.vm().template execute<traits>(host, &msg, hash, code);
 
     // "if the call fails or returns an error, the block MUST be invalidated"
-    if (MONAD_UNLIKELY(result.status_code != EVMC_SUCCESS)) {
+    if (MONAD_UNLIKELY(result.status_code != CallStatus::Success)) {
         return BlockError::SystemCallFailed;
     }
 

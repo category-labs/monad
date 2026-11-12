@@ -23,6 +23,7 @@
 #include <category/vm/compiler/ir/x86/types.hpp>
 #include <category/vm/compiler/ir/x86/virtual_stack.hpp>
 #include <category/vm/compiler/types.hpp>
+#include <category/vm/evm/tx_context.hpp>
 #include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/runtime/math.hpp>
 #include <category/vm/runtime/math/intrinsics.hpp>
@@ -38,8 +39,6 @@
 #include <asmjit/core/jitruntime.h>
 #include <asmjit/core/operand.h>
 #include <asmjit/x86/x86operand.h>
-
-#include <evmc/evmc.h>
 
 #include <algorithm>
 #include <array>
@@ -641,6 +640,7 @@ namespace monad::vm::compiler::native
         , rodata_{as_.newNamedLabel("ROD")}
         , exponential_constant_fold_counter_{0}
         , accumulated_static_work_{0}
+        , touched_memory_end_{0}
         , final_stack_dep_counts_{
               std::make_unique_for_overwrite<int32_t[]>(1024)}
     {
@@ -670,6 +670,9 @@ namespace monad::vm::compiler::native
     {
         contract_epilogue();
 
+        if (!load_bounded_le_handlers_.empty()) {
+            checked_debug_comment("calldataload bounded loads");
+        }
         for (auto const &[lbl, fn, back] : load_bounded_le_handlers_) {
             as_.bind(lbl);
             as_.call(fn);
@@ -1031,6 +1034,10 @@ namespace monad::vm::compiler::native
 
     void Emitter::add_jump_dest(byte_offset const d)
     {
+        if (MONAD_LIKELY(!debug_logger_.file())) {
+            jump_dests_.emplace(d, as_.newLabel());
+            return;
+        }
         char name[2 * sizeof(byte_offset) + 2];
         static_assert(sizeof(byte_offset) <= sizeof(long));
         auto const isize = snprintf(name, sizeof(name), "B%lx", d);
@@ -1043,10 +1050,15 @@ namespace monad::vm::compiler::native
     {
         checked_debug_comment("  0x{:02x}:", b.offset);
         if (keep_stack_in_next_block_) {
+            // `touched_memory_end_` is only valid if this block has no
+            // other entry.
+            MONAD_DEBUG_ASSERT(
+                !jump_dests_.contains(static_cast<byte_offset>(b.offset)));
             stack_.continue_block(b);
         }
         else {
             stack_.begin_new_block(b);
+            touched_memory_end_ = 0;
         }
         return block_prologue(b);
     }
@@ -1292,6 +1304,7 @@ namespace monad::vm::compiler::native
             return;
         }
 
+        checked_debug_comment("gas decrement");
         as_.sub(
             x86::qword_ptr(reg_context, runtime::context_offset_gas_remaining),
             static_cast<int32_t>(gas));
@@ -1299,6 +1312,7 @@ namespace monad::vm::compiler::native
 
     void Emitter::gas_decrement_no_check(x86::Gpq const gas)
     {
+        checked_debug_comment("gas decrement");
         as_.sub(
             x86::qword_ptr(reg_context, runtime::context_offset_gas_remaining),
             gas);
@@ -1341,8 +1355,13 @@ namespace monad::vm::compiler::native
         auto const max_delta = stack_.max_delta();
         if (max_delta - min_delta > 1024) {
             // No stack size passes both of the checks below.
+            checked_debug_comment("stack bound check");
             as_.jmp(error_label_);
             return false;
+        }
+        if (stack_.did_min_delta_decrease() ||
+            stack_.did_max_delta_increase()) {
+            checked_debug_comment("stack bound check");
         }
         auto const size_mem = x86::qword_ptr(x86::rsp, sp_offset_stack_size);
         if (stack_.did_min_delta_decrease()) {
@@ -1366,6 +1385,7 @@ namespace monad::vm::compiler::native
     {
         auto const delta = stack_.delta();
         if (delta != 0) {
+            checked_debug_comment("adjust by stack delta");
             auto const ssm = x86::qword_ptr(x86::rsp, sp_offset_stack_size);
             if constexpr (preserve_eflags) {
                 as_.mov(x86::rax, ssm);
@@ -1397,6 +1417,10 @@ namespace monad::vm::compiler::native
             // Nothing on the stack.
             MONAD_DEBUG_ASSERT(stack_.missing_spill_count() == 0);
             return;
+        }
+        if (MONAD_UNLIKELY(debug_logger_.file()) &&
+            stack_.missing_spill_count()) {
+            unchecked_debug_comment("write to final stack offsets");
         }
 
         // The macros defined below are for counting the number of stack
@@ -2411,6 +2435,14 @@ namespace monad::vm::compiler::native
         stack_.swap(stack_.top_index() - static_cast<int32_t>(swap_ix));
     }
 
+    // No discharge
+    void Emitter::exchange(uint8_t const n, uint8_t const m)
+    {
+        MONAD_ASSERT(n > 0);
+        MONAD_ASSERT(m > n);
+        stack_.exchange(stack_.top_index() - n, stack_.top_index() - m);
+    }
+
     // Discharge through `lt` overload
     void Emitter::lt()
     {
@@ -3173,64 +3205,67 @@ namespace monad::vm::compiler::native
     // No discharge
     void Emitter::origin()
     {
-        read_evmc_tx_context_address(offsetof(evmc_tx_context, tx_origin));
+        read_tx_context_address(offsetof(TxContext, tx_origin));
     }
 
     // No discharge
     void Emitter::gasprice()
     {
-        read_evmc_tx_context_word(offsetof(evmc_tx_context, tx_gas_price));
+        read_tx_context_word(offsetof(TxContext, tx_gas_price));
     }
 
     // No discharge
     void Emitter::gaslimit()
     {
-        read_evmc_tx_context_uint64_to_word(
-            offsetof(evmc_tx_context, block_gas_limit));
+        read_tx_context_uint64_to_word(offsetof(TxContext, block_gas_limit));
     }
 
     // No discharge
     void Emitter::coinbase()
     {
-        read_evmc_tx_context_address(offsetof(evmc_tx_context, block_coinbase));
+        read_tx_context_address(offsetof(TxContext, block_coinbase));
     }
 
     // No discharge
     void Emitter::timestamp()
     {
-        read_evmc_tx_context_uint64_to_word(
-            offsetof(evmc_tx_context, block_timestamp));
+        read_tx_context_uint64_to_word(offsetof(TxContext, block_timestamp));
     }
 
     // No discharge
     void Emitter::number()
     {
-        read_evmc_tx_context_uint64_to_word(
-            offsetof(evmc_tx_context, block_number));
+        read_tx_context_uint64_to_word(offsetof(TxContext, block_number));
     }
 
     // No discharge
     void Emitter::prevrandao()
     {
-        read_evmc_tx_context_word(offsetof(evmc_tx_context, block_prev_randao));
+        read_tx_context_word(offsetof(TxContext, block_prev_randao));
     }
 
     // No discharge
     void Emitter::chainid()
     {
-        read_evmc_tx_context_word(offsetof(evmc_tx_context, chain_id));
+        read_tx_context_word(offsetof(TxContext, chain_id));
     }
 
     // No discharge
     void Emitter::basefee()
     {
-        read_evmc_tx_context_word(offsetof(evmc_tx_context, block_base_fee));
+        read_tx_context_word(offsetof(TxContext, block_base_fee));
     }
 
     // No discharge
     void Emitter::blobbasefee()
     {
-        read_evmc_tx_context_word(offsetof(evmc_tx_context, blob_base_fee));
+        read_tx_context_word(offsetof(TxContext, blob_base_fee));
+    }
+
+    // No discharge
+    void Emitter::slotnum()
+    {
+        read_tx_context_uint64_to_word(offsetof(TxContext, block_round));
     }
 
     // Discharge
@@ -3475,6 +3510,7 @@ namespace monad::vm::compiler::native
     // Discharge
     void Emitter::call_runtime_impl(RuntimeImpl &rt)
     {
+        checked_debug_comment("runtime call");
         discharge_deferred_comparison();
         spill_caller_save_regs(rt.spill_avx_regs());
         size_t const n = rt.explicit_arg_count();
@@ -3686,6 +3722,7 @@ namespace monad::vm::compiler::native
         }
         jump_table_label_ = jump_table_label_ ? jump_table_label_
                                               : as_.newNamedLabel("JumpTable");
+        checked_debug_comment("jump table lookup");
         if (std::holds_alternative<Gpq256>(dest_op)) {
             Gpq256 const &gpq = std::get<Gpq256>(dest_op);
             as_.cmp(gpq[0], *bytecode_size_);
@@ -3925,7 +3962,7 @@ namespace monad::vm::compiler::native
         stack_.push(std::move(dst));
     }
 
-    void Emitter::read_evmc_tx_context_address(int32_t const offset)
+    void Emitter::read_tx_context_address(int32_t const offset)
     {
         auto [dst, _] = alloc_general_reg();
         Gpq256 const &gpq = general_reg_to_gpq256(*dst->general_reg());
@@ -3955,7 +3992,7 @@ namespace monad::vm::compiler::native
         stack_.push(read_mem_be(x86::qword_ptr(reg_context, offset)));
     }
 
-    void Emitter::read_evmc_tx_context_word(int32_t const offset)
+    void Emitter::read_tx_context_word(int32_t const offset)
     {
         as_.mov(
             x86::rax,
@@ -3982,7 +4019,7 @@ namespace monad::vm::compiler::native
         stack_.push(std::move(dst));
     }
 
-    void Emitter::read_evmc_tx_context_uint64_to_word(int32_t const offset)
+    void Emitter::read_tx_context_uint64_to_word(int32_t const offset)
     {
         auto [dst, _] = alloc_general_reg();
         Gpq256 const &gpq = general_reg_to_gpq256(*dst->general_reg());
@@ -6203,6 +6240,7 @@ namespace monad::vm::compiler::native
         if (elem->literal()) {
             auto const &lit = elem->literal()->value;
             if (lit >= uint64_t{1} << bits) {
+                checked_debug_comment("offset bound check");
                 as_.jmp(skip_label);
                 return {};
             }
@@ -6212,6 +6250,7 @@ namespace monad::vm::compiler::native
         static constexpr auto mask = std::numeric_limits<uint64_t>::max()
                                      << bits;
 
+        checked_debug_comment("offset bound check");
         if (elem->general_reg()) {
             auto const &gpq = general_reg_to_gpq256(*elem->general_reg());
             if (is_live(elem, live)) {
@@ -6320,12 +6359,22 @@ namespace monad::vm::compiler::native
             return std::nullopt;
         }
 
+        checked_debug_comment("memory expansion check");
         if (std::holds_alternative<uint64_t>(offset_op)) {
+            auto const lit = std::get<uint64_t>(offset_op);
+            auto const read_end = static_cast<int32_t>(lit) + read_size;
+            if (read_end <= touched_memory_end_) {
+                as_.mov(
+                    x86::rax,
+                    x86::qword_ptr(
+                        reg_context, runtime::context_offset_memory_data));
+                return x86::qword_ptr(x86::rax, static_cast<int32_t>(lit));
+            }
+            touched_memory_end_ = read_end;
+
             release_volatile_general_reg(live);
             spill_avx_reg_range(5);
 
-            auto const lit = std::get<uint64_t>(offset_op);
-            auto const read_end = static_cast<int32_t>(lit) + read_size;
             static_assert(sizeof(runtime::Memory::size) == sizeof(uint32_t));
             as_.cmp(
                 x86::dword_ptr(

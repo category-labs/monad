@@ -15,6 +15,7 @@
 
 #include "runloop_monad_ethblocks.hpp"
 
+#include <category/core/address.hpp>
 #include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
@@ -22,7 +23,9 @@
 #include <category/core/keccak.hpp>
 #include <category/core/log.hpp>
 #include <category/core/procfs/statm.h>
+#include <category/core/result.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
+#include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
@@ -38,14 +41,16 @@
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
+#include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
-#include <category/execution/ethereum/validate_transaction.hpp>
+#include <category/execution/ethereum/validate_transaction_error.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
-#include <category/execution/monad/db/commit_block_migration.hpp>
-#include <category/execution/monad/reserve_balance.hpp>
+#include <category/execution/monad/db/commit_block.hpp>
 #include <category/execution/monad/validate_monad_block.hpp>
+#include <category/vm/evm/monad/revision.h>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/vm.hpp>
 
 #include <ankerl/unordered_dense.h>
 
@@ -55,9 +60,15 @@
 
 #include <algorithm>
 #include <chrono>
+#include <csignal>
+#include <cstdint>
+#include <filesystem>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <thread>
+#include <utility>
+#include <variant>
 #include <vector>
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
@@ -119,7 +130,7 @@ void get_block_with_retry(
 template <Traits traits>
     requires is_monad_trait_v<traits>
 Result<void> process_monad_block(
-    MonadChain const &chain, Db &db, Db *const mirror_db, vm::VM &vm,
+    MonadChain const &chain, Db &db, vm::VM &vm,
     BlockHashBufferFinalized &block_hash_buffer,
     fiber::PriorityPool &priority_pool, Block &block, bytes32_t const &block_id,
     bytes32_t const &parent_block_id, bool const enable_tracing,
@@ -145,7 +156,7 @@ Result<void> process_monad_block(
         chain.get_chain_id(),
         block.header,
         block.header.parent_hash,
-        block.header.number,
+        block.header.slot_number.value_or(block.header.number),
         0,
         block.header.timestamp * 1'000'000'000UL,
         block.transactions.size(),
@@ -209,14 +220,12 @@ Result<void> process_monad_block(
 
     // Core execution: transaction-level EVM execution that tracks state
     // changes but does not commit them
-    for_each_db(db, mirror_db, [&](Db &d) {
-        d.set_block_and_prefix(block.header.number - 1, parent_block_id);
-    });
+    db.set_block_and_prefix(block.header.number - 1, parent_block_id);
     block.header.parent_hash =
         to_bytes(keccak256(rlp::encode_block_header(db.read_eth_header())));
 
     BlockMetrics block_metrics;
-    BlockState block_state(db, vm, mirror_db);
+    BlockState block_state(db, vm);
     record_block_marker_event(exec_recorder, MONAD_EXEC_BLOCK_PERF_EVM_ENTER);
     BOOST_OUTCOME_TRY(
         auto const receipts,
@@ -241,15 +250,18 @@ Result<void> process_monad_block(
     auto const commit_begin = std::chrono::steady_clock::now();
     auto [state, code, _] = std::move(block_state).release();
 
-    BlockCommitAncillaries const anc{
-        .code = code,
-        .receipts = receipts,
-        .transactions = block.transactions,
-        .senders = senders,
-        .call_frames = call_frames,
-        .ommers = block.ommers,
-        .withdrawals = block.withdrawals};
-    commit_block<traits>(db, mirror_db, block_id, block.header, *state, anc);
+    commit_block<traits>(
+        db,
+        block_id,
+        block.header,
+        *state,
+        code,
+        receipts,
+        call_frames,
+        senders,
+        block.transactions,
+        block.ommers,
+        block.withdrawals);
 
     [[maybe_unused]] auto const commit_time =
         std::chrono::duration_cast<std::chrono::microseconds>(
@@ -268,10 +280,8 @@ Result<void> process_monad_block(
 
     // Commit prologue: database finalization, computation of the Ethereum
     // block hash to append to the circular hash buffer
-    for_each_db(db, mirror_db, [&](Db &d) {
-        d.finalize(block.header.number, block_id);
-        d.update_verified_block(block.header.number);
-    });
+    db.finalize(block.header.number, block_id);
+    db.update_verified_block(block.header.number);
     exec_output.eth_block_hash =
         to_bytes(keccak256(rlp::encode_block_header(exec_output.eth_header)));
     block_hash_buffer.set(
@@ -279,17 +289,11 @@ Result<void> process_monad_block(
     (void)record_block_result(exec_recorder, exec_output);
 
     LOG_INFO(
-        "block={}, block_id={} state_root {}={}{}",
+        "block={}, block_id={} state_root {}={}",
         block.header.number,
         block_id,
         db.is_page_encoded() ? "page" : "slot",
-        db.state_root(),
-        mirror_db != nullptr
-            ? fmt::format(
-                  " mirror_{}={}",
-                  mirror_db->is_page_encoded() ? "page" : "slot",
-                  mirror_db->state_root())
-            : std::string{});
+        db.state_root());
 
     // Emit the block metrics log line
     [[maybe_unused]] auto const block_time =
@@ -334,8 +338,7 @@ MONAD_NAMESPACE_BEGIN
 
 Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
     MonadChain const &chain, std::filesystem::path const &ledger_dir, Db &db,
-    Db *const secondary_db, vm::VM &vm,
-    BlockHashBufferFinalized &block_hash_buffer,
+    vm::VM &vm, BlockHashBufferFinalized &block_hash_buffer,
     fiber::PriorityPool &priority_pool, uint64_t &finalized_block_num,
     uint64_t const end_block_num, sig_atomic_t const volatile &stop,
     bool const enable_tracing, std::chrono::seconds const block_db_timeout,
@@ -428,25 +431,22 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
         monad_revision const rev =
             chain.get_monad_revision(block.header.timestamp);
 
-        // Blocks always execute on and commit to the primary; the primary's
-        // encoding must match the block's revision. Before the mip-8 cutoff
-        // the primary is the slot db and a page-encoded secondary, when
-        // open, is mirrored so it can be promoted at the cutoff (offline,
-        // via monad-mpt). After the promote the primary is the page db and
-        // the slot secondary is frozen history that takes no writes.
+        // Blocks always execute on and commit to `db`, whose encoding must
+        // match the block's revision: slot before the MIP-8 cutoff, page
+        // after. Crossing the cutoff is an offline migration (snapshot load
+        // into a page-encoded timeline, then monad-mpt --promote-secondary),
+        // so replay stops here rather than executing on the wrong encoding.
         MONAD_ASSERT_PRINTF(
             db.is_page_encoded() == mip_8_active(rev),
-            "monad revision %d at block %lu needs a %s-encoded primary "
+            "monad revision %d at block %lu needs a %s-encoded db "
             "(found %s); %s",
             rev,
             block.header.number,
             mip_8_active(rev) ? "page" : "slot",
             db.is_page_encoded() ? "page" : "slot",
             mip_8_active(rev)
-                ? "run monad-mpt --promote-secondary offline"
-                : "pre MIP-8 blocks cannot replay on a promoted db");
-
-        Db *const mirror_db = !mip_8_active(rev) ? secondary_db : nullptr;
+                ? "migrate the db to page encoding offline"
+                : "pre MIP-8 blocks cannot replay on a page-encoded db");
 
         ankerl::unordered_dense::segmented_set<Address> senders_and_authorities;
         BOOST_OUTCOME_TRY([&] {
@@ -454,7 +454,6 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
                 process_monad_block,
                 chain,
                 db,
-                mirror_db,
                 vm,
                 block_hash_buffer,
                 priority_pool,

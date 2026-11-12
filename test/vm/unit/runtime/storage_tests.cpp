@@ -20,8 +20,6 @@
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/runtime/storage.hpp>
 
-#include <evmc/evmc.h>
-
 using namespace monad;
 using namespace monad::vm;
 using namespace monad::vm::runtime;
@@ -57,7 +55,7 @@ TEST_F(RuntimeTest, TransientStorage)
 
 TYPED_TEST(RuntimeTraitsTest, StorageLoadCold)
 {
-    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_BERLIN);
+    static_assert(TestFixture::Trait::evm_rev() >= EvmRevision::Berlin);
 
     using traits = TestFixture::Trait;
     auto load = TestFixture::wrap(sload<traits>);
@@ -94,7 +92,7 @@ TYPED_TEST(RuntimeTraitsTest, StorageLoadWarm)
 
 TYPED_TEST(RuntimeTraitsTest, StorageOriginalEmpty)
 {
-    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_BERLIN);
+    static_assert(TestFixture::Trait::evm_rev() >= EvmRevision::Berlin);
 
     using traits = TestFixture::Trait;
     auto load = TestFixture::wrap(sload<traits>);
@@ -141,7 +139,7 @@ TYPED_TEST(RuntimeTraitsTest, StorageOriginalEmpty)
 
 TYPED_TEST(RuntimeTraitsTest, StorageOriginalNonEmpty)
 {
-    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_BERLIN);
+    static_assert(TestFixture::Trait::evm_rev() >= EvmRevision::Berlin);
 
     using traits = TestFixture::Trait;
     auto load = TestFixture::wrap(sload<traits>);
@@ -180,7 +178,7 @@ TYPED_TEST(RuntimeTraitsTest, StorageOriginalNonEmpty)
         if constexpr (traits::mip_8_active()) {
             ASSERT_EQ(ctx_.gas_refund, 0);
         }
-        else if constexpr (traits::evm_rev() <= MONAD_ETH_BERLIN) {
+        else if constexpr (!traits::eip_3529_active()) {
             ASSERT_EQ(ctx_.gas_refund, 15000);
         }
         else {

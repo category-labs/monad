@@ -27,6 +27,7 @@
  * event" because it represents the first state transition (to "proposed")
  */
 
+#include <category/core/bytes32.h>
 #include <category/execution/ethereum/core/base_ctypes.h>
 #include <stdint.h>
 
@@ -52,7 +53,7 @@ static bool monad_exec_ring_get_block_number(
 /// block with the given id
 static bool monad_exec_ring_block_id_matches(
     struct monad_event_ring const *, struct monad_event_descriptor const *,
-    monad_c_bytes32 const *);
+    monad_bytes32 const *);
 
 /// Rewind the event ring iterator so that the next event produced by
 /// `monad_event_iterator_try_next` will be the most recent consensus event
@@ -78,7 +79,7 @@ static bool monad_exec_iter_block_number_prev(
 /// these events
 static bool monad_exec_iter_block_id_prev(
     struct monad_event_iterator *, struct monad_event_ring const *,
-    monad_c_bytes32 const *, enum monad_exec_event_type filter,
+    monad_bytes32 const *, enum monad_exec_event_type filter,
     struct monad_event_descriptor *);
 
 /// Rewind the event ring iterator, following the "simple replay strategy",

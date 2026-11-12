@@ -26,9 +26,6 @@
 #include <monad/test/traits_test.hpp>
 #include <test_resource_data.h>
 
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
-
 #include <gtest/gtest.h>
 
 #include <optional>
@@ -44,7 +41,7 @@ constexpr auto c{0xa5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5_address};
 
 TYPED_TEST(TraitsTest, apply_block_reward)
 {
-    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_PETERSBURG);
+    static_assert(TestFixture::Trait::evm_rev() >= EvmRevision::Petersburg);
 
     mpt::Db db{std::make_unique<InMemoryMachine>()};
     db_t tdb{db};
@@ -68,7 +65,7 @@ TYPED_TEST(TraitsTest, apply_block_reward)
             BlockHeader{.number = 8, .beneficiary = c}}};
     apply_block_reward<typename TestFixture::Trait>(as, block);
 
-    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_PARIS) {
+    if constexpr (!TestFixture::Trait::eip_3675_active()) {
         EXPECT_EQ(as.get_balance(a), 2'125'000'000'000'000'000);
         EXPECT_EQ(as.get_balance(b), 1'750'000'000'000'000'000);
         EXPECT_EQ(as.get_balance(c), 1'500'000'000'000'000'000);

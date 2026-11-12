@@ -21,8 +21,8 @@
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
-#include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/state_host.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
@@ -35,7 +35,7 @@ namespace monad::test
         uint64_t tx_index_;
         NoopCallTracer noop_call_tracer_;
         State &state_;
-        evmc_tx_context tx_context_;
+        vm::TxContext tx_context_;
         std::vector<Address> chain_context_senders_;
         std::vector<std::vector<std::optional<Address>>>
             chain_context_authorities_;
@@ -43,7 +43,7 @@ namespace monad::test
             chain_context_senders_and_authorities_;
         ChainContext<traits> chain_context_;
         trace::StateTracer noop_state_tracer_;
-        EvmcHost<traits> host_;
+        StateHost<traits> host_;
 
         ChainContext<traits> make_chain_context()
         {
@@ -98,7 +98,7 @@ namespace monad::test
         {
         }
 
-        EvmcHost<traits> &get_evmc_host()
+        StateHost<traits> &get_state_host()
         {
             return host_;
         }

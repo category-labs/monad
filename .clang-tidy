@@ -52,6 +52,9 @@
                     readability-isolate-declaration,
                     readability-qualified-auto'
   WarningsAsErrors: '*'
+  # Stepping into the standard library (mostly gtest's failure messages)
+  # exhausts the analyzer's budget before it finishes most test bodies.
+  ExtraArgs: ['-Xclang', '-analyzer-config', '-Xclang', 'c++-stdlib-inlining=false']
   CheckOptions:
     - key:          bugprone-assert-side-effect.AssertMacros
       value:        assert,MONAD_DEBUG_ASSERT
@@ -61,6 +64,8 @@
       value:        __progname
     - key:          bugprone-string-constructor.StringNames
       value:        ::std::basic_string;::std::basic_string_view;::absl::string_view
+    - key:          bugprone-suspicious-stringview-data-usage.AllowedCallees
+      value:        ::monad::unaligned_load;::monad::load_be_unsafe;::memcpy;::std::copy_n;::ECDSA_do_verify
     - key:          misc-include-cleaner.IgnoreHeaders
       value:        gtest/.*|gmock/.*|sys/.*|CLI/.*|boost/.*|llvm/.*|nlohmann/.*|quill/.*|bits/.*|category/core/log\.hpp|getopt\.h
     - key:          modernize-use-default-member-init.UseAssignment

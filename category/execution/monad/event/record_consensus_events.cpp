@@ -15,9 +15,10 @@
 
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
+#include <category/core/event/event_recorder.hpp>
 #include <category/execution/ethereum/event/exec_event_ctypes.h>
 #include <category/execution/ethereum/event/exec_event_recorder.hpp>
-#include <category/execution/monad/core/monad_block.hpp>
+#include <category/execution/monad/core/monad_block.hpp> // IWYU pragma: keep
 #include <category/execution/monad/event/record_consensus_events.hpp>
 
 #include <cstdint>

@@ -18,34 +18,41 @@
 #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
-#include <category/execution/ethereum/evmc_host.hpp>
+#include <category/execution/ethereum/core/units.hpp>
+#include <category/execution/ethereum/create_contract_address.hpp>
 #include <category/execution/ethereum/execute_message.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
+#include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/process_requests.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/state_host.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
+#include <category/execution/monad/chain/monad_testnet.hpp>
 #include <category/execution/monad/reserve_balance.hpp>
 #include <monad/test/traits_test.hpp>
 
 #include <category/core/address.hpp>
+#include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/hex.hpp>
 #include <category/core/int.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/mpt/db.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/monad/revision.h>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
+
+#include <boost/fiber/future/promise.hpp>
 
 #include <ankerl/unordered_dense.h>
 #include <gtest/gtest.h>
@@ -55,6 +62,8 @@
 
 #include <algorithm>
 #include <bit>
+#include <cstdint>
+#include <format>
 #include <optional>
 #include <vector>
 
@@ -1126,7 +1135,7 @@ TYPED_TEST(TraitsTest, access_list_precompiles)
         0x000000000000000000000000000000000000000b_address;
 
     auto const json_string = [] {
-        if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_PRAGUE) {
+        if constexpr (!TestFixture::Trait::eip_2537_active()) {
             return R"(
                     [
                         {
@@ -1161,6 +1170,101 @@ TYPED_TEST(TraitsTest, access_list_precompiles)
     }
 }
 
+// ExecuteTransaction finalizes before it runs the state tracer, so a contract
+// created and self-destructed to itself in one transaction is traced in its
+// finalized form: under EIP-8246 a preserved account showing only its balance
+// (nonce 0, no code and cleared storage are omitted), before EIP-8246 nothing
+// on either side.
+TYPED_TEST(TraitsTest, statediff_selfdestruct_same_tx_preserved)
+{
+    static constexpr auto from{
+        0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
+    static constexpr uint64_t nonce = 25;
+    auto const created = create_contract_address(from, nonce);
+
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
+    TrieDb tdb{db};
+    vm::VM vm;
+    BlockState bs{tdb, vm};
+    BlockMetrics metrics;
+
+    {
+        State state{bs, Incarnation{0, 0}};
+        state.add_to_balance(from, 20_ether);
+        state.set_nonce(from, nonce);
+        bs.merge(state);
+    }
+
+    // Initcode: PUSH1 1 PUSH1 0 SSTORE ADDRESS SELFDESTRUCT
+    auto const data = byte_string{0x60, 0x01, 0x60, 0x00, 0x55, 0x30, 0xff};
+
+    Transaction const tx{
+        .sc =
+            {
+                .signature =
+                    {
+                        .r =
+                            0x5fd883bb01a10915ebc06621b925bd6d624cb6768976b73c0d468b31f657d15b_u256,
+                        .s =
+                            0x121d855c539a23aadf6f06ac21165db1ad5efd261842e82a719c9863ca4ac04c_u256,
+                    },
+            },
+        .nonce = nonce,
+        .max_fee_per_gas = 1,
+        .gas_limit = 100'000,
+        .value = 1_ether,
+        .to = std::nullopt,
+        .data = data,
+    };
+
+    BlockHeader const header{};
+    BlockHashBufferFinalized const block_hash_buffer;
+
+    NoopCallTracer noop_call_tracer;
+    nlohmann::json diff;
+    StateTracer state_tracer = StateDiffTracer{diff};
+
+    boost::fibers::promise<void> prev_promise{};
+    auto prev = prev_promise.get_future();
+    prev_promise.set_value();
+
+    auto const chain_ctx =
+        ChainContext<typename TestFixture::Trait>::debug_empty();
+
+    auto const receipt = ExecuteTransaction<typename TestFixture::Trait>(
+        MonadTestnet{},
+        0,
+        tx,
+        from,
+        {},
+        header,
+        block_hash_buffer,
+        bs,
+        metrics,
+        prev,
+        noop_call_tracer,
+        state_tracer,
+        chain_ctx,
+        /*exec_recorder=*/nullptr)();
+
+    ASSERT_TRUE(receipt.has_value());
+    EXPECT_EQ(receipt.value().status, 1u);
+
+    ASSERT_TRUE(diff.contains("pre") && diff.contains("post")) << diff.dump();
+    auto const key = std::format("0x{}", to_hex(created));
+    EXPECT_FALSE(diff["pre"].contains(key)) << diff.dump();
+    if constexpr (TestFixture::Trait::eip_8246_active()) {
+        auto const json_str = R"({"balance":"0xde0b6b3a7640000"})";
+        EXPECT_EQ(
+            diff["post"].value(key, nlohmann::json{}),
+            nlohmann::json::parse(json_str))
+            << diff.dump();
+    }
+    else {
+        EXPECT_FALSE(diff["post"].contains(key)) << diff.dump();
+    }
+}
+
 TEST(PrestateTracer, prestate_access_storage)
 {
     // Setup matter
@@ -1190,7 +1294,7 @@ TEST(PrestateTracer, prestate_access_storage)
     // Touch some of the account's storage.
     // First access the account to bring it into the state object; this is a
     // prerequisite for accessing the storage.
-    EXPECT_EQ(s.access_account(ADDR_A), MONAD_ACCESS_COLD);
+    EXPECT_EQ(s.access_account(ADDR_A), AccessStatus::Cold);
     EXPECT_TRUE(s.original().contains(ADDR_A));
     EXPECT_TRUE(s.current().contains(ADDR_A));
     EXPECT_EQ(s.get_storage(ADDR_A, key2), value2);
@@ -1255,7 +1359,7 @@ TEST(PrestateTracer, prestate_access_zero_storage)
 
     // Regression from block 89733717 capture: reading an untouched slot must
     // still include that slot with a zero value in prestate output.
-    EXPECT_EQ(s.access_account(ADDR_A), MONAD_ACCESS_COLD);
+    EXPECT_EQ(s.access_account(ADDR_A), AccessStatus::Cold);
     EXPECT_EQ(s.get_storage(ADDR_A, key8), bytes32_t{});
 
     {
@@ -1686,7 +1790,7 @@ TEST(PrestateTracer, prestate_retain_beneficiary_access_storage)
     // Touch some of the account's storage.
     // First access the account to bring it into the state object; this is a
     // prerequisite for accessing the storage.
-    EXPECT_EQ(s.access_account(ADDR_A), MONAD_ACCESS_COLD);
+    EXPECT_EQ(s.access_account(ADDR_A), AccessStatus::Cold);
     EXPECT_TRUE(s.original().contains(ADDR_A));
     EXPECT_TRUE(s.current().contains(ADDR_A));
     EXPECT_EQ(s.get_storage(ADDR_A, key2), value2);
@@ -1752,7 +1856,7 @@ TEST(PrestateTracer, prestate_omit_beneficiary)
 
     // Touch the account, so it shows up in `state.original` and
     // `state.current`.
-    EXPECT_EQ(s.access_account(ADDR_A), MONAD_ACCESS_COLD);
+    EXPECT_EQ(s.access_account(ADDR_A), AccessStatus::Cold);
     EXPECT_TRUE(s.original().contains(ADDR_A));
     EXPECT_TRUE(s.current().contains(ADDR_A));
 
@@ -1838,8 +1942,8 @@ TEST(PrestateTracer, prestate_empty_block_no_reward)
 // asserts that the recorded codes map contains the (code_hash, intercode)
 // pair that the site is responsible for. The sites are:
 //
-//   1. EvmcHostBase::get_code_size  (EXTCODESIZE host hook)
-//   2. EvmcHostBase::copy_code       (EXTCODECOPY host hook)
+//   1. StateHostBase::get_code_size  (EXTCODESIZE host hook)
+//   2. StateHostBase::copy_code       (EXTCODECOPY host hook)
 //   3. execute_call_message          (called contract code, per CALL)
 //   4. system_call (via process_requests, EIP-7002/7251)
 //   5. validate_ethereum_transaction (EIP-7702 sender code check)
@@ -1864,7 +1968,7 @@ namespace
         monad::vm::make_shared_intercode(SYSTEM_STUB_CODE);
 }
 
-// Site 1: EvmcHostBase::get_code_size
+// Site 1: StateHostBase::get_code_size
 TYPED_TEST(TraitsTest, code_tracer_records_extcodesize)
 {
     mpt::Db db{std::make_unique<InMemoryMachine>()};
@@ -1891,7 +1995,7 @@ TYPED_TEST(TraitsTest, code_tracer_records_extcodesize)
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t const base_fee{0};
     trace::StateTracer state_tracer = trace::CodeTracer{};
-    EvmcHost<typename TestFixture::Trait> host{
+    StateHost<typename TestFixture::Trait> host{
         call_tracer,
         state_tracer,
         EMPTY_TX_CONTEXT,
@@ -1913,7 +2017,7 @@ TYPED_TEST(TraitsTest, code_tracer_records_extcodesize)
         byte_string_view(A_ICODE->code(), A_ICODE->size()));
 }
 
-// Site 2: EvmcHostBase::copy_code
+// Site 2: StateHostBase::copy_code
 TYPED_TEST(TraitsTest, code_tracer_records_extcodecopy)
 {
     mpt::Db db{std::make_unique<InMemoryMachine>()};
@@ -1940,7 +2044,7 @@ TYPED_TEST(TraitsTest, code_tracer_records_extcodecopy)
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t const base_fee{0};
     trace::StateTracer state_tracer = trace::CodeTracer{};
-    EvmcHost<typename TestFixture::Trait> host{
+    StateHost<typename TestFixture::Trait> host{
         call_tracer,
         state_tracer,
         EMPTY_TX_CONTEXT,
@@ -1999,7 +2103,7 @@ TYPED_TEST(TraitsTest, code_tracer_records_called_contract_code)
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t const base_fee{0};
     trace::StateTracer state_tracer = trace::CodeTracer{};
-    EvmcHost<typename TestFixture::Trait> host{
+    StateHost<typename TestFixture::Trait> host{
         call_tracer,
         state_tracer,
         EMPTY_TX_CONTEXT,
@@ -2013,8 +2117,8 @@ TYPED_TEST(TraitsTest, code_tracer_records_called_contract_code)
     // depth = 1 to bypass the depth-0 reserve-balance revert path; we want
     // to isolate execute_call_message's own code-read here.
     auto msg_memory = vm.message_memory_ref();
-    evmc_message const msg{
-        .kind = EVMC_CALL,
+    vm::Message const msg{
+        .kind = vm::CallKind::Call,
         .depth = 1,
         .gas = 1'000'000,
         .recipient = ADDR_B,
@@ -2097,7 +2201,7 @@ TYPED_TEST(TraitsTest, code_tracer_records_system_contract_code)
 // Site 5: validate_ethereum_transaction records sender code on EIP-7702 check
 TYPED_TEST(TraitsTest, code_tracer_records_sender_code_in_validate)
 {
-    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_PRAGUE) {
+    if constexpr (!TestFixture::Trait::eip_7702_active()) {
         GTEST_SKIP() << "EIP-7702 sender code read requires Prague+";
     }
     else {
@@ -2127,7 +2231,7 @@ TYPED_TEST(TraitsTest, code_tracer_records_sender_code_in_validate)
         Transaction const tx{.gas_limit = 60'500};
         trace::StateTracer state_tracer = trace::CodeTracer{};
         (void)validate_ethereum_transaction<typename TestFixture::Trait>(
-            tx, ADDR_A, state, state_tracer);
+            tx, ADDR_A, state, state_tracer, ExecutionMode{});
 
         auto const &codes = std::get<trace::CodeTracer>(state_tracer).codes;
         auto const it = codes.find(C_CODE_HASH);
@@ -2153,7 +2257,7 @@ TYPED_TEST(TraitsTest, code_tracer_records_sender_code_in_validate)
 // covered by the witness-generation integration tests.
 TYPED_TEST(EvmTraitsTest, code_tracer_records_authorization_code)
 {
-    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_PRAGUE) {
+    if constexpr (!TestFixture::Trait::eip_7702_active()) {
         GTEST_SKIP() << "EIP-7702 authority code read requires Prague+";
     }
     else {
@@ -2204,7 +2308,7 @@ TYPED_TEST(EvmTraitsTest, code_tracer_records_authorization_code)
             ChainContext<typename TestFixture::Trait>::debug_empty();
         uint256_t const base_fee{0};
         trace::StateTracer state_tracer = trace::CodeTracer{};
-        EvmcHost<typename TestFixture::Trait> host{
+        StateHost<typename TestFixture::Trait> host{
             call_tracer,
             state_tracer,
             EMPTY_TX_CONTEXT,
@@ -2245,7 +2349,7 @@ TYPED_TEST(EvmTraitsTest, code_tracer_records_authorization_code)
 TYPED_TEST(MonadTraitsTest, code_tracer_records_reserve_balance_code)
 {
     using Trait = typename TestFixture::Trait;
-    if (TestFixture::REV < MONAD_FOUR) {
+    if (!Trait::reserve_balance_active()) {
         GTEST_SKIP() << "reserve-balance code reads are MONAD_FOUR+ only";
     }
 

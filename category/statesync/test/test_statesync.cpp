@@ -653,6 +653,74 @@ TEST_F(StateSyncFixture, sync_one_account)
     EXPECT_TRUE(monad_statesync_client_finalize(cctx));
 }
 
+TEST_F(StateSyncFixture, retry_after_failed_root_validation)
+{
+    constexpr auto N = 1'000'000;
+    bytes32_t parent_hash{NULL_HASH};
+    load_header(
+        sdb.load_root_for_version(N - 257),
+        sdb,
+        BlockHeader{.number = N - 257});
+    for (size_t i = N - 256; i < N; ++i) {
+        stdb.set_block_and_prefix(i - 1);
+        commit_sequential(
+            stdb,
+            StateDeltas({}),
+            {},
+            BlockHeader{.parent_hash = parent_hash, .number = i});
+        parent_hash = to_bytes(
+            keccak256(rlp::encode_block_header(stdb.read_eth_header())));
+    }
+    commit_sequential(
+        stdb,
+        StateDeltas(
+            {{ADDR_A,
+              StateDelta{
+                  .account = {std::nullopt, Account{.balance = 100}},
+                  .storage = {}}}}),
+        Code{},
+        BlockHeader{.number = N});
+    init();
+    BlockHeader const tgrt{
+        .parent_hash = parent_hash,
+        .state_root = stdb.state_root(),
+        .number = N};
+    handle_target(cctx, tgrt);
+    // A syntactically valid account the server never sent corrupts the synced
+    // state: the sync completes normally but the root comparison in finalize
+    // must fail against the honest target.
+    auto const corrupt = encode_account_db(
+        0x00000000000000000000000000000000cafebabe_address,
+        Account{.balance = 42});
+    EXPECT_TRUE(monad_statesync_client_handle_upsert(
+        cctx, 0, SYNC_TYPE_UPSERT_ACCOUNT, corrupt.data(), corrupt.size()));
+    run();
+    EXPECT_TRUE(monad_statesync_client_has_reached_target(cctx));
+    EXPECT_FALSE(monad_statesync_client_finalize(cctx));
+
+    monad_statesync_client_context_destroy(cctx);
+    cctx = nullptr;
+    monad_statesync_server_destroy(server);
+    server = nullptr;
+
+    // The failed validation must not have recorded the corrupt target as
+    // finalized: that is the baseline a restarted client rewinds to.
+    {
+        mpt::Db const cdb{
+            std::make_unique<MonadOnDiskMachine>(),
+            mpt::OnDiskDbConfig{
+                .append = true, .dbname_path = cdbname, .chunk_capacity = 24}};
+        EXPECT_EQ(cdb.get_latest_finalized_version(), INVALID_BLOCK_NUM);
+    }
+
+    // A restarted client syncing the same honest target must succeed rather
+    // than inherit the corrupt state as its sync baseline.
+    init();
+    handle_target(cctx, tgrt);
+    run();
+    EXPECT_TRUE(monad_statesync_client_finalize(cctx));
+}
+
 // Multi-slot pages: several slots share each server page leaf, and the client
 // must rebuild the same pages.
 TEST_F(StateSyncFixture, sync_multi_slot_pages)
@@ -1454,17 +1522,11 @@ TEST(Deletions, history_length)
     for (uint64_t i = 1; i <= MAX_ENTRIES + 1; ++i) {
         Deletion const deletion{.address = Address{i}};
         deletions->write(i, {deletion});
-        std::vector<Deletion> result;
-        auto const fn = [&result](auto const &deletion) {
-            result.push_back(deletion);
-        };
-        bool const success = deletions->for_each(i, fn);
-        EXPECT_TRUE(success);
-        ASSERT_EQ(result.size(), 1);
-        EXPECT_EQ(result[0], deletion);
+        auto const entry = deletions->find(i);
+        ASSERT_NE(entry, nullptr);
+        EXPECT_EQ(*entry, std::vector{deletion});
     }
-    bool const success = deletions->for_each(1, {});
-    EXPECT_FALSE(success);
+    EXPECT_EQ(deletions->find(1), nullptr);
 }
 
 TEST(Deletions, max_deletions)
@@ -1482,26 +1544,19 @@ TEST(Deletions, max_deletions)
     deletions->write(102, to);
 
     // Check that everything fits
-    std::vector<Deletion> result;
-    auto const fn = [&result](auto const &deletion) {
-        result.push_back(deletion);
-    };
-    bool success = deletions->for_each(1, fn);
-    EXPECT_TRUE(success);
-    EXPECT_TRUE(result.empty());
+    auto entry = deletions->find(1);
+    ASSERT_NE(entry, nullptr);
+    EXPECT_TRUE(entry->empty());
 
     for (uint64_t i = 2; i <= 101; ++i) {
-        result.clear();
-        success = deletions->for_each(i, fn);
-        EXPECT_TRUE(success);
-        ASSERT_EQ(result.size(), 1);
-        EXPECT_EQ(result[0], Deletion{.address = Address{i}});
+        entry = deletions->find(i);
+        ASSERT_NE(entry, nullptr);
+        EXPECT_EQ(*entry, std::vector{Deletion{.address = Address{i}}});
     }
 
-    result.clear();
-    success = deletions->for_each(102, fn);
-    EXPECT_TRUE(success);
-    EXPECT_EQ(result, to);
+    entry = deletions->find(102);
+    ASSERT_NE(entry, nullptr);
+    EXPECT_EQ(*entry, to);
 
     // now exceed the max and check that history is pruned
     std::vector<Deletion> to_103{10};
@@ -1511,27 +1566,22 @@ TEST(Deletions, max_deletions)
     deletions->write(103, to_103);
 
     for (uint64_t i = 1; i <= 11; ++i) {
-        success = deletions->for_each(i, fn);
-        EXPECT_FALSE(success);
+        EXPECT_EQ(deletions->find(i), nullptr);
     }
 
     for (uint64_t i = 12; i <= 101; ++i) {
-        result.clear();
-        success = deletions->for_each(i, fn);
-        EXPECT_TRUE(success);
-        ASSERT_EQ(result.size(), 1);
-        EXPECT_EQ(result[0], Deletion{.address = Address{i}});
+        entry = deletions->find(i);
+        ASSERT_NE(entry, nullptr);
+        EXPECT_EQ(*entry, std::vector{Deletion{.address = Address{i}}});
     }
 
-    result.clear();
-    success = deletions->for_each(102, fn);
-    EXPECT_TRUE(success);
-    EXPECT_EQ(result, to);
+    entry = deletions->find(102);
+    ASSERT_NE(entry, nullptr);
+    EXPECT_EQ(*entry, to);
 
-    result.clear();
-    success = deletions->for_each(103, fn);
-    EXPECT_TRUE(success);
-    EXPECT_EQ(result, to_103);
+    entry = deletions->find(103);
+    ASSERT_NE(entry, nullptr);
+    EXPECT_EQ(*entry, to_103);
 
     // now prune everything
     std::vector<Deletion> to_104{MAX_DELETIONS};
@@ -1540,13 +1590,11 @@ TEST(Deletions, max_deletions)
     }
     deletions->write(104, to_104);
     for (uint64_t i = 1; i <= 103; ++i) {
-        success = deletions->for_each(i, fn);
-        EXPECT_FALSE(success);
+        EXPECT_EQ(deletions->find(i), nullptr);
     }
-    result.clear();
-    success = deletions->for_each(104, fn);
-    EXPECT_TRUE(success);
-    EXPECT_EQ(result, to_104);
+    entry = deletions->find(104);
+    ASSERT_NE(entry, nullptr);
+    EXPECT_EQ(*entry, to_104);
 }
 
 TEST(Deletions, max_deletions_replenish)
@@ -1573,8 +1621,7 @@ TEST(Deletions, max_deletions_replenish)
     deletions->write(i, to);
 
     for (uint64_t j = i - MAX_ENTRIES + 1; j <= i; ++j) {
-        bool const success = deletions->for_each(j, [](auto const &) {});
-        EXPECT_TRUE(success);
+        EXPECT_NE(deletions->find(j), nullptr);
     }
 }
 
@@ -1590,16 +1637,34 @@ TEST(Deletions, exceed_max_deletions)
 
     // everything blown away
     for (uint64_t i = 1; i <= 11; ++i) {
-        bool const success = deletions->for_each(i, [](auto const &) {});
-        EXPECT_FALSE(success);
+        EXPECT_EQ(deletions->find(i), nullptr);
     }
 
     // write something
     std::vector<Deletion> const to2{MAX_DELETIONS};
     deletions->write(12, to2);
 
-    bool const success = deletions->for_each(12, [](auto const &) {});
-    EXPECT_TRUE(success);
+    EXPECT_NE(deletions->find(12), nullptr);
+}
+
+TEST(Deletions, found_entry_outlives_eviction)
+{
+    auto const deletions = std::make_unique<FinalizedDeletions>();
+    std::vector<Deletion> const to{
+        Deletion{.address = Address{1}},
+        Deletion{.address = Address{2}, .key = bytes32_t{3}}};
+    deletions->write(1, to);
+    auto const entry = deletions->find(1);
+    ASSERT_NE(entry, nullptr);
+
+    // Takes the whole MAX_DELETIONS budget, so block 1 is evicted.
+    deletions->write(
+        2,
+        std::vector<Deletion>(
+            MAX_DELETIONS, Deletion{.address = Address{0xff}}));
+
+    EXPECT_EQ(deletions->find(1), nullptr);
+    EXPECT_EQ(*entry, to);
 }
 
 // Unit tests for request validation logic

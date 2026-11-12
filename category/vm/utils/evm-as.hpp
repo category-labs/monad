@@ -15,20 +15,51 @@
 
 #pragma once
 
+#include <category/core/assert.h>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/utils/evm-as/builder.hpp>
 #include <category/vm/utils/evm-as/compiler.hpp>
 #include <category/vm/utils/evm-as/instruction.hpp>
 #include <category/vm/utils/evm-as/validator.hpp>
 
-#include <evmc/evmc.h>
+#include <cstdint>
+#include <format>
+#include <string>
+#include <vector>
 
 namespace monad::vm::utils::evm_as
 {
-
-    inline EvmBuilder<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>> latest()
+    // Assembles `eb` without validating it. Use for programs that are
+    // intentionally invalid (e.g. stack underflow, bad jump targets) but
+    // still expressible in evm-as.
+    template <Traits traits>
+    std::vector<uint8_t> assemble_unchecked(EvmBuilder<traits> const &eb)
     {
-        return EvmBuilder<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>{};
+        std::vector<uint8_t> bytecode;
+        compile(eb, bytecode);
+        return bytecode;
+    }
+
+    // Validates and assembles `eb`, aborting with the validation errors if
+    // the program is invalid.
+    template <Traits traits>
+    std::vector<uint8_t> assemble(EvmBuilder<traits> const &eb)
+    {
+        std::vector<ValidationError> errors;
+        if (!validate(eb, errors)) {
+            std::string msg;
+            for (auto const &e : errors) {
+                msg += std::format("\n  offset {}: {}", e.offset, e.msg);
+            }
+            MONAD_ASSERT_PRINTF(
+                false, "evm_as::assemble: invalid program:%s", msg.c_str());
+        }
+        return assemble_unchecked(eb);
+    }
+
+    inline EvmBuilder<EvmTraits<EvmRevision::LatestStable>> latest()
+    {
+        return EvmBuilder<EvmTraits<EvmRevision::LatestStable>>{};
     }
 
     inline EvmBuilder<EvmTraits<constants::EARLIEST_SUPPORTED_EVM_FORK>>
@@ -37,43 +68,43 @@ namespace monad::vm::utils::evm_as
         return EvmBuilder<EvmTraits<constants::EARLIEST_SUPPORTED_EVM_FORK>>{};
     }
 
-    inline EvmBuilder<EvmTraits<MONAD_ETH_BERLIN>> berlin()
+    inline EvmBuilder<EvmTraits<EvmRevision::Berlin>> berlin()
     {
-        return EvmBuilder<EvmTraits<MONAD_ETH_BERLIN>>{};
+        return EvmBuilder<EvmTraits<EvmRevision::Berlin>>{};
     }
 
-    inline EvmBuilder<EvmTraits<MONAD_ETH_LONDON>> london()
+    inline EvmBuilder<EvmTraits<EvmRevision::London>> london()
     {
-        return EvmBuilder<EvmTraits<MONAD_ETH_LONDON>>{};
+        return EvmBuilder<EvmTraits<EvmRevision::London>>{};
     }
 
-    inline EvmBuilder<EvmTraits<MONAD_ETH_PARIS>> paris()
+    inline EvmBuilder<EvmTraits<EvmRevision::Paris>> paris()
     {
-        return EvmBuilder<EvmTraits<MONAD_ETH_PARIS>>{};
+        return EvmBuilder<EvmTraits<EvmRevision::Paris>>{};
     }
 
-    inline EvmBuilder<EvmTraits<MONAD_ETH_SHANGHAI>> shanghai()
+    inline EvmBuilder<EvmTraits<EvmRevision::Shanghai>> shanghai()
     {
-        return EvmBuilder<EvmTraits<MONAD_ETH_SHANGHAI>>{};
+        return EvmBuilder<EvmTraits<EvmRevision::Shanghai>>{};
     }
 
-    inline EvmBuilder<EvmTraits<MONAD_ETH_CANCUN>> cancun()
+    inline EvmBuilder<EvmTraits<EvmRevision::Cancun>> cancun()
     {
-        return EvmBuilder<EvmTraits<MONAD_ETH_CANCUN>>{};
+        return EvmBuilder<EvmTraits<EvmRevision::Cancun>>{};
     }
 
-    inline EvmBuilder<EvmTraits<MONAD_ETH_PRAGUE>> prague()
+    inline EvmBuilder<EvmTraits<EvmRevision::Prague>> prague()
     {
-        return EvmBuilder<EvmTraits<MONAD_ETH_PRAGUE>>{};
+        return EvmBuilder<EvmTraits<EvmRevision::Prague>>{};
     }
 
-    inline EvmBuilder<EvmTraits<MONAD_ETH_OSAKA>> osaka()
+    inline EvmBuilder<EvmTraits<EvmRevision::Osaka>> osaka()
     {
-        return EvmBuilder<EvmTraits<MONAD_ETH_OSAKA>>{};
+        return EvmBuilder<EvmTraits<EvmRevision::Osaka>>{};
     }
 
-    inline EvmBuilder<EvmTraits<MONAD_ETH_AMSTERDAM>> amsterdam()
+    inline EvmBuilder<EvmTraits<EvmRevision::Amsterdam>> amsterdam()
     {
-        return EvmBuilder<EvmTraits<MONAD_ETH_AMSTERDAM>>{};
+        return EvmBuilder<EvmTraits<EvmRevision::Amsterdam>>{};
     }
 }

@@ -17,7 +17,7 @@
 #include <category/core/cases.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/opcodes.hpp>
-#include <category/vm/evm/revision.h>
+#include <category/vm/evm/revision.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/utils/evm-as.hpp>
 #include <category/vm/utils/evm-as/builder.hpp>
@@ -175,7 +175,7 @@ namespace monad::vm::utils
     std::optional<uint8_t> find_opcode(std::string_view const op)
     {
         auto const &tbl = monad::vm::compiler::make_opcode_table<
-            EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>();
+            EvmTraits<EvmRevision::LatestStable>>();
         size_t i;
         for (i = 0; i < tbl.size(); ++i) {
             if (tbl[i].name == op) {
@@ -188,11 +188,13 @@ namespace monad::vm::utils
         return std::nullopt;
     }
 
+    using disasm_traits = EvmTraits<EvmRevision::Max>;
+
     std::string show_opcodes(std::vector<uint8_t> const &opcodes)
     {
         std::stringstream ss;
-        auto const &tbl = monad::vm::compiler::make_opcode_table<
-            EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>();
+        auto const &tbl =
+            monad::vm::compiler::make_opcode_table<disasm_traits>();
         for (size_t i = 0; i < opcodes.size(); ++i) {
             auto c = opcodes[i];
             ss << std::format("[{:#x}] {:#x} {}\n", i, c, tbl[opcodes[i]].name);
@@ -213,14 +215,24 @@ namespace monad::vm::utils
                         n);
                 }
             }
+            else if (is_eip8024_opcode(c) && i + 1 < opcodes.size()) {
+                auto const imm = opcodes[i + 1];
+                if (eip8024_immediate_valid(c, imm)) {
+                    i++;
+                    ss << std::format("[{:#x}] {:#x}\n", i, opcodes[i]);
+                }
+                else {
+                    ss << std::format(
+                        "// invalid {} immediate ({:#x})\n", tbl[c].name, imm);
+                }
+            }
         }
         return ss.str();
     }
 
     std::vector<uint8_t> compile_tokens(
         parser_config const &config,
-        evm_as::EvmBuilder<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>> const
-            &eb)
+        evm_as::EvmBuilder<EvmTraits<EvmRevision::LatestStable>> const &eb)
     {
         std::vector<uint8_t> opcodes{};
         std::vector<evm_as::ValidationError> errors{};

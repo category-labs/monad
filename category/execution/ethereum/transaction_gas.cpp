@@ -23,8 +23,6 @@
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 
-#include <evmc/evmc.h>
-
 #include <algorithm>
 #include <cstdint>
 #include <iterator>
@@ -108,7 +106,7 @@ std::pair<uint64_t, uint64_t> tokens_in_calldata(Transaction const &tx) noexcept
 template <Traits traits>
 uint64_t g_data(Transaction const &tx) noexcept
 {
-    static_assert(traits::evm_rev() >= MONAD_ETH_ISTANBUL);
+    static_assert(traits::evm_rev() >= EvmRevision::Istanbul);
 
     auto const [zeros, nonzeros] = tokens_in_calldata(tx);
 
@@ -121,18 +119,18 @@ EXPLICIT_TRAITS(g_data);
 template <Traits traits>
 uint64_t intrinsic_gas(Transaction const &tx) noexcept
 {
-    static_assert(traits::evm_rev() >= MONAD_ETH_BERLIN);
+    static_assert(traits::evm_rev() >= EvmRevision::Berlin);
 
     // EIP-2930: access-list and storage-key cost (active since Berlin)
     uint64_t gas = 21'000 + g_data<traits>(tx) + g_txn_create(tx) +
                    g_access_and_storage(tx);
 
-    // EIP-3860: per-word initcode cost (Shanghai)
-    if constexpr (traits::evm_rev() >= MONAD_ETH_SHANGHAI) {
+    // EIP-3860: per-word initcode cost
+    if constexpr (traits::eip_3860_active()) {
         gas += g_extra_cost_init(tx);
     }
-    // EIP-7702: authorization-list cost (Prague)
-    if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
+    // EIP-7702: authorization-list cost
+    if constexpr (traits::eip_7702_active()) {
         gas += g_authorization(tx);
     }
     // EIP-7981: increase access-list cost (Amsterdam)
@@ -183,10 +181,9 @@ template <Traits traits>
 uint256_t
 gas_price(Transaction const &tx, uint256_t const &base_fee_per_gas) noexcept
 {
-    if constexpr (traits::evm_rev() < MONAD_ETH_LONDON) {
+    if constexpr (!traits::eip_1559_header_active()) {
         return tx.max_fee_per_gas;
     }
-    // EIP-1559
     return priority_fee_per_gas(tx, base_fee_per_gas) + base_fee_per_gas;
 }
 
@@ -197,9 +194,7 @@ template <Traits traits>
 uint64_t g_star(
     Transaction const &tx, uint64_t const gas_remaining, uint64_t const refund)
 {
-    // EIP-3529
-    constexpr auto max_refund_quotient =
-        traits::evm_rev() >= MONAD_ETH_LONDON ? 5 : 2;
+    constexpr auto max_refund_quotient = traits::eip_3529_active() ? 5 : 2;
     auto const refund_allowance =
         (tx.gas_limit - gas_remaining) / max_refund_quotient;
     return gas_remaining + std::min(refund_allowance, refund);
@@ -221,7 +216,7 @@ uint256_t calculate_txn_award(
     Transaction const &tx, uint256_t const &base_fee_per_gas,
     uint64_t const gas_used) noexcept
 {
-    if constexpr (traits::evm_rev() < MONAD_ETH_LONDON) {
+    if constexpr (!traits::eip_1559_header_active()) {
         return gas_used * gas_price<traits>(tx, base_fee_per_gas);
     }
     return gas_used * priority_fee_per_gas(tx, base_fee_per_gas);

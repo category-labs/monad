@@ -19,7 +19,7 @@
 #include "category/vm/compiler/ir/x86/types.hpp"
 #include "category/vm/runtime//types.hpp"
 #include "category/vm/utils/evm-as/compiler.hpp"
-#include "evmc/evmc.hpp"
+#include <category/core/address.h>
 #include <category/core/address.hpp>
 #include <category/core/int.hpp>
 #include <category/vm/compiler/ir/basic_blocks.hpp>
@@ -38,7 +38,6 @@
 #include <test/vm/utils/evm-as_utils.hpp>
 #include <test/vm/utils/test_context.hpp>
 
-#include <evmc/evmc.h>
 #include <gtest/gtest.h>
 
 #include <cstddef>
@@ -61,7 +60,7 @@ namespace
     std::shared_ptr<monad::vm::compiler::native::Nativecode>
     compile(asmjit::JitRuntime &rt, std::vector<uint8_t> const &bytecode)
     {
-        using traits = EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>;
+        using traits = EvmTraits<EvmRevision::LatestStable>;
 
         monad::vm::compiler::native::CompilerConfig const config{};
         auto const ir = monad::vm::compiler::basic_blocks::BasicBlocksIR(
@@ -118,8 +117,7 @@ namespace
     struct jit
     {
         static uint256_t
-        run(evm_as::EvmBuilder<
-            EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>> const &eb)
+        run(evm_as::EvmBuilder<EvmTraits<EvmRevision::LatestStable>> const &eb)
         {
             std::vector<uint8_t> bytecode{};
             evm_as::compile(eb, bytecode);
@@ -1141,7 +1139,7 @@ TEST(EvmAs, Annotation7)
 
 TEST(EvmAs, KernelBuilderRepetitionCount)
 {
-    using traits = EvmTraits<MONAD_ETH_PRAGUE>;
+    using traits = EvmTraits<EvmRevision::Prague>;
     using KB = evm_as::KernelBuilder<traits>;
 
     auto seq = [&](size_t args_size, bool has_output) {
@@ -1206,7 +1204,7 @@ TEST(EvmAs, KernelBuilderRepetitionCount)
 
 TEST(EvmAs, KernelBuilderCalldata)
 {
-    using traits = EvmTraits<MONAD_ETH_PRAGUE>;
+    using traits = EvmTraits<EvmRevision::Prague>;
     using KB = evm_as::KernelBuilder<traits>;
 
     KB post_seq;
@@ -1483,9 +1481,9 @@ TEST(EvmAs, PushAddressLabelResolution)
     }
 
     {
-        static Address const addr{{0xaa, 0xaf, 0x53, 0x74, 0xfc, 0xe5, 0xed,
-                                   0xbc, 0x8e, 0x2a, 0x86, 0x97, 0xc1, 0x53,
-                                   0x31, 0x67, 0x7e, 0x6e, 0xbf, 0x0b}};
+        static Address const addr = monad_address{
+            0xaa, 0xaf, 0x53, 0x74, 0xfc, 0xe5, 0xed, 0xbc, 0x8e, 0x2a,
+            0x86, 0x97, 0xc1, 0x53, 0x31, 0x67, 0x7e, 0x6e, 0xbf, 0x0b};
         auto eb = evm_as::latest();
         for (size_t i = 0; i < 999; i++) {
             eb.push(addr); // 1 + 20 bytes
@@ -2018,4 +2016,122 @@ TEST(EvmAs, NewVarMaxSubscript)
 
     std::string const var = evm_as::internal::new_var(ctx);
     ASSERT_EQ(var, std::format("X{}", std::numeric_limits<size_t>::max()));
+}
+
+TEST(EvmAs, Eip8024Emission)
+{
+    auto eb = evm_as::amsterdam();
+    eb.dupn(17).swapn(235).exchange(1, 2);
+
+    ASSERT_EQ(eb.size(), 3u);
+    ASSERT_TRUE(evm_as::Instruction::is_eip8024(eb[0]));
+    EXPECT_EQ(
+        evm_as::Instruction::as_eip8024(eb[0]).opcode,
+        compiler::EvmOpCode::DUPN);
+    EXPECT_EQ(
+        evm_as::Instruction::as_eip8024(eb[1]).opcode,
+        compiler::EvmOpCode::SWAPN);
+    EXPECT_EQ(
+        evm_as::Instruction::as_eip8024(eb[2]).opcode,
+        compiler::EvmOpCode::EXCHANGE);
+
+    std::vector<uint8_t> bytecode{};
+    evm_as::compile(eb, bytecode);
+    std::vector<uint8_t> const expected{
+        0xE6,
+        compiler::eip8024_encode_single(17),
+        0xE7,
+        compiler::eip8024_encode_single(235),
+        0xE8,
+        compiler::eip8024_encode_pair(1, 2)};
+    EXPECT_EQ(bytecode, expected);
+
+    std::string const expected_mnemonic = "DUPN 17\n"
+                                          "SWAPN 235\n"
+                                          "EXCHANGE 1, 2\n";
+    EXPECT_EQ(evm_as::mcompile(eb), expected_mnemonic);
+}
+
+TEST(EvmAs, Eip8024NotNullary)
+{
+    auto eb = evm_as::amsterdam();
+    eb.ins(compiler::EvmOpCode::DUPN)
+        .ins(compiler::EvmOpCode::SWAPN)
+        .ins(compiler::EvmOpCode::EXCHANGE);
+
+    ASSERT_EQ(eb.size(), 3u);
+    EXPECT_TRUE(evm_as::Instruction::is_invalid(eb[0]));
+    EXPECT_TRUE(evm_as::Instruction::is_invalid(eb[1]));
+    EXPECT_TRUE(evm_as::Instruction::is_invalid(eb[2]));
+
+    auto rb = evm_as::amsterdam();
+    rb.push(1).ins(compiler::EvmOpCode::DUPN).push(2).stop();
+
+    std::vector<uint8_t> bytecode{};
+    evm_as::compile(rb, bytecode);
+    std::vector<uint8_t> const expected{0x60, 0x01, 0xFE, 0x60, 0x02, 0x00};
+    EXPECT_EQ(bytecode, expected);
+}
+
+TEST(EvmAs, Eip8024Gating)
+{
+    {
+        auto eb = evm_as::amsterdam();
+        eb.dupn(16); // below the [17, 235] single range
+        ASSERT_EQ(eb.size(), 1u);
+        EXPECT_TRUE(evm_as::Instruction::is_invalid(eb[0]));
+        EXPECT_FALSE(evm_as::validate(eb));
+    }
+    {
+        auto eb = evm_as::amsterdam();
+        eb.exchange(2, 2); // pair requires n < m
+        ASSERT_EQ(eb.size(), 1u);
+        EXPECT_TRUE(evm_as::Instruction::is_invalid(eb[0]));
+    }
+    {
+        auto eb = evm_as::osaka();
+        eb.dupn(17);
+        ASSERT_EQ(eb.size(), 1u);
+        EXPECT_TRUE(evm_as::Instruction::is_invalid(eb[0]));
+    }
+    {
+        auto eb = evm_as::amsterdam();
+        for (int i = 0; i < 18; ++i) {
+            eb.push(1);
+        }
+        eb.dupn(17);
+        EXPECT_TRUE(evm_as::validate(eb));
+    }
+    {
+        auto eb = evm_as::amsterdam();
+        eb.push(1).push(2).dupn(17);
+        EXPECT_FALSE(evm_as::validate(eb));
+    }
+}
+
+TEST(EvmAs, Assemble)
+{
+    auto eb = evm_as::latest();
+    eb.push(1).push(2).add().stop();
+
+    std::vector<uint8_t> expected;
+    evm_as::compile(eb, expected);
+    ASSERT_EQ(evm_as::assemble(eb), expected);
+}
+
+TEST(EvmAs, AssembleUnchecked)
+{
+    auto eb = evm_as::latest();
+    eb.add();
+    ASSERT_FALSE(evm_as::validate(eb));
+    ASSERT_EQ(
+        evm_as::assemble_unchecked(eb),
+        std::vector<uint8_t>{compiler::EvmOpCode::ADD});
+}
+
+TEST(EvmAsDeathTest, AssembleInvalid)
+{
+    auto eb = evm_as::latest();
+    eb.add();
+    EXPECT_DEATH(evm_as::assemble(eb), "evm_as::assemble: invalid program");
 }

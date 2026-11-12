@@ -14,7 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 pub(crate) use self::bindings::{
-    monad_c_bytes32, triedb_async_ranged_get, triedb_async_read, triedb_async_read_callback_fn,
+    monad_bytes32, triedb_async_ranged_get, triedb_async_read, triedb_async_read_callback_fn,
     triedb_async_traverse, triedb_async_traverse_callback, triedb_async_traverse_callback_fn,
     triedb_async_traverse_callback_triedb_async_traverse_callback_finished_early,
     triedb_async_traverse_callback_triedb_async_traverse_callback_finished_normally,

@@ -13,11 +13,22 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
+#include <category/core/config.hpp>
+#include <category/core/result.hpp>
+#include <category/execution/ethereum/chain/chain.hpp>
+#include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
+#include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/monad/dispatch_transaction.hpp>
 #include <category/execution/monad/execute_system_transaction.hpp>
 #include <category/execution/monad/system_sender.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/traits.hpp>
+
+#include <cstdint>
+#include <optional>
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -28,11 +39,11 @@ Result<Receipt> dispatch_transaction(
     std::vector<std::optional<Address>> const &authorities,
     BlockHeader const &header, BlockHashBuffer const &block_hash_buffer,
     BlockState &block_state, BlockMetrics &block_metrics,
-    boost::fibers::promise<void> &prev, CallTracerBase &call_tracer,
+    boost::fibers::future<void> &prev, CallTracerBase &call_tracer,
     trace::StateTracer &state_tracer, ChainContext<traits> const &chain_ctx,
     ExecutionEventRecorder *const exec_recorder, bool const trace_transfers)
 {
-    if (traits::monad_rev() >= MONAD_FOUR && sender == SYSTEM_SENDER) {
+    if (traits::staking_active() && sender == SYSTEM_SENDER) {
         // System transactions is a concept used in Monad for consensus to
         // communicate state changes to execution this code handles these in a
         // separate executor.

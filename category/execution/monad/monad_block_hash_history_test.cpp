@@ -13,15 +13,21 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/byte_string.hpp>
 #include <category/execution/ethereum/block_hash_history.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
+#include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
-#include <category/vm/utils/evm-as.hpp>
+#include <category/mpt/db.hpp>
+#include <category/vm/evm/monad/revision.h>
+#include <category/vm/vm.hpp>
 #include <monad/test/traits_test.hpp>
 
-#include <evmc/evmc.h>
 #include <gtest/gtest.h>
+
+#include <cstddef>
+#include <memory>
 
 using namespace monad;
 
@@ -45,7 +51,7 @@ TYPED_TEST(MonadBlockHashHistoryFixture, noop_before_fork)
     using Trait = TestFixture::Trait;
 
     deploy_block_hash_history_contract<Trait>(this->state);
-    if constexpr (Trait::evm_rev() < MONAD_ETH_PRAGUE) {
+    if constexpr (!Trait::eip_2935_active()) {
         EXPECT_FALSE(this->state.account_exists(BLOCK_HISTORY_ADDRESS));
     }
     else {
@@ -60,7 +66,7 @@ TYPED_TEST(MonadBlockHashHistoryFixture, noop_before_fork)
 
     for (size_t i = 1; i < 128; ++i) {
         bytes32_t const actual = get_block_hash_history(this->state, i);
-        if constexpr (!Trait::eip_2935_active()) {
+        if constexpr (Trait::monad_rev() < MONAD_SIX) {
             EXPECT_EQ(actual, bytes32_t{});
         }
         else {
@@ -82,7 +88,7 @@ TYPED_TEST(MonadBlockHashHistoryFixture, redeploy)
     // redeploy
     deploy_block_hash_history_contract<Trait>(this->state);
 
-    if constexpr (Trait::eip_2935_active()) {
+    if constexpr (Trait::monad_rev() >= MONAD_SIX) {
         EXPECT_NE(
             this->state.get_code_hash(BLOCK_HISTORY_ADDRESS), bad_code_hash);
     }

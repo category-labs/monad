@@ -51,12 +51,12 @@ public:
 
     ConsensusView(State &state, Address const &address, bytes32_t const &key);
 
-    StorageVariable<Stake_t> stake() noexcept
+    StorageVariable<Stake_t> stake()
     {
         return {state_, address_, key_ + Offsets::stake};
     }
 
-    StorageVariable<Stake_t> commission() noexcept
+    StorageVariable<Stake_t> commission()
     {
         return {state_, address_, key_ + Offsets::commission};
     }

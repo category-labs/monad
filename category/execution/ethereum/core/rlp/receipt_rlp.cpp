@@ -74,14 +74,15 @@ byte_string encode_receipt(Receipt const &receipt)
     if (receipt.type == TransactionType::monad) {
         receipt_fields += encode_list2(byte_string{});
     }
-    auto const receipt_bytes = encode_list2(receipt_fields);
+    auto receipt_bytes = encode_list2(receipt_fields);
 
     if (receipt.type == TransactionType::eip1559 ||
         receipt.type == TransactionType::eip2930 ||
         receipt.type == TransactionType::eip4844 ||
         receipt.type == TransactionType::eip7702 ||
         receipt.type == TransactionType::monad) {
-        return static_cast<unsigned char>(receipt.type) + receipt_bytes;
+        receipt_bytes.insert(
+            receipt_bytes.begin(), static_cast<unsigned char>(receipt.type));
     }
     return receipt_bytes;
 }

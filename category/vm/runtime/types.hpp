@@ -20,18 +20,25 @@
 #include <category/core/bytes.hpp>
 #include <category/core/runtime/non_temporal_memory.hpp>
 #include <category/core/runtime/uint256.hpp>
+#include <category/vm/evm/call_status.hpp>
+#include <category/vm/evm/message.hpp>
+#include <category/vm/evm/result.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/evm/tx_context.hpp>
 #include <category/vm/runtime/bin.hpp>
 #include <category/vm/runtime/exit.hpp>
 #include <category/vm/runtime/transmute.hpp>
-
-#include <evmc/evmc.hpp>
 
 #include <cstddef>
 #include <span>
 #include <type_traits>
 #include <variant>
 #include <vector>
+
+namespace monad::vm
+{
+    class Host;
+}
 
 namespace monad::vm::runtime
 {
@@ -52,7 +59,7 @@ namespace monad::vm::runtime
 
     struct Environment
     {
-        uint32_t evmc_flags;
+        uint32_t flags;
         int32_t depth;
         Address recipient;
         Address sender;
@@ -67,7 +74,7 @@ namespace monad::vm::runtime
         uint32_t code_size;
         size_t return_data_size;
 
-        evmc_tx_context const *tx_context;
+        TxContext const *tx_context;
 
         ~Environment()
         {
@@ -227,14 +234,13 @@ namespace monad::vm::runtime
     struct Context
     {
         static Context from(
-            evmc_host_interface const *host, evmc_host_context *context,
-            evmc_message const *msg, std::span<uint8_t const> code) noexcept;
+            Host &host, Message const *msg,
+            std::span<uint8_t const> code) noexcept;
 
         static Context
         empty(uint8_t *memory_handle, uint32_t memory_capacity) noexcept;
 
-        evmc_host_interface const *host;
-        evmc_host_context *context;
+        Host *host;
 
         int64_t gas_remaining;
         int64_t gas_refund;
@@ -390,17 +396,16 @@ namespace monad::vm::runtime
         void exit [[noreturn]] (StatusCode code) noexcept;
 
         template <Traits traits>
-        evmc::Result copy_to_evmc_result();
+        vm::Result copy_to_result();
 
     private:
         template <Traits traits>
-        std::variant<std::span<uint8_t const>, evmc_status_code>
-        copy_result_data();
+        std::variant<std::span<uint8_t const>, CallStatus> copy_result_data();
     };
 
     // Update context.S accordingly if these offsets change:
-    static_assert(offsetof(Context, gas_remaining) == 16);
-    static_assert(offsetof(Context, memory) == 264);
+    static_assert(offsetof(Context, gas_remaining) == 8);
+    static_assert(offsetof(Context, memory) == 256);
     static_assert(offsetof(Memory, size) == 0);
     static_assert(offsetof(Memory, capacity) == 4);
     static_assert(offsetof(Memory, data) == 8);

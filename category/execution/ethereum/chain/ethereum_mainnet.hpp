@@ -22,8 +22,6 @@
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/chain/genesis_state.hpp>
 
-#include <evmc/evmc.h>
-
 #include <cstdint>
 #include <span>
 
@@ -67,7 +65,7 @@ struct EthereumMainnet : Chain
 {
     virtual uint256_t get_chain_id() const override;
 
-    virtual monad_eth_revision
+    virtual EvmRevision
     get_revision(uint64_t block_number, uint64_t timestamp) const override;
 
     virtual BlobSchedule get_blob_schedule(uint64_t timestamp) const override;

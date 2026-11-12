@@ -17,6 +17,8 @@
 
 #include <category/core/bytes.hpp>
 #include <category/vm/code.hpp>
+#include <category/vm/evm/message.hpp>
+#include <category/vm/evm/result.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/host.hpp>
 #include <category/vm/interpreter/execute.hpp>
@@ -24,9 +26,6 @@
 #include <category/vm/memory_pool.hpp>
 #include <category/vm/runtime/allocator.hpp>
 #include <category/vm/runtime/types.hpp>
-
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 
 #include <cstdint>
 #include <optional>
@@ -74,21 +73,17 @@ namespace monad::vm
         }
 
         template <Traits traits>
-        evmc::Result execute(
-            Host &host, evmc_message const *const msg,
+        Result execute(
+            Host &host, Message const *const msg,
             bytes32_t const & /*code_hash*/, SharedVarcode const &vcode)
         {
             auto const &icode = vcode->intercode();
-            auto rt_ctx = runtime::Context::from(
-                &host.get_interface(),
-                host.to_context(),
-                msg,
-                icode->code_span());
+            auto rt_ctx = runtime::Context::from(host, msg, icode->code_span());
 
             auto *const prev_rt_ctx = host.set_runtime_context(&rt_ctx);
             auto const stack_ptr = stack_allocator_.allocate();
             interpreter::execute<traits>(rt_ctx, *icode, stack_ptr.get());
-            auto result = rt_ctx.template copy_to_evmc_result<traits>();
+            auto result = rt_ctx.template copy_to_result<traits>();
             rt_ctx.template return_to<traits>(prev_rt_ctx);
             (void)host.set_runtime_context(prev_rt_ctx);
             host.rethrow_on_active_exception();
@@ -96,18 +91,17 @@ namespace monad::vm
         }
 
         template <Traits traits>
-        evmc::Result execute_bytecode(
-            Host &host, evmc_message const *const msg,
+        Result execute_bytecode(
+            Host &host, Message const *const msg,
             std::span<uint8_t const> const code)
         {
-            auto rt_ctx = runtime::Context::from(
-                &host.get_interface(), host.to_context(), msg, code);
+            auto rt_ctx = runtime::Context::from(host, msg, code);
 
             auto *const prev_rt_ctx = host.set_runtime_context(&rt_ctx);
             auto const stack_ptr = stack_allocator_.allocate();
             interpreter::execute<traits>(
                 rt_ctx, interpreter::Intercode{code}, stack_ptr.get());
-            auto result = rt_ctx.template copy_to_evmc_result<traits>();
+            auto result = rt_ctx.template copy_to_result<traits>();
             rt_ctx.template return_to<traits>(prev_rt_ctx);
             (void)host.set_runtime_context(prev_rt_ctx);
             host.rethrow_on_active_exception();

@@ -32,8 +32,6 @@
 #include <category/execution/monad/staking/util/val_execution.hpp>
 #include <category/vm/evm/traits.hpp>
 
-#include <evmc/evmc.h>
-
 #include <cstdint>
 #include <optional>
 #include <string_view>
@@ -51,9 +49,11 @@ class StakingContract
 {
     State &state_;
     CallTracerBase &call_tracer_;
+    bool const log_native_transfers_;
 
 public:
-    StakingContract(State &, CallTracerBase &);
+    StakingContract(
+        State &, CallTracerBase &, bool log_native_transfers = false);
 
     struct WithdrawalRequest
     {
@@ -160,7 +160,7 @@ public:
         // Abstracts the boundary block handling from the caller. The consensus
         // stakes and snapshot validator sets are unstable during an epoch, and
         // this function provides a stable interface.
-        StorageArray<u64_be> this_epoch_valset() noexcept
+        StorageArray<u64_be> this_epoch_valset()
         {
             return in_epoch_delay_period.load_checked().has_value()
                        ? valset_snapshot
@@ -174,14 +174,14 @@ public:
         // mapping (address => uint64) val_id
         //
         // Used both for existence and for resolving which validator to reward.
-        StorageVariable<u64_be> val_id(Address const &secp_eth_address) noexcept
+        StorageVariable<u64_be> val_id(Address const &secp_eth_address)
         {
             struct
             {
                 u8_be ns;
                 Address address;
                 uint8_t slots[11];
-            } key{
+            } const key{
                 .ns = Namespace::ValIdSecp,
                 .address = secp_eth_address,
                 .slots = {}};
@@ -193,15 +193,14 @@ public:
         //
         // This mapping only exists to ensure the same bls_key cannot be reused
         // by multiple validators.
-        StorageVariable<u64_be>
-        val_id_bls(Address const &bls_eth_address) noexcept
+        StorageVariable<u64_be> val_id_bls(Address const &bls_eth_address)
         {
             struct
             {
                 u8_be ns;
                 Address address;
                 uint8_t slots[11];
-            } key{
+            } const key{
                 .ns = Namespace::ValIdBls,
                 .address = bls_eth_address,
                 .slots = {}};
@@ -215,14 +214,14 @@ public:
         // Existence in the bucket can be determined by using the bottom 8 bits.
         // within the bucket. This is to save storage since 256 val ids can be
         // packed in a single slot.
-        StorageVariable<u256_be> val_bitset_bucket(u64_be const val_id) noexcept
+        StorageVariable<u256_be> val_bitset_bucket(u64_be const val_id)
         {
             struct
             {
                 u8_be ns;
                 u64_be bucket;
                 uint8_t slots[23];
-            } key{
+            } const key{
                 .ns = Namespace::ValBitset,
                 .bucket = (val_id.native() >> 8),
                 .slots = {}};
@@ -235,14 +234,15 @@ public:
         // A mapping between a validator ID and the validators info. Stake
         // changes are applied to the execution view and copied to the consensus
         // view on snapshot.
-        ValExecution val_execution(u64_be const id) noexcept
+        ValExecution val_execution(u64_be const id)
         {
             struct
             {
                 u8_be ns;
                 u64_be val_id;
                 uint8_t slots[23];
-            } key{.ns = Namespace::ValExecution, .val_id = id, .slots = {}};
+            } const key{
+                .ns = Namespace::ValExecution, .val_id = id, .slots = {}};
 
             return {state_, STAKING_CA, std::bit_cast<bytes32_t>(key)};
         }
@@ -252,14 +252,15 @@ public:
         // A view of the execution stake and commmission at the time of the
         // snapshot. This is only set if the validator has a top N stake. Does
         // not account for boundary block.
-        ConsensusView consensus_view(u64_be const id) noexcept
+        ConsensusView consensus_view(u64_be const id)
         {
             struct
             {
                 u8_be ns;
                 u64_be val_id;
                 uint8_t slots[23];
-            } key{.ns = Namespace::ConsensusStake, .val_id = id, .slots = {}};
+            } const key{
+                .ns = Namespace::ConsensusStake, .val_id = id, .slots = {}};
 
             return {state_, STAKING_CA, std::bit_cast<bytes32_t>(key)};
         }
@@ -268,14 +269,15 @@ public:
         //
         // A view of the consensus stake and commission at the time of the
         // snapshot.  Referenced by reward during the boundary period.
-        SnapshotView snapshot_view(u64_be const id) noexcept
+        SnapshotView snapshot_view(u64_be const id)
         {
             struct
             {
                 u8_be ns;
                 u64_be val_id;
                 uint8_t slots[23];
-            } key{.ns = Namespace::SnapshotStake, .val_id = id, .slots = {}};
+            } const key{
+                .ns = Namespace::SnapshotStake, .val_id = id, .slots = {}};
 
             return {state_, STAKING_CA, std::bit_cast<bytes32_t>(key)};
         }
@@ -287,7 +289,7 @@ public:
         // from the caller.  The consensus stakes and snapshot stakes are
         // unstable during an epoch, and this function provides a stable
         // interface.
-        ConsensusView this_epoch_view(u64_be const id) noexcept
+        ConsensusView this_epoch_view(u64_be const id)
         {
             return in_epoch_delay_period.load_checked().has_value()
                        ? snapshot_view(id)
@@ -297,8 +299,7 @@ public:
         // mapping(uint64 => mapping(address => Delegator)) delegator
         //
         // Retrieve a delegators metadata given a validator.
-        Delegator
-        delegator(u64_be const val_id, Address const &address) noexcept
+        Delegator delegator(u64_be const val_id, Address const &address)
         {
             struct
             {
@@ -306,7 +307,7 @@ public:
                 u64_be val_id;
                 Address address;
                 uint8_t slots[3];
-            } key{
+            } const key{
                 .ns = Namespace::Delegator,
                 .val_id = val_id,
                 .address = address,
@@ -323,7 +324,7 @@ public:
         // ID during undelegate.
         StorageVariable<WithdrawalRequest> withdrawal_request(
             u64_be const val_id, Address const &delegator,
-            u8_be const withdrawal_id) noexcept
+            u8_be const withdrawal_id)
         {
             struct
             {
@@ -332,7 +333,7 @@ public:
                 Address address;
                 u8_be withdrawal_id;
                 uint8_t slots[2];
-            } key{
+            } const key{
                 .ns = Namespace::WithdrawalRequest,
                 .val_id = val_id,
                 .address = delegator,
@@ -349,8 +350,8 @@ public:
         // increments the refcount, and this value is applied on epoch change.
         // This accumulator is not made accessible to delegators until that
         // epoch has completed.
-        StorageVariable<RefCountedAccumulator> accumulated_reward_per_token(
-            u64_be const epoch, u64_be const val_id) noexcept
+        StorageVariable<RefCountedAccumulator>
+        accumulated_reward_per_token(u64_be const epoch, u64_be const val_id)
         {
             struct
             {
@@ -358,7 +359,7 @@ public:
                 u64_be epoch;
                 u64_be val_id;
                 uint8_t slots[15];
-            } key{
+            } const key{
                 .ns = Namespace::Accumulator,
                 .epoch = epoch,
                 .val_id = val_id,
@@ -487,8 +488,9 @@ private:
     // Mint tokens in the staking contract. Done in reward.
     void mint_tokens(uint256_t const &);
 
-    // Send tokens from the staking contract to a delegator. Done in claim and
-    // withdraw.
+    // Send tokens from the staking contract to a delegator and log the
+    // transfer. Done in claim and withdraw.
+    template <Traits traits>
     void send_tokens(Address const &, uint256_t const &);
 
     // Sets an existence bit in state that `val_id` is present in the set.
@@ -510,10 +512,10 @@ private:
     u256_be decrement_accumulator_refcount(u64_be epoch, u64_be val_id);
 
     // Returns the epoch when the delegation or undelegation will activate.
-    uint64_t get_activation_epoch() const noexcept;
+    uint64_t get_activation_epoch() const;
 
     // Checks if a delegation or undelegation are ready
-    bool is_epoch_active(uint64_t) const noexcept;
+    bool is_epoch_active(uint64_t) const;
 
     // Compounds a delegation into the current stake and computes the rewards
     // for the time that stake was active, then folds that stake in the active
@@ -602,8 +604,10 @@ public:
     template <Traits traits>
     Result<byte_string> precompile_compound(
         byte_string_view, Address const &, uint256_be_t const &);
+    template <Traits traits>
     Result<byte_string> precompile_withdraw(
         byte_string_view, Address const &, uint256_be_t const &);
+    template <Traits traits>
     Result<byte_string> precompile_claim_rewards(
         byte_string_view, Address const &, uint256_be_t const &);
     Result<byte_string> precompile_change_commission(

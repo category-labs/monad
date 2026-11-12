@@ -17,7 +17,9 @@
 
 #include <category/vm/evm/opcodes.hpp>
 
+#include <algorithm>
 #include <array>
+#include <vector>
 
 namespace monad::vm::fuzzing
 {
@@ -45,6 +47,9 @@ namespace monad::vm::fuzzing
     //   RETURNDATACOPY  (generate_returndatacopy)
     //   PUSH0 - PUSH32  (generate_push)
     //   CREATE, CREATE2 (generate_create)
+    //
+    // TODO(amsterdam): Amsterdam opcodes are not fuzzed, since the reference
+    // the fuzzer compares against has no Amsterdam revision.
 
     constexpr auto call_non_terminators = std::array{
         CALL,

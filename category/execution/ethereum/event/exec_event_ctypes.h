@@ -28,6 +28,8 @@
  * Definitions of event payloads used with the EXEC event ring
  */
 
+#include <category/core/address.h>
+#include <category/core/bytes32.h>
 #include <category/core/event/event_metadata.h>
 #include <category/execution/ethereum/core/eth_ctypes.h>
 #include <category/execution/monad/core/monad_ctypes.h>
@@ -97,7 +99,7 @@ enum monad_exec_flow_type : uint8_t
 /// details
 struct monad_exec_block_tag
 {
-    monad_c_bytes32 id;    ///< Monad consensus unique ID for block
+    monad_bytes32 id;      ///< Monad consensus unique ID for block
     uint64_t block_number; ///< Proposal is to become this block
 };
 
@@ -112,7 +114,7 @@ struct monad_exec_block_start
     monad_c_uint256_ne chain_id;      ///< Blockchain we're associated with
     struct monad_c_secp256k1_pubkey
         author;                       ///< Public key of block author
-    monad_c_bytes32 parent_eth_hash;  ///< Hash of Ethereum parent block
+    monad_bytes32 parent_eth_hash;    ///< Hash of Ethereum parent block
     struct monad_c_eth_block_input
         eth_block_input;              ///< Ethereum execution inputs
     struct monad_c_native_block_input
@@ -128,7 +130,7 @@ typedef uint32_t monad_exec_block_reject;
 /// Event recorded upon successful block execution
 struct monad_exec_block_end
 {
-    monad_c_bytes32 eth_block_hash;      ///< Hash of Ethereum block
+    monad_bytes32 eth_block_hash;        ///< Hash of Ethereum block
     struct monad_c_eth_block_exec_output
         exec_output;                     ///< Ethereum execution outputs
 };
@@ -154,8 +156,8 @@ struct monad_exec_block_verified
 /// First event recorded when transaction processing starts
 struct monad_exec_txn_header_start
 {
-    monad_c_bytes32 txn_hash;     ///< Keccak hash of transaction RLP
-    monad_c_address sender;       ///< Recovered sender address
+    monad_bytes32 txn_hash;       ///< Keccak hash of transaction RLP
+    monad_address sender;         ///< Recovered sender address
     struct monad_c_eth_txn_header
         txn_header;               ///< Transaction header
 };
@@ -174,7 +176,7 @@ struct monad_exec_txn_auth_list_entry
     uint32_t index;                ///< Array index of EIP-7702 list entry
     struct monad_c_auth_list_entry
         entry;                     ///< Entry for a single authorization
-    monad_c_address authority;     ///< Recovered authority from signature
+    monad_address authority;       ///< Recovered authority from signature
     bool is_valid_authority;       ///< Distinguish true 0x0 from recovery failure
 };
 
@@ -224,17 +226,17 @@ typedef struct monad_c_eth_txn_log monad_exec_txn_log;
 /// exceptional, and other information useful for tracing the call tree.
 struct monad_exec_txn_call_frame
 {
-    uint32_t index;              ///< Array index of call frame
-    monad_c_address caller;      ///< Address initiating call
-    monad_c_address call_target; ///< Address receiving call (or deployment addr)
-    uint8_t opcode;              ///< EVM opcode that creates frame
-    monad_c_uint256_ne value;    ///< I_v: value passed to account during execution
-    uint64_t gas;                ///< g: gas available for message execution
-    uint64_t gas_used;           ///< Gas used by call
-    int32_t evmc_status;         ///< evmc_status_code of call
-    uint64_t depth;              ///< I_e: depth of call context stack
-    uint64_t input_length;       ///< Length of trailing call input
-    uint64_t return_length;      ///< Length of trailing return data
+    uint32_t index;            ///< Array index of call frame
+    monad_address caller;      ///< Address initiating call
+    monad_address call_target; ///< Address receiving call (or deployment addr)
+    uint8_t opcode;            ///< EVM opcode that creates frame
+    monad_c_uint256_ne value;  ///< I_v: value passed to account during execution
+    uint64_t gas;              ///< g: gas available for message execution
+    uint64_t gas_used;         ///< Gas used by call
+    int32_t evmc_status;       ///< evmc_status_code of call
+    uint64_t depth;            ///< I_e: depth of call context stack
+    uint64_t input_length;     ///< Length of trailing call input
+    uint64_t return_length;    ///< Length of trailing return data
 };
 
 /// Context in which EVM accessed / modified an account
@@ -257,7 +259,7 @@ struct monad_exec_account_access_list_header
 struct monad_exec_account_access
 {
     uint32_t index;                        ///< Index in accessed account list
-    monad_c_address address;               ///< Address of account
+    monad_address address;                 ///< Address of account
     enum monad_exec_account_access_context
         access_context;                    ///< Context of account access
     bool is_balance_modified;              ///< True -> modified_balance meaningful
@@ -273,15 +275,15 @@ struct monad_exec_account_access
 /// Event emitted for each account storage key that is accessed
 struct monad_exec_storage_access
 {
-    monad_c_address address;               ///< Address of storage account
+    monad_address address;                 ///< Address of storage account
     uint32_t index;                        ///< Index of storage records in this context
     enum monad_exec_account_access_context
         access_context;                    ///< Context of account access
     bool modified;                         ///< True -> new_value meaningful
     bool transient;                        ///< True -> is transient storage
-    monad_c_bytes32 key;                   ///< Storage key accessed / modified
-    monad_c_bytes32 start_value;           ///< Read (or original) value
-    monad_c_bytes32 end_value;             ///< New value, if modified
+    monad_bytes32 key;                     ///< Storage key accessed / modified
+    monad_bytes32 start_value;             ///< Read (or original) value
+    monad_bytes32 end_value;               ///< New value, if modified
 };
 
 /// Error occurred in execution process (not a validation error)

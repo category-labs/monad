@@ -14,39 +14,42 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/address.hpp>
-#include <category/core/byte_string.hpp>
-#include <category/core/bytes.hpp>
 #include <category/core/hex.hpp>
 #include <category/core/result.hpp>
+#include <category/execution/ethereum/core/receipt.hpp>
+#include <category/execution/ethereum/core/signature.hpp>
+#include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
+#include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
-#include <category/execution/ethereum/validate_transaction.hpp>
+#include <category/execution/ethereum/validate_transaction_error.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/execution/monad/execute_system_transaction.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
 #include <category/execution/monad/system_sender.hpp>
 #include <category/execution/monad/validate_system_transaction.hpp>
 #include <category/mpt/db.hpp>
+#include <category/vm/evm/monad/revision.h>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
-#include <monad/test/traits_test.hpp>
 
-#include <test_resource_data.h>
-
+#include <boost/fiber/future/promise.hpp>
 #include <boost/outcome/success_failure.hpp>
 #include <boost/outcome/try.hpp>
 
 #include <nlohmann/json.hpp>
 
 #include <cstdint>
+#include <format>
+#include <memory>
+#include <variant>
 
 #include <gtest/gtest.h>
 
 using namespace monad;
-using namespace monad::test;
 
 TEST(SystemTransaction, prestate_trace_staking_epoch_change)
 {
@@ -54,7 +57,7 @@ TEST(SystemTransaction, prestate_trace_staking_epoch_change)
     TrieDb tdb{db};
     vm::VM vm;
 
-    MonadDevnet chain;
+    MonadDevnet const chain;
 
     BlockState block_state{tdb, vm};
     BlockMetrics block_metrics;
@@ -91,6 +94,7 @@ TEST(SystemTransaction, prestate_trace_staking_epoch_change)
         // Fulfil this promise such that ExecuteSystemTransaction doesn't wait
         // indefinitely.
         boost::fibers::promise<void> promise;
+        auto prev = promise.get_future();
         promise.set_value();
 
         Result<Receipt> const result =
@@ -102,14 +106,14 @@ TEST(SystemTransaction, prestate_trace_staking_epoch_change)
                 header,
                 block_state,
                 block_metrics,
-                promise,
+                prev,
                 noop_call_tracer,
                 prestate_tracer,
                 /*exec_recorder=*/nullptr}();
 
         EXPECT_TRUE(result.has_value());
 
-        auto const expected = R"({
+        auto const *const expected = R"({
             "0x0000000000000000000000000000000000001000": {
                 "balance": "0x0"
             },
@@ -127,6 +131,7 @@ TEST(SystemTransaction, prestate_trace_staking_epoch_change)
             trace::PrestateTracer{trace, beneficiary};
 
         boost::fibers::promise<void> promise;
+        auto prev = promise.get_future();
         promise.set_value();
 
         Result<Receipt> const result =
@@ -138,14 +143,14 @@ TEST(SystemTransaction, prestate_trace_staking_epoch_change)
                 header,
                 block_state,
                 block_metrics,
-                promise,
+                prev,
                 noop_call_tracer,
                 prestate_tracer,
                 /*exec_recorder=*/nullptr}();
 
         EXPECT_TRUE(result.has_value());
 
-        auto const expected = R"({
+        auto const *const expected = R"({
             "0x0000000000000000000000000000000000001000": {
                 "balance": "0x0",
                 "storage": {
@@ -170,7 +175,7 @@ TEST(SystemTransaction, statediff_trace_staking_epoch_change)
     TrieDb tdb{db};
     vm::VM vm;
 
-    MonadDevnet chain;
+    MonadDevnet const chain;
 
     BlockState block_state{tdb, vm};
     BlockMetrics block_metrics;
@@ -200,6 +205,7 @@ TEST(SystemTransaction, statediff_trace_staking_epoch_change)
         trace::StateTracer statediff_tracer = trace::StateDiffTracer{trace};
 
         boost::fibers::promise<void> promise;
+        auto prev = promise.get_future();
         promise.set_value();
 
         Result<Receipt> const result =
@@ -211,14 +217,14 @@ TEST(SystemTransaction, statediff_trace_staking_epoch_change)
                 header,
                 block_state,
                 block_metrics,
-                promise,
+                prev,
                 noop_call_tracer,
                 statediff_tracer,
                 /*exec_recorder=*/nullptr}();
 
         EXPECT_TRUE(result.has_value());
 
-        auto const expected = R"({
+        auto const *const expected = R"({
             "post": {
                 "0x0000000000000000000000000000000000001000": {
                     "balance": "0x0",
@@ -242,6 +248,7 @@ TEST(SystemTransaction, statediff_trace_staking_epoch_change)
         trace::StateTracer statediff_tracer = trace::StateDiffTracer{trace};
 
         boost::fibers::promise<void> promise;
+        auto prev = promise.get_future();
         promise.set_value();
 
         Result<Receipt> const result =
@@ -253,14 +260,14 @@ TEST(SystemTransaction, statediff_trace_staking_epoch_change)
                 header,
                 block_state,
                 block_metrics,
-                promise,
+                prev,
                 noop_call_tracer,
                 statediff_tracer,
                 /*exec_recorder=*/nullptr}();
 
         EXPECT_TRUE(result.has_value());
 
-        auto const expected = R"({
+        auto const *const expected = R"({
             "post": {
                 "0x0000000000000000000000000000000000001000": {
                     "storage": {
@@ -295,7 +302,7 @@ TEST(SystemTransaction, static_validate_system_transaction_failure)
     TrieDb tdb{db};
     vm::VM vm;
 
-    MonadDevnet chain;
+    MonadDevnet const chain;
 
     BlockState block_state{tdb, vm};
     BlockMetrics block_metrics;
@@ -308,6 +315,7 @@ TEST(SystemTransaction, static_validate_system_transaction_failure)
     auto const tx = Transaction{.type = TransactionType::eip7702};
 
     boost::fibers::promise<void> promise;
+    auto prev = promise.get_future();
     promise.set_value();
 
     Result<Receipt> const result =
@@ -319,7 +327,7 @@ TEST(SystemTransaction, static_validate_system_transaction_failure)
             header,
             block_state,
             block_metrics,
-            promise,
+            prev,
             noop_call_tracer,
             noop_state_tracer,
             /*exec_recorder=*/nullptr}();
@@ -334,7 +342,7 @@ TEST(SystemTransaction, static_validate_transaction_failure)
     TrieDb tdb{db};
     vm::VM vm;
 
-    MonadDevnet chain;
+    MonadDevnet const chain;
 
     BlockState block_state{tdb, vm};
     BlockMetrics block_metrics;
@@ -348,6 +356,7 @@ TEST(SystemTransaction, static_validate_transaction_failure)
         .sc = SignatureAndChain{.chain_id = 1}, .to = staking::STAKING_CA};
 
     boost::fibers::promise<void> promise;
+    auto prev = promise.get_future();
     promise.set_value();
 
     Result<Receipt> const result =
@@ -359,7 +368,7 @@ TEST(SystemTransaction, static_validate_transaction_failure)
             header,
             block_state,
             block_metrics,
-            promise,
+            prev,
             noop_call_tracer,
             noop_state_tracer,
             /*exec_recorder=*/nullptr}();

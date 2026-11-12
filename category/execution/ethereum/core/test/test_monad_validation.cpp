@@ -56,12 +56,20 @@ TEST(MonadValidation, ActivationIsDevnetAndPragueOnly)
 {
     auto tx = transaction();
     EXPECT_TRUE(validate(tx).has_value());
+    EXPECT_TRUE(validate<MonadTraits<MONAD_EIGHT>>(tx).has_value());
+    EXPECT_TRUE(validate<MonadTraits<MONAD_NEXT>>(tx).has_value());
     EXPECT_EQ(
         validate<MonadTraits<MONAD_TWO>>(tx).error(),
         TransactionError::TypeNotSupported);
     EXPECT_EQ(
-        validate<EvmTraits<MONAD_ETH_PRAGUE>>(tx).error(),
+        validate<EvmTraits<EvmRevision::Prague>>(tx).error(),
         TransactionError::TypeNotSupported);
+    EXPECT_EQ(
+        validate<EvmTraits<EvmRevision::Amsterdam>>(tx).error(),
+        TransactionError::TypeNotSupported);
+    tx.type = static_cast<TransactionType>(0x41);
+    EXPECT_EQ(validate(tx).error(), TransactionError::TypeNotSupported);
+    tx.type = TransactionType::monad;
     tx.sc.chain_id = 143;
     EXPECT_EQ(validate(tx, 143).error(), TransactionError::TypeNotSupported);
     EXPECT_EQ(validate(tx).error(), TransactionError::WrongChainId);

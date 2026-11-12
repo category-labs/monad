@@ -23,8 +23,6 @@
 
 #include <asmjit/x86.h>
 
-#include <evmc/evmc.h>
-
 #include <memory>
 #include <span>
 

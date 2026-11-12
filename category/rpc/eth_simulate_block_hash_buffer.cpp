@@ -28,7 +28,7 @@
 MONAD_NAMESPACE_BEGIN
 
 EthSimulateBlockHashBuffer::EthSimulateBlockHashBuffer(
-    mpt::RODb const &db, uint64_t const n,
+    mpt::RODb const *const db, uint64_t const n,
     std::optional<bytes32_t const> const &base_block_hash)
     : LazyBlockHash(db, n)
     , n_{n}

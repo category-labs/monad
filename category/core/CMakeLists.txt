@@ -13,8 +13,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-cmake_policy(SET CMP0144 NEW) # find_package uses upper-case _ROOT variables
-
 include(CheckCXXSourceCompiles)
 include(CheckCXXSourceRuns)
 include(CheckCXXSymbolExists)
@@ -106,6 +104,7 @@ add_library(
   # config
   "config.hpp"
   # core
+  "address.h"
   "address.hpp"
   "asan.h"
   "assert.c"
@@ -117,6 +116,7 @@ add_library(
   "blake3.hpp"
   "byte_string.hpp"
   "bytes.hpp"
+  "bytes32.h"
   "bytes_hash_compare.hpp"
   "cases.hpp"
   "checked_math.cpp"
@@ -265,7 +265,6 @@ target_link_libraries(monad_core PUBLIC CLI11::CLI11)
 target_link_libraries(monad_core PUBLIC komihash)
 target_link_libraries(monad_core PUBLIC blake3)
 target_link_libraries(monad_core PUBLIC monad_crypto)
-target_link_libraries(monad_core PUBLIC evmc)
 target_link_libraries(monad_core PUBLIC quill)
 target_link_libraries(monad_core PUBLIC unordered_dense)
 target_link_libraries(monad_core PUBLIC PkgConfig::zstd)

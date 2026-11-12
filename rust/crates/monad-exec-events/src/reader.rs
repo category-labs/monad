@@ -17,7 +17,7 @@ use monad_event_ring::{EventDescriptor, EventReader};
 
 use crate::{
     ffi::{
-        monad_c_bytes32, monad_exec_iter_block_id_prev, monad_exec_iter_block_number_prev,
+        monad_bytes32, monad_exec_iter_block_id_prev, monad_exec_iter_block_number_prev,
         monad_exec_iter_consensus_prev, monad_exec_ring_block_id_matches,
         monad_exec_ring_get_block_number, MONAD_EXEC_NONE,
     },
@@ -30,7 +30,7 @@ pub trait ExecEventDescriptorExt {
     fn get_block_number(&self) -> Option<u64>;
 
     /// Checks whether the current [`EventDescriptor`] is associated with the provided `block_id`.
-    fn block_id_matches(&self, block_id: &monad_c_bytes32) -> bool;
+    fn block_id_matches(&self, block_id: &monad_bytes32) -> bool;
 }
 
 impl<'ring> ExecEventDescriptorExt for EventDescriptor<'ring, ExecEventDecoder> {
@@ -38,7 +38,7 @@ impl<'ring> ExecEventDescriptorExt for EventDescriptor<'ring, ExecEventDecoder> 
         self.with_raw(monad_exec_ring_get_block_number)
     }
 
-    fn block_id_matches(&self, block_id: &monad_c_bytes32) -> bool {
+    fn block_id_matches(&self, block_id: &monad_bytes32) -> bool {
         self.with_raw(|c_event_ring, c_event_descriptor| {
             monad_exec_ring_block_id_matches(c_event_ring, c_event_descriptor, block_id)
         })
@@ -75,7 +75,7 @@ pub trait ExecEventReaderExt<'ring> {
     /// event descriptor. Otherwise, the reader remains unchanged.
     fn block_id_prev(
         &mut self,
-        block_id: &monad_c_bytes32,
+        block_id: &monad_bytes32,
         filter: Option<ExecEventType>,
     ) -> Option<EventDescriptor<'ring, ExecEventDecoder>>;
 }
@@ -110,7 +110,7 @@ impl<'ring> ExecEventReaderExt<'ring> for EventReader<'ring, ExecEventDecoder> {
 
     fn block_id_prev(
         &mut self,
-        block_id: &monad_c_bytes32,
+        block_id: &monad_bytes32,
         filter: Option<ExecEventType>,
     ) -> Option<EventDescriptor<'ring, ExecEventDecoder>> {
         self.with_raw(|c_event_ring, c_event_iterator| {

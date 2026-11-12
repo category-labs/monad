@@ -36,23 +36,23 @@ class Secp256k1Pubkey
     int parse_result_;
 
 public:
-    Secp256k1Pubkey(byte_string_fixed<33> const &serialized)
+    explicit Secp256k1Pubkey(byte_string_fixed<33> const &serialized)
     {
         parse_result_ = secp256k1_ec_pubkey_parse(
             get_secp_context(), &pubkey_, serialized.data(), serialized.size());
     }
 
-    bool is_valid() const noexcept
+    bool is_valid() const
     {
         return parse_result_ == 1;
     }
 
-    secp256k1_pubkey const &get() const noexcept
+    secp256k1_pubkey const &get() const
     {
         return pubkey_;
     }
 
-    byte_string_fixed<65> serialize() const noexcept
+    byte_string_fixed<65> serialize() const
     {
         byte_string_fixed<65> serialized;
         size_t uncompressed_pubkey_size = 65;
@@ -73,27 +73,27 @@ class Secp256k1Signature
     int parse_result_;
 
 public:
-    Secp256k1Signature(byte_string_fixed<64> const &serialized)
+    explicit Secp256k1Signature(byte_string_fixed<64> const &serialized)
     {
         parse_result_ = secp256k1_ecdsa_signature_parse_compact(
             get_secp_context(), &sig_, serialized.data());
     }
 
-    bool is_valid() const noexcept
+    bool is_valid() const
     {
         return parse_result_ == 1;
     }
 
-    bool verify(Secp256k1Pubkey const &pubkey, byte_string_view const message)
-        const noexcept
+    bool
+    verify(Secp256k1Pubkey const &pubkey, byte_string_view const message) const
     {
         bytes32_t const digest = to_bytes(blake3(message));
-        int res = secp256k1_ecdsa_verify(
+        int const res = secp256k1_ecdsa_verify(
             get_secp_context(), &sig_, digest.bytes, &pubkey.get());
         return res == 1;
     }
 
-    secp256k1_ecdsa_signature const &get() const noexcept
+    secp256k1_ecdsa_signature const &get() const
     {
         return sig_;
     }

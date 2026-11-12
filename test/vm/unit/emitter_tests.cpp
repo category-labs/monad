@@ -24,6 +24,7 @@
 #include <category/vm/compiler/types.hpp>
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/evm/tx_context.hpp>
 #include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/runtime/allocator.hpp>
 #include <category/vm/runtime/math.hpp>
@@ -35,9 +36,6 @@
 
 #include <asmjit/core/globals.h>
 #include <asmjit/core/jitruntime.h>
-
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 
 #include <gtest/gtest.h>
 
@@ -141,7 +139,7 @@ namespace
     }
 
     monad::vm::test::TestContext test_context(
-        evmc_tx_context const *const tx_context,
+        TxContext const *const tx_context,
         int64_t const gas_remaining = (uint64_t{1} << 63) - 1)
     {
         return monad::vm::test::TestContext{[&](auto &x) {
@@ -287,7 +285,7 @@ namespace
         emit.return_();
 
         entrypoint_t entry = emit.finish_contract(rt);
-        evmc_tx_context tx_context{};
+        TxContext tx_context{};
         auto ctx = test_context(&tx_context);
         auto const &ret = ctx->result;
 
@@ -328,7 +326,7 @@ namespace
                    Emitter::location_type_to_string(right_loc));
     }
 
-    template <Traits traits = EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>
+    template <Traits traits = EvmTraits<EvmRevision::LatestStable>>
     void pure_una_instr_test_instance(
         asmjit::JitRuntime &rt, PureEmitterInstr instr, uint256_t const &input,
         Emitter::LocationType loc, uint256_t const &result,
@@ -367,7 +365,7 @@ namespace
         emit.return_();
 
         entrypoint_t entry = emit.finish_contract(rt);
-        evmc_tx_context tx_context{};
+        TxContext tx_context{};
         auto ctx = test_context(&tx_context);
         auto const &ret = ctx->result;
 
@@ -467,7 +465,7 @@ namespace
         emit.return_();
 
         entrypoint_t entry = emit.finish_contract(rt);
-        evmc_tx_context tx_context{};
+        TxContext tx_context{};
         auto ctx = test_context(&tx_context);
         auto const &ret = ctx->result;
 
@@ -519,7 +517,7 @@ namespace
             rt, opcode, [&](Emitter &e) { (e.*instr)(); }, left, right, result);
     }
 
-    template <Traits traits = EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>
+    template <Traits traits = EvmTraits<EvmRevision::LatestStable>>
     void pure_una_instr_test(
         asmjit::JitRuntime &rt, EvmOpCode opcode, PureEmitterInstr instr,
         uint256_t const &input, uint256_t const &result)
@@ -602,7 +600,7 @@ namespace
         emit.return_();
 
         entrypoint_t entry = emit.finish_contract(rt);
-        evmc_tx_context tx_context{};
+        TxContext tx_context{};
         auto ctx = test_context(&tx_context);
         auto const &ret = ctx->result;
 
@@ -746,7 +744,7 @@ namespace
         emit.revert();
 
         entrypoint_t entry = emit.finish_contract(rt);
-        evmc_tx_context tx_context{};
+        TxContext tx_context{};
         auto ctx = test_context(&tx_context);
         auto const &ret = ctx->result;
 
@@ -837,7 +835,7 @@ namespace
         emit.return_();
 
         entrypoint_t entry = emit.finish_contract(rt);
-        evmc_tx_context tx_context{};
+        TxContext tx_context{};
         auto ctx = test_context(&tx_context);
         auto const &ret = ctx->result;
 
@@ -882,7 +880,7 @@ TEST(Emitter, empty)
     TestEmitter emit{rt, code_size_t{}};
 
     entrypoint_t entry = emit.finish_contract(rt);
-    evmc_tx_context tx_context{};
+    TxContext tx_context{};
     auto ctx = test_context(&tx_context);
     auto const &ret = ctx->result;
 
@@ -900,7 +898,7 @@ TEST(Emitter, stop)
     emit.stop();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    evmc_tx_context tx_context{};
+    TxContext tx_context{};
     auto ctx = test_context(&tx_context);
     auto const &ret = ctx->result;
 
@@ -924,7 +922,7 @@ TEST(Emitter, invalid_instruction)
     emit.invalid_instruction();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    evmc_tx_context tx_context{};
+    TxContext tx_context{};
     auto ctx = test_context(&tx_context);
     auto const &ret = ctx->result;
 
@@ -942,7 +940,7 @@ TEST(Emitter, gas_decrement_static_work_no_check_1)
     emit.stop();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    evmc_tx_context tx_context{};
+    TxContext tx_context{};
     auto ctx = test_context(&tx_context, 5);
     auto const &ret = ctx->result;
 
@@ -962,7 +960,7 @@ TEST(Emitter, gas_decrement_static_work_no_check_2)
     emit.stop();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    evmc_tx_context tx_context{};
+    TxContext tx_context{};
     auto ctx =
         test_context(&tx_context, Emitter::STATIC_WORK_GAS_CHECK_THRESHOLD - 1);
     auto const &ret = ctx->result;
@@ -982,7 +980,7 @@ TEST(Emitter, gas_decrement_static_work_check_non_negative_1)
     emit.stop();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    evmc_tx_context tx_context{};
+    TxContext tx_context{};
     auto ctx =
         test_context(&tx_context, Emitter::STATIC_WORK_GAS_CHECK_THRESHOLD);
     auto const &ret = ctx->result;
@@ -1002,7 +1000,7 @@ TEST(Emitter, gas_decrement_static_work_check_non_negative_2)
     emit.stop();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    evmc_tx_context tx_context{};
+    TxContext tx_context{};
     auto ctx =
         test_context(&tx_context, Emitter::STATIC_WORK_GAS_CHECK_THRESHOLD + 1);
     auto const &ret = ctx->result;
@@ -1028,7 +1026,7 @@ TEST(Emitter, gas_decrement_static_work_check_non_negative_3)
     emit.stop();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    evmc_tx_context tx_context{};
+    TxContext tx_context{};
     auto ctx =
         test_context(&tx_context, 4 * Emitter::STATIC_WORK_GAS_CHECK_THRESHOLD);
     auto const &ret = ctx->result;
@@ -1049,7 +1047,7 @@ TEST(Emitter, gas_decrement_unbounded_work)
     emit.stop();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    evmc_tx_context tx_context{};
+    TxContext tx_context{};
     auto ctx = test_context(&tx_context, 5);
     auto const &ret = ctx->result;
 
@@ -1074,7 +1072,7 @@ TEST(Emitter, return_)
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    evmc_tx_context tx_context{};
+    TxContext tx_context{};
     auto ctx = test_context(&tx_context);
     auto const &ret = ctx->result;
 
@@ -1099,7 +1097,7 @@ TEST(Emitter, revert)
     emit.revert();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    evmc_tx_context tx_context{};
+    TxContext tx_context{};
     auto ctx = test_context(&tx_context);
     auto const &ret = ctx->result;
 
@@ -1159,7 +1157,7 @@ TEST(Emitter, mov_stack_index_to_avx_reg)
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    evmc_tx_context tx_context{};
+    TxContext tx_context{};
     auto ctx = test_context(&tx_context);
     auto const &ret = ctx->result;
 
@@ -1212,7 +1210,7 @@ TEST(Emitter, mov_literal_to_ymm)
             emit.return_();
 
             entrypoint_t entry = emit.finish_contract(rt);
-            evmc_tx_context tx_context{};
+            TxContext tx_context{};
             auto ctx = test_context(&tx_context);
             auto const &ret = ctx->result;
 
@@ -1275,7 +1273,7 @@ TEST(Emitter, mov_stack_index_to_general_reg)
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    evmc_tx_context tx_context{};
+    TxContext tx_context{};
     auto ctx = test_context(&tx_context);
     auto const &ret = ctx->result;
 
@@ -1348,7 +1346,7 @@ TEST(Emitter, mov_stack_index_to_stack_offset)
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    evmc_tx_context tx_context{};
+    TxContext tx_context{};
     auto ctx = test_context(&tx_context);
     auto const &ret = ctx->result;
 
@@ -1400,7 +1398,7 @@ TEST(Emitter, discharge_deferred_comparison)
     ASSERT_FALSE(stack.has_deferred_comparison());
 
     entrypoint_t entry = emit.finish_contract(rt);
-    evmc_tx_context tx_context{};
+    TxContext tx_context{};
     auto ctx = test_context(&tx_context);
     auto const &ret = ctx->result;
 
@@ -1491,7 +1489,7 @@ TEST(Emitter, discharge_negated_deferred_comparison)
     ASSERT_FALSE(stack.has_deferred_comparison());
 
     entrypoint_t entry = emit.finish_contract(rt);
-    evmc_tx_context tx_context{};
+    TxContext tx_context{};
     auto ctx = test_context(&tx_context);
     auto const &ret = ctx->result;
 
@@ -2402,7 +2400,7 @@ TEST(Emitter, exp)
         for (int i = 0; i < rep_count; ++i) {
             emit.push(513); // some exponent over 512
             emit.push(13); // base (with popcount != 1)
-            emit.exp<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>(
+            emit.exp<EvmTraits<EvmRevision::LatestStable>>(
                 std::numeric_limits<int32_t>::max());
             emit.pop();
             ASSERT_EQ(
@@ -2414,7 +2412,7 @@ TEST(Emitter, exp)
         emit.push(0);
         emit.return_();
         entrypoint_t entry = emit.finish_contract(rt);
-        evmc_tx_context tx_context{};
+        TxContext tx_context{};
         auto ctx = test_context(&tx_context);
         auto const &ret = ctx->result;
 
@@ -2457,7 +2455,7 @@ TEST(Emitter, exp)
                 rt,
                 EXP,
                 [&](Emitter &em) {
-                    (em.exp<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>(
+                    (em.exp<EvmTraits<EvmRevision::LatestStable>>(
                         std::numeric_limits<int32_t>::max()));
                 },
                 {b},
@@ -2467,13 +2465,13 @@ TEST(Emitter, exp)
                 rt,
                 EXP,
                 [&](Emitter &em) {
-                    (em.exp<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>(
+                    (em.exp<EvmTraits<EvmRevision::LatestStable>>(
                         std::numeric_limits<int32_t>::max()));
                 },
                 {b},
                 {e},
                 runtime::exp_dynamic_gas_cost_multiplier<
-                    EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>() *
+                    EvmTraits<EvmRevision::LatestStable>>() *
                     count_significant_bytes(e));
         }
     }
@@ -3111,7 +3109,7 @@ TEST(Emitter, shift_literal_by_non_literal_without_free_general_reg)
         emit.return_();
 
         entrypoint_t entry = emit.finish_contract(rt);
-        evmc_tx_context tx_context{};
+        TxContext tx_context{};
         auto ctx = test_context(&tx_context);
         auto const &ret = ctx->result;
         auto stack_memory = test_stack_memory();
@@ -3133,24 +3131,24 @@ TEST(Emitter, clz)
     asmjit::JitRuntime rt;
 
     // Test zero case
-    pure_una_instr_test<EvmTraits<MONAD_ETH_OSAKA>>(
+    pure_una_instr_test<EvmTraits<EvmRevision::Osaka>>(
         rt, CLZ, &Emitter::clz, 0, 256);
 
     // Test all leading zeros
     for (uint64_t i = 0; i < 256; ++i) {
         // 1 hot bit at different positions
         uint256_t value{uint256_t{1} << (255 - i)};
-        pure_una_instr_test<EvmTraits<MONAD_ETH_OSAKA>>(
+        pure_una_instr_test<EvmTraits<EvmRevision::Osaka>>(
             rt, CLZ, &Emitter::clz, value, countl_zero(value));
 
         // All ones except leading zeros
         value = ~uint256_t{0} >> i;
-        pure_una_instr_test<EvmTraits<MONAD_ETH_OSAKA>>(
+        pure_una_instr_test<EvmTraits<EvmRevision::Osaka>>(
             rt, CLZ, &Emitter::clz, value, countl_zero(value));
 
         // Test with some random bits set after the leading one
         value = value | (uint256_t{0xDEADBEEF} << (i * 4));
-        pure_una_instr_test<EvmTraits<MONAD_ETH_OSAKA>>(
+        pure_una_instr_test<EvmTraits<EvmRevision::Osaka>>(
             rt, CLZ, &Emitter::clz, value, countl_zero(value));
     }
 }
@@ -3166,7 +3164,7 @@ TEST(Emitter, clz_without_free_regs)
             bytecode.push_back(op);
         }
         auto ir = basic_blocks::BasicBlocksIR::unsafe_from<
-            EvmTraits<MONAD_ETH_OSAKA>>(std::move(bytecode));
+            EvmTraits<EvmRevision::Osaka>>(std::move(bytecode));
         TestEmitter emit{rt, ir.codesize};
         (void)emit.begin_new_block(ir.blocks()[0]);
 
@@ -3202,7 +3200,7 @@ TEST(Emitter, clz_without_free_regs)
         emit.return_();
 
         entrypoint_t entry = emit.finish_contract(rt);
-        evmc_tx_context tx_context{};
+        TxContext tx_context{};
         auto ctx = test_context(&tx_context);
         auto const &ret = ctx->result;
         auto stack_memory = test_stack_memory();
@@ -3225,7 +3223,7 @@ TEST(Emitter, clz_without_free_regs)
 TEST(Emitter, clz_with_deferred_comparison)
 {
     auto ir =
-        basic_blocks::BasicBlocksIR::unsafe_from<EvmTraits<MONAD_ETH_OSAKA>>(
+        basic_blocks::BasicBlocksIR::unsafe_from<EvmTraits<EvmRevision::Osaka>>(
             {PUSH0, PUSH0, PUSH0, LT, SWAP1, CLZ, RETURN});
     asmjit::JitRuntime rt;
 
@@ -3246,7 +3244,7 @@ TEST(Emitter, clz_with_deferred_comparison)
             emit.return_();
 
             entrypoint_t entry = emit.finish_contract(rt);
-            evmc_tx_context tx_context{};
+            TxContext tx_context{};
             auto ctx = test_context(&tx_context);
             auto const &ret = ctx->result;
             auto stack_memory = test_stack_memory();
@@ -3308,7 +3306,7 @@ TEST(Emitter, call_runtime_12_arg_fun)
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    evmc_tx_context tx_context{};
+    TxContext tx_context{};
     auto ctx = test_context(&tx_context, 10);
     auto const &ret = ctx->result;
 
@@ -3346,7 +3344,7 @@ TEST(Emitter, call_runtime_11_arg_fun)
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    evmc_tx_context tx_context{};
+    TxContext tx_context{};
     auto ctx = test_context(&tx_context, 10);
     auto const &ret = ctx->result;
 
@@ -3369,11 +3367,11 @@ TEST(Emitter, runtime_exit)
     emit.push(300);
     emit.push(10);
     emit.call_runtime(
-        9, true, runtime::exp<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>);
+        9, true, runtime::exp<EvmTraits<EvmRevision::LatestStable>>);
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    evmc_tx_context tx_context{};
+    TxContext tx_context{};
     auto ctx = test_context(&tx_context, 99);
     auto const &ret = ctx->result;
 
@@ -3395,7 +3393,7 @@ TEST(Emitter, address)
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    evmc_tx_context tx_context{};
+    TxContext tx_context{};
     auto ctx = test_context(&tx_context);
     auto const &ret = ctx->result;
 
@@ -3426,7 +3424,7 @@ TEST(Emitter, origin)
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    evmc_tx_context tx_context{};
+    TxContext tx_context{};
     auto ctx = test_context(&tx_context);
     auto const &ret = ctx->result;
 
@@ -3450,7 +3448,7 @@ TEST(Emitter, gasprice)
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    evmc_tx_context tx_context{};
+    TxContext tx_context{};
     auto ctx = test_context(&tx_context);
     auto const &ret = ctx->result;
 
@@ -3474,7 +3472,7 @@ TEST(Emitter, gaslimit)
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    evmc_tx_context tx_context{};
+    TxContext tx_context{};
     auto ctx = test_context(&tx_context);
     auto const &ret = ctx->result;
 
@@ -3498,7 +3496,7 @@ TEST(Emitter, coinbase)
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    evmc_tx_context tx_context{};
+    TxContext tx_context{};
     auto ctx = test_context(&tx_context);
     auto const &ret = ctx->result;
 
@@ -3522,7 +3520,7 @@ TEST(Emitter, timestamp)
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    evmc_tx_context tx_context{};
+    TxContext tx_context{};
     auto ctx = test_context(&tx_context);
     auto const &ret = ctx->result;
 
@@ -3546,7 +3544,7 @@ TEST(Emitter, number)
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    evmc_tx_context tx_context{};
+    TxContext tx_context{};
     auto ctx = test_context(&tx_context);
     auto const &ret = ctx->result;
 
@@ -3571,7 +3569,7 @@ TEST(Emitter, prevrandao)
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    evmc_tx_context tx_context{};
+    TxContext tx_context{};
     auto ctx = test_context(&tx_context);
     auto const &ret = ctx->result;
 
@@ -3595,7 +3593,7 @@ TEST(Emitter, chainid)
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    evmc_tx_context tx_context{};
+    TxContext tx_context{};
     auto ctx = test_context(&tx_context);
     auto const &ret = ctx->result;
 
@@ -3619,7 +3617,7 @@ TEST(Emitter, basefee)
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    evmc_tx_context tx_context{};
+    TxContext tx_context{};
     auto ctx = test_context(&tx_context);
     auto const &ret = ctx->result;
 
@@ -3644,7 +3642,7 @@ TEST(Emitter, blobbasefee)
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    evmc_tx_context tx_context{};
+    TxContext tx_context{};
     auto ctx = test_context(&tx_context);
     auto const &ret = ctx->result;
 
@@ -3654,6 +3652,32 @@ TEST(Emitter, blobbasefee)
 
     ASSERT_EQ(load_le<uint256_t>(ret.offset), 0xb00);
     ASSERT_EQ(load_le<uint256_t>(ret.size), 0xb00);
+}
+
+TEST(Emitter, slotnum)
+{
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from(
+        {SLOTNUM, SLOTNUM},
+        basic_blocks::ChainMarker<EvmTraits<EvmRevision::Amsterdam>>{});
+
+    asmjit::JitRuntime rt;
+    TestEmitter emit{rt, ir.codesize};
+    (void)emit.begin_new_block(ir.blocks()[0]);
+    emit.slotnum();
+    emit.slotnum();
+    emit.return_();
+
+    entrypoint_t entry = emit.finish_contract(rt);
+    TxContext tx_context{};
+    auto ctx = test_context(&tx_context);
+    auto const &ret = ctx->result;
+
+    tx_context.block_round = 8;
+
+    entry(&*ctx, nullptr);
+
+    ASSERT_EQ(load_le<uint256_t>(ret.offset), 8);
+    ASSERT_EQ(load_le<uint256_t>(ret.size), 8);
 }
 
 TEST(Emitter, caller)
@@ -3668,7 +3692,7 @@ TEST(Emitter, caller)
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    evmc_tx_context tx_context{};
+    TxContext tx_context{};
     auto ctx = test_context(&tx_context);
     auto const &ret = ctx->result;
 
@@ -3700,7 +3724,7 @@ TEST(Emitter, calldatasize)
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    evmc_tx_context tx_context{};
+    TxContext tx_context{};
     auto ctx = test_context(&tx_context);
     auto const &ret = ctx->result;
     ctx->env.input_data_size = 5;
@@ -3724,7 +3748,7 @@ TEST(Emitter, returndatasize)
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    evmc_tx_context tx_context{};
+    TxContext tx_context{};
     auto ctx = test_context(&tx_context);
     auto const &ret = ctx->result;
     ctx->env.return_data_size = 6;
@@ -3747,7 +3771,7 @@ TEST(Emitter, msize)
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    evmc_tx_context tx_context{};
+    TxContext tx_context{};
     auto ctx = test_context(&tx_context);
     auto const &ret = ctx->result;
     ctx->memory.size = 0xffffffff;
@@ -3828,7 +3852,7 @@ static void memory_instructions_test_impl()
         emit.return_();
 
         entrypoint_t entry = emit.finish_contract(rt);
-        evmc_tx_context tx_context{};
+        TxContext tx_context{};
         auto ctx = test_context(&tx_context);
         auto const &ret = ctx->result;
 
@@ -3938,7 +3962,7 @@ static void mstore_upper_bound_test_impl()
         emit.stop();
 
         entrypoint_t entry = emit.finish_contract(rt);
-        evmc_tx_context tx_context{};
+        TxContext tx_context{};
         auto ctx = test_context(&tx_context);
         auto const &ret = ctx->result;
         auto stack_memory = test_stack_memory();
@@ -3960,7 +3984,7 @@ static void mstore_upper_bound_test_impl()
         emit.stop();
 
         entrypoint_t entry = emit.finish_contract(rt);
-        evmc_tx_context tx_context{};
+        TxContext tx_context{};
         auto ctx = test_context(&tx_context);
         auto const &ret = ctx->result;
         auto stack_memory = test_stack_memory();
@@ -4006,7 +4030,7 @@ static void mload_upper_bound_test_impl()
         emit.stop();
 
         entrypoint_t entry = emit.finish_contract(rt);
-        evmc_tx_context tx_context{};
+        TxContext tx_context{};
         auto ctx = test_context(&tx_context);
         auto const &ret = ctx->result;
         auto stack_memory = test_stack_memory();
@@ -4027,7 +4051,7 @@ static void mload_upper_bound_test_impl()
         emit.stop();
 
         entrypoint_t entry = emit.finish_contract(rt);
-        evmc_tx_context tx_context{};
+        TxContext tx_context{};
         auto ctx = test_context(&tx_context);
         auto const &ret = ctx->result;
         auto stack_memory = test_stack_memory();
@@ -4087,7 +4111,7 @@ static void memory_repeated_offset_test_impl()
         emit.return_();
 
         entrypoint_t entry = emit.finish_contract(rt);
-        evmc_tx_context tx_context{};
+        TxContext tx_context{};
         auto ctx = test_context(&tx_context);
         auto const &ret = ctx->result;
         auto stack_memory = test_stack_memory();
@@ -4105,9 +4129,105 @@ TEST(Emitter, MemoryRepeatedOffset)
     memory_repeated_offset_test_impl<runtime::Memory::Version::MIP3>();
 }
 
+template <runtime::Memory::Version memory_version>
+static void memory_repeated_literal_offset_test_impl()
+{
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from(
+        {PUSH1,    1,     PUSH1, 64,       MSTORE, PUSH1, 2,     PUSH1, 32,
+         MSTORE,   PUSH1, 64,    MLOAD,    PUSH1,  96,    MLOAD, ADD,   MSIZE,
+         PUSH1,    27,    JUMP,  JUMPDEST, PUSH2,  1,     0,     MLOAD, STOP,
+         JUMPDEST, PUSH1, 160,   MLOAD,    POP,    RETURN});
+
+    asmjit::JitRuntime rt;
+    TestEmitter emit{rt, ir.codesize};
+    for (auto const &[k, _] : ir.jump_dests()) {
+        emit.add_jump_dest(k);
+    }
+    (void)emit.begin_new_block(ir.blocks().at(0));
+    emit.push(1);
+    emit.push(64);
+    emit.mstore<memory_version>();
+    emit.push(2);
+    emit.push(32);
+    emit.mstore<memory_version>();
+    emit.push(64);
+    emit.mload<memory_version>();
+    emit.push(96);
+    emit.mload<memory_version>();
+    emit.add();
+    emit.msize();
+    emit.push(27);
+    emit.jump();
+    (void)emit.begin_new_block(ir.blocks().at(1));
+    emit.push(256);
+    emit.mload<memory_version>();
+    emit.stop();
+    (void)emit.begin_new_block(ir.blocks().at(2));
+    emit.push(160);
+    emit.mload<memory_version>();
+    emit.pop();
+    emit.return_();
+
+    entrypoint_t entry = emit.finish_contract(rt);
+    TxContext tx_context{};
+    auto ctx = test_context(&tx_context);
+    auto const &ret = ctx->result;
+    auto stack_memory = test_stack_memory();
+    entry(&*ctx, stack_memory.get());
+
+    ASSERT_EQ(ret.status, runtime::StatusCode::Success);
+    ASSERT_EQ(load_le<uint256_t>(ret.offset), 128);
+    ASSERT_EQ(load_le<uint256_t>(ret.size), 1);
+    ASSERT_EQ(ctx->memory.size, 192);
+}
+
+template <runtime::Memory::Version memory_version>
+static void memory_literal_offset_kept_fallthrough_test_impl()
+{
+    static constexpr std::array<uint8_t, 3> offsets{32, 32, 80};
+    std::vector<uint8_t> bytecode{PUSH1, 64, MLOAD, POP, PUSH0, PUSH0, JUMPI};
+    for (auto const off : offsets) {
+        bytecode.insert(bytecode.end(), {PUSH1, off, MLOAD, POP});
+    }
+    bytecode.push_back(STOP);
+    auto ir = basic_blocks::BasicBlocksIR::unsafe_from(bytecode);
+
+    asmjit::JitRuntime const rt;
+    TestEmitter emit{rt, ir.codesize};
+    (void)emit.begin_new_block(ir.blocks().at(0));
+    emit.push(64);
+    emit.mload<memory_version>();
+    emit.pop();
+    emit.push(0);
+    emit.push(0);
+    emit.jumpi(ir.blocks().at(1));
+    (void)emit.begin_new_block(ir.blocks().at(1));
+    std::vector<size_t> sizes{emit.estimate_size()};
+    for (auto const off : offsets) {
+        emit.push(off);
+        emit.mload<memory_version>();
+        emit.pop();
+        sizes.push_back(emit.estimate_size());
+    }
+    emit.stop();
+
+    ASSERT_EQ(sizes[1] - sizes[0], sizes[2] - sizes[1]);
+    ASSERT_GT(sizes[3] - sizes[2], sizes[2] - sizes[1]);
+}
+
+TEST(Emitter, MemoryRepeatedLiteralOffset)
+{
+    memory_repeated_literal_offset_test_impl<runtime::Memory::Version::V1>();
+    memory_repeated_literal_offset_test_impl<runtime::Memory::Version::MIP3>();
+    memory_literal_offset_kept_fallthrough_test_impl<
+        runtime::Memory::Version::V1>();
+    memory_literal_offset_kept_fallthrough_test_impl<
+        runtime::Memory::Version::MIP3>();
+}
+
 TEST(Emitter, calldataload)
 {
-    evmc_tx_context tx_context{};
+    TxContext tx_context{};
     auto ctx = test_context(&tx_context);
     uint8_t calldata[33];
     for (uint8_t i = 0; i < sizeof(calldata); ++i) {
@@ -4200,7 +4320,7 @@ TEST(Emitter, calldataload_not_bounded_by_bits)
         emit.return_();
 
         entrypoint_t entry = emit.finish_contract(rt);
-        evmc_tx_context tx_context{};
+        TxContext tx_context{};
         auto ctx = test_context(&tx_context);
         ctx->env.input_data = input_data.get();
         ctx->env.input_data_size = input_data_size;
@@ -4226,7 +4346,7 @@ TEST(Emitter, calldataload_not_bounded_by_bits)
         emit.return_();
 
         entrypoint_t entry = emit.finish_contract(rt);
-        evmc_tx_context tx_context{};
+        TxContext tx_context{};
         auto ctx = test_context(&tx_context);
         ctx->env.input_data = input_data.get();
         ctx->env.input_data_size = input_data_size;
@@ -4252,7 +4372,7 @@ TEST(Emitter, calldataload_not_bounded_by_bits)
         emit.return_();
 
         entrypoint_t entry = emit.finish_contract(rt);
-        evmc_tx_context tx_context{};
+        TxContext tx_context{};
         auto ctx = test_context(&tx_context);
         ctx->env.input_data = input_data.get();
         ctx->env.input_data_size = input_data_size;
@@ -4278,7 +4398,7 @@ TEST(Emitter, gas)
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    evmc_tx_context tx_context{};
+    TxContext tx_context{};
     auto ctx = test_context(&tx_context, 10);
     auto const &ret = ctx->result;
 
@@ -4300,7 +4420,7 @@ TEST(Emitter, callvalue)
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    evmc_tx_context tx_context{};
+    TxContext tx_context{};
     auto ctx = test_context(&tx_context);
     auto const &ret = ctx->result;
 
@@ -4364,7 +4484,7 @@ TEST(Emitter, jump_bad_jumpdest)
     emit.jump();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    evmc_tx_context tx_context{};
+    TxContext tx_context{};
     auto ctx = test_context(&tx_context);
     auto const &ret = ctx->result;
     auto stack_memory = test_stack_memory();
@@ -4411,7 +4531,7 @@ TEST(Emitter, jumpi_bad_jumpdest)
     emit.jumpi(ir.blocks().at(1));
 
     entrypoint_t entry = emit.finish_contract(rt);
-    evmc_tx_context tx_context{};
+    TxContext tx_context{};
     auto ctx = test_context(&tx_context);
     auto const &ret = ctx->result;
     auto stack_memory = test_stack_memory();
@@ -4572,7 +4692,7 @@ TEST(Emitter, SpillInMovGeneralRegToAvxRegRegression)
     emit.return_();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    evmc_tx_context tx_context{};
+    TxContext tx_context{};
     auto ctx = test_context(&tx_context);
     auto const &ret = ctx->result;
     auto stack_memory = test_stack_memory();
@@ -4608,7 +4728,7 @@ TEST(Emitter, ReleaseSrcAndDestRegression)
     emit.stop();
 
     entrypoint_t entry = emit.finish_contract(rt);
-    evmc_tx_context tx_context{};
+    TxContext tx_context{};
     auto ctx = test_context(&tx_context);
     auto const &ret = ctx->result;
     auto stack_memory = test_stack_memory();
@@ -4622,13 +4742,28 @@ TEST(Emitter, AsmLogLabelsEachInstruction)
     auto const path = std::filesystem::temp_directory_path() /
                       "monad_vm_asm_log_labels_each_instruction.s";
     std::vector<uint8_t> const bytecode{
-        CALLVALUE, PUSH1, 0x06, JUMPI, CALLVALUE, STOP, JUMPDEST, STOP};
+        CALLVALUE,
+        PUSH1,
+        0x0e,
+        JUMPI,
+        CALLVALUE,
+        CALLVALUE,
+        MSTORE,
+        CALLVALUE,
+        CALLDATALOAD,
+        CALLVALUE,
+        SLOAD,
+        CALLVALUE,
+        CALLVALUE,
+        JUMP,
+        JUMPDEST,
+        STOP};
     auto const ir = basic_blocks::BasicBlocksIR::unsafe_from(bytecode);
 
     asmjit::JitRuntime rt;
     CompilerConfig config{};
     config.asm_log_path = path.c_str();
-    (void)compile_basic_blocks<EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>(
+    (void)compile_basic_blocks<EvmTraits<EvmRevision::LatestStable>>(
         rt, ir, config);
 
     std::ifstream log{path};
@@ -4642,14 +4777,35 @@ TEST(Emitter, AsmLogLabelsEachInstruction)
 
     std::vector<std::string> const expected{
         "//   0x00:",
+        "// stack bound check",
+        "// gas decrement",
         "//       0x00: CALLVALUE",
-        "//       0x01: PUSH1 0x6",
+        "//       0x01: PUSH1 0xe",
         "//     0x03: JumpI 1",
         "//   0x04:",
+        "// stack bound check",
+        "// gas decrement",
         "//       0x04: CALLVALUE",
-        "//     0x05: Stop",
-        "//   0x06:",
-        "//     0x07: Stop"};
+        "//       0x05: CALLVALUE",
+        "//       0x06: MSTORE",
+        "// offset bound check",
+        "// memory expansion check",
+        "//       0x07: CALLVALUE",
+        "//       0x08: CALLDATALOAD",
+        "// offset bound check",
+        "//       0x09: CALLVALUE",
+        "//       0x0a: SLOAD",
+        "// runtime call",
+        "//       0x0b: CALLVALUE",
+        "//       0x0c: CALLVALUE",
+        "//     0x0d: Jump",
+        "// write to final stack offsets",
+        "// adjust by stack delta",
+        "// jump table lookup",
+        "//   0x0e:",
+        "// gas decrement",
+        "//     0x0f: Stop",
+        "// calldataload bounded loads"};
     EXPECT_EQ(labels, expected);
 }
 
@@ -4690,7 +4846,7 @@ TEST(Emitter, WriteGeneralRegWordsToFinalStackOffsets)
             emit.return_();
 
             entrypoint_t entry = emit.finish_contract(rt);
-            evmc_tx_context tx_context{};
+            TxContext tx_context{};
             auto ctx = test_context(&tx_context);
             auto const &ret = ctx->result;
             auto stack_memory = test_stack_memory();
@@ -4701,4 +4857,146 @@ TEST(Emitter, WriteGeneralRegWordsToFinalStackOffsets)
             ASSERT_EQ(load_le<uint256_t>(ret.size), x);
         }
     }
+}
+
+namespace
+{
+    basic_blocks::BasicBlocksIR make_push_block_ir(unsigned const depth)
+    {
+        std::vector<uint8_t> code;
+        code.reserve(2 * depth);
+        for (unsigned i = 0; i < depth; ++i) {
+            code.push_back(static_cast<uint8_t>(PUSH1));
+            code.push_back(0);
+        }
+        return basic_blocks::BasicBlocksIR::unsafe_from(code);
+    }
+
+    uint256_t literal_at(Stack &stack, int32_t const index)
+    {
+        auto const e = stack.get(index);
+        EXPECT_TRUE(e->literal().has_value());
+        return e->literal().value().value;
+    }
+}
+
+// literal_at takes an absolute index (0 is the bottom); exchange(n, m) swaps
+// the items n+1 and m+1 from the top.
+
+TEST(Emitter, exchange_swaps_second_and_third)
+{
+    auto ir = make_push_block_ir(3);
+    asmjit::JitRuntime rt;
+    TestEmitter emit{rt, ir.codesize};
+    (void)emit.begin_new_block(ir.blocks()[0]);
+
+    emit.push(0x33);
+    emit.push(0x22);
+    emit.push(0x11);
+
+    Stack &stack = emit.get_stack();
+    emit.exchange(1, 2);
+
+    EXPECT_EQ(literal_at(stack, 0), 0x22);
+    EXPECT_EQ(literal_at(stack, 1), 0x33);
+    EXPECT_EQ(literal_at(stack, 2), 0x11);
+
+    (void)emit.finish_contract(rt);
+}
+
+TEST(Emitter, exchange_swaps_deep_pair_and_leaves_others)
+{
+    auto ir = make_push_block_ir(6);
+    asmjit::JitRuntime rt;
+    TestEmitter emit{rt, ir.codesize};
+    (void)emit.begin_new_block(ir.blocks()[0]);
+
+    emit.push(0x66);
+    emit.push(0x55);
+    emit.push(0x44);
+    emit.push(0x33);
+    emit.push(0x22);
+    emit.push(0x11);
+
+    Stack &stack = emit.get_stack();
+    ASSERT_EQ(literal_at(stack, 3), 0x33);
+    ASSERT_EQ(literal_at(stack, 1), 0x55);
+
+    emit.exchange(2, 4);
+
+    EXPECT_EQ(literal_at(stack, 3), 0x55);
+    EXPECT_EQ(literal_at(stack, 1), 0x33);
+    EXPECT_EQ(literal_at(stack, 0), 0x66);
+    EXPECT_EQ(literal_at(stack, 2), 0x44);
+    EXPECT_EQ(literal_at(stack, 4), 0x22);
+    EXPECT_EQ(literal_at(stack, 5), 0x11);
+
+    (void)emit.finish_contract(rt);
+}
+
+TEST(Emitter, exchange_across_location_types)
+{
+    for (auto const loc_third : all_locations) {
+        for (auto const loc_second : all_locations) {
+            auto ir = make_push_block_ir(3);
+            asmjit::JitRuntime rt;
+            TestEmitter emit{rt, ir.codesize};
+            (void)emit.begin_new_block(ir.blocks()[0]);
+
+            emit.push(0x33);
+            emit.push(0x22);
+            emit.push(0x11);
+
+            Stack &stack = emit.get_stack();
+            // The stack retains ownership, so these raw pointers stay valid.
+            auto const *third = stack.get(0).get();
+            auto const *second = stack.get(1).get();
+
+            mov_literal_to_location_type(emit, 0, loc_third);
+            mov_literal_to_location_type(emit, 1, loc_second);
+
+            emit.exchange(1, 2);
+
+            EXPECT_EQ(stack.get(0).get(), second)
+                << "3rd@" << Emitter::location_type_to_string(loc_third)
+                << " 2nd@" << Emitter::location_type_to_string(loc_second);
+            EXPECT_EQ(stack.get(1).get(), third)
+                << "3rd@" << Emitter::location_type_to_string(loc_third)
+                << " 2nd@" << Emitter::location_type_to_string(loc_second);
+
+            (void)emit.finish_contract(rt);
+        }
+    }
+}
+
+TEST(Emitter, exchange_aliased_duplicated_element)
+{
+    auto ir = make_push_block_ir(4);
+    asmjit::JitRuntime rt;
+    TestEmitter emit{rt, ir.codesize};
+    (void)emit.begin_new_block(ir.blocks()[0]);
+
+    Stack &stack = emit.get_stack();
+
+    emit.push(0x30);
+    emit.push(0x20);
+    emit.dup(1);
+    emit.push(0x99);
+
+    auto shared = stack.get(1);
+    ASSERT_EQ(stack.get(1).get(), stack.get(2).get());
+    ASSERT_EQ(shared->stack_indices().size(), 2u);
+
+    emit.exchange(1, 2);
+
+    ASSERT_EQ(stack.get(1).get(), stack.get(2).get());
+    ASSERT_EQ(stack.get(1).get(), shared.get());
+    ASSERT_EQ(shared->stack_indices().size(), 2u);
+    ASSERT_TRUE(shared->literal().has_value());
+    ASSERT_EQ(shared->literal().value().value, 0x20);
+    EXPECT_EQ(literal_at(stack, 3), 0x99);
+    EXPECT_EQ(literal_at(stack, 0), 0x30);
+    shared.reset();
+
+    (void)emit.finish_contract(rt);
 }

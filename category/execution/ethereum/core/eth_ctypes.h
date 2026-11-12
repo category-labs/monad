@@ -28,6 +28,8 @@
  * C layout-compatible types describing Ethereum blocks and transactions
  */
 
+#include <category/core/address.h>
+#include <category/core/bytes32.h>
 #include <category/execution/ethereum/core/base_ctypes.h>
 #include <stdint.h>
 
@@ -51,7 +53,7 @@ enum monad_c_transaction_type : uint8_t
 /// Entry in a EIP-2930 storage access warmup list
 struct monad_c_access_list_entry
 {
-    monad_c_address address;    ///< E_a: addr of account whose storage to warm
+    monad_address address;      ///< E_a: addr of account whose storage to warm
     uint32_t storage_key_count; ///< Size of trailing E_s storage key array
 };
 
@@ -59,9 +61,9 @@ struct monad_c_access_list_entry
 struct monad_c_auth_list_entry
 {
     monad_c_uint256_ne chain_id; ///< Chain where authorization is valid
-    monad_c_address address;     ///< Delegation contract address
+    monad_address address;       ///< Delegation contract address
     uint64_t nonce;              ///< Nonce of signing authority
-    bool y_parity;               ///< y parity of authority ECDSA signature
+    uint8_t y_parity;            ///< y parity of authority ECDSA signature
     monad_c_uint256_ne r;        ///< r of authority ECDSA signature
     monad_c_uint256_ne s;        ///< s of authority ECDSA signature
 };
@@ -84,7 +86,7 @@ struct monad_c_eth_txn_header
     monad_c_uint256_ne
         max_priority_fee_per_gas;        ///< T_f in EIP-1559 txns, 0 otherwise
     monad_c_uint256_ne value;            ///< T_v: wei xfered or contract endowment
-    monad_c_address to;                  ///< T_t: recipient
+    monad_address to;                    ///< T_t: recipient
     bool is_contract_creation;           ///< True -> interpret T_t == 0 as null
     monad_c_uint256_ne r;                ///< T_r: r value of ECDSA signature
     monad_c_uint256_ne s;                ///< T_s: s value of ECDSA signature
@@ -113,7 +115,7 @@ struct monad_c_eth_txn_receipt
 struct monad_c_eth_txn_log
 {
     uint32_t index;          ///< Index of log in series
-    monad_c_address address; ///< Address of contract generating log
+    monad_address address;   ///< Address of contract generating log
     uint8_t topic_count;     ///< Size of hash32 topic array after header
     uint32_t data_length;    ///< Length of log data placed after header
 };
@@ -123,25 +125,25 @@ struct monad_c_eth_account_state
 {
     uint64_t nonce;             ///< sigma[a]_n: num tx sent from address
     monad_c_uint256_ne balance; ///< sigma[a]_b: wei owned by address
-    monad_c_bytes32 code_hash;  ///< sigma[a]_c: EVM code hash
+    monad_bytes32 code_hash;    ///< sigma[a]_c: EVM code hash
 };
 
 /// Fields of an Ethereum block header which are known at the start of execution
 struct monad_c_eth_block_input
 {
-    monad_c_bytes32 ommers_hash;         ///< H_o: hash of ommer blocks
-    monad_c_address beneficiary;         ///< H_c: recipient addr of prio gas fees
-    monad_c_bytes32 transactions_root;   ///< H_t: hash of block txn list
+    monad_bytes32 ommers_hash;           ///< H_o: hash of ommer blocks
+    monad_address beneficiary;           ///< H_c: recipient addr of prio gas fees
+    monad_bytes32 transactions_root;     ///< H_t: hash of block txn list
     uint64_t difficulty;                 ///< H_d: PoW difficulty scaling param
     uint64_t number;                     ///< H_i: # of ancestor blocks ("height")
     uint64_t gas_limit;                  ///< H_l: max gas expenditure we're allowed
     uint64_t timestamp;                  ///< H_s: UNIX epoch timestamp of block inception
-    monad_c_bytes32 extra_data;          ///< H_x: extra metadata about this block
+    monad_bytes32 extra_data;            ///< H_x: extra metadata about this block
     uint64_t extra_data_length;          ///< Number of bytes used in H_x
-    monad_c_bytes32 prev_randao;         ///< H_a: source of randomness
+    monad_bytes32 prev_randao;           ///< H_a: source of randomness
     monad_c_b64 nonce;                   ///< H_n: PoW puzzle solution; now zero
     monad_c_uint256_ne base_fee_per_gas; ///< H_f: wei burned per unit gas
-    monad_c_bytes32 withdrawals_root;    ///< H_w: consensus-initiated withdrawals
+    monad_bytes32 withdrawals_root;      ///< H_w: consensus-initiated withdrawals
     uint64_t txn_count;                  ///< Number of transactions in block
 };
 
@@ -149,17 +151,17 @@ struct monad_c_eth_block_input
 /// execution
 struct monad_c_eth_block_exec_output
 {
-    monad_c_bytes32 state_root;    ///< H_r: MPT root hash of state trie
-    monad_c_bytes32 receipts_root; ///< H_e: MPT root hash of receipt trie
-    monad_c_bloom256 logs_bloom;   ///< H_b: bloom filter of transaction logs
-    uint64_t gas_used;             ///< H_g: gas used by all txns in block
+    monad_bytes32 state_root;    ///< H_r: MPT root hash of state trie
+    monad_bytes32 receipts_root; ///< H_e: MPT root hash of receipt trie
+    monad_c_bloom256 logs_bloom; ///< H_b: bloom filter of transaction logs
+    uint64_t gas_used;           ///< H_g: gas used by all txns in block
 };
 
 /// Compressed ECDSA public key using secp256k1 curve [SEC1v2: 2.3.3]
 struct monad_c_secp256k1_pubkey
 {
     uint8_t y_parity;  ///< Parity of compressed y coordinate
-    monad_c_bytes32 x; ///< x coordinate of public key (big endian)
+    monad_bytes32 x;   ///< x coordinate of public key (big endian)
 };
 
 // clang-format on

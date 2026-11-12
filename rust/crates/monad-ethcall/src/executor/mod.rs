@@ -62,10 +62,46 @@ impl MonadExecutor {
         node_lru_max_mem: u64,
         triedb_path: &Path,
     ) -> Self {
+        Self::new_with_db_path(
+            low_pool_config,
+            high_pool_config,
+            block_pool_config,
+            tx_exec_num_fibers,
+            node_lru_max_mem,
+            Some(triedb_path),
+        )
+    }
+
+    pub fn new_null_db(
+        low_pool_config: ffi::PoolConfig,
+        high_pool_config: ffi::PoolConfig,
+        block_pool_config: ffi::PoolConfig,
+        tx_exec_num_fibers: u32,
+        node_lru_max_mem: u64,
+    ) -> Self {
+        Self::new_with_db_path(
+            low_pool_config,
+            high_pool_config,
+            block_pool_config,
+            tx_exec_num_fibers,
+            node_lru_max_mem,
+            None,
+        )
+    }
+
+    pub fn new_with_db_path(
+        low_pool_config: ffi::PoolConfig,
+        high_pool_config: ffi::PoolConfig,
+        block_pool_config: ffi::PoolConfig,
+        tx_exec_num_fibers: u32,
+        node_lru_max_mem: u64,
+        triedb_path: Option<&Path>,
+    ) -> Self {
         monad_cxx::init_cxx_logging(tracing::Level::WARN);
 
-        let dbpath = CString::new(triedb_path.to_str().expect("invalid path"))
-            .expect("failed to create CString");
+        let dbpath = triedb_path.map(|path| {
+            CString::new(path.to_str().expect("invalid path")).expect("failed to create CString")
+        });
 
         let eth_call_executor = unsafe {
             ffi::monad_executor_create(
@@ -74,7 +110,9 @@ impl MonadExecutor {
                 block_pool_config,
                 tx_exec_num_fibers,
                 node_lru_max_mem,
-                dbpath.as_c_str().as_ptr(),
+                dbpath
+                    .as_ref()
+                    .map_or(std::ptr::null(), |path| path.as_c_str().as_ptr()),
             )
         };
 

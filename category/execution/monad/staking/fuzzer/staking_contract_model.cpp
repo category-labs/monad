@@ -14,12 +14,36 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/address.hpp>
+#include <category/core/assert.h>
+#include <category/core/byte_string.hpp>
+#include <category/core/bytes.hpp>
 #include <category/core/int.hpp>
+#include <category/core/result.hpp>
+#include <category/core/runtime/unaligned.hpp>
+#include <category/execution/ethereum/core/account.hpp>
+#include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
 #include <category/execution/ethereum/core/contract/abi_signatures.hpp>
+#include <category/execution/ethereum/core/contract/big_endian.hpp>
+#include <category/execution/ethereum/core/contract/storage_array.hpp>
+#include <category/execution/ethereum/core/contract/storage_variable.hpp>
 #include <category/execution/ethereum/db/test/commit_simple.hpp>
+#include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/monad/staking/fuzzer/staking_contract_model.hpp>
+#include <category/execution/monad/staking/staking_contract.hpp>
+#include <category/execution/monad/staking/util/constants.hpp>
+#include <category/execution/monad/staking/util/delegator.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/traits.hpp>
+
+#include <bit>
+#include <cstdint>
+#include <cstring>
+#include <limits>
+#include <optional>
+#include <unordered_set>
+#include <utility>
+#include <vector>
 
 namespace
 {
@@ -243,7 +267,7 @@ namespace monad::staking::test
     uint256_t StakingContractModel::withdrawal_reward(
         u64_be const val_id, Address const &addr, u8_be const id)
     {
-        auto withdraw =
+        auto const withdraw =
             contract_.vars.withdrawal_request(val_id, addr, id).load();
         if (withdraw.epoch.native() == 0) {
             return 0;
@@ -328,7 +352,7 @@ namespace monad::staking::test
         if (res.has_value()) {
             active_consensus_stake_.clear();
             active_consensus_commission_.clear();
-            auto valset_consensus = contract_.vars.valset_consensus;
+            auto const valset_consensus = contract_.vars.valset_consensus;
             uint64_t const n = valset_consensus.length();
             for (uint64_t i = 0; i < n; ++i) {
                 u64_be const val_id = valset_consensus.get(i).load();
@@ -359,7 +383,7 @@ namespace monad::staking::test
         auto res = contract_.syscall_reward<traits>(input, reward.native());
         post_call(res);
         if (res.has_value()) {
-            u64_be v = contract_.vars.val_id(addr).load();
+            u64_be const v = contract_.vars.val_id(addr).load();
             auto const p = active_consensus_commission_[v.native()];
             auto const c = (reward.native() * p) / MON;
             auto const a = contract_.vars.val_execution(v).auth_address();
@@ -379,7 +403,7 @@ namespace monad::staking::test
         auto res = contract_.distribute_priority_fees(fees.native());
         post_call(res);
         if (res.has_value()) {
-            u64_be v = contract_.vars.proposer_val_id.load();
+            u64_be const v = contract_.vars.proposer_val_id.load();
             auto const p = active_consensus_commission_[v.native()];
             auto const c = (fees.native() * p) / MON;
             auto const a = contract_.vars.val_execution(v).auth_address();
@@ -639,7 +663,7 @@ namespace monad::staking::test
         uint64_t const val_id, Address const &addr, uint64_t const epoch)
     {
         auto const &m = delegator_stake_[{val_id, addr}];
-        auto it = m.lower_bound(epoch);
+        auto const it = m.lower_bound(epoch);
         return it == m.end() ? uint256_t{} : it->second;
     }
 
@@ -690,8 +714,8 @@ namespace monad::staking::test
 
         uint256_t computed_total_stake;
         for (auto const &a : dels) {
-            auto x = get_delegator_stake(v, a, epoch) +
-                     get_withdrawal_stake(v, a, epoch);
+            auto const x = get_delegator_stake(v, a, epoch) +
+                           get_withdrawal_stake(v, a, epoch);
             unit_bias_rewards_[{v, a}] += x * rr;
             computed_total_stake += x;
         }

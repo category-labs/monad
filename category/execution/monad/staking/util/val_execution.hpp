@@ -92,32 +92,32 @@ public:
     /////////////
 
     // Total stake in the validator pool
-    StorageVariable<Stake_t> stake() noexcept
+    StorageVariable<Stake_t> stake()
     {
         return {state_, address_, key_ + Offsets::stake};
     }
 
     // Validator's rewards per token. This is updated on every call to reward()
-    StorageVariable<RewardsPerToken_t> accumulated_reward_per_token() noexcept
+    StorageVariable<RewardsPerToken_t> accumulated_reward_per_token()
     {
         return {state_, address_, key_ + Offsets::rewards_per_token};
     }
 
     // Immutable: validator commission rate. Valid values are [0,1e18]
-    StorageVariable<Commission_t> commission() noexcept
+    StorageVariable<Commission_t> commission()
     {
         return {state_, address_, key_ + Offsets::commission};
     }
 
     // Immutable: Bls and Secp keys the validator signs blocks with
-    StorageVariable<Keys_t> keys() noexcept
+    StorageVariable<Keys_t> keys()
     {
         return {state_, address_, key_ + Offsets::keys};
     }
 
     // Auth address and flags packed into a single slot. See the helpers for
     // getting these individually.
-    StorageVariable<AddressFlags_t> address_flags() noexcept
+    StorageVariable<AddressFlags_t> address_flags()
     {
         return {state_, address_, key_ + Offsets::address_flags};
     }
@@ -125,7 +125,7 @@ public:
     // Unclaimed rewards in the validator pool. Used for internal solvency
     // checks so that a delegator cannot realize more rewards available to the
     // pool.
-    StorageVariable<UnclaimedRewards_t> unclaimed_rewards() noexcept
+    StorageVariable<UnclaimedRewards_t> unclaimed_rewards()
     {
         return {state_, address_, key_ + Offsets::unclaimed_rewards};
     }
@@ -135,7 +135,7 @@ public:
     /////////////
 
     // Auth account used to create the validator
-    Address auth_address() const noexcept
+    Address auth_address() const
     {
         return StorageVariable<AddressFlags_t>{
             state_, address_, key_ + Offsets::address_flags}
@@ -145,7 +145,7 @@ public:
 
     // Flags indicating validators state. Any nonzero value implies the
     // validator is not a candidate for the consensus set next epoch.
-    uint64_t get_flags() const noexcept
+    uint64_t get_flags() const
     {
         return StorageVariable<AddressFlags_t>{
             state_, address_, key_ + Offsets::address_flags}
@@ -153,21 +153,21 @@ public:
             .flags.native();
     }
 
-    void set_flag(uint64_t const flag) noexcept
+    void set_flag(uint64_t const flag)
     {
         auto af = address_flags().load();
         af.flags = af.flags.native() | flag;
         address_flags().store(af);
     }
 
-    void clear_flag(uint64_t const flag) noexcept
+    void clear_flag(uint64_t const flag)
     {
         auto af = address_flags().load();
         af.flags = af.flags.native() & ~flag;
         address_flags().store(af);
     }
 
-    bool exists() const noexcept
+    bool exists() const
     {
         return auth_address() != Address{};
     }

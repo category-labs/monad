@@ -15,9 +15,7 @@
 
 #include <category/core/assert.h>
 #include <category/execution/ethereum/state3/state.hpp>
-
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
+#include <category/vm/evm/result.hpp>
 
 #include <algorithm>
 #include <span>
@@ -36,6 +34,40 @@ namespace monad::vm::fuzzing
         }
     }
 
+    static bool is_cached_read(
+        State const &s, Address const &k, bytes32_t const &key,
+        bytes32_t const &value)
+    {
+        auto const it = s.original().find(k);
+        if (it == s.original().end()) {
+            return false;
+        }
+        auto const *const original = it->second.storage_.find(key);
+        return original && *original == value;
+    }
+
+    // A frame the compiler fails early can skip reads that the other side
+    // makes before failing; their cached originals reach the storage map
+    // when the account is next written.
+    static void assert_equal_storage(
+        Address const &k, State const &a, AccountState const &as,
+        State const &b, AccountState const &bs)
+    {
+        for (auto const &[key, v] : as.storage_) {
+            if (auto const *const found = bs.storage_.find(key)) {
+                MONAD_ASSERT(*found == v);
+            }
+            else {
+                MONAD_ASSERT(is_cached_read(a, k, key, v));
+            }
+        }
+        for (auto const &[key, v] : bs.storage_) {
+            if (!as.storage_.find(key)) {
+                MONAD_ASSERT(is_cached_read(b, k, key, v));
+            }
+        }
+    }
+
     void assert_equal(
         Address const &k, State &a, AccountState const &as, State &b,
         AccountState const &bs)
@@ -51,7 +83,7 @@ namespace monad::vm::fuzzing
             a.is_current_incarnation(k) == b.is_current_incarnation(k));
         MONAD_ASSERT(a.is_touched(k) == b.is_touched(k));
 
-        assert_equal(as.storage_, bs.storage_);
+        assert_equal_storage(k, a, as, b, bs);
         assert_equal(as.transient_storage_, bs.transient_storage_);
         MONAD_ASSERT(as.get_accessed_storage() == bs.get_accessed_storage());
     }
@@ -82,7 +114,7 @@ namespace monad::vm::fuzzing
     }
 
     void assert_equal(
-        evmc::Result const &spec_result, evmc::Result const &compiler_result,
+        vm::Result const &spec_result, vm::Result const &compiler_result,
         bool const strict_out_of_gas)
     {
         MONAD_ASSERT(std::ranges::equal(
@@ -98,14 +130,15 @@ namespace monad::vm::fuzzing
                 compiler_result.output_data, compiler_result.output_size)));
 
         switch (spec_result.status_code) {
-        case EVMC_SUCCESS:
-        case EVMC_REVERT:
+        case CallStatus::Success:
+        case CallStatus::Revert:
             MONAD_ASSERT(
                 spec_result.status_code == compiler_result.status_code);
             break;
-        case EVMC_OUT_OF_GAS: {
+        case CallStatus::OutOfGas: {
             if (strict_out_of_gas) {
-                MONAD_ASSERT(compiler_result.status_code == EVMC_OUT_OF_GAS);
+                MONAD_ASSERT(
+                    compiler_result.status_code == CallStatus::OutOfGas);
             }
             else {
                 // For the compiler, we allow a relaxed check for out-of-gas,
@@ -114,14 +147,14 @@ namespace monad::vm::fuzzing
                 // statically produce a generic error for code that would
                 // dynamically run out of gas.
                 MONAD_ASSERT(
-                    compiler_result.status_code == EVMC_OUT_OF_GAS ||
-                    compiler_result.status_code == EVMC_FAILURE);
+                    compiler_result.status_code == CallStatus::OutOfGas ||
+                    compiler_result.status_code == CallStatus::Failure);
             }
             break;
         }
         default:
-            MONAD_ASSERT(compiler_result.status_code != EVMC_SUCCESS);
-            MONAD_ASSERT(compiler_result.status_code != EVMC_REVERT);
+            MONAD_ASSERT(compiler_result.status_code != CallStatus::Success);
+            MONAD_ASSERT(compiler_result.status_code != CallStatus::Revert);
             break;
         }
     }

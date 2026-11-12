@@ -13,16 +13,25 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/bytes.hpp>
+#include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
+#include <category/execution/ethereum/db/util.hpp>
+#include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/monad/db/page_commit_builder.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
+#include <category/mpt/db.hpp>
 
 #include <gtest/gtest.h>
 
 #include <test_resource_data.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <cstring>
+#include <memory>
+#include <optional>
+#include <utility>
 
 using namespace monad;
 using namespace monad::mpt;
@@ -67,7 +76,7 @@ TEST(MonadDb, key_grouping)
 
 TEST(MonadDb, page_commit_deterministic)
 {
-    storage_page_t page{};
+    storage_page_t const page{};
     auto const c1 = page_commit(page);
     auto const c2 = page_commit(page);
     EXPECT_EQ(c1, c2);
@@ -76,7 +85,7 @@ TEST(MonadDb, page_commit_deterministic)
 
 TEST(MonadDb, page_commit_differs_for_different_pages)
 {
-    storage_page_t page_a{};
+    storage_page_t const page_a{};
     storage_page_t page_b{};
     page_b.set(0, bytes32_t{0x01});
 
@@ -117,7 +126,7 @@ TEST(MonadDb, page_commit_sparse_nonzero)
     page.set(2, filled(0x22));
     page.set(4, filled(0x33));
 
-    storage_page_t zero_page{};
+    storage_page_t const zero_page{};
     EXPECT_NE(page_commit(page), page_commit(zero_page));
     EXPECT_EQ(page_commit(page), page_commit(page));
 }
@@ -150,7 +159,7 @@ TEST(MonadDb, page_commit_cross_check_with_reference)
     constexpr auto FULL_PAGE_COMMIT =
         0xe5a642261a2c2dedebd68ebd42237f2210d1eee94553d677d425dc3a46c7a687_bytes32;
 
-    storage_page_t zero_page{};
+    storage_page_t const zero_page{};
     EXPECT_EQ(page_commit(zero_page), ZERO_PAGE_COMMIT);
 
     storage_page_t page_slot0{};
@@ -290,6 +299,70 @@ TEST(MonadDb, page_write_merges_slots)
     EXPECT_EQ(
         tdb.read_storage(ADDR_A, Incarnation{0, 0}, slot_key_0), val_0_updated);
     EXPECT_EQ(tdb.read_storage(ADDR_A, Incarnation{0, 0}, slot_key_1), val_1);
+}
+
+// After an account changes incarnation, rewriting one slot must not restore
+// the untouched slots of the dead incarnation. PageCommitBuilder has to start
+// from an empty page instead of merging onto the page read from the db, on
+// the same page as the rewritten slot and on any other page.
+TEST(MonadDb, reincarnation_does_not_resurrect_page_slots)
+{
+    // slot_0 and slot_1 share a page; slot_far is on a different page.
+    constexpr auto slot_0 = bytes32_t{uint64_t{0x00}};
+    constexpr auto slot_1 = bytes32_t{uint64_t{0x01}};
+    constexpr auto slot_far = bytes32_t{uint64_t{0x80}};
+    ASSERT_EQ(compute_page_key(slot_0), compute_page_key(slot_1));
+    ASSERT_NE(compute_page_key(slot_0), compute_page_key(slot_far));
+
+    Account const inc1{.nonce = 1, .incarnation = Incarnation{1, 0}};
+    Account const inc2{.nonce = 1, .incarnation = Incarnation{2, 0}};
+    mpt::Db mpt_db{std::make_unique<MonadInMemoryMachine>()};
+    TrieDb tdb{mpt_db};
+    ASSERT_TRUE(tdb.is_page_encoded()) << "test requires page-encoded storage";
+
+    // Block 0: create the contract at incarnation {1,0}; seed slot_0 and
+    // slot_1 (same page) plus slot_far (a different page).
+    {
+        PageCommitBuilder builder(0, tdb);
+        builder.add_state_deltas(StateDeltas{
+            {ADDR_A,
+             StateDelta{
+                 .account = {std::nullopt, inc1},
+                 .storage = {
+                     {slot_0, {bytes32_t{}, bytes32_t{uint64_t{0xa1}}}},
+                     {slot_1, {bytes32_t{}, bytes32_t{uint64_t{0xb1}}}},
+                     {slot_far, {bytes32_t{}, bytes32_t{uint64_t{0xfa}}}}}}}});
+        auto root = mpt_db.upsert(nullptr, builder.build(finalized_nibbles), 0);
+        tdb.reset_root(std::move(root), 0);
+    }
+
+    // Block 1: reincarnate ({1,0} -> {2,0}) and write ONLY slot_0. The new
+    // incarnation starts with empty storage, so from its perspective slot_0
+    // goes empty -> 0xc2 and slot_1 / slot_far are never touched.
+    {
+        PageCommitBuilder builder(1, tdb);
+        builder.add_state_deltas(StateDeltas{
+            {ADDR_A,
+             StateDelta{
+                 .account = {inc1, inc2},
+                 .storage = {
+                     {slot_0, {bytes32_t{}, bytes32_t{uint64_t{0xc2}}}}}}}});
+        auto root =
+            mpt_db.upsert(tdb.get_root(), builder.build(finalized_nibbles), 1);
+        tdb.reset_root(std::move(root), 1);
+    }
+
+    // On-disk reads are incarnation-blind, so the incarnation argument is
+    // immaterial here.
+    EXPECT_EQ(
+        tdb.read_storage(ADDR_A, Incarnation{0, 0}, slot_0),
+        bytes32_t{uint64_t{0xc2}})
+        << "slot_0 rewritten by the new incarnation";
+    EXPECT_EQ(tdb.read_storage(ADDR_A, Incarnation{0, 0}, slot_1), bytes32_t{})
+        << "slot_1 from the dead incarnation must not be resurrected";
+    EXPECT_EQ(
+        tdb.read_storage(ADDR_A, Incarnation{0, 0}, slot_far), bytes32_t{})
+        << "slot_far from the dead incarnation must not be resurrected";
 }
 
 TEST(MonadDb, byte_size_inline)

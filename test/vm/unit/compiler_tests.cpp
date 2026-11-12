@@ -19,8 +19,6 @@
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/evm/traits.hpp>
 
-#include <evmc/evmc.h>
-
 #include <gtest/gtest.h>
 
 #include <cstdint>
@@ -35,7 +33,7 @@ using namespace monad::vm::compiler;
 
 template <
     typename Op, typename... Args,
-    Traits traits = EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>
+    Traits traits = EvmTraits<EvmRevision::LatestStable>>
 Instruction i(std::uint32_t pc, Op evm_opcode, Args &&...args)
 {
     auto info = opcode_table<traits>[evm_opcode];

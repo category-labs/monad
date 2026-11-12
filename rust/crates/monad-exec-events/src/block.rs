@@ -19,7 +19,7 @@ use itertools::Itertools;
 #[cfg(feature = "alloy")]
 use crate::ffi;
 use crate::ffi::{
-    monad_c_address, monad_c_bytes32, monad_c_eth_txn_header, monad_c_eth_txn_receipt,
+    monad_address, monad_bytes32, monad_c_eth_txn_header, monad_c_eth_txn_receipt,
     monad_c_uint256_ne, monad_exec_block_end, monad_exec_block_start, monad_exec_txn_call_frame,
 };
 
@@ -74,8 +74,8 @@ impl ExecutedBlock {
             excess_blob_gas: Some(0),
             parent_beacon_block_root: Some(alloy_primitives::B256::ZERO),
             requests_hash: Some(alloy_primitives::B256::ZERO),
-            block_access_list_hash: None,
-            slot_number: None,
+            block_access_list_hash: Some(alloy_primitives::B256::ZERO),
+            slot_number: Some(self.start.round),
         }
     }
 
@@ -310,8 +310,8 @@ impl ExecutedBlock {
 #[allow(missing_docs)]
 #[derive(Clone, Debug)]
 pub struct ExecutedTxn {
-    pub hash: monad_c_bytes32,
-    pub sender: monad_c_address,
+    pub hash: monad_bytes32,
+    pub sender: monad_address,
     pub header: monad_c_eth_txn_header,
     pub input: Box<[u8]>,
     pub access_list: Box<[ExecutedTxnAccessListEntry]>,
@@ -382,7 +382,7 @@ impl ExecutedTxn {
                             )),
                             nonce: *nonce,
                         },
-                        if *y_parity { 1 } else { 0 },
+                        *y_parity,
                         alloy_primitives::U256::from_limbs(r.limbs),
                         alloy_primitives::U256::from_limbs(s.limbs),
                     )
@@ -540,8 +540,8 @@ impl ExecutedTxn {
 #[allow(missing_docs)]
 #[derive(Clone, Debug)]
 pub struct ExecutedTxnLog {
-    pub address: monad_c_address,
-    pub topic: Box<[monad_c_bytes32]>,
+    pub address: monad_address,
+    pub topic: Box<[monad_bytes32]>,
     pub data: Box<[u8]>,
 }
 
@@ -575,8 +575,8 @@ pub struct ExecutedTxnCallFrame {
 #[allow(missing_docs)]
 #[derive(Clone, Debug)]
 pub struct ExecutedTxnAccessListEntry {
-    pub address: monad_c_address,
-    pub storage_keys: Box<[monad_c_bytes32]>,
+    pub address: monad_address,
+    pub storage_keys: Box<[monad_bytes32]>,
 }
 
 /// Authorization reconstructed from execution events.
@@ -584,10 +584,10 @@ pub struct ExecutedTxnAccessListEntry {
 #[derive(Clone, Debug)]
 pub struct ExecutedTxnSignedAuthorization {
     pub chain_id: monad_c_uint256_ne,
-    pub address: monad_c_address,
+    pub address: monad_address,
     pub nonce: u64,
 
-    pub y_parity: bool,
+    pub y_parity: u8,
     pub r: monad_c_uint256_ne,
     pub s: monad_c_uint256_ne,
 }
@@ -632,7 +632,7 @@ mod native_tests {
                 max_fee_per_gas: quantity(tx.max_fee_per_gas),
                 max_priority_fee_per_gas: quantity(tx.max_priority_fee_per_gas),
                 value: quantity(tx.value),
-                to: monad_c_address {
+                to: monad_address {
                     bytes: envelope.to().unwrap_or_default().into_array(),
                 },
                 is_contract_creation: tx.to.is_create(),
@@ -647,10 +647,10 @@ mod native_tests {
             };
             let event = ExecutedTxn {
                 header,
-                hash: monad_c_bytes32 {
+                hash: monad_bytes32 {
                     bytes: envelope.hash().0,
                 },
-                sender: monad_c_address {
+                sender: monad_address {
                     bytes: envelope.recover_signer().unwrap().into_array(),
                 },
                 input: tx.input.to_vec().into_boxed_slice(),
@@ -659,13 +659,13 @@ mod native_tests {
                     .iter()
                     .flat_map(|list| list.iter())
                     .map(|item| ExecutedTxnAccessListEntry {
-                        address: monad_c_address {
+                        address: monad_address {
                             bytes: item.address.into_array(),
                         },
                         storage_keys: item
                             .storage_keys
                             .iter()
-                            .map(|key| monad_c_bytes32 { bytes: key.0 })
+                            .map(|key| monad_bytes32 { bytes: key.0 })
                             .collect(),
                     })
                     .collect(),

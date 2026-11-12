@@ -36,8 +36,6 @@
 
 #include <CLI/CLI.hpp>
 
-#include <evmc/evmc.h>
-
 #include <category/vm/compiler/ir/x86.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/interpreter/intercode.hpp>
@@ -50,7 +48,7 @@ struct arguments
 {
     bool verbose = false;
     bool binary = false;
-    bool stdin = false;
+    bool read_stdin = false;
     bool compile = false;
     bool validate = false;
     std::vector<std::string> filenames;
@@ -81,7 +79,7 @@ arguments parse_args(int const argc, char **const argv)
     app.add_flag("-v,--verbose", args.verbose, "send debug info to stdout");
 
     app.add_flag(
-        "-s,--stdin", args.stdin, "read from stdin and write to stdout");
+        "-s,--stdin", args.read_stdin, "read from stdin and write to stdout");
 
     try {
         app.parse(argc, argv);
@@ -128,7 +126,7 @@ int main(int const argc, char **const argv)
 
     parser_config const config{args.verbose, args.validate};
 
-    if (args.stdin) {
+    if (args.read_stdin) {
         std::stringstream buffer;
         buffer << std::cin.rdbuf();
         std::string s = buffer.str();
@@ -143,7 +141,7 @@ int main(int const argc, char **const argv)
         if (args.compile) {
             auto rt = asmjit::JitRuntime{};
             monad::vm::compiler::native::compile<
-                monad::EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>(
+                monad::EvmTraits<monad::EvmRevision::LatestStable>>(
                 rt,
                 opcodes.data(),
                 code_size_t::unsafe_from(static_cast<uint32_t>(opcodes.size())),
@@ -170,7 +168,7 @@ int main(int const argc, char **const argv)
                 auto outfile_asm = filename + ".asm";
                 auto rt = asmjit::JitRuntime{};
                 monad::vm::compiler::native::compile<
-                    monad::EvmTraits<MONAD_ETH_LATEST_STABLE_REVISION>>(
+                    monad::EvmTraits<monad::EvmRevision::LatestStable>>(
                     rt,
                     opcodes.data(),
                     code_size_t::unsafe_from(

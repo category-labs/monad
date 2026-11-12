@@ -15,11 +15,10 @@
 
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/bytes32.h>
 #include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 
 #include <gtest/gtest.h>
-
-#include <evmc/evmc.h>
 
 #include <cstdint>
 #include <unordered_set>
@@ -245,12 +244,12 @@ TEST(Bytes32, usable_in_unordered_set)
 }
 
 // ---------------------------------------------------------------------------
-// evmc_bytes32 implicit conversion
+// monad_bytes32 implicit conversion
 // ---------------------------------------------------------------------------
 
-TEST(Bytes32, implicit_from_evmc_bytes32)
+TEST(Bytes32, implicit_from_monad_bytes32)
 {
-    evmc_bytes32 raw{};
+    monad_bytes32 raw{};
     raw.bytes[31] = 0x07;
     bytes32_t const wrapped = raw;
     EXPECT_EQ(wrapped.bytes[31], 0x07);

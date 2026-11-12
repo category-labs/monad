@@ -23,8 +23,6 @@
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
 
-#include <evmc/evmc.hpp>
-
 #include <gtest/gtest.h>
 
 #include <cstddef>
@@ -662,6 +660,38 @@ TEST(Rlp_Transaction, DecodeEip2718TrailingBytes)
         auto const result = decode_transaction_list(enc, nullptr);
         ASSERT_TRUE(result.has_error());
         EXPECT_EQ(result.error(), DecodeError::InputTooLong);
+    }
+}
+
+TEST(Rlp_Transaction, DecodeEip2718TypeZero)
+{
+    Transaction const t{
+        .sc = {.signature = {.r = 1, .s = 1, .y_parity = false}, .chain_id = 1},
+        .nonce = 0,
+        .max_fee_per_gas = 1,
+        .gas_limit = 21'000,
+        .value = 0,
+        .to = 0x3535353535353535353535353535353535353535_address,
+        .type = TransactionType::eip2930,
+        .access_list = {AccessEntry{
+            0xa0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0_address, {}}}};
+    auto encoded = encode_transaction(t);
+    ASSERT_EQ(encoded[0], 0x01);
+    encoded[0] = 0x00;
+
+    {
+        byte_string_view enc{encoded};
+        auto const result = decode_transaction(enc);
+        ASSERT_TRUE(result.has_error());
+        EXPECT_EQ(result.error(), DecodeError::InvalidTxnType);
+    }
+
+    {
+        auto const body = encode_list2(encode_string2(encoded));
+        byte_string_view enc{body};
+        auto const result = decode_transaction_list(enc, nullptr);
+        ASSERT_TRUE(result.has_error());
+        EXPECT_EQ(result.error(), DecodeError::InvalidTxnType);
     }
 }
 

@@ -31,7 +31,7 @@
 #include <category/mpt/test/test_fixtures_gtest.hpp>
 #include <category/mpt/traverse.hpp>
 #include <category/mpt/traverse_util.hpp>
-#include <category/vm/evm/status_code.h>
+#include <category/vm/evm/call_status.hpp>
 
 #include <nlohmann/json.hpp>
 
@@ -128,7 +128,7 @@ namespace
             std::make_move_iterator(chunks.begin()),
             std::make_move_iterator(chunks.end()),
             byte_string{},
-            [](byte_string const acc, KeyedChunk const chunk) {
+            [](byte_string acc, KeyedChunk chunk) {
                 return std::move(acc) + std::move(chunk.second);
             });
 
@@ -357,6 +357,70 @@ TEST_F(OnDiskTrieDbFixture, get_proposal_block_ids)
         auto proposals = get_proposal_block_ids(db, 10);
         EXPECT_EQ(std::set(proposals.begin(), proposals.end()), block_ids);
     }
+}
+
+// Tests the !is_current_block path in finalize: commit two blocks as proposals,
+// then finalize the earlier one while the in-memory trie is at the later block.
+// Verifies that the in-memory trie is preserved and that set_block_and_prefix
+// correctly reloads the finalized state from disk.
+TEST_F(OnDiskTrieDbFixture, finalize_earlier_block_preserves_in_memory_trie)
+{
+    Account const acct_10{.balance = 100};
+    Account const acct_11{.balance = 200};
+
+    TrieDb tdb{db};
+    load_header({}, db, BlockHeader{.number = 9});
+
+    // Commit block 10 as a proposal
+    tdb.set_block_and_prefix(9);
+    bytes32_t const p10{10};
+    commit_simple(
+        tdb,
+        StateDeltas{{ADDR_A, StateDelta{.account = {std::nullopt, acct_10}}}},
+        Code{},
+        p10,
+        BlockHeader{.number = 10});
+
+    // Finalize block 10 and advance to finalized state
+    tdb.finalize(10, p10);
+    tdb.set_block_and_prefix(10); // finalized
+    EXPECT_EQ(tdb.read_account(ADDR_A).value().balance, 100);
+
+    // Commit block 11 as a proposal — block_number_ becomes 11
+    bytes32_t const p11{11};
+    commit_simple(
+        tdb,
+        StateDeltas{{ADDR_A, StateDelta{.account = {acct_10, acct_11}}}},
+        Code{},
+        p11,
+        BlockHeader{.number = 11});
+    EXPECT_EQ(tdb.get_block_number(), 11);
+
+    // Commit block 12 as a proposal on top of block 11
+    Account const acct_12{.balance = 300};
+    bytes32_t const p12{12};
+    tdb.set_block_and_prefix(11, p11);
+    commit_simple(
+        tdb,
+        StateDeltas{{ADDR_A, StateDelta{.account = {acct_11, acct_12}}}},
+        Code{},
+        p12,
+        BlockHeader{.number = 12});
+    EXPECT_EQ(tdb.get_block_number(), 12);
+
+    // Finalizing a different block (11) than current block (12) should only
+    // persist finalized state to disk without disturbing the in-memory trie for
+    // block 12.
+    tdb.finalize(11, p11);
+    EXPECT_EQ(tdb.get_block_number(), 12);
+
+    // The in-memory trie for block 12 is still valid
+    tdb.set_block_and_prefix(12, p12);
+    EXPECT_EQ(tdb.read_account(ADDR_A).value().balance, 300);
+
+    // set to finalized block 11 should reload from disk
+    tdb.set_block_and_prefix(11);
+    EXPECT_EQ(tdb.read_account(ADDR_A).value().balance, 200);
 }
 
 TYPED_TEST(DBTest, ModifyStorageOfAccount)
@@ -695,7 +759,7 @@ TEST_F(OnDiskTrieDbWithFileFixture, get_transactions)
     auto verify_transactions = [&](auto &db) {
         auto const txs_res = get_transactions(db, block_number);
         ASSERT_TRUE(txs_res.has_value());
-        auto const txs = txs_res.value();
+        auto const &txs = txs_res.value();
         EXPECT_EQ(txs.size(), transactions.size());
         for (size_t i = 0; i < txs.size(); ++i) {
             EXPECT_EQ(txs[i], transactions[i]);
@@ -875,7 +939,7 @@ TYPED_TEST(DBTest, commit_call_frames)
         .gas_used = 21'000u,
         .input = byte_string{0xaa, 0xbb, 0xcc},
         .output = byte_string{},
-        .status = MONAD_STATUS_SUCCESS,
+        .status = CallStatus::Success,
         .depth = 0,
     };
 
@@ -889,7 +953,7 @@ TYPED_TEST(DBTest, commit_call_frames)
         .gas_used = 10'000u,
         .input = byte_string{0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0x01},
         .output = byte_string{0x01, 0x02},
-        .status = MONAD_STATUS_REVERT,
+        .status = CallStatus::Revert,
         .depth = 1,
     };
 
@@ -898,12 +962,14 @@ TYPED_TEST(DBTest, commit_call_frames)
     static byte_string const encoded_txn = byte_string{0x1a, 0x1b, 0x1c};
     std::vector<CallFrame> const call_frame{call_frame1, call_frame2};
     std::vector<std::vector<CallFrame>> call_frames;
+    call_frames.reserve(NUM_TXNS);
     for (uint64_t txn = 0; txn < NUM_TXNS; ++txn) {
         call_frames.emplace_back(call_frame);
     }
     std::vector<Receipt> const receipts(call_frames.size());
     // need to increment the nonce of transactions
     std::vector<Transaction> transactions;
+    transactions.reserve(call_frames.size());
     for (uint64_t nonce = 0; nonce < call_frames.size(); ++nonce) {
         transactions.push_back(Transaction{.nonce = nonce});
     }

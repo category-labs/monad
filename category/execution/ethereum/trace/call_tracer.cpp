@@ -26,10 +26,10 @@
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
-#include <category/vm/evm/status_code.h>
+#include <category/vm/evm/call_status.hpp>
+#include <category/vm/evm/message.hpp>
+#include <category/vm/evm/result.hpp>
 
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 #include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
 
@@ -75,9 +75,9 @@ namespace
     }
 }
 
-void NoopCallTracer::on_enter(evmc_message const &) {}
+void NoopCallTracer::on_enter(vm::Message const &) {}
 
-void NoopCallTracer::on_exit(evmc::Result const &) {}
+void NoopCallTracer::on_exit(vm::Result const &) {}
 
 void NoopCallTracer::on_log(Receipt::Log) {}
 
@@ -213,25 +213,29 @@ CallTracer::CallTracer(
     frames_.reserve(initial_capacity);
 }
 
-void CallTracer::on_enter(evmc_message const &msg)
+void CallTracer::on_enter(vm::Message const &msg)
 {
-    if (!(size_ += sizeof(CallFrame)) || !(size_ += msg.input_size)) {
+    size_ += sizeof(CallFrame);
+    size_ += msg.input_size;
+    if (!size_) {
         return;
     }
 
     auto const depth = static_cast<uint64_t>(msg.depth);
 
     // This is to conform with quicknode RPC
-    Address const from =
-        msg.kind == EVMC_DELEGATECALL || msg.kind == EVMC_CALLCODE
-            ? msg.recipient
-            : msg.sender;
+    Address const from = msg.kind == vm::CallKind::DelegateCall ||
+                                 msg.kind == vm::CallKind::CallCode
+                             ? msg.recipient
+                             : msg.sender;
 
     std::optional<Address> to;
-    if (msg.kind == EVMC_CALL) {
+    if (msg.kind == vm::CallKind::Call) {
         to = msg.recipient;
     }
-    else if (msg.kind == EVMC_DELEGATECALL || msg.kind == EVMC_CALLCODE) {
+    else if (
+        msg.kind == vm::CallKind::DelegateCall ||
+        msg.kind == vm::CallKind::CallCode) {
         to = msg.code_address;
     }
 
@@ -239,18 +243,16 @@ void CallTracer::on_enter(evmc_message const &msg)
         .type =
             [kind = msg.kind] {
                 switch (kind) {
-                case EVMC_CALL:
+                case vm::CallKind::Call:
                     return CallType::CALL;
-                case EVMC_DELEGATECALL:
+                case vm::CallKind::DelegateCall:
                     return CallType::DELEGATECALL;
-                case EVMC_CALLCODE:
+                case vm::CallKind::CallCode:
                     return CallType::CALLCODE;
-                case EVMC_CREATE:
+                case vm::CallKind::Create:
                     return CallType::CREATE;
-                case EVMC_CREATE2:
+                case vm::CallKind::Create2:
                     return CallType::CREATE2;
-                case EVMC_EOFCREATE:
-                    MONAD_ABORT(); // unsupported
                 }
                 MONAD_ABORT(); // unreachable
             }(),
@@ -264,19 +266,20 @@ void CallTracer::on_enter(evmc_message const &msg)
                      ? byte_string{}
                      : byte_string{msg.input_data, msg.input_size},
         .output = {},
-        .status = MONAD_STATUS_FAILURE,
+        .status = CallStatus::Failure,
         .depth = depth,
         .logs = std::vector<CallFrame::Log>{},
     });
 }
 
-void CallTracer::on_exit(evmc::Result const &res)
+void CallTracer::on_exit(vm::Result const &res)
 {
-    size_t const output_size =
-        res.status_code == EVMC_SUCCESS || res.status_code == EVMC_REVERT
-            ? res.output_size
-            : 0;
-    if (!(size_ += output_size)) {
+    size_t const output_size = res.status_code == CallStatus::Success ||
+                                       res.status_code == CallStatus::Revert
+                                   ? res.output_size
+                                   : 0;
+    size_ += output_size;
+    if (!size_) {
         return;
     }
 
@@ -287,12 +290,13 @@ void CallTracer::on_exit(evmc::Result const &res)
         "Frame gas is less than remaining gas");
     frame.gas_used = frame.gas - static_cast<uint64_t>(res.gas_left);
 
-    if (res.status_code == EVMC_SUCCESS || res.status_code == EVMC_REVERT) {
+    if (res.status_code == CallStatus::Success ||
+        res.status_code == CallStatus::Revert) {
         frame.output = res.output_size == 0
                            ? byte_string{}
                            : byte_string{res.output_data, res.output_size};
     }
-    frame.status = from_evmc_status_code(res.status_code);
+    frame.status = res.status_code;
 
     if (frame.type == CallType::CREATE || frame.type == CallType::CREATE2) {
         frame.to = is_zero(res.create_address)
@@ -303,13 +307,13 @@ void CallTracer::on_exit(evmc::Result const &res)
 
 void CallTracer::on_log(Receipt::Log log)
 {
-    if (!(size_ += sizeof(CallFrame::Log)) || !(size_ += log.data.size())) {
-        return;
-    }
+    size_ += sizeof(CallFrame::Log);
+    size_ += log.data.size();
     for (auto const &topic : log.topics) {
-        if (!(size_ += sizeof(topic))) {
-            return;
-        }
+        size_ += sizeof(topic);
+    }
+    if (!size_) {
+        return;
     }
 
     auto &frame = frames_stack_.top_frame();
@@ -323,7 +327,8 @@ void CallTracer::on_self_destruct(
     Address const &from, Address const &to,
     uint256_t const &transferred_balance)
 {
-    if (!(size_ += sizeof(CallFrame))) {
+    size_ += sizeof(CallFrame);
+    if (!size_) {
         return;
     }
 
@@ -339,7 +344,7 @@ void CallTracer::on_self_destruct(
         .gas_used = 0,
         .input = {},
         .output = {},
-        .status = MONAD_STATUS_SUCCESS, // TODO
+        .status = CallStatus::Success, // TODO
         .depth = parent.depth + 1,
         .logs = std::vector<CallFrame::Log>{},
     });

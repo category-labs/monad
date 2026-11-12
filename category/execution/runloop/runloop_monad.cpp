@@ -16,16 +16,21 @@
 #include "runloop_monad.hpp"
 #include "file_io.hpp"
 
+#include <category/core/address.hpp>
 #include <category/core/assert.h>
-#include <category/core/blake3.hpp>
+#include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/core/fiber/priority_pool.hpp>
 #include <category/core/hex.hpp>
+#include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
+#include <category/core/likely.h>
 #include <category/core/log.hpp>
 #include <category/core/procfs/statm.h>
+#include <category/core/result.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
+#include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
@@ -40,30 +45,39 @@
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
+#include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
-#include <category/execution/ethereum/validate_transaction.hpp>
+#include <category/execution/ethereum/validate_transaction_error.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/core/monad_block.hpp>
 #include <category/execution/monad/core/rlp/monad_block_rlp.hpp>
-#include <category/execution/monad/db/commit_block_migration.hpp>
+#include <category/execution/monad/db/commit_block.hpp>
 #include <category/execution/monad/event/record_consensus_events.hpp>
-#include <category/execution/monad/reserve_balance.hpp>
 #include <category/execution/monad/validate_monad_block.hpp>
+#include <category/execution/runloop/runloop_monad_override.hpp>
 #include <category/mpt/db.hpp>
+#include <category/mpt/util.hpp>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/vm.hpp>
 
 #include <ankerl/unordered_dense.h>
 #include <boost/outcome/try.hpp>
 
 #include <quill/std/Chrono.h>
 
+#include <algorithm>
 #include <chrono>
+#include <csignal>
+#include <cstdint>
 #include <deque>
 #include <filesystem>
+#include <memory>
 #include <optional>
 #include <thread>
+#include <tuple>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -214,18 +228,16 @@ Result<BlockExecOutput> propose_block(
         }
     }
 
-    auto senders_and_authorities =
-        combine_senders_and_authorities(senders, recovered_authorities);
-
-    MONAD_ASSERT(block_cache
-                     .emplace(
-                         block_id,
-                         BlockCacheEntry{
-                             .block_number = block.header.number,
-                             .parent_id = consensus_header.parent_id(),
-                             .senders_and_authorities =
-                                 std::move(senders_and_authorities)})
-                     .second);
+    MONAD_ASSERT(
+        block_cache
+            .emplace(
+                block_id,
+                BlockCacheEntry{
+                    .block_number = block.header.number,
+                    .parent_id = consensus_header.parent_id(),
+                    .senders_and_authorities = combine_senders_and_authorities(
+                        senders, recovered_authorities)})
+            .second);
     BOOST_OUTCOME_TRY(
         static_validate_monad_body<traits>(senders, block.transactions));
 
@@ -288,13 +300,6 @@ Result<BlockExecOutput> propose_block(
     block.header.parent_hash =
         to_bytes(keccak256(rlp::encode_block_header(db.read_eth_header())));
 
-    // EIP-7843: surface the Monad consensus round to execution via the EL
-    // header's slot_number (in-memory only for now; not RLP-encoded). It is
-    // read into evmc_tx_context.block_round by get_tx_context and system_call.
-    // NOTE: only this path populates slot_number; RPC/trace re-execution does
-    // not (see EXE-60).
-    block.header.slot_number = consensus_header.block_round;
-
     BlockExecOutput exec_output;
     BlockMetrics block_metrics;
 
@@ -327,16 +332,18 @@ Result<BlockExecOutput> propose_block(
     // Allow overriding the state deltas for testing purposes:
     runloop_override.preprocess_state_deltas(&state);
 
-    BlockCommitAncillaries const anc{
-        .code = code,
-        .receipts = results,
-        .transactions = block.transactions,
-        .senders = senders,
-        .call_frames = call_frames,
-        .ommers = block.ommers,
-        .withdrawals = block.withdrawals};
     commit_block<traits>(
-        db, /*secondary_db=*/nullptr, block_id, block.header, *state, anc);
+        db,
+        block_id,
+        block.header,
+        *state,
+        code,
+        results,
+        call_frames,
+        senders,
+        block.transactions,
+        block.ommers,
+        block.withdrawals);
     [[maybe_unused]] auto const commit_time =
         std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - commit_begin);
@@ -530,9 +537,6 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                 recovered_authorities =
                     recover_authorities(body.transactions, priority_pool);
 
-            auto senders_and_authorities =
-                combine_senders_and_authorities(senders, recovered_authorities);
-
             MONAD_ASSERT(block_cache
                              .emplace(
                                  id,
@@ -540,7 +544,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                                      .block_number = header.seqno,
                                      .parent_id = header.parent_id(),
                                      .senders_and_authorities =
-                                         std::move(senders_and_authorities)})
+                                         combine_senders_and_authorities(
+                                             senders, recovered_authorities)})
                              .second);
         });
 
@@ -585,6 +590,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
             [&raw_db, &to_execute, &to_finalize](
                 bytes32_t const &id, auto const &header) {
                 std::vector<uint64_t> verified_blocks;
+                verified_blocks.reserve(
+                    header.delayed_execution_results.size());
                 for (BlockHeader const &h : header.delayed_execution_results) {
                     verified_blocks.push_back(h.number);
                 }
@@ -717,15 +724,19 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
                 exec_output.eth_header.gas_used,
                 block_time_start);
 
-            return outcome::success();
+            return std::pair{ntxns, exec_output.eth_header.gas_used};
         };
 
         for (auto const &[block_id, consensus_header] : to_execute) {
-            BOOST_OUTCOME_TRY(std::visit(
-                [&block_id, handle_to_execute](auto const &header) {
-                    return handle_to_execute(block_id, header);
-                },
-                consensus_header));
+            BOOST_OUTCOME_TRY(
+                auto const executed,
+                std::visit(
+                    [&block_id, handle_to_execute](auto const &header) {
+                        return handle_to_execute(block_id, header);
+                    },
+                    consensus_header));
+            ntxs += executed.first;
+            total_gas += executed.second;
         }
 
         for (auto const &[block, block_id, verified_blocks] : to_finalize) {

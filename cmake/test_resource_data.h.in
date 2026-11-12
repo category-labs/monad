@@ -10,8 +10,6 @@
 
 #include <monad/test/config.hpp>
 
-#include <evmc/evmc.h>
-
 #include <filesystem>
 
 MONAD_NAMESPACE_BEGIN

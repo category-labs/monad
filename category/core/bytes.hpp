@@ -20,12 +20,11 @@
 #include <category/core/address.hpp>
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
+#include <category/core/bytes32.h>
 #include <category/core/hex.hpp>
 #include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
 #include <category/core/seeded_fast_hash.hpp>
-
-#include <evmc/evmc.hpp>
 
 #include <ankerl/unordered_dense.h>
 
@@ -36,23 +35,23 @@
 
 MONAD_NAMESPACE_BEGIN
 
-struct bytes32_t : evmc_bytes32
+struct bytes32_t : monad_bytes32
 {
     constexpr bytes32_t() noexcept
-        : evmc_bytes32{}
+        : monad_bytes32{}
     {
     }
 
     constexpr bytes32_t(bytes32_t const &) noexcept = default;
     constexpr bytes32_t &operator=(bytes32_t const &) noexcept = default;
 
-    explicit(false) constexpr bytes32_t(evmc_bytes32 const &other) noexcept
-        : evmc_bytes32{other}
+    explicit(false) constexpr bytes32_t(monad_bytes32 const &other) noexcept
+        : monad_bytes32{other}
     {
     }
 
     explicit constexpr bytes32_t(uint64_t const v) noexcept
-        : evmc_bytes32{}
+        : monad_bytes32{}
     {
         for (int i = 0; i < 8; ++i) {
             bytes[31 - i] = static_cast<uint8_t>(v >> (i * 8));
@@ -62,7 +61,7 @@ struct bytes32_t : evmc_bytes32
     template <std::same_as<uint8_t>... Bytes>
         requires(sizeof...(Bytes) >= 1 && sizeof...(Bytes) <= 32)
     explicit(false) constexpr bytes32_t(Bytes... bs) noexcept
-        : evmc_bytes32{{bs...}}
+        : monad_bytes32{{bs...}}
     {
     }
 

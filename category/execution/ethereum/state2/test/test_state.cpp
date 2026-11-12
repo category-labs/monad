@@ -38,9 +38,6 @@
 #include <category/vm/vm.hpp>
 #include <monad/test/traits_test.hpp>
 
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
-
 #include <quill/std/Optional.h>
 
 #include <gtest/gtest.h>
@@ -226,10 +223,10 @@ TEST_F(InMemoryStateTest, access_account)
 
     State s{bs, Incarnation{1, 1}};
 
-    EXPECT_EQ(s.access_account(a), MONAD_ACCESS_COLD);
-    EXPECT_EQ(s.access_account(a), MONAD_ACCESS_WARM);
-    EXPECT_EQ(s.access_account(b), MONAD_ACCESS_COLD);
-    EXPECT_EQ(s.access_account(b), MONAD_ACCESS_WARM);
+    EXPECT_EQ(s.access_account(a), AccessStatus::Cold);
+    EXPECT_EQ(s.access_account(a), AccessStatus::Warm);
+    EXPECT_EQ(s.access_account(b), AccessStatus::Cold);
+    EXPECT_EQ(s.access_account(b), AccessStatus::Warm);
 }
 
 TEST_F(InMemoryStateTest, account_exists)
@@ -399,7 +396,7 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct)
         std::make_pair(false, 0));
 
     s.destruct_suicides<typename TestFixture::Trait>();
-    if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_CANCUN) {
+    if constexpr (TestFixture::Trait::eip_6780_active()) {
         EXPECT_TRUE(s.account_exists(a));
     }
     else {
@@ -443,7 +440,7 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_separate_tx)
         std::make_pair(false, 0));
 
     s.destruct_suicides<typename TestFixture::Trait>();
-    if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_CANCUN) {
+    if constexpr (TestFixture::Trait::eip_6780_active()) {
         EXPECT_TRUE(s.account_exists(a));
     }
     else {
@@ -512,8 +509,7 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_self_separate_tx)
     uint256_t const balance_after_selfdestruct = s.get_balance(a);
     s.destruct_suicides<typename TestFixture::Trait>();
 
-    if constexpr (TestFixture::Trait::evm_rev() < MONAD_ETH_CANCUN) {
-        // Pre-cancun behavior
+    if constexpr (!TestFixture::Trait::eip_6780_active()) {
         EXPECT_EQ(balance_after_selfdestruct, 0);
         EXPECT_FALSE(s.account_exists(a));
     }
@@ -542,14 +538,575 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_self_same_tx)
 
     State s{bs, Incarnation{1, 1}};
 
-    // Behavior doesn't change in cancun if in same txn
+    // The returned balance is read before the guard at every revision; it is
+    // what the call tracer records as the SELFDESTRUCT frame's value.
     EXPECT_EQ(
         s.selfdestruct<typename TestFixture::Trait>(a, a),
         std::make_pair(true, 18'000));
-    EXPECT_EQ(s.get_balance(a), 0);
+
+    if constexpr (TestFixture::Trait::eip_8246_active()) {
+        EXPECT_EQ(s.get_balance(a), 18'000);
+        s.destruct_suicides<typename TestFixture::Trait>();
+        ASSERT_TRUE(s.account_exists(a));
+        EXPECT_EQ(s.get_balance(a), 18'000);
+        EXPECT_EQ(s.get_nonce(a), 0);
+        EXPECT_EQ(s.get_code_hash(a), NULL_HASH);
+    }
+    else {
+        EXPECT_EQ(s.get_balance(a), 0);
+        s.destruct_suicides<typename TestFixture::Trait>();
+        EXPECT_FALSE(s.account_exists(a));
+    }
+}
+
+TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_self_same_tx_zero_balance)
+{
+    BlockState bs{this->tdb, this->vm};
+    State s{bs, Incarnation{1, 1}};
+
+    // Empty after the destruct, so EIP-161 deletes it at every revision.
+    s.create_contract(a);
+    EXPECT_EQ(
+        s.selfdestruct<typename TestFixture::Trait>(a, a),
+        std::make_pair(true, 0));
 
     s.destruct_suicides<typename TestFixture::Trait>();
     EXPECT_FALSE(s.account_exists(a));
+}
+
+TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_preserved_storage_zeroed)
+{
+    BlockState bs{this->tdb, this->vm};
+    commit_sequential(
+        this->tdb,
+        StateDeltas(
+            {{a,
+              StateDelta{
+                  .account = {std::nullopt, Account{.balance = 18'000}},
+                  .storage = {{key1, {bytes32_t{}, value1}}}}}}),
+        Code{},
+        BlockHeader{});
+    {
+        State s1{bs, Incarnation{1, 1}};
+
+        // create_contract makes the pre-existing account same-tx for EIP-6780.
+        s1.create_contract(a);
+        s1.set_storage(a, key2, value2);
+        EXPECT_EQ(
+            s1.selfdestruct<typename TestFixture::Trait>(a, a),
+            std::make_pair(true, 18'000));
+        s1.destruct_suicides<typename TestFixture::Trait>();
+
+        EXPECT_TRUE(bs.can_merge(s1));
+        bs.merge(s1);
+    }
+    {
+        State s2{bs, Incarnation{1, 2}};
+        if constexpr (TestFixture::Trait::eip_8246_active()) {
+            // Both slots read as zero in a later transaction of the same block:
+            // key2 because finalization zeroed rather than erased it, key1
+            // because create_contract bumped the incarnation.
+            ASSERT_TRUE(s2.account_exists(a));
+            EXPECT_EQ(s2.get_balance(a), 18'000);
+            EXPECT_EQ(s2.get_nonce(a), 0);
+            EXPECT_EQ(s2.get_code_hash(a), NULL_HASH);
+            EXPECT_EQ(s2.get_storage(a, key1), bytes32_t{});
+            EXPECT_EQ(s2.get_storage(a, key2), bytes32_t{});
+        }
+        else {
+            EXPECT_FALSE(s2.account_exists(a));
+        }
+    }
+}
+
+TYPED_TEST(
+    InMemoryStateTraitsTest, selfdestruct_credit_after_destruct_preserved)
+{
+    BlockState bs{this->tdb, this->vm};
+    commit_sequential(
+        this->tdb,
+        StateDeltas(
+            {{a,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .balance = 18'000,
+                           .incarnation = Incarnation{1, 1}}}}}}),
+        Code{},
+        BlockHeader{});
+
+    State s{bs, Incarnation{1, 1}};
+
+    // EIP-8246's second case: a credit to an account already marked for
+    // destruction is no longer destroyed with it.
+    EXPECT_EQ(
+        s.selfdestruct<typename TestFixture::Trait>(a, b),
+        std::make_pair(true, 18'000));
+    EXPECT_EQ(s.get_balance(a), 0);
+    EXPECT_EQ(s.get_balance(b), 18'000);
+
+    s.add_to_balance(a, 5'000);
+    s.destruct_suicides<typename TestFixture::Trait>();
+
+    if constexpr (TestFixture::Trait::eip_8246_active()) {
+        ASSERT_TRUE(s.account_exists(a));
+        EXPECT_EQ(s.get_balance(a), 5'000);
+        EXPECT_EQ(s.get_nonce(a), 0);
+        EXPECT_EQ(s.get_code_hash(a), NULL_HASH);
+    }
+    else {
+        EXPECT_FALSE(s.account_exists(a));
+    }
+    EXPECT_EQ(s.get_balance(b), 18'000);
+}
+
+TYPED_TEST(
+    InMemoryStateTraitsTest, selfdestruct_preserved_clears_nonce_and_code)
+{
+    BlockState bs{this->tdb, this->vm};
+    commit_sequential(
+        this->tdb,
+        StateDeltas(
+            {{a,
+              StateDelta{
+                  .account = {std::nullopt, Account{.balance = 18'000}}}}}),
+        Code{},
+        BlockHeader{});
+
+    State s{bs, Incarnation{1, 1}};
+
+    s.create_contract(a);
+    s.set_nonce(a, 1);
+    s.set_code(a, code1);
+    ASSERT_EQ(s.get_nonce(a), 1);
+    ASSERT_NE(s.get_code_hash(a), NULL_HASH);
+
+    s.selfdestruct<typename TestFixture::Trait>(a, a);
+    s.destruct_suicides<typename TestFixture::Trait>();
+
+    if constexpr (TestFixture::Trait::eip_8246_active()) {
+        ASSERT_TRUE(s.account_exists(a));
+        EXPECT_EQ(s.get_balance(a), 18'000);
+        EXPECT_EQ(s.get_nonce(a), 0);
+        EXPECT_EQ(s.get_code_hash(a), NULL_HASH);
+    }
+    else {
+        EXPECT_FALSE(s.account_exists(a));
+    }
+}
+
+TYPED_TEST(
+    InMemoryStateTraitsTest, selfdestruct_preserved_read_only_slot_cleared)
+{
+    BlockState bs{this->tdb, this->vm};
+    commit_sequential(
+        this->tdb,
+        StateDeltas(
+            {{a,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .balance = 18'000,
+                           .incarnation = Incarnation{1, 1}}},
+                  .storage = {{key1, {bytes32_t{}, value1}}}}}}),
+        Code{},
+        BlockHeader{});
+    {
+        State s1{bs, Incarnation{1, 1}};
+
+        // key1 is only read and key2 written; both must read zero afterwards.
+        s1.access_storage<typename TestFixture::Trait>(a, key1);
+        ASSERT_EQ(s1.get_storage(a, key1), value1);
+        s1.set_storage(a, key2, value2);
+
+        s1.selfdestruct<typename TestFixture::Trait>(a, a);
+        s1.destruct_suicides<typename TestFixture::Trait>();
+
+        EXPECT_TRUE(bs.can_merge(s1));
+        bs.merge(s1);
+    }
+    {
+        State s2{bs, Incarnation{1, 2}};
+        if constexpr (TestFixture::Trait::eip_8246_active()) {
+            ASSERT_TRUE(s2.account_exists(a));
+            EXPECT_EQ(s2.get_balance(a), 18'000);
+            EXPECT_EQ(s2.get_nonce(a), 0);
+            EXPECT_EQ(s2.get_code_hash(a), NULL_HASH);
+            EXPECT_EQ(s2.get_storage(a, key1), bytes32_t{});
+            EXPECT_EQ(s2.get_storage(a, key2), bytes32_t{});
+        }
+        else {
+            EXPECT_FALSE(s2.account_exists(a));
+        }
+    }
+}
+
+TYPED_TEST(
+    InMemoryStateTraitsTest, selfdestruct_preserved_survives_touched_dead)
+{
+    BlockState bs{this->tdb, this->vm};
+    commit_sequential(
+        this->tdb,
+        StateDeltas(
+            {{a,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .balance = 18'000,
+                           .incarnation = Incarnation{1, 1}}}}}}),
+        Code{},
+        BlockHeader{});
+
+    State s{bs, Incarnation{1, 1}};
+
+    // b has a nonce and code, so it is not dead: only the EIP-161 arm in
+    // destruct_suicides can delete it, not destruct_touched_dead.
+    s.create_contract(b);
+    s.set_nonce(b, 1);
+    s.set_code(b, code2);
+
+    // A destruct to self moves no value under EIP-8246, so touch the account
+    // explicitly, as transfer_balances does in production.
+    s.touch(a);
+    s.touch(b);
+
+    s.selfdestruct<typename TestFixture::Trait>(a, a);
+    s.selfdestruct<typename TestFixture::Trait>(b, b);
+    s.destruct_suicides<typename TestFixture::Trait>();
+
+    // Checked before destruct_touched_dead, to attribute the deletion.
+    EXPECT_FALSE(s.account_exists(b));
+
+    s.destruct_touched_dead();
+
+    if constexpr (TestFixture::Trait::eip_8246_active()) {
+        ASSERT_TRUE(s.account_exists(a));
+        EXPECT_EQ(s.get_balance(a), 18'000);
+        EXPECT_EQ(s.get_nonce(a), 0);
+        EXPECT_EQ(s.get_code_hash(a), NULL_HASH);
+    }
+    else {
+        EXPECT_FALSE(s.account_exists(a));
+    }
+    EXPECT_FALSE(s.account_exists(b));
+}
+
+TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_preserved_merge_commit)
+{
+    BlockState bs{this->tdb, this->vm};
+    commit_sequential(
+        this->tdb,
+        StateDeltas(
+            {{a,
+              StateDelta{
+                  .account = {std::nullopt, Account{.balance = 18'000}},
+                  .storage = {{key1, {bytes32_t{}, value1}}}}}}),
+        Code{},
+        BlockHeader{});
+    {
+        State s1{bs, Incarnation{1, 1}};
+
+        s1.create_contract(a);
+        s1.set_storage(a, key2, value2);
+        s1.selfdestruct<typename TestFixture::Trait>(a, a);
+        s1.destruct_suicides<typename TestFixture::Trait>();
+
+        EXPECT_TRUE(bs.can_merge(s1));
+        bs.merge(s1);
+    }
+    {
+        auto [released_state, released_code, _] = std::move(bs).release();
+        commit_simple(
+            this->tdb,
+            *released_state,
+            released_code,
+            bytes32_t{1},
+            BlockHeader{.number = 1});
+        this->tdb.finalize(1, bytes32_t{1});
+        this->tdb.set_block_and_prefix(1);
+
+        // Through the trie, so the revision's real commit builder runs.
+        EXPECT_EQ(
+            this->tdb.read_storage(a, Incarnation{1, 1}, key1), bytes32_t{});
+        EXPECT_EQ(
+            this->tdb.read_storage(a, Incarnation{1, 1}, key2), bytes32_t{});
+        if constexpr (TestFixture::Trait::eip_8246_active()) {
+            ASSERT_TRUE(this->tdb.read_account(a).has_value());
+            EXPECT_EQ(this->tdb.read_account(a).value().balance, 18'000);
+            EXPECT_EQ(this->tdb.read_account(a).value().nonce, 0);
+            EXPECT_EQ(this->tdb.read_account(a).value().code_hash, NULL_HASH);
+        }
+        else {
+            EXPECT_FALSE(this->tdb.read_account(a).has_value());
+        }
+    }
+}
+
+// With no writes, only the account update's reincarnation flag can wipe the
+// old subtree, so destruct_suicides must keep the incarnation.
+TYPED_TEST(
+    InMemoryStateTraitsTest,
+    selfdestruct_preserved_prestate_storage_wiped_no_writes)
+{
+    BlockState bs{this->tdb, this->vm};
+    commit_sequential(
+        this->tdb,
+        StateDeltas(
+            {{a,
+              StateDelta{
+                  .account = {std::nullopt, Account{.balance = 18'000}},
+                  .storage = {{key1, {bytes32_t{}, value1}}}}}}),
+        Code{},
+        BlockHeader{});
+    {
+        State s1{bs, Incarnation{1, 1}};
+        s1.create_contract(a);
+        s1.selfdestruct<typename TestFixture::Trait>(a, a);
+        s1.destruct_suicides<typename TestFixture::Trait>();
+        EXPECT_TRUE(bs.can_merge(s1));
+        bs.merge(s1);
+    }
+    {
+        auto [released_state, released_code, _] = std::move(bs).release();
+        commit_simple(
+            this->tdb,
+            *released_state,
+            released_code,
+            bytes32_t{1},
+            BlockHeader{.number = 1});
+        this->tdb.finalize(1, bytes32_t{1});
+        this->tdb.set_block_and_prefix(1);
+
+        EXPECT_EQ(
+            this->tdb.read_storage(a, Incarnation{1, 1}, key1), bytes32_t{});
+        // The pre-destruct incarnation must not resolve either.
+        EXPECT_EQ(
+            this->tdb.read_storage(a, Incarnation{0, 0}, key1), bytes32_t{});
+        if constexpr (TestFixture::Trait::eip_8246_active()) {
+            ASSERT_TRUE(this->tdb.read_account(a).has_value());
+            EXPECT_EQ(this->tdb.read_account(a).value().balance, 18'000);
+            EXPECT_EQ(this->tdb.read_account(a).value().nonce, 0);
+            EXPECT_EQ(this->tdb.read_account(a).value().code_hash, NULL_HASH);
+        }
+        else {
+            EXPECT_FALSE(this->tdb.read_account(a).has_value());
+        }
+    }
+}
+
+// The two dbs use different incarnations on purpose: the incarnation must stay
+// out of the merkle account.
+TYPED_TEST(
+    InMemoryStateTraitsTest,
+    selfdestruct_preserved_state_root_matches_plain_account)
+{
+    if constexpr (!TestFixture::Trait::eip_8246_active()) {
+        GTEST_SKIP() << "account preservation requires EIP-8246";
+    }
+    else {
+        bytes32_t preserved_root{};
+        {
+            BlockState bs{this->tdb, this->vm};
+            State s1{bs, Incarnation{1, 1}};
+            s1.create_contract(a);
+            s1.set_nonce(a, 1);
+            s1.set_code(a, code1);
+            s1.set_storage(a, key1, value1);
+            s1.add_to_balance(a, 18'000);
+            s1.selfdestruct<typename TestFixture::Trait>(a, a);
+            s1.destruct_suicides<typename TestFixture::Trait>();
+            ASSERT_TRUE(bs.can_merge(s1));
+            bs.merge(s1);
+            auto [released_state, released_code, _] = std::move(bs).release();
+            commit_simple(
+                this->tdb,
+                *released_state,
+                released_code,
+                bytes32_t{1},
+                BlockHeader{.number = 1});
+            this->tdb.finalize(1, bytes32_t{1});
+            this->tdb.set_block_and_prefix(1);
+            preserved_root = this->tdb.state_root();
+        }
+        {
+            mpt::Db db2{TestFixture::make_machine()};
+            TrieDb tdb2{db2};
+            BlockState bs2{tdb2, this->vm};
+            State s2{bs2, Incarnation{1, 5}};
+            s2.add_to_balance(a, 18'000);
+            ASSERT_TRUE(bs2.can_merge(s2));
+            bs2.merge(s2);
+            auto [released_state, released_code, _] = std::move(bs2).release();
+            commit_simple(
+                tdb2,
+                *released_state,
+                released_code,
+                bytes32_t{1},
+                BlockHeader{.number = 1});
+            tdb2.finalize(1, bytes32_t{1});
+            tdb2.set_block_and_prefix(1);
+            EXPECT_EQ(preserved_root, tdb2.state_root());
+        }
+    }
+}
+
+// The block delta still carries key2 from the first transaction.
+TYPED_TEST(
+    InMemoryStateTraitsTest,
+    selfdestruct_preserved_recreated_next_tx_same_block)
+{
+    BlockState bs{this->tdb, this->vm};
+    commit_sequential(
+        this->tdb,
+        StateDeltas(
+            {{a,
+              StateDelta{
+                  .account = {std::nullopt, Account{.balance = 18'000}}}}}),
+        Code{},
+        BlockHeader{});
+    {
+        State s1{bs, Incarnation{1, 1}};
+        s1.create_contract(a);
+        s1.set_nonce(a, 1);
+        s1.set_code(a, code1);
+        s1.set_storage(a, key2, value2);
+        s1.selfdestruct<typename TestFixture::Trait>(a, a);
+        s1.destruct_suicides<typename TestFixture::Trait>();
+        EXPECT_TRUE(bs.can_merge(s1));
+        bs.merge(s1);
+    }
+    if constexpr (!TestFixture::Trait::eip_8246_active()) {
+        GTEST_SKIP() << "account preservation requires EIP-8246";
+    }
+    else {
+        {
+            State s2{bs, Incarnation{1, 2}};
+            // The preserved account is nonce 0 / NULL_HASH, so EIP-684 lets a
+            // CREATE land here.
+            ASSERT_TRUE(s2.account_exists(a));
+            ASSERT_EQ(s2.get_nonce(a), 0);
+            ASSERT_EQ(s2.get_code_hash(a), NULL_HASH);
+            EXPECT_EQ(s2.get_storage(a, key2), bytes32_t{});
+
+            s2.create_contract(a);
+            EXPECT_EQ(s2.get_storage(a, key2), bytes32_t{});
+            s2.set_nonce(a, 1);
+            s2.set_code(a, code2);
+            s2.set_storage(a, key3, value3);
+            s2.selfdestruct<typename TestFixture::Trait>(a, a);
+            s2.destruct_suicides<typename TestFixture::Trait>();
+            EXPECT_TRUE(bs.can_merge(s2));
+            bs.merge(s2);
+        }
+        {
+            auto [released_state, released_code, _] = std::move(bs).release();
+            commit_simple(
+                this->tdb,
+                *released_state,
+                released_code,
+                bytes32_t{1},
+                BlockHeader{.number = 1});
+            this->tdb.finalize(1, bytes32_t{1});
+            this->tdb.set_block_and_prefix(1);
+
+            ASSERT_TRUE(this->tdb.read_account(a).has_value());
+
+            EXPECT_EQ(this->tdb.read_account(a).value().balance, 18'000);
+
+            EXPECT_EQ(this->tdb.read_account(a).value().nonce, 0);
+
+            EXPECT_EQ(this->tdb.read_account(a).value().code_hash, NULL_HASH);
+            auto const inc = this->tdb.read_account(a).value().incarnation;
+            EXPECT_EQ(this->tdb.read_storage(a, inc, key2), bytes32_t{});
+            EXPECT_EQ(this->tdb.read_storage(a, inc, key3), bytes32_t{});
+        }
+    }
+}
+
+TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_mutual_conserves_supply)
+{
+    BlockState bs{this->tdb, this->vm};
+    State s{bs, Incarnation{1, 1}};
+
+    s.create_contract(a);
+    s.set_nonce(a, 1);
+    s.set_code(a, code1);
+    s.add_to_balance(a, 100);
+
+    s.create_contract(b);
+    s.set_nonce(b, 1);
+    s.set_code(b, code2);
+    s.add_to_balance(b, 200);
+
+    s.selfdestruct<typename TestFixture::Trait>(a, b);
+    EXPECT_EQ(s.get_balance(a), 0);
+    EXPECT_EQ(s.get_balance(b), 300);
+
+    s.selfdestruct<typename TestFixture::Trait>(b, a);
+    EXPECT_EQ(s.get_balance(a), 300);
+    EXPECT_EQ(s.get_balance(b), 0);
+
+    s.destruct_suicides<typename TestFixture::Trait>();
+    s.destruct_touched_dead();
+
+    if constexpr (TestFixture::Trait::eip_8246_active()) {
+        ASSERT_TRUE(s.account_exists(a));
+        EXPECT_EQ(s.get_balance(a), 300);
+        EXPECT_EQ(s.get_nonce(a), 0);
+        EXPECT_EQ(s.get_code_hash(a), NULL_HASH);
+    }
+    else {
+        EXPECT_FALSE(s.account_exists(a));
+    }
+    EXPECT_FALSE(s.account_exists(b));
+}
+
+TYPED_TEST(
+    InMemoryStateTraitsTest, selfdestruct_preserved_visible_in_next_block)
+{
+    {
+        BlockState bs{this->tdb, this->vm};
+        State s1{bs, Incarnation{1, 1}};
+        s1.create_contract(a);
+        s1.set_nonce(a, 1);
+        s1.set_code(a, code1);
+        s1.set_storage(a, key1, value1);
+        s1.add_to_balance(a, 18'000);
+        s1.selfdestruct<typename TestFixture::Trait>(a, a);
+        s1.destruct_suicides<typename TestFixture::Trait>();
+        ASSERT_TRUE(bs.can_merge(s1));
+        bs.merge(s1);
+        auto [released_state, released_code, _] = std::move(bs).release();
+        commit_simple(
+            this->tdb,
+            *released_state,
+            released_code,
+            bytes32_t{1},
+            BlockHeader{.number = 1});
+        this->tdb.finalize(1, bytes32_t{1});
+        this->tdb.set_block_and_prefix(1);
+    }
+
+    BlockState bs2{this->tdb, this->vm};
+    State s2{bs2, Incarnation{2, 1}};
+    if constexpr (!TestFixture::Trait::eip_8246_active()) {
+        EXPECT_FALSE(s2.account_exists(a));
+    }
+    else {
+        ASSERT_TRUE(s2.account_exists(a));
+        EXPECT_EQ(s2.get_balance(a), 18'000);
+        EXPECT_EQ(s2.get_nonce(a), 0);
+        EXPECT_EQ(s2.get_code_hash(a), NULL_HASH);
+        EXPECT_FALSE(s2.account_is_dead(a));
+        EXPECT_EQ(s2.get_storage(a, key1), bytes32_t{});
+        s2.subtract_from_balance(a, 18'000);
+        s2.add_to_balance(b, 18'000);
+        EXPECT_EQ(s2.get_balance(a), 0);
+        EXPECT_EQ(s2.get_balance(b), 18'000);
+    }
 }
 
 TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_merge_incarnation)
@@ -575,7 +1132,7 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_merge_incarnation)
     }
     {
         State s2{bs, Incarnation{1, 2}};
-        if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_CANCUN) {
+        if constexpr (TestFixture::Trait::eip_6780_active()) {
             EXPECT_TRUE(s2.account_exists(a));
         }
         else {
@@ -609,7 +1166,7 @@ TYPED_TEST(InMemoryStateTraitsTest, selfdestruct_merge_create_incarnation)
     }
     {
         State s2{bs, Incarnation{1, 2}};
-        if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_CANCUN) {
+        if constexpr (TestFixture::Trait::eip_6780_active()) {
             EXPECT_TRUE(s2.account_exists(a));
         }
         else {
@@ -734,7 +1291,7 @@ TYPED_TEST(
         this->tdb.set_block_and_prefix(1);
         EXPECT_EQ(this->tdb.read_storage(a, Incarnation{1, 2}, key1), value1);
         EXPECT_EQ(this->tdb.read_storage(a, Incarnation{1, 2}, key2), value2);
-        if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_CANCUN) {
+        if constexpr (TestFixture::Trait::eip_6780_active()) {
             EXPECT_EQ(
                 this->tdb.read_storage(a, Incarnation{1, 2}, key3), value3);
 
@@ -1048,14 +1605,14 @@ TYPED_TEST(InMemoryStateTraitsTest, access_storage)
     BlockState bs{this->tdb, this->vm};
 
     State s{bs, Incarnation{1, 1}};
-    EXPECT_EQ(s.access_storage<Trait>(a, key1), MONAD_ACCESS_COLD);
-    EXPECT_EQ(s.access_storage<Trait>(a, key1), MONAD_ACCESS_WARM);
-    EXPECT_EQ(s.access_storage<Trait>(b, key1), MONAD_ACCESS_COLD);
-    EXPECT_EQ(s.access_storage<Trait>(b, key1), MONAD_ACCESS_WARM);
-    EXPECT_EQ(s.access_storage<Trait>(a, key2), MONAD_ACCESS_COLD);
-    EXPECT_EQ(s.access_storage<Trait>(a, key2), MONAD_ACCESS_WARM);
-    EXPECT_EQ(s.access_storage<Trait>(b, key2), MONAD_ACCESS_COLD);
-    EXPECT_EQ(s.access_storage<Trait>(b, key2), MONAD_ACCESS_WARM);
+    EXPECT_EQ(s.access_storage<Trait>(a, key1), AccessStatus::Cold);
+    EXPECT_EQ(s.access_storage<Trait>(a, key1), AccessStatus::Warm);
+    EXPECT_EQ(s.access_storage<Trait>(b, key1), AccessStatus::Cold);
+    EXPECT_EQ(s.access_storage<Trait>(b, key1), AccessStatus::Warm);
+    EXPECT_EQ(s.access_storage<Trait>(a, key2), AccessStatus::Cold);
+    EXPECT_EQ(s.access_storage<Trait>(a, key2), AccessStatus::Warm);
+    EXPECT_EQ(s.access_storage<Trait>(b, key2), AccessStatus::Cold);
+    EXPECT_EQ(s.access_storage<Trait>(b, key2), AccessStatus::Warm);
 }
 
 TEST_F(InMemoryStateTest, get_storage)
@@ -1104,7 +1661,7 @@ TEST_F(InMemoryStateTest, set_storage_modified)
 
     State s{bs, Incarnation{1, 1}};
     EXPECT_TRUE(s.account_exists(a));
-    EXPECT_EQ(s.set_storage(a, key2, value3), MONAD_STORAGE_MODIFIED);
+    EXPECT_EQ(s.set_storage(a, key2, value3), StorageStatus::Modified);
     EXPECT_EQ(s.get_storage(a, key2), value3);
 }
 
@@ -1124,11 +1681,11 @@ TEST_F(InMemoryStateTest, set_storage_deleted)
 
     State s{bs, Incarnation{1, 1}};
     EXPECT_TRUE(s.account_exists(b));
-    EXPECT_EQ(s.set_storage(b, key1, null), MONAD_STORAGE_DELETED);
+    EXPECT_EQ(s.set_storage(b, key1, null), StorageStatus::Deleted);
     EXPECT_EQ(s.get_storage(b, key1), null);
-    EXPECT_EQ(s.set_storage(b, key1, null), MONAD_STORAGE_ASSIGNED);
+    EXPECT_EQ(s.set_storage(b, key1, null), StorageStatus::Assigned);
     EXPECT_EQ(s.get_storage(b, key1), null);
-    EXPECT_EQ(s.set_storage(b, key1, value2), MONAD_STORAGE_DELETED_ADDED);
+    EXPECT_EQ(s.set_storage(b, key1, value2), StorageStatus::DeletedAdded);
     EXPECT_EQ(s.get_storage(b, key1), value2);
 }
 
@@ -1143,11 +1700,11 @@ TEST_F(InMemoryStateTest, set_storage_added)
 
     State s{bs, Incarnation{1, 1}};
     EXPECT_TRUE(s.account_exists(b));
-    EXPECT_EQ(s.set_storage(b, key1, value1), MONAD_STORAGE_ADDED);
+    EXPECT_EQ(s.set_storage(b, key1, value1), StorageStatus::Added);
     EXPECT_EQ(s.get_storage(b, key1), value1);
-    EXPECT_EQ(s.set_storage(b, key1, value1), MONAD_STORAGE_ASSIGNED);
+    EXPECT_EQ(s.set_storage(b, key1, value1), StorageStatus::Assigned);
     EXPECT_EQ(s.get_storage(b, key1), value1);
-    EXPECT_EQ(s.set_storage(b, key1, value2), MONAD_STORAGE_ASSIGNED);
+    EXPECT_EQ(s.set_storage(b, key1, value2), StorageStatus::Assigned);
     EXPECT_EQ(s.get_storage(b, key1), value2);
 }
 
@@ -1167,9 +1724,9 @@ TEST_F(InMemoryStateTest, set_storage_different_assigned)
 
     State s{bs, Incarnation{1, 1}};
     EXPECT_TRUE(s.account_exists(a));
-    EXPECT_EQ(s.set_storage(a, key2, value3), MONAD_STORAGE_MODIFIED);
+    EXPECT_EQ(s.set_storage(a, key2, value3), StorageStatus::Modified);
     EXPECT_EQ(s.get_storage(a, key2), value3);
-    EXPECT_EQ(s.set_storage(a, key2, value1), MONAD_STORAGE_ASSIGNED);
+    EXPECT_EQ(s.set_storage(a, key2, value1), StorageStatus::Assigned);
     EXPECT_EQ(s.get_storage(a, key2), value1);
 }
 
@@ -1189,7 +1746,7 @@ TEST_F(InMemoryStateTest, set_storage_unchanged_assigned)
 
     State s{bs, Incarnation{1, 1}};
     EXPECT_TRUE(s.account_exists(a));
-    EXPECT_EQ(s.set_storage(a, key2, value2), MONAD_STORAGE_ASSIGNED);
+    EXPECT_EQ(s.set_storage(a, key2, value2), StorageStatus::Assigned);
     EXPECT_EQ(s.get_storage(a, key2), value2);
 }
 
@@ -1204,9 +1761,9 @@ TEST_F(InMemoryStateTest, set_storage_added_deleted)
 
     State s{bs, Incarnation{1, 1}};
     EXPECT_TRUE(s.account_exists(b));
-    EXPECT_EQ(s.set_storage(b, key1, value1), MONAD_STORAGE_ADDED);
+    EXPECT_EQ(s.set_storage(b, key1, value1), StorageStatus::Added);
     EXPECT_EQ(s.get_storage(b, key1), value1);
-    EXPECT_EQ(s.set_storage(b, key1, null), MONAD_STORAGE_ADDED_DELETED);
+    EXPECT_EQ(s.set_storage(b, key1, null), StorageStatus::AddedDeleted);
     EXPECT_EQ(s.get_storage(b, key1), null);
 }
 
@@ -1221,9 +1778,9 @@ TEST_F(InMemoryStateTest, set_storage_added_deleted_null)
 
     State s{bs, Incarnation{1, 1}};
     EXPECT_TRUE(s.account_exists(b));
-    EXPECT_EQ(s.set_storage(b, key1, null), MONAD_STORAGE_ASSIGNED);
+    EXPECT_EQ(s.set_storage(b, key1, null), StorageStatus::Assigned);
     EXPECT_EQ(s.get_storage(b, key1), null);
-    EXPECT_EQ(s.set_storage(b, key1, null), MONAD_STORAGE_ASSIGNED);
+    EXPECT_EQ(s.set_storage(b, key1, null), StorageStatus::Assigned);
     EXPECT_EQ(s.get_storage(b, key1), null);
 }
 
@@ -1242,9 +1799,9 @@ TEST_F(InMemoryStateTest, set_storage_modify_delete)
 
     State s{bs, Incarnation{1, 1}};
     EXPECT_TRUE(s.account_exists(b));
-    EXPECT_EQ(s.set_storage(b, key2, value1), MONAD_STORAGE_MODIFIED);
+    EXPECT_EQ(s.set_storage(b, key2, value1), StorageStatus::Modified);
     EXPECT_EQ(s.get_storage(b, key2), value1);
-    EXPECT_EQ(s.set_storage(b, key2, null), MONAD_STORAGE_MODIFIED_DELETED);
+    EXPECT_EQ(s.set_storage(b, key2, null), StorageStatus::ModifiedDeleted);
     EXPECT_EQ(s.get_storage(b, key2), null);
 }
 
@@ -1263,9 +1820,9 @@ TEST_F(InMemoryStateTest, set_storage_delete_restored)
 
     State s{bs, Incarnation{1, 1}};
     EXPECT_TRUE(s.account_exists(b));
-    EXPECT_EQ(s.set_storage(b, key2, null), MONAD_STORAGE_DELETED);
+    EXPECT_EQ(s.set_storage(b, key2, null), StorageStatus::Deleted);
     EXPECT_EQ(s.get_storage(b, key2), null);
-    EXPECT_EQ(s.set_storage(b, key2, value2), MONAD_STORAGE_DELETED_RESTORED);
+    EXPECT_EQ(s.set_storage(b, key2, value2), StorageStatus::DeletedRestored);
     EXPECT_EQ(s.get_storage(b, key2), value2);
 }
 
@@ -1284,9 +1841,9 @@ TEST_F(InMemoryStateTest, set_storage_modified_restored)
 
     State s{bs, Incarnation{1, 1}};
     EXPECT_TRUE(s.account_exists(b));
-    EXPECT_EQ(s.set_storage(b, key2, value1), MONAD_STORAGE_MODIFIED);
+    EXPECT_EQ(s.set_storage(b, key2, value1), StorageStatus::Modified);
     EXPECT_EQ(s.get_storage(b, key2), value1);
-    EXPECT_EQ(s.set_storage(b, key2, value2), MONAD_STORAGE_MODIFIED_RESTORED);
+    EXPECT_EQ(s.set_storage(b, key2, value2), StorageStatus::ModifiedRestored);
     EXPECT_EQ(s.get_storage(b, key2), value2);
 }
 
@@ -1427,13 +1984,13 @@ TEST_F(InMemoryStateTest, can_merge_same_account_different_storage)
 
     State as{bs, Incarnation{1, 1}};
     EXPECT_TRUE(as.account_exists(b));
-    EXPECT_EQ(as.set_storage(b, key1, value2), MONAD_STORAGE_MODIFIED);
+    EXPECT_EQ(as.set_storage(b, key1, value2), StorageStatus::Modified);
     EXPECT_TRUE(bs.can_merge(as));
     bs.merge(as);
 
     State cs{bs, Incarnation{1, 2}};
     EXPECT_TRUE(cs.account_exists(b));
-    EXPECT_EQ(cs.set_storage(b, key2, null), MONAD_STORAGE_DELETED);
+    EXPECT_EQ(cs.set_storage(b, key2, null), StorageStatus::Deleted);
     EXPECT_TRUE(bs.can_merge(cs));
     bs.merge(cs);
 }
@@ -1454,11 +2011,11 @@ TEST_F(InMemoryStateTest, cant_merge_colliding_storage)
 
     State as{bs, Incarnation{1, 1}};
     EXPECT_TRUE(as.account_exists(b));
-    EXPECT_EQ(as.set_storage(b, key1, value2), MONAD_STORAGE_MODIFIED);
+    EXPECT_EQ(as.set_storage(b, key1, value2), StorageStatus::Modified);
 
     State cs{bs, Incarnation{1, 2}};
     EXPECT_TRUE(cs.account_exists(b));
-    EXPECT_EQ(cs.set_storage(b, key1, null), MONAD_STORAGE_DELETED);
+    EXPECT_EQ(cs.set_storage(b, key1, null), StorageStatus::Deleted);
 
     EXPECT_TRUE(bs.can_merge(as));
     bs.merge(as);
@@ -1468,7 +2025,7 @@ TEST_F(InMemoryStateTest, cant_merge_colliding_storage)
     {
         State cs{bs, Incarnation{1, 2}};
         EXPECT_TRUE(cs.account_exists(b));
-        EXPECT_EQ(cs.set_storage(b, key1, null), MONAD_STORAGE_DELETED);
+        EXPECT_EQ(cs.set_storage(b, key1, null), StorageStatus::Deleted);
         EXPECT_TRUE(bs.can_merge(cs));
         bs.merge(cs);
     }
@@ -1501,16 +2058,16 @@ TYPED_TEST(InMemoryStateTraitsTest, merge_txn0_and_txn1)
 
     State as{bs, Incarnation{1, 1}};
     EXPECT_TRUE(as.account_exists(b));
-    EXPECT_EQ(as.set_storage(b, key1, value2), MONAD_STORAGE_MODIFIED);
-    EXPECT_EQ(as.set_storage(b, key2, null), MONAD_STORAGE_DELETED);
-    EXPECT_EQ(as.set_storage(b, key2, value2), MONAD_STORAGE_DELETED_RESTORED);
+    EXPECT_EQ(as.set_storage(b, key1, value2), StorageStatus::Modified);
+    EXPECT_EQ(as.set_storage(b, key2, null), StorageStatus::Deleted);
+    EXPECT_EQ(as.set_storage(b, key2, value2), StorageStatus::DeletedRestored);
     EXPECT_TRUE(bs.can_merge(as));
     bs.merge(as);
 
     State cs{bs, Incarnation{1, 2}};
     EXPECT_TRUE(cs.account_exists(c));
-    EXPECT_EQ(cs.set_storage(c, key1, null), MONAD_STORAGE_DELETED);
-    EXPECT_EQ(cs.set_storage(c, key2, null), MONAD_STORAGE_DELETED);
+    EXPECT_EQ(cs.set_storage(c, key1, null), StorageStatus::Deleted);
+    EXPECT_EQ(cs.set_storage(c, key2, null), StorageStatus::Deleted);
     EXPECT_EQ(
         cs.selfdestruct<typename TestFixture::Trait>(c, a),
         std::make_pair(true, 50'000));
@@ -1556,8 +2113,8 @@ TEST_F(InMemoryStateTest, set_and_then_clear_storage_in_same_commit)
     State as{bs, Incarnation{1, 1}};
 
     as.create_contract(a);
-    EXPECT_EQ(as.set_storage(a, key1, value1), MONAD_STORAGE_ADDED);
-    EXPECT_EQ(as.set_storage(a, key1, null), MONAD_STORAGE_ADDED_DELETED);
+    EXPECT_EQ(as.set_storage(a, key1, value1), StorageStatus::Added);
+    EXPECT_EQ(as.set_storage(a, key1, null), StorageStatus::AddedDeleted);
     bs.merge(as);
     auto [released_state, released_code, _] = std::move(bs).release();
     commit_simple(
@@ -1614,10 +2171,10 @@ TYPED_TEST(InMemoryStateTraitsTest, commit_twice)
         EXPECT_TRUE(as.account_exists(b));
         as.add_to_balance(b, 42'000);
         as.set_nonce(b, 3);
-        EXPECT_EQ(as.set_storage(b, key1, value2), MONAD_STORAGE_MODIFIED);
-        EXPECT_EQ(as.set_storage(b, key2, null), MONAD_STORAGE_DELETED);
+        EXPECT_EQ(as.set_storage(b, key1, value2), StorageStatus::Modified);
+        EXPECT_EQ(as.set_storage(b, key2, null), StorageStatus::Deleted);
         EXPECT_EQ(
-            as.set_storage(b, key2, value2), MONAD_STORAGE_DELETED_RESTORED);
+            as.set_storage(b, key2, value2), StorageStatus::DeletedRestored);
         EXPECT_TRUE(bs.can_merge(as));
         bs.merge(as);
         auto [released_state, released_code, _] = std::move(bs).release();
@@ -1628,19 +2185,18 @@ TYPED_TEST(InMemoryStateTraitsTest, commit_twice)
             bytes32_t{10},
             BlockHeader{.number = 10});
         this->tdb.finalize(10, bytes32_t{10});
-
+        this->tdb.set_block_and_prefix(10);
         EXPECT_EQ(this->tdb.read_storage(b, Incarnation{1, 1}, key1), value2);
         EXPECT_EQ(this->tdb.read_storage(b, Incarnation{1, 1}, key2), value2);
-
-        this->tdb.set_block_and_prefix(10, bytes32_t{10});
     }
     { // Commit to Block 11 Round 6, on top of block 10 round 5
+        this->tdb.set_block_and_prefix(10, bytes32_t{10});
         BlockState bs{this->tdb, this->vm};
         State cs{bs, Incarnation{2, 1}};
         EXPECT_TRUE(cs.account_exists(a));
         EXPECT_TRUE(cs.account_exists(c));
-        EXPECT_EQ(cs.set_storage(c, key1, null), MONAD_STORAGE_DELETED);
-        EXPECT_EQ(cs.set_storage(c, key2, value1), MONAD_STORAGE_MODIFIED);
+        EXPECT_EQ(cs.set_storage(c, key1, null), StorageStatus::Deleted);
+        EXPECT_EQ(cs.set_storage(c, key2, value1), StorageStatus::Modified);
         EXPECT_EQ(
             cs.selfdestruct<typename TestFixture::Trait>(c, a),
             std::make_pair(true, 50'000));
@@ -1657,7 +2213,7 @@ TYPED_TEST(InMemoryStateTraitsTest, commit_twice)
         EXPECT_EQ(
             this->tdb.read_storage(c, Incarnation{2, 1}, key1),
             monad::bytes32_t{});
-        if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_CANCUN) {
+        if constexpr (TestFixture::Trait::eip_6780_active()) {
             EXPECT_EQ(
                 this->tdb.read_storage(c, Incarnation{2, 1}, key2), value1);
         }
@@ -1673,7 +2229,7 @@ TYPED_TEST(InMemoryStateTraitsTest, commit_twice)
         EXPECT_EQ(
             this->tdb.read_storage(c, Incarnation{2, 1}, key1),
             monad::bytes32_t{});
-        if constexpr (TestFixture::Trait::evm_rev() >= MONAD_ETH_CANCUN) {
+        if constexpr (TestFixture::Trait::eip_6780_active()) {
             EXPECT_EQ(
                 this->tdb.read_storage(c, Incarnation{2, 1}, key2), value1);
         }
@@ -1724,8 +2280,8 @@ TYPED_TEST(OnDiskTestSuite, commit_multiple_proposals)
         EXPECT_TRUE(as.account_exists(b));
         as.add_to_balance(b, 42'000);
         as.set_nonce(b, 3);
-        EXPECT_EQ(as.set_storage(b, key1, value2), MONAD_STORAGE_MODIFIED);
-        EXPECT_EQ(as.set_storage(b, key2, null), MONAD_STORAGE_DELETED);
+        EXPECT_EQ(as.set_storage(b, key1, value2), StorageStatus::Modified);
+        EXPECT_EQ(as.set_storage(b, key2, null), StorageStatus::Deleted);
 
         EXPECT_TRUE(bs.can_merge(as));
         bs.merge(as);
@@ -1753,8 +2309,8 @@ TYPED_TEST(OnDiskTestSuite, commit_multiple_proposals)
         EXPECT_TRUE(as.account_exists(b));
         as.add_to_balance(b, 44'000);
         as.set_nonce(b, 3);
-        EXPECT_EQ(as.set_storage(b, key1, null), MONAD_STORAGE_DELETED);
-        EXPECT_EQ(as.set_storage(b, key2, null), MONAD_STORAGE_DELETED);
+        EXPECT_EQ(as.set_storage(b, key1, null), StorageStatus::Deleted);
+        EXPECT_EQ(as.set_storage(b, key2, null), StorageStatus::Deleted);
         EXPECT_TRUE(bs.can_merge(as));
         bs.merge(as);
         // Commit block 11 round 6 on top of block 10 round 5
@@ -1782,9 +2338,9 @@ TYPED_TEST(OnDiskTestSuite, commit_multiple_proposals)
         EXPECT_TRUE(as.account_exists(b));
         as.add_to_balance(b, 32'000);
         as.set_nonce(b, 3);
-        EXPECT_EQ(as.set_storage(b, key1, null), MONAD_STORAGE_DELETED);
-        EXPECT_EQ(as.set_storage(b, key2, value3), MONAD_STORAGE_MODIFIED);
-        EXPECT_EQ(as.set_storage(b, key1, value2), MONAD_STORAGE_DELETED_ADDED);
+        EXPECT_EQ(as.set_storage(b, key1, null), StorageStatus::Deleted);
+        EXPECT_EQ(as.set_storage(b, key2, value3), StorageStatus::Modified);
+        EXPECT_EQ(as.set_storage(b, key1, value2), StorageStatus::DeletedAdded);
         EXPECT_TRUE(bs.can_merge(as));
         bs.merge(as);
         // Commit block 11 round 7 on top of block 10 round 5
@@ -1925,8 +2481,8 @@ TYPED_TEST(OnDiskCachedTestSuite, undecided_proposals)
     {
         State as{bs_111, Incarnation{11, 1}};
         as.add_to_balance(b, 40'000);
-        EXPECT_EQ(as.set_storage(b, key1, value2), MONAD_STORAGE_MODIFIED);
-        EXPECT_EQ(as.set_storage(b, key2, null), MONAD_STORAGE_DELETED);
+        EXPECT_EQ(as.set_storage(b, key1, value2), StorageStatus::Modified);
+        EXPECT_EQ(as.set_storage(b, key2, null), StorageStatus::Deleted);
         EXPECT_TRUE(bs_111.can_merge(as));
         bs_111.merge(as);
     }
@@ -1961,7 +2517,7 @@ TYPED_TEST(OnDiskCachedTestSuite, undecided_proposals)
     {
         State as{bs_121, Incarnation{12, 1}};
         as.add_to_balance(c, 10'000);
-        EXPECT_EQ(as.set_storage(c, key2, value1), MONAD_STORAGE_MODIFIED);
+        EXPECT_EQ(as.set_storage(c, key2, value1), StorageStatus::Modified);
         EXPECT_TRUE(bs_121.can_merge(as));
         bs_121.merge(as);
     }
@@ -1995,8 +2551,8 @@ TYPED_TEST(OnDiskCachedTestSuite, undecided_proposals)
     {
         State as{bs_112, Incarnation{11, 1}};
         as.add_to_balance(a, 20'000);
-        EXPECT_EQ(as.set_storage(b, key1, null), MONAD_STORAGE_DELETED);
-        EXPECT_EQ(as.set_storage(c, key1, null), MONAD_STORAGE_DELETED);
+        EXPECT_EQ(as.set_storage(b, key1, null), StorageStatus::Deleted);
+        EXPECT_EQ(as.set_storage(c, key1, null), StorageStatus::Deleted);
         EXPECT_TRUE(bs_112.can_merge(as));
         bs_112.merge(as);
     }
@@ -2019,7 +2575,7 @@ TYPED_TEST(OnDiskCachedTestSuite, undecided_proposals)
     {
         State as{bs_122, Incarnation{12, 1}};
         as.add_to_balance(b, 20'000);
-        EXPECT_EQ(as.set_storage(b, key1, value3), MONAD_STORAGE_ADDED);
+        EXPECT_EQ(as.set_storage(b, key1, value3), StorageStatus::Added);
         EXPECT_TRUE(bs_122.can_merge(as));
         bs_122.merge(as);
     }
@@ -2043,9 +2599,9 @@ TYPED_TEST(OnDiskCachedTestSuite, undecided_proposals)
         State as{bs_131, Incarnation{13, 1}};
         as.add_to_balance(a, 30'000);
         as.add_to_balance(b, 20'000);
-        EXPECT_EQ(as.set_storage(b, key2, value1), MONAD_STORAGE_ADDED);
-        EXPECT_EQ(as.set_storage(c, key1, value2), MONAD_STORAGE_MODIFIED);
-        EXPECT_EQ(as.set_storage(c, key2, null), MONAD_STORAGE_DELETED);
+        EXPECT_EQ(as.set_storage(b, key2, value1), StorageStatus::Added);
+        EXPECT_EQ(as.set_storage(c, key1, value2), StorageStatus::Modified);
+        EXPECT_EQ(as.set_storage(c, key2, null), StorageStatus::Deleted);
         EXPECT_TRUE(bs_131.can_merge(as));
         bs_131.merge(as);
     }
@@ -2068,8 +2624,8 @@ TYPED_TEST(OnDiskCachedTestSuite, undecided_proposals)
     // b13 r132 r122                  --        v3
     {
         State as{bs_132, Incarnation{13, 1}};
-        EXPECT_EQ(as.set_storage(b, key1, null), MONAD_STORAGE_DELETED);
-        EXPECT_EQ(as.set_storage(c, key1, value3), MONAD_STORAGE_ADDED);
+        EXPECT_EQ(as.set_storage(b, key1, null), StorageStatus::Deleted);
+        EXPECT_EQ(as.set_storage(c, key1, value3), StorageStatus::Added);
         EXPECT_TRUE(bs_132.can_merge(as));
         bs_132.merge(as);
     }

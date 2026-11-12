@@ -13,15 +13,21 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
+#include <category/core/config.hpp>
 #include <category/core/likely.h>
+#include <category/core/result.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
-#include <category/execution/ethereum/validate_transaction.hpp>
+#include <category/execution/ethereum/validate_transaction_error.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
 #include <category/execution/monad/system_sender.hpp>
 #include <category/execution/monad/validate_system_transaction.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/traits.hpp>
 
 #include <boost/outcome/config.hpp>
+
+#include <initializer_list>
 
 // TODO unstable paths between versions
 #if __has_include(<boost/outcome/experimental/status-code/status-code/config.hpp>)
@@ -40,7 +46,7 @@ template <Traits traits>
 Result<void>
 static_validate_system_transaction(Transaction const &tx, Address const &sender)
 {
-    if constexpr (traits::monad_rev() < MONAD_FOUR) {
+    if constexpr (!traits::staking_active()) {
         return SystemTransactionError::SystemTxnBeforeFork;
     }
 

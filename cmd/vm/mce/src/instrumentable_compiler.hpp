@@ -24,7 +24,6 @@
 #include <category/vm/evm/traits.hpp>
 
 #include <asmjit/x86.h>
-#include <evmc/evmc.h>
 #include <valgrind/cachegrind.h>
 
 #include <cstdint>

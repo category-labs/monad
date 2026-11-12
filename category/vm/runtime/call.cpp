@@ -18,21 +18,23 @@
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
 #include <category/core/runtime/uint256.hpp>
-#include <category/vm/evm/delegation.hpp>
+#include <category/vm/evm/access_status.hpp>
+#include <category/vm/evm/call_status.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
-#include <category/vm/evm/revision.h>
+#include <category/vm/evm/message.hpp>
+#include <category/vm/evm/result.hpp>
+#include <category/vm/evm/revision.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/host.hpp>
 #include <category/vm/runtime/bin.hpp>
 #include <category/vm/runtime/call.hpp>
 #include <category/vm/runtime/transmute.hpp>
 #include <category/vm/runtime/types.hpp>
 
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
-
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 
 namespace monad::vm::runtime
 {
@@ -41,14 +43,14 @@ namespace monad::vm::runtime
         bool const delegation_indicator)
     {
         if (static_call) {
-            env_flags = static_cast<uint32_t>(EVMC_STATIC);
+            env_flags = std::to_underlying(CallFlags::Static);
         }
 
         if (delegation_indicator) {
-            env_flags |= static_cast<uint32_t>(EVMC_DELEGATED);
+            env_flags |= std::to_underlying(CallFlags::Delegated);
         }
         else {
-            env_flags &= ~static_cast<uint32_t>(EVMC_DELEGATED);
+            env_flags &= ~std::to_underlying(CallFlags::Delegated);
         }
 
         return env_flags;
@@ -60,10 +62,10 @@ namespace monad::vm::runtime
         bool const has_value, bytes32_t const &value,
         uint256_t const &args_offset_word, uint256_t const &args_size_word,
         uint256_t const &ret_offset_word, uint256_t const &ret_size_word,
-        evmc_call_kind const call_kind, bool const static_call,
+        CallKind const call_kind, bool const static_call,
         int64_t const remaining_block_base_gas)
     {
-        static_assert(traits::evm_rev() >= MONAD_ETH_BERLIN);
+        static_assert(traits::evm_rev() >= EvmRevision::Berlin);
 
         ctx->env.clear_return_data();
 
@@ -81,22 +83,21 @@ namespace monad::vm::runtime
 
         auto const dest_address = address_from_uint256(address);
 
-        auto const access_status =
-            ctx->host->access_account(ctx->context, &dest_address);
-        if (access_status == EVMC_ACCESS_COLD) {
+        auto const access_status = ctx->host->access_account(dest_address);
+        if (access_status == AccessStatus::Cold) {
             ctx->deduct_gas(traits::cold_account_cost());
         }
 
         auto const code_address = [&]() -> Address {
-            if constexpr (traits::evm_rev() >= MONAD_ETH_PRAGUE) {
+            if constexpr (traits::eip_7702_active()) {
                 // EIP-7702: if the code address starts with 0xEF0100, then
                 // treat it as a delegated call in the context of the
                 // current authority.
-                if (auto delegate_address = evm::resolve_delegation(
-                        ctx->host, ctx->context, dest_address)) {
-                    auto const access_status = ctx->host->access_account(
-                        ctx->context, &*delegate_address);
-                    ctx->gas_remaining -= (access_status == EVMC_ACCESS_COLD
+                if (auto delegate_address =
+                        ctx->host->resolve_delegation(dest_address)) {
+                    auto const access_status =
+                        ctx->host->access_account(*delegate_address);
+                    ctx->gas_remaining -= (access_status == AccessStatus::Cold
                                                ? traits::cold_account_cost()
                                                : 0) +
                                           100;
@@ -106,11 +107,11 @@ namespace monad::vm::runtime
             return dest_address;
         }();
 
-        auto const recipient = (call_kind == EVMC_CALL || static_call)
+        auto const recipient = (call_kind == CallKind::Call || static_call)
                                    ? dest_address
                                    : ctx->env.recipient;
 
-        auto const sender = (call_kind == EVMC_DELEGATECALL)
+        auto const sender = (call_kind == CallKind::DelegateCall)
                                 ? ctx->env.sender
                                 : ctx->env.recipient;
 
@@ -118,9 +119,10 @@ namespace monad::vm::runtime
             ctx->gas_remaining -= 9000;
         }
 
-        if (call_kind == EVMC_CALL) {
+        if (call_kind == CallKind::Call) {
             if (MONAD_UNLIKELY(
-                    has_value && (ctx->env.evmc_flags & EVMC_STATIC))) {
+                    has_value &&
+                    (ctx->env.flags & std::to_underlying(CallFlags::Static)))) {
                 auto const error_code =
                     ctx->gas_remaining + remaining_block_base_gas < 0
                         ? StatusCode::OutOfGas
@@ -128,8 +130,7 @@ namespace monad::vm::runtime
                 ctx->exit(error_code);
             }
 
-            if (has_value &&
-                !ctx->host->account_exists(ctx->context, &dest_address)) {
+            if (has_value && !ctx->host->account_exists(dest_address)) {
                 ctx->gas_remaining -= 25000;
             }
         }
@@ -154,10 +155,10 @@ namespace monad::vm::runtime
             return 0;
         }
 
-        auto const message = evmc_message{
+        auto const message = Message{
             .kind = call_kind,
             .flags = message_flags(
-                ctx->env.evmc_flags, static_call, dest_address != code_address),
+                ctx->env.flags, static_call, dest_address != code_address),
             .depth = ctx->env.depth + 1,
             .gas = gas,
             .recipient = recipient,
@@ -165,15 +166,15 @@ namespace monad::vm::runtime
             .input_data =
                 (*args_size > 0) ? ctx->memory.data + *args_offset : nullptr,
             .input_size = *args_size,
-            .value = static_cast<evmc::bytes32>(value),
-            .create2_salt = static_cast<evmc::bytes32>(ctx->env.create2_salt),
+            .value = value,
+            .create2_salt = ctx->env.create2_salt,
             .code_address = code_address,
             .memory_handle = ctx->memory.data_handle,
             .memory = ctx->memory.data + ctx->memory.size,
             .memory_capacity = ctx->memory.capacity - ctx->memory.size,
         };
 
-        auto const result = ctx->host->call(ctx->context, &message);
+        auto const result = ctx->host->call(message).release_raw();
 
         ctx->env.set_return_data(result.output_data, result.output_size);
 
@@ -189,7 +190,7 @@ namespace monad::vm::runtime
         std::copy_n(
             result.output_data, copy_size, ctx->memory.data + *ret_offset);
 
-        return (result.status_code == EVMC_SUCCESS) ? 1 : 0;
+        return (result.status_code == CallStatus::Success) ? 1 : 0;
     }
 
     EXPLICIT_TRAITS(call_impl);
@@ -212,7 +213,7 @@ namespace monad::vm::runtime
             *args_size_ptr,
             *ret_offset_ptr,
             *ret_size_ptr,
-            EVMC_CALL,
+            CallKind::Call,
             false,
             remaining_block_base_gas);
     }
@@ -237,7 +238,7 @@ namespace monad::vm::runtime
             *args_size_ptr,
             *ret_offset_ptr,
             *ret_size_ptr,
-            EVMC_CALLCODE,
+            CallKind::CallCode,
             false,
             remaining_block_base_gas);
     }
@@ -261,7 +262,7 @@ namespace monad::vm::runtime
             *args_size_ptr,
             *ret_offset_ptr,
             *ret_size_ptr,
-            EVMC_DELEGATECALL,
+            CallKind::DelegateCall,
             false,
             remaining_block_base_gas);
     }
@@ -275,7 +276,7 @@ namespace monad::vm::runtime
         uint256_t const *args_size_ptr, uint256_t const *ret_offset_ptr,
         uint256_t const *ret_size_ptr, int64_t const remaining_block_base_gas)
     {
-        static_assert(traits::evm_rev() >= MONAD_ETH_CONSTANTINOPLE);
+        static_assert(traits::evm_rev() >= EvmRevision::Constantinople);
 
         *result_ptr = call_impl<traits>(
             ctx,
@@ -287,7 +288,7 @@ namespace monad::vm::runtime
             *args_size_ptr,
             *ret_offset_ptr,
             *ret_size_ptr,
-            EVMC_CALL,
+            CallKind::Call,
             true,
             remaining_block_base_gas);
     }

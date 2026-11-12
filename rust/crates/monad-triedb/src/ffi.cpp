@@ -32,7 +32,6 @@
 #include <quill/std/SystemError.h>
 
 #include <algorithm>
-#include <cassert>
 #include <cstring>
 #include <filesystem>
 #include <iostream>
@@ -472,8 +471,10 @@ namespace
                 node.path_nibble_view());
 
             if (node.has_value()) { // node is a leaf
-                assert(
-                    (path_.nibble_size() & 1) == 0); // assert even nibble size
+                MONAD_ASSERT_PRINTF(
+                    (path_.nibble_size() & 1) == 0,
+                    "Only supported for even length paths but got %u nibbles",
+                    path_.nibble_size());
                 size_t const path_bytes = path_.nibble_size() / 2;
                 auto path_data = std::make_unique<uint8_t[]>(path_bytes);
 
@@ -697,7 +698,7 @@ uint64_t triedb_latest_proposed_version(TriedbRoInner *db)
     return db->db.get_latest_proposed_version();
 }
 
-monad_c_bytes32 triedb_latest_proposed_block_id(TriedbRoInner *db)
+monad_bytes32 triedb_latest_proposed_block_id(TriedbRoInner *db)
 {
     return db->db.get_latest_proposed_block_id();
 }
@@ -707,7 +708,7 @@ uint64_t triedb_latest_voted_version(TriedbRoInner *db)
     return db->db.get_latest_voted_version();
 }
 
-monad_c_bytes32 triedb_latest_voted_block_id(TriedbRoInner *db)
+monad_bytes32 triedb_latest_voted_block_id(TriedbRoInner *db)
 {
     return db->db.get_latest_voted_block_id();
 }

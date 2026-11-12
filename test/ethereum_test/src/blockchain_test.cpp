@@ -67,14 +67,11 @@
 #include <category/execution/monad/validate_monad_transaction.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/vm/evm/monad/revision.h>
-#include <category/vm/evm/revision.h>
+#include <category/vm/evm/revision.hpp>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 
 #include <monad/test/config.hpp>
-
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 
 #include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
@@ -150,12 +147,12 @@ BlobSchedule const *find_blob_schedule(
     return nullptr;
 }
 
-std::string_view blob_schedule_name(monad_eth_revision const rev)
+std::string_view blob_schedule_name(EvmRevision const rev)
 {
-    if (rev >= MONAD_ETH_OSAKA) {
+    if (rev >= EvmRevision::Osaka) {
         return "Osaka";
     }
-    if (rev >= MONAD_ETH_PRAGUE) {
+    if (rev >= EvmRevision::Prague) {
         return "Prague";
     }
     return "Cancun";
@@ -197,7 +194,7 @@ struct TraitsMainnet : MonadChain
         }
     }
 
-    virtual monad_eth_revision get_revision(
+    virtual EvmRevision get_revision(
         uint64_t /* block_number */, uint64_t /* timestamp */) const override
     {
         return traits::evm_rev();
@@ -330,7 +327,7 @@ Result<BlockExecOutput> execute(
     std::vector<std::vector<CallFrame>> &call_frames,
     ExecutionEventRecorder *const exec_recorder)
 {
-    static_assert(traits::evm_rev() >= MONAD_ETH_CONSTANTINOPLE);
+    static_assert(traits::evm_rev() >= EvmRevision::Constantinople);
 
     using namespace monad::test;
 
@@ -466,7 +463,7 @@ Result<std::vector<Receipt>> execute_and_record(
         /*chain_id*/ 1,
         block.header,
         block.header.parent_hash,
-        block.header.number,
+        block.header.slot_number.value_or(block.header.number),
         0,
         uint128_t{block.header.timestamp} * uint128_t{1'000'000'000UL},
         size(block.transactions),
@@ -505,7 +502,7 @@ void process_test(
     vm::VM::Mode const vm_mode, bool enable_tracing,
     monad_event_ring const *const exec_event_ring)
 {
-    static_assert(traits::evm_rev() >= MONAD_ETH_BYZANTIUM);
+    static_assert(traits::evm_rev() >= EvmRevision::Byzantium);
 
     using namespace test;
 
@@ -748,13 +745,13 @@ void process_test(
 }
 
 void process_test(
-    std::variant<monad_eth_revision, monad_revision> const &revision,
+    std::variant<EvmRevision, monad_revision> const &revision,
     std::string const &name, nlohmann::json const &j_contents,
     vm::VM::Mode const vm_mode, bool const enable_tracing,
     monad_event_ring const *const exec_event_ring)
 {
-    if (std::holds_alternative<monad_eth_revision>(revision)) {
-        auto const rev = std::get<monad_eth_revision>(revision);
+    if (std::holds_alternative<EvmRevision>(revision)) {
+        auto const rev = std::get<EvmRevision>(revision);
         SWITCH_EVM_TRAITS(
             process_test,
             name,
@@ -835,7 +832,8 @@ void BlockchainTest::TestBody()
     if (!executed && revision_.has_value()) {
         std::visit(
             [](auto const &r) {
-                GTEST_SKIP() << "no test cases found for revision=" << r;
+                GTEST_SKIP() << "no test cases found for revision="
+                             << std::to_underlying(r);
             },
             revision_.value());
     }
@@ -843,8 +841,7 @@ void BlockchainTest::TestBody()
 
 void register_blockchain_tests_path(
     std::filesystem::path const &root,
-    std::optional<std::variant<monad_eth_revision, monad_revision>> const
-        &revision,
+    std::optional<std::variant<EvmRevision, monad_revision>> const &revision,
     std::optional<vm::VM::Mode> const vm_mode, bool const enable_tracing,
     monad_event_ring const *const exec_event_ring)
 {
@@ -900,8 +897,7 @@ void register_blockchain_tests_path(
 }
 
 void register_blockchain_tests(
-    std::optional<std::variant<monad_eth_revision, monad_revision>> const
-        &revision,
+    std::optional<std::variant<EvmRevision, monad_revision>> const &revision,
     std::optional<vm::VM::Mode> const vm_mode, bool const enable_tracing,
     monad_event_ring const *const exec_event_ring)
 {

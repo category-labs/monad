@@ -20,9 +20,9 @@
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/mpt/db.hpp>
 
-#include <array>
 #include <deque>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <vector>
 
@@ -42,37 +42,23 @@ struct Deletion
 static_assert(sizeof(Deletion) == 53);
 static_assert(alignof(Deletion) == 1);
 
-struct FinalizedDeletionsEntry
-{
-    std::mutex mutex{};
-    uint64_t block_number{mpt::INVALID_BLOCK_NUM};
-    size_t idx{0};
-    size_t size{0};
-};
-
-static_assert(sizeof(FinalizedDeletionsEntry) == 64);
-static_assert(alignof(FinalizedDeletionsEntry) == 8);
-
 class FinalizedDeletions
 {
-    uint64_t start_block_number_{mpt::INVALID_BLOCK_NUM};
-    uint64_t end_block_number_{mpt::INVALID_BLOCK_NUM};
-    std::array<FinalizedDeletionsEntry, MAX_ENTRIES> entries_{};
-    std::array<Deletion, MAX_DELETIONS> deletions_{};
-    size_t free_start_{0};
-    size_t free_end_{MAX_DELETIONS};
+public:
+    using Entry = std::shared_ptr<std::vector<Deletion> const>;
 
-    void
-    set_entry(uint64_t i, uint64_t block_number, std::vector<Deletion> const &);
-    void clear_entry(uint64_t i);
+private:
+    std::mutex mutex_;
+    // First block in entries_, or the next to write when entries_ is empty.
+    uint64_t start_block_number_{mpt::INVALID_BLOCK_NUM};
+    std::deque<Entry> entries_; // size() <= MAX_ENTRIES
+    size_t num_deletions_{0}; // sum of entries_ sizes, <= MAX_DELETIONS
 
 public:
-    bool for_each(uint64_t block_number, std::function<void(Deletion const &)>);
-    void write(uint64_t block_number, std::vector<Deletion> const &);
+    // nullptr if block_number is not retained. The result outlives eviction.
+    Entry find(uint64_t block_number);
+    void write(uint64_t block_number, std::vector<Deletion>);
 };
-
-static_assert(sizeof(FinalizedDeletions) == 108764832);
-static_assert(alignof(FinalizedDeletions) == 8);
 
 struct ProposedDeletions
 {

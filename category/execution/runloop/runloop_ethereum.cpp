@@ -15,6 +15,7 @@
 
 #include "runloop_ethereum.hpp"
 
+#include <category/core/address.hpp>
 #include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
@@ -22,6 +23,7 @@
 #include <category/core/keccak.hpp>
 #include <category/core/log.hpp>
 #include <category/core/procfs/statm.h>
+#include <category/core/result.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/block.hpp>
@@ -39,10 +41,13 @@
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
+#include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
-#include <category/execution/ethereum/validate_transaction.hpp>
+#include <category/execution/ethereum/validate_transaction_error.hpp>
+#include <category/vm/evm/revision.hpp>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/vm.hpp>
 
 #include <boost/outcome/try.hpp>
 
@@ -50,7 +55,14 @@
 
 #include <algorithm>
 #include <chrono>
+#include <csignal>
+#include <cstdint>
+#include <filesystem>
+#include <limits>
 #include <memory>
+#include <optional>
+#include <utility>
+#include <variant>
 #include <vector>
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
@@ -95,7 +107,7 @@ Result<void> process_ethereum_block(
     bytes32_t const &parent_block_id, bool const enable_tracing,
     ExecutionEventRecorder *const exec_recorder)
 {
-    static_assert(traits::evm_rev() >= MONAD_ETH_CONSTANTINOPLE);
+    static_assert(traits::evm_rev() >= EvmRevision::Constantinople);
 
     [[maybe_unused]] auto const block_start = std::chrono::system_clock::now();
     auto const block_begin = std::chrono::steady_clock::now();
@@ -106,7 +118,7 @@ Result<void> process_ethereum_block(
         chain.get_chain_id(),
         block.header,
         block.header.parent_hash,
-        block.header.number,
+        block.header.slot_number.value_or(block.header.number),
         0,
         block.header.timestamp * 1'000'000'000UL,
         block.transactions.size(),
@@ -287,13 +299,13 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
     uint64_t batch_gas = 0;
     auto batch_begin = std::chrono::steady_clock::now();
     uint64_t ntxs = 0;
-    auto block_db_base = [&]() -> std::unique_ptr<BlockDb> {
+    auto const block_db_base = [&]() -> std::unique_ptr<BlockDb> {
         if (!rlp_path.empty()) {
             return std::make_unique<RlpBlockDb>(ledger_dir, rlp_path);
         }
         return std::make_unique<BlockDb>(ledger_dir);
     }();
-    BlockDb &block_db = *block_db_base;
+    BlockDb const &block_db = *block_db_base;
     bytes32_t parent_block_id{};
 
     while (block_num <= end_block_num && stop == 0) {
@@ -311,7 +323,7 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
             block.header.number);
 
         bytes32_t const block_id = bytes32_t{block.header.number};
-        monad_eth_revision const rev =
+        EvmRevision const rev =
             chain.get_revision(block.header.number, block.header.timestamp);
 
         BOOST_OUTCOME_TRY([&] {
@@ -328,7 +340,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_ethereum(
                 parent_block_id,
                 enable_tracing,
                 exec_recorder);
-            MONAD_ABORT_PRINTF("unhandled rev switch case: %d", rev);
+            MONAD_ABORT_PRINTF(
+                "unhandled rev switch case: %d", std::to_underlying(rev));
         }());
 
         record_mock_consensus_events(exec_recorder, block_id, block_num);

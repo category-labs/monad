@@ -31,8 +31,6 @@
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 
-#include <evmc/evmc.h>
-
 #include <boost/outcome/config.hpp>
 // TODO unstable paths between versions
 #if __has_include(<boost/outcome/experimental/status-code/status-code/config.hpp>)
@@ -48,6 +46,7 @@
 #include <cstdint>
 #include <initializer_list>
 #include <limits>
+#include <utility>
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN
@@ -76,7 +75,7 @@ bytes32_t compute_ommers_hash(std::vector<BlockHeader> const &ommers)
 template <Traits traits>
 Result<void> static_validate_header(BlockHeader const &header)
 {
-    static_assert(traits::evm_rev() >= MONAD_ETH_TANGERINE_WHISTLE);
+    static_assert(traits::evm_rev() >= EvmRevision::TangerineWhistle);
 
     // YP eq. 56
     if (MONAD_UNLIKELY(header.gas_limit < 5000)) {
@@ -94,8 +93,7 @@ Result<void> static_validate_header(BlockHeader const &header)
         return BlockError::ExtraDataTooLong;
     }
 
-    // EIP-1559
-    if constexpr (traits::evm_rev() < MONAD_ETH_LONDON) {
+    if constexpr (!traits::eip_1559_header_active()) {
         if (MONAD_UNLIKELY(header.base_fee_per_gas.has_value())) {
             return BlockError::FieldBeforeFork;
         }
@@ -104,8 +102,7 @@ Result<void> static_validate_header(BlockHeader const &header)
         return BlockError::MissingField;
     }
 
-    // EIP-7685
-    if constexpr (traits::evm_rev() < MONAD_ETH_PRAGUE) {
+    if constexpr (!traits::eip_7685_header_active()) {
         if (MONAD_UNLIKELY(header.requests_hash.has_value())) {
             return BlockError::FieldBeforeFork;
         }
@@ -114,24 +111,29 @@ Result<void> static_validate_header(BlockHeader const &header)
         return BlockError::MissingField;
     }
 
-    // EIP-4844 and EIP-4788
-    if constexpr (traits::evm_rev() < MONAD_ETH_CANCUN) {
+    if constexpr (!traits::eip_4844_header_active()) {
         if (MONAD_UNLIKELY(
                 header.blob_gas_used.has_value() ||
-                header.excess_blob_gas.has_value() ||
-                header.parent_beacon_block_root.has_value())) {
+                header.excess_blob_gas.has_value())) {
             return BlockError::FieldBeforeFork;
         }
     }
     else if (MONAD_UNLIKELY(
                  !header.blob_gas_used.has_value() ||
-                 !header.excess_blob_gas.has_value() ||
-                 !header.parent_beacon_block_root.has_value())) {
+                 !header.excess_blob_gas.has_value())) {
         return BlockError::MissingField;
     }
 
-    // EIP-4895
-    if constexpr (traits::evm_rev() < MONAD_ETH_SHANGHAI) {
+    if constexpr (!traits::eip_4788_active()) {
+        if (MONAD_UNLIKELY(header.parent_beacon_block_root.has_value())) {
+            return BlockError::FieldBeforeFork;
+        }
+    }
+    else if (MONAD_UNLIKELY(!header.parent_beacon_block_root.has_value())) {
+        return BlockError::MissingField;
+    }
+
+    if constexpr (!traits::eip_4895_active()) {
         if (MONAD_UNLIKELY(header.withdrawals_root.has_value())) {
             return BlockError::FieldBeforeFork;
         }
@@ -140,8 +142,7 @@ Result<void> static_validate_header(BlockHeader const &header)
         return BlockError::MissingField;
     }
 
-    // EIP-3675
-    if constexpr (traits::evm_rev() >= MONAD_ETH_PARIS) {
+    if constexpr (traits::eip_3675_active()) {
         if (MONAD_UNLIKELY(header.difficulty != 0)) {
             return BlockError::PowBlockAfterMerge;
         }
@@ -154,6 +155,22 @@ Result<void> static_validate_header(BlockHeader const &header)
 
         if (MONAD_UNLIKELY(header.ommers_hash != NULL_LIST_HASH)) {
             return BlockError::WrongOmmersHash;
+        }
+    }
+
+    // EIP-7843 (requires EIP-7928)
+    if constexpr (!traits::eip_7843_active()) {
+        if (MONAD_UNLIKELY(
+                header.block_access_list_hash.has_value() ||
+                header.slot_number.has_value())) {
+            return BlockError::FieldBeforeFork;
+        }
+    }
+    else {
+        if (MONAD_UNLIKELY(
+                !header.block_access_list_hash.has_value() ||
+                !header.slot_number.has_value())) {
+            return BlockError::MissingField;
         }
     }
 
@@ -170,8 +187,7 @@ Result<void> static_validate_ommers(Chain const &chain, Block const &block)
         return BlockError::WrongOmmersHash;
     }
 
-    // EIP-3675
-    if constexpr (traits::evm_rev() >= MONAD_ETH_PARIS) {
+    if constexpr (traits::eip_3675_active()) {
         if (MONAD_UNLIKELY(!block.ommers.empty())) {
             return BlockError::TooManyOmmers;
         }
@@ -190,11 +206,12 @@ Result<void> static_validate_ommers(Chain const &chain, Block const &block)
 
     // YP eq. 167
     for (auto const &ommer : block.ommers) {
-        monad_eth_revision const rev =
+        EvmRevision const rev =
             chain.get_revision(ommer.number, ommer.timestamp);
         BOOST_OUTCOME_TRY([&] {
             SWITCH_EVM_TRAITS(static_validate_header, ommer);
-            MONAD_ABORT_PRINTF("unhandled ommer rev switch case: %d", rev);
+            MONAD_ABORT_PRINTF(
+                "unhandled ommer rev switch case: %d", std::to_underlying(rev));
         }());
     }
 
@@ -204,7 +221,7 @@ Result<void> static_validate_ommers(Chain const &chain, Block const &block)
 template <Traits traits>
 Result<void> static_validate_4844(Chain const &chain, Block const &block)
 {
-    if constexpr (traits::evm_rev() >= MONAD_ETH_CANCUN) {
+    if constexpr (traits::eip_4844_header_active()) {
         uint64_t blob_gas_used = 0;
         for (auto const &tx : block.transactions) {
             if (tx.type == TransactionType::eip4844) {
@@ -246,8 +263,7 @@ Result<void> static_validate_4844_parent(
 template <Traits traits>
 Result<void> static_validate_body(Chain const &chain, Block const &block)
 {
-    // EIP-4895
-    if constexpr (traits::evm_rev() < MONAD_ETH_SHANGHAI) {
+    if constexpr (!traits::eip_4895_active()) {
         if (MONAD_UNLIKELY(block.withdrawals.has_value())) {
             return BlockError::FieldBeforeFork;
         }

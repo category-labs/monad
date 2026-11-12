@@ -313,6 +313,7 @@ namespace monad::vm::compiler::native
         void pop();
         void dup(uint8_t dup_index);
         void swap(uint8_t swap_index);
+        void exchange(uint8_t n, uint8_t m);
 
         void lt();
         void gt();
@@ -354,6 +355,7 @@ namespace monad::vm::compiler::native
         void chainid();
         void basefee();
         void blobbasefee();
+        void slotnum();
 
         void calldataload();
 
@@ -891,11 +893,11 @@ namespace monad::vm::compiler::native
         void jumpi_keep_fallthrough_stack();
 
         void read_context_address(int32_t offset);
-        void read_evmc_tx_context_address(int32_t offset);
+        void read_tx_context_address(int32_t offset);
         void read_context_word(int32_t offset);
-        void read_evmc_tx_context_word(int32_t offset);
+        void read_tx_context_word(int32_t offset);
         void read_context_uint32_to_word(int32_t offset);
-        void read_evmc_tx_context_uint64_to_word(int32_t offset);
+        void read_tx_context_uint64_to_word(int32_t offset);
 
         void lt(StackElemRef dst, StackElemRef src);
         void slt(StackElemRef dst, StackElemRef src);
@@ -1086,6 +1088,9 @@ namespace monad::vm::compiler::native
         std::vector<std::pair<asmjit::Label, std::string>> debug_messages_;
         uint32_t exponential_constant_fold_counter_;
         int64_t accumulated_static_work_;
+        // Largest memory end `touch_memory` has checked on every path to the
+        // current instruction.
+        int32_t touched_memory_end_;
         std::unique_ptr<int32_t[]> final_stack_dep_counts_;
     };
 }

@@ -29,9 +29,16 @@
 
 MONAD_NAMESPACE_BEGIN
 
+template <size_t age>
+    requires(valid_chain_context_buffer_age<age, 3>)
+ankerl::unordered_dense::segmented_set<Address> const &
+ChainContextBuffer::get() const
+{
+    return senders_and_authorities_buffer_[(current_index_ + age) % K];
+}
+
 template <Traits traits>
-    requires(is_monad_trait_v<traits>)
-ChainContext<traits> ChainContextBuffer<traits>::advance(
+ChainContext<traits> ChainContextBuffer::advance(
     std::vector<Address> const &senders,
     std::vector<std::vector<std::optional<Address>>> const &authorities)
 {
@@ -41,34 +48,20 @@ ChainContext<traits> ChainContextBuffer<traits>::advance(
     senders_and_authorities_buffer_[current_index_] =
         combine_senders_and_authorities(senders, authorities);
 
-    return ChainContext<traits>{
-        .grandparent_senders_and_authorities = get<2>(),
-        .parent_senders_and_authorities = get<1>(),
-        .senders_and_authorities = get<0>(),
-        .senders = *current_senders_,
-        .authorities = *current_authorities_,
-    };
+    if constexpr (is_monad_trait_v<traits>) {
+        return ChainContext<traits>{
+            .grandparent_senders_and_authorities = get<2>(),
+            .parent_senders_and_authorities = get<1>(),
+            .senders_and_authorities = get<0>(),
+            .senders = *current_senders_,
+            .authorities = *current_authorities_,
+        };
+    }
+    else {
+        return ChainContext<traits>{};
+    }
 }
 
-template <Traits traits>
-    requires(is_monad_trait_v<traits>)
-template <size_t age>
-    requires(valid_chain_context_buffer_age<age, 3>)
-ankerl::unordered_dense::segmented_set<Address> const &
-ChainContextBuffer<traits>::get() const
-{
-    return senders_and_authorities_buffer_[(current_index_ + age) % K];
-}
-
-template <Traits traits>
-    requires(is_evm_trait_v<traits>)
-ChainContext<traits> ChainContextBuffer<traits>::advance(
-    std::vector<Address> const &,
-    std::vector<std::vector<std::optional<Address>>> const &)
-{
-    return {};
-}
-
-EXPLICIT_TRAITS_CLASS(ChainContextBuffer);
+EXPLICIT_TRAITS_MEMBER(ChainContextBuffer::advance);
 
 MONAD_NAMESPACE_END

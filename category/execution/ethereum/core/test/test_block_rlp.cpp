@@ -22,13 +22,13 @@
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/db/block_db.hpp>
 
-#include <evmc/evmc.hpp>
 #include <gtest/gtest.h>
 
 #include <test_resource_data.h>
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <optional>
 #include <vector>
 
@@ -757,7 +757,6 @@ TEST(Rlp_Block, DecodeEncodeShanghai)
         0xfc, 0xe5, 0xed, 0xbc, 0x8e, 0x2a, 0x86, 0x97, 0xc1, 0x53, 0x31, 0x67,
         0x7e, 0x6e, 0xbf, 0x0b, 0x82, 0x27, 0x10};
 
-    auto const encoded_block_copy = encoded_block;
     byte_string_view encoded_block_view{encoded_block};
 
     auto const decoded_block = rlp::decode_block(encoded_block_view);
@@ -864,7 +863,7 @@ TEST(Rlp_Block, DecodeEncodeShanghai)
     // check encoding
     auto const encoded_block_from_decoded =
         rlp::encode_block(decoded_block.value());
-    EXPECT_EQ(encoded_block_from_decoded, encoded_block_copy);
+    EXPECT_EQ(encoded_block_from_decoded, encoded_block);
 }
 
 TEST(Rlp_Block, DecodeEncodeCancun)
@@ -931,7 +930,6 @@ TEST(Rlp_Block, DecodeEncodeCancun)
         0xe5, 0xed, 0xbc, 0x8e, 0x2a, 0x86, 0x97, 0xc1, 0x53, 0x31, 0x67, 0x7e,
         0x6e, 0xbf, 0x0b, 0x82, 0x27, 0x10};
 
-    auto const encoded_block_copy = encoded_block;
     byte_string_view encoded_block_view{encoded_block};
 
     auto const decoded_block = rlp::decode_block(encoded_block_view);
@@ -1049,7 +1047,7 @@ TEST(Rlp_Block, DecodeEncodeCancun)
     // check encoding
     auto const encoded_block_from_decoded =
         rlp::encode_block(decoded_block.value());
-    EXPECT_EQ(encoded_block_from_decoded, encoded_block_copy);
+    EXPECT_EQ(encoded_block_from_decoded, encoded_block);
 }
 
 TEST(Rlp_block, IntTypeMismatchRegression)
@@ -1117,4 +1115,57 @@ TEST(Rlp_Block, DecodeBlockRawTransactions)
         EXPECT_TRUE(view.empty());
         EXPECT_EQ(tx.value(), block.transactions[i]);
     }
+}
+
+TEST(Rlp_block, SlotNumberRoundTrip)
+{
+    // slot_number (EIP-7843) is encoded after block_access_list_hash, so
+    // a header carrying it must also carry every earlier optional field.
+    auto const block_header = BlockHeader{
+        .base_fee_per_gas = 0x1_u256,
+        .withdrawals_root =
+            0x0000000000000000000000000000000000000000000000000000000000000001_bytes32,
+        .blob_gas_used = 0,
+        .excess_blob_gas = 0,
+        .parent_beacon_block_root =
+            0x0000000000000000000000000000000000000000000000000000000000000002_bytes32,
+        .requests_hash =
+            0x0000000000000000000000000000000000000000000000000000000000000003_bytes32,
+        .block_access_list_hash =
+            0x0000000000000000000000000000000000000000000000000000000000000000_bytes32,
+        .slot_number = std::numeric_limits<uint64_t>::max(),
+    };
+    auto const encoded_block_header = rlp::encode_block_header(block_header);
+    byte_string_view encoded_block_header_view{encoded_block_header};
+
+    auto const decoded_block_header =
+        rlp::decode_block_header(encoded_block_header_view);
+    ASSERT_FALSE(decoded_block_header.has_error());
+    EXPECT_EQ(decoded_block_header.value(), block_header);
+    EXPECT_EQ(
+        decoded_block_header.value().slot_number,
+        std::numeric_limits<uint64_t>::max());
+}
+
+TEST(Rlp_block, SlotNumberAbsentRoundTrip)
+{
+    auto const block_header = BlockHeader{
+        .base_fee_per_gas = 0x1_u256,
+        .withdrawals_root =
+            0x0000000000000000000000000000000000000000000000000000000000000001_bytes32,
+        .blob_gas_used = 0,
+        .excess_blob_gas = 0,
+        .parent_beacon_block_root =
+            0x0000000000000000000000000000000000000000000000000000000000000002_bytes32,
+        .requests_hash =
+            0x0000000000000000000000000000000000000000000000000000000000000003_bytes32,
+    };
+    auto const encoded_block_header = rlp::encode_block_header(block_header);
+    byte_string_view encoded_block_header_view{encoded_block_header};
+
+    auto const decoded_block_header =
+        rlp::decode_block_header(encoded_block_header_view);
+    ASSERT_FALSE(decoded_block_header.has_error());
+    EXPECT_EQ(decoded_block_header.value(), block_header);
+    EXPECT_FALSE(decoded_block_header.value().slot_number.has_value());
 }

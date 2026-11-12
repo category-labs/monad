@@ -64,14 +64,14 @@ void execute_block_header(
     BlockState &block_state, BlockHeader const &header,
     ExecutionEventRecorder *exec_recorder)
 {
-    static_assert(traits::evm_rev() >= MONAD_ETH_TANGERINE_WHISTLE);
+    static_assert(traits::evm_rev() >= EvmRevision::TangerineWhistle);
 
     State state{block_state, Incarnation{header.number, 0}};
 
     deploy_block_hash_history_contract<traits>(state);
     set_block_hash_history<traits>(state, header);
 
-    if constexpr (traits::evm_rev() >= MONAD_ETH_CANCUN) {
+    if constexpr (traits::eip_4788_active()) {
         set_beacon_root(state, header);
     }
 

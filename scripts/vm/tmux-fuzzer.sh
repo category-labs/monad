@@ -79,7 +79,7 @@ status_command() {
     list=`tmux ls | awk -F ':' '{ print $1 }'`
     for i in `seq 1 $compiler_sessions`; do
         s=fuzzer_compiler_$i
-        if grep $s <<< $list >/dev/null; then
+        if grep -qx "$s" <<< "$list"; then
             echo $s: RUNNING
         else
             echo $s: TERMINATED
@@ -87,7 +87,7 @@ status_command() {
     done
     for i in `seq 1 $interpreter_sessions`; do
         s=fuzzer_interpreter_$i
-        if grep $s <<< $list >/dev/null; then
+        if grep -qx "$s" <<< "$list"; then
             echo $s: RUNNING
         else
             echo $s: TERMINATED

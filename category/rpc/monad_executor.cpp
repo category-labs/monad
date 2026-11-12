@@ -43,15 +43,18 @@
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/core/withdrawal.hpp>
+#include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/trie_rodb.hpp>
 #include <category/execution/ethereum/db/util.hpp>
-#include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/execute_block.hpp>
 #include <category/execution/ethereum/execute_block_header.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
+#include <category/execution/ethereum/execution_modalities.hpp>
+#include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/rlp/decode.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/state_host.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
@@ -70,10 +73,12 @@
 #include <category/rpc/chain_context_buffer.hpp>
 #include <category/rpc/eth_simulate_block_hash_buffer.hpp>
 #include <category/rpc/lazy_block_hash.hpp>
+#include <category/rpc/null_db.hpp>
 #include <category/rpc/simulation_error.hpp>
 #include <category/rpc/utils/response_size.hpp>
-#include <category/vm/evm/revision.h>
-#include <category/vm/evm/status_code.h>
+#include <category/vm/evm/call_status.hpp>
+#include <category/vm/evm/result.hpp>
+#include <category/vm/evm/revision.hpp>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
@@ -104,12 +109,9 @@
 #include <string.h>
 
 #include <ankerl/unordered_dense.h>
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 #include <nlohmann/json.hpp>
 
 using namespace monad;
-using namespace monad::vm;
 
 namespace
 {
@@ -125,6 +127,8 @@ namespace
         "tracer are supported";
     char const *const CANNOT_TRACE_GENESIS_ERR_MSG =
         "cannot trace genesis block";
+    char const *const CANNOT_TRACE_WITHOUT_DB_ERR_MSG =
+        "cannot trace without a database";
     char const *const RECOVER_SENDER_ERR_MSG = "failed to recover sender";
     char const *const TRANSACTIONS_CONTEXT_ERR_MSG =
         "failed to recover the transactions context";
@@ -137,6 +141,24 @@ namespace
     namespace eth_simulate_json = monad::rpc::eth_simulateV1::json_fields;
     static ankerl::unordered_dense::segmented_set<Address>
         empty_senders_and_authorities{};
+
+    class StateDb
+    {
+        std::variant<NullDb, TrieRODb> db_;
+
+    public:
+        explicit StateDb(mpt::RODb *const db)
+        {
+            if (db != nullptr) {
+                db_.emplace<TrieRODb>(*db);
+            }
+        }
+
+        Db &get()
+        {
+            return std::visit([](Db &db) -> Db & { return db; }, db_);
+        }
+    };
 
     void apply_state_overrides(
         BlockState &block_state, Incarnation const incarnation,
@@ -203,14 +225,15 @@ namespace
     }
 
     template <Traits traits>
-    Result<evmc::Result> eth_call_impl(
+    Result<vm::Result> eth_call_impl(
         Chain const &chain, Transaction const &txn, BlockHeader const &header,
         uint64_t const block_number, bytes32_t const &block_id,
         Address const &sender,
-        std::vector<std::optional<Address>> const &authorities, TrieRODb &tdb,
+        std::vector<std::optional<Address>> const &authorities, Db &db,
         vm::VM &vm, BlockHashBuffer const &buffer,
         monad_state_override const &state_overrides,
-        CallTracerBase &call_tracer, trace::StateTracer &state_tracer)
+        CallTracerBase &call_tracer, trace::StateTracer &state_tracer,
+        Simulation const &execution_mode)
     {
         Transaction enriched_txn{txn};
 
@@ -229,31 +252,18 @@ namespace
             chain.get_chain_id(),
             chain.get_blob_schedule(header.timestamp)));
 
-        tdb.set_block_and_prefix(block_number, block_id);
-        BlockState block_state{tdb, vm};
+        db.set_block_and_prefix(block_number, block_id);
+        BlockState block_state{db, vm};
         // avoid conflict with block reward txn
         Incarnation const incarnation{block_number, Incarnation::LAST_TX - 1u};
         apply_state_overrides(block_state, incarnation, state_overrides);
 
         State state{block_state, incarnation};
 
-        // validate_transaction expects nonce to match.
-        // However, eth_call doesn't take a nonce parameter.
-        // Solving the issue by manually setting nonce to match with the
-        // expected nonce
-        enriched_txn.nonce = state.get_nonce(sender);
-
-        // Safe to pass empty code to validation here because the above override
-        // will always mark this transaction as coming from an EOA.
         {
             State state{block_state, incarnation};
-            // validate_transaction expects the sender of a transaction is EOA,
-            // not CA. However, eth_call allows the sender to be CA to simulate
-            // a subroutine. Solving this issue by manually setting account to
-            // be EOA for validation
-            state.set_code(sender, {});
             BOOST_OUTCOME_TRY(validate_ethereum_transaction<traits>(
-                enriched_txn, sender, state, state_tracer));
+                enriched_txn, sender, state, state_tracer, execution_mode));
         }
 
         auto const senders = std::vector{sender};
@@ -276,6 +286,7 @@ namespace
                     .senders_and_authorities = senders_and_authorities,
                     .senders = senders,
                     .authorities = authorities_vec,
+                    .mode = execution_mode,
                 };
             }
             else {
@@ -290,7 +301,7 @@ namespace
             chain.get_chain_id(),
             chain.get_blob_schedule(header.timestamp));
 
-        EvmcHost<traits> host{
+        StateHost<traits> host{
             call_tracer,
             state_tracer,
             tx_context,
@@ -391,16 +402,6 @@ namespace
         std::span<std::vector<std::optional<Address>> const> const
             authorities_view{authorities.data(), transactions_size};
 
-        // TODO(EXE-60): this re-execution path (and the sibling eth_call /
-        // eth_simulate paths in this file) receives a BlockHeader whose
-        // slot_number is unset (it is in-memory only, not RLP-encoded), so
-        // once SLOTNUM (EIP-7843) is wired the round read via
-        // evmc_tx_context.block_round would be 0. On this historical-trace
-        // path that diverges from how the block actually executed; the
-        // eth_call/eth_simulate paths run against synthetic headers where a 0
-        // round may be acceptable. Repopulate slot_number from the persisted
-        // MonadConsensusBlockHeader::block_round where a real round exists, per
-        // EXE-60.
         // Execute block header
         execute_block_header<traits>(
             block_state, header, /*exec_recorder=*/nullptr);
@@ -638,14 +639,14 @@ namespace
 
             call_result[eth_simulate_json::status] = std::format(
                 "0x{:x}",
-                call_frames[tx_idx][0].status == MONAD_STATUS_SUCCESS ? 1 : 0);
+                call_frames[tx_idx][0].status == CallStatus::Success ? 1 : 0);
             call_result[eth_simulate_json::return_data] =
                 format_hex(call_frames[tx_idx][0].output);
             call_result[eth_simulate_json::gas_used] =
                 std::format("0x{:x}", call_frames[tx_idx][0].gas_used);
 
             size_t log_index_value = 0;
-            if (call_frames[tx_idx][0].status == MONAD_STATUS_SUCCESS) {
+            if (call_frames[tx_idx][0].status == CallStatus::Success) {
                 call_result[eth_simulate_json::logs] = nlohmann::json::array();
                 for (auto const &log : receipts[tx_idx].logs) {
                     call_result[eth_simulate_json::logs].emplace_back(
@@ -776,6 +777,104 @@ namespace
         return carried_size;
     }
 
+    // Returns the base fee of a simulated block whose parent is `parent`.
+    std::optional<uint256_t> simulated_base_fee(
+        std::optional<uint256_t> const &base_fee_override,
+        BlockHeader const &parent, Simulation const &execution_mode)
+    {
+        if (base_fee_override.has_value()) {
+            return base_fee_override;
+        }
+        if (inherit_base_fee(execution_mode)) {
+            return parent.base_fee_per_gas;
+        }
+        return std::nullopt;
+    }
+
+    // Executes one simulated block under the fork rules active at its
+    // header. Fork-dependent header fields are populated here.
+    template <Traits traits>
+    Result<std::vector<Receipt>> eth_simulate_execute_block(
+        Chain const &chain, BlockHeader const &parent, Block &block,
+        std::vector<Address> const &senders,
+        std::vector<std::vector<std::optional<Address>>> const &authorities,
+        BlockState &block_state, BlockHashBuffer const &block_hash_buffer,
+        fiber::FiberGroup &tx_exec_pool,
+        std::vector<std::unique_ptr<CallTracerBase>> &call_tracers,
+        std::vector<std::unique_ptr<trace::StateTracer>> &state_tracers,
+        ChainContextBuffer &context_buffer,
+        bool const emit_native_transfer_logs, Simulation const &execution_mode)
+    {
+        if constexpr (traits::eip_7843_active()) {
+            block.header.requests_hash = bytes32_t{};
+            block.header.block_access_list_hash = bytes32_t{};
+            block.header.slot_number = parent.slot_number.has_value()
+                                           ? parent.slot_number.value() + 1
+                                           : 0;
+        }
+
+        auto block_metrics = BlockMetrics{};
+        trace::StateTracer system_call_state_tracer{std::monostate{}};
+        auto chain_context =
+            context_buffer.advance<traits>(senders, authorities);
+
+        static_assert(is_monad_trait_v<traits>);
+        chain_context.mode = execution_mode;
+
+        return execute_block<traits>(
+            chain,
+            block,
+            senders,
+            authorities,
+            block_state,
+            block_hash_buffer,
+            tx_exec_pool,
+            block_metrics,
+            call_tracers,
+            state_tracers,
+            system_call_state_tracer,
+            chain_context,
+            /*exec_recorder=*/nullptr,
+            emit_native_transfer_logs);
+    }
+
+    template <Traits base_traits>
+    Result<std::vector<Receipt>> eth_simulate_dispatch_block(
+        Chain const &chain, BlockHeader const &parent, Block &block,
+        std::vector<Address> const &senders,
+        std::vector<std::vector<std::optional<Address>>> const &authorities,
+        BlockState &block_state, BlockHashBuffer const &block_hash_buffer,
+        fiber::FiberGroup &tx_exec_pool,
+        std::vector<std::unique_ptr<CallTracerBase>> &call_tracers,
+        std::vector<std::unique_ptr<trace::StateTracer>> &state_tracers,
+        ChainContextBuffer &context_buffer,
+        bool const emit_native_transfer_logs, Simulation const &execution_mode)
+    {
+        static_assert(is_monad_trait_v<base_traits>);
+        auto const *const monad_chain =
+            dynamic_cast<MonadChain const *>(&chain);
+        MONAD_ASSERT_THROW(monad_chain, "Failed to cast chain to MonadChain");
+        auto const rev =
+            monad_chain->get_monad_revision(block.header.timestamp);
+        SWITCH_MONAD_TRAITS(
+            eth_simulate_execute_block,
+            chain,
+            parent,
+            block,
+            senders,
+            authorities,
+            block_state,
+            block_hash_buffer,
+            tx_exec_pool,
+            call_tracers,
+            state_tracers,
+            context_buffer,
+            emit_native_transfer_logs,
+            execution_mode);
+        MONAD_ASSERT_THROW(
+            false, "Unreachable code reached in eth_simulate_dispatch_block");
+    }
+
     template <Traits traits>
     Result<nlohmann::json> eth_simulate_impl(
         Chain const &chain, std::vector<std::vector<Transaction>> calls,
@@ -784,11 +883,11 @@ namespace
         std::vector<std::vector<Address>> senders,
         std::vector<std::vector<std::vector<std::optional<Address>>>>
             authorities,
-        mpt::RODb &db, vm::VM &vm, fiber::FiberGroup &tx_exec_pool,
+        mpt::RODb *const db, vm::VM &vm, fiber::FiberGroup &tx_exec_pool,
         struct monad_state_override_vec const &state_overrides,
         struct monad_block_override_vec const &block_overrides,
         uint64_t const gas_limit, size_t const max_calls, size_t const max_size,
-        bool emit_native_transfer_logs)
+        Simulation const execution_mode, bool emit_native_transfer_logs)
     {
         // TODO(dhil): Decide on the default timestamp increment.
         static constexpr uint64_t DEFAULT_TIMESTAMP_INCREMENT = 1;
@@ -826,15 +925,17 @@ namespace
         // willing to materialize this simulation.
         size_t const soft_max_size = padded_max_size(max_size);
 
-        TrieRODb tdb{db};
-        tdb.set_block_and_prefix(base_block_number, block_id);
+        StateDb state_db{db};
+        state_db.get().set_block_and_prefix(base_block_number, block_id);
 
-        // Initialize the chain context buffer.
-        auto context_buffer = ChainContextBuffer<traits>{};
+        // Initialize the chain context buffer. Without a database the
+        // transactions of the parent and grandparent blocks are unavailable,
+        // so their contexts are left empty.
+        auto context_buffer = ChainContextBuffer{};
         // Load grandparent context if available.
-        if (MONAD_LIKELY(base_block_number > 0)) {
+        if (MONAD_LIKELY(db != nullptr && base_block_number > 0)) {
             auto const grandparent_transactions = monad::get_transactions(
-                db, base_block_number - 1, grandparent_id);
+                *db, base_block_number - 1, grandparent_id);
             if (MONAD_UNLIKELY(!grandparent_transactions.has_value())) {
                 return Result<nlohmann::json>::error_type{
                     SimulationError::TransactionsContextUnavailable};
@@ -842,14 +943,14 @@ namespace
             auto const &[grandparent_senders, grandparent_authorities] =
                 recover_senders_and_authorities(
                     grandparent_transactions.assume_value());
-            context_buffer.advance(
+            context_buffer.advance<traits>(
                 grandparent_senders, grandparent_authorities);
         }
         // Load parent context.
         std::optional<bytes32_t> base_block_hash = std::nullopt;
-        {
+        if (MONAD_LIKELY(db != nullptr)) {
             auto const parent_transactions =
-                monad::get_transactions(db, base_block_number, block_id);
+                monad::get_transactions(*db, base_block_number, block_id);
             if (MONAD_UNLIKELY(!parent_transactions.has_value())) {
                 return Result<nlohmann::json>::error_type{
                     SimulationError::TransactionsContextUnavailable};
@@ -857,7 +958,7 @@ namespace
             auto const &[parent_senders, parent_authorities] =
                 recover_senders_and_authorities(
                     parent_transactions.assume_value());
-            context_buffer.advance(parent_senders, parent_authorities);
+            context_buffer.advance<traits>(parent_senders, parent_authorities);
 
             // If the base block is in-flight then we compute a mock block hash
             // using the header and the loaded transactions.
@@ -869,6 +970,12 @@ namespace
                 base_block_hash =
                     to_bytes(keccak256(rlp::encode_block(base_block)));
             }
+        }
+        else {
+            // The base block hash cannot be read from a database, so derive
+            // it from the base header.
+            base_block_hash =
+                to_bytes(keccak256(rlp::encode_block_header(base_header)));
         }
 
         // Instantiate the block hash buffer. We simulate on top of the base
@@ -883,7 +990,7 @@ namespace
         uint64_t gas_consumed_so_far = 0;
         size_t carried_size = sizeof(nlohmann::json::array_t);
 
-        auto block_state = BlockState{tdb, vm};
+        auto block_state = BlockState{state_db.get(), vm};
         for (size_t block_idx = 0; block_idx < calls.size(); ++block_idx) {
             auto const &bo = block_overrides.overrides[block_idx];
 
@@ -894,57 +1001,55 @@ namespace
                 bo.number.value_or(header.number + 1) - header.number;
             // No-op for gap == 1.
             for (size_t i = 1; i < gap; ++i) {
-                BlockHeader const synthetic_header{
-                    .parent_hash = block_hash_buffer.get(header.number),
-                    .number = header.number + 1,
-                    // NOTE(dhil): Synthetic blocks carry forward the previous
-                    // gas limit.
-                    .gas_limit = header.gas_limit,
-                    // TODO(dhil): Better Monad timestamp simulation (e.g. pack
-                    // multiple blocks into the same timestamp).
-                    .timestamp = header.timestamp + DEFAULT_TIMESTAMP_INCREMENT,
-                    // NOTE(dhil): Synthetic blocks carry forward the block
-                    // beneficiary.
-                    .beneficiary = header.beneficiary,
-                    // TODO(dhil): The simulation does not compute roots at this
-                    // time.
-                    .parent_beacon_block_root = bytes32_t{},
-                };
-                Block const synthetic_block{
-                    .header = synthetic_header,
+                Block synthetic_block{
+                    .header =
+                        BlockHeader{
+                            .parent_hash = block_hash_buffer.get(header.number),
+                            .number = header.number + 1,
+                            // NOTE(dhil): Synthetic blocks carry forward the
+                            // previous gas limit.
+                            .gas_limit = header.gas_limit,
+                            // TODO(dhil): Better Monad timestamp simulation
+                            // (e.g. pack multiple blocks into the same
+                            // timestamp).
+                            .timestamp =
+                                header.timestamp + DEFAULT_TIMESTAMP_INCREMENT,
+                            // NOTE(dhil): Synthetic blocks carry forward the
+                            // block beneficiary.
+                            .beneficiary = header.beneficiary,
+                            .base_fee_per_gas = simulated_base_fee(
+                                std::nullopt, header, execution_mode),
+                            // TODO(dhil): The simulation does not compute roots
+                            // at this time.
+                            .parent_beacon_block_root = bytes32_t{},
+                        },
                 };
 
-                auto block_metrics = BlockMetrics{};
                 auto call_tracers =
                     std::vector<std::unique_ptr<CallTracerBase>>{};
                 auto state_tracers =
                     std::vector<std::unique_ptr<trace::StateTracer>>{};
-                trace::StateTracer system_call_state_tracer{std::monostate{}};
 
-                static std::vector<Address> empty_senders{};
-                static std::vector<std::vector<std::optional<Address>>>
+                static std::vector<Address> const empty_senders{};
+                static std::vector<std::vector<std::optional<Address>>> const
                     empty_authorities{};
-
-                auto const chain_context =
-                    context_buffer.advance(empty_senders, empty_authorities);
 
                 BOOST_OUTCOME_TRY(
                     auto const receipts,
-                    execute_block<traits>(
+                    eth_simulate_dispatch_block<traits>(
                         chain,
+                        header,
                         synthetic_block,
                         empty_senders,
                         empty_authorities,
                         block_state,
                         block_hash_buffer,
                         tx_exec_pool,
-                        block_metrics,
                         call_tracers,
                         state_tracers,
-                        system_call_state_tracer,
-                        chain_context,
-                        /*exec_recorder=*/nullptr,
-                        emit_native_transfer_logs));
+                        context_buffer,
+                        emit_native_transfer_logs,
+                        execution_mode));
 
                 // NOTE(dhil): Synthetic blocks are free, so we don't update
                 // `gas_consumed_so_far`.
@@ -993,7 +1098,8 @@ namespace
                 .timestamp = bo.time.value_or(
                     header.timestamp + DEFAULT_TIMESTAMP_INCREMENT),
                 .beneficiary = bo.fee_recipient.value_or(header.beneficiary),
-                .base_fee_per_gas = bo.base_fee_per_gas,
+                .base_fee_per_gas = simulated_base_fee(
+                    bo.base_fee_per_gas, header, execution_mode),
                 // TODO(dhil): The simulation does not compute roots at this
                 // time.
                 .parent_beacon_block_root = bytes32_t{},
@@ -1029,7 +1135,6 @@ namespace
                 }
             }
 
-            auto block_metrics = BlockMetrics{};
             auto call_frames = std::vector<std::vector<CallFrame>>{};
             call_frames.reserve(calls[block_idx].size());
             auto call_tracers = std::vector<std::unique_ptr<CallTracerBase>>{};
@@ -1037,7 +1142,6 @@ namespace
             auto state_tracers =
                 std::vector<std::unique_ptr<trace::StateTracer>>{};
             state_tracers.reserve(calls[block_idx].size());
-            trace::StateTracer system_call_state_tracer{std::monostate{}};
 
             size_t const remaining_size =
                 max_size > carried_size ? max_size - carried_size : 0;
@@ -1054,9 +1158,6 @@ namespace
                     std::make_unique<trace::StateTracer>());
             }
 
-            auto const chain_context = context_buffer.advance(
-                senders[block_idx], authorities[block_idx]);
-
             auto block = Block{
                 .header = current_header,
                 .transactions = std::move(calls[block_idx]),
@@ -1066,26 +1167,28 @@ namespace
 
             BOOST_OUTCOME_TRY(
                 auto const receipts,
-                execute_block<traits>(
+                eth_simulate_dispatch_block<traits>(
                     chain,
+                    header,
                     block,
                     senders[block_idx],
                     authorities[block_idx],
                     block_state,
                     block_hash_buffer,
                     tx_exec_pool,
-                    block_metrics,
                     call_tracers,
                     state_tracers,
-                    system_call_state_tracer,
-                    chain_context,
-                    /*exec_recorder=*/nullptr,
-                    emit_native_transfer_logs));
+                    context_buffer,
+                    emit_native_transfer_logs,
+                    execution_mode));
 
             for (auto const &call_tracer : call_tracers) {
                 static_cast<CallTracer const &>(*call_tracer)
                     .check_size_limit();
             }
+
+            // The next block derives its defaults from the executed header.
+            BlockHeader const executed_header = block.header;
 
             // Receipts have cumulative gas_used (YP eq. 22), so
             // the last receipt's value is the total for the block.
@@ -1141,7 +1244,7 @@ namespace
                     soft_max_size,
                     result));
 
-            header = current_header;
+            header = executed_header;
         }
 
         return result;
@@ -1294,21 +1397,13 @@ namespace
 
 struct monad_executor
 {
-    Pool low_gas_pool_;
-    Pool high_gas_pool_;
+    // IMPORTANT: members are destroyed in reverse declaration order. Pools and
+    // fiber groups drain queued requests on destruction, so each is declared
+    // after every member those requests use (including other pools).
 
-    // Shared thread pool for trace operations (reduces thread count)
-    fiber::FiberThreadPool trace_thread_pool_;
-
-    // Fiber groups sharing the trace thread pool
-    Group trace_block_group_; // Limits concurrent trace requests
-    Group trace_tx_exec_group_; // Executes transactions within trace blocks
-
-    // Sequence number for each call. This is used as a priority of the request,
-    // requests started earlier have higher priority.
-    std::atomic<uint64_t> call_seq_no_{0};
-
-    mpt::RODb db_;
+    // Null when the executor runs without a database, in which case requests
+    // execute against an empty world (see `NullDb`).
+    std::unique_ptr<mpt::RODb> db_;
 
     // Secondary timeline, opened when active; shares db_'s service thread
     // and node cache. On archive nodes after the offline promote this is the
@@ -1320,6 +1415,20 @@ struct monad_executor
     // interpreter rather than the compiler. If it uses the compiler, then
     // out-of-gas errors can be misreported as generic failures.
     vm::VM vm_{vm::VM::InterpreterOnly};
+
+    Pool high_gas_pool_;
+    Pool low_gas_pool_;
+
+    // Shared thread pool for trace operations (reduces thread count)
+    fiber::FiberThreadPool trace_thread_pool_;
+
+    // Fiber groups sharing the trace thread pool
+    Group trace_tx_exec_group_; // Executes transactions within trace blocks
+    Group trace_block_group_; // Limits concurrent trace requests
+
+    // Sequence number for each call. This is used as a priority of the request,
+    // requests started earlier have higher priority.
+    std::atomic<uint64_t> call_seq_no_{0};
 
     static mpt::ReadOnlyOnDiskDbConfig make_db_config(
         std::string const &triedb_path, uint64_t const node_lru_max_mem)
@@ -1338,38 +1447,42 @@ struct monad_executor
     // versions below that floor fall through to the secondary (the strictly
     // older history). Availability is re-validated inside the read path, so
     // a version trimmed between here and the read fails the same way it
-    // always has.
-    mpt::RODb &select_db(uint64_t const block_number)
+    // always has. Returns null when the executor runs without a database.
+    mpt::RODb *select_db(uint64_t const block_number)
     {
-        if (block_number >= db_.get_earliest_version() ||
-            secondary_db_ == nullptr) {
-            return db_;
+        if (db_ == nullptr) {
+            return nullptr;
         }
-        return *secondary_db_;
+        if (block_number >= db_->get_earliest_version() ||
+            secondary_db_ == nullptr) {
+            return db_.get();
+        }
+        return secondary_db_.get();
     }
 
     monad_executor(
         monad_executor_pool_config const &low_pool_config,
         monad_executor_pool_config const &high_pool_config,
         monad_executor_pool_config const &block_pool_config,
-        unsigned const tx_exec_num_fibers,
-        uint64_t const node_lru_max_mem, std::string const &triedb_path)
-        : low_gas_pool_{Pool::Type::low, low_pool_config}
+        unsigned const tx_exec_num_fibers, uint64_t const node_lru_max_mem,
+        std::optional<std::string> const &triedb_path)
+        : db_{
+              triedb_path.has_value()
+                  ? std::make_unique<mpt::RODb>(
+                        make_db_config(*triedb_path, node_lru_max_mem))
+                  : nullptr}
+        , secondary_db_{db_ ? db_->open_secondary_timeline() : nullptr}
         , high_gas_pool_{Pool::Type::high, high_pool_config}
+        , low_gas_pool_{Pool::Type::low, low_pool_config}
         , trace_thread_pool_{block_pool_config.num_threads, true}
-        , trace_block_group_{
-              block_pool_config.queue_limit,
-              std::chrono::seconds(block_pool_config.timeout_sec),
-              trace_thread_pool_.create_fiber_group(block_pool_config.num_fibers)}
         , trace_tx_exec_group_{
               block_pool_config.queue_limit,
               std::chrono::seconds(block_pool_config.timeout_sec),
               trace_thread_pool_.create_fiber_group(tx_exec_num_fibers)}
-        // create the db instances on the PriorityPool thread so all the
-        // thread local storage gets instantiated on the one thread its
-        // used
-        , db_{make_db_config(triedb_path, node_lru_max_mem)}
-        , secondary_db_{db_.open_secondary_timeline()}
+        , trace_block_group_{
+              block_pool_config.queue_limit,
+              std::chrono::seconds(block_pool_config.timeout_sec),
+              trace_thread_pool_.create_fiber_group(block_pool_config.num_fibers)}
     {
     }
 
@@ -1424,7 +1537,7 @@ struct monad_executor
         Pool &active_pool)
     {
         if (!active_pool.try_enqueue()) {
-            result->status_code = EVMC_REJECTED;
+            result->status_code = std::to_underlying(CallStatus::Rejected);
             result->message = strdup(EXCEED_QUEUE_SIZE_ERR_MSG);
             MONAD_ASSERT(result->message);
             complete(result, user);
@@ -1441,7 +1554,7 @@ struct monad_executor
              block_header = block_header,
              block_number = block_number,
              block_id = block_id,
-             &db = select_db(block_number),
+             db = select_db(block_number),
              sender = sender,
              result = result,
              complete = complete,
@@ -1450,6 +1563,7 @@ struct monad_executor
              call_tracer_max_size = call_tracer_max_size,
              tracer_config = tracer_config,
              gas_specified = gas_specified,
+             execution_mode = Simulation{false},
              active_pool = &active_pool] {
                 active_pool->queued_count.fetch_sub(
                     1, std::memory_order_relaxed);
@@ -1464,7 +1578,8 @@ struct monad_executor
                     // check for timeout
                     if (std::chrono::steady_clock::now() - call_begin >
                         active_pool->timeout) {
-                        result->status_code = EVMC_REJECTED;
+                        result->status_code =
+                            std::to_underlying(CallStatus::Rejected);
                         result->message = strdup(TIMEOUT_ERR_MSG);
                         MONAD_ASSERT(result->message);
                         complete(result, user);
@@ -1494,7 +1609,7 @@ struct monad_executor
                     auto const chain = make_chain(chain_config);
 
                     LazyBlockHash block_hash_buffer{db, block_number};
-                    TrieRODb tdb{db};
+                    StateDb state_db{db};
                     std::vector<CallFrame> call_frames;
                     nlohmann::json state_trace;
                     std::unique_ptr<CallTracerBase> call_tracer =
@@ -1527,10 +1642,10 @@ struct monad_executor
                         MONAD_ASSERT(false);
                     }();
 
-                    auto const res = [&]() -> Result<evmc::Result> {
+                    auto const res = [&]() -> Result<vm::Result> {
                         if (chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET ||
                             chain_config == CHAIN_CONFIG_HIVE_NET) {
-                            monad_eth_revision const rev = chain->get_revision(
+                            EvmRevision const rev = chain->get_revision(
                                 block_header.number, block_header.timestamp);
                             SWITCH_EVM_TRAITS(
                                 eth_call_impl,
@@ -1541,12 +1656,13 @@ struct monad_executor
                                 block_id,
                                 sender,
                                 authorities,
-                                tdb,
+                                state_db.get(),
                                 vm_,
                                 block_hash_buffer,
                                 *state_overrides,
                                 *call_tracer,
-                                state_tracer);
+                                state_tracer,
+                                execution_mode);
                             MONAD_ASSERT(false);
                         }
                         else {
@@ -1563,20 +1679,21 @@ struct monad_executor
                                 block_id,
                                 sender,
                                 authorities,
-                                tdb,
+                                state_db.get(),
                                 vm_,
                                 block_hash_buffer,
                                 *state_overrides,
                                 *call_tracer,
-                                state_tracer);
+                                state_tracer,
+                                execution_mode);
                             MONAD_ASSERT(false);
                         }
                     }();
 
                     if (override_with_low_gas_retry_if_oog &&
                         ((res.has_value() &&
-                          (res.value().status_code == EVMC_OUT_OF_GAS ||
-                           res.value().status_code == EVMC_REVERT)) ||
+                          (res.value().status_code == CallStatus::OutOfGas ||
+                           res.value().status_code == CallStatus::Revert)) ||
                          (res.has_error() &&
                           res.error() == TransactionError::
                                              IntrinsicGasGreaterThanLimit))) {
@@ -1598,7 +1715,8 @@ struct monad_executor
                         return;
                     }
                     if (MONAD_UNLIKELY(res.has_error())) {
-                        result->status_code = EVMC_REJECTED;
+                        result->status_code =
+                            std::to_underlying(CallStatus::Rejected);
                         result->message = strdup(res.error().message().c_str());
                         MONAD_ASSERT(result->message);
                         complete(result, user);
@@ -1618,13 +1736,15 @@ struct monad_executor
                         state_trace);
                 }
                 catch (MonadException const &e) {
-                    result->status_code = EVMC_INTERNAL_ERROR;
+                    result->status_code =
+                        std::to_underlying(CallStatus::InternalError);
                     result->message = strdup(e.message());
                     MONAD_ASSERT(result->message);
                     complete(result, user);
                 }
                 catch (...) {
-                    result->status_code = EVMC_INTERNAL_ERROR;
+                    result->status_code =
+                        std::to_underlying(CallStatus::InternalError);
                     result->message = strdup(UNEXPECTED_EXCEPTION_ERR_MSG);
                     MONAD_ASSERT(result->message);
                     complete(result, user);
@@ -1633,23 +1753,23 @@ struct monad_executor
     }
 
     void call_complete(
-        Transaction const &transaction, evmc::Result const &evmc_result,
+        Transaction const &transaction, vm::Result const &res,
         monad_executor_result *const result,
         void (*complete)(monad_executor_result *, void *user), void *const user,
         std::vector<CallFrame> const &call_frames,
         nlohmann::json const &state_trace)
     {
-        result->status_code = evmc_result.status_code;
+        result->status_code = std::to_underlying(res.status_code);
         result->gas_used =
-            static_cast<int64_t>(transaction.gas_limit) - evmc_result.gas_left;
-        result->gas_refund = evmc_result.gas_refund;
-        if (evmc_result.output_size > 0) {
-            result->output_data = new uint8_t[evmc_result.output_size];
-            result->output_data_len = evmc_result.output_size;
+            static_cast<int64_t>(transaction.gas_limit) - res.gas_left;
+        result->gas_refund = res.gas_refund;
+        if (res.output_size > 0) {
+            result->output_data = new uint8_t[res.output_size];
+            result->output_data_len = res.output_size;
             memcpy(
                 (uint8_t *)result->output_data,
-                evmc_result.output_data,
-                evmc_result.output_size);
+                res.output_data,
+                res.output_size);
         }
         else {
             result->output_data = nullptr;
@@ -1730,7 +1850,7 @@ struct monad_executor
 
         if (tracer_config != PRESTATE_TRACER &&
             tracer_config != STATEDIFF_TRACER) {
-            result->status_code = EVMC_REJECTED;
+            result->status_code = std::to_underlying(CallStatus::Rejected);
             result->message = strdup(PRESTATE_TRACER_SUPPORT_ERR_MSG);
             MONAD_ASSERT(result->message);
             complete(result, user);
@@ -1738,15 +1858,23 @@ struct monad_executor
         }
 
         if (block_number == 0) {
-            result->status_code = EVMC_REJECTED;
+            result->status_code = std::to_underlying(CallStatus::Rejected);
             result->message = strdup(CANNOT_TRACE_GENESIS_ERR_MSG);
             MONAD_ASSERT(result->message);
             complete(result, user);
             return;
         }
 
+        if (db_ == nullptr) {
+            result->status_code = std::to_underlying(CallStatus::Rejected);
+            result->message = strdup(CANNOT_TRACE_WITHOUT_DB_ERR_MSG);
+            MONAD_ASSERT(result->message);
+            complete(result, user);
+            return;
+        }
+
         if (!trace_block_group_.try_enqueue()) {
-            result->status_code = EVMC_REJECTED;
+            result->status_code = std::to_underlying(CallStatus::Rejected);
             result->message = strdup(EXCEED_QUEUE_SIZE_ERR_MSG);
             MONAD_ASSERT(result->message);
             complete(result, user);
@@ -1763,7 +1891,7 @@ struct monad_executor
              block_number = block_number,
              chain_config = chain_config,
              complete = complete,
-             &db = select_db(block_number),
+             &db = *select_db(block_number),
              fiber_group = &trace_block_group_,
              tx_exec_group = &trace_tx_exec_group_,
              grandparent_id = grandparent_id,
@@ -1849,12 +1977,12 @@ struct monad_executor
                     TrieRODb tdb{db};
                     tdb.set_block_and_prefix(block_number - 1, parent_id);
                     BlockState block_state{tdb, vm_};
-                    LazyBlockHash block_hash_buffer{db, block_number};
+                    LazyBlockHash block_hash_buffer{&db, block_number};
 
                     auto const res = [&]() -> Result<nlohmann::json> {
                         if (chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET ||
                             chain_config == CHAIN_CONFIG_HIVE_NET) {
-                            monad_eth_revision const rev = chain->get_revision(
+                            EvmRevision const rev = chain->get_revision(
                                 block_header.number, block_header.timestamp);
                             SWITCH_EVM_TRAITS(
                                 eth_trace_block_or_transaction_impl,
@@ -1910,7 +2038,8 @@ struct monad_executor
                     }();
 
                     if (MONAD_UNLIKELY(res.has_error())) {
-                        result->status_code = EVMC_REJECTED;
+                        result->status_code =
+                            std::to_underlying(CallStatus::Rejected);
                         result->message = strdup(res.error().message().c_str());
                         MONAD_ASSERT(result->message);
                         complete(result, user);
@@ -1937,13 +2066,15 @@ struct monad_executor
                     complete(result, user);
                 }
                 catch (MonadException const &e) {
-                    result->status_code = EVMC_INTERNAL_ERROR;
+                    result->status_code =
+                        std::to_underlying(CallStatus::InternalError);
                     result->message = strdup(e.message());
                     MONAD_ASSERT(result->message);
                     complete(result, user);
                 }
                 catch (...) {
-                    result->status_code = EVMC_INTERNAL_ERROR;
+                    result->status_code =
+                        std::to_underlying(CallStatus::InternalError);
                     result->message = strdup(UNEXPECTED_EXCEPTION_ERR_MSG);
                     MONAD_ASSERT(result->message);
                     complete(result, user);
@@ -1960,13 +2091,13 @@ struct monad_executor
         BlockHeader const &block_header, uint64_t const block_number,
         bytes32_t const &block_id, bytes32_t const &grandparent_id,
         uint64_t const gas_limit, size_t const max_calls, size_t const max_size,
-        bool emit_native_transfer_logs,
+        bool const validation, bool emit_native_transfer_logs,
         void (*complete)(monad_executor_result *, void *user), void *const user)
     {
         monad_executor_result *const result = new monad_executor_result();
 
         if (!trace_block_group_.try_enqueue()) {
-            result->status_code = EVMC_REJECTED;
+            result->status_code = std::to_underlying(CallStatus::Rejected);
             result->message = strdup(ETH_SIMULATE_EXCEED_QUEUE_SIZE_ERR_MSG);
             MONAD_ASSERT(result->message);
             complete(result, user);
@@ -1986,10 +2117,11 @@ struct monad_executor
              block_id = block_id,
              grandparent_id = grandparent_id,
              chain_config = chain_config,
-             &db = select_db(block_number),
+             db = select_db(block_number),
              gas_limit = gas_limit,
              max_calls = max_calls,
              max_size = max_size,
+             execution_mode = Simulation{validation},
              emit_native_transfer_logs = emit_native_transfer_logs,
              fiber_group = &trace_block_group_,
              tx_exec_group = &trace_tx_exec_group_,
@@ -2040,28 +2172,8 @@ struct monad_executor
 
                         if (chain_config == CHAIN_CONFIG_ETHEREUM_MAINNET ||
                             chain_config == CHAIN_CONFIG_HIVE_NET) {
-                            monad_eth_revision const rev = chain->get_revision(
-                                block_header.number, block_header.timestamp);
-                            SWITCH_EVM_TRAITS(
-                                eth_simulate_impl,
-                                *chain,
-                                calls,
-                                block_header,
-                                base_block_number,
-                                block_id,
-                                grandparent_id,
-                                senders,
-                                authorities,
-                                db,
-                                vm,
-                                *tx_exec_group->group,
-                                *state_overrides,
-                                *block_overrides,
-                                gas_limit,
-                                max_calls,
-                                max_size,
-                                emit_native_transfer_logs);
-                            MONAD_ASSERT(false);
+                            return Result<nlohmann::json>::error_type{
+                                SimulationError::UnsupportedChainConfig};
                         }
                         else {
                             auto const rev =
@@ -2086,6 +2198,7 @@ struct monad_executor
                                 gas_limit,
                                 max_calls,
                                 max_size,
+                                execution_mode,
                                 emit_native_transfer_logs);
                             MONAD_ASSERT(false);
                         }
@@ -2093,7 +2206,8 @@ struct monad_executor
 
                     if (MONAD_UNLIKELY(res.has_error())) {
                         auto const error = simulation_error_info(res.error());
-                        result->status_code = error.status_code;
+                        result->status_code =
+                            std::to_underlying(error.status_code);
                         result->message = strdup(error.message.c_str());
                         MONAD_ASSERT(result->message);
                         complete(result, user);
@@ -2112,13 +2226,15 @@ struct monad_executor
                     complete(result, user);
                 }
                 catch (MonadException const &e) {
-                    result->status_code = EVMC_INTERNAL_ERROR;
+                    result->status_code =
+                        std::to_underlying(CallStatus::InternalError);
                     result->message = strdup(e.message());
                     MONAD_ASSERT(result->message);
                     complete(result, user);
                 }
                 catch (...) {
-                    result->status_code = EVMC_INTERNAL_ERROR;
+                    result->status_code =
+                        std::to_underlying(CallStatus::InternalError);
                     result->message = strdup(UNEXPECTED_EXCEPTION_ERR_MSG);
                     MONAD_ASSERT(result->message);
                     complete(result, user);
@@ -2137,8 +2253,15 @@ monad_executor *monad_executor_create(
     uint64_t const hash_seed = set_hash_seed();
     LOG_INFO("rpc: hashtable seed: {}", hash_seed);
 
-    MONAD_ASSERT(dbpath);
-    std::string const triedb_path{dbpath};
+    std::optional<std::string> triedb_path;
+    if (dbpath != nullptr) {
+        triedb_path.emplace(dbpath);
+    }
+    else {
+        LOG_INFO("rpc: no database path given, executing against empty state");
+    }
+
+    MONAD_ASSERT(init_trusted_setup());
 
     monad_executor *const e = new monad_executor(
         low_pool_conf,
@@ -2348,7 +2471,7 @@ void monad_executor_eth_simulate_submit(
     size_t max_calls, size_t max_output_size,
     struct monad_state_override_vec const *const state_overrides,
     struct monad_block_override_vec const *const block_overrides,
-    bool emit_native_transfer_logs,
+    bool const validation, bool emit_native_transfer_logs,
     void (*complete)(monad_executor_result *, void *user), void *user)
 {
 
@@ -2410,6 +2533,7 @@ void monad_executor_eth_simulate_submit(
         gas_limit,
         max_calls,
         max_output_size,
+        validation,
         emit_native_transfer_logs,
         complete,
         user);

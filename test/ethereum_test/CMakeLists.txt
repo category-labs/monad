@@ -65,13 +65,8 @@ add_test_fixtures(
 
 add_test_fixtures(
   MonadAmsterdamSpecTestFixtures
-  "https://github.com/monad-developers/execution-specs/releases/download/tests-monad_amsterdam@v0.2.0/fixtures_monad_amsterdam.tar.gz"
-  20b2a55f49a4b777f1abc6c196dc0afad22475b0ac598a39cc94fc598e22619d)
-
-add_test_fixtures(
-  MonadEip7981SpecTestFixtures
-  "https://github.com/monad-developers/execution-specs/releases/download/tests-monad_eip7981@v0.1.0/fixtures_monad_eip7981.tar.gz"
-  d624ec9c38c945c48f43ffb229c0a963660b8506d5bf4fe8068e13df4fdf0b8d)
+  "https://github.com/monad-developers/execution-specs/releases/download/tests-monad_eip7708%2B7843%2B7981%2B7997%2B8024%2B8246%40v0.3.1/fixtures_monad_eip7708+7843+7981+7997+8024+8246.tar.gz"
+  9ee1075421aa620b08690c9df9a302a9c11654c0ef0eaed561f650936288f98e)
 
 add_executable(monad-ethereum-test)
 target_link_libraries(monad-ethereum-test PRIVATE GTest::gtest monad-test-utils)
@@ -156,23 +151,13 @@ add_monad_test(FORK MONAD_EIGHT)
 add_monad_test(FORK MONAD_NINE)
 add_monad_test(FORK MONAD_TEN)
 
-# MONAD_NEXT Amsterdam spec tests, from a separate fixtures release. While the
-# whole suite is excluded (see the exclusion file), the runner exits non-zero
-# via its "No tests were run" guard, so shard 0 is marked WILL_FAIL to keep
-# ctest green. WILL_FAIL is set only while the suite is fully excluded: once
-# individual tests are re-enabled by dropping entries from the exclusion list,
-# the job runs normally so real failures (and unexpected passes) surface.
+# MONAD_NEXT Amsterdam spec tests, from a separate fixtures release.
 include(${CMAKE_CURRENT_SOURCE_DIR}/exclude/MONAD_NEXT_amsterdam.cmake)
 list(JOIN MONAD_NEXT_amsterdam_excluded_tests ":" TESTS_EXCLUDED)
 add_sharded_test(MONAD_NEXT_amsterdam_monad_ethereum_test
                  COMMAND monad-ethereum-test --fork MONAD_NEXT
                          --blockchain-tests ${CMAKE_BINARY_DIR}/src/MonadAmsterdamSpecTestFixtures/blockchain_tests
-                         --blockchain-tests ${CMAKE_BINARY_DIR}/src/MonadEip7981SpecTestFixtures/blockchain_tests
                          --gtest_filter=-:${TESTS_EXCLUDED})
-if(MONAD_NEXT_amsterdam_excluded_tests STREQUAL "BlockchainTests.*")
-  set_tests_properties(MONAD_NEXT_amsterdam_monad_ethereum_test_0
-                       PROPERTIES WILL_FAIL TRUE)
-endif()
 
 add_ethereum_test(FORK berlin)
 add_ethereum_test(FORK london)

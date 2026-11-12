@@ -19,10 +19,10 @@
 #include <category/core/config.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/monad/revision.h>
+#include <category/vm/evm/result.hpp>
 #include <category/vm/evm/traits.hpp>
-
-#include <evmc/evmc.hpp>
 
 #include <optional>
 
@@ -34,7 +34,8 @@ template <Traits traits>
 bool is_precompile(Address const &);
 
 template <Traits traits>
-std::optional<evmc::Result>
-check_call_precompile(State &, CallTracerBase &, evmc_message const &msg);
+std::optional<vm::Result> check_call_precompile(
+    State &, CallTracerBase &, vm::Message const &msg,
+    bool log_native_transfers);
 
 MONAD_NAMESPACE_END

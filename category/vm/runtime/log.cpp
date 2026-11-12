@@ -18,24 +18,25 @@
 #include <category/core/likely.h>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/host.hpp>
 #include <category/vm/runtime/bin.hpp>
 #include <category/vm/runtime/log.hpp>
 #include <category/vm/runtime/types.hpp>
 
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
-
 #include <span>
+#include <utility>
 
 namespace monad::vm::runtime
 {
     template <Traits traits>
     void log_impl(
         Context *ctx, uint256_t const &offset_word, uint256_t const &size_word,
-        std::span<evmc::bytes32 const> topics)
+        std::span<bytes32_t const> const topics)
     {
-        if (MONAD_UNLIKELY(ctx->env.evmc_flags & EVMC_STATIC)) {
+        if (MONAD_UNLIKELY(
+                ctx->env.flags & std::to_underlying(CallFlags::Static))) {
             ctx->exit(StatusCode::Error);
         }
 
@@ -49,8 +50,7 @@ namespace monad::vm::runtime
         }
 
         ctx->host->emit_log(
-            ctx->context,
-            &ctx->env.recipient,
+            ctx->env.recipient,
             ctx->memory.data + *offset,
             *size,
             topics.data(),
@@ -78,7 +78,7 @@ namespace monad::vm::runtime
             *offset_ptr,
             *size_ptr,
             {{
-                static_cast<evmc::bytes32>(store_be_as<bytes32_t>(*topic1_ptr)),
+                store_be_as<bytes32_t>(*topic1_ptr),
             }});
     }
 
@@ -94,8 +94,8 @@ namespace monad::vm::runtime
             *offset_ptr,
             *size_ptr,
             {{
-                static_cast<evmc::bytes32>(store_be_as<bytes32_t>(*topic1_ptr)),
-                static_cast<evmc::bytes32>(store_be_as<bytes32_t>(*topic2_ptr)),
+                store_be_as<bytes32_t>(*topic1_ptr),
+                store_be_as<bytes32_t>(*topic2_ptr),
             }});
     }
 
@@ -112,9 +112,9 @@ namespace monad::vm::runtime
             *offset_ptr,
             *size_ptr,
             {{
-                static_cast<evmc::bytes32>(store_be_as<bytes32_t>(*topic1_ptr)),
-                static_cast<evmc::bytes32>(store_be_as<bytes32_t>(*topic2_ptr)),
-                static_cast<evmc::bytes32>(store_be_as<bytes32_t>(*topic3_ptr)),
+                store_be_as<bytes32_t>(*topic1_ptr),
+                store_be_as<bytes32_t>(*topic2_ptr),
+                store_be_as<bytes32_t>(*topic3_ptr),
             }});
     }
 
@@ -131,10 +131,10 @@ namespace monad::vm::runtime
             *offset_ptr,
             *size_ptr,
             {{
-                static_cast<evmc::bytes32>(store_be_as<bytes32_t>(*topic1_ptr)),
-                static_cast<evmc::bytes32>(store_be_as<bytes32_t>(*topic2_ptr)),
-                static_cast<evmc::bytes32>(store_be_as<bytes32_t>(*topic3_ptr)),
-                static_cast<evmc::bytes32>(store_be_as<bytes32_t>(*topic4_ptr)),
+                store_be_as<bytes32_t>(*topic1_ptr),
+                store_be_as<bytes32_t>(*topic2_ptr),
+                store_be_as<bytes32_t>(*topic3_ptr),
+                store_be_as<bytes32_t>(*topic4_ptr),
             }});
     }
 

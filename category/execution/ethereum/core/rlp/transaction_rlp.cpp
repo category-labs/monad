@@ -476,6 +476,7 @@ Result<Transaction> decode_transaction_eip2718(byte_string_view &enc)
         return decode_monad_transaction(enc);
     }
     if (MONAD_UNLIKELY(
+            enc[0] == static_cast<unsigned char>(TransactionType::legacy) ||
             enc[0] >= static_cast<unsigned char>(TransactionType::LAST))) {
         return DecodeError::InvalidTxnType;
     }
@@ -510,7 +511,7 @@ Result<Transaction> decode_transaction_eip2718(byte_string_view &enc)
         BOOST_OUTCOME_TRY(auto hashes_payload, parse_list_metadata(payload));
         while (!hashes_payload.empty()) {
             BOOST_OUTCOME_TRY(auto const hash, decode_bytes32(hashes_payload));
-            txn.blob_versioned_hashes.emplace_back(std::move(hash));
+            txn.blob_versioned_hashes.emplace_back(hash);
         }
     }
 

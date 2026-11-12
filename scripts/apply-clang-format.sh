@@ -2,14 +2,19 @@
 
 set -euo pipefail
 
-script_dir="$(dirname "$0")"
-root_dir="$(realpath "$script_dir/..")"
+source "$(dirname "$0")/ubuntu-build/toolchain.env"
+
+case "${1:-}" in
+  "") mode=(-i) ;;
+  --check) mode=(--dry-run --Werror) ;;
+  *) echo "Usage: $0 [--check]" >&2; exit 1 ;;
+esac
 
 # Only format unignored files.
-cd "${root_dir}"
+cd "$(dirname "$0")/.."
 rg --files -0 -g '*.hpp' -g '*.cpp' -g '*.c' -g '*.h' \
-  "${root_dir}/category" \
-  "${root_dir}/cmd" \
-  "${root_dir}/test" \
-  "${root_dir}/zkvm" \
-  | xargs -0 -r clang-format-19 -i
+  category \
+  cmd \
+  test \
+  zkvm \
+  | xargs -0 -r "clang-format-${LLVM_VERSION}" "${mode[@]}"

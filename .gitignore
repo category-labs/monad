@@ -162,6 +162,7 @@ vcpkg_installed/
 .idea/
 
 # VM Fuzzer log files
+fuzzer-log/
 tmux-fuzzer-log/
 
 # Claude Code — ignore everything except shared commands

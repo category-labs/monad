@@ -48,17 +48,18 @@ void monad_runloop_run(MonadRunloop *, uint64_t nblocks);
 
 // Set balance of the account with given address.
 void monad_runloop_set_balance(
-    MonadRunloop *, MonadRunloopAddress const *, MonadRunloopWord const *);
+    MonadRunloop *, struct MonadRunloopAddress const *,
+    struct MonadRunloopWord const *);
 
 // Get balance of the account with given address.
 // Balance is stored in `result_balance`
 void monad_runloop_get_balance(
-    MonadRunloop *, MonadRunloopAddress const *,
-    MonadRunloopWord *result_balance);
+    MonadRunloop *, struct MonadRunloopAddress const *,
+    struct MonadRunloopWord *result_balance);
 
 // Store current state root in `result_state_root`.
 void monad_runloop_get_state_root(
-    MonadRunloop *, MonadRunloopWord *result_state_root);
+    MonadRunloop *, struct MonadRunloopWord *result_state_root);
 
 // Dump the current state of the database to stdout
 void monad_runloop_dump(MonadRunloop *);

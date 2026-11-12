@@ -1,0 +1,17 @@
+[package]
+name = "monad-transaction"
+version = "0.1.0"
+edition = "2021"
+description = "Canonical Monad and Ethereum transaction and receipt envelopes"
+
+[dependencies]
+alloy-consensus = { workspace = true, features = ["std", "serde", "k256"] }
+alloy-eips = { workspace = true, features = ["std", "serde"] }
+alloy-primitives = { workspace = true, features = ["std", "serde", "rlp", "k256"] }
+alloy-rlp = { workspace = true, features = ["std"] }
+alloy-rpc-types = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+hex = { workspace = true }

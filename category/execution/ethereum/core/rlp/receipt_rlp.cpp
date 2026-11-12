@@ -68,16 +68,19 @@ byte_string encode_receipt(Receipt const &receipt)
         log_result += encode_log(i);
     }
 
-    auto const receipt_bytes = encode_list2(
-        encode_unsigned(receipt.status),
-        encode_unsigned(receipt.gas_used),
-        encode_bloom(receipt.bloom),
-        encode_list2(log_result));
+    auto receipt_fields =
+        encode_unsigned(receipt.status) + encode_unsigned(receipt.gas_used) +
+        encode_bloom(receipt.bloom) + encode_list2(log_result);
+    if (receipt.type == TransactionType::monad) {
+        receipt_fields += encode_list2(byte_string{});
+    }
+    auto const receipt_bytes = encode_list2(receipt_fields);
 
     if (receipt.type == TransactionType::eip1559 ||
         receipt.type == TransactionType::eip2930 ||
         receipt.type == TransactionType::eip4844 ||
-        receipt.type == TransactionType::eip7702) {
+        receipt.type == TransactionType::eip7702 ||
+        receipt.type == TransactionType::monad) {
         return static_cast<unsigned char>(receipt.type) + receipt_bytes;
     }
     return receipt_bytes;
@@ -142,7 +145,8 @@ Result<std::vector<Receipt::Log>> decode_logs(byte_string_view &enc)
     return logs;
 }
 
-Result<Receipt> decode_untyped_receipt(byte_string_view &enc)
+Result<Receipt>
+decode_untyped_receipt(byte_string_view &enc, bool native = false)
 {
     Receipt receipt;
     BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
@@ -150,6 +154,13 @@ Result<Receipt> decode_untyped_receipt(byte_string_view &enc)
     BOOST_OUTCOME_TRY(receipt.gas_used, decode_unsigned<uint64_t>(payload));
     BOOST_OUTCOME_TRY(receipt.bloom, decode_bloom(payload));
     BOOST_OUTCOME_TRY(receipt.logs, decode_logs(payload));
+
+    if (native) {
+        BOOST_OUTCOME_TRY(auto extensions, parse_list_metadata(payload));
+        if (!extensions.empty() || receipt.status > 1) {
+            return DecodeError::NonCanonical;
+        }
+    }
 
     if (MONAD_UNLIKELY(!payload.empty())) {
         return DecodeError::InputTooLong;
@@ -170,7 +181,7 @@ Result<Receipt> decode_receipt(byte_string_view &enc)
     if (first < 0xc0) // eip 2718 - typed transaction envelope
     {
         enc = enc.substr(1);
-        BOOST_OUTCOME_TRY(receipt, decode_untyped_receipt(enc));
+        BOOST_OUTCOME_TRY(receipt, decode_untyped_receipt(enc, first == 0x40));
         switch (first) {
         case 0x1:
             receipt.type = TransactionType::eip2930;
@@ -183,6 +194,9 @@ Result<Receipt> decode_receipt(byte_string_view &enc)
             break;
         case 0x4:
             receipt.type = TransactionType::eip7702;
+            break;
+        case 0x40:
+            receipt.type = TransactionType::monad;
             break;
         default:
             return DecodeError::InvalidTxnType;

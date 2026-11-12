@@ -13,11 +13,12 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use alloy_consensus::{Header, Transaction as _, TxEnvelope};
+use alloy_consensus::Header;
 use alloy_eips::eip2718::Encodable2718;
 use alloy_primitives::Address;
 use alloy_rlp::Encodable;
 use futures::channel::oneshot::channel;
+use monad_transaction::TxEnvelope;
 use tracing::warn;
 
 use super::{

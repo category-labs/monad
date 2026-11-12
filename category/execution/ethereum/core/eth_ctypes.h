@@ -45,6 +45,7 @@ enum monad_c_transaction_type : uint8_t
     MONAD_TXN_EIP1559 = 2,
     MONAD_TXN_EIP4844 = 3,
     MONAD_TXN_EIP7702 = 4,
+    MONAD_TXN_MONAD = 0x40,
 };
 
 /// Entry in a EIP-2930 storage access warmup list
@@ -75,6 +76,7 @@ struct monad_c_eth_txn_header
 {
     enum monad_c_transaction_type
         txn_type;                        ///< EIP-2718 transaction type
+    uint8_t monad_access_list_present;   ///< Native feature 0x04 was present (0/1)
     monad_c_uint256_ne chain_id;         ///< T_c: EIP-155 blockchain identifier
     uint64_t nonce;                      ///< T_n: num txns sent by this sender
     uint64_t gas_limit;                  ///< T_g: max usable gas (upfront xfer)

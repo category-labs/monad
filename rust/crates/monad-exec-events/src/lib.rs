@@ -101,3 +101,7 @@ pub type ExecEventRing = EventRing<ExecEventDecoder>;
 
 /// A type alias for a snapshot event ring that produces monad execution events.
 pub type ExecSnapshotEventRing = SnapshotEventRing<ExecEventDecoder>;
+
+/// Utilities for replaying the repository's pre-native transaction fixtures.
+#[cfg(any(test, feature = "test-utils"))]
+pub mod test_utils;

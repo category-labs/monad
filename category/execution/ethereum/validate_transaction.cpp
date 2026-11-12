@@ -64,6 +64,13 @@ Result<void> static_validate_transaction(
         }
     }
 
+    if (tx.type == TransactionType::monad) {
+        if (!is_monad_trait_v<traits> || chain_id != 20143 ||
+            !tx.sc.chain_id.has_value()) {
+            return TransactionError::TypeNotSupported;
+        }
+    }
+
     // TODO: remove the below logic once we fully migrate over to traits
     // EIP-1559
     if constexpr (traits::evm_rev() < MONAD_ETH_LONDON) {
@@ -95,7 +102,8 @@ Result<void> static_validate_transaction(
                  tx.type != TransactionType::eip2930 &&
                  tx.type != TransactionType::eip1559 &&
                  tx.type != TransactionType::eip4844 &&
-                 tx.type != TransactionType::eip7702)) {
+                 tx.type != TransactionType::eip7702 &&
+                 tx.type != TransactionType::monad)) {
         return TransactionError::TypeNotSupported;
     }
 

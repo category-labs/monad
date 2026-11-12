@@ -15,8 +15,9 @@
 
 #include <category/vm/compiler/ir/basic_blocks.hpp>
 #include <category/vm/compiler/ir/instruction.hpp>
+#include <category/vm/evm/call_status.hpp>
 #include <category/vm/evm/opcodes.hpp>
-#include <category/vm/evm/revision.h>
+#include <category/vm/evm/revision.hpp>
 #include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/utils/evm-as.hpp>
 #include <category/vm/utils/evm-as/compiler.hpp>
@@ -24,7 +25,6 @@
 
 #include <test/vm/unit/evm_fixture.hpp>
 
-#include <evmc/evmc.h>
 #include <gtest/gtest.h>
 
 #include <array>
@@ -38,6 +38,8 @@
 using namespace monad::vm;
 using enum monad::vm::compiler::EvmOpCode;
 
+using monad::CallStatus;
+using monad::EvmRevision;
 using monad::EvmTraits;
 using monad::vm::compiler::eip8024_decode_pair;
 using monad::vm::compiler::eip8024_decode_single;
@@ -179,7 +181,7 @@ namespace
             EXCHANGE,
             eip8024_encode_pair(2, 3),
         };
-        auto const ir = unsafe_make_ir<EvmTraits<MONAD_ETH_AMSTERDAM>>(
+        auto const ir = unsafe_make_ir<EvmTraits<EvmRevision::Amsterdam>>(
             std::span<uint8_t const>{code});
         ASSERT_EQ(ir.blocks().size(), 1u);
         auto const &instrs = ir.blocks()[0].instrs;
@@ -204,7 +206,7 @@ namespace
         using monad::vm::compiler::basic_blocks::unsafe_make_ir;
 
         std::vector<uint8_t> const code{DUPN, JUMPDEST};
-        auto const ir = unsafe_make_ir<EvmTraits<MONAD_ETH_AMSTERDAM>>(
+        auto const ir = unsafe_make_ir<EvmTraits<EvmRevision::Amsterdam>>(
             std::span<uint8_t const>{code});
         ASSERT_FALSE(ir.blocks().empty());
         EXPECT_TRUE(ir.blocks()[0].instrs.empty());
@@ -214,7 +216,7 @@ namespace
 
     class Eip8024Test
         : public test::VMTraitsTestBase<
-              std::integral_constant<monad_eth_revision, MONAD_ETH_AMSTERDAM>>
+              std::integral_constant<EvmRevision, EvmRevision::Amsterdam>>
         , public ::testing::Test
     {
     protected:
@@ -222,7 +224,7 @@ namespace
 
         struct Outcome
         {
-            evmc_status_code status;
+            CallStatus status;
             int64_t gas_left;
             std::vector<uint8_t> output;
         };
@@ -255,10 +257,10 @@ namespace
             auto const i = run(code, Interpreter, gas);
             auto const c = run(code, Compiler, gas);
             EXPECT_EQ(c.status, i.status);
-            EXPECT_NE(i.status, EVMC_SUCCESS);
-            EXPECT_NE(i.status, EVMC_REVERT);
-            EXPECT_NE(c.status, EVMC_SUCCESS);
-            EXPECT_NE(c.status, EVMC_REVERT);
+            EXPECT_NE(i.status, CallStatus::Success);
+            EXPECT_NE(i.status, CallStatus::Revert);
+            EXPECT_NE(c.status, CallStatus::Success);
+            EXPECT_NE(c.status, CallStatus::Revert);
         }
 
         static std::vector<uint8_t> assemble(auto const &eb)
@@ -284,7 +286,7 @@ namespace
         append_return_top(eb);
 
         auto const out = expect_equal(assemble(eb));
-        ASSERT_EQ(out.status, EVMC_SUCCESS);
+        ASSERT_EQ(out.status, CallStatus::Success);
         ASSERT_EQ(out.output.size(), 32u);
         EXPECT_EQ(out.output[31], 4);
     }
@@ -299,7 +301,7 @@ namespace
         append_return_top(eb);
 
         auto const out = expect_equal(assemble(eb));
-        ASSERT_EQ(out.status, EVMC_SUCCESS);
+        ASSERT_EQ(out.status, CallStatus::Success);
         ASSERT_EQ(out.output.size(), 32u);
         EXPECT_EQ(out.output[31], 1);
     }
@@ -314,7 +316,7 @@ namespace
         append_return_top(eb);
 
         auto const out = expect_equal(assemble(eb));
-        ASSERT_EQ(out.status, EVMC_SUCCESS);
+        ASSERT_EQ(out.status, CallStatus::Success);
         ASSERT_EQ(out.output.size(), 32u);
         EXPECT_EQ(out.output[31], 3);
     }
@@ -330,7 +332,7 @@ namespace
         append_return_top(eb);
 
         auto const out = expect_equal(assemble(eb));
-        ASSERT_EQ(out.status, EVMC_SUCCESS);
+        ASSERT_EQ(out.status, CallStatus::Success);
         ASSERT_EQ(out.output.size(), 32u);
         EXPECT_EQ(out.output[31], 3);
     }
@@ -358,7 +360,7 @@ namespace
         append_return_top(eb);
 
         auto const out = expect_equal(assemble(eb));
-        ASSERT_EQ(out.status, EVMC_SUCCESS);
+        ASSERT_EQ(out.status, CallStatus::Success);
         ASSERT_EQ(out.output.size(), 32u);
         EXPECT_EQ(out.output[31], 1);
     }
@@ -374,7 +376,7 @@ namespace
         append_return_top(eb);
 
         auto const out = expect_equal(assemble(eb));
-        ASSERT_EQ(out.status, EVMC_SUCCESS);
+        ASSERT_EQ(out.status, CallStatus::Success);
         ASSERT_EQ(out.output.size(), 32u);
         EXPECT_EQ(out.output[31], 1);
     }
@@ -390,7 +392,7 @@ namespace
         append_return_top(eb);
 
         auto const out = expect_equal(assemble(eb));
-        ASSERT_EQ(out.status, EVMC_SUCCESS);
+        ASSERT_EQ(out.status, CallStatus::Success);
         ASSERT_EQ(out.output.size(), 32u);
         EXPECT_EQ(out.output[31], 1);
     }
@@ -399,7 +401,7 @@ namespace
     {
         std::vector<uint8_t> const c{DUPN, JUMPDEST};
         auto const out = expect_equal(c);
-        EXPECT_EQ(out.status, EVMC_FAILURE);
+        EXPECT_EQ(out.status, CallStatus::Failure);
     }
 
     TEST_F(Eip8024Test, DisallowedPairImmediateHaltsAsInvalid)
@@ -407,7 +409,7 @@ namespace
         // 0x52 (MSTORE) is disallowed for EXCHANGE but not for DUPN/SWAPN.
         std::vector<uint8_t> const c{EXCHANGE, MSTORE};
         auto const out = expect_equal(c);
-        EXPECT_EQ(out.status, EVMC_FAILURE);
+        EXPECT_EQ(out.status, CallStatus::Failure);
     }
 
     TEST(Eip8024Disasm, DisallowedImmediateIsLabelledAndNotConsumed)
@@ -467,14 +469,14 @@ namespace
     {
         std::vector<uint8_t> const c{DUPN, JUMPDEST};
         auto const out = expect_equal(c, 2); // DUPN costs 3
-        EXPECT_EQ(out.status, EVMC_FAILURE);
+        EXPECT_EQ(out.status, CallStatus::Failure);
     }
 
     TEST_F(Eip8024Test, DisallowedImmediateByteIsAReachableJumpdestInCompiler)
     {
         std::vector<uint8_t> const c{PUSH1, 0x04, JUMP, DUPN, JUMPDEST, STOP};
         auto const out = expect_equal(c);
-        EXPECT_EQ(out.status, EVMC_SUCCESS);
+        EXPECT_EQ(out.status, CallStatus::Success);
     }
 
     TEST_F(Eip8024Test, UnderflowHaltsInBothEngines)
@@ -482,7 +484,7 @@ namespace
         auto eb = evm_as::amsterdam();
         eb.push(1).push(2).dupn(17);
         auto const out = expect_equal(assemble(eb));
-        EXPECT_EQ(out.status, EVMC_FAILURE);
+        EXPECT_EQ(out.status, CallStatus::Failure);
     }
 
     TEST_F(Eip8024Test, TruncatedImmediateHaltsWithoutOob)
@@ -514,7 +516,7 @@ namespace
             eb.dupn(n);
             append_return_top(eb);
             auto const out = expect_equal(assemble(eb));
-            ASSERT_EQ(out.status, EVMC_SUCCESS) << "n=" << n;
+            ASSERT_EQ(out.status, CallStatus::Success) << "n=" << n;
             ASSERT_EQ(out.output.size(), 32u) << "n=" << n;
             EXPECT_EQ(out.output[31], 2) << "n=" << n;
         }
@@ -530,7 +532,7 @@ namespace
             eb.swapn(n);
             append_return_top(eb);
             auto const out = expect_equal(assemble(eb));
-            ASSERT_EQ(out.status, EVMC_SUCCESS) << "n=" << n;
+            ASSERT_EQ(out.status, CallStatus::Success) << "n=" << n;
             ASSERT_EQ(out.output.size(), 32u) << "n=" << n;
             EXPECT_EQ(out.output[31], 1) << "n=" << n;
         }
@@ -549,7 +551,7 @@ namespace
                 eb.dup(n + 1);
                 append_return_top(eb);
                 auto const out = expect_equal(assemble(eb));
-                ASSERT_EQ(out.status, EVMC_SUCCESS)
+                ASSERT_EQ(out.status, CallStatus::Success)
                     << "n=" << +n << " m=" << +m;
                 ASSERT_EQ(out.output.size(), 32u) << "n=" << +n << " m=" << +m;
                 EXPECT_EQ(out.output[31], 1) << "n=" << +n << " m=" << +m;
@@ -568,7 +570,7 @@ namespace
             }
             eb.dupn(17).stop();
             auto const out = expect_equal(assemble(eb));
-            EXPECT_EQ(out.status, EVMC_SUCCESS);
+            EXPECT_EQ(out.status, CallStatus::Success);
         }
         {
             auto eb = evm_as::amsterdam();
@@ -577,7 +579,7 @@ namespace
             }
             eb.dupn(17).stop();
             auto const out = expect_equal(assemble(eb));
-            EXPECT_EQ(out.status, EVMC_FAILURE);
+            EXPECT_EQ(out.status, CallStatus::Failure);
         }
     }
 
@@ -611,7 +613,7 @@ namespace
     {
         auto const out =
             expect_equal(jumped_block(236, DUPN, eip8024_encode_single(235)));
-        ASSERT_EQ(out.status, EVMC_SUCCESS);
+        ASSERT_EQ(out.status, CallStatus::Success);
         ASSERT_EQ(out.output.size(), 32u);
         EXPECT_EQ(out.output[31], 2);
     }
@@ -620,7 +622,7 @@ namespace
     {
         auto const out =
             expect_equal(jumped_block(236, SWAPN, eip8024_encode_single(235)));
-        ASSERT_EQ(out.status, EVMC_SUCCESS);
+        ASSERT_EQ(out.status, CallStatus::Success);
         ASSERT_EQ(out.output.size(), 32u);
         EXPECT_EQ(out.output[31], 1);
     }
@@ -629,7 +631,7 @@ namespace
     {
         auto const out = expect_equal(
             jumped_block(30, EXCHANGE, eip8024_encode_pair(1, 29), {DUP2}));
-        ASSERT_EQ(out.status, EVMC_SUCCESS);
+        ASSERT_EQ(out.status, CallStatus::Success);
         ASSERT_EQ(out.output.size(), 32u);
         EXPECT_EQ(out.output[31], 1);
     }
@@ -641,11 +643,12 @@ namespace
 
     class Eip8024DormantTest
         : public test::VMTraitsTestBase<
-              std::integral_constant<monad_eth_revision, MONAD_ETH_OSAKA>>
+              std::integral_constant<EvmRevision, EvmRevision::Osaka>>
         , public ::testing::Test
     {
     protected:
-        evmc_status_code run(std::span<uint8_t const> code, Implementation impl)
+        CallStatus
+        run(std::span<uint8_t const> const code, Implementation const impl)
         {
             host_ = {};
             execute(1'000'000, code, {}, impl);
@@ -657,10 +660,11 @@ namespace
     {
         for (uint8_t op : {DUPN, SWAPN, EXCHANGE}) {
             std::vector<uint8_t> const c{PUSH1, 0x01, op, 0x00};
-            EXPECT_NE(run(c, Interpreter), EVMC_SUCCESS) << "op=" << +op;
-            EXPECT_NE(run(c, Compiler), EVMC_SUCCESS) << "op=" << +op;
+            EXPECT_NE(run(c, Interpreter), CallStatus::Success) << "op=" << +op;
+            EXPECT_NE(run(c, Compiler), CallStatus::Success) << "op=" << +op;
         }
         EXPECT_TRUE(
-            compiler::is_unknown_opcode_info<EvmTraits<MONAD_ETH_OSAKA>>(DUPN));
+            compiler::is_unknown_opcode_info<EvmTraits<EvmRevision::Osaka>>(
+                DUPN));
     }
 }

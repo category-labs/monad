@@ -13,16 +13,25 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/bytes.hpp>
+#include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
+#include <category/execution/ethereum/db/util.hpp>
+#include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/monad/db/page_commit_builder.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
+#include <category/mpt/db.hpp>
 
 #include <gtest/gtest.h>
 
 #include <test_resource_data.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <cstring>
+#include <memory>
+#include <optional>
+#include <utility>
 
 using namespace monad;
 using namespace monad::mpt;
@@ -67,7 +76,7 @@ TEST(MonadDb, key_grouping)
 
 TEST(MonadDb, page_commit_deterministic)
 {
-    storage_page_t page{};
+    storage_page_t const page{};
     auto const c1 = page_commit(page);
     auto const c2 = page_commit(page);
     EXPECT_EQ(c1, c2);
@@ -76,7 +85,7 @@ TEST(MonadDb, page_commit_deterministic)
 
 TEST(MonadDb, page_commit_differs_for_different_pages)
 {
-    storage_page_t page_a{};
+    storage_page_t const page_a{};
     storage_page_t page_b{};
     page_b.set(0, bytes32_t{0x01});
 
@@ -117,7 +126,7 @@ TEST(MonadDb, page_commit_sparse_nonzero)
     page.set(2, filled(0x22));
     page.set(4, filled(0x33));
 
-    storage_page_t zero_page{};
+    storage_page_t const zero_page{};
     EXPECT_NE(page_commit(page), page_commit(zero_page));
     EXPECT_EQ(page_commit(page), page_commit(page));
 }
@@ -150,7 +159,7 @@ TEST(MonadDb, page_commit_cross_check_with_reference)
     constexpr auto FULL_PAGE_COMMIT =
         0xe5a642261a2c2dedebd68ebd42237f2210d1eee94553d677d425dc3a46c7a687_bytes32;
 
-    storage_page_t zero_page{};
+    storage_page_t const zero_page{};
     EXPECT_EQ(page_commit(zero_page), ZERO_PAGE_COMMIT);
 
     storage_page_t page_slot0{};

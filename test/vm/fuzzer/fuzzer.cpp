@@ -18,6 +18,8 @@
 #include "generator.hpp"
 
 #include <test/utils/test_state.hpp>
+#include <test/vm/utils/evmc_host_adapter.hpp>
+#include <test/vm/utils/evmc_result.hpp>
 #include <test/vm/utils/test_block_hash_buffer.hpp>
 #include <test/vm/utils/test_host.hpp>
 
@@ -31,8 +33,10 @@
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/vm/compiler/ir/x86/types.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/opcodes.hpp>
-#include <category/vm/evm/revision.h>
+#include <category/vm/evm/result.hpp>
+#include <category/vm/evm/revision.hpp>
 #include <category/vm/fuzzing/choice.hpp>
 #include <category/vm/memory_pool.hpp>
 #include <category/vm/utils/debug.hpp>
@@ -47,6 +51,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <bits/chrono.h>
 #include <cassert>
 #include <chrono>
@@ -112,44 +117,44 @@ public:
     }
 };
 
-static constexpr std::string_view to_string(evmc_status_code const sc) noexcept
+static constexpr std::string_view to_string(CallStatus const sc) noexcept
 {
     switch (sc) {
-    case EVMC_SUCCESS:
+    case CallStatus::Success:
         return "SUCCESS";
-    case EVMC_FAILURE:
+    case CallStatus::Failure:
         return "FAILURE";
-    case EVMC_REVERT:
+    case CallStatus::Revert:
         return "REVERT";
-    case EVMC_OUT_OF_GAS:
+    case CallStatus::OutOfGas:
         return "OUT_OF_GAS";
-    case EVMC_INVALID_INSTRUCTION:
+    case CallStatus::InvalidInstruction:
         return "INVALID_INSTRUCTION";
-    case EVMC_UNDEFINED_INSTRUCTION:
+    case CallStatus::UndefinedInstruction:
         return "UNDEFINED_INSTRUCTION";
-    case EVMC_STACK_OVERFLOW:
+    case CallStatus::StackOverflow:
         return "STACK_OVERFLOW";
-    case EVMC_STACK_UNDERFLOW:
+    case CallStatus::StackUnderflow:
         return "STACK_UNDERFLOW";
-    case EVMC_BAD_JUMP_DESTINATION:
+    case CallStatus::BadJumpDestination:
         return "BAD_JUMP_DESTINATION";
-    case EVMC_INVALID_MEMORY_ACCESS:
+    case CallStatus::InvalidMemoryAccess:
         return "INVALID_MEMORY_ACCESS";
-    case EVMC_CALL_DEPTH_EXCEEDED:
+    case CallStatus::CallDepthExceeded:
         return "CALL_DEPTH_EXCEEDED";
-    case EVMC_STATIC_MODE_VIOLATION:
+    case CallStatus::StaticModeViolation:
         return "STATIC_MODE_VIOLATION";
-    case EVMC_PRECOMPILE_FAILURE:
+    case CallStatus::PrecompileFailure:
         return "PRECOMPILE_FAILURE";
-    case EVMC_ARGUMENT_OUT_OF_RANGE:
+    case CallStatus::ArgumentOutOfRange:
         return "ARGUMENT_OUT_OF_RANGE";
-    case EVMC_INSUFFICIENT_BALANCE:
+    case CallStatus::InsufficientBalance:
         return "INSUFFICIENT_BALANCE";
-    case EVMC_INTERNAL_ERROR:
+    case CallStatus::InternalError:
         return "INTERNAL_ERROR";
-    case EVMC_REJECTED:
+    case CallStatus::Rejected:
         return "REJECTED";
-    case EVMC_OUT_OF_MEMORY:
+    case CallStatus::OutOfMemory:
         return "OUT_OF_MEMORY";
     default:
         return "OTHER";
@@ -202,7 +207,7 @@ private:
 static constexpr auto block_gas_limit = 300'000'000;
 
 static Transaction
-tx_from(TransitionState &tstate, evmc_message const &msg) noexcept
+tx_from(TransitionState &tstate, vm::Message const &msg) noexcept
 {
     auto tx = Transaction{};
     tx.to = msg.recipient;
@@ -212,9 +217,9 @@ tx_from(TransitionState &tstate, evmc_message const &msg) noexcept
 }
 
 template <Traits traits>
-static evmc::Result message_call(
+static vm::Result message_call(
     TransitionState &tstate, BlockHashBuffer const &block_hash_buffer,
-    Transaction const &tx, evmc_message const &msg,
+    Transaction const &tx, vm::Message const &msg,
     BlockHeader const &block_header)
 {
     std::optional<uint256_t> base_fee_per_gas{};
@@ -230,13 +235,13 @@ static evmc::Result message_call(
         authorities,
         block_header,
         chain};
-    auto &host = test_host.get_evmc_host();
+    auto &host = test_host.get_state_host();
     return host.call(msg);
 }
 
 template <Traits traits>
-static evmc::Result transition(
-    TransitionState &tstate, evmc_message const &msg,
+static vm::Result transition(
+    TransitionState &tstate, vm::Message const &msg,
     BlockHashBuffer const &block_hash_buffer, BlockHeader const &block_header)
 {
     auto tx = tx_from(tstate, msg);
@@ -427,8 +432,8 @@ static arguments parse_args(int const argc, char **const argv)
 }
 
 template <Traits traits>
-static evmc_status_code fuzz_iteration(
-    evmc_message const &msg, BlockHashBuffer const &block_hash_buffer,
+static CallStatus fuzz_iteration(
+    vm::Message const &msg, BlockHashBuffer const &block_hash_buffer,
     FuzzerTestStateRef spec_state, FuzzerTestStateRef monad_state,
     BlockHeader const &block_header)
 {
@@ -451,7 +456,7 @@ static evmc_status_code fuzz_iteration(
 
     assert_equal(spec_tstate.state, monad_tstate.state);
 
-    if (monad_result.status_code == EVMC_SUCCESS) {
+    if (monad_result.status_code == CallStatus::Success) {
         spec_tstate.accept(block_header.number);
         monad_tstate.accept(block_header.number);
     }
@@ -469,7 +474,7 @@ static evmc_status_code fuzz_iteration(
 
 static void
 log(std::chrono::high_resolution_clock::time_point start, arguments const &args,
-    std::unordered_map<evmc_status_code, std::size_t> const &exit_code_stats,
+    std::unordered_map<CallStatus, std::size_t> const &exit_code_stats,
     std::size_t const run_index, std::size_t const total_messages)
 {
     using namespace std::chrono;
@@ -609,14 +614,19 @@ static void do_run(
     // VM mode of spec_state is ignored by overriding execute:
     spec_state->vm.debug_set_execute_override(
         [&spec_vm](
-            auto const *const host,
-            auto *const context,
+            auto &host,
             auto const rev,
             auto const *const msg,
             auto const *const code,
-            auto const code_size) -> evmc::Result {
-            return spec_vm.execute(
-                *host, context, to_evmc_revision(rev), *msg, code, code_size);
+            auto const code_size) -> vm::Result {
+            vm::test::EvmcHostAdapter adapter{host};
+            return vm::test::from_evmc_result(spec_vm.execute(
+                adapter.get_interface(),
+                adapter.to_context(),
+                vm::test::to_evmc_revision(rev),
+                vm::test::to_evmc(*msg),
+                code,
+                code_size));
         });
 
     auto monad_state = [&] {
@@ -635,7 +645,7 @@ static void do_run(
     auto contract_addresses = std::vector<Address>{};
     auto known_addresses = std::vector<Address>{};
 
-    auto exit_code_stats = std::unordered_map<evmc_status_code, std::size_t>{};
+    auto exit_code_stats = std::unordered_map<CallStatus, std::size_t>{};
     auto total_messages = std::size_t{0};
 
     auto start_time = std::chrono::high_resolution_clock::now();

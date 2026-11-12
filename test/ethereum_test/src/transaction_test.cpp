@@ -30,9 +30,6 @@
 #include <category/vm/evm/traits.hpp>
 #include <monad/test/config.hpp>
 
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
-
 #include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
 
@@ -48,6 +45,7 @@
 #include <fstream>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
@@ -84,11 +82,11 @@ void process_transaction(Transaction const &txn, nlohmann::json const &expected)
 }
 
 void process_transaction(
-    std::variant<monad_eth_revision, monad_revision> const &revision,
+    std::variant<EvmRevision, monad_revision> const &revision,
     Transaction const &txn, nlohmann::json const &expected)
 {
-    if (std::holds_alternative<monad_eth_revision>(revision)) {
-        auto const rev = std::get<monad_eth_revision>(revision);
+    if (std::holds_alternative<EvmRevision>(revision)) {
+        auto const rev = std::get<EvmRevision>(revision);
         SWITCH_EVM_TRAITS(process_transaction, txn, expected);
         MONAD_ASSERT(false);
     }
@@ -151,7 +149,8 @@ void TransactionTest::TestBody()
     if (!executed && revision_.has_value()) {
         std::visit(
             [](auto const &r) {
-                GTEST_SKIP() << "no test cases found for revision=" << r;
+                GTEST_SKIP() << "no test cases found for revision="
+                             << std::to_underlying(r);
             },
             revision_.value());
     }
@@ -159,8 +158,7 @@ void TransactionTest::TestBody()
 
 void register_transaction_tests_path(
     std::filesystem::path const &root,
-    std::optional<std::variant<monad_eth_revision, monad_revision>> const
-        &revision)
+    std::optional<std::variant<EvmRevision, monad_revision>> const &revision)
 {
     namespace fs = std::filesystem;
     MONAD_ASSERT(fs::exists(root));
@@ -206,8 +204,7 @@ void register_transaction_tests_path(
 }
 
 void register_transaction_tests(
-    std::optional<std::variant<monad_eth_revision, monad_revision>> const
-        &revision)
+    std::optional<std::variant<EvmRevision, monad_revision>> const &revision)
 {
     register_transaction_tests_path(
         test_resource::ethereum_tests_dir / "TransactionTests", revision);

@@ -148,9 +148,9 @@ add_subdirectory("third_party/immer" SYSTEM)
 # intx
 add_subdirectory("third_party/intx")
 
-# evmc
+# evmc: only the test adapter for the OCaml spec VM uses it
 set(HUNTER_ENABLED OFF)
-add_subdirectory("third_party/evmc")
+add_subdirectory("third_party/evmc" EXCLUDE_FROM_ALL)
 
 # komihash
 add_library(komihash INTERFACE)
@@ -292,6 +292,7 @@ add_subdirectory("category/core")
 add_subdirectory("category/mpt")
 add_subdirectory("category/event")
 add_subdirectory("category/execution")
+add_subdirectory("category/execution/domain")
 add_subdirectory("category/rpc")
 add_subdirectory("category/statesync")
 add_subdirectory("category/vm")

@@ -45,13 +45,12 @@
 #include <category/mpt/traverse_util.hpp>
 #include <category/mpt/util.hpp>
 #include <category/vm/code.hpp>
+#include <category/vm/evm/call_status.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/monad/revision.h>
-#include <category/vm/evm/status_code.h>
+#include <category/vm/evm/result.hpp>
 #include <category/vm/vm.hpp>
 #include <monad/test/traits_test.hpp>
-
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 
 #include <test_resource_data.h>
 
@@ -93,9 +92,9 @@ namespace
         {
         }
 
-        void on_enter(evmc_message const &) override {}
+        void on_enter(vm::Message const &) override {}
 
-        void on_exit(evmc::Result const &) override {}
+        void on_exit(vm::Result const &) override {}
 
         void on_log(Receipt::Log) override {}
 
@@ -185,7 +184,7 @@ namespace
             std::make_move_iterator(chunks.begin()),
             std::make_move_iterator(chunks.end()),
             byte_string{},
-            [](byte_string const acc, KeyedChunk const chunk) {
+            [](byte_string acc, KeyedChunk chunk) {
                 return std::move(acc) + std::move(chunk.second);
             });
 
@@ -616,6 +615,64 @@ TYPED_TEST(TraitsTest, fibers_join_exception)
     EXPECT_THROW((void)result.get(), std::runtime_error);
 }
 
+TYPED_TEST(TraitsTest, non_last_transaction_exception)
+{
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
+    db_t tdb{db};
+    vm::VM vm;
+    BlockState block_state{tdb, vm};
+    BlockMetrics block_metrics;
+    BlockHeader const header{.number = 1, .gas_limit = 42'000};
+    BlockHashBufferFinalized const block_hash_buffer;
+    auto const chain = [] {
+        if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {
+            return MonadMainnet{};
+        }
+        else {
+            return EthereumMainnet{};
+        }
+    }();
+    auto const chain_ctx =
+        ChainContext<typename TestFixture::Trait>::debug_empty();
+
+    Transaction const transaction{
+        .sc = {.signature = {.r = 1, .s = 2}},
+        .gas_limit = 21'000,
+        .to = 0xbbbf5374fce5edbc8e2a8697c15331677e6ebf0b_address};
+    std::vector<Transaction> transactions(2, transaction);
+    transactions[1].gas_limit = 0;
+    std::vector<Address> const senders(
+        2, 0xa94f5374fce5edbc8e2a8697c15331677e6ebf0b_address);
+    std::vector<std::vector<std::optional<Address>>> const authorities(2);
+
+    std::vector<std::unique_ptr<CallTracerBase>> call_tracers;
+    call_tracers.emplace_back(std::make_unique<ResetCallTracer>(
+        [] { throw std::runtime_error{"tracer reset failed"}; }));
+    call_tracers.emplace_back(std::make_unique<ResetCallTracer>([] {}));
+    std::vector<std::unique_ptr<trace::StateTracer>> state_tracers(2);
+    for (auto &tracer : state_tracers) {
+        tracer = std::make_unique<trace::StateTracer>(std::monostate{});
+    }
+
+    fiber::PriorityPool pool{1, 2};
+    EXPECT_THROW(
+        (void)execute_block_transactions<typename TestFixture::Trait>(
+            chain,
+            header,
+            transactions,
+            senders,
+            authorities,
+            block_state,
+            block_hash_buffer,
+            pool.fiber_group(),
+            block_metrics,
+            call_tracers,
+            state_tracers,
+            chain_ctx,
+            nullptr),
+        std::runtime_error);
+}
+
 // test referenced from :
 // https://github.com/ethereum/tests/blob/v10.0/BlockchainTests/GeneralStateTests/stRefundTest/refund50_1.json
 TYPED_TEST(TraitsTest, call_frames_refund)
@@ -833,8 +890,9 @@ TYPED_TEST(TraitsTest, call_frames_refund)
                 return 0x186a0;
             }
             else {
-                static_assert(TestFixture::Trait::evm_rev() > MONAD_ETH_BERLIN);
-                // same cost as >MONAD_ETH_BERLIN
+                static_assert(
+                    TestFixture::Trait::evm_rev() > EvmRevision::Berlin);
+                // same cost as >EvmRevision::Berlin
                 return static_cast<uint64_t>((10'000'000 - 9'631'760) / 10);
             }
         }
@@ -847,7 +905,7 @@ TYPED_TEST(TraitsTest, call_frames_refund)
         .value = 0,
         .gas = 0x186a0,
         .gas_used = gas_used,
-        .status = MONAD_STATUS_SUCCESS,
+        .status = CallStatus::Success,
         .depth = 0,
         .logs = std::vector<CallFrame::Log>{},
     };

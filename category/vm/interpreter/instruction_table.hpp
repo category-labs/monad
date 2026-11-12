@@ -30,8 +30,6 @@
 #include <category/vm/runtime/types.hpp>
 #include <category/vm/utils/debug.hpp>
 
-#include <evmc/evmc.h>
-
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -80,7 +78,7 @@ namespace monad::vm::interpreter
     template <Traits traits>
     consteval InstrTable make_instruction_table()
     {
-        static_assert(traits::evm_rev() >= MONAD_ETH_ISTANBUL);
+        static_assert(traits::evm_rev() >= EvmRevision::Istanbul);
 
         constexpr auto avail = [](compiler::EvmOpCode const opcode,
                                   InstrEval impl) {

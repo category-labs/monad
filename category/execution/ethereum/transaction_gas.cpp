@@ -23,8 +23,6 @@
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 
-#include <evmc/evmc.h>
-
 #include <algorithm>
 #include <cstdint>
 #include <iterator>
@@ -108,7 +106,7 @@ std::pair<uint64_t, uint64_t> tokens_in_calldata(Transaction const &tx) noexcept
 template <Traits traits>
 uint64_t g_data(Transaction const &tx) noexcept
 {
-    static_assert(traits::evm_rev() >= MONAD_ETH_ISTANBUL);
+    static_assert(traits::evm_rev() >= EvmRevision::Istanbul);
 
     auto const [zeros, nonzeros] = tokens_in_calldata(tx);
 
@@ -121,7 +119,7 @@ EXPLICIT_TRAITS(g_data);
 template <Traits traits>
 uint64_t intrinsic_gas(Transaction const &tx) noexcept
 {
-    static_assert(traits::evm_rev() >= MONAD_ETH_BERLIN);
+    static_assert(traits::evm_rev() >= EvmRevision::Berlin);
 
     // EIP-2930: access-list and storage-key cost (active since Berlin)
     uint64_t gas = 21'000 + g_data<traits>(tx) + g_txn_create(tx) +

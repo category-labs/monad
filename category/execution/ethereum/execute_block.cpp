@@ -53,8 +53,6 @@
 
 #include <boost/fiber/future/promise.hpp>
 #include <boost/outcome/try.hpp>
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 
 #include <quill/std/Optional.h>
 
@@ -255,7 +253,10 @@ Result<std::vector<Receipt>> execute_block_transactions(
     }
 
     auto const last = static_cast<ptrdiff_t>(transactions.size());
-    futures[last].get();
+    futures[last].wait();
+    for (ptrdiff_t i = 1; i <= last; ++i) {
+        futures[i].get();
+    }
     block_metrics.tx_exec_time =
         std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - tx_exec_begin);
@@ -264,15 +265,16 @@ Result<std::vector<Receipt>> execute_block_transactions(
     for (unsigned i = 0; i < transactions.size(); ++i) {
         MONAD_ASSERT_THROW(
             results[i].has_value(), "missing transaction result");
-        if (MONAD_UNLIKELY(results[i].value().has_error())) {
+        auto &result = results[i].value();
+        if (MONAD_UNLIKELY(result.has_error())) {
             LOG_ERROR(
                 "tx {} {} validation failed: {}",
                 i,
                 transactions[i],
-                results[i].value().assume_error().message().c_str());
+                result.assume_error().message().c_str());
+            return std::move(result).as_failure();
         }
-        BOOST_OUTCOME_TRY(auto retval, std::move(results[i].value()));
-        retvals.push_back(std::move(retval));
+        retvals.push_back(std::move(result).assume_value());
     }
 
     // YP eq. 22
@@ -298,7 +300,7 @@ Result<std::vector<Receipt>> execute_block(
     ChainContext<traits> const &chain_ctx,
     ExecutionEventRecorder *const exec_recorder, bool const trace_transfers)
 {
-    static_assert(traits::evm_rev() >= MONAD_ETH_SPURIOUS_DRAGON);
+    static_assert(traits::evm_rev() >= EvmRevision::SpuriousDragon);
 
     TRACE_BLOCK_EVENT(StartBlock);
 

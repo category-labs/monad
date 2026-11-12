@@ -18,8 +18,6 @@
 #include <category/core/address.hpp>
 #include <category/core/runtime/uint256.hpp>
 
-#include <evmc/evmc.hpp>
-
 #include <cstdint>
 
 namespace monad::vm::utils::evm_as::sugar

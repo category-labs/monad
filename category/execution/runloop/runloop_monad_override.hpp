@@ -23,7 +23,7 @@ MONAD_NAMESPACE_BEGIN
 
 struct RunloopMonadOverrideMethods
 {
-    virtual ~RunloopMonadOverrideMethods() {}
+    virtual ~RunloopMonadOverrideMethods() = default;
 
     virtual uint64_t start_block_num() const = 0;
     virtual void
@@ -34,11 +34,13 @@ struct RunloopMonadOverrideMethods
 // runloop is only invoked a single time if `override_methods_` is `nullptr`.
 class RunloopMonadOverride
 {
-    RunloopMonadOverrideMethods const *override_methods_;
+    RunloopMonadOverrideMethods const *override_methods_{nullptr};
 
 public:
-    RunloopMonadOverride(
-        RunloopMonadOverrideMethods const *override_methods = nullptr)
+    RunloopMonadOverride() = default;
+
+    explicit RunloopMonadOverride(
+        RunloopMonadOverrideMethods const *const override_methods)
         : override_methods_{override_methods}
     {
     }

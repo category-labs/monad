@@ -247,7 +247,6 @@ fn emit_rerun_directives(repo_root: &Path) {
         "third_party/blst",
         "third_party/cthash",
         "third_party/ethash_vendor",
-        "third_party/evmc",
         "third_party/immer",
         "third_party/komihash",
         "third_party/nlohmann_json",

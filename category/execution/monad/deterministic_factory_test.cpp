@@ -25,9 +25,10 @@
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/create_contract_address.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
-#include <category/execution/ethereum/evmc_host.hpp>
+#include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/state_host.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
@@ -35,19 +36,23 @@
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/mpt/db.hpp>
-#include <category/vm/code.hpp>
+#include <category/vm/evm/call_status.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/monad/revision.h>
+#include <category/vm/evm/result.hpp>
 #include <category/vm/evm/traits.hpp>
-#include <category/vm/utils/evm-as.hpp>
+#include <category/vm/evm/tx_context.hpp>
+#include <category/vm/utils/evm-as/builder.hpp>
+#include <category/vm/utils/evm-as/compiler.hpp>
+#include <category/vm/utils/evm-as/validator.hpp>
 #include <category/vm/vm.hpp>
 
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 #include <gtest/gtest.h>
 
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <variant>
 #include <vector>
 
 using namespace monad;
@@ -110,7 +115,7 @@ namespace
 
         // Call the factory with `salt || initcode` as calldata, as a user
         // would, and return the raw execution result.
-        evmc::Result call_factory(
+        vm::Result call_factory(
             bytes32_t const &salt, std::vector<uint8_t> const &initcode)
         {
             static constexpr Address sender =
@@ -121,7 +126,7 @@ namespace
 
             Transaction const tx{};
             BlockHeader const header{.number = 1};
-            evmc_tx_context const tx_context = get_tx_context<Trait>(
+            vm::TxContext const tx_context = get_tx_context<Trait>(
                 tx,
                 sender,
                 header,
@@ -131,7 +136,7 @@ namespace
             trace::StateTracer noop_state_tracer = std::monostate{};
             BlockHashBufferFinalized const buffer{};
             uint256_t base_fee{0};
-            EvmcHost<Trait> host{
+            StateHost<Trait> host{
                 call_tracer,
                 noop_state_tracer,
                 tx_context,
@@ -143,8 +148,8 @@ namespace
                 ChainContext<Trait>::debug_empty()};
 
             auto msg_memory = state.vm().message_memory_ref();
-            evmc_message const msg{
-                .kind = EVMC_CALL,
+            vm::Message const msg{
+                .kind = vm::CallKind::Call,
                 .gas = 1'000'000,
                 .recipient = FACTORY_ADDRESS,
                 .sender = sender,
@@ -178,7 +183,7 @@ TEST_F(DeterministicFactoryTest, create2_deploys_at_expected_address)
         FACTORY_ADDRESS, salt, keccak256(initcode_view));
 
     auto const result = call_factory(salt, initcode);
-    ASSERT_EQ(result.status_code, EVMC_SUCCESS);
+    ASSERT_EQ(result.status_code, CallStatus::Success);
     ASSERT_EQ(result.output_size, sizeof(Address));
     Address actual{};
     memcpy(actual.bytes, result.output_data, sizeof(Address));
@@ -197,11 +202,11 @@ TEST_F(DeterministicFactoryTest, create2_collision_reverts)
     auto const initcode = trivial_initcode();
 
     auto const first = call_factory(salt, initcode);
-    ASSERT_EQ(first.status_code, EVMC_SUCCESS);
+    ASSERT_EQ(first.status_code, CallStatus::Success);
 
     // Same salt and initcode: CREATE2 fails on the address collision and
     // the proxy reverts with no data.
     auto const second = call_factory(salt, initcode);
-    EXPECT_EQ(second.status_code, EVMC_REVERT);
+    EXPECT_EQ(second.status_code, CallStatus::Revert);
     EXPECT_EQ(second.output_size, 0);
 }

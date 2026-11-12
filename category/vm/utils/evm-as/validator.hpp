@@ -23,8 +23,6 @@
 #include <category/vm/utils/evm-as/instruction.hpp>
 #include <category/vm/utils/evm-as/resolver.hpp>
 
-#include <evmc/evmc.h>
-
 #include <limits>
 #include <set>
 #include <variant>

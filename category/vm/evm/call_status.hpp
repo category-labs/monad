@@ -13,17 +13,35 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/vm/evm/page_storage_status.h>
+#pragma once
 
-#include <evmc/evmc.h>
+#include <category/core/config.hpp>
 
-static_assert(
-    sizeof(monad_page_storage_status) == sizeof(evmc_page_storage_status));
+MONAD_NAMESPACE_BEGIN
 
-evmc_page_storage_status
-to_evmc_page_storage_status(monad_page_storage_status const status)
+enum class CallStatus : int
 {
-    return {
-        .first_page_write = status.first_page_write,
-        .grew_state = status.grew_state};
-}
+    Success = 0,
+    Failure = 1,
+    Revert = 2,
+    OutOfGas = 3,
+    InvalidInstruction = 4,
+    UndefinedInstruction = 5,
+    StackOverflow = 6,
+    StackUnderflow = 7,
+    BadJumpDestination = 8,
+    InvalidMemoryAccess = 9,
+    CallDepthExceeded = 10,
+    StaticModeViolation = 11,
+    PrecompileFailure = 12,
+    ContractValidationFailure = 13,
+    ArgumentOutOfRange = 14,
+    InsufficientBalance = 17,
+    ReserveBalanceViolation = 18,
+
+    InternalError = -1,
+    Rejected = -2,
+    OutOfMemory = -3
+};
+
+MONAD_NAMESPACE_END

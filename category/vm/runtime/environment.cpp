@@ -13,7 +13,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/core/bytes.hpp>
 #include <category/core/int.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/host.hpp>
@@ -43,8 +42,7 @@ namespace monad::vm::runtime
             std::max(tx_context.block_number - 256, 0L);
         if (block_number >= first_allowed_block &&
             block_number < tx_context.block_number) {
-            auto const hash =
-                static_cast<bytes32_t>(ctx->host->get_block_hash(block_number));
+            auto const hash = ctx->host->get_block_hash(block_number);
             *result_ptr = load_be<uint256_t>(hash);
         }
         else {
@@ -54,9 +52,7 @@ namespace monad::vm::runtime
 
     void selfbalance(Context *const ctx, uint256_t *const result_ptr)
     {
-        auto const balance =
-            static_cast<bytes32_t>(ctx->host->get_balance(ctx->env.recipient));
-        *result_ptr = load_be<uint256_t>(balance);
+        *result_ptr = ctx->host->get_balance(ctx->env.recipient);
     }
 
     void blobhash(
@@ -64,9 +60,9 @@ namespace monad::vm::runtime
         uint256_t const *const index)
     {
         auto const &c = *ctx->env.tx_context;
-        *result_ptr = (*index < c.blob_hashes_count)
-                          ? load_be<uint256_t>(static_cast<bytes32_t>(
-                                c.blob_hashes[static_cast<size_t>(*index)]))
-                          : 0;
+        *result_ptr =
+            (*index < c.blob_hashes_count)
+                ? load_be<uint256_t>(c.blob_hashes[static_cast<size_t>(*index)])
+                : 0;
     }
 }

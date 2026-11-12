@@ -18,6 +18,7 @@
 #include <category/core/address.hpp>
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
+#include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
@@ -37,11 +38,14 @@
 #include <category/execution/monad/staking/util/constants.hpp>
 #include <category/execution/monad/staking/util/staking_error.hpp>
 #include <category/execution/monad/validate_system_transaction.hpp>
+#include <category/vm/evm/call_status.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/message.hpp>
+#include <category/vm/evm/result.hpp>
 #include <category/vm/evm/traits.hpp>
-#include <evmc/evmc.h>
 
 #include <cstdint>
+#include <utility>
 
 #include <optional>
 
@@ -146,12 +150,12 @@ Result<Receipt> ExecuteSystemTransaction<traits>::operator()()
 }
 
 template <Traits traits>
-evmc_message ExecuteSystemTransaction<traits>::to_message() const
+vm::Message ExecuteSystemTransaction<traits>::to_message() const
 {
     // System transactions currently do not need a pointer to vm memory,
     // so the `memory*` fields are zero initialized:
-    evmc_message msg{
-        .kind = EVMC_CALL,
+    vm::Message msg{
+        .kind = vm::CallKind::Call,
         .flags = 0,
         .depth = 0,
         .gas = 0,
@@ -159,7 +163,7 @@ evmc_message ExecuteSystemTransaction<traits>::to_message() const
         .sender = sender_,
         .input_data = tx_.data.data(),
         .input_size = tx_.data.size(),
-        .value = store_be_as<evmc::uint256be>(tx_.value),
+        .value = store_be_as<bytes32_t>(tx_.value),
         .create2_salt = {},
         .code_address = *tx_.to,
         .memory_handle = nullptr,
@@ -180,7 +184,7 @@ Result<void> ExecuteSystemTransaction<traits>::execute(State &state)
     state.push();
     call_tracer_.on_enter(to_message());
     BOOST_OUTCOME_TRY(execute_staking_syscall(state, tx_.data, tx_.value));
-    call_tracer_.on_exit(evmc::Result{EVMC_SUCCESS});
+    call_tracer_.on_exit(vm::Result{CallStatus::Success});
     state.pop_accept();
 
     return success();
@@ -192,7 +196,7 @@ Receipt ExecuteSystemTransaction<traits>::execute_final(State &state)
     // always return success because these transactions can't revert.
     Receipt receipt{.status = 1u, .gas_used = 0, .type = tx_.type};
     for (auto const &log : state.logs()) {
-        receipt.add_log(std::move(log));
+        receipt.add_log(log);
     }
     call_tracer_.on_finish(receipt.gas_used);
     trace::run_tracer<traits>(state_tracer_, state);
@@ -228,8 +232,9 @@ Result<void> ExecuteSystemTransaction<traits>::execute_staking_syscall(
         return contract.syscall_snapshot(calldata, value);
     case staking::selector::ON_EPOCH_CHANGE:
         return contract.syscall_on_epoch_change(calldata, value);
+    default:
+        return staking::StakingError::MethodNotSupported;
     }
-    return staking::StakingError::MethodNotSupported;
 }
 
 EXPLICIT_MONAD_TRAITS_CLASS(ExecuteSystemTransaction);

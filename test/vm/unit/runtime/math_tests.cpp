@@ -19,8 +19,6 @@
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/runtime/math.hpp>
 
-#include <evmc/evmc.h>
-
 #include <gtest/gtest.h>
 
 #include <cstdint>
@@ -192,7 +190,7 @@ TEST_F(RuntimeTest, MulMod)
 
 TYPED_TEST(RuntimeTraitsTest, Exp)
 {
-    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_SPURIOUS_DRAGON);
+    static_assert(TestFixture::Trait::evm_rev() >= EvmRevision::SpuriousDragon);
 
     auto f = TestFixture::wrap(exp<typename TestFixture::Trait>);
 

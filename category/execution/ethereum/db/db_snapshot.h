@@ -98,7 +98,7 @@ static_assert((MONAD_SNAPSHOT_STREAM_MAGIC & 0xff) < 0xc0);
 // its memory except as monad_db_snapshot_loader_set_flush_bytes notes. Each
 // flush costs an extra merklizing upsert, so this sits well above a typical
 // shard; every shard is also flushed when its load ends.
-inline constexpr uint64_t MONAD_SNAPSHOT_DEFAULT_FLUSH_BYTES = 10ull << 30;
+inline constexpr uint64_t MONAD_SNAPSHOT_DEFAULT_FLUSH_BYTES = 5ull << 30;
 
 extern "C"
 {

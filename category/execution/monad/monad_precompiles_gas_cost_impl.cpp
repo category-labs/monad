@@ -17,7 +17,11 @@
 #include <category/core/config.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/revision.hpp>
 #include <category/vm/evm/traits.hpp>
+
+#include <cstdint>
+#include <optional>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -40,7 +44,7 @@ uint64_t ecadd_gas_cost(byte_string_view const)
     static constexpr auto pricing_factor =
         traits::monad_pricing_version() >= 1 ? 2 : 1;
 
-    static_assert(traits::evm_rev() >= MONAD_ETH_ISTANBUL);
+    static_assert(traits::evm_rev() >= EvmRevision::Istanbul);
 
     return pricing_factor * 150;
 }
@@ -54,7 +58,7 @@ uint64_t ecmul_gas_cost(byte_string_view const)
     static constexpr auto pricing_factor =
         traits::monad_pricing_version() >= 1 ? 5 : 1;
 
-    static_assert(traits::evm_rev() >= MONAD_ETH_ISTANBUL);
+    static_assert(traits::evm_rev() >= EvmRevision::Istanbul);
 
     return pricing_factor * 6'000;
 }

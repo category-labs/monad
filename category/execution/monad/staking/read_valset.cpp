@@ -13,18 +13,26 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <category/core/config.hpp>
+#include <category/core/assert.h>
+#include <category/execution/ethereum/core/contract/big_endian.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
+#include <category/execution/monad/staking/config.hpp>
 #include <category/execution/monad/staking/read_valset.hpp>
 #include <category/execution/monad/staking/staking_contract.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
 #include <category/mpt/db.hpp>
 #include <category/vm/vm.hpp>
+
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <optional>
+#include <vector>
 
 MONAD_STAKING_NAMESPACE_BEGIN
 

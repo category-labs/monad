@@ -13,19 +13,29 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
 #include <category/core/config.hpp>
+#include <category/core/int.hpp>
 #include <category/core/likely.h>
+#include <category/core/result.hpp>
+#include <category/execution/ethereum/execution_modalities.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
+#include <category/execution/ethereum/validate_transaction_error.hpp>
 #include <category/execution/monad/system_sender.hpp>
 #include <category/execution/monad/validate_monad_transaction.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/traits.hpp>
 
 #include <boost/outcome/success_failure.hpp>
+#include <boost/outcome/try.hpp>
 
-#include <ranges>
-#include <system_error>
+#include <algorithm>
+#include <initializer_list>
+#include <optional>
+#include <span>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -34,10 +44,14 @@ Result<void> validate_transaction(
     Transaction const &tx, Address const &sender, State &state,
     uint256_t const &base_fee_per_gas,
     std::span<std::optional<Address> const> const authorities,
-    trace::StateTracer &state_tracer)
+    trace::StateTracer &state_tracer, ExecutionMode const &mode)
 {
-    auto res =
-        validate_ethereum_transaction<traits>(tx, sender, state, state_tracer);
+    if (!sender_nonce_check(mode)) {
+        BOOST_OUTCOME_TRY(validate_simulation_sender_nonce(sender, state));
+    }
+    auto res = validate_ethereum_transaction<traits>(
+        tx, sender, state, state_tracer, mode);
+
     if constexpr (traits::reserve_balance_active()) {
         if (res.has_error() &&
             res.error() != TransactionError::InsufficientBalance) {

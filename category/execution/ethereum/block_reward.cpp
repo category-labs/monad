@@ -23,8 +23,6 @@
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 
-#include <evmc/evmc.h>
-
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -34,7 +32,7 @@ MONAD_NAMESPACE_BEGIN
 template <Traits traits>
 constexpr uint256_t block_reward()
 {
-    static_assert(traits::evm_rev() >= MONAD_ETH_PETERSBURG);
+    static_assert(traits::evm_rev() >= EvmRevision::Petersburg);
 
     if constexpr (!traits::eip_3675_active()) {
         return 2'000'000'000'000'000'000; // YP Eqn. 176, EIP-1234

@@ -18,10 +18,9 @@
 #include <category/core/assert.h>
 #include <category/core/is_specialization_of.hpp>
 #include <category/vm/evm/monad/revision.h>
-#include <category/vm/evm/revision.h>
+#include <category/vm/evm/revision.hpp>
 
 #include <cstddef>
-#include <evmc/evmc.h>
 
 #include <concepts>
 #include <cstdint>
@@ -31,22 +30,22 @@ namespace monad
 {
     namespace constants
     {
-        inline constexpr monad_eth_revision EARLIEST_SUPPORTED_EVM_FORK =
-            MONAD_ETH_BERLIN;
+        inline constexpr EvmRevision EARLIEST_SUPPORTED_EVM_FORK =
+            EvmRevision::Berlin;
 
         // The latest EVM fork whose execution semantics are implemented. Later
-        // forks may exist in the monad_eth_revision enum (so the dispatch
+        // forks may exist in the EvmRevision enum (so the dispatch
         // infrastructure — explicit instantiations, switch cases, opcode and
         // storage tables — is in place) but are not yet wired up behaviorally.
         // Such forks are excluded from the typed-revision test matrices and
-        // must not be run through evmone (see to_evmc_revision()).
-        inline constexpr monad_eth_revision LATEST_SUPPORTED_EVM_FORK =
-            MONAD_ETH_AMSTERDAM;
+        // must not be run through the reference VM.
+        inline constexpr EvmRevision LATEST_SUPPORTED_EVM_FORK =
+            EvmRevision::Amsterdam;
 
         // The latest fork supported by the reference implementation,
         // used for differential tests.
-        inline constexpr monad_eth_revision LATEST_REFERENCE_REVISION =
-            MONAD_ETH_OSAKA;
+        inline constexpr EvmRevision LATEST_REFERENCE_REVISION =
+            EvmRevision::Osaka;
 
         inline constexpr size_t MAX_CODE_SIZE_EIP170 = 24 * 1024; // 0x6000
         inline constexpr size_t MAX_INITCODE_SIZE_EIP3860 =
@@ -70,7 +69,7 @@ namespace monad
     template <typename T>
     concept Traits = requires() {
         requires sizeof(T) == 1;
-        { T::evm_rev() } -> std::same_as<monad_eth_revision>;
+        { T::evm_rev() } -> std::same_as<EvmRevision>;
 
         // Feature flags
 
@@ -133,194 +132,195 @@ namespace monad
         { T::id() } -> std::same_as<uint64_t>;
     };
 
-    template <monad_eth_revision Rev>
+    template <EvmRevision Rev>
     struct EvmTraits
     {
-        static_assert(Rev >= MONAD_ETH_BERLIN, "EVM revision is not supported");
+        static_assert(
+            Rev >= EvmRevision::Berlin, "EVM revision is not supported");
 
-        static consteval monad_eth_revision evm_rev() noexcept
+        static consteval EvmRevision evm_rev() noexcept
         {
             return Rev;
         }
 
         static consteval bool eip_1153_active() noexcept
         {
-            return Rev >= MONAD_ETH_CANCUN;
+            return Rev >= EvmRevision::Cancun;
         }
 
         static consteval bool eip_1559_header_active() noexcept
         {
-            return Rev >= MONAD_ETH_LONDON;
+            return Rev >= EvmRevision::London;
         }
 
         static consteval bool eip_2537_active() noexcept
         {
-            return Rev >= MONAD_ETH_PRAGUE;
+            return Rev >= EvmRevision::Prague;
         }
 
         static consteval bool eip_2935_active() noexcept
         {
-            return Rev >= MONAD_ETH_PRAGUE;
+            return Rev >= EvmRevision::Prague;
         }
 
         static consteval bool eip_3198_active() noexcept
         {
-            return Rev >= MONAD_ETH_LONDON;
+            return Rev >= EvmRevision::London;
         }
 
         static consteval bool eip_3529_active() noexcept
         {
-            return Rev >= MONAD_ETH_LONDON;
+            return Rev >= EvmRevision::London;
         }
 
         static consteval bool eip_3541_active() noexcept
         {
-            return Rev >= MONAD_ETH_LONDON;
+            return Rev >= EvmRevision::London;
         }
 
         static consteval bool eip_3651_active() noexcept
         {
-            return Rev >= MONAD_ETH_SHANGHAI;
+            return Rev >= EvmRevision::Shanghai;
         }
 
         static consteval bool eip_3675_active() noexcept
         {
-            return Rev >= MONAD_ETH_PARIS;
+            return Rev >= EvmRevision::Paris;
         }
 
         static consteval bool eip_3855_active() noexcept
         {
-            return Rev >= MONAD_ETH_SHANGHAI;
+            return Rev >= EvmRevision::Shanghai;
         }
 
         static consteval bool eip_3860_active() noexcept
         {
-            return Rev >= MONAD_ETH_SHANGHAI;
+            return Rev >= EvmRevision::Shanghai;
         }
 
         static consteval bool eip_4399_active() noexcept
         {
-            return Rev >= MONAD_ETH_PARIS;
+            return Rev >= EvmRevision::Paris;
         }
 
         static consteval bool eip_4788_active() noexcept
         {
-            return Rev >= MONAD_ETH_CANCUN;
+            return Rev >= EvmRevision::Cancun;
         }
 
         static consteval bool eip_4844_active() noexcept
         {
-            return Rev >= MONAD_ETH_CANCUN;
+            return Rev >= EvmRevision::Cancun;
         }
 
         static consteval bool eip_4844_header_active() noexcept
         {
-            return Rev >= MONAD_ETH_CANCUN;
+            return Rev >= EvmRevision::Cancun;
         }
 
         static consteval bool eip_4844_opcodes_active() noexcept
         {
-            return Rev >= MONAD_ETH_CANCUN;
+            return Rev >= EvmRevision::Cancun;
         }
 
         static consteval bool eip_4844_precompile_active() noexcept
         {
-            return Rev >= MONAD_ETH_CANCUN;
+            return Rev >= EvmRevision::Cancun;
         }
 
         static consteval bool eip_4895_active() noexcept
         {
-            return Rev >= MONAD_ETH_SHANGHAI;
+            return Rev >= EvmRevision::Shanghai;
         }
 
         static consteval bool eip_5656_active() noexcept
         {
-            return Rev >= MONAD_ETH_CANCUN;
+            return Rev >= EvmRevision::Cancun;
         }
 
         static consteval bool eip_6780_active() noexcept
         {
-            return Rev >= MONAD_ETH_CANCUN;
+            return Rev >= EvmRevision::Cancun;
         }
 
         static consteval bool eip_7623_active() noexcept
         {
-            return Rev >= MONAD_ETH_PRAGUE;
+            return Rev >= EvmRevision::Prague;
         }
 
         static consteval bool eip_7685_active() noexcept
         {
-            return Rev >= MONAD_ETH_PRAGUE;
+            return Rev >= EvmRevision::Prague;
         }
 
         static consteval bool eip_7685_header_active() noexcept
         {
-            return Rev >= MONAD_ETH_PRAGUE;
+            return Rev >= EvmRevision::Prague;
         }
 
         static consteval bool eip_7691_active() noexcept
         {
-            return Rev >= MONAD_ETH_PRAGUE;
+            return Rev >= EvmRevision::Prague;
         }
 
         static consteval bool eip_7702_active() noexcept
         {
-            return Rev >= MONAD_ETH_PRAGUE;
+            return Rev >= EvmRevision::Prague;
         }
 
         static consteval bool eip_7708_active() noexcept
         {
-            return Rev >= MONAD_ETH_AMSTERDAM;
+            return Rev >= EvmRevision::Amsterdam;
         }
 
         static consteval bool eip_7823_active() noexcept
         {
-            return Rev >= MONAD_ETH_OSAKA;
+            return Rev >= EvmRevision::Osaka;
         }
 
         static consteval bool eip_7843_active() noexcept
         {
-            return Rev >= MONAD_ETH_AMSTERDAM;
+            return Rev >= EvmRevision::Amsterdam;
         }
 
         static consteval bool eip_7883_active() noexcept
         {
-            return Rev >= MONAD_ETH_OSAKA;
+            return Rev >= EvmRevision::Osaka;
         }
 
         static consteval bool eip_7918_active() noexcept
         {
-            return Rev >= MONAD_ETH_OSAKA;
+            return Rev >= EvmRevision::Osaka;
         }
 
         static consteval bool eip_7928_active() noexcept
         {
-            return Rev >= MONAD_ETH_AMSTERDAM;
+            return Rev >= EvmRevision::Amsterdam;
         }
 
         static consteval bool eip_7939_active() noexcept
         {
-            return Rev >= MONAD_ETH_OSAKA;
+            return Rev >= EvmRevision::Osaka;
         }
 
         static consteval bool eip_7951_active() noexcept
         {
-            return Rev >= MONAD_ETH_OSAKA;
+            return Rev >= EvmRevision::Osaka;
         }
 
         static consteval bool eip_7981_active() noexcept
         {
-            return Rev >= MONAD_ETH_AMSTERDAM;
+            return Rev >= EvmRevision::Amsterdam;
         }
 
         static consteval bool eip_8024_active() noexcept
         {
-            return Rev >= MONAD_ETH_AMSTERDAM;
+            return Rev >= EvmRevision::Amsterdam;
         }
 
         static consteval bool eip_8246_active() noexcept
         {
-            return Rev >= MONAD_ETH_AMSTERDAM;
+            return Rev >= EvmRevision::Amsterdam;
         }
 
         static consteval bool mip_3_active() noexcept
@@ -370,7 +370,7 @@ namespace monad
 
         static consteval size_t max_initcode_size() noexcept
         {
-            if constexpr (Rev >= MONAD_ETH_SHANGHAI) {
+            if constexpr (Rev >= EvmRevision::Shanghai) {
                 return constants::MAX_INITCODE_SIZE_EIP3860;
             }
 
@@ -401,7 +401,7 @@ namespace monad
         static detail::TraitsKey key;
     };
 
-    template <monad_eth_revision Rev>
+    template <EvmRevision Rev>
     detail::TraitsKey EvmTraits<Rev>::key;
 
     // Runtime sibling to MonadTraits::mip_8_active(), for code holding a
@@ -415,19 +415,19 @@ namespace monad
     template <monad_revision Rev>
     struct MonadTraits
     {
-        static consteval monad_eth_revision evm_rev() noexcept
+        static consteval EvmRevision evm_rev() noexcept
         {
             if constexpr (Rev >= MONAD_NEXT) {
-                return MONAD_ETH_AMSTERDAM;
+                return EvmRevision::Amsterdam;
             }
             if constexpr (Rev >= MONAD_NINE) {
-                return MONAD_ETH_OSAKA;
+                return EvmRevision::Osaka;
             }
             if constexpr (Rev >= MONAD_FOUR) {
-                return MONAD_ETH_PRAGUE;
+                return EvmRevision::Prague;
             }
 
-            return MONAD_ETH_CANCUN;
+            return EvmRevision::Cancun;
         }
 
         static consteval monad_revision monad_rev() noexcept
@@ -437,67 +437,67 @@ namespace monad
 
         static consteval bool eip_1153_active() noexcept
         {
-            return evm_rev() >= MONAD_ETH_CANCUN;
+            return evm_rev() >= EvmRevision::Cancun;
         }
 
         static consteval bool eip_1559_header_active() noexcept
         {
-            return evm_rev() >= MONAD_ETH_LONDON;
+            return evm_rev() >= EvmRevision::London;
         }
 
         static consteval bool eip_2537_active() noexcept
         {
-            return evm_rev() >= MONAD_ETH_PRAGUE;
+            return evm_rev() >= EvmRevision::Prague;
         }
 
         static consteval bool eip_2935_active() noexcept
         {
-            return evm_rev() >= MONAD_ETH_PRAGUE;
+            return evm_rev() >= EvmRevision::Prague;
         }
 
         static consteval bool eip_3198_active() noexcept
         {
-            return evm_rev() >= MONAD_ETH_LONDON;
+            return evm_rev() >= EvmRevision::London;
         }
 
         static consteval bool eip_3529_active() noexcept
         {
-            return evm_rev() >= MONAD_ETH_LONDON;
+            return evm_rev() >= EvmRevision::London;
         }
 
         static consteval bool eip_3541_active() noexcept
         {
-            return evm_rev() >= MONAD_ETH_LONDON;
+            return evm_rev() >= EvmRevision::London;
         }
 
         static consteval bool eip_3651_active() noexcept
         {
-            return evm_rev() >= MONAD_ETH_SHANGHAI;
+            return evm_rev() >= EvmRevision::Shanghai;
         }
 
         static consteval bool eip_3675_active() noexcept
         {
-            return evm_rev() >= MONAD_ETH_PARIS;
+            return evm_rev() >= EvmRevision::Paris;
         }
 
         static consteval bool eip_3855_active() noexcept
         {
-            return evm_rev() >= MONAD_ETH_SHANGHAI;
+            return evm_rev() >= EvmRevision::Shanghai;
         }
 
         static consteval bool eip_3860_active() noexcept
         {
-            return evm_rev() >= MONAD_ETH_SHANGHAI;
+            return evm_rev() >= EvmRevision::Shanghai;
         }
 
         static consteval bool eip_4399_active() noexcept
         {
-            return evm_rev() >= MONAD_ETH_PARIS;
+            return evm_rev() >= EvmRevision::Paris;
         }
 
         static consteval bool eip_4788_active() noexcept
         {
-            return evm_rev() >= MONAD_ETH_CANCUN;
+            return evm_rev() >= EvmRevision::Cancun;
         }
 
         static consteval bool eip_4844_active() noexcept
@@ -510,37 +510,37 @@ namespace monad
 
         static consteval bool eip_4844_header_active() noexcept
         {
-            return evm_rev() >= MONAD_ETH_CANCUN;
+            return evm_rev() >= EvmRevision::Cancun;
         }
 
         static consteval bool eip_4844_opcodes_active() noexcept
         {
-            return evm_rev() >= MONAD_ETH_CANCUN;
+            return evm_rev() >= EvmRevision::Cancun;
         }
 
         static consteval bool eip_4844_precompile_active() noexcept
         {
-            return evm_rev() >= MONAD_ETH_CANCUN;
+            return evm_rev() >= EvmRevision::Cancun;
         }
 
         static consteval bool eip_4895_active() noexcept
         {
-            return evm_rev() >= MONAD_ETH_SHANGHAI;
+            return evm_rev() >= EvmRevision::Shanghai;
         }
 
         static consteval bool eip_5656_active() noexcept
         {
-            return evm_rev() >= MONAD_ETH_CANCUN;
+            return evm_rev() >= EvmRevision::Cancun;
         }
 
         static consteval bool eip_6780_active() noexcept
         {
-            return evm_rev() >= MONAD_ETH_CANCUN;
+            return evm_rev() >= EvmRevision::Cancun;
         }
 
         static consteval bool eip_7623_active() noexcept
         {
-            return evm_rev() >= MONAD_ETH_PRAGUE;
+            return evm_rev() >= EvmRevision::Prague;
         }
 
         static consteval bool eip_7685_active() noexcept
@@ -554,7 +554,7 @@ namespace monad
 
         static consteval bool eip_7685_header_active() noexcept
         {
-            return evm_rev() >= MONAD_ETH_PRAGUE;
+            return evm_rev() >= EvmRevision::Prague;
         }
 
         static consteval bool eip_7691_active() noexcept
@@ -564,27 +564,27 @@ namespace monad
 
         static consteval bool eip_7702_active() noexcept
         {
-            return evm_rev() >= MONAD_ETH_PRAGUE;
+            return evm_rev() >= EvmRevision::Prague;
         }
 
         static consteval bool eip_7708_active() noexcept
         {
-            return evm_rev() >= MONAD_ETH_AMSTERDAM;
+            return evm_rev() >= EvmRevision::Amsterdam;
         }
 
         static consteval bool eip_7823_active() noexcept
         {
-            return evm_rev() >= MONAD_ETH_OSAKA;
+            return evm_rev() >= EvmRevision::Osaka;
         }
 
         static consteval bool eip_7843_active() noexcept
         {
-            return evm_rev() >= MONAD_ETH_AMSTERDAM;
+            return evm_rev() >= EvmRevision::Amsterdam;
         }
 
         static consteval bool eip_7883_active() noexcept
         {
-            return evm_rev() >= MONAD_ETH_OSAKA;
+            return evm_rev() >= EvmRevision::Osaka;
         }
 
         static consteval bool eip_7918_active() noexcept
@@ -601,7 +601,7 @@ namespace monad
 
         static consteval bool eip_7939_active() noexcept
         {
-            return evm_rev() >= MONAD_ETH_OSAKA;
+            return evm_rev() >= EvmRevision::Osaka;
         }
 
         static consteval bool eip_7951_active() noexcept
@@ -611,17 +611,17 @@ namespace monad
 
         static consteval bool eip_7981_active() noexcept
         {
-            return evm_rev() >= MONAD_ETH_AMSTERDAM;
+            return evm_rev() >= EvmRevision::Amsterdam;
         }
 
         static consteval bool eip_8024_active() noexcept
         {
-            return evm_rev() >= MONAD_ETH_AMSTERDAM;
+            return evm_rev() >= EvmRevision::Amsterdam;
         }
 
         static consteval bool eip_8246_active() noexcept
         {
-            return evm_rev() >= MONAD_ETH_AMSTERDAM;
+            return evm_rev() >= EvmRevision::Amsterdam;
         }
 
         static consteval bool mip_3_active() noexcept
@@ -781,7 +781,7 @@ namespace monad
         is_specialization_of_v<MonadTraits, T>;
 
     static_assert(is_monad_trait_v<MonadTraits<MONAD_ZERO>> == true);
-    static_assert(is_monad_trait_v<EvmTraits<MONAD_ETH_BERLIN>> == false);
+    static_assert(is_monad_trait_v<EvmTraits<EvmRevision::Berlin>> == false);
     static_assert(is_evm_trait_v<MonadTraits<MONAD_ZERO>> == false);
-    static_assert(is_evm_trait_v<EvmTraits<MONAD_ETH_BERLIN>> == true);
+    static_assert(is_evm_trait_v<EvmTraits<EvmRevision::Berlin>> == true);
 }

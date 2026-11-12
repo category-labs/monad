@@ -44,8 +44,6 @@
 #include <common/bytes.h>
 #include <common/ret.h>
 
-#include <evmc/evmc.h>
-
 #include <setup/settings.h>
 #include <setup/setup.h>
 
@@ -59,55 +57,66 @@
 #include <optional>
 #include <string_view>
 
-namespace
+MONAD_ANONYMOUS_NAMESPACE_BEGIN
+
+monad::bytes32_t kzg_to_version_hashed(KZGCommitment const &commitment)
 {
-    std::optional<KZGSettings> g_trustedSetup;
-
-    monad::bytes32_t kzg_to_version_hashed(KZGCommitment const &commitment)
-    {
-        constexpr uint8_t VERSION_HASH_VERSION_KZG = 1;
-        monad::bytes32_t h;
-        monad_sha256(
-            h.bytes,
-            commitment.bytes,
-            sizeof(KZGCommitment),
-            true /* use_cpu_extensions */);
-        h.bytes[0] = VERSION_HASH_VERSION_KZG;
-        return h;
-    }
-
-    struct bytes64_t
-    {
-        uint8_t bytes[64];
-    };
-
-    constexpr bytes64_t blob_precompile_return_value()
-    {
-        constexpr std::string_view v{
-            "0x0000000000000000000000000000000000000000000000000000000000001000"
-            "73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001"};
-        constexpr auto r = monad::from_hex<bytes64_t>(v);
-        static_assert(r.has_value());
-        return r.value();
-    }
+    constexpr uint8_t VERSION_HASH_VERSION_KZG = 1;
+    monad::bytes32_t h;
+    monad_sha256(
+        h.bytes,
+        commitment.bytes,
+        sizeof(KZGCommitment),
+        true /* use_cpu_extensions */);
+    h.bytes[0] = VERSION_HASH_VERSION_KZG;
+    return h;
 }
+
+struct bytes64_t
+{
+    uint8_t bytes[64];
+};
+
+constexpr bytes64_t blob_precompile_return_value()
+{
+    constexpr std::string_view v{
+        "0x0000000000000000000000000000000000000000000000000000000000001000"
+        "73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001"};
+    constexpr auto r = monad::from_hex<bytes64_t>(v);
+    static_assert(r.has_value());
+    return r.value();
+}
+
+std::optional<KZGSettings> load_trusted_setup()
+{
+    std::optional<KZGSettings> result;
+    auto const setup = c_kzg_4844::trusted_setup_data();
+    FILE *const fp = fmemopen((void *)(setup.data()), setup.size(), "r");
+    if (fp) {
+        KZGSettings settings;
+        if (load_trusted_setup_file(&settings, fp, 0) == C_KZG_OK) {
+            result.emplace(settings);
+        }
+        fclose(fp);
+    }
+    return result;
+}
+
+// Function-local static: initialized exactly once on first access, with
+// concurrent callers blocking until initialization completes.
+std::optional<KZGSettings> const &trusted_setup()
+{
+    static std::optional<KZGSettings> const setup = load_trusted_setup();
+    return setup;
+}
+
+MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
 
 bool init_trusted_setup()
 {
-    if (!g_trustedSetup.has_value()) {
-        auto const setup = c_kzg_4844::trusted_setup_data();
-        KZGSettings settings;
-        FILE *fp = fmemopen((void *)(setup.data()), setup.size(), "r");
-        if (fp) {
-            if (load_trusted_setup_file(&settings, fp, 0) == C_KZG_OK) {
-                g_trustedSetup.emplace(settings);
-            }
-            fclose(fp);
-        }
-    }
-    return g_trustedSetup.has_value();
+    return trusted_setup().has_value();
 }
 
 [[gnu::always_inline]] inline PrecompileImplResult
@@ -272,7 +281,7 @@ blake2bf_impl(byte_string_view const input, std::span<uint8_t, 64> const out)
     }
 
     bool ok{false};
-    verify_kzg_proof(&ok, &commitment, z, y, proof, &g_trustedSetup.value());
+    verify_kzg_proof(&ok, &commitment, z, y, proof, &trusted_setup().value());
     if (!ok) {
         return PrecompileImplResult::failure();
     }

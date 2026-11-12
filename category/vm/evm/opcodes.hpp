@@ -18,8 +18,6 @@
 #include <category/core/assert.h>
 #include <category/vm/evm/traits.hpp>
 
-#include <evmc/evmc.hpp>
-
 #include <array>
 #include <cstdint>
 #include <string_view>
@@ -287,7 +285,7 @@ namespace monad::vm::compiler
     template <Traits traits>
     consteval std::array<OpCodeInfo, 256> make_opcode_table()
     {
-        static_assert(traits::evm_rev() >= MONAD_ETH_BERLIN);
+        static_assert(traits::evm_rev() >= EvmRevision::Berlin);
 
         // clang-format off
         return {

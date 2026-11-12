@@ -19,11 +19,10 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
-#include <category/vm/evm/status_code.h>
+#include <category/vm/evm/call_status.hpp>
+#include <category/vm/evm/message.hpp>
+#include <category/vm/evm/result.hpp>
 #include <category/vm/evm/traits.hpp>
-
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 
 #include <bit>
 #include <cstring>
@@ -35,6 +34,9 @@ MONAD_NAMESPACE_BEGIN
 class State;
 struct CallTracerBase;
 
+// Loads the embedded KZG trusted setup on first call and returns whether it
+// loaded. Idempotent and safe to call from multiple threads; the outcome of
+// the first load is cached, so a failed load is not retried.
 bool init_trusted_setup();
 
 inline constexpr Address ripemd_address{3};
@@ -46,11 +48,11 @@ template <Traits traits>
 bool is_precompile(Address const &);
 
 template <Traits traits>
-std::optional<evmc::Result> check_call_eth_precompile(evmc_message const &);
+std::optional<vm::Result> check_call_eth_precompile(vm::Message const &);
 
 template <Traits traits>
-std::optional<evmc::Result> check_call_precompile(
-    State &, CallTracerBase &, evmc_message const &, bool log_native_transfers);
+std::optional<vm::Result> check_call_precompile(
+    State &, CallTracerBase &, vm::Message const &, bool log_native_transfers);
 
 using precompiled_gas_cost_fn = std::optional<uint64_t>(byte_string_view);
 
@@ -72,11 +74,11 @@ uint64_t ecadd_gas_cost(byte_string_view);
 template <Traits traits>
 uint64_t ecmul_gas_cost(byte_string_view);
 
-template <monad_eth_revision Rev>
+template <EvmRevision Rev>
 [[gnu::always_inline]] inline uint64_t
 snarkv_gas_cost_ethereum(byte_string_view const input)
 {
-    static_assert(Rev >= MONAD_ETH_ISTANBUL);
+    static_assert(Rev >= EvmRevision::Istanbul);
 
     uint64_t const k{input.size() / 192};
     return 34'000 * k + 45'000; // EIP-1108
@@ -124,14 +126,14 @@ uint64_t p256_verify_gas_cost(byte_string_view);
 
 struct PrecompileResult
 {
-    monad_status_code status_code;
+    CallStatus status_code;
     uint8_t *obuf;
     size_t output_size;
 
     static constexpr PrecompileResult failure() noexcept
     {
         return {
-            .status_code = MONAD_STATUS_PRECOMPILE_FAILURE,
+            .status_code = CallStatus::PrecompileFailure,
             .obuf = nullptr,
             .output_size = 0,
         };

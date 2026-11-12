@@ -31,7 +31,7 @@ class BlsPubkey
     BLST_ERROR parse_result_;
 
 public:
-    BlsPubkey(byte_string_fixed<48> const &compressed)
+    explicit BlsPubkey(byte_string_fixed<48> const &compressed)
     {
         parse_result_ = blst_p1_uncompress(&pubkey_, compressed.data());
     }
@@ -65,7 +65,7 @@ class BlsSignature
     BLST_ERROR parse_result_;
 
 public:
-    BlsSignature(byte_string_fixed<96> const &compressed)
+    explicit BlsSignature(byte_string_fixed<96> const &compressed)
     {
         parse_result_ = blst_p2_uncompress(&sig_, compressed.data());
     }
@@ -79,7 +79,7 @@ public:
 
     bool verify(BlsPubkey const &pubkey, byte_string_view const message)
     {
-        BLST_ERROR valid_signature = blst_core_verify_pk_in_g1(
+        BLST_ERROR const valid_signature = blst_core_verify_pk_in_g1(
             &pubkey.get(), // Public key in G1
             &sig_, // Signature in G2
             true, // hash-to-curve

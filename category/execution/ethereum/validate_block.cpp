@@ -31,8 +31,6 @@
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 
-#include <evmc/evmc.h>
-
 #include <boost/outcome/config.hpp>
 // TODO unstable paths between versions
 #if __has_include(<boost/outcome/experimental/status-code/status-code/config.hpp>)
@@ -48,6 +46,7 @@
 #include <cstdint>
 #include <initializer_list>
 #include <limits>
+#include <utility>
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN
@@ -76,7 +75,7 @@ bytes32_t compute_ommers_hash(std::vector<BlockHeader> const &ommers)
 template <Traits traits>
 Result<void> static_validate_header(BlockHeader const &header)
 {
-    static_assert(traits::evm_rev() >= MONAD_ETH_TANGERINE_WHISTLE);
+    static_assert(traits::evm_rev() >= EvmRevision::TangerineWhistle);
 
     // YP eq. 56
     if (MONAD_UNLIKELY(header.gas_limit < 5000)) {
@@ -207,11 +206,12 @@ Result<void> static_validate_ommers(Chain const &chain, Block const &block)
 
     // YP eq. 167
     for (auto const &ommer : block.ommers) {
-        monad_eth_revision const rev =
+        EvmRevision const rev =
             chain.get_revision(ommer.number, ommer.timestamp);
         BOOST_OUTCOME_TRY([&] {
             SWITCH_EVM_TRAITS(static_validate_header, ommer);
-            MONAD_ABORT_PRINTF("unhandled ommer rev switch case: %d", rev);
+            MONAD_ABORT_PRINTF(
+                "unhandled ommer rev switch case: %d", std::to_underlying(rev));
         }());
     }
 

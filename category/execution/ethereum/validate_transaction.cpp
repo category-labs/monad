@@ -29,10 +29,9 @@
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 
-#include <evmc/evmc.h>
-
 #include <boost/outcome/config.hpp>
 #include <boost/outcome/success_failure.hpp>
+#include <boost/outcome/try.hpp>
 
 #include <cstdint>
 #include <limits>
@@ -48,7 +47,7 @@ Result<void> static_validate_transaction(
     std::optional<uint64_t> const &excess_blob_gas, uint256_t const &chain_id,
     BlobSchedule const &blob_schedule)
 {
-    static_assert(traits::evm_rev() >= MONAD_ETH_BERLIN);
+    static_assert(traits::evm_rev() >= EvmRevision::Berlin);
 
     // EIP-155
     if (MONAD_LIKELY(tx.sc.chain_id.has_value())) {
@@ -163,11 +162,14 @@ Result<void> validate_transaction(
     Transaction const &tx, Address const &sender, State &state,
     uint256_t const & /*base_fee_per_gas*/,
     std::span<std::optional<Address> const> const /*authorities*/,
-    trace::StateTracer &state_tracer)
+    trace::StateTracer &state_tracer, ExecutionMode const &mode)
 {
     static_assert(is_evm_trait_v<traits>);
+    if (!sender_nonce_check(mode)) {
+        BOOST_OUTCOME_TRY(validate_simulation_sender_nonce(sender, state));
+    }
     return validate_ethereum_transaction<traits>(
-        tx, sender, state, state_tracer);
+        tx, sender, state, state_tracer, mode);
 }
 
 EXPLICIT_EVM_TRAITS(validate_transaction);

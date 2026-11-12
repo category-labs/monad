@@ -21,9 +21,6 @@
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/runtime/transmute/intrinsics.hpp>
 
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
-
 namespace monad::vm::runtime
 {
     static_assert(sizeof(Address) == 20);

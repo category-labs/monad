@@ -13,6 +13,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
+#include <category/core/byte_string.hpp>
+#include <category/core/config.hpp>
+#include <category/core/likely.h>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
@@ -20,13 +24,19 @@
 #include <category/execution/monad/reserve_balance/reserve_balance_contract.hpp>
 #include <category/execution/monad/staking/staking_contract.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
+#include <category/vm/evm/call_status.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/message.hpp>
+#include <category/vm/evm/result.hpp>
+#include <category/vm/evm/traits.hpp>
+#include <cstdint>
+#include <optional>
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
 template <Traits traits, typename Contract, Address contract_address>
-std::optional<evmc::Result> check_call_monad_precompile(
-    State &state, CallTracerBase &call_tracer, evmc_message const &msg,
+std::optional<vm::Result> check_call_monad_precompile(
+    State &state, CallTracerBase &call_tracer, vm::Message const &msg,
     bool const log_native_transfers)
 {
 
@@ -34,15 +44,15 @@ std::optional<evmc::Result> check_call_monad_precompile(
         return std::nullopt;
     }
 
-    if (MONAD_UNLIKELY(msg.kind != EVMC_CALL) || (msg.flags != 0)) {
-        return evmc::Result{evmc_status_code::EVMC_REJECTED};
+    if (MONAD_UNLIKELY(msg.kind != vm::CallKind::Call) || (msg.flags != 0)) {
+        return vm::Result{CallStatus::Rejected};
     }
 
     byte_string_view input{msg.input_data, msg.input_size};
     auto const [method, cost] =
         Contract::template precompile_dispatch<traits>(input);
     if (MONAD_UNLIKELY(std::cmp_less(msg.gas, cost))) {
-        return evmc::Result{evmc_status_code::EVMC_OUT_OF_GAS};
+        return vm::Result{CallStatus::OutOfGas};
     }
 
     Contract contract = Contract{state, call_tracer, log_native_transfers};
@@ -50,15 +60,15 @@ std::optional<evmc::Result> check_call_monad_precompile(
     if (MONAD_LIKELY(res.has_value())) {
         int64_t const gas_left = msg.gas - static_cast<int64_t>(cost);
         int64_t const gas_refund = 0;
-        return evmc::Result(
-            EVMC_SUCCESS,
+        return vm::Result(
+            CallStatus::Success,
             gas_left,
             gas_refund,
             res.value().data(),
             res.value().size());
     }
-    return evmc::Result(
-        EVMC_REVERT,
+    return vm::Result(
+        CallStatus::Revert,
         0 /* gas left */,
         0 /* gas refund */,
         reinterpret_cast<uint8_t const *>(res.error().message().data()),
@@ -83,8 +93,8 @@ bool is_precompile(Address const &address)
 EXPLICIT_MONAD_TRAITS(is_precompile);
 
 template <Traits traits>
-std::optional<evmc::Result> check_call_precompile(
-    State &state, CallTracerBase &call_tracer, evmc_message const &msg,
+std::optional<vm::Result> check_call_precompile(
+    State &state, CallTracerBase &call_tracer, vm::Message const &msg,
     bool const log_native_transfers)
 {
     if (auto maybe_result = check_call_eth_precompile<traits>(msg)) {

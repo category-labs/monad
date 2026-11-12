@@ -19,11 +19,11 @@
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
+#include <category/execution/ethereum/execution_modalities.hpp>
 #include <category/vm/evm/monad/revision.h>
-#include <category/vm/evm/revision.h>
+#include <category/vm/evm/revision.hpp>
 
 #include <ankerl/unordered_dense.h>
-#include <evmc/evmc.h>
 
 #include <optional>
 #include <span>
@@ -52,6 +52,8 @@ struct ChainContext<T>
     std::vector<Address> const &senders;
     std::vector<std::vector<std::optional<Address>>> const &authorities;
 
+    ExecutionMode mode{};
+
     // Returns an empty ChainContext for unit testing purposes.
     // Not intended for production use.
     static ChainContext<T> const &debug_empty();
@@ -59,7 +61,7 @@ struct ChainContext<T>
 
 struct MonadChain : Chain
 {
-    virtual monad_eth_revision
+    virtual EvmRevision
     get_revision(uint64_t block_number, uint64_t timestamp) const override;
 
     virtual BlobSchedule get_blob_schedule(uint64_t timestamp) const override;

@@ -23,7 +23,6 @@
 #include <category/core/result.hpp>
 
 #include <boost/container/small_vector.hpp>
-#include <evmc/evmc.hpp>
 
 #include <bit>
 #include <cstddef>

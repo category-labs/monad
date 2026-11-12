@@ -19,12 +19,14 @@
 #include <category/execution/ethereum/block_hash_history.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
-#include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/state_host.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/mpt/db.hpp>
+#include <category/vm/evm/message.hpp>
+#include <category/vm/evm/result.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/utils/evm-as.hpp>
 #include <monad/test/traits_test.hpp>
@@ -90,7 +92,7 @@ namespace
             return true;
         }();
 
-        evmc::Result call(
+        vm::Result call(
             uint64_t const current_block_number, Address const sender,
             Address const code_addr, std::uint8_t const *const input_data,
             std::uint32_t const input_size, int64_t const gas,
@@ -100,7 +102,7 @@ namespace
 
             Transaction const tx{};
             BlockHeader const header = {.number = current_block_number};
-            evmc_tx_context const tx_context = get_tx_context<Trait>(
+            vm::TxContext const tx_context = get_tx_context<Trait>(
                 tx,
                 sender,
                 header,
@@ -110,7 +112,7 @@ namespace
 
             uint256_t base_fee{0};
             trace::StateTracer noop_state_tracer = std::monostate{};
-            EvmcHost<Trait> host{
+            StateHost<Trait> host{
                 call_tracer,
                 noop_state_tracer,
                 tx_context,
@@ -122,8 +124,8 @@ namespace
                 ChainContext<Trait>::debug_empty()};
 
             auto msg_memory = state.vm().message_memory_ref();
-            evmc_message const msg{
-                .kind = EVMC_CALL,
+            vm::Message const msg{
+                .kind = vm::CallKind::Call,
                 .gas = gas,
                 .recipient = code_addr,
                 .sender = sender,
@@ -138,7 +140,7 @@ namespace
             return state.vm().template execute<Trait>(host, &msg, hash, code);
         }
 
-        evmc::Result call_blockhash_opcode(
+        vm::Result call_blockhash_opcode(
             uint64_t const block_number, uint64_t const current_block_number,
             Address sender = 0xcccccccccccccccccccccccccccccccccccccccc_address)
         {
@@ -221,7 +223,7 @@ namespace
 
 TYPED_TEST_SUITE(
     BlockHashHistoryTraitsTest,
-    ::detail::MonadEvmRevisionTypesSince<MONAD_ETH_PRAGUE>,
+    ::detail::MonadEvmRevisionTypesSince<EvmRevision::Prague>,
     ::detail::RevisionTestNameGenerator);
 
 TYPED_TEST(BlockHashHistoryTraitsTest, read_write_block_hash_history_storage)
@@ -297,7 +299,7 @@ TYPED_TEST(BlockHashHistoryTraitsTest, read_from_block_hash_history_contract)
         BlockHashBufferFinalized const buffer{};
 
         bytes32_t const calldata = enc(block_number);
-        evmc::Result const result = TestFixture::call(
+        vm::Result const result = TestFixture::call(
             window_size,
             sender,
             BLOCK_HISTORY_ADDRESS,
@@ -306,7 +308,7 @@ TYPED_TEST(BlockHashHistoryTraitsTest, read_from_block_hash_history_contract)
             100'000,
             buffer);
         if (expect_success) {
-            ASSERT_EQ(result.status_code, EVMC_SUCCESS);
+            ASSERT_EQ(result.status_code, CallStatus::Success);
             ASSERT_EQ(result.output_size, 32);
             bytes32_t const expected_from_state =
                 get_block_hash_history(this->state, block_number);
@@ -322,7 +324,7 @@ TYPED_TEST(BlockHashHistoryTraitsTest, read_from_block_hash_history_contract)
             ASSERT_EQ(actual, expected_from_state);
         }
         else {
-            ASSERT_EQ(result.status_code, EVMC_REVERT);
+            ASSERT_EQ(result.status_code, CallStatus::Revert);
         }
     };
 
@@ -348,7 +350,7 @@ TYPED_TEST(BlockHashHistoryTraitsTest, read_write_block_hash_history_contract)
             Address sender =
                 0xfffffffffffffffffffffffffffffffffffffffe_address) -> void {
         BlockHashBufferFinalized const buffer{};
-        evmc::Result const result = TestFixture::call(
+        vm::Result const result = TestFixture::call(
             block_number,
             sender,
             BLOCK_HISTORY_ADDRESS,
@@ -356,7 +358,7 @@ TYPED_TEST(BlockHashHistoryTraitsTest, read_write_block_hash_history_contract)
             32,
             30'000'000,
             buffer);
-        ASSERT_EQ(result.status_code, EVMC_SUCCESS);
+        ASSERT_EQ(result.status_code, CallStatus::Success);
     };
 
     auto const get =
@@ -368,7 +370,7 @@ TYPED_TEST(BlockHashHistoryTraitsTest, read_write_block_hash_history_contract)
         BlockHashBufferFinalized const buffer{};
 
         bytes32_t const calldata = enc(block_number);
-        evmc::Result const result = TestFixture::call(
+        vm::Result const result = TestFixture::call(
             current_block_number,
             sender,
             BLOCK_HISTORY_ADDRESS,
@@ -377,7 +379,7 @@ TYPED_TEST(BlockHashHistoryTraitsTest, read_write_block_hash_history_contract)
             100'000,
             buffer);
         if (expect_success) {
-            ASSERT_EQ(result.status_code, EVMC_SUCCESS);
+            ASSERT_EQ(result.status_code, CallStatus::Success);
             ASSERT_EQ(result.output_size, 32);
             bytes32_t const expected = to_bytes(block_number);
             bytes32_t const expected_from_state =
@@ -388,7 +390,7 @@ TYPED_TEST(BlockHashHistoryTraitsTest, read_write_block_hash_history_contract)
             EXPECT_EQ(actual, expected_from_state);
         }
         else {
-            ASSERT_EQ(result.status_code, EVMC_REVERT);
+            ASSERT_EQ(result.status_code, CallStatus::Revert);
         }
     };
 
@@ -437,7 +439,7 @@ TYPED_TEST(BlockHashHistoryTraitsTest, unauthorized_set)
                 0xfffffffffffffffffffffffffffffffffffffffe_address) -> void {
         BlockHashBufferFinalized const buffer{};
 
-        evmc::Result result = TestFixture::call(
+        vm::Result result = TestFixture::call(
             block_number,
             sender,
             BLOCK_HISTORY_ADDRESS,
@@ -446,10 +448,10 @@ TYPED_TEST(BlockHashHistoryTraitsTest, unauthorized_set)
             30'000'000,
             buffer);
         if (expect_success) {
-            ASSERT_EQ(result.status_code, EVMC_SUCCESS);
+            ASSERT_EQ(result.status_code, CallStatus::Success);
         }
         else {
-            ASSERT_EQ(result.status_code, EVMC_REVERT);
+            ASSERT_EQ(result.status_code, CallStatus::Revert);
         }
     };
 
@@ -461,7 +463,7 @@ TYPED_TEST(BlockHashHistoryTraitsTest, unauthorized_set)
                 0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address) -> void {
         BlockHashBufferFinalized const buffer{};
         bytes32_t const calldata = enc(block_number);
-        evmc::Result const result = TestFixture::call(
+        vm::Result const result = TestFixture::call(
             current_block_number,
             sender,
             BLOCK_HISTORY_ADDRESS,
@@ -471,7 +473,7 @@ TYPED_TEST(BlockHashHistoryTraitsTest, unauthorized_set)
             buffer);
 
         if (expect_success) {
-            ASSERT_EQ(result.status_code, EVMC_SUCCESS);
+            ASSERT_EQ(result.status_code, CallStatus::Success);
             ASSERT_EQ(result.output_size, 32);
             bytes32_t const expected = to_bytes(0xFF);
             bytes32_t const expected_from_state =
@@ -482,7 +484,7 @@ TYPED_TEST(BlockHashHistoryTraitsTest, unauthorized_set)
             EXPECT_EQ(actual, expected_from_state);
         }
         else {
-            ASSERT_EQ(result.status_code, EVMC_REVERT);
+            ASSERT_EQ(result.status_code, CallStatus::Revert);
         }
     };
 
@@ -526,7 +528,7 @@ TYPED_TEST(BlockHashHistoryTraitsTest, blockhash_opcode)
     // Initially the storage of the block history contract will be empty.
     for (uint64_t i = 0; i < 256; i++) {
         auto const result = TestFixture::call_blockhash_opcode(i, 256);
-        ASSERT_EQ(result.status_code, EVMC_SUCCESS);
+        ASSERT_EQ(result.status_code, CallStatus::Success);
         ASSERT_EQ(result.output_size, 32);
         bytes32_t actual{};
         memcpy(actual.bytes, result.output_data, 32);
@@ -540,7 +542,7 @@ TYPED_TEST(BlockHashHistoryTraitsTest, blockhash_opcode)
     // some reads from the block hash buffer.
     for (uint64_t i = 0; i < 256; i++) {
         auto const result = TestFixture::call_blockhash_opcode(i, 256);
-        ASSERT_EQ(result.status_code, EVMC_SUCCESS);
+        ASSERT_EQ(result.status_code, CallStatus::Success);
         ASSERT_EQ(result.output_size, 32);
         bytes32_t actual{};
         memcpy(actual.bytes, result.output_data, 32);
@@ -558,7 +560,7 @@ TYPED_TEST(BlockHashHistoryTraitsTest, blockhash_opcode)
     TestFixture::fill_history_fixed(128, 256, to_bytes(0xAA));
     for (uint64_t i = 0; i < 256; i++) {
         auto const result = TestFixture::call_blockhash_opcode(i, 256);
-        ASSERT_EQ(result.status_code, EVMC_SUCCESS);
+        ASSERT_EQ(result.status_code, CallStatus::Success);
         ASSERT_EQ(result.output_size, 32);
         bytes32_t actual{};
         memcpy(actual.bytes, result.output_data, 32);
@@ -576,7 +578,7 @@ TYPED_TEST(BlockHashHistoryTraitsTest, blockhash_opcode)
         257, BLOCK_HISTORY_LENGTH * 3, to_bytes(0xCC));
     for (uint64_t i = 0; i < 256; i++) {
         auto const result = TestFixture::call_blockhash_opcode(i, 256);
-        ASSERT_EQ(result.status_code, EVMC_SUCCESS);
+        ASSERT_EQ(result.status_code, CallStatus::Success);
         ASSERT_EQ(result.output_size, 32);
         bytes32_t actual{};
         memcpy(actual.bytes, result.output_data, 32);
@@ -592,7 +594,7 @@ TYPED_TEST(BlockHashHistoryTraitsTest, blockhash_opcode)
     // Check that the semantics of `blockhash` is unaltered.
     for (uint64_t i = 256; i < BLOCK_HISTORY_LENGTH; i++) {
         auto const result = TestFixture::call_blockhash_opcode(i, 256);
-        ASSERT_EQ(result.status_code, EVMC_SUCCESS);
+        ASSERT_EQ(result.status_code, CallStatus::Success);
         ASSERT_EQ(result.output_size, 32);
         bytes32_t actual{};
         memcpy(actual.bytes, result.output_data, 32);
@@ -613,7 +615,7 @@ TYPED_TEST(BlockHashHistoryTraitsTest, blockhash_opcode_late_deploy)
     // Initially the storage of the block history contract will be empty.
     for (uint64_t i = 0; i < 256; i++) {
         auto const result = TestFixture::call_blockhash_opcode(i, 256);
-        ASSERT_EQ(result.status_code, EVMC_SUCCESS);
+        ASSERT_EQ(result.status_code, CallStatus::Success);
         ASSERT_EQ(result.output_size, 32);
         bytes32_t actual{};
         memcpy(actual.bytes, result.output_data, 32);
@@ -629,7 +631,7 @@ TYPED_TEST(BlockHashHistoryTraitsTest, blockhash_opcode_late_deploy)
     // some reads from the block hash buffer.
     for (uint64_t i = 0; i < 256; i++) {
         auto const result = TestFixture::call_blockhash_opcode(i, 256);
-        ASSERT_EQ(result.status_code, EVMC_SUCCESS);
+        ASSERT_EQ(result.status_code, CallStatus::Success);
         ASSERT_EQ(result.output_size, 32);
         bytes32_t actual{};
         memcpy(actual.bytes, result.output_data, 32);
@@ -648,7 +650,7 @@ TYPED_TEST(BlockHashHistoryTraitsTest, blockhash_opcode_late_deploy)
     TestFixture::fill_history_fixed(0, start_block, to_bytes(0xAA));
     for (uint64_t i = 0; i < 256; i++) {
         auto const result = TestFixture::call_blockhash_opcode(i, 256);
-        ASSERT_EQ(result.status_code, EVMC_SUCCESS);
+        ASSERT_EQ(result.status_code, CallStatus::Success);
         ASSERT_EQ(result.output_size, 32);
         bytes32_t actual{};
         memcpy(actual.bytes, result.output_data, 32);
@@ -676,7 +678,7 @@ TYPED_TEST(
 
     for (uint64_t i = 0; i < 256; i++) {
         auto const result = TestFixture::call_blockhash_opcode(i, 256);
-        ASSERT_EQ(result.status_code, EVMC_SUCCESS);
+        ASSERT_EQ(result.status_code, CallStatus::Success);
         ASSERT_EQ(result.output_size, 32);
         bytes32_t actual{};
         memcpy(actual.bytes, result.output_data, 32);
@@ -691,7 +693,7 @@ TYPED_TEST(
 
     for (uint64_t i = 0; i < 256; i++) {
         auto const result = TestFixture::call_blockhash_opcode(i, 256);
-        ASSERT_EQ(result.status_code, EVMC_SUCCESS);
+        ASSERT_EQ(result.status_code, CallStatus::Success);
         ASSERT_EQ(result.output_size, 32);
         bytes32_t actual{};
         memcpy(actual.bytes, result.output_data, 32);
@@ -708,7 +710,7 @@ TYPED_TEST(
 
     for (uint64_t i = 0; i < 256; i++) {
         auto const result = TestFixture::call_blockhash_opcode(i, 256);
-        ASSERT_EQ(result.status_code, EVMC_SUCCESS);
+        ASSERT_EQ(result.status_code, CallStatus::Success);
         ASSERT_EQ(result.output_size, 32);
         bytes32_t actual{};
         memcpy(actual.bytes, result.output_data, 32);

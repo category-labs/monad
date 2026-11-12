@@ -47,7 +47,7 @@
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/ethereum/validate_transaction_error.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
-#include <category/vm/evm/revision.h>
+#include <category/vm/evm/revision.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
 
@@ -86,7 +86,7 @@ Result<void> validate_block_body(
             block.header.ommers_hash)) {
         return BlockError::WrongOmmersHash;
     }
-    if constexpr (traits::evm_rev() >= MONAD_ETH_SHANGHAI) {
+    if constexpr (traits::evm_rev() >= EvmRevision::Shanghai) {
         MONAD_ASSERT(
             block.header.withdrawals_root.has_value() &&
             block.withdrawals.has_value());
@@ -163,7 +163,7 @@ Result<bytes32_t> execute_block_zkvm(
     std::span<byte_string_view const> const raw_transactions, Db &pdb,
     vm::VM &vm, BlockHashBuffer const &block_hash_buffer)
 {
-    static_assert(traits::evm_rev() > MONAD_ETH_TANGERINE_WHISTLE);
+    static_assert(traits::evm_rev() > EvmRevision::TangerineWhistle);
 
     BOOST_OUTCOME_TRY(validate_block_body<traits>(block, raw_transactions));
 
@@ -239,7 +239,7 @@ Result<bytes32_t> execute_block_zkvm(
     State state{
         block_state, Incarnation{block.header.number, Incarnation::LAST_TX}};
 
-    if constexpr (traits::evm_rev() >= MONAD_ETH_SHANGHAI) {
+    if constexpr (traits::evm_rev() >= EvmRevision::Shanghai) {
         process_withdrawal(state, block.withdrawals);
     }
 

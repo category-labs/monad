@@ -104,6 +104,7 @@ add_library(
   # config
   "config.hpp"
   # core
+  "address.h"
   "address.hpp"
   "asan.h"
   "assert.c"
@@ -264,7 +265,6 @@ target_link_libraries(monad_core PUBLIC CLI11::CLI11)
 target_link_libraries(monad_core PUBLIC komihash)
 target_link_libraries(monad_core PUBLIC blake3)
 target_link_libraries(monad_core PUBLIC monad_crypto)
-target_link_libraries(monad_core PUBLIC evmc)
 target_link_libraries(monad_core PUBLIC quill)
 target_link_libraries(monad_core PUBLIC unordered_dense)
 target_link_libraries(monad_core PUBLIC PkgConfig::zstd)

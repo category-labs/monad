@@ -18,8 +18,6 @@
 #include <category/core/config.hpp>
 #include <category/vm/evm/traits.hpp>
 
-#include <evmc/evmc.h>
-
 MONAD_NAMESPACE_BEGIN
 
 struct Block;

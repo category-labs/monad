@@ -21,10 +21,8 @@
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/chain/blob_schedule.hpp>
 #include <category/execution/ethereum/chain/genesis_state.hpp>
+#include <category/execution/ethereum/execution_modalities.hpp>
 #include <category/vm/evm/traits.hpp>
-
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 
 #include <optional>
 #include <span>
@@ -42,7 +40,7 @@ struct Chain
 
     virtual uint256_t get_chain_id() const = 0;
 
-    virtual monad_eth_revision
+    virtual EvmRevision
     get_revision(uint64_t block_number, uint64_t timestamp) const = 0;
 
     virtual BlobSchedule get_blob_schedule(uint64_t timestamp) const = 0;
@@ -57,6 +55,8 @@ template <typename T>
     requires is_evm_trait_v<T>
 struct ChainContext<T>
 {
+    static constexpr ExecutionMode mode{};
+
     // Returns an empty ChainContext for unit testing purposes.
     // Not intended for production use.
     static ChainContext<T> const &debug_empty()

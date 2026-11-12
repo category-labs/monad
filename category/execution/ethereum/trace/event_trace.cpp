@@ -33,6 +33,7 @@ TraceTimer::TraceTimer(TraceEvent const &event)
     QUILL_LOG_INFO(event_tracer, "{}", event);
 }
 
+// NOLINTNEXTLINE(bugprone-exception-escape): a logging failure here is fatal
 TraceTimer::~TraceTimer()
 {
     QUILL_LOG_INFO(

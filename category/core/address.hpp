@@ -15,12 +15,11 @@
 
 #pragma once
 
+#include <category/core/address.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
 #include <category/core/hex.hpp>
 #include <category/core/seeded_fast_hash.hpp>
-
-#include <evmc/evmc.h>
 
 #include <ankerl/unordered_dense.h>
 
@@ -32,23 +31,23 @@
 
 MONAD_NAMESPACE_BEGIN
 
-struct Address : evmc_address
+struct Address : monad_address
 {
     constexpr Address() noexcept
-        : evmc_address{}
+        : monad_address{}
     {
     }
 
     constexpr Address(Address const &) noexcept = default;
     constexpr Address &operator=(Address const &) noexcept = default;
 
-    explicit(false) constexpr Address(evmc_address const &other) noexcept
-        : evmc_address{other}
+    explicit(false) constexpr Address(monad_address const &other) noexcept
+        : monad_address{other}
     {
     }
 
     explicit constexpr Address(uint64_t const v) noexcept
-        : evmc_address{}
+        : monad_address{}
     {
         for (int i = 0; i < 8; ++i) {
             bytes[19 - i] = static_cast<uint8_t>(v >> (i * 8));
@@ -58,7 +57,7 @@ struct Address : evmc_address
     template <std::same_as<uint8_t>... Bytes>
         requires(sizeof...(Bytes) >= 1 && sizeof...(Bytes) <= 20)
     explicit(false) constexpr Address(Bytes... bs) noexcept
-        : evmc_address{{bs...}}
+        : monad_address{{bs...}}
     {
     }
 

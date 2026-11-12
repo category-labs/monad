@@ -18,8 +18,6 @@
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/db/block_db.hpp>
 
-#include <evmc/evmc.hpp>
-
 #include <cstdint>
 
 #include <gtest/gtest.h>

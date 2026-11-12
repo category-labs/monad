@@ -375,7 +375,7 @@ void State::subtract_from_balance(
     rb_.on_debit(address);
 }
 
-monad_storage_status State::set_storage(
+StorageStatus State::set_storage(
     Address const &address, bytes32_t const &key, bytes32_t const &value)
 {
     bytes32_t original_value;
@@ -416,15 +416,14 @@ void State::touch(Address const &address)
     account_state.touch();
 }
 
-monad_access_status State::access_account(Address const &address)
+AccessStatus State::access_account(Address const &address)
 {
     auto &account_state = current_account_state(address);
     return account_state.access();
 }
 
 template <Traits traits>
-monad_access_status
-State::access_storage(Address const &address, bytes32_t const &key)
+AccessStatus State::access_storage(Address const &address, bytes32_t const &key)
 {
     auto &account_state = current_account_state(address);
     auto const slot_status = account_state.access_storage(key);
@@ -436,9 +435,8 @@ State::access_storage(Address const &address, bytes32_t const &key)
 
 EXPLICIT_TRAITS_MEMBER(State::access_storage);
 
-monad_page_storage_status State::update_page(
-    Address const &address, bytes32_t const &key,
-    monad_storage_status const status)
+PageStorageStatus State::update_page(
+    Address const &address, bytes32_t const &key, StorageStatus const status)
 {
     auto &account_state = current_account_state(address);
     return account_state.page_tracker_.update_page(key, status);

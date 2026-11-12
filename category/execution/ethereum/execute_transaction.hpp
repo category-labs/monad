@@ -21,11 +21,12 @@
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
+#include <category/vm/evm/message.hpp>
+#include <category/vm/evm/result.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
 
 #include <boost/fiber/future/future.hpp>
-#include <evmc/evmc.hpp>
 
 #include <cstdint>
 #include <span>
@@ -39,7 +40,7 @@ class BlockState;
 struct CallTracerBase;
 struct Chain;
 template <Traits traits>
-struct EvmcHost;
+struct StateHost;
 class ExecutionEventRecorder;
 class State;
 struct Transaction;
@@ -47,10 +48,10 @@ struct Transaction;
 template <Traits traits>
 class ExecuteTransactionNoValidation
 {
-    evmc_message to_message(
+    vm::Message to_message(
         vm::MemoryPool::Ref &msg_memory, uint32_t msg_memory_capacity) const;
 
-    uint64_t process_authorizations(State &, EvmcHost<traits> &);
+    uint64_t process_authorizations(State &, StateHost<traits> &);
 
 protected:
     Chain const &chain_;
@@ -64,7 +65,7 @@ public:
         Chain const &, Transaction const &, Address const &,
         std::span<std::optional<Address> const>, BlockHeader const &);
 
-    evmc::Result operator()(State &, EvmcHost<traits> &);
+    vm::Result operator()(State &, StateHost<traits> &);
 };
 
 template <Traits traits>
@@ -87,8 +88,8 @@ class ExecuteTransaction : public ExecuteTransactionNoValidation<traits>
     ExecutionEventRecorder *exec_recorder_;
     bool trace_transfers_;
 
-    Result<evmc::Result> execute_impl2(State &);
-    Receipt execute_final(State &, evmc::Result const &);
+    Result<vm::Result> execute_impl2(State &);
+    Receipt execute_final(State &, vm::Result const &);
 
 public:
     ExecuteTransaction(

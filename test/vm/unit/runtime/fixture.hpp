@@ -17,6 +17,9 @@
 
 #include <category/core/address.hpp>
 #include <category/core/runtime/uint256.hpp>
+#include <category/vm/evm/access_status.hpp>
+#include <category/vm/evm/message.hpp>
+#include <category/vm/evm/result.hpp>
 #include <category/vm/runtime/detail.hpp>
 #include <category/vm/runtime/types.hpp>
 #include <monad/test/traits_test.hpp>
@@ -25,9 +28,8 @@
 
 #include <gtest/gtest.h>
 
-#include <evmc/evmc.hpp>
-
 #include <limits>
+#include <utility>
 
 extern "C" void tests_trampoline(void *, void (*)(void *), void *);
 
@@ -45,19 +47,19 @@ namespace monad::vm::test
         std::array<std::uint8_t, 128> call_data_;
         std::array<std::uint8_t, 128> call_return_data_;
 
-        std::array<evmc_bytes32, 2> blob_hashes_;
+        std::array<bytes32_t, 2> blob_hashes_;
         MockedHost host_;
         TestContext test_ctx_;
         vm::runtime::Context &ctx_;
 
-        evmc_result
+        vm::RawResult
         success_result(std::int64_t gas_left, std::int64_t gas_refund = 0);
 
-        evmc_result create_result(
+        vm::RawResult create_result(
             Address prog_addr, std::int64_t gas_left,
             std::int64_t gas_refund = 0);
 
-        evmc_result failure_result(evmc_status_code = EVMC_INTERNAL_ERROR);
+        vm::RawResult failure_result(CallStatus = CallStatus::InternalError);
 
         // shim to be able to pass a function pointer to tests_trampoline
         // which will then correctly invoke the actual closure/lambda
@@ -203,19 +205,19 @@ namespace monad::vm::test
 
             if constexpr (TraitsTest<T>::Trait::eip_7702_active()) {
                 ASSERT_EQ(
-                    host_.access_account(delegate_addr), EVMC_ACCESS_WARM);
+                    host_.access_account(delegate_addr), AccessStatus::Warm);
                 ASSERT_EQ(
                     host_.recorded_calls[0].flags &
-                        static_cast<uint32_t>(EVMC_DELEGATED),
-                    static_cast<uint32_t>(EVMC_DELEGATED));
+                        std::to_underlying(CallFlags::Delegated),
+                    std::to_underlying(CallFlags::Delegated));
             }
             else {
                 ASSERT_EQ(
-                    host_.access_account(delegate_addr), EVMC_ACCESS_COLD);
+                    host_.access_account(delegate_addr), AccessStatus::Cold);
                 ASSERT_NE(
                     host_.recorded_calls[0].flags &
-                        static_cast<uint32_t>(EVMC_DELEGATED),
-                    static_cast<uint32_t>(EVMC_DELEGATED));
+                        std::to_underlying(CallFlags::Delegated),
+                    std::to_underlying(CallFlags::Delegated));
             }
         }
     };

@@ -18,8 +18,6 @@
 #include <category/vm/interpreter/types.hpp>
 #include <category/vm/runtime/types.hpp>
 
-#include <evmc/evmc.h>
-
 #include <cstddef>
 #include <cstdint>
 

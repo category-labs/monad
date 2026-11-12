@@ -22,7 +22,6 @@
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/db/block_db.hpp>
 
-#include <evmc/evmc.hpp>
 #include <gtest/gtest.h>
 
 #include <test_resource_data.h>
@@ -758,7 +757,6 @@ TEST(Rlp_Block, DecodeEncodeShanghai)
         0xfc, 0xe5, 0xed, 0xbc, 0x8e, 0x2a, 0x86, 0x97, 0xc1, 0x53, 0x31, 0x67,
         0x7e, 0x6e, 0xbf, 0x0b, 0x82, 0x27, 0x10};
 
-    auto const encoded_block_copy = encoded_block;
     byte_string_view encoded_block_view{encoded_block};
 
     auto const decoded_block = rlp::decode_block(encoded_block_view);
@@ -865,7 +863,7 @@ TEST(Rlp_Block, DecodeEncodeShanghai)
     // check encoding
     auto const encoded_block_from_decoded =
         rlp::encode_block(decoded_block.value());
-    EXPECT_EQ(encoded_block_from_decoded, encoded_block_copy);
+    EXPECT_EQ(encoded_block_from_decoded, encoded_block);
 }
 
 TEST(Rlp_Block, DecodeEncodeCancun)
@@ -932,7 +930,6 @@ TEST(Rlp_Block, DecodeEncodeCancun)
         0xe5, 0xed, 0xbc, 0x8e, 0x2a, 0x86, 0x97, 0xc1, 0x53, 0x31, 0x67, 0x7e,
         0x6e, 0xbf, 0x0b, 0x82, 0x27, 0x10};
 
-    auto const encoded_block_copy = encoded_block;
     byte_string_view encoded_block_view{encoded_block};
 
     auto const decoded_block = rlp::decode_block(encoded_block_view);
@@ -1050,7 +1047,7 @@ TEST(Rlp_Block, DecodeEncodeCancun)
     // check encoding
     auto const encoded_block_from_decoded =
         rlp::encode_block(decoded_block.value());
-    EXPECT_EQ(encoded_block_from_decoded, encoded_block_copy);
+    EXPECT_EQ(encoded_block_from_decoded, encoded_block);
 }
 
 TEST(Rlp_block, IntTypeMismatchRegression)

@@ -20,27 +20,25 @@
 #include <category/core/concat.h>
 #include <category/vm/evm/traits.hpp>
 
-#include <evmc/evmc.h>
-
 // Template free functions
 
 #define EXPLICIT_EVM_TRAITS(f)                                                 \
-    template decltype(f<::monad::EvmTraits<MONAD_ETH_BERLIN>>)                 \
-        f<::monad::EvmTraits<MONAD_ETH_BERLIN>>;                               \
-    template decltype(f<::monad::EvmTraits<MONAD_ETH_LONDON>>)                 \
-        f<::monad::EvmTraits<MONAD_ETH_LONDON>>;                               \
-    template decltype(f<::monad::EvmTraits<MONAD_ETH_PARIS>>)                  \
-        f<::monad::EvmTraits<MONAD_ETH_PARIS>>;                                \
-    template decltype(f<::monad::EvmTraits<MONAD_ETH_SHANGHAI>>)               \
-        f<::monad::EvmTraits<MONAD_ETH_SHANGHAI>>;                             \
-    template decltype(f<::monad::EvmTraits<MONAD_ETH_CANCUN>>)                 \
-        f<::monad::EvmTraits<MONAD_ETH_CANCUN>>;                               \
-    template decltype(f<::monad::EvmTraits<MONAD_ETH_PRAGUE>>)                 \
-        f<::monad::EvmTraits<MONAD_ETH_PRAGUE>>;                               \
-    template decltype(f<::monad::EvmTraits<MONAD_ETH_OSAKA>>)                  \
-        f<::monad::EvmTraits<MONAD_ETH_OSAKA>>;                                \
-    template decltype(f<::monad::EvmTraits<MONAD_ETH_AMSTERDAM>>)              \
-        f<::monad::EvmTraits<MONAD_ETH_AMSTERDAM>>;
+    template decltype(f<::monad::EvmTraits<::monad::EvmRevision::Berlin>>)     \
+        f<::monad::EvmTraits<::monad::EvmRevision::Berlin>>;                   \
+    template decltype(f<::monad::EvmTraits<::monad::EvmRevision::London>>)     \
+        f<::monad::EvmTraits<::monad::EvmRevision::London>>;                   \
+    template decltype(f<::monad::EvmTraits<::monad::EvmRevision::Paris>>)      \
+        f<::monad::EvmTraits<::monad::EvmRevision::Paris>>;                    \
+    template decltype(f<::monad::EvmTraits<::monad::EvmRevision::Shanghai>>)   \
+        f<::monad::EvmTraits<::monad::EvmRevision::Shanghai>>;                 \
+    template decltype(f<::monad::EvmTraits<::monad::EvmRevision::Cancun>>)     \
+        f<::monad::EvmTraits<::monad::EvmRevision::Cancun>>;                   \
+    template decltype(f<::monad::EvmTraits<::monad::EvmRevision::Prague>>)     \
+        f<::monad::EvmTraits<::monad::EvmRevision::Prague>>;                   \
+    template decltype(f<::monad::EvmTraits<::monad::EvmRevision::Osaka>>)      \
+        f<::monad::EvmTraits<::monad::EvmRevision::Osaka>>;                    \
+    template decltype(f<::monad::EvmTraits<::monad::EvmRevision::Amsterdam>>)  \
+        f<::monad::EvmTraits<::monad::EvmRevision::Amsterdam>>;
 
 #define EXPLICIT_MONAD_TRAITS(f)                                               \
     template decltype(f<::monad::MonadTraits<MONAD_ZERO>>)                     \
@@ -75,14 +73,14 @@
 // Template classes
 
 #define EXPLICIT_EVM_TRAITS_CLASS(c)                                           \
-    template class c<::monad::EvmTraits<MONAD_ETH_BERLIN>>;                    \
-    template class c<::monad::EvmTraits<MONAD_ETH_LONDON>>;                    \
-    template class c<::monad::EvmTraits<MONAD_ETH_PARIS>>;                     \
-    template class c<::monad::EvmTraits<MONAD_ETH_SHANGHAI>>;                  \
-    template class c<::monad::EvmTraits<MONAD_ETH_CANCUN>>;                    \
-    template class c<::monad::EvmTraits<MONAD_ETH_PRAGUE>>;                    \
-    template class c<::monad::EvmTraits<MONAD_ETH_OSAKA>>;                     \
-    template class c<::monad::EvmTraits<MONAD_ETH_AMSTERDAM>>;
+    template class c<::monad::EvmTraits<::monad::EvmRevision::Berlin>>;        \
+    template class c<::monad::EvmTraits<::monad::EvmRevision::London>>;        \
+    template class c<::monad::EvmTraits<::monad::EvmRevision::Paris>>;         \
+    template class c<::monad::EvmTraits<::monad::EvmRevision::Shanghai>>;      \
+    template class c<::monad::EvmTraits<::monad::EvmRevision::Cancun>>;        \
+    template class c<::monad::EvmTraits<::monad::EvmRevision::Prague>>;        \
+    template class c<::monad::EvmTraits<::monad::EvmRevision::Osaka>>;         \
+    template class c<::monad::EvmTraits<::monad::EvmRevision::Amsterdam>>;
 
 #define EXPLICIT_MONAD_TRAITS_CLASS(c)                                         \
     template class c<::monad::MonadTraits<MONAD_ZERO>>;                        \
@@ -138,14 +136,15 @@
     }
 
 #define EXPLICIT_EVM_TRAITS_MEMBER_LIST(f, id)                                 \
-    template void id<&f<::monad::EvmTraits<MONAD_ETH_BERLIN>>>();              \
-    template void id<&f<::monad::EvmTraits<MONAD_ETH_LONDON>>>();              \
-    template void id<&f<::monad::EvmTraits<MONAD_ETH_PARIS>>>();               \
-    template void id<&f<::monad::EvmTraits<MONAD_ETH_SHANGHAI>>>();            \
-    template void id<&f<::monad::EvmTraits<MONAD_ETH_CANCUN>>>();              \
-    template void id<&f<::monad::EvmTraits<MONAD_ETH_PRAGUE>>>();              \
-    template void id<&f<::monad::EvmTraits<MONAD_ETH_OSAKA>>>();               \
-    template void id<&f<::monad::EvmTraits<MONAD_ETH_AMSTERDAM>>>();
+    template void id<&f<::monad::EvmTraits<::monad::EvmRevision::Berlin>>>();  \
+    template void id<&f<::monad::EvmTraits<::monad::EvmRevision::London>>>();  \
+    template void id<&f<::monad::EvmTraits<::monad::EvmRevision::Paris>>>();   \
+    template void                                                              \
+    id<&f<::monad::EvmTraits<::monad::EvmRevision::Shanghai>>>();              \
+    template void id<&f<::monad::EvmTraits<::monad::EvmRevision::Cancun>>>();  \
+    template void id<&f<::monad::EvmTraits<::monad::EvmRevision::Prague>>>();  \
+    template void id<&f<::monad::EvmTraits<::monad::EvmRevision::Osaka>>>();   \
+    template void id<&f<::monad::EvmTraits<::monad::EvmRevision::Amsterdam>>>();
 
 #define EXPLICIT_EVM_TRAITS_MEMBER_HELPER(f, id)                               \
     EXPLICIT_TRAITS_MEMBER_FN(id)                                              \

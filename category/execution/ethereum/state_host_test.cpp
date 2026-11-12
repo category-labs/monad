@@ -28,9 +28,9 @@
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/trie_rodb.hpp>
 #include <category/execution/ethereum/db/util.hpp>
-#include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/state_host.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
@@ -38,14 +38,12 @@
 #include <category/mpt/node_cache.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/mpt/util.hpp>
+#include <category/vm/evm/access_status.hpp>
 #include <category/vm/vm.hpp>
 
 #include <monad/test/traits_test.hpp>
 
 #include <test_resource_data.h>
-
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 
 #include <gtest/gtest.h>
 
@@ -60,34 +58,35 @@ using namespace monad;
 
 using db_t = TrieDb;
 
-bool operator==(evmc_tx_context const &lhs, evmc_tx_context const &rhs)
+namespace monad::vm
 {
-    return !std::memcmp(
-               lhs.tx_gas_price.bytes,
-               rhs.tx_gas_price.bytes,
-               sizeof(evmc_bytes32)) &&
-           !std::memcmp(
-               lhs.tx_origin.bytes,
-               rhs.tx_origin.bytes,
-               sizeof(evmc_address)) &&
-           !std::memcmp(
-               lhs.block_coinbase.bytes,
-               rhs.block_coinbase.bytes,
-               sizeof(evmc_address)) &&
-           lhs.block_number == rhs.block_number &&
-           lhs.block_timestamp == rhs.block_timestamp &&
-           lhs.block_gas_limit == rhs.block_gas_limit &&
-           !std::memcmp(
-               lhs.block_prev_randao.bytes,
-               rhs.block_prev_randao.bytes,
-               sizeof(evmc_bytes32)) &&
-           !std::memcmp(
-               lhs.chain_id.bytes, rhs.chain_id.bytes, sizeof(evmc_bytes32)) &&
-           !std::memcmp(
-               lhs.block_base_fee.bytes,
-               rhs.block_base_fee.bytes,
-               sizeof(evmc_bytes32)) &&
-           lhs.block_round == rhs.block_round;
+    bool operator==(TxContext const &lhs, TxContext const &rhs)
+    {
+        return !std::memcmp(
+                   lhs.tx_gas_price.bytes,
+                   rhs.tx_gas_price.bytes,
+                   sizeof(bytes32_t)) &&
+               !std::memcmp(
+                   lhs.tx_origin.bytes, rhs.tx_origin.bytes, sizeof(Address)) &&
+               !std::memcmp(
+                   lhs.block_coinbase.bytes,
+                   rhs.block_coinbase.bytes,
+                   sizeof(Address)) &&
+               lhs.block_number == rhs.block_number &&
+               lhs.block_timestamp == rhs.block_timestamp &&
+               lhs.block_gas_limit == rhs.block_gas_limit &&
+               !std::memcmp(
+                   lhs.block_prev_randao.bytes,
+                   rhs.block_prev_randao.bytes,
+                   sizeof(bytes32_t)) &&
+               !std::memcmp(
+                   lhs.chain_id.bytes, rhs.chain_id.bytes, sizeof(bytes32_t)) &&
+               !std::memcmp(
+                   lhs.block_base_fee.bytes,
+                   rhs.block_base_fee.bytes,
+                   sizeof(bytes32_t)) &&
+               lhs.block_round == rhs.block_round;
+    }
 }
 
 TYPED_TEST(TraitsTest, get_tx_context)
@@ -115,17 +114,17 @@ TYPED_TEST(TraitsTest, get_tx_context)
 
     auto const result = get_tx_context<typename TestFixture::Trait>(
         tx, from, hdr, 1, default_blob_schedule<typename TestFixture::Trait>());
-    evmc_tx_context ctx{
+    vm::TxContext ctx{
         .tx_origin = from,
         .block_coinbase = bene,
         .block_number = 15'000'000,
         .block_timestamp = 1677616016,
         .block_gas_limit = 50'000,
-        .block_prev_randao = evmc::uint256be{10'000'000u},
+        .block_prev_randao = uint256_be_t{10'000'000u},
     };
-    ctx.chain_id = store_be_as<evmc::uint256be>(uint256_t{chain_id});
-    ctx.tx_gas_price = store_be_as<evmc::uint256be>(gas_cost);
-    ctx.block_base_fee = store_be_as<evmc::uint256be>(base_fee_per_gas);
+    ctx.chain_id = store_be_as<uint256_be_t>(uint256_t{chain_id});
+    ctx.tx_gas_price = store_be_as<uint256_be_t>(gas_cost);
+    ctx.block_base_fee = store_be_as<uint256_be_t>(base_fee_per_gas);
     EXPECT_EQ(result, ctx);
 
     hdr.difficulty = 0;
@@ -159,8 +158,7 @@ TYPED_TEST(TraitsTest, emit_log)
         0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c_bytes32};
     static constexpr auto topic1{
         0x0000000000000000000000000000000000000000000000000000000000000007_bytes32};
-    static constexpr evmc::bytes32 topics[] = {
-        to_evmc(topic0), to_evmc(topic1)};
+    static constexpr bytes32_t topics[] = {topic0, topic1};
     static byte_string const data = {0x00, 0x01, 0x02, 0x03, 0x04};
 
     mpt::Db db{std::make_unique<InMemoryMachine>()};
@@ -175,7 +173,7 @@ TYPED_TEST(TraitsTest, emit_log)
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t base_fee{0};
     trace::StateTracer noop_state_tracer = std::monostate{};
-    EvmcHost<typename TestFixture::Trait> host{
+    StateHost<typename TestFixture::Trait> host{
         call_tracer,
         noop_state_tracer,
         EMPTY_TX_CONTEXT,
@@ -211,7 +209,7 @@ TYPED_TEST(TraitsTest, access_precompile)
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t base_fee{0};
     trace::StateTracer noop_state_tracer = std::monostate{};
-    EvmcHost<typename TestFixture::Trait> host{
+    StateHost<typename TestFixture::Trait> host{
         call_tracer,
         noop_state_tracer,
         EMPTY_TX_CONTEXT,
@@ -224,18 +222,18 @@ TYPED_TEST(TraitsTest, access_precompile)
 
     EXPECT_EQ(
         host.access_account(0x0000000000000000000000000000000000000001_address),
-        EVMC_ACCESS_WARM);
+        AccessStatus::Warm);
     EXPECT_EQ(
         host.access_account(0x5353535353535353535353535353535353535353_address),
-        EVMC_ACCESS_COLD);
+        AccessStatus::Cold);
 }
 
-TEST(EvmcHostTest, host_methods_rethrow_pruned_read)
+TEST(StateHostTest, host_methods_rethrow_pruned_read)
 {
     using traits = MonadTraits<MONAD_NEXT>;
 
     std::string dbpath = (MONAD_ASYNC_NAMESPACE::working_temporary_directory() /
-                          "evmc_host_pruned_read_XXXXXX")
+                          "state_host_pruned_read_XXXXXX")
                              .string();
     int const fd = ::mkstemp(dbpath.data());
     ASSERT_NE(fd, -1);
@@ -285,7 +283,7 @@ TEST(EvmcHostTest, host_methods_rethrow_pruned_read)
         Transaction tx{};
         auto const chain_ctx = ChainContext<traits>::debug_empty();
         trace::StateTracer noop_state_tracer = std::monostate{};
-        EvmcHost<traits> host{
+        StateHost<traits> host{
             call_tracer,
             noop_state_tracer,
             EMPTY_TX_CONTEXT,

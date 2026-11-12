@@ -20,9 +20,8 @@
 #include <category/core/int.hpp>
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
+#include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/vm/evm/monad/revision.h>
-
-#include <evmc/evmc.h>
 
 // TODO unstable paths between versions
 #if __has_include(<boost/outcome/experimental/status-code/status-code/config.hpp>)
@@ -55,7 +54,7 @@ Result<void> validate_transaction(
     Transaction const &, Address const &sender, State &,
     uint256_t const &base_fee_per_gas,
     std::span<std::optional<Address> const> authorities,
-    trace::StateTracer &state_tracer);
+    trace::StateTracer &state_tracer, ExecutionMode const &mode);
 
 MONAD_NAMESPACE_END
 

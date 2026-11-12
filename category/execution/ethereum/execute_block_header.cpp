@@ -64,7 +64,7 @@ void execute_block_header(
     BlockState &block_state, BlockHeader const &header,
     ExecutionEventRecorder *exec_recorder)
 {
-    static_assert(traits::evm_rev() >= MONAD_ETH_TANGERINE_WHISTLE);
+    static_assert(traits::evm_rev() >= EvmRevision::TangerineWhistle);
 
     State state{block_state, Incarnation{header.number, 0}};
 

@@ -13,10 +13,14 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/bytes.hpp>
+#include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
+#include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
+#include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
 #include <category/execution/monad/db/commit_block.hpp>
 #include <category/vm/evm/monad/revision.h>
@@ -26,7 +30,10 @@
 
 #include <test_resource_data.h>
 
+#include <cstdint>
+#include <memory>
 #include <optional>
+#include <utility>
 #include <vector>
 
 using namespace monad;

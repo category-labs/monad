@@ -19,7 +19,7 @@
 
 #include <gtest/gtest.h>
 
-#include <evmc/evmc.h>
+#include <category/vm/evm/call_status.hpp>
 
 #include <array>
 #include <string_view>
@@ -65,9 +65,20 @@ TEST(SimulationErrorTest, SimulationDomain)
             static_cast<SimulationError>(test_case.error);
         auto const info = simulation_error_info(error);
 
-        EXPECT_EQ(info.status_code, EVMC_INTERNAL_ERROR);
+        EXPECT_EQ(info.status_code, CallStatus::InternalError);
         EXPECT_EQ(info.message, test_case.message);
     }
+}
+
+TEST(SimulationErrorTest, UnsupportedChainConfig)
+{
+    Result<void>::error_type const error =
+        SimulationError::UnsupportedChainConfig;
+
+    auto const info = simulation_error_info(error);
+
+    EXPECT_EQ(info.status_code, CallStatus::Rejected);
+    EXPECT_EQ(info.message, "only Monad chain configurations are supported");
 }
 
 TEST(SimulationErrorTest, BlockDomain)
@@ -76,6 +87,6 @@ TEST(SimulationErrorTest, BlockDomain)
 
     auto const info = simulation_error_info(error);
 
-    EXPECT_EQ(info.status_code, EVMC_REJECTED);
+    EXPECT_EQ(info.status_code, CallStatus::Rejected);
     EXPECT_EQ(info.message, "gas above limit");
 }

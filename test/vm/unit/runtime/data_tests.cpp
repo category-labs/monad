@@ -22,8 +22,6 @@
 #include <category/vm/runtime/data.hpp>
 #include <category/vm/runtime/transmute.hpp>
 
-#include <evmc/evmc.h>
-
 #include <cstdint>
 #include <limits>
 
@@ -38,7 +36,7 @@ constexpr auto wei = uint256_t{782374};
 template <typename Trait>
 constexpr auto gas_remaining_cold_access()
 {
-    static_assert(Trait::evm_rev() >= MONAD_ETH_BERLIN);
+    static_assert(Trait::evm_rev() >= EvmRevision::Berlin);
 
     if constexpr (is_monad_trait_v<Trait>) {
         if constexpr (Trait::monad_pricing_version() >= 1) {

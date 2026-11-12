@@ -20,7 +20,6 @@
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/core/units.hpp>
 #include <category/execution/ethereum/create_contract_address.hpp>
-#include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/execute_message.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
@@ -28,6 +27,7 @@
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/account_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/state_host.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
@@ -47,11 +47,10 @@
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/mpt/db.hpp>
+#include <category/vm/evm/message.hpp>
 #include <category/vm/evm/monad/revision.h>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 
 #include <boost/fiber/future/promise.hpp>
 
@@ -1295,7 +1294,7 @@ TEST(PrestateTracer, prestate_access_storage)
     // Touch some of the account's storage.
     // First access the account to bring it into the state object; this is a
     // prerequisite for accessing the storage.
-    EXPECT_EQ(s.access_account(ADDR_A), MONAD_ACCESS_COLD);
+    EXPECT_EQ(s.access_account(ADDR_A), AccessStatus::Cold);
     EXPECT_TRUE(s.original().contains(ADDR_A));
     EXPECT_TRUE(s.current().contains(ADDR_A));
     EXPECT_EQ(s.get_storage(ADDR_A, key2), value2);
@@ -1360,7 +1359,7 @@ TEST(PrestateTracer, prestate_access_zero_storage)
 
     // Regression from block 89733717 capture: reading an untouched slot must
     // still include that slot with a zero value in prestate output.
-    EXPECT_EQ(s.access_account(ADDR_A), MONAD_ACCESS_COLD);
+    EXPECT_EQ(s.access_account(ADDR_A), AccessStatus::Cold);
     EXPECT_EQ(s.get_storage(ADDR_A, key8), bytes32_t{});
 
     {
@@ -1791,7 +1790,7 @@ TEST(PrestateTracer, prestate_retain_beneficiary_access_storage)
     // Touch some of the account's storage.
     // First access the account to bring it into the state object; this is a
     // prerequisite for accessing the storage.
-    EXPECT_EQ(s.access_account(ADDR_A), MONAD_ACCESS_COLD);
+    EXPECT_EQ(s.access_account(ADDR_A), AccessStatus::Cold);
     EXPECT_TRUE(s.original().contains(ADDR_A));
     EXPECT_TRUE(s.current().contains(ADDR_A));
     EXPECT_EQ(s.get_storage(ADDR_A, key2), value2);
@@ -1857,7 +1856,7 @@ TEST(PrestateTracer, prestate_omit_beneficiary)
 
     // Touch the account, so it shows up in `state.original` and
     // `state.current`.
-    EXPECT_EQ(s.access_account(ADDR_A), MONAD_ACCESS_COLD);
+    EXPECT_EQ(s.access_account(ADDR_A), AccessStatus::Cold);
     EXPECT_TRUE(s.original().contains(ADDR_A));
     EXPECT_TRUE(s.current().contains(ADDR_A));
 
@@ -1943,8 +1942,8 @@ TEST(PrestateTracer, prestate_empty_block_no_reward)
 // asserts that the recorded codes map contains the (code_hash, intercode)
 // pair that the site is responsible for. The sites are:
 //
-//   1. EvmcHostBase::get_code_size  (EXTCODESIZE host hook)
-//   2. EvmcHostBase::copy_code       (EXTCODECOPY host hook)
+//   1. StateHostBase::get_code_size  (EXTCODESIZE host hook)
+//   2. StateHostBase::copy_code       (EXTCODECOPY host hook)
 //   3. execute_call_message          (called contract code, per CALL)
 //   4. system_call (via process_requests, EIP-7002/7251)
 //   5. validate_ethereum_transaction (EIP-7702 sender code check)
@@ -1969,7 +1968,7 @@ namespace
         monad::vm::make_shared_intercode(SYSTEM_STUB_CODE);
 }
 
-// Site 1: EvmcHostBase::get_code_size
+// Site 1: StateHostBase::get_code_size
 TYPED_TEST(TraitsTest, code_tracer_records_extcodesize)
 {
     mpt::Db db{std::make_unique<InMemoryMachine>()};
@@ -1996,7 +1995,7 @@ TYPED_TEST(TraitsTest, code_tracer_records_extcodesize)
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t const base_fee{0};
     trace::StateTracer state_tracer = trace::CodeTracer{};
-    EvmcHost<typename TestFixture::Trait> host{
+    StateHost<typename TestFixture::Trait> host{
         call_tracer,
         state_tracer,
         EMPTY_TX_CONTEXT,
@@ -2018,7 +2017,7 @@ TYPED_TEST(TraitsTest, code_tracer_records_extcodesize)
         byte_string_view(A_ICODE->code(), A_ICODE->size()));
 }
 
-// Site 2: EvmcHostBase::copy_code
+// Site 2: StateHostBase::copy_code
 TYPED_TEST(TraitsTest, code_tracer_records_extcodecopy)
 {
     mpt::Db db{std::make_unique<InMemoryMachine>()};
@@ -2045,7 +2044,7 @@ TYPED_TEST(TraitsTest, code_tracer_records_extcodecopy)
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t const base_fee{0};
     trace::StateTracer state_tracer = trace::CodeTracer{};
-    EvmcHost<typename TestFixture::Trait> host{
+    StateHost<typename TestFixture::Trait> host{
         call_tracer,
         state_tracer,
         EMPTY_TX_CONTEXT,
@@ -2104,7 +2103,7 @@ TYPED_TEST(TraitsTest, code_tracer_records_called_contract_code)
         ChainContext<typename TestFixture::Trait>::debug_empty();
     uint256_t const base_fee{0};
     trace::StateTracer state_tracer = trace::CodeTracer{};
-    EvmcHost<typename TestFixture::Trait> host{
+    StateHost<typename TestFixture::Trait> host{
         call_tracer,
         state_tracer,
         EMPTY_TX_CONTEXT,
@@ -2118,8 +2117,8 @@ TYPED_TEST(TraitsTest, code_tracer_records_called_contract_code)
     // depth = 1 to bypass the depth-0 reserve-balance revert path; we want
     // to isolate execute_call_message's own code-read here.
     auto msg_memory = vm.message_memory_ref();
-    evmc_message const msg{
-        .kind = EVMC_CALL,
+    vm::Message const msg{
+        .kind = vm::CallKind::Call,
         .depth = 1,
         .gas = 1'000'000,
         .recipient = ADDR_B,
@@ -2232,7 +2231,7 @@ TYPED_TEST(TraitsTest, code_tracer_records_sender_code_in_validate)
         Transaction const tx{.gas_limit = 60'500};
         trace::StateTracer state_tracer = trace::CodeTracer{};
         (void)validate_ethereum_transaction<typename TestFixture::Trait>(
-            tx, ADDR_A, state, state_tracer);
+            tx, ADDR_A, state, state_tracer, ExecutionMode{});
 
         auto const &codes = std::get<trace::CodeTracer>(state_tracer).codes;
         auto const it = codes.find(C_CODE_HASH);
@@ -2309,7 +2308,7 @@ TYPED_TEST(EvmTraitsTest, code_tracer_records_authorization_code)
             ChainContext<typename TestFixture::Trait>::debug_empty();
         uint256_t const base_fee{0};
         trace::StateTracer state_tracer = trace::CodeTracer{};
-        EvmcHost<typename TestFixture::Trait> host{
+        StateHost<typename TestFixture::Trait> host{
             call_tracer,
             state_tracer,
             EMPTY_TX_CONTEXT,

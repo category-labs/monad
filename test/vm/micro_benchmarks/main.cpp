@@ -21,7 +21,9 @@
 #include <category/execution/ethereum/db/test/commit_simple.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
-#include <category/vm/evm/revision.h>
+#include <category/vm/evm/message.hpp>
+#include <category/vm/evm/result.hpp>
+#include <category/vm/evm/revision.hpp>
 #include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/utils/evm-as/kernel-builder.hpp>
 #include <category/vm/vm.hpp>
@@ -47,7 +49,7 @@ using namespace monad::vm;
 using namespace monad::vm::runtime;
 using namespace monad::vm::utils::evm_as;
 
-using traits = EvmTraits<MONAD_ETH_OSAKA>;
+using traits = EvmTraits<EvmRevision::Osaka>;
 
 enum class OutputFormat
 {
@@ -378,13 +380,9 @@ static double execute_iteration(
     // success immediately, while the top-level frame runs on `vm`.
     vm::VM monad_vm;
     monad_vm.debug_set_execute_override(
-        [](auto const *const,
-           auto *const,
-           auto const,
-           auto const *msg,
-           auto const *,
-           auto const) -> evmc::Result {
-            return evmc::Result{EVMC_SUCCESS, msg->gas};
+        [](auto &, auto const, auto const *msg, auto const *, auto const)
+            -> vm::Result {
+            return vm::Result{CallStatus::Success, msg->gas};
         });
 
     Address const sender_address{200};
@@ -416,11 +414,11 @@ static double execute_iteration(
         authorities,
         header,
         chain};
-    auto &host = test_host.get_evmc_host();
+    auto &host = test_host.get_state_host();
 
     auto msg_memory = memory_pool.alloc_ref();
-    evmc_message msg{
-        .kind = EVMC_CALL,
+    vm::Message msg{
+        .kind = vm::CallKind::Call,
         .flags = 0,
         .depth = 0,
         .gas = std::numeric_limits<int64_t>::max(),
@@ -442,7 +440,7 @@ static double execute_iteration(
 
     auto const stop = std::chrono::steady_clock::now();
 
-    MONAD_ASSERT(result.status_code == EVMC_SUCCESS);
+    MONAD_ASSERT(result.status_code == CallStatus::Success);
 
     return static_cast<double>((stop - start).count());
 }

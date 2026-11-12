@@ -15,26 +15,15 @@
 
 #pragma once
 
-#include <evmc/evmc.h>
+#include <category/core/config.hpp>
 
-#include <stdbool.h>
+MONAD_NAMESPACE_BEGIN
 
-#ifdef __cplusplus
-extern "C"
-{
-#endif
-
-// In-tree mirror of the fork-only `evmc_page_storage_status` (MIP-8 SSTORE page
-// accounting). Converted to the evmc struct only in the EvmcHost override.
-struct monad_page_storage_status
+// MIP-8 SSTORE page accounting.
+struct PageStorageStatus
 {
     bool first_page_write;
     bool grew_state;
 };
 
-struct evmc_page_storage_status
-to_evmc_page_storage_status(struct monad_page_storage_status status);
-
-#ifdef __cplusplus
-} // extern "C"
-#endif
+MONAD_NAMESPACE_END

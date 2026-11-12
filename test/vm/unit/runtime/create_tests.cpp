@@ -22,8 +22,6 @@
 #include <category/vm/runtime/memory.hpp>
 #include <category/vm/runtime/transmute.hpp>
 
-#include <evmc/evmc.h>
-
 using namespace monad;
 using namespace monad::vm;
 using namespace monad::vm::runtime;
@@ -34,7 +32,8 @@ constexpr Address result_addr = Address{uint8_t{0x42}};
 
 TYPED_TEST(RuntimeTraitsTest, Create)
 {
-    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_TANGERINE_WHISTLE);
+    static_assert(
+        TestFixture::Trait::evm_rev() >= EvmRevision::TangerineWhistle);
 
     TestFixture::call(mstore<typename TestFixture::Trait>, 0, prog);
     ASSERT_EQ(this->ctx_.memory.data[31], 0xF3);
@@ -63,7 +62,8 @@ TYPED_TEST(RuntimeTraitsTest, Create)
 
 TYPED_TEST(RuntimeTraitsTest, CreateSizeIsZero)
 {
-    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_TANGERINE_WHISTLE);
+    static_assert(
+        TestFixture::Trait::evm_rev() >= EvmRevision::TangerineWhistle);
 
     this->ctx_.gas_remaining = 1000000;
     this->host_.call_result = TestFixture::create_result(result_addr, 900000);
@@ -79,7 +79,7 @@ TYPED_TEST(RuntimeTraitsTest, CreateSizeIsZero)
 
 TYPED_TEST(RuntimeTraitsTest, CreateFailure)
 {
-    this->host_.call_result = TestFixture::failure_result(EVMC_OUT_OF_GAS);
+    this->host_.call_result = TestFixture::failure_result(CallStatus::OutOfGas);
 
     auto do_create = TestFixture::wrap(create<typename TestFixture::Trait>);
 
@@ -91,7 +91,7 @@ TYPED_TEST(RuntimeTraitsTest, CreateFailure)
 
 TYPED_TEST(RuntimeTraitsTest, Create2)
 {
-    static_assert(TestFixture::Trait::evm_rev() >= MONAD_ETH_CONSTANTINOPLE);
+    static_assert(TestFixture::Trait::evm_rev() >= EvmRevision::Constantinople);
 
     TestFixture::call(mstore<typename TestFixture::Trait>, 0, prog);
     ASSERT_EQ(this->ctx_.memory.data[31], 0xF3);

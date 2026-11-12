@@ -18,8 +18,6 @@
 #include <category/core/assert.h>
 #include <category/core/runtime/uint256.hpp>
 
-#include <evmc/evmc.hpp>
-
 #include <cstdint>
 #include <format>
 #include <limits>

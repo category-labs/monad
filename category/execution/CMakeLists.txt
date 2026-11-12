@@ -137,8 +137,8 @@ add_library(
   "ethereum/create_contract_address.hpp"
   "ethereum/dispatch_transaction.cpp"
   "ethereum/dispatch_transaction.hpp"
-  "ethereum/evmc_host.cpp"
-  "ethereum/evmc_host.hpp"
+  "ethereum/state_host.cpp"
+  "ethereum/state_host.hpp"
   "ethereum/execute_block.cpp"
   "ethereum/execute_block.hpp"
   "ethereum/execute_block_header.cpp"
@@ -147,6 +147,7 @@ add_library(
   "ethereum/execute_message.hpp"
   "ethereum/execute_transaction.cpp"
   "ethereum/execute_transaction.hpp"
+  "ethereum/execution_modalities.hpp"
   "ethereum/fmt/event_trace_fmt.hpp"
   "ethereum/native_transfer_log.cpp"
   "ethereum/native_transfer_log.hpp"
@@ -338,16 +339,10 @@ target_include_directories(
   PRIVATE ${Boost_INCLUDE_DIRS})
 
 target_compile_definitions(
-  monad_execution_ethereum PUBLIC MONAD_CXX_CTYPES_USE_EVMC_HPP
-                                  MONAD_CXX_CTYPES_USE_MONAD_INTS)
+  monad_execution_ethereum PUBLIC MONAD_CXX_CTYPES_USE_MONAD_INTS)
 
 target_compile_definitions(
-  monad_execution_native PUBLIC MONAD_CXX_CTYPES_USE_EVMC_HPP
-                                MONAD_CXX_CTYPES_USE_MONAD_INTS)
-
-target_compile_definitions(
-  monad_execution_runloop PUBLIC MONAD_CXX_CTYPES_USE_EVMC_HPP
-                                 MONAD_CXX_CTYPES_USE_INTX)
+  monad_execution_native PUBLIC MONAD_CXX_CTYPES_USE_MONAD_INTS)
 
 target_include_directories(
   monad_precompiles
@@ -364,7 +359,6 @@ target_link_libraries(
   PUBLIC c-kzg-4844
   PRIVATE aws_lc::crypto
   PUBLIC ethash::keccak
-  PUBLIC evmc
   PUBLIC immer
   PUBLIC intx::intx
   PUBLIC nlohmann_json::nlohmann_json
@@ -384,7 +378,6 @@ target_link_libraries(
   PRIVATE monad_crypto
   PRIVATE PkgConfig::brotli
   PRIVATE secp256k1
-  PUBLIC evmc
   PUBLIC immer
   PUBLIC intx::intx
   PUBLIC nlohmann_json::nlohmann_json
@@ -401,7 +394,6 @@ target_link_libraries(
   PUBLIC monad_execution_ethereum
   PUBLIC monad_core
   PUBLIC monad_trie
-  PUBLIC evmc
   PUBLIC magic_enum::magic_enum
   PUBLIC secp256k1
   PUBLIC quill::quill)

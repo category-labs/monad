@@ -32,7 +32,7 @@ Use `/build`, `/test`, `/lint`, `/format`, `/fuzz` skills for full options (sani
 |-----------|----------|-------|
 | `gcc-avx2.cmake` | GCC or Clang | `-march=haswell` (default) |
 | `gcc-avx512.cmake` | GCC or Clang | `-march=skylake-avx512` |
-| `gcc-asan.cmake` | GCC only | ASAN + UBSAN. **Breaks VM interpreter** (must-tail incompatibility) |
+| `gcc-asan.cmake` | GCC or Clang | ASAN + UBSAN. **Breaks VM interpreter under GCC** (must-tail incompatibility) |
 | `gcc-tsan.cmake` | GCC only | TSAN |
 | `clang-tsan.cmake` | Clang only | TSAN |
 | `clang-fuzz.cmake` | Clang only | ASAN + UBSAN + fuzzing instrumentation |
@@ -54,12 +54,12 @@ All execution code is templated on a `Traits` parameter that encodes the chain r
 
 There are two trait families, defined in `category/vm/evm/traits.hpp`:
 
-- **`EvmTraits<evmc_revision>`** — one per EVM fork (HOMESTEAD through OSAKA, 14 total)
+- **`EvmTraits<EvmRevision>`** — one per EVM fork (EvmRevision::Berlin through EvmRevision::Amsterdam, 8 total)
 - **`MonadTraits<monad_revision>`** — one per Monad revision (MONAD_ZERO through MONAD_NEXT, 12 total)
 
 Both satisfy the `Traits` concept, which exposes `consteval` methods for:
-- `evm_rev()` — the underlying EVM revision (MonadTraits maps to an EVM rev, e.g. MONAD_FOUR+ maps to EVMC_PRAGUE)
-- Feature flags like `eip_2929_active()`, `eip_4844_active()`, `mip_3_active()`
+- `evm_rev()` — the underlying EVM revision (MonadTraits maps to an EVM rev, e.g. MONAD_FOUR+ maps to EvmRevision::Prague)
+- Feature flags like `eip_7702_active()`, `eip_4844_active()`, `mip_3_active()`
 - Constants like `cold_account_cost()`, `max_code_size()`
 
 Because all methods are `consteval`, `if constexpr` on trait queries is zero-cost — dead branches are eliminated at compile time.
@@ -69,14 +69,14 @@ Because all methods are `consteval`, `if constexpr` on trait queries is zero-cos
 Runtime revision values are mapped to the correct template instantiation via switch macros in `category/vm/evm/switch_traits.hpp`:
 
 ```cpp
-// At a call site that has a runtime evmc_revision:
+// At a call site that has a runtime EvmRevision:
 SWITCH_EVM_TRAITS(execute_transaction, chain, tx, header, ...);
 
 // At a call site that has a runtime monad_revision:
 SWITCH_MONAD_TRAITS(execute_transaction, chain, tx, header, ...);
 ```
 
-Each expands to a switch statement that calls `execute_transaction<EvmTraits<EVMC_OSAKA>>(...)`, `execute_transaction<EvmTraits<EVMC_PRAGUE>>(...)`, etc.
+Each expands to a switch statement that calls `execute_transaction<EvmTraits<EvmRevision::Osaka>>(...)`, `execute_transaction<EvmTraits<EvmRevision::Prague>>(...)`, etc.
 
 ### Explicit instantiation macros
 
@@ -84,16 +84,16 @@ Templates must be explicitly instantiated in `.cpp` files using macros from `cat
 
 | Macro | What it instantiates | Revisions |
 |-------|---------------------|-----------|
-| `EXPLICIT_EVM_TRAITS(f)` | Free function `f` | 14 EVM revisions |
+| `EXPLICIT_EVM_TRAITS(f)` | Free function `f` | 8 EVM revisions |
 | `EXPLICIT_MONAD_TRAITS(f)` | Free function `f` | 12 Monad revisions |
-| `EXPLICIT_TRAITS(f)` | Free function `f` | All 26 |
-| `EXPLICIT_EVM_TRAITS_CLASS(c)` | Class template `c` | 14 EVM revisions |
+| `EXPLICIT_TRAITS(f)` | Free function `f` | All 20 |
+| `EXPLICIT_EVM_TRAITS_CLASS(c)` | Class template `c` | 8 EVM revisions |
 | `EXPLICIT_MONAD_TRAITS_CLASS(c)` | Class template `c` | 12 Monad revisions |
 | `EXPLICIT_MONAD_TRAITS_STRUCT(c)` | Struct template `c` | 12 Monad revisions |
-| `EXPLICIT_TRAITS_CLASS(c)` | Class template `c` | All 26 |
-| `EXPLICIT_EVM_TRAITS_MEMBER(f)` | Member function `f` | 14 EVM revisions |
+| `EXPLICIT_TRAITS_CLASS(c)` | Class template `c` | All 20 |
+| `EXPLICIT_EVM_TRAITS_MEMBER(f)` | Member function `f` | 8 EVM revisions |
 | `EXPLICIT_MONAD_TRAITS_MEMBER(f)` | Member function `f` | 12 Monad revisions |
-| `EXPLICIT_TRAITS_MEMBER(f)` | Member function `f` | All 26 |
+| `EXPLICIT_TRAITS_MEMBER(f)` | Member function `f` | All 20 |
 
 **Rules:**
 - Instantiation macros go in `.cpp` files only, never in headers.
@@ -135,9 +135,9 @@ EXPLICIT_MONAD_TRAITS(revert_transaction);
 The linker picks the right instantiation — EVM callers get the no-op, Monad callers get the real implementation. No `if constexpr (is_monad_trait_v<traits>)` needed in the shared code.
 
 **When branching IS acceptable:**
-- Using `if constexpr` on **feature flags** like `traits::eip_2929_active()` or `traits::evm_rev() >= EVMC_ISTANBUL` is fine — these are per-revision decisions, not monad-vs-EVM decisions.
+- Using `if constexpr` on **feature flags** like `traits::eip_7702_active()` or `traits::evm_rev() >= EvmRevision::Prague` is fine — these are per-revision decisions, not monad-vs-EVM decisions.
 - Using `requires is_monad_trait_v<traits>` constraints on functions that only make sense for Monad (e.g. `can_sender_dip_into_reserve`) is fine — these aren't branches, they're compile-time constraints that prevent misuse.
-- **Pragmatic exceptions** exist in `ethereum/` where the separate-instantiation pattern would be unwieldy — e.g. one-line initialization guards like `if constexpr (is_monad_trait_v<traits>) { init_reserve_balance_context(...); }` in `execute_transaction.cpp` and `execute_block.cpp`. Prefer the split-instantiation pattern for new code, but a guarded call is acceptable when the alternative would be splitting an entire function just to add one Monad-specific line.
+- **Pragmatic exceptions** exist in `ethereum/` where the separate-instantiation pattern would be unwieldy — e.g. `if constexpr (is_monad_trait_v<traits>)` guards in `execute_transaction.cpp` (`init_reserve_balance_context(...)`), `execute_block_header.cpp` and `block_hash_history.cpp`. Prefer the split-instantiation pattern for new code, but a guarded call is acceptable when the alternative would be splitting an entire function just to add one Monad-specific line.
 
 ### ChainContext specialization
 
@@ -154,11 +154,11 @@ Defined in `category/vm/evm/monad/revision.h`:
 
 | Revision | Underlying EVM | Notable changes |
 |----------|---------------|-----------------|
-| MONAD_ZERO–THREE | EVMC_CANCUN | Base Monad; MONAD_TWO raises max code size to 128KB |
-| MONAD_FOUR–EIGHT | EVMC_PRAGUE | EIP-7951 active; larger initcode; Monad pricing v1 at MONAD_SEVEN |
-| MONAD_NINE | EVMC_OSAKA | MIP-3 active |
-| MONAD_TEN | EVMC_OSAKA | MIP-8 (page-encoded storage) active |
-| MONAD_NEXT | EVMC_OSAKA | Future/development |
+| MONAD_ZERO–THREE | EvmRevision::Cancun | Base Monad; MONAD_TWO raises max code size to 128KB |
+| MONAD_FOUR–EIGHT | EvmRevision::Prague | EIP-7951 active; larger initcode; Monad pricing v1 at MONAD_SEVEN |
+| MONAD_NINE | EvmRevision::Osaka | MIP-3 and MIP-4 active |
+| MONAD_TEN | EvmRevision::Osaka | MIP-8 (page-encoded storage) active |
+| MONAD_NEXT | EvmRevision::Amsterdam | Future/development; MIP-12 active |
 
 Key differences from EVM traits: EIP-4844 (blob gas) is always disabled, cold account/storage costs are higher (Monad pricing), and code size limits are larger (128KB code, 256KB initcode). See the [Monad changelog](https://docs.monad.xyz/developer-essentials/changelog) for user-facing details of each revision.
 
@@ -166,7 +166,7 @@ Key differences from EVM traits: EIP-4844 (blob gas) is always disabled, cold ac
 
 ### Namespaces
 
-All code uses macros from `category/core/config.hpp` — do not write `namespace monad {` directly:
+Code outside `category/vm/` uses macros from `category/core/config.hpp` — do not write `namespace monad {` directly there (`category/vm/` opens `namespace monad::vm` directly):
 
 ```cpp
 #include <category/core/config.hpp>
@@ -203,7 +203,7 @@ Carve-outs where the parameter stays non-const:
 
 ### Comment hygiene after rebase, squash, or rename/removal
 
-Stale comments are invisible to the author (you read your intent, not the text) and to diff-scoped reviewers and PR bots (they can't grep the whole tree or read unchanged files). After squashing history, rebasing onto a new base, or renaming/removing any function, type, or field, run two sweeps before finalizing:
+Stale comments are invisible to the author (you read your intent, not the text) and to diff-scoped reviewers and PR bots (most see only the diff; the Claude reviewer can grep the tree but has no git history). After squashing history, rebasing onto a new base, or renaming/removing any function, type, or field, run two sweeps before finalizing:
 
 1. **Temporal-language sweep.** Grep changed comments (extended regex) for the temporal markers: `grep -nE 'Previously|Originally|No longer|The old|Now uses|Used to|previous (commit|version|approach)|initially was'`. Every hit must describe a *durable* contrast (e.g. this-branch-vs-`main` behavior) — not an intermediate state of your own branch, which doesn't exist in the final history and is meaningless to a future reader. Reword or delete.
 2. **Dead-identifier sweep.** For every function/type/field named in a changed comment, confirm it still exists: `grep -rnw 'identifier' category/ test/`. Renames and removals leave stale references that the temporal-word grep won't catch. A comment naming a planned-but-unwired caller (`used by propose_block`) is the same defect — verify the caller actually exists and calls the code, or drop the claim.
@@ -223,7 +223,7 @@ Tests use Google Test. CMake helper functions are defined in root `CMakeLists.tx
 New library/executable targets should call `monad_compile_options(target)` to apply the standard C++26 flags, warnings, and compile definitions. Most targets link against `monad_execution` — the aggregate library that bundles all of `category/`.
 
 Test files live in two places:
-- **Alongside source** in `category/` subdirectories (e.g., `category/core/hex_test.cpp`, `category/execution/ethereum/evm_test.cpp`)
+- **Alongside source** in `category/` subdirectories (e.g., `category/core/hex_test.cpp`, `category/execution/ethereum/execute_message_test.cpp`)
 - **In `test/`** for cross-cutting or suite-level tests (e.g., `test/ethereum_test/`, `test/vm/`)
 
 Test data paths are available via generated header `test/test_resource_data.h`:

@@ -23,17 +23,17 @@
 #include <category/core/likely.h>
 #include <category/core/runtime/uint256.hpp>
 #include <category/execution/ethereum/create_contract_address.hpp>
-#include <category/execution/ethereum/evmc_host.hpp>
 #include <category/execution/ethereum/execute_message.hpp>
 #include <category/execution/ethereum/native_transfer_log.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/reserve_balance.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/state_host.hpp>
+#include <category/vm/evm/call_status.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/message.hpp>
+#include <category/vm/evm/result.hpp>
 #include <category/vm/evm/traits.hpp>
-
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
 
 #include <cstdint>
 #include <limits>
@@ -45,7 +45,7 @@ MONAD_NAMESPACE_BEGIN
 namespace
 {
 
-    bool sender_has_balance(State &state, evmc_message const &msg) noexcept
+    bool sender_has_balance(State &state, vm::Message const &msg) noexcept
     {
         uint256_t const value = load_be<uint256_t>(msg.value);
         // for optimistic execution, we do NOT require the original balance to
@@ -56,7 +56,7 @@ namespace
 
     template <Traits traits>
     void transfer_balances(
-        State &state, EvmcHost<traits> &host, evmc_message const &msg,
+        State &state, StateHost<traits> &host, vm::Message const &msg,
         Address const &to)
     {
         uint256_t const value = load_be<uint256_t>(msg.value);
@@ -74,21 +74,21 @@ namespace
 } // anonymous namespace
 
 template <Traits traits>
-evmc::Result deploy_contract_code(
-    State &state, Address const &address, evmc::Result result) noexcept
+vm::Result deploy_contract_code(
+    State &state, Address const &address, vm::Result result) noexcept
 {
-    static_assert(traits::evm_rev() >= MONAD_ETH_SPURIOUS_DRAGON);
+    static_assert(traits::evm_rev() >= EvmRevision::SpuriousDragon);
 
-    MONAD_ASSERT(result.status_code == EVMC_SUCCESS);
+    MONAD_ASSERT(result.status_code == CallStatus::Success);
 
     if constexpr (traits::eip_3541_active()) {
         if (result.output_size > 0 && result.output_data[0] == 0xef) {
-            return evmc::Result{EVMC_CONTRACT_VALIDATION_FAILURE};
+            return vm::Result{CallStatus::ContractValidationFailure};
         }
     }
     // EIP-170
     if (result.output_size > traits::max_code_size()) {
-        return evmc::Result{EVMC_OUT_OF_GAS};
+        return vm::Result{CallStatus::OutOfGas};
     }
 
     auto const deploy_cost = static_cast<int64_t>(result.output_size) * 200;
@@ -98,7 +98,7 @@ evmc::Result deploy_contract_code(
         // pay for the final gas fee for adding the contract code to
         // the state, the contract creation fails (ie. goes
         // out-of-gas) rather than leaving an empty contract.
-        result.status_code = EVMC_OUT_OF_GAS;
+        result.status_code = CallStatus::OutOfGas;
     }
     else {
         result.create_address = address;
@@ -111,19 +111,20 @@ evmc::Result deploy_contract_code(
 EXPLICIT_TRAITS(deploy_contract_code);
 
 template <Traits traits>
-std::optional<evmc::Result>
-pre_call(EvmcHost<traits> &host, evmc_message const &msg, State &state)
+std::optional<vm::Result>
+pre_call(StateHost<traits> &host, vm::Message const &msg, State &state)
 {
     state.push();
 
-    bool const static_call = msg.flags & EVMC_STATIC;
+    bool const static_call =
+        msg.flags & std::to_underlying(vm::CallFlags::Static);
 
-    if (msg.kind != EVMC_DELEGATECALL) {
+    if (msg.kind != vm::CallKind::DelegateCall) {
         if (MONAD_UNLIKELY(!sender_has_balance(state, msg))) {
             // The pushed frame exits before bytecode, account access, or
             // storage access, so there is no access-list metadata to capture.
             state.pop_reject();
-            return evmc::Result{EVMC_INSUFFICIENT_BALANCE, msg.gas};
+            return vm::Result{CallStatus::InsufficientBalance, msg.gas};
         }
         else if (!static_call) {
             transfer_balances<traits>(state, host, msg, msg.recipient);
@@ -132,11 +133,11 @@ pre_call(EvmcHost<traits> &host, evmc_message const &msg, State &state)
 
     if constexpr (!traits::eip_7702_active()) {
         MONAD_ASSERT(
-            msg.kind != EVMC_CALL ||
-            Address{msg.recipient} == Address{msg.code_address});
+            msg.kind != vm::CallKind::Call ||
+            msg.recipient == msg.code_address);
     }
 
-    if (msg.kind == EVMC_CALL && static_call) {
+    if (msg.kind == vm::CallKind::Call && static_call) {
         // eip-161
         state.touch(msg.recipient);
     }
@@ -145,7 +146,7 @@ pre_call(EvmcHost<traits> &host, evmc_message const &msg, State &state)
 }
 
 template <Traits traits>
-void reject_frame(EvmcHost<traits> &host, State &state)
+void reject_frame(StateHost<traits> &host, State &state)
 {
     // Successful frames remain in State and are captured when the state tracer
     // is encoded. Failed frames are about to be rolled back, so the state
@@ -167,16 +168,17 @@ void reject_frame(EvmcHost<traits> &host, State &state)
 }
 
 template <Traits traits>
-void post_call(EvmcHost<traits> &host, State &state, evmc::Result const &result)
+void post_call(StateHost<traits> &host, State &state, vm::Result const &result)
 {
-    MONAD_ASSERT(result.status_code == EVMC_SUCCESS || result.gas_refund == 0);
     MONAD_ASSERT(
-        result.status_code == EVMC_SUCCESS ||
-        result.status_code == EVMC_REVERT ||
-        result.status_code == EVMC_MONAD_RESERVE_BALANCE_VIOLATION ||
+        result.status_code == CallStatus::Success || result.gas_refund == 0);
+    MONAD_ASSERT(
+        result.status_code == CallStatus::Success ||
+        result.status_code == CallStatus::Revert ||
+        result.status_code == CallStatus::ReserveBalanceViolation ||
         result.gas_left == 0);
 
-    if (result.status_code == EVMC_SUCCESS) {
+    if (result.status_code == CallStatus::Success) {
         state.pop_accept();
     }
     else {
@@ -185,12 +187,13 @@ void post_call(EvmcHost<traits> &host, State &state, evmc::Result const &result)
 }
 
 template <Traits traits>
-evmc::Result execute_create_message(
-    EvmcHost<traits> *const host, State &state, evmc_message const &msg)
+vm::Result execute_create_message(
+    StateHost<traits> *const host, State &state, vm::Message const &msg)
 {
-    static_assert(traits::evm_rev() >= MONAD_ETH_SPURIOUS_DRAGON);
+    static_assert(traits::evm_rev() >= EvmRevision::SpuriousDragon);
 
-    MONAD_ASSERT(msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2);
+    MONAD_ASSERT(
+        msg.kind == vm::CallKind::Create || msg.kind == vm::CallKind::Create2);
 
     auto &call_tracer = host->get_call_tracer();
     call_tracer.on_enter(msg);
@@ -212,7 +215,7 @@ evmc::Result execute_create_message(
                 state.set_nonce(msg.sender, nonce + 1);
             }
         }
-        evmc::Result result{EVMC_INSUFFICIENT_BALANCE, msg.gas};
+        vm::Result result{CallStatus::InsufficientBalance, msg.gas};
         call_tracer.on_exit(result);
         return result;
     }
@@ -220,17 +223,17 @@ evmc::Result execute_create_message(
     auto const nonce = state.get_nonce(msg.sender);
     if (nonce == UINT64_MAX) {
         // this overflow can only happen for msg.depth != 0
-        evmc::Result result{EVMC_ARGUMENT_OUT_OF_RANGE, msg.gas};
+        vm::Result result{CallStatus::ArgumentOutOfRange, msg.gas};
         call_tracer.on_exit(result);
         return result;
     }
     state.set_nonce(msg.sender, nonce + 1);
 
     Address const contract_address = [&] {
-        if (msg.kind == EVMC_CREATE) {
+        if (msg.kind == vm::CallKind::Create) {
             return create_contract_address(msg.sender, nonce); // YP Eqn. 85
         }
-        else { // msg.kind == EVMC_CREATE2
+        else { // msg.kind == vm::CallKind::Create2
             auto const code_hash = keccak256({msg.input_data, msg.input_size});
             return create2_contract_address(
                 msg.sender, msg.create2_salt, code_hash);
@@ -241,7 +244,7 @@ evmc::Result execute_create_message(
 
     // Prevent overwriting contracts - EIP-684
     if (state.account_has_code_or_nonce(contract_address)) {
-        evmc::Result result{EVMC_INVALID_INSTRUCTION};
+        vm::Result result{CallStatus::InvalidInstruction};
         call_tracer.on_exit(result);
         return result;
     }
@@ -254,8 +257,8 @@ evmc::Result execute_create_message(
     state.set_nonce(contract_address, 1);
     transfer_balances<traits>(state, *host, msg, contract_address);
 
-    evmc_message const m_call{
-        .kind = EVMC_CALL,
+    vm::Message const m_call{
+        .kind = vm::CallKind::Call,
         .flags = 0,
         .depth = msg.depth,
         .gas = msg.gas,
@@ -274,7 +277,7 @@ evmc::Result execute_create_message(
     auto result = state.vm().execute_bytecode<traits>(
         *host, &m_call, {msg.input_data, msg.input_size});
 
-    if (result.status_code == EVMC_SUCCESS) {
+    if (result.status_code == CallStatus::Success) {
         result = deploy_contract_code<traits>(
             state, contract_address, std::move(result));
     }
@@ -288,16 +291,16 @@ evmc::Result execute_create_message(
                 state,
                 host->state_tracer_,
                 host->chain_ctx_)) {
-            result.status_code = EVMC_MONAD_RESERVE_BALANCE_VIOLATION;
+            result.status_code = CallStatus::ReserveBalanceViolation;
         }
     }
 
-    if (result.status_code == EVMC_SUCCESS) {
+    if (result.status_code == CallStatus::Success) {
         state.pop_accept();
     }
     else {
         result.gas_refund = 0;
-        if (result.status_code != EVMC_REVERT) {
+        if (result.status_code != CallStatus::Revert) {
             result.gas_left = 0;
         }
         reject_frame(*host, state);
@@ -311,12 +314,12 @@ evmc::Result execute_create_message(
 EXPLICIT_TRAITS(execute_create_message);
 
 template <Traits traits>
-evmc::Result execute_call_message(
-    EvmcHost<traits> *const host, State &state, evmc_message const &msg)
+vm::Result execute_call_message(
+    StateHost<traits> *const host, State &state, vm::Message const &msg)
 {
     MONAD_ASSERT(
-        msg.kind == EVMC_DELEGATECALL || msg.kind == EVMC_CALLCODE ||
-        msg.kind == EVMC_CALL);
+        msg.kind == vm::CallKind::DelegateCall ||
+        msg.kind == vm::CallKind::CallCode || msg.kind == vm::CallKind::Call);
 
     auto &call_tracer = host->get_call_tracer();
     call_tracer.on_enter(msg);
@@ -326,7 +329,7 @@ evmc::Result execute_call_message(
         return std::move(result.value());
     }
 
-    evmc::Result result;
+    vm::Result result;
     if (auto maybe_result = check_call_precompile<traits>(
             state, call_tracer, msg, host->log_native_transfers_);
         maybe_result.has_value()) {
@@ -348,7 +351,7 @@ evmc::Result execute_call_message(
                 state,
                 host->state_tracer_,
                 host->chain_ctx_)) {
-            result.status_code = EVMC_MONAD_RESERVE_BALANCE_VIOLATION;
+            result.status_code = CallStatus::ReserveBalanceViolation;
             result.gas_refund = 0;
         }
     }

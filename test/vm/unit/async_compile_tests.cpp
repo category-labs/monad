@@ -23,9 +23,6 @@
 
 #include <test/vm/utils/test_context.hpp>
 
-#include <evmc/evmc.h>
-#include <evmc/evmc.hpp>
-
 #include <gtest/gtest.h>
 
 #include <algorithm>
@@ -67,7 +64,7 @@ namespace
 
 TEST(async_compile_test, stress)
 {
-    using traits = EvmTraits<MONAD_ETH_CANCUN>;
+    using traits = EvmTraits<EvmRevision::Cancun>;
 
     constexpr size_t P = 10;
     constexpr size_t L = 120;
@@ -139,8 +136,8 @@ TEST(async_compile_test, disable)
         auto const hash = test_hash(i);
         auto const icode = make_shared_intercode(std::move(code));
 
-        ASSERT_TRUE(
-            compiler.async_compile<EvmTraits<MONAD_ETH_PRAGUE>>(hash, icode));
+        ASSERT_TRUE(compiler.async_compile<EvmTraits<EvmRevision::Prague>>(
+            hash, icode));
     }
 
     compiler.debug_wait_for_empty_queue();
@@ -164,14 +161,14 @@ TEST(async_compile_test, trait_ids_distinct)
     // One revision per line so the roster stays readable and diffs cleanly.
     // clang-format off
     std::array<uint64_t, 20> const ids{
-        EvmTraits<MONAD_ETH_BERLIN>::id(),
-        EvmTraits<MONAD_ETH_LONDON>::id(),
-        EvmTraits<MONAD_ETH_PARIS>::id(),
-        EvmTraits<MONAD_ETH_SHANGHAI>::id(),
-        EvmTraits<MONAD_ETH_CANCUN>::id(),
-        EvmTraits<MONAD_ETH_PRAGUE>::id(),
-        EvmTraits<MONAD_ETH_OSAKA>::id(),
-        EvmTraits<MONAD_ETH_AMSTERDAM>::id(),
+        EvmTraits<EvmRevision::Berlin>::id(),
+        EvmTraits<EvmRevision::London>::id(),
+        EvmTraits<EvmRevision::Paris>::id(),
+        EvmTraits<EvmRevision::Shanghai>::id(),
+        EvmTraits<EvmRevision::Cancun>::id(),
+        EvmTraits<EvmRevision::Prague>::id(),
+        EvmTraits<EvmRevision::Osaka>::id(),
+        EvmTraits<EvmRevision::Amsterdam>::id(),
         MonadTraits<MONAD_ZERO>::id(),
         MonadTraits<MONAD_ONE>::id(),
         MonadTraits<MONAD_TWO>::id(),
@@ -191,8 +188,8 @@ TEST(async_compile_test, trait_ids_distinct)
     static_assert(
         MONAD_NEXT == 11, "a monad_revision was added; extend the list above");
     static_assert(
-        MONAD_ETH_EXPERIMENTAL == 16,
-        "a monad_eth_revision was added; extend the list above");
+        std::to_underlying(EvmRevision::Experimental) == 16,
+        "an EvmRevision was added; extend the list above");
 
     std::unordered_set<uint64_t> const unique(ids.begin(), ids.end());
     EXPECT_EQ(unique.size(), ids.size());

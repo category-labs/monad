@@ -32,8 +32,14 @@
 #include <category/core/format_err.h>
 #include <category/core/srcloc.h>
 
+constexpr size_t PAGE_2MB = 1UL << 21;
+
+// The header region in an event ring file is rounded up to 2MiB page boundary
+// to large-page-align the descriptor ring. The unused space is zeroed to allow
+// extensions to the header structure without breaking the ABI.
+constexpr size_t HEADER_REGION_SIZE = PAGE_2MB;
+
 thread_local char _g_monad_event_ring_error_buf[1024];
-static size_t const PAGE_2MB = 1UL << 21, HEADER_SIZE = PAGE_2MB;
 
 #define FORMAT_ERRC(...)                                                       \
     monad_format_err(                                                          \
@@ -41,6 +47,45 @@ static size_t const PAGE_2MB = 1UL << 21, HEADER_SIZE = PAGE_2MB;
         sizeof(_g_monad_event_ring_error_buf),                                 \
         &MONAD_SOURCE_LOCATION_CURRENT(),                                      \
         __VA_ARGS__)
+
+// Basic input validation of the event ring size structure
+static int validate_event_ring_size(
+    struct monad_event_ring_size const *const ring_size,
+    char const *const error_name)
+{
+    if (!stdc_has_single_bit(ring_size->descriptor_capacity) ||
+        ring_size->descriptor_capacity <
+            (1UL << MONAD_EVENT_MIN_DESCRIPTORS_SHIFT) ||
+        ring_size->descriptor_capacity >
+            (1UL << MONAD_EVENT_MAX_DESCRIPTORS_SHIFT)) {
+        return FORMAT_ERRC(
+            EINVAL,
+            "event ring file `%s` descriptor size %lu is invalid",
+            error_name,
+            ring_size->descriptor_capacity);
+    }
+    if (!stdc_has_single_bit(ring_size->payload_buf_size) ||
+        ring_size->payload_buf_size <
+            (1UL << MONAD_EVENT_MIN_PAYLOAD_BUF_SHIFT) ||
+        ring_size->payload_buf_size >
+            (1UL << MONAD_EVENT_MAX_PAYLOAD_BUF_SHIFT)) {
+        return FORMAT_ERRC(
+            EINVAL,
+            "event ring file `%s` payload buffer size %lu is invalid",
+            error_name,
+            ring_size->payload_buf_size);
+    }
+    if ((ring_size->context_area_size > 0 &&
+         !stdc_has_single_bit(ring_size->context_area_size)) ||
+        ring_size->context_area_size > MONAD_EVENT_MAX_CONTEXT_AREA_SIZE) {
+        return FORMAT_ERRC(
+            EINVAL,
+            "event ring file `%s` context area size %lu is invalid",
+            error_name,
+            ring_size->context_area_size);
+    }
+    return 0;
+}
 
 int monad_event_ring_init_size(
     uint8_t const descriptors_shift, uint8_t const payload_buf_shift,
@@ -86,7 +131,7 @@ int monad_event_ring_init_size(
 size_t monad_event_ring_calc_storage(
     struct monad_event_ring_size const *const ring_size)
 {
-    return PAGE_2MB +
+    return HEADER_REGION_SIZE +
            ring_size->descriptor_capacity *
                sizeof(struct monad_event_descriptor) +
            ring_size->payload_buf_size + ring_size->context_area_size;
@@ -110,6 +155,7 @@ int monad_event_ring_init_file(
     uint8_t const (*const schema_hash)[32], int const ring_fd,
     off_t const ring_offset, char const *error_name)
 {
+    int rc;
     size_t ring_bytes;
     void *map_base;
     struct stat ring_stat;
@@ -121,39 +167,25 @@ int monad_event_ring_init_file(
         error_name = namebuf;
     }
 
-    // Do some basic input validation if they didn't obtain their size object
-    // via a call to monad_event_ring_init_size
-    if (!stdc_has_single_bit(ring_size->descriptor_capacity) ||
-        ring_size->descriptor_capacity <
-            (1UL << MONAD_EVENT_MIN_DESCRIPTORS_SHIFT) ||
-        ring_size->descriptor_capacity >
-            (1UL << MONAD_EVENT_MAX_DESCRIPTORS_SHIFT)) {
-        return FORMAT_ERRC(
-            EINVAL,
-            "event ring file `%s` descriptor size %lu is invalid; use "
-            "monad_event_ring_init_size",
-            error_name,
-            ring_size->descriptor_capacity);
+    rc = validate_event_ring_size(ring_size, error_name);
+    if (rc != 0) {
+        return rc;
     }
-    if (!stdc_has_single_bit(ring_size->payload_buf_size) ||
-        ring_size->payload_buf_size <
-            (1UL << MONAD_EVENT_MIN_PAYLOAD_BUF_SHIFT) ||
-        ring_size->payload_buf_size >
-            (1UL << MONAD_EVENT_MAX_PAYLOAD_BUF_SHIFT)) {
+    // The caller is responsible for ensuring that the file range
+    // [ring_offset, ring_offset+ring_bytes) is valid. We check that they've
+    // done this, because we will mmap this range and need to be sure we won't
+    // get SIGBUS upon access.
+    ring_bytes = monad_event_ring_calc_storage(ring_size);
+    if (fstat(ring_fd, &ring_stat) == -1) {
         return FORMAT_ERRC(
-            EINVAL,
-            "event ring file `%s` descriptor size %lu is invalid; use "
-            "monad_event_ring_init_size",
-            error_name,
-            ring_size->payload_buf_size);
+            errno, "unable to fstat event ring file `%s`", error_name);
     }
-    if (ring_size->context_area_size > 0 &&
-        !stdc_has_single_bit(ring_size->context_area_size)) {
+    if (ring_offset + (off_t)ring_bytes > ring_stat.st_size) {
         return FORMAT_ERRC(
-            EINVAL,
-            "event ring file `%s` context area size %lu is invalid",
+            ENOSPC,
+            "event ring file `%s` cannot hold total event ring size %lu",
             error_name,
-            ring_size->context_area_size);
+            ring_bytes);
     }
     if (content_type == MONAD_EVENT_CONTENT_TYPE_NONE ||
         content_type >= MONAD_EVENT_CONTENT_TYPE_COUNT) {
@@ -169,23 +201,6 @@ int monad_event_ring_init_file(
     memcpy(header.schema_hash, schema_hash, sizeof header.schema_hash);
     header.content_type = content_type;
     header.size = *ring_size;
-    ring_bytes = monad_event_ring_calc_storage(ring_size);
-
-    // The caller is responsible for ensuring that the file range
-    // [ring_offset, ring_offset+ring_bytes) is valid. We check that they've
-    // done this, because we will mmap this range and need to be sure we won't
-    // get SIGBUS upon access.
-    if (fstat(ring_fd, &ring_stat) == -1) {
-        return FORMAT_ERRC(
-            errno, "unable to fstat event ring file `%s`", error_name);
-    }
-    if (ring_offset + (off_t)ring_bytes > ring_stat.st_size) {
-        return FORMAT_ERRC(
-            ENOSPC,
-            "event ring file `%s` cannot hold total event ring size %lu",
-            error_name,
-            ring_bytes);
-    }
 
     // Map the file and copy the header into it
     map_base =
@@ -196,12 +211,19 @@ int monad_event_ring_init_file(
     }
     memcpy(map_base, &header, sizeof header);
 
+    // To ensure future ABI extensions to the event ring header read as zero
+    // when opening old files, zero out the rest of the page it lives in.
+    memset(
+        (uint8_t *)map_base + sizeof header,
+        0,
+        HEADER_REGION_SIZE - sizeof header);
+
     // To function correctly, all event descriptor's sequence number fields
     // need to be zero'ed out when creating a new event ring. Because we may
     // be given a file region that's already been used, memset the whole
     // descriptor region to zero.
     memset(
-        (uint8_t *)map_base + HEADER_SIZE,
+        (uint8_t *)map_base + HEADER_REGION_SIZE,
         0,
         sizeof(struct monad_event_descriptor) *
             header.size.descriptor_capacity);
@@ -217,8 +239,10 @@ int monad_event_ring_mmap(
 {
     int rc;
     char namebuf[64];
+    size_t ring_bytes;
+    struct stat ring_stat;
     struct monad_event_ring_header const *header;
-    off_t const base_ring_data_offset = ring_offset + (off_t)PAGE_2MB;
+    off_t const base_ring_data_offset = ring_offset + (off_t)HEADER_REGION_SIZE;
 
     if (event_ring == nullptr) {
         return FORMAT_ERRC(EFAULT, "event_ring cannot be nullptr");
@@ -227,11 +251,21 @@ int monad_event_ring_mmap(
         snprintf(namebuf, sizeof namebuf, "fd:%d [%d]", ring_fd, getpid());
         error_name = namebuf;
     }
-
+    memset(event_ring, 0, sizeof *event_ring);
+    if (fstat(ring_fd, &ring_stat) == -1) {
+        return FORMAT_ERRC(
+            errno, "unable to fstat event ring file `%s`", error_name);
+    }
+    if (ring_offset + (off_t)HEADER_REGION_SIZE > ring_stat.st_size) {
+        return FORMAT_ERRC(
+            EPROTO,
+            "file `%s` does not contain an event ring header",
+            error_name);
+    }
     event_ring->mmap_prot = mmap_prot;
     header = event_ring->header = mmap(
         nullptr,
-        HEADER_SIZE,
+        HEADER_REGION_SIZE,
         mmap_prot,
         MAP_SHARED | mmap_extra_flags,
         ring_fd,
@@ -244,7 +278,7 @@ int monad_event_ring_mmap(
             header->magic,
             MONAD_EVENT_RING_HEADER_VERSION,
             sizeof header->magic) != 0) {
-        return FORMAT_ERRC(
+        rc = FORMAT_ERRC(
             EPROTO,
             "event ring file `%s` has version %.*s, library has version %.*s",
             error_name,
@@ -252,7 +286,26 @@ int monad_event_ring_mmap(
             header->magic,
             (int)sizeof header->magic,
             MONAD_EVENT_RING_HEADER_VERSION);
+        goto Error;
     }
+
+    // Check that the header describes a file of the appropriate size; this
+    // will stop us from calling mmap(2) with invalid bytes ranges if the
+    // header is malformed
+    rc = validate_event_ring_size(&header->size, error_name);
+    if (rc != 0) {
+        goto Error;
+    }
+    ring_bytes = monad_event_ring_calc_storage(&header->size);
+    if (ring_offset + (off_t)ring_bytes > ring_stat.st_size) {
+        rc = FORMAT_ERRC(
+            ENOSPC,
+            "event ring file `%s` cannot hold total event ring size %lu",
+            error_name,
+            ring_bytes);
+        goto Error;
+    }
+
     event_ring->desc_capacity_mask =
         event_ring->header->size.descriptor_capacity - 1;
     event_ring->payload_buf_mask =
@@ -375,7 +428,7 @@ void monad_event_ring_unmap(struct monad_event_ring *const event_ring)
         if (event_ring->context_area) {
             munmap(event_ring->context_area, header->size.context_area_size);
         }
-        munmap((void *)header, HEADER_SIZE);
+        munmap((void *)header, HEADER_REGION_SIZE);
     }
     memset(event_ring, 0, sizeof *event_ring);
 }

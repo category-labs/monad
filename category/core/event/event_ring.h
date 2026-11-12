@@ -186,6 +186,8 @@ constexpr uint8_t MONAD_EVENT_MAX_DESCRIPTORS_SHIFT = 32;
 constexpr uint8_t MONAD_EVENT_MIN_PAYLOAD_BUF_SHIFT = 27;
 constexpr uint8_t MONAD_EVENT_MAX_PAYLOAD_BUF_SHIFT = 40;
 
+constexpr size_t MONAD_EVENT_MAX_CONTEXT_AREA_SIZE = 1UL << 37;
+
 /// Sliding window increment, see `event_recorder.md` documentation
 constexpr uint64_t MONAD_EVENT_WINDOW_INCR = 1UL << 24;
 

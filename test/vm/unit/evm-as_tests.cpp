@@ -2108,3 +2108,30 @@ TEST(EvmAs, Eip8024Gating)
         EXPECT_FALSE(evm_as::validate(eb));
     }
 }
+
+TEST(EvmAs, Assemble)
+{
+    auto eb = evm_as::latest();
+    eb.push(1).push(2).add().stop();
+
+    std::vector<uint8_t> expected;
+    evm_as::compile(eb, expected);
+    ASSERT_EQ(evm_as::assemble(eb), expected);
+}
+
+TEST(EvmAs, AssembleUnchecked)
+{
+    auto eb = evm_as::latest();
+    eb.add();
+    ASSERT_FALSE(evm_as::validate(eb));
+    ASSERT_EQ(
+        evm_as::assemble_unchecked(eb),
+        std::vector<uint8_t>{compiler::EvmOpCode::ADD});
+}
+
+TEST(EvmAsDeathTest, AssembleInvalid)
+{
+    auto eb = evm_as::latest();
+    eb.add();
+    EXPECT_DEATH(evm_as::assemble(eb), "evm_as::assemble: invalid program");
+}

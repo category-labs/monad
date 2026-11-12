@@ -51,8 +51,7 @@ PageCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
 {
     UpdateList account_updates;
     for (auto const &[addr, delta] : state_deltas) {
-        UpdateList storage_updates;
-        std::optional<byte_string_view> value;
+        UpdateList storage_updates; std::optional<byte_string_view> value;
         auto const &account = delta.account.second;
         proposal_post_state_.accounts[addr] = account;
         // reincarnated account starts with empty storage.

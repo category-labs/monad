@@ -40,6 +40,9 @@
 #include <optional>
 #include <utility>
 
+#include <chrono>
+#include <iostream>
+
 MONAD_NAMESPACE_BEGIN
 
 namespace
@@ -190,10 +193,15 @@ evmc::Result execute_create_message(
 {
     static_assert(traits::evm_rev() >= MONAD_ETH_SPURIOUS_DRAGON);
 
+    auto start_time1 = std::chrono::steady_clock::now();
     MONAD_ASSERT(msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2);
 
     auto &call_tracer = host->get_call_tracer();
     call_tracer.on_enter(msg);
+
+    auto const end_time1 = std::chrono::steady_clock::now();
+    std::cout << "pre -3 execute_create_message ns = " << (end_time1 - start_time1).count() << std::endl;
+    auto start_time2M3 = std::chrono::steady_clock::now();
 
     if (MONAD_UNLIKELY(!sender_has_balance(state, msg))) {
         /**
@@ -217,6 +225,10 @@ evmc::Result execute_create_message(
         return result;
     }
 
+    auto const end_time2M3 = std::chrono::steady_clock::now();
+    std::cout << "pre -2 execute_create_message ns = " << (end_time2M3 - start_time2M3).count() << std::endl;
+    auto start_time2M2 = std::chrono::steady_clock::now();
+
     auto const nonce = state.get_nonce(msg.sender);
     if (nonce == UINT64_MAX) {
         // this overflow can only happen for msg.depth != 0
@@ -225,6 +237,10 @@ evmc::Result execute_create_message(
         return result;
     }
     state.set_nonce(msg.sender, nonce + 1);
+
+    auto const end_time2M2 = std::chrono::steady_clock::now();
+    std::cout << "pre -1 execute_create_message ns = " << (end_time2M2 - start_time2M2).count() << std::endl;
+    auto start_time2M1 = std::chrono::steady_clock::now();
 
     Address const contract_address = [&] {
         if (msg.kind == EVMC_CREATE) {
@@ -237,7 +253,15 @@ evmc::Result execute_create_message(
         }
     }();
 
+    auto const end_time2M1 = std::chrono::steady_clock::now();
+    std::cout << "pre 0 execute_create_message ns = " << (end_time2M1 - start_time2M1).count() << std::endl;
+    auto start_time21 = std::chrono::steady_clock::now();
+
     state.access_account(contract_address);
+
+    auto const end_time21 = std::chrono::steady_clock::now();
+    std::cout << "pre 1 execute_create_message ns = " << (end_time21 - start_time21).count() << std::endl;
+    auto start_time20 = std::chrono::steady_clock::now();
 
     // Prevent overwriting contracts - EIP-684
     if (state.account_has_code_or_nonce(contract_address)) {
@@ -248,7 +272,15 @@ evmc::Result execute_create_message(
 
     state.push();
 
+    auto const end_time20 = std::chrono::steady_clock::now();
+    std::cout << "pre 2 execute_create_message ns = " << (end_time20 - start_time20).count() << std::endl;
+    auto start_time2 = std::chrono::steady_clock::now();
+
     state.create_contract(contract_address);
+
+    auto const end_time2 = std::chrono::steady_clock::now();
+    std::cout << "mid execute_create_message ns = " << (end_time2 - start_time2).count() << std::endl;
+    auto start_time3 = std::chrono::steady_clock::now();
 
     // EIP-161
     state.set_nonce(contract_address, 1);
@@ -305,6 +337,8 @@ evmc::Result execute_create_message(
 
     call_tracer.on_exit(result);
 
+    auto const end_time3 = std::chrono::steady_clock::now();
+    std::cout << "fin execute_create_message ns = " << (end_time3 - start_time3).count() << std::endl;
     return result;
 }
 
@@ -321,10 +355,15 @@ evmc::Result execute_call_message(
     auto &call_tracer = host->get_call_tracer();
     call_tracer.on_enter(msg);
 
+    //auto start_time = std::chrono::steady_clock::now();
     if (auto result = pre_call<traits>(*host, msg, state); result.has_value()) {
         call_tracer.on_exit(result.value());
         return std::move(result.value());
     }
+    //auto const pre_call_time = std::chrono::steady_clock::now();
+    //std::cout << "pre_call_time = " << (pre_call_time - start_time).count() << std::endl;
+
+    //start_time = std::chrono::steady_clock::now();
 
     evmc::Result result;
     if (auto maybe_result = check_call_precompile<traits>(
@@ -338,6 +377,10 @@ evmc::Result execute_call_message(
         trace::on_read_code(host->state_tracer_, hash, code->intercode());
         result = state.vm().execute<traits>(*host, &msg, hash, code);
     }
+    //auto const execute_time = std::chrono::steady_clock::now();
+    //std::cout << "execute_time = " << (execute_time - start_time).count() << std::endl;
+
+    //start_time = std::chrono::steady_clock::now();
 
     if (msg.depth == 0) {
         if (revert_transaction<traits>(
@@ -355,6 +398,10 @@ evmc::Result execute_call_message(
 
     post_call(*host, state, result);
     call_tracer.on_exit(result);
+
+    //auto const post_time = std::chrono::steady_clock::now();
+    //std::cout << "post_time = " << (post_time - start_time).count() << std::endl;
+
     return result;
 }
 

@@ -13,6 +13,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <chrono>
+#include <iostream>
+
 #include <category/core/address.hpp>
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
@@ -109,6 +112,7 @@ std::optional<Account> TrieDb::read_account(Address const &addr)
     if (status == CacheReadStatus::Hit) {
         return result;
     }
+    auto start_time = std::chrono::steady_clock::now();
     auto const res = db_.find(
         curr_root_,
         concat(
@@ -127,6 +131,27 @@ std::optional<Account> TrieDb::read_account(Address const &addr)
     }
     if (cache_ && status == CacheReadStatus::MissResolved) {
         cache_->insert_account(addr, result);
+    }
+    auto end_time = std::chrono::steady_clock::now();
+    {
+        static uint64_t best_time;
+        static uint64_t worst_time;
+        static uint64_t total_time;
+        static uint64_t total_count;
+        static std::mutex time_mtx;
+        std::lock_guard<std::mutex> lock(time_mtx);
+        uint64_t t = static_cast<uint64_t>((end_time - start_time).count());
+        best_time = std::min(best_time, t);
+        worst_time = std::max(worst_time, t);
+        total_time += t;
+        total_count += 1;
+        if (total_count % 1000 == 0) {
+            uint64_t avg = total_time / total_count;
+            std::cout <<
+                "account avg_time ns = " << avg << ", "
+                "account best_time ns = " << best_time << ", "
+                "account worst_time ns = " << worst_time << std::endl;
+        }
     }
     return result;
 }
@@ -170,6 +195,7 @@ storage_page_t TrieDb::load_storage_page(
     Address const &addr, Incarnation const incarnation,
     bytes32_t const &lookup_key, CacheReadStatus const status)
 {
+    auto start_time = std::chrono::steady_clock::now();
     auto const res = db_.find(
         curr_root_,
         concat(
@@ -191,11 +217,33 @@ storage_page_t TrieDb::load_storage_page(
     if (cache_ && status == CacheReadStatus::MissResolved) {
         cache_->insert_storage_page(addr, incarnation, lookup_key, page);
     }
+    auto end_time = std::chrono::steady_clock::now();
+    {
+        static uint64_t best_time;
+        static uint64_t worst_time;
+        static uint64_t total_time;
+        static uint64_t total_count;
+        static std::mutex time_mtx;
+        std::lock_guard<std::mutex> lock(time_mtx);
+        uint64_t t = static_cast<uint64_t>((end_time - start_time).count());
+        best_time = std::min(best_time, t);
+        worst_time = std::max(worst_time, t);
+        total_time += t;
+        total_count += 1;
+        if (total_count % 1000 == 0) {
+            uint64_t avg = total_time / total_count;
+            std::cout <<
+                "page load avg_time ns = " << avg << ", "
+                "page load best_time ns = " << best_time << ", "
+                "page load worst_time ns = " << worst_time << std::endl;
+        }
+    }
     return page;
 }
 
 vm::SharedIntercode TrieDb::read_code(bytes32_t const &code_hash)
 {
+    auto start_time = std::chrono::steady_clock::now();
     // TODO read intercode object
     auto const res = db_.find(
         curr_root_,
@@ -206,6 +254,12 @@ vm::SharedIntercode TrieDb::read_code(bytes32_t const &code_hash)
         block_number_);
     if (res.has_error()) {
         return vm::make_shared_intercode({});
+    }
+    auto end_time = std::chrono::steady_clock::now();
+    {
+        uint64_t t = static_cast<uint64_t>((end_time - start_time).count());
+        size_t sz = res.value().node->value().size();
+        std::cout << "code size " << sz << " time ns = " << t << std::endl;
     }
     return vm::make_shared_intercode(res.value().node->value());
 }

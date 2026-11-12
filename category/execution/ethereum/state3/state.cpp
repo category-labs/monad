@@ -38,6 +38,8 @@
 #include <immer/map_transient.hpp>
 #include <immer/vector.hpp>
 
+#include <iostream>
+
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>

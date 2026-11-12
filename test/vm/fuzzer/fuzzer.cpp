@@ -436,13 +436,17 @@ static evmc_status_code fuzz_iteration(
         spec_state->test_state.trie_db.state_root() ==
         monad_state->test_state.trie_db.state_root());
 
-    TransitionState spec_tstate{spec_state};
-    auto const spec_result =
-        transition<traits>(spec_tstate, msg, block_hash_buffer, block_header);
-
+    auto const start = std::chrono::steady_clock::now();
     TransitionState monad_tstate{monad_state};
     auto const monad_result =
         transition<traits>(monad_tstate, msg, block_hash_buffer, block_header);
+    auto const end = std::chrono::steady_clock::now();
+
+    std::cout << "monad time ns = " << (start - end).count() << std::endl;
+
+    TransitionState spec_tstate{spec_state};
+    auto const spec_result =
+        transition<traits>(spec_tstate, msg, block_hash_buffer, block_header);
 
     // Ideally we will verify out-of-gas error strictly when testing the
     // interpreter. However the monad-ml evm does not agree on specific error
@@ -663,8 +667,25 @@ static void do_run(
         }
 
         for (;;) {
+            std::vector<uint8_t> contract{
+                JUMPDEST,
+                PUSH0,
+                PUSH0,
+                PUSH0,
+                PUSH0,
+                PUSH0,
+                PUSH0,
+                PUSH1, 0xff, // gas
+                CALL,
+                POP,
+                PUSH0,
+                JUMP
+            };
+
+#if 0
             auto const contract = monad::vm::fuzzing::generate_program<traits>(
                 focus, engine, known_addresses);
+#endif
 
             auto const a = deploy_contracts(
                 spec_state, monad_state, contract, block_counter.next());
@@ -694,6 +715,7 @@ static void do_run(
                     msg_memory.get(),
                     memory_pool.alloc_capacity());
             }();
+            msg->gas = 150000000;
             ++total_messages;
 
             auto const block_header =

@@ -15,6 +15,9 @@
 
 #pragma once
 
+#include <chrono>
+#include <iostream>
+
 #include <category/core/int.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/opcodes.hpp>
@@ -1682,6 +1685,7 @@ namespace monad::vm::interpreter
         uint256_t const *stack_bottom, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr)
     {
+        //auto start_time = std::chrono::steady_clock::now();
         checked_runtime_call<CALL, traits>(
             runtime::call<traits>,
             ctx,
@@ -1690,6 +1694,8 @@ namespace monad::vm::interpreter
             stack_top,
             gas_remaining,
             instr_ptr);
+        //auto end_time = std::chrono::steady_clock::now();
+        //std::cout << "interp call time ns = " << (end_time - start_time).count() << std::endl;
 
         MONAD_VM_NEXT(CALL);
     }

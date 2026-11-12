@@ -116,6 +116,15 @@ using CalldataGenerator =
 
 using BenchTestStateRef = monad::test::TestStateRef<true>;
 
+using PreSlots = std::vector<std::tuple<uint256_t, uint256_t>>;
+using PreCodes = std::vector<std::tuple<Address, std::vector<uint8_t>>>;
+
+struct PreState
+{
+    PreSlots intern_state;
+    PreCodes extern_code;
+};
+
 struct Benchmark
 {
     std::string title;
@@ -125,6 +134,7 @@ struct Benchmark
     EvmBuilder<traits> baseline_seq;
     std::vector<EvmBuilder<traits>> subject_seqs;
     std::optional<std::vector<EvmBuilder<traits>>> effect_free_subject_seqs;
+    PreState pre_state;
     size_t sequence_count;
     Assembler assemble;
     CalldataGenerator calldata_generate;
@@ -333,7 +343,9 @@ print_results(std::vector<BenchmarkResult> const &results, OutputFormat format)
 
 static bytes32_t init_execute_state(
     Address const &code_address, Address const &sender_address,
-    std::vector<uint8_t> const &bytecode, BenchTestStateRef test_state)
+    std::vector<uint8_t> const &bytecode,
+    PreState const &pre_state,
+    BenchTestStateRef test_state)
 {
     byte_string_view const raw_code{bytecode.data(), bytecode.size()};
     auto const code_hash = to_bytes(keccak256(raw_code));
@@ -351,10 +363,34 @@ static bytes32_t init_execute_state(
         .nonce = 1,
     };
 
-    StateDelta code_delta{{std::nullopt, code_account}};
     StateDelta sender_delta{{std::nullopt, sender_account}};
+
+    StorageDeltas storage;
+    for (auto const &[k, v] : pre_state.intern_state) {
+        bytes32_t ks;
+        store_be(ks.bytes, k);
+        bytes32_t vs;
+        store_be(vs.bytes, v);
+        StorageDeltas::const_accessor ac;
+        storage.emplace(ac, ks, std::make_pair(bytes32_t{}, vs));
+    }
+    StateDelta code_delta{{std::nullopt, code_account}, std::move(storage)};
+
     StateDeltas deltas{
         {code_address, code_delta}, {sender_address, sender_delta}};
+    for (auto const &[a, c] : pre_state.extern_code) {
+        byte_string_view const raw_code{c.data(), c.size()};
+        auto const code_hash = to_bytes(keccak256(raw_code));
+        Account acct{
+            .balance = BALANCE,
+            .code_hash = code_hash,
+            .nonce = 1,
+        };
+        StateDeltas::const_accessor ac;
+        deltas.emplace(ac, a, std::make_pair(std::nullopt, std::make_optional(acct)));
+        auto icode = make_shared_intercode(raw_code);
+        code.emplace(code_hash, std::move(icode));
+    }
 
     monad::test::commit_simple(
         test_state->trie_db,
@@ -369,34 +405,21 @@ static bytes32_t init_execute_state(
 static double execute_iteration(
     vm::VM &vm, MemoryPool &memory_pool, Address const &code_address,
     std::vector<uint8_t> const &bytecode,
-    vm::test::KernelCalldata const &calldata)
+    vm::test::KernelCalldata const &calldata, PreState const &pre_state)
 {
     auto const json_state = monad::test::JsonState{};
     auto const test_state = json_state.make_test_state<true>();
 
-    // Nested calls are not part of the measurement: the state's VM returns
-    // success immediately, while the top-level frame runs on `vm`.
-    vm::VM monad_vm;
-    monad_vm.debug_set_execute_override(
-        [](auto const *const,
-           auto *const,
-           auto const,
-           auto const *msg,
-           auto const *,
-           auto const) -> evmc::Result {
-            return evmc::Result{EVMC_SUCCESS, msg->gas};
-        });
-
     Address const sender_address{200};
 
     auto const code_hash =
-        init_execute_state(code_address, sender_address, bytecode, test_state);
+        init_execute_state(code_address, sender_address, bytecode, pre_state, test_state);
     auto const icode =
         vm.try_insert_varcode_raw(code_hash, bytecode)->intercode();
     auto const vcode =
         vm::test::prime_varcode_cache<traits>(vm, code_hash, icode);
 
-    BlockState block_state{test_state->trie_db, monad_vm};
+    BlockState block_state{test_state->trie_db, vm};
     monad::State state{block_state, Incarnation{2, 1}};
 
     monad::test::TestBlockHashBuffer block_hash_buffer{};
@@ -436,6 +459,21 @@ static double execute_iteration(
         .memory_capacity = memory_pool.alloc_capacity(),
     };
 
+    // Pull pre-state into the state cache:
+    (void)state.get_code(code_address);
+    (void)state.get_code(sender_address);
+    for (auto const &[k, v] : pre_state.intern_state) {
+        bytes32_t ks;
+        store_be(ks.bytes, k);
+        bytes32_t vs;
+        store_be(vs.bytes, v);
+        (void)state.get_storage(code_address, ks);
+        (void)state.set_transient_storage(code_address, ks, vs);
+    }
+    for (auto const &[a, _] : pre_state.extern_code) {
+        (void)state.get_code(a);
+    }
+
     auto const start = std::chrono::steady_clock::now();
 
     auto const result = vm.execute<traits>(host, &msg, code_hash, vcode);
@@ -452,24 +490,25 @@ static std::pair<double, double> execute_against_base(
     std::vector<uint8_t> const &base_bytecode,
     vm::test::KernelCalldata const &base_calldata, Address const &code_address,
     std::vector<uint8_t> const &bytecode,
-    vm::test::KernelCalldata const &calldata, size_t iteration_count)
+    vm::test::KernelCalldata const &calldata, size_t iteration_count,
+    PreState const &pre_state)
 {
     for (uint32_t i = 0; i < (iteration_count >> 4) + 1; ++i) {
         // warmup
         (void)execute_iteration(
-            vm, memory_pool, base_code_address, base_bytecode, base_calldata);
+            vm, memory_pool, base_code_address, base_bytecode, base_calldata, pre_state);
         (void)execute_iteration(
-            vm, memory_pool, code_address, bytecode, calldata);
+            vm, memory_pool, code_address, bytecode, calldata, pre_state);
     }
 
     double base_best = std::numeric_limits<double>::max();
     double best = std::numeric_limits<double>::max();
     for (size_t i = 0; i < iteration_count; ++i) {
         auto const base_t = execute_iteration(
-            vm, memory_pool, base_code_address, base_bytecode, base_calldata);
+            vm, memory_pool, base_code_address, base_bytecode, base_calldata, pre_state);
         base_best = std::min(base_t, base_best);
         auto const t = execute_iteration(
-            vm, memory_pool, code_address, bytecode, calldata);
+            vm, memory_pool, code_address, bytecode, calldata, pre_state);
         best = std::min(t, best);
     }
     return {base_best, best};
@@ -539,7 +578,8 @@ static std::optional<BenchmarkResult> run_implementation_benchmark(
             address_from_uint256(code_address),
             bytecode,
             calldata,
-            bench.iteration_count);
+            bench.iteration_count,
+            bench.pre_state);
 
         auto const stop = std::chrono::steady_clock::now();
 
@@ -639,6 +679,22 @@ static std::vector<EvmBuilder<traits>> const
         EvmBuilder<traits>{}.pop().push(0),
         EvmBuilder<traits>{}.pop().push(0)};
 
+static std::vector<EvmBuilder<traits>> const any_store_math_builders = {
+    EvmBuilder<traits>{}.mstore(),
+    EvmBuilder<traits>{}.tstore(),
+    EvmBuilder<traits>{}.sstore()};
+
+static std::vector<EvmBuilder<traits>> const any_store_load_math_builders = {
+    EvmBuilder<traits>{}.mstore().mload(),
+    EvmBuilder<traits>{}.tstore().tload(),
+    EvmBuilder<traits>{}.sstore().sload()};
+
+static std::vector<EvmBuilder<traits>> const
+    effect_free_any_store_load_math_builders = {
+        EvmBuilder<traits>{}.pop().swap1().pop(),
+        EvmBuilder<traits>{}.pop().swap1().pop(),
+        EvmBuilder<traits>{}.pop().swap1().pop()};
+
 static std::vector<EvmBuilder<traits>> operator*(
     std::vector<EvmBuilder<traits>> const &post, EvmBuilder<traits> const &pre)
 {
@@ -684,6 +740,7 @@ struct BenchmarkBuilderData
     std::vector<EvmBuilder<traits>> subject_seqs;
     std::optional<std::vector<EvmBuilder<traits>>> effect_free_subject_seqs =
         std::nullopt;
+    PreState pre_state = {{}, {}};
 };
 
 struct BenchmarkBuilder
@@ -700,7 +757,8 @@ struct BenchmarkBuilder
         , baseline_seq_{std::move(data.baseline_seq)}
         , subject_seqs_{std::move(data.subject_seqs)}
         , effect_free_subject_seqs_{std::move(data.effect_free_subject_seqs)}
-        , memory_pool_{100 * 1024} // arbitrary 100 kB alloc capacity
+        , pre_state_{std::move(data.pre_state)}
+        , memory_pool_{100 * 1024 * 1024} // 100 MB capacity
     {
     }
 
@@ -724,6 +782,7 @@ private:
     std::optional<EvmBuilder<traits>> baseline_seq_;
     std::vector<EvmBuilder<traits>> subject_seqs_;
     std::optional<std::vector<EvmBuilder<traits>>> effect_free_subject_seqs_;
+    PreState pre_state_;
     std::vector<uint8_t> calldata_;
     MemoryPool memory_pool_;
 };
@@ -738,8 +797,15 @@ BenchmarkBuilder &BenchmarkBuilder::run_throughput_benchmark()
     for (size_t i = 1; i < num_inputs_; ++i) {
         base_builder.pop();
     }
-    if (!num_inputs_ && has_output_) {
-        base_builder.push0();
+    if (num_inputs_ == 0) {
+        if (has_output_) {
+            base_builder.push0();
+        }
+    }
+    else {
+        if (!has_output_) {
+            base_builder.pop();
+        }
     }
 
     run_benchmark(
@@ -755,6 +821,7 @@ BenchmarkBuilder &BenchmarkBuilder::run_throughput_benchmark()
                                                       : std::move(base_builder),
             .subject_seqs = subject_seqs_,
             .effect_free_subject_seqs = effect_free_subject_seqs_,
+            .pre_state = pre_state_,
             .sequence_count = KB::get_sequence_repetition_count(
                 num_inputs_, calldata_.size()),
             .assemble =
@@ -801,6 +868,7 @@ BenchmarkBuilder &BenchmarkBuilder::run_latency_benchmark()
                                                       : std::move(base_builder),
             .subject_seqs = subject_seqs_,
             .effect_free_subject_seqs = effect_free_subject_seqs_,
+            .pre_state = pre_state_,
             .sequence_count = KB::get_sequence_repetition_count(
                 num_inputs_, calldata_.size()),
             .assemble =
@@ -866,12 +934,12 @@ int main(int argc, char **argv)
     BenchmarkBuilder(
         args,
         results,
-        {.title = "DUP2; MSTORE; MLOAD, constant input",
-         .num_inputs = 2,
+        {.title = "STORE; LOAD, constant input",
+         .num_inputs = 3,
          .has_output = true,
          .iteration_count = 100,
-         .subject_seqs = {KernelBuilder<traits>{}.dup2().mstore().mload()},
-         .effect_free_subject_seqs = {{KernelBuilder<traits>{}.pop()}}})
+         .subject_seqs = any_store_load_math_builders,
+         .effect_free_subject_seqs = effect_free_any_store_load_math_builders})
         .make_calldata([](size_t num_inputs) {
             auto const off = KernelBuilder<traits>::free_memory_start;
             std::vector<uint8_t> cd(10'000 * num_inputs * 32, 0);
@@ -886,18 +954,28 @@ int main(int argc, char **argv)
     BenchmarkBuilder(
         args,
         results,
-        {.title = "DUP2; MSTORE; MLOAD, increasing input",
-         .num_inputs = 2,
+        {.title = "STORE; LOAD, increasing input",
+         .num_inputs = 3,
          .has_output = true,
          .iteration_count = 100,
-         .subject_seqs = {KernelBuilder<traits>{}.dup2().mstore().mload()},
-         .effect_free_subject_seqs = {{KernelBuilder<traits>{}.pop()}}})
+         .subject_seqs = any_store_load_math_builders,
+         .effect_free_subject_seqs = effect_free_any_store_load_math_builders,
+         .pre_state = []{
+            PreSlots slots;
+            auto const off = KernelBuilder<traits>::free_memory_start;
+            auto const n = 10'000 * 3 * 32;
+            for (size_t i = 0; i < n; i += 3 * 32) {
+                slots.emplace_back(uint256_t{off + i}, uint256_t{1});
+            }
+            return PreState{std::move(slots), {}};
+         }()})
         .make_calldata([](size_t num_inputs) {
             auto const off = KernelBuilder<traits>::free_memory_start;
             std::vector<uint8_t> cd(10'000 * num_inputs * 32, 0);
-            for (size_t i = 0; i < cd.size(); i += 64) {
-                store_be(&cd[i], uint256_t{off + i * 2});
-                store_be(&cd[i + 32], uint256_t{off + i * 2});
+            for (size_t i = 0; i < cd.size(); i += num_inputs * 32) {
+                store_be(&cd[i], uint256_t{off + i});
+                store_be(&cd[i + 32], uint256_t{off + i});
+                store_be(&cd[i + 64], uint256_t{off + i});
             }
             return cd;
         })
@@ -923,6 +1001,82 @@ int main(int argc, char **argv)
         })
         .run_throughput_benchmark()
         .run_latency_benchmark();
+
+    BenchmarkBuilder(
+        args,
+        results,
+        {.title = "LOAD, increasing input",
+         .num_inputs = 1,
+         .has_output = true,
+         .iteration_count = 100,
+         .subject_seqs = any_load_math_builders,
+         .effect_free_subject_seqs = effect_free_any_load_math_builders,
+         .pre_state = []{
+            PreSlots slots;
+            auto const off = KernelBuilder<traits>::free_memory_start;
+            auto const n = 10'000 * 32;
+            for (size_t i = 0; i < n; i += 32) {
+                slots.emplace_back(uint256_t{off + i}, uint256_t{0});
+            }
+            return PreState{std::move(slots), {}};
+         }()})
+        .make_calldata([](size_t num_inputs) {
+            auto const off = KernelBuilder<traits>::free_memory_start;
+            std::vector<uint8_t> cd(10'000 * num_inputs * 32, 0);
+            for (size_t i = 0; i < cd.size(); i += 32) {
+                store_be(&cd[i], uint256_t{off + i});
+            }
+            return cd;
+        })
+        .run_throughput_benchmark()
+        .run_latency_benchmark();
+
+    BenchmarkBuilder(
+        args,
+        results,
+        {.title = "STORE, constant input",
+         .num_inputs = 2,
+         .has_output = false,
+         .iteration_count = 100,
+         .subject_seqs = any_store_math_builders})
+        .make_calldata([](size_t num_inputs) {
+            auto const off = KernelBuilder<traits>::free_memory_start;
+            std::vector<uint8_t> cd(10'000 * num_inputs * 32, 0);
+            for (size_t i = 0; i < cd.size(); i += 64) {
+                store_be(&cd[i], uint256_t{off});
+                store_be(&cd[i + 32], uint256_t{off});
+            }
+            return cd;
+        })
+        .run_throughput_benchmark();
+
+    BenchmarkBuilder(
+        args,
+        results,
+        {.title = "STORE, increasing input",
+         .num_inputs = 2,
+         .has_output = false,
+         .iteration_count = 100,
+         .subject_seqs = any_store_math_builders,
+         .pre_state = []{
+            PreSlots slots;
+            auto const off = KernelBuilder<traits>::free_memory_start;
+            auto const n = 10'000 * 2 * 32;
+            for (size_t i = 0; i < n; i += 64) {
+                slots.emplace_back(uint256_t{off + i}, uint256_t{0});
+            }
+            return PreState{std::move(slots), {}};
+         }()})
+        .make_calldata([](size_t num_inputs) {
+            auto const off = KernelBuilder<traits>::free_memory_start;
+            std::vector<uint8_t> cd(10'000 * num_inputs * 32, 0);
+            for (size_t i = 0; i < cd.size(); i += 64) {
+                store_be(&cd[i], uint256_t{off + i});
+                store_be(&cd[i + 32], uint256_t{off + i});
+            }
+            return cd;
+        })
+        .run_throughput_benchmark();
 
     BenchmarkBuilder(
         args,
@@ -1317,30 +1471,12 @@ int main(int argc, char **argv)
     BenchmarkBuilder(
         args,
         results,
-        {.title = "CREATE, constant input",
-         .num_inputs = 3,
-         .has_output = true,
-         .iteration_count = 100,
-         .subject_seqs = {KernelBuilder<traits>{}.create()}})
-        .make_calldata([](size_t num_inputs) {
-            std::vector<uint8_t> cd(10'000 * num_inputs * 32, 0);
-            for (size_t i = 0; i < cd.size(); i += 96) {
-                store_be(&cd[i], uint256_t{0}); // value
-                store_be(&cd[i + 32], uint256_t{32}); // offset
-                store_be(&cd[i + 64], uint256_t{32}); // size
-            }
-            return cd;
-        })
-        .run_throughput_benchmark();
-
-    BenchmarkBuilder(
-        args,
-        results,
         {.title = "CALL, constant input",
          .num_inputs = 7,
          .has_output = true,
          .iteration_count = 100,
-         .subject_seqs = {KernelBuilder<traits>{}.call()}})
+         .subject_seqs = {KernelBuilder<traits>{}.call()},
+         .effect_free_subject_seqs = {{KernelBuilder<traits>{}.pop().pop().pop().pop().pop().pop().pop().push(1)}}})
         .make_calldata([](size_t num_inputs) {
             std::vector<uint8_t> cd(10'000 * num_inputs * 32, 0);
             for (size_t i = 0; i < cd.size(); i += num_inputs * 32) {
@@ -1354,7 +1490,43 @@ int main(int argc, char **argv)
             }
             return cd;
         })
-        .run_throughput_benchmark();
+        .run_throughput_benchmark()
+        .run_latency_benchmark();
+
+    BenchmarkBuilder(
+        args,
+        results,
+        {.title = "CALL, increasing address",
+         .num_inputs = 7,
+         .has_output = true,
+         .iteration_count = 100,
+         .subject_seqs = {KernelBuilder<traits>{}.call()},
+         .effect_free_subject_seqs = {{KernelBuilder<traits>{}.pop().pop().pop().pop().pop().pop().pop().push(1)}},
+         .pre_state = []{
+            PreCodes codes;
+            auto const n = 10'000 * 7 * 32;
+            for (size_t i = 0; i < n; i += 7 * 32) {
+                std::vector<uint8_t> c;
+                compile(KernelBuilder<traits>{}.push(i), c);
+                codes.emplace_back(Address{5000 + i}, std::move(c));
+            }
+            return PreState{{}, std::move(codes)};
+         }()})
+        .make_calldata([](size_t num_inputs) {
+            std::vector<uint8_t> cd(10'000 * num_inputs * 32, 0);
+            for (size_t i = 0; i < cd.size(); i += num_inputs * 32) {
+                store_be(&cd[i], uint256_t{100'000}); // gas
+                store_be(&cd[i + 32], uint256_t{5000 + i}); // address
+                store_be(&cd[i + 64], uint256_t{0}); // value
+                store_be(&cd[i + 96], uint256_t{0}); // argsOffset
+                store_be(&cd[i + 128], uint256_t{64}); // argsSize
+                store_be(&cd[i + 160], uint256_t{64}); // retOffset
+                store_be(&cd[i + 192], uint256_t{32}); // retSize
+            }
+            return cd;
+        })
+        .run_throughput_benchmark()
+        .run_latency_benchmark();
 
     BenchmarkBuilder(
         args,

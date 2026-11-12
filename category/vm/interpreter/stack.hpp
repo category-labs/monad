@@ -41,7 +41,12 @@ namespace monad::vm::interpreter
         static constexpr auto info = compiler::opcode_table<traits>[Instr];
 
         if constexpr (info.min_gas > 0) {
-            gas_remaining -= info.min_gas;
+            if constexpr (Instr == monad::vm::compiler::CREATE) {
+                gas_remaining -= 423;
+            }
+            else {
+                gas_remaining -= info.min_gas;
+            }
 
             if (MONAD_UNLIKELY(gas_remaining < 0)) {
                 ctx.exit(OutOfGas);

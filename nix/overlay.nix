@@ -16,5 +16,5 @@
 # ZisK toolchains, also exported through the flake as overlays.default.
 final: prev: {
   riscv64-none-elf-toolchain = final.callPackage ./zisk/riscv64-none-elf-toolchain { };
-  zisk-rust-toolchain = final.callPackage ./zisk/rust-toolchain { };
+  zisk-rust-toolchain = final.callPackage ./zisk/rust-toolchain.nix { };
 }

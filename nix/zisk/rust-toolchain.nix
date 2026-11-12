@@ -26,7 +26,6 @@
   openssl,
   gmp,
   libffi,
-  writeText,
 }:
 
 let
@@ -63,18 +62,11 @@ stdenv.mkDerivation {
   dontConfigure = true;
   dontBuild = true;
 
-  # Normalize source paths and root-crate metadata through the wrapper.
-  setupHook = writeText "zisk-rust-toolchain-setup-hook" ''
-    export RUSTC_WRAPPER=@out@/bin/zisk-rustc-wrapper
-  '';
-
   installPhase = ''
     runHook preInstall
     mkdir -p $out
     cp -r bin lib $out/
     autoPatchelf $out/bin $out/lib/*.so* $out/lib/rustlib/x86_64-unknown-linux-gnu
-    # For builds that must not depend on their build directory; see the script.
-    install -m755 ${./rustc-wrapper.sh} $out/bin/zisk-rustc-wrapper
     runHook postInstall
   '';
 

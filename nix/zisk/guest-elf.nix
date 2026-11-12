@@ -40,6 +40,18 @@ stdenv.mkDerivation (finalAttrs: {
   dontStrip = true;
   dontPatchELF = true;
 
+  # The build directory reaches the ELF through panic locations and
+  # Cargo's crate metadata. Only the sandbox fixes it, so refuse to build
+  # anywhere else rather than produce a different ELF.
+  preBuild = ''
+    if [ "$NIX_BUILD_TOP" != /build ]; then
+      echo "The reference guest must be built in the Nix sandbox:" \
+        "the build directory is $NIX_BUILD_TOP, not /build." \
+        "Pass --option sandbox true --option sandbox-fallback false." >&2
+      exit 1
+    fi
+  '';
+
   buildPhase = ''
     runHook preBuild
     cd zkvm/zisk

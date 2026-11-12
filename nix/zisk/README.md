@@ -19,7 +19,7 @@ Build the reference ELF from a clean checkout with initialized submodules:
 
 ```shell
 git submodule update --init --recursive
-nix build '.?submodules=1#zisk-elf'
+nix build --option sandbox true --option sandbox-fallback false '.?submodules=1#zisk-elf'
 ls result/   # monad-zkvm-zisk, monad-zkvm-zisk.build.json
 ```
 
@@ -34,11 +34,16 @@ verifies this marker. The adjacent manifest records the source commit,
 toolchain and dependency paths, ZisK revision, build ID and ELF hash.
 Keep it with published artifacts and benchmark results.
 
+The build directory reaches the ELF through panic locations and Cargo's
+crate metadata. The Nix sandbox fixes it at `/build`, so the recipe fails
+outside the sandbox. The two options above make Nix report a missing
+sandbox itself instead of falling back to an unsandboxed build.
+
 Pinned inputs do not establish reproducibility on their own. Rebuild and
 let Nix compare the outputs:
 
 ```shell
-nix build --rebuild '.?submodules=1#zisk-elf'
+nix build --rebuild --option sandbox true --option sandbox-fallback false '.?submodules=1#zisk-elf'
 ```
 
 ## Development shell
@@ -56,11 +61,12 @@ Cargo drives the C++ build through CMake; `cargo-zisk` is not required.
 Cargo/CMake retain incremental artifacts. Cargo may download locked
 dependencies on the first build.
 
-Use `nix develop`, not `nix shell`: setup hooks configure the Rust wrapper,
-linker script and bindgen. The shell clears inherited host compiler flags,
+Use `nix develop`, not `nix shell`: setup hooks configure the linker
+script and bindgen. The shell clears inherited host compiler flags,
 global Rust flags and build stamps. Development ELFs default to
 `monad-zkvm;commit=none;build=none`; they do not undergo the reference
-identity check. The shell does not supply `ziskemu` or the prover.
+identity check, and they embed the checkout's path. The shell does not
+supply `ziskemu` or the prover.
 
 `build-env.nix` enables DMA and LTO for both paths. Override
 `MONAD_ZKVM_ZISK_DMA` or `MONAD_ZKVM_ZISK_LTO` to compare configurations.
@@ -99,14 +105,10 @@ nix build .#zisk-rust-toolchain
 ./result/bin/rustc --version
 ```
 
-`rust-toolchain/default.nix` pins ZisK Rust **4.1.0** by tag and archive
+`rust-toolchain.nix` pins ZisK Rust **4.1.0** by tag and archive
 hash, including the `riscv64ima-zisk-zkvm-elf` target libraries. Nix patches
 only host binaries. Evaluation checks that its major matches the pinned
 ZisK release's requirement.
-
-The `RUSTC_WRAPPER` normalizes build paths and root-crate metadata to avoid
-embedding temporary build-directory names. Its script documents the two
-transformations.
 
 ## Package layout
 

@@ -158,6 +158,15 @@ Result<Dtype> ScalarValidator::validate_fn<FineFn::Add>(
     return binop_fn(args);
 }
 
+// FAdd: Add's type
+template <>
+Result<Dtype> ScalarValidator::validate_fn<FineFn::FAdd>(
+    std::monostate const &,
+    std::array<Dtype, FnArity<FineFn::FAdd>> const &args)
+{
+    return binop_fn(args);
+}
+
 template <>
 Result<Dtype> ScalarValidator::validate_fn<FineFn::Sub>(
     std::monostate const &, std::array<Dtype, FnArity<FineFn::Sub>> const &args)

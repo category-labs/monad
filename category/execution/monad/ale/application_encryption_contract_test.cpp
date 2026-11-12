@@ -167,6 +167,107 @@ TEST_F(ApplicationEncryptionContractTest, seal_reads_destination_key)
         installed.assume_error(), ApplicationEncryptionError::NotImplemented);
 }
 
+TEST_F(
+    ApplicationEncryptionContractTest,
+    seal_message_dispatches_solidity_selector)
+{
+    AbiEncoder encoder;
+    encoder.add_uint(u64_be{DESTINATION_DOMAIN});
+    encoder.add_uint(u256_be{uint256_t{1} << 200});
+    encoder.add_bytes(byte_string{0xab});
+    auto const arguments = encoder.encode_final();
+
+    byte_string input{0x57, 0x60, 0xb0, 0x4f};
+    input += arguments;
+    byte_string_view remaining{input};
+    auto const [method, cost] =
+        ApplicationEncryptionContract::precompile_dispatch<
+            MonadTraits<MONAD_NEXT>>(remaining);
+
+    EXPECT_EQ(method, &ApplicationEncryptionContract::precompile_seal_message);
+    EXPECT_EQ(cost, 100);
+    EXPECT_EQ(remaining, byte_string_view{arguments});
+}
+
+TEST_F(
+    ApplicationEncryptionContractTest, seal_message_decodes_dynamic_plaintext)
+{
+    state.set_nonce(SPOKE_CA, 1);
+    state.set_storage(SPOKE_CA, DESTINATION_KEY_SLOT, DESTINATION_KEY);
+
+    for (size_t const size : {0uz, 1uz, 31uz, 32uz, 33uz, 65uz}) {
+        SCOPED_TRACE(size);
+        AbiEncoder encoder;
+        encoder.add_uint(u64_be{DESTINATION_DOMAIN});
+        encoder.add_uint(u256_be{uint256_t{1} << 200});
+        encoder.add_bytes(byte_string(size, 0xab));
+        auto const input = encoder.encode_final();
+
+        auto const result =
+            contract.precompile_seal_message(input, SPOKE_CA, {});
+        ASSERT_TRUE(result.has_error());
+        EXPECT_EQ(
+            result.assume_error(), ApplicationEncryptionError::NotImplemented);
+    }
+}
+
+TEST_F(
+    ApplicationEncryptionContractTest, seal_message_rejects_truncated_arguments)
+{
+    AbiEncoder encoder;
+    encoder.add_uint(u64_be{DESTINATION_DOMAIN});
+    encoder.add_uint(u256_be{uint256_t{1} << 200});
+    encoder.add_bytes(byte_string(33, 0xab));
+    auto const encoded = encoder.encode_final();
+
+    for (size_t size = 0; size < encoded.size(); ++size) {
+        SCOPED_TRACE(size);
+        auto const input = byte_string_view{encoded}.substr(0, size);
+        auto const result =
+            contract.precompile_seal_message(input, SPOKE_CA, {});
+        ASSERT_TRUE(result.has_error());
+        EXPECT_EQ(result.assume_error(), AbiDecodeError::InputTooShort);
+    }
+}
+
+TEST_F(ApplicationEncryptionContractTest, seal_message_rejects_nonzero_value)
+{
+    auto const result =
+        contract.precompile_seal_message({}, SPOKE_CA, bytes32_t{1});
+    ASSERT_TRUE(result.has_error());
+    EXPECT_EQ(result.assume_error(), ApplicationEncryptionError::ValueNonZero);
+}
+
+TEST_F(ApplicationEncryptionContractTest, seal_message_reads_destination_key)
+{
+    AbiEncoder encoder;
+    encoder.add_uint(u64_be{DESTINATION_DOMAIN});
+    encoder.add_uint(u256_be{uint256_t{1} << 200});
+    encoder.add_bytes(byte_string{0xab});
+    auto const input = encoder.encode_final();
+
+    auto const absent_spoke =
+        contract.precompile_seal_message(input, SPOKE_CA, {});
+    ASSERT_TRUE(absent_spoke.has_error());
+    EXPECT_EQ(
+        absent_spoke.assume_error(), ApplicationEncryptionError::SpokeNotFound);
+
+    state.set_nonce(SPOKE_CA, 1);
+    auto const absent_key =
+        contract.precompile_seal_message(input, SPOKE_CA, {});
+    ASSERT_TRUE(absent_key.has_error());
+    EXPECT_EQ(
+        absent_key.assume_error(),
+        ApplicationEncryptionError::DestinationKeyNotFound);
+
+    state.set_storage(SPOKE_CA, DESTINATION_KEY_SLOT, DESTINATION_KEY);
+    auto const installed =
+        contract.precompile_seal_message(input, SPOKE_CA, {});
+    ASSERT_TRUE(installed.has_error());
+    EXPECT_EQ(
+        installed.assume_error(), ApplicationEncryptionError::NotImplemented);
+}
+
 TEST_F(ApplicationEncryptionContractTest, unseal_decodes_dynamic_arguments)
 {
     for (auto const &[blob_size, ctx_size] : {

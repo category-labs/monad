@@ -26,6 +26,7 @@
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/host.hpp>
 #include <category/vm/runtime/allocator.hpp>
+#include <category/vm/runtime/engine_timer.hpp>
 #include <category/vm/runtime/types.hpp>
 #include <category/vm/vm.hpp>
 
@@ -78,6 +79,7 @@ namespace monad::vm
         auto *const prev_rt_ctx = host.set_runtime_context(&rt_ctx);
 
         auto result = execute_raw<traits>(rt_ctx, code_hash, vcode);
+        stats_.event_engine_time(rt_ctx.engine_timer);
 
         rt_ctx.return_to<traits>(prev_rt_ctx);
 
@@ -108,6 +110,7 @@ namespace monad::vm
         auto *const prev_rt_ctx = host.set_runtime_context(&rt_ctx);
 
         auto result = execute_bytecode_raw<traits>(rt_ctx, code);
+        stats_.event_engine_time(rt_ctx.engine_timer);
 
         rt_ctx.return_to<traits>(prev_rt_ctx);
 
@@ -204,6 +207,8 @@ namespace monad::vm
         stats_.event_execute_bytecode();
 
         auto const stack_ptr = stack_allocator_.allocate();
+        runtime::EngineTimer::Scope const timer{
+            &rt_ctx.engine_timer, runtime::EngineTimer::Engine};
         interpreter::execute<traits>(rt_ctx, Intercode{code}, stack_ptr.get());
 
         return rt_ctx.copy_to_result<traits>();
@@ -218,6 +223,8 @@ namespace monad::vm
         stats_.event_execute_intercode();
 
         auto const stack_ptr = stack_allocator_.allocate();
+        runtime::EngineTimer::Scope const timer{
+            &rt_ctx.engine_timer, runtime::EngineTimer::Engine};
         interpreter::execute<traits>(rt_ctx, *icode, stack_ptr.get());
 
         return rt_ctx.copy_to_result<traits>();
@@ -232,6 +239,8 @@ namespace monad::vm
         stats_.event_execute_native_entrypoint();
 
         auto const stack_ptr = stack_allocator_.allocate();
+        runtime::EngineTimer::Scope const timer{
+            &rt_ctx.engine_timer, runtime::EngineTimer::Engine};
         entry(&rt_ctx, stack_ptr.get());
 
         return rt_ctx.copy_to_result<traits>();

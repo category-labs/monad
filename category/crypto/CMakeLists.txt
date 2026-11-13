@@ -37,16 +37,13 @@ endif()
 target_include_directories(monad_crypto PRIVATE "${THIRD_PARTY_DIR}/openssl")
 target_sources(monad_crypto PRIVATE "keccak_impl.S")
 
-# Precompiles vendored from silkpre: SHA-256, RIPEMD-160, BLAKE2F, ECRECOVER,
-# and bn128 bn_add, bn_mul, snarkv.
+# Precompiles vendored from silkpre: SHA-256, RIPEMD-160, BLAKE2F, ECRECOVER.
 # The sources stay under third_party/ with their LICENSE and NOTICE
 set(SILKPRE_VENDOR_DIR "${THIRD_PARTY_DIR}/silkpre_vendor/src")
 
 target_sources(monad_crypto PRIVATE
   "${SILKPRE_VENDOR_DIR}/category/crypto/silkpre_vendor/blake2b.c"
   "${SILKPRE_VENDOR_DIR}/category/crypto/silkpre_vendor/blake2b.h"
-  "${SILKPRE_VENDOR_DIR}/category/crypto/silkpre_vendor/bn128.cpp"
-  "${SILKPRE_VENDOR_DIR}/category/crypto/silkpre_vendor/bn128.hpp"
   "${SILKPRE_VENDOR_DIR}/category/crypto/silkpre_vendor/ecdsa.c"
   "${SILKPRE_VENDOR_DIR}/category/crypto/silkpre_vendor/ecdsa.h"
   "${SILKPRE_VENDOR_DIR}/category/crypto/silkpre_vendor/rmd160.c"
@@ -56,8 +53,8 @@ target_sources(monad_crypto PRIVATE
 
 target_include_directories(monad_crypto PUBLIC "${SILKPRE_VENDOR_DIR}")
 
-# ecdsa needs libsecp256k1 and bn128 needs libff
-target_link_libraries(monad_crypto PUBLIC secp256k1 PUBLIC ff)
+# ecdsa needs libsecp256k1
+target_link_libraries(monad_crypto PUBLIC secp256k1)
 
 # Silence the warnings the vendored sources legitimately trip on; the upstream
 # silkpre build doesn't enforce them.
@@ -66,6 +63,17 @@ set_source_files_properties(
   "${SILKPRE_VENDOR_DIR}/category/crypto/silkpre_vendor/ecdsa.c"
   "${SILKPRE_VENDOR_DIR}/category/crypto/silkpre_vendor/rmd160.c"
   "${SILKPRE_VENDOR_DIR}/category/crypto/silkpre_vendor/sha256.c"
-  "${SILKPRE_VENDOR_DIR}/category/crypto/silkpre_vendor/bn128.cpp"
   TARGET_DIRECTORY monad_crypto
   PROPERTIES COMPILE_OPTIONS "-Wno-conversion;-Wno-sign-conversion")
+
+# alt_bn128 precompiles (ecAdd, ecMul, ecPairing) vendored from evmone.
+set(EVMONE_VENDOR_DIR "${THIRD_PARTY_DIR}/evmone_vendor/src")
+
+target_sources(monad_crypto PRIVATE
+  "${EVMONE_VENDOR_DIR}/category/crypto/evmone_vendor/bn254.cpp"
+  "${EVMONE_VENDOR_DIR}/category/crypto/evmone_vendor/bn254_precompiles.cpp"
+  "${EVMONE_VENDOR_DIR}/category/crypto/evmone_vendor/pairing/bn254/pairing.cpp")
+
+target_include_directories(monad_crypto PUBLIC "${EVMONE_VENDOR_DIR}")
+
+target_link_libraries(monad_crypto PRIVATE intx::intx PkgConfig::gmp)

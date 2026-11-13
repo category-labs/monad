@@ -22,8 +22,8 @@
 #include <category/core/hex.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
+#include <category/crypto/evmone_vendor/bn254_precompiles.hpp>
 #include <category/crypto/silkpre_vendor/blake2b.h>
-#include <category/crypto/silkpre_vendor/bn128.hpp>
 #include <category/crypto/silkpre_vendor/rmd160.h>
 #include <category/crypto/silkpre_vendor/sha256.h>
 #include <category/execution/ethereum/core/signature.hpp>

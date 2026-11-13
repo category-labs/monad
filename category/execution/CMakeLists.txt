@@ -358,6 +358,7 @@ target_link_libraries(
   PUBLIC blst::blst
   PUBLIC c-kzg-4844
   PRIVATE aws_lc::crypto
+  PRIVATE PkgConfig::gmp
   PUBLIC ethash::keccak
   PUBLIC immer
   PUBLIC intx::intx

@@ -144,7 +144,9 @@ class State
             FlagTouched,
             FlagDestructed,
             FlagAccessed,
-            // undo_words_[payload_index]: appended warm-slot key.
+            // undo_words_[payload_index]: appended warm-slot key. The guest
+            // keeps no key, and its payload_index is 0: the key to remove is
+            // the row's last.
             WarmSlot,
             // undo_slots_[payload_index]
             Slot,
@@ -213,7 +215,11 @@ class State
     void
     journal_nonce(monad_address const &address, std::uint64_t previous_value);
     void journal_flag(monad_address const &address, Undo::Kind kind);
+#ifdef MONAD_ZKVM_ZISK
+    void journal_warm_slot(monad_address const &address);
+#else
     void journal_warm_slot(monad_address const &address, bytes32_t const &key);
+#endif
     void journal_slot(
         monad_address const &address, bytes32_t const &key,
         bytes32_t const *previous_value);

@@ -249,6 +249,18 @@ void State::journal_flag(monad_address const &address, Undo::Kind const kind)
     undo_.emplace_back(address, kind, 0);
 }
 
+#ifdef MONAD_ZKVM_ZISK
+// No key and no payload: the row's last warm slot is the one to remove (see
+// AccountSubstate::undo_warm_slot), and a constant payload_index keeps the
+// record from reading undo_words_'s size.
+void State::journal_warm_slot(monad_address const &address)
+{
+    if (!journalling()) {
+        return;
+    }
+    undo_.emplace_back(address, Undo::Kind::WarmSlot, 0);
+}
+#else
 void State::journal_warm_slot(
     monad_address const &address, bytes32_t const &key)
 {
@@ -258,6 +270,7 @@ void State::journal_warm_slot(
     undo_.emplace_back(address, Undo::Kind::WarmSlot, undo_words_.size());
     undo_words_.push_back(key);
 }
+#endif
 
 // Reuse the caller's lookup to save the old value without another probe.
 void State::journal_slot(
@@ -340,6 +353,7 @@ State::State(
 #ifdef MONAD_ZKVM_ZISK
     // Reserve more room for slot-related undo records to avoid early growth
     // and copies. reserve() allocates capacity without constructing entries.
+    // Keep the existing balance-payload capacity after removing warm-slot keys.
     constexpr size_t INITIAL_SLOT_CAPACITY = 64;
     undo_.reserve(INITIAL_SLOT_CAPACITY);
     undo_accounts_.reserve(INITIAL_CAPACITY);
@@ -567,10 +581,13 @@ void State::pop_reject()
             break;
 
         case Undo::Kind::WarmSlot:
-            row.undo_warm_slot(undo_words_[undo_record.payload_index]);
 #if defined(MONAD_ZKVM_ZISK)
+            // No payload: see journal_warm_slot.
+            row.undo_warm_slot();
             // Original values survive rollback; their warmth does not.
             row.original_state_->cached_slots_may_be_cold_ = 1;
+#else
+            row.undo_warm_slot(undo_words_[undo_record.payload_index]);
 #endif
             break;
 
@@ -1043,7 +1060,11 @@ template <Traits traits>
 {
     auto const slot_status = account_state.access_storage(key);
     if (slot_status == AccessStatus::Cold) {
+#ifdef MONAD_ZKVM_ZISK
+        journal_warm_slot(address);
+#else
         journal_warm_slot(address, key);
+#endif
     }
     if constexpr (traits::mip_8_active()) {
         journal_pages(address, account_state);
@@ -1083,7 +1104,7 @@ AccessStatus State::sload_cold(
     bool const can_pay_cold_access, uint256_t &out, AccountState &account_state)
 {
     account_state.add_accessed_storage(key);
-    journal_warm_slot(address, key);
+    journal_warm_slot(address);
     if (can_pay_cold_access) {
         current_storage_into(account_state, address, key, out);
     }
@@ -1096,7 +1117,7 @@ AccessStatus State::sload_cold_uncached(
     bool const can_pay_cold_access, uint256_t &out, AccountState &account_state)
 {
     account_state.add_accessed_storage(key);
-    journal_warm_slot(address, key);
+    journal_warm_slot(address);
     if (can_pay_cold_access) {
         OriginalAccountState &original_state = *account_state.original_state_;
         bytes32_t const &value = block_state_.read_storage(

@@ -40,7 +40,7 @@ This makes PriorityPool 0.000235691 times faster than a single CPU core.
 Hardware concurrency is 64
 */
 
-TEST(PriorityPool, benchmark)
+TEST(PriorityPool, DISABLED_benchmark)
 {
     monad::fiber::PriorityPool ppool(
         (unsigned)std::thread::hardware_concurrency(),

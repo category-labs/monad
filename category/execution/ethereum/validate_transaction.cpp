@@ -66,7 +66,10 @@ Result<void> static_validate_transaction(
         (tx.type == TransactionType::eip1559 &&
          traits::eip_1559_header_active()) ||
         (tx.type == TransactionType::eip4844 && traits::eip_4844_active()) ||
-        (tx.type == TransactionType::eip7702 && traits::eip_7702_active());
+        (tx.type == TransactionType::eip7702 && traits::eip_7702_active()) ||
+        (tx.type == TransactionType::monad && is_monad_trait_v<traits> &&
+         traits::evm_rev() >= EvmRevision::Prague && chain_id == 20143 &&
+         tx.sc.chain_id.has_value());
     if (MONAD_UNLIKELY(!type_supported)) {
         return TransactionError::TypeNotSupported;
     }

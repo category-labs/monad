@@ -167,7 +167,8 @@ constexpr uint256_t priority_fee_per_gas(
 
     if (tx.type == TransactionType::eip1559 ||
         tx.type == TransactionType::eip4844 ||
-        tx.type == TransactionType::eip7702) {
+        tx.type == TransactionType::eip7702 ||
+        tx.type == TransactionType::monad) {
         return std::min(tx.max_priority_fee_per_gas, max_priority_fee_per_gas);
     }
     // EIP-1559: "Legacy Ethereum transactions will still work and

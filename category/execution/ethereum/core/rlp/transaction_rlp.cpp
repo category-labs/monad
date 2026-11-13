@@ -141,8 +141,48 @@ byte_string encode_eip2718_base(Transaction const &txn)
     return encoding;
 }
 
+namespace
+{
+    byte_string encode_monad_transaction(Transaction const &txn, bool signing)
+    {
+        auto const field = [](uint8_t key, byte_string const &value) {
+            return encode_list2(encode_unsigned(key), value);
+        };
+        auto features = field(1, encode_unsigned(txn.nonce));
+        features += field(2, encode_unsigned(txn.gas_limit));
+        features += field(
+            3,
+            encode_list2(
+                field(1, encode_address(txn.to)),
+                field(2, encode_unsigned(txn.value)),
+                field(3, encode_string2(txn.data))));
+        if (txn.monad_access_list_present || !txn.access_list.empty()) {
+            features += field(4, encode_access_list(txn.access_list));
+        }
+        features += field(
+            6,
+            signing ? encode_list2(byte_string{})
+                    : encode_list2(
+                          encode_unsigned(txn.sc.signature.y_parity),
+                          encode_unsigned(txn.sc.signature.r),
+                          encode_unsigned(txn.sc.signature.s)));
+        features += field(
+            7,
+            encode_list2(
+                encode_unsigned(txn.max_priority_fee_per_gas),
+                encode_unsigned(txn.max_fee_per_gas)));
+        return byte_string(1, 0x40) +
+               encode_list2(
+                   encode_unsigned(txn.sc.chain_id.value_or(0)),
+                   encode_list2(features));
+    }
+}
+
 byte_string encode_transaction(Transaction const &txn)
 {
+    if (txn.type == TransactionType::monad) {
+        return encode_monad_transaction(txn, false);
+    }
     if (txn.type == TransactionType::legacy) {
         return encode_list2(
             encode_legacy_base(txn),
@@ -164,6 +204,9 @@ byte_string encode_transaction(Transaction const &txn)
 
 byte_string encode_transaction_for_signing(Transaction const &txn)
 {
+    if (txn.type == TransactionType::monad) {
+        return encode_monad_transaction(txn, true);
+    }
     if (txn.type == TransactionType::legacy) {
         if (txn.sc.chain_id.has_value()) {
             return encode_list2(
@@ -305,11 +348,132 @@ Result<Transaction> decode_transaction_legacy(byte_string_view &enc)
     return txn;
 }
 
+namespace
+{
+    Result<std::pair<uint8_t, byte_string_view>>
+    decode_feature(byte_string_view &features, uint8_t &previous)
+    {
+        BOOST_OUTCOME_TRY(auto pair, parse_list_metadata(features));
+        BOOST_OUTCOME_TRY(auto const key, parse_string_metadata(pair));
+        if (key.size() != 1 || key[0] <= previous) {
+            return DecodeError::NonCanonical;
+        }
+        previous = key[0];
+        return std::pair{previous, pair};
+    }
+
+    Result<Transaction> decode_monad_transaction(byte_string_view &enc)
+    {
+        Transaction txn;
+        txn.type = TransactionType::monad;
+        BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
+        BOOST_OUTCOME_TRY(
+            auto const chain_id, decode_unsigned<uint256_t>(payload));
+        txn.sc.chain_id = chain_id;
+        BOOST_OUTCOME_TRY(auto features, parse_list_metadata(payload));
+        // Auxiliary data belongs only to the RPC submission wrapper.
+        if (!payload.empty() || !enc.empty()) {
+            return DecodeError::InputTooLong;
+        }
+        uint8_t previous = 0;
+        uint8_t present = 0;
+        while (!features.empty()) {
+            BOOST_OUTCOME_TRY(auto pair, decode_feature(features, previous));
+            auto &[key, value] = pair;
+            switch (key) {
+            case 1: {
+                BOOST_OUTCOME_TRY(txn.nonce, decode_unsigned<uint64_t>(value));
+                break;
+            }
+            case 2: {
+                BOOST_OUTCOME_TRY(
+                    txn.gas_limit, decode_unsigned<uint64_t>(value));
+                break;
+            }
+            case 3: {
+                BOOST_OUTCOME_TRY(auto call, parse_list_metadata(value));
+                uint8_t call_previous = 0;
+                for (uint8_t expected = 1; expected <= 3; ++expected) {
+                    BOOST_OUTCOME_TRY(
+                        auto call_pair, decode_feature(call, call_previous));
+                    auto &[call_key, field] = call_pair;
+                    if (call_key != expected) {
+                        return DecodeError::NonCanonical;
+                    }
+                    if (call_key == 1) {
+                        BOOST_OUTCOME_TRY(
+                            txn.to, decode_optional_address(field));
+                    }
+                    else if (call_key == 2) {
+                        BOOST_OUTCOME_TRY(
+                            txn.value, decode_unsigned<uint256_t>(field));
+                    }
+                    else {
+                        BOOST_OUTCOME_TRY(txn.data, decode_string(field));
+                    }
+                    if (!field.empty()) {
+                        return DecodeError::InputTooLong;
+                    }
+                }
+                if (!call.empty()) {
+                    return DecodeError::InputTooLong;
+                }
+                break;
+            }
+            case 4: {
+                txn.monad_access_list_present = true;
+                BOOST_OUTCOME_TRY(txn.access_list, decode_access_list(value));
+                break;
+            }
+            case 6: {
+                BOOST_OUTCOME_TRY(auto sig, parse_list_metadata(value));
+                BOOST_OUTCOME_TRY(
+                    txn.sc.signature.y_parity, decode_unsigned<uint8_t>(sig));
+                BOOST_OUTCOME_TRY(
+                    txn.sc.signature.r, decode_unsigned<uint256_t>(sig));
+                BOOST_OUTCOME_TRY(
+                    txn.sc.signature.s, decode_unsigned<uint256_t>(sig));
+                if (!sig.empty() || txn.sc.signature.y_parity > 1) {
+                    return DecodeError::NonCanonical;
+                }
+                break;
+            }
+            case 7: {
+                BOOST_OUTCOME_TRY(auto fees, parse_list_metadata(value));
+                BOOST_OUTCOME_TRY(
+                    txn.max_priority_fee_per_gas,
+                    decode_unsigned<uint256_t>(fees));
+                BOOST_OUTCOME_TRY(
+                    txn.max_fee_per_gas, decode_unsigned<uint256_t>(fees));
+                if (!fees.empty()) {
+                    return DecodeError::InputTooLong;
+                }
+                break;
+            }
+            default:
+                return DecodeError::InvalidTxnType;
+            }
+            present |= static_cast<uint8_t>(1u << key);
+            if (!value.empty()) {
+                return DecodeError::InputTooLong;
+            }
+        }
+        if ((present & 0xce) != 0xce) {
+            return DecodeError::InputTooShort;
+        }
+        return txn;
+    }
+}
+
 Result<Transaction> decode_transaction_eip2718(byte_string_view &enc)
 {
     Transaction txn;
     if (MONAD_UNLIKELY(enc.empty())) {
         return DecodeError::InputTooShort;
+    }
+    if (enc[0] == 0x40) {
+        enc = enc.substr(1);
+        return decode_monad_transaction(enc);
     }
     if (MONAD_UNLIKELY(
             enc[0] == static_cast<unsigned char>(TransactionType::legacy) ||

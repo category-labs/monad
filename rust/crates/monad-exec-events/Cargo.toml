@@ -5,6 +5,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+zstd = { workspace = true, optional = true }
+monad-transaction = { workspace = true, optional = true }
 monad-event-ring = { workspace = true }
 
 alloy-consensus = { workspace = true, optional = true }
@@ -20,6 +22,7 @@ tracing = { workspace = true }
 monad-build = { workspace = true, features = ["bindgen-static"] }
 
 [dev-dependencies]
+zstd = { workspace = true }
 alloy-primitives = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
@@ -32,7 +35,8 @@ strum = { workspace = true }
 
 [features]
 default = []
-alloy = ["dep:alloy-consensus", "dep:alloy-eips", "dep:alloy-primitives", "dep:alloy-rpc-types"]
+test-utils = ["dep:zstd"]
+alloy = ["dep:monad-transaction", "dep:alloy-consensus", "dep:alloy-eips", "dep:alloy-primitives", "dep:alloy-rpc-types"]
 
 [[bench]]
 name = "snapshot_exec"

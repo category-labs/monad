@@ -40,7 +40,9 @@ namespace monad::vm::interpreter
         static constexpr size_t end_padding_size = 32 + 1;
 
     public:
-        using JumpdestMap = std::vector<bool>;
+        // Bitmap, one bit per code byte; the scan writes 32 bits at a
+        // time, which std::vector<bool> cannot express.
+        using JumpdestMap = std::vector<uint64_t>;
 
         explicit Intercode(std::span<uint8_t const> const);
 
@@ -73,7 +75,8 @@ namespace monad::vm::interpreter
 
         bool is_jumpdest(size_t const pc) const noexcept
         {
-            return pc < *code_size_ && jumpdest_map_[pc];
+            return pc < *code_size_ &&
+                   ((jumpdest_map_[pc >> 6] >> (pc & 63)) & 1);
         }
 
         [[gnu::always_inline]]
@@ -97,6 +100,9 @@ namespace monad::vm::interpreter
 
         static uint8_t const *pad(std::span<uint8_t const> code);
 
-        static JumpdestMap find_jumpdests(std::span<uint8_t const> code);
+        // Scans `padded_code_`, whose trailing zero padding (>= 31 bytes)
+        // covers the SIMD kernel's over-read past the last code byte.
+        static JumpdestMap
+        find_jumpdests(uint8_t const *code, size_t code_size);
     };
 }

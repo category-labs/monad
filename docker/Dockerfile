@@ -62,7 +62,7 @@ ADD --checksum=sha256:9ee1075421aa620b08690c9df9a302a9c11654c0ef0eaed561f6509362
     https://github.com/monad-developers/execution-specs/releases/download/tests-monad_eip7708%2B7843%2B7981%2B7997%2B8024%2B8246%40v0.3.1/fixtures_monad_eip7708+7843+7981+7997+8024+8246.tar.gz \
     /fixtures/
 
-FROM base AS build_and_test
+FROM base AS build
 
 COPY --from=test_fixtures /fixtures /fixtures
 ENV MONAD_TEST_FIXTURES_DIR=/fixtures
@@ -78,6 +78,19 @@ ARG GIT_COMMIT_HASH
 ENV GIT_COMMIT_HASH=$GIT_COMMIT_HASH
 
 RUN cd src && CC=${CC:?} CXX=${CXX:?} CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:?} CMAKE_TOOLCHAIN_FILE=category/core/toolchains/${TOOLCHAIN:?}.cmake ./scripts/configure.sh
+
+# The `runner` image only needs these three binaries, so build just them rather
+# than the `all` target (which also compiles the ~112 test executables). The
+# integration-test image build targets `runner`, so this keeps that build from
+# compiling and running the entire C++ test suite. CI builds the
+# `build_and_test` stage below, which still produces the full build + tests.
+RUN cd src && cmake --build build --target monad monad-cli monad-mpt
+
+FROM build AS build_and_test
+
+ARG CC
+ARG CXX
+ARG CMAKE_BUILD_TYPE
 
 RUN cd src && ./scripts/build.sh
 
@@ -233,6 +246,6 @@ ARG FUZZER_SECONDS
 RUN cd src && ./scripts/vm/fuzz.sh -c 26 -i 5 -s "${FUZZER_BASE_SEED:-143}" -t "${FUZZER_SECONDS:-420}"
 
 FROM base AS runner
-COPY --from=build_and_test /src/build/category/mpt/monad-mpt /usr/local/bin/
-COPY --from=build_and_test /src/build/cmd/monad-cli /usr/local/bin/
-COPY --from=build_and_test /src/build/cmd/monad /usr/local/bin/
+COPY --from=build /src/build/category/mpt/monad-mpt /usr/local/bin/
+COPY --from=build /src/build/cmd/monad-cli /usr/local/bin/
+COPY --from=build /src/build/cmd/monad /usr/local/bin/

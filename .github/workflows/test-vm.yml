@@ -57,7 +57,7 @@ jobs:
       matrix:
         build:
           - CMAKE_BUILD_TYPE: RelWithDebInfo
-            TOOLCHAIN: gcc-avx2
+            TOOLCHAIN: gcc-avx2-ci
           - CMAKE_BUILD_TYPE: Debug
             TOOLCHAIN: gcc-asan
         compiler:

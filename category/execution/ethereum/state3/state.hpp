@@ -236,7 +236,14 @@ class State
     // True when a frame is open, i.e. when anything could still roll back.
     [[nodiscard]] bool journalling() const
     {
+#if defined(MONAD_ZKVM_ZISK) && defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
+        // One load where the vector test is two: push and both pops assert
+        // undo_marks_.size() == version_, and no journal is written between
+        // a pop's mark and its decrement.
+        return version_ != 0;
+#else
         return !undo_marks_.empty();
+#endif
     }
 
     std::vector<Undo> undo_{};

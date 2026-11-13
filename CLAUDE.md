@@ -31,6 +31,7 @@ Use `/build`, `/test`, `/lint`, `/format`, `/fuzz` skills for full options (sani
 | Toolchain | Compiler | Flags |
 |-----------|----------|-------|
 | `gcc-avx2.cmake` | GCC or Clang | `-march=haswell` (default) |
+| `gcc-avx2-ci.cmake` | GCC or Clang | `gcc-avx2` with line tables only (`-g1`); used by CI |
 | `gcc-avx512.cmake` | GCC or Clang | `-march=skylake-avx512` |
 | `gcc-asan.cmake` | GCC or Clang | ASAN + UBSAN. **Breaks VM interpreter under GCC** (must-tail incompatibility) |
 | `gcc-tsan.cmake` | GCC only | TSAN |

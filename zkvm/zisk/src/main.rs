@@ -16,12 +16,6 @@
 #![no_main]
 ziskos::entrypoint!(main);
 
-// zkvm/guest/execute_witness.cpp reads the RLP witness and writes the 32-byte
-// post-state root through the eth-act I/O functions supplied by ziskos.
-extern "C" {
-    fn monad_zkvm_execute_witness();
-}
-
 // Implement the C++ halt ABI with ZisK's exit syscall (a7 = 93, a0 = status).
 #[no_mangle]
 pub unsafe extern "C" fn zkvm_halt(status: i32) -> ! {
@@ -34,5 +28,5 @@ pub unsafe extern "C" fn zkvm_halt(status: i32) -> ! {
 }
 
 fn main() {
-    unsafe { monad_zkvm_execute_witness() };
+    monad_zkvm_zisk::execute_witness();
 }

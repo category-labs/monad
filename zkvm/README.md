@@ -19,7 +19,7 @@ zkvm/
 │   ├── x86_test_runner.cpp
 │   └── CMakeLists.txt
 ├── build-support/        # shared Cargo/CMake build helpers
-├── zisk/                 # ZisK guest crate
+├── zisk/                 # ZisK guest binary and host library exposing its ELF
 └── sp1/                  # SP1 cargo workspace
     ├── program/          #   C guest entry (main.c)
     └── script/           #   host driver / prover (clap CLI)
@@ -63,13 +63,35 @@ Start each section's commands from the repository root unless stated otherwise.
 
 ## ZisK
 
+Host applications can depend on `monad-zkvm-zisk` to build and embed the ELF:
+
+```toml
+guest-monad = { package = "monad-zkvm-zisk", git = "https://github.com/category-labs/monad.git", rev = "<commit>" }
+```
+
+The host library exposes `guest_monad::ELF: zisk_sdk::GuestProgram`. Every
+consumer needs the build prerequisites above; no ELF is checked into Git.
+The build script cross-compiles this package's `guest` binary with the ZisK
+toolchain, then embeds it. Target-specific dependencies keep the host SDK out
+of the RISC-V build. Guest artifacts go under `OUT_DIR/guest-target`, and the
+nested build uses `--locked` without modifying the source checkout.
+
+For example, from this repository root:
+
+```sh
+RISCV_TOOLCHAIN_DIR=/path/to/riscv_gcc cargo build --manifest-path zkvm/zisk/Cargo.toml
+```
+
+Use a compatible ZisK SDK version in the consuming application. Native
+execution and hint generation are not exposed by this library.
+
 ZisK input is an 8-byte little-endian payload length followed by the witness,
 zero-padded to an 8-byte boundary.
 
 ```sh
 # 1. Build the guest ELF.
 cd zkvm/zisk
-cargo-zisk build --release --bin monad-zkvm-zisk
+cargo-zisk build --release --features guest --bin monad-zkvm-zisk
 #  → target/elf/riscv64ima-zisk-zkvm-elf/release/monad-zkvm-zisk
 
 # 2. Wrap the witness with the 8-byte length prefix the emulator expects,

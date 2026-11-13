@@ -14,5 +14,6 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 fn main() {
-    monad_zkvm_build_support::Backend::Zisk.build_guest_lib();
+    println!("cargo:rustc-check-cfg=cfg(target_vendor, values(\"zisk\"))");
+    monad_zkvm_build_support::build_zisk();
 }

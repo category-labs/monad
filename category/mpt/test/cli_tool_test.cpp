@@ -39,6 +39,7 @@
 #include <category/mpt/state_machine_kind.hpp>
 #include <category/mpt/trie.hpp>
 #include <category/mpt/update.hpp>
+#include <category/mpt/util.hpp>
 
 #include <algorithm>
 #include <array>
@@ -345,6 +346,64 @@ namespace
             monad::mpt::NibblesView{key}, monad::byte_string_view{value});
         ul.push_front(u);
         return target.upsert(std::move(root), std::move(ul), 0);
+    }
+
+    // Moves the head of the free list onto the end of `which` and points that
+    // list's write offset at the start of it. This is how a list is left once
+    // its writer has moved on to a chunk it has not yet written to, and the
+    // archive holds no entry for such a chunk.
+    void append_empty_chunk(
+        std::filesystem::path const &path,
+        monad::mpt::UpdateAux::chunk_list const which)
+    {
+        using monad::mpt::UpdateAux;
+        monad::mpt::AsyncIOContext io_ctx{
+            monad::mpt::OnDiskDbConfig{.append = true, .dbname_path = {path}}};
+        UpdateAux aux(io_ctx.io);
+        auto &ctx = aux.metadata_ctx();
+        auto const id = ctx.main()->free_list.begin;
+        ASSERT_NE(id, monad::mpt::detail::db_metadata::NULL_CHUNK);
+        ctx.remove(id);
+        ctx.append(which, id);
+        MONAD_ASYNC_NAMESPACE::chunk_offset_t fast =
+            ctx.get_start_of_wip_fast_offset();
+        MONAD_ASYNC_NAMESPACE::chunk_offset_t slow =
+            ctx.get_start_of_wip_slow_offset();
+        (which == UpdateAux::chunk_list::fast ? fast : slow) =
+            MONAD_ASYNC_NAMESPACE::chunk_offset_t{id, 0};
+        ctx.advance_db_offsets_to(fast, slow);
+    }
+
+    struct chunk_lists
+    {
+        // (chunk id, insertion count) in list order
+        std::vector<std::pair<uint32_t, uint32_t>> fast, slow;
+        MONAD_ASYNC_NAMESPACE::chunk_offset_t wip_fast{
+            MONAD_ASYNC_NAMESPACE::INVALID_OFFSET},
+            wip_slow{MONAD_ASYNC_NAMESPACE::INVALID_OFFSET};
+
+        bool operator==(chunk_lists const &) const = default;
+    };
+
+    chunk_lists read_chunk_lists(std::filesystem::path const &path)
+    {
+        using monad::mpt::detail::db_metadata;
+        monad::mpt::AsyncIOContext io_ctx{
+            monad::mpt::ReadOnlyOnDiskDbConfig{.dbname_path = {path}}};
+        monad::mpt::UpdateAux const aux(io_ctx.io);
+        auto const *const m = aux.metadata_ctx().main();
+        auto const walk = [m](db_metadata::chunk_info_t const *i) {
+            std::vector<std::pair<uint32_t, uint32_t>> ret;
+            for (; i != nullptr; i = i->next(m)) {
+                ret.emplace_back(i->index(m), uint32_t(i->insertion_count()));
+            }
+            return ret;
+        };
+        return chunk_lists{
+            .fast = walk(m->fast_list_begin()),
+            .slow = walk(m->slow_list_begin()),
+            .wip_fast = aux.metadata_ctx().get_start_of_wip_fast_offset(),
+            .wip_slow = aux.metadata_ctx().get_start_of_wip_slow_offset()};
     }
 }
 
@@ -1020,6 +1079,97 @@ TEST(cli_tool, restore_with_state_machine_rejected)
     EXPECT_EQ(
         read_kind(temppath, monad::mpt::timeline_id::primary),
         monad::mpt::state_machine_kind::monad);
+}
+
+// The archive holds no entry for an empty seq chunk, which a list can end in
+// whenever its writer has moved on to a chunk it has yet to write to, and a
+// list can also start with. The restored lists must still match the archived
+// database's, chunk for chunk and insertion count for insertion count, since
+// virtual offsets derive from those.
+TEST(cli_tool, archives_restores_lists_with_empty_chunks)
+{
+    using namespace monad::mpt;
+    using monad::literals::operator""_bytes;
+
+    auto const src_dbname = create_temp_file(8);
+    auto const dst_dbname = create_temp_file(8);
+    char arc_path[] = "cli_tool_tmp_test_XXXXXX";
+    int const arc_fd = ::mkstemp(arc_path);
+    ASSERT_NE(arc_fd, -1);
+    ::close(arc_fd);
+    auto const unfiles = monad::make_scope_exit([&]() noexcept {
+        std::filesystem::remove(src_dbname);
+        std::filesystem::remove(dst_dbname);
+        ::unlink(arc_path);
+    });
+
+    auto const key = 0xaabbccdd_bytes;
+    auto const value = 0x11223344_bytes;
+    {
+        OnDiskDbConfig const config{
+            .compaction = true,
+            .sq_thread_cpu = std::nullopt,
+            .dbname_path = src_dbname,
+            .fixed_history_length = MPT_TEST_HISTORY_LENGTH};
+        Db db{std::make_unique<StateMachineAlwaysMerkle>(), config};
+        ASSERT_NE(upsert_one(db, key, value, nullptr), nullptr);
+    }
+    // Fast list: written chunk, then an empty one. Slow list: two empty
+    // chunks, so neither its begin nor its end is archived.
+    append_empty_chunk(src_dbname, UpdateAux::chunk_list::fast);
+    append_empty_chunk(src_dbname, UpdateAux::chunk_list::slow);
+    auto const src_lists = read_chunk_lists(src_dbname);
+    ASSERT_EQ(2u, src_lists.fast.size());
+    ASSERT_EQ(2u, src_lists.slow.size());
+
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt",
+            "--storage",
+            src_dbname.c_str(),
+            "--archive",
+            arc_path};
+        int const retcode = std::async(std::launch::async, [&] {
+                                return main_impl(cout, cerr, args);
+                            }).get();
+        ASSERT_EQ(retcode, 0)
+            << "stderr: " << cerr.str() << "\nstdout: " << cout.str();
+    }
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt",
+            "--storage",
+            dst_dbname.c_str(),
+            "--root-offsets-chunk-count",
+            "2",
+            "--yes",
+            "--restore",
+            arc_path};
+        int const retcode = std::async(std::launch::async, [&] {
+                                return main_impl(cout, cerr, args);
+                            }).get();
+        ASSERT_EQ(retcode, 0)
+            << "stderr: " << cerr.str() << "\nstdout: " << cout.str();
+    }
+
+    EXPECT_EQ(src_lists, read_chunk_lists(dst_dbname));
+
+    OnDiskDbConfig const config{
+        .append = true,
+        .compaction = true,
+        .sq_thread_cpu = std::nullopt,
+        .dbname_path = dst_dbname,
+        .fixed_history_length = MPT_TEST_HISTORY_LENGTH};
+    Db const db{std::make_unique<StateMachineAlwaysMerkle>(), config};
+    Node::SharedPtr const root = db.load_root_for_version(0);
+    ASSERT_NE(root, nullptr);
+    auto const res = db.find(NodeCursor{root}, NibblesView{key}, 0);
+    ASSERT_TRUE(res.has_value());
+    EXPECT_EQ(monad::byte_string{res.value().node->value()}, value);
 }
 
 // Round-trips a Db whose secondary timeline is active and holds a key

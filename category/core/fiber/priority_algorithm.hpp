@@ -55,6 +55,8 @@ public:
 
     void awakened(context *, PriorityProperties &) noexcept override;
 
+    bool awakened_from_remote(context *) noexcept override;
+
     context *pick_next() noexcept override;
 
     bool has_ready_fibers() const noexcept override;

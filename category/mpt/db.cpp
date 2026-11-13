@@ -44,6 +44,7 @@
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/mpt/state_machine_kind.hpp>
 #include <category/mpt/traverse.hpp>
+#include <category/mpt/traverse_inorder.hpp>
 #include <category/mpt/trie.hpp>
 #include <category/mpt/update.hpp>
 #include <category/mpt/util.hpp>
@@ -1336,6 +1337,22 @@ bool Db::traverse_blocking(
     MONAD_ASSERT(cursor.is_valid());
     return preorder_traverse_blocking(
         impl_->aux(), *cursor.node, machine, block_id, impl_->tid());
+}
+
+bool Db::traverse_inorder(
+    NodeCursor const &cursor, InOrderTraverseMachine &machine,
+    uint64_t const block_id, size_t const concurrency_limit)
+{
+    MONAD_ASSERT(impl_);
+    MONAD_ASSERT(is_read_only());
+    MONAD_ASSERT(cursor.is_valid());
+    return preorder_traverse_ondisk_inorder(
+        impl_->aux(),
+        cursor.node,
+        machine,
+        block_id,
+        impl_->tid(),
+        concurrency_limit);
 }
 
 void Db::update_finalized_version(uint64_t const version)

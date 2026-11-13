@@ -43,6 +43,7 @@
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/mpt/test/test_fixtures_gtest.hpp>
 #include <category/mpt/traverse.hpp>
+#include <category/mpt/traverse_inorder.hpp>
 #include <category/mpt/traverse_util.hpp>
 #include <category/mpt/trie.hpp>
 #include <category/mpt/update.hpp>
@@ -1161,6 +1162,196 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_traverse_as_version_expire)
         test_traverse(
             ro_db, [&](auto &&...args) { return ro_db.traverse(args...); });
     }
+}
+
+namespace
+{
+    struct LeafKeyRecorder final : public InOrderTraverseMachine
+    {
+        std::vector<Nibbles> &keys;
+        std::function<void()> before_leaf;
+
+        explicit LeafKeyRecorder(
+            std::vector<Nibbles> &keys, std::function<void()> before_leaf = {})
+            : keys(keys)
+            , before_leaf(std::move(before_leaf))
+        {
+        }
+
+        LeafKeyRecorder(
+            LeafKeyRecorder const &other, unsigned char const branch)
+            : InOrderTraverseMachine(other, branch)
+            , keys(other.keys)
+            , before_leaf(other.before_leaf)
+        {
+        }
+
+        void visit(unsigned char, Node const &node) override
+        {
+            if (node.mask != 0) {
+                return;
+            }
+            if (before_leaf) {
+                before_leaf();
+            }
+            keys.emplace_back(path());
+        }
+
+        std::unique_ptr<InOrderTraverseMachine>
+        clone(unsigned char const branch) const override
+        {
+            return std::make_unique<LeafKeyRecorder>(*this, branch);
+        }
+    };
+}
+
+// A concurrency limit of one leaves almost every read pending, which is where
+// reads are reordered by key and merged by disk offset.
+TEST_F(
+    OnDiskDbWithFileFixture, read_only_db_traverse_inorder_visits_in_key_order)
+{
+    constexpr unsigned nkeys = 2000;
+    auto [bytes_alloc, updates_alloc] = prepare_random_updates(nkeys);
+    UpdateList ls;
+    for (auto &u : updates_alloc) {
+        ls.push_front(u);
+    }
+    root = db.upsert(std::move(root), std::move(ls), 0);
+
+    std::vector<Nibbles> expected;
+    for (auto const &key : bytes_alloc) {
+        expected.emplace_back(NibblesView{key});
+    }
+    std::ranges::sort(expected, [](NibblesView const a, NibblesView const b) {
+        return a < b;
+    });
+
+    AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_path = dbname}};
+    Db ro_db{io_ctx};
+    auto const root_cursor = ro_db.find({}, 0).value();
+    for (size_t const concurrency_limit : {1uz, 2uz, 16uz, 4096uz}) {
+        std::vector<Nibbles> keys;
+        LeafKeyRecorder machine{keys};
+        ASSERT_TRUE(
+            ro_db.traverse_inorder(root_cursor, machine, 0, concurrency_limit));
+        EXPECT_EQ(keys, expected) << "concurrency_limit=" << concurrency_limit;
+    }
+}
+
+// Read completions polled from inside visit() run while the traverse is part
+// way through visiting; each key must still be visited exactly once. Reads
+// issued inside a completion are not submitted until it returns, so at a
+// concurrency of two the other outstanding read was submitted by an earlier
+// completion, and the first leaf's visit() can wait for it.
+TEST_F(OnDiskDbWithFileFixture, read_only_db_traverse_inorder_polled_from_visit)
+{
+    constexpr unsigned nkeys = 2000;
+    auto [bytes_alloc, updates_alloc] = prepare_random_updates(nkeys);
+    UpdateList ls;
+    for (auto &u : updates_alloc) {
+        ls.push_front(u);
+    }
+    root = db.upsert(std::move(root), std::move(ls), 0);
+
+    std::vector<Nibbles> expected;
+    for (auto const &key : bytes_alloc) {
+        expected.emplace_back(NibblesView{key});
+    }
+    std::ranges::sort(expected, [](NibblesView const a, NibblesView const b) {
+        return a < b;
+    });
+
+    AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_path = dbname}};
+    Db ro_db{io_ctx};
+    size_t completions_polled = 0;
+    std::vector<Nibbles> keys;
+    LeafKeyRecorder machine{keys, [&] {
+                                size_t polled = 0;
+                                while (polled == 0 &&
+                                       io_ctx.io.reads_in_flight() > 0) {
+                                    polled = ro_db.poll(false);
+                                }
+                                completions_polled += polled;
+                            }};
+    ASSERT_TRUE(
+        ro_db.traverse_inorder(ro_db.find({}, 0).value(), machine, 0, 2));
+    EXPECT_GT(completions_polled, 0u);
+    EXPECT_EQ(keys, expected);
+}
+
+TEST_F(OnDiskDbWithFileFixture, read_only_db_traverse_inorder_as_version_expire)
+{
+    constexpr unsigned nkeys = 20;
+    auto keys_and_updates = prepare_random_updates(nkeys);
+    uint64_t version = 0;
+    auto const upsert_once = [&] {
+        UpdateList ls;
+        for (auto &u : keys_and_updates.second) {
+            ls.push_front(u);
+        }
+        root = db.upsert(std::move(root), std::move(ls), version++);
+    };
+    while (version < MPT_TEST_HISTORY_LENGTH) {
+        upsert_once();
+    }
+
+    AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_path = dbname}};
+    Db ro_db{io_ctx};
+    uint64_t const earliest_version = ro_db.get_earliest_version();
+    auto const root_cursor = ro_db.find({}, earliest_version).value();
+
+    std::vector<Nibbles> keys;
+    LeafKeyRecorder pruning_machine{keys, [&] {
+                                        if (keys.empty()) {
+                                            upsert_once();
+                                        }
+                                    }};
+    EXPECT_FALSE(ro_db.traverse_inorder(
+        root_cursor, pruning_machine, earliest_version, 1));
+    EXPECT_GT(ro_db.get_earliest_version(), earliest_version);
+    EXPECT_LT(keys.size(), nkeys);
+
+    keys.clear();
+    LeafKeyRecorder machine{keys};
+    EXPECT_FALSE(
+        ro_db.traverse_inorder(root_cursor, machine, earliest_version, 1));
+    EXPECT_TRUE(keys.empty());
+}
+
+// Merkle compute caps a leaf's path at 32 bytes, short of the longest key.
+using OnDiskDbWithFileNoComputeFixture =
+    OnDiskDbWithFileFixtureBase<StateMachineAlwaysEmpty>;
+
+// The longest key a NibblesView can hold must still have a path at its leaf.
+TEST_F(
+    OnDiskDbWithFileNoComputeFixture,
+    read_only_db_traverse_inorder_max_length_keys)
+{
+    constexpr unsigned key_nibbles = 255;
+    // The first nibbles differ, so both leaves hang off the root.
+    std::array<monad::byte_string, 2> const key_bytes{
+        monad::byte_string((key_nibbles + 1) / 2, 0x05),
+        monad::byte_string((key_nibbles + 1) / 2, 0x15)};
+    std::deque<Update> updates_alloc;
+    UpdateList ls;
+    std::vector<Nibbles> expected;
+    for (auto const &bytes : key_bytes) {
+        NibblesView const key{0, key_nibbles, bytes.data()};
+        expected.emplace_back(key);
+        ls.push_front(updates_alloc.emplace_back(Update{
+            .key = key,
+            .value = bytes,
+            .incarnation = false,
+            .next = UpdateList{}}));
+    }
+    root = db.upsert(std::move(root), std::move(ls), 0);
+
+    AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_path = dbname}};
+    Db ro_db{io_ctx};
+    std::vector<Nibbles> keys;
+    LeafKeyRecorder machine{keys};
+    ASSERT_TRUE(ro_db.traverse_inorder(ro_db.find({}, 0).value(), machine, 0));
+    EXPECT_EQ(keys, expected);
 }
 
 TEST_F(OnDiskDbWithFileFixture, benchmark_blocking_parallel_traverse)

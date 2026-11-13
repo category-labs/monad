@@ -18,6 +18,7 @@ function(monad_compile_options target)
   set_property(TARGET ${target} PROPERTY C_STANDARD_REQUIRED ON)
   set_property(TARGET ${target} PROPERTY CXX_STANDARD 26)
   set_property(TARGET ${target} PROPERTY CXX_STANDARD_REQUIRED ON)
+  set_property(TARGET ${target} PROPERTY CXX_SCAN_FOR_MODULES OFF)
 
   target_compile_options(${target} PRIVATE -Wall -Wextra -Wconversion -Werror)
   target_compile_definitions(${target} PUBLIC "_GNU_SOURCE")

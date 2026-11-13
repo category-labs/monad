@@ -30,7 +30,6 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <exception>
 #include <optional>
 #include <span>
 
@@ -90,34 +89,6 @@ namespace monad::vm
         virtual PageStorageStatus
         update_page(Address const &, bytes32_t const &key, StorageStatus) = 0;
 
-        /// Capture `std::current_exception()`.
-        /// IMPORTANT: Make sure to call this from inside a `catch` block.
-        void capture_current_exception() const noexcept
-        {
-            active_exception_ = std::current_exception();
-        }
-
-        /// Propagate a previously captured exception through the most recent
-        /// VM stack frame(s). The VM will re-throw the exception after
-        /// unwinding the stack. IMPORTANT: Do not call this from a `catch`
-        /// block, because it does not return. This can otherwise cause memory
-        /// leaks due to missing deallocation of the current active exception.
-        /// IMPORTANT: Since `stack_unwind` never returns, make sure there are
-        /// no stack objects with uninvoked destructor.
-        [[noreturn]] void stack_unwind() const
-        {
-            MONAD_ASSERT(active_exception_);
-            // rethrow exceptions when running outside of vm execution context
-            // (i.e. when runtime_context_ is unset)
-            if (runtime_context_ == nullptr) {
-                auto e = active_exception_;
-                active_exception_ = std::exception_ptr{};
-                std::rethrow_exception(std::move(e));
-            }
-
-            runtime_context_->stack_unwind();
-        }
-
         std::optional<Address> resolve_delegation(Address const &addr) const
         {
             // Copy up to |code_size| bytes of the bytecode. Then test
@@ -146,16 +117,6 @@ namespace monad::vm
 
     private:
         [[gnu::always_inline]]
-        void rethrow_on_active_exception()
-        {
-            if (MONAD_UNLIKELY(active_exception_)) {
-                auto e = active_exception_;
-                active_exception_ = std::exception_ptr{};
-                std::rethrow_exception(std::move(e));
-            }
-        }
-
-        [[gnu::always_inline]]
         runtime::Context *
         set_runtime_context(runtime::Context *const ctx) noexcept
         {
@@ -165,6 +126,5 @@ namespace monad::vm
         }
 
         runtime::Context *runtime_context_{nullptr};
-        mutable std::exception_ptr active_exception_;
     };
 }

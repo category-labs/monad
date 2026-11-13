@@ -25,6 +25,7 @@
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/host.hpp>
 #include <category/vm/runtime/bin.hpp>
+#include <category/vm/runtime/call_host.hpp>
 #include <category/vm/runtime/create.hpp>
 #include <category/vm/runtime/transmute.hpp>
 #include <category/vm/runtime/types.hpp>
@@ -60,7 +61,7 @@ namespace monad::vm::runtime
         if constexpr (
             traits::eip_7702_active() &&
             !traits::can_create_inside_delegated()) {
-            if (ctx->host->resolve_delegation(ctx->env.recipient)) {
+            if (call_host<&Host::resolve_delegation>(ctx, ctx->env.recipient)) {
                 ctx->exit(StatusCode::Error);
             }
         }
@@ -113,7 +114,7 @@ namespace monad::vm::runtime
             .memory_capacity = ctx->memory.capacity - ctx->memory.size,
         };
 
-        auto const result = ctx->host->call(message).release_raw();
+        auto const result = call_host<&Host::call>(ctx, message).release_raw();
 
         ctx->env.set_return_data(result.output_data, result.output_size);
 

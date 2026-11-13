@@ -20,6 +20,7 @@
 #include <category/core/likely.h>
 #include <category/vm/evm/message.hpp>
 #include <category/vm/host.hpp>
+#include <category/vm/runtime/call_host.hpp>
 #include <category/vm/runtime/types.hpp>
 
 #include <cstdint>
@@ -40,8 +41,8 @@ namespace monad::vm::runtime
         uint256_t const *const key_ptr)
     {
         auto const key = store_be_as<bytes32_t>(*key_ptr);
-        auto const value =
-            ctx->host->get_transient_storage(ctx->env.recipient, key);
+        auto const value = call_host<&Host::get_transient_storage>(
+            ctx, ctx->env.recipient, key);
 
         *result_ptr = load_be<uint256_t>(value);
     }
@@ -58,10 +59,11 @@ namespace monad::vm::runtime
         auto const key = store_be_as<bytes32_t>(*key_ptr);
         auto const val = store_be_as<bytes32_t>(*val_ptr);
 
-        ctx->host->set_transient_storage(ctx->env.recipient, key, val);
+        call_host<&Host::set_transient_storage>(
+            ctx, ctx->env.recipient, key, val);
     }
 
     bool debug_tstore_stack(
-        Context const *ctx, uint256_t const *stack, uint64_t stack_size,
+        Context *ctx, uint256_t const *stack, uint64_t stack_size,
         uint64_t offset, uint64_t base_offset);
 }

@@ -22,6 +22,7 @@
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/host.hpp>
 #include <category/vm/runtime/bin.hpp>
+#include <category/vm/runtime/call_host.hpp>
 #include <category/vm/runtime/data.hpp>
 #include <category/vm/runtime/transmute.hpp>
 #include <category/vm/runtime/types.hpp>
@@ -39,12 +40,13 @@ namespace monad::vm::runtime
 
         auto const address = address_from_uint256(*address_ptr);
 
-        auto const access_status = ctx->host->access_account(address);
+        auto const access_status =
+            call_host<&Host::access_account>(ctx, address);
         if (access_status == AccessStatus::Cold) {
             ctx->deduct_gas(traits::cold_account_cost());
         }
 
-        *result_ptr = ctx->host->get_balance(address);
+        *result_ptr = call_host<&Host::get_balance>(ctx, address);
     }
 
     EXPLICIT_TRAITS(balance);
@@ -134,7 +136,8 @@ namespace monad::vm::runtime
 
         auto const address = address_from_uint256(*address_ptr);
 
-        auto const access_status = ctx->host->access_account(address);
+        auto const access_status =
+            call_host<&Host::access_account>(ctx, address);
         if (access_status == AccessStatus::Cold) {
             ctx->deduct_gas(traits::cold_account_cost());
         }
@@ -143,8 +146,8 @@ namespace monad::vm::runtime
             auto const offset = clamp_cast<uint32_t>(*offset_ptr);
 
             auto *dest_ptr = ctx->memory.data + *dest_offset;
-            auto const n =
-                ctx->host->copy_code(address, offset, dest_ptr, *size);
+            auto const n = call_host<&Host::copy_code>(
+                ctx, address, offset, dest_ptr, *size);
 
             auto *begin = dest_ptr + static_cast<uint32_t>(n);
             auto *end = dest_ptr + *size;
@@ -195,12 +198,13 @@ namespace monad::vm::runtime
 
         auto const address = address_from_uint256(*address_ptr);
 
-        auto const access_status = ctx->host->access_account(address);
+        auto const access_status =
+            call_host<&Host::access_account>(ctx, address);
         if (access_status == AccessStatus::Cold) {
             ctx->deduct_gas(traits::cold_account_cost());
         }
 
-        auto const hash = ctx->host->get_code_hash(address);
+        auto const hash = call_host<&Host::get_code_hash>(ctx, address);
         *result_ptr = load_be<uint256_t>(hash);
     }
 
@@ -214,12 +218,13 @@ namespace monad::vm::runtime
 
         auto const address = address_from_uint256(*address_ptr);
 
-        auto const access_status = ctx->host->access_account(address);
+        auto const access_status =
+            call_host<&Host::access_account>(ctx, address);
         if (access_status == AccessStatus::Cold) {
             ctx->deduct_gas(traits::cold_account_cost());
         }
 
-        *result_ptr = ctx->host->get_code_size(address);
+        *result_ptr = call_host<&Host::get_code_size>(ctx, address);
     }
 
     EXPLICIT_TRAITS(extcodesize);

@@ -26,6 +26,7 @@
 #include <category/vm/interpreter/execute.hpp>
 #include <category/vm/memory_pool.hpp>
 #include <category/vm/runtime/allocator.hpp>
+#include <category/vm/runtime/engine_timer.hpp>
 #include <category/vm/utils/debug.hpp>
 
 #include <array>
@@ -37,10 +38,19 @@ namespace monad::vm
 {
     constexpr auto counts_format_string =
         ",execute_intercode_calls={},execute_native_entrypoint_"
-        "calls={},execute_raw_calls={}";
+        "calls={},execute_raw_calls={},engine={}us,keccak={}us";
 
     struct VmStats
     {
+        struct EngineTimes
+        {
+            std::atomic<uint64_t> engine_ns{0};
+            std::atomic<uint64_t> keccak_ns{0};
+        };
+
+        EngineTimes engine_times_per_block_{};
+        EngineTimes engine_times_{};
+
         std::atomic<uint64_t> execute_intercode_call_count_per_block_{0};
         std::atomic<uint64_t> execute_native_entrypoint_call_count_per_block_{
             0};
@@ -78,6 +88,23 @@ namespace monad::vm
             }
         }
 
+        void event_engine_time(runtime::EngineTimer const &timer) noexcept
+        {
+            if constexpr (utils::collect_monad_compiler_hot_path_stats) {
+                auto const engine = static_cast<uint64_t>(
+                    timer.elapsed(runtime::EngineTimer::Engine).count());
+                auto const keccak = static_cast<uint64_t>(
+                    timer.elapsed(runtime::EngineTimer::Keccak).count());
+                for (auto *const times :
+                     {&engine_times_, &engine_times_per_block_}) {
+                    times->engine_ns.fetch_add(
+                        engine, std::memory_order_release);
+                    times->keccak_ns.fetch_add(
+                        keccak, std::memory_order_release);
+                }
+            }
+        }
+
         void reset_block_counts() noexcept
         {
             if constexpr (utils::collect_monad_compiler_hot_path_stats) {
@@ -87,7 +114,16 @@ namespace monad::vm
                     0, std::memory_order_release);
                 execute_raw_call_count_per_block_.store(
                     0, std::memory_order_release);
+                engine_times_per_block_.engine_ns.store(
+                    0, std::memory_order_release);
+                engine_times_per_block_.keccak_ns.store(
+                    0, std::memory_order_release);
             }
+        }
+
+        static uint64_t to_us(std::atomic<uint64_t> const &ns) noexcept
+        {
+            return ns.load(std::memory_order_acquire) / 1000;
         }
 
         [[nodiscard]]
@@ -101,7 +137,9 @@ namespace monad::vm
                     execute_native_entrypoint_call_count_per_block_.load(
                         std::memory_order_acquire),
                     execute_raw_call_count_per_block_.load(
-                        std::memory_order_acquire));
+                        std::memory_order_acquire),
+                    to_us(engine_times_per_block_.engine_ns),
+                    to_us(engine_times_per_block_.keccak_ns));
                 reset_block_counts();
                 return str;
             }
@@ -119,7 +157,9 @@ namespace monad::vm
                         std::memory_order_acquire),
                     execute_native_entrypoint_call_count_.load(
                         std::memory_order_acquire),
-                    execute_raw_call_count_.load(std::memory_order_acquire));
+                    execute_raw_call_count_.load(std::memory_order_acquire),
+                    to_us(engine_times_.engine_ns),
+                    to_us(engine_times_.keccak_ns));
             }
             else {
                 return "";

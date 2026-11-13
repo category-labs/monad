@@ -936,17 +936,23 @@ OffsetTrie::node_rlp_span OffsetTrie::encode_rlp(
                     asm("" : "+r"(child_cursor));
 #endif
                     uint64_t const child_offset = *child_cursor;
+                    if (child_offset == 0) {
+                        // 0x80 encodes an empty child. The full branch fits
+                        // within MAX_NODE_RLP, so this byte always has room.
+                        static_assert(
+                            3 + 16 * HASH_RLP_LEN + 1 <= MAX_NODE_RLP);
+                        dest = dest.prepend_unchecked(0x80);
+                        continue;
+                    }
 #if defined(MONAD_ZKVM_ZISK)
                     if constexpr (claim_children) {
                         // Before reading the child, require a previously seen
                         // node that no other parent has claimed.
-                        if (child_offset != 0) {
-                            MONAD_ASSERT(
-                                child_offset < blob_size &&
-                                unclaimed_node_marks[child_offset] != 0);
-                            unclaimed_node_marks[child_offset] = 0;
-                            claimed_node_bytes += DIGEST_NODE_LEN;
-                        }
+                        MONAD_ASSERT(
+                            child_offset < blob_size &&
+                            unclaimed_node_marks[child_offset] != 0);
+                        unclaimed_node_marks[child_offset] = 0;
+                        claimed_node_bytes += DIGEST_NODE_LEN;
                     }
 #endif
                     if (!digest_at(child_offset)) {
@@ -960,12 +966,9 @@ OffsetTrie::node_rlp_span OffsetTrie::encode_rlp(
                             static_assert(
                                 MAX_NODE_RLP - (3 + 16 * HASH_RLP_LEN + 1) >=
                                 16 * sizeof(uintptr_t));
-                            if (child_offset != 0) {
-                                reinterpret_cast<uintptr_t *>(dest.base())
-                                    [child_cursor - children_begin] =
-                                        reinterpret_cast<uintptr_t>(
-                                            dest.rlp_data());
-                            }
+                            reinterpret_cast<uintptr_t *>(
+                                dest.base())[child_cursor - children_begin] =
+                                reinterpret_cast<uintptr_t>(dest.rlp_data());
                         }
 #endif
                         continue;

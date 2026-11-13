@@ -94,6 +94,13 @@ struct node_rlp_span : private std::span<unsigned char>
         return std::span<unsigned char>::data();
     }
 
+    // Prepend one byte. Caller must ensure the remaining span is nonempty.
+    node_rlp_span prepend_unchecked(unsigned char const byte) const
+    {
+        std::span<unsigned char>::data()[size() - 1] = byte;
+        return node_rlp_span{std::span<unsigned char>::first(size() - 1)};
+    }
+
     // Prepend length bytes to the encoded tail. Caller must ensure length <=
     // size().
     node_rlp_span prepend_unchecked(

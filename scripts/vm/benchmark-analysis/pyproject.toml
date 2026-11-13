@@ -14,6 +14,7 @@ dependencies = [
 [project.scripts]
 compare-benchmarks = "compare_benchmarks.main:main"
 compare-implementations = "compare_implementations.main:main"
+vm-perf = "vm_perf.cli:main"
 
 [tool.uv]
 package = true

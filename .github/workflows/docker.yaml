@@ -68,7 +68,7 @@ jobs:
             CC=${{ matrix.compiler.CC }}
             CXX=${{ matrix.compiler.CXX }}
             CMAKE_BUILD_TYPE=${{ matrix.CMAKE_BUILD_TYPE }}
-            TOOLCHAIN=gcc-avx2
+            TOOLCHAIN=gcc-avx2-ci
           allow: security.insecure # for tests which use io_uring
           cache-from: |
             type=gha,scope=base

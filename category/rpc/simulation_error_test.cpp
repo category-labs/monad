@@ -58,6 +58,17 @@ TEST(SimulationErrorTest, SimulationDomain)
             "the block gap must be exactly 1 after filling in synthetic "
             "blocks"},
         TestCase{SimulationError::GasLimitExceeded, "gas limit exceeded"},
+        TestCase{
+            SimulationError::RevisionPinningNotSupported,
+            "revision pinning is only supported on Ethereum chains"},
+        TestCase{
+            SimulationError::UnsupportedPinnedRevision,
+            "pinned revision is not supported"},
+        TestCase{
+            SimulationError::UnsupportedBaseRevision,
+            "the base block predates the earliest supported fork"},
+        TestCase{
+            SimulationError::TimestampOverflow, "block timestamp overflow"},
     };
 
     for (auto const &test_case : test_cases) {
@@ -68,17 +79,6 @@ TEST(SimulationErrorTest, SimulationDomain)
         EXPECT_EQ(info.status_code, CallStatus::InternalError);
         EXPECT_EQ(info.message, test_case.message);
     }
-}
-
-TEST(SimulationErrorTest, UnsupportedChainConfig)
-{
-    Result<void>::error_type const error =
-        SimulationError::UnsupportedChainConfig;
-
-    auto const info = simulation_error_info(error);
-
-    EXPECT_EQ(info.status_code, CallStatus::Rejected);
-    EXPECT_EQ(info.message, "only Monad chain configurations are supported");
 }
 
 TEST(SimulationErrorTest, BlockDomain)

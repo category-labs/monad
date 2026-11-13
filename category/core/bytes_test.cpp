@@ -115,10 +115,10 @@ TEST(Bytes32, operator_bool_nonzero_is_true)
 
 TEST(Bytes32, equality)
 {
-    constexpr auto a = bytes32_from_hex(
-        "0000000000000000000000000000000000000000000000000000000000000001");
-    constexpr auto b = bytes32_from_hex(
-        "0000000000000000000000000000000000000000000000000000000000000001");
+    constexpr auto a =
+        0x0000000000000000000000000000000000000000000000000000000000000001_bytes32;
+    constexpr auto b =
+        0x0000000000000000000000000000000000000000000000000000000000000001_bytes32;
     constexpr bytes32_t c{uint64_t{2}};
     EXPECT_EQ(a, b);
     EXPECT_NE(a, c);
@@ -165,24 +165,6 @@ TEST(Bytes32, literal_full_width)
         EXPECT_EQ(val.bytes[i + 2], 0xBE);
         EXPECT_EQ(val.bytes[i + 3], 0xEF);
     }
-}
-
-// ---------------------------------------------------------------------------
-// bytes32_from_hex
-// ---------------------------------------------------------------------------
-
-TEST(Bytes32, from_hex_without_prefix)
-{
-    auto const val = bytes32_from_hex(
-        "0000000000000000000000000000000000000000000000000000000000000042");
-    EXPECT_EQ(val.bytes[31], 0x42);
-}
-
-TEST(Bytes32, from_hex_with_prefix)
-{
-    auto const val = bytes32_from_hex(
-        "0x0000000000000000000000000000000000000000000000000000000000000042");
-    EXPECT_EQ(val.bytes[31], 0x42);
 }
 
 // ---------------------------------------------------------------------------

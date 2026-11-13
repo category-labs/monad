@@ -162,7 +162,7 @@ static constexpr std::string_view to_string(CallStatus const sc) noexcept
 }
 
 static constexpr Address genesis_address =
-    monad::address_from_hex("0xBEEFCAFE000000000000000000000000BA5EBA11");
+    0xBEEFCAFE000000000000000000000000BA5EBA11_address;
 
 struct TransitionState
 {

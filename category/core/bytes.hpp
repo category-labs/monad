@@ -127,23 +127,18 @@ namespace literals
 
 using literals::operator""_bytes32;
 
-constexpr bytes32_t bytes32_from_hex(char const *const s)
-{
-    return from_hex<bytes32_t>(s).value();
-}
+constexpr bytes32_t NULL_HASH{
+    0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470_bytes32};
 
-constexpr bytes32_t NULL_HASH{bytes32_from_hex(
-    "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470")};
-
-constexpr bytes32_t NULL_LIST_HASH{bytes32_from_hex(
-    "1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347")};
+constexpr bytes32_t NULL_LIST_HASH{
+    0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347_bytes32};
 
 // Root hash of an empty trie
-constexpr bytes32_t NULL_ROOT{bytes32_from_hex(
-    "56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421")};
+constexpr bytes32_t NULL_ROOT{
+    0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421_bytes32};
 
-constexpr bytes32_t NULL_HASH_BLAKE3{bytes32_from_hex(
-    "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262")};
+constexpr bytes32_t NULL_HASH_BLAKE3{
+    0xaf1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262_bytes32};
 
 MONAD_NAMESPACE_END
 

@@ -116,10 +116,8 @@ TEST(Address, operator_bool_nonzero_is_true)
 
 TEST(Address, equality)
 {
-    constexpr auto a =
-        address_from_hex("0000000000000000000000000000000000000001");
-    constexpr auto b =
-        address_from_hex("0000000000000000000000000000000000000001");
+    constexpr auto a = 0x0000000000000000000000000000000000000001_address;
+    constexpr auto b = 0x0000000000000000000000000000000000000001_address;
     constexpr Address c{uint64_t{2}};
     EXPECT_EQ(a, b);
     EXPECT_NE(a, c);
@@ -164,24 +162,6 @@ TEST(Address, literal_full_width)
         EXPECT_EQ(val.bytes[i + 2], 0xBE);
         EXPECT_EQ(val.bytes[i + 3], 0xEF);
     }
-}
-
-// ---------------------------------------------------------------------------
-// address_from_hex
-// ---------------------------------------------------------------------------
-
-TEST(Address, from_hex_without_prefix)
-{
-    auto const val =
-        address_from_hex("0000000000000000000000000000000000000042");
-    EXPECT_EQ(val.bytes[19], 0x42);
-}
-
-TEST(Address, from_hex_with_prefix)
-{
-    auto const val =
-        address_from_hex("0x0000000000000000000000000000000000000042");
-    EXPECT_EQ(val.bytes[19], 0x42);
 }
 
 // ---------------------------------------------------------------------------

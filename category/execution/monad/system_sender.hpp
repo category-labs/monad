@@ -23,6 +23,6 @@ MONAD_NAMESPACE_BEGIN
 // This address is derived from a known key. Consensus will sign all system
 // transactions with this key.
 inline constexpr Address SYSTEM_SENDER =
-    address_from_hex("0x6f49a8F621353f12378d0046E7d7e4b9B249DC9e");
+    0x6f49a8F621353f12378d0046E7d7e4b9B249DC9e_address;
 
 MONAD_NAMESPACE_END

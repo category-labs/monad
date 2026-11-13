@@ -132,7 +132,8 @@ init_exec_event_ring(std::string const event_ring_path)
         .context_large_pages = 0,
         .content_type = MONAD_EVENT_CONTENT_TYPE_EXEC,
         .schema_hash = g_monad_exec_event_schema_hash};
-    int rc = monad_event_ring_init_simple(&simple_cfg, ring_fd, 0, MEMFD_NAME);
+    int rc = monad_event_ring_init_simple(
+        &simple_cfg, MONAD_EVENT_INIT_NO_ZERO_FILL, ring_fd, 0, MEMFD_NAME);
     MONAD_ASSERT_PRINTF(
         rc == 0,
         "event library error -- %s",

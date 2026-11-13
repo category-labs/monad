@@ -19,6 +19,9 @@
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/event/event_iterator.h>
+#include <category/core/event/event_ring.h>
+#include <category/core/event/event_ring_util.h>
 #include <category/core/hex.hpp>
 #include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
@@ -42,6 +45,7 @@
 #include <category/execution/ethereum/db/test/commit_simple.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
+#include <category/execution/ethereum/event/exec_event_ctypes.h>
 #include <category/execution/ethereum/native_transfer_log.hpp>
 #include <category/execution/ethereum/reserve_balance.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
@@ -98,6 +102,7 @@
 #include <memory>
 #include <optional>
 #include <ranges>
+#include <span>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string>
@@ -5568,6 +5573,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_simple_transfer)
         block_override,
         true, // validation
         false,
+        nullptr,
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -5592,6 +5598,260 @@ TEST_F(EthCallFixture, eth_simulate_v1_simple_transfer)
     ASSERT_TRUE(sender_account.has_value());
     EXPECT_EQ(sender_account->balance, uint256_t{1'000'000});
 
+    monad_block_override_vec_destroy(block_override);
+    monad_state_override_vec_destroy(state_override);
+    monad_executor_destroy(executor);
+}
+
+// The same setup as `eth_simulate_v1_simple_transfer`, but this records
+// execution events to an ephemeral event ring
+TEST_F(EthCallFixture, eth_simulate_v1_simple_transfer_exec_events)
+{
+    static constexpr Address sender =
+        0x00000000000000000000000000000000deadbeef_address;
+    static constexpr Address recipient =
+        0x00000000000000000000000000000000feedface_address;
+    static constexpr uint64_t gas_limit = 200'000'000;
+    static constexpr uint256_t transfer_value = 1000;
+    static constexpr uint256_t initial_balance = 1'000'000;
+
+    commit_sequential(
+        tdb,
+        StateDeltas{
+            {{sender,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{.balance = initial_balance, .nonce = 0}}}},
+             {recipient,
+              StateDelta{
+                  .account =
+                      {std::nullopt, Account{.balance = 0, .nonce = 0}}}}}},
+        {},
+        BlockHeader{.number = 0});
+
+    for (uint64_t i = 1; i < 256; ++i) {
+        commit_sequential(tdb, {}, {}, BlockHeader{.number = i});
+    }
+
+    auto *executor = create_executor(dbname.string());
+
+    auto *const state_override = monad_state_override_vec_create(1);
+    auto *const block_override = monad_block_override_vec_create(1);
+
+    auto const rlp_senders = to_vec(rlp::encode_list2(
+        rlp::encode_list2(rlp::encode_address(std::make_optional(sender)))));
+
+    // A simple transfer
+    Transaction const tx{
+        .gas_limit = gas_limit,
+        .value = transfer_value,
+        .to = recipient,
+    };
+    auto const encoded_tx = rlp::encode_transaction(tx);
+    auto const rlp_calls = to_vec(rlp::encode_list2(
+        rlp::encode_list2(rlp::encode_string2(byte_string_view(encoded_tx)))));
+
+    // Header for the base block (block 1).
+    BlockHeader const header{
+        .number = 1,
+        .gas_limit = gas_limit,
+    };
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+
+    int event_ring_fd;
+    monad_event_ring event_ring;
+    monad_event_ring_simple_config const event_ring_cfg = {
+        .descriptors_shift = 20,
+        .payload_buf_shift = 28,
+        .context_large_pages = 0,
+        .content_type = MONAD_EVENT_CONTENT_TYPE_EXEC,
+        .schema_hash = g_monad_exec_event_schema_hash,
+    };
+
+    int rc = monad_event_ring_create_ephemeral(
+        &event_ring_cfg,
+        "eth_simulate_v1_test_ring",
+        0,
+        MAP_NORESERVE,
+        &event_ring_fd,
+        &event_ring);
+    ASSERT_EQ(rc, 0);
+
+    monad_executor_event_record_options const event_record_opts = {
+        .exec_event_ring = &event_ring,
+        .emit_mock_consensus_events = true,
+    };
+
+    monad_executor_eth_simulate_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_senders.data(),
+        rlp_senders.size(),
+        rlp_calls.data(),
+        rlp_calls.size(),
+        1, // block_number
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        rlp_finalized_id.data(),
+        rlp_finalized_id.size(),
+        simulate_gas_limit,
+        simulate_max_calls,
+        simulate_max_output_size,
+        state_override,
+        block_override,
+        true,
+        false,
+        &event_record_opts,
+        complete_callback,
+        (void *)&ctx);
+    f.get();
+
+    ASSERT_EQ(ctx.result->status_code, std::to_underlying(CallStatus::Success));
+    ASSERT_TRUE(ctx.result->encoded_trace_len > 0);
+
+    // Check that the events are as expected
+    monad_event_descriptor event{};
+    monad_event_iterator event_iter;
+    monad_event_iter_result iter_result;
+    unsigned event_count = 0;
+    unsigned txn_count = 0;
+    unsigned call_frame_count = 0;
+    rc = monad_event_ring_init_iterator(&event_ring, &event_iter);
+    ASSERT_EQ(rc, 0);
+    monad_event_iterator_set_seqno(&event_iter, 1);
+
+ReadNextEvent:
+    iter_result = monad_event_iterator_try_next(&event_iter, &event);
+    ASSERT_EQ(iter_result, MONAD_EVENT_SUCCESS);
+    void const *const event_payload =
+        monad_event_ring_payload_peek(&event_ring, &event);
+    ASSERT_NE(event_payload, nullptr);
+    ++event_count;
+
+    // To avoid making the test too brittle, we don't want to assume too much
+    // about the exact execution event schema. Consequently, we don't specify
+    // exactly how many events the simulation should generate. However, we
+    // specify an upper limit so we can die in case the iteration isn't
+    // terminating in the way we expect.
+    ASSERT_LT(event_count, 128);
+
+    // We don't want to check every field here, because we're _not_ trying
+    // to check the correctness of the execution events recording in general,
+    // only that simulation infrastructure records the events related to the
+    // simulation.
+    switch (event.event_type) {
+    case MONAD_EXEC_BLOCK_START: {
+        monad_exec_block_start const *const block_start =
+            static_cast<monad_exec_block_start const *>(event_payload);
+        ASSERT_EQ(block_start->eth_block_input.txn_count, 1);
+        ASSERT_EQ(block_start->eth_block_input.gas_limit, gas_limit);
+    }
+        goto ReadNextEvent;
+
+    case MONAD_EXEC_TXN_HEADER_START: {
+        monad_exec_txn_header_start const *const txn_header =
+            static_cast<monad_exec_txn_header_start const *>(event_payload);
+
+        // There should be only one transaction; in the future if blocks
+        // contain injected system transactions this check would need to
+        // be more sophisticated.
+        ASSERT_EQ(++txn_count, 1);
+
+        ASSERT_EQ(Address{txn_header->sender}, sender);
+        ASSERT_EQ(Address{txn_header->txn_header.to}, recipient);
+        ASSERT_EQ(txn_header->txn_header.value, transfer_value);
+    }
+        goto ReadNextEvent;
+
+    case MONAD_EXEC_TXN_EVM_OUTPUT: {
+        monad_exec_txn_evm_output const *const txn_output =
+            static_cast<monad_exec_txn_evm_output const *>(event_payload);
+        ASSERT_TRUE(txn_output->receipt.status);
+        ASSERT_EQ(txn_output->receipt.gas_used, gas_limit);
+        ASSERT_EQ(txn_output->receipt.log_count, 1); // EIP-7708
+    }
+        goto ReadNextEvent;
+
+    case MONAD_EXEC_TXN_LOG: {
+        // Checks the contents of the EIP-7708 native transfer log, which is an
+        // ERC-20 `Transfer` event; the hash below is the keccak digest of
+        // `Transfer(address,address,uint256)`
+        static bytes32_t const erc20_transfer_hash =
+            0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef_bytes32;
+        monad_exec_txn_log const *const txn_log =
+            static_cast<monad_exec_txn_log const *>(event_payload);
+        ASSERT_EQ(txn_log->index, 0);
+        ASSERT_EQ(Address{txn_log->address}, ETH_SYSTEM_ADDRESS);
+        ASSERT_EQ(txn_log->topic_count, 3);
+        ASSERT_EQ(txn_log->data_length, sizeof(bytes32_t));
+        std::span const log_topics{
+            reinterpret_cast<bytes32_t const *>(txn_log + 1),
+            txn_log->topic_count};
+        ASSERT_EQ(log_topics[0], erc20_transfer_hash);
+        ASSERT_EQ(log_topics[1], abi_encode_address(sender));
+        ASSERT_EQ(log_topics[2], abi_encode_address(recipient));
+        bytes32_t const log_data = *(log_topics.data() + log_topics.size());
+        ASSERT_EQ(log_data, abi_encode_uint(u256_be{transfer_value}));
+    }
+        goto ReadNextEvent;
+
+    case MONAD_EXEC_TXN_CALL_FRAME: {
+        monad_exec_txn_call_frame const *const call_frame =
+            static_cast<monad_exec_txn_call_frame const *>(event_payload);
+
+        // There should be only one call frame
+        ASSERT_EQ(++call_frame_count, 1);
+
+        ASSERT_EQ(Address{call_frame->caller}, sender);
+        ASSERT_EQ(Address{call_frame->call_target}, recipient);
+        ASSERT_EQ(call_frame->value, transfer_value);
+        ASSERT_EQ(call_frame->gas, gas_limit);
+        ASSERT_EQ(call_frame->gas_used, gas_limit);
+        ASSERT_EQ(call_frame->evmc_status, 0);
+        ASSERT_EQ(call_frame->depth, 0);
+    }
+        goto ReadNextEvent;
+
+    case MONAD_EXEC_ACCOUNT_ACCESS: {
+        monad_exec_account_access const *const acct_access =
+            static_cast<monad_exec_account_access const *>(event_payload);
+        if (Address{acct_access->address} == sender) {
+            ASSERT_TRUE(acct_access->is_balance_modified);
+            ASSERT_TRUE(acct_access->is_nonce_modified);
+            ASSERT_EQ(acct_access->prestate.nonce, 0);
+            ASSERT_EQ(acct_access->prestate.balance, initial_balance);
+            ASSERT_EQ(acct_access->modified_nonce, 1);
+            ASSERT_EQ(
+                acct_access->modified_balance,
+                initial_balance - transfer_value);
+        }
+        if (Address{acct_access->address} == recipient) {
+            ASSERT_TRUE(acct_access->is_balance_modified);
+            ASSERT_FALSE(acct_access->is_nonce_modified);
+            ASSERT_EQ(acct_access->prestate.balance, uint256_t{0});
+            ASSERT_EQ(acct_access->modified_balance, transfer_value);
+        }
+    }
+        goto ReadNextEvent;
+
+    case MONAD_EXEC_BLOCK_FINALIZED:
+        // Seeing the mock finalization consensus event is the only way we can
+        // exit successfully; all other paths jump back to ReadNextEvent.
+        break;
+
+    default:
+        goto ReadNextEvent;
+    }
+
+    close(event_ring_fd);
+    monad_event_ring_unmap(&event_ring);
     monad_block_override_vec_destroy(block_override);
     monad_state_override_vec_destroy(state_override);
     monad_executor_destroy(executor);
@@ -5684,6 +5944,7 @@ TEST_F(EthCallFixture, eth_simulate_slot_number)
         block_override,
         true, // validation
         false,
+        nullptr, // event_record_opts
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -5821,6 +6082,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_slot_number_across_amsterdam)
             bo,
             true, // validation
             false,
+            nullptr, // event_record_opts
             complete_callback,
             (void *)&ctx);
         f.get();
@@ -5959,6 +6221,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_simple_transfers_multiple_blocks)
         block_overrides,
         true, // validation
         false,
+        nullptr, // event_record_opts
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -6060,6 +6323,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_single_call_block_255)
         bo_overrides,
         true, // validation
         false,
+        nullptr, // event_record_opts
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -6119,6 +6383,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_empty_input)
         bo_overrides,
         true, // validation
         false,
+        nullptr, // event_record_opts
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -6196,6 +6461,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_block_override_synthetic_gap)
         bo_overrides,
         true, // validation
         false,
+        nullptr, // event_record_opts
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -6299,6 +6565,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_block_override_no_synthetic_gaps)
         bo_overrides,
         true, // validation
         false,
+        nullptr, // event_record_opts
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -6411,6 +6678,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_stress_queue_rejection)
             subs[i]->bo,
             true, // validation
             false,
+            nullptr, // event_record_opts
             complete_callback,
             (void *)&subs[i]->ctx);
     }
@@ -6578,6 +6846,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance)
         bo,
         true, // validation
         false,
+        nullptr, // event_record_opts
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -6736,6 +7005,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance_chain_context_buffer)
             bo,
             true, // validation
             false,
+            nullptr, // event_record_opts
             complete_callback,
             (void *)&ctx);
         f.get();
@@ -6880,6 +7150,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance_chain_context_buffer)
             bo,
             true, // validation
             false,
+            nullptr, // event_record_opts
             complete_callback,
             (void *)&ctx);
         f.get();
@@ -7113,6 +7384,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_call_types)
         bo,
         true, // validation
         false,
+        nullptr, // event_record_opts
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -7261,6 +7533,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_state_changes_across_blocks)
         bo,
         true, // validation
         false,
+        nullptr, // event_record_opts
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -7484,6 +7757,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_deploy_and_call)
         bo,
         true, // validation
         false,
+        nullptr, // event_record_opts
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -7702,6 +7976,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_native_transfer_logs)
         bo,
         true, // validation
         true, // emit_native_transfer_logs
+        nullptr, // event_record_opts
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -7848,6 +8123,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_trace_transfers_across_amsterdam)
             bo,
             true, // validation
             true, // emit_native_transfer_logs
+            nullptr, // event_record_opts
             complete_callback,
             (void *)&ctx);
         f.get();
@@ -8022,6 +8298,7 @@ TYPED_TEST(EthCallEncodingFixture, eth_simulate_v1_time_travel)
         bo,
         true, // validation
         true, // emit_native_transfer_logs
+        nullptr, // event_record_opts
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -8152,6 +8429,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_blockhash_reads)
         bo,
         true, // validation
         false,
+        nullptr, // event_record_opts
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -8297,6 +8575,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_legacy_transactions)
         block_overrides,
         true, // validation
         false,
+        nullptr, // event_record_opts
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -8411,6 +8690,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_typed_transactions_2930_and_1559)
         block_overrides,
         true, // validation
         false,
+        nullptr, // event_record_opts
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -8539,6 +8819,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_typed_transaction_7702)
         block_overrides,
         true, // validation
         false,
+        nullptr, // event_record_opts
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -8695,6 +8976,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_all_transaction_formats_single_block)
         block_overrides,
         true, // validation
         false,
+        nullptr, // event_record_opts
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -8814,6 +9096,7 @@ TEST_F(
         block_overrides,
         true, // validation
         false,
+        nullptr, // event_record_opts
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -8937,6 +9220,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_gas_limit_enforcement)
         block_override,
         true, // validation
         false,
+        nullptr, // event_record_opts
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -9033,6 +9317,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_simple_transfer_withdrawals_monad)
         block_override,
         true, // validation
         false,
+        nullptr, // event_record_opts
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -9174,6 +9459,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_state_override_graceful_failure)
         block_override,
         true, // validation
         false,
+        nullptr, // event_record_opts
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -9250,6 +9536,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_transaction_input_too_long_causes_death)
             block_override,
             true, // validation
             false,
+            nullptr, // event_record_opts
             nullptr,
             nullptr),
         "maybe_txns\\.has_value\\(\\)"); // Pattern match on the expected
@@ -9335,6 +9622,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_beacon_roots)
             block_overrides,
             true, // validation
             false,
+            nullptr, // event_record_opts
             complete_callback,
             (void *)&ctx);
 
@@ -9483,6 +9771,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_block_history_state_override)
         block_overrides,
         true, // validation
         false,
+        nullptr, // event_record_opts
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -9592,6 +9881,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_deploy_over_storage_override)
         block_overrides,
         true, // validation
         false,
+        nullptr, // event_record_opts
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -9735,6 +10025,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_output_size_enforcement)
             block_override,
             true, // validation
             false,
+            nullptr, // event_record_opts
             complete_callback,
             (void *)&no_limit_ctx);
         f.get();
@@ -9773,6 +10064,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_output_size_enforcement)
             block_override,
             true, // validation
             false,
+            nullptr, // event_record_opts
             complete_callback,
             (void *)&actual_ctx);
         f.get();
@@ -9814,6 +10106,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_output_size_enforcement)
             block_override,
             true, // validation
             false,
+            nullptr, // event_record_opts
             complete_callback,
             (void *)&limited_ctx);
         f.get();
@@ -9862,6 +10155,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_output_size_enforcement)
             block_override,
             true, // validation
             false,
+            nullptr, // event_record_opts
             complete_callback,
             (void *)&output_limited_ctx);
         f.get();
@@ -9915,6 +10209,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_output_size_enforcement)
             block_override,
             true, // validation
             false,
+            nullptr, // event_record_opts
             complete_callback,
             (void *)&mixed_limited_ctx);
         f.get();
@@ -10101,6 +10396,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_empty_state_override_zeros_storage)
         block_overrides,
         true, // validation
         false,
+        nullptr, // event_record_opts
         complete_callback,
         &ctx);
     future.get();
@@ -10588,6 +10884,7 @@ TEST(EthCallFixtureNoDb, eth_simulate_v1_with_state_overrides)
         bo,
         true, // validation
         false,
+        nullptr, // event_record_opts
         complete_callback,
         (void *)&ctx);
     f.get();
@@ -10722,6 +11019,7 @@ TEST(EthCallFixtureNoDb, eth_simulate_v1_rejects_ethereum_chain_configs)
                 block_overrides,
                 validation,
                 false, // emit_native_transfer_logs
+                nullptr, // event_record_opts
                 complete_callback,
                 (void *)&ctx);
             future.get();
@@ -10809,6 +11107,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_validation_modes_match_for_eoa)
             block_overrides,
             validation,
             false,
+            nullptr, // event_record_opts
             complete_callback,
             (void *)&ctx);
         future.get();
@@ -10961,6 +11260,7 @@ TEST_F(
                 block_overrides,
                 validation,
                 false,
+                nullptr, // event_record_opts
                 complete_callback,
                 (void *)&ctx);
             future.get();
@@ -11091,6 +11391,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_relaxed_sender_validation)
             block_overrides,
             test_case.validation,
             false,
+            nullptr, // event_record_opts
             complete_callback,
             (void *)&ctx);
         future.get();
@@ -11316,6 +11617,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_validation_false_matches_eth_call)
             block_overrides,
             false, // validation
             false,
+            nullptr, // event_record_opts
             complete_callback,
             &simulate_ctx);
         simulate_future.get();
@@ -11493,6 +11795,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_max_sender_nonce_differs_from_eth_call)
         block_overrides,
         false, // validation
         false,
+        nullptr, // event_record_opts
         complete_callback,
         &simulate_ctx);
     simulate_future.get();
@@ -11608,6 +11911,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_validation_false_bounds_sender_nonce)
             block_overrides,
             false, // validation
             false,
+            nullptr, // event_record_opts
             complete_callback,
             (void *)&ctx);
         future.get();
@@ -11717,6 +12021,7 @@ TEST_F(
         block_overrides,
         false, // validation
         false,
+        nullptr, // event_record_opts
         complete_callback,
         (void *)&ctx);
     future.get();
@@ -11840,6 +12145,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_nonce_moved_by_earlier_authorization)
             block_overrides,
             validation,
             false,
+            nullptr, // event_record_opts
             complete_callback,
             (void *)&ctx);
         future.get();
@@ -11954,6 +12260,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_authorization_raises_sender_nonce_to_max)
             block_overrides,
             validation,
             false, // emit_native_transfer_logs
+            nullptr, // event_record_opts
             complete_callback,
             (void *)&ctx);
         future.get();
@@ -12128,6 +12435,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_validation_controls_base_fee)
             block_overrides,
             test_case.validation,
             false, // emit_native_transfer_logs
+            nullptr, // event_record_opts
             complete_callback,
             (void *)&ctx);
         future.get();

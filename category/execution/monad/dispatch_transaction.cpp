@@ -15,11 +15,13 @@
 
 #include <category/core/address.hpp>
 #include <category/core/config.hpp>
+#include <category/core/likely.h>
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
+#include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/dispatch_transaction.hpp>
 #include <category/execution/monad/execute_system_transaction.hpp>
 #include <category/execution/monad/system_sender.hpp>
@@ -43,6 +45,33 @@ Result<Receipt> dispatch_transaction(
     trace::StateTracer &state_tracer, ChainContext<traits> const &chain_ctx,
     ExecutionEventRecorder *const exec_recorder, bool const trace_transfers)
 {
+    if (MONAD_UNLIKELY(chain_ctx.private_domain)) {
+        // Deliveries come from DOMAIN_SYSTEM_RELAYER, the L1 system sender,
+        // but are ordinary calls to the spoke. A transaction that fails
+        // validation stays in the block with a status-0 receipt, so that the
+        // block's body does not depend on execution.
+        auto result = ExecuteTransaction<traits>{
+            chain,
+            i,
+            transaction,
+            sender,
+            authorities,
+            header,
+            block_hash_buffer,
+            block_state,
+            block_metrics,
+            prev,
+            call_tracer,
+            state_tracer,
+            chain_ctx,
+            exec_recorder,
+            trace_transfers}();
+        if (result.has_error()) {
+            return Receipt{
+                .status = 0, .gas_used = 0, .type = transaction.type};
+        }
+        return result;
+    }
     if (traits::staking_active() && sender == SYSTEM_SENDER) {
         // System transactions is a concept used in Monad for consensus to
         // communicate state changes to execution this code handles these in a

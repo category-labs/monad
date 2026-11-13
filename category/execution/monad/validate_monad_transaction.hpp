@@ -19,6 +19,7 @@
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/core/result.hpp>
+#include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/validate_transaction.hpp>
 #include <category/vm/evm/monad/revision.h>
@@ -54,7 +55,7 @@ Result<void> validate_transaction(
     Transaction const &, Address const &sender, State &,
     uint256_t const &base_fee_per_gas,
     std::span<std::optional<Address> const> authorities,
-    trace::StateTracer &state_tracer, ExecutionMode const &mode);
+    trace::StateTracer &state_tracer, ChainContext<traits> const &);
 
 MONAD_NAMESPACE_END
 

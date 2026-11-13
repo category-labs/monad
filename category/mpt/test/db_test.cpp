@@ -27,7 +27,6 @@
 #include <category/core/fiber/priority_pool.hpp>
 #include <category/core/hex.hpp>
 #include <category/core/result.hpp>
-#include <category/core/runtime/unaligned.hpp>
 #include <category/core/small_prng.hpp>
 #include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 #include <category/crypto/keccak.h>
@@ -1398,13 +1397,11 @@ TEST(DbTest, out_of_order_upserts_with_compaction)
     Db rodb{io_ctx};
 
     auto get_release_offsets = [](monad::byte_string_view const bytes)
-        -> std::pair<uint32_t, uint32_t> {
-        MONAD_ASSERT(bytes.size() == 8);
+        -> std::pair<uint64_t, uint64_t> {
+        auto const offsets = compact_offset_pair::deserialize(bytes);
         return {
-            // copy size is implicitly part of the `unaligned_load` call
-            // NOLINTNEXTLINE(bugprone-suspicious-stringview-data-usage)
-            monad::unaligned_load<uint32_t>(bytes.data()),
-            monad::unaligned_load<uint32_t>(bytes.data() + sizeof(uint32_t))};
+            static_cast<uint64_t>(offsets.fast),
+            static_cast<uint64_t>(offsets.slow)};
     };
 
     auto const prefix = 0x00_bytes;

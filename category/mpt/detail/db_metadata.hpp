@@ -24,8 +24,6 @@
 #include <category/async/config.hpp>
 #include <category/core/detail/start_lifetime_as_polyfill.hpp>
 
-#include "unsigned_20.hpp"
-
 #include <atomic>
 #include <cstddef>
 #include <type_traits>
@@ -66,23 +64,33 @@ namespace detail
 #endif
     inline void
     db_copy(db_metadata *dest, db_metadata const *src, size_t bytes);
+    inline void db_copy_leaving_dest_dirty(
+        db_metadata *dest, db_metadata const *src, size_t bytes);
+
+    // Rewrites one metadata copy in place from the MONAD008 layout, whose
+    // chunk_records[] held only the 8-byte chunk_info_t with a 20-bit count,
+    // to MONAD009's 16-byte records, and stamps MAGIC last. The header layout
+    // is the same in both. The caller marks the copy dirty, has checked that
+    // the records fit, and flushes afterwards.
+    void migrate_monad008_to_monad009(db_metadata *m) noexcept;
 
     // For the memory map of the first conventional chunk
     struct db_metadata
     {
-        static constexpr char const *MAGIC = "MONAD008";
+        static constexpr char const *MAGIC = "MONAD009";
+        static constexpr char const *PREVIOUS_MAGIC = "MONAD008";
         static constexpr unsigned MAGIC_STRING_LEN = 8;
 
         friend class MONAD_MPT_NAMESPACE::DbMetadataContext;
         friend class MONAD_MPT_NAMESPACE::UpdateAux;
-        friend inline void
-        db_copy(db_metadata *dest, db_metadata const *src, size_t bytes);
+        friend inline void db_copy_leaving_dest_dirty(
+            db_metadata *dest, db_metadata const *src, size_t bytes);
 
         // Needed to please the compiler in db_copy()
         db_metadata &operator=(db_metadata const &) = default;
 
         char magic[MAGIC_STRING_LEN];
-        uint64_t chunk_info_count : 20; // items in chunk_info below
+        uint64_t chunk_info_count : 20; // records in chunk_records below
         uint64_t unused0_ : 36; // next item MUST be on a byte boundary
         uint64_t reserved_for_is_dirty_ : 8; // for is_dirty below
         // DO NOT INSERT ANYTHING IN HERE
@@ -106,8 +114,8 @@ namespace detail
             static constexpr size_t SIZE_ = 32;
 
             friend class MONAD_MPT_NAMESPACE::DbMetadataContext;
-            friend inline void
-            db_copy(db_metadata *dest, db_metadata const *src, size_t bytes);
+            friend inline void db_copy_leaving_dest_dirty(
+                db_metadata *dest, db_metadata const *src, size_t bytes);
             friend struct MONAD_MPT_NAMESPACE::test::DbMetadataTestAccess;
 
         private:
@@ -248,7 +256,7 @@ namespace detail
             PENDING_OP_ACTIVATE = 1, // activate_secondary_header
             PENDING_OP_DEACTIVATE = 2, // deactivate_secondary_header
             PENDING_OP_PROMOTE = 3, // promote_secondary_to_primary_header
-            PENDING_OP_GROW = 4 // chunk_info[] growth after monad-mpt --grow
+            PENDING_OP_GROW = 4 // chunk_records[] growth after monad-mpt --grow
         };
 
         // Frozen by the on-disk format: an interrupted operation records its
@@ -328,6 +336,9 @@ namespace detail
             uint64_t prev_chunk_id : 20; // same bits as from chunk_offset_t
             uint64_t in_fast_list : 1;
             uint64_t in_slow_list : 1;
+            // insertion_count0_ and insertion_count1_ hold the low 20 bits of
+            // the record's identity count, where the MONAD008 layout kept the
+            // whole count.
             uint64_t insertion_count0_ : 10; // align next to 8 bit boundary
                                              // to aid codegen
             uint64_t next_chunk_id : 20; // same bits as from chunk_offset_t
@@ -336,15 +347,17 @@ namespace detail
 
             uint32_t index(db_metadata const *const parent) const noexcept
             {
-                auto const ret = uint32_t(this - parent->chunk_info);
+                auto const *const record =
+                    reinterpret_cast<chunk_record_t const *>(this);
+                auto const ret = uint32_t(record - parent->chunk_records);
                 MONAD_ASSERT(ret < parent->chunk_info_count);
                 return ret;
             }
 
-            unsigned_20 insertion_count() const noexcept
+            void set_low_insertion_count_bits(uint64_t const count) noexcept
             {
-                return uint32_t(insertion_count1_ << 10) |
-                       uint32_t(insertion_count0_);
+                insertion_count0_ = count & 0x3ff;
+                insertion_count1_ = (count >> 10) & 0x3ff;
             }
 
             chunk_info_t const *
@@ -365,6 +378,24 @@ namespace detail
                 return parent->at(next_chunk_id);
             }
         };
+
+        // A chunk's list membership and insertion count, as one word so that
+        // a reader translating an address never pairs a count with the wrong
+        // list. The list bits mirror chunk_info_t's. Counts run consecutively
+        // from a list's head to its tail and stay below
+        // virtual_chunk_offset_t::MAX_COUNT.
+        struct chunk_identity_t
+        {
+            uint64_t count : 62;
+            uint64_t in_fast_list : 1;
+            uint64_t in_slow_list : 1;
+        };
+
+        struct chunk_record_t
+        {
+            chunk_info_t info;
+            chunk_identity_t identity;
+        };
 #ifdef __clang__
     #pragma clang diagnostic push
     #pragma clang diagnostic ignored "-Wc99-extensions"
@@ -372,7 +403,7 @@ namespace detail
     #pragma GCC diagnostic push
     #pragma GCC diagnostic ignored "-Wpedantic"
 #endif
-        chunk_info_t chunk_info[];
+        chunk_record_t chunk_records[];
 #ifdef __clang__
     #pragma clang diagnostic pop
 #elif defined __GNUC__
@@ -380,10 +411,18 @@ namespace detail
 #endif
         static_assert(sizeof(chunk_info_t) == 8);
         static_assert(std::is_trivially_copyable_v<chunk_info_t>);
-        // chunk_info[] lives in cross-process shared memory and is accessed
-        // via std::atomic_ref<chunk_info_t>; require lock-free so it uses
-        // direct atomic instructions rather than a per-process lock table.
+        static_assert(sizeof(chunk_identity_t) == 8);
+        static_assert(std::is_trivially_copyable_v<chunk_identity_t>);
+        static_assert(sizeof(chunk_record_t) == 16);
+        // A record and its info are pointer-interconvertible.
+        static_assert(std::is_standard_layout_v<chunk_record_t>);
+        static_assert(offsetof(chunk_record_t, info) == 0);
+        // chunk_records[] lives in cross-process shared memory and each half
+        // of a record is accessed via std::atomic_ref; require lock-free so
+        // they use direct atomic instructions rather than a per-process lock
+        // table.
         static_assert(std::atomic_ref<chunk_info_t>::is_always_lock_free);
+        static_assert(std::atomic_ref<chunk_identity_t>::is_always_lock_free);
 
         auto hold_dirty() noexcept
         {
@@ -421,21 +460,28 @@ namespace detail
         chunk_info_t const *at(uint32_t const idx) const noexcept
         {
             MONAD_ASSERT(idx < chunk_info_count);
-            return &chunk_info[idx];
+            return &chunk_records[idx].info;
         }
 
-        chunk_info_t atomic_load_chunk_info(
-            uint32_t const idx, std::memory_order const load_ord =
-                                    std::memory_order_seq_cst) const noexcept
+        chunk_identity_t atomic_load_chunk_identity(
+            uint32_t const idx, std::memory_order const order) const noexcept
         {
-            // at() is const-qualified, but chunk_info[] is mutable shared
-            // memory; std::atomic_ref gains a const-qualified form only in
-            // C++26 (P3323R1), so a const_cast is required here for now.
-            // TODO(C++26/P3323): use std::atomic_ref<chunk_info_t const> and
-            // drop the const_cast.
-            return std::atomic_ref<chunk_info_t>(
-                       *const_cast<chunk_info_t *>(at(idx)))
-                .load(load_ord);
+            MONAD_ASSERT(idx < chunk_info_count);
+            // chunk_records[] is mutable shared memory; std::atomic_ref gains
+            // a const-qualified form only in C++26 (P3323R1), so a const_cast
+            // is required here for now.
+            // TODO(C++26/P3323): use std::atomic_ref<chunk_identity_t const>
+            // and drop the const_cast.
+            return std::atomic_ref<chunk_identity_t>(
+                       const_cast<chunk_identity_t &>(
+                           chunk_records[idx].identity))
+                .load(order);
+        }
+
+        uint64_t insertion_count(uint32_t const idx) const noexcept
+        {
+            return atomic_load_chunk_identity(idx, std::memory_order_relaxed)
+                .count;
         }
 
         chunk_info_t const *free_list_begin() const noexcept
@@ -490,47 +536,84 @@ namespace detail
         chunk_info_t *at_(uint32_t const idx) noexcept
         {
             MONAD_ASSERT(idx < chunk_info_count);
-            return &chunk_info[idx];
+            return &chunk_records[idx].info;
+        }
+
+        void store_identity_(
+            uint32_t const idx, uint64_t const count, bool const in_fast_list,
+            bool const in_slow_list) noexcept
+        {
+            MONAD_ASSERT(idx < chunk_info_count);
+            MONAD_ASSERT(count < virtual_chunk_offset_t::MAX_COUNT);
+            chunk_identity_t identity;
+            identity.count = count & virtual_chunk_offset_t::MAX_COUNT;
+            identity.in_fast_list = in_fast_list;
+            identity.in_slow_list = in_slow_list;
+            std::atomic_ref<chunk_identity_t>(chunk_records[idx].identity)
+                .store(identity, std::memory_order_release);
+        }
+
+        uint64_t next_insertion_count_(id_pair const &list) const noexcept
+        {
+            if (list.end == NULL_CHUNK) {
+                return 0;
+            }
+            uint64_t const count = insertion_count(list.end) + 1;
+            MONAD_ASSERT(
+                count < virtual_chunk_offset_t::MAX_COUNT,
+                "Chunk insertion counts are exhausted.");
+            return count;
         }
 
         void append_(id_pair &list, chunk_info_t *const i) noexcept
         {
-            // Insertion count is assigned to chunk_info_t *i atomically
             auto const g = hold_dirty();
+            auto const idx = i->index(this);
+            uint64_t const count = next_insertion_count_(list);
             chunk_info_t info;
             info.in_fast_list = (&list == &fast_list);
             info.in_slow_list = (&list == &slow_list);
-            info.insertion_count0_ = info.insertion_count1_ = 0;
+            info.set_low_insertion_count_bits(count);
             info.next_chunk_id = chunk_info_t::INVALID_CHUNK_ID;
             if (list.end == NULL_CHUNK) {
                 MONAD_ASSERT(list.begin == NULL_CHUNK);
                 info.prev_chunk_id = chunk_info_t::INVALID_CHUNK_ID;
-                list.begin = list.end = i->index(this);
+                list.begin = list.end = idx;
             }
             else {
                 MONAD_ASSERT((list.end & ~0xfffffU) == 0);
                 info.prev_chunk_id = list.end & 0xfffffU;
                 auto *tail = at_(list.end);
-                uint32_t const insertion_count =
-                    uint32_t(tail->insertion_count()) + 1;
-                // Strict less-than because MAX_COUNT is reserved for
-                // INVALID_VIRTUAL_OFFSET so that no valid virtual offset
-                // compacts to INVALID_COMPACT_VIRTUAL_OFFSET.
-                MONAD_ASSERT(
-                    insertion_count < virtual_chunk_offset_t::MAX_COUNT,
-                    "Chunk count overflow detected. The 20-bit address "
-                    "space for chunk count has been exhausted. Please "
-                    "perform a database reset. TODO: expand the address "
-                    "space.");
-                info.insertion_count0_ = insertion_count & 0x3ff;
-                info.insertion_count1_ = insertion_count >> 10 & 0x3ff;
                 MONAD_ASSERT(
                     tail->next_chunk_id == chunk_info_t::INVALID_CHUNK_ID);
-                list.end = tail->next_chunk_id = i->index(this) & 0xfffffU;
+                list.end = tail->next_chunk_id = idx & 0xfffffU;
             }
             std::atomic_ref<chunk_info_t>(*i).store(
                 info, std::memory_order_release);
+            store_identity_(idx, count, info.in_fast_list, info.in_slow_list);
         }
+
+        void restart_insertion_counts_(
+            id_pair const &list, uint64_t const count) noexcept
+        {
+            MONAD_ASSERT(list.begin != NULL_CHUNK && list.begin == list.end);
+            auto const g = hold_dirty();
+            auto *const i = at_(list.begin);
+            i->set_low_insertion_count_bits(count);
+            store_identity_(
+                list.begin, count, i->in_fast_list, i->in_slow_list);
+        }
+
+#ifndef NDEBUG
+        // Release builds keep a removed chunk's list bits, in both halves of
+        // its record, until the chunk is next appended.
+        void clear_list_bits_(chunk_info_t *const i) noexcept
+        {
+            i->in_fast_list = i->in_slow_list = false;
+            auto const idx = i->index(this);
+            store_identity_(idx, insertion_count(idx), false, false);
+        }
+#endif
 
         void remove_(chunk_info_t *const i) noexcept
         {
@@ -551,7 +634,7 @@ namespace detail
                 MONAD_ASSERT(list.end == i->index(this));
                 list.begin = list.end = NULL_CHUNK;
 #ifndef NDEBUG
-                i->in_fast_list = i->in_slow_list = false;
+                clear_list_bits_(i);
 #endif
                 return;
             }
@@ -562,7 +645,7 @@ namespace detail
                 next->prev_chunk_id = chunk_info_t::INVALID_CHUNK_ID;
                 list.begin = next->index(this);
 #ifndef NDEBUG
-                i->in_fast_list = i->in_slow_list = false;
+                clear_list_bits_(i);
                 i->next_chunk_id = chunk_info_t::INVALID_CHUNK_ID;
 #endif
                 return;
@@ -574,7 +657,7 @@ namespace detail
                 prev->next_chunk_id = chunk_info_t::INVALID_CHUNK_ID;
                 list.end = prev->index(this);
 #ifndef NDEBUG
-                i->in_fast_list = i->in_slow_list = false;
+                clear_list_bits_(i);
                 i->prev_chunk_id = chunk_info_t::INVALID_CHUNK_ID;
 #endif
                 return;
@@ -587,7 +670,7 @@ namespace detail
             prev->next_chunk_id = next->index(this) & 0xfffffU;
             next->prev_chunk_id = prev->index(this) & 0xfffffU;
 #ifndef NDEBUG
-            i->in_fast_list = i->in_slow_list = false;
+            clear_list_bits_(i);
             i->prev_chunk_id = i->next_chunk_id =
                 chunk_info_t::INVALID_CHUNK_ID;
 #endif
@@ -605,10 +688,10 @@ namespace detail
             capacity_in_free_list -= bytes;
         }
 
-        // Grow chunk_info[] to `to` entries, append every new entry to the
-        // free list continuing insertion counts from the current tail, and
-        // fold in the new chunks' capacity. All of it in one dirty scope, so
-        // a crash part-way through is caught by dirty-bit recovery rather
+        // Grow chunk_records[] to `to` records, append every new record to
+        // the free list continuing insertion counts from the current tail,
+        // and fold in the new chunks' capacity. All of it in one dirty scope,
+        // so a crash part-way through is caught by dirty-bit recovery rather
         // than leaving a half-linked list or an understated capacity.
         void extend_chunk_info_(
             uint32_t const to, uint64_t const added_capacity_bytes) noexcept
@@ -619,38 +702,30 @@ namespace detail
             MONAD_ASSERT((to & ~0xfffffU) == 0);
             chunk_info_count = to & 0xfffffU;
             for (uint32_t n = from; n < to; n++) {
+                uint64_t const count = next_insertion_count_(free_list);
                 chunk_info_t info;
                 info.in_fast_list = 0;
                 info.in_slow_list = 0;
                 info.unused0_ = 0;
+                info.set_low_insertion_count_bits(count);
                 info.next_chunk_id = chunk_info_t::INVALID_CHUNK_ID;
                 if (free_list.end == NULL_CHUNK) {
                     MONAD_ASSERT(free_list.begin == NULL_CHUNK);
                     info.prev_chunk_id = chunk_info_t::INVALID_CHUNK_ID;
-                    info.insertion_count0_ = 0;
-                    info.insertion_count1_ = 0;
                     free_list.begin = free_list.end = n;
                 }
                 else {
                     MONAD_ASSERT((free_list.end & ~0xfffffU) == 0);
                     auto *const tail = at_(free_list.end);
-                    uint32_t const insertion_count =
-                        uint32_t(tail->insertion_count()) + 1;
-                    MONAD_ASSERT(
-                        insertion_count < virtual_chunk_offset_t::MAX_COUNT,
-                        "Chunk count overflow detected. The 20-bit address "
-                        "space for chunk count has been exhausted. Please "
-                        "perform a database reset.");
-                    info.insertion_count0_ = insertion_count & 0x3ff;
-                    info.insertion_count1_ = insertion_count >> 10 & 0x3ff;
                     info.prev_chunk_id = free_list.end & 0xfffffU;
                     MONAD_ASSERT(
                         tail->next_chunk_id == chunk_info_t::INVALID_CHUNK_ID);
                     tail->next_chunk_id = n & 0xfffffU;
                     free_list.end = n;
                 }
-                std::atomic_ref<chunk_info_t>(chunk_info[n])
+                std::atomic_ref<chunk_info_t>(chunk_records[n].info)
                     .store(info, std::memory_order_release);
+                store_identity_(n, count, false, false);
             }
             capacity_in_free_list += added_capacity_bytes;
         }
@@ -667,10 +742,10 @@ namespace detail
     static_assert(std::is_trivially_copy_assignable_v<db_metadata>);
     // The fixed-header size is pinned so that adding or shrinking a
     // field in the header is a conscious decision. The actual mmap
-    // region is sizeof(db_metadata) + chunk_count * sizeof(chunk_info_t)
+    // region is sizeof(db_metadata) + chunk_count * sizeof(chunk_record_t)
     // and must fit in cnv.capacity()/2 (copy 0 at offset 0, copy 1 at
     // cnv.capacity()/2); enlarging the fixed header eats into the
-    // chunk_info[] budget for any given chunk_count.
+    // chunk_records[] budget for any given chunk_count.
     static_assert(sizeof(db_metadata) == 4480);
     static_assert(alignof(db_metadata) == 8);
     // recorded_device_size reads zero on a pool that predates it only
@@ -723,10 +798,10 @@ namespace detail
         }
     }
 
-    /* A dirty bit setting memcpy implementation, so the dirty bit gets held
-    high during the memory copy.
-    */
-    inline void db_copy(
+    // Copies `bytes` of `src` over `dest`, which is marked dirty before the
+    // first byte lands and is left marked dirty, so that a caller can make
+    // the copy durable before declaring it clean.
+    inline void db_copy_leaving_dest_dirty(
         db_metadata *const dest, db_metadata const *const src,
         size_t const bytes)
     {
@@ -734,8 +809,8 @@ namespace detail
         memcpy(buffer, src, sizeof(db_metadata));
         auto *intr = start_lifetime_as<db_metadata>(buffer);
         MONAD_ASSERT(intr->is_dirty().load(std::memory_order_acquire) == false);
-        auto const g1 = intr->hold_dirty();
-        auto const g2 = dest->hold_dirty();
+        intr->is_dirty().store(1, std::memory_order_release);
+        dest->is_dirty().store(1, std::memory_order_release);
         dest->root_offsets.next_version_ = 0; // INVALID_BLOCK_NUM
         auto const old_next_version = intr->root_offsets.next_version_;
         intr->root_offsets.next_version_ = 0; // INVALID_BLOCK_NUM
@@ -751,7 +826,18 @@ namespace detail
             .store(old_next_version, std::memory_order_release);
         std::atomic_ref<uint64_t>(dest->secondary_timeline.next_version_)
             .store(old_secondary_next, std::memory_order_release);
-    };
+    }
+
+    /* A dirty bit setting memcpy implementation, so the dirty bit gets held
+    high during the memory copy.
+    */
+    inline void db_copy(
+        db_metadata *const dest, db_metadata const *const src,
+        size_t const bytes)
+    {
+        db_copy_leaving_dest_dirty(dest, src, bytes);
+        dest->is_dirty().store(0, std::memory_order_release);
+    }
 }
 
 MONAD_MPT_NAMESPACE_END

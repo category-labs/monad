@@ -26,6 +26,7 @@
 
 #include <gtest/gtest.h>
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -188,12 +189,16 @@ TEST(grow_database, grows_chunk_info_and_free_list)
     }
     EXPECT_EQ(free_list_ids(m1), after_free);
 
-    // Insertion counts stay monotone across the splice point, which is what
-    // chunk_list_and_age relies on.
+    // Insertion counts stay consecutive across the splice point, which is what
+    // num_chunks relies on.
     for (size_t n = 1; n < after_free.size(); n++) {
-        EXPECT_EQ(
-            uint32_t(m0->at(after_free[n])->insertion_count()),
-            uint32_t(m0->at(after_free[n - 1])->insertion_count()) + 1)
+        auto const identity = m0->atomic_load_chunk_identity(
+            after_free[n], std::memory_order_acquire);
+        auto const prev_identity = m0->atomic_load_chunk_identity(
+            after_free[n - 1], std::memory_order_acquire);
+        EXPECT_EQ(uint64_t(identity.count), uint64_t(prev_identity.count) + 1)
+            << "free slot " << n;
+        EXPECT_FALSE(identity.in_fast_list || identity.in_slow_list)
             << "free slot " << n;
     }
 
@@ -402,7 +407,7 @@ TEST(grow_database, interrupted_growth_replays_on_reopen)
 // hundreds of gigabytes.
 TEST(grow_database, chunk_info_bounds)
 {
-    // 4096 chunks at 8 bytes each on top of the header, inside a 1Mb
+    // 4096 chunks at 16 bytes each on top of the header, inside a 1Mb
     // half-chunk: fits.
     MONAD_MPT_NAMESPACE::test::AddDevicesTestAccess::check_chunk_info_fits(
         4096, 1024 * 1024);

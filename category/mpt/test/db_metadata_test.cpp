@@ -13,11 +13,17 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/async/config.hpp>
 #include <category/async/detail/scope_polyfill.hpp>
+#include <category/async/io.hpp>
+#include <category/async/storage_pool.hpp>
 #include <category/core/assert.h>
+#include <category/core/io/buffers.hpp>
+#include <category/core/io/ring.hpp>
 #include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 #include <category/mpt/detail/db_metadata.hpp>
 #include <category/mpt/test/db_metadata_test_access.hpp>
+#include <category/mpt/trie.hpp>
 
 #include <gtest/gtest.h>
 
@@ -33,6 +39,7 @@
 #include <thread>
 #include <utility>
 
+using monad::mpt::test::AddDevicesTestAccess;
 using monad::mpt::test::DbMetadataTestAccess;
 
 TEST(db_metadata, DISABLED_copy)
@@ -113,6 +120,28 @@ TEST(db_metadata, total_size)
     // Both rings now use the same ring-header type. The total metadata size
     // is dominated by the cnv_chunks lists in each ring (SIZE_=32).
     EXPECT_EQ(sizeof(monad::mpt::detail::db_metadata), 4480u);
+    EXPECT_EQ(sizeof(monad::mpt::detail::db_metadata::chunk_record_t), 16u);
+}
+
+TEST(db_metadata, map_size_is_the_header_plus_a_record_per_chunk)
+{
+    monad::async::storage_pool pool{monad::async::use_anonymous_inode_tag{}};
+    monad::io::Ring ring1;
+    monad::io::Ring ring2;
+    monad::io::Buffers buffers =
+        monad::io::make_buffers_for_segregated_read_write(
+            ring1,
+            ring2,
+            2,
+            4,
+            monad::async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE,
+            monad::async::AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE);
+    monad::async::AsyncIO io{pool, buffers};
+    monad::mpt::UpdateAux const aux{io};
+    auto const &ctx = aux.metadata_ctx();
+    EXPECT_EQ(
+        AddDevicesTestAccess::db_map_size_of(ctx, ctx.main()),
+        4480 + 16 * io.chunk_count());
 }
 
 TEST(db_metadata, ring_b_layout_matches_ring_a)

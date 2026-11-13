@@ -551,6 +551,49 @@ TEST_F(StateSyncFixture, sync_from_some)
     }
 }
 
+TEST_F(StateSyncFixture, sync_from_some_over_a_legacy_root)
+{
+    {
+        mpt::Db db{
+            std::make_unique<MonadOnDiskMachine>(),
+            OnDiskDbConfig{
+                .append = true,
+                .dbname_path = this->cdbname,
+                .chunk_capacity = 24}};
+        monad::mpt::test::DbAccessor::aux(db)
+            .write_legacy_formats_unit_testing_only(true);
+        TrieDb tdb{db};
+        load_genesis_state(GENESIS_STATE, tdb);
+        commit_simple(
+            tdb,
+            StateDeltas({}),
+            {},
+            NULL_HASH_BLAKE3,
+            BlockHeader{.number = 1});
+        monad::mpt::test::DbAccessor::aux(db)
+            .write_legacy_formats_unit_testing_only(false);
+        load_genesis_state(GENESIS_STATE, stdb);
+        init();
+    }
+
+    auto const res = sdb.find(
+        stdb.get_root(), concat(FINALIZED_NIBBLE, BLOCKHEADER_NIBBLE), 0);
+    ASSERT_TRUE(res.has_value() && res.value().is_valid());
+    commit_sequential(
+        sctx,
+        StateDeltas({}),
+        {},
+        BlockHeader{
+            .parent_hash = to_bytes(keccak256(res.value().node->value())),
+            .number = 1});
+    BlockHeader const hdr = stdb.read_eth_header();
+
+    handle_target(cctx, hdr);
+    run();
+
+    EXPECT_TRUE(monad_statesync_client_finalize(cctx));
+}
+
 TEST_F(StateSyncFixture, deletion_proposal)
 {
     {

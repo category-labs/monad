@@ -26,7 +26,7 @@
 struct RewindTest
     : public monad::test::FillDBWithChunksGTest<
           monad::test::FillDBWithChunksConfig{
-              .chunks_to_fill = 5,
+              .chunks_to_fill = 6,
               .history_len = 65535,
               .updates_per_block = 1,
               .use_anonymous_inode = false}>

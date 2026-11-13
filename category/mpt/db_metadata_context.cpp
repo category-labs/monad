@@ -59,6 +59,33 @@ using namespace MONAD_ASYNC_NAMESPACE;
 static_assert(
     storage_pool::min_chunk_capacity / 2 >= sizeof(detail::db_metadata));
 
+namespace detail
+{
+    void migrate_monad008_to_monad009(db_metadata *const m) noexcept
+    {
+        using entry_t = db_metadata::chunk_info_t;
+        using record_t = db_metadata::chunk_record_t;
+        auto *const bytes = reinterpret_cast<std::byte *>(m->chunk_records);
+        // Record j lands on entries 2j and 2j + 1, so working down from the
+        // top reads every entry before anything is written over it.
+        for (auto j = static_cast<size_t>(m->chunk_info_count); j-- > 0;) {
+            entry_t entry;
+            memcpy(&entry, bytes + j * sizeof(entry_t), sizeof(entry_t));
+            record_t const record{
+                .info = entry,
+                .identity = {
+                    .count = uint64_t{entry.insertion_count1_} << 10 |
+                             entry.insertion_count0_,
+                    .in_fast_list = entry.in_fast_list,
+                    .in_slow_list = entry.in_slow_list}};
+            memcpy(bytes + j * sizeof(record_t), &record, sizeof(record_t));
+        }
+        // A copy carrying MAGIC must be fully converted.
+        std::atomic_signal_fence(std::memory_order_seq_cst);
+        memcpy(m->magic, db_metadata::MAGIC, db_metadata::MAGIC_STRING_LEN);
+    }
+}
+
 DbMetadataContext::DbMetadataContext(AsyncIO &io)
     : io_(&io)
 {
@@ -79,8 +106,7 @@ DbMetadataContext::DbMetadataContext(AsyncIO &io)
     // Each copy gets a full half of cnv chunk 0.
     metadata_mmap_size_ = cnv_chunk.capacity() / 2;
     db_map_size_ = sizeof(detail::db_metadata) +
-                   chunk_count * sizeof(detail::db_metadata::chunk_info_t);
-    check_chunk_info_fits_(chunk_count, metadata_mmap_size_);
+                   chunk_count * sizeof(detail::db_metadata::chunk_record_t);
 
     // mmap both metadata copies
     copies_[0].main = start_lifetime_as<detail::db_metadata>(::mmap(
@@ -126,6 +152,11 @@ DbMetadataContext::DbMetadataContext(AsyncIO &io)
         }
     }
 
+    bool const upgraded = upgrade_previous_format_();
+    // Checked after the upgrade, which refuses a pool whose records do not
+    // fit at their new width with a message saying so.
+    check_chunk_info_fits_(chunk_count, metadata_mmap_size_);
+
     // Version mismatch detection
     constexpr unsigned magic_version_len = 3;
     constexpr unsigned magic_prefix_len =
@@ -143,6 +174,9 @@ DbMetadataContext::DbMetadataContext(AsyncIO &io)
             "version %s. Please regenerate with the new DB version.",
             copies_[0].main->magic + magic_prefix_len,
             detail::db_metadata::MAGIC + magic_prefix_len);
+    }
+    if (upgraded) {
+        sync_metadata_to_disk_();
     }
 
     // Dirty recovery
@@ -272,6 +306,118 @@ DbMetadataContext::DbMetadataContext(AsyncIO &io)
     #pragma GCC diagnostic pop
 #endif
 
+bool DbMetadataContext::upgrade_previous_format_()
+{
+    auto const is_previous = [](detail::db_metadata const *const m) {
+        return 0 == memcmp(
+                        m->magic,
+                        detail::db_metadata::PREVIOUS_MAGIC,
+                        detail::db_metadata::MAGIC_STRING_LEN);
+    };
+    if (!is_previous(copies_[0].main) && !is_previous(copies_[1].main)) {
+        return false;
+    }
+    if (!io_->storage_pool().is_migration_allowed()) {
+        MONAD_ABORT_PRINTF(
+            "DB is on older format (magic=%s) and this binary expects %s. Run "
+            "'monad-mpt --upgrade --storage <path>' before starting monad "
+            "services.",
+            detail::db_metadata::PREVIOUS_MAGIC,
+            detail::db_metadata::MAGIC);
+    }
+    if (io_->storage_pool().is_read_only()) {
+        MONAD_ABORT_PRINTF(
+            "Detected a %s DB, which requires a writable mapping to upgrade "
+            "to %s.",
+            detail::db_metadata::PREVIOUS_MAGIC,
+            detail::db_metadata::MAGIC);
+    }
+    auto const is_current = [](detail::db_metadata const *const m) {
+        return 0 == memcmp(
+                        m->magic,
+                        detail::db_metadata::MAGIC,
+                        detail::db_metadata::MAGIC_STRING_LEN);
+    };
+    // A host crash can leave any subset of a copy's pages on disk, so a copy
+    // is rewritten only between durable steps: marked dirty, then rewritten
+    // and still dirty, then clean. At most one copy on disk is ever in flux,
+    // and it is marked dirty, so recovery heals it from its intact sibling.
+    auto const rewrite_durably = [&](unsigned const i, auto const &rewrite) {
+        auto *const m = copies_[i].main;
+        auto const sync = [&] {
+            sync_metadata_copy_to_disk_(i, metadata_mmap_size_);
+            if (on_upgrade_sync_unit_testing_only != nullptr) {
+                on_upgrade_sync_unit_testing_only(*this, i);
+            }
+        };
+        m->is_dirty().store(1, std::memory_order_release);
+        sync();
+        rewrite(m);
+        sync();
+        m->is_dirty().store(0, std::memory_order_release);
+        sync();
+    };
+    // The copies may be on different layouts. db_copy_leaving_dest_dirty
+    // interprets only the header, which both layouts share.
+    auto const heal_from_sibling = [&](unsigned const i) {
+        auto *const sibling = copies_[1 - i].main;
+        MONAD_ASSERT(
+            !sibling->is_dirty().load(std::memory_order_acquire),
+            "Neither DB metadata copy is intact, so the DB is unrecoverable. "
+            "Restore it from a backup.");
+        rewrite_durably(i, [&](detail::db_metadata *const m) {
+            detail::db_copy_leaving_dest_dirty(m, sibling, metadata_mmap_size_);
+        });
+    };
+    // A copy whose magic names neither format is damaged rather than
+    // interrupted, so none of its header can be trusted, its dirty bit
+    // included. Its sibling holds PREVIOUS_MAGIC, or there would be nothing
+    // to upgrade.
+    for (unsigned i = 0; i < 2; ++i) {
+        if (!is_previous(copies_[i].main) && !is_current(copies_[i].main)) {
+            heal_from_sibling(i);
+        }
+    }
+    for (unsigned i = 0; i < 2; ++i) {
+        if (copies_[i].main->is_dirty().load(std::memory_order_acquire)) {
+            heal_from_sibling(i);
+        }
+    }
+    for (auto const &copy : copies_) {
+        if (copy.main->pending_shrink_grow.op_kind ==
+            detail::db_metadata::PENDING_OP_GROW) {
+            MONAD_ABORT_PRINTF(
+                "A device grow is pending on this DB; finish it with the "
+                "previous binary before running --upgrade.");
+        }
+        // An old-binary grow can leave the pool with more chunks than the
+        // records describe, and check_chunk_info_fits_ only runs after the
+        // migration.
+        size_t const records =
+            std::max(size_t(copy.main->chunk_info_count), io_->chunk_count());
+        size_t const needed =
+            sizeof(detail::db_metadata) +
+            records * sizeof(detail::db_metadata::chunk_record_t);
+        if (needed > metadata_mmap_size_) {
+            MONAD_ABORT_PRINTF(
+                "16-byte chunk records need %zu bytes of metadata but only %zu "
+                "are available.",
+                needed,
+                metadata_mmap_size_);
+        }
+    }
+    for (unsigned i = 0; i < 2; ++i) {
+        if (is_previous(copies_[i].main)) {
+            rewrite_durably(i, detail::migrate_monad008_to_monad009);
+        }
+    }
+    LOG_INFO(
+        "Upgraded DB metadata from {} to {}.",
+        detail::db_metadata::PREVIOUS_MAGIC,
+        detail::db_metadata::MAGIC);
+    return true;
+}
+
 void DbMetadataContext::map_ring_a_storage()
 {
     map_ring_storage_(
@@ -328,7 +474,7 @@ void DbMetadataContext::check_chunk_info_fits_(
         static_cast<unsigned long long>(
             MONAD_ASYNC_NAMESPACE::chunk_offset_t::max_id));
     auto const needed = sizeof(detail::db_metadata) +
-                        target * sizeof(detail::db_metadata::chunk_info_t);
+                        target * sizeof(detail::db_metadata::chunk_record_t);
     MONAD_ASSERT_PRINTF(
         metadata_mmap_size >= needed,
         "The storage pool provides %zu sequential chunks, needing %zu bytes "
@@ -342,9 +488,9 @@ void DbMetadataContext::check_chunk_info_fits_(
 size_t DbMetadataContext::db_map_size_of_(
     detail::db_metadata const *const m) const noexcept
 {
-    auto const ret =
-        sizeof(detail::db_metadata) +
-        size_t(m->chunk_info_count) * sizeof(detail::db_metadata::chunk_info_t);
+    auto const ret = sizeof(detail::db_metadata) +
+                     size_t(m->chunk_info_count) *
+                         sizeof(detail::db_metadata::chunk_record_t);
     MONAD_ASSERT(ret <= metadata_mmap_size_);
     return ret;
 }
@@ -908,17 +1054,28 @@ void DbMetadataContext::replay_pending_shrink_grow_()
     sync_metadata_to_disk_();
 }
 
+void DbMetadataContext::sync_metadata_to_disk()
+{
+    sync_metadata_to_disk_();
+}
+
 void DbMetadataContext::sync_metadata_to_disk_()
 {
-    MONAD_ASSERT(can_write_to_map_);
     for (unsigned which = 0; which < 2; which++) {
-        MONAD_ASSERT_PRINTF(
-            0 == ::msync(copies_[which].main, db_map_size_, MS_SYNC),
-            "msync of metadata copy %u failed: %s (errno=%d)",
-            which,
-            strerror(errno),
-            errno);
+        sync_metadata_copy_to_disk_(which, db_map_size_);
     }
+}
+
+void DbMetadataContext::sync_metadata_copy_to_disk_(
+    unsigned const which, size_t const bytes)
+{
+    MONAD_ASSERT(can_write_to_map_);
+    MONAD_ASSERT_PRINTF(
+        0 == ::msync(copies_[which].main, bytes, MS_SYNC),
+        "msync of metadata copy %u failed: %s (errno=%d)",
+        which,
+        strerror(errno),
+        errno);
     // Also fsync the underlying cnv chunk 0 FD so the filesystem journal
     // commits the msync'd pages (msync's durability guarantees across
     // filesystems/kernels are narrower than fsync's).
@@ -1521,7 +1678,7 @@ DbMetadataContext::~DbMetadataContext()
 
 void DbMetadataContext::init_new_pool(
     std::optional<uint64_t> const history_len,
-    uint32_t const initial_insertion_count)
+    uint64_t const initial_insertion_count)
 {
     MONAD_ASSERT(is_new_pool_);
     auto const chunk_count = io_->chunk_count();
@@ -1533,11 +1690,11 @@ void DbMetadataContext::init_new_pool(
         &copies_[0].main->fast_list, 0xff, sizeof(copies_[0].main->fast_list));
     memset(
         &copies_[0].main->slow_list, 0xff, sizeof(copies_[0].main->slow_list));
-    auto *chunk_info =
-        start_lifetime_as_array<detail::db_metadata::chunk_info_t>(
-            copies_[0].main->chunk_info, chunk_count);
+    auto *records =
+        start_lifetime_as_array<detail::db_metadata::chunk_record_t>(
+            copies_[0].main->chunk_records, chunk_count);
     for (size_t n = 0; n < chunk_count; n++) {
-        auto &ci = chunk_info[n];
+        auto &ci = records[n].info;
         ci.prev_chunk_id = ci.next_chunk_id =
             detail::db_metadata::chunk_info_t::INVALID_CHUNK_ID;
     }
@@ -1570,16 +1727,7 @@ void DbMetadataContext::init_new_pool(
                                                     uint32_t id) {
         append(list, id);
         if (initial_insertion_count != 0) {
-            auto override_insertion_count = [&](detail::db_metadata *db) {
-                auto const g = db->hold_dirty();
-                auto *i = db->at_(id);
-                i->insertion_count0_ =
-                    uint32_t(initial_insertion_count) & 0x3ff;
-                i->insertion_count1_ =
-                    uint32_t(initial_insertion_count >> 10) & 0x3ff;
-            };
-            override_insertion_count(copies_[0].main);
-            override_insertion_count(copies_[1].main);
+            restart_insertion_counts(list, initial_insertion_count);
         }
         auto *i = copies_[0].main->at_(id);
         MONAD_ASSERT(i->index(copies_[0].main) == id);
@@ -1668,17 +1816,16 @@ void DbMetadataContext::append(chunk_list const list, uint32_t const idx)
         copies_[0].main->free_capacity_add_(capacity);
         copies_[1].main->free_capacity_add_(capacity);
     }
-    else {
-        auto const insertion_count =
-            static_cast<uint32_t>(main(0)->at(idx)->insertion_count());
-        if (insertion_count >= virtual_chunk_offset_t::MAX_COUNT * 9 / 10) {
-            LOG_WARNING(
-                "Virtual offset space is running out "
-                "(insertion count: {} / {}). "
-                "Please perform a database reset.",
-                insertion_count,
-                (uint32_t)virtual_chunk_offset_t::MAX_COUNT);
-        }
+}
+
+void DbMetadataContext::restart_insertion_counts(
+    chunk_list const list, uint64_t const count) noexcept
+{
+    MONAD_ASSERT(list != chunk_list::free);
+    for (auto const &copy : copies_) {
+        auto *const m = copy.main;
+        m->restart_insertion_counts_(
+            list == chunk_list::fast ? m->fast_list : m->slow_list, count);
     }
 }
 

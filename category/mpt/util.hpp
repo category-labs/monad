@@ -24,6 +24,8 @@
 #include <category/mpt/config.hpp>
 #include <category/mpt/nibbles_view.hpp>
 
+#include <array>
+#include <bit>
 #include <concepts>
 #include <tuple>
 
@@ -61,41 +63,32 @@ static byte_string const empty_trie_hash = [] {
 struct virtual_chunk_offset_t
 {
     static constexpr unsigned OFFSET_BITS = chunk_offset_t::OFFSET_BITS;
-    static constexpr unsigned COUNT_BITS = chunk_offset_t::ID_BITS;
-    static constexpr unsigned SPARE_BITS = chunk_offset_t::SPARE_BITS;
+    static constexpr unsigned COUNT_BITS = 35;
 
     file_offset_t offset : OFFSET_BITS; //!< Offset into the chunk, max is 256Mb
-    file_offset_t count : COUNT_BITS; //!< Count of the chunk, max is 1 million,
-                                      //!< therefore maximum addressable storage
-                                      //!< is 256Tb
-    file_offset_t spare : SPARE_BITS;
+    file_offset_t count : COUNT_BITS; //!< Insertion count of the chunk
     file_offset_t is_in_fast_list : 1;
 
     static constexpr file_offset_t MAX_OFFSET = (1ULL << OFFSET_BITS) - 1;
-    static constexpr file_offset_t MAX_COUNT = (1U << COUNT_BITS) - 1;
-    static constexpr file_offset_t MAX_SPARE = (1U << SPARE_BITS) - 1;
+    static constexpr uint64_t MAX_COUNT = (1ULL << COUNT_BITS) - 1;
 
     static constexpr virtual_chunk_offset_t invalid_value() noexcept
     {
-        return {MAX_COUNT, MAX_OFFSET, 1, MAX_SPARE};
+        return {MAX_COUNT, MAX_OFFSET, 1};
     }
 
     constexpr virtual_chunk_offset_t(
-        uint32_t const count_, file_offset_t const offset_,
-        file_offset_t const is_fast_list_,
-        file_offset_t const spare_ = MAX_SPARE)
+        uint64_t const count_, file_offset_t const offset_,
+        file_offset_t const is_fast_list_)
         : offset(offset_ & MAX_OFFSET)
         , count(count_ & MAX_COUNT)
-        , spare{spare_ & MAX_SPARE}
         , is_in_fast_list(is_fast_list_ & 1)
     {
-        MONAD_ASSERT(spare_ <= MAX_SPARE);
         MONAD_ASSERT(count_ <= MAX_COUNT);
         MONAD_ASSERT(offset_ <= MAX_OFFSET);
         MONAD_ASSERT(is_fast_list_ <= 1);
     }
 
-    // note that comparator ignores `spare`
     constexpr bool operator==(virtual_chunk_offset_t const &o) const noexcept
     {
         return is_in_fast_list == o.is_in_fast_list && count == o.count &&
@@ -113,18 +106,18 @@ struct virtual_chunk_offset_t
         return is_in_fast_list;
     }
 
-    // ignore `spare` and `is_in_fast_list`
+    // ignore `is_in_fast_list`
     constexpr file_offset_t raw() const noexcept
     {
         return (static_cast<file_offset_t>(count) << OFFSET_BITS) |
                static_cast<file_offset_t>(offset);
     }
 
-    // for hash table key, only ignore `spare`
+    // for hash table key
     constexpr file_offset_t hasher_raw() const noexcept
     {
         return (static_cast<file_offset_t>(is_in_fast_list)
-                << (OFFSET_BITS + COUNT_BITS + SPARE_BITS)) |
+                << (OFFSET_BITS + COUNT_BITS)) |
                (static_cast<file_offset_t>(count) << OFFSET_BITS) |
                static_cast<file_offset_t>(offset);
     }
@@ -152,11 +145,9 @@ struct virtual_chunk_offset_t_hasher
 //! losing too much granularity in compaction offset.
 class compact_virtual_chunk_offset_t
 {
-    static constexpr unsigned most_significant_bits = sizeof(uint32_t) * 8;
-    static constexpr unsigned bits_to_truncate =
-        virtual_chunk_offset_t::OFFSET_BITS +
-        virtual_chunk_offset_t::COUNT_BITS - most_significant_bits;
-    uint32_t v_{0};
+    static constexpr unsigned bits_to_truncate = 16;
+    static constexpr unsigned legacy_count_bits = 20;
+    uint64_t v_{0};
 
     struct prevent_public_construction_tag
     {
@@ -165,7 +156,7 @@ class compact_virtual_chunk_offset_t
 public:
     static constexpr compact_virtual_chunk_offset_t invalid_value() noexcept
     {
-        return {prevent_public_construction_tag{}, uint32_t(-1)};
+        return {prevent_public_construction_tag{}, uint64_t(-1)};
     }
 
     static constexpr compact_virtual_chunk_offset_t min_value() noexcept
@@ -174,7 +165,7 @@ public:
     }
 
     constexpr compact_virtual_chunk_offset_t(
-        prevent_public_construction_tag, uint32_t const v)
+        prevent_public_construction_tag, uint64_t const v)
         : v_{v}
     {
     }
@@ -182,24 +173,39 @@ public:
     // NOLINTNEXTLINE(google-explicit-constructor)
     constexpr compact_virtual_chunk_offset_t(
         virtual_chunk_offset_t const offset)
-        : v_{static_cast<uint32_t>(offset.raw() >> bits_to_truncate)}
+        : v_{offset.raw() >> bits_to_truncate}
     {
         MONAD_ASSERT(offset != INVALID_VIRTUAL_OFFSET);
     }
 
-    void set_value(uint32_t const v) noexcept
+    static constexpr compact_virtual_chunk_offset_t
+    from_legacy(uint32_t const v) noexcept
+    {
+        return v == UINT32_MAX ? invalid_value()
+                               : compact_virtual_chunk_offset_t{
+                                     prevent_public_construction_tag{}, v};
+    }
+
+    constexpr uint32_t to_legacy() const noexcept
+    {
+        if (*this == invalid_value()) {
+            return UINT32_MAX;
+        }
+        MONAD_ASSERT(get_count() < (1u << legacy_count_bits) - 1);
+        return static_cast<uint32_t>(v_);
+    }
+
+    void set_value(uint64_t const v) noexcept
     {
         v_ = v;
     }
 
-    constexpr uint32_t get_count() const
+    constexpr uint64_t get_count() const
     {
-        return v_ >>
-               (most_significant_bits - virtual_chunk_offset_t::COUNT_BITS);
+        return v_ >> (virtual_chunk_offset_t::OFFSET_BITS - bits_to_truncate);
     }
 
-    // NOLINTNEXTLINE(google-explicit-constructor)
-    constexpr operator uint32_t() const noexcept
+    constexpr explicit operator uint64_t() const noexcept
     {
         return v_;
     }
@@ -230,8 +236,8 @@ public:
     }
 };
 
-static_assert(sizeof(compact_virtual_chunk_offset_t) == 4);
-static_assert(alignof(compact_virtual_chunk_offset_t) == 4);
+static_assert(sizeof(compact_virtual_chunk_offset_t) == 8);
+static_assert(alignof(compact_virtual_chunk_offset_t) == 8);
 static_assert(std::is_trivially_copyable_v<compact_virtual_chunk_offset_t>);
 
 //! The invalid and min compact_virtual_chunk_offset_t
@@ -262,14 +268,16 @@ struct compact_offset_pair
 
     byte_string serialize() const;
 
+    byte_string serialize_legacy() const;
+
     static compact_offset_pair deserialize(byte_string_view bytes);
 
     constexpr bool
     operator==(compact_offset_pair const &) const noexcept = default;
 };
 
-static_assert(sizeof(compact_offset_pair) == 8);
-static_assert(alignof(compact_offset_pair) == 4);
+static_assert(sizeof(compact_offset_pair) == 16);
+static_assert(alignof(compact_offset_pair) == 8);
 
 constexpr unsigned bitmask_index(uint16_t const mask, unsigned const i) noexcept
 {
@@ -328,22 +336,45 @@ inline byte_string serialize(V n)
     return byte_string{arr.data(), arr.size()};
 }
 
+template <std::integral V, size_t N>
+inline byte_string serialize_words(std::array<V, N> const &words)
+{
+    static_assert(std::endian::native == std::endian::little);
+    auto const arr =
+        std::bit_cast<std::array<unsigned char, sizeof(V) * N>>(words);
+    return byte_string{arr.data(), arr.size()};
+}
+
 inline byte_string compact_offset_pair::serialize() const
 {
-    return ::monad::mpt::serialize((uint32_t)fast) +
-           ::monad::mpt::serialize((uint32_t)slow);
+    return serialize_words(std::array<uint64_t, 2>{
+        static_cast<uint64_t>(fast), static_cast<uint64_t>(slow)});
+}
+
+inline byte_string compact_offset_pair::serialize_legacy() const
+{
+    return serialize_words(
+        std::array<uint32_t, 2>{fast.to_legacy(), slow.to_legacy()});
 }
 
 inline compact_offset_pair
 compact_offset_pair::deserialize(byte_string_view const bytes)
 {
-    MONAD_ASSERT(bytes.size() == 2 * sizeof(uint32_t));
     compact_offset_pair offsets;
     // copy size is implicitly part of the `unaligned_load` call
-    // NOLINTNEXTLINE(bugprone-suspicious-stringview-data-usage)
-    offsets.fast.set_value(unaligned_load<uint32_t>(bytes.data()));
-    offsets.slow.set_value(
+    // NOLINTBEGIN(bugprone-suspicious-stringview-data-usage)
+    if (bytes.size() == 2 * sizeof(uint64_t)) {
+        offsets.fast.set_value(unaligned_load<uint64_t>(bytes.data()));
+        offsets.slow.set_value(
+            unaligned_load<uint64_t>(bytes.data() + sizeof(uint64_t)));
+        return offsets;
+    }
+    MONAD_ASSERT(bytes.size() == 2 * sizeof(uint32_t));
+    offsets.fast = compact_virtual_chunk_offset_t::from_legacy(
+        unaligned_load<uint32_t>(bytes.data()));
+    offsets.slow = compact_virtual_chunk_offset_t::from_legacy(
         unaligned_load<uint32_t>(bytes.data() + sizeof(uint32_t)));
+    // NOLINTEND(bugprone-suspicious-stringview-data-usage)
     return offsets;
 }
 

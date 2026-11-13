@@ -133,7 +133,7 @@ namespace grow_test
                 .header_bytes =
                     sizeof(MONAD_MPT_NAMESPACE::detail::db_metadata),
                 .bytes_per_chunk = sizeof(
-                    MONAD_MPT_NAMESPACE::detail::db_metadata::chunk_info_t)};
+                    MONAD_MPT_NAMESPACE::detail::db_metadata::chunk_record_t)};
         return flags;
     }
 

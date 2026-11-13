@@ -124,6 +124,11 @@ class State
     // Replay mutations backward to the frame mark; acceptance retains them
     // for parent rollback. payload_index selects the previous-value vector.
     // Store addresses because erasing rows can invalidate pointers.
+    //
+    // Every append to a payload vector comes with its own record, whose
+    // payload_index is the vector's size before the append: the guest's
+    // pop_reject finds each vector's size at the frame mark in the
+    // payload_index of the frame's earliest record of a kind that uses it.
     struct Undo
     {
         enum class Kind : unsigned char
@@ -241,8 +246,27 @@ class State
     std::vector<SlotUndo> undo_slots_{};
     std::vector<PageTracker> undo_pages_{};
 
-    // Saved positions for each journal vector. ZisK uses byte offsets;
-    // elsewhere only the account payload position is measured in bytes.
+#ifdef MONAD_ZKVM_ZISK
+    // Save undo_ and logs_ byte offsets for each frame. Rollback recovers
+    // payload-vector sizes from payload_index instead of saving them here.
+    struct UndoMark
+    {
+        size_t undo_position;
+        size_t log_position;
+
+        // Built through a constructor, as SlotUndo is: an aggregate mark was
+        // zeroed whole before its fields were written.
+        UndoMark(size_t const undo_at, size_t const log_at)
+            : undo_position{undo_at}
+            , log_position{log_at}
+        {
+        }
+    };
+
+    static_assert(sizeof(UndoMark) == 16);
+#else
+    // Saved positions for each journal vector. Only the account payload
+    // position is measured in bytes.
     struct UndoMark
     {
         size_t undo_position;
@@ -252,36 +276,21 @@ class State
         size_t slot_position;
         size_t page_position;
         // Power-of-two size for cheaper vector::size(), as in Undo.
-#ifdef MONAD_ZKVM_ZISK
-        // Padding is never read. Initialize only the six saved positions
-        // to avoid zeroing the entire mark on every frame.
-        size_t pad_[2];
-
-        UndoMark(
-            size_t const undo_at, size_t const account_at, size_t const word_at,
-            size_t const nonce_at, size_t const slot_at, size_t const page_at)
-            : undo_position{undo_at}
-            , account_position{account_at}
-            , word_position{word_at}
-            , nonce_position{nonce_at}
-            , slot_position{slot_at}
-            , page_position{page_at}
-        {
-        }
-#else
         size_t pad_[2]{};
-#endif
     };
 
     static_assert(sizeof(UndoMark) == 64);
+#endif
 
     std::vector<UndoMark> undo_marks_{};
 
     // Append-only logs; frame marks let rollback discard the appended suffix.
     std::vector<Receipt::Log> logs_{};
+#ifndef MONAD_ZKVM_ZISK
     // Saved log sizes in bytes; convert to counts only on rollback.
-    // log_marks_.size() == version_.
+    // log_marks_.size() == version_. The guest keeps it in UndoMark.
     std::vector<size_t> log_marks_{};
+#endif
 
     Map<bytes32_t, vm::SharedVarcode> code_{};
 
@@ -435,7 +444,7 @@ public:
 
     void push();
 #if defined(MONAD_ZKVM_ZISK)
-    // Grow both mark vectors, then retry push with enough capacity.
+    // Grow the mark vector, then retry push with enough capacity.
     [[gnu::noinline, gnu::cold]] void push_after_growing();
 #endif
 

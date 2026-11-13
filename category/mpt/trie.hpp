@@ -181,12 +181,18 @@ class UpdateAux
 
     void advance_compact_offsets(Node::SharedPtr prev_root, timeline_id tid);
 
-    void free_compacted_chunks();
+    void free_compacted_chunks(uint32_t fast_chunks, uint32_t slow_chunks);
 
     // clear a timeline's root offsets of versions <= version
     void
     clear_root_offsets_up_to_and_including(uint64_t version, timeline_id tid);
     void release_unreferenced_chunks();
+
+    // The root's stored watermark, except that a component behind the head
+    // of a list that has not wrapped reads as MIN, which is what the older
+    // binaries that wrote such values meant. Any other component outside its
+    // list aborts.
+    compact_offset_pair root_watermark(Node const &root) const;
 
     double
     calculate_disk_usage_if_erased_up_to_and_including(uint64_t version) const;
@@ -219,19 +225,18 @@ class UpdateAux
     std::unique_ptr<DbMetadataContext> metadata_ctx_;
 
     /******** Compaction ********/
-    uint32_t chunks_to_remove_before_count_fast_{0};
-    uint32_t chunks_to_remove_before_count_slow_{0};
     // speed control var
     compact_virtual_chunk_offset_t last_block_end_offset_fast_{
         MIN_COMPACT_VIRTUAL_OFFSET};
     compact_virtual_chunk_offset_t last_block_end_offset_slow_{
         MIN_COMPACT_VIRTUAL_OFFSET};
-    compact_virtual_chunk_offset_t last_block_disk_growth_fast_{
-        MIN_COMPACT_VIRTUAL_OFFSET};
-    compact_virtual_chunk_offset_t last_block_disk_growth_slow_{
-        MIN_COMPACT_VIRTUAL_OFFSET};
+    compact_distance last_block_disk_growth_fast_{};
+    compact_distance last_block_disk_growth_slow_{};
     bool alternate_slow_fast_writer_{false};
     bool can_write_to_fast_{true};
+    // Only older binaries write legacy watermarks, so one clean scan holds for
+    // the rest of this process.
+    bool legacy_watermarks_ruled_out_{false};
 
     // Lifetime totals, never reset. The per-upsert figures that the stats log
     // and the slow-ring speed control consume are the difference between
@@ -340,6 +345,22 @@ public:
     // translate between virtual and physical addresses chunk_offset_t
     virtual_chunk_offset_t physical_to_virtual(chunk_offset_t) const noexcept;
 
+    //! Order of the fast and slow lists as they stand now; stale once a
+    //! chunk is released from a list's head.
+    offset_order current_offset_order() const noexcept;
+
+    //! Aborts before a chunk list can wrap its insertion count while a
+    //! retained root holds a watermark an older binary wrote behind the list's
+    //! head: once the tail passes that count again, the watermark lands back
+    //! inside the list and passes for a real GC boundary.
+    void assert_no_legacy_watermark_before_wrap();
+
+    //! Both lists' head and tail counts, or nullopt when a list stayed
+    //! unreadable for a second because a writer stopped mid-append.
+    std::optional<fast_slow_list_counts> list_counts() const noexcept;
+
+    fast_slow_tail_states list_tail_states() const noexcept;
+
     // age is relative to the beginning chunk's count
     std::pair<chunk_list, detail::unsigned_20>
     chunk_list_and_age(uint32_t idx) const noexcept;
@@ -404,7 +425,7 @@ public:
 };
 
 static_assert(
-    sizeof(UpdateAux) == 128 + 3 * sizeof(detail::TrieUpdateCollectedStats));
+    sizeof(UpdateAux) == 120 + 3 * sizeof(detail::TrieUpdateCollectedStats));
 static_assert(alignof(UpdateAux) == 8);
 
 template <receiver Receiver>
@@ -575,9 +596,18 @@ constexpr unsigned num_pages(file_offset_t const offset, unsigned bytes)
 }
 
 inline compact_offset_pair calc_min_offsets(
-    Node &node,
+    UpdateAux const &aux, Node &node,
     virtual_chunk_offset_t const node_virtual_offset = INVALID_VIRTUAL_OFFSET)
 {
+    auto const order = aux.current_offset_order();
+    uint32_t const fast_chunks = aux.num_chunks(UpdateAux::chunk_list::fast);
+    uint32_t const slow_chunks = aux.num_chunks(UpdateAux::chunk_list::slow);
+    // INVALID marks a subtrie with no node in that list.
+    auto const in_list = [](chunk_list_order const &list,
+                            compact_virtual_chunk_offset_t const x,
+                            uint32_t const chunks) {
+        return x == INVALID_COMPACT_VIRTUAL_OFFSET || list.contains(x, chunks);
+    };
     compact_offset_pair ret;
     if (node_virtual_offset != INVALID_VIRTUAL_OFFSET) {
         auto &r = node_virtual_offset.in_fast_list() ? ret.fast : ret.slow;
@@ -587,8 +617,13 @@ inline compact_offset_pair calc_min_offsets(
     auto const fast = node.child_min_offset_fast_data();
     auto const slow = node.child_min_offset_slow_data();
     for (unsigned i = 0; i < n; ++i) {
-        ret.fast = std::min<compact_virtual_chunk_offset_t>(ret.fast, fast[i]);
-        ret.slow = std::min<compact_virtual_chunk_offset_t>(ret.slow, slow[i]);
+        MONAD_ASSERT(
+            in_list(order.fast, fast[i], fast_chunks) &&
+                in_list(order.slow, slow[i], slow_chunks),
+            "Detected referenced offsets in released chunks; potential disk "
+            "corruption");
+        ret.fast = order.fast.min(ret.fast, fast[i]);
+        ret.slow = order.slow.min(ret.slow, slow[i]);
     }
     return ret;
 }

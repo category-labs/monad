@@ -76,7 +76,7 @@ TEST_F(MixedAsyncSyncLoadsTest, works)
     // Initiate an async find of a key
     monad::mpt::AsyncInflightNodes inflights;
     monad::mpt::NodeCache node_cache{
-        1000 * monad::mpt::NodeCache::AVERAGE_NODE_SIZE};
+        1000 * monad::mpt::NodeCache::AVERAGE_NODE_SIZE, aux};
     // NOLINTNEXTLINE(performance-unnecessary-copy-initialization)
     auto state = monad::async::connect(
         monad::mpt::find_request_sender<>(

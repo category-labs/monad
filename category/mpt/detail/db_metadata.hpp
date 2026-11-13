@@ -512,16 +512,7 @@ namespace detail
                 info.prev_chunk_id = list.end & 0xfffffU;
                 auto *tail = at_(list.end);
                 uint32_t const insertion_count =
-                    uint32_t(tail->insertion_count()) + 1;
-                // Strict less-than because MAX_COUNT is reserved for
-                // INVALID_VIRTUAL_OFFSET so that no valid virtual offset
-                // compacts to INVALID_COMPACT_VIRTUAL_OFFSET.
-                MONAD_ASSERT(
-                    insertion_count < virtual_chunk_offset_t::MAX_COUNT,
-                    "Chunk count overflow detected. The 20-bit address "
-                    "space for chunk count has been exhausted. Please "
-                    "perform a database reset. TODO: expand the address "
-                    "space.");
+                    next_insertion_count(uint32_t(tail->insertion_count()));
                 info.insertion_count0_ = insertion_count & 0x3ff;
                 info.insertion_count1_ = insertion_count >> 10 & 0x3ff;
                 MONAD_ASSERT(
@@ -635,12 +626,7 @@ namespace detail
                     MONAD_ASSERT((free_list.end & ~0xfffffU) == 0);
                     auto *const tail = at_(free_list.end);
                     uint32_t const insertion_count =
-                        uint32_t(tail->insertion_count()) + 1;
-                    MONAD_ASSERT(
-                        insertion_count < virtual_chunk_offset_t::MAX_COUNT,
-                        "Chunk count overflow detected. The 20-bit address "
-                        "space for chunk count has been exhausted. Please "
-                        "perform a database reset.");
+                        next_insertion_count(uint32_t(tail->insertion_count()));
                     info.insertion_count0_ = insertion_count & 0x3ff;
                     info.insertion_count1_ = insertion_count >> 10 & 0x3ff;
                     info.prev_chunk_id = free_list.end & 0xfffffU;

@@ -15,19 +15,27 @@
 
 #pragma once
 
-// Construction is the only thing the zkVM guest does with a builder
-// any other use is a compile error rather than a silent no-op.
+// The guest's stand-in for the native state3/state.hpp. The execution layer
+// is written against the concrete class monad::State, so in a guest build
+// that name is the guest state: a final class deriving from zkvm::State
+// with nothing of its own. The guest class keeps its own namespace so that
+// the host's unit tests can link it beside the native State; this header
+// is found first only by translation units compiled with
+// zkvm/guest/shadow on their include path, which is every execution source
+// the guest keeps and the guest driver itself.
 
 #include <category/core/config.hpp>
-
-#include <cstdint>
+#include <category/execution/ethereum/state3/state_interface.hpp>
+#include <zkvm/state/state.hpp>
 
 MONAD_NAMESPACE_BEGIN
 
-class CommitBuilder
+class State final : public zkvm::State
 {
 public:
-    explicit CommitBuilder(uint64_t) {}
+    using zkvm::State::State;
 };
+
+static_assert(StateInterface<State>);
 
 MONAD_NAMESPACE_END

@@ -28,14 +28,14 @@
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/offset_trie.hpp>
-#include <category/execution/ethereum/db/partial_trie_db.hpp>
 #include <category/execution/ethereum/rlp/decode.hpp>
 #include <category/execution/ethereum/rlp/execution_witness.hpp>
+#include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/validate_block.hpp>
-#include <category/vm/code.hpp>
 #include <category/vm/evm/revision.hpp>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/vm.hpp>
+#include <zkvm/state/key_hash.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -53,24 +53,6 @@ extern "C" void monad_zkvm_execute_witness(void)
         monad::byte_string_view{input, input_len});
     MONAD_ASSERT(witness.has_value());
 
-    monad::CodeIndex code_index;
-    {
-        monad::byte_string_view codes = witness.value().encoded_codes;
-        while (!codes.empty()) {
-            auto const bytes = monad::rlp::parse_string_metadata(codes);
-            MONAD_ASSERT(bytes.has_value());
-            code_index.emplace(
-                monad::to_bytes(monad::keccak256(bytes.value())),
-                monad::vm::make_shared_intercode(bytes.value()));
-        }
-    }
-
-    monad::mpt::OffsetTrie trie{witness.value().encoded_nodes};
-    // A witness must carry a materialised pre-state trie; an overlay-id root
-    // signifies an empty trie.
-    MONAD_ASSERT(!monad::mpt::is_overlay_id(trie.root));
-    monad::PartialTrieDb pdb{std::move(trie), std::move(code_index)};
-
     monad::byte_string_view block_view = witness.value().block_rlp;
     // Keep each transaction's original bytes to verify transactions_root
     // without re-encoding the decoded transaction.
@@ -79,6 +61,32 @@ extern "C" void monad_zkvm_execute_witness(void)
     MONAD_ASSERT(block_result.has_value());
     MONAD_ASSERT(block_view.empty());
     auto const &block = block_result.value();
+
+    // The state's tables are keyed from this block's hash (see
+    // zkvm/state/key_hash.hpp), so the seed comes before any of them.
+    monad::zkvm::KeySeed const seed =
+        monad::zkvm::KeySeed::from_block_hash(monad::to_bytes(
+            monad::keccak256(monad::rlp::encode_block_header(block.header))));
+
+    monad::vm::VM vm;
+    monad::State::CodeTable codes{0, monad::zkvm::Bytes32Hash{seed}};
+    {
+        monad::byte_string_view encoded = witness.value().encoded_codes;
+        while (!encoded.empty()) {
+            auto const bytes = monad::rlp::parse_string_metadata(encoded);
+            MONAD_ASSERT(bytes.has_value());
+            auto const hash = monad::to_bytes(monad::keccak256(bytes.value()));
+            codes.try_emplace(
+                hash, vm.try_insert_varcode_raw(hash, bytes.value()));
+        }
+    }
+
+    monad::mpt::OffsetTrie trie{witness.value().encoded_nodes};
+    // A witness must carry a materialised pre-state trie; an overlay-id root
+    // signifies an empty trie.
+    MONAD_ASSERT(!monad::mpt::is_overlay_id(trie.root));
+    monad::State state{
+        std::move(trie), std::move(codes), vm, block.header.number, seed};
 
     monad::WitnessBlockHashBuffer block_hash_buffer;
     monad::bytes32_t pre_state_root{};
@@ -109,7 +117,7 @@ extern "C" void monad_zkvm_execute_witness(void)
                 // The last header is this block's parent
                 MONAD_ASSERT(
                     hash == block.header.parent_hash && headers.empty());
-                pre_state_root = pdb.state_root();
+                pre_state_root = state.state_root();
                 MONAD_ASSERT(pre_state_root == header.value().state_root);
                 parent_header = header.value();
                 checked_pre_state_root = true;
@@ -122,8 +130,6 @@ extern "C" void monad_zkvm_execute_witness(void)
     }
 
     monad::EthereumMainnet const chain;
-    monad::vm::VM vm;
-    pdb.set_block_and_prefix(block.header.number, monad::bytes32_t{});
 
     monad::EvmRevision const rev =
         chain.get_revision(block.header.number, block.header.timestamp);
@@ -142,8 +148,7 @@ extern "C" void monad_zkvm_execute_witness(void)
             chain,
             block,
             raw_transactions,
-            pdb,
-            vm,
+            state,
             block_hash_buffer);
         MONAD_ABORT("unsupported revision");
     }();

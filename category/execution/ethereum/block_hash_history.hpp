@@ -32,6 +32,12 @@ constexpr Address BLOCK_HISTORY_ADDRESS{
 
 constexpr uint64_t BLOCK_HISTORY_LENGTH{8191};
 
+// keccak of the EIP-2935 history contract's code.
+inline constexpr bytes32_t BLOCK_HISTORY_CODE_HASH = [] {
+    using literals::operator""_bytes32;
+    return 0x6e49e66782037c0555897870e29fa5e552daf4719552131a0abce779daec0a5d_bytes32;
+}();
+
 template <Traits traits>
 void deploy_block_hash_history_contract(State &);
 

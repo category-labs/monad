@@ -35,6 +35,7 @@
 #include <bit>
 #include <cstdint>
 #include <cstring>
+#include <optional>
 #include <span>
 #include <utility>
 
@@ -528,8 +529,8 @@ public:
 
     // Account-trie root, NULL_ID while the trie is empty. upsert_node and
     // erase_node keep a materialised root's id stable, so a caller only
-    // reassigns it across the empty/non-empty transitions — exactly as
-    // PartialTrieDb::commit already threads a storage sub-root.
+    // reassigns it across the empty/non-empty transitions — exactly as the
+    // guest State's commit threads a storage sub-root.
     NodeId root;
 
     NodeViewBase empty() const
@@ -551,6 +552,16 @@ public:
         return NodeViewBase{blob_.data() + static_cast<uint64_t>(id)};
     }
 
+    // The id of a view the blob holds, i.e. one from get_original or
+    // find_original: its offset. The overlay is not addressable this way.
+    NodeId id_of(NodeViewBase const v) const
+    {
+        // NOLINTNEXTLINE(bugprone-suspicious-stringview-data-usage)
+        auto const off = static_cast<uint64_t>(v.bytes() - blob_.data());
+        MONAD_ASSERT(off < blob_.size());
+        return NodeId{off};
+    }
+
     // Current bytes for `id` — overlay entry if present, else the blob.
     // put_node shadows a rewritten blob node under its own blob id, so the
     // overlay has to be consulted for every id, not just fresh ones. A
@@ -569,6 +580,12 @@ public:
     // leaf view if the key is present, else `NullView`. Aborts on a Digest
     // (incomplete witness). Traverses through the view accessors via match.
     NodeViewBase find_original(NodeId id, NibblesView key) const;
+
+    // As find_original, but a Digest on the path yields nullopt instead of
+    // aborting: the witness cannot say whether the key is present. For
+    // callers that decide what an unproven key means themselves.
+    std::optional<NodeViewBase>
+    try_find_original(NodeId id, NibblesView key) const;
 
     NodeId put_branch(NodeId, std::array<node_id_wire_t, 16> const &);
     NodeId put_ext(NodeId, NibblesView, NodeId);

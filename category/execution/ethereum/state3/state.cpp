@@ -369,7 +369,9 @@ State::State(
 #endif
     undo_marks_.reserve(INITIAL_CAPACITY);
     logs_.reserve(INITIAL_CAPACITY);
+#ifndef MONAD_ZKVM_ZISK
     log_marks_.reserve(INITIAL_CAPACITY);
+#endif
 }
 
 State::Map<Address, OriginalAccountState> const &State::original() const
@@ -401,7 +403,6 @@ DirtyAccounts const &State::current_frame_dirty_accounts() const
 void State::push_after_growing()
 {
     undo_marks_.reserve(2 * undo_marks_.capacity() + 1);
-    log_marks_.reserve(2 * log_marks_.capacity() + 1);
     push();
 }
 #endif
@@ -410,9 +411,7 @@ void State::push()
 {
 #if defined(MONAD_ZKVM_ZISK)
     // Keep growth calls and their register saves out of the usual push path.
-    if (MONAD_UNLIKELY(
-            undo_marks_.size() == undo_marks_.capacity() ||
-            log_marks_.size() == log_marks_.capacity())) {
+    if (MONAD_UNLIKELY(undo_marks_.size() == undo_marks_.capacity())) {
         return push_after_growing();
     }
 #endif
@@ -432,16 +431,11 @@ void State::push()
 #if !defined(MONAD_ZKVM_NO_DIRTY_ACCOUNTS)
     dirty_.emplace_back();
 #endif
-    // Construct the mark in place to avoid copying a 64-byte temporary.
+    // Construct the frame mark in place.
 #if defined(MONAD_ZKVM_ZISK)
-    // Save byte offsets; convert to element counts only when rolling back.
-    undo_marks_.emplace_back(
-        bytes_of(undo_),
-        bytes_of(undo_accounts_),
-        bytes_of(undo_words_),
-        bytes_of(undo_u64_),
-        bytes_of(undo_slots_),
-        bytes_of(undo_pages_));
+    // Save byte offsets without computing element counts on every push.
+    // Rollback recovers payload sizes from the undo records (see UndoMark).
+    undo_marks_.emplace_back(bytes_of(undo_), bytes_of(logs_));
 #else
     undo_marks_.emplace_back(
         undo_.size(),
@@ -450,8 +444,8 @@ void State::push()
         undo_u64_.size(),
         undo_slots_.size(),
         undo_pages_.size());
-#endif
     log_marks_.push_back(bytes_of(logs_));
+#endif
 }
 
 void State::pop_accept()
@@ -489,8 +483,11 @@ void State::pop_accept()
         undo_pages_.clear();
     }
 
-    // Accepted: the frame's logs stay where they are, only its watermark goes.
+    // Accepted: the frame's logs stay where they are, only its watermark goes,
+    // which the guest keeps in its UndoMark.
+#if !defined(MONAD_ZKVM_ZISK)
     log_marks_.pop_back();
+#endif
 
     --version_;
 }
@@ -514,8 +511,12 @@ void State::pop_reject()
 #endif
 
     // Rejected: drop exactly what this frame appended.
+#if defined(MONAD_ZKVM_ZISK)
+    logs_.resize(undo_marks_.back().log_position / sizeof(Receipt::Log));
+#else
     logs_.resize(log_marks_.back() / sizeof(Receipt::Log));
     log_marks_.pop_back();
+#endif
 
     // Rollback may erase and move map entries, invalidating the cached
     // pointer.
@@ -525,6 +526,16 @@ void State::pop_reject()
     UndoMark const mark = undo_marks_.back();
     undo_marks_.pop_back();
 #if defined(MONAD_ZKVM_ZISK)
+    // Each payload vector's size at the mark: the payload_index of the frame's
+    // earliest record that appended to it, which the backward replay meets
+    // last. A vector's records index its entries in order: an accepted inner
+    // frame left its records in place, and a rejected one removed them with
+    // their entries. A vector the frame did not append to keeps its size.
+    size_t account_payload_count = undo_accounts_.size();
+    size_t word_payload_count = undo_words_.size();
+    size_t nonce_payload_count = undo_u64_.size();
+    size_t slot_payload_count = undo_slots_.size();
+    size_t page_payload_count = undo_pages_.size();
     while (bytes_of(undo_) > mark.undo_position) {
 #else
     while (undo_.size() > mark.undo_position) {
@@ -546,6 +557,9 @@ void State::pop_reject()
 
         case Undo::Kind::AccountWhole:
             row.account_ = std::move(undo_accounts_[undo_record.payload_index]);
+#if defined(MONAD_ZKVM_ZISK)
+            account_payload_count = undo_record.payload_index;
+#endif
             break;
 
         case Undo::Kind::Balance:
@@ -556,16 +570,25 @@ void State::pop_reject()
                 &row.account_->balance,
                 undo_words_[undo_record.payload_index].bytes,
                 sizeof(undo_words_[undo_record.payload_index].bytes));
+#if defined(MONAD_ZKVM_ZISK)
+            word_payload_count = undo_record.payload_index;
+#endif
             break;
 
         case Undo::Kind::CodeHash:
             MONAD_ASSERT(row.account_.has_value());
             row.account_->code_hash = undo_words_[undo_record.payload_index];
+#if defined(MONAD_ZKVM_ZISK)
+            word_payload_count = undo_record.payload_index;
+#endif
             break;
 
         case Undo::Kind::Nonce:
             MONAD_ASSERT(row.account_.has_value());
             row.account_->nonce = undo_u64_[undo_record.payload_index];
+#if defined(MONAD_ZKVM_ZISK)
+            nonce_payload_count = undo_record.payload_index;
+#endif
             break;
 
         case Undo::Kind::FlagTouched:
@@ -599,6 +622,9 @@ void State::pop_reject()
             else {
                 row.storage_.erase(slot_undo.key);
             }
+#if defined(MONAD_ZKVM_ZISK)
+            slot_payload_count = undo_record.payload_index;
+#endif
             break;
         }
 
@@ -610,24 +636,31 @@ void State::pop_reject()
             else {
                 row.transient_storage_.erase(slot_undo.key);
             }
+#if defined(MONAD_ZKVM_ZISK)
+            slot_payload_count = undo_record.payload_index;
+#endif
             break;
         }
 
         case Undo::Kind::Pages:
             row.page_tracker_ =
                 std::move(undo_pages_[undo_record.payload_index]);
+#if defined(MONAD_ZKVM_ZISK)
+            page_payload_count = undo_record.payload_index;
+#endif
             break;
         }
         undo_.pop_back();
     }
+#if defined(MONAD_ZKVM_ZISK)
+    undo_accounts_.resize(account_payload_count);
+    undo_words_.resize(word_payload_count);
+    undo_u64_.resize(nonce_payload_count);
+    undo_slots_.resize(slot_payload_count);
+    undo_pages_.resize(page_payload_count);
+#else
     undo_accounts_.resize(
         mark.account_position / sizeof(std::optional<Account>));
-#if defined(MONAD_ZKVM_ZISK)
-    undo_words_.resize(mark.word_position / sizeof(bytes32_t));
-    undo_u64_.resize(mark.nonce_position / sizeof(std::uint64_t));
-    undo_slots_.resize(mark.slot_position / sizeof(SlotUndo));
-    undo_pages_.resize(mark.page_position / sizeof(PageTracker));
-#else
     undo_words_.resize(mark.word_position);
     undo_u64_.resize(mark.nonce_position);
     undo_slots_.resize(mark.slot_position);

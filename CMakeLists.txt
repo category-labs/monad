@@ -208,16 +208,14 @@ function(monad_add_test target)
     target_link_libraries(${target} GTest::Main)
   else()
     add_executable(${target} ${AT_UNPARSED_ARGUMENTS})
-    target_include_directories(
-      ${target}
-      PRIVATE "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/test/unit/common/include")
     target_link_libraries(${target} monad_gtest_main)
   endif()
   monad_compile_options(${target})
   target_compile_options(${target} PUBLIC "-Wno-missing-field-initializers"
   )# TODO
   target_include_directories(${target} PRIVATE "${TOP_CURRENT_BINARY_DIR}/test")
-  target_link_libraries(${target} monad_execution GTest::GTest)
+  target_link_libraries(${target} monad_test_support monad_execution
+                        GTest::GTest)
   gtest_discover_tests(
     ${target} DISCOVERY_MODE PRE_TEST
     PROPERTIES ENVIRONMENT ASAN_OPTIONS=abort_on_error=1 ENVIRONMENT

@@ -15,6 +15,7 @@
 
 #include <category/core/log.hpp>
 #include <revision_map.hpp>
+#include <shard.hpp>
 #include <transaction_test.hpp>
 
 #include <category/core/address.hpp>
@@ -39,7 +40,6 @@
 
 #include <test/utils/from_json.hpp>
 
-#include <algorithm>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -167,12 +167,7 @@ void register_transaction_tests_path(
         if (path.extension() == ".json") {
             MONAD_ASSERT(fs::is_regular_file(path));
 
-            auto test_name = path == root ? path.filename().string()
-                                          : fs::relative(path, root).string();
-            // get rid of minus signs, which is a special symbol when used in
-            // filtering
-            std::ranges::replace(test_name, '-', '_');
-
+            auto const test_name = fixture_test_name(root, path);
             testing::RegisterTest(
                 "TransactionTests",
                 test_name.c_str(),
@@ -186,20 +181,21 @@ void register_transaction_tests_path(
         }
     };
 
+    std::vector<fs::path> fixtures;
     if (fs::is_directory(root)) {
-        std::vector<fs::path> paths;
         for (auto const &entry : fs::recursive_directory_iterator{root}) {
-            paths.push_back(entry.path());
-        }
-        // gtest shards by registration index, so all shards must agree on it
-        std::ranges::sort(paths);
-        for (auto const &path : paths) {
-            register_test(path);
+            if (entry.path().extension() == ".json") {
+                fixtures.push_back(entry.path());
+            }
         }
     }
     else {
         MONAD_ASSERT(fs::is_regular_file(root));
-        register_test(root);
+        fixtures.push_back(root);
+    }
+    for (auto const &path : fixtures_for_this_shard(
+             "TransactionTests", root, std::move(fixtures))) {
+        register_test(path);
     }
 }
 

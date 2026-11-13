@@ -157,13 +157,21 @@ int main(int argc, char *argv[])
         test::register_transaction_tests(revision);
     }
 
-    int return_code = RUN_ALL_TESTS();
-
-    // gtest gives the first runnable test to shard 0, so only it is empty
-    // when nothing matched.
+    // The largest matching fixture goes to shard 0, so only it is empty when
+    // nothing matched.
     char const *const shard_index = std::getenv("GTEST_SHARD_INDEX");
     bool const first_shard =
         shard_index == nullptr || std::string_view{shard_index} == "0";
+    // The fixtures were split between the shards when they were registered.
+    // With only one of the two set, gtest is left to reject the setup.
+    if (shard_index != nullptr &&
+        std::getenv("GTEST_TOTAL_SHARDS") != nullptr) {
+        ::unsetenv("GTEST_TOTAL_SHARDS");
+        ::unsetenv("GTEST_SHARD_INDEX");
+    }
+
+    int return_code = RUN_ALL_TESTS();
+
     if (first_shard &&
         ::testing::UnitTest::GetInstance()->test_to_run_count() == 0) {
         LOG_ERROR("No tests were run.");

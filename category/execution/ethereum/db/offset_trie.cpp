@@ -243,13 +243,17 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
         // View the current window as a fixed-size array without copying it.
         auto &window =
             *reinterpret_cast<unsigned char(*)[MAX_NODE_RLP]>(walk_window);
+        // Keep non-branch encoding behind a call: LTO inlining enlarged the
+        // constructor and increased execution cost in the measured build.
         node_rlp_span const rem =
             tag == BRANCH
                 ? encode_rlp<true, true>(
                       node,
                       node_rlp_span{window},
                       primed_slots_ + PRIMED_CHILDREN_OFFSET)
-                : encode_rlp<true>(node, node_rlp_span{window}); // priming pass
+                : [&]() __attribute__((noinline)) {
+                      return encode_rlp<true>(node, node_rlp_span{window});
+                  }();
 #else
         node_rlp_span const rem =
             encode_rlp<true>(node, node_rlp_span{rlp_buf}); // priming pass

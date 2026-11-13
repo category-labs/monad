@@ -214,6 +214,72 @@ TEST(AbiDecode, dynamic_bytes_tail_length_mismatch)
     EXPECT_EQ(decode_res.assume_error(), AbiDecodeError::LengthMismatch);
 }
 
+TEST(AbiDecode, runtime_dynamic_bytes_tail_word_boundaries)
+{
+    for (size_t const length : {0uz, 1uz, 31uz, 32uz, 33uz, 64uz, 65uz}) {
+        SCOPED_TRACE(length);
+        byte_string const payload(length, 0xAB);
+        byte_string encoded(32, 0);
+        encoded.back() = static_cast<unsigned char>(length);
+        encoded += payload;
+        encoded.append((32 - length % 32) % 32, 0);
+        byte_string_view input{encoded};
+
+        auto const decoded = abi_decode_dynamic_bytes_tail(input);
+        ASSERT_TRUE(decoded.has_value());
+        EXPECT_EQ(decoded.value(), payload);
+        EXPECT_EQ(decoded.value().data(), encoded.data() + 32);
+        EXPECT_TRUE(input.empty());
+    }
+}
+
+TEST(AbiDecode, runtime_dynamic_bytes_tail_rejects_truncation)
+{
+    byte_string encoded(96, 0);
+    encoded[31] = 33;
+    for (size_t size = 0; size < encoded.size(); ++size) {
+        SCOPED_TRACE(size);
+        byte_string_view input = byte_string_view{encoded}.substr(0, size);
+        auto const decoded = abi_decode_dynamic_bytes_tail(input);
+        ASSERT_TRUE(decoded.has_error());
+        EXPECT_EQ(decoded.assume_error(), AbiDecodeError::InputTooShort);
+    }
+}
+
+TEST(AbiDecode, runtime_dynamic_bytes_tail_rejects_oversized_lengths)
+{
+    uint256_t const lengths[] = {
+        uint256_t{std::numeric_limits<size_t>::max()},
+        uint256_t{std::numeric_limits<size_t>::max()} + 1,
+        std::numeric_limits<uint256_t>::max()};
+    for (auto const length : lengths) {
+        bytes32_t const encoded = abi_encode_uint(u256_be{length});
+        byte_string_view input{encoded};
+        auto const decoded = abi_decode_dynamic_bytes_tail(input);
+        ASSERT_TRUE(decoded.has_error());
+        EXPECT_EQ(decoded.assume_error(), AbiDecodeError::InputTooShort);
+    }
+}
+
+TEST(AbiDecode, runtime_dynamic_bytes_tail_consumes_consecutive_tails)
+{
+    byte_string const first(33, 0xAB);
+    byte_string const second(1, 0xCD);
+    byte_string const encoded =
+        abi_encode_bytes(first) + abi_encode_bytes(second);
+    byte_string_view input{encoded};
+
+    auto const first_decoded = abi_decode_dynamic_bytes_tail(input);
+    ASSERT_TRUE(first_decoded.has_value());
+    EXPECT_EQ(first_decoded.value(), first);
+    EXPECT_EQ(input.size(), 64);
+
+    auto const second_decoded = abi_decode_dynamic_bytes_tail(input);
+    ASSERT_TRUE(second_decoded.has_value());
+    EXPECT_EQ(second_decoded.value(), second);
+    EXPECT_TRUE(input.empty());
+}
+
 TEST(AbiDecode, complex_decode)
 {
     // encode with both a head and tail. Note that we only decode known types,

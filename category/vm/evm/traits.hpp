@@ -664,6 +664,11 @@ namespace monad
             return Rev >= MONAD_NEXT;
         }
 
+        static consteval bool ale_active() noexcept
+        {
+            return Rev >= MONAD_NEXT;
+        }
+
         // Pricing version 1 activates the changes in:
         // Monad specification §4: Opcode Gas Costs and Gas Refunds
         static consteval uint8_t monad_pricing_version() noexcept

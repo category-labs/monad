@@ -18,6 +18,7 @@
 // IWYU pragma: always_keep
 
 #include <category/core/basic_formatter.hpp>
+#include <category/core/hex.hpp>
 #include <category/core/log.hpp>
 #include <category/mpt/nibbles_view.hpp>
 
@@ -33,10 +34,10 @@ struct fmt::formatter<monad::mpt::NibblesView> : public monad::BasicFormatter
     template <typename FormatContext>
     auto format(monad::mpt::NibblesView const &value, FormatContext &ctx) const
     {
-        fmt::format_to(ctx.out(), "0x");
+        auto out = fmt::format_to(ctx.out(), "0x");
         for (auto i = 0u; i < value.nibble_size(); ++i) {
-            fmt::format_to(ctx.out(), "{:01x}", value.get(i));
+            *out++ = monad::to_hex_char(value.get(i));
         }
-        return ctx.out();
+        return out;
     }
 };

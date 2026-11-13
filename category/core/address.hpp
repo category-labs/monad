@@ -106,11 +106,6 @@ namespace literals
 
 using literals::operator""_address;
 
-constexpr Address address_from_hex(char const *const s)
-{
-    return from_hex<Address>(s).value();
-}
-
 MONAD_NAMESPACE_END
 
 template <>

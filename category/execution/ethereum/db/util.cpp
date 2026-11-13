@@ -1042,6 +1042,45 @@ get_transactions<mpt::Db>(mpt::Db &, uint64_t, bytes32_t const &);
 template Result<std::vector<Transaction>>
 get_transactions<mpt::RODb>(mpt::RODb &, uint64_t, bytes32_t const &);
 
+template <typename DBType>
+    requires std::is_same_v<mpt::Db, DBType> ||
+             std::is_same_v<mpt::RODb, DBType>
+Result<std::vector<Receipt>>
+get_receipts(DBType &db, uint64_t const block_number, bytes32_t const &block_id)
+{
+    Nibbles const prefix =
+        block_id == bytes32_t{} ? finalized_nibbles : proposal_prefix(block_id);
+    BOOST_OUTCOME_TRY(
+        auto const cursor,
+        db.find(concat(NibblesView{prefix}, RECEIPT_NIBBLE), block_number));
+    std::vector<Receipt> receipts;
+    GetAllMachine machine{
+        [&receipts](NibblesView const path, byte_string_view value) {
+            // Keyed by the rlp of the receipt's index.
+            MONAD_ASSERT(path.nibble_size() == path.data_size() * 2);
+            byte_string_view raw{path.data(), path.data_size()};
+            auto const index = rlp::decode_unsigned<uint32_t>(raw);
+            MONAD_ASSERT(index.has_value());
+            auto receipt = decode_receipt_db(value);
+            MONAD_ASSERT(receipt.has_value());
+            if (index.value() >= receipts.size()) {
+                receipts.resize(index.value() + 1);
+            }
+            receipts[index.value()] = std::move(receipt.value().first);
+        }};
+    if (db.traverse(cursor, machine, block_number) == false) {
+        MONAD_ASSERT(db.find({}, block_number).has_error());
+        return DbError::version_no_longer_exist;
+    }
+    return receipts;
+}
+
+template Result<std::vector<Receipt>>
+get_receipts<mpt::Db>(mpt::Db &, uint64_t, bytes32_t const &);
+
+template Result<std::vector<Receipt>>
+get_receipts<mpt::RODb>(mpt::RODb &, uint64_t, bytes32_t const &);
+
 bool for_each_code(
     mpt::Db &db, uint64_t const block,
     std::function<void(bytes32_t const &, byte_string_view)> const fn)

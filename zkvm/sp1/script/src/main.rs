@@ -16,8 +16,9 @@
 use clap::Parser;
 use sp1_sdk::{utils, Elf, Prover, ProverClient, ProvingKey, SP1Stdin};
 
-// build.rs exports the ELF path for the witness guest.
-const ELF_BYTES: &[u8] = include_bytes!(env!("GUEST_ELF"));
+// build.rs exports the ELF path for the witness guest, or the precompile
+// test guest when the `precompile-test` feature is enabled.
+const ELF_BYTES: &[u8] = include_bytes!(env!("MONAD_ELF"));
 const MONAD_ELF: Elf = Elf::Static(ELF_BYTES);
 
 #[derive(Parser)]

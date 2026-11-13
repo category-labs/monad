@@ -145,7 +145,11 @@ pub struct TransactionReceipt<T = ReceiptEnvelope<Log>> {
     pub block_number: Option<u64>,
     #[serde(with = "quantity")]
     pub gas_used: u64,
-    #[serde(default, alias = "gasPrice")]
+    #[serde(
+        default,
+        alias = "gasPrice",
+        deserialize_with = "deserialize_effective_gas_price"
+    )]
     pub effective_gas_price: U256,
     #[serde(
         default,
@@ -158,6 +162,12 @@ pub struct TransactionReceipt<T = ReceiptEnvelope<Log>> {
     pub from: Address,
     pub to: Option<Address>,
     pub contract_address: Option<Address>,
+}
+
+fn deserialize_effective_gas_price<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<U256, D::Error> {
+    Ok(Option::<U256>::deserialize(deserializer)?.unwrap_or_default())
 }
 
 impl<T: alloy_consensus::TxReceipt> TransactionReceipt<T> {

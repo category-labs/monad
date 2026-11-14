@@ -75,6 +75,7 @@ target_sources(
   PRIVATE include/blockchain_test.hpp
           include/event.hpp
           include/revision_map.hpp
+          include/shard.hpp
           include/transaction_test.hpp
           src/blockchain_test.cpp
           src/event.cpp
@@ -139,11 +140,12 @@ function(add_monad_test)
   list(JOIN ${TESTS_EXCLUDED} ":" TESTS_EXCLUDED)
   set(FILTER "-:${TESTS_EXCLUDED}")
 
+  string(TOLOWER "for_${ADD_MONAD_TEST_FORK}" FIXTURES_DIR)
   add_sharded_test(${ADD_MONAD_TEST_FORK}_monad_ethereum_test
                    COMMAND monad-ethereum-test --fork ${ADD_MONAD_TEST_FORK}
                           # TODO: not ready yet
                           #  --record-exec-events
-                           --blockchain-tests ${CMAKE_BINARY_DIR}/src/MonadSpecTestFixtures/blockchain_tests
+                           --blockchain-tests ${CMAKE_BINARY_DIR}/src/MonadSpecTestFixtures/blockchain_tests/${FIXTURES_DIR}
                            --gtest_filter=${FILTER})
 endfunction()
 
@@ -156,7 +158,7 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/exclude/MONAD_NEXT_amsterdam.cmake)
 list(JOIN MONAD_NEXT_amsterdam_excluded_tests ":" TESTS_EXCLUDED)
 add_sharded_test(MONAD_NEXT_amsterdam_monad_ethereum_test
                  COMMAND monad-ethereum-test --fork MONAD_NEXT
-                         --blockchain-tests ${CMAKE_BINARY_DIR}/src/MonadAmsterdamSpecTestFixtures/blockchain_tests
+                         --blockchain-tests ${CMAKE_BINARY_DIR}/src/MonadAmsterdamSpecTestFixtures/blockchain_tests/for_monad_next
                          --gtest_filter=-:${TESTS_EXCLUDED})
 
 add_ethereum_test(FORK berlin)

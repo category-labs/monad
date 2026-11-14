@@ -220,12 +220,22 @@ TYPED_TEST(TraitsTest, access_precompile)
         0,
         chain_ctx};
 
+    static constexpr auto regular_a{
+        0x5353535353535353535353535353535353535353_address};
+    static constexpr auto regular_b{
+        0x6464646464646464646464646464646464646464_address};
+
     EXPECT_EQ(
         host.access_account(0x0000000000000000000000000000000000000001_address),
         AccessStatus::Warm);
-    EXPECT_EQ(
-        host.access_account(0x5353535353535353535353535353535353535353_address),
-        AccessStatus::Cold);
+    EXPECT_EQ(host.access_account(regular_a), AccessStatus::Cold);
+    EXPECT_EQ(host.access_account(regular_a), AccessStatus::Warm);
+
+    state.push();
+    EXPECT_EQ(host.access_account(regular_b), AccessStatus::Cold);
+    EXPECT_EQ(host.access_account(regular_b), AccessStatus::Warm);
+    state.pop_reject();
+    EXPECT_EQ(host.access_account(regular_b), AccessStatus::Cold);
 }
 
 // EIP-3651: the coinbase is warm for the whole transaction. The host answers

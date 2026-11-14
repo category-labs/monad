@@ -106,8 +106,6 @@ Result<byte_string> system_call(
         .memory_capacity = state.vm().message_memory_capacity(),
     };
 
-    state.access_account(contract_address);
-
     NoopCallTracer noop_tracer;
     Transaction const empty_tx{};
     StateHost<traits> host{
@@ -120,6 +118,8 @@ Result<byte_string> system_call(
         header.base_fee_per_gas,
         0,
         chain_ctx};
+
+    host.access_account(contract_address);
 
     // We intentionally invoke the VM directly: system calls must not go
     // through the regular call path which does state push/pop -- a revert

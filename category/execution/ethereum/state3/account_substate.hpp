@@ -27,9 +27,12 @@
 
 MONAD_NAMESPACE_BEGIN
 
+class State;
+
 // YP 6.1
 class AccountSubstate
 {
+    friend class State;
     using Set =
         immer::set<bytes32_t, ankerl::unordered_dense::hash<monad::bytes32_t>>;
 
@@ -77,22 +80,24 @@ public:
         touched_ = true;
     }
 
-    // A_a
-    AccessStatus access()
-    {
-        bool const inserted = !accessed_;
-        accessed_ = true;
-        if (inserted) {
-            return AccessStatus::Cold;
-        }
-        return AccessStatus::Warm;
-    }
-
     // A_K
     AccessStatus access_storage(bytes32_t const &key)
     {
         if (accessed_storage_.count(key) == 0) {
             accessed_storage_ = accessed_storage_.insert(key);
+            return AccessStatus::Cold;
+        }
+        return AccessStatus::Warm;
+    }
+
+private:
+    // A_a (dynamically warmed accounts only; StateHost::access_account handles
+    // statically warm precompiles and the EIP-3651 block coinbase)
+    AccessStatus access()
+    {
+        bool const inserted = !accessed_;
+        accessed_ = true;
+        if (inserted) {
             return AccessStatus::Cold;
         }
         return AccessStatus::Warm;

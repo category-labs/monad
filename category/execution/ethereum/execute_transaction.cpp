@@ -143,7 +143,7 @@ uint64_t ExecuteTransactionNoValidation<traits>::process_authorizations(
         MONAD_ASSERT(!auth_entry.sc.signature.has_upper_s());
 
         // 4. Add authority to accessed_addresses, as defined in EIP-2929.
-        state.access_account(*authority);
+        host.access_account(*authority);
 
         // 5. Verify the code of authority is empty or already delegated.
         auto const code_hash = state.get_code_hash(*authority);
@@ -257,15 +257,20 @@ vm::Result ExecuteTransactionNoValidation<traits>::operator()(
         auth_refund = process_authorizations(state, host);
     }
 
-    state.access_account(sender_);
+    if constexpr (traits::eip_3651_active()) {
+        MONAD_DEBUG_ASSERT(
+            host.get_tx_context()->block_coinbase == header_.beneficiary);
+    }
+
+    host.access_account(sender_);
     for (auto const &ae : tx_.access_list) {
-        state.access_account(ae.a);
+        host.access_account(ae.a);
         for (auto const &keys : ae.keys) {
             state.access_storage<traits>(ae.a, keys);
         }
     }
     if (MONAD_LIKELY(tx_.to)) {
-        state.access_account(*tx_.to);
+        host.access_account(*tx_.to);
     }
 
     auto msg_memory = state.vm().message_memory_ref();
@@ -276,7 +281,7 @@ vm::Result ExecuteTransactionNoValidation<traits>::operator()(
             if (auto const delegate = host.resolve_delegation(*tx_.to)) {
                 msg.code_address = *delegate;
                 msg.flags |= std::to_underlying(vm::CallFlags::Delegated);
-                state.access_account(*delegate);
+                host.access_account(*delegate);
             }
         }
     }

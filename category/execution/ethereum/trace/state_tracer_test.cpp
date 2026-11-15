@@ -737,8 +737,25 @@ TYPED_TEST(TraitsTest, access_list_records_rejected_frame_regular_account)
     StateTracer tracer =
         AccessListTracer{storage, addr1, addr2, std::nullopt, authorities};
 
+    NoopCallTracer call_tracer;
+    BlockHashBufferFinalized const block_hash_buffer;
+    Transaction const tx{};
+    auto const chain_ctx =
+        ChainContext<typename TestFixture::Trait>::debug_empty();
+    uint256_t const base_fee{0};
+    StateHost<typename TestFixture::Trait> host{
+        call_tracer,
+        tracer,
+        EMPTY_TX_CONTEXT,
+        block_hash_buffer,
+        s,
+        tx,
+        base_fee,
+        0,
+        chain_ctx};
+
     s.push();
-    s.access_account(addr4);
+    (void)host.access_account(addr4);
     on_frame_reject(tracer, s);
     s.pop_reject();
 
@@ -1292,9 +1309,9 @@ TEST(PrestateTracer, prestate_access_storage)
     State s(bs, Incarnation{0, 0});
 
     // Touch some of the account's storage.
-    // First access the account to bring it into the state object; this is a
+    // First touch the account to bring it into the state object; this is a
     // prerequisite for accessing the storage.
-    EXPECT_EQ(s.access_account(ADDR_A), AccessStatus::Cold);
+    s.touch(ADDR_A);
     EXPECT_TRUE(s.original().contains(ADDR_A));
     EXPECT_TRUE(s.current().contains(ADDR_A));
     EXPECT_EQ(s.get_storage(ADDR_A, key2), value2);
@@ -1359,7 +1376,7 @@ TEST(PrestateTracer, prestate_access_zero_storage)
 
     // Regression from block 89733717 capture: reading an untouched slot must
     // still include that slot with a zero value in prestate output.
-    EXPECT_EQ(s.access_account(ADDR_A), AccessStatus::Cold);
+    s.touch(ADDR_A);
     EXPECT_EQ(s.get_storage(ADDR_A, key8), bytes32_t{});
 
     {
@@ -1788,9 +1805,9 @@ TEST(PrestateTracer, prestate_retain_beneficiary_access_storage)
     State s(bs, Incarnation{0, 0});
 
     // Touch some of the account's storage.
-    // First access the account to bring it into the state object; this is a
+    // First touch the account to bring it into the state object; this is a
     // prerequisite for accessing the storage.
-    EXPECT_EQ(s.access_account(ADDR_A), AccessStatus::Cold);
+    s.touch(ADDR_A);
     EXPECT_TRUE(s.original().contains(ADDR_A));
     EXPECT_TRUE(s.current().contains(ADDR_A));
     EXPECT_EQ(s.get_storage(ADDR_A, key2), value2);
@@ -1854,9 +1871,9 @@ TEST(PrestateTracer, prestate_omit_beneficiary)
 
     State s(bs, Incarnation{0, 0});
 
-    // Touch the account, so it shows up in `state.original` and
-    // `state.current`.
-    EXPECT_EQ(s.access_account(ADDR_A), AccessStatus::Cold);
+    // Credit a zero priority fee, matching `execute_final`, so the beneficiary
+    // shows up in `state.original` and `state.current` unchanged.
+    s.add_to_balance(ADDR_A, 0);
     EXPECT_TRUE(s.original().contains(ADDR_A));
     EXPECT_TRUE(s.current().contains(ADDR_A));
 
@@ -2384,7 +2401,7 @@ TYPED_TEST(MonadTraitsTest, code_tracer_records_reserve_balance_code)
     // Sender is intentionally NOT accessed: init_reserve_balance_context's
     // is_delegated reads via state.get_code_hash / original_account_state,
     // neither of which inserts into current_.
-    state.access_account(ADDR_B);
+    state.touch(ADDR_B);
 
     ankerl::unordered_dense::segmented_set<Address> const empty_neighbours;
     std::vector<Address> const senders = {SENDER};

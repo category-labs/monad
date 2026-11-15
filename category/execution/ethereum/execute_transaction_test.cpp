@@ -30,6 +30,7 @@
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/state_host.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
@@ -729,5 +730,74 @@ TYPED_TEST(TraitsTest, selfdestructed_beneficiary_keeps_award)
     }
     else {
         EXPECT_FALSE(state.account_exists(bene));
+    }
+}
+
+// EIP-2930 access-list warming routes through StateHost::access_account so an
+// entry naming the EIP-3651 block coinbase (with no storage keys) stays warm
+// without adding the coinbase to the transaction's read set.
+TYPED_TEST(TraitsTest, access_list_coinbase_omitted_from_read_set)
+{
+    using Trait = typename TestFixture::Trait;
+    if constexpr (Trait::evm_rev() < MONAD_ETH_BERLIN) {
+        GTEST_SKIP() << "access lists require EIP-2930";
+    }
+
+    static constexpr auto sender{
+        0xf8636377b7a998b51a3cf2bd711b870b3ab0ad56_address};
+    static constexpr auto recipient{
+        0x1111111111111111111111111111111111111111_address};
+    static constexpr auto bene{
+        0xbebebebebebebebebebebebebebebebebebebebe_address};
+
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
+    db_t tdb{db};
+    vm::VM vm;
+    BlockState bs{tdb, vm};
+
+    {
+        State state{bs, Incarnation{0, 0}};
+        state.add_to_balance(sender, 20_ether);
+        bs.merge(state);
+    }
+
+    Transaction const tx{
+        .max_fee_per_gas = 1,
+        .gas_limit = 50'000,
+        .to = recipient,
+        .type = TransactionType::eip2930,
+        .access_list = {{.a = bene, .keys = {}}},
+    };
+
+    BlockHeader const header{.beneficiary = bene};
+    BlockHashBufferFinalized const block_hash_buffer;
+    NoopCallTracer noop_call_tracer;
+    trace::StateTracer noop_state_tracer = std::monostate{};
+    auto const chain_ctx = ChainContext<Trait>::debug_empty();
+    vm::TxContext tx_context = EMPTY_TX_CONTEXT;
+    tx_context.block_coinbase = bene;
+
+    State state{bs, Incarnation{0, 1}};
+    StateHost<Trait> host{
+        noop_call_tracer,
+        noop_state_tracer,
+        tx_context,
+        block_hash_buffer,
+        state,
+        tx,
+        uint256_t{0},
+        0,
+        chain_ctx};
+
+    auto const res = ExecuteTransactionNoValidation<Trait>{
+        MonadTestnet{}, tx, sender, {}, header}(state, host);
+    EXPECT_EQ(res.status_code, MONAD_STATUS_SUCCESS);
+
+    if constexpr (Trait::eip_3651_active()) {
+        EXPECT_FALSE(state.original().contains(bene));
+        EXPECT_FALSE(state.current().contains(bene));
+    }
+    else {
+        EXPECT_TRUE(state.original().contains(bene));
     }
 }

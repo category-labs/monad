@@ -240,7 +240,7 @@ vm::Result execute_create_message(
         }
     }();
 
-    state.access_account(contract_address);
+    host->access_account(contract_address);
 
     // Prevent overwriting contracts - EIP-684
     if (state.account_has_code_or_nonce(contract_address)) {

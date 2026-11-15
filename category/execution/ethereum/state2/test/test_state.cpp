@@ -209,26 +209,6 @@ namespace
 
 DEFINE_TRAITS_FIXTURE(InMemoryStateTraitsTest);
 
-TEST_F(InMemoryStateTest, access_account)
-{
-    BlockState bs{this->tdb, this->vm};
-    commit_sequential(
-        this->tdb,
-        StateDeltas(
-            {{a,
-              StateDelta{
-                  .account = {std::nullopt, Account{.balance = 10'000}}}}}),
-        Code{},
-        BlockHeader{});
-
-    State s{bs, Incarnation{1, 1}};
-
-    EXPECT_EQ(s.access_account(a), AccessStatus::Cold);
-    EXPECT_EQ(s.access_account(a), AccessStatus::Warm);
-    EXPECT_EQ(s.access_account(b), AccessStatus::Cold);
-    EXPECT_EQ(s.access_account(b), AccessStatus::Warm);
-}
-
 TEST_F(InMemoryStateTest, account_exists)
 {
     BlockState bs{this->tdb, this->vm};
@@ -1386,7 +1366,7 @@ TYPED_TEST(
         // pre-state incarnation. create_contract then bumps the
         // incarnation so destruct_suicides actually resets the account
         // under EIP-6780.
-        s1.access_account(a);
+        s1.access_storage<typename TestFixture::Trait>(a, key1);
         EXPECT_EQ(s1.get_storage(a, key1), value1);
         s1.create_contract(a);
         s1.selfdestruct<typename TestFixture::Trait>(a, b);
@@ -1422,7 +1402,7 @@ TYPED_TEST(
 
     {
         State s1{bs, Incarnation{1, 1}};
-        s1.access_account(a);
+        s1.access_storage<typename TestFixture::Trait>(a, key1);
         EXPECT_EQ(s1.get_storage(a, key1), value1);
         s1.create_contract(a);
         s1.selfdestruct<typename TestFixture::Trait>(a, b);
@@ -1933,7 +1913,6 @@ TEST_F(InMemoryStateTest, get_code)
     State s{bs, Incarnation{1, 1}};
 
     {
-        s.access_account(a);
         auto const c = s.get_code(a)->intercode();
         EXPECT_EQ(byte_string_view(c->code(), c->size()), contract);
     }

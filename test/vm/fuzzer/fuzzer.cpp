@@ -236,6 +236,8 @@ static vm::Result message_call(
         block_header,
         chain};
     auto &host = test_host.get_state_host();
+    host.access_account(*tx.to);
+    host.access_account(msg.sender);
     return host.call(msg);
 }
 
@@ -248,9 +250,7 @@ static vm::Result transition(
 
     MONAD_ASSERT(tx.to.has_value());
     tstate.state.add_to_balance(*tx.to, 0); // initialize the account
-    tstate.state.access_account(*tx.to);
 
-    tstate.state.access_account(msg.sender);
     tstate.state.add_to_balance(msg.sender, load_be<uint256_t>(msg.value));
     tstate.state.set_nonce(msg.sender, tstate.state.get_nonce(msg.sender) + 1);
 

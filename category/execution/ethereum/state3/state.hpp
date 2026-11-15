@@ -44,6 +44,8 @@
 MONAD_NAMESPACE_BEGIN
 
 class BlockState;
+template <Traits traits>
+struct StateHost;
 
 class State
 {
@@ -73,6 +75,8 @@ class State
     ReserveBalance rb_;
 
     template <Traits traits>
+    friend struct StateHost;
+    template <Traits traits>
     friend bool revert_transaction_cached(State &);
     template <Traits traits>
         requires is_monad_trait_v<traits>
@@ -98,6 +102,8 @@ private:
     std::optional<Account> const &recent_account(Address const &);
 
     std::optional<Account> &current_account(Address const &);
+
+    AccessStatus access_account(Address const &);
 
 public:
     State(BlockState &, Incarnation, bool relaxed_validation = false);
@@ -173,8 +179,6 @@ public:
         Address const &, bytes32_t const &key, bytes32_t const &value);
 
     void touch(Address const &);
-
-    AccessStatus access_account(Address const &);
 
     template <Traits traits>
     AccessStatus access_storage(Address const &, bytes32_t const &key);

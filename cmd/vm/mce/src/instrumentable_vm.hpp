@@ -102,11 +102,6 @@ public:
 
         BlockState block_state{test_state_.trie_db, vm_};
         State state{block_state, Incarnation{0, 0}};
-        state.push();
-        for (auto const &addr : {msg->sender, msg->recipient}) {
-            state.add_to_balance(addr, 0);
-            state.access_account(addr);
-        }
 
         monad::test::TestBlockHashBuffer const block_hash_buffer{};
         Transaction const tx{};
@@ -125,6 +120,12 @@ public:
             block_header,
             chain};
         vm::Host &host = test_host.get_state_host();
+
+        state.push();
+        for (auto const &addr : {msg->sender, msg->recipient}) {
+            state.add_to_balance(addr, 0);
+            host.access_account(addr);
+        }
 
         std::vector<uint8_t> empty_code{};
         auto code_span = std::span<uint8_t const>{empty_code.data(), 0};

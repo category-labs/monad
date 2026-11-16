@@ -1,4 +1,5 @@
 import Proof.Avx2.Circuit
+import Proof.Avx2.NoPush
 
 namespace Jumpdest.Avx2.Proof
 open Jumpdest.Proof
@@ -10,7 +11,12 @@ theorem pair_eq_stream (op : __m256i) (skip : Byte) (hskip : skip ≤ 32) :
     pair op (_mm_set1_epi8 (0x70+skip)) =
       (streamMask op skip, _mm_set1_epi8 (0x70+(stream (pairBytes op) skip).2)) := by
   unfold pair
-  apply pair_circuit <;> first | exact hskip | rfl
+  split
+  · rename_i h_no_push
+    unfold pairFast
+    apply no_push_circuit <;> first | exact hskip | exact h_no_push | rfl
+  · unfold pairSlow
+    apply pair_circuit <;> first | exact hskip | rfl
 
 /-- Read one bit from a mask packed from exactly 32 Boolean values. -/
 theorem mask_get (xs : List Bool) (hx : xs.length = 32) (i : Nat) (hi : i < 32) :

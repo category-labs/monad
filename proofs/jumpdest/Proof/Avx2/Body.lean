@@ -10,7 +10,7 @@ set_option maxRecDepth 100000
 
 /-- Proof-only straight-line form of the loop body. `find_jumpdests_avx2_eq_pairs`
     relates the optimized implementation to this form. -/
-def pair (op : __m256i) (entry : __m128i) : BitVec 32 × __m128i :=
+def pairSlow (op : __m256i) (entry : __m128i) : BitVec 32 × __m128i :=
   let len_floor := _mm256_set1_epi8 EvmOpCode.PUSH0
   let lane_bias := _mm256_setr_epi8 #v[
     0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19,
@@ -54,6 +54,23 @@ def pair (op : __m256i) (entry : __m128i) : BitVec 32 × __m128i :=
   let mask := _mm256_movemask_epi8 jd
   (mask, entry_next)
 
+/-- All bytes after the incoming PUSH data are instructions in a PUSH-free block. -/
+def pairFast (op : __m256i) (entry : __m128i) : BitVec 32 × __m128i :=
+  let lane := _mm256_setr_epi8 #v[
+    0x70, 0x71, 0x72, 0x73, 0x74, 0x75, 0x76, 0x77,
+    0x78, 0x79, 0x7a, 0x7b, 0x7c, 0x7d, 0x7e, 0x7f,
+    0x70, 0x71, 0x72, 0x73, 0x74, 0x75, 0x76, 0x77,
+    0x78, 0x79, 0x7a, 0x7b, 0x7c, 0x7d, 0x7e, 0x7f]
+  let entries := _mm256_set_m128i (_mm_sub_epi8 entry (_mm_set1_epi8 16)) entry
+  let start := _mm256_cmpeq_epi8 (_mm256_max_epu8 entries lane) lane
+  let is_jumpdest := _mm256_cmpeq_epi8 op (_mm256_set1_epi8 EvmOpCode.JUMPDEST)
+  (_mm256_movemask_epi8 (_mm256_and_si256 start is_jumpdest), _mm_set1_epi8 0x70)
+
+def pair (op : __m256i) (entry : __m128i) : BitVec 32 × __m128i :=
+  if _mm256_movemask_epi8 (_mm256_cmpgt_epi8 op (_mm256_set1_epi8 EvmOpCode.PUSH0)) == 0 then
+    pairFast op entry
+  else pairSlow op entry
+
 theorem find_jumpdests_avx2_eq_pairs (code : Array Byte) (code_size : Nat) (bits : Bitmap) :
     find_jumpdests_avx2 code code_size bits = (Id.run do
       let mut bits := bits
@@ -63,7 +80,10 @@ theorem find_jumpdests_avx2_eq_pairs (code : Array Byte) (code_size : Nat) (bits
         bits := store (8*(4*b)) result.1 (List.range 32) bits
         entry := result.2
       return bits) := by
-  simp only [find_jumpdests_avx2, pair, store_u32_le_eq_store, movemask_and_guard]
+  simp only [find_jumpdests_avx2, pair, pairFast, pairSlow, store_u32_le_eq_store, movemask_and_guard]
+  congr 3
+  funext b state
+  split <;> rfl
 
 def pairBytes (op : __m256i) : List Byte := List.ofFn fun i : Fin 32 => byte op i.val
 

@@ -152,6 +152,22 @@ namespace monad::vm::interpreter
             for (size_t b = 0; b < npairs; ++b) {
                 __m256i const op = _mm256_loadu_si256(
                     reinterpret_cast<__m256i const *>(code + 32 * b));
+                __m256i const is_jumpdest = _mm256_cmpeq_epi8(op, jumpdest);
+                // Signed comparison detects exactly PUSH1..PUSH32. With no
+                // PUSH bytes, every byte after the incoming skip is an opcode.
+                if (_mm256_movemask_epi8(_mm256_cmpgt_epi8(op, len_floor)) ==
+                    0) {
+                    __m256i const entries =
+                        _mm256_set_m128i(_mm_sub_epi8(entry, sixteen), entry);
+                    __m256i const start =
+                        _mm256_cmpeq_epi8(_mm256_max_epu8(entries, lane), lane);
+                    auto const mask =
+                        static_cast<uint32_t>(_mm256_movemask_epi8(
+                            _mm256_and_si256(start, is_jumpdest)));
+                    std::memcpy(out + 4 * b, &mask, 4);
+                    entry = _mm_set1_epi8(0x70);
+                    continue;
+                }
                 __m256i const n0 =
                     _mm256_add_epi8(_mm256_max_epi8(op, len_floor), lane_bias);
                 __m256i const n1 = square(n0);
@@ -171,7 +187,6 @@ namespace monad::vm::interpreter
                 // The carry is needed even when this block has no JUMPDEST.
                 // Skip only the instruction-start mask construction in that
                 // case.
-                __m256i const is_jumpdest = _mm256_cmpeq_epi8(op, jumpdest);
                 uint32_t mask = 0;
                 if (_mm256_movemask_epi8(is_jumpdest) != 0) {
                     __m256i const entries = _mm256_set_m128i(entry_hi, entry);

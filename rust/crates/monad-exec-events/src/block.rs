@@ -14,6 +14,8 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #[cfg(feature = "alloy")]
+use alloy_consensus::{SignableTransaction, Transaction};
+#[cfg(feature = "alloy")]
 use itertools::Itertools;
 
 #[cfg(feature = "alloy")]
@@ -395,13 +397,19 @@ impl ExecutedTxn {
             assert!(self.authorization_list.is_empty());
             assert!(self.header.monad_access_list_present != 0 || access_list.is_empty());
             let tx = monad_transaction::TxMonad {
-                chain_id: alloy_primitives::U256::from_limbs(self.header.chain_id.limbs),
+                chain_id: alloy_primitives::U256::from_limbs(self.header.chain_id.limbs)
+                    .try_into()
+                    .expect("validated native chain id fits in u64"),
                 nonce: self.header.nonce,
                 gas_limit: self.header.gas_limit,
-                max_fee_per_gas: gas_price,
+                max_fee_per_gas: gas_price
+                    .try_into()
+                    .expect("validated native max fee fits in u128"),
                 max_priority_fee_per_gas: alloy_primitives::U256::from_limbs(
                     self.header.max_priority_fee_per_gas.limbs,
-                ),
+                )
+                .try_into()
+                .expect("validated native priority fee fits in u128"),
                 to,
                 value,
                 input,
@@ -620,17 +628,21 @@ mod native_tests {
                     .trim_start_matches("0x"),
             )
             .unwrap();
+            if matches!(vector["name"].as_str(), Some("wide-fees" | "wide-chain-id")) {
+                assert!(TxEnvelope::decode_2718_exact(&bytes).is_err());
+                continue;
+            }
             let envelope = TxEnvelope::decode_2718_exact(&bytes).unwrap();
             let signed = envelope.as_monad().unwrap();
             let tx = signed.tx();
             let header = monad_c_eth_txn_header {
                 txn_type: ffi::MONAD_TXN_MONAD,
                 monad_access_list_present: u8::from(tx.access_list.is_some()),
-                chain_id: quantity(tx.chain_id),
+                chain_id: quantity(U256::from(tx.chain_id)),
                 nonce: tx.nonce,
                 gas_limit: tx.gas_limit,
-                max_fee_per_gas: quantity(tx.max_fee_per_gas),
-                max_priority_fee_per_gas: quantity(tx.max_priority_fee_per_gas),
+                max_fee_per_gas: quantity(U256::from(tx.max_fee_per_gas)),
+                max_priority_fee_per_gas: quantity(U256::from(tx.max_priority_fee_per_gas)),
                 value: quantity(tx.value),
                 to: monad_address {
                     bytes: envelope.to().unwrap_or_default().into_array(),
@@ -693,9 +705,33 @@ mod native_tests {
             assert_eq!(json["hash"], vector["hash"]);
             assert_eq!(
                 json["maxFeePerGas"],
-                serde_json::to_value(tx.max_fee_per_gas).unwrap()
+                serde_json::json!(format!("{:#x}", tx.max_fee_per_gas))
             );
             assert_eq!(json.get("accessList").is_some(), tx.access_list.is_some());
+            let mut boundary_tx = tx.clone();
+            boundary_tx.chain_id = u64::MAX;
+            boundary_tx.max_fee_per_gas = u128::MAX;
+            boundary_tx.max_priority_fee_per_gas = u128::MAX;
+            boundary_tx.value = U256::MAX;
+            let boundary_tx = boundary_tx.into_signed(*signed.signature());
+            let mut boundary = event.clone();
+            boundary.header.chain_id = quantity(U256::from(u64::MAX));
+            boundary.header.max_fee_per_gas = quantity(U256::from(u128::MAX));
+            boundary.header.max_priority_fee_per_gas = quantity(U256::from(u128::MAX));
+            boundary.header.value = quantity(U256::MAX);
+            boundary.hash.bytes = boundary_tx.hash().0;
+            assert_eq!(boundary.to_alloy(), TxEnvelope::Monad(boundary_tx));
+
+            // Invalid event quantities must fail before reconstruction can truncate them.
+            for field in 0..3 {
+                let mut invalid = event.clone();
+                match field {
+                    0 => invalid.header.chain_id = quantity(U256::ONE << 64),
+                    1 => invalid.header.max_fee_per_gas = quantity(U256::ONE << 128),
+                    _ => invalid.header.max_priority_fee_per_gas = quantity(U256::ONE << 128),
+                }
+                assert!(std::panic::catch_unwind(|| invalid.to_alloy()).is_err());
+            }
         }
     }
 }

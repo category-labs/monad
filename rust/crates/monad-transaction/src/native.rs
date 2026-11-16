@@ -13,9 +13,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use alloy_consensus::{transaction::RlpEcdsaEncodableTx, Signed};
-use alloy_eips::{eip2930::AccessList, Typed2718};
-use alloy_primitives::{keccak256, Bytes, Signature, TxKind, B256, U256};
+use alloy_consensus::{transaction::RlpEcdsaEncodableTx, SignableTransaction, Signed, Transaction};
+use alloy_eips::{eip2930::AccessList, eip7702::SignedAuthorization, Typed2718};
+use alloy_primitives::{Bytes, Signature, TxKind, B256, U256};
 use alloy_rlp::{BufMut, Decodable, Encodable, Error, Header};
 use serde::{Deserialize, Serialize};
 
@@ -26,13 +26,16 @@ use crate::MONAD_TX_TYPE;
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TxMonad {
-    pub chain_id: U256,
+    #[serde(with = "quantity")]
+    pub chain_id: u64,
     #[serde(with = "quantity")]
     pub nonce: u64,
     #[serde(rename = "gas", with = "quantity")]
     pub gas_limit: u64,
-    pub max_priority_fee_per_gas: U256,
-    pub max_fee_per_gas: U256,
+    #[serde(with = "quantity_u128")]
+    pub max_priority_fee_per_gas: u128,
+    #[serde(with = "quantity_u128")]
+    pub max_fee_per_gas: u128,
     pub to: TxKind,
     pub value: U256,
     pub input: Bytes,
@@ -104,20 +107,6 @@ impl TxMonad {
         fields
     }
 
-    pub fn encoded_for_signing(&self) -> Vec<u8> {
-        let mut out = vec![MONAD_TX_TYPE];
-        out.extend_from_slice(&list(&self.fields(None)));
-        out
-    }
-
-    pub fn signature_hash(&self) -> B256 {
-        keccak256(self.encoded_for_signing())
-    }
-
-    pub fn into_signed(self, signature: Signature) -> Signed<Self> {
-        Signed::new_unhashed(self, signature)
-    }
-
     /// Encode the RPC-only wrapper. The auxiliary data is always an empty list.
     pub fn encode_submission(&self, signature: &Signature) -> Vec<u8> {
         let mut fields = self.fields(Some(signature));
@@ -134,7 +123,7 @@ impl TxMonad {
         submission: bool,
     ) -> alloy_rlp::Result<Signed<Self>> {
         let mut body = Header::decode_bytes(buf, true)?;
-        let chain_id = U256::decode(&mut body)?;
+        let chain_id = u64::decode(&mut body)?;
         let mut features = Header::decode_bytes(&mut body, true)?;
         if submission {
             finish(Header::decode_bytes(&mut body, true)?)?;
@@ -185,8 +174,8 @@ impl TxMonad {
                 }
                 7 => {
                     let mut fees = Header::decode_bytes(&mut value, true)?;
-                    tx.max_priority_fee_per_gas = U256::decode(&mut fees)?;
-                    tx.max_fee_per_gas = U256::decode(&mut fees)?;
+                    tx.max_priority_fee_per_gas = u128::decode(&mut fees)?;
+                    tx.max_fee_per_gas = u128::decode(&mut fees)?;
                     finish(fees)?;
                 }
                 _ => return Err(Error::Custom("unsupported Monad feature")),
@@ -204,6 +193,77 @@ impl TxMonad {
 impl Typed2718 for TxMonad {
     fn ty(&self) -> u8 {
         MONAD_TX_TYPE
+    }
+}
+
+impl Transaction for TxMonad {
+    fn chain_id(&self) -> Option<u64> {
+        Some(self.chain_id)
+    }
+    fn nonce(&self) -> u64 {
+        self.nonce
+    }
+    fn gas_limit(&self) -> u64 {
+        self.gas_limit
+    }
+    fn gas_price(&self) -> Option<u128> {
+        None
+    }
+    fn max_fee_per_gas(&self) -> u128 {
+        self.max_fee_per_gas
+    }
+    fn max_priority_fee_per_gas(&self) -> Option<u128> {
+        Some(self.max_priority_fee_per_gas)
+    }
+    fn max_fee_per_blob_gas(&self) -> Option<u128> {
+        None
+    }
+    fn priority_fee_or_price(&self) -> u128 {
+        self.max_priority_fee_per_gas
+    }
+    fn effective_gas_price(&self, base_fee: Option<u64>) -> u128 {
+        alloy_eips::eip1559::calc_effective_gas_price(
+            self.max_fee_per_gas,
+            self.max_priority_fee_per_gas,
+            base_fee,
+        )
+    }
+    fn is_dynamic_fee(&self) -> bool {
+        true
+    }
+    fn kind(&self) -> TxKind {
+        self.to
+    }
+    fn is_create(&self) -> bool {
+        self.to.is_create()
+    }
+    fn value(&self) -> U256 {
+        self.value
+    }
+    fn input(&self) -> &Bytes {
+        &self.input
+    }
+    fn access_list(&self) -> Option<&AccessList> {
+        self.access_list.as_ref()
+    }
+    fn blob_versioned_hashes(&self) -> Option<&[B256]> {
+        None
+    }
+    fn authorization_list(&self) -> Option<&[SignedAuthorization]> {
+        None
+    }
+}
+
+impl SignableTransaction<Signature> for TxMonad {
+    fn set_chain_id(&mut self, chain_id: u64) {
+        self.chain_id = chain_id;
+    }
+    fn encode_for_signing(&self, out: &mut dyn BufMut) {
+        out.put_u8(MONAD_TX_TYPE);
+        out.put_slice(&list(&self.fields(None)));
+    }
+    fn payload_len_for_signature(&self) -> usize {
+        1 + list(&self.fields(None)).len()
     }
 }
 
@@ -233,5 +293,16 @@ pub(crate) mod quantity {
     }
     pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u64, D::Error> {
         Ok(U64::deserialize(deserializer)?.to())
+    }
+}
+
+mod quantity_u128 {
+    use alloy_primitives::U128;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    pub fn serialize<S: Serializer>(value: &u128, serializer: S) -> Result<S::Ok, S::Error> {
+        U128::from(*value).serialize(serializer)
+    }
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u128, D::Error> {
+        Ok(U128::deserialize(deserializer)?.to())
     }
 }

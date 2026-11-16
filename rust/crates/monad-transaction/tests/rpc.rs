@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use alloy_primitives::{Address, Bloom, B256, U256};
+use alloy_primitives::{Address, Bloom, B256};
 use monad_transaction::rpc::TransactionReceipt;
 use serde_json::{json, Value};
 
@@ -39,7 +39,7 @@ fn receipt_price_defaults_only_missing_or_null_to_zero() {
                 value[field] = Value::Null;
             }
             let decoded: TransactionReceipt = serde_json::from_value(value).unwrap();
-            assert_eq!(decoded.effective_gas_price, U256::ZERO);
+            assert_eq!(decoded.effective_gas_price, 0);
             let encoded = serde_json::to_value(decoded).unwrap();
             assert_eq!(encoded["effectiveGasPrice"], "0x0");
             assert!(encoded.get("gasPrice").is_none());
@@ -48,16 +48,10 @@ fn receipt_price_defaults_only_missing_or_null_to_zero() {
 }
 
 #[test]
-fn receipt_price_alias_and_canonical_field_preserve_uint256() {
+fn receipt_price_alias_and_canonical_field_preserve_uint128() {
     for transaction_type in [0, 1, 2, 3, 4, 0x40] {
         for field in ["effectiveGasPrice", "gasPrice"] {
-            for price in [
-                U256::ZERO,
-                U256::ONE,
-                U256::from(u128::MAX),
-                U256::ONE << 200,
-                U256::MAX,
-            ] {
+            for price in [0, 1, u128::MAX] {
                 let mut value = receipt(transaction_type);
                 value[field] = json!(format!("{price:#x}"));
                 let decoded: TransactionReceipt = serde_json::from_value(value).unwrap();
@@ -83,6 +77,7 @@ fn receipt_price_rejects_invalid_quantities_and_duplicate_aliases() {
                 json!("garbage"),
                 json!(-1),
                 json!("-0x1"),
+                json!(format!("0x1{}", "0".repeat(32))),
                 json!(format!("0x1{}", "0".repeat(64))),
             ] {
                 let mut value = receipt(transaction_type);

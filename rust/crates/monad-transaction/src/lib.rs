@@ -14,7 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! Canonical transaction identity is independent of the RPC submission wrapper.
-//! Native fee quantities retain their full 256-bit width through consensus and RPC.
+//! Native fees use u128 and outer chain IDs use u64; values and accounting remain U256.
 
 mod envelope;
 mod framing;

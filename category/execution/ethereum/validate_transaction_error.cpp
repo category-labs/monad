@@ -61,6 +61,9 @@ quick_status_code_from_enum<monad::TransactionError>::value_mappings()
         {TransactionError::InvalidBlobHash, "invalid blob hash", {}},
         {TransactionError::EmptyAuthorizationList,
          "empty authorization list",
+         {}},
+        {TransactionError::NativeQuantityOverflow,
+         "native chain id or fee exceeds supported width",
          {}}};
 
     return v;

@@ -13,7 +13,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use alloy_consensus::{transaction::Recovered, Receipt, ReceiptWithBloom, Signed, TxLegacy};
+use alloy_consensus::{
+    transaction::Recovered, Receipt, ReceiptWithBloom, SignableTransaction, Signed, Transaction,
+    TxLegacy,
+};
 use alloy_eips::{Decodable2718, Encodable2718};
 use alloy_primitives::{keccak256, Address, Bloom, Signature, B256, U256};
 use alloy_rlp::{Decodable, Encodable, Header};
@@ -81,6 +84,11 @@ fn change_features(raw: &[u8], change: impl FnOnce(&mut Vec<Vec<u8>>)) -> Vec<u8
 fn sdk_vectors_agree_on_bytes_hash_digest_sender_and_network_framing() {
     for v in vectors() {
         let raw = bytes(&v.canonical);
+        if matches!(v.name.as_str(), "wide-fees" | "wide-chain-id") {
+            assert!(TxEnvelope::decode_2718_exact(&raw).is_err());
+            assert!(TxEnvelope::decode_submission(&bytes(&v.submission)).is_err());
+            continue;
+        }
         let tx = TxEnvelope::decode_2718_exact(&raw).unwrap();
         assert_eq!(tx.encoded_2718(), raw, "{}", v.name);
         assert_eq!(*tx.hash(), v.hash, "{}", v.name);
@@ -226,7 +234,7 @@ fn receipt_requires_fifth_empty_extension_field() {
 
 #[test]
 fn rpc_roundtrip_retains_native_widths_and_ethereum_gas_price() {
-    let native = TxEnvelope::decode_2718_exact(&bytes(&vectors()[5].canonical)).unwrap();
+    let native = TxEnvelope::decode_2718_exact(&bytes(&vectors()[1].canonical)).unwrap();
     let legacy = TxEnvelope::Legacy(Signed::new_unhashed(
         TxLegacy {
             gas_price: 2000000000,
@@ -250,7 +258,7 @@ fn rpc_roundtrip_retains_native_widths_and_ethereum_gas_price() {
         );
         assert_eq!(
             encoded["gasPrice"],
-            serde_json::to_value(rpc.effective_gas_price).unwrap()
+            serde_json::json!(format!("{:#x}", rpc.effective_gas_price.unwrap()))
         );
         assert_eq!(
             serde_json::from_value::<rpc::Transaction>(encoded).unwrap(),
@@ -268,30 +276,28 @@ fn native_and_ethereum_effective_fees_follow_the_same_rules() {
         ..Default::default()
     };
     let native = monad_transaction::TxMonad {
-        max_fee_per_gas: U256::from(100),
-        max_priority_fee_per_gas: U256::from(10),
+        max_fee_per_gas: 100,
+        max_priority_fee_per_gas: 10,
         ..Default::default()
     };
     let sig = Signature::new(U256::ONE, U256::ONE, false);
     let wrapped: TxEnvelope = ethereum.clone().into_signed(sig).into();
     let native: TxEnvelope = native.into_signed(sig).into();
     for base_fee in [None, Some(0), Some(50), Some(95), Some(100), Some(101)] {
-        let expected = U256::from(ethereum.effective_gas_price(base_fee));
+        let expected = ethereum.effective_gas_price(base_fee);
         assert_eq!(wrapped.effective_gas_price(base_fee), expected);
         assert_eq!(native.effective_gas_price(base_fee), expected);
     }
 }
 
 #[test]
-fn fee_history_reward_preserves_full_width_quantities() {
+fn fee_history_reward_preserves_uint128_quantities() {
     let history = rpc::FeeHistory {
-        inner: alloy_rpc_types::FeeHistory {
-            oldest_block: 1,
-            base_fee_per_gas: vec![1, 2],
-            gas_used_ratio: vec![0.5],
-            ..Default::default()
-        },
-        reward: Some(vec![vec![U256::ONE << 200]]),
+        oldest_block: 1,
+        base_fee_per_gas: vec![1, 2],
+        gas_used_ratio: vec![0.5],
+        reward: Some(vec![vec![u128::MAX]]),
+        ..Default::default()
     };
     let json = serde_json::to_string(&history).unwrap();
     assert_eq!(json.matches("\"reward\"").count(), 1);
@@ -330,7 +336,88 @@ fn trie_roots_commit_canonical_transactions_and_five_field_receipts() {
         logs_bloom: Bloom::ZERO,
     });
     assert_eq!(
-        alloy_consensus::proofs::calculate_receipt_root(&[receipt.clone()]),
+        alloy_consensus::proofs::calculate_receipt_root(std::slice::from_ref(&receipt)),
         single_leaf_root(&receipt.encoded_2718())
     );
+}
+
+#[test]
+fn native_numeric_bounds_preserve_canonical_bytes_and_signing_traits() {
+    let fixture = TxEnvelope::decode_2718_exact(&bytes(&vectors()[1].canonical)).unwrap();
+    let mut tx = fixture.as_monad().unwrap().tx().clone();
+    tx.set_chain_id(u64::MAX);
+    tx.max_fee_per_gas = u128::MAX;
+    tx.max_priority_fee_per_gas = u128::MAX;
+    tx.value = U256::MAX;
+    let signing = tx.encoded_for_signing();
+    assert_eq!(tx.payload_len_for_signature(), signing.len());
+    assert_eq!(tx.signature_hash(), keccak256(&signing));
+    let signature = *fixture.signature();
+    let envelope: TxEnvelope = tx.clone().into_signed(signature).into();
+    let canonical = envelope.encoded_2718();
+    assert_eq!(TxEnvelope::decode_2718_exact(&canonical).unwrap(), envelope);
+    assert_eq!(
+        TxEnvelope::decode_submission(&tx.encode_submission(&signature)).unwrap(),
+        envelope
+    );
+    assert_eq!(*envelope.hash(), keccak256(&canonical));
+    assert_eq!(envelope.chain_id(), Some(u64::MAX));
+    assert_eq!(envelope.value(), U256::MAX);
+    assert_eq!(envelope.effective_gas_price(Some(u64::MAX)), u128::MAX);
+    let json = serde_json::to_value(&envelope).unwrap();
+    assert_eq!(json["chainId"], "0xffffffffffffffff");
+    assert_eq!(json["maxFeePerGas"], "0xffffffffffffffffffffffffffffffff");
+    assert_eq!(
+        serde_json::from_value::<TxEnvelope>(json.clone()).unwrap(),
+        envelope
+    );
+
+    // Mutate the wire representation independently of the bounded Rust fields.
+    for field in ["chainId", "maxFeePerGas", "maxPriorityFeePerGas"] {
+        let overflow = U256::ONE << if field == "chainId" { 64 } else { 128 };
+        let mut bad_json = json.clone();
+        bad_json[field] = serde_json::json!(format!("{overflow:#x}"));
+        assert!(serde_json::from_value::<TxEnvelope>(bad_json).is_err());
+        let bad = if field == "chainId" {
+            let mut body = &canonical[1..];
+            let mut fields = raw_items(Header::decode_bytes(&mut body, true).unwrap());
+            fields[0] = alloy_rlp::encode(overflow);
+            [vec![0x40], list(&fields.concat())].concat()
+        } else {
+            change_features(&canonical, |features| {
+                let (tip, cap) = if field == "maxFeePerGas" {
+                    (U256::from(u128::MAX), overflow)
+                } else {
+                    (overflow, U256::from(u128::MAX))
+                };
+                let fees = [alloy_rlp::encode(tip), alloy_rlp::encode(cap)].concat();
+                *features.last_mut().unwrap() = list(&[vec![7], list(&fees)].concat());
+            })
+        };
+        assert!(TxEnvelope::decode_2718_exact(&bad).is_err(), "{field}");
+        let mut body = &bad[1..];
+        let fields = Header::decode_bytes(&mut body, true).unwrap();
+        let submission = [vec![0x40], list(&[fields, &[0xc0]].concat())].concat();
+        assert!(
+            TxEnvelope::decode_submission(&submission).is_err(),
+            "{field}"
+        );
+    }
+}
+
+#[test]
+fn native_rpc_gas_price_never_saturates() {
+    let envelope = TxEnvelope::decode_2718_exact(&bytes(&vectors()[1].canonical)).unwrap();
+    let rpc = rpc::Transaction {
+        inner: Recovered::new_unchecked(envelope, Address::ZERO),
+        effective_gas_price: Some(u128::MAX),
+        ..Default::default()
+    };
+    let mut json = serde_json::to_value(&rpc).unwrap();
+    assert_eq!(
+        serde_json::from_value::<rpc::Transaction>(json.clone()).unwrap(),
+        rpc
+    );
+    json["gasPrice"] = serde_json::json!(format!("{:#x}", U256::ONE << 128));
+    assert!(serde_json::from_value::<rpc::Transaction>(json).is_err());
 }

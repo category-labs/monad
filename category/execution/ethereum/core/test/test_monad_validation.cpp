@@ -29,7 +29,7 @@ using namespace monad;
 
 namespace
 {
-    using NativeTraits = MonadTraits<MONAD_NINE>;
+    using NativeTraits = MonadTraits<MONAD_TEN>;
 
     Transaction transaction(size_t index = 1)
     {
@@ -77,17 +77,20 @@ TEST(MonadValidation, ActivationIsDevnetAndPragueOnly)
     EXPECT_EQ(validate(tx).error(), TransactionError::TypeNotSupported);
 }
 
-TEST(MonadValidation, NativeFeesUseFullWidthAndDynamicPricing)
+TEST(MonadValidation, NativeFeesUseUint128AndDynamicPricing)
 {
-    auto tx = transaction(5);
+    auto tx = transaction();
+    tx.max_fee_per_gas = (uint256_t{1} << 128) - 1;
+    tx.max_priority_fee_per_gas = tx.max_fee_per_gas - 1;
     EXPECT_TRUE(validate(tx).has_value());
     EXPECT_EQ(gas_price<NativeTraits>(tx, 1), tx.max_priority_fee_per_gas + 1);
-    tx.max_priority_fee_per_gas = tx.max_fee_per_gas + 1;
+    tx.max_fee_per_gas = 100;
+    tx.max_priority_fee_per_gas = 101;
     EXPECT_EQ(
         validate(tx).error(), TransactionError::PriorityFeeGreaterThanMax);
     tx.max_priority_fee_per_gas = 1;
-    tx.max_fee_per_gas = std::numeric_limits<uint256_t>::max();
-    EXPECT_EQ(validate(tx).error(), TransactionError::GasLimitOverflow);
+    tx.max_fee_per_gas = uint256_t{1} << 128;
+    EXPECT_EQ(validate(tx).error(), TransactionError::NativeQuantityOverflow);
     tx = transaction(6);
     EXPECT_EQ(validate(tx).error(), TransactionError::NonceExceedsMax);
 }
@@ -109,4 +112,25 @@ TEST(MonadValidation, ExistingAccessListCreationAndCalldataGasApply)
     EXPECT_EQ(floor_data_gas<NativeTraits>(tx), 30040);
     EXPECT_EQ(
         validate(tx).error(), TransactionError::IntrinsicGasGreaterThanLimit);
+}
+
+TEST(MonadValidation, NativeBoundsDoNotChangeDecoderOrEthereumValidation)
+{
+    // The preserved SDK fixture remains structurally decodable but no longer
+    // executable.
+    auto tx = transaction(5);
+    EXPECT_EQ(validate(tx).error(), TransactionError::NativeQuantityOverflow);
+    tx.type = TransactionType::eip1559;
+    EXPECT_TRUE(validate(tx).has_value());
+
+    tx = transaction();
+    tx.max_priority_fee_per_gas = uint256_t{1} << 128;
+    EXPECT_EQ(validate(tx).error(), TransactionError::NativeQuantityOverflow);
+    tx.max_priority_fee_per_gas = 1;
+    tx.sc.chain_id = std::numeric_limits<uint64_t>::max();
+    EXPECT_EQ(validate(tx).error(), TransactionError::WrongChainId);
+    tx.sc.chain_id = uint256_t{1} << 64;
+    EXPECT_EQ(validate(tx).error(), TransactionError::NativeQuantityOverflow);
+    tx = transaction(7);
+    EXPECT_EQ(validate(tx).error(), TransactionError::NativeQuantityOverflow);
 }

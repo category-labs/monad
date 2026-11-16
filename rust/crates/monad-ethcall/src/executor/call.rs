@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use alloy_consensus::Header;
+use alloy_consensus::{Header, Transaction};
 use alloy_eips::eip2718::Encodable2718;
 use alloy_primitives::Address;
 use alloy_rlp::Encodable;

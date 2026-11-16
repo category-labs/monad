@@ -16,7 +16,8 @@
 use alloy_consensus::{
     crypto::{secp256k1, RecoveryError},
     transaction::{Recovered, SignerRecoverable, TxHashRef},
-    Signed, Transaction as _, TxEip1559, TxEip2930, TxEip4844Variant, TxEip7702, TxLegacy,
+    SignableTransaction, Signed, Transaction, TxEip1559, TxEip2930, TxEip4844Variant, TxEip7702,
+    TxLegacy,
 };
 use alloy_eips::{
     eip2718::{Decodable2718, Eip2718Result, Encodable2718, IsTyped2718},
@@ -146,145 +147,8 @@ impl TxEnvelope {
             Self::Monad(_) => TxType::Monad,
         }
     }
-    pub fn chain_id(&self) -> Option<U256> {
-        match self {
-            Self::Legacy(tx) => tx.chain_id().map(U256::from),
-            Self::Eip2930(tx) => tx.chain_id().map(U256::from),
-            Self::Eip1559(tx) => tx.chain_id().map(U256::from),
-            Self::Eip4844(tx) => tx.chain_id().map(U256::from),
-            Self::Eip7702(tx) => tx.chain_id().map(U256::from),
-            Self::Monad(tx) => Some(tx.tx().chain_id),
-        }
-    }
-    pub fn nonce(&self) -> u64 {
-        match self {
-            Self::Legacy(tx) => tx.nonce(),
-            Self::Eip2930(tx) => tx.nonce(),
-            Self::Eip1559(tx) => tx.nonce(),
-            Self::Eip4844(tx) => tx.nonce(),
-            Self::Eip7702(tx) => tx.nonce(),
-            Self::Monad(tx) => tx.tx().nonce,
-        }
-    }
-    pub fn gas_limit(&self) -> u64 {
-        match self {
-            Self::Legacy(tx) => tx.gas_limit(),
-            Self::Eip2930(tx) => tx.gas_limit(),
-            Self::Eip1559(tx) => tx.gas_limit(),
-            Self::Eip4844(tx) => tx.gas_limit(),
-            Self::Eip7702(tx) => tx.gas_limit(),
-            Self::Monad(tx) => tx.tx().gas_limit,
-        }
-    }
-    pub fn gas_price(&self) -> Option<U256> {
-        match self {
-            Self::Legacy(tx) => tx.gas_price().map(U256::from),
-            Self::Eip2930(tx) => tx.gas_price().map(U256::from),
-            Self::Eip1559(tx) => tx.gas_price().map(U256::from),
-            Self::Eip4844(tx) => tx.gas_price().map(U256::from),
-            Self::Eip7702(tx) => tx.gas_price().map(U256::from),
-            Self::Monad(_) => None,
-        }
-    }
-    pub fn max_fee_per_gas(&self) -> U256 {
-        match self {
-            Self::Legacy(tx) => U256::from(tx.max_fee_per_gas()),
-            Self::Eip2930(tx) => U256::from(tx.max_fee_per_gas()),
-            Self::Eip1559(tx) => U256::from(tx.max_fee_per_gas()),
-            Self::Eip4844(tx) => U256::from(tx.max_fee_per_gas()),
-            Self::Eip7702(tx) => U256::from(tx.max_fee_per_gas()),
-            Self::Monad(tx) => tx.tx().max_fee_per_gas,
-        }
-    }
-    pub fn max_priority_fee_per_gas(&self) -> Option<U256> {
-        match self {
-            Self::Legacy(tx) => tx.max_priority_fee_per_gas().map(U256::from),
-            Self::Eip2930(tx) => tx.max_priority_fee_per_gas().map(U256::from),
-            Self::Eip1559(tx) => tx.max_priority_fee_per_gas().map(U256::from),
-            Self::Eip4844(tx) => tx.max_priority_fee_per_gas().map(U256::from),
-            Self::Eip7702(tx) => tx.max_priority_fee_per_gas().map(U256::from),
-            Self::Monad(tx) => Some(tx.tx().max_priority_fee_per_gas),
-        }
-    }
-    pub fn max_fee_per_blob_gas(&self) -> Option<U256> {
-        match self {
-            Self::Legacy(tx) => tx.max_fee_per_blob_gas().map(U256::from),
-            Self::Eip2930(tx) => tx.max_fee_per_blob_gas().map(U256::from),
-            Self::Eip1559(tx) => tx.max_fee_per_blob_gas().map(U256::from),
-            Self::Eip4844(tx) => tx.max_fee_per_blob_gas().map(U256::from),
-            Self::Eip7702(tx) => tx.max_fee_per_blob_gas().map(U256::from),
-            Self::Monad(_) => None,
-        }
-    }
-    pub fn kind(&self) -> TxKind {
-        match self {
-            Self::Legacy(tx) => tx.kind(),
-            Self::Eip2930(tx) => tx.kind(),
-            Self::Eip1559(tx) => tx.kind(),
-            Self::Eip4844(tx) => tx.kind(),
-            Self::Eip7702(tx) => tx.kind(),
-            Self::Monad(tx) => tx.tx().to,
-        }
-    }
-    pub fn value(&self) -> U256 {
-        match self {
-            Self::Legacy(tx) => tx.value(),
-            Self::Eip2930(tx) => tx.value(),
-            Self::Eip1559(tx) => tx.value(),
-            Self::Eip4844(tx) => tx.value(),
-            Self::Eip7702(tx) => tx.value(),
-            Self::Monad(tx) => tx.tx().value,
-        }
-    }
-    pub fn input(&self) -> &Bytes {
-        match self {
-            Self::Legacy(tx) => tx.input(),
-            Self::Eip2930(tx) => tx.input(),
-            Self::Eip1559(tx) => tx.input(),
-            Self::Eip4844(tx) => tx.input(),
-            Self::Eip7702(tx) => tx.input(),
-            Self::Monad(tx) => &tx.tx().input,
-        }
-    }
-    pub fn access_list(&self) -> Option<&AccessList> {
-        match self {
-            Self::Legacy(tx) => tx.access_list(),
-            Self::Eip2930(tx) => tx.access_list(),
-            Self::Eip1559(tx) => tx.access_list(),
-            Self::Eip4844(tx) => tx.access_list(),
-            Self::Eip7702(tx) => tx.access_list(),
-            Self::Monad(tx) => tx.tx().access_list.as_ref(),
-        }
-    }
-    pub fn authorization_list(&self) -> Option<&[SignedAuthorization]> {
-        match self {
-            Self::Legacy(tx) => tx.authorization_list(),
-            Self::Eip2930(tx) => tx.authorization_list(),
-            Self::Eip1559(tx) => tx.authorization_list(),
-            Self::Eip4844(tx) => tx.authorization_list(),
-            Self::Eip7702(tx) => tx.authorization_list(),
-            Self::Monad(_) => None,
-        }
-    }
-    pub fn blob_versioned_hashes(&self) -> Option<&[B256]> {
-        match self {
-            Self::Legacy(tx) => tx.blob_versioned_hashes(),
-            Self::Eip2930(tx) => tx.blob_versioned_hashes(),
-            Self::Eip1559(tx) => tx.blob_versioned_hashes(),
-            Self::Eip4844(tx) => tx.blob_versioned_hashes(),
-            Self::Eip7702(tx) => tx.blob_versioned_hashes(),
-            Self::Monad(_) => None,
-        }
-    }
     pub fn signature_hash(&self) -> B256 {
-        match self {
-            Self::Legacy(tx) => tx.signature_hash(),
-            Self::Eip2930(tx) => tx.signature_hash(),
-            Self::Eip1559(tx) => tx.signature_hash(),
-            Self::Eip4844(tx) => tx.signature_hash(),
-            Self::Eip7702(tx) => tx.signature_hash(),
-            Self::Monad(tx) => tx.tx().signature_hash(),
-        }
+        each!(self, tx => tx.signature_hash())
     }
     pub fn signature(&self) -> &Signature {
         each!(self, tx => tx.signature())
@@ -295,46 +159,8 @@ impl TxEnvelope {
     pub fn tx_hash(&self) -> &B256 {
         self.hash()
     }
-    pub fn to(&self) -> Option<Address> {
-        self.kind().into_to()
-    }
-    pub fn is_create(&self) -> bool {
-        self.kind().is_create()
-    }
-    pub fn is_dynamic_fee(&self) -> bool {
-        self.max_priority_fee_per_gas().is_some()
-    }
     pub fn is_replay_protected(&self) -> bool {
         self.chain_id().is_some()
-    }
-    pub fn priority_fee_or_price(&self) -> U256 {
-        self.max_priority_fee_per_gas()
-            .unwrap_or(self.max_fee_per_gas())
-    }
-    pub fn effective_tip_per_gas(&self, base_fee: u64) -> Option<U256> {
-        let room = self.max_fee_per_gas().checked_sub(U256::from(base_fee))?;
-        Some(
-            self.max_priority_fee_per_gas()
-                .map_or(room, |tip| room.min(tip)),
-        )
-    }
-    pub fn effective_gas_price(&self, base_fee: Option<u64>) -> U256 {
-        let Some(base_fee) = base_fee else {
-            return self.max_fee_per_gas();
-        };
-        match self.max_priority_fee_per_gas() {
-            Some(tip) => self
-                .max_fee_per_gas()
-                .min(U256::from(base_fee).saturating_add(tip)),
-            None => self.max_fee_per_gas(),
-        }
-    }
-    pub fn authorization_count(&self) -> Option<u64> {
-        self.authorization_list().map(|list| list.len() as u64)
-    }
-    pub fn blob_gas_used(&self) -> Option<u64> {
-        self.blob_versioned_hashes()
-            .map(|hashes| hashes.len() as u64 * alloy_eips::eip4844::DATA_GAS_PER_BLOB)
     }
     pub fn eip2718_encoded_length(&self) -> usize {
         self.encode_2718_len()
@@ -358,6 +184,60 @@ impl TxEnvelope {
         let tx = TxMonad::decode_body(&mut body, true)?;
         finish(body)?;
         Ok(Self::Monad(tx))
+    }
+}
+
+impl Transaction for TxEnvelope {
+    fn chain_id(&self) -> Option<u64> {
+        each!(self, tx => tx.chain_id())
+    }
+    fn nonce(&self) -> u64 {
+        each!(self, tx => tx.nonce())
+    }
+    fn gas_limit(&self) -> u64 {
+        each!(self, tx => tx.gas_limit())
+    }
+    fn gas_price(&self) -> Option<u128> {
+        each!(self, tx => tx.gas_price())
+    }
+    fn max_fee_per_gas(&self) -> u128 {
+        each!(self, tx => tx.max_fee_per_gas())
+    }
+    fn max_priority_fee_per_gas(&self) -> Option<u128> {
+        each!(self, tx => tx.max_priority_fee_per_gas())
+    }
+    fn max_fee_per_blob_gas(&self) -> Option<u128> {
+        each!(self, tx => tx.max_fee_per_blob_gas())
+    }
+    fn priority_fee_or_price(&self) -> u128 {
+        each!(self, tx => tx.priority_fee_or_price())
+    }
+    fn is_dynamic_fee(&self) -> bool {
+        each!(self, tx => tx.is_dynamic_fee())
+    }
+    fn kind(&self) -> TxKind {
+        each!(self, tx => tx.kind())
+    }
+    fn is_create(&self) -> bool {
+        each!(self, tx => tx.is_create())
+    }
+    fn value(&self) -> U256 {
+        each!(self, tx => tx.value())
+    }
+    fn input(&self) -> &Bytes {
+        each!(self, tx => tx.input())
+    }
+    fn access_list(&self) -> Option<&AccessList> {
+        each!(self, tx => tx.access_list())
+    }
+    fn blob_versioned_hashes(&self) -> Option<&[B256]> {
+        each!(self, tx => tx.blob_versioned_hashes())
+    }
+    fn authorization_list(&self) -> Option<&[SignedAuthorization]> {
+        each!(self, tx => tx.authorization_list())
+    }
+    fn effective_gas_price(&self, base_fee: Option<u64>) -> u128 {
+        each!(self, tx => tx.effective_gas_price(base_fee))
     }
 }
 
@@ -507,6 +387,10 @@ impl<'de> Deserialize<'de> for TxEnvelope {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let value = serde_json::Value::deserialize(deserializer)?;
         if value.get("type").and_then(|v| v.as_str()) == Some("0x40") {
+            if let Some(price) = value.get("gasPrice").filter(|price| !price.is_null()) {
+                serde_json::from_value::<alloy_primitives::U128>(price.clone())
+                    .map_err(serde::de::Error::custom)?;
+            }
             let signed: Signed<TxMonad> =
                 serde_json::from_value(value).map_err(serde::de::Error::custom)?;
             let (tx, signature, claimed_hash) = signed.into_parts();

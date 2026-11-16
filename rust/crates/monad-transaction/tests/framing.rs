@@ -55,7 +55,11 @@ fn transactions() -> Vec<TxEnvelope> {
                 .trim_start_matches("0x"),
         )
         .unwrap();
-        txs.push(TxEnvelope::decode_2718_exact(&raw).unwrap());
+        if matches!(vector["name"].as_str(), Some("wide-fees" | "wide-chain-id")) {
+            assert!(TxEnvelope::decode_2718_exact(&raw).is_err());
+        } else {
+            txs.push(TxEnvelope::decode_2718_exact(&raw).unwrap());
+        }
     }
     txs
 }

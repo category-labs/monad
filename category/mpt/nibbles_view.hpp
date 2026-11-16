@@ -23,6 +23,7 @@
 
 #include <algorithm>
 #include <compare>
+#include <concepts>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -34,6 +35,7 @@
 
 MONAD_MPT_NAMESPACE_BEGIN
 
+class Nibbles;
 class NibblesView;
 class Node;
 
@@ -41,10 +43,20 @@ constexpr bool operator==(NibblesView const &a, NibblesView const &b);
 constexpr std::strong_ordering
 operator<=>(NibblesView const &a, NibblesView const &b);
 
+// One argument of concat: a single nibble, or anything viewable as nibbles.
+template <class T>
+concept NibblesPiece = std::same_as<std::remove_cvref_t<T>, unsigned char> ||
+                       std::convertible_to<T const &, NibblesView>;
+
+template <NibblesPiece... Args>
+constexpr Nibbles concat(Args const &...args);
+
 class Nibbles
 {
 private:
     friend class NibblesView;
+    template <NibblesPiece... Args>
+    friend constexpr Nibbles concat(Args const &...args);
     using size_type = uint8_t; // max length support is 255 nibbles
     std::unique_ptr<unsigned char[]> data_;
     bool begin_nibble_{false};
@@ -217,6 +229,11 @@ public:
         return data_;
     }
 
+    bool begin_nibble() const noexcept
+    {
+        return begin_nibble_;
+    }
+
     [[nodiscard]] bool empty() const noexcept
     {
         return !data_;
@@ -280,6 +297,43 @@ inline Nibbles::Nibbles(NibblesView const nibbles)
     }
 }
 
+namespace detail
+{
+    // Compares the first `n` nibbles of two views that start at the same
+    // parity. Nibbles are packed high half first, so whole bytes order the
+    // same way as the nibbles in them.
+    constexpr std::strong_ordering
+    compare_aligned_prefix(NibblesView const a, NibblesView const b, unsigned n)
+    {
+        if (n == 0) {
+            return std::strong_ordering::equal;
+        }
+        unsigned char const *pa = a.data();
+        unsigned char const *pb = b.data();
+        if (a.begin_nibble()) {
+            auto const x = static_cast<unsigned char>(*pa & 0xF);
+            auto const y = static_cast<unsigned char>(*pb & 0xF);
+            if (x != y) {
+                return x <=> y;
+            }
+            ++pa;
+            ++pb;
+            --n;
+        }
+        unsigned const bytes = n / 2;
+        if (bytes != 0) {
+            int const c = std::memcmp(pa, pb, bytes);
+            if (c != 0) {
+                return c <=> 0;
+            }
+        }
+        if (n % 2 != 0) {
+            return (pa[bytes] >> 4) <=> (pb[bytes] >> 4);
+        }
+        return std::strong_ordering::equal;
+    }
+}
+
 constexpr bool operator==(NibblesView const &a, NibblesView const &b)
 {
     if (&a == &b) {
@@ -287,6 +341,9 @@ constexpr bool operator==(NibblesView const &a, NibblesView const &b)
     }
     if (a.nibble_size() != b.nibble_size()) {
         return false;
+    }
+    if (a.begin_nibble() == b.begin_nibble()) {
+        return detail::compare_aligned_prefix(a, b, a.nibble_size()) == 0;
     }
     for (auto i = 0u; i < a.nibble_size(); ++i) {
         if (a.get(i) != b.get(i)) {
@@ -300,6 +357,13 @@ constexpr std::strong_ordering
 operator<=>(NibblesView const &a, NibblesView const &b)
 {
     unsigned const min_size = std::min(a.nibble_size(), b.nibble_size());
+    if (a.begin_nibble() == b.begin_nibble()) {
+        auto const cmp = detail::compare_aligned_prefix(a, b, min_size);
+        if (cmp != 0) {
+            return cmp;
+        }
+        return a.nibble_size() <=> b.nibble_size();
+    }
     for (unsigned i = 0; i < min_size; ++i) {
         if (a.get(i) != b.get(i)) {
             return a.get(i) <=> b.get(i);
@@ -308,40 +372,78 @@ operator<=>(NibblesView const &a, NibblesView const &b)
     return a.nibble_size() <=> b.nibble_size();
 }
 
-template <class... Args>
-    requires(
-        (std::same_as<Args, unsigned char> || std::same_as<Args, NibblesView>),
-        ...)
-constexpr Nibbles concat(Args... args)
+// Writes `src` into `dest` starting at nibble `dest_nibble`. The half-byte
+// before an odd `dest_nibble` is preserved; if the write ends mid-byte, the
+// rest of that byte is zeroed. The caller guarantees the room.
+constexpr void copy_nibbles(
+    unsigned char *const dest, unsigned const dest_nibble,
+    NibblesView const src) noexcept
 {
-    unsigned num_nibbles = 0;
-    (
-        [&num_nibbles]<class T>(T const arg) {
-            if constexpr (std::same_as<T, unsigned char>) {
-                ++num_nibbles;
-            }
-            else {
-                num_nibbles += arg.nibble_size();
-            }
-        }(args),
-        ...);
+    unsigned const end = src.begin_nibble() + src.nibble_size();
+    unsigned char const *const in = src.data();
+    unsigned char *out = dest + dest_nibble / 2;
+    unsigned i = src.begin_nibble();
+    if (i == end) {
+        return;
+    }
+    if (dest_nibble % 2 != 0) {
+        *out = static_cast<unsigned char>((*out & 0xF0) | get_nibble(in, i));
+        ++out;
+        ++i;
+    }
+    if (i % 2 == 0) {
+        unsigned const bytes = (end - i) / 2;
+        std::memcpy(out, in + i / 2, bytes);
+        out += bytes;
+        i += 2 * bytes;
+    }
+    else {
+        for (; i + 1 < end; i += 2) {
+            *out++ = static_cast<unsigned char>(
+                (in[i / 2] << 4) | (in[i / 2 + 1] >> 4));
+        }
+    }
+    if (i < end) {
+        *out = static_cast<unsigned char>(get_nibble(in, i) << 4);
+    }
+}
 
-    Nibbles ret{num_nibbles};
+namespace detail
+{
+    template <NibblesPiece T>
+    constexpr unsigned piece_nibble_size(T const &piece)
+    {
+        if constexpr (std::same_as<T, unsigned char>) {
+            return 1;
+        }
+        else {
+            return NibblesView{piece}.nibble_size();
+        }
+    }
+
+    template <NibblesPiece T>
+    constexpr void
+    write_piece(unsigned char *const dest, unsigned &index, T const &piece)
+    {
+        if constexpr (std::same_as<T, unsigned char>) {
+            MONAD_ASSERT(piece <= 0xF);
+            set_nibble(dest, index, piece);
+            ++index;
+        }
+        else {
+            NibblesView const view{piece};
+            copy_nibbles(dest, index, view);
+            index += view.nibble_size();
+        }
+    }
+}
+
+template <NibblesPiece... Args>
+constexpr Nibbles concat(Args const &...args)
+{
+    Nibbles ret{(0u + ... + detail::piece_nibble_size(args))};
     unsigned index = 0;
-    (
-        [&ret, &index]<class T>(T const arg) {
-            if constexpr (std::same_as<T, unsigned char>) {
-                ret.set(index, arg);
-                ++index;
-            }
-            else {
-                for (auto i = 0u; i < arg.nibble_size(); ++i) {
-                    ret.set(index + i, arg.get(i));
-                }
-                index += arg.nibble_size();
-            }
-        }(args),
-        ...);
+    (detail::write_piece(ret.data_.get(), index, args), ...);
     return ret;
 }
 

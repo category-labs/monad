@@ -24,3 +24,8 @@ monad_compile_options(async_read_bench)
 target_link_libraries(
   async_read_bench PUBLIC monad_trie monad_async monad_core
                                   CLI11::CLI11 quill::quill)
+
+# benchmark nibble path operations
+add_executable(nibbles_bench "nibbles_bench.cpp")
+monad_compile_options(nibbles_bench)
+target_link_libraries(nibbles_bench PUBLIC monad_trie monad_async monad_core)

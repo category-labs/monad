@@ -168,22 +168,28 @@ namespace monad::vm::interpreter
                     _mm_max_epu8(_mm_shuffle_epi8(n4_hi, entry_hi), entry_hi),
                     sixteen);
 
-                __m256i const entries = _mm256_set_m128i(entry_hi, entry);
-                __m256i pos = entries;
-                pos = lift(n3, pos, lane);
-                pos = lift(n2, pos, lane);
-                pos = lift(n1, pos, lane);
-                __m256i const start = _mm256_or_si256(
-                    _mm256_cmpeq_epi8(pos, lane),
-                    _mm256_cmpeq_epi8(_mm256_shuffle_epi8(n0, pos), lane));
-                // An entry past its block (inside a long PUSH) has its sign bit
-                // set; such blocks contribute no instruction starts.
-                __m256i const in_block = _mm256_cmpgt_epi8(entries, minus_one);
-                __m256i const jd = _mm256_and_si256(
-                    _mm256_and_si256(start, in_block),
-                    _mm256_cmpeq_epi8(op, jumpdest));
-                auto const mask =
-                    static_cast<uint32_t>(_mm256_movemask_epi8(jd));
+                // The carry is needed even when this block has no JUMPDEST.
+                // Skip only the instruction-start mask construction in that
+                // case.
+                __m256i const is_jumpdest = _mm256_cmpeq_epi8(op, jumpdest);
+                uint32_t mask = 0;
+                if (_mm256_movemask_epi8(is_jumpdest) != 0) {
+                    __m256i const entries = _mm256_set_m128i(entry_hi, entry);
+                    __m256i pos = entries;
+                    pos = lift(n3, pos, lane);
+                    pos = lift(n2, pos, lane);
+                    pos = lift(n1, pos, lane);
+                    __m256i const start = _mm256_or_si256(
+                        _mm256_cmpeq_epi8(pos, lane),
+                        _mm256_cmpeq_epi8(_mm256_shuffle_epi8(n0, pos), lane));
+                    // An entry past its block (inside a long PUSH) has its sign
+                    // bit set; such blocks contribute no instruction starts.
+                    __m256i const in_block =
+                        _mm256_cmpgt_epi8(entries, minus_one);
+                    __m256i const jd = _mm256_and_si256(
+                        _mm256_and_si256(start, in_block), is_jumpdest);
+                    mask = static_cast<uint32_t>(_mm256_movemask_epi8(jd));
+                }
                 std::memcpy(out + 4 * b, &mask, 4);
 
                 entry = entry_next;

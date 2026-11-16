@@ -1,6 +1,6 @@
 import Avx2Intrinsics
 
-/-! Direct translation of find_jumpdests_avx2 at Monad commit 965212f8a.
+/-! Direct translation of find_jumpdests_avx2 in category/vm/interpreter/intercode.cpp.
     Equivalence.lean proves this implementation equivalent to Scalar.lean. -/
 namespace Jumpdest.Avx2
 
@@ -49,19 +49,22 @@ def find_jumpdests_avx2 (code : Array Byte) (code_size : Nat) (bits : Bitmap) : 
     let entry_next := _mm_sub_epi8
       (_mm_max_epu8 (_mm_shuffle_epi8 n4_hi entry_hi) entry_hi) sixteen
 
-    let entries := _mm256_set_m128i entry_hi entry
-    let mut pos := entries
-    pos := lift n3 pos lane
-    pos := lift n2 pos lane
-    pos := lift n1 pos lane
-    let start := _mm256_or_si256
-      (_mm256_cmpeq_epi8 pos lane)
-      (_mm256_cmpeq_epi8 (_mm256_shuffle_epi8 n0 pos) lane)
-    let in_block := _mm256_cmpgt_epi8 entries minus_one
-    let jd := _mm256_and_si256
-      (_mm256_and_si256 start in_block)
-      (_mm256_cmpeq_epi8 op jumpdest)
-    let mask := _mm256_movemask_epi8 jd
+    let is_jumpdest := _mm256_cmpeq_epi8 op jumpdest
+    let mask := if _mm256_movemask_epi8 is_jumpdest != 0 then
+      let entries := _mm256_set_m128i entry_hi entry
+      let pos := entries
+      let pos := lift n3 pos lane
+      let pos := lift n2 pos lane
+      let pos := lift n1 pos lane
+      let start := _mm256_or_si256
+        (_mm256_cmpeq_epi8 pos lane)
+        (_mm256_cmpeq_epi8 (_mm256_shuffle_epi8 n0 pos) lane)
+      let in_block := _mm256_cmpgt_epi8 entries minus_one
+      let jd := _mm256_and_si256
+        (_mm256_and_si256 start in_block)
+        is_jumpdest
+      _mm256_movemask_epi8 jd
+    else 0
     -- Corresponds to C++: std::memcpy(out + 4 * b, &mask, 4);
     bits := bits.store_u32_le (4 * b) mask
     entry := entry_next

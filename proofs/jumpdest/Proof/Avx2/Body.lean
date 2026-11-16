@@ -1,14 +1,15 @@
 import Avx2
 import Proof.Stream
 import Proof.Avx2.Memory
+import Proof.Avx2.Optimizations
 
 namespace Jumpdest.Avx2.Proof
 open Jumpdest.Proof
 set_option maxHeartbeats 2000000
 set_option maxRecDepth 100000
 
-/-- Proof-only extraction of the literal loop body. `find_jumpdests_avx2_eq_pairs`
-    checks that the extraction matches the implementation by definitional equality. -/
+/-- Proof-only straight-line form of the loop body. `find_jumpdests_avx2_eq_pairs`
+    relates the optimized implementation to this form. -/
 def pair (op : __m256i) (entry : __m128i) : BitVec 32 × __m128i :=
   let len_floor := _mm256_set1_epi8 EvmOpCode.PUSH0
   let lane_bias := _mm256_setr_epi8 #v[
@@ -62,7 +63,7 @@ theorem find_jumpdests_avx2_eq_pairs (code : Array Byte) (code_size : Nat) (bits
         bits := store (8*(4*b)) result.1 (List.range 32) bits
         entry := result.2
       return bits) := by
-  simp only [find_jumpdests_avx2, pair, store_u32_le_eq_store]
+  simp only [find_jumpdests_avx2, pair, store_u32_le_eq_store, movemask_and_guard]
 
 def pairBytes (op : __m256i) : List Byte := List.ofFn fun i : Fin 32 => byte op i.val
 

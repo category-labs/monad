@@ -37,7 +37,9 @@ runs:
       run: |
         git config --global submodule.LegacyTests.update none
         git config --global submodule.third_party/tests.update none
-        git submodule update --init --recursive --depth=1 --jobs "$(nproc)"
+        git submodule init
+        git submodule status | awk '{ print $2 }' |
+          xargs -P 0 -n 1 git submodule update --init --recursive --depth=1 --
 
     - name: Set up Docker Buildx
       if: inputs.setup == 'true'

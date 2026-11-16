@@ -5,7 +5,11 @@ set -euo pipefail
 source "$(dirname "$0")/ubuntu-build/toolchain.env"
 
 BUILD_DIR=build
-RUN_CLANG_TIDY="run-clang-tidy-$LLVM_VERSION"
+RUN_CLANG_TIDY=(python3 "$(dirname "$0")/run-clang-tidy.py")
+# run-clang-tidy.py only checks; LLVM's driver applies fixes.
+if [[ " $* " == *" -fix "* ]]; then
+  RUN_CLANG_TIDY=("run-clang-tidy-$LLVM_VERSION")
+fi
 
 usage() {
   cat >&2 <<EOF
@@ -25,7 +29,7 @@ while [[ "$#" -gt 0 ]]; do
       shift
       ;;
     -d|--driver)
-      RUN_CLANG_TIDY="$2"
+      RUN_CLANG_TIDY=("$2")
       shift
       shift
       ;;
@@ -63,8 +67,9 @@ mapfile -d '' -t inputs < <(\
     category/vm    \
     zkvm)
 
-"${RUN_CLANG_TIDY}"                               \
+"${RUN_CLANG_TIDY[@]}"                            \
   "${inputs[@]}"                                  \
+  -clang-tidy-binary "clang-tidy-$LLVM_VERSION"   \
   "${CUSTOM_PASS_OPTIONS[@]}"                     \
   -header-filter "category/.*"                    \
   -j "$(nproc)"                                   \

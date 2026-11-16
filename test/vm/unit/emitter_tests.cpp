@@ -4506,7 +4506,13 @@ TEST(Emitter, jump_unbound_jumpdest)
     emit.push(3);
     emit.jump();
 
-    EXPECT_THROW(emit.finish_contract(rt), Emitter::Error);
+    try {
+        emit.finish_contract(rt);
+        FAIL();
+    }
+    catch (Emitter::Error const &e) {
+        EXPECT_STREQ(e.what(), "x86 emitter error: UnresolvedFixups");
+    }
     EXPECT_EQ(rt.allocator().statistics().allocation_count(), 0u);
 }
 

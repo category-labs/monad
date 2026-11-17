@@ -43,6 +43,7 @@ option(MONAD_COMPILER_BENCHMARKS "Build compiler benchmarks" OFF)
 option(MONAD_COMPILER_DUMP_ASM "Dump assembly files into build/asm" OFF)
 option(MONAD_COMPILER_STATS "Print statistics about the compiler" OFF)
 option(MONAD_COMPILER_HOT_PATH_STATS "Print statistics about the vm" OFF)
+option(MONAD_GAS_PROFILE "Record gas charges per resource for pricing studies" OFF)
 
 include(cmake/test.cmake)
 

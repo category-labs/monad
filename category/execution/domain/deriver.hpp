@@ -21,15 +21,16 @@
 #include <category/execution/domain/config.hpp>
 #include <category/execution/domain/derive_domain_block.hpp>
 #include <category/execution/domain/domain_block.hpp>
+#include <category/execution/domain/input_queue.hpp>
 
 #include <cstdint>
 #include <functional>
+#include <optional>
 
 MONAD_DOMAIN_NAMESPACE_BEGIN
 
 class L1Source;
 class PrivateDomainKey;
-struct PendingDomainInputs;
 
 // Where derivation of a domain is: the next L1 block to derive, and the
 // number the domain's next block gets, 0 before genesis. It is not saved:
@@ -61,6 +62,39 @@ Result<DerivationCursor> find_derivation_start(
 
 // Derives one private domain's blocks from the finalized L1 chain, one L1
 // block at a time, in order, and hands each block on.
+// How derivation of a domain continues, given the number of its next block.
+struct DerivationStart
+{
+    enum class Source
+    {
+        // From the logs of L1 blocks, at `cursor`.
+        Logs,
+        // From `pending`, the blocks the hub's state holds as of
+        // `pending_l1_block`, then from the logs of the L1 blocks after it.
+        Pending,
+        // Not from the domain's own state: `pending` starts after its next
+        // block. The domain needs its state at the block before
+        // `pending->next_block`, whose hash is
+        // `pending->attested_block_hash`, and continues as for Pending.
+        Checkpoint,
+    };
+
+    Source source{Source::Logs};
+    DerivationCursor cursor{};
+    std::optional<PendingDomainInputs> pending{};
+    uint64_t pending_l1_block{};
+};
+
+// Finds how to continue a domain whose next block is `next_block`, 0 if it
+// has none. The logs of the L1 blocks are used while the source has them from
+// that block's L1 block on, as find_derivation_start finds it; otherwise the
+// blocks the hub's state holds as of the latest finalized L1 block, if they
+// reach back to `next_block`; otherwise the domain's state at the hub's
+// checkpoint is needed first.
+Result<DerivationStart> plan_derivation_start(
+    L1Source const &, Address const &hub, uint64_t domain_chain_id,
+    uint64_t next_block);
+
 class PrivateDomainDeriver
 {
 public:
@@ -94,9 +128,10 @@ public:
     Result<bool> derive_next(BlockHandler const &on_block);
 
     // Derives the blocks of `pending`, which the hub held as of finalized L1
-    // block `l1_block_number`, passes each to `on_block`, and continues with
-    // the L1 block after it. The cursor must be at the first of those blocks.
-    // On failure the cursor stays at the block that failed.
+    // block `l1_block_number`, from the cursor's block on, passes each to
+    // `on_block`, and continues with the L1 block after it. The cursor's
+    // block must be one of them or the one after them. On failure the cursor
+    // stays at the block that failed.
     Result<void> derive_pending(
         PendingDomainInputs const &pending, uint64_t l1_block_number,
         BlockHandler const &on_block);

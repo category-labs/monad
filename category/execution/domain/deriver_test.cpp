@@ -497,7 +497,47 @@ TEST_F(PrivateDomainDeriverTest, derives_the_inputs_the_hub_holds)
     EXPECT_EQ(blocks[1].senders[0], DOMAIN_SYSTEM_RELAYER);
 }
 
-TEST_F(PrivateDomainDeriverTest, held_inputs_must_start_at_the_next_block)
+TEST_F(PrivateDomainDeriverTest, held_inputs_are_derived_from_the_next_block)
+{
+    PendingDomainInputs pending;
+    pending.next_block = 2;
+    for (uint64_t number = 2; number < 5; ++number) {
+        pending.blocks.push_back(DomainInputs{
+            .l1_block_number = 10 + number,
+            .timestamp = 1'010 + number,
+            .prev_randao = bytes32_t{0x77},
+            .slot_number = 0,
+            .registered = false,
+            .inputs = {EncryptedL1DomainMessage{}}});
+    }
+    std::vector<uint64_t> derived_blocks;
+    auto const on_block =
+        [&derived_blocks](DerivedDomainBlock const &block) -> Result<void> {
+        derived_blocks.push_back(block.number);
+        return outcome::success();
+    };
+
+    // Blocks 2 and 3 are already derived.
+    auto partly =
+        make_deriver(DerivationCursor{.next_l1_block = 4, .next_block = 4});
+    ASSERT_TRUE(partly.derive_pending(pending, 20, on_block).has_value());
+    EXPECT_EQ(derived_blocks, std::vector<uint64_t>{4});
+    EXPECT_EQ(
+        partly.cursor(),
+        (DerivationCursor{.next_l1_block = 21, .next_block = 5}));
+
+    // All of them are.
+    derived_blocks.clear();
+    auto wholly =
+        make_deriver(DerivationCursor{.next_l1_block = 4, .next_block = 5});
+    ASSERT_TRUE(wholly.derive_pending(pending, 20, on_block).has_value());
+    EXPECT_TRUE(derived_blocks.empty());
+    EXPECT_EQ(
+        wholly.cursor(),
+        (DerivationCursor{.next_l1_block = 21, .next_block = 5}));
+}
+
+TEST_F(PrivateDomainDeriverTest, held_inputs_must_reach_the_next_block)
 {
     PendingDomainInputs pending;
     pending.next_block = 2;

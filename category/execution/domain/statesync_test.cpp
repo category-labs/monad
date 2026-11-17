@@ -30,6 +30,7 @@
 #include <category/execution/domain/executor.hpp>
 #include <category/execution/domain/spoke.hpp>
 #include <category/execution/domain/statesync.hpp>
+#include <category/execution/domain/statesync_listener.hpp>
 #include <category/execution/domain/system_transaction.hpp>
 #include <category/execution/ethereum/chain/genesis_state.hpp>
 #include <category/execution/ethereum/core/block.hpp>
@@ -54,6 +55,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <utility>
@@ -530,4 +532,70 @@ TEST_F(DomainStatesyncTest, a_client_that_leaves_does_not_stop_the_server)
     auto const served = serve_domain_state(pair.fds[1], DOMAIN, source_path_);
     ASSERT_TRUE(served.has_error());
     EXPECT_EQ(served.error(), StatesyncError::Connection);
+}
+
+TEST_F(DomainStatesyncTest, the_listener_serves_an_allowed_peer)
+{
+    StatesyncListener const listener{
+        "127.0.0.1:0", {"127.0.0.1"}, DOMAIN, source_path_};
+    auto const fd =
+        connect_statesync_peer("127.0.0.1:" + std::to_string(listener.port()));
+    ASSERT_TRUE(fd.has_value());
+    auto const synced = sync_domain_state(
+        fd.value(), DOMAIN, 3, source_hash(3), config(target_path_));
+    ::close(fd.value());
+    ASSERT_TRUE(synced.has_value());
+
+    // And the next one.
+    auto const second_path = create_file("second.db");
+    auto const second =
+        connect_statesync_peer("127.0.0.1:" + std::to_string(listener.port()));
+    ASSERT_TRUE(second.has_value());
+    EXPECT_TRUE(
+        sync_domain_state(
+            second.value(), DOMAIN, 4, source_hash(4), config(second_path))
+            .has_value());
+    ::close(second.value());
+}
+
+TEST_F(DomainStatesyncTest, the_listener_answers_no_other_peer)
+{
+    StatesyncListener const listener{
+        "127.0.0.1:0", {"127.0.0.2", "::1"}, DOMAIN, source_path_};
+    auto const fd =
+        connect_statesync_peer("127.0.0.1:" + std::to_string(listener.port()));
+    ASSERT_TRUE(fd.has_value());
+    auto const synced = sync_domain_state(
+        fd.value(), DOMAIN, 3, source_hash(3), config(target_path_));
+    ::close(fd.value());
+    ASSERT_TRUE(synced.has_error());
+    EXPECT_EQ(synced.error(), StatesyncError::Connection);
+}
+
+TEST_F(DomainStatesyncTest, the_listener_serves_nothing_before_the_domain_db)
+{
+    StatesyncListener const listener{
+        "127.0.0.1:0", {"127.0.0.1"}, DOMAIN, dir_ / "none.db"};
+    auto const fd =
+        connect_statesync_peer("127.0.0.1:" + std::to_string(listener.port()));
+    ASSERT_TRUE(fd.has_value());
+    auto const synced = sync_domain_state(
+        fd.value(), DOMAIN, 3, source_hash(3), config(target_path_));
+    ::close(fd.value());
+    ASSERT_TRUE(synced.has_error());
+    EXPECT_EQ(synced.error(), StatesyncError::Connection);
+}
+
+TEST_F(DomainStatesyncTest, addresses_must_be_numeric)
+{
+    EXPECT_THROW(
+        (StatesyncListener{"localhost:0", {}, DOMAIN, source_path_}),
+        std::runtime_error);
+    EXPECT_THROW(
+        (StatesyncListener{"127.0.0.1", {}, DOMAIN, source_path_}),
+        std::runtime_error);
+    EXPECT_THROW(
+        (StatesyncListener{"127.0.0.1:0", {"peer"}, DOMAIN, source_path_}),
+        std::runtime_error);
+    EXPECT_TRUE(connect_statesync_peer("localhost:1").has_error());
 }

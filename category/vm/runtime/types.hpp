@@ -29,7 +29,8 @@
 #include <category/vm/runtime/exit.hpp>
 #include <category/vm/runtime/transmute.hpp>
 
-#include <cstddef>
+#include <chrono>
+#include <limits>
 #include <span>
 #include <type_traits>
 #include <variant>
@@ -48,6 +49,7 @@ namespace monad::vm::runtime
         Revert,
         Error,
         OutOfGas,
+        Cancelled,
     };
 
     struct alignas(uint64_t) Result
@@ -254,6 +256,53 @@ namespace monad::vm::runtime
         exit_stack_ptr_t exit_stack_ptr = nullptr;
         bool is_stack_unwinding_active = false;
 
+        static constexpr int64_t no_deadline =
+            std::numeric_limits<int64_t>::max();
+
+        /// Read the clock every this many gas checks rather than on each
+        /// one, to reduce the overhead of clock reads. Execution can overshoot
+        /// the deadline by up to this many gas checks.
+        static constexpr uint32_t deadline_check_interval = 256;
+
+        /// Absolute execution deadline as a steady-clock timestamp in
+        /// nanoseconds (see `steady_clock_now_ns`), or `no_deadline`.
+        int64_t deadline_ns = no_deadline;
+        uint32_t deadline_countdown = deadline_check_interval;
+
+        static int64_t steady_clock_now_ns() noexcept
+        {
+            return std::chrono::duration_cast<std::chrono::nanoseconds>(
+                       std::chrono::steady_clock::now().time_since_epoch())
+                .count();
+        }
+
+        [[gnu::always_inline]]
+        constexpr void check_deadline() noexcept
+        {
+            if (MONAD_LIKELY(deadline_ns == no_deadline)) {
+                return;
+            }
+            if (--deadline_countdown != 0) {
+                return;
+            }
+            deadline_countdown = deadline_check_interval;
+            check_deadline_now();
+        }
+
+        /// Like `check_deadline`, but always reads the clock. Called right
+        /// after a child frame returns, so a cancelled child deterministically
+        /// cancels its ancestors instead of looking like a failed call.
+        [[gnu::always_inline]]
+        constexpr void check_deadline_now() noexcept
+        {
+            if (MONAD_LIKELY(deadline_ns == no_deadline)) {
+                return;
+            }
+            if (steady_clock_now_ns() >= deadline_ns) {
+                exit(StatusCode::Cancelled);
+            }
+        }
+
         [[gnu::always_inline]]
         constexpr void deduct_gas(int64_t const gas) noexcept
         {
@@ -261,6 +310,7 @@ namespace monad::vm::runtime
             if (MONAD_UNLIKELY(gas_remaining < 0)) {
                 exit(StatusCode::OutOfGas);
             }
+            check_deadline();
         }
 
         [[gnu::always_inline]]

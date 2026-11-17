@@ -50,6 +50,7 @@ enum class TransactionError
     InvalidSignature,
     InvalidBlobHash,
     EmptyAuthorizationList,
+    ExecutionTimeout,
 };
 
 MONAD_NAMESPACE_END

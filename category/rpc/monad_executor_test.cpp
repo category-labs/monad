@@ -127,12 +127,33 @@ namespace
 
     auto create_executor(std::string const &dbname)
     {
-        monad_executor_pool_config const conf = {1, 2, max_timeout, 1000};
+        monad_executor_pool_config const conf = {
+            1, 2, max_timeout, max_timeout, 1000};
         unsigned const tx_exec_num_fibers = 10;
         return monad_executor_create(
             conf,
             conf,
             conf,
+            tx_exec_num_fibers,
+            node_lru_max_mem,
+            dbname.c_str());
+    }
+
+    auto create_executor_with_timeouts(
+        std::string const &dbname, unsigned const short_execution_timeout_ms,
+        unsigned const long_execution_timeout_ms)
+    {
+        monad_executor_pool_config const short_conf = {
+            1, 2, max_timeout, short_execution_timeout_ms, 1000};
+        monad_executor_pool_config const long_conf = {
+            1, 2, max_timeout, long_execution_timeout_ms, 1000};
+        monad_executor_pool_config const block_conf = {
+            1, 2, max_timeout, max_timeout, 1000};
+        unsigned const tx_exec_num_fibers = 10;
+        return monad_executor_create(
+            short_conf,
+            long_conf,
+            block_conf,
             tx_exec_num_fibers,
             node_lru_max_mem,
             dbname.c_str());
@@ -199,7 +220,7 @@ namespace
             std::filesystem::remove(dbname);
         }
 
-        void test_transfer_call_with_trace(bool gas_specified);
+        void test_transfer_call_with_trace();
     };
 
     // Slot-encoded db (the common case) for the bulk of TEST_F tests.
@@ -257,8 +278,7 @@ namespace
     }
 
     template <class Machine>
-    void EthCallEncodingFixture<Machine>::test_transfer_call_with_trace(
-        bool const gas_specified)
+    void EthCallEncodingFixture<Machine>::test_transfer_call_with_trace()
     {
         for (uint64_t i = 0; i < 256; ++i) {
             commit_sequential(
@@ -322,8 +342,7 @@ namespace
             complete_callback,
             (void *)&ctx,
             CALL_TRACER,
-            call_tracer_max_size,
-            gas_specified);
+            call_tracer_max_size);
         f.get();
 
         EXPECT_EQ(
@@ -337,9 +356,11 @@ namespace
             .from = from,
             .to = ADDR_B,
             .value = 0x10000,
-            .gas = gas_specified ? tx.gas_limit : MONAD_ETH_CALL_LOW_GAS_LIMIT,
-            .gas_used =
-                gas_specified ? tx.gas_limit : MONAD_ETH_CALL_LOW_GAS_LIMIT,
+            // The executor runs the call with the transaction's gas limit
+            // as-is, whether or not the client specified one: calls are
+            // bounded by the pool's execution timeout, not by a gas clamp.
+            .gas = tx.gas_limit,
+            .gas_used = tx.gas_limit,
             .status = CallStatus::Success,
             .depth = 0,
             // EIP-7708: log this transfer
@@ -428,8 +449,7 @@ TEST_F(EthCallFixture, simple_success_call)
         complete_callback,
         (void *)&ctx,
         NOOP_TRACER,
-        call_tracer_max_size,
-        true);
+        call_tracer_max_size);
     f.get();
 
     EXPECT_EQ(ctx.result->status_code, std::to_underlying(CallStatus::Success));
@@ -452,14 +472,15 @@ TEST_F(EthCallFixture, destroy_with_queued_calls)
     static constexpr auto to{
         0x5353535353535353535353535353535353535353_address};
 
-    // PUSH0 PUSH0 REVERT: every call reverts in the low gas pool and is
-    // retried in the high gas pool.
-    byte_string const code{0x5f, 0x5f, 0xfd};
+    // A bounded loop long enough to reach the VM's amortized deadline check
+    // (PUSH2 512; JUMPDEST; PUSH1 1; SWAP1; SUB; DUP1; PUSH1 3; JUMPI; STOP).
+    // With a zero execution budget in the short pool every call is cancelled
+    // there and resubmitted to the long pool, so destruction has to drain
+    // calls queued in both pools.
+    byte_string const code = 0x6102005b600190038060035700_bytes;
     auto const code_hash = to_bytes(keccak256(code));
     Transaction const tx{
-        .gas_limit = 2 * MONAD_ETH_CALL_LOW_GAS_LIMIT,
-        .to = to,
-        .type = TransactionType::eip1559};
+        .gas_limit = 9'000'000, .to = to, .type = TransactionType::eip1559};
     BlockHeader const header{.number = 256};
 
     commit_sequential(
@@ -479,7 +500,8 @@ TEST_F(EthCallFixture, destroy_with_queued_calls)
         to_vec(rlp::encode_address(std::make_optional(from)));
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
-    auto *executor = create_executor(dbname.string());
+    auto *executor =
+        create_executor_with_timeouts(dbname.string(), 0, max_timeout);
     auto *state_override = monad_state_override_create();
 
     std::array<callback_context, 32> ctxs{};
@@ -500,14 +522,13 @@ TEST_F(EthCallFixture, destroy_with_queued_calls)
             complete_callback,
             (void *)&ctx,
             NOOP_TRACER,
-            call_tracer_max_size,
-            false);
+            call_tracer_max_size);
     }
     monad_executor_destroy(executor);
 
     for (auto const &ctx : ctxs) {
         EXPECT_EQ(
-            ctx.result->status_code, std::to_underlying(CallStatus::Revert));
+            ctx.result->status_code, std::to_underlying(CallStatus::Success));
     }
 
     monad_state_override_destroy(state_override);
@@ -560,8 +581,7 @@ TEST_F(EthCallFixture, insufficient_balance)
         complete_callback,
         (void *)&ctx,
         NOOP_TRACER,
-        call_tracer_max_size,
-        true);
+        call_tracer_max_size);
     f.get();
 
     EXPECT_TRUE(
@@ -620,8 +640,7 @@ TEST_F(EthCallFixture, on_proposed_block)
         complete_callback,
         (void *)&ctx,
         NOOP_TRACER,
-        call_tracer_max_size,
-        true);
+        call_tracer_max_size);
     f.get();
 
     EXPECT_EQ(ctx.result->status_code, std::to_underlying(CallStatus::Success));
@@ -711,8 +730,7 @@ TEST_F(EthCallFixture, eth_call_slot_number)
         complete_callback,
         (void *)&ctx,
         NOOP_TRACER,
-        call_tracer_max_size,
-        true);
+        call_tracer_max_size);
     f.get();
 
     ASSERT_TRUE(
@@ -793,8 +811,7 @@ TEST_F(EthCallFixture, blockhash_before_fork)
         complete_callback,
         (void *)&ctx,
         NOOP_TRACER,
-        call_tracer_max_size,
-        true);
+        call_tracer_max_size);
     f.get();
 
     EXPECT_EQ(ctx.result->status_code, std::to_underlying(CallStatus::Success));
@@ -871,8 +888,7 @@ TEST_F(EthCallFixture, failed_to_read)
         complete_callback,
         (void *)&ctx,
         NOOP_TRACER,
-        call_tracer_max_size,
-        true);
+        call_tracer_max_size);
     f.get();
 
     EXPECT_EQ(
@@ -929,8 +945,7 @@ TEST_F(EthCallFixture, contract_deployment_success)
         complete_callback,
         (void *)&ctx,
         NOOP_TRACER,
-        call_tracer_max_size,
-        true);
+        call_tracer_max_size);
     f.get();
 
     byte_string const deployed_code_bytes =
@@ -1014,8 +1029,7 @@ TEST_F(EthCallFixture, assertion_exception_depth1)
         complete_callback,
         (void *)&ctx,
         NOOP_TRACER,
-        call_tracer_max_size,
-        true);
+        call_tracer_max_size);
     f.get();
 
     EXPECT_EQ(
@@ -1112,8 +1126,7 @@ TEST_F(EthCallFixture, assertion_exception_depth2)
         complete_callback,
         (void *)&ctx,
         NOOP_TRACER,
-        call_tracer_max_size,
-        true);
+        call_tracer_max_size);
     f.get();
 
     EXPECT_EQ(
@@ -1199,8 +1212,7 @@ TEST_F(EthCallFixture, state_override_oversized_code_fails_gracefully)
         complete_callback,
         (void *)&ctx,
         NOOP_TRACER,
-        call_tracer_max_size,
-        true);
+        call_tracer_max_size);
     f.get();
 
     EXPECT_EQ(
@@ -1265,8 +1277,7 @@ TEST_F(EthCallFixture, loop_out_of_gas)
         complete_callback,
         (void *)&ctx,
         NOOP_TRACER,
-        call_tracer_max_size,
-        true);
+        call_tracer_max_size);
     f.get();
 
     EXPECT_TRUE(
@@ -1388,8 +1399,7 @@ TEST_F(EthCallFixture, expensive_read_out_of_gas)
         complete_callback,
         (void *)&ctx,
         NOOP_TRACER,
-        call_tracer_max_size,
-        true);
+        call_tracer_max_size);
     f.get();
 
     EXPECT_TRUE(
@@ -1454,8 +1464,7 @@ TEST_F(EthCallFixture, from_contract_account)
         complete_callback,
         (void *)&ctx,
         NOOP_TRACER,
-        call_tracer_max_size,
-        true);
+        call_tracer_max_size);
     f.get();
 
     EXPECT_TRUE(
@@ -1538,8 +1547,7 @@ TEST_F(EthCallFixture, concurrent_eth_calls)
             complete_callback,
             (void *)ctx.get(),
             NOOP_TRACER,
-            call_tracer_max_size,
-            true);
+            call_tracer_max_size);
     }
 
     for (auto [ctx, f, state_override] :
@@ -1562,12 +1570,203 @@ TEST_F(EthCallFixture, concurrent_eth_calls)
 
 TEST_F(EthCallFixture, transfer_success_with_call_trace)
 {
-    test_transfer_call_with_trace(true);
+    test_transfer_call_with_trace();
 }
 
-TEST_F(EthCallFixture, transfer_success_with_trace_unspecified_gas)
+namespace
 {
-    test_transfer_call_with_trace(false);
+    // Shared setup for the timeout tests: a funded sender, a recipient, a
+    // contract that loops forever (JUMPDEST PUSH0 JUMP) bounded only by
+    // gas, and a contract that runs a bounded counting loop of a few
+    // thousand opcodes (enough to guarantee the VM's amortized deadline
+    // check fires) and then stops.
+    constexpr auto TIMEOUT_LOOP_ADDR =
+        0x00000000000000000000000000000000100b100b_address;
+    constexpr auto BOUNDED_LOOP_ADDR =
+        0x00000000000000000000000000000000200b200b_address;
+
+    template <class Fixture>
+    BlockHeader commit_timeout_test_state(Fixture &fix)
+    {
+        for (uint64_t i = 0; i < 256; ++i) {
+            commit_sequential(
+                fix.tdb, StateDeltas({}), {}, BlockHeader{.number = i});
+        }
+
+        BlockHeader const header{.number = 256};
+        auto const loop_code = 0x5b5f56_bytes;
+        auto const loop_code_hash = to_bytes(keccak256(loop_code));
+        // PUSH2 512; JUMPDEST; PUSH1 1; SWAP1; SUB; DUP1; PUSH1 3; JUMPI;
+        // STOP — counts 512 iterations (~3.5k opcodes) and returns.
+        auto const bounded_loop_code = 0x6102005b600190038060035700_bytes;
+        auto const bounded_loop_code_hash =
+            to_bytes(keccak256(bounded_loop_code));
+
+        commit_sequential(
+            fix.tdb,
+            StateDeltas(
+                {{ADDR_A,
+                  StateDelta{
+                      .account =
+                          {std::nullopt,
+                           Account{
+                               .balance = std::numeric_limits<uint256_t>::max(),
+                               .code_hash = NULL_HASH,
+                               .nonce = 0x0}}}},
+                 {ADDR_B,
+                  StateDelta{
+                      .account =
+                          {std::nullopt,
+                           Account{.balance = 0, .code_hash = NULL_HASH}}}},
+                 {TIMEOUT_LOOP_ADDR,
+                  StateDelta{
+                      .account =
+                          {std::nullopt,
+                           Account{
+                               .balance = 0, .code_hash = loop_code_hash}}}},
+                 {BOUNDED_LOOP_ADDR,
+                  StateDelta{
+                      .account =
+                          {std::nullopt,
+                           Account{
+                               .balance = 0,
+                               .code_hash = bounded_loop_code_hash}}}}}),
+            Code{
+                {loop_code_hash, monad::vm::make_shared_intercode(loop_code)},
+                {bounded_loop_code_hash,
+                 monad::vm::make_shared_intercode(bounded_loop_code)}},
+            header);
+        return header;
+    }
+
+    monad_executor_result const *submit_and_wait(
+        monad_executor *const executor, Transaction const &tx,
+        BlockHeader const &header, callback_context &ctx)
+    {
+        auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
+        auto const rlp_header = to_vec(rlp::encode_block_header(header));
+        auto const rlp_sender =
+            to_vec(rlp::encode_address(std::make_optional(ADDR_A)));
+        auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+        auto *state_override = monad_state_override_create();
+        boost::fibers::future<void> f = ctx.promise.get_future();
+
+        monad_executor_eth_call_submit(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_tx.data(),
+            rlp_tx.size(),
+            rlp_header.data(),
+            rlp_header.size(),
+            rlp_sender.data(),
+            rlp_sender.size(),
+            header.number,
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            state_override,
+            complete_callback,
+            (void *)&ctx,
+            NOOP_TRACER,
+            call_tracer_max_size);
+        f.get();
+
+        monad_state_override_destroy(state_override);
+        return ctx.result;
+    }
+}
+
+TEST_F(EthCallFixture, queue_timeout_reported_when_expired_at_pickup)
+{
+    auto const header = commit_timeout_test_state(*this);
+
+    // Zero queue budget in the short pool: the call is picked up with its
+    // queue wait already over the limit and is rejected with the queue
+    // timeout error, without executing and without escalating (the
+    // effectively unlimited execution budgets never come into play).
+    monad_executor_pool_config const short_conf = {1, 2, 0, max_timeout, 1000};
+    monad_executor_pool_config const default_conf = {
+        1, 2, max_timeout, max_timeout, 1000};
+    auto *executor = monad_executor_create(
+        short_conf,
+        default_conf,
+        default_conf,
+        10,
+        node_lru_max_mem,
+        dbname.string().c_str());
+
+    Transaction const tx{
+        .max_fee_per_gas = 1,
+        .gas_limit = 9'000'000u,
+        .value = 0x10000,
+        .to = ADDR_B,
+    };
+
+    callback_context ctx;
+    auto const *result = submit_and_wait(executor, tx, header, ctx);
+
+    EXPECT_EQ(result->status_code, std::to_underlying(CallStatus::Rejected));
+    ASSERT_NE(result->message, nullptr);
+    EXPECT_STREQ(
+        result->message,
+        "failure to execute eth_call: queuing time exceeded timeout "
+        "threshold");
+
+    monad_executor_destroy(executor);
+}
+
+TEST_F(EthCallFixture, timeout_in_short_pool_escalates_to_long_pool)
+{
+    auto const header = commit_timeout_test_state(*this);
+
+    // Zero execution budget in the short pool, effectively unlimited in the
+    // long pool, against a bounded loop long enough to hit the VM's
+    // deadline check: the call is cancelled mid-run in the short pool,
+    // escalates, and must then succeed, not fail with a timeout.
+    auto *executor =
+        create_executor_with_timeouts(dbname.string(), 0, max_timeout);
+
+    Transaction const tx{
+        .max_fee_per_gas = 1,
+        .gas_limit = 9'000'000u,
+        .to = BOUNDED_LOOP_ADDR,
+    };
+
+    callback_context ctx;
+    auto const *result = submit_and_wait(executor, tx, header, ctx);
+
+    EXPECT_EQ(result->status_code, std::to_underlying(CallStatus::Success));
+    EXPECT_GT(result->gas_used, 21000);
+
+    monad_executor_destroy(executor);
+}
+
+TEST_F(EthCallFixture, execution_cancelled_by_deadline_mid_run)
+{
+    auto const header = commit_timeout_test_state(*this);
+
+    // 150ms execution budget per pool against a contract that loops for far
+    // longer than that if not cancelled: the VM's deadline check must abort
+    // execution mid-run in the short pool, the escalated attempt must abort
+    // again in the long pool, and the timeout is reported. The test
+    // completing at all (in well under a second, not minutes) demonstrates
+    // the mid-execution cancellation.
+    auto *executor = create_executor_with_timeouts(dbname.string(), 150, 150);
+
+    Transaction const tx{
+        .max_fee_per_gas = 1,
+        .gas_limit = 50'000'000'000u,
+        .to = TIMEOUT_LOOP_ADDR,
+    };
+
+    callback_context ctx;
+    auto const *result = submit_and_wait(executor, tx, header, ctx);
+
+    EXPECT_EQ(result->status_code, std::to_underlying(CallStatus::Rejected));
+    ASSERT_NE(result->message, nullptr);
+    EXPECT_STREQ(result->message, "execution timeout");
+
+    monad_executor_destroy(executor);
 }
 
 TEST_F(EthCallFixture, call_trace_with_logs)
@@ -1684,8 +1883,7 @@ TEST_F(EthCallFixture, call_trace_with_logs)
         complete_callback,
         (void *)&ctx,
         CALL_TRACER,
-        call_tracer_max_size,
-        true);
+        call_tracer_max_size);
     f.get();
 
     EXPECT_TRUE(
@@ -1869,8 +2067,7 @@ TEST_F(EthCallFixture, static_precompile_OOG_with_call_trace)
         complete_callback,
         (void *)&ctx,
         CALL_TRACER,
-        call_tracer_max_size,
-        true);
+        call_tracer_max_size);
     f.get();
 
     EXPECT_TRUE(
@@ -1995,8 +2192,7 @@ TEST_F(EthCallFixture, point_evaluation_precompile_with_call_trace)
         complete_callback,
         (void *)&ctx,
         CALL_TRACER,
-        call_tracer_max_size,
-        true);
+        call_tracer_max_size);
     f.get();
 
     ASSERT_EQ(ctx.result->status_code, std::to_underlying(CallStatus::Success))
@@ -2089,8 +2285,7 @@ TEST_F(EthCallFixture, transfer_success_with_state_trace)
             complete_callback,
             (void *)&prestate_ctx,
             PRESTATE_TRACER,
-            call_tracer_max_size,
-            true);
+            call_tracer_max_size);
         f.get();
 
         ASSERT_EQ(
@@ -2138,8 +2333,7 @@ TEST_F(EthCallFixture, transfer_success_with_state_trace)
             complete_callback,
             (void *)&statediff_ctx,
             STATEDIFF_TRACER,
-            call_tracer_max_size,
-            true);
+            call_tracer_max_size);
         f.get();
 
         ASSERT_EQ(
@@ -2232,8 +2426,7 @@ TEST_F(EthCallFixture, contract_deployment_success_with_state_trace)
             complete_callback,
             (void *)&prestate_ctx,
             PRESTATE_TRACER,
-            call_tracer_max_size,
-            true);
+            call_tracer_max_size);
         f.get();
 
         ASSERT_TRUE(
@@ -2277,8 +2470,7 @@ TEST_F(EthCallFixture, contract_deployment_success_with_state_trace)
             complete_callback,
             (void *)&statediff_ctx,
             STATEDIFF_TRACER,
-            call_tracer_max_size,
-            true);
+            call_tracer_max_size);
         f.get();
 
         ASSERT_TRUE(
@@ -3534,8 +3726,7 @@ TEST_F(EthCallFixture, access_list_trace)
             complete_callback,
             (void *)&ctx,
             ACCESS_LIST_TRACER,
-            call_tracer_max_size,
-            true);
+            call_tracer_max_size);
         f.get();
 
         ASSERT_TRUE(
@@ -3640,8 +3831,7 @@ TEST_F(EthCallFixture, access_list_trace_reverted_call)
             complete_callback,
             (void *)&ctx,
             ACCESS_LIST_TRACER,
-            call_tracer_max_size,
-            true);
+            call_tracer_max_size);
         f.get();
 
         ASSERT_TRUE(
@@ -3749,8 +3939,7 @@ TEST_F(EthCallFixture, access_list_trace_page_dedup)
             complete_callback,
             (void *)&ctx,
             ACCESS_LIST_TRACER,
-            call_tracer_max_size,
-            true);
+            call_tracer_max_size);
         f.get();
 
         ASSERT_TRUE(
@@ -3855,8 +4044,7 @@ TEST_F(EthCallFixture, access_list_trace_empty)
             complete_callback,
             (void *)&ctx,
             ACCESS_LIST_TRACER,
-            call_tracer_max_size,
-            true);
+            call_tracer_max_size);
         f.get();
 
         ASSERT_TRUE(
@@ -3952,8 +4140,7 @@ TEST_F(EthCallFixture, access_list_trace_nested)
         complete_callback,
         (void *)&ctx,
         ACCESS_LIST_TRACER,
-        call_tracer_max_size,
-        true);
+        call_tracer_max_size);
     f.get();
 
     EXPECT_TRUE(
@@ -4069,8 +4256,7 @@ TEST_F(EthCallFixture, access_list_trace_nested_reverted_call)
         complete_callback,
         (void *)&ctx,
         ACCESS_LIST_TRACER,
-        call_tracer_max_size,
-        true);
+        call_tracer_max_size);
     f.get();
 
     EXPECT_TRUE(
@@ -4166,8 +4352,7 @@ TEST_F(EthCallFixture, prestate_state_overrides)
             complete_callback,
             (void *)&prestate_ctx,
             PRESTATE_TRACER,
-            call_tracer_max_size,
-            true);
+            call_tracer_max_size);
         f.get();
 
         ASSERT_TRUE(
@@ -4213,8 +4398,7 @@ TEST_F(EthCallFixture, prestate_state_overrides)
             complete_callback,
             (void *)&statediff_ctx,
             STATEDIFF_TRACER,
-            call_tracer_max_size,
-            true);
+            call_tracer_max_size);
         f.get();
 
         ASSERT_TRUE(
@@ -4377,8 +4561,7 @@ TYPED_TEST(EthCallEncodingFixture, prestate_override_state)
             complete_callback,
             (void *)&ctx_state,
             PRESTATE_TRACER,
-            call_tracer_max_size,
-            true);
+            call_tracer_max_size);
         f.get();
 
         ASSERT_TRUE(
@@ -4463,8 +4646,7 @@ TYPED_TEST(EthCallEncodingFixture, prestate_override_state)
             complete_callback,
             (void *)&ctx_statediff,
             PRESTATE_TRACER,
-            call_tracer_max_size,
-            true);
+            call_tracer_max_size);
         f.get();
 
         ASSERT_TRUE(
@@ -4637,8 +4819,7 @@ TEST_F(EthCallFixture, eth_call_reserve_balance)
         complete_callback,
         (void *)&ctx,
         NOOP_TRACER,
-        call_tracer_max_size,
-        true);
+        call_tracer_max_size);
     f.get();
 
     EXPECT_EQ(
@@ -4721,8 +4902,7 @@ TEST_F(EthCallFixture, eth_call_reserve_balance_emptying)
         complete_callback,
         (void *)&ctx,
         NOOP_TRACER,
-        call_tracer_max_size,
-        true);
+        call_tracer_max_size);
     f.get();
 
     EXPECT_EQ(ctx.result->status_code, std::to_underlying(CallStatus::Success));
@@ -4833,8 +5013,7 @@ TEST_F(EthCallFixture, eth_call_reserve_balance_assertion)
         complete_callback,
         (void *)&ctx,
         NOOP_TRACER,
-        call_tracer_max_size,
-        true);
+        call_tracer_max_size);
     f.get();
 
     EXPECT_EQ(
@@ -6336,8 +6515,10 @@ TEST_F(EthCallFixture, eth_simulate_v1_stress_queue_rejection)
 
     // Create executor with a tiny queue limit (2) for the block pool
     // so that excess submissions get rejected.
-    monad_executor_pool_config const block_conf = {1, 2, max_timeout, 2};
-    monad_executor_pool_config const default_conf = {1, 2, max_timeout, 1000};
+    monad_executor_pool_config const block_conf = {
+        1, 2, max_timeout, max_timeout, 2};
+    monad_executor_pool_config const default_conf = {
+        1, 2, max_timeout, max_timeout, 1000};
     unsigned const tx_exec_num_fibers = 10;
     auto *executor = monad_executor_create(
         default_conf,
@@ -10002,8 +10183,7 @@ TEST_F(EthCallFixture, eth_call_empty_state_override_zeros_storage)
         complete_callback,
         &ctx,
         NOOP_TRACER,
-        call_tracer_max_size,
-        true);
+        call_tracer_max_size);
     future.get();
 
     ASSERT_EQ(ctx.result->status_code, std::to_underlying(CallStatus::Success));
@@ -10122,12 +10302,10 @@ TEST_F(EthCallFixture, eth_simulate_v1_empty_state_override_zeros_storage)
     monad_executor_destroy(executor);
 }
 
-// This test demonstrates that call trace size is not monotonic in the gas
-// limit. This test exercises an eth_call that materializes a too large output
-// in the low gas scenario, but materializes a small output in the high gas
-// scenario. Thus demonstrating that must defer the call trace size check until
-// after both low gas and high gas tries.
-TEST_F(EthCallFixture, eth_call_discards_oversized_low_gas_trace_on_retry)
+// eth_call enforces the call tracer size limit: a trace that fits is
+// returned in full, one that does not fails the call with an internal error
+// and no trace.
+TEST_F(EthCallFixture, eth_call_call_tracer_size_limit)
 {
     using namespace monad::vm::utils;
 
@@ -10135,37 +10313,10 @@ TEST_F(EthCallFixture, eth_call_discards_oversized_low_gas_trace_on_retry)
         0x00000000000000000000000000000000deadbeef_address;
     static constexpr Address contract =
         0x00000000000000000000000000000000feedface_address;
-    static constexpr uint64_t gas_threshold = 9'000'000;
-    static constexpr uint64_t high_gas_limit = 20'000'000;
     static constexpr size_t revert_data_size = 1024 * 1024;
-    static_assert(MONAD_ETH_CALL_LOW_GAS_LIMIT < gas_threshold);
-    static_assert(gas_threshold < high_gas_limit - 21'000);
 
-    // The code constructed below is roughly equivalent to the following
-    // Solidity contract:
-    //
-    // contract GasSensitiveTrace {
-    //   fallback() external {
-    //     assembly {
-    //       if lt(gas(), gas_threshold) {
-    //         revert(0, revert_data_size)
-    //       }
-    //       return(0, 0)
-    //     }
-    //   }
-    // }
-    auto const eb = evm_as::latest()
-                        .push(gas_threshold)
-                        .gas()
-                        .lt()
-                        .jumpi("low_gas")
-                        .push0()
-                        .push0()
-                        .return_()
-                        .jumpdest("low_gas")
-                        .push(revert_data_size)
-                        .push0()
-                        .revert();
+    // revert(0, revert_data_size)
+    auto const eb = evm_as::latest().push(revert_data_size).push0().revert();
     ASSERT_TRUE(evm_as::validate(eb));
     std::vector<uint8_t> code{};
     evm_as::compile(eb, code);
@@ -10198,13 +10349,10 @@ TEST_F(EthCallFixture, eth_call_discards_oversized_low_gas_trace_on_retry)
         to_vec(rlp::encode_address(std::make_optional(sender)));
     auto const rlp_block_id = to_vec(rlp_finalized_id);
 
-    auto const submit = [&](uint64_t const gas_limit,
-                            size_t const trace_limit,
-                            bool const gas_specified,
-                            callback_context &ctx) {
+    auto const submit = [&](size_t const trace_limit, callback_context &ctx) {
         Transaction const tx{
             .max_fee_per_gas = 1,
-            .gas_limit = gas_limit,
+            .gas_limit = 9'000'000,
             .to = contract,
         };
         auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
@@ -10225,67 +10373,43 @@ TEST_F(EthCallFixture, eth_call_discards_oversized_low_gas_trace_on_retry)
             complete_callback,
             &ctx,
             CALL_TRACER,
-            trace_limit,
-            gas_specified);
+            trace_limit);
         future.get();
     };
 
-    callback_context low_gas_ctx;
-    callback_context limited_low_gas_ctx;
-    callback_context retry_ctx;
-    submit(
-        MONAD_ETH_CALL_LOW_GAS_LIMIT,
-        sizeof(CallFrame) + revert_data_size,
-        true,
-        low_gas_ctx);
-    submit(
-        MONAD_ETH_CALL_LOW_GAS_LIMIT,
-        revert_data_size,
-        true,
-        limited_low_gas_ctx);
-    submit(high_gas_limit, revert_data_size, false, retry_ctx);
+    callback_context fits_ctx;
+    callback_context limited_ctx;
+    submit(sizeof(CallFrame) + revert_data_size, fits_ctx);
+    submit(revert_data_size, limited_ctx);
 
     monad_state_override_destroy(state_override);
     monad_executor_destroy(executor);
 
     ASSERT_EQ(
-        low_gas_ctx.result->status_code,
-        std::to_underlying(CallStatus::Revert));
-    EXPECT_EQ(low_gas_ctx.result->output_data_len, revert_data_size);
-    byte_string_view low_gas_view{
-        low_gas_ctx.result->encoded_trace,
-        low_gas_ctx.result->encoded_trace_len};
-    auto const low_gas_frames = rlp::decode_call_frames(low_gas_view);
-    ASSERT_TRUE(low_gas_frames.has_value());
-    ASSERT_EQ(low_gas_frames.value().size(), 1);
-    EXPECT_EQ(low_gas_frames.value().front().output.size(), revert_data_size);
+        fits_ctx.result->status_code, std::to_underlying(CallStatus::Revert));
+    EXPECT_EQ(fits_ctx.result->output_data_len, revert_data_size);
+    byte_string_view fits_view{
+        fits_ctx.result->encoded_trace, fits_ctx.result->encoded_trace_len};
+    auto const fits_frames = rlp::decode_call_frames(fits_view);
+    ASSERT_TRUE(fits_frames.has_value());
+    ASSERT_EQ(fits_frames.value().size(), 1);
+    EXPECT_EQ(fits_frames.value().front().output.size(), revert_data_size);
 
     EXPECT_EQ(
-        limited_low_gas_ctx.result->status_code,
+        limited_ctx.result->status_code,
         std::to_underlying(CallStatus::InternalError));
     EXPECT_STREQ(
-        limited_low_gas_ctx.result->message,
+        limited_ctx.result->message,
         "call trace size exceeds maximum allowed size");
-    EXPECT_EQ(limited_low_gas_ctx.result->encoded_trace_len, 0);
-
-    ASSERT_EQ(
-        retry_ctx.result->status_code, std::to_underlying(CallStatus::Success));
-    EXPECT_EQ(retry_ctx.result->output_data_len, 0);
-    byte_string_view retry_view{
-        retry_ctx.result->encoded_trace, retry_ctx.result->encoded_trace_len};
-    auto const retry_frames = rlp::decode_call_frames(retry_view);
-    ASSERT_TRUE(retry_frames.has_value());
-    ASSERT_EQ(retry_frames.value().size(), 1);
-    EXPECT_EQ(retry_frames.value().front().gas, high_gas_limit);
-    EXPECT_EQ(retry_frames.value().front().status, CallStatus::Success);
-    EXPECT_TRUE(retry_frames.value().front().output.empty());
+    EXPECT_EQ(limited_ctx.result->encoded_trace_len, 0);
 }
 
 namespace
 {
     monad_executor *create_executor_without_db()
     {
-        monad_executor_pool_config const conf = {1, 2, max_timeout, 1000};
+        monad_executor_pool_config const conf = {
+            1, 2, max_timeout, max_timeout, 1000};
         unsigned const tx_exec_num_fibers = 10;
         return monad_executor_create(
             conf, conf, conf, tx_exec_num_fibers, node_lru_max_mem, nullptr);
@@ -10319,8 +10443,7 @@ namespace
             complete_callback,
             &ctx,
             NOOP_TRACER,
-            call_tracer_max_size,
-            true);
+            call_tracer_max_size);
         f.get();
     }
 }
@@ -11288,8 +11411,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_validation_false_matches_eth_call)
             complete_callback,
             &call_ctx,
             CALL_TRACER,
-            call_tracer_max_size,
-            true);
+            call_tracer_max_size);
         call_future.get();
 
         auto &simulate_ctx =
@@ -11466,8 +11588,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_max_sender_nonce_differs_from_eth_call)
         complete_callback,
         &call_ctx,
         NOOP_TRACER,
-        call_tracer_max_size,
-        true);
+        call_tracer_max_size);
     call_future.get();
 
     callback_context simulate_ctx;

@@ -121,6 +121,9 @@ namespace monad::vm::runtime
         // is deallocated by the `Environment` destructor.
         ctx->propagate_stack_unwind();
 
+        // Propagate the child frame's cancellation, if relevant.
+        ctx->check_deadline_now();
+
         ctx->deduct_gas(gas - result.gas_left);
         ctx->gas_refund += result.gas_refund;
 

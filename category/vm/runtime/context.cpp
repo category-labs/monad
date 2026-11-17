@@ -231,6 +231,9 @@ namespace monad::vm::runtime
         if (MONAD_UNLIKELY(result.status == OutOfGas)) {
             return vm::Result{CallStatus::OutOfGas};
         }
+        if (MONAD_UNLIKELY(result.status == Cancelled)) {
+            return vm::Result{CallStatus::Rejected};
+        }
 
         MONAD_DEBUG_ASSERT(result.status == Success || result.status == Revert);
 

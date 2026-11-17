@@ -29,6 +29,7 @@
 #include <category/core/keccak.hpp>
 #include <category/core/log.hpp>
 #include <category/core/result.hpp>
+#include <category/execution/domain/ale/application_encryption_context.hpp>
 #include <category/execution/domain/chain_id.hpp>
 #include <category/execution/domain/deriver.hpp>
 #include <category/execution/domain/domain_block.hpp>
@@ -191,6 +192,8 @@ try {
     }
     Address const spoke = *from_hex<Address>(spoke_hex);
     Address const hub = *from_hex<Address>(hub_hex);
+    ApplicationEncryptionContext const encryption_context{
+        domain_chain_id, key.value(), spoke};
 
     // The domain db is created when the domain's genesis is derived.
     std::optional<fiber::PriorityPool> priority_pool;
@@ -225,7 +228,12 @@ try {
         priority_pool.emplace(EXECUTION_THREADS, EXECUTION_FIBERS);
         vm.emplace();
         executor.emplace(
-            *chain, domain_chain_id, *domain_db, *vm, *priority_pool);
+            *chain,
+            domain_chain_id,
+            *domain_db,
+            *vm,
+            *priority_pool,
+            &encryption_context);
         LOG_INFO(
             "executing private domain {} into {}, from domain block {}",
             domain_chain_id,

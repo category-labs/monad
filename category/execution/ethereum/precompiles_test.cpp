@@ -408,6 +408,25 @@ namespace
     }
 }
 
+TYPED_TEST(TraitsTest, application_encryption_unavailable)
+{
+    using traits = typename TestFixture::Trait;
+    // ALE's current address, without depending on the domain implementation.
+    constexpr Address address{0x1a7e};
+    EXPECT_FALSE(is_precompile<traits>(address));
+
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
+    TrieDb trie_db{db};
+    vm::VM vm;
+    BlockState block_state{trie_db, vm};
+    State state{block_state, Incarnation{0, 0}};
+    NoopCallTracer call_tracer;
+    vm::Message const msg{.code_address = address};
+    EXPECT_FALSE(
+        check_call_precompile<traits>(state, call_tracer, msg, false)
+            .has_value());
+}
+
 TYPED_TEST(TraitsTest, ecrecover)
 {
     if constexpr (is_monad_trait_v<typename TestFixture::Trait>) {

@@ -20,6 +20,7 @@
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/core/result.hpp>
+#include <category/execution/domain/ale/application_encryption_context.hpp>
 #include <category/vm/evm/traits.hpp>
 
 #include <cstdint>
@@ -32,10 +33,6 @@ struct CallTracerBase;
 
 // TODO(cmcl): Stub precompile address
 constexpr Address ALE_CA = Address{0x1A7E};
-
-// TODO(cmcl): Hub and Spoke addresses to be fixed
-constexpr Address HUB_CA{0x485542};       // ASCII "HUB"
-constexpr Address SPOKE_CA{0x53504f4b45}; // ASCII "SPOKE"
 
 // Encoding the associated data
 // abi.encode("monad-sealed-blob-v1", dest_domain, to, app_ctx).
@@ -53,12 +50,14 @@ class ApplicationEncryptionContract
     [[maybe_unused]] State &state_;
     [[maybe_unused]] CallTracerBase &call_tracer_;
     [[maybe_unused]] bool log_native_transfers_;
+    ApplicationEncryptionContext const &encryption_context_;
 
 public:
     static constexpr uint256_t SPOKE_VIEWING_KEYS_SLOT{7};
 
     ApplicationEncryptionContract(
-        State &, CallTracerBase &, bool log_native_transfers = false);
+        State &, CallTracerBase &, ApplicationEncryptionContext const &,
+        bool log_native_transfers = false);
 
     using PrecompileFunc =
         Result<byte_string> (ApplicationEncryptionContract::*)(

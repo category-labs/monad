@@ -32,5 +32,5 @@ add_library(monad_gtest_main STATIC
             ${PROJECT_SOURCE_DIR}/test/unit/common/src/test/main.cpp)
 target_include_directories(monad_gtest_main
                            PRIVATE ${PROJECT_SOURCE_DIR}/test/unit/common/include)
-target_link_libraries(monad_gtest_main PUBLIC monad_execution GTest::GTest)
+target_link_libraries(monad_gtest_main PUBLIC monad_core GTest::GTest)
 monad_compile_options(monad_gtest_main)

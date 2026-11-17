@@ -245,8 +245,6 @@ add_library(
   "monad/dispatch_transaction.hpp"
   "monad/min_base_fee.cpp"
   "monad/min_base_fee.h"
-  "monad/monad_precompiles.cpp"
-  "monad/monad_precompiles.hpp"
   "monad/monad_precompiles_gas_cost_impl.cpp"
   "monad/monad_transaction_gas.cpp"
   "monad/monad_transaction_gas.hpp"
@@ -260,11 +258,6 @@ add_library(
   "monad/validate_monad_transaction.hpp"
   "monad/validate_system_transaction.cpp"
   "monad/validate_system_transaction.hpp"
-  # monad/ale
-  "monad/ale/application_encryption_contract.cpp"
-  "monad/ale/application_encryption_contract.hpp"
-  "monad/ale/application_encryption_error.cpp"
-  "monad/ale/application_encryption_error.hpp"
   # monad/reserve_balance
   "monad/reserve_balance/reserve_balance_contract.cpp"
   "monad/reserve_balance/reserve_balance_contract.hpp"
@@ -409,6 +402,14 @@ target_link_libraries(
     monad_execution_runloop
     PUBLIC monad_execution_native)
 monad_compile_options(monad_execution_runloop)
+
+# Public Monad precompile dispatcher.
+add_library(
+  monad_precompiles_native OBJECT
+  "monad/monad_precompiles.cpp"
+  "monad/monad_precompiles.hpp")
+target_link_libraries(monad_precompiles_native PUBLIC monad_execution_native)
+monad_compile_options(monad_precompiles_native)
 
 # ##############################################################################
 # unit tests

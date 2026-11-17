@@ -46,6 +46,8 @@ add_library(
   "spoke.hpp"
   "statesync.cpp"
   "statesync.hpp"
+  "statesync_listener.cpp"
+  "statesync_listener.hpp"
   "system_transaction.cpp"
   "system_transaction.hpp")
 

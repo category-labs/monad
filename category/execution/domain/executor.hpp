@@ -80,6 +80,9 @@ public:
         return next_block_;
     }
 
+    // The hash of the block before next_block(), which must not be 0.
+    bytes32_t latest_block_hash() const;
+
     // Executes `block`, which must be the next block. A block that fails to
     // execute is an error.
     Result<void> execute(DerivedDomainBlock const &block);

@@ -94,6 +94,12 @@ PrivateDomainExecutor::PrivateDomainExecutor(
         l1_chain_id_);
 }
 
+bytes32_t PrivateDomainExecutor::latest_block_hash() const
+{
+    MONAD_ASSERT(next_block_ > 0);
+    return block_hashes_.get(next_block_ - 1);
+}
+
 template <Traits traits>
     requires is_monad_trait_v<traits>
 Result<void>

@@ -37,6 +37,7 @@
 #include <boost/outcome/try.hpp>
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string_view>
@@ -136,6 +137,50 @@ Result<DerivationCursor> find_derivation_start(
     return DerivationCursor{.next_l1_block = high, .next_block = target};
 }
 
+Result<DerivationStart> plan_derivation_start(
+    L1Source const &l1, Address const &hub, uint64_t const domain_chain_id,
+    uint64_t const next_block)
+{
+    auto found = find_derivation_start(l1, hub, domain_chain_id, next_block);
+    if (found.has_value()) {
+        return DerivationStart{
+            .source = DerivationStart::Source::Logs,
+            .cursor = found.value(),
+            .pending = std::nullopt,
+            .pending_l1_block = 0};
+    }
+    if (found.error() != mpt::DbError::version_no_longer_exist) {
+        return std::move(found).as_failure();
+    }
+
+    // The L1 block of the next block has left the source's history. The hub
+    // recorded that block, so the domain is registered and the source has a
+    // finalized block.
+    uint64_t const l1_block = l1.latest_finalized();
+    BOOST_OUTCOME_TRY(
+        auto pending,
+        read_pending_domain_inputs(l1, hub, domain_chain_id, l1_block));
+    if (!pending.has_value()) {
+        return DomainDerivationError::MalformedInputQueue;
+    }
+    auto source = DerivationStart::Source::Pending;
+    if (pending->next_block > next_block) {
+        // Only an attested checkpoint releases blocks from the queue.
+        if (pending->attested_block_hash == bytes32_t{}) {
+            return DomainDerivationError::MalformedInputQueue;
+        }
+        source = DerivationStart::Source::Checkpoint;
+    }
+    DerivationCursor const cursor{
+        .next_l1_block = l1_block + 1,
+        .next_block = std::max(next_block, pending->next_block)};
+    return DerivationStart{
+        .source = source,
+        .cursor = cursor,
+        .pending = std::move(pending),
+        .pending_l1_block = l1_block};
+}
+
 PrivateDomainDeriver::PrivateDomainDeriver(
     L1Source const &l1, PrivateDomainKey const &key,
     uint64_t const domain_chain_id, Address const &hub, DerivationCursor cursor)
@@ -177,16 +222,19 @@ Result<void> PrivateDomainDeriver::derive_pending(
     PendingDomainInputs const &pending, uint64_t const l1_block_number,
     BlockHandler const &on_block)
 {
-    if (pending.next_block < cursor_.next_block) {
-        return DomainDerivationError::AheadOfHub;
-    }
     // Blocks between the cursor and the first the hub still holds are covered
     // by its checkpoint, and can only be derived from the L1 blocks' logs.
     if (pending.next_block > cursor_.next_block) {
         return DomainDerivationError::BehindCheckpoint;
     }
-    for (auto const &inputs : pending.blocks) {
-        BOOST_OUTCOME_TRY(derive_inputs(inputs, on_block));
+    // The blocks before the cursor's are already derived.
+    uint64_t const derived = cursor_.next_block - pending.next_block;
+    if (derived > pending.blocks.size()) {
+        return DomainDerivationError::AheadOfHub;
+    }
+    for (auto i = static_cast<size_t>(derived); i < pending.blocks.size();
+         ++i) {
+        BOOST_OUTCOME_TRY(derive_inputs(pending.blocks[i], on_block));
     }
     cursor_.next_l1_block = l1_block_number + 1;
     return outcome::success();

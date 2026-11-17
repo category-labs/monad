@@ -30,9 +30,12 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <map>
+#include <optional>
 #include <vector>
 
 using namespace monad;
@@ -47,10 +50,15 @@ namespace
     constexpr uint64_t CAPACITY = uint64_t{1} << 17;
 
     // The hub's storage of one domain, written as InputQueue.sol and
-    // DomainHub.sol write it.
+    // DomainHub.sol write it. What is written is the storage as of L1_BLOCK,
+    // the latest finalized L1 block; seal() keeps a copy as of an earlier one.
     class FakeHub final : public L1Source
     {
-        std::map<bytes32_t, bytes32_t> storage_;
+        using Storage = std::map<bytes32_t, bytes32_t>;
+
+        Storage storage_;
+        // The storage as of earlier L1 blocks, each until the next.
+        std::map<uint64_t, Storage> sealed_;
         uint64_t head_{0};
         uint64_t tail_{0};
 
@@ -72,6 +80,15 @@ namespace
         }
 
     public:
+        // The first L1 block the source still has.
+        uint64_t history_start{0};
+
+        // What is written so far is the storage from `l1_block_number` on.
+        void seal(uint64_t const l1_block_number)
+        {
+            sealed_[l1_block_number] = storage_;
+        }
+
         void store(uint64_t const index, bytes32_t const &value)
         {
             storage_[input_queue_slot(DOMAIN, index)] = value;
@@ -163,18 +180,26 @@ namespace
 
         uint64_t earliest() const override
         {
-            return L1_BLOCK;
+            return history_start;
         }
 
         Result<bytes32_t> read_storage(
             uint64_t const number, Address const &address,
             bytes32_t const &slot) const override
         {
-            if (number != L1_BLOCK) {
+            if (number < history_start || number > L1_BLOCK) {
                 return mpt::DbError::version_no_longer_exist;
             }
-            auto const it = storage_.find(slot);
-            if (address != HUB || it == storage_.end()) {
+            Storage const *storage = &storage_;
+            if (number != L1_BLOCK) {
+                auto const later = sealed_.upper_bound(number);
+                if (later == sealed_.begin()) {
+                    return bytes32_t{};
+                }
+                storage = &std::prev(later)->second;
+            }
+            auto const it = storage->find(slot);
+            if (address != HUB || it == storage->end()) {
                 return bytes32_t{};
             }
             return it->second;
@@ -456,4 +481,128 @@ TEST(InputQueue, rejects_a_queue_the_hub_cannot_have_written)
         hub.store(0, latest);
         expect_malformed(hub);
     }
+}
+
+namespace
+{
+    // A domain with a genesis from L1 block 100 and a block 1 from L1 block
+    // 104.
+    FakeHub two_blocks()
+    {
+        FakeHub hub;
+        hub.open_block(0, 100);
+        hub.seal(100);
+        hub.open_block(1, 104);
+        hub.push_input(1, 7, bytes(5, 1));
+        hub.seal(104);
+        return hub;
+    }
+
+    using Source = DerivationStart::Source;
+}
+
+TEST(DerivationStart, logs_while_the_l1_has_them)
+{
+    auto const hub = two_blocks();
+    for (uint64_t next_block = 0; next_block < 3; ++next_block) {
+        auto const start = plan_derivation_start(hub, HUB, DOMAIN, next_block);
+        ASSERT_TRUE(start.has_value());
+        EXPECT_EQ(start.value().source, Source::Logs);
+        EXPECT_FALSE(start.value().pending.has_value());
+        // The L1 block of the next block, or the one after the latest if the
+        // hub has no next block yet.
+        EXPECT_EQ(
+            start.value().cursor,
+            (DerivationCursor{
+                .next_l1_block =
+                    std::array<uint64_t, 3>{100, 104, 501}[next_block],
+                .next_block = next_block}));
+    }
+
+    // Before its registration a domain can only wait for it.
+    FakeHub const unregistered;
+    auto const start = plan_derivation_start(unregistered, HUB, DOMAIN, 0);
+    ASSERT_TRUE(start.has_value());
+    EXPECT_EQ(start.value().source, Source::Logs);
+    EXPECT_EQ(
+        start.value().cursor,
+        (DerivationCursor{.next_l1_block = 501, .next_block = 0}));
+}
+
+TEST(DerivationStart, the_hubs_queue_once_the_logs_are_gone)
+{
+    auto hub = two_blocks();
+    hub.history_start = 105;
+
+    // With no domain state, and with the genesis only.
+    for (uint64_t next_block = 0; next_block < 2; ++next_block) {
+        auto const start = plan_derivation_start(hub, HUB, DOMAIN, next_block);
+        ASSERT_TRUE(start.has_value());
+        EXPECT_EQ(start.value().source, Source::Pending);
+        EXPECT_EQ(start.value().pending_l1_block, L1_BLOCK);
+        ASSERT_TRUE(start.value().pending.has_value());
+        EXPECT_EQ(start.value().pending->next_block, 0);
+        EXPECT_EQ(start.value().pending->blocks.size(), 2);
+        EXPECT_EQ(
+            start.value().cursor,
+            (DerivationCursor{
+                .next_l1_block = L1_BLOCK + 1, .next_block = next_block}));
+    }
+
+    // A domain that has every block needs neither.
+    auto const start = plan_derivation_start(hub, HUB, DOMAIN, 2);
+    ASSERT_TRUE(start.has_value());
+    EXPECT_EQ(start.value().source, Source::Logs);
+    EXPECT_EQ(
+        start.value().cursor,
+        (DerivationCursor{.next_l1_block = L1_BLOCK + 1, .next_block = 2}));
+}
+
+TEST(DerivationStart, the_checkpoint_once_the_queue_is_past_the_domain)
+{
+    auto hub = two_blocks();
+    hub.attest(bytes32_t{0xabcd});
+    hub.open_block(2, 120);
+    hub.seal(120);
+    hub.history_start = 121;
+
+    // Blocks 0 and 1 are in neither the logs nor the queue.
+    for (uint64_t next_block = 0; next_block < 2; ++next_block) {
+        auto const start = plan_derivation_start(hub, HUB, DOMAIN, next_block);
+        ASSERT_TRUE(start.has_value());
+        EXPECT_EQ(start.value().source, Source::Checkpoint);
+        ASSERT_TRUE(start.value().pending.has_value());
+        EXPECT_EQ(
+            start.value().pending->attested_block_hash, bytes32_t{0xabcd});
+        EXPECT_EQ(start.value().pending->next_block, 2);
+        EXPECT_EQ(
+            start.value().cursor,
+            (DerivationCursor{.next_l1_block = L1_BLOCK + 1, .next_block = 2}));
+    }
+
+    // A domain at the checkpoint has the queue.
+    auto const start = plan_derivation_start(hub, HUB, DOMAIN, 2);
+    ASSERT_TRUE(start.has_value());
+    EXPECT_EQ(start.value().source, Source::Pending);
+    EXPECT_EQ(
+        start.value().cursor,
+        (DerivationCursor{.next_l1_block = L1_BLOCK + 1, .next_block = 2}));
+}
+
+TEST(DerivationStart, fails_on_a_domain_the_hub_does_not_have)
+{
+    auto hub = two_blocks();
+    auto ahead = plan_derivation_start(hub, HUB, DOMAIN, 5);
+    ASSERT_TRUE(ahead.has_error());
+    EXPECT_EQ(ahead.error(), DomainDerivationError::AheadOfHub);
+
+    // The queue starts after the domain's next block, with no checkpoint to
+    // have released the blocks before.
+    hub.attest(bytes32_t{});
+    hub.open_block(2, 120);
+    hub.seal(120);
+    hub.history_start = 121;
+    auto const released = plan_derivation_start(hub, HUB, DOMAIN, 1);
+    ASSERT_TRUE(released.has_error());
+    EXPECT_EQ(released.error(), DomainDerivationError::MalformedInputQueue);
 }

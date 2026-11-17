@@ -307,7 +307,9 @@ add_subdirectory("category/rpc")
 add_subdirectory("category/statesync")
 add_subdirectory("category/vm")
 
-# Each runtime links its own Monad precompile dispatcher.
+# Assemble separate archives, each with its Monad precompile dispatcher.
+# monad_execution is the native execution client whereas monad_domain
+# supports Private Settlement Domains.
 foreach(runtime monad_execution monad_domain)
   add_library(${runtime})
   target_link_libraries(

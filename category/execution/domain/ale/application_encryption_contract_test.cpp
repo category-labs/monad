@@ -13,29 +13,68 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/assert.h>
 #include <category/core/hex.hpp>
+#include <category/execution/domain/ale/application_encryption_contract.hpp>
+#include <category/execution/domain/ale/application_encryption_error.hpp>
+#include <category/execution/domain/hpke.hpp>
+#include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/core/contract/abi_decode_error.hpp>
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/state_host.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
-#include <category/execution/monad/ale/application_encryption_contract.hpp>
-#include <category/execution/monad/ale/application_encryption_error.hpp>
+#include <category/execution/ethereum/tx_context.hpp>
+#include <category/execution/monad/chain/monad_chain.hpp>
+#include <category/execution/monad/reserve_balance/reserve_balance_contract.hpp>
+#include <category/execution/monad/staking/util/constants.hpp>
 #include <category/mpt/db.hpp>
 #include <category/vm/vm.hpp>
 
 #include <gtest/gtest.h>
+#include <nlohmann/json.hpp>
 
 #include <cstddef>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <memory>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <unistd.h>
+#include <utility>
+#include <vector>
 
 using namespace monad;
 
 namespace
 {
+    constexpr uint64_t SOURCE_DOMAIN = 0x520000004eaf;
     constexpr uint64_t DESTINATION_DOMAIN = 0x510000004eaf;
+    constexpr Address SPOKE_CA{0x12345678};
+
+    domain::PrivateDomainKey load_test_key()
+    {
+        std::string path = "/tmp/monad-ale-key-XXXXXX";
+        int const fd = ::mkstemp(path.data());
+        MONAD_ASSERT(fd != -1);
+        ::close(fd);
+        {
+            std::ofstream stream{path, std::ios::binary};
+            stream << R"(-----BEGIN PRIVATE KEY-----
+MC4CAQAwBQYDK2VuBCIEIBERERERERERERERERERERERERERERERERERERERERER
+-----END PRIVATE KEY-----
+)";
+            EXPECT_TRUE(stream.good());
+        }
+        auto key = domain::PrivateDomainKey::load(path);
+        std::filesystem::remove(path);
+        return std::move(key).value();
+    }
 
     // Independently computed with cthash: Keccak-256 of these two ABI words,
     // representing the destination domain and the mapping's root slot (7):
@@ -56,8 +95,160 @@ struct ApplicationEncryptionContractTest : public ::testing::Test
     BlockState block_state{trie_db, vm};
     State state{block_state, Incarnation{0, 0}};
     NoopCallTracer call_tracer;
-    ApplicationEncryptionContract contract{state, call_tracer};
+    domain::PrivateDomainKey const key = load_test_key();
+    ApplicationEncryptionContext const encryption_context{
+        SOURCE_DOMAIN, key, SPOKE_CA};
+    ApplicationEncryptionContract contract{
+        state, call_tracer, encryption_context};
 };
+
+TEST(ApplicationEncryptionPrecompile, domain_availability)
+{
+    using traits = MonadTraits<MONAD_NEXT>;
+    EXPECT_TRUE(is_precompile<traits>(Address{1}));
+    EXPECT_TRUE(is_precompile<traits>(ALE_CA));
+    EXPECT_FALSE(is_precompile<traits>(staking::STAKING_CA));
+    EXPECT_FALSE(is_precompile<traits>(RESERVE_BALANCE_CA));
+    EXPECT_FALSE(is_precompile<traits>(Address{0x1234}));
+    EXPECT_FALSE(is_precompile<MonadTraits<MONAD_TEN>>(ALE_CA));
+    EXPECT_FALSE(is_precompile<MonadTraits<MONAD_THREE>>(staking::STAKING_CA));
+}
+
+TEST_F(ApplicationEncryptionContractTest, domain_host_warming)
+{
+    using traits = MonadTraits<MONAD_NEXT>;
+    auto chain_ctx = ChainContext<traits>::debug_empty();
+    chain_ctx.private_domain = true;
+    chain_ctx.encryption_context = &encryption_context;
+    BlockHashBufferFinalized const block_hashes;
+    Transaction const tx{};
+    trace::StateTracer state_tracer{std::monostate{}};
+    StateHost<traits> host{
+        call_tracer,
+        state_tracer,
+        EMPTY_TX_CONTEXT,
+        block_hashes,
+        state,
+        tx,
+        std::nullopt,
+        0,
+        chain_ctx};
+    EXPECT_EQ(host.access_account(Address{1}), AccessStatus::Warm);
+    EXPECT_EQ(host.access_account(ALE_CA), AccessStatus::Warm);
+    EXPECT_EQ(host.access_account(staking::STAKING_CA), AccessStatus::Cold);
+    EXPECT_EQ(host.access_account(RESERVE_BALANCE_CA), AccessStatus::Cold);
+    EXPECT_EQ(host.access_account(staking::STAKING_CA), AccessStatus::Warm);
+    EXPECT_EQ(host.access_account(RESERVE_BALANCE_CA), AccessStatus::Warm);
+}
+
+TEST_F(ApplicationEncryptionContractTest, domain_access_list)
+{
+    using traits = MonadTraits<MONAD_NEXT>;
+    for (auto const address :
+         {Address{1}, ALE_CA, staking::STAKING_CA, RESERVE_BALANCE_CA}) {
+        (void)state.access_account(address);
+    }
+    nlohmann::json output;
+    std::vector<std::optional<Address>> const authorities;
+    trace::AccessListTracer tracer{
+        output, Address{}, Address{}, std::nullopt, authorities};
+    tracer.encode<traits>(state);
+    std::vector<Address> addresses;
+    for (auto const &entry : output) {
+        addresses.push_back(
+            *from_hex<Address>(entry["address"].get<std::string>()));
+    }
+    EXPECT_EQ(
+        addresses,
+        (std::vector<Address>{staking::STAKING_CA, RESERVE_BALANCE_CA}));
+}
+
+TEST_F(
+    ApplicationEncryptionContractTest,
+    domain_dispatch_excludes_public_contracts)
+{
+    using traits = MonadTraits<MONAD_NEXT>;
+    for (auto const address : {staking::STAKING_CA, RESERVE_BALANCE_CA}) {
+        vm::Message const msg{.code_address = address};
+        EXPECT_FALSE(
+            check_call_precompile<traits>(state, call_tracer, msg, false)
+                .has_value());
+    }
+}
+
+TEST_F(ApplicationEncryptionContractTest, dispatch_receives_encryption_context)
+{
+    using traits = MonadTraits<MONAD_NEXT>;
+    state.set_nonce(SPOKE_CA, 1);
+    state.set_storage(SPOKE_CA, DESTINATION_KEY_SLOT, DESTINATION_KEY);
+    AbiEncoder encoder;
+    encoder.add_bytes(byte_string{0xab});
+    encoder.add_uint(u64_be{DESTINATION_DOMAIN});
+    encoder.add_address(Address{0x1234});
+    encoder.add_bytes(byte_string{0xcd});
+    byte_string const input =
+        byte_string{0x60, 0x7c, 0x42, 0xc9} + encoder.encode_final();
+    vm::Message const msg{
+        .kind = vm::CallKind::Call,
+        .gas = 1'000,
+        .recipient = ALE_CA,
+        .sender = Address{0x4321},
+        .input_data = input.data(),
+        .input_size = input.size(),
+        .code_address = ALE_CA};
+
+    auto const missing_context =
+        check_call_precompile<traits>(state, call_tracer, msg, false);
+    ASSERT_TRUE(missing_context.has_value());
+    EXPECT_EQ(missing_context->status_code, CallStatus::Rejected);
+
+    auto unrelated_msg = msg;
+    unrelated_msg.recipient = Address{0x1234};
+    unrelated_msg.code_address = unrelated_msg.recipient;
+    EXPECT_FALSE(
+        check_call_precompile<traits>(state, call_tracer, unrelated_msg, false)
+            .has_value());
+    EXPECT_FALSE(
+        check_call_precompile<MonadTraits<MONAD_TEN>>(
+            state, call_tracer, msg, false)
+            .has_value());
+
+    auto chain_ctx = ChainContext<traits>::debug_empty();
+    chain_ctx.private_domain = true;
+    auto const missing_encryption_context = check_call_precompile<traits>(
+        state, call_tracer, msg, false, &chain_ctx);
+    ASSERT_TRUE(missing_encryption_context.has_value());
+    EXPECT_EQ(missing_encryption_context->status_code, CallStatus::Rejected);
+
+    chain_ctx.encryption_context = &encryption_context;
+    chain_ctx.private_domain = false;
+    auto const public_context = check_call_precompile<traits>(
+        state, call_tracer, msg, false, &chain_ctx);
+    ASSERT_TRUE(public_context.has_value());
+    EXPECT_EQ(public_context->status_code, CallStatus::Rejected);
+
+    chain_ctx.private_domain = true;
+    BlockHashBufferFinalized const block_hashes;
+    Transaction const tx{};
+    trace::StateTracer state_tracer{std::monostate{}};
+    StateHost<traits> host{
+        call_tracer,
+        state_tracer,
+        EMPTY_TX_CONTEXT,
+        block_hashes,
+        state,
+        tx,
+        std::nullopt,
+        0,
+        chain_ctx};
+    auto const result = execute_call_message<traits>(&host, state, msg);
+    EXPECT_EQ(result.status_code, CallStatus::Revert);
+    EXPECT_EQ(
+        (std::string_view{
+            reinterpret_cast<char const *>(result.output_data),
+            result.output_size}),
+        "application encryption is not implemented");
+}
 
 TEST_F(ApplicationEncryptionContractTest, destination_key_rejects_missing_spoke)
 {

@@ -15,13 +15,14 @@
 
 #include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
+#include <category/execution/domain/ale/application_encryption_contract.hpp>
+#include <category/execution/domain/ale/application_encryption_error.hpp>
+#include <category/execution/domain/hpke.hpp>
 #include <category/execution/ethereum/core/contract/abi_decode.hpp>
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
 #include <category/execution/ethereum/core/contract/abi_signatures.hpp>
 #include <category/execution/ethereum/core/contract/big_endian.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
-#include <category/execution/monad/ale/application_encryption_contract.hpp>
-#include <category/execution/monad/ale/application_encryption_error.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 
 #include <boost/outcome/try.hpp>
@@ -107,10 +108,13 @@ Result<bytes32_t> read_destination_key(
 }
 
 ApplicationEncryptionContract::ApplicationEncryptionContract(
-    State &state, CallTracerBase &tracer, bool const log_native_transfers)
+    State &state, CallTracerBase &tracer,
+    ApplicationEncryptionContext const &encryption_context,
+    bool const log_native_transfers)
     : state_{state}
     , call_tracer_{tracer}
     , log_native_transfers_{log_native_transfers}
+    , encryption_context_{encryption_context}
 {
 }
 
@@ -172,11 +176,11 @@ Result<byte_string> ApplicationEncryptionContract::precompile_seal_message(
         [[maybe_unused]] auto const key,
         read_destination_key(
             state_,
-            SPOKE_CA,
+            encryption_context_.spoke,
             SPOKE_VIEWING_KEYS_SLOT,
             destination_domain.native()));
 
-    // TODO: Obtain the source domain from execution context. Encode AD as
+    // TODO: Encode AD with encryption_context_.domain_chain_id as source:
     // abi.encode("monad-cross-domain-encryption-v1", source_domain,
     // destination_domain, sequence_number), preserving the uint256 nonce.
     // TODO: Derive randomness from the domain seed, sequence number, caller,
@@ -218,7 +222,10 @@ Result<byte_string> ApplicationEncryptionContract::precompile_seal(
     BOOST_OUTCOME_TRY(
         [[maybe_unused]] auto const key,
         read_destination_key(
-            state_, SPOKE_CA, SPOKE_VIEWING_KEYS_SLOT, dest_domain.native()));
+            state_,
+            encryption_context_.spoke,
+            SPOKE_VIEWING_KEYS_SLOT,
+            dest_domain.native()));
     // TODO: derive deterministic randomness
     // from seed_D, the counter, msg.sender, tx_ctx, epk, ad and blob.
     // TODO: Seal the blob with ad, update the counter and encode the
@@ -227,7 +234,8 @@ Result<byte_string> ApplicationEncryptionContract::precompile_seal(
 }
 
 Result<byte_string> ApplicationEncryptionContract::precompile_unseal(
-    byte_string_view input, Address const &, uint256_be_t const &msg_value)
+    byte_string_view input, Address const &msg_sender,
+    uint256_be_t const &msg_value)
 {
     if (std::ranges::any_of(
             msg_value.bytes, [](uint8_t const byte) { return byte != 0; })) {
@@ -242,16 +250,15 @@ Result<byte_string> ApplicationEncryptionContract::precompile_unseal(
         [[maybe_unused]] byte_string_view sealed_blob,
         abi_decode_dynamic_bytes_tail(input));
     BOOST_OUTCOME_TRY(
-        [[maybe_unused]] byte_string_view app_ctx,
-        abi_decode_dynamic_bytes_tail(input));
+        byte_string_view app_ctx, abi_decode_dynamic_bytes_tail(input));
 
     // Unseal (sealed_blob, app_ctx) for msg_sender on the executing domain.
     // TODO: Specify the length-based gas schedule. Input excludes the selector.
 
-    // TODO: Obtain the domain's esk_D.
-    // TODO: Use sealed_blob_ad with the executing domain, msg.sender and
-    // app_ctx; open the blob and encode its plaintext. Do not increment the
-    // counter.
+    [[maybe_unused]] auto const ad = sealed_blob_ad(
+        encryption_context_.domain_chain_id, msg_sender, app_ctx);
+    // TODO: Open with encryption_context_.key and ad, then encode the
+    // plaintext. Do not increment the counter.
     // TODO: Enforce empty revert data for every unseal failure and the
     // specified length-based gas charge in the wrapper before registration.
     return ApplicationEncryptionError::NotImplemented;

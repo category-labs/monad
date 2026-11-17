@@ -20,6 +20,7 @@
 #include <category/core/fiber/priority_pool.hpp>
 #include <category/core/int.hpp>
 #include <category/core/result.hpp>
+#include <category/execution/domain/ale/application_encryption_context.hpp>
 #include <category/execution/domain/config.hpp>
 #include <category/execution/domain/derive_domain_block.hpp>
 #include <category/execution/domain/execute_domain_block.hpp>
@@ -120,7 +121,8 @@ template <Traits traits>
 Result<std::vector<Receipt>> execute_domain_block(
     DomainChain const &chain, DerivedDomainBlock const &derived,
     BlockHeader const &header, BlockState &block_state,
-    BlockHashBuffer const &block_hashes, fiber::PriorityPool &priority_pool)
+    BlockHashBuffer const &block_hashes, fiber::PriorityPool &priority_pool,
+    ApplicationEncryptionContext const *const encryption_context)
 {
     // No private domain runs an earlier revision. Some of those would not
     // store the parent's hash in state: see set_block_hash_history.
@@ -128,6 +130,9 @@ Result<std::vector<Receipt>> execute_domain_block(
         traits::monad_rev() >= MONAD_TEN,
         "private domains are not supported before MONAD_TEN");
 
+    MONAD_ASSERT(
+        encryption_context == nullptr ||
+        chain.get_chain_id() == encryption_context->domain_chain_id);
     auto const &transactions = derived.transactions;
     MONAD_ASSERT(derived.senders.size() == transactions.size());
 
@@ -154,7 +159,8 @@ Result<std::vector<Receipt>> execute_domain_block(
         .senders_and_authorities = senders_and_authorities,
         .senders = derived.senders,
         .authorities = authorities,
-        .private_domain = true};
+        .private_domain = true,
+        .encryption_context = encryption_context};
 
     std::vector<std::unique_ptr<CallTracerBase>> call_tracers{
         transactions.size()};

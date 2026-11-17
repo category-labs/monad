@@ -68,7 +68,8 @@ MONAD_DOMAIN_NAMESPACE_BEGIN
 PrivateDomainExecutor::PrivateDomainExecutor(
     MonadChain const &l1_chain, uint64_t const domain_chain_id,
     Address const &hub, mpt::Db &db, vm::VM &vm,
-    fiber::PriorityPool &priority_pool)
+    fiber::PriorityPool &priority_pool,
+    ApplicationEncryptionContext const *const encryption_context)
     : chain_{l1_chain, domain_chain_id}
     , domain_chain_id_{domain_chain_id}
     , l1_chain_id_{static_cast<uint64_t>(l1_chain.get_chain_id())}
@@ -76,6 +77,7 @@ PrivateDomainExecutor::PrivateDomainExecutor(
     , db_{db}
     , vm_{vm}
     , priority_pool_{priority_pool}
+    , encryption_context_{encryption_context}
 {
     auto const finalized = db.get_latest_finalized_version();
     if (finalized == mpt::INVALID_BLOCK_NUM) {
@@ -125,7 +127,8 @@ PrivateDomainExecutor::execute_block(DerivedDomainBlock const &block)
             header,
             block_state,
             NoBlockHashBuffer{},
-            priority_pool_));
+            priority_pool_,
+            encryption_context_));
     auto [state, code, _] = std::move(block_state).release();
 
     // The block is finalized at once, so its proposal id only has to be

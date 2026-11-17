@@ -29,6 +29,7 @@ MONAD_DOMAIN_NAMESPACE_BEGIN
 
 class L1Source;
 class PrivateDomainKey;
+struct PendingDomainInputs;
 
 // Where derivation of a domain is: the next L1 block to derive, and the
 // number the domain's next block gets, 0 before genesis. It is not saved:
@@ -91,6 +92,20 @@ public:
     // if any, to `on_block`. Returns whether it derived. On failure the cursor
     // does not move.
     Result<bool> derive_next(BlockHandler const &on_block);
+
+    // Derives the blocks of `pending`, which the hub held as of finalized L1
+    // block `l1_block_number`, passes each to `on_block`, and continues with
+    // the L1 block after it. The cursor must be at the first of those blocks.
+    // On failure the cursor stays at the block that failed.
+    Result<void> derive_pending(
+        PendingDomainInputs const &pending, uint64_t l1_block_number,
+        BlockHandler const &on_block);
+
+private:
+    // Derives the block of `inputs`, if they yield one, and passes it to
+    // `on_block`.
+    Result<void>
+    derive_inputs(DomainInputs const &inputs, BlockHandler const &on_block);
 };
 
 MONAD_DOMAIN_NAMESPACE_END

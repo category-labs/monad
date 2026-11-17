@@ -26,6 +26,8 @@
 #include <category/execution/domain/derive_domain_block.hpp>
 #include <category/execution/domain/domain_block.hpp>
 #include <category/execution/domain/hpke.hpp>
+#include <category/execution/domain/input_queue.hpp>
+#include <category/execution/domain/inputs.hpp>
 #include <category/execution/domain/l1_source.hpp>
 #include <category/execution/domain/spoke.hpp>
 #include <category/execution/domain/system_transaction.hpp>
@@ -445,4 +447,83 @@ TEST_F(PrivateDomainDeriverTest, fails_on_inputs_before_registration)
     ASSERT_TRUE(derived.has_error());
     EXPECT_EQ(derived.error(), DomainDerivationError::NotRegistered);
     EXPECT_EQ(deriver.cursor(), DerivationCursor{});
+}
+
+TEST_F(PrivateDomainDeriverTest, derives_the_inputs_the_hub_holds)
+{
+    PendingDomainInputs pending;
+    pending.blocks.push_back(DomainInputs{
+        .l1_block_number = 3,
+        .timestamp = 1'003,
+        .prev_randao = bytes32_t{0x77},
+        .slot_number = 0,
+        .registered = true,
+        .inputs = {}});
+    pending.blocks.push_back(DomainInputs{
+        .l1_block_number = 5,
+        .timestamp = 1'005,
+        .prev_randao = bytes32_t{0x78},
+        .slot_number = 0,
+        .registered = false,
+        .inputs = {L1DomainMessage{
+            .source_chain_id = NETWORK_CHAIN_ID,
+            .from = Address{0x1111},
+            .to = Address{0x2222},
+            .data = byte_string{0xca, 0xfe},
+            .nonce = 0,
+            .fee = 300'000 * DOMAIN_GAS_PRICE}}});
+
+    auto deriver = make_deriver();
+    std::vector<DerivedDomainBlock> blocks;
+    auto const derived = deriver.derive_pending(
+        pending, 9, [&](DerivedDomainBlock const &block) -> Result<void> {
+            blocks.push_back(block);
+            return outcome::success();
+        });
+    ASSERT_TRUE(derived.has_value());
+    // Derivation continues with the L1 block after the one the inputs were
+    // read at.
+    EXPECT_EQ(
+        deriver.cursor(),
+        (DerivationCursor{.next_l1_block = 10, .next_block = 2}));
+    ASSERT_EQ(blocks.size(), 2);
+    EXPECT_EQ(blocks[0].number, 0);
+    EXPECT_EQ(blocks[0].l1_block_number, 3);
+    EXPECT_TRUE(blocks[0].transactions.empty());
+    EXPECT_EQ(blocks[1].number, 1);
+    EXPECT_EQ(blocks[1].timestamp, 1'005);
+    EXPECT_EQ(blocks[1].prev_randao, bytes32_t{0x78});
+    ASSERT_EQ(blocks[1].transactions.size(), 1);
+    EXPECT_EQ(blocks[1].senders[0], DOMAIN_SYSTEM_RELAYER);
+}
+
+TEST_F(PrivateDomainDeriverTest, held_inputs_must_start_at_the_next_block)
+{
+    PendingDomainInputs pending;
+    pending.next_block = 2;
+    auto const on_block = [](DerivedDomainBlock const &) -> Result<void> {
+        return outcome::success();
+    };
+
+    // The hub released blocks 0 and 1, which the domain does not have.
+    auto behind = make_deriver();
+    auto derived = behind.derive_pending(pending, 9, on_block);
+    ASSERT_TRUE(derived.has_error());
+    EXPECT_EQ(derived.error(), DomainDerivationError::BehindCheckpoint);
+    EXPECT_EQ(behind.cursor(), DerivationCursor{});
+
+    auto ahead =
+        make_deriver(DerivationCursor{.next_l1_block = 4, .next_block = 5});
+    derived = ahead.derive_pending(pending, 9, on_block);
+    ASSERT_TRUE(derived.has_error());
+    EXPECT_EQ(derived.error(), DomainDerivationError::AheadOfHub);
+
+    // Nothing is held for a domain that is at the checkpoint.
+    auto at_checkpoint =
+        make_deriver(DerivationCursor{.next_l1_block = 4, .next_block = 2});
+    derived = at_checkpoint.derive_pending(pending, 9, on_block);
+    ASSERT_TRUE(derived.has_value());
+    EXPECT_EQ(
+        at_checkpoint.cursor(),
+        (DerivationCursor{.next_l1_block = 10, .next_block = 2}));
 }

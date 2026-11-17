@@ -41,6 +41,12 @@ enum class DomainDerivationError
     // The domain db has blocks the hub has not recorded, so it does not belong
     // to this L1 chain.
     AheadOfHub,
+    // The domain's input queue in the hub's storage does not have the layout
+    // the hub writes.
+    MalformedInputQueue,
+    // The hub's checkpoint covers blocks the domain db does not have yet, so
+    // the hub no longer holds their inputs.
+    BehindCheckpoint,
 };
 
 MONAD_DOMAIN_NAMESPACE_END

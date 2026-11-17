@@ -609,6 +609,16 @@ else()
         "${CMAKE_CURRENT_SOURCE_DIR}/../..")
     add_test(NAME monad-zkvm-hash-test COMMAND monad-zkvm-hash-test)
 
+    # uint256_t's ZisK branches, checked on the host. The test links no
+    # monad library, whose copies of the operators would lack those branches.
+    add_executable(monad-zkvm-uint256-test test/uint256_zisk_test.cpp)
+    monad_compile_options(monad-zkvm-uint256-test)
+    target_compile_definitions(monad-zkvm-uint256-test PRIVATE MONAD_ZKVM_ZISK)
+    target_include_directories(monad-zkvm-uint256-test PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/../..")
+    target_link_libraries(monad-zkvm-uint256-test PRIVATE intx::intx)
+    add_test(NAME monad-zkvm-uint256-test COMMAND monad-zkvm-uint256-test)
+
 endif()
 
 # ---- Guest sources, shared by both modes ----

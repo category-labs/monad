@@ -58,6 +58,9 @@ ADD --checksum=sha256:3e2b02d49fe903eda4fd8caca5cbf0d139c470e97e1de9a85299b1b034
 ADD --checksum=sha256:a19da286fec086ecd82ce06057e0afa3219d4f28bc1e07a3adffad2e1bd4757e \
     https://github.com/monad-developers/execution-specs/releases/download/tests-monad@v1.3.0/fixtures_monad.tar.gz \
     /fixtures/
+ADD --checksum=sha256:183279b9cae654cbc90d550fdf8cae09ce1459563a2f8b2b4b4e95a8552c0ada \
+    https://github.com/category-labs/monad/releases/download/mainnet-replay-v1/fixtures_monad_mainnet_replay.tar.zst \
+    /fixtures/
 
 FROM base AS build_and_test
 

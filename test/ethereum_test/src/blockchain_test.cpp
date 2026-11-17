@@ -323,7 +323,8 @@ Result<BlockExecOutput> execute(
     monad::Db &db, vm::VM &vm, BlockHashBuffer const &block_hash_buffer,
     std::map<uint64_t, ankerl::unordered_dense::segmented_set<Address>>
         &senders_and_authorities_map,
-    bool enable_tracing, std::vector<Receipt> &receipts,
+    bool enable_tracing, bool const partial_state,
+    std::vector<Receipt> &receipts,
     std::vector<std::vector<CallFrame>> &call_frames,
     ExecutionEventRecorder *const exec_recorder)
 {
@@ -443,6 +444,9 @@ Result<BlockExecOutput> execute(
     exec_output.eth_block_hash =
         to_bytes(keccak256(rlp::encode_block_header(exec_output.eth_header)));
 
+    if (partial_state) {
+        block.header.state_root = exec_output.eth_header.state_root;
+    }
     BOOST_OUTCOME_TRY(
         validate_output_header(block.header, exec_output.eth_header));
 
@@ -455,7 +459,8 @@ Result<std::vector<Receipt>> execute_and_record(
     monad::Db &db, vm::VM &vm, BlockHashBuffer const &block_hash_buffer,
     std::map<uint64_t, ankerl::unordered_dense::segmented_set<Address>>
         &senders_and_authorities_map,
-    bool enable_tracing, ExecutionEventRecorder *const exec_recorder)
+    bool enable_tracing, bool const partial_state,
+    ExecutionEventRecorder *const exec_recorder)
 {
     record_block_start(
         exec_recorder,
@@ -484,6 +489,7 @@ Result<std::vector<Receipt>> execute_and_record(
             block_hash_buffer,
             senders_and_authorities_map,
             enable_tracing,
+            partial_state,
             receipts,
             call_frames,
             exec_recorder));
@@ -536,11 +542,38 @@ void process_test(
         ankerl::unordered_dense::segmented_set<Address>{};
     BlockHeader parent_header = json_state.header;
 
+    uint64_t genesis_number = parent_header.number;
+    auto genesis_hash =
+        j_contents.at("genesisBlockHeader").at("hash").get<bytes32_t>();
+    bool const partial_state = j_contents.contains("_replay");
+    if (partial_state) {
+        for (auto const &j_rlp :
+             j_contents.at("_replay").at("ancestorBlocks")) {
+            auto const rlp = j_rlp.get<byte_string>();
+            byte_string_view rlp_view{rlp};
+            auto const ancestor = rlp::decode_block(rlp_view);
+            ASSERT_TRUE(ancestor.has_value() && rlp_view.empty()) << name;
+            auto const &txs = ancestor.value().transactions;
+            auto const &header = ancestor.value().header;
+            block_hash_buffer.set(header.number - 1, header.parent_hash);
+            // A replay fixture's genesis header stands in for its parent.
+            genesis_number = header.number;
+            genesis_hash =
+                to_bytes(keccak256(rlp::encode_block_header(header)));
+            std::vector<Address> senders;
+            for (auto const &sender : recover_senders(txs, *pool_)) {
+                ASSERT_TRUE(sender.has_value()) << name;
+                senders.push_back(sender.value());
+            }
+            senders_and_authorities_map[header.number] =
+                combine_senders_and_authorities(
+                    senders, recover_authorities(txs, *pool_));
+        }
+    }
+
     // The buffer holds only accepted blocks: a rejected block's parent_hash is
     // not validated until after execution, and it may be followed by a sibling.
-    block_hash_buffer.set(
-        parent_header.number,
-        j_contents.at("genesisBlockHeader").at("hash").get<bytes32_t>());
+    block_hash_buffer.set(genesis_number, genesis_hash);
 
     for (auto const &j_block : j_contents.at("blocks")) {
 
@@ -573,6 +606,7 @@ void process_test(
             block_hash_buffer,
             senders_and_authorities_map,
             enable_tracing,
+            partial_state,
             opt_exec_recorder ? std::addressof(*opt_exec_recorder) : nullptr);
 
         ExecutionEvents exec_events{};

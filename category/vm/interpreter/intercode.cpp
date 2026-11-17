@@ -95,9 +95,11 @@ namespace monad::vm::interpreter
             lift(__m256i const nk, __m256i const pos, __m256i const lane)
             {
                 __m256i const q = _mm256_shuffle_epi8(nk, pos);
-                __m256i const le =
-                    _mm256_cmpeq_epi8(_mm256_max_epu8(q, lane), lane);
-                return _mm256_blendv_epi8(pos, q, le);
+                // q is zero or an encoded successor in [0x71, 0xa0].
+                // lane is in [0x70, 0x7f], so lane - q fits a signed byte.
+                // Its sign bit selects pos precisely when q > lane.
+                __m256i const gt = _mm256_sub_epi8(lane, q);
+                return _mm256_blendv_epi8(q, pos, gt);
             }
 
             [[gnu::always_inline]] inline __m256i square(__m256i const n)
@@ -144,7 +146,6 @@ namespace monad::vm::interpreter
             // clang-format on
             __m256i const jumpdest =
                 _mm256_set1_epi8(static_cast<char>(EvmOpCode::JUMPDEST));
-            __m256i const minus_one = _mm256_set1_epi8(-1);
             __m128i const sixteen = _mm_set1_epi8(16);
 
             __m128i entry = _mm_set1_epi8(0x70);
@@ -178,9 +179,10 @@ namespace monad::vm::interpreter
                     _mm256_cmpeq_epi8(_mm256_shuffle_epi8(n0, pos), lane));
                 // An entry past its block (inside a long PUSH) has its sign bit
                 // set; such blocks contribute no instruction starts.
-                __m256i const in_block = _mm256_cmpgt_epi8(entries, minus_one);
+                // movemask observes only sign bits: clear those bits directly
+                // from entries instead of constructing a full in-block mask.
                 __m256i const jd = _mm256_and_si256(
-                    _mm256_and_si256(start, in_block),
+                    _mm256_andnot_si256(entries, start),
                     _mm256_cmpeq_epi8(op, jumpdest));
                 auto const mask =
                     static_cast<uint32_t>(_mm256_movemask_epi8(jd));

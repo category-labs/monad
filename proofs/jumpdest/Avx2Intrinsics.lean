@@ -70,6 +70,10 @@ def _mm256_set_m128i (hi lo : __m128i) : __m256i := hi ++ lo
     [Clang documentation](https://clang.llvm.org/doxygen/avx2intrin_8h.html#a7aa1c61703591f6572722d01e3c371b2). -/
 def _mm256_add_epi8 (a b : __m256i) : __m256i := zipBytes (· + ·) a b
 
+/-- VPSUBB (YMM): wrapping byte subtraction.
+    [Clang documentation](https://clang.llvm.org/doxygen/avx2intrin_8h.html). -/
+def _mm256_sub_epi8 (a b : __m256i) : __m256i := zipBytes (· - ·) a b
+
 /-- VPSUBB (XMM), or legacy PSUBB: wrapping byte subtraction.
     [Clang documentation](https://clang.llvm.org/doxygen/emmintrin_8h.html#ac1eb656086c60d309fde37490a736414). -/
 def _mm_sub_epi8 (a b : __m128i) : __m128i := zipBytes (· - ·) a b
@@ -127,6 +131,10 @@ def _mm256_or_si256 (a b : __m256i) : __m256i := a ||| b
 /-- VPAND (YMM): bitwise AND.
     [Clang documentation](https://clang.llvm.org/doxygen/avx2intrin_8h.html#aad42e1dec834b7dd756a66fcedef644c). -/
 def _mm256_and_si256 (a b : __m256i) : __m256i := a &&& b
+
+/-- VPANDN (YMM): bitwise AND of the complemented first operand and the second.
+    [Clang documentation](https://clang.llvm.org/doxygen/avx2intrin_8h.html). -/
+def _mm256_andnot_si256 (a b : __m256i) : __m256i := (~~~a) &&& b
 
 /-- VPMOVMSKB (YMM): byte i's high bit becomes scalar mask bit i.
     C++ returns a signed `int`; this model returns the same 32 bits as a

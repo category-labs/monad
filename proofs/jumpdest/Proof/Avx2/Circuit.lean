@@ -12,7 +12,6 @@ theorem pair_circuit (op : __m256i) (skip : Byte) (entry : __m128i)
     (lane_bias : __m256i)
     (lane : __m256i)
     (jumpdest : __m256i)
-    (minus_one : __m256i)
     (sixteen : __m128i)
     (n0 : __m256i)
     (n1 : __m256i)
@@ -29,7 +28,6 @@ theorem pair_circuit (op : __m256i) (skip : Byte) (entry : __m128i)
     (pos2 : __m256i)
     (pos : __m256i)
     (start : __m256i)
-    (in_block : __m256i)
     (jd : __m256i)
     (mask : BitVec 32)
     (hskip : skip ≤ 32) (hentry : entry = _mm_set1_epi8 (0x70 + skip))
@@ -45,7 +43,6 @@ theorem pair_circuit (op : __m256i) (skip : Byte) (entry : __m128i)
     0x70, 0x71, 0x72, 0x73, 0x74, 0x75, 0x76, 0x77,
     0x78, 0x79, 0x7a, 0x7b, 0x7c, 0x7d, 0x7e, 0x7f])
     (h_jumpdest : jumpdest = _mm256_set1_epi8 EvmOpCode.JUMPDEST)
-    (h_minus_one : minus_one = _mm256_set1_epi8 (-1))
     (h_sixteen : sixteen = _mm_set1_epi8 16)
     (h_n0 : n0 = _mm256_add_epi8 (_mm256_max_epi8 op len_floor) lane_bias)
     (h_n1 : n1 = square n0)
@@ -66,9 +63,8 @@ theorem pair_circuit (op : __m256i) (skip : Byte) (entry : __m128i)
     (h_start : start = _mm256_or_si256
     (_mm256_cmpeq_epi8 pos lane)
     (_mm256_cmpeq_epi8 (_mm256_shuffle_epi8 n0 pos) lane))
-    (h_in_block : in_block = _mm256_cmpgt_epi8 entries minus_one)
     (h_jd : jd = _mm256_and_si256
-    (_mm256_and_si256 start in_block)
+    (_mm256_andnot_si256 entries start)
     (_mm256_cmpeq_epi8 op jumpdest))
     (h_mask : mask = _mm256_movemask_epi8 jd)
     : (mask, entry_next) =
@@ -77,14 +73,13 @@ theorem pair_circuit (op : __m256i) (skip : Byte) (entry : __m128i)
   change lane_bias = (0x21201f1e1d1c1b1a191817161514131221201f1e1d1c1b1a1918171615141312 : BitVec 256) at h_lane_bias
   change lane = (0x7f7e7d7c7b7a797877767574737271707f7e7d7c7b7a79787776757473727170 : BitVec 256) at h_lane
   change jumpdest = (0x5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b : BitVec 256) at h_jumpdest
-  change minus_one = (0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff : BitVec 256) at h_minus_one
   change sixteen = (0x10101010101010101010101010101010 : BitVec 128) at h_sixteen
-  simp only [lift, square, _mm256_add_epi8, _mm256_max_epi8,
+  simp only [lift, square, _mm256_sub_epi8, _mm256_add_epi8, _mm256_max_epi8,
     _mm256_max_epu8, _mm256_shuffle_epi8,
     _mm_set1_epi8, _mm256_castsi256_si128, _mm256_extracti128_si256,
     _mm_sub_epi8, _mm_max_epu8, _mm_shuffle_epi8, _mm256_set_m128i,
     _mm256_cmpeq_epi8, _mm256_cmpgt_epi8, _mm256_blendv_epi8,
-    _mm256_or_si256, _mm256_and_si256, _mm256_movemask_epi8,
+    _mm256_or_si256, _mm256_and_si256, _mm256_andnot_si256, _mm256_movemask_epi8,
     shuffleBytes, zipBytes, bytes, truthMask, byte, streamMask, pairBytes,
     List.ofFn_succ, List.ofFn_zero, Fin.val_zero, Fin.val_succ,
     stream, skipNext, immediate, List.zipIdx_cons, List.zipIdx_nil,

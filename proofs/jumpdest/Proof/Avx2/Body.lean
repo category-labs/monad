@@ -22,7 +22,6 @@ def pair (op : __m256i) (entry : __m128i) : BitVec 32 × __m128i :=
     0x70, 0x71, 0x72, 0x73, 0x74, 0x75, 0x76, 0x77,
     0x78, 0x79, 0x7a, 0x7b, 0x7c, 0x7d, 0x7e, 0x7f]
   let jumpdest := _mm256_set1_epi8 EvmOpCode.JUMPDEST
-  let minus_one := _mm256_set1_epi8 (-1)
   let sixteen := _mm_set1_epi8 16
 
   let n0 := _mm256_add_epi8 (_mm256_max_epi8 op len_floor) lane_bias
@@ -46,9 +45,8 @@ def pair (op : __m256i) (entry : __m128i) : BitVec 32 × __m128i :=
   let start := _mm256_or_si256
     (_mm256_cmpeq_epi8 pos lane)
     (_mm256_cmpeq_epi8 (_mm256_shuffle_epi8 n0 pos) lane)
-  let in_block := _mm256_cmpgt_epi8 entries minus_one
   let jd := _mm256_and_si256
-    (_mm256_and_si256 start in_block)
+    (_mm256_andnot_si256 entries start)
     (_mm256_cmpeq_epi8 op jumpdest)
   let mask := _mm256_movemask_epi8 jd
   (mask, entry_next)

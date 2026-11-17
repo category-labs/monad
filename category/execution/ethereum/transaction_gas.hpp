@@ -36,6 +36,9 @@ template <Traits traits>
 uint64_t intrinsic_gas(Transaction const &) noexcept;
 
 template <Traits traits>
+void profile_intrinsic_gas(Transaction const &) noexcept;
+
+template <Traits traits>
 uint64_t floor_data_gas(Transaction const &) noexcept;
 
 template <Traits traits>

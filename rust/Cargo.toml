@@ -24,14 +24,21 @@ monad-event-ring = { path = "./crates/monad-event-ring" }
 monad-exec-events = { path = "./crates/monad-exec-events" }
 monad-statesync = { path = "./crates/monad-statesync" }
 monad-triedb = { path = "./crates/monad-triedb" }
-monad-transaction = { path = "./crates/monad-transaction" }
+monad-transaction = { path = "./crates/monad-transaction", version = "0.1.0" }
 
 alloy-consensus  = { version = "2.0",     default-features = false }
 alloy-eips       = { version = "2.0",     default-features = false }
+alloy-network    = { version = "=2.0.4", default-features = false }
 alloy-primitives = { version = "1.5",     default-features = false }
+alloy-provider   = { version = "=2.0.4", default-features = false }
 alloy-rlp        = { version = "0.3",     default-features = false }
 alloy-rpc-types  = { version = "2.0",     default-features = false, features = ["eth"] }
+alloy-rpc-types-eth = { version = "=2.0.4", default-features = false }
+alloy-signer     = { version = "=2.0.4", default-features = false }
+alloy-signer-local = { version = "=2.0.4", default-features = false }
 alloy-sol-types  = { version = "1.5",     default-features = false }
+alloy-transport  = { version = "=2.0.4", default-features = false }
+async-trait      = { version = "0.1" }
 bindgen          = { version = "0.71.1",  default-features = false, features = ["logging", "runtime"] }
 build-rs         = { version = "0.3.4",   default-features = false }
 cargo_metadata   = { version = "0.23.1",  default-features = false }
@@ -49,4 +56,5 @@ ratatui          = { version = "0.30.0",  default-features = false, features = [
 serde            = { version = "1.0",     default-features = false, features = ["std"] }
 serde_json       = { version = "1.0",     default-features = false }
 strum            = { version = "0.27",    default-features = false, features = ["derive"] }
+tokio            = { version = "1", features = ["macros", "rt-multi-thread", "net", "io-util", "time"] }
 tracing          = { version = "0.1",     default-features = false }

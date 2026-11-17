@@ -2,6 +2,7 @@
 name = "monad-transaction"
 version = "0.1.0"
 edition = "2021"
+license = "GPL-3.0-or-later"
 description = "Canonical Monad and Ethereum transaction and receipt envelopes"
 
 [dependencies]

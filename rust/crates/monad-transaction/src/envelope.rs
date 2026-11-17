@@ -57,6 +57,26 @@ impl Typed2718 for TxType {
         *self as u8
     }
 }
+impl From<TxType> for u8 {
+    fn from(value: TxType) -> Self {
+        value as u8
+    }
+}
+impl TryFrom<u8> for TxType {
+    type Error = alloy_eips::eip2718::Eip2718Error;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::Legacy),
+            1 => Ok(Self::Eip2930),
+            2 => Ok(Self::Eip1559),
+            3 => Ok(Self::Eip4844),
+            4 => Ok(Self::Eip7702),
+            MONAD_TX_TYPE => Ok(Self::Monad),
+            _ => Err(Self::Error::UnexpectedType(value)),
+        }
+    }
+}
 impl std::fmt::Display for TxType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "0x{:x}", *self as u8)
@@ -175,6 +195,15 @@ impl TxEnvelope {
         SignerRecoverable::try_into_recovered(self)
     }
 
+    /// Encode RPC submission bytes. Only native transactions gain an auxiliary list.
+    /// The transaction hash always commits to `encoded_2718()` instead.
+    pub fn encode_submission(&self) -> Vec<u8> {
+        match self {
+            Self::Monad(tx) => tx.tx().encode_submission(tx.signature()),
+            _ => self.encoded_2718(),
+        }
+    }
+
     /// Only the RPC edge accepts the three-field native submission wrapper.
     pub fn decode_submission(bytes: &[u8]) -> Eip2718Result<Self> {
         if bytes.first() != Some(&MONAD_TX_TYPE) {
@@ -184,6 +213,12 @@ impl TxEnvelope {
         let tx = TxMonad::decode_body(&mut body, true)?;
         finish(body)?;
         Ok(Self::Monad(tx))
+    }
+}
+
+impl AsRef<Self> for TxEnvelope {
+    fn as_ref(&self) -> &Self {
+        self
     }
 }
 

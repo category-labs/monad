@@ -21,9 +21,11 @@ mod framing;
 mod native;
 mod receipt;
 pub mod rpc;
+mod typed;
 pub use envelope::{TxEnvelope, TxType};
 pub use native::TxMonad;
 pub use receipt::ReceiptEnvelope;
+pub use typed::TypedTransaction;
 
 /// Universal transaction type selected by the main transaction design.
 pub const MONAD_TX_TYPE: u8 = 0x40;

@@ -40,11 +40,9 @@ fn vectors() -> Vec<Vector> {
     struct Fixture {
         vectors: Vec<Vector>,
     }
-    serde_json::from_str::<Fixture>(include_str!(
-        "../../../../category/execution/ethereum/core/test/monad_type40_vectors.json"
-    ))
-    .unwrap()
-    .vectors
+    serde_json::from_str::<Fixture>(include_str!("fixtures/monad_type40_vectors.json"))
+        .unwrap()
+        .vectors
 }
 fn bytes(hex: &str) -> Vec<u8> {
     hex::decode(hex.strip_prefix("0x").unwrap()).unwrap()
@@ -139,7 +137,8 @@ fn commitment_boundaries_reject_wrong_framing_auxiliary_and_suffixes() {
 #[test]
 fn rejects_noncanonical_missing_and_unsupported_features() {
     let raw = bytes(&vectors()[1].canonical);
-    let mutations: Vec<Box<dyn FnOnce(&mut Vec<Vec<u8>>)>> = vec![
+    type FeatureMutation = Box<dyn FnOnce(&mut Vec<Vec<u8>>)>;
+    let mutations: Vec<FeatureMutation> = vec![
         Box::new(|f| f.swap(0, 1)),
         Box::new(|f| f.insert(1, f[0].clone())),
         Box::new(|f| {

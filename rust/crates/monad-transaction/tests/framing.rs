@@ -43,10 +43,8 @@ fn transactions() -> Vec<TxEnvelope> {
         Signed::new_unhashed(TxEip4844Variant::from(TxEip4844::default()), signature).into(),
         Signed::new_unhashed(TxEip7702::default(), signature).into(),
     ];
-    let fixture: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../category/execution/ethereum/core/test/monad_type40_vectors.json"
-    ))
-    .unwrap();
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/monad_type40_vectors.json")).unwrap();
     for vector in fixture["vectors"].as_array().unwrap() {
         let raw = hex::decode(
             vector["canonical"]

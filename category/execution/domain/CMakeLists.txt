@@ -44,6 +44,8 @@ add_library(
   "scan_domain_inputs.hpp"
   "spoke.cpp"
   "spoke.hpp"
+  "statesync.cpp"
+  "statesync.hpp"
   "system_transaction.cpp"
   "system_transaction.hpp")
 

@@ -78,8 +78,12 @@ JsonState load_blockchain_json_state(nlohmann::json const &j_contents)
 
     auto const it1 = j_contents.find("pre");
     auto const it2 = std::next(it1, 1);
-    auto const hash =
-        from_hex<bytes32_t>(genesisJson.at("hash").get<std::string>()).value();
+    // Replay fixtures hold partial state, whose root no real header commits to.
+    std::optional<bytes32_t> hash;
+    if (!j_contents.contains("_replay")) {
+        hash = from_hex<bytes32_t>(genesisJson.at("hash").get<std::string>())
+                   .value();
+    }
     return {
         .header = header,
         .withdrawals = withdrawals,

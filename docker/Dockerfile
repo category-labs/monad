@@ -61,6 +61,9 @@ ADD --checksum=sha256:c96c822d2e187e9168aa20f2c158c8a2de96ea076f6e6c473a1b6d3fc5
 ADD --checksum=sha256:9ee1075421aa620b08690c9df9a302a9c11654c0ef0eaed561f650936288f98e \
     https://github.com/monad-developers/execution-specs/releases/download/tests-monad_eip7708%2B7843%2B7981%2B7997%2B8024%2B8246%40v0.3.1/fixtures_monad_eip7708+7843+7981+7997+8024+8246.tar.gz \
     /fixtures/
+ADD --checksum=sha256:183279b9cae654cbc90d550fdf8cae09ce1459563a2f8b2b4b4e95a8552c0ada \
+    https://github.com/category-labs/monad/releases/download/mainnet-replay-v1/fixtures_monad_mainnet_replay.tar.zst \
+    /fixtures/
 
 FROM base AS build_and_test
 

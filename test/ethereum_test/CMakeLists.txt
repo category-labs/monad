@@ -68,6 +68,11 @@ add_test_fixtures(
   "https://github.com/monad-developers/execution-specs/releases/download/tests-monad_eip7708%2B7843%2B7981%2B7997%2B8024%2B8246%40v0.3.1/fixtures_monad_eip7708+7843+7981+7997+8024+8246.tar.gz"
   9ee1075421aa620b08690c9df9a302a9c11654c0ef0eaed561f650936288f98e)
 
+add_test_fixtures(
+  MonadMainnetReplayFixtures
+  "https://github.com/category-labs/monad/releases/download/mainnet-replay-v1/fixtures_monad_mainnet_replay.tar.zst"
+  183279b9cae654cbc90d550fdf8cae09ce1459563a2f8b2b4b4e95a8552c0ada)
+
 add_executable(monad-ethereum-test)
 target_link_libraries(monad-ethereum-test PRIVATE GTest::gtest monad-test-utils)
 target_sources(
@@ -150,6 +155,11 @@ endfunction()
 add_monad_test(FORK MONAD_EIGHT)
 add_monad_test(FORK MONAD_NINE)
 add_monad_test(FORK MONAD_TEN)
+
+# 300 blocks sampled from Monad mainnet, with the state each one touches.
+add_sharded_test(monad_mainnet_replay
+                 COMMAND monad-ethereum-test --blockchain-tests
+                         ${CMAKE_BINARY_DIR}/src/MonadMainnetReplayFixtures)
 
 # MONAD_NEXT Amsterdam spec tests, from a separate fixtures release.
 include(${CMAKE_CURRENT_SOURCE_DIR}/exclude/MONAD_NEXT_amsterdam.cmake)

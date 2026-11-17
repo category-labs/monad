@@ -22,6 +22,7 @@
 #include <category/vm/evm/message.hpp>
 #include <category/vm/evm/revision.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/gas_profile.hpp>
 #include <category/vm/host.hpp>
 #include <category/vm/runtime/storage.hpp>
 #include <category/vm/runtime/storage_costs.hpp>
@@ -45,7 +46,8 @@ namespace monad::vm::runtime
         auto const access_status =
             ctx->host->access_storage(ctx->env.recipient, key);
         if (access_status == AccessStatus::Cold) {
-            ctx->deduct_gas(traits::cold_storage_cost());
+            ctx->deduct_gas(gas_profile::tag(
+                gas_profile::ColdStorage, 1, traits::cold_storage_cost()));
         }
 
         auto const value = ctx->host->get_storage(ctx->env.recipient, key);
@@ -81,7 +83,8 @@ namespace monad::vm::runtime
             auto const access_status =
                 ctx->host->access_storage(ctx->env.recipient, key);
             if (access_status == AccessStatus::Cold) {
-                ctx->deduct_gas(traits::cold_storage_cost());
+                ctx->deduct_gas(gas_profile::tag(
+                    gas_profile::ColdStorage, 1, traits::cold_storage_cost()));
             }
 
             auto const storage_status =
@@ -92,10 +95,12 @@ namespace monad::vm::runtime
 
             int64_t gas_used = traits::base_sstore_cost();
             if (first_page_write) {
-                gas_used += traits::page_write_cost();
+                gas_used += gas_profile::tag(
+                    gas_profile::PageWrite, 1, traits::page_write_cost());
             }
             if (grew_state) {
-                gas_used += traits::page_growth_cost();
+                gas_used += gas_profile::tag(
+                    gas_profile::PageGrowth, 1, traits::page_growth_cost());
             }
 
             gas_used -= min_gas;
@@ -105,7 +110,12 @@ namespace monad::vm::runtime
             auto const access_status =
                 ctx->host->access_storage(ctx->env.recipient, key);
             if (access_status == AccessStatus::Cold) {
-                ctx->deduct_gas(traits::cold_storage_cost() + min_gas);
+                ctx->deduct_gas(
+                    gas_profile::tag(
+                        gas_profile::ColdStorage,
+                        1,
+                        traits::cold_storage_cost()) +
+                    gas_profile::tag(gas_profile::SstoreColdBase, 1, min_gas));
             }
 
             auto const storage_status =
@@ -116,7 +126,12 @@ namespace monad::vm::runtime
             gas_used -= min_gas;
 
             ctx->gas_refund += gas_refund;
-            ctx->deduct_gas(gas_used);
+            ctx->deduct_gas(gas_profile::tag(
+                static_cast<gas_profile::Component>(
+                    gas_profile::SstoreStatus +
+                    static_cast<unsigned>(storage_status)),
+                1,
+                gas_used));
         }
     }
 

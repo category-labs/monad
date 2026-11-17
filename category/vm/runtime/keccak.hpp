@@ -19,6 +19,7 @@
 #include <category/core/keccak.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/gas_profile.hpp>
 #include <category/vm/runtime/bin.hpp>
 #include <category/vm/runtime/types.hpp>
 
@@ -38,7 +39,8 @@ namespace monad::vm::runtime
             ctx->expand_memory<traits>(offset + size);
 
             auto const word_size = shr_ceil<5>(size);
-            ctx->deduct_gas(word_size * bin<6>);
+            ctx->deduct_gas(gas_profile::tag(
+                gas_profile::KeccakWords, *word_size, word_size * bin<6>));
         }
 
         auto const hash = keccak256({ctx->memory.data + *offset, *size});

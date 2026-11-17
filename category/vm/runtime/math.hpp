@@ -18,6 +18,7 @@
 #include <category/core/assert.h>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/gas_profile.hpp>
 #include <category/vm/runtime/math/intrinsics.hpp>
 #include <category/vm/runtime/types.hpp>
 
@@ -112,7 +113,10 @@ namespace monad::vm::runtime
 
         auto const exponent_cost = exp_dynamic_gas_cost_multiplier<traits>();
 
-        ctx->deduct_gas(exponent_byte_size * exponent_cost);
+        ctx->deduct_gas(gas_profile::tag(
+            gas_profile::ExpBytes,
+            exponent_byte_size,
+            exponent_byte_size * exponent_cost));
 
         *result_ptr = exp(*a_ptr, *exponent_ptr);
     }

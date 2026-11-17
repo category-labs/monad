@@ -25,6 +25,7 @@
 #include <category/vm/evm/result.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/evm/tx_context.hpp>
+#include <category/vm/gas_profile.hpp>
 #include <category/vm/runtime/bin.hpp>
 #include <category/vm/runtime/exit.hpp>
 #include <category/vm/runtime/transmute.hpp>
@@ -288,6 +289,25 @@ namespace monad::vm::runtime
             }
         }
 
+        template <Traits traits>
+        static int64_t tag_memory_expansion(
+            uint32_t const old_size, uint32_t const new_word_count,
+            int64_t const cost) noexcept
+        {
+            int64_t const old_words = old_size >> 5;
+            int64_t const new_words = new_word_count;
+            int64_t const linear =
+                traits::mip_3_active() ? cost : 3 * (new_words - old_words);
+            return gas_profile::tag(
+                       gas_profile::MemoryWords,
+                       new_words - old_words,
+                       linear) +
+                   gas_profile::tag(
+                       gas_profile::MemoryWordsSquared,
+                       new_words * new_words - old_words * old_words,
+                       cost - linear);
+        }
+
         [[gnu::always_inline]]
         static constexpr Bin<25>
         memory_size_to_word_count(Bin<29> const mem_size) noexcept
@@ -338,7 +358,8 @@ namespace monad::vm::runtime
                 int64_t const expansion_cost = new_cost - memory.cost;
 
                 // Gas check before increasing size or capacity:
-                deduct_gas(expansion_cost);
+                deduct_gas(tag_memory_expansion<traits>(
+                    memory.size, *word_count, expansion_cost));
                 uint32_t const old_size = memory.size;
                 memory.size = *new_size;
                 memory.cost = new_cost;

@@ -19,6 +19,7 @@
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/gas_profile.hpp>
 #include <category/vm/interpreter/stack_top.hpp>
 #include <category/vm/interpreter/types.hpp>
 
@@ -38,9 +39,9 @@ namespace monad::vm::interpreter
         static_assert(!compiler::has_operand_dependent_stack_effect(Instr));
         static constexpr auto info = compiler::opcode_table<traits>[Instr];
 
+        gas_remaining -= gas_profile::tag(
+            static_cast<gas_profile::Component>(Instr), 1, info.min_gas);
         if constexpr (info.min_gas > 0) {
-            gas_remaining -= info.min_gas;
-
             if (MONAD_UNLIKELY(gas_remaining < 0)) {
                 ctx.exit(OutOfGas);
             }
@@ -93,7 +94,8 @@ namespace monad::vm::interpreter
             ctx.exit(Error);
         }
 
-        gas_remaining -= info.min_gas;
+        gas_remaining -= gas_profile::tag(
+            static_cast<gas_profile::Component>(Instr), 1, info.min_gas);
         if (MONAD_UNLIKELY(gas_remaining < 0)) {
             ctx.exit(OutOfGas);
         }

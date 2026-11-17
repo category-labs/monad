@@ -20,6 +20,7 @@
 #include <category/vm/evm/message.hpp>
 #include <category/vm/evm/revision.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/gas_profile.hpp>
 #include <category/vm/host.hpp>
 #include <category/vm/runtime/selfdestruct.hpp>
 #include <category/vm/runtime/transmute.hpp>
@@ -44,7 +45,10 @@ namespace monad::vm::runtime
         auto const access_status = ctx->host->access_account(address);
         if (access_status == AccessStatus::Cold) {
             // +100 for the warm account access cost.
-            ctx->deduct_gas(traits::cold_account_cost() + 100);
+            ctx->deduct_gas(
+                gas_profile::tag(
+                    gas_profile::ColdAccount, 1, traits::cold_account_cost()) +
+                gas_profile::tag(gas_profile::SelfdestructWarmAccess, 1, 100));
         }
 
         auto const non_zero_transfer =
@@ -54,7 +58,8 @@ namespace monad::vm::runtime
             auto const exists = ctx->host->account_exists(address);
 
             if (!exists) {
-                ctx->deduct_gas(25000);
+                ctx->deduct_gas(gas_profile::tag(
+                    gas_profile::SelfdestructNewAccount, 1, 25000));
             }
         }
 

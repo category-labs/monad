@@ -609,14 +609,37 @@ else()
         "${CMAKE_CURRENT_SOURCE_DIR}/../..")
     add_test(NAME monad-zkvm-hash-test COMMAND monad-zkvm-hash-test)
 
+    # Run the shared uint256 software tests on the host.
+    # Prefer guest headers and avoid linking host Monad libraries, which could
+    # replace the inline guest definitions.
+    add_executable(monad-zkvm-uint256-test test/uint256_zisk_test.cpp)
+    monad_compile_options(monad-zkvm-uint256-test)
+    target_compile_definitions(monad-zkvm-uint256-test PRIVATE MONAD_ZKVM_ZISK)
+    # Without AVX2, as on a guest: uint256.hpp's AVX2 code needs immintrin.h,
+    # which the shadow of uint256/intrinsics.hpp does not include.
+    target_compile_options(monad-zkvm-uint256-test PRIVATE -mno-avx2)
+    target_include_directories(monad-zkvm-uint256-test BEFORE PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/..")
+    target_include_directories(monad-zkvm-uint256-test PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/../..")
+    target_link_libraries(monad-zkvm-uint256-test PRIVATE intx::intx)
+    add_test(NAME monad-zkvm-uint256-test COMMAND monad-zkvm-uint256-test)
+
 endif()
 
 # ---- Guest sources, shared by both modes ----
-# Both modes share the witness pipeline; only guests carry an ELF build stamp.
+set(_guest_entry_source "${CMAKE_CURRENT_SOURCE_DIR}/execute_witness.cpp")
+if(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
+    option(MONAD_ZKVM_UINT256_SELFTEST
+        "Run uint256 tests instead of executing a witness" OFF)
+    if(MONAD_ZKVM_UINT256_SELFTEST)
+        set(_guest_entry_source "${CMAKE_CURRENT_SOURCE_DIR}/test/uint256_zisk_test.cpp")
+    endif()
+endif()
 add_library(monad-zkvm-guest OBJECT
     "${CMAKE_CURRENT_SOURCE_DIR}/keccak_accel.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/execute_block.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/execute_witness.cpp"
+    "${_guest_entry_source}"
     "${CMAKE_CURRENT_SOURCE_DIR}/witness_block_hash_buffer.cpp"
 )
 monad_compile_options(monad-zkvm-guest)
@@ -624,6 +647,11 @@ target_link_libraries(monad-zkvm-guest PRIVATE zkevm-standards)
 if(DEFINED MONAD_ZKVM_GUEST_TARGET)
     target_sources(monad-zkvm-guest PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/build_identity.cpp")
+    if(MONAD_ZKVM_UINT256_SELFTEST)
+        target_compile_definitions(monad-zkvm-guest PRIVATE MONAD_ZKVM_UINT256_SELFTEST)
+        target_include_directories(monad-zkvm-guest PRIVATE
+            "${THIRD_PARTY_DIR}/intx/include")
+    endif()
     monad_riscv_compile_options(monad-zkvm-guest)
     target_link_libraries(monad-zkvm-guest
         PRIVATE monad-core monad_execution_ethereum)

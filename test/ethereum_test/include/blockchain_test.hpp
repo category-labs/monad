@@ -32,6 +32,7 @@
 #include <nlohmann/json_fwd.hpp>
 
 #include <filesystem>
+#include <iosfwd>
 #include <optional>
 #include <variant>
 
@@ -75,6 +76,8 @@ public:
 
     void TestBody() override;
 };
+
+void set_gas_profile_output(std::ostream *);
 
 void register_blockchain_tests_path(
     std::filesystem::path const &,

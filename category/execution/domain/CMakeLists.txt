@@ -35,6 +35,8 @@ add_library(
   "hpke.cpp"
   "hpke.hpp"
   "hub_storage.hpp"
+  "input_queue.cpp"
+  "input_queue.hpp"
   "inputs.hpp"
   "l1_source.cpp"
   "l1_source.hpp"

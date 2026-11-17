@@ -26,6 +26,8 @@
 #include <category/execution/domain/derive_domain_block.hpp>
 #include <category/execution/domain/hpke.hpp>
 #include <category/execution/domain/hub_storage.hpp>
+#include <category/execution/domain/input_queue.hpp>
+#include <category/execution/domain/inputs.hpp>
 #include <category/execution/domain/l1_source.hpp>
 #include <category/execution/domain/scan_domain_inputs.hpp>
 #include <category/execution/domain/spoke.hpp>
@@ -166,6 +168,33 @@ Result<bool> PrivateDomainDeriver::derive_next(BlockHandler const &on_block)
     BOOST_OUTCOME_TRY(
         auto const inputs,
         scan_domain_inputs(l1_header, l1_receipts, hub_, domain_.chain_id));
+    BOOST_OUTCOME_TRY(derive_inputs(inputs, on_block));
+    ++cursor_.next_l1_block;
+    return true;
+}
+
+Result<void> PrivateDomainDeriver::derive_pending(
+    PendingDomainInputs const &pending, uint64_t const l1_block_number,
+    BlockHandler const &on_block)
+{
+    if (pending.next_block < cursor_.next_block) {
+        return DomainDerivationError::AheadOfHub;
+    }
+    // Blocks between the cursor and the first the hub still holds are covered
+    // by its checkpoint, and can only be derived from the L1 blocks' logs.
+    if (pending.next_block > cursor_.next_block) {
+        return DomainDerivationError::BehindCheckpoint;
+    }
+    for (auto const &inputs : pending.blocks) {
+        BOOST_OUTCOME_TRY(derive_inputs(inputs, on_block));
+    }
+    cursor_.next_l1_block = l1_block_number + 1;
+    return outcome::success();
+}
+
+Result<void> PrivateDomainDeriver::derive_inputs(
+    DomainInputs const &inputs, BlockHandler const &on_block)
+{
     BOOST_OUTCOME_TRY(
         auto const block,
         derive_domain_block(
@@ -175,16 +204,11 @@ Result<bool> PrivateDomainDeriver::derive_next(BlockHandler const &on_block)
             [this](byte_string_view const payload) {
                 return key_.open_transaction(domain_.chain_id, payload);
             }));
-
-    DerivationCursor next{
-        .next_l1_block = cursor_.next_l1_block + 1,
-        .next_block = cursor_.next_block};
     if (block.has_value()) {
         BOOST_OUTCOME_TRY(on_block(*block));
-        next.next_block = block->number + 1;
+        cursor_.next_block = block->number + 1;
     }
-    cursor_ = std::move(next);
-    return true;
+    return outcome::success();
 }
 
 MONAD_DOMAIN_NAMESPACE_END

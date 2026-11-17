@@ -1,0 +1,8 @@
+name = "jumpdest"
+version = "0.1.0"
+defaultTargets = ["Jumpdest"]
+
+[[lean_lib]]
+name = "Jumpdest"
+roots = ["Types", "Scalar", "Avx2Intrinsics", "Avx2", "Equivalence"]
+globs = ["Types", "Scalar", "Avx2Intrinsics", "Avx2", "Equivalence", "Proof.+"]

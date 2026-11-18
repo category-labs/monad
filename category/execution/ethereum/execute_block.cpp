@@ -20,12 +20,15 @@
 #include <category/core/fiber/priority_pool.hpp>
 #include <category/core/int.hpp>
 #include <category/core/likely.h>
+#include <category/core/math.hpp>
 #include <category/core/monad_exception.hpp>
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/block_reward.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/block.hpp>
+#include <category/execution/ethereum/core/ecrecover.hpp>
+#include <category/execution/ethereum/core/ecrecover/impl.hpp>
 #include <category/execution/ethereum/core/fmt/transaction_fmt.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
@@ -56,6 +59,7 @@
 
 #include <quill/std/Optional.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -82,73 +86,173 @@ void process_withdrawal(
     }
 }
 
+// recover_signers splits the pooled signatures into batches of up to
+// MAX_SIGNER_BATCH, aiming for SIGNER_BATCHES_PER_THREAD batches per pool
+// thread so the load stays balanced. A batch larger than SIGNER_BATCH_LANES
+// is rounded up to a multiple of it, the lane count of a vectorized
+// recover_addresses.
+constexpr size_t SIGNER_BATCH_LANES = 8;
+constexpr size_t MAX_SIGNER_BATCH = 256;
+constexpr size_t SIGNER_BATCHES_PER_THREAD = 4;
+
+size_t
+signer_batch_size(size_t const num_signatures, unsigned const num_threads)
+{
+    size_t const target_batches =
+        std::max(size_t{1}, size_t{num_threads}) * SIGNER_BATCHES_PER_THREAD;
+    size_t const size = std::max(
+        size_t{1}, (num_signatures + target_batches - 1) / target_batches);
+    if (size <= SIGNER_BATCH_LANES) {
+        return size;
+    }
+    return std::min(MAX_SIGNER_BATCH, round_up(size, SIGNER_BATCH_LANES));
+}
+
+// Index of the transaction owning signature `index`, where transaction i owns
+// the signatures [offsets[i], offsets[i + 1])
+size_t transaction_of_signature(
+    std::span<size_t const> const offsets, size_t const index)
+{
+    MONAD_ASSERT(!offsets.empty() && index < offsets.back());
+    return static_cast<size_t>(
+               std::ranges::upper_bound(offsets, index) - offsets.begin()) -
+           1;
+}
+
+// Recovers the signatures [begin, end) of the pooled sequence, in which
+// transaction i owns [offsets[i], offsets[i + 1]): first its sender, then its
+// authorization entries in order. Every signature has its own element of
+// `signers`, so batches over disjoint ranges can run concurrently.
+void recover_signer_batch(
+    std::span<Transaction const> const transactions,
+    std::span<size_t const> const offsets, size_t const begin, size_t const end,
+    RecoveredSigners &signers)
+{
+    std::vector<RecoverAddressInput> inputs;
+    std::vector<std::optional<Address> *> results;
+    inputs.reserve(end - begin);
+    results.reserve(end - begin);
+
+    size_t tx = transaction_of_signature(offsets, begin);
+    for (size_t index = begin; index < end; ++index) {
+        while (index >= offsets[tx + 1]) {
+            ++tx;
+        }
+        Transaction const &transaction = transactions[tx];
+        size_t const slot = index - offsets[tx];
+        std::optional<RecoverAddressInput> input;
+        std::optional<Address> *result;
+        if (slot == 0) {
+            input = make_sender_recover_input(transaction);
+            result = &signers.senders[tx];
+        }
+        else {
+            input = make_authority_recover_input(
+                transaction.authorization_list[slot - 1]);
+            result = &signers.authorities[tx][slot - 1];
+        }
+        // A malformed signature has no signer, so its result stays nullopt
+        if (input.has_value()) {
+            inputs.push_back(*input);
+            results.push_back(result);
+        }
+    }
+
+    std::vector<RecoverAddressOutput> outputs(inputs.size());
+    recover_addresses(inputs, outputs);
+    for (size_t i = 0; i < outputs.size(); ++i) {
+        *results[i] = to_address(outputs[i]);
+    }
+}
+
 MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
 
-std::vector<std::optional<Address>> recover_senders(
+RecoveredSigners recover_signers(
     std::span<Transaction const> const transactions,
     fiber::PriorityPool &priority_pool)
 {
-    std::vector<std::optional<Address>> senders{transactions.size()};
+    RecoveredSigners signers{
+        .senders = std::vector<std::optional<Address>>(transactions.size()),
+        .authorities = {}};
+    signers.authorities.reserve(transactions.size());
 
-    std::shared_ptr<boost::fibers::promise<void>[]> const promises{
-        new boost::fibers::promise<void>[transactions.size()]};
+    // Transaction i owns the signatures [offsets[i], offsets[i + 1]) of the
+    // pooled sequence
+    std::vector<size_t> offsets;
+    offsets.reserve(transactions.size() + 1);
+    offsets.push_back(0);
+    for (Transaction const &transaction : transactions) {
+        size_t const num_authorities = transaction.authorization_list.size();
+        signers.authorities.emplace_back(num_authorities);
+        offsets.push_back(offsets.back() + 1 + num_authorities);
+    }
 
-    for (unsigned i = 0; i < transactions.size(); ++i) {
+    size_t const num_signatures = offsets.back();
+    if (num_signatures == 0) {
+        return signers;
+    }
+    size_t const batch_size =
+        signer_batch_size(num_signatures, priority_pool.num_threads());
+    size_t const num_batches = (num_signatures + batch_size - 1) / batch_size;
+
+    // Shared with the tasks, which may still be inside set_value when the
+    // waiter below wakes up
+    auto const promises =
+        std::make_shared<std::vector<boost::fibers::promise<void>>>(
+            num_batches);
+    std::vector<boost::fibers::future<void>> futures;
+    futures.reserve(num_batches);
+    for (auto &promise : *promises) {
+        futures.push_back(promise.get_future());
+    }
+
+    for (size_t batch = 0; batch < num_batches; ++batch) {
+        size_t const begin = batch * batch_size;
+        size_t const end = std::min(num_signatures, begin + batch_size);
+        // Prioritize by the first transaction the batch covers, so batches
+        // for earlier transactions are scheduled first
+        uint64_t const priority = transaction_of_signature(offsets, begin);
         priority_pool.submit(
-            i,
-            [i = i,
-             promises = promises,
-             &sender = senders[i],
-             &transaction = transactions[i]] {
-                sender = recover_sender(transaction);
-                promises[i].set_value();
+            priority,
+            [batch,
+             begin,
+             end,
+             promises,
+             transactions,
+             offsets = std::span<size_t const>{offsets},
+             &signers] {
+                TRACE_TXN_EVENT(StartSenderRecovery);
+                std::exception_ptr current_exception = nullptr;
+                try {
+                    recover_signer_batch(
+                        transactions, offsets, begin, end, signers);
+                }
+                catch (...) {
+                    current_exception = std::current_exception();
+                }
+                // Signalled outside the catch block, as in
+                // execute_block_transactions
+                if (MONAD_UNLIKELY(current_exception)) {
+                    (*promises)[batch].set_exception(current_exception);
+                }
+                else {
+                    (*promises)[batch].set_value();
+                }
             });
     }
 
-    for (unsigned i = 0; i < transactions.size(); ++i) {
-        promises[i].get_future().wait();
+    // Every batch writes into `signers` and reads `offsets`, so all of them
+    // must finish before an exception from any one is rethrown
+    for (auto const &future : futures) {
+        future.wait();
+    }
+    for (auto &future : futures) {
+        future.get();
     }
 
-    return senders;
-}
-
-std::vector<std::vector<std::optional<Address>>> recover_authorities(
-    std::span<Transaction const> const transactions,
-    fiber::PriorityPool &priority_pool)
-{
-    std::vector<std::vector<std::optional<Address>>> authorities{
-        transactions.size()};
-    std::vector<std::shared_ptr<boost::fibers::promise<void>[]>> promises{
-        transactions.size()};
-
-    for (auto i = 0u; i < transactions.size(); ++i) {
-        authorities[i] = std::vector<std::optional<Address>>{
-            transactions[i].authorization_list.size()};
-        promises[i] = std::shared_ptr<boost::fibers::promise<void>[]>{
-            new boost::fibers::promise<void>[authorities[i].size()]};
-
-        for (auto j = 0u; j < authorities[i].size(); ++j) {
-            priority_pool.submit(
-                i,
-                [j = j,
-                 auth_promises = promises[i],
-                 &auth = authorities[i][j],
-                 &auth_entry = transactions[i].authorization_list[j]]() {
-                    auth = recover_authority(auth_entry);
-                    auth_promises[j].set_value();
-                });
-        }
-    }
-
-    for (auto i = 0u; i < transactions.size(); ++i) {
-        for (auto j = 0u; j < transactions[i].authorization_list.size(); ++j) {
-            promises[i][j].get_future().wait();
-        }
-    }
-
-    return authorities;
+    return signers;
 }
 
 template <Traits traits>

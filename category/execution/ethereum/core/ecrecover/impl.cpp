@@ -13,12 +13,14 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/assert.h>
 #include <category/core/config.hpp>
 #include <category/crypto/silkpre_vendor/ecdsa.h>
 #include <category/execution/ethereum/core/ecrecover/impl.hpp>
 
 #include <secp256k1.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <span>
@@ -38,6 +40,19 @@ bool recover_address(
 
     return monad_recover_address(
         out.data(), msg.data(), sig.data(), recid, context.get());
+}
+
+// Element-at-a-time reference implementation. A vectorized implementation
+// replaces this function and must agree with recover_address on every input.
+void recover_addresses(
+    std::span<RecoverAddressInput const> const in,
+    std::span<RecoverAddressOutput> const out)
+{
+    MONAD_ASSERT(in.size() == out.size());
+    for (size_t i = 0; i < in.size(); ++i) {
+        out[i].ok =
+            recover_address(out[i].address, in[i].msg, in[i].sig, in[i].recid);
+    }
 }
 
 MONAD_NAMESPACE_END

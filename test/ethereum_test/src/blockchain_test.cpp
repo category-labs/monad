@@ -336,9 +336,8 @@ Result<BlockExecOutput> execute(
 
     BlockState block_state(db, vm);
     BlockMetrics metrics;
-    auto const recovered_senders = recover_senders(block.transactions, *pool_);
-    auto const recovered_authorities =
-        recover_authorities(block.transactions, *pool_);
+    auto const [recovered_senders, recovered_authorities] =
+        recover_signers(block.transactions, *pool_);
     std::vector<Address> senders(block.transactions.size());
     for (unsigned i = 0; i < recovered_senders.size(); ++i) {
         if (recovered_senders[i].has_value()) {

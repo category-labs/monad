@@ -15,16 +15,33 @@
 
 #pragma once
 
+#include <category/core/assert.h>
 #include <category/core/config.hpp>
 #include <category/crypto/keccak.h>
 
 #include <c-interface-accelerators/zkvm_accelerators.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <span>
 
 MONAD_NAMESPACE_BEGIN
+
+// Must match the definitions in the host
+// category/execution/ethereum/core/ecrecover/impl.hpp.
+struct RecoverAddressInput
+{
+    uint8_t msg[32]; ///< message digest
+    uint8_t sig[64]; ///< r || s, each 32 bytes big-endian
+    uint8_t recid; ///< recovery id (y parity)
+};
+
+struct RecoverAddressOutput
+{
+    uint8_t address[20];
+    bool ok;
+};
 
 [[gnu::always_inline]] inline bool recover_address(
     std::span<uint8_t, 20> const out, std::span<uint8_t const, 32> const msg,
@@ -50,6 +67,18 @@ MONAD_NAMESPACE_BEGIN
     std::memcpy(out.data(), key_hash + 12, out.size());
 
     return true;
+}
+
+// The ecrecover accelerator takes one signature per call, so a batch is a loop.
+inline void recover_addresses(
+    std::span<RecoverAddressInput const> const in,
+    std::span<RecoverAddressOutput> const out)
+{
+    MONAD_ASSERT(in.size() == out.size());
+    for (size_t i = 0; i < in.size(); ++i) {
+        out[i].ok =
+            recover_address(out[i].address, in[i].msg, in[i].sig, in[i].recid);
+    }
 }
 
 MONAD_NAMESPACE_END

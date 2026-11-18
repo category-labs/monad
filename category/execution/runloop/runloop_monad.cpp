@@ -211,10 +211,8 @@ Result<BlockExecOutput> propose_block(
 
     // Sender and EIP-7702 authorities recovery
     auto const sender_recovery_begin = std::chrono::steady_clock::now();
-    auto const recovered_senders =
-        recover_senders(block.transactions, priority_pool);
-    auto const recovered_authorities =
-        recover_authorities(block.transactions, priority_pool);
+    auto const [recovered_senders, recovered_authorities] =
+        recover_signers(block.transactions, priority_pool);
     [[maybe_unused]] auto const sender_recovery_time =
         std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - sender_recovery_begin);
@@ -525,17 +523,14 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad(
             bytes32_t const &id, auto const &header) {
             MonadConsensusBlockBody const body =
                 read_body(header.block_body_id, body_dir);
-            std::vector<std::optional<Address>> const recovered =
-                recover_senders(body.transactions, priority_pool);
+            auto const [recovered, recovered_authorities] =
+                recover_signers(body.transactions, priority_pool);
             std::vector<Address> senders;
             senders.reserve(recovered.size());
             for (std::optional<Address> const &addr : recovered) {
                 MONAD_ASSERT(addr.has_value());
                 senders.emplace_back(addr.value());
             }
-            std::vector<std::vector<std::optional<Address>>> const
-                recovered_authorities =
-                    recover_authorities(body.transactions, priority_pool);
 
             MONAD_ASSERT(block_cache
                              .emplace(

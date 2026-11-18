@@ -22,6 +22,7 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/int.hpp>
+#include <category/execution/ethereum/core/ecrecover/impl.hpp>
 #include <category/execution/ethereum/core/signature.hpp>
 
 #include <algorithm>
@@ -71,6 +72,11 @@ static_assert(alignof(AuthorizationEntry) == 8);
 
 std::optional<Address> recover_authority(AuthorizationEntry const &);
 
+/// The recover_addresses input whose result is the authority of the entry;
+/// nullopt if the entry's signature is malformed.
+std::optional<RecoverAddressInput>
+make_authority_recover_input(AuthorizationEntry const &);
+
 using AuthorizationList = std::vector<AuthorizationEntry>;
 
 static_assert(sizeof(AuthorizationList) == 24);
@@ -99,5 +105,10 @@ static_assert(sizeof(Transaction) == 384);
 static_assert(alignof(Transaction) == 8);
 
 std::optional<Address> recover_sender(Transaction const &);
+
+/// The recover_addresses input whose result is the sender of the transaction;
+/// nullopt if the transaction's signature is malformed.
+std::optional<RecoverAddressInput>
+make_sender_recover_input(Transaction const &);
 
 MONAD_NAMESPACE_END

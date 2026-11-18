@@ -62,6 +62,7 @@ add_library(
   "state_machine.hpp"
   "state_machine_kind.cpp"
   "state_machine_kind.hpp"
+  "traverse.cpp"
   "traverse.hpp"
   "traverse_util.hpp"
   "trie.cpp"

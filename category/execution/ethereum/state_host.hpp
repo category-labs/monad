@@ -18,7 +18,6 @@
 #include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
-#include <category/core/throw.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/execute_message.hpp>
 #include <category/execution/ethereum/native_transfer_log.hpp>
@@ -67,34 +66,35 @@ public:
 
     virtual ~StateHostBase() noexcept = default;
 
-    virtual bytes32_t
-    get_storage(Address const &, bytes32_t const &key) const override;
+    virtual vm::TxContext const *get_tx_context() const noexcept override;
 
-    virtual StorageStatus set_storage(
+private:
+    virtual bytes32_t
+    get_storage_impl(Address const &, bytes32_t const &key) const override;
+
+    virtual StorageStatus set_storage_impl(
         Address const &, bytes32_t const &key, bytes32_t const &value) override;
 
-    virtual uint256_t get_balance(Address const &) const override;
+    virtual uint256_t get_balance_impl(Address const &) const override;
 
-    virtual size_t get_code_size(Address const &) const override;
+    virtual size_t get_code_size_impl(Address const &) const override;
 
-    virtual bytes32_t get_code_hash(Address const &) const override;
+    virtual bytes32_t get_code_hash_impl(Address const &) const override;
 
-    virtual size_t copy_code(
+    virtual size_t copy_code_impl(
         Address const &, size_t offset, uint8_t *data,
         size_t size) const override;
 
-    virtual vm::TxContext const *get_tx_context() const noexcept override;
+    virtual bytes32_t get_block_hash_impl(int64_t) const override;
 
-    virtual bytes32_t get_block_hash(int64_t) const override;
-
-    virtual void emit_log(
+    virtual void emit_log_impl(
         Address const &, uint8_t const *data, size_t data_size,
         bytes32_t const topics[], size_t num_topics) override;
 
-    virtual bytes32_t
-    get_transient_storage(Address const &, bytes32_t const &key) const override;
+    virtual bytes32_t get_transient_storage_impl(
+        Address const &, bytes32_t const &key) const override;
 
-    virtual void set_transient_storage(
+    virtual void set_transient_storage_impl(
         Address const &, bytes32_t const &key, bytes32_t const &value) override;
 };
 
@@ -130,132 +130,85 @@ struct StateHost final : public StateHostBase
         std::optional<uint256_t>, uint64_t, ChainContext<traits> const &&,
         bool = false) = delete;
 
-    virtual bool account_exists(Address const &address) const override
+    CallTracerBase &get_call_tracer() noexcept
+    {
+        return call_tracer_;
+    }
+
+private:
+    virtual bool account_exists_impl(Address const &address) const override
     {
         static_assert(traits::evm_rev() >= EvmRevision::SpuriousDragon);
 
-        MONAD_TRY
-        {
-            return !state_.account_is_dead(address);
-        }
-        MONAD_CATCH(...)
-        {
-            capture_current_exception();
-        }
-        stack_unwind();
+        return !state_.account_is_dead(address);
     }
 
-    virtual bool
-    selfdestruct(Address const &address, Address const &beneficiary) override
+    virtual bool selfdestruct_impl(
+        Address const &address, Address const &beneficiary) override
     {
-        MONAD_TRY
-        {
-            auto const [result, transferred_balance] =
-                state_.selfdestruct<traits>(address, beneficiary);
+        auto const [result, transferred_balance] =
+            state_.selfdestruct<traits>(address, beneficiary);
 
-            call_tracer_.on_self_destruct(
-                address, beneficiary, transferred_balance);
+        call_tracer_.on_self_destruct(
+            address, beneficiary, transferred_balance);
 
-            emit_native_transfer_logs<traits>(
-                state_,
-                call_tracer_,
-                address,
-                beneficiary,
-                transferred_balance,
-                log_native_transfers_);
+        emit_native_transfer_logs<traits>(
+            state_,
+            call_tracer_,
+            address,
+            beneficiary,
+            transferred_balance,
+            log_native_transfers_);
 
+        return result;
+    }
+
+    virtual vm::Result call_impl(vm::Message const &msg) override
+    {
+        if (msg.kind == vm::CallKind::Create ||
+            msg.kind == vm::CallKind::Create2) {
+            auto result =
+                ::monad::execute_create_message<traits>(this, state_, msg);
+
+            // EIP-211
+            if (result.status_code != CallStatus::Revert) {
+                result = vm::Result{
+                    result.status_code,
+                    result.gas_left,
+                    result.gas_refund,
+                    result.create_address};
+            }
             return result;
         }
-        MONAD_CATCH(...)
-        {
-            capture_current_exception();
+        else {
+            return ::monad::execute_call_message<traits>(this, state_, msg);
         }
-        stack_unwind();
     }
 
-    virtual vm::Result call(vm::Message const &msg) override
+    virtual AccessStatus access_account_impl(Address const &address) override
     {
-        MONAD_TRY
-        {
-            if (msg.kind == vm::CallKind::Create ||
-                msg.kind == vm::CallKind::Create2) {
-                auto result =
-                    ::monad::execute_create_message<traits>(this, state_, msg);
-
-                // EIP-211
-                if (result.status_code != CallStatus::Revert) {
-                    result = vm::Result{
-                        result.status_code,
-                        result.gas_left,
-                        result.gas_refund,
-                        result.create_address};
-                }
-                return result;
-            }
-            else {
-                return ::monad::execute_call_message<traits>(this, state_, msg);
-            }
+        if (is_precompile<traits>(address)) {
+            return AccessStatus::Warm;
         }
-        MONAD_CATCH(...)
-        {
-            capture_current_exception();
-        }
-        stack_unwind();
-    }
-
-    virtual AccessStatus access_account(Address const &address) override
-    {
-        MONAD_TRY
-        {
-            if (is_precompile<traits>(address)) {
-                return AccessStatus::Warm;
-            }
-            return state_.access_account(address);
-        }
-        MONAD_CATCH(...)
-        {
-            capture_current_exception();
-        }
-        stack_unwind();
+        return state_.access_account(address);
     }
 
     virtual AccessStatus
-    access_storage(Address const &address, bytes32_t const &key) override
+    access_storage_impl(Address const &address, bytes32_t const &key) override
     {
-        MONAD_TRY
-        {
-            return state_.access_storage<traits>(address, key);
-        }
-        MONAD_CATCH(...)
-        {
-            capture_current_exception();
-        }
-        stack_unwind();
+        return state_.access_storage<traits>(address, key);
     }
 
-    virtual PageStorageStatus update_page(
+    virtual PageStorageStatus update_page_impl(
         Address const &address, bytes32_t const &key,
         StorageStatus const status) override
     {
         if constexpr (traits::mip_8_active()) {
-            MONAD_TRY
-            {
-                return state_.update_page(address, key, status);
-            }
-            MONAD_CATCH(...)
-            {
-                capture_current_exception();
-            }
-            stack_unwind();
+            return state_.update_page(address, key, status);
         }
         else {
             MONAD_ABORT("update_page is MIP-8 only");
         }
-    }
-
-    CallTracerBase &get_call_tracer() noexcept
-    {
-        return call_tracer_;
     }
 };
 

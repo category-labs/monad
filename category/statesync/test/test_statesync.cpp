@@ -131,6 +131,7 @@ namespace
     void statesync_send_request(
         monad_statesync_client *const client, monad_sync_request const rq)
     {
+        EXPECT_EQ(rq.until, rq.target);
         client->rqs.push_back(rq);
     }
 

@@ -197,15 +197,16 @@ void StatesyncProtocolV1_2::send_request(
     auto const &[progress, old_target] = ctx->progress[prefix];
     MONAD_ASSERT(progress == INVALID_BLOCK_NUM || progress < tgrt);
     MONAD_ASSERT(old_target == INVALID_BLOCK_NUM || old_target <= tgrt);
-    auto const from = progress == INVALID_BLOCK_NUM ? 0 : progress + 1;
+    // Leaf versions are local to each server, so a pass that ended before the
+    // target could only be continued by the same peer.
     ctx->statesync_send_request(
         ctx->sync,
         monad_sync_request{
             .prefix = prefix,
             .prefix_bytes = monad_statesync_client_prefix_bytes(),
             .target = tgrt,
-            .from = from,
-            .until = from >= (tgrt * 99 / 100) ? tgrt : tgrt * 99 / 100,
+            .from = progress == INVALID_BLOCK_NUM ? 0 : progress + 1,
+            .until = tgrt,
             .old_target = old_target,
             .version = version_});
 }

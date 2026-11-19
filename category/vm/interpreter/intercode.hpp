@@ -31,7 +31,8 @@ namespace monad::vm::interpreter
     {
         // PUSHN needs at least 30 leading bytes for a single 32-byte read
         // before the instruction pointer, masking out unrelated bytes.
-        // Round up to 32 to preserve 8-byte alignment for guest Keccak loads.
+        // Round up to 32 to preserve 8-byte alignment for guest Keccak loads
+        // and ZisK's JUMPDEST precompile.
         static constexpr size_t start_padding_size = 32;
 
         // 32 for a truncated PUSH32, 1 for a STOP so that we don't have to
@@ -39,7 +40,42 @@ namespace monad::vm::interpreter
         static constexpr size_t end_padding_size = 32 + 1;
 
     public:
-        using JumpdestMap = std::vector<bool>;
+        // One bit per code byte. Explicit 64-bit words define the layout for
+        // precompile access, unlike std::vector<bool>'s opaque storage.
+        class JumpdestMap
+        {
+            std::vector<uint64_t> words_;
+
+        public:
+            JumpdestMap() = default;
+
+            explicit JumpdestMap(size_t const bits)
+                : words_((bits + 63) / 64, 0)
+            {
+            }
+
+            void set(size_t const i) noexcept
+            {
+                // Set bit i % 64 in word i / 64.
+                words_[i >> 6] |= uint64_t{1} << (i & 63);
+            }
+
+            bool test(size_t const i) const noexcept
+            {
+                // Read bit i % 64 from word i / 64.
+                return (words_[i >> 6] >> (i & 63)) & 1;
+            }
+
+            size_t word_count() const noexcept
+            {
+                return words_.size();
+            }
+
+            uint64_t *words() noexcept
+            {
+                return words_.data();
+            }
+        };
 
         explicit Intercode(std::span<uint8_t const> const);
 
@@ -72,7 +108,7 @@ namespace monad::vm::interpreter
 
         bool is_jumpdest(size_t const pc) const noexcept
         {
-            return pc < *code_size_ && jumpdest_map_[pc];
+            return pc < *code_size_ && jumpdest_map_.test(pc);
         }
 
         [[gnu::always_inline]]

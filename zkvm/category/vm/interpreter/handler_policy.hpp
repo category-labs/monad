@@ -18,6 +18,19 @@
 #if !defined(MONAD_ZKVM_ZISK)
     #include_next <category/vm/interpreter/handler_policy.hpp>
 #else
+/**
+ * On ZisK a revision's handlers are laid out in slots, one per opcode
+ * (execute.cpp), and the dispatch computes a handler's address from its opcode
+ * instead of loading it from a table. A handler is compiled into its slot and
+ * nowhere else; a twin a handler tail-calls stays a function of its own
+ * (MONAD_VM_TWIN_CALL), and a handler pointer carries no attribute
+ * (MONAD_VM_POINTER_CALL).
+ */
+    #define MONAD_VM_INSTRUCTION_CALL __attribute__((always_inline)) inline
+    #define MONAD_VM_INLINE_INSTRUCTION_CALL MONAD_VM_INSTRUCTION_CALL
+    #define MONAD_VM_TWIN_CALL
+    #define MONAD_VM_POINTER_CALL
+
 // On ZisK, pass the table base in a seventh register argument to avoid
 // reloading it at each dispatch: the slots' base where the revision has them
 // (dispatch_table, instruction_table.hpp), the table's otherwise.

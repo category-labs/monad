@@ -51,6 +51,9 @@ struct ChainContext<T>
         &senders_and_authorities;
     std::vector<Address> const &senders;
     std::vector<std::vector<std::optional<Address>>> const &authorities;
+    // Set when executing a private domain block. See PROTOCOL.md in
+    // category-labs/monad-domains for the rules it changes.
+    bool private_domain{false};
 
     ExecutionMode mode{};
 

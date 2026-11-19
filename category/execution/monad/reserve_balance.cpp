@@ -340,7 +340,8 @@ void ReserveBalance::init_from_tx(
         }
     }();
 
-    if constexpr (tracking_disabled) {
+    // Nothing is charged on a private domain, which has no native token.
+    if (tracking_disabled || ctx.private_domain) {
         tracking_enabled_ = false;
         use_recent_code_hash_ = false;
         allow_init_selfdestruct_exemption_ = false;
@@ -398,6 +399,9 @@ bool revert_transaction(
     trace::StateTracer &state_tracer, ChainContext<traits> const &ctx)
 {
     if constexpr (traits::reserve_balance_active()) {
+        if (ctx.private_domain) {
+            return false;
+        }
         return dipped_into_reserve<traits>(
             sender, tx, base_fee_per_gas, i, state_tracer, ctx, state);
     }

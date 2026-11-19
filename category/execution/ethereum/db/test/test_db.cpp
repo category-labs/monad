@@ -57,7 +57,6 @@
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
-#include <fstream>
 #include <iterator>
 #include <memory>
 #include <numeric>
@@ -901,42 +900,6 @@ TYPED_TEST(DBTest, to_json)
 
         std::filesystem::remove(dbname);
     }
-}
-
-TYPED_TEST(DBTest, load_from_binary)
-{
-    std::ifstream accounts(test_resource::checkpoint_dir / "accounts");
-    std::ifstream code(test_resource::checkpoint_dir / "code");
-    auto const root = load_from_binary(this->db, accounts, code);
-    TrieDb tdb{this->db};
-    tdb.reset_root(root, 0);
-    EXPECT_EQ(
-        tdb.state_root(),
-        0xb9eda41f4a719d9f2ae332e3954de18bceeeba2248a44110878949384b184888_bytes32);
-    auto const a_icode = tdb.read_code(A_CODE_HASH);
-    EXPECT_EQ(
-        byte_string_view(a_icode->code(), a_icode->size()),
-        byte_string_view(A_ICODE->code(), A_ICODE->size()));
-    auto const b_icode = tdb.read_code(B_CODE_HASH);
-    EXPECT_EQ(
-        byte_string_view(b_icode->code(), b_icode->size()),
-        byte_string_view(B_ICODE->code(), B_ICODE->size()));
-    auto const c_icode = tdb.read_code(C_CODE_HASH);
-    EXPECT_EQ(
-        byte_string_view(c_icode->code(), c_icode->size()),
-        byte_string_view(C_ICODE->code(), C_ICODE->size()));
-    auto const d_icode = tdb.read_code(D_CODE_HASH);
-    EXPECT_EQ(
-        byte_string_view(d_icode->code(), d_icode->size()),
-        byte_string_view(D_ICODE->code(), D_ICODE->size()));
-    auto const e_icode = tdb.read_code(E_CODE_HASH);
-    EXPECT_EQ(
-        byte_string_view(e_icode->code(), e_icode->size()),
-        byte_string_view(E_ICODE->code(), E_ICODE->size()));
-    auto const h_icode = tdb.read_code(H_CODE_HASH);
-    EXPECT_EQ(
-        byte_string_view(h_icode->code(), h_icode->size()),
-        byte_string_view(H_ICODE->code(), H_ICODE->size()));
 }
 
 TYPED_TEST(DBTest, commit_call_frames)

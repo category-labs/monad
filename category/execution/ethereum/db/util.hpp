@@ -29,7 +29,6 @@
 
 #include <filesystem>
 #include <functional>
-#include <istream>
 
 MONAD_MPT_NAMESPACE_BEGIN
 
@@ -227,11 +226,6 @@ decode_transaction_db(byte_string_view &);
 void write_to_file(
     nlohmann::json const &, std::filesystem::path const &,
     uint64_t block_number);
-
-mpt::Node::SharedPtr load_from_binary(
-    mpt::Db &, std::istream &accounts, std::istream &code,
-    uint64_t init_block_number = 0,
-    size_t buf_size = 1ul << 32); // TODO: dynamic loading
 
 mpt::Node::SharedPtr
 load_header(mpt::Node::SharedPtr, mpt::Db &, BlockHeader const &);

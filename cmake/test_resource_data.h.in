@@ -37,8 +37,6 @@ namespace test_resource
     inline auto const internal_blockchain_tests_dir =
         test_data_dir / "data" / "shared";
 
-    inline auto const checkpoint_dir = test_data_dir / "data" / "checkpoint";
-
     // geth vectors
     inline auto const geth_vectors_dir = third_party_dir / "go-ethereum" /
                                          "core" / "vm" / "testdata" /

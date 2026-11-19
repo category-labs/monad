@@ -59,6 +59,7 @@ add_library(
   "ondisk_db_config.hpp"
   "request.hpp"
   "read_node_blocking.cpp"
+  "space_counters.cpp"
   "state_machine.hpp"
   "state_machine_kind.cpp"
   "state_machine_kind.hpp"

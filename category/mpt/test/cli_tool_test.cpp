@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include "legacy_metadata.hpp"
 #include "test_fixtures_base.hpp"
 #include "test_fixtures_gtest.hpp"
 
@@ -26,6 +27,7 @@
 #include <category/core/hex.hpp>
 #include <category/core/io/buffers.hpp>
 #include <category/core/io/ring.hpp>
+#include <category/core/small_prng.hpp>
 #include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 #include <category/core/test_util/temp_file_cleanup.hpp>
 #include <category/mpt/cli_tool_impl.hpp>
@@ -42,23 +44,31 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
+#include <bit>
 #include <cctype>
 #include <csignal>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <future>
+#include <initializer_list>
 #include <iostream>
+#include <map>
 #include <memory>
 #include <optional>
 #include <ostream>
+#include <span>
 #include <sstream>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
 
+#include <archive.h>
+#include <archive_entry.h>
 #include <fcntl.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -1679,4 +1689,627 @@ TEST(cli_tool, grow_argument_cross_checks)
             std::string::npos,
             cerr.str().find("cannot be combined with --restore"));
     }
+}
+
+namespace
+{
+    void create_small_pool(char const *const path)
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt",
+            "--storage",
+            path,
+            "--create",
+            "--root-offsets-chunk-count",
+            "2",
+            "--chunk-capacity",
+            "24"};
+        ASSERT_EQ(0, main_impl(cout, cerr, args)) << cerr.str();
+    }
+
+    void provision_monad008_pool(char const *const path)
+    {
+        MONAD_ASYNC_NAMESPACE::storage_pool pool{
+            std::filesystem::path{path},
+            MONAD_ASYNC_NAMESPACE::storage_pool::mode::open_existing};
+        monad::mpt::test::provision_monad008_pool(pool);
+    }
+
+    struct metadata_copy_view
+    {
+        std::string magic;
+        // Each chunk's {count, in_fast_list, in_slow_list}.
+        std::vector<std::array<uint64_t, 3>> identities;
+    };
+
+    std::array<metadata_copy_view, 2>
+    read_metadata_copies(char const *const path)
+    {
+        using monad::mpt::detail::db_metadata;
+        monad::mpt::AsyncIOContext io_ctx{monad::mpt::ReadOnlyOnDiskDbConfig{
+            .dbname_path = {std::filesystem::path{path}}}};
+        monad::mpt::DbMetadataContext const ctx{io_ctx.io};
+        std::array<metadata_copy_view, 2> ret;
+        for (unsigned which = 0; which < 2; ++which) {
+            auto const *const m = ctx.main(which);
+            ret[which].magic.assign(m->magic, db_metadata::MAGIC_STRING_LEN);
+            for (uint32_t i = 0; i < m->chunk_info_count; ++i) {
+                auto const id =
+                    m->atomic_load_chunk_identity(i, std::memory_order_acquire);
+                ret[which].identities.push_back(
+                    {id.count, id.in_fast_list, id.in_slow_list});
+            }
+        }
+        return ret;
+    }
+}
+
+TEST(cli_tool, upgrade_converts_a_monad008_pool)
+{
+    char temppath[] = "cli_tool_tmp_upg_XXXXXX";
+    make_temp_pool(temppath);
+    auto const untempfile =
+        monad::make_scope_exit([&]() noexcept { unlink(temppath); });
+    ASSERT_NO_FATAL_FAILURE(create_small_pool(temppath));
+    auto const before = read_metadata_copies(temppath);
+    provision_monad008_pool(temppath);
+
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt", "--storage", temppath, "--upgrade"};
+        ASSERT_EQ(0, main_impl(cout, cerr, args)) << cerr.str();
+        EXPECT_NE(std::string::npos, cout.str().find("Success.")) << cout.str();
+    }
+
+    auto const after = read_metadata_copies(temppath);
+    for (unsigned which = 0; which < 2; ++which) {
+        EXPECT_EQ(after[which].magic, monad::mpt::detail::db_metadata::MAGIC)
+            << "copy " << which;
+        EXPECT_EQ(after[which].identities, before[which].identities)
+            << "copy " << which;
+    }
+}
+
+TEST(cli_tool, refuses_monad008_without_upgrade)
+{
+    // main_impl logs through quill, which a forked death-test child cannot
+    // use, so re-exec instead.
+    testing::FLAGS_gtest_death_test_style = "threadsafe";
+
+    char temppath[] = "cli_tool_tmp_upg_XXXXXX";
+    make_temp_pool(temppath);
+    auto const untempfile =
+        monad::make_scope_exit([&]() noexcept { unlink(temppath); });
+    unlink_on_abort(temppath);
+    ASSERT_NO_FATAL_FAILURE(create_small_pool(temppath));
+    provision_monad008_pool(temppath);
+
+    std::stringstream cout;
+    std::stringstream cerr;
+    std::string_view args[] = {"monad-mpt", "--storage", temppath};
+    ASSERT_DEATH(
+        { (void)main_impl(cout, cerr, args); },
+        "Run 'monad-mpt --upgrade --storage <path>'");
+}
+
+// A MONAD008 device extended in place, or whose previous-release --grow was
+// interrupted before it moved the pool footer. This release can neither grow
+// nor upgrade it, so both name the previous release's --grow.
+TEST(cli_tool, grow_and_upgrade_refuse_an_extended_monad008_device)
+{
+    char temppath[] = "cli_tool_tmp_g008_XXXXXX";
+    make_temp_pool(temppath);
+    auto const untempfile =
+        monad::make_scope_exit([&]() noexcept { unlink(temppath); });
+    ASSERT_NO_FATAL_FAILURE(create_small_pool(temppath));
+    provision_monad008_pool(temppath);
+    auto const size_before = std::filesystem::file_size(temppath);
+    ASSERT_EQ(0, ::truncate(temppath, 10LL * 1024 * 1024 * 1024));
+
+    for (char const *const op : {"--grow", "--upgrade"}) {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt", "--storage", temppath, op, "--yes"};
+        EXPECT_EQ(1, main_impl(cout, cerr, args)) << op;
+        EXPECT_NE(
+            std::string::npos,
+            cerr.str().find(
+                "is MONAD008. Finish the grow with the previous release's "
+                "monad-mpt --grow, then run monad-mpt --upgrade."))
+            << op << ": " << cerr.str();
+    }
+
+    // Undoing the extend leaves a pool --upgrade converts, so the refusals
+    // wrote nothing.
+    ASSERT_EQ(0, ::truncate(temppath, static_cast<off_t>(size_before)));
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt", "--storage", temppath, "--upgrade"};
+        ASSERT_EQ(0, main_impl(cout, cerr, args)) << cerr.str();
+    }
+    for (auto const &copy : read_metadata_copies(temppath)) {
+        EXPECT_EQ(copy.magic, monad::mpt::detail::db_metadata::MAGIC);
+    }
+}
+
+TEST(cli_tool, grow_and_upgrade_refuse_a_monad008_pool_with_a_pending_grow)
+{
+    using monad::mpt::detail::db_metadata;
+    char temppath[] = "cli_tool_tmp_p008_XXXXXX";
+    make_temp_pool(temppath);
+    auto const untempfile =
+        monad::make_scope_exit([&]() noexcept { unlink(temppath); });
+    ASSERT_NO_FATAL_FAILURE(create_small_pool(temppath));
+    auto const edit_copies = [&](auto const &edit) {
+        MONAD_ASYNC_NAMESPACE::storage_pool pool{
+            std::filesystem::path{temppath},
+            MONAD_ASYNC_NAMESPACE::storage_pool::mode::open_existing};
+        monad::mpt::test::edit_metadata_copies(pool, edit);
+    };
+    edit_copies([](db_metadata *const m, unsigned) {
+        monad::mpt::test::provision_monad008_metadata(m);
+        m->pending_shrink_grow = {
+            db_metadata::PENDING_OP_GROW,
+            static_cast<uint32_t>(m->chunk_info_count)};
+    });
+
+    for (char const *const op : {"--grow", "--upgrade"}) {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt", "--storage", temppath, op, "--yes"};
+        EXPECT_EQ(1, main_impl(cout, cerr, args)) << op;
+        EXPECT_NE(
+            std::string::npos,
+            cerr.str().find(
+                "is MONAD008. Finish the grow with the previous release's "
+                "monad-mpt --grow, then run monad-mpt --upgrade."))
+            << op << ": " << cerr.str();
+    }
+
+    // Completing the grow leaves a pool --upgrade converts, so the refusals
+    // wrote nothing.
+    edit_copies([](db_metadata *const m, unsigned) {
+        m->pending_shrink_grow = {db_metadata::PENDING_OP_NONE, 0};
+    });
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt", "--storage", temppath, "--upgrade"};
+        ASSERT_EQ(0, main_impl(cout, cerr, args)) << cerr.str();
+    }
+}
+
+// Nothing is left of a grow, so the previous release has nothing to finish.
+TEST(cli_tool, grow_asks_for_an_upgrade_first_on_a_monad008_pool)
+{
+    char temppath[] = "cli_tool_tmp_gu08_XXXXXX";
+    make_temp_pool(temppath);
+    auto const untempfile =
+        monad::make_scope_exit([&]() noexcept { unlink(temppath); });
+    ASSERT_NO_FATAL_FAILURE(create_small_pool(temppath));
+    provision_monad008_pool(temppath);
+
+    std::stringstream cout;
+    std::stringstream cerr;
+    std::string_view args[] = {
+        "monad-mpt", "--storage", temppath, "--grow", "--yes"};
+    EXPECT_EQ(1, main_impl(cout, cerr, args));
+    EXPECT_NE(
+        std::string::npos,
+        cerr.str().find(
+            "is MONAD008. Run monad-mpt --upgrade first, then --grow."))
+        << cerr.str();
+    EXPECT_EQ(std::string::npos, cerr.str().find("previous release"))
+        << cerr.str();
+}
+
+TEST(cli_tool, upgrade_argument_cross_checks)
+{
+    char temppath[] = "cli_tool_tmp_uxc_XXXXXX";
+    make_temp_pool(temppath);
+    auto const untempfile =
+        monad::make_scope_exit([&]() noexcept { unlink(temppath); });
+    ASSERT_NO_FATAL_FAILURE(create_small_pool(temppath));
+    // Mutually exclusive with the other mutating operations.
+    for (auto const &[op, value] :
+         std::initializer_list<std::pair<char const *, char const *>>{
+             {"--truncate", nullptr},
+             {"--grow", nullptr},
+             {"--rewind-to", "1"},
+             {"--reset-history-length", "1000"}}) {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::vector<std::string_view> args = {
+            "monad-mpt", "--storage", temppath, "--upgrade", op};
+        if (value != nullptr) {
+            args.push_back(value);
+        }
+        args.push_back("--yes");
+        EXPECT_NE(0, main_impl(cout, cerr, args)) << op;
+        EXPECT_NE(
+            std::string::npos, cerr.str().find("Requires at most 1 options"))
+            << op << ": " << cerr.str();
+    }
+    // --archive sits outside the exclusive group, and --upgrade returns
+    // before the archive would run.
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt",
+            "--storage",
+            temppath,
+            "--upgrade",
+            "--archive",
+            "/nonexistent-archive-dest"};
+        EXPECT_NE(0, main_impl(cout, cerr, args));
+        EXPECT_NE(
+            std::string::npos,
+            cerr.str().find(
+                "--upgrade cannot be combined with --restore or --archive"))
+            << cerr.str();
+    }
+    // --restore sits outside it too, and truncates the pool it would have
+    // upgraded.
+    {
+        std::stringstream cout;
+        std::stringstream cerr;
+        std::string_view args[] = {
+            "monad-mpt",
+            "--storage",
+            temppath,
+            "--upgrade",
+            "--restore",
+            "/nonexistent-archive",
+            "--yes"};
+        EXPECT_NE(0, main_impl(cout, cerr, args));
+        EXPECT_NE(
+            std::string::npos,
+            cerr.str().find(
+                "--upgrade cannot be combined with --restore or --archive"))
+            << cerr.str();
+        EXPECT_TRUE(device_carries_db_metadata(temppath));
+    }
+}
+
+namespace
+{
+    constexpr uint64_t NARROW_LIMIT = uint64_t{1} << 20;
+    constexpr size_t WIDE_POOL_CHUNKS = 16;
+    constexpr size_t WIDE_STATIC_KEYS = 256;
+    constexpr uint64_t WIDE_MAX_BLOCKS = 20'000;
+
+    struct chunk_identity_view
+    {
+        uint64_t count;
+        bool in_fast;
+        bool in_slow;
+
+        bool operator==(chunk_identity_view const &) const = default;
+    };
+
+    using list_identities = std::map<uint32_t, chunk_identity_view>;
+
+    // Every chunk that is on the fast or the slow list, by chunk id.
+    list_identities listed_identities(monad::mpt::UpdateAux const &aux)
+    {
+        list_identities ret;
+        auto const *const m = aux.metadata_ctx().main();
+        for (uint32_t i = 0; i < m->chunk_info_count; ++i) {
+            auto const id =
+                m->atomic_load_chunk_identity(i, std::memory_order_acquire);
+            if (id.in_fast_list || id.in_slow_list) {
+                ret[i] = {
+                    id.count, bool(id.in_fast_list), bool(id.in_slow_list)};
+            }
+        }
+        return ret;
+    }
+
+    // A pool whose insertion counts straddle 2^20, filled with enough blocks
+    // for the fast list to hold several chunks, then archived by the CLI.
+    class WideCountArchive : public ::testing::Test
+    {
+    protected:
+        char poolpath[64] = "cli_tool_tmp_wide_XXXXXX";
+        char archivepath[64] = "cli_tool_tmp_wide_XXXXXX";
+        char destpath[64] = "cli_tool_tmp_wide_XXXXXX";
+        std::vector<monad::byte_string> keys;
+        list_identities source_identities;
+        uint64_t source_latest_version{0};
+
+        void SetUp() override
+        {
+            for (char *const path : {poolpath, archivepath, destpath}) {
+                int const fd = ::mkstemp(path);
+                ASSERT_NE(fd, -1);
+                ::close(fd);
+            }
+            ASSERT_EQ(
+                0,
+                ::truncate(
+                    poolpath,
+                    (3 + WIDE_POOL_CHUNKS) * MONAD_ASYNC_NAMESPACE::AsyncIO::
+                                                 MONAD_IO_BUFFERS_WRITE_SIZE +
+                        24576));
+            ASSERT_EQ(
+                0,
+                ::truncate(
+                    destpath,
+                    (17 + WIDE_POOL_CHUNKS) * MONAD_ASYNC_NAMESPACE::AsyncIO::
+                                                  MONAD_IO_BUFFERS_WRITE_SIZE +
+                        24576));
+        }
+
+        void TearDown() override
+        {
+            ::unlink(poolpath);
+            ::unlink(archivepath);
+            ::unlink(destpath);
+        }
+
+        void build_and_archive()
+        {
+            ASSERT_NO_FATAL_FAILURE(build_pool());
+            std::stringstream cout;
+            std::stringstream cerr;
+            std::string_view args[] = {
+                "monad-mpt", "--storage", poolpath, "--archive", archivepath};
+            int const retcode = std::async(std::launch::async, [&] {
+                                    return main_impl(cout, cerr, args);
+                                }).get();
+            ASSERT_EQ(retcode, 0) << cerr.str();
+        }
+
+        int restore(std::stringstream &cerr)
+        {
+            std::stringstream cout;
+            std::string_view args[] = {
+                "monad-mpt",
+                "--chunk-capacity",
+                "23",
+                "--yes",
+                "--restore",
+                archivepath,
+                "--storage",
+                destpath};
+            return std::async(
+                       std::launch::async,
+                       [&] { return main_impl(cout, cerr, args); })
+                .get();
+        }
+
+    private:
+        void build_pool()
+        {
+            MONAD_ASYNC_NAMESPACE::storage_pool::creation_flags flags;
+            flags.chunk_capacity = std::countr_zero(
+                MONAD_ASYNC_NAMESPACE::AsyncIO::MONAD_IO_BUFFERS_WRITE_SIZE);
+            MONAD_ASYNC_NAMESPACE::storage_pool pool{
+                std::filesystem::path{poolpath},
+                MONAD_ASYNC_NAMESPACE::storage_pool::mode::create_if_needed,
+                flags};
+            monad::io::Ring ring1{monad::io::RingConfig{2}};
+            monad::io::Ring ring2{monad::io::RingConfig{4}};
+            monad::io::Buffers rwbuf{
+                monad::io::make_buffers_for_segregated_read_write(
+                    ring1,
+                    ring2,
+                    2,
+                    4,
+                    MONAD_ASYNC_NAMESPACE::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE,
+                    MONAD_ASYNC_NAMESPACE::AsyncIO::
+                        MONAD_IO_BUFFERS_WRITE_SIZE)};
+            MONAD_ASYNC_NAMESPACE::AsyncIO io{pool, rwbuf};
+            monad::mpt::UpdateAux aux{};
+            aux.set_initial_insertion_count_unit_testing_only(NARROW_LIMIT - 2);
+            aux.init(io, MPT_TEST_HISTORY_LENGTH);
+
+            monad::test::StateMachineAlwaysMerkle sm;
+            monad::mpt::Node::SharedPtr root;
+            uint64_t version = 0;
+            monad::small_prng rand;
+            auto random_key = [&] {
+                monad::byte_string key(32, 0);
+                for (size_t n = 0; n < key.size(); n += 4) {
+                    uint32_t const v = rand();
+                    std::memcpy(key.data() + n, &v, 4);
+                }
+                return key;
+            };
+            auto upsert = [&](std::vector<monad::byte_string> const &ks) {
+                std::vector<monad::mpt::Update> updates;
+                updates.reserve(ks.size());
+                monad::mpt::UpdateList ls;
+                for (auto const &k : ks) {
+                    updates.push_back(monad::mpt::make_update(k, k));
+                    ls.push_front(updates.back());
+                }
+                root = aux.do_update(
+                    std::move(root),
+                    sm,
+                    std::move(ls),
+                    version++,
+                    /*compaction=*/true,
+                    /*can_write_to_fast=*/true,
+                    /*write_root=*/true,
+                    monad::mpt::timeline_id::primary);
+            };
+            for (size_t i = 0; i < WIDE_STATIC_KEYS; ++i) {
+                keys.push_back(random_key());
+            }
+            upsert(keys);
+            auto const past_limit = [&] {
+                auto const ids = listed_identities(aux);
+                return std::ranges::any_of(ids, [](auto const &kv) {
+                    return kv.second.count > NARROW_LIMIT;
+                });
+            };
+            for (uint64_t n = 0; n < WIDE_MAX_BLOCKS && !past_limit(); ++n) {
+                upsert({keys.front()});
+            }
+            ASSERT_TRUE(past_limit());
+            // Archiving skips empty chunks, so give the new tail some data.
+            upsert({keys.front()});
+            source_identities = listed_identities(aux);
+            source_latest_version = aux.metadata_ctx().db_history_max_version();
+        }
+    };
+
+    // Copies the archive at `src` to `dst` with the first seq chunk's metadata
+    // xattr replaced by `xattr`, or dropped if that is nothing.
+    void copy_replacing_one_xattr(
+        char const *const src, char const *const dst,
+        std::optional<std::span<std::byte const>> const xattr)
+    {
+        struct archive *const in = archive_read_new();
+        struct archive *const out = archive_write_new();
+        MONAD_ASSERT(in != nullptr && out != nullptr);
+        auto const free_all = monad::make_scope_exit([&]() noexcept {
+            archive_read_free(in);
+            archive_write_close(out);
+            archive_write_free(out);
+        });
+        MONAD_ASSERT(ARCHIVE_OK == archive_read_support_format_tar(in));
+        MONAD_ASSERT(ARCHIVE_OK == archive_read_support_filter_all(in));
+        MONAD_ASSERT(
+            ARCHIVE_OK == archive_read_open_filename(in, src, 1 << 20));
+        MONAD_ASSERT(
+            ARCHIVE_OK == archive_write_set_format_pax_restricted(out));
+        MONAD_ASSERT(ARCHIVE_OK == archive_write_open_filename(out, dst));
+        bool replaced = false;
+        for (archive_entry *entry = nullptr;
+             archive_read_next_header(in, &entry) == ARCHIVE_OK;) {
+            if (!replaced &&
+                std::string_view{archive_entry_pathname(entry)}.starts_with(
+                    "seq/")) {
+                archive_entry_xattr_clear(entry);
+                if (xattr.has_value()) {
+                    archive_entry_xattr_add_entry(
+                        entry,
+                        "monad.triedb.metadata",
+                        xattr->data(),
+                        xattr->size());
+                }
+                replaced = true;
+            }
+            MONAD_ASSERT(ARCHIVE_OK == archive_write_header(out, entry));
+            for (;;) {
+                void const *buffer = nullptr;
+                size_t len = 0;
+                la_int64_t offset = 0;
+                int const r =
+                    archive_read_data_block(in, &buffer, &len, &offset);
+                if (r == ARCHIVE_EOF) {
+                    break;
+                }
+                MONAD_ASSERT(r == ARCHIVE_OK);
+                MONAD_ASSERT(
+                    la_ssize_t(len) == archive_write_data(out, buffer, len));
+            }
+        }
+        MONAD_ASSERT(replaced);
+    }
+
+    void replace_one_xattr(
+        char const *const path,
+        std::optional<std::span<std::byte const>> const xattr)
+    {
+        char dst[] = "cli_tool_tmp_wide_XXXXXX";
+        int const fd = ::mkstemp(dst);
+        MONAD_ASSERT(fd != -1);
+        ::close(fd);
+        copy_replacing_one_xattr(path, dst, xattr);
+        MONAD_ASSERT(0 == std::rename(dst, path));
+    }
+}
+
+TEST_F(WideCountArchive, archive_restore_keeps_counts_past_twenty_bits)
+{
+    ASSERT_NO_FATAL_FAILURE(build_and_archive());
+    std::stringstream cerr;
+    ASSERT_EQ(0, restore(cerr)) << cerr.str();
+
+    std::async(std::launch::async, [&] {
+        monad::async::storage_pool pool(std::filesystem::path{destpath});
+        monad::io::Ring testring;
+        monad::io::Buffers testrwbuf = monad::io::make_buffers_for_read_only(
+            testring, 1, monad::async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE);
+        monad::async::AsyncIO testio(pool, testrwbuf);
+        monad::mpt::UpdateAux const aux{testio};
+
+        EXPECT_EQ(listed_identities(aux), source_identities);
+        EXPECT_EQ(
+            aux.metadata_ctx().db_history_max_version(), source_latest_version);
+        monad::mpt::Node::SharedPtr const root_ptr{read_node_blocking(
+            aux,
+            aux.metadata_ctx().get_latest_root_offset(),
+            aux.metadata_ctx().db_history_max_version(),
+            monad::mpt::timeline_id::primary)};
+        monad::mpt::NodeCursor const root(root_ptr);
+        for (auto const &key : keys) {
+            auto const ret = monad::mpt::find_blocking(
+                aux,
+                root,
+                key,
+                aux.metadata_ctx().db_history_max_version(),
+                monad::mpt::timeline_id::primary);
+            EXPECT_EQ(ret.second, monad::mpt::find_result::success);
+        }
+    }).get();
+}
+
+TEST_F(WideCountArchive, restore_rejects_a_monad008_archive)
+{
+    ASSERT_NO_FATAL_FAILURE(build_and_archive());
+    std::array<std::byte, 8> const old_entry{};
+    replace_one_xattr(archivepath, std::span<std::byte const>{old_entry});
+
+    std::stringstream cerr;
+    EXPECT_NE(0, restore(cerr));
+    EXPECT_NE(
+        std::string::npos,
+        cerr.str().find(
+            "archived chunk metadata is 8 bytes; this binary restores only "
+            "MONAD009 archives (16 bytes). Restore it with the previous "
+            "release, then run monad-mpt --upgrade."))
+        << cerr.str();
+}
+
+TEST_F(WideCountArchive, restore_rejects_an_archive_of_neither_format)
+{
+    ASSERT_NO_FATAL_FAILURE(build_and_archive());
+    std::array<std::byte, 12> const odd_entry{};
+    replace_one_xattr(archivepath, std::span<std::byte const>{odd_entry});
+
+    std::stringstream cerr;
+    EXPECT_NE(0, restore(cerr));
+    EXPECT_NE(
+        std::string::npos,
+        cerr.str().find("archived chunk metadata is 12 bytes; this binary "
+                        "restores only MONAD009 archives (16 bytes)."))
+        << cerr.str();
+    EXPECT_EQ(std::string::npos, cerr.str().find("previous release"))
+        << cerr.str();
+}
+
+TEST_F(WideCountArchive, restore_rejects_a_chunk_without_metadata)
+{
+    ASSERT_NO_FATAL_FAILURE(build_and_archive());
+    replace_one_xattr(archivepath, std::nullopt);
+
+    std::stringstream cerr;
+    EXPECT_NE(0, restore(cerr));
+    EXPECT_NE(
+        std::string::npos, cerr.str().find("has no monad.triedb.metadata"))
+        << cerr.str();
 }

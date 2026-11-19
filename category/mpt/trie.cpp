@@ -1556,14 +1556,31 @@ node_writer_unique_ptr_type replace_node_writer(
     return ret;
 }
 
+static void serialize_node_for_write(
+    bool const legacy, unsigned char *const write_pos,
+    unsigned const bytes_to_append, Node const &node, uint32_t const size,
+    unsigned const offset)
+{
+    if (legacy) {
+        serialize_legacy_layout_node_to_buffer(
+            write_pos, bytes_to_append, node, size, offset);
+    }
+    else {
+        serialize_node_to_buffer(
+            write_pos, bytes_to_append, node, size, offset);
+    }
+}
+
 // return physical offset the node is written at
 async_write_node_result async_write_node(
     UpdateAux &aux, node_writer_unique_ptr_type &node_writer, Node const &node)
 {
+    bool const legacy = aux.write_legacy_formats();
 retry:
     aux.io->poll_nonblocking_if_not_within_completions(1);
     auto *sender = &node_writer->sender();
-    auto const size = node.get_disk_size();
+    uint32_t const size =
+        legacy ? legacy_layout_disk_size(node) : node.get_disk_size();
     auto const remaining_bytes = sender->remaining_buffer_bytes();
     async_write_node_result ret{
         .offset_written_to = INVALID_OFFSET,
@@ -1575,8 +1592,8 @@ retry:
             sender->offset().add_to_offset(sender->written_buffer_bytes());
         auto *where_to_serialize = sender->advance_buffer_append(size);
         MONAD_ASSERT(where_to_serialize != nullptr);
-        serialize_node_to_buffer(
-            (unsigned char *)where_to_serialize, size, node, size);
+        serialize_node_for_write(
+            legacy, (unsigned char *)where_to_serialize, size, node, size, 0);
     }
     else {
         auto const chunk_remaining_bytes =
@@ -1604,7 +1621,8 @@ retry:
                 (unsigned char *)node_writer->sender().advance_buffer_append(
                     bytes_to_append);
             MONAD_ASSERT(where_to_serialize != nullptr);
-            serialize_node_to_buffer(
+            serialize_node_for_write(
+                legacy,
                 where_to_serialize,
                 bytes_to_append,
                 node,
@@ -1641,7 +1659,8 @@ retry:
             auto const bytes_to_append = std::min(
                 (unsigned)node_writer->sender().remaining_buffer_bytes(),
                 size - offset_in_on_disk_node);
-            serialize_node_to_buffer(
+            serialize_node_for_write(
+                legacy,
                 where_to_serialize,
                 bytes_to_append,
                 node,
@@ -1687,17 +1706,15 @@ async_write_node_set_spare(UpdateAux &aux, Node &node, bool write_to_fast)
         aux.set_can_write_to_fast(!aux.can_write_to_fast());
     }
 
-    auto off = async_write_node(
-                   aux,
-                   write_to_fast ? aux.node_writer_fast : aux.node_writer_slow,
-                   node)
-                   .offset_written_to;
+    auto const written = async_write_node(
+        aux, write_to_fast ? aux.node_writer_fast : aux.node_writer_slow, node);
+    auto off = written.offset_written_to;
     MONAD_ASSERT(
         (write_to_fast &&
          aux.metadata_ctx().main()->at(off.id)->in_fast_list) ||
         (!write_to_fast &&
          aux.metadata_ctx().main()->at(off.id)->in_slow_list));
-    unsigned const pages = num_pages(off.offset, node.get_disk_size());
+    unsigned const pages = num_pages(off.offset, written.bytes_appended);
     off.set_spare(static_cast<uint16_t>(node_disk_pages_spare_15{pages}));
     return off;
 }

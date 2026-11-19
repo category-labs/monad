@@ -72,6 +72,12 @@ namespace test
         {
             DbMetadataContext::check_chunk_info_fits_(target, mmap_size);
         }
+
+        static size_t db_map_size_of(
+            DbMetadataContext const &ctx, detail::db_metadata const *const m)
+        {
+            return ctx.db_map_size_of_(m);
+        }
     };
 }
 

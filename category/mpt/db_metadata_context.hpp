@@ -224,6 +224,15 @@ public:
         return is_new_pool_;
     }
 
+    // Forces both metadata copies to durable storage. Requires a writable
+    // mapping.
+    void sync_metadata_to_disk();
+
+    // Called after each sync the upgrade makes, with the index of the copy it
+    // synced. Process-wide, so only for single-threaded tests.
+    static inline void (*on_upgrade_sync_unit_testing_only)(
+        DbMetadataContext const &, unsigned which) = nullptr;
+
     enum class chunk_list : uint8_t
     {
         free = 0,
@@ -234,12 +243,16 @@ public:
     void append(chunk_list list, uint32_t idx);
     void remove(uint32_t idx) noexcept;
 
+    // Restarts the insertion counts of the fast or slow list at `count`. The
+    // list must hold exactly one chunk.
+    void restart_insertion_counts(chunk_list list, uint64_t count) noexcept;
+
     // Initialize a brand new pool: chunk lists, version markers, magic,
     // root_offsets mapping, and optionally history length.
     // initial_insertion_count is for unit testing only (normally 0).
     void init_new_pool(
         std::optional<uint64_t> history_len = {},
-        uint32_t initial_insertion_count = 0);
+        uint64_t initial_insertion_count = 0);
 
     // Which physical ring is currently the logical primary. 0 = ring_a,
     // 1 = ring_b. Atomic acquire load so callers that branch on it pair
@@ -542,6 +555,9 @@ private:
     // before and after the body runs.
     void sync_metadata_to_disk_();
 
+    // Force the first `bytes` of metadata copy `which` to durable storage.
+    void sync_metadata_copy_to_disk_(unsigned which, size_t bytes);
+
     // Force the currently-occupied portions of ring_a and ring_b to durable
     // storage. Called at the end of activate/deactivate body before the
     // pending flag is cleared, so that by the time the cleared flag
@@ -574,9 +590,9 @@ private:
     // operation to completion before the constructor returns.
     void replay_pending_shrink_grow_();
 
-    // Inner body of the chunk_info[] growth which follows a mode::grow open.
-    // Idempotent under replay: a copy already at `target` is left alone.
-    // Expects the pending flag to already be stamped.
+    // Inner body of the chunk_records[] growth which follows a mode::grow
+    // open. Idempotent under replay: a copy already at `target` is left
+    // alone. Expects the pending flag to already be stamped.
     void grow_chunk_info_body_(uint32_t target_chunk_count);
 
     // Called from the constructor after replay_pending_shrink_grow_. Compares
@@ -584,7 +600,13 @@ private:
     // nothing, grows, or aborts naming monad-mpt --grow.
     void reconcile_chunk_count_();
 
-    // Aborts if chunk_info[] cannot describe `target` chunks. Split out from
+    // Upgrades every copy still carrying PREVIOUS_MAGIC to MAGIC, after
+    // healing a damaged or dirty copy from its sibling. Returns whether any
+    // copy carried PREVIOUS_MAGIC. Aborts instead on a pool that was not
+    // opened to allow the upgrade, or on which it cannot complete.
+    bool upgrade_previous_format_();
+
+    // Aborts if chunk_records[] cannot describe `target` chunks. Split out from
     // the constructor so the limits can be unit tested without provisioning a
     // multi-terabyte pool.
     static void
@@ -607,7 +629,7 @@ private:
     MONAD_ASYNC_NAMESPACE::AsyncIO *io_{nullptr};
     metadata_copy copies_[2];
     // db_map_size_ is the logical bytes of live metadata (header +
-    // chunk_info[]); metadata_mmap_size_ is the total VA reservation
+    // chunk_records[]); metadata_mmap_size_ is the total VA reservation
     // (cnv chunk 0 half-capacity) and is always >= db_map_size_. Use
     // metadata_mmap_size_ for mmap/munmap and db_map_size_
     // for msync, to avoid syncing megabytes of dead bytes beyond the logical

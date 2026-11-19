@@ -211,7 +211,7 @@ class UpdateAux
 
     void update_disk_growth_data();
 
-    uint32_t initial_insertion_count_on_pool_creation_{0};
+    uint64_t initial_insertion_count_on_pool_creation_{0};
     bool enable_dynamic_history_length_{true};
 
     // Owns the mmap lifecycle for db_metadata. Contains the two copies of
@@ -219,8 +219,8 @@ class UpdateAux
     std::unique_ptr<DbMetadataContext> metadata_ctx_;
 
     /******** Compaction ********/
-    uint32_t chunks_to_remove_before_count_fast_{0};
-    uint32_t chunks_to_remove_before_count_slow_{0};
+    uint64_t chunks_to_remove_before_count_fast_{0};
+    uint64_t chunks_to_remove_before_count_slow_{0};
     // speed control var
     compact_virtual_chunk_offset_t last_block_end_offset_fast_{
         MIN_COMPACT_VIRTUAL_OFFSET};
@@ -231,6 +231,7 @@ class UpdateAux
     compact_virtual_chunk_offset_t last_block_disk_growth_slow_{
         MIN_COMPACT_VIRTUAL_OFFSET};
     bool alternate_slow_fast_writer_{false};
+    bool write_legacy_formats_{false};
     bool can_write_to_fast_{true};
 
     // Lifetime totals, never reset. The per-upsert figures that the stats log
@@ -340,17 +341,13 @@ public:
     // translate between virtual and physical addresses chunk_offset_t
     virtual_chunk_offset_t physical_to_virtual(chunk_offset_t) const noexcept;
 
-    // age is relative to the beginning chunk's count
-    std::pair<chunk_list, detail::unsigned_20>
-    chunk_list_and_age(uint32_t idx) const noexcept;
-
     // WARNING: These are destructive, they discard immediately any extraneous
     // data.
     void rewind_to_match_offsets();
     void rewind_to_version(uint64_t version);
     void clear_ondisk_db();
 
-    void set_initial_insertion_count_unit_testing_only(uint32_t const count)
+    void set_initial_insertion_count_unit_testing_only(uint64_t const count)
     {
         initial_insertion_count_on_pool_creation_ = count;
     }
@@ -365,6 +362,18 @@ public:
     bool alternate_slow_fast_writer() const noexcept
     {
         return alternate_slow_fast_writer_;
+    }
+
+    // WARNING: for unit testing only
+    // DO NOT invoke it outside of unit test
+    void write_legacy_formats_unit_testing_only(bool const legacy) noexcept
+    {
+        write_legacy_formats_ = legacy;
+    }
+
+    bool write_legacy_formats() const noexcept
+    {
+        return write_legacy_formats_;
     }
 
     bool can_write_to_fast() const noexcept
@@ -404,7 +413,7 @@ public:
 };
 
 static_assert(
-    sizeof(UpdateAux) == 128 + 3 * sizeof(detail::TrieUpdateCollectedStats));
+    sizeof(UpdateAux) == 192 + 3 * sizeof(detail::TrieUpdateCollectedStats));
 static_assert(alignof(UpdateAux) == 8);
 
 template <receiver Receiver>

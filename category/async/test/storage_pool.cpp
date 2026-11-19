@@ -460,6 +460,21 @@ namespace
             growable_pool::MARKED_BYTES);
     }
 
+    TEST(StoragePool, ends_in_footer_until_extended_and_after_a_grow)
+    {
+        growable_pool fixture{10 * growable_pool::BLKSIZE};
+        EXPECT_TRUE(storage_pool::ends_in_footer(fixture.dev));
+        fixture.extend_to(14 * growable_pool::BLKSIZE + 16384);
+        EXPECT_FALSE(storage_pool::ends_in_footer(fixture.dev));
+        {
+            storage_pool const pool{
+                fixture.dev,
+                storage_pool::mode::grow,
+                fixture.recorded_flags()};
+        }
+        EXPECT_TRUE(storage_pool::ends_in_footer(fixture.dev));
+    }
+
     // The footer at the new end is the relocation's commit record, so a crash
     // before it is durable must leave the device re-runnable with its
     // bytes-used accounting intact. Reproduced by clearing that footer's

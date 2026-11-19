@@ -123,7 +123,6 @@ namespace monad::vm::interpreter
     }
 #endif
 
-#if defined(MONAD_ZKVM_ZISK)
     // Separate entry points for the same errors; keep them out of line.
     [[noreturn, gnu::noinline, gnu::cold]] inline void
     exit_out_of_gas(runtime::Context &ctx) noexcept
@@ -136,7 +135,6 @@ namespace monad::vm::interpreter
     {
         ctx.exit(Error);
     }
-#endif
 
     // Shared operand-count check for individual opcodes and fused sequences.
     template <int32_t Required>

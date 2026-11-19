@@ -21,6 +21,8 @@ add_library(
   "chain_id.cpp"
   "chain_id.hpp"
   "config.hpp"
+  "l1_source.cpp"
+  "l1_source.hpp"
   "system_transaction.cpp"
   "system_transaction.hpp")
 

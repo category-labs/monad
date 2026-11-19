@@ -57,6 +57,7 @@ class PrivateDomainExecutor
     TrieDb db_;
     vm::VM &vm_;
     fiber::PriorityPool &priority_pool_;
+    ApplicationEncryptionContext const *encryption_context_;
     BlockHashBufferFinalized block_hashes_;
     uint64_t next_block_{0};
 
@@ -67,10 +68,12 @@ class PrivateDomainExecutor
 public:
     // Executes as the domain `domain_chain_id` of the L1 `l1_chain`, and
     // continues after the db's latest finalized block. The db must match
-    // the encoding of the blocks' revisions.
+    // the encoding of the blocks' revisions. The encryption context and its
+    // key must outlive this executor; ALE calls are rejected without it.
     PrivateDomainExecutor(
         MonadChain const &l1_chain, uint64_t domain_chain_id, mpt::Db &,
-        vm::VM &, fiber::PriorityPool &);
+        vm::VM &, fiber::PriorityPool &,
+        ApplicationEncryptionContext const *encryption_context = nullptr);
 
     uint64_t next_block() const
     {

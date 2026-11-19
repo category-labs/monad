@@ -69,12 +69,14 @@ BlockHeader execution_header(DerivedDomainBlock const &);
 // Executes a derived domain block's transactions in order under the private
 // domain rules. `block_state` holds the domain's state as of the previous
 // block, `header` is the block's execution_header, and `block_hashes` serves
-// BLOCKHASH. Returns one receipt per transaction.
+// BLOCKHASH. The encryption context and its key must outlive execution. Returns
+// one receipt per transaction.
 template <Traits traits>
     requires is_monad_trait_v<traits>
 Result<std::vector<Receipt>> execute_domain_block(
     DomainChain const &chain, DerivedDomainBlock const &,
     BlockHeader const &header, BlockState &,
-    BlockHashBuffer const &block_hashes, fiber::PriorityPool &);
+    BlockHashBuffer const &block_hashes, fiber::PriorityPool &,
+    ApplicationEncryptionContext const *encryption_context = nullptr);
 
 MONAD_DOMAIN_NAMESPACE_END

@@ -523,6 +523,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         PkgConfig::secp256k1
         quill::quill)
     monad_riscv_compile_options(monad_execution_native)
+    monad_riscv_compile_options(monad_precompiles_native)
 
     # ---- Final guest static archive ----
     add_library(${_guest_target} STATIC
@@ -532,6 +533,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         $<TARGET_OBJECTS:monad_precompiles>
         $<TARGET_OBJECTS:monad_execution_ethereum>
         $<TARGET_OBJECTS:monad_execution_native>
+        $<TARGET_OBJECTS:monad_precompiles_native>
         $<TARGET_OBJECTS:monad-vm-evm>
         $<TARGET_OBJECTS:monad-vm-runtime>
         $<TARGET_OBJECTS:monad-vm-interpreter>

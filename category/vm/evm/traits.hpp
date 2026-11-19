@@ -114,6 +114,7 @@ namespace monad
         { T::mip_8_active() } -> std::same_as<bool>;
         { T::mip_11_active() } -> std::same_as<bool>;
         { T::mip_12_active() } -> std::same_as<bool>;
+        { T::ale_active() } -> std::same_as<bool>;
         { T::can_create_inside_delegated() } -> std::same_as<bool>;
         { T::charges_gas_limit() } -> std::same_as<bool>;
         { T::bumps_nonce_on_unfunded_create() } -> std::same_as<bool>;
@@ -339,6 +340,11 @@ namespace monad
         }
 
         static consteval bool mip_12_active() noexcept
+        {
+            return false;
+        }
+
+        static consteval bool ale_active() noexcept
         {
             return false;
         }
@@ -660,6 +666,11 @@ namespace monad
         }
 
         static consteval bool mip_12_active() noexcept
+        {
+            return Rev >= MONAD_NEXT;
+        }
+
+        static consteval bool ale_active() noexcept
         {
             return Rev >= MONAD_NEXT;
         }

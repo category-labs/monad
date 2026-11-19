@@ -189,6 +189,13 @@ MC4CAQAwBQYDK2VwBCIEIBERERERERERERERERERERERERERERERERERERERERER
             "a3c6898d05630de04949dbf70f2e544a52814e");
     }
 
+    byte_string recipient_public_key()
+    {
+        // Public key for the raw X25519 private key 0x22 * 32.
+        return *from_hex(
+            "0faa684ed28867b97f4a6a2dee5df8ce974e76b7018e3f22a1c4cf2678570f20");
+    }
+
     byte_string unsupported_frame_payload()
     {
         // As independent_payload(), with plaintext 0x02 || 02 c0.
@@ -389,4 +396,178 @@ TEST(PrivateDomainHpke, rejects_non_x25519_private_keys)
             result.assume_error(), PrivateDomainHpkeError::InvalidPrivateKey)
             << name;
     }
+}
+
+TEST(PrivateDomainHpke, seal_matches_independent_vector)
+{
+    TempDirectory const directory;
+    auto const key = load_key(directory);
+    byte_string const plaintext{0xde, 0xad, 0xbe, 0xef};
+    byte_string const ad{0x01, 0x02};
+    byte_string const randomness_input{0xa1, 0xb2, 0xc3};
+
+    auto const result =
+        key.seal(plaintext, recipient_public_key(), ad, randomness_input);
+
+    ASSERT_TRUE(result.has_value());
+    // Independently computed with Python cryptography 50.0.2 and the RFC
+    // 9180 labeled HKDF operations. The persistent seed uses raw 0x11 * 32,
+    // zero salt and abi.encode("monad-seed-key-v1"). HMAC-SHA256 of the
+    // opaque test input above supplies the ephemeral X25519 private bytes.
+    EXPECT_EQ(
+        result.value(),
+        *from_hex(
+            "f84288f61b65f5f7216d41589383ede4469528436f9525c3de5d04b707019420"
+            "493bdd5001ee1a90409a220aecc2c023e10ec51b"));
+}
+
+TEST(PrivateDomainHpke, sealing_authenticates_associated_data)
+{
+    TempDirectory const directory;
+    auto const key = load_key(directory);
+    byte_string const plaintext{0xde, 0xad, 0xbe, 0xef};
+    byte_string const ad{0x01, 0x02};
+    byte_string const randomness_input{0xa1, 0xb2, 0xc3};
+    auto const result =
+        key.seal(plaintext, recipient_public_key(), ad, randomness_input);
+
+    ASSERT_TRUE(result.has_value());
+    byte_string_view const payload = result.value();
+    auto const opened = detail::hpke_base_open_x25519(
+        byte_string(32, 0x22),
+        payload.substr(0, 32),
+        {},
+        ad,
+        payload.substr(32));
+    ASSERT_TRUE(opened.has_value());
+    EXPECT_EQ(opened.value(), plaintext);
+    EXPECT_EQ(
+        detail::hpke_base_open_x25519(
+            byte_string(32, 0x22),
+            payload.substr(0, 32),
+            {},
+            {},
+            payload.substr(32))
+            .assume_error(),
+        PrivateDomainHpkeError::DecryptionFailed);
+}
+
+TEST(PrivateDomainHpke, reproduces_sealing_after_key_reload)
+{
+    TempDirectory const directory;
+    auto const key = load_key(directory);
+    auto const reloaded = load_key(directory);
+    byte_string const plaintext{0x01, 0x02};
+    byte_string const randomness_input{0xa1, 0xb2, 0xc3};
+    auto const expected =
+        key.seal(plaintext, recipient_public_key(), {}, randomness_input);
+
+    ASSERT_TRUE(expected.has_value());
+    for (auto const *const replica : {&key, &reloaded}) {
+        auto const result = replica->seal(
+            plaintext, recipient_public_key(), {}, randomness_input);
+        ASSERT_TRUE(result.has_value());
+        EXPECT_EQ(result.value(), expected.value());
+    }
+}
+
+TEST(PrivateDomainHpke, preserves_sealing_after_key_move)
+{
+    TempDirectory const directory;
+    auto key = load_key(directory);
+    byte_string const plaintext{0x01, 0x02};
+    byte_string const randomness_input{0xa1, 0xb2, 0xc3};
+    auto const expected =
+        key.seal(plaintext, recipient_public_key(), {}, randomness_input);
+    ASSERT_TRUE(expected.has_value());
+
+    auto moved = std::move(key);
+    auto const after_construction =
+        moved.seal(plaintext, recipient_public_key(), {}, randomness_input);
+    ASSERT_TRUE(after_construction.has_value());
+    EXPECT_EQ(after_construction.value(), expected.value());
+
+    TempDirectory const other_directory;
+    auto assigned = load_key(other_directory, X25519_PRIVATE_KEY_2);
+    assigned = std::move(moved);
+    auto const after_assignment =
+        assigned.seal(plaintext, recipient_public_key(), {}, randomness_input);
+    ASSERT_TRUE(after_assignment.has_value());
+    EXPECT_EQ(after_assignment.value(), expected.value());
+}
+
+TEST(PrivateDomainHpke, sealing_randomness_depends_on_source_key_and_input)
+{
+    TempDirectory const directory;
+    auto const key = load_key(directory);
+    TempDirectory const other_directory;
+    auto const other_key = load_key(other_directory, X25519_PRIVATE_KEY_2);
+    byte_string const plaintext{0x01, 0x02};
+    byte_string const randomness_input{0xa1, 0xb2, 0xc3};
+    auto const original =
+        key.seal(plaintext, recipient_public_key(), {}, randomness_input);
+    auto const changed_key =
+        other_key.seal(plaintext, recipient_public_key(), {}, randomness_input);
+    auto const changed_input = key.seal(
+        plaintext, recipient_public_key(), {}, byte_string{0xa1, 0xb2, 0xc4});
+
+    ASSERT_TRUE(original.has_value());
+    ASSERT_TRUE(changed_key.has_value());
+    ASSERT_TRUE(changed_input.has_value());
+    EXPECT_NE(
+        original.value().substr(0, 32), changed_key.value().substr(0, 32));
+    EXPECT_NE(
+        original.value().substr(0, 32), changed_input.value().substr(0, 32));
+}
+
+TEST(PrivateDomainHpke, seals_empty_plaintext)
+{
+    TempDirectory const directory;
+    auto const key = load_key(directory);
+    auto const sealed = key.seal({}, recipient_public_key(), {}, {});
+
+    ASSERT_TRUE(sealed.has_value());
+    EXPECT_EQ(sealed.value().size(), 32 + 16);
+    byte_string_view const payload = sealed.value();
+    auto const opened = detail::hpke_base_open_x25519(
+        byte_string(32, 0x22),
+        payload.substr(0, 32),
+        {},
+        {},
+        payload.substr(32));
+    ASSERT_TRUE(opened.has_value());
+    EXPECT_TRUE(opened.value().empty());
+}
+
+TEST(PrivateDomainHpke, sealing_rejects_invalid_recipient_keys)
+{
+    TempDirectory const directory;
+    auto const key = load_key(directory);
+    for (byte_string const &pubkey :
+         {byte_string{},
+          byte_string(31, 0x22),
+          byte_string(33, 0x22),
+          byte_string(32, 0)}) {
+        auto const result = key.seal({}, pubkey, {}, {});
+        ASSERT_TRUE(result.has_error());
+        EXPECT_EQ(
+            result.assume_error(), PrivateDomainHpkeError::EncryptionFailed);
+    }
+
+    // A rejection must not leave an error that affects the next call.
+    EXPECT_TRUE(key.seal({}, recipient_public_key(), {}, {}).has_value());
+}
+
+TEST(PrivateDomainHpkeDeathTest, sealing_aborts_on_an_allocation_failure)
+{
+    TempDirectory const directory;
+    auto const key = load_key(directory);
+    auto const pubkey = recipient_public_key();
+
+    EXPECT_DEATH(
+        {
+            allocations_left = 0;
+            (void)key.seal({}, pubkey, {}, {});
+        },
+        "allocation failed while sealing a private domain payload");
 }

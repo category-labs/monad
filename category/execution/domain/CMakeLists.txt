@@ -28,6 +28,7 @@ add_library(
   "deriver.cpp"
   "deriver.hpp"
   "domain_block.hpp"
+  "domains_precompiles.cpp"
   "execute_domain_block.cpp"
   "execute_domain_block.hpp"
   "executor.cpp"
@@ -41,7 +42,13 @@ add_library(
   "scan_domain_inputs.cpp"
   "scan_domain_inputs.hpp"
   "system_transaction.cpp"
-  "system_transaction.hpp")
+  "system_transaction.hpp"
+  # application-level encryption precompile
+  "ale/application_encryption_contract.cpp"
+  "ale/application_encryption_contract.hpp"
+  "ale/application_encryption_context.hpp"
+  "ale/application_encryption_error.cpp"
+  "ale/application_encryption_error.hpp")
 
 target_link_libraries(
   monad_domain_execution
@@ -52,6 +59,5 @@ monad_compile_options(monad_domain_execution)
 file(GLOB_RECURSE domain_tests CONFIGURE_DEPENDS *_test.cpp)
 foreach(test_file ${domain_tests})
   get_filename_component(test_name ${test_file} NAME_WLE)
-  monad_add_test(${test_name} ${test_file})
-  target_link_libraries(${test_name} monad_domain_execution)
+  monad_add_test(${test_name} ${test_file} RUNTIME monad_domain)
 endforeach()

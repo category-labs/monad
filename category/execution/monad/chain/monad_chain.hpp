@@ -38,6 +38,7 @@ inline constexpr size_t MAX_INITCODE_SIZE_MONAD_FOUR =
 struct BlockHeader;
 struct Transaction;
 class AccountState;
+struct ApplicationEncryptionContext;
 
 template <typename T>
     requires is_monad_trait_v<T>
@@ -51,9 +52,12 @@ struct ChainContext<T>
         &senders_and_authorities;
     std::vector<Address> const &senders;
     std::vector<std::vector<std::optional<Address>>> const &authorities;
+
     // Set when executing a private domain block. See PROTOCOL.md in
     // category-labs/monad-domains for the rules it changes.
     bool private_domain{false};
+
+    ApplicationEncryptionContext const *encryption_context{nullptr};
 
     ExecutionMode mode{};
 

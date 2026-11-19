@@ -95,7 +95,7 @@ EXPLICIT_MONAD_TRAITS(is_precompile);
 template <Traits traits>
 std::optional<vm::Result> check_call_precompile(
     State &state, CallTracerBase &call_tracer, vm::Message const &msg,
-    bool const log_native_transfers)
+    bool const log_native_transfers, ChainContext<traits> const *)
 {
     if (auto maybe_result = check_call_eth_precompile<traits>(msg)) {
         return maybe_result;

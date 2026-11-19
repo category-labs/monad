@@ -20,6 +20,7 @@
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/revision.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/gas_profile.hpp>
 #include <category/vm/host.hpp>
 #include <category/vm/runtime/bin.hpp>
 #include <category/vm/runtime/data.hpp>
@@ -41,7 +42,8 @@ namespace monad::vm::runtime
 
         auto const access_status = ctx->host->access_account(address);
         if (access_status == AccessStatus::Cold) {
-            ctx->deduct_gas(traits::cold_account_cost());
+            ctx->deduct_gas(gas_profile::tag(
+                gas_profile::ColdAccount, 1, traits::cold_account_cost()));
         }
 
         *result_ptr = ctx->host->get_balance(address);
@@ -65,7 +67,11 @@ namespace monad::vm::runtime
         ctx->expand_memory<traits>(dest_offset + size);
 
         auto const size_in_words = shr_ceil<5>(size);
-        ctx->deduct_gas(size_in_words * bin<3>);
+        ctx->deduct_gas(gas_profile::tag(
+            source == ctx->env.input_data ? gas_profile::CopyCalldata
+                                          : gas_profile::CopyCode,
+            *size_in_words,
+            size_in_words * bin<3>));
 
         uint32_t const start =
             is_bounded_by_bits<32>(offset_word)
@@ -129,14 +135,18 @@ namespace monad::vm::runtime
             ctx->expand_memory<traits>(dest_offset + size);
 
             auto const size_in_words = shr_ceil<5>(size);
-            ctx->deduct_gas(size_in_words * bin<3>);
+            ctx->deduct_gas(gas_profile::tag(
+                gas_profile::CopyExtcode,
+                *size_in_words,
+                size_in_words * bin<3>));
         }
 
         auto const address = address_from_uint256(*address_ptr);
 
         auto const access_status = ctx->host->access_account(address);
         if (access_status == AccessStatus::Cold) {
-            ctx->deduct_gas(traits::cold_account_cost());
+            ctx->deduct_gas(gas_profile::tag(
+                gas_profile::ColdAccount, 1, traits::cold_account_cost()));
         }
 
         if (*size > 0) {
@@ -176,7 +186,10 @@ namespace monad::vm::runtime
             ctx->expand_memory<traits>(dest_offset + size);
 
             auto const size_in_words = shr_ceil<5>(size);
-            ctx->deduct_gas(size_in_words * bin<3>);
+            ctx->deduct_gas(gas_profile::tag(
+                gas_profile::CopyReturndata,
+                *size_in_words,
+                size_in_words * bin<3>));
 
             std::copy_n(
                 ctx->env.return_data + offset,
@@ -197,7 +210,8 @@ namespace monad::vm::runtime
 
         auto const access_status = ctx->host->access_account(address);
         if (access_status == AccessStatus::Cold) {
-            ctx->deduct_gas(traits::cold_account_cost());
+            ctx->deduct_gas(gas_profile::tag(
+                gas_profile::ColdAccount, 1, traits::cold_account_cost()));
         }
 
         auto const hash = ctx->host->get_code_hash(address);
@@ -216,7 +230,8 @@ namespace monad::vm::runtime
 
         auto const access_status = ctx->host->access_account(address);
         if (access_status == AccessStatus::Cold) {
-            ctx->deduct_gas(traits::cold_account_cost());
+            ctx->deduct_gas(gas_profile::tag(
+                gas_profile::ColdAccount, 1, traits::cold_account_cost()));
         }
 
         *result_ptr = ctx->host->get_code_size(address);

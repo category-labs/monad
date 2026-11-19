@@ -25,6 +25,7 @@
 #include <category/vm/evm/result.hpp>
 #include <category/vm/evm/revision.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/gas_profile.hpp>
 #include <category/vm/host.hpp>
 #include <category/vm/runtime/bin.hpp>
 #include <category/vm/runtime/call.hpp>
@@ -85,7 +86,8 @@ namespace monad::vm::runtime
 
         auto const access_status = ctx->host->access_account(dest_address);
         if (access_status == AccessStatus::Cold) {
-            ctx->deduct_gas(traits::cold_account_cost());
+            ctx->deduct_gas(gas_profile::tag(
+                gas_profile::ColdAccount, 1, traits::cold_account_cost()));
         }
 
         // Charge the value-transfer cost before the EIP-7702 delegation
@@ -93,7 +95,8 @@ namespace monad::vm::runtime
         // and does not load a cold callee the frame cannot pay for, so a
         // witness built from revm has no proof for that account.
         if (has_value) {
-            ctx->gas_remaining -= 9000;
+            ctx->gas_remaining -=
+                gas_profile::tag(gas_profile::CallValue, 1, 9000);
             if (MONAD_UNLIKELY(
                     ctx->gas_remaining + remaining_block_base_gas < 0)) {
                 ctx->exit(StatusCode::OutOfGas);
@@ -114,10 +117,14 @@ namespace monad::vm::runtime
                         ctx->host->resolve_delegation(dest_address)) {
                     auto const access_status =
                         ctx->host->access_account(*delegate_address);
-                    ctx->gas_remaining -= (access_status == AccessStatus::Cold
-                                               ? traits::cold_account_cost()
-                                               : 0) +
-                                          100;
+                    ctx->gas_remaining -=
+                        (access_status == AccessStatus::Cold
+                             ? gas_profile::tag(
+                                   gas_profile::ColdAccount,
+                                   1,
+                                   traits::cold_account_cost())
+                             : 0) +
+                        gas_profile::tag(gas_profile::WarmDelegate, 1, 100);
                     return *delegate_address;
                 }
             }
@@ -134,7 +141,8 @@ namespace monad::vm::runtime
 
         if (call_kind == CallKind::Call) {
             if (has_value && !ctx->host->account_exists(dest_address)) {
-                ctx->gas_remaining -= 25000;
+                ctx->gas_remaining -=
+                    gas_profile::tag(gas_profile::CallNewAccount, 1, 25000);
             }
         }
 
@@ -151,7 +159,8 @@ namespace monad::vm::runtime
 
         if (has_value) {
             gas += 2300;
-            ctx->gas_remaining += 2300;
+            ctx->gas_remaining -=
+                gas_profile::tag(gas_profile::CallStipend, 1, -2300);
         }
 
         if (MONAD_UNLIKELY(ctx->env.depth >= 1024)) {

@@ -23,6 +23,7 @@
 #include <category/vm/evm/result.hpp>
 #include <category/vm/evm/revision.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/gas_profile.hpp>
 #include <category/vm/host.hpp>
 #include <category/vm/runtime/bin.hpp>
 #include <category/vm/runtime/create.hpp>
@@ -87,7 +88,11 @@ namespace monad::vm::runtime
                 ? create2_code_word_cost(traits::eip_3860_active())
                 : create_code_word_cost(traits::eip_3860_active());
 
-        ctx->deduct_gas(min_words * word_cost);
+        ctx->deduct_gas(gas_profile::tag(
+            kind == CallKind::Create2 ? gas_profile::Create2Words
+                                      : gas_profile::CreateWords,
+            *min_words,
+            min_words * word_cost));
 
         if (MONAD_UNLIKELY(ctx->env.depth >= 1024)) {
             return 0;

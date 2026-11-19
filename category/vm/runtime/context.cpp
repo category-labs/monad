@@ -194,10 +194,12 @@ namespace monad::vm::runtime
                 return CallStatus::OutOfGas;
             }
 
+            auto const word_count =
+                Context::memory_size_to_word_count(memory_end);
             auto const memory_cost =
-                Context::memory_cost_from_word_count<traits>(
-                    Context::memory_size_to_word_count(memory_end));
-            gas_remaining -= memory_cost - memory.cost;
+                Context::memory_cost_from_word_count<traits>(word_count);
+            gas_remaining -= tag_memory_expansion<traits>(
+                memory.size, *word_count, memory_cost - memory.cost);
 
             if (gas_remaining < 0) {
                 return CallStatus::OutOfGas;

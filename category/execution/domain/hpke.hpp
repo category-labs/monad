@@ -16,6 +16,7 @@
 #pragma once
 
 #include <category/core/byte_string.hpp>
+#include <category/core/bytes.hpp>
 #include <category/core/result.hpp>
 #include <category/execution/domain/config.hpp>
 
@@ -43,6 +44,7 @@ enum class PrivateDomainHpkeError
     KeyLoadFailed,
     InvalidPrivateKey,
     DecryptionFailed,
+    EncryptionFailed,
 };
 
 namespace detail
@@ -61,7 +63,7 @@ namespace detail
 // abi.encode("monad-transaction-encryption-v1", uint64 domain_chain_id).
 byte_string private_domain_transaction_ad(uint64_t domain_chain_id);
 
-// One private domain's RFC 9180 receiver key.
+// One private domain's RFC 9180 key and deterministic Seal seed.
 class PrivateDomainKey
 {
     struct PrivateKeyDeleter
@@ -72,16 +74,28 @@ class PrivateDomainKey
     using PrivateKeyPtr = std::unique_ptr<evp_hpke_key_st, PrivateKeyDeleter>;
 
     PrivateKeyPtr key_;
+    bytes32_t seed_; // persistent randomness seed
 
     explicit PrivateDomainKey(PrivateKeyPtr);
 
 public:
+    ~PrivateDomainKey();
+    PrivateDomainKey(PrivateDomainKey &&) noexcept = default;
+    PrivateDomainKey &operator=(PrivateDomainKey &&) noexcept = default;
+
     // Opens one sequenced transaction of `domain_chain_id` sealed to this key
     // and strips its frame byte. `payload` is the 32-byte ephemeral public key
     // followed by the ciphertext and tag. The associated data is
     // private_domain_transaction_ad(domain_chain_id).
     [[nodiscard]] Result<byte_string>
     open_transaction(uint64_t domain_chain_id, byte_string_view payload) const;
+
+    // Seals plaintext to pubkey with ad, returning enc || ciphertext || tag.
+    // randomness_input is the operation's encoded PRF input, including a
+    // unique counter, caller, transaction context, pubkey, ad and plaintext.
+    [[nodiscard]] Result<byte_string> seal(
+        byte_string_view plaintext, byte_string_view pubkey,
+        byte_string_view ad, byte_string_view randomness_input) const;
 
     // Loads an unencrypted X25519 private key (PKCS#8 PEM).
     [[nodiscard]] static Result<PrivateDomainKey>

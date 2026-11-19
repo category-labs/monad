@@ -20,6 +20,8 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/cases.hpp>
+#include <category/core/int.hpp>
+#include <category/core/keccak.hpp>
 #include <category/core/nibble.h>
 #include <category/core/rlp/encode.hpp>
 #include <category/execution/ethereum/core/account.hpp>
@@ -433,6 +435,37 @@ OffsetTrie::node_rlp_span OffsetTrie::child_ref_compute(
     return encode_rlp(h, dest);
 }
 
+namespace
+{
+    // Like rlp::zeroless_view for a 32-byte big-endian value, but skips
+    // leading zeros eight bytes at a time. Reads the aligned stack copy
+    // because unaligned word reads from the blob are more expensive on ZisK.
+    [[gnu::always_inline]] inline byte_string_view
+    zeroless_view32(unsigned char const *const bytes)
+    {
+        for (unsigned byte_offset = 0; byte_offset < 32; byte_offset += 8) {
+            uint64_t const word = bits::load64(bytes + byte_offset);
+            if (word == 0) {
+                continue;
+            }
+            // Byte-swap the loaded word to count zeros in big-endian byte
+            // order.
+#if defined(__riscv_zbb) || defined(__x86_64__) || defined(__aarch64__)
+            unsigned const leading_zero_bytes =
+                static_cast<unsigned>(std::countl_zero(std::byteswap(word))) /
+                8;
+#else
+            unsigned const leading_zero_bytes =
+                static_cast<unsigned>(bits::clz64(bits::bswap64(word))) / 8;
+#endif
+            return {
+                bytes + byte_offset + leading_zero_bytes,
+                32 - byte_offset - leading_zero_bytes};
+        }
+        return {bytes + 32, 0};
+    }
+}
+
 template <bool priming_pass>
 OffsetTrie::node_rlp_span
 OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
@@ -474,45 +507,85 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
                 // A digest is pre-state only, put_node never shadows a digest
                 // id and its original bytes are still its current bytes which
                 // is why we can memcpy from the blob_ directly below.
-                auto const digest_at = [this](node_id_wire_t const w) {
-                    return w != 0 && w < OVERLAY_BASE &&
+                //
+                // Widen wire IDs once to use native 64-bit arithmetic.
+                //
+                // Priming uses validated blob IDs. During mutation, reject
+                // overlay IDs before reading the original blob; get_original
+                // checks bounds.
+                auto const blob_digest_at = [this](uint64_t const w) {
+                    return w != 0 &&
                            get_original(NodeId{w}).tag() == Tag::DIGEST;
                 };
-
-                auto const consecutive_digest = [](node_id_wire_t const a,
-                                                   node_id_wire_t const b) {
-                    return uint64_t{a} + HASH_RLP_LEN == uint64_t{b};
+                auto const digest_at = [blob_digest_at](uint64_t const w) {
+                    if constexpr (priming_pass) {
+                        return blob_digest_at(w);
+                    }
+                    else {
+                        return w < OVERLAY_BASE && blob_digest_at(w);
+                    }
                 };
 
-                for (int i = 15; i >= 0; --i) {
-                    if (!digest_at(children[static_cast<size_t>(i)])) {
-                        dest = child_ref<priming_pass>(
-                            NodeId{children[static_cast<size_t>(i)]}, dest);
+                // Walk backwards by pointer to avoid repeated index scaling.
+                // Test before decrementing to stay within the array and avoid
+                // GCC copying the pointer's old value for the comparison.
+                node_id_wire_t const *const children_begin = children.data();
+                for (node_id_wire_t const *child_cursor =
+                         children_begin + children.size();
+                     child_cursor != children_begin;) {
+                    --child_cursor;
+#if defined(MONAD_ZKVM_ZISK)
+                    // Make the load use the decremented pointer, avoiding an
+                    // old/new pointer register copy on each iteration.
+                    asm("" : "+r"(child_cursor));
+#endif
+                    uint64_t const child_offset = *child_cursor;
+                    if (!digest_at(child_offset)) {
+                        dest =
+                            child_ref<priming_pass>(NodeId{child_offset}, dest);
                         continue;
                     }
                     // copy any contiguous digests directly into dest, since a
                     // digest node is already a valid RLP string
                     static_assert(DIGEST == 0x80 + KECCAK256_SIZE);
-                    int lo = i;
-                    while (lo > 0 &&
-                           consecutive_digest(
-                               children[static_cast<size_t>(lo - 1)],
-                               children[static_cast<size_t>(lo)]) &&
-                           digest_at(children[static_cast<size_t>(lo - 1)])) {
-                        --lo;
+                    node_id_wire_t const *run_begin = child_cursor;
+                    // Expected offset of the preceding digest. The run starts
+                    // at preceding_offset + HASH_RLP_LEN when the loop ends.
+                    // A matching preceding offset cannot be an overlay ID.
+                    // Disable unrolling to avoid extra GCC register moves.
+                    uint64_t preceding_offset = child_offset - HASH_RLP_LEN;
+#pragma GCC unroll 1
+                    while (run_begin != children_begin) {
+                        uint64_t const previous_child = run_begin[-1];
+                        if (previous_child != preceding_offset ||
+                            !blob_digest_at(previous_child)) {
+                            break;
+                        }
+                        preceding_offset -= HASH_RLP_LEN;
+                        --run_begin;
                     }
-                    size_t const digests_length =
-                        static_cast<size_t>(i - lo + 1) * HASH_RLP_LEN;
+#if defined(MONAD_ZKVM_ZISK)
+                    // Make the copy use the final offset, avoiding an extra
+                    // old/new offset register copy in the digest loop.
+                    asm("" : "+r"(preceding_offset));
+#endif
+                    // preceding_offset is one digest before the run;
+                    // child_offset is its last.
+                    // NOLINTNEXTLINE(misc-const-correctness)
+                    size_t digests_length = child_offset - preceding_offset;
+#if defined(MONAD_ZKVM_ZISK)
+                    // Keep the computed run length in a register for the copy
+                    // and cursor.
+                    asm("" : "+r"(digests_length));
+#endif
 
-                    unsigned char *const digests =
-                        dest.last(digests_length).data();
-                    std::memcpy(
-                        digests,
-                        blob_.data() + children[static_cast<size_t>(lo)],
+                    // A complete branch needs at most 532 bytes, within
+                    // MAX_NODE_RLP, so this copy needs no extra room check.
+                    dest = dest.prepend_unchecked(
+                        blob_.data() + (preceding_offset + HASH_RLP_LEN),
                         digests_length);
-
-                    dest = dest.shrink(digests_length);
-                    i = lo;
+                    // The next decrement skips the whole copied run.
+                    child_cursor = run_begin;
                 }
                 return wrap(dest);
             },
@@ -557,13 +630,13 @@ OffsetTrie::encode_rlp(NodeViewBase const node, OffsetTrie::node_rlp_span dest)
                 return wrap(dest);
             },
             [&, encode_path, wrap](StorageLeafView l) -> node_rlp_span {
-                bytes32_t const v = l.value();
+                // Align the local value for cheaper word loads on ZisK.
+                alignas(8) bytes32_t const v = l.value();
                 // storage value = rlp(zeroless(slot)), itself wrapped again
                 // as the leaf's value string: write the inner rlp(zl) into
                 // dest's tail, then prepend the outer string prefix in
                 // place.
-                auto const val =
-                    rlp::zeroless_view(to_byte_string_view(v.bytes));
+                auto const val = zeroless_view32(v.bytes);
                 size_t const val_len = rlp::string_length(val);
                 rlp::encode_string(dest.last(val_len), val);
                 dest = dest.shrink(val_len);
@@ -662,6 +735,48 @@ void append_storage(
     append_path(out, path);
 }
 
+namespace
+{
+    // Append the integer directly, without allocating a temporary RLP string.
+    void append_unsigned_rlp(byte_string &out, uint256_t const &value)
+    {
+        size_t significant_words = uint256_t::num_words;
+        while (significant_words != 0 && value[significant_words - 1] == 0) {
+            --significant_words;
+        }
+        if (significant_words == 0) {
+            out.push_back(static_cast<unsigned char>(
+                0x80)); // RLP of zero is the empty string
+            return;
+        }
+        // Count significant bytes in the highest nonzero word.
+        unsigned const top_word_bytes =
+            8u - static_cast<unsigned>(
+                     std::countl_zero(value[significant_words - 1]) >> 3);
+        // Include all lower words.
+        size_t const byte_count = (significant_words - 1) * 8 + top_word_bytes;
+        alignas(8) unsigned char big_endian[uint256_t::num_bytes];
+        for (size_t i = 0; i < significant_words; ++i) {
+            uint64_t const big_endian_word = bswap(value[i]);
+            std::memcpy(
+                big_endian + (significant_words - 1 - i) * 8,
+                &big_endian_word,
+                sizeof(big_endian_word));
+        }
+        unsigned char const *const significant_bytes =
+            big_endian + (significant_words * 8 - byte_count);
+        // Values fit in 32 bytes: use either the single-byte form or a short
+        // string with a one-byte prefix.
+        if (byte_count == 1 && significant_bytes[0] <= 0x7f) {
+            out.push_back(significant_bytes[0]);
+            return;
+        }
+        out.push_back(static_cast<unsigned char>(0x80 + byte_count));
+        out.append(significant_bytes, byte_count);
+    }
+
+}
+
 void append_acct(
     byte_string &out, NodeId const storage, Account const &acct,
     NibblesView const path)
@@ -673,8 +788,8 @@ void append_acct(
     // appends below may reallocate, so hold slot by index
     size_t const len_index = out.size();
     out.push_back(0);
-    out.append(rlp::encode_unsigned(acct.nonce));
-    out.append(rlp::encode_unsigned(acct.balance));
+    append_unsigned_rlp(out, uint256_t{acct.nonce});
+    append_unsigned_rlp(out, acct.balance);
     size_t const len = out.size() - len_index - 1;
     MONAD_DEBUG_ASSERT(len >= 2 && len <= MAX_NONCE_BALANCE_RLP_LEN);
     out[len_index] = static_cast<unsigned char>(len);

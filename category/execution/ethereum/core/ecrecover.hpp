@@ -20,6 +20,7 @@
 #include <category/core/config.hpp>
 #include <category/core/keccak.hpp>
 #include <category/execution/ethereum/core/ecrecover/impl.hpp>
+#include <category/execution/ethereum/core/ecrecover/types.hpp>
 #include <category/execution/ethereum/core/signature.hpp>
 
 #include <cstring>

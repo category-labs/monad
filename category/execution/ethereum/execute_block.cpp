@@ -29,6 +29,7 @@
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/ecrecover.hpp>
 #include <category/execution/ethereum/core/ecrecover/impl.hpp>
+#include <category/execution/ethereum/core/ecrecover/types.hpp>
 #include <category/execution/ethereum/core/fmt/transaction_fmt.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>

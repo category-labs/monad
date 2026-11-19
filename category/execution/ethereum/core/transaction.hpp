@@ -22,7 +22,7 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/int.hpp>
-#include <category/execution/ethereum/core/ecrecover/impl.hpp>
+#include <category/execution/ethereum/core/ecrecover/types.hpp>
 #include <category/execution/ethereum/core/signature.hpp>
 
 #include <algorithm>

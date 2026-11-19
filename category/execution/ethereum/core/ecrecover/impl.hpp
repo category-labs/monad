@@ -16,28 +16,12 @@
 #pragma once
 
 #include <category/core/config.hpp>
+#include <category/execution/ethereum/core/ecrecover/types.hpp>
 
 #include <cstdint>
 #include <span>
 
 MONAD_NAMESPACE_BEGIN
-
-/// One element of a recover_addresses batch: the arguments of a single
-/// recover_address call.
-struct RecoverAddressInput
-{
-    uint8_t msg[32]; ///< message digest
-    uint8_t sig[64]; ///< r || s, each 32 bytes big-endian
-    uint8_t recid; ///< recovery id (y parity)
-};
-
-/// Result for one element of a recover_addresses batch. `address` is only
-/// meaningful when `ok` is set.
-struct RecoverAddressOutput
-{
-    uint8_t address[20];
-    bool ok;
-};
 
 /// Wrapper around the implementation kept in its own TU so the silkpre /
 /// secp256k1 dependency is confined to a single source file, and can be

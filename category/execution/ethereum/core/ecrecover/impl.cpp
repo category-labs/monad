@@ -17,6 +17,7 @@
 #include <category/core/config.hpp>
 #include <category/crypto/silkpre_vendor/ecdsa.h>
 #include <category/execution/ethereum/core/ecrecover/impl.hpp>
+#include <category/execution/ethereum/core/ecrecover/types.hpp>
 
 #include <secp256k1.h>
 

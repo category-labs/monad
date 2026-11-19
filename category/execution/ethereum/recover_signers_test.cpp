@@ -22,6 +22,7 @@
 #include <category/core/keccak.hpp>
 #include <category/execution/ethereum/core/ecrecover.hpp>
 #include <category/execution/ethereum/core/ecrecover/impl.hpp>
+#include <category/execution/ethereum/core/ecrecover/types.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/signature.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>

@@ -18,7 +18,6 @@
 #include <category/core/assert.h>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
-#include <category/core/throw.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/execute_message.hpp>
 #include <category/execution/ethereum/native_transfer_log.hpp>
@@ -43,7 +42,7 @@
 
 MONAD_NAMESPACE_BEGIN
 
-static_assert(sizeof(vm::Host) == 24);
+static_assert(sizeof(vm::Host) == 16);
 static_assert(alignof(vm::Host) == 8);
 
 class BlockHashBuffer;
@@ -98,7 +97,7 @@ public:
         Address const &, bytes32_t const &key, bytes32_t const &value) override;
 };
 
-static_assert(sizeof(StateHostBase) == 72);
+static_assert(sizeof(StateHostBase) == 64);
 static_assert(alignof(StateHostBase) == 8);
 
 template <Traits traits>
@@ -134,103 +133,63 @@ struct StateHost final : public StateHostBase
     {
         static_assert(traits::evm_rev() >= EvmRevision::SpuriousDragon);
 
-        MONAD_TRY
-        {
-            return !state_.account_is_dead(address);
-        }
-        MONAD_CATCH(...)
-        {
-            capture_current_exception();
-        }
-        stack_unwind();
+        return !state_.account_is_dead(address);
     }
 
     virtual bool
     selfdestruct(Address const &address, Address const &beneficiary) override
     {
-        MONAD_TRY
-        {
-            auto const [result, transferred_balance] =
-                state_.selfdestruct<traits>(address, beneficiary);
+        auto const [result, transferred_balance] =
+            state_.selfdestruct<traits>(address, beneficiary);
 
-            call_tracer_.on_self_destruct(
-                address, beneficiary, transferred_balance);
+        call_tracer_.on_self_destruct(
+            address, beneficiary, transferred_balance);
 
-            emit_native_transfer_logs<traits>(
-                state_,
-                call_tracer_,
-                address,
-                beneficiary,
-                transferred_balance,
-                log_native_transfers_);
+        emit_native_transfer_logs<traits>(
+            state_,
+            call_tracer_,
+            address,
+            beneficiary,
+            transferred_balance,
+            log_native_transfers_);
 
-            return result;
-        }
-        MONAD_CATCH(...)
-        {
-            capture_current_exception();
-        }
-        stack_unwind();
+        return result;
     }
 
     virtual vm::Result call(vm::Message const &msg) override
     {
-        MONAD_TRY
-        {
-            if (msg.kind == vm::CallKind::Create ||
-                msg.kind == vm::CallKind::Create2) {
-                auto result =
-                    ::monad::execute_create_message<traits>(this, state_, msg);
+        if (msg.kind == vm::CallKind::Create ||
+            msg.kind == vm::CallKind::Create2) {
+            auto result =
+                ::monad::execute_create_message<traits>(this, state_, msg);
 
-                // EIP-211
-                if (result.status_code != CallStatus::Revert) {
-                    result = vm::Result{
-                        result.status_code,
-                        result.gas_left,
-                        result.gas_refund,
-                        result.create_address};
-                }
-                return result;
+            // EIP-211
+            if (result.status_code != CallStatus::Revert) {
+                result = vm::Result{
+                    result.status_code,
+                    result.gas_left,
+                    result.gas_refund,
+                    result.create_address};
             }
-            else {
-                return ::monad::execute_call_message<traits>(this, state_, msg);
-            }
+            return result;
         }
-        MONAD_CATCH(...)
-        {
-            capture_current_exception();
+        else {
+            return ::monad::execute_call_message<traits>(this, state_, msg);
         }
-        stack_unwind();
     }
 
     virtual AccessStatus access_account(Address const &address) override
     {
-        MONAD_TRY
-        {
-            if (is_precompile<traits>(address)) {
-                return AccessStatus::Warm;
-            }
-            return state_.access_account(address);
+        if (is_precompile<traits>(address)) {
+            return AccessStatus::Warm;
         }
-        MONAD_CATCH(...)
-        {
-            capture_current_exception();
-        }
-        stack_unwind();
+        return state_.access_account(address);
     }
 
     virtual AccessStatus
     access_storage(Address const &address, bytes32_t const &key) override
     {
-        MONAD_TRY
-        {
-            return state_.access_storage<traits>(address, key);
-        }
-        MONAD_CATCH(...)
-        {
-            capture_current_exception();
-        }
-        stack_unwind();
+        return state_.access_storage<traits>(address, key);
     }
 
     virtual PageStorageStatus update_page(
@@ -238,15 +197,7 @@ struct StateHost final : public StateHostBase
         StorageStatus const status) override
     {
         if constexpr (traits::mip_8_active()) {
-            MONAD_TRY
-            {
-                return state_.update_page(address, key, status);
-            }
-            MONAD_CATCH(...)
-            {
-                capture_current_exception();
-            }
-            stack_unwind();
+            return state_.update_page(address, key, status);
         }
         else {
             MONAD_ABORT("update_page is MIP-8 only");
@@ -259,9 +210,9 @@ struct StateHost final : public StateHostBase
     }
 };
 
-static_assert(sizeof(StateHost<EvmTraits<EvmRevision::LatestStable>>) == 136);
+static_assert(sizeof(StateHost<EvmTraits<EvmRevision::LatestStable>>) == 128);
 static_assert(alignof(StateHost<EvmTraits<EvmRevision::LatestStable>>) == 8);
-static_assert(sizeof(StateHost<MonadTraits<MONAD_NEXT>>) == 136);
+static_assert(sizeof(StateHost<MonadTraits<MONAD_NEXT>>) == 128);
 static_assert(alignof(StateHost<MonadTraits<MONAD_NEXT>>) == 8);
 
 MONAD_NAMESPACE_END

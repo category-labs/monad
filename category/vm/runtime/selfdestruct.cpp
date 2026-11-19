@@ -41,25 +41,24 @@ namespace monad::vm::runtime
 
         auto const address = address_from_uint256(*address_ptr);
 
-        auto const access_status = ctx->host->access_account(address);
+        auto const access_status = ctx->host.access_account(address);
         if (access_status == AccessStatus::Cold) {
             // +100 for the warm account access cost.
             ctx->deduct_gas(traits::cold_account_cost() + 100);
         }
 
         auto const non_zero_transfer =
-            ctx->host->get_balance(ctx->env.recipient) != 0;
+            ctx->host.get_balance(ctx->env.recipient) != 0;
 
         if (non_zero_transfer) {
-            auto const exists = ctx->host->account_exists(address);
+            auto const exists = ctx->host.account_exists(address);
 
             if (!exists) {
                 ctx->deduct_gas(25000);
             }
         }
 
-        auto const result =
-            ctx->host->selfdestruct(ctx->env.recipient, address);
+        auto const result = ctx->host.selfdestruct(ctx->env.recipient, address);
 
         if constexpr (!traits::eip_3529_active()) {
             if (result) {

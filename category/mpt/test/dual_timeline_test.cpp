@@ -571,7 +571,7 @@ namespace
     }
 
     // -------------------------------------------------------------------
-    // Test: RODb bound to the secondary timeline serves versions the
+    // Test: read-only Db bound to the secondary timeline serves versions the
     // primary does not have (the archive shape where the primary stops
     // committing at the mip-8 cutoff)
     // -------------------------------------------------------------------
@@ -593,10 +593,10 @@ namespace
 
         {
             ReadOnlyOnDiskDbConfig const ro_config{.dbname_path = dbname};
-            RODb const ro_primary{ro_config};
+            Db ro_primary{ro_config};
             EXPECT_TRUE(ro_primary.timeline_active(timeline_id::secondary));
             auto const ro_secondary = ro_primary.open_secondary_timeline();
-            ASSERT_NE(ro_secondary, nullptr);
+            ASSERT_TRUE(ro_secondary.has_value());
 
             // Each handle reports its own timeline's version range.
             EXPECT_EQ(ro_primary.get_latest_version(), 4);

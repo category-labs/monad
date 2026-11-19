@@ -275,7 +275,7 @@ TEST(StateHostTest, host_methods_rethrow_pruned_read)
                 write_db, {}, {}, BlockHeader{.number = block});
         }
 
-        mpt::RODb read_db{mpt::ReadOnlyOnDiskDbConfig{
+        mpt::Db read_db{mpt::ReadOnlyOnDiskDbConfig{
             .dbname_path = dbpath,
             .node_lru_max_mem = 1024 * mpt::NodeCache::AVERAGE_NODE_SIZE}};
         TrieRODb stale_db{read_db};

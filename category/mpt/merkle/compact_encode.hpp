@@ -17,13 +17,18 @@
 
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
+#include <category/core/int.hpp>
 #include <category/core/result.hpp>
 #include <category/core/rlp/decode_error.hpp>
 #include <category/mpt/config.hpp>
 #include <category/mpt/nibbles_view.hpp>
 
+#include <algorithm>
 #include <cassert>
+#include <cstdint>
+#include <cstring>
 #include <limits>
+#include <type_traits>
 #include <utility>
 
 MONAD_MPT_NAMESPACE_BEGIN
@@ -34,8 +39,35 @@ constexpr unsigned compact_encode_len(unsigned const si, unsigned const ei)
     return (ei - si) / 2 + 1;
 }
 
-// Transform the nibbles to its compact encoding
-// https://ethereum.org/en/developers/docs/data-structures-and-encoding/patricia-merkle-trie/
+// Shift packed nibbles left by four bits into byte_count output bytes.
+// For nonempty input, reads source[0..byte_count]; buffers must not overlap.
+// For at least eight bytes, overlap the final word to avoid byte stores.
+// Keep one loop body to preserve GCC's inlining; overlapping writes agree.
+inline void shift_nibbles_left(
+    unsigned char *const output, unsigned char const *const source,
+    unsigned const byte_count)
+{
+    if (byte_count >= 8) {
+        unsigned const last_word_offset = byte_count - 8;
+        for (unsigned offset = 0;;
+             offset = std::min(offset + 8, last_word_offset)) {
+            std::uint64_t word;
+            std::memcpy(&word, source + offset, sizeof(word));
+            std::uint64_t const shifted_word = bswap(
+                (bswap(word) << 4) |
+                (static_cast<std::uint64_t>(source[offset + 8]) >> 4));
+            std::memcpy(output + offset, &shifted_word, sizeof(shifted_word));
+            if (offset == last_word_offset) {
+                return;
+            }
+        }
+    }
+    for (unsigned offset = 0; offset < byte_count; ++offset) {
+        output[offset] = static_cast<unsigned char>(
+            (source[offset] << 4) | (source[offset + 1] >> 4));
+    }
+}
+
 constexpr void compact_encode_raw(
     unsigned char *const res, NibblesView const nibbles, bool const terminating)
 {
@@ -51,10 +83,27 @@ constexpr void compact_encode_raw(
         i = 1;
     }
 
-    unsigned res_ci = 2;
-    for (; i < nibbles.nibble_size(); i++) {
-        set_nibble(res, res_ci, nibbles.get(i));
-        ++res_ci;
+    // The remaining nibbles fill whole bytes starting at res[1].
+    // Copy aligned input; shift by four bits when it starts in a low nibble.
+    if (std::is_constant_evaluated()) {
+        unsigned output_nibble = 2;
+        for (; i < nibbles.nibble_size(); i++) {
+            set_nibble(res, output_nibble, nibbles.get(i));
+            ++output_nibble;
+        }
+        return;
+    }
+
+    unsigned const remaining_nibbles = nibbles.nibble_size() - i;
+    unsigned const source_nibble = nibbles.begin_nibble() + i;
+    unsigned char const *const source = nibbles.data() + source_nibble / 2;
+
+    if (source_nibble % 2 == 0) {
+        std::memcpy(res + 1, source, remaining_nibbles / 2);
+    }
+    else {
+        // Long leaf paths benefit from shifting whole words.
+        shift_nibbles_left(res + 1, source, remaining_nibbles / 2);
     }
 }
 

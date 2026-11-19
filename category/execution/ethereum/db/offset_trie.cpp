@@ -173,51 +173,206 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
         node_offsets, [](uint64_t const w) { return w == 0; }));
 }
 
+#if defined(MONAD_ZKVM_ZISK)
+namespace
+{
+    // Compare nibble_count nibbles from byte boundaries. Ignore the last low
+    // nibble for odd lengths: it is padding, not authenticated by the trie
+    // hash.
+    [[gnu::always_inline]] inline bool aligned_nibbles_equal(
+        unsigned char const *const a, unsigned char const *const b,
+        unsigned const nibble_count)
+    {
+        // Two nibbles form one complete byte.
+        size_t const whole_bytes = nibble_count / 2;
+        // If n is odd, compare the remaining high nibble separately.
+        // XOR finds differing bits; 0xf0 keeps only the high half.
+        if ((nibble_count & 1) != 0 &&
+            ((a[whole_bytes] ^ b[whole_bytes]) & 0xf0) != 0) {
+            return false;
+        }
+        // Any remaining high nibble was checked above.
+        if (whole_bytes == 0) {
+            return true;
+        }
+        uint64_t difference;
+        // CSR 0x814 compares bytes; the following add encodes the second
+        // pointer and the register holding the byte count.
+        // The "m" operands tell the compiler that both buffers are read.
+        asm(".option push\n\t"
+            ".option arch, +zicsr\n\t"
+            "csrrs %0, 0x814, %1\n\t"
+            "add x0, %2, %3\n\t"
+            ".option pop"
+            : "=&r"(difference)
+            : "r"(a),
+              "r"(b),
+              "r"(whole_bytes),
+              "m"(*reinterpret_cast<
+                  unsigned char const(*)[MAX_PATH_NIBBLES / 2]>(a)),
+              "m"(*reinterpret_cast<
+                  unsigned char const(*)[MAX_PATH_NIBBLES / 2]>(b)));
+        // DMA returns zero when all compared bytes match.
+        return difference == 0;
+    }
+
+    // Compare the leaf path with the remaining key. If the key starts in
+    // a low nibble, shift a copy of the full key to allow byte comparison.
+    [[gnu::always_inline]] inline bool leaf_path_equals(
+        NibblesView const path, NibblesView const key,
+        unsigned char const *const whole_key)
+    {
+        unsigned const nibble_count = path.nibble_size();
+        if (nibble_count != key.nibble_size()) {
+            return false;
+        }
+        // An unaligned stored path still needs the general comparison.
+        if (path.begin_nibble()) {
+            return path == key;
+        }
+        // Both views already start on a byte boundary.
+        if (!key.begin_nibble()) {
+            return aligned_nibbles_equal(path.data(), key.data(), nibble_count);
+        }
+        // Only a lookup starting with a full 32-byte key can use the shift.
+        if (whole_key == nullptr) {
+            return path == key;
+        }
+        // Load the full key as four big-endian words.
+        uint64_t key_words[4];
+    #pragma GCC unroll 1
+        for (size_t i = 0; i < 4; ++i) {
+            __builtin_memcpy(
+                &key_words[i], whole_key + 8 * i, sizeof(key_words[i]));
+            key_words[i] = __builtin_bswap64(key_words[i]);
+        }
+        // Shift left by one nibble, carrying between words, then restore
+        // byte order. For example, AB CD EF becomes BC DE F0.
+        alignas(8) uint64_t shifted_key[4];
+        shifted_key[0] =
+            __builtin_bswap64(key_words[0] << 4 | key_words[1] >> 60);
+        shifted_key[1] =
+            __builtin_bswap64(key_words[1] << 4 | key_words[2] >> 60);
+        shifted_key[2] =
+            __builtin_bswap64(key_words[2] << 4 | key_words[3] >> 60);
+        shifted_key[3] = __builtin_bswap64(key_words[3] << 4);
+        // The remaining key starts at nibble 64 - nibble_count in the original
+        // key, or 63 - nibble_count after the shift. Divide by two to get its
+        // byte offset.
+        return aligned_nibbles_equal(
+            path.data(),
+            reinterpret_cast<unsigned char const *>(shifted_key) +
+                (MAX_PATH_NIBBLES - 1 - nibble_count) / 2,
+            nibble_count);
+    }
+}
+#endif
+
 NodeViewBase OffsetTrie::find_original(NodeId id, NibblesView key) const
 {
+#if defined(MONAD_ZKVM_ZISK)
+    // Keep the full key for realigning a leaf comparison at an odd depth.
+    // During traversal, key remains a suffix of this original input.
+    unsigned char const *const whole_key =
+        key.nibble_size() == MAX_PATH_NIBBLES && !key.begin_nibble()
+            ? key.data()
+            : nullptr;
+#endif
     NodeViewBase found = empty();
+    // Validate the entry ID; an overlay ID is not a valid original root.
+    // Descendant IDs were already validated by the blob constructor.
+    NodeViewBase node = get_original(id);
+#if defined(MONAD_ZKVM_ZISK)
+    // Walk consecutive branches using both nibbles of each key byte.
+    // Update the key view once, then let the general loop handle other nodes.
+    if (whole_key != nullptr) {
+        unsigned char const *key_cursor = whole_key;
+        // Set if we stop after consuming only the current byte's high nibble.
+        unsigned consumed_high_nibble = 0;
+        while (id != NULL_ID) {
+            if (node.tag() != BRANCH) {
+                break;
+            }
+            if (key_cursor ==
+                whole_key + MAX_PATH_NIBBLES / 2) { // no value at a branch
+                return found;
+            }
+            unsigned const key_byte = *key_cursor;
+            // The high nibble selects the first child.
+            id = BranchView{node}.child(key_byte >> 4);
+            if (id == NULL_ID) {
+                return found;
+            }
+            node = original_child(id);
+            if (node.tag() != BRANCH) {
+                consumed_high_nibble = 1;
+                break;
+            }
+            // If that child is also a branch, use the same byte's low nibble.
+            id = BranchView{node}.child(key_byte & 0xf);
+            node = original_child(id);
+            ++key_cursor;
+        }
+        // Skip two nibbles per consumed byte, plus the high nibble if needed.
+        key = NibblesView{
+            2 * static_cast<unsigned>(key_cursor - whole_key) +
+                consumed_high_nibble,
+            MAX_PATH_NIBBLES,
+            whole_key};
+    }
+#endif
     while (id != NULL_ID) {
+        // Test the common branch case before the general tag dispatch.
+        if (MONAD_LIKELY(node.tag() == BRANCH)) {
+            if (key.nibble_size() == 0) { // no value at a branch
+                break;
+            }
+            id = BranchView{node}.child(key.get(0));
+            key = key.substr(1);
+            node = original_child(id);
+            continue;
+        }
         id = match(
-            get_original(id),
-            Cases{
-                [&](BranchView b) -> NodeId {
-                    if (key.nibble_size() == 0) { // no value at a branch
-                        return NULL_ID;
-                    }
-                    NodeId const next = b.child(key.get(0));
-                    key = key.substr(1);
-                    return next;
-                },
-                [&](ExtView e) -> NodeId {
-                    NibblesView const ep = e.path();
-                    if (!key.starts_with(ep)) {
-                        return NULL_ID;
-                    }
-                    key = key.substr(ep.nibble_size());
-                    return e.child();
-                },
-                [&](AccountLeafView l) -> NodeId {
+            node, Cases {
+                [](BranchView) -> NodeId { std::unreachable(); },
+                    [&](ExtView e) -> NodeId {
+                        NibblesView const extension_path = e.path();
+                        if (!key.starts_with(extension_path)) {
+                            return NULL_ID;
+                        }
+                        key = key.substr(extension_path.nibble_size());
+                        return e.child();
+                    },
+                    [&](AccountLeafView l) -> NodeId {
+#if defined(MONAD_ZKVM_ZISK)
+                        if (leaf_path_equals(l.path(), key, whole_key)) {
+#else
                     if (l.path() == key) {
-                        found = l;
-                    }
-                    return NULL_ID;
-                },
-                [&](StorageLeafView l) -> NodeId {
+#endif
+                            found = l;
+                        }
+                        return NULL_ID;
+                    },
+                    [&](StorageLeafView l) -> NodeId {
+#if defined(MONAD_ZKVM_ZISK)
+                        if (leaf_path_equals(l.path(), key, whole_key)) {
+#else
                     if (l.path() == key) {
-                        found = l;
-                    }
-                    return NULL_ID;
-                },
-                [](DigestView) -> NodeId {
-                    MONAD_ABORT("incomplete witness: lookup hit a Digest");
-                },
-                [](NullView) -> NodeId {
-                    // There is only a single NullView node, namely the NULL_ID
-                    // magic header. However, since id is strictly greater than
-                    // 0 inside the loop, get_original can never reach it.
-                    std::unreachable();
-                },
+#endif
+                            found = l;
+                        }
+                        return NULL_ID;
+                    },
+                    [](DigestView) -> NodeId {
+                        MONAD_ABORT("incomplete witness: lookup hit a Digest");
+                    },
+                    [](NullView) -> NodeId {
+                        // The loop excludes the NULL_ID header. Any other null
+                        // tag indicates a malformed node.
+                        MONAD_ABORT("malformed trie: node not found");
+                    },
             });
+        node = original_child(id);
     }
     return found;
 }
@@ -454,27 +609,32 @@ namespace
     // Append a path as nodes store it: a 1-byte nibble count then
     // ceil(nlen/2) packed nibbles, left-aligned (nibble 0 in the high
     // nibble of the first byte) — exactly what path_view reads back.
-    void append_path(byte_string &b, NibblesView const path)
+    void append_path(byte_string &buffer, NibblesView const path)
     {
-        unsigned const nlen = path.nibble_size();
-        MONAD_ASSERT(nlen <= MAX_PATH_NIBBLES);
-        b.push_back(static_cast<unsigned char>(nlen));
-        size_t const start = b.size();
-        b.resize(start + (nlen + 1) / 2, 0);
-        for (unsigned i = 0; i < nlen; ++i) {
-            set_nibble(b.data() + start, i, path.get(i));
+        unsigned const nibble_count = path.nibble_size();
+        MONAD_ASSERT(nibble_count <= MAX_PATH_NIBBLES);
+        buffer.push_back(static_cast<unsigned char>(nibble_count));
+        if (nibble_count == 0) {
+            return;
         }
-    }
-
-    unsigned common_prefix_length(NibblesView const a, NibblesView const b)
-    {
-        unsigned const n = std::min(a.nibble_size(), b.nibble_size());
-        for (unsigned i = 0; i < n; ++i) {
-            if (a.get(i) != b.get(i)) {
-                return i;
-            }
+        size_t const output_offset = buffer.size();
+        buffer.resize(output_offset + (nibble_count + 1) / 2, 0);
+        // The output starts at a byte boundary. Copy whole input bytes,
+        // or shift by four bits when the path starts in a low nibble.
+        unsigned char *const output = buffer.data() + output_offset;
+        unsigned char const *const source = path.data();
+        bool const odd_start = path.begin_nibble(); // the run starts mid-byte
+        unsigned const whole_bytes = nibble_count / 2;
+        if (!odd_start) {
+            std::memcpy(output, source, whole_bytes);
         }
-        return n;
+        else {
+            mpt::shift_nibbles_left(output, source, whole_bytes);
+        }
+        if (nibble_count % 2) {
+            // Write the final high nibble; keep the low padding nibble zero.
+            set_nibble(output, nibble_count - 1, path.get(nibble_count - 1));
+        }
     }
 }
 
@@ -619,20 +779,34 @@ void OffsetTrie::fold_ext_node_path_maybe(
         });
 }
 
-std::pair<NodeId, Nibbles>
+// Returned paths borrow a suffix of the caller's key, which must outlive them.
+// The extension path remains an owning copy: writes may replace its storage.
+std::pair<NodeId, NibblesView>
 OffsetTrie::upsert_node(NodeId const id, NibblesView const key)
 {
+#if defined(MONAD_ZKVM_ZISK)
+    // Keep the full key so leaf_path_equals can realign an odd-depth suffix.
+    unsigned char const *const whole_key =
+        key.nibble_size() == MAX_PATH_NIBBLES && !key.begin_nibble()
+            ? key.data()
+            : nullptr;
+#endif
     hashes_.erase(id); // dirtied along the descent
-    // Leaf split/overwrite, shared by both leaf types. Only re-emitting if the
+    // Leaf split/overwrite, shared by both leaf types. Only re-emitting the
     // displaced old leaf differs (`reput_old`): a storage leaf keeps its
     // value, an account leaf its fields and storage edge. `reput_old` runs
     // ahead of every other put_* here, which is what lets it still read the
     // displaced leaf's bytes.
     auto const split_leaf =
         [&](NibblesView const path,
-            auto const &reput_old) -> std::pair<NodeId, Nibbles> {
-        if (path == key) { // exact match -> overwrite (reuse id + its path)
-            return {id, Nibbles{key}};
+            auto const &reput_old) -> std::pair<NodeId, NibblesView> {
+    // exact match -> overwrite (reuse id + its path)
+#if defined(MONAD_ZKVM_ZISK)
+        if (leaf_path_equals(path, key, whole_key)) {
+#else
+        if (path == key) {
+#endif
+            return {id, key};
         }
         // old leaf + new key meet at a fresh branch, wrapped in an
         // extension for their shared prefix.
@@ -650,32 +824,34 @@ OffsetTrie::upsert_node(NodeId const id, NibblesView const key)
         else {
             put_branch(id, children);
         }
-        return {leaf, Nibbles{key.substr(cp + 1)}};
+        return {leaf, key.substr(cp + 1)};
     };
 
     return match(
         get_current(id),
         Cases{
-            [&](NullView) -> std::pair<NodeId, Nibbles> {
+            [&](NullView) -> std::pair<NodeId, NibblesView> {
                 // Empty slot (or an empty trie's root): a fresh leaf
                 // holding the whole remaining key, which the caller
                 // materialises.
-                return {fresh_id(), Nibbles{key}};
+                return {fresh_id(), key};
             },
-            [&](StorageLeafView l) -> std::pair<NodeId, Nibbles> {
+            [&](StorageLeafView l) -> std::pair<NodeId, NibblesView> {
                 bytes32_t const v = l.value();
-                return split_leaf(l.path(), [&](NibblesView const np) {
-                    return put_storage(NULL_ID, np, v);
-                });
+                return split_leaf(
+                    l.path(), [&](NibblesView const remaining_path) {
+                        return put_storage(NULL_ID, remaining_path, v);
+                    });
             },
-            [&](AccountLeafView l) -> std::pair<NodeId, Nibbles> {
-                return split_leaf(l.path(), [&, l](NibblesView const np) {
-                    return clone_acct(NULL_ID, l, np);
-                });
+            [&](AccountLeafView l) -> std::pair<NodeId, NibblesView> {
+                return split_leaf(
+                    l.path(), [&, l](NibblesView const remaining_path) {
+                        return clone_acct(NULL_ID, l, remaining_path);
+                    });
             },
-            [&](ExtView e) -> std::pair<NodeId, Nibbles> {
-                Nibbles const p{e.path()};
-                NibblesView const path{p};
+            [&](ExtView e) -> std::pair<NodeId, NibblesView> {
+                Nibbles const owned_path{e.path()};
+                NibblesView const path{owned_path};
                 NodeId child = e.child();
                 unsigned const cp = common_prefix_length(path, key);
                 if (cp == path.nibble_size()) { // full prefix -> descend
@@ -698,9 +874,9 @@ OffsetTrie::upsert_node(NodeId const id, NibblesView const key)
                 else {
                     put_branch(id, children);
                 }
-                return {leaf, Nibbles{key.substr(cp + 1)}};
+                return {leaf, key.substr(cp + 1)};
             },
-            [&](BranchView b) -> std::pair<NodeId, Nibbles> {
+            [&](BranchView b) -> std::pair<NodeId, NibblesView> {
                 MONAD_ASSERT(key.nibble_size() > 0); // never ends at branch
                 unsigned const nib = key.get(0);
                 std::array<node_id_wire_t, 16> children = b.children();
@@ -716,7 +892,7 @@ OffsetTrie::upsert_node(NodeId const id, NibblesView const key)
                 }
                 return result;
             },
-            [&](DigestView) -> std::pair<NodeId, Nibbles> {
+            [&](DigestView) -> std::pair<NodeId, NibblesView> {
                 MONAD_ABORT("incomplete witness: upsert hit a Digest");
             },
         });

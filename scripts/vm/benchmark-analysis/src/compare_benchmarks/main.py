@@ -14,12 +14,13 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import argparse
-import json
 import pathlib
 from collections.abc import Callable
 
 import pandas as pd
 import scipy.stats
+
+from benchmark_results import load_timings, select_pairs, split_implementations
 
 
 def parse_args() -> argparse.Namespace:
@@ -72,25 +73,9 @@ def parse_args() -> argparse.Namespace:
 def load_single_runtime_results(
     args: argparse.Namespace,
 ) -> Callable[[pathlib.Path, str], pd.DataFrame]:
-    def _split_benchmark_impl(row: pd.Series) -> tuple[str, str]:
-        parts = row["name"].split("/")
-        return ("/".join(parts[:-1]), parts[-1])
-
     def _curried(path: pathlib.Path, label: str) -> pd.DataFrame:
-        with open(path, "r") as f:
-            json_data = json.load(f)
-
-        df = pd.json_normalize(json_data["benchmarks"])
-
-        if args.aggregate:
-            df = df[df.name.str.endswith("_mean")]
-            df.name = df.name.str.removesuffix("_mean")
-
-        df["version"] = label
-        df[["name", "implementation"]] = df.apply(_split_benchmark_impl, axis="columns", result_type="expand")
-        df = df[df.implementation == args.implementation]
-
-        return df
+        df = split_implementations(load_timings(path, "real_time", aggregate=args.aggregate, prefix="execute/"))
+        return df[df.implementation == args.implementation].assign(version=label)
 
     return _curried
 
@@ -98,26 +83,9 @@ def load_single_runtime_results(
 def load_single_compile_results(
     args: argparse.Namespace,
 ) -> Callable[[pathlib.Path, str], pd.DataFrame]:
-    def _compile_benchmark(row: pd.Series) -> str:
-        parts = row["name"].split("/")
-        return parts[1]
-
     def _curried(path: pathlib.Path, label: str) -> pd.DataFrame:
-        with open(path, "r") as f:
-            json_data = json.load(f)
-
-        df = pd.json_normalize(json_data["benchmarks"])
-
-        df = df[~df.name.str.startswith("complexity")]
-
-        if args.aggregate:
-            df = df[df.name.str.endswith("mean")]
-            df.name = df.name.str.removesuffix("_mean")
-
-        df["version"] = label
-        df["name"] = df.apply(_compile_benchmark, axis="columns", result_type="expand")
-
-        return df
+        df = load_timings(path, "real_time", aggregate=args.aggregate, prefix="compile/")
+        return df.assign(name=df.name.str.removeprefix("compile/"), version=label)
 
     return _curried
 
@@ -127,34 +95,18 @@ def load_json_results(
     before: pathlib.Path,
     after: pathlib.Path,
 ) -> pd.DataFrame:
-    df = pd.concat(
-        [
-            loader(before, "before"),
-            loader(after, "after"),
-        ]
-    ).reset_index(drop=True)
-    assert len(set(df.time_unit.tolist())) == 1
-    return df
+    return pd.concat([loader(before, "before"), loader(after, "after")], ignore_index=True)
 
 
 def compute_ratio(df: pd.DataFrame) -> pd.DataFrame:
-    df = df[["name", "version", "real_time", "time_unit"]].pivot(index="name", columns=["version"])
-    df["change"] = df["real_time"]["before"] / df["real_time"]["after"]
-    return df
+    values = df.pivot_table(index="name", columns="version", values="real_time", aggfunc="mean")
+    pairs = select_pairs(values, "before", "after")
+    return pairs.assign(change=pairs["before"] / pairs["after"])
 
 
 def relabel_for_printing(df: pd.DataFrame) -> pd.DataFrame:
-    df["Before (ns)"] = df["real_time"]["before"]
-    df["After (ns)"] = df["real_time"]["after"]
-    df["Change (×)"] = df["change"]
-
-    cols = pd.Index(["Before (ns)", "After (ns)", "Change (×)"])
-    df = df[cols]
-    df.columns = cols
-    df.index = pd.Index(map(lambda s: f"`{s}`", df.index.tolist()))
-    df.index.names = ["Benchmark"]
-
-    return df
+    result = df.rename(columns={"before": "Before (ns)", "after": "After (ns)", "change": "Change (×)"})
+    return result.rename(index=lambda name: f"`{name}`").rename_axis("Benchmark")
 
 
 def to_markdown_with_stats(df: pd.DataFrame) -> str:
@@ -177,8 +129,10 @@ def loader(args: argparse.Namespace) -> Callable[[pathlib.Path, str], pd.DataFra
 def main() -> None:
     args = parse_args()
 
-    df = load_json_results(loader(args), args.before, args.after)
-    df = compute_ratio(df)
+    try:
+        df = compute_ratio(load_json_results(loader(args), args.before, args.after))
+    except (ValueError, OSError, KeyError) as error:
+        raise SystemExit(str(error)) from None
     df = relabel_for_printing(df)
     print(to_markdown_with_stats(df))
 

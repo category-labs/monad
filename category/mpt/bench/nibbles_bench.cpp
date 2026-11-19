@@ -18,6 +18,7 @@
 #include <category/core/small_prng.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/merkle/compact_encode.hpp>
+#include <category/mpt/nibbles_buffer.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/test/test_fixtures_base.hpp>
@@ -241,6 +242,57 @@ namespace
                  auto const r =
                      concat(static_cast<unsigned char>(i & 0xF), path);
                  do_not_optimize(r);
+             });
+         }},
+        {"buffer_account_key",
+         [](Inputs &in) {
+             return measure_loop([&](size_t const i) {
+                 NibblesBuffer const r{
+                     in.prefix1,
+                     state_nibble,
+                     NibblesView{in.hashes[i % key_pool]}};
+                 do_not_optimize(r);
+             });
+         }},
+        {"buffer_account_key_proposal",
+         [](Inputs &in) {
+             return measure_loop([&](size_t const i) {
+                 NibblesBuffer const r{
+                     in.prefix65,
+                     state_nibble,
+                     NibblesView{in.hashes[i % key_pool]}};
+                 do_not_optimize(r);
+             });
+         }},
+        {"buffer_storage_key",
+         [](Inputs &in) {
+             return measure_loop([&](size_t const i) {
+                 NibblesBuffer const r{
+                     in.prefix1,
+                     state_nibble,
+                     NibblesView{in.hashes[i % key_pool]},
+                     NibblesView{in.slots[i % key_pool]}};
+                 do_not_optimize(r);
+             });
+         }},
+        {"buffer_branch_path_odd",
+         [](Inputs &in) {
+             NibblesView const path{1, 41, in.path_bytes.data()};
+             return measure_loop([&](size_t const i) {
+                 NibblesBuffer const r{
+                     static_cast<unsigned char>(i & 0xF), path};
+                 do_not_optimize(r);
+             });
+         }},
+        {"buffer_push_pop",
+         [](Inputs &in) {
+             NibblesView const path{1, 41, in.path_bytes.data()};
+             NibblesBuffer b{NibblesView{0, 21, in.cmp_a.data()}};
+             return measure_loop([&](size_t const i) {
+                 b.push_back(static_cast<unsigned char>(i & 0xF));
+                 b.append(path);
+                 do_not_optimize(b);
+                 b.shrink(21);
              });
          }},
         {"compare_equal_64_even",

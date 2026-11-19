@@ -80,6 +80,8 @@ namespace monad::vm
             auto const &icode = vcode->intercode();
             auto rt_ctx = runtime::Context::from(host, msg, icode->code_span());
 
+            host.template enter_call_frame<traits>(rt_ctx);
+
             auto *const prev_rt_ctx = host.set_runtime_context(&rt_ctx);
             auto const stack_ptr = stack_allocator_.allocate();
             interpreter::execute<traits>(rt_ctx, *icode, stack_ptr.get());
@@ -96,6 +98,8 @@ namespace monad::vm
             std::span<uint8_t const> const code)
         {
             auto rt_ctx = runtime::Context::from(host, msg, code);
+
+            host.template enter_call_frame<traits>(rt_ctx);
 
             auto *const prev_rt_ctx = host.set_runtime_context(&rt_ctx);
             auto const stack_ptr = stack_allocator_.allocate();

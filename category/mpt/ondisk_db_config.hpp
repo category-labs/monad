@@ -16,6 +16,7 @@
 #pragma once
 
 #include <category/mpt/config.hpp>
+#include <category/mpt/recent_node_cache.hpp>
 
 #include <filesystem>
 #include <optional>
@@ -56,6 +57,7 @@ struct OnDiskDbConfig
     // counters into it after every upsert, for an out-of-process scraper to
     // read. See category/mpt/db_stats_shm.hpp.
     std::optional<std::filesystem::path> stats_file_path{std::nullopt};
+    RecentNodeCacheConfig recent_node_cache{};
 };
 
 struct ReadOnlyOnDiskDbConfig

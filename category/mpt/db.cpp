@@ -500,6 +500,7 @@ private:
             if (stats_publisher.has_value()) {
                 aux.set_stats_publisher(&stats_publisher.value());
             }
+            aux.configure_recent_node_cache(options.recent_node_cache);
             if (options.rewind_to_latest_finalized) {
                 auto const latest_block_id =
                     aux.metadata_ctx().get_latest_finalized_version();
@@ -612,8 +613,14 @@ private:
                 bool dequeued = false;
                 if (parent->comms_.try_dequeue(request)) {
                     if (auto *req = std::get_if<1>(&request); req != nullptr) {
+                        bool const attach =
+                            aux.record_recent_find(req->start, req->key);
                         find_notify_fiber_future(
-                            aux, std::move(req->promise), req->start, req->key);
+                            aux,
+                            std::move(req->promise),
+                            req->start,
+                            req->key,
+                            attach);
                     }
                     else if (auto *req = std::get_if<2>(&request);
                              req != nullptr) {

@@ -72,6 +72,7 @@ int main(int argc, char *argv[])
     std::vector<std::filesystem::path> blockchain_tests_paths;
     std::optional<std::filesystem::path> transaction_tests_path;
     bool trace_calls = false;
+    std::optional<std::filesystem::path> gas_profile_path;
     unsigned sleep_seconds = 0;
 
     CLI::App app{"monad ethereum tests runner"};
@@ -114,7 +115,26 @@ int main(int argc, char *argv[])
             ->type_name("<file-path> (leave empty for anonymous memfd)");
     app.add_option(
         "--sleep", sleep_seconds, "Sleep for the specified number of seconds");
+    app.add_option(
+        "--gas-profile",
+        gas_profile_path,
+        "Write each transaction's gas by component, from interpreter runs, as "
+        "JSON lines (needs MONAD_GAS_PROFILE)");
     CLI11_PARSE(app, argc, argv);
+
+    std::ofstream gas_profile_out;
+    if (gas_profile_path) {
+        if (!vm::gas_profile::enabled) {
+            std::cerr << "--gas-profile needs a MONAD_GAS_PROFILE build\n";
+            return 1;
+        }
+        gas_profile_out.open(*gas_profile_path);
+        if (!gas_profile_out) {
+            std::cerr << "cannot open " << *gas_profile_path << '\n';
+            return 1;
+        }
+        test::set_gas_profile_output(&gas_profile_out);
+    }
 
     std::optional<vm::VM::Mode> vm_mode;
     if (vm_mode_name.has_value()) {

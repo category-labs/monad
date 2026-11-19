@@ -39,6 +39,7 @@
 #include <category/mpt/state_machine_kind.hpp>
 #include <category/mpt/trie.hpp>
 #include <category/mpt/update.hpp>
+#include <category/mpt/util.hpp>
 
 #include <algorithm>
 #include <array>
@@ -747,6 +748,7 @@ struct config
 {
     size_t chunks_to_fill;
     size_t chunks_max;
+    uint32_t initial_insertion_count{0};
 };
 
 template <config Config>
@@ -755,7 +757,8 @@ struct cli_tool_fixture
           monad::test::FillDBWithChunksConfig{
               .chunks_to_fill = Config.chunks_to_fill,
               .chunks_max = Config.chunks_max,
-              .use_anonymous_inode = false}>
+              .use_anonymous_inode = false,
+              .initial_insertion_count = Config.initial_insertion_count}>
 {
     void run_test()
     {
@@ -861,6 +864,25 @@ struct cli_tool_fixture
                         monad::mpt::timeline_id::primary);
                     EXPECT_EQ(ret.second, monad::mpt::find_result::success);
                 }
+                auto const list_counts = [](monad::mpt::UpdateAux const &a,
+                                            bool const fast) {
+                    std::vector<std::pair<uint32_t, uint32_t>> ret;
+                    auto const *const m = a.metadata_ctx().main();
+                    for (auto const *ci = fast ? m->fast_list_begin()
+                                               : m->slow_list_begin();
+                         ci != nullptr;
+                         ci = ci->next(m)) {
+                        ret.emplace_back(
+                            ci->index(m), uint32_t(ci->insertion_count()));
+                    }
+                    return ret;
+                };
+                EXPECT_EQ(
+                    list_counts(aux, true),
+                    list_counts(this->state()->aux, true));
+                EXPECT_EQ(
+                    list_counts(aux, false),
+                    list_counts(this->state()->aux, false));
                 EXPECT_EQ(
                     this->state()
                         ->aux.metadata_ctx()
@@ -881,6 +903,26 @@ struct cli_tool_archives_restores
 
 TEST_F(cli_tool_archives_restores, archives_restores)
 {
+    run_test();
+}
+
+struct cli_tool_archives_restores_across_the_wrap
+    : public cli_tool_fixture<config{
+          .chunks_to_fill = 8,
+          .chunks_max = 16,
+          .initial_insertion_count = monad::mpt::INSERTION_COUNT_PERIOD - 2}>
+{
+};
+
+TEST_F(cli_tool_archives_restores_across_the_wrap, archives_restores)
+{
+    auto const *const m = this->state()->aux.metadata_ctx().main();
+    ASSERT_GE(
+        uint32_t(m->fast_list_begin()->insertion_count()),
+        monad::mpt::INSERTION_COUNT_PERIOD - 2);
+    ASSERT_LT(
+        uint32_t(m->fast_list_end()->insertion_count()),
+        monad::mpt::INSERTION_COUNT_PERIOD - 2);
     run_test();
 }
 

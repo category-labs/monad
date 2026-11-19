@@ -1669,15 +1669,14 @@ void DbMetadataContext::append(chunk_list const list, uint32_t const idx)
         copies_[1].main->free_capacity_add_(capacity);
     }
     else {
-        auto const insertion_count =
-            static_cast<uint32_t>(main(0)->at(idx)->insertion_count());
-        if (insertion_count >= virtual_chunk_offset_t::MAX_COUNT * 9 / 10) {
-            LOG_WARNING(
-                "Virtual offset space is running out "
-                "(insertion count: {} / {}). "
-                "Please perform a database reset.",
-                insertion_count,
-                (uint32_t)virtual_chunk_offset_t::MAX_COUNT);
+        auto const *const m = main(0);
+        auto const *const prev = m->at(idx)->prev(m);
+        if (prev != nullptr &&
+            uint32_t(prev->insertion_count()) == INSERTION_COUNT_PERIOD) {
+            LOG_INFO(
+                "{} list insertion count wrapped at chunk id {}",
+                list == chunk_list::fast ? "Fast" : "Slow",
+                idx);
         }
     }
 }

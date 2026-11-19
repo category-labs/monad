@@ -39,6 +39,7 @@
 #include <category/mpt/find_request_sender.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/node.hpp>
+#include <category/mpt/node_cache.hpp>
 #include <category/mpt/node_cursor.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/mpt/test/test_fixtures_gtest.hpp>
@@ -706,6 +707,61 @@ TEST_F(OnDiskDbWithFileAsyncFixture, read_only_db_single_thread_async)
         });
 
     poll_until(1);
+}
+
+TEST_F(
+    OnDiskDbWithFileAsyncFixture, async_get_empties_the_node_cache_after_rewind)
+{
+    auto const fast_tail = [this] {
+        auto const *const m = test::DbAccessor::aux(db).metadata_ctx().main();
+        return uint32_t(m->fast_list_end()->insertion_count());
+    };
+    constexpr unsigned keys_per_block = 1000;
+    uint64_t version = 0;
+    auto const upsert_block = [&] {
+        auto [kv_alloc, updates_alloc] = prepare_random_updates(
+            keys_per_block, static_cast<unsigned>(version * keys_per_block));
+        UpdateList ls;
+        for (auto &u : updates_alloc) {
+            ls.push_front(u);
+        }
+        root = db.upsert(std::move(root), std::move(ls), version++);
+    };
+    upsert_block();
+    uint32_t const first_tail = fast_tail();
+    while (fast_tail() == first_tail) {
+        upsert_block();
+    }
+    uint64_t const target = version - 2;
+    db.update_finalized_version(target);
+
+    auto const key = keccak_int_to_string(0);
+    auto const expect_get = [&](uint64_t const v) {
+        cbs = 0;
+        async_get<monad::byte_string>(
+            make_get_sender(ctx.get(), key, v),
+            [&](result_t<monad::byte_string> res) {
+                ASSERT_TRUE(res.has_value());
+                EXPECT_EQ(res.value(), key);
+            });
+        poll_until(1);
+    };
+    expect_get(version - 1);
+    // No slow chunk of this pool reaches this count.
+    virtual_chunk_offset_t const unused_offset{
+        virtual_chunk_offset_t::MAX_COUNT - 1, 0, 0};
+    ctx->node_cache.insert(
+        unused_offset, ro_db.load_root_for_version(version - 1));
+
+    root.reset();
+    db.~Db();
+    config.append = true;
+    config.rewind_to_latest_finalized = true;
+    new (&db) Db(std::make_unique<StateMachineAlwaysMerkle>(), config);
+    ASSERT_EQ(fast_tail(), first_tail);
+    expect_get(target);
+    NodeCache::ConstAccessor acc;
+    EXPECT_FALSE(ctx->node_cache.find(acc, unused_offset));
 }
 
 TEST_F(OnDiskDbWithFileFixture, open_emtpy_rodb)

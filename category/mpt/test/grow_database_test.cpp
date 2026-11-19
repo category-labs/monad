@@ -188,8 +188,8 @@ TEST(grow_database, grows_chunk_info_and_free_list)
     }
     EXPECT_EQ(free_list_ids(m1), after_free);
 
-    // Insertion counts stay monotone across the splice point, which is what
-    // chunk_list_and_age relies on.
+    // Insertion counts stay consecutive across the splice point, which
+    // chunk_list_and_age and num_chunks rely on.
     for (size_t n = 1; n < after_free.size(); n++) {
         EXPECT_EQ(
             uint32_t(m0->at(after_free[n])->insertion_count()),

@@ -40,6 +40,12 @@ namespace monad::vm
     class Host;
 }
 
+#if defined(MONAD_ZKVM_WIDE_MEMORY_SIZE) && defined(__x86_64__)
+    #error "MONAD_ZKVM_WIDE_MEMORY_SIZE is a guest-only layout: it moves \
+the Environment and Memory fields that context.S and the x86 emitter read at \
+fixed offsets."
+#endif
+
 namespace monad::vm::runtime
 {
     enum class StatusCode : uint64_t
@@ -57,10 +63,26 @@ namespace monad::vm::runtime
         StatusCode status;
     };
 
+    // Use full-word reads on the guest; preserve the x86 emitter's layout.
+#ifdef MONAD_ZKVM_WIDE_MEMORY_SIZE
+    using env_size_t = uint64_t;
+#else
+    using env_size_t = uint32_t;
+#endif
+
+    // Widen flags and depth too, avoiding 32-bit guest memory accesses.
+#ifdef MONAD_ZKVM_WIDE_MEMORY_SIZE
+    using env_flags_t = uint64_t;
+    using env_depth_t = int64_t;
+#else
+    using env_flags_t = uint32_t;
+    using env_depth_t = int32_t;
+#endif
+
     struct Environment
     {
-        uint32_t flags;
-        int32_t depth;
+        env_flags_t flags;
+        env_depth_t depth;
         Address recipient;
         Address sender;
         bytes32_t value;
@@ -70,8 +92,8 @@ namespace monad::vm::runtime
         uint8_t const *code;
         uint8_t const *return_data;
 
-        uint32_t input_data_size;
-        uint32_t code_size;
+        env_size_t input_data_size;
+        env_size_t code_size;
         size_t return_data_size;
 
         TxContext const *tx_context;
@@ -99,12 +121,21 @@ namespace monad::vm::runtime
         }
     };
 
+    // Wider size/capacity fields reduce ZisK's sub-word access costs.
+    // The x86 JIT and context.S require the 32-bit layout, enforced by the
+    // #error above.
+#ifdef MONAD_ZKVM_WIDE_MEMORY_SIZE
+    using memory_size_t = uint64_t;
+#else
+    using memory_size_t = uint32_t;
+#endif
+
     struct Memory
     {
         // Size of the memory region for current call frame:
-        uint32_t size;
+        memory_size_t size;
         // Capacity of the memory region for current call frame:
-        uint32_t capacity;
+        memory_size_t capacity;
         // Start of memory region for current call frame:
         uint8_t *data;
         // Current accumulated memory cost for current call frame:
@@ -201,7 +232,7 @@ namespace monad::vm::runtime
             // to fail:
             MONAD_ASSERT(x <= Bin<30>::upper);
 
-            return Bin<30>::unsafe_from(static_cast<uint32_t>(x));
+            return Bin<30>::unsafe_from(static_cast<Bin<30>::rep>(x));
         }
 
         [[gnu::always_inline]]
@@ -364,7 +395,8 @@ namespace monad::vm::runtime
                     !is_bounded_by_bits<Memory::offset_bits>(offset))) {
                 exit(StatusCode::OutOfGas);
             }
-            return Memory::Offset::unsafe_from(static_cast<uint32_t>(offset));
+            return Memory::Offset::unsafe_from(
+                static_cast<Memory::Offset::rep>(offset));
         }
 
         template <Traits traits>
@@ -411,14 +443,30 @@ namespace monad::vm::runtime
         std::variant<std::span<uint8_t const>, CallStatus> copy_result_data();
     };
 
+    // Keep memory sizes and offsets at the same representation width.
+    static_assert(std::is_same_v<memory_size_t, Memory::Offset::rep>);
+
     // Update context.S accordingly if these offsets change:
     static_assert(offsetof(Context, gas_remaining) == 8);
+#ifndef MONAD_ZKVM_WIDE_MEMORY_SIZE
+    // The wide Environment layout shifts memory on the guest.
     static_assert(offsetof(Context, memory) == 256);
+#endif
+    // Preserve contiguous fields in both layouts, retaining the offsets
+    // used by context.S and the JIT on x86.
     static_assert(offsetof(Memory, size) == 0);
-    static_assert(offsetof(Memory, capacity) == 4);
-    static_assert(offsetof(Memory, data) == 8);
-    static_assert(offsetof(Memory, cost) == 16);
-    static_assert(offsetof(Memory, data_handle) == 24);
+    static_assert(
+        offsetof(Memory, capacity) ==
+        offsetof(Memory, size) + sizeof(Memory::size));
+    static_assert(
+        offsetof(Memory, data) ==
+        offsetof(Memory, capacity) + sizeof(Memory::capacity));
+    static_assert(
+        offsetof(Memory, cost) ==
+        offsetof(Memory, data) + sizeof(Memory::data));
+    static_assert(
+        offsetof(Memory, data_handle) ==
+        offsetof(Memory, cost) + sizeof(Memory::cost));
 
     constexpr auto context_offset_gas_remaining =
         offsetof(Context, gas_remaining);

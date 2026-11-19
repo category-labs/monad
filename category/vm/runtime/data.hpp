@@ -38,7 +38,8 @@ namespace monad::vm::runtime
         }
 
         auto const i{static_cast<uint32_t>(*i_ptr)};
-        auto const n = int64_t{ctx->env.input_data_size} - int64_t{i};
+        auto const n =
+            static_cast<int64_t>(ctx->env.input_data_size) - int64_t{i};
         if (MONAD_UNLIKELY(n <= 0)) {
             // Prevent undefined behavior from pointer arithmetic out of bounds.
             *result_ptr = 0;

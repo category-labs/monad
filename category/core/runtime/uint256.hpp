@@ -1134,9 +1134,119 @@ udivrem(words_t<M> const &u, words_t<N> const &v) noexcept
     return result;
 }
 
+#ifdef MONAD_ZKVM_ZISK
+// Compare two 8-byte-aligned 32-byte blocks via ZisK DMA.
+// On CSR 0x814, ZisK's transpiler reads the immediately following addi
+// for the second pointer and length, emitting one comparison for the pair.
+// One asm block prevents the compiler from inserting code between them.
+[[gnu::always_inline]] inline bool
+zisk_equal32(uint64_t const *const a, uint64_t const *const b) noexcept
+{
+    uint64_t differ;
+    // Enable CSR instructions locally, then restore the assembler options.
+    asm(".option push\n\t"
+        ".option arch, +zicsr\n\t"
+        // DMA comparison (0x814): a (%1) in, difference flag (%0) out.
+        "csrrs %0, 0x814, %1\n\t"
+        // Metadata for ZisK: b (%2), length 32; no b + 32 is computed.
+        "addi x0, %2, 32\n\t"
+        ".option pop"
+        // %0: register output; '&' prevents overlap with input registers.
+        : "=&r"(differ)
+        : "r"(a), // %1
+          "r"(b), // %2
+          // Declare both 32-byte reads so the compiler preserves their data.
+          "m"(*reinterpret_cast<uint64_t const(*)[4]>(a)),
+          "m"(*reinterpret_cast<uint64_t const(*)[4]>(b)));
+    return differ == 0; // Zero means all 32 bytes match.
+}
+
+// Verify the executor's division hint: q·v + r == u in 512 bits and
+// r < v (requires v != 0). Calling fcall 19 directly avoids
+// div_rem256_c's extra copies and zero-initialisation.
+[[gnu::always_inline]] inline div_result<uint256_t>
+zisk_udivrem(uint256_t const &u, uint256_t const &v) noexcept
+{
+    static_assert(alignof(uint256_t) >= 8);
+    static_assert(sizeof(uint256_t) == 4 * sizeof(uint64_t));
+    alignas(8) uint64_t qr[8]; // the quotient, then the remainder
+    alignas(8) uint64_t d[8]; // q·v + r, low half then high half
+    asm volatile(".option push\n\t"
+                 ".option arch, +zicsr\n\t"
+                 "csrs 0x8F2, %[u]\n\t" // a parameter: the four words at u
+                 "csrs 0x8F2, %[v]\n\t"
+                 "csrwi 0x8C0, 19\n\t" // FCALL_UINT256_DIV_ID
+                 "csrs 0x815, %[qr]\n\t" // inputcpy: the eight result words
+                 "addi x0, %[qr], 64\n\t"
+                 ".option pop"
+                 :
+                 : [u] "r"(&u), [v] "r"(&v), [qr] "r"(qr)
+                 : "memory");
+    ZiskArith256Params p{
+        qr, reinterpret_cast<uint64_t const *>(&v), qr + 4, d, d + 4};
+    asm volatile(".option push\n\t"
+                 ".option arch, +zicsr\n\t"
+                 "csrs 0x801, %0\n\t"
+                 ".option pop"
+                 :
+                 : "r"(&p)
+                 : "memory");
+    uint256_t const q{qr[0], qr[1], qr[2], qr[3]};
+    uint256_t const r{qr[4], qr[5], qr[6], qr[7]};
+    MONAD_ASSERT(
+        zisk_equal32(d, reinterpret_cast<uint64_t const *>(&u)) &&
+        zisk_equal32(d + 4, zisk_zero_limbs));
+    MONAD_ASSERT(r < v);
+    return {.quot = q, .rem = r};
+}
+#endif
+
 [[gnu::always_inline]] constexpr div_result<uint256_t>
 udivrem(uint256_t const &u, uint256_t const &v) noexcept
 {
+#ifdef MONAD_ZKVM_ZISK
+    if !consteval {
+        uint64_t const v_high = v[1] | v[2] | v[3];
+        // Keep division by zero on the existing assertion path.
+        if (v[0] | v_high) {
+            // For v = 2^k, a shift and mask replace the division hint and its
+            // verification. Check the low word first to quickly reject common
+            // divisors with multiple set bits (e.g. decimal scales).
+            if ((v[0] & (v[0] - 1)) == 0) {
+                unsigned k = 256; // no single bit found
+                if (v[0] != 0) {
+                    if (v_high == 0) {
+                        k = static_cast<unsigned>(std::countr_zero(v[0]));
+                    }
+                }
+                else if (v[1] != 0) {
+                    if ((v[1] & (v[1] - 1)) == 0 && (v[2] | v[3]) == 0) {
+                        k = 64 + static_cast<unsigned>(std::countr_zero(v[1]));
+                    }
+                }
+                else if (v[2] != 0) {
+                    if ((v[2] & (v[2] - 1)) == 0 && v[3] == 0) {
+                        k = 128 + static_cast<unsigned>(std::countr_zero(v[2]));
+                    }
+                }
+                else if ((v[3] & (v[3] - 1)) == 0) {
+                    k = 192 + static_cast<unsigned>(std::countr_zero(v[3]));
+                }
+                if (k < 256) {
+                    return {.quot = u >> uint256_t{k}, .rem = u & (v - 1)};
+                }
+            }
+            // For 64-bit operands, use native division instead of the hint.
+            if ((u[1] | u[2] | u[3] | v_high) == 0) {
+                return {
+                    .quot = uint256_t{u[0] / v[0]},
+                    .rem = uint256_t{u[0] % v[0]}};
+            }
+            // Read operands in place; keep results separate for x /= x.
+            return zisk_udivrem(u, v);
+        }
+    }
+#endif
     auto const r = udivrem(u.as_words(), v.as_words());
     return {.quot = uint256_t{r.quot}, .rem = uint256_t{r.rem}};
 }

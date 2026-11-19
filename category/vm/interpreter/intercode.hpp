@@ -15,7 +15,7 @@
 
 #pragma once
 
-#include <category/vm/interpreter/intrinsics.hpp>
+#include <category/vm/interpreter/jumpdest_map.hpp>
 #include <category/vm/runtime/bin.hpp>
 
 #include <algorithm>
@@ -41,89 +41,8 @@ namespace monad::vm::interpreter
         static constexpr size_t end_padding_size = 32 + 1;
 
     public:
-        // One bit per code byte. Explicit 64-bit words define the layout for
-        // precompile access, unlike std::vector<bool>'s opaque storage.
-        class JumpdestMap
-        {
-#if defined(MONAD_ZKVM_ZISK)
-            // Cover every PUSH2 destination (2^16 bits). This relies on fresh,
-            // zero-filled ZisK bump memory: allocations are never reused, and
-            // analysis leaves every bit beyond the code unset.
-            static constexpr size_t min_words = (size_t{1} << 16) / 64;
-            uint64_t *words_{nullptr};
-            size_t word_count_{0};
-#else
-            std::vector<uint64_t> words_;
-#endif
-
-        public:
-            JumpdestMap() = default;
-
-#if defined(MONAD_ZKVM_ZISK)
-            explicit JumpdestMap(size_t const bits)
-                : words_{static_cast<uint64_t *>(::operator new(
-                      std::max((bits + 63) / 64, min_words) *
-                      sizeof(uint64_t)))}
-                , word_count_{std::max((bits + 63) / 64, min_words)}
-            {
-            }
-#else
-            explicit JumpdestMap(size_t const bits)
-                : words_((bits + 63) / 64, 0)
-            {
-            }
-#endif
-
-            void set(size_t const i) noexcept
-            {
-                // Set bit i % 64 in word i / 64.
-                words_[i >> 6] |= uint64_t{1} << (i & 63);
-            }
-
-#ifdef MONAD_ZKVM_ZISK
-            // Let FrameCode test the same bitmap without owning the map.
-            [[gnu::always_inline]] static bool
-            test(uint64_t const *const words, size_t const i) noexcept
-            {
-                return MONAD_VM_TEST_BIT(words[i >> 6], i);
-            }
-#endif
-
-            bool test(size_t const i) const noexcept
-            {
-#ifdef MONAD_ZKVM_ZISK
-                return test(words_, i);
-#else
-                // Read bit i % 64 from word i / 64.
-                return MONAD_VM_TEST_BIT(words_[i >> 6], i);
-#endif
-            }
-
-            size_t word_count() const noexcept
-            {
-#if defined(MONAD_ZKVM_ZISK)
-                return word_count_;
-#else
-                return words_.size();
-#endif
-            }
-
-            uint64_t *words() noexcept
-            {
-#if defined(MONAD_ZKVM_ZISK)
-                return words_;
-#else
-                return words_.data();
-#endif
-            }
-
-#if defined(MONAD_ZKVM_ZISK)
-            uint64_t const *words() const noexcept
-            {
-                return words_;
-            }
-#endif
-        };
+        // One bit per code byte (jumpdest_map.hpp).
+        using JumpdestMap = interpreter::JumpdestMap;
 
         explicit Intercode(std::span<uint8_t const> const);
 
@@ -167,16 +86,17 @@ namespace monad::vm::interpreter
 #endif
 
         // Requires pc < 2^16: callers use load_be_k<2>, which combines exactly
-        // two bytes and leaves the upper bits zero. On ZisK the map covers
-        // this range, with zero bits beyond the code. Keep size_t to avoid
-        // another zero-extension of the already decoded value.
+        // two bytes and leaves the upper bits zero. A map that covers this
+        // range, with zero bits beyond the code, needs no bounds check. Keep
+        // size_t to avoid another zero-extension of the already decoded value.
         bool is_jumpdest16(size_t const pc) const noexcept
         {
-#if defined(MONAD_ZKVM_ZISK)
-            return jumpdest_map_.test(pc);
-#else
-            return is_jumpdest(pc);
-#endif
+            if constexpr (JumpdestMap::covers_push2) {
+                return jumpdest_map_.test(pc);
+            }
+            else {
+                return is_jumpdest(pc);
+            }
         }
 
         [[gnu::always_inline]]

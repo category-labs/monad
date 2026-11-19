@@ -657,7 +657,8 @@ void create_node_compute_data_possibly_async(
     MONAD_ASSERT(entry.branch < 16);
     if (node) {
         parent.version = std::max(parent.version, node->version);
-        entry.finalize(std::move(node), sm.get_compute(), sm.cache());
+        bool const keep = aux.keep_written_node(sm, *node, tid);
+        entry.finalize(std::move(node), sm.get_compute(), keep);
         if (sm.auto_expire()) {
             MONAD_ASSERT(
                 entry.subtrie_min_version >=
@@ -824,7 +825,8 @@ void create_new_trie_from_requests_(
         aux, sm, mask, mask, children, path, opt_leaf_data, version, tid);
     MONAD_ASSERT(node);
     parent_version = std::max(parent_version, node->version);
-    entry.finalize(std::move(node), sm.get_compute(), sm.cache());
+    bool const keep = aux.keep_written_node(sm, *node, tid);
+    entry.finalize(std::move(node), sm.get_compute(), keep);
     if (sm.auto_expire()) {
         MONAD_ASSERT(
             entry.subtrie_min_version >=
@@ -1094,10 +1096,10 @@ void mismatch_handler_(
             auto &child = children[index];
             child.branch = branch;
             // Updated node inherits the version number directly from old node
-            child.finalize(
-                make_node(old, path_suffix, old.opt_value(), old.version),
-                sm.get_compute(),
-                sm.cache());
+            auto moved =
+                make_node(old, path_suffix, old.opt_value(), old.version);
+            bool const keep = aux.keep_moved_node(sm, *moved, tid);
+            child.finalize(std::move(moved), sm.get_compute(), keep);
             MONAD_ASSERT(child.offset == INVALID_OFFSET);
             // Note that it is possible that we recreate this node later after
             // done expiring all subtries under it

@@ -94,7 +94,8 @@ struct Db::Impl
         Node::SharedPtr src_root, NibblesView src, Node::SharedPtr dest_root,
         NibblesView dest, uint64_t dest_version, bool write_root = true) = 0;
     virtual find_cursor_result_type find_fiber_blocking(
-        NodeCursor const &root, NibblesView const &key, uint64_t version) = 0;
+        NodeCursor const &start, NibblesView const &key, uint64_t version,
+        bool start_is_root) = 0;
     virtual size_t prefetch_fiber_blocking(Node::SharedPtr const &) = 0;
     virtual Node::SharedPtr load_root_for_version(uint64_t version) = 0;
 
@@ -203,8 +204,8 @@ public:
     }
 
     virtual find_cursor_result_type find_fiber_blocking(
-        NodeCursor const &root, NibblesView const &key,
-        uint64_t const version) override
+        NodeCursor const &root, NibblesView const &key, uint64_t const version,
+        bool) override
     {
         if (!root.is_valid()) {
             return {NodeCursor{}, find_result::root_node_is_null_failure};
@@ -316,8 +317,8 @@ public:
     }
 
     virtual find_cursor_result_type find_fiber_blocking(
-        NodeCursor const &root, NibblesView const &key,
-        uint64_t const version) override
+        NodeCursor const &root, NibblesView const &key, uint64_t const version,
+        bool) override
     {
         return find_blocking(aux(), root, key, version, timeline_id::primary);
     }
@@ -500,6 +501,7 @@ private:
             if (stats_publisher.has_value()) {
                 aux.set_stats_publisher(&stats_publisher.value());
             }
+            aux.configure_recent_node_cache(options.recent_node_cache);
             if (options.rewind_to_latest_finalized) {
                 auto const latest_block_id =
                     aux.metadata_ctx().get_latest_finalized_version();
@@ -612,8 +614,14 @@ private:
                 bool dequeued = false;
                 if (parent->comms_.try_dequeue(request)) {
                     if (auto *req = std::get_if<1>(&request); req != nullptr) {
+                        bool const attach = aux.record_recent_find(
+                            req->start_is_primary_root, req->key);
                         find_notify_fiber_future(
-                            aux, std::move(req->promise), req->start, req->key);
+                            aux,
+                            std::move(req->promise),
+                            req->start,
+                            req->key,
+                            attach);
                     }
                     else if (auto *req = std::get_if<2>(&request);
                              req != nullptr) {
@@ -864,8 +872,8 @@ public:
 
     // threadsafe
     virtual find_cursor_result_type find_fiber_blocking(
-        NodeCursor const &start, NibblesView const &key,
-        uint64_t const version) override
+        NodeCursor const &start, NibblesView const &key, uint64_t const version,
+        bool const start_is_root) override
     {
         // Validating once suffices — RWDb does not interleave upserts and
         // reads. An unflushed-version hit on this timeline bypasses the
@@ -877,7 +885,11 @@ public:
         ::boost::fibers::promise<find_cursor_result_type> promise;
         auto fut = promise.get_future();
         worker_thread_->submit(fiber_find_request_t{
-            .promise = std::move(promise), .start = start, .key = key});
+            .promise = std::move(promise),
+            .start = start,
+            .key = key,
+            .start_is_primary_root =
+                start_is_root && tid_ == timeline_id::primary});
         return fut.get();
     }
 
@@ -1074,8 +1086,8 @@ public:
 
     // threadsafe
     virtual find_cursor_result_type find_fiber_blocking(
-        NodeCursor const &start, NibblesView const &key,
-        uint64_t const version) override
+        NodeCursor const &start, NibblesView const &key, uint64_t const version,
+        bool) override
     {
         ::boost::fibers::promise<find_cursor_result_type> promise;
         auto fut = promise.get_future();
@@ -1097,7 +1109,7 @@ public:
             INVALID_OFFSET) {
             return nullptr;
         }
-        auto [cursor, result] = find_fiber_blocking({}, {}, version);
+        auto [cursor, result] = find_fiber_blocking({}, {}, version, false);
         if (result != find_result::success) {
             return nullptr;
         }
@@ -1217,18 +1229,19 @@ Db::Db(Db &&) noexcept = default;
 Db &Db::operator=(Db &&) noexcept = default;
 Db::~Db() = default;
 
-Result<NodeCursor> Db::find(
-    NodeCursor const &root, NibblesView const key,
-    uint64_t const block_id) const
+Result<NodeCursor> Db::find_from(
+    NodeCursor const &start, NibblesView const key, uint64_t const block_id,
+    bool const start_is_root) const
 {
     MONAD_ASSERT(impl_);
-    if (!root.is_valid()) {
+    if (!start.is_valid()) {
         return DbError::version_no_longer_exist;
     }
     if (key.empty()) {
-        return root;
+        return start;
     }
-    auto const [it, result] = impl_->find_fiber_blocking(root, key, block_id);
+    auto const [it, result] =
+        impl_->find_fiber_blocking(start, key, block_id, start_is_root);
     if (result != find_result::success) {
         return find_result_to_db_error(result);
     }
@@ -1237,13 +1250,29 @@ Result<NodeCursor> Db::find(
     return it;
 }
 
+Result<NodeCursor> Db::find(
+    NodeCursor const &start, NibblesView const key,
+    uint64_t const block_id) const
+{
+    return find_from(start, key, block_id, false);
+}
+
+Result<NodeCursor> Db::find(
+    Node::SharedPtr const &root, NibblesView const key,
+    uint64_t const block_id) const
+{
+    return find_from(NodeCursor{root}, key, block_id, true);
+}
+
 Result<NodeCursor>
 Db::find(NibblesView const key, uint64_t const block_id) const
 {
     MONAD_ASSERT(impl_);
     MONAD_ASSERT(impl_->aux().is_on_disk());
+    // A root loaded for one find is freed with it, so nothing it attaches
+    // would stay.
     auto const root = impl_->load_root_for_version(block_id);
-    return find(NodeCursor{root}, key, block_id);
+    return find_from(NodeCursor{root}, key, block_id, false);
 }
 
 Node::SharedPtr Db::load_root_for_version(uint64_t const block_id) const

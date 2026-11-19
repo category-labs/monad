@@ -341,6 +341,26 @@ void triedb_storage_stats_read(
     out->disk_used_bytes = stats.disk_used_bytes;
 }
 
+void triedb_space_stats_read(
+    TriedbRoInner *const db, triedb_space_stats *const out)
+{
+    if (out == nullptr) {
+        return;
+    }
+    *out = {};
+    if (db == nullptr) {
+        return;
+    }
+    auto const stats = db->db.get_storage_stats();
+    out->chunk_capacity_bytes = stats.chunk_capacity_bytes;
+    out->free_chunk_bytes = stats.free_chunk_bytes;
+    out->fast_written_bytes = stats.fast_written_bytes;
+    out->slow_written_bytes = stats.slow_written_bytes;
+    out->slow_live_bytes = stats.slow_live_bytes;
+    out->truly_free_bytes = stats.truly_free_bytes;
+    out->live_bytes_known = stats.live_bytes_known ? 1 : 0;
+}
+
 void triedb_compute_page_key(
     uint8_t const *const slot_key, uint8_t *const out_page_key)
 {

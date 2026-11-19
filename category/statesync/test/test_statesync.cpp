@@ -407,6 +407,7 @@ TEST_F(StateSyncFixture, sync_from_some)
             {},
             NULL_HASH_BLAKE3,
             BlockHeader{.number = 1});
+        ASSERT_TRUE(db.get_storage_stats().live_bytes_known);
         load_genesis_state(GENESIS_STATE, stdb);
         init();
     }
@@ -538,6 +539,8 @@ TEST_F(StateSyncFixture, sync_from_some)
 
     // find transaction trie
     mpt::Db const cdb{ReadOnlyOnDiskDbConfig{.dbname_path = this->cdbname}};
+    // The next open that counts fills the counters by a walk.
+    EXPECT_FALSE(cdb.get_storage_stats().live_bytes_known);
     for (auto const nibble :
          {RECEIPT_NIBBLE,
           TRANSACTION_NIBBLE,

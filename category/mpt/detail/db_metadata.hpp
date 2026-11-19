@@ -71,6 +71,7 @@ namespace detail
     struct db_metadata
     {
         static constexpr char const *MAGIC = "MONAD008";
+        static constexpr uint64_t SPACE_COUNTERS_MARKER = 0x31544E4345434150;
         static constexpr unsigned MAGIC_STRING_LEN = 8;
 
         friend class MONAD_MPT_NAMESPACE::DbMetadataContext;
@@ -195,10 +196,17 @@ namespace detail
             {
             }
 
+            // Other threads and processes load the offsets atomically.
             void store(db_offsets_info_t const &o)
             {
-                start_of_wip_offset_fast = o.start_of_wip_offset_fast;
-                start_of_wip_offset_slow = o.start_of_wip_offset_slow;
+                static_assert(
+                    std::atomic_ref<chunk_offset_t>::is_always_lock_free);
+                std::atomic_ref<chunk_offset_t>(start_of_wip_offset_fast)
+                    .store(
+                        o.start_of_wip_offset_fast, std::memory_order_release);
+                std::atomic_ref<chunk_offset_t>(start_of_wip_offset_slow)
+                    .store(
+                        o.start_of_wip_offset_slow, std::memory_order_release);
             }
         } db_offsets;
 
@@ -282,12 +290,29 @@ namespace detail
         // on every pool that already exists.
         uint64_t recorded_device_size;
 
+        // Live bytes per list as of `finalized_version`, valid only while
+        // `marker` is SPACE_COUNTERS_MARKER. `sequence` is odd while the
+        // fields are being written, so a reader in another process can tell
+        // a torn read. Carved from the padding below, which every existing
+        // pool has zeroed, so old pools read as not recorded.
+        struct space_counters_t
+        {
+            uint64_t sequence;
+            uint64_t marker;
+            uint64_t finalized_version;
+            uint64_t fast_live;
+            uint64_t slow_live;
+        } space_counters;
+
+        static_assert(sizeof(space_counters_t) == 40);
+
         // padding for adding future atomics without requiring DB reset.
         // Sized so sizeof(db_metadata) stays at 4480 regardless of how
         // timeline_state_t grows in subsequent PRs.
         uint8_t future_variables_unused
             [4040 - sizeof(root_offsets_ring_t) - 2 * sizeof(timeline_state_t) -
-             16 - sizeof(pending_shrink_grow_t) - sizeof(uint64_t)];
+             16 - sizeof(pending_shrink_grow_t) - sizeof(uint64_t) -
+             sizeof(space_counters_t)];
 
         // used to know if the metadata was being
         // updated when the process suddenly exited
@@ -493,10 +518,38 @@ namespace detail
             return &chunk_info[idx];
         }
 
+        // Other threads and processes load chunk_info[] entries and list ends
+        // atomically while the writer relinks them.
+        static void store_(chunk_info_t &ci, chunk_info_t const info) noexcept
+        {
+            std::atomic_ref<chunk_info_t>(ci).store(
+                info, std::memory_order_release);
+        }
+
+        static void store_(uint32_t &id, uint32_t const value) noexcept
+        {
+            std::atomic_ref<uint32_t>(id).store(
+                value, std::memory_order_release);
+        }
+
+        static void set_prev_(chunk_info_t &ci, uint32_t const id) noexcept
+        {
+            chunk_info_t info = ci;
+            info.prev_chunk_id = id & 0xfffffU;
+            store_(ci, info);
+        }
+
+        static void set_next_(chunk_info_t &ci, uint32_t const id) noexcept
+        {
+            chunk_info_t info = ci;
+            info.next_chunk_id = id & 0xfffffU;
+            store_(ci, info);
+        }
+
         void append_(id_pair &list, chunk_info_t *const i) noexcept
         {
-            // Insertion count is assigned to chunk_info_t *i atomically
             auto const g = hold_dirty();
+            uint32_t const id = i->index(this);
             chunk_info_t info;
             info.in_fast_list = (&list == &fast_list);
             info.in_slow_list = (&list == &slow_list);
@@ -505,31 +558,31 @@ namespace detail
             if (list.end == NULL_CHUNK) {
                 MONAD_ASSERT(list.begin == NULL_CHUNK);
                 info.prev_chunk_id = chunk_info_t::INVALID_CHUNK_ID;
-                list.begin = list.end = i->index(this);
+                store_(*i, info);
+                store_(list.begin, id);
+                store_(list.end, id);
+                return;
             }
-            else {
-                MONAD_ASSERT((list.end & ~0xfffffU) == 0);
-                info.prev_chunk_id = list.end & 0xfffffU;
-                auto *tail = at_(list.end);
-                uint32_t const insertion_count =
-                    uint32_t(tail->insertion_count()) + 1;
-                // Strict less-than because MAX_COUNT is reserved for
-                // INVALID_VIRTUAL_OFFSET so that no valid virtual offset
-                // compacts to INVALID_COMPACT_VIRTUAL_OFFSET.
-                MONAD_ASSERT(
-                    insertion_count < virtual_chunk_offset_t::MAX_COUNT,
-                    "Chunk count overflow detected. The 20-bit address "
-                    "space for chunk count has been exhausted. Please "
-                    "perform a database reset. TODO: expand the address "
-                    "space.");
-                info.insertion_count0_ = insertion_count & 0x3ff;
-                info.insertion_count1_ = insertion_count >> 10 & 0x3ff;
-                MONAD_ASSERT(
-                    tail->next_chunk_id == chunk_info_t::INVALID_CHUNK_ID);
-                list.end = tail->next_chunk_id = i->index(this) & 0xfffffU;
-            }
-            std::atomic_ref<chunk_info_t>(*i).store(
-                info, std::memory_order_release);
+            MONAD_ASSERT((list.end & ~0xfffffU) == 0);
+            info.prev_chunk_id = list.end & 0xfffffU;
+            auto *tail = at_(list.end);
+            uint32_t const insertion_count =
+                uint32_t(tail->insertion_count()) + 1;
+            // Strict less-than because MAX_COUNT is reserved for
+            // INVALID_VIRTUAL_OFFSET so that no valid virtual offset
+            // compacts to INVALID_COMPACT_VIRTUAL_OFFSET.
+            MONAD_ASSERT(
+                insertion_count < virtual_chunk_offset_t::MAX_COUNT,
+                "Chunk count overflow detected. The 20-bit address "
+                "space for chunk count has been exhausted. Please "
+                "perform a database reset. TODO: expand the address "
+                "space.");
+            info.insertion_count0_ = insertion_count & 0x3ff;
+            info.insertion_count1_ = insertion_count >> 10 & 0x3ff;
+            MONAD_ASSERT(tail->next_chunk_id == chunk_info_t::INVALID_CHUNK_ID);
+            store_(*i, info);
+            set_next_(*tail, id);
+            store_(list.end, id);
         }
 
         void remove_(chunk_info_t *const i) noexcept
@@ -549,47 +602,39 @@ namespace detail
                 id_pair &list = get_list();
                 MONAD_ASSERT(list.begin == i->index(this));
                 MONAD_ASSERT(list.end == i->index(this));
-                list.begin = list.end = NULL_CHUNK;
-#ifndef NDEBUG
-                i->in_fast_list = i->in_slow_list = false;
-#endif
-                return;
+                store_(list.begin, NULL_CHUNK);
+                store_(list.end, NULL_CHUNK);
             }
-            if (i->prev_chunk_id == chunk_info_t::INVALID_CHUNK_ID) {
+            else if (i->prev_chunk_id == chunk_info_t::INVALID_CHUNK_ID) {
                 id_pair &list = get_list();
                 MONAD_ASSERT(list.begin == i->index(this));
                 auto *next = at_(i->next_chunk_id);
-                next->prev_chunk_id = chunk_info_t::INVALID_CHUNK_ID;
-                list.begin = next->index(this);
-#ifndef NDEBUG
-                i->in_fast_list = i->in_slow_list = false;
-                i->next_chunk_id = chunk_info_t::INVALID_CHUNK_ID;
-#endif
-                return;
+                set_prev_(*next, chunk_info_t::INVALID_CHUNK_ID);
+                store_(list.begin, next->index(this));
             }
-            if (i->next_chunk_id == chunk_info_t::INVALID_CHUNK_ID) {
+            else if (i->next_chunk_id == chunk_info_t::INVALID_CHUNK_ID) {
                 id_pair &list = get_list();
                 MONAD_ASSERT(list.end == i->index(this));
                 auto *prev = at_(i->prev_chunk_id);
-                prev->next_chunk_id = chunk_info_t::INVALID_CHUNK_ID;
-                list.end = prev->index(this);
-#ifndef NDEBUG
-                i->in_fast_list = i->in_slow_list = false;
-                i->prev_chunk_id = chunk_info_t::INVALID_CHUNK_ID;
-#endif
-                return;
+                set_next_(*prev, chunk_info_t::INVALID_CHUNK_ID);
+                store_(list.end, prev->index(this));
             }
-            MONAD_ASSERT(
-                "remove_() has had mid-list removals explicitly disabled to "
-                "prevent insertion count becoming inaccurate" == nullptr);
-            auto *prev = at_(i->prev_chunk_id);
-            auto *next = at_(i->next_chunk_id);
-            prev->next_chunk_id = next->index(this) & 0xfffffU;
-            next->prev_chunk_id = prev->index(this) & 0xfffffU;
+            else {
+                MONAD_ASSERT(
+                    "remove_() has had mid-list removals explicitly disabled "
+                    "to prevent insertion count becoming inaccurate" ==
+                    nullptr);
+                auto *prev = at_(i->prev_chunk_id);
+                auto *next = at_(i->next_chunk_id);
+                set_next_(*prev, next->index(this));
+                set_prev_(*next, prev->index(this));
+            }
 #ifndef NDEBUG
-            i->in_fast_list = i->in_slow_list = false;
-            i->prev_chunk_id = i->next_chunk_id =
+            chunk_info_t info = *i;
+            info.in_fast_list = info.in_slow_list = false;
+            info.prev_chunk_id = info.next_chunk_id =
                 chunk_info_t::INVALID_CHUNK_ID;
+            store_(*i, info);
 #endif
         }
 
@@ -629,7 +674,9 @@ namespace detail
                     info.prev_chunk_id = chunk_info_t::INVALID_CHUNK_ID;
                     info.insertion_count0_ = 0;
                     info.insertion_count1_ = 0;
-                    free_list.begin = free_list.end = n;
+                    store_(chunk_info[n], info);
+                    store_(free_list.begin, n);
+                    store_(free_list.end, n);
                 }
                 else {
                     MONAD_ASSERT((free_list.end & ~0xfffffU) == 0);
@@ -646,11 +693,10 @@ namespace detail
                     info.prev_chunk_id = free_list.end & 0xfffffU;
                     MONAD_ASSERT(
                         tail->next_chunk_id == chunk_info_t::INVALID_CHUNK_ID);
-                    tail->next_chunk_id = n & 0xfffffU;
-                    free_list.end = n;
+                    store_(chunk_info[n], info);
+                    set_next_(*tail, n);
+                    store_(free_list.end, n);
                 }
-                std::atomic_ref<chunk_info_t>(chunk_info[n])
-                    .store(info, std::memory_order_release);
             }
             capacity_in_free_list += added_capacity_bytes;
         }

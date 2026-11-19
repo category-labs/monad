@@ -28,6 +28,8 @@
 #include <category/execution/ethereum/core/rlp/int_rlp.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
+#include <category/execution/ethereum/core/withdrawal.hpp>
+#include <category/execution/ethereum/db/commit_builder.hpp>
 #include <category/execution/ethereum/db/test/commit_simple.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
@@ -35,12 +37,16 @@
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/trace/call_frame.hpp>
 #include <category/execution/ethereum/trace/rlp/call_frame_rlp.hpp>
+#include <category/execution/monad/db/page_commit_builder.hpp>
 #include <category/mpt/db.hpp>
+#include <category/mpt/detail/space_counters.hpp>
+#include <category/mpt/detail/timeline.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/mpt/test/test_fixtures_gtest.hpp>
 #include <category/mpt/traverse_util.hpp>
+#include <category/mpt/trie.hpp>
 #include <category/mpt/util.hpp>
 #include <category/vm/evm/call_status.hpp>
 #include <category/vm/vm.hpp>
@@ -56,6 +62,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -1006,4 +1013,327 @@ TYPED_TEST(DBTest, commit_call_frames)
         EXPECT_EQ(res[0], call_frame1);
         EXPECT_EQ(res[1], call_frame2);
     }
+}
+
+namespace monad::mpt::test
+{
+    struct DbAccessor
+    {
+        static UpdateAux &aux(Db &db)
+        {
+            return const_cast<UpdateAux &>(db.aux());
+        }
+    };
+}
+
+namespace
+{
+    Address settlement_address(uint32_t const i)
+    {
+        Address address{};
+        std::memcpy(address.bytes, &i, sizeof(i));
+        address.bytes[19] = 0x77;
+        return address;
+    }
+
+    StateDeltas account_updates(
+        uint32_t const first, uint32_t const count, uint64_t const nonce)
+    {
+        StateDeltas deltas;
+        for (uint32_t i = first; i < first + count; ++i) {
+            deltas.emplace(
+                settlement_address(i),
+                StateDelta{
+                    .account =
+                        {std::nullopt,
+                         Account{.balance = nonce, .nonce = nonce}},
+                    .storage = {}});
+        }
+        return deltas;
+    }
+
+    struct list_excess
+    {
+        int64_t fast;
+        int64_t slow;
+
+        bool operator==(list_excess const &) const = default;
+    };
+
+    // Live bytes the counters hold minus those a walk of the newest
+    // finalized version finds under the finalized prefix, per list. The walk
+    // leaves out what the counters do unless `whole_block_data`.
+    list_excess
+    excess_over_walk(mpt::Db &db, bool const whole_block_data = false)
+    {
+        auto &aux = mpt::test::DbAccessor::aux(db);
+        uint64_t const version = db.get_latest_finalized_version();
+        auto const root = aux.metadata_ctx().get_root_offset_at_version(
+            version, mpt::timeline_id::primary);
+        OnDiskMachine machine;
+        auto const walked = mpt::detail::walk_live_bytes(
+            aux,
+            root,
+            version,
+            mpt::timeline_id::primary,
+            finalized_nibbles,
+            whole_block_data ? nullptr : &machine);
+        auto const counted = aux.live_bytes();
+        MONAD_ASSERT(walked.has_value() && counted.has_value());
+        return {
+            .fast = static_cast<int64_t>(counted->fast) -
+                    static_cast<int64_t>(walked->fast),
+            .slow = static_cast<int64_t>(counted->slow) -
+                    static_cast<int64_t>(walked->slow)};
+    }
+
+    int64_t slow_excess_over_walk(mpt::Db &db)
+    {
+        return excess_over_walk(db).slow;
+    }
+
+    // Every kind of block data that is replaced whole each block, sized by
+    // the block number.
+    void commit_with_block_data(TrieDb &tdb, uint64_t const n)
+    {
+        CallFrame const frame{
+            .type = CallType::CALL,
+            .gas = 21'000u,
+            .input = byte_string(static_cast<size_t>(n % 7) * 40, 0xaa)};
+        size_t const txns = 2 + n % 6;
+        std::vector<std::vector<CallFrame>> const call_frames(
+            txns, std::vector<CallFrame>{frame, frame});
+        std::vector<Receipt> const receipts(txns);
+        std::vector<Transaction> transactions;
+        transactions.reserve(txns);
+        for (uint64_t i = 0; i < txns; ++i) {
+            transactions.push_back(Transaction{.nonce = n * 100 + i});
+        }
+        std::vector<Address> const senders(txns);
+        commit_sequential(
+            tdb,
+            account_updates(static_cast<uint32_t>((n * 7) % 180), 20, n),
+            Code{},
+            BlockHeader{.number = n},
+            receipts,
+            call_frames,
+            senders,
+            transactions,
+            {},
+            std::vector<Withdrawal>(n % 3));
+    }
+
+    // Writes accounts [0, 2000) straight to the slow list under the finalized
+    // prefix, as a snapshot load does, at version 8. Returns the counters'
+    // excess over the walk at that point: the load's own finalized-prefix
+    // node, which finalize later replaces.
+    int64_t load_state_to_slow(mpt::Db &db, TrieDb &tdb)
+    {
+        auto builder = make_commit_builder(8, tdb);
+        builder->add_state_deltas(account_updates(0, 2000, 1));
+        auto root = db.upsert(
+            tdb.get_root(),
+            builder->build(finalized_nibbles),
+            8,
+            /*enable_compaction=*/false,
+            /*can_write_to_fast=*/false);
+        // The header goes last: an upsert's can_write_to_fast stays in
+        // effect for the following copy_trie, and a running node's last
+        // write before a commit is to the fast list.
+        root = load_header(std::move(root), db, BlockHeader{.number = 8});
+        tdb.reset_root(root, 8);
+        db.update_finalized_version(8);
+        tdb.set_block_and_prefix(8);
+        return slow_excess_over_walk(db);
+    }
+
+    bytes32_t proposal_id(char const fork, uint64_t const n)
+    {
+        return bytes32_t{(fork == 'A' ? 1000u : 2000u) + n};
+    }
+}
+
+struct OnDiskTrieDbSettlement : public ::testing::Test
+{
+    mpt::Db db{
+        std::make_unique<OnDiskMachine>(),
+        mpt::OnDiskDbConfig{.compaction = true}};
+};
+
+TEST_F(OnDiskTrieDbSettlement, single_proposal_matches_walk)
+{
+    TrieDb tdb{db};
+    int64_t const baseline = load_state_to_slow(db, tdb);
+    for (uint64_t n = 9; n < 29; ++n) {
+        commit_sequential(
+            tdb,
+            account_updates(static_cast<uint32_t>((n * 7) % 180), 20, n),
+            Code{},
+            BlockHeader{.number = n});
+    }
+    EXPECT_EQ(slow_excess_over_walk(db), baseline);
+}
+
+TEST_F(OnDiskTrieDbSettlement, fork_settles_winner_only)
+{
+    TrieDb tdb{db};
+    int64_t const baseline = load_state_to_slow(db, tdb);
+    commit_sequential(
+        tdb, account_updates(0, 10, 2), Code{}, BlockHeader{.number = 9});
+    tdb.set_block_and_prefix(9);
+    commit_simple(
+        tdb,
+        account_updates(0, 100, 3),
+        Code{},
+        proposal_id('A', 10),
+        BlockHeader{.number = 10});
+    tdb.set_block_and_prefix(9);
+    commit_simple(
+        tdb,
+        account_updates(50, 100, 4),
+        Code{},
+        proposal_id('B', 10),
+        BlockHeader{.number = 10});
+    tdb.finalize(10, proposal_id('A', 10));
+    EXPECT_EQ(
+        mpt::test::DbAccessor::aux(db).pending_settlements_unit_testing_only(),
+        0u);
+    EXPECT_EQ(slow_excess_over_walk(db), baseline);
+}
+
+TEST_F(OnDiskTrieDbSettlement, proposal_on_loser_is_dropped)
+{
+    TrieDb tdb{db};
+    int64_t const baseline = load_state_to_slow(db, tdb);
+    commit_sequential(
+        tdb, account_updates(0, 10, 2), Code{}, BlockHeader{.number = 9});
+    for (char const fork : {'A', 'B'}) {
+        tdb.set_block_and_prefix(9);
+        commit_simple(
+            tdb,
+            account_updates(fork == 'A' ? 0 : 50, 100, 3),
+            Code{},
+            proposal_id(fork, 10),
+            BlockHeader{.number = 10});
+    }
+    for (char const fork : {'A', 'B'}) {
+        tdb.set_block_and_prefix(10, proposal_id(fork, 10));
+        commit_simple(
+            tdb,
+            account_updates(fork == 'A' ? 20 : 70, 100, 5),
+            Code{},
+            proposal_id(fork, 11),
+            BlockHeader{.number = 11});
+    }
+    tdb.finalize(10, proposal_id('A', 10));
+    tdb.finalize(11, proposal_id('A', 11));
+    EXPECT_EQ(slow_excess_over_walk(db), baseline);
+}
+
+// Executing a proposal again from its parent replaces its first trie.
+TEST_F(OnDiskTrieDbSettlement, reexecuted_proposal_settles_last_execution)
+{
+    TrieDb tdb{db};
+    int64_t const baseline = load_state_to_slow(db, tdb);
+    commit_sequential(
+        tdb, account_updates(0, 10, 2), Code{}, BlockHeader{.number = 9});
+    for (uint64_t const nonce : {uint64_t{3}, uint64_t{4}}) {
+        tdb.set_block_and_prefix(9);
+        commit_simple(
+            tdb,
+            account_updates(0, 100, nonce),
+            Code{},
+            proposal_id('A', 10),
+            BlockHeader{.number = 10});
+    }
+    tdb.finalize(10, proposal_id('A', 10));
+    EXPECT_EQ(slow_excess_over_walk(db), baseline);
+}
+
+TEST_F(OnDiskTrieDbSettlement, fork_with_compaction)
+{
+    TrieDb tdb{db};
+    int64_t const baseline = load_state_to_slow(db, tdb);
+    commit_sequential(
+        tdb, account_updates(0, 10, 2), Code{}, BlockHeader{.number = 9});
+    auto &aux = mpt::test::DbAccessor::aux(db);
+    uint64_t const copied_before = aux.stats_snapshot().compacted_bytes_in_slow;
+    aux.slow_collection_override_unit_testing_only(4);
+    tdb.set_block_and_prefix(9);
+    commit_simple(
+        tdb,
+        account_updates(0, 100, 3),
+        Code{},
+        proposal_id('A', 10),
+        BlockHeader{.number = 10});
+    tdb.set_block_and_prefix(9);
+    commit_simple(
+        tdb,
+        account_updates(50, 100, 4),
+        Code{},
+        proposal_id('B', 10),
+        BlockHeader{.number = 10});
+    tdb.finalize(10, proposal_id('A', 10));
+    aux.slow_collection_override_unit_testing_only(std::nullopt);
+    EXPECT_GT(aux.stats_snapshot().compacted_bytes_in_slow, copied_before);
+    EXPECT_EQ(slow_excess_over_walk(db), baseline);
+}
+
+// Receipts, transactions, call frames and withdrawals are replaced whole every
+// block. Only their table roots are counted, so a replaced block's data is
+// never read to subtract it, and the counters keep a fixed offset from the
+// walk.
+TEST_F(OnDiskTrieDbSettlement, replaced_block_data_keeps_counters_exact)
+{
+    TrieDb tdb{db};
+    int64_t const baseline = load_state_to_slow(db, tdb);
+    commit_with_block_data(tdb, 9);
+    commit_with_block_data(tdb, 10);
+    auto const offset = excess_over_walk(db);
+    for (uint64_t n = 11; n < 40; ++n) {
+        commit_with_block_data(tdb, n);
+    }
+    EXPECT_EQ(excess_over_walk(db), offset);
+    EXPECT_EQ(slow_excess_over_walk(db), baseline);
+    EXPECT_LT(excess_over_walk(db, true).fast, excess_over_walk(db).fast);
+}
+
+TEST(OnDiskTrieDbSpaceStats, read_only_handle_reads_counters)
+{
+    auto const name =
+        std::filesystem::temp_directory_path() /
+        (::testing::UnitTest::GetInstance()->current_test_info()->name() +
+         std::to_string(rand()));
+    {
+        mpt::Db db{
+            std::make_unique<OnDiskMachine>(),
+            mpt::OnDiskDbConfig{
+                .compaction = true, .dbname_path = name, .chunk_capacity = 24}};
+        TrieDb tdb{db};
+        (void)load_state_to_slow(db, tdb);
+        for (uint64_t n = 9; n < 13; ++n) {
+            commit_sequential(
+                tdb,
+                account_updates(0, 50, n),
+                Code{},
+                BlockHeader{.number = n});
+        }
+        auto const rw = db.get_storage_stats();
+        ASSERT_TRUE(rw.live_bytes_known);
+        auto const live = mpt::test::DbAccessor::aux(db).live_bytes();
+        ASSERT_TRUE(live.has_value());
+        EXPECT_EQ(rw.slow_live_bytes, live->slow);
+
+        mpt::AsyncIOContext io_ctx{
+            mpt::ReadOnlyOnDiskDbConfig{.dbname_path = name}};
+        mpt::Db const ro_db{io_ctx};
+        auto const ro = ro_db.get_storage_stats();
+        ASSERT_TRUE(ro.live_bytes_known);
+        EXPECT_EQ(ro.slow_live_bytes, rw.slow_live_bytes);
+        EXPECT_EQ(ro.slow_written_bytes, rw.slow_written_bytes);
+        EXPECT_EQ(
+            ro.truly_free_bytes,
+            ro.free_chunk_bytes + ro.slow_written_bytes - ro.slow_live_bytes);
+    }
+    std::filesystem::remove(name);
 }

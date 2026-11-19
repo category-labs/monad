@@ -277,6 +277,7 @@ Node::SharedPtr copy_trie_to_dest(
     uint64_t const dest_version, timeline_id const tid, bool const write_root)
 {
     MONAD_ASSERT(aux.is_on_disk());
+    UpdateAux::uncounted_writes const uncounted{aux};
     auto const expected_compact_offset =
         dest_root ? compact_offset_pair::deserialize(dest_root->value())
                   : compact_offset_pair::deserialize(src_root->value());

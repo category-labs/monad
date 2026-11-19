@@ -21,6 +21,7 @@
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/interpreter/intercode.hpp>
+#include <category/vm/interpreter/intrinsics.hpp>
 #include <category/vm/interpreter/stack.hpp>
 #include <category/vm/interpreter/stack_top.hpp>
 #include <category/vm/interpreter/types.hpp>
@@ -52,48 +53,6 @@ namespace monad::vm::interpreter
         }
 
         using subword_t = uint256_t::word_type;
-
-        // Assemble K big-endian bytes directly to avoid a temporary and a
-        // software byte swap on targets without a byte-swap instruction.
-        template <size_t K>
-        [[gnu::always_inline]] inline subword_t
-        load_be_k(uint8_t const *const p) noexcept
-        {
-            static_assert(K >= 1 && K <= 8);
-#ifdef MONAD_ZKVM_ZISK
-            // ZisK charges less for two byte loads + packh than lhu/rev8/srli.
-            // Memory operands let GCC fold pointer offsets into the loads.
-            if constexpr (K == 2) {
-                subword_t hi;
-                subword_t lo;
-                // %0 = hi, %1 = lo; %2/%3 address p[0]/p[1].
-                // "=&r": write-only registers, distinct from input addresses.
-                // lbu zero-extends each byte.
-                asm("lbu %0, %2\n\t" // hi = p[0]
-                    "lbu %1, %3\n\t" // lo = p[1]
-                    "packh %0, %1, %0" // hi = (hi << 8) | lo
-                    : "=&r"(hi), "=&r"(lo)
-                    : "m"(p[0]), "m"(p[1]));
-                return hi;
-            }
-            // Use lwu instead of lw to avoid ZisK's sign-extension cost.
-            // rev8 and srli convert the four bytes from big-endian.
-            if constexpr (K == 4) {
-                subword_t v;
-                asm("lwu %0, %1\n\t"
-                    "rev8 %0, %0\n\t"
-                    "srli %0, %0, 32"
-                    : "=r"(v)
-                    : "m"(*reinterpret_cast<uint8_t const(*)[4]>(p)));
-                return v;
-            }
-#endif
-            return [p]<size_t... Is>(std::index_sequence<Is...>) {
-                return (
-                    (static_cast<subword_t>(p[Is]) << (8 * (K - 1 - Is))) |
-                    ...);
-            }(std::make_index_sequence<K>{});
-        }
 
         [[gnu::always_inline]] inline subword_t
         read_unaligned(uint8_t const *const ptr)

@@ -31,6 +31,7 @@ target_sources(monad-vm-interpreter PRIVATE
   "entry.S"
   "execute.cpp"
   "execute.hpp"
+  "handler_policy.hpp"
   "instruction_stats.cpp"
   "instruction_stats.hpp"
   "instruction_table.hpp"

@@ -16,6 +16,7 @@
 #pragma once
 
 #include <category/core/runtime/uint256.hpp>
+#include <category/vm/interpreter/handler_policy.hpp>
 #include <category/vm/interpreter/intercode.hpp>
 #include <category/vm/interpreter/stack_top.hpp>
 #include <category/vm/runtime/types.hpp>
@@ -65,22 +66,6 @@
             #define MONAD_VM_INSTRUCTION_CALL
         #endif
     #endif
-#endif
-
-// On ZisK, pass the table base in a seventh register argument to avoid
-// reloading it at each dispatch.
-// All dispatching handlers must use MONAD_VM_TBL_PARAM and MONAD_VM_TBL_ARG;
-// they expand to nothing on other targets.
-#if defined(MONAD_ZKVM_ZISK)
-    #define MONAD_VM_TBL_TYPE , void const *
-    #define MONAD_VM_TBL_PARAM , void const *table_base
-    #define MONAD_VM_TBL_ARG , table_base
-    #define MONAD_VM_TABLE_REF (static_cast<InstrEval const *>(table_base))
-#else
-    #define MONAD_VM_TBL_TYPE
-    #define MONAD_VM_TBL_PARAM
-    #define MONAD_VM_TBL_ARG
-    #define MONAD_VM_TABLE_REF instruction_table<traits>
 #endif
 
 namespace monad::vm::interpreter

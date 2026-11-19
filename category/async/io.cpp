@@ -69,11 +69,10 @@
                 if (unique == -EINTR) {                                        \
                     continue;                                                  \
                 }                                                              \
-                char buffer[256] = "unknown error";                            \
-                if (strerror_r(-unique, buffer, 256) != nullptr) {             \
-                    buffer[255] = 0;                                           \
-                }                                                              \
-                MONAD_ABORT_PRINTF("FATAL: %s", buffer)                        \
+                /* GNU strerror_r returns the text, usually not in buffer */   \
+                char buffer[256];                                              \
+                char const *const text = strerror_r(-unique, buffer, 256);     \
+                MONAD_ABORT_PRINTF("FATAL: %s (%d)", text, -unique)            \
             }                                                                  \
             break;                                                             \
         }                                                                      \

@@ -25,13 +25,6 @@
 #include <cstddef>
 #include <cstdint>
 
-#if defined(MONAD_ZKVM_ZISK) && !defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
-    #define MONAD_VM_SHOULD_CHECK_GAS(Instr, DYNAMIC)                          \
-        ::monad::vm::interpreter::should_check_gas((Instr), (DYNAMIC))
-#else
-    #define MONAD_VM_SHOULD_CHECK_GAS(Instr, DYNAMIC) true
-#endif
-
 // Shared gas and stack checks; EXIT(status) selects how to leave on failure.
 #define MONAD_VM_CHECK_REQUIREMENTS(Instr, EXIT)                               \
     MONAD_VM_CHECK_REQUIREMENTS_AT(Instr, 0, EXIT)
@@ -104,7 +97,7 @@ namespace monad::vm::interpreter
 {
     using enum runtime::StatusCode;
 
-#if defined(MONAD_ZKVM_ZISK)
+    // Checkpoints of targets that defer gas checks (MONAD_VM_SHOULD_CHECK_GAS).
     // Keep gas checks before observable effects and jumps. Other opcodes
     // still charge gas, but may defer exhaustion to the next checkpoint.
     // Host reads also need a checkpoint: even a discarded read may require
@@ -121,7 +114,6 @@ namespace monad::vm::interpreter
                op == TSTORE || op == SELFDESTRUCT || op == BLOCKHASH ||
                op == SELFBALANCE || op == TLOAD;
     }
-#endif
 
     // Separate entry points for the same errors; keep them out of line.
     [[noreturn, gnu::noinline, gnu::cold]] inline void

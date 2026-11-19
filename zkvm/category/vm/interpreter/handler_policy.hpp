@@ -58,6 +58,15 @@
     #define MONAD_VM_TBL_ARG , table_base
     #define MONAD_VM_TABLE_REF (dispatch_table<traits>(table_base))
 
+// Gas checks wait for checkpoints (should_check_gas) unless the gas self-tests
+// ask for eager checks.
+    #if !defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
+        #define MONAD_VM_SHOULD_CHECK_GAS(Instr, DYNAMIC)                      \
+            ::monad::vm::interpreter::should_check_gas((Instr), (DYNAMIC))
+    #else
+        #define MONAD_VM_SHOULD_CHECK_GAS(Instr, DYNAMIC) true
+    #endif
+
 namespace monad::vm::interpreter
 {
     // View of the running code metadata saved by execute().

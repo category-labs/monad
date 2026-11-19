@@ -120,6 +120,11 @@ namespace
         return x86::qword_ptr(x86::rbp, offset.offset * 32);
     }
 
+    x86::Mem stack_offset_to_ymm_mem(StackOffset const offset)
+    {
+        return x86::ymmword_ptr(x86::rbp, offset.offset * 32);
+    }
+
     x86::Vec avx_reg_to_ymm(AvxReg const reg)
     {
         MONAD_DEBUG_ASSERT(reg.reg < 32);
@@ -327,7 +332,7 @@ namespace monad::vm::compiler::native
 
     asmjit::x86::Mem Emitter::RoData::add_literal(Literal const &lit)
     {
-        return add32(lit.value);
+        return add32(lit.value).clone_resized(8);
     }
 
     template <typename F>
@@ -354,7 +359,7 @@ namespace monad::vm::compiler::native
             data_.push_back(x);
         }
         int32_t const offset = it->second;
-        return x86::qword_ptr(label_, offset);
+        return x86::ymmword_ptr(label_, offset);
     }
 
     // The three values are stored contiguously, so that a load may span
@@ -406,9 +411,7 @@ namespace monad::vm::compiler::native
     {
         std::array<uint8_t, 4> x;
         std::memcpy(x.data(), &x0, 4);
-        auto m = add<4>(x);
-        m.set_size(4);
-        return m;
+        return add<4>(x);
     }
 
     template <size_t N>
@@ -463,7 +466,7 @@ namespace monad::vm::compiler::native
             partial_sub_index_ = next_partial_sub_index + n;
         }
         int32_t const offset = it->second;
-        return x86::qword_ptr(label_, offset);
+        return x86::ptr(label_, offset, N);
     }
 
     size_t Emitter::RoData::estimate_size()
@@ -645,6 +648,10 @@ namespace monad::vm::compiler::native
         , final_stack_dep_counts_{
               std::make_unique_for_overwrite<int32_t[]>(1024)}
     {
+#ifdef MONAD_COMPILER_TESTING
+        as_.add_diagnostic_options(
+            asmjit::DiagnosticOptions::kValidateAssembler);
+#endif
         contract_prologue();
     }
 
@@ -1107,7 +1114,7 @@ namespace monad::vm::compiler::native
     void Emitter::spill_avx_reg_range(uint8_t const start)
     {
         for (auto const &[reg, off] : stack_.spill_avx_reg_range(start)) {
-            as_.vmovaps(stack_offset_to_mem(off), avx_reg_to_ymm(reg));
+            as_.vmovaps(stack_offset_to_ymm_mem(off), avx_reg_to_ymm(reg));
         }
     }
 
@@ -1121,7 +1128,8 @@ namespace monad::vm::compiler::native
         auto [elem, reserv, offset] = stack_.alloc_avx_reg();
         if (offset.has_value()) {
             as_.vmovaps(
-                stack_offset_to_mem(*offset), avx_reg_to_ymm(*elem->avx_reg()));
+                stack_offset_to_ymm_mem(*offset),
+                avx_reg_to_ymm(*elem->avx_reg()));
         }
         return {elem, reserv};
     }
@@ -1132,7 +1140,8 @@ namespace monad::vm::compiler::native
         auto offset = stack_.insert_avx_reg_without_reserv(elem);
         if (offset.has_value()) {
             as_.vmovaps(
-                stack_offset_to_mem(*offset), avx_reg_to_ymm(*elem.avx_reg()));
+                stack_offset_to_ymm_mem(*offset),
+                avx_reg_to_ymm(*elem.avx_reg()));
         }
     }
 
@@ -1141,7 +1150,8 @@ namespace monad::vm::compiler::native
         auto [reserv, offset] = stack_.insert_avx_reg(elem);
         if (offset.has_value()) {
             as_.vmovaps(
-                stack_offset_to_mem(*offset), avx_reg_to_ymm(*elem->avx_reg()));
+                stack_offset_to_ymm_mem(*offset),
+                avx_reg_to_ymm(*elem->avx_reg()));
         }
         return reserv;
     }
@@ -1459,7 +1469,7 @@ namespace monad::vm::compiler::native
         if (spill_elem_has_new_mem_location) {
             MONAD_DEBUG_ASSERT(spill_elem->stack_offset().has_value());
             as_.vmovaps(
-                stack_offset_to_mem(*spill_elem->stack_offset()), init_yx1);
+                stack_offset_to_ymm_mem(*spill_elem->stack_offset()), init_yx1);
             // The above mov was a write to a final stack offset if and only
             // if the new stack offset is a stack index of the stack element:
             MONAD_COMPILER_X86_INC_FINAL_WRITE_COUNT_IF(
@@ -1572,7 +1582,7 @@ namespace monad::vm::compiler::native
                     }
                     else {
                         as_.vmovaps(
-                            yx1, stack_offset_to_mem(*d->stack_offset()));
+                            yx1, stack_offset_to_ymm_mem(*d->stack_offset()));
                     }
                 }
                 else if (d->literal()) {
@@ -1593,7 +1603,7 @@ namespace monad::vm::compiler::native
                     ++it;
                     // Put in `yx1` if there are more final stack offsets:
                     if (it != is.end()) {
-                        as_.vmovaps(yx1, m);
+                        as_.vmovaps(yx1, m.clone_resized(32));
                     }
                     MONAD_COMPILER_X86_INC_FINAL_WRITE_COUNT();
                 }
@@ -1602,7 +1612,8 @@ namespace monad::vm::compiler::native
             for (; it != is.end(); ++it) {
                 if (!d->stack_offset() || d->stack_offset()->offset != *it) {
                     as_.vmovaps(
-                        stack_offset_to_mem(StackOffset{*it, PrevLoc::AvxReg}),
+                        stack_offset_to_ymm_mem(
+                            StackOffset{*it, PrevLoc::AvxReg}),
                         yx1);
                     MONAD_COMPILER_X86_INC_FINAL_WRITE_COUNT();
                 }
@@ -1672,7 +1683,7 @@ namespace monad::vm::compiler::native
 
             MONAD_DEBUG_ASSERT(cycle.size() >= 2);
             as_.vmovaps(
-                yx1, stack_offset_to_mem(*cycle.back()->stack_offset()));
+                yx1, stack_offset_to_ymm_mem(*cycle.back()->stack_offset()));
 
             // Write all the stack elements in the cycle containing e to
             // their final stack offsets.
@@ -1681,10 +1692,12 @@ namespace monad::vm::compiler::native
                 // Invariant:
                 // stack element `cycle[k]` is located in AVX register `yx1`.
                 as_.vmovaps(
-                    yx2, stack_offset_to_mem(*cycle[k - 1]->stack_offset()));
+                    yx2,
+                    stack_offset_to_ymm_mem(*cycle[k - 1]->stack_offset()));
                 for (int32_t const i : cycle[k]->stack_indices()) {
                     as_.vmovaps(
-                        stack_offset_to_mem(StackOffset{i, PrevLoc::AvxReg}),
+                        stack_offset_to_ymm_mem(
+                            StackOffset{i, PrevLoc::AvxReg}),
                         yx1);
                     MONAD_COMPILER_X86_INC_FINAL_WRITE_COUNT();
                 }
@@ -1692,7 +1705,8 @@ namespace monad::vm::compiler::native
             }
             for (int32_t const i : e->stack_indices()) {
                 as_.vmovaps(
-                    stack_offset_to_mem(StackOffset{i, PrevLoc::AvxReg}), yx1);
+                    stack_offset_to_ymm_mem(StackOffset{i, PrevLoc::AvxReg}),
+                    yx1);
                 MONAD_COMPILER_X86_INC_FINAL_WRITE_COUNT();
             }
         }
@@ -1907,10 +1921,10 @@ namespace monad::vm::compiler::native
             elem = std::move(t);
         }
         if constexpr (assume_aligned) {
-            as_.vmovaps(mem, avx_reg_to_ymm(reg));
+            as_.vmovaps(mem.clone_resized(32), avx_reg_to_ymm(reg));
         }
         else {
-            as_.vmovups(mem, avx_reg_to_ymm(reg));
+            as_.vmovups(mem.clone_resized(32), avx_reg_to_ymm(reg));
         }
     }
 
@@ -1937,14 +1951,16 @@ namespace monad::vm::compiler::native
         StackElemRef elem, asmjit::x86::Mem const &mem)
     {
         if (elem->avx_reg()) {
-            as_.vmovups(mem, avx_reg_to_ymm(*elem->avx_reg()));
+            as_.vmovups(
+                mem.clone_resized(32), avx_reg_to_ymm(*elem->avx_reg()));
         }
         else if (elem->general_reg()) {
             mov_general_reg_to_mem(*elem->general_reg(), mem);
         }
         else if constexpr (remember_intermediate) {
             mov_stack_elem_to_avx_reg(elem);
-            as_.vmovups(mem, avx_reg_to_ymm(*elem->avx_reg()));
+            as_.vmovups(
+                mem.clone_resized(32), avx_reg_to_ymm(*elem->avx_reg()));
         }
         else if (elem->literal()) {
             mov_literal_to_mem<false, false>(elem, mem);
@@ -1953,8 +1969,8 @@ namespace monad::vm::compiler::native
             MONAD_DEBUG_ASSERT(elem->stack_offset().has_value());
             auto [t, reserv] = alloc_avx_reg();
             auto const ymm = avx_reg_to_ymm(*t->avx_reg());
-            as_.vmovaps(ymm, stack_offset_to_mem(*elem->stack_offset()));
-            as_.vmovups(mem, ymm);
+            as_.vmovaps(ymm, stack_offset_to_ymm_mem(*elem->stack_offset()));
+            as_.vmovups(mem.clone_resized(32), ymm);
         }
     }
 
@@ -2023,7 +2039,8 @@ namespace monad::vm::compiler::native
             }
             else {
                 auto const m = x86::qword_ptr(x86::rsp, sp_offset_temp_word1);
-                as_.vmovups(m, avx_reg_to_ymm(*elem->avx_reg()));
+                as_.vmovups(
+                    m.clone_resized(32), avx_reg_to_ymm(*elem->avx_reg()));
                 mov_mem_to_gpq256(m, gpq);
             }
         }
@@ -2074,7 +2091,7 @@ namespace monad::vm::compiler::native
             as_.vmovups(y.xmm(), m);
         }
         else {
-            auto const m = rodata_.add_literal(lit);
+            auto const m = rodata_.add32(lit.value);
             as_.vmovaps(y, m);
         }
     }
@@ -2205,7 +2222,7 @@ namespace monad::vm::compiler::native
         auto const reserv = insert_avx_reg(elem);
         as_.vmovaps(
             avx_reg_to_ymm(*elem->avx_reg()),
-            stack_offset_to_mem(*elem->stack_offset()));
+            stack_offset_to_ymm_mem(*elem->stack_offset()));
     }
 
     void Emitter::mov_avx_reg_to_stack_offset(StackElemRef elem)
@@ -2220,7 +2237,7 @@ namespace monad::vm::compiler::native
         MONAD_DEBUG_ASSERT(elem->avx_reg().has_value());
         stack_.insert_stack_offset(elem, preferred, PrevLoc::AvxReg);
         auto const y = avx_reg_to_ymm(*elem->avx_reg());
-        as_.vmovaps(stack_offset_to_mem(*elem->stack_offset()), y);
+        as_.vmovaps(stack_offset_to_ymm_mem(*elem->stack_offset()), y);
     }
 
     void Emitter::mov_general_reg_to_stack_offset(StackElem &elem)
@@ -2346,7 +2363,7 @@ namespace monad::vm::compiler::native
         }
         else {
             MONAD_DEBUG_ASSERT(std::holds_alternative<x86::Mem>(src));
-            as_.vpermq(dst, std::get<x86::Mem>(src), 27);
+            as_.vpermq(dst, std::get<x86::Mem>(src).clone_resized(32), 27);
         }
         auto const t = rodata_.add32(
             {0x0001020304050607,
@@ -2403,7 +2420,7 @@ namespace monad::vm::compiler::native
                 MONAD_DEBUG_ASSERT(e->stack_offset().has_value());
                 bswap_to_ymm(stack_offset_to_mem(*e->stack_offset()), y);
             }
-            as_.vmovups(m, y);
+            as_.vmovups(m.clone_resized(32), y);
         }
     }
 
@@ -3364,7 +3381,7 @@ namespace monad::vm::compiler::native
 
         as_.cmp(x86::rsi, 32);
         as_.jl(load_bounded_label);
-        as_.vmovups(x86::ymm15, x86::byte_ptr(x86::rdi));
+        as_.vmovups(x86::ymm15, x86::ymmword_ptr(x86::rdi));
 
         as_.bind(bswap_label);
         bswap_to_ymm(x86::ymm15, result_y);
@@ -3694,7 +3711,7 @@ namespace monad::vm::compiler::native
         else if (!dest->stack_offset()) {
             MONAD_DEBUG_ASSERT(dest->avx_reg().has_value());
             x86::Mem const m = x86::qword_ptr(x86::rsp, sp_offset_temp_word1);
-            as_.vmovups(m, avx_reg_to_ymm(*dest->avx_reg()));
+            as_.vmovups(m.clone_resized(32), avx_reg_to_ymm(*dest->avx_reg()));
             op = m;
         }
         return {op, spill_elem};
@@ -4505,7 +4522,7 @@ namespace monad::vm::compiler::native
         as_.sub(x86::rax, 31);
         as_.cmova(x86::rax, rodata_.add8(1));
         as_.neg(x86::rax);
-        as_.vmovd(scratch_ymm.xmm(), x86::rax);
+        as_.vmovq(scratch_ymm.xmm(), x86::rax);
         as_.vpsrld(scratch_ymm.xmm(), scratch_ymm.xmm(), 2);
         as_.vpermps(dst_ymm, scratch_ymm, src_ymm);
 
@@ -4925,7 +4942,7 @@ namespace monad::vm::compiler::native
         as_.vpcmpgtb(dst_y, dst_y, rodata_.add32(mem));
         // dst_y = {f(-1), f(0), f(1), ..., f(30)}
         // where f(i) = if byte_ix > i then -1 else 0
-        as_.vpblendvb(dst_y, tmp_y, base_mem, dst_y);
+        as_.vpblendvb(dst_y, tmp_y, base_mem.clone_resized(32), dst_y);
         // dst_y = {g(0), g(1), ..., g(31)}
         // where g(i) = if byte_ix >= i then base_mem[i] else tmp_y[i]
 
@@ -5334,7 +5351,7 @@ namespace monad::vm::compiler::native
 
         as_.lea(base, window);
         as_.vmovd(tmp1.xmm(), x86::eax);
-        as_.vpand(tmp1.xmm(), tmp1.xmm(), bit_mask);
+        as_.vpand(tmp1.xmm(), tmp1.xmm(), bit_mask.clone_resized(16));
         as_.shr(x86::eax, 3);
         if constexpr (shift_type == ShiftType::SHL) {
             as_.neg(x86::rax);
@@ -6174,7 +6191,7 @@ namespace monad::vm::compiler::native
             (as_.*VM)(
                 avx_reg_to_ymm(*dst->avx_reg()),
                 std::get<x86::Vec>(left_op),
-                std::get<x86::Mem>(right_op));
+                std::get<x86::Mem>(right_op).clone_resized(32));
         }
     }
 
@@ -6505,7 +6522,7 @@ namespace monad::vm::compiler::native
                 as_.imul(dst.r32(), left.r32());
             }
             else {
-                as_.imul(dst.r32(), left);
+                as_.imul(dst.r32(), left.clone_resized(4));
             }
         }
         else {
@@ -6524,7 +6541,7 @@ namespace monad::vm::compiler::native
                 as_.imul(dst.r32(), left.r32(), right);
             }
             else {
-                as_.imul(dst.r32(), left, right);
+                as_.imul(dst.r32(), left.clone_resized(4), right);
             }
         }
         else {
@@ -6546,7 +6563,7 @@ namespace monad::vm::compiler::native
                 }
             }
             else {
-                as_.mov(dst.r32(), left);
+                as_.mov(dst.r32(), left.clone_resized(4));
             }
             if (right > 1) {
                 as_.shl(dst.r32(), std::bit_width(right) - 1);
@@ -6751,7 +6768,7 @@ namespace monad::vm::compiler::native
                     lmem.add_offset(8);
                 }
                 if constexpr (Has32Bit) {
-                    em_.as_.mov(mul_dst[i].r32(), lmem);
+                    em_.as_.mov(mul_dst[i].r32(), lmem.clone_resized(4));
                 }
                 else {
                     em_.as_.mov(mul_dst[i], lmem);
@@ -6814,7 +6831,7 @@ namespace monad::vm::compiler::native
                         r.add_offset(
                             static_cast<int64_t>((word_count - N) * 8));
                         if constexpr (Has32Bit) {
-                            em_.as_.mov(mul_dst[0].r32(), r);
+                            em_.as_.mov(mul_dst[0].r32(), r.clone_resized(4));
                             em_.as_.imul(mul_dst[0].r32(), lgpq[0].r32());
                         }
                         else {
@@ -6848,7 +6865,8 @@ namespace monad::vm::compiler::native
                         if constexpr (Has32Bit) {
                             em_.as_.mov(
                                 mul_dst[0].r32(), r[word_count - N].r32());
-                            em_.as_.imul(mul_dst[0].r32(), lmem);
+                            em_.as_.imul(
+                                mul_dst[0].r32(), lmem.clone_resized(4));
                         }
                         else {
                             em_.as_.mov(mul_dst[0], r[word_count - N]);
@@ -6859,8 +6877,9 @@ namespace monad::vm::compiler::native
                         r.add_offset(
                             static_cast<int64_t>((word_count - N) * 8));
                         if constexpr (Has32Bit) {
-                            em_.as_.mov(mul_dst[0].r32(), r);
-                            em_.as_.imul(mul_dst[0].r32(), lmem);
+                            em_.as_.mov(mul_dst[0].r32(), r.clone_resized(4));
+                            em_.as_.imul(
+                                mul_dst[0].r32(), lmem.clone_resized(4));
                         }
                         else {
                             em_.as_.mov(mul_dst[0], r);
@@ -7718,7 +7737,7 @@ namespace monad::vm::compiler::native
             size_t const occupied_bits =
                 i + 1 == numQwords ? exp - (i * 64) : 64;
             if (occupied_bits <= 32) {
-                as_.mov(gpq[i].r32(), mem);
+                as_.mov(gpq[i].r32(), mem.clone_resized(4));
             }
             else {
                 as_.mov(gpq[i].r64(), mem);
@@ -7746,7 +7765,7 @@ namespace monad::vm::compiler::native
             size_t const occupied_bits =
                 i + 1 == numQwords ? exp - (i * 64) : 64;
             if (occupied_bits <= 32) {
-                as_.mov(gpq[i].r32(), lit.value[i]);
+                as_.mov(gpq[i].r32(), static_cast<uint32_t>(lit.value[i]));
             }
             else {
                 as_.mov(gpq[i].r64(), lit.value[i]);
@@ -8069,7 +8088,7 @@ namespace monad::vm::compiler::native
                                 i + 1 == numQwords ? exp - (i * 64) : 64;
                             if (i == start_offset) {
                                 if (bits_occupied <= 32) {
-                                    as_.add(a[i].r32(), temp);
+                                    as_.add(a[i].r32(), temp.clone_resized(4));
                                 }
                                 else {
                                     MONAD_DEBUG_ASSERT(bits_occupied <= 64);
@@ -8078,7 +8097,7 @@ namespace monad::vm::compiler::native
                             }
                             else {
                                 if (bits_occupied <= 32) {
-                                    as_.adc(a[i].r32(), temp);
+                                    as_.adc(a[i].r32(), temp.clone_resized(4));
                                 }
                                 else {
                                     MONAD_DEBUG_ASSERT(bits_occupied <= 64);
@@ -8137,7 +8156,7 @@ namespace monad::vm::compiler::native
                                 i + 1 == numQwords ? exp - (i * 64) : 64;
                             if (i == start_offset) {
                                 if (bits_occupied <= 32) {
-                                    as_.add(temp, b[i].r32());
+                                    as_.add(temp.clone_resized(4), b[i].r32());
                                 }
                                 else {
                                     MONAD_DEBUG_ASSERT(bits_occupied <= 64);
@@ -8146,7 +8165,7 @@ namespace monad::vm::compiler::native
                             }
                             else {
                                 if (bits_occupied <= 32) {
-                                    as_.adc(temp, b[i].r32());
+                                    as_.adc(temp.clone_resized(4), b[i].r32());
                                 }
                                 else {
                                     MONAD_DEBUG_ASSERT(bits_occupied <= 64);
@@ -8168,11 +8187,11 @@ namespace monad::vm::compiler::native
                             if (i == start_offset) {
                                 if (bits_occupied <= 8) {
                                     temp.set_size(1);
-                                    as_.add(temp, b[i]);
+                                    as_.add(temp, b[i].value_as<int8_t>());
                                 }
                                 else if (bits_occupied <= 16) {
                                     temp.set_size(2);
-                                    as_.add(temp, b[i]);
+                                    as_.add(temp, b[i].value_as<int16_t>());
                                 }
                                 else if (bits_occupied <= 32) {
                                     temp.set_size(4);
@@ -8186,11 +8205,11 @@ namespace monad::vm::compiler::native
                             else {
                                 if (bits_occupied <= 8) {
                                     temp.set_size(1);
-                                    as_.adc(temp, b[i]);
+                                    as_.adc(temp, b[i].value_as<int8_t>());
                                 }
                                 else if (bits_occupied <= 16) {
                                     temp.set_size(2);
-                                    as_.adc(temp, b[i]);
+                                    as_.adc(temp, b[i].value_as<int16_t>());
                                 }
                                 else if (bits_occupied <= 32) {
                                     temp.set_size(4);

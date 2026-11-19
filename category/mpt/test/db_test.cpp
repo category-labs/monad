@@ -347,7 +347,7 @@ namespace
 
     struct ROOnDiskWithFileFixture : public OnDiskDbWithFileFixture
     {
-        RODb ro_db;
+        Db ro_db;
         monad::fiber::PriorityPool pool;
 
         static constexpr unsigned keys_per_block = 10;
@@ -711,13 +711,13 @@ TEST_F(OnDiskDbWithFileAsyncFixture, read_only_db_single_thread_async)
 
 TEST_F(OnDiskDbWithFileFixture, open_emtpy_rodb)
 {
-    // construct RODb
+    // construct read-only Db
     AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_path = dbname}};
     Db const ro_db{io_ctx};
-    // RODb root is invalid
+    // read-only Db root is invalid
     EXPECT_EQ(ro_db.get_latest_version(), INVALID_BLOCK_NUM);
     EXPECT_EQ(ro_db.get_earliest_version(), INVALID_BLOCK_NUM);
-    // RODb find() from any block will fail
+    // read-only Db find() from any block will fail
     EXPECT_EQ(
         ro_db.find({}, 0).assume_error(), DbError::version_no_longer_exist);
 }
@@ -748,7 +748,7 @@ TEST_F(OnDiskDbWithFileFixture, DISABLED_read_only_db_concurrent)
     };
 
     auto keep_query = [&]() {
-        // construct RODb
+        // construct read-only Db
         AsyncIOContext io_ctx{ReadOnlyOnDiskDbConfig{.dbname_path = dbname}};
         Db const ro_db{io_ctx};
 
@@ -1158,7 +1158,7 @@ TEST_F(OnDiskDbWithFileFixture, read_only_db_traverse_as_version_expire)
             ro_db, [&](auto &&...args) { return ro_db.traverse(args...); });
     }
     {
-        RODb ro_db(ReadOnlyOnDiskDbConfig{.dbname_path = dbname});
+        Db ro_db(ReadOnlyOnDiskDbConfig{.dbname_path = dbname});
         test_traverse(
             ro_db, [&](auto &&...args) { return ro_db.traverse(args...); });
     }
@@ -1382,7 +1382,7 @@ TEST_F(OnDiskDbWithFileFixture, benchmark_blocking_parallel_traverse)
         std::chrono::duration_cast<std::chrono::microseconds>(
             times[times.size() / 8] - begin)
             .count();
-    std::cout << "RODb parallel traversal takes " << parallel_elapsed
+    std::cout << "Parallel traversal takes " << parallel_elapsed
               << " us, 12.5% node took " << parallel_first_node_elapsed
               << " us." << std::endl;
 
@@ -1757,6 +1757,7 @@ TYPED_TEST(DbTest, simple_with_same_prefix)
         0x22f3b7fc4b987d8327ec4525baf4cb35087a75d9250a8a3be45881dd889027ad_bytes);
 
     EXPECT_FALSE(this->db.find(this->root, 0x01_bytes, block_id).has_value());
+    EXPECT_EQ(this->db.find(this->root, {}, block_id).value().node, this->root);
 }
 
 TYPED_TEST(DbTest, simple_with_increasing_block_id_prefix)

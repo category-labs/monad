@@ -13,12 +13,15 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/nibble.h>
 #include <category/core/rlp/decode_error.hpp>
 #include <category/mpt/merkle/compact_encode.hpp>
 #include <category/mpt/nibbles_view.hpp>
 
 #include <gtest/gtest.h>
 
+#include <array>
+#include <cstring>
 #include <initializer_list>
 #include <random>
 #include <string>
@@ -29,6 +32,24 @@ using monad::rlp::DecodeError;
 
 namespace
 {
+    // The nibble-at-a-time encoder that the bytewise one must match.
+    void reference_compact_encode_raw(
+        unsigned char *const res, NibblesView const nibbles,
+        bool const terminating)
+    {
+        unsigned i = 0;
+        res[0] = terminating ? 0x20 : 0x00;
+        if (nibbles.nibble_size() % 2) {
+            res[0] |= static_cast<unsigned char>(0x10 | nibbles.get(0));
+            i = 1;
+        }
+        unsigned res_ci = 2;
+        for (; i < nibbles.nibble_size(); i++) {
+            set_nibble(res, res_ci, nibbles.get(i));
+            ++res_ci;
+        }
+    }
+
     // Build a Nibbles from an initializer list of nibble values [0, 15].
     Nibbles make_nibbles(std::initializer_list<unsigned char> values)
     {
@@ -171,6 +192,38 @@ TEST(CompactRoundtrip, LongPath)
         }
         check_roundtrip(NibblesView{path}, /*is_leaf=*/true);
         check_roundtrip(NibblesView{path}, /*is_leaf=*/false);
+    }
+}
+
+TEST(CompactEncode, MatchesReference)
+{
+    std::mt19937_64 rng{0x636f6d70'61637400ULL};
+    std::array<unsigned char, 40> source{};
+    for (unsigned iteration = 0; iteration < 20'000; ++iteration) {
+        for (auto &b : source) {
+            b = static_cast<unsigned char>(rng());
+        }
+        bool const terminating = rng() & 1;
+        unsigned const begin = static_cast<unsigned>(rng() % 2);
+        unsigned const size = terminating
+                                  ? static_cast<unsigned>(rng() % 65)
+                                  : 1 + static_cast<unsigned>(rng() % 64);
+        NibblesView const path{begin, begin + size, source.data()};
+
+        std::array<unsigned char, 40> out;
+        std::array<unsigned char, 40> ref;
+        out.fill(0xCC);
+        ref.fill(0xCC);
+        compact_encode_raw(out.data(), path, terminating);
+        reference_compact_encode_raw(ref.data(), path, terminating);
+
+        auto const len = compact_encode_len(0, size);
+        EXPECT_EQ(0, std::memcmp(out.data(), ref.data(), len));
+        EXPECT_EQ(out[len], 0xCC);
+        if (testing::Test::HasFailure()) {
+            FAIL() << "iteration " << iteration << ", begin " << begin
+                   << ", size " << size << ", terminating " << terminating;
+        }
     }
 }
 

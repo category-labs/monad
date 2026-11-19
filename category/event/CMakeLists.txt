@@ -26,7 +26,6 @@ find_library(libzstd_file zstd REQUIRED)
 
 add_library(
   monad_event
-  "../core/assert.c"
   "../core/cleanup.c"
   "../core/format_err.c"
   "../core/path_util.c"

@@ -536,6 +536,12 @@ void process_test(
         ankerl::unordered_dense::segmented_set<Address>{};
     BlockHeader parent_header = json_state.header;
 
+    // The buffer holds only accepted blocks: a rejected block's parent_hash is
+    // not validated until after execution, and it may be followed by a sibling.
+    block_hash_buffer.set(
+        parent_header.number,
+        j_contents.at("genesisBlockHeader").at("hash").get<bytes32_t>());
+
     for (auto const &j_block : j_contents.at("blocks")) {
 
         auto const block_rlp = j_block.at("rlp").get<byte_string>();
@@ -556,9 +562,6 @@ void process_test(
             EXPECT_TRUE(j_block.contains("expectException")) << name;
             continue;
         }
-
-        block_hash_buffer.set(
-            block.value().header.number - 1, block.value().header.parent_hash);
 
         uint64_t const curr_block_number = block.value().header.number;
         auto const result = execute_and_record<traits>(
@@ -594,6 +597,9 @@ void process_test(
         if (!result.has_error()) {
             db_post_state = tdb.to_json();
             parent_header = block.value().header;
+            block_hash_buffer.set(
+                curr_block_number,
+                to_bytes(keccak256(rlp::encode_block_header(parent_header))));
             EXPECT_FALSE(j_block.contains("expectException")) << name;
             EXPECT_EQ(tdb.get_block_number(), curr_block_number) << name;
             auto const root = tdb.get_root();

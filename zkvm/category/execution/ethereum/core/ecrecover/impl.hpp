@@ -16,6 +16,7 @@
 #pragma once
 
 #include <category/core/config.hpp>
+#include <category/crypto/keccak.h>
 
 #include <c-interface-accelerators/zkvm_accelerators.h>
 
@@ -42,12 +43,11 @@ MONAD_NAMESPACE_BEGIN
         return false;
     }
 
-    zkvm_bytes_32 key_hash;
-    if (zkvm_keccak256(pubkey.data, 64, &key_hash) != ZKVM_EOK) {
-        return false;
-    }
+    // Hash the recovered public key; its hash's last 20 bytes form the address.
+    uint8_t key_hash[KECCAK256_SIZE];
+    monad_keccak256(pubkey.data, 64, key_hash);
 
-    std::memcpy(out.data(), key_hash.data + 12, out.size());
+    std::memcpy(out.data(), key_hash + 12, out.size());
 
     return true;
 }

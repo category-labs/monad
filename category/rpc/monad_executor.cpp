@@ -147,7 +147,7 @@ namespace
         std::variant<NullDb, TrieRODb> db_;
 
     public:
-        explicit StateDb(mpt::RODb *const db)
+        explicit StateDb(mpt::Db *const db)
         {
             if (db != nullptr) {
                 db_.emplace<TrieRODb>(*db);
@@ -883,7 +883,7 @@ namespace
         std::vector<std::vector<Address>> senders,
         std::vector<std::vector<std::vector<std::optional<Address>>>>
             authorities,
-        mpt::RODb *const db, vm::VM &vm, fiber::FiberGroup &tx_exec_pool,
+        mpt::Db *const db, vm::VM &vm, fiber::FiberGroup &tx_exec_pool,
         struct monad_state_override_vec const &state_overrides,
         struct monad_block_override_vec const &block_overrides,
         uint64_t const gas_limit, size_t const max_calls, size_t const max_size,
@@ -1403,13 +1403,13 @@ struct monad_executor
 
     // Null when the executor runs without a database, in which case requests
     // execute against an empty world (see `NullDb`).
-    std::unique_ptr<mpt::RODb> db_;
+    std::unique_ptr<mpt::Db> db_;
 
     // Secondary timeline, opened when active; shares db_'s service thread
     // and node cache. On archive nodes after the offline promote this is the
     // frozen slot-encoded history that serves pre-cutoff versions the
     // page-encoded primary does not have.
-    std::unique_ptr<mpt::RODb> secondary_db_;
+    std::optional<mpt::Db> secondary_db_;
 
     // The VM for executing eth calls needs to unconditionally use the
     // interpreter rather than the compiler. If it uses the compiler, then
@@ -1448,16 +1448,16 @@ struct monad_executor
     // older history). Availability is re-validated inside the read path, so
     // a version trimmed between here and the read fails the same way it
     // always has. Returns null when the executor runs without a database.
-    mpt::RODb *select_db(uint64_t const block_number)
+    mpt::Db *select_db(uint64_t const block_number)
     {
         if (db_ == nullptr) {
             return nullptr;
         }
         if (block_number >= db_->get_earliest_version() ||
-            secondary_db_ == nullptr) {
+            !secondary_db_.has_value()) {
             return db_.get();
         }
-        return secondary_db_.get();
+        return &*secondary_db_;
     }
 
     monad_executor(
@@ -1468,10 +1468,10 @@ struct monad_executor
         std::optional<std::string> const &triedb_path)
         : db_{
               triedb_path.has_value()
-                  ? std::make_unique<mpt::RODb>(
+                  ? std::make_unique<mpt::Db>(
                         make_db_config(*triedb_path, node_lru_max_mem))
                   : nullptr}
-        , secondary_db_{db_ ? db_->open_secondary_timeline() : nullptr}
+        , secondary_db_{db_ ? db_->open_secondary_timeline() : std::nullopt}
         , high_gas_pool_{Pool::Type::high, high_pool_config}
         , low_gas_pool_{Pool::Type::low, low_pool_config}
         , trace_thread_pool_{block_pool_config.num_threads, true}
@@ -1484,6 +1484,8 @@ struct monad_executor
               std::chrono::seconds(block_pool_config.timeout_sec),
               trace_thread_pool_.create_fiber_group(block_pool_config.num_fibers)}
     {
+        MONAD_ASSERT(!db_ || db_->is_read_only());
+        MONAD_ASSERT(!secondary_db_ || secondary_db_->is_read_only());
     }
 
     monad_executor(monad_executor const &) = delete;

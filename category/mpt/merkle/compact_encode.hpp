@@ -51,11 +51,7 @@ constexpr void compact_encode_raw(
         i = 1;
     }
 
-    unsigned res_ci = 2;
-    for (; i < nibbles.nibble_size(); i++) {
-        set_nibble(res, res_ci, nibbles.get(i));
-        ++res_ci;
-    }
+    copy_nibbles(res, 2, nibbles.substr(i));
 }
 
 [[nodiscard]] constexpr byte_string_view compact_encode(

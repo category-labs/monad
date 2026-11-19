@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/vm/interpreter/intrinsics.hpp>
 #include <category/vm/runtime/bin.hpp>
 
 #include <algorithm>
@@ -62,23 +63,8 @@ namespace monad::vm::interpreter
 
             bool test(size_t const i) const noexcept
             {
-#ifdef MONAD_ZKVM_ZISK
-                // bext extracts bit i % 64 in one instruction. Use asm because
-                // GCC misses this pattern with a masked shift count. Removing
-                // the mask in C++ would make shifts by 64 or more undefined.
-                uint64_t const w = words_[i >> 6];
-                uint64_t r;
-                asm(".option push\n\t"
-                    ".option arch, +zbs\n\t"
-                    "bext %0, %1, %2\n\t"
-                    ".option pop"
-                    : "=r"(r)
-                    : "r"(w), "r"(i));
-                return r != 0;
-#else
                 // Read bit i % 64 from word i / 64.
-                return (words_[i >> 6] >> (i & 63)) & 1;
-#endif
+                return MONAD_VM_TEST_BIT(words_[i >> 6], i);
             }
 
             size_t word_count() const noexcept

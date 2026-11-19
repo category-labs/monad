@@ -335,3 +335,77 @@ TEST(KeepIdleMonotonic, a_sample_absent_from_previous_is_untouched)
     EXPECT_EQ(current[0].idle_ns, 7u);
     EXPECT_EQ(current[1].idle_ns, 500u);
 }
+
+namespace
+{
+    struct IdleFromBusyTimeTest : public ThreadIdleCounterTest
+    {
+        IdleFromBusyTime idle{"triedb sqpoll", fake_clock};
+    };
+}
+
+TEST_F(IdleFromBusyTimeTest, has_no_sample_before_the_first_reading)
+{
+    EXPECT_FALSE(idle.sample(std::nullopt).has_value());
+}
+
+TEST_F(IdleFromBusyTimeTest, the_first_reading_starts_the_registration_at_zero)
+{
+    auto const s = idle.sample(50);
+    ASSERT_TRUE(s.has_value());
+    EXPECT_STREQ(s->name.data(), "triedb sqpoll");
+    EXPECT_EQ(s->idle_ns, 0u);
+    EXPECT_EQ(s->registered_at_ns, 1000u);
+}
+
+TEST_F(IdleFromBusyTimeTest, idle_is_the_elapsed_time_less_the_busy_time)
+{
+    idle.sample(50);
+    fake_now = 11'000;
+    auto const s = idle.sample(3'050);
+    ASSERT_TRUE(s.has_value());
+    EXPECT_EQ(s->idle_ns, 7'000u);
+    EXPECT_EQ(s->registered_at_ns, 1000u);
+}
+
+// Busy time a kernel accounts in whole ticks can run ahead of the wall clock
+// between two close readings.
+TEST_F(IdleFromBusyTimeTest, busy_time_ahead_of_elapsed_time_is_zero_idle)
+{
+    idle.sample(0);
+    fake_now = 2000;
+    EXPECT_EQ(idle.sample(5000)->idle_ns, 0u);
+}
+
+TEST_F(IdleFromBusyTimeTest, a_missing_reading_repeats_the_last_sample)
+{
+    idle.sample(50);
+    fake_now = 11'000;
+    auto const last = idle.sample(3'050);
+    ASSERT_TRUE(last.has_value());
+    fake_now = 21'000;
+    auto const repeated = idle.sample(std::nullopt);
+    ASSERT_TRUE(repeated.has_value());
+    EXPECT_EQ(repeated->idle_ns, last->idle_ns);
+    EXPECT_EQ(repeated->registered_at_ns, last->registered_at_ns);
+}
+
+// Otherwise a stray zero reading would turn all the time since the first
+// reading into idle time.
+TEST_F(IdleFromBusyTimeTest, busy_time_below_the_last_reading_is_ignored)
+{
+    idle.sample(500);
+    fake_now = 2000;
+    auto const last = idle.sample(1400);
+    ASSERT_TRUE(last.has_value());
+    fake_now = 3000;
+    auto const after_zero = idle.sample(0);
+    ASSERT_TRUE(after_zero.has_value());
+    EXPECT_EQ(after_zero->idle_ns, last->idle_ns);
+}
+
+TEST_F(IdleFromBusyTimeTest, long_names_are_truncated_to_fifteen_characters)
+{
+    IdleFromBusyTime long_name{"a-name-longer-than-fifteen", fake_clock};
+    EXPECT_EQ(std::string_view{long_name.sample(0)->name.data()}.size(), 15u);
+}

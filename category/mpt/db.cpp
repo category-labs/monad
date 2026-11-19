@@ -455,6 +455,50 @@ private:
         std::array<ThreadIdleSample, ThreadIdleRegistry::MAX_THREADS>
             last_thread_idle_samples{};
         size_t last_thread_idle_count{0};
+        IdleFromBusyTime sqpoll_idle{"triedb sqpoll"};
+        // Long enough that a run of reads losing the lock to a busy SQPOLL
+        // thread does not log.
+        static constexpr unsigned SQPOLL_FAILURES_BEFORE_WARNING = 10;
+        unsigned sqpoll_consecutive_failures{0};
+
+        static char const *
+        describe(io::SqPollTimesUnavailable const reason) noexcept
+        {
+            switch (reason) {
+            case io::SqPollTimesUnavailable::no_sqpoll:
+                return "the read ring has no SQPOLL thread";
+            case io::SqPollTimesUnavailable::unreadable:
+                return "cannot read the read ring's /proc fdinfo";
+            case io::SqPollTimesUnavailable::unsupported:
+                return "the kernel does not report SQPOLL thread times";
+            case io::SqPollTimesUnavailable::contended:
+                return "every read lost the SQPOLL thread's lock";
+            }
+            return "unknown";
+        }
+
+        std::optional<ThreadIdleSample> sqpoll_sample()
+        {
+            auto const times = async_io.read_ring.sqpoll_times();
+            if (times.has_value()) {
+                if (sqpoll_consecutive_failures >=
+                    SQPOLL_FAILURES_BEFORE_WARNING) {
+                    LOG_INFO("triedb sqpoll idle time is readable again");
+                }
+                sqpoll_consecutive_failures = 0;
+                return sqpoll_idle.sample(times->work_ns);
+            }
+            if (times.error() == io::SqPollTimesUnavailable::no_sqpoll) {
+                return std::nullopt;
+            }
+            if (++sqpoll_consecutive_failures ==
+                SQPOLL_FAILURES_BEFORE_WARNING) {
+                LOG_WARNING(
+                    "triedb sqpoll idle time unavailable: {}",
+                    describe(times.error()));
+            }
+            return sqpoll_idle.sample(std::nullopt);
+        }
 
         void maybe_publish_thread_idle(uint64_t const now_ns)
         {
@@ -465,7 +509,11 @@ private:
             }
             std::array<ThreadIdleSample, ThreadIdleRegistry::MAX_THREADS>
                 samples;
-            size_t const n = ThreadIdleRegistry::global().snapshot(samples);
+            size_t n = ThreadIdleRegistry::global().snapshot(samples);
+            if (auto const sqpoll = sqpoll_sample();
+                sqpoll.has_value() && n < samples.size()) {
+                samples[n++] = *sqpoll;
+            }
             auto const current = std::span{samples}.first(n);
             keep_idle_monotonic(
                 current,

@@ -19,9 +19,33 @@
 
 #include <liburing.h>
 
+#include <cstdint>
+#include <expected>
 #include <optional>
+#include <string_view>
 
 MONAD_IO_NAMESPACE_BEGIN
+
+//! CPU time the kernel reports for a ring's SQPOLL thread in its fdinfo. A
+//! kernel without upstream 8ac9b0d33e5c counts the system time of the whole
+//! process in both, not only that thread's.
+struct SqPollTimes
+{
+    uint64_t total_ns;
+    uint64_t work_ns; //!< The part spent in loop iterations that found work
+};
+
+enum class SqPollTimesUnavailable
+{
+    no_sqpoll,
+    unreadable,
+    unsupported, //!< The kernel predates the times or prints them differently
+    //! The read lost the SQPOLL thread's lock, or the thread was exiting
+    contended,
+};
+
+std::expected<SqPollTimes, SqPollTimesUnavailable>
+parse_sqpoll_times(std::string_view fdinfo) noexcept;
 
 struct RingConfig
 {
@@ -87,6 +111,8 @@ public:
     {
         return !(params_.flags & IORING_SETUP_SQPOLL);
     }
+
+    std::expected<SqPollTimes, SqPollTimesUnavailable> sqpoll_times() const;
 };
 
 static_assert(sizeof(Ring) == 336);

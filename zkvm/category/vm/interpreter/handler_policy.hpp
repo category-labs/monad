@@ -18,6 +18,12 @@
 #if !defined(MONAD_ZKVM_ZISK)
     #include_next <category/vm/interpreter/handler_policy.hpp>
 #else
+    #include <category/vm/interpreter/intercode.hpp>
+    #include <category/vm/runtime/types.hpp>
+
+    #include <cstddef>
+    #include <cstdint>
+
 /**
  * On ZisK a revision's handlers are laid out in slots, one per opcode
  * (execute.cpp), and the dispatch computes a handler's address from its opcode
@@ -36,6 +42,14 @@
 // directly against stack_lower_bound (>= and > respectively).
     #define MONAD_VM_STACK_LOWER_BOUND_BIAS 1
 
+// ZisK passes the stack limit instead of the code analysis to avoid loading
+// it from ctx on each overflow check. Code metadata is read through FrameCode.
+    #define MONAD_VM_DISPATCH_STATE_TYPE uint256_t const *
+    #define MONAD_VM_DISPATCH_STATE_PARAM uint256_t const *stack_limit
+    #define MONAD_VM_DISPATCH_STATE_ARG stack_limit
+    #define MONAD_VM_CODE_VIEW (::monad::vm::interpreter::FrameCode{ctx})
+    #define MONAD_VM_STACK_LIMIT stack_limit
+
 // On ZisK, pass the table base in a seventh register argument to avoid
 // reloading it at each dispatch: the slots' base where the revision has them
 // (dispatch_table, instruction_table.hpp), the table's otherwise.
@@ -43,4 +57,37 @@
     #define MONAD_VM_TBL_PARAM , void const *table_base
     #define MONAD_VM_TBL_ARG , table_base
     #define MONAD_VM_TABLE_REF (dispatch_table<traits>(table_base))
+
+namespace monad::vm::interpreter
+{
+    // View of the running code metadata saved by execute().
+    struct FrameCode
+    {
+        runtime::Context const &ctx;
+
+        // Recover the code start; code() + dst + 1 folds to landing_base + dst.
+        [[gnu::always_inline]] uint8_t const *code() const noexcept
+        {
+            return ctx.landing_base - 1;
+        }
+
+        [[gnu::always_inline]] size_t size() const noexcept
+        {
+            return ctx.code_bound;
+        }
+
+        // PUSH2 destinations fit in the bitmap even beyond the code end.
+        [[gnu::always_inline]] bool
+        is_jumpdest16(size_t const pc) const noexcept
+        {
+            return Intercode::JumpdestMap::test(ctx.jumpdest_words, pc);
+        }
+
+        [[gnu::always_inline]] bool is_jumpdest(size_t const pc) const noexcept
+        {
+            return pc < ctx.code_bound &&
+                   Intercode::JumpdestMap::test(ctx.jumpdest_words, pc);
+        }
+    };
+}
 #endif

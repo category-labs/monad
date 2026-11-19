@@ -24,23 +24,6 @@
 #include <array>
 #include <cstdint>
 
-// ZisK passes the stack limit instead of the code analysis to avoid loading
-// it from ctx on each overflow check. Code metadata is read through FrameCode.
-// Other targets keep passing the analysis and load the limit from ctx.
-#if defined(MONAD_ZKVM_ZISK)
-    #define MONAD_VM_DISPATCH_STATE_TYPE uint256_t const *
-    #define MONAD_VM_DISPATCH_STATE_PARAM uint256_t const *stack_limit
-    #define MONAD_VM_DISPATCH_STATE_ARG stack_limit
-    #define MONAD_VM_CODE_VIEW (::monad::vm::interpreter::FrameCode{ctx})
-    #define MONAD_VM_STACK_LIMIT stack_limit
-#else
-    #define MONAD_VM_DISPATCH_STATE_TYPE Intercode const &
-    #define MONAD_VM_DISPATCH_STATE_PARAM Intercode const &analysis
-    #define MONAD_VM_DISPATCH_STATE_ARG analysis
-    #define MONAD_VM_CODE_VIEW analysis
-    #define MONAD_VM_STACK_LIMIT ctx.stack_limit
-#endif
-
 namespace monad::vm::interpreter
 {
     // Use void const * to pass either a slot base or a pointer table without
@@ -50,36 +33,4 @@ namespace monad::vm::interpreter
         StackTop, int64_t, uint8_t const *MONAD_VM_TBL_TYPE);
 
     using InstrTable = std::array<InstrEval, 256>;
-
-#if defined(MONAD_ZKVM_ZISK)
-    // View of the running code metadata saved by execute().
-    struct FrameCode
-    {
-        runtime::Context const &ctx;
-
-        // Recover the code start; code() + dst + 1 folds to landing_base + dst.
-        [[gnu::always_inline]] uint8_t const *code() const noexcept
-        {
-            return ctx.landing_base - 1;
-        }
-
-        [[gnu::always_inline]] size_t size() const noexcept
-        {
-            return ctx.code_bound;
-        }
-
-        // PUSH2 destinations fit in the bitmap even beyond the code end.
-        [[gnu::always_inline]] bool
-        is_jumpdest16(size_t const pc) const noexcept
-        {
-            return Intercode::JumpdestMap::test(ctx.jumpdest_words, pc);
-        }
-
-        [[gnu::always_inline]] bool is_jumpdest(size_t const pc) const noexcept
-        {
-            return pc < ctx.code_bound &&
-                   Intercode::JumpdestMap::test(ctx.jumpdest_words, pc);
-        }
-    };
-#endif
 }

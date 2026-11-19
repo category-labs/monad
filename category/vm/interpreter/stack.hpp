@@ -164,11 +164,9 @@ namespace monad::vm::interpreter
         uint256_t const *const stack_lower_bound, StackTop const stack_top,
         int64_t &gas_remaining)
     {
-#if defined(MONAD_ZKVM_ZISK)
-        // The handlers hold the limit in their second argument; this caller
-        // has the analysis there.
+        // MONAD_VM_STACK_LIMIT may name the handlers' second argument; this
+        // caller has the analysis there.
         [[maybe_unused]] uint256_t const *const stack_limit = ctx.stack_limit;
-#endif
         MONAD_VM_CHECK_REQUIREMENTS(Instr, ctx.exit);
     }
 

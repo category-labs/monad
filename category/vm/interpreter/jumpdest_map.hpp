@@ -62,5 +62,10 @@ namespace monad::vm::interpreter
         {
             return words_.data();
         }
+
+        uint64_t const *words() const noexcept
+        {
+            return words_.data();
+        }
     };
 }

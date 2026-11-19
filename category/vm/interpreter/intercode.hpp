@@ -78,12 +78,10 @@ namespace monad::vm::interpreter
             return pc < *code_size_ && jumpdest_map_.test(pc);
         }
 
-#if defined(MONAD_ZKVM_ZISK)
         uint64_t const *jumpdest_words() const noexcept
         {
             return jumpdest_map_.words();
         }
-#endif
 
         // Requires pc < 2^16: callers use load_be_k<2>, which combines exactly
         // two bytes and leaves the upper bits zero. A map that covers this

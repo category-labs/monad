@@ -29,6 +29,7 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/vm/code.hpp>
+#include <category/vm/gas_profile.hpp>
 #include <category/vm/vm.hpp>
 
 #include <ankerl/unordered_dense.h>
@@ -120,12 +121,15 @@ vm::SharedVarcode BlockState::read_code(bytes32_t const &code_hash)
 {
     // vm
     if (auto vcode = vm_.find_varcode(code_hash)) {
+        vm::gas_profile::code_load(
+            code_hash.bytes, (*vcode)->intercode()->size());
         return *vcode;
     }
     // block state
     {
         Code::const_accessor it{};
         if (code_.find(it, code_hash)) {
+            vm::gas_profile::code_load(code_hash.bytes, it->second->size());
             return vm_.try_insert_varcode(code_hash, it->second);
         }
     }
@@ -139,6 +143,7 @@ vm::SharedVarcode BlockState::read_code(bytes32_t const &code_hash)
             fmt::format("{}", code_hash).c_str(),
             result->size(),
             db_.get_block_number());
+        vm::gas_profile::code_load(code_hash.bytes, result->size());
         return vm_.try_insert_varcode(code_hash, result);
     }
 }

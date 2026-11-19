@@ -35,6 +35,7 @@
 #include <category/vm/evm/result.hpp>
 #include <category/vm/evm/storage_status.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/gas_profile.hpp>
 #include <category/vm/host.hpp>
 #include <category/vm/runtime/types.hpp>
 
@@ -177,6 +178,7 @@ struct StateHost final : public StateHostBase
     {
         MONAD_TRY
         {
+            auto const frame = vm::gas_profile::frame_enter(msg.gas);
             if (msg.kind == vm::CallKind::Create ||
                 msg.kind == vm::CallKind::Create2) {
                 auto result =
@@ -190,6 +192,13 @@ struct StateHost final : public StateHostBase
                         result.gas_refund,
                         result.create_address};
                 }
+                vm::gas_profile::frame_exit(frame, result);
+                return result;
+            }
+            else if constexpr (vm::gas_profile::enabled) {
+                auto result =
+                    ::monad::execute_call_message<traits>(this, state_, msg);
+                vm::gas_profile::frame_exit(frame, result);
                 return result;
             }
             else {

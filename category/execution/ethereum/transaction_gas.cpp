@@ -24,6 +24,7 @@
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/revision.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/gas_profile.hpp>
 
 #include <algorithm>
 #include <cstdint>
@@ -145,6 +146,47 @@ uint64_t intrinsic_gas(Transaction const &tx) noexcept
 }
 
 EXPLICIT_TRAITS(intrinsic_gas);
+
+template <Traits traits>
+void profile_intrinsic_gas(Transaction const &tx) noexcept
+{
+    using namespace vm::gas_profile;
+
+    auto const [zeros, nonzeros] = tokens_in_calldata(tx);
+    int64_t keys = 0;
+    for (auto const &i : tx.access_list) {
+        keys += static_cast<int64_t>(i.keys.size());
+    }
+    auto const addresses = static_cast<int64_t>(tx.access_list.size());
+    auto const z = static_cast<int64_t>(zeros);
+    auto const nz = static_cast<int64_t>(nonzeros);
+
+    charge(TxBase, 1, 21'000);
+    charge(
+        TxCalldataZero, z, static_cast<int64_t>(g_data<traits>(tx)) - nz * 16);
+    charge(TxCalldataNonzero, nz, nz * 16);
+    charge(TxAccessListAddress, addresses, addresses * 2'400);
+    charge(TxAccessListKey, keys, keys * 1'900);
+    if (!tx.to.has_value()) {
+        charge(TxCreate, 1, 32'000);
+        if constexpr (traits::eip_3860_active()) {
+            auto const words = static_cast<int64_t>(g_extra_cost_init(tx) / 2);
+            charge(TxInitcodeWords, words, words * 2);
+        }
+    }
+    if constexpr (traits::eip_7702_active()) {
+        auto const n = static_cast<int64_t>(tx.authorization_list.size());
+        charge(TxAuthorization, n, static_cast<int64_t>(g_authorization(tx)));
+    }
+    if constexpr (traits::eip_7981_active()) {
+        charge(
+            TxAccessListData,
+            addresses * 20 + keys * 32,
+            static_cast<int64_t>(g_access_list_data(tx)));
+    }
+}
+
+EXPLICIT_TRAITS(profile_intrinsic_gas);
 
 template <Traits traits>
 uint64_t floor_data_gas(Transaction const &tx) noexcept

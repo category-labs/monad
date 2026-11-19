@@ -759,6 +759,15 @@ TEST(uint256, bitwise)
     }
 }
 
+// Arithmetic right shift: complement a negative value, shift it logically,
+// then complement the result.
+uint256_t sar_reference(::intx::uint256 const &shift, uint256_t const &x)
+{
+    auto const ix = to_intx(x);
+    bool const negative = (x[3] >> 63) != 0;
+    return from_intx(negative ? ~(~ix >> shift) : ix >> shift);
+}
+
 TEST(uint256, shifts)
 {
     for (auto const &x : test_inputs) {
@@ -768,10 +777,13 @@ TEST(uint256, shifts)
 
             auto shr = x >> shift;
             ASSERT_EQ(shr, from_intx(to_intx(x) >> shift));
+
+            ASSERT_EQ(sar(shift, x), sar_reference(shift, x));
         }
         for (auto const &y : test_inputs) {
             ASSERT_EQ(x << y, from_intx(to_intx(x) << to_intx(y)));
             ASSERT_EQ(x >> y, from_intx(to_intx(x) >> to_intx(y)));
+            ASSERT_EQ(sar(y, x), sar_reference(to_intx(y), x));
         }
     }
 }

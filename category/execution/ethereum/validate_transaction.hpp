@@ -43,11 +43,12 @@
 
 MONAD_NAMESPACE_BEGIN
 
+// Reuse calldata counts from execution, or pass tokens_in_calldata(tx).
 template <Traits traits>
 Result<void> static_validate_transaction(
     Transaction const &, std::optional<uint256_t> const &base_fee_per_gas,
     std::optional<uint64_t> const &excess_blob_gas, uint256_t const &chain_id,
-    BlobSchedule const &blob_schedule);
+    BlobSchedule const &blob_schedule, CalldataTokens tokens);
 
 template <Traits traits>
 Result<void> validate_transaction(

@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
@@ -61,12 +62,9 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
-#include <deque>
 #include <filesystem>
 #include <fstream>
 #include <functional>
-#include <istream>
 #include <memory>
 #include <optional>
 #include <string>
@@ -91,255 +89,6 @@ namespace
         MONAD_ASSERT(nibbles.data_size() == sizeof(bytes32_t));
         return to_bytes(byte_string_view{nibbles.data(), nibbles.data_size()});
     }
-
-    struct BinaryDbLoader
-    {
-    private:
-        static constexpr uint64_t CHUNK_SIZE = 1ul << 13; // 8 kb
-
-        ::monad::mpt::Db &db_;
-        std::deque<mpt::Update> update_alloc_;
-        std::deque<byte_string> bytes_alloc_;
-        size_t buf_size_;
-        std::unique_ptr<unsigned char[]> buf_;
-        uint64_t block_id_;
-        Node::SharedPtr root_;
-
-    public:
-        BinaryDbLoader(
-            ::monad::mpt::Db &db, size_t const buf_size,
-            uint64_t const block_id)
-            : db_{db}
-            , buf_size_{buf_size}
-            , buf_{std::make_unique_for_overwrite<unsigned char[]>(buf_size)}
-            , block_id_{block_id}
-            , root_{nullptr}
-        {
-            MONAD_ASSERT(buf_size >= CHUNK_SIZE);
-        };
-
-        Node::SharedPtr load(std::istream &accounts, std::istream &code)
-        {
-            load(
-                accounts,
-                [&](byte_string_view in, UpdateList &updates) {
-                    return parse_accounts(in, updates);
-                },
-                [&](UpdateList account_updates) {
-                    UpdateList updates;
-                    auto state_update = Update{
-                        .key = state_nibbles,
-                        .value = byte_string_view{},
-                        .incarnation = false,
-                        .next = std::move(account_updates),
-                        .version = static_cast<int64_t>(block_id_)};
-                    updates.push_front(state_update);
-
-                    UpdateList finalized_updates;
-                    Update finalized{
-                        .key = finalized_nibbles,
-                        .value = byte_string_view{},
-                        .incarnation = false,
-                        .next = std::move(updates),
-                        .version = static_cast<int64_t>(block_id_),
-                    };
-                    finalized_updates.push_front(finalized);
-                    root_ = db_.upsert(
-                        std::move(root_),
-                        std::move(finalized_updates),
-                        block_id_,
-                        false,
-                        false);
-                    db_.update_finalized_version(block_id_);
-
-                    update_alloc_.clear();
-                    bytes_alloc_.clear();
-                });
-            load(
-                code,
-                [&](byte_string_view in, UpdateList &updates) {
-                    return parse_code(in, updates);
-                },
-                [&](UpdateList code_updates) {
-                    UpdateList updates;
-                    auto code_update = Update{
-                        .key = code_nibbles,
-                        .value = byte_string_view{},
-                        .incarnation = false,
-                        .next = std::move(code_updates),
-                        .version = static_cast<int64_t>(block_id_)};
-                    updates.push_front(code_update);
-
-                    UpdateList finalized_updates;
-                    Update finalized{
-                        .key = finalized_nibbles,
-                        .value = byte_string_view{},
-                        .incarnation = false,
-                        .next = std::move(updates),
-                        .version = static_cast<int64_t>(block_id_),
-                    };
-                    finalized_updates.push_front(finalized);
-                    root_ = db_.upsert(
-                        std::move(root_),
-                        std::move(finalized_updates),
-                        block_id_,
-                        false,
-                        false);
-
-                    update_alloc_.clear();
-                    bytes_alloc_.clear();
-                });
-            return root_;
-        }
-
-    private:
-        static constexpr auto storage_entry_size = sizeof(bytes32_t) * 2;
-        static_assert(storage_entry_size == 64);
-
-        void load(
-            std::istream &input,
-            std::function<size_t(byte_string_view, UpdateList &)> const fparse,
-            std::function<void(UpdateList)> const fwrite)
-        {
-            UpdateList updates;
-            size_t total_processed = 0;
-            size_t total_read = 0;
-            while (input.read((char *)buf_.get() + total_read, CHUNK_SIZE)) {
-                auto const count = static_cast<size_t>(input.gcount());
-                MONAD_ASSERT(count <= CHUNK_SIZE);
-                total_read += count;
-                total_processed += fparse(
-                    byte_string_view{
-                        buf_.get() + total_processed,
-                        total_read - total_processed},
-                    updates);
-                if (MONAD_UNLIKELY((total_read + CHUNK_SIZE) > buf_size_)) {
-                    fwrite(std::exchange(updates, {}));
-                    std::memmove(
-                        buf_.get(),
-                        buf_.get() + total_processed,
-                        total_read - total_processed);
-                    total_read -= total_processed;
-                    total_processed = 0;
-                }
-            }
-
-            auto const count = static_cast<size_t>(input.gcount());
-            MONAD_ASSERT(count <= CHUNK_SIZE);
-            total_read += count;
-            total_processed += fparse(
-                byte_string_view{
-                    buf_.get() + total_processed, total_read - total_processed},
-                updates);
-            MONAD_ASSERT(total_processed == total_read);
-            MONAD_ASSERT(input.eof());
-
-            fwrite(std::move(updates));
-        }
-
-        size_t parse_accounts(byte_string_view in, UpdateList &account_updates)
-        {
-            constexpr auto account_fixed_size =
-                sizeof(bytes32_t) + sizeof(uint256_t) + sizeof(uint64_t) +
-                sizeof(bytes32_t) + sizeof(uint64_t);
-            static_assert(account_fixed_size == 112);
-            size_t total_processed = 0;
-            while (in.size() >= account_fixed_size) {
-                constexpr auto num_storage_offset =
-                    account_fixed_size - sizeof(uint64_t);
-                auto const num_storage = unaligned_load<uint64_t>(
-                    in.substr(num_storage_offset, sizeof(uint64_t)).data());
-                auto const storage_size = num_storage * storage_entry_size;
-                auto const entry_size = account_fixed_size + storage_size;
-                MONAD_ASSERT(entry_size <= buf_size_);
-                if (in.size() < entry_size) {
-                    return total_processed;
-                }
-                auto &update = update_alloc_.emplace_back(handle_account(in));
-                if (num_storage) {
-                    update.next = handle_storage(
-                        in.substr(account_fixed_size, storage_size));
-                }
-                account_updates.push_front(update);
-                total_processed += entry_size;
-                in = in.substr(entry_size);
-            }
-            return total_processed;
-        }
-
-        size_t parse_code(byte_string_view in, UpdateList &code_updates)
-        {
-            constexpr auto hash_and_len_size =
-                sizeof(bytes32_t) + sizeof(uint64_t);
-            static_assert(hash_and_len_size == 40);
-            size_t total_processed = 0;
-            while (in.size() >= hash_and_len_size) {
-                auto const code_len = unaligned_load<uint64_t>(
-                    in.substr(sizeof(bytes32_t), sizeof(uint64_t)).data());
-                auto const entry_size = code_len + hash_and_len_size;
-                MONAD_ASSERT(entry_size <= buf_size_);
-                if (in.size() < entry_size) {
-                    return total_processed;
-                }
-                code_updates.push_front(update_alloc_.emplace_back(Update{
-                    .key = in.substr(0, sizeof(bytes32_t)),
-                    .value = in.substr(hash_and_len_size, code_len),
-                    .incarnation = false,
-                    .next = UpdateList{},
-                    .version = static_cast<int64_t>(block_id_)}));
-
-                total_processed += entry_size;
-                in = in.substr(entry_size);
-            }
-            return total_processed;
-        }
-
-        Update handle_account(byte_string_view const curr)
-        {
-            constexpr auto balance_offset = sizeof(bytes32_t);
-            constexpr auto nonce_offset = balance_offset + sizeof(uint256_t);
-            constexpr auto code_hash_offset = nonce_offset + sizeof(uint64_t);
-
-            return Update{
-                .key = curr.substr(0, sizeof(bytes32_t)),
-                .value = bytes_alloc_.emplace_back(encode_account_db(
-                    Address{}, // TODO: Update this when binary checkpoint
-                               // includes unhashed address
-                    Account{
-                        .balance = unaligned_load<uint256_t>(
-                            curr.substr(balance_offset, sizeof(uint256_t))
-                                .data()),
-                        .code_hash = unaligned_load<bytes32_t>(
-                            curr.substr(code_hash_offset, sizeof(bytes32_t))
-                                .data()),
-                        .nonce = unaligned_load<uint64_t>(
-                            curr.substr(nonce_offset, sizeof(uint64_t))
-                                .data())})),
-                .incarnation = false,
-                .next = UpdateList{},
-                .version = static_cast<int64_t>(block_id_)};
-        }
-
-        UpdateList handle_storage(byte_string_view in)
-        {
-            UpdateList storage_updates;
-            while (!in.empty()) {
-                storage_updates.push_front(update_alloc_.emplace_back(Update{
-                    .key = in.substr(0, sizeof(bytes32_t)),
-                    .value = bytes_alloc_.emplace_back(encode_storage_db(
-                        bytes32_t{}, // TODO: update this when binary checkpoint
-                                     // includes unhashed storage slot
-                        unaligned_load<bytes32_t>(
-                            in.substr(sizeof(bytes32_t), sizeof(bytes32_t))
-                                .data()))),
-                    .incarnation = false,
-                    .next = UpdateList{},
-                    .version = static_cast<int64_t>(block_id_)}));
-                in = in.substr(storage_entry_size);
-            }
-            return storage_updates;
-        }
-    };
 
     struct PagedStorageLeafProcessor
     {
@@ -874,15 +623,6 @@ void write_to_file(
         block_number,
         std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - start_time));
-}
-
-Node::SharedPtr load_from_binary(
-    mpt::Db &db, std::istream &accounts, std::istream &code,
-    uint64_t const init_block_number, size_t const buf_size)
-{
-    BinaryDbLoader loader{
-        db, buf_size, db.is_on_disk() ? init_block_number : 0};
-    return loader.load(accounts, code);
 }
 
 Node::SharedPtr

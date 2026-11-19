@@ -97,7 +97,26 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
 
     // Reserve before priming to avoid rehashing. The measured corpus has
     // about one cached hash per 430 blob bytes; /256 leaves spare capacity.
+#if defined(MONAD_ZKVM_ZISK)
+    // Allocate direct slot tables and an initial pool of hash entries.
+    blob_node_cache_ = static_cast<NodeCacheEntry **>(
+        ::operator new((blob_.size() / 4 + 1) * sizeof(NodeCacheEntry *)));
+    new_node_cache_ = static_cast<NodeCacheEntry **>(
+        ::operator new(FRESH_HASH_SLOTS * sizeof(NodeCacheEntry *)));
+    refill_hash_pool(blob_.size() / 256 + 1);
+#else
     hashes_.reserve(blob_.size() / 256);
+#endif
+#if defined(MONAD_ZKVM_ZISK)
+    modified_blob_nodes_ = static_cast<byte_string **>(
+        ::operator new((blob_.size() / 4 + 1) * sizeof(byte_string *)));
+    new_nodes_ = static_cast<byte_string **>(
+        ::operator new(FRESH_HASH_SLOTS * sizeof(byte_string *)));
+#else
+    // Reserve initial overlay capacity to avoid early rehashes.
+    // The number of nodes created during commit is not known yet.
+    overlay_.reserve(1024);
+#endif
 
     // A node's byte is set when the walk reaches it and cleared when a parent
     // claims it as a child.
@@ -111,10 +130,12 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
     // remains, without scanning the marks again.
     size_t unclaimed_bytes = static_cast<size_t>(region_end - node.bytes());
 
+#if !defined(MONAD_ZKVM_ZISK)
     // Reuse a valid entry as Keccak output, then copy it into the cache.
     // This avoids reinitializing the entry for every node.
     NodeCacheEntry hash_entry{};
     hash_entry.hash_valid = true;
+#endif
 
     // Cache the size so possible aliasing with mark stores does not
     // force GCC to reload it for each child.
@@ -128,7 +149,16 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
         node_marks[child_offset] = 0;
         unclaimed_bytes -= DIGEST_NODE_LEN;
     };
+#if !defined(MONAD_ZKVM_ZISK)
     unsigned char rlp_buf[MAX_NODE_RLP];
+#endif
+#if defined(MONAD_ZKVM_ZISK)
+    // Keep traversal pointers local so encoding and Keccak do not force member
+    // reloads. Cache slots stay fixed; save the final window after the walk.
+    unsigned char *walk_window = rlp_window_;
+    unsigned char *walk_windows_end = rlp_windows_end_;
+    NodeCacheEntry **const walk_node_cache = blob_node_cache_;
+#endif
 
     while (node.bytes() < region_end) {
         // In range by the loop's own condition: the walk runs while
@@ -152,6 +182,11 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
         // of the region
         auto const next_offset =
             static_cast<uint64_t>(node.checked_end(region_end) - base);
+#if defined(MONAD_ZKVM_ZISK)
+        // Read once: the copy of a branch's children may alias the blob, so
+        // GCC could otherwise reload the tag before choosing the encoder.
+        Tag const tag = node.tag();
+#endif
 
         match(
             node,
@@ -191,38 +226,50 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
                 [&](AccountLeafView a) { claim_child(a.storage()); },
                 [](auto) {}});
 
-        match(
-            node,
-            Cases{
-                [](NullView) {},
-                [](DigestView) {},
-                [&](auto) {
+        // Digests were handled earlier; checked_end rejects invalid tags.
+        // Only branches, extensions and leaves remain to encode.
 #if defined(MONAD_ZKVM_ZISK)
-                    node_rlp_span const rem =
-                        node.tag() == BRANCH
-                            ? encode_rlp<true, true>(
-                                  node,
-                                  node_rlp_span{rlp_buf},
-                                  primed_slots_ + PRIMED_CHILDREN_OFFSET)
-                            : encode_rlp<true>(
-                                  node, node_rlp_span{rlp_buf}); // priming pass
+        // Keep retained RLP windows alive for cached pointers. Inline nodes
+        // let the next encoding reuse the current window.
+        if (MONAD_UNLIKELY(walk_window == walk_windows_end)) {
+            refill_rlp_windows();
+            walk_window = rlp_window_;
+            walk_windows_end = rlp_windows_end_;
+        }
+        // View the current window as a fixed-size array without copying it.
+        auto &window =
+            *reinterpret_cast<unsigned char(*)[MAX_NODE_RLP]>(walk_window);
+        node_rlp_span const rem =
+            tag == BRANCH
+                ? encode_rlp<true, true>(
+                      node,
+                      node_rlp_span{window},
+                      primed_slots_ + PRIMED_CHILDREN_OFFSET)
+                : encode_rlp<true>(node, node_rlp_span{window}); // priming pass
 #else
-                    node_rlp_span const rem = encode_rlp<true>(
-                        node, node_rlp_span{rlp_buf}); // priming pass
+        node_rlp_span const rem =
+            encode_rlp<true>(node, node_rlp_span{rlp_buf}); // priming pass
 #endif
-                    // Only hash-referenced nodes (canonical RLP >= 32 B)
-                    // are cached; smaller nodes are inlined by their
-                    // parent, so caching their hash would make child_ref
-                    // emit a 32-byte ref where the trie inlines it.
-                    if (rem.rlp_size() >= 32) {
-                        monad_keccak256(
-                            rem.rlp_data(),
-                            rem.rlp_size(),
-                            hash_entry.hash.bytes);
-                        hashes_.insert_or_assign(
-                            NodeId{node_offset}, hash_entry);
-                    }
-                }});
+        // Only hash-referenced nodes (canonical RLP >= 32 B) are cached;
+        // smaller nodes are inlined by their parent, so caching their hash
+        // would make child_ref emit a 32-byte ref where the trie inlines it.
+        if (rem.rlp_size() >= 32) {
+#if defined(MONAD_ZKVM_ZISK)
+            // Each node is visited once, so its hash slot is empty.
+            // Store the metadata before Keccak so it need not survive the call.
+            // Fresh ZisK pool entries already have hash_stale == 0.
+            NodeCacheEntry *const cached = new_hash_entry();
+            cached->priming_rlp = rem.base() + rem.size();
+            cached->priming_rlp_len = rem.rlp_size();
+            walk_node_cache[node_offset >> 2] = cached;
+            walk_window += RLP_WINDOW_STRIDE;
+            monad_keccak256(rem.rlp_data(), rem.rlp_size(), cached->hash.bytes);
+#else
+            monad_keccak256(
+                rem.rlp_data(), rem.rlp_size(), hash_entry.hash.bytes);
+            hashes_.insert_or_assign(NodeId{node_offset}, hash_entry);
+#endif
+        }
 
         node_marks[node_offset] = 1;
         unclaimed_bytes =
@@ -233,6 +280,7 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
     MONAD_ASSERT(node.bytes() == region_end); // nodes tile exactly
     claim_child(root);
 #if defined(MONAD_ZKVM_ZISK)
+    rlp_window_ = walk_window;
     unclaimed_bytes -= claimed_bytes_;
     claim_marks_ = nullptr;
 #endif
@@ -458,14 +506,14 @@ bytes32_t OffsetTrie::hash(NodeId const id)
                     return *hit;
                 }
 
-                unsigned char buf[MAX_NODE_RLP];
-                node_rlp_span const rem = encode_rlp(node, node_rlp_span{buf});
+                alignas(8) unsigned char buf[MAX_NODE_RLP];
+                node_rlp_span const rem = encode_current(id, node, buf);
                 MONAD_ASSERT(rem.rlp_size() >= 32);
                 bytes32_t h;
                 // RLP occupies the tail: [rem.end(), buf_end).
                 monad_keccak256(rem.rlp_data(), rem.rlp_size(), h.bytes);
 
-                hashes_.insert_or_assign(id, NodeCacheEntry{h, true});
+                store_hash(id, h);
                 return h;
             }});
 }
@@ -475,13 +523,242 @@ bytes32_t OffsetTrie::state_root()
     return hash(root);
 }
 
+#if defined(MONAD_ZKVM_ZISK)
+void OffsetTrie::refill_hash_pool(size_t const entries)
+{
+    // Keep previous chunks alive so existing slot pointers remain valid.
+    next_cache_entry_ = static_cast<NodeCacheEntry *>(
+        ::operator new(entries * sizeof(NodeCacheEntry)));
+    cache_entries_end_ = next_cache_entry_ + entries;
+}
+
+void OffsetTrie::refill_rlp_windows()
+{
+    // Keep previous chunks alive so cached RLP pointers remain valid.
+    constexpr size_t WINDOWS = 2048;
+    rlp_window_ = static_cast<unsigned char *>(
+        ::operator new(WINDOWS * RLP_WINDOW_STRIDE));
+    rlp_windows_end_ = rlp_window_ + WINDOWS * RLP_WINDOW_STRIDE;
+}
+
+namespace
+{
+    // The length of a node's RLP list header: its payload is under 2^16.
+    constexpr size_t rlp_list_header_len(unsigned char const prefix)
+    {
+        return prefix <= 0xf7 ? 1 : static_cast<size_t>(prefix - 0xf6);
+    }
+
+    // A child ref: the empty string, a 32-byte hash, or an inlined node,
+    // which is under 32 bytes and so a short list.
+    constexpr size_t rlp_ref_len(unsigned char const prefix)
+    {
+        return prefix == 0x80   ? 1
+               : prefix == 0xa0 ? 1 + KECCAK256_SIZE
+                                : 1 + static_cast<size_t>(prefix - 0xc0);
+    }
+
+    // A compact path: a single byte that is its own RLP, or a short string.
+    constexpr size_t rlp_path_len(unsigned char const prefix)
+    {
+        return prefix < 0x80 ? 1 : 1 + static_cast<size_t>(prefix - 0x80);
+    }
+}
+
+// Patch saved child references in an otherwise unchanged node.
+// Dirty bits never clear, so every patch revisits all modified children.
+// A changed reference length returns 0 for a full encode. Partial patches
+// remain in the window; later attempts revisit them using the same dirty bits.
+size_t
+OffsetTrie::patch_rlp(NodeCacheEntry const &cached, NodeViewBase const node)
+{
+    size_t const rlp_length = cached.priming_rlp_len;
+    unsigned char *const rlp = cached.priming_rlp;
+    unsigned char *field = rlp + rlp_list_header_len(rlp[0]);
+    uint64_t dirty_children = cached.dirty_children;
+    if (node.tag() == BRANCH) {
+        BranchView const branch{node};
+        // The window's head stores child-reference addresses. Retained windows
+        // never move, so patching can use these pointers directly.
+        uintptr_t const *const child_ref_addresses =
+            reinterpret_cast<uintptr_t const *>(
+                cached.priming_rlp + rlp_length - MAX_NODE_RLP);
+        while (dirty_children != 0) {
+            unsigned const child_index =
+                static_cast<unsigned>(std::countr_zero(dirty_children));
+            dirty_children &= dirty_children - 1;
+            uintptr_t const ref_address = child_ref_addresses[child_index];
+            if (ref_address == 0) {
+                return 0;
+            }
+            auto *const ref = reinterpret_cast<unsigned char *>(ref_address);
+            if (!patch_ref(branch.child(child_index), ref, rlp_ref_len(*ref))) {
+                return 0;
+            }
+        }
+    }
+    else if (node.tag() == LEAF_ACCT) {
+        // The storage root is the account's third field, a 32-byte string
+        // just before the code hash's: the RLP's last 66 bytes are the two.
+        if ((dirty_children & 1) != 0) {
+            bytes32_t const storage_root =
+                hash(AccountLeafView{node}.storage());
+            std::memcpy(
+                rlp + rlp_length - 2 * HASH_RLP_LEN + 1,
+                storage_root.bytes,
+                KECCAK256_SIZE);
+        }
+    }
+    else {
+        MONAD_ASSERT(node.tag() == EXT);
+        field += rlp_path_len(*field);
+        if ((dirty_children & 1) != 0 &&
+            !patch_ref(ExtView{node}.child(), field, rlp_ref_len(*field))) {
+            return 0;
+        }
+    }
+    return rlp_length;
+}
+
+bool OffsetTrie::keep_account_leaf(NodeId const leaf, NodeId const storage)
+{
+    uint64_t const node_id = static_cast<uint64_t>(leaf);
+    if (node_id >= OVERLAY_BASE ||
+        modified_blob_nodes_[node_id >> 2] != nullptr) {
+        return false;
+    }
+    NodeViewBase const node = get_original(leaf);
+    if (node.tag() != LEAF_ACCT || AccountLeafView{node}.storage() != storage) {
+        return false;
+    }
+    NodeCacheEntry *const cached = blob_node_cache_[node_id >> 2];
+    if (cached == nullptr || cached->priming_rlp == nullptr) {
+        return false;
+    }
+    cached->hash_stale = 1;
+    mark_dirty(cached, 0);
+    return true;
+}
+
+bool OffsetTrie::patch_ref(
+    NodeId const child, unsigned char *const ref, size_t const ref_len)
+{
+    // For a hash reference, keep the 0xa0 prefix and replace only the digest.
+    // Compute uncached hashes directly in their cache entry to avoid copies.
+    if (ref_len == HASH_RLP_LEN) {
+        // For an original branch, extension or account leaf, reuse
+        // its cache entry and patch its saved RLP without repeated lookups.
+        // If patching fails, fall through to the general encoding path.
+        uint64_t const node_id = static_cast<uint64_t>(child);
+        if (node_id < OVERLAY_BASE) {
+            // patch_rlp reads this child ID from an unchanged original node;
+            // the constructor already validated its offset.
+            NodeViewBase const original = original_child(child);
+            Tag const tag = original.tag();
+            NodeCacheEntry *const cached = blob_node_cache_[node_id >> 2];
+            if (modified_blob_nodes_[node_id >> 2] == nullptr &&
+                (tag == BRANCH || tag == EXT || tag == LEAF_ACCT) &&
+                cached != nullptr && cached->priming_rlp != nullptr) {
+                auto const patch_and_hash = [&] {
+                    size_t const rlp_length = patch_rlp(*cached, original);
+                    if (rlp_length == 0) {
+                        return false;
+                    }
+                    monad_keccak256(
+                        cached->priming_rlp, rlp_length, cached->hash.bytes);
+                    cached->hash_stale = 0;
+                    return true;
+                };
+                if (cached->hash_stale == 0 || patch_and_hash()) {
+                    std::memcpy(ref + 1, cached->hash.bytes, KECCAK256_SIZE);
+                    return true;
+                }
+            }
+        }
+        NodeViewBase const node = get_current(child);
+        Tag const tag = node.tag();
+        if (tag == BRANCH || tag == EXT || tag == LEAF_ACCT ||
+            tag == LEAF_STORAGE) {
+            if (bytes32_t const *const hit = cached_hash(child)) {
+                std::memcpy(ref + 1, hit->bytes, KECCAK256_SIZE);
+                return true;
+            }
+            alignas(8) unsigned char buf[MAX_NODE_RLP];
+            node_rlp_span const rem = encode_current(child, node, buf);
+            if (rem.rlp_size() < 32) {
+                return false; // now inlined: the ref's length changes
+            }
+            NodeCacheEntry *&slot = hash_slot(child);
+            if (slot == nullptr) {
+                slot = new_hash_entry();
+            }
+            monad_keccak256(rem.rlp_data(), rem.rlp_size(), slot->hash.bytes);
+            slot->hash_stale = 0;
+            std::memcpy(ref + 1, slot->hash.bytes, KECCAK256_SIZE);
+            return true;
+        }
+    }
+    // Otherwise encode the child's reference separately.
+    unsigned char reference_buffer[MAX_NODE_RLP];
+    node_rlp_span const rem =
+        child_ref<false>(child, node_rlp_span{reference_buffer});
+    // A different length would shift later fields; request a full node encode.
+    if (rem.rlp_size() != ref_len) {
+        return false;
+    }
+    // Replace the old reference without moving the surrounding RLP fields.
+    std::memcpy(ref, rem.rlp_data(), ref_len);
+    return true;
+}
+#endif
+
+OffsetTrie::node_rlp_span OffsetTrie::encode_current(
+    NodeId const id, NodeViewBase const node,
+    unsigned char (&buf)[MAX_NODE_RLP])
+{
+#if defined(MONAD_ZKVM_ZISK)
+    // An original branch, extension or account leaf keeps its structure;
+    // absent from the overlay, only its child references may need updating.
+    // get_current/get_original must have validated the blob id first.
+    uint64_t const node_id = static_cast<uint64_t>(id);
+    if (node_id < OVERLAY_BASE &&
+        modified_blob_nodes_[node_id >> 2] == nullptr &&
+        (node.tag() == BRANCH || node.tag() == EXT ||
+         node.tag() == LEAF_ACCT)) {
+        NodeCacheEntry const *const cached = blob_node_cache_[node_id >> 2];
+        if (cached != nullptr && cached->priming_rlp != nullptr) {
+            if (size_t const rlp_length = patch_rlp(*cached, node);
+                rlp_length != 0) {
+                // Return the retained window; no copy into buf is needed.
+                auto &window =
+                    *reinterpret_cast<unsigned char(*)[MAX_NODE_RLP]>(
+                        cached->priming_rlp + rlp_length - MAX_NODE_RLP);
+                return node_rlp_span{window}.shrink(rlp_length);
+            }
+            // The window may be partly patched. Fall back to a complete
+            // encoding in buf; later patches will revisit all dirty children.
+        }
+    }
+#else
+    (void)id;
+#endif
+    // Encode fully if reuse is unavailable or a child reference changed size.
+    return encode_rlp(node, node_rlp_span{buf});
+}
+
 template <bool priming_pass>
 OffsetTrie::node_rlp_span OffsetTrie::child_ref_compute(
     NodeId const id, NodeViewBase const node, OffsetTrie::node_rlp_span dest)
 {
-    unsigned char buf[MAX_NODE_RLP];
-    node_rlp_span const rem =
-        encode_rlp<priming_pass>(node, node_rlp_span{buf});
+    alignas(8) unsigned char buf[MAX_NODE_RLP];
+    node_rlp_span const rem = [&] {
+        if constexpr (priming_pass) {
+            return encode_rlp<true>(node, node_rlp_span{buf});
+        }
+        else {
+            return encode_current(id, node, buf);
+        }
+    }();
     unsigned char const *const child_rlp = rem.rlp_data();
     size_t const child_rlp_len = rem.rlp_size();
     if (child_rlp_len < 32) {
@@ -495,7 +772,7 @@ OffsetTrie::node_rlp_span OffsetTrie::child_ref_compute(
     }
     bytes32_t digest;
     monad_keccak256(child_rlp, child_rlp_len, digest.bytes);
-    hashes_.insert_or_assign(id, NodeCacheEntry{digest, true});
+    store_hash(id, digest);
     return encode_rlp(digest, dest);
 }
 
@@ -658,6 +935,22 @@ OffsetTrie::node_rlp_span OffsetTrie::encode_rlp(
                     if (!digest_at(child_offset)) {
                         dest =
                             child_ref<priming_pass>(NodeId{child_offset}, dest);
+#if defined(MONAD_ZKVM_ZISK)
+                        if constexpr (priming_pass) {
+                            // Store reference addresses before the RLP tail.
+                            // Retained windows never move; only nonempty,
+                            // nondigest children can later become dirty.
+                            static_assert(
+                                MAX_NODE_RLP - (3 + 16 * HASH_RLP_LEN + 1) >=
+                                16 * sizeof(uintptr_t));
+                            if (child_offset != 0) {
+                                reinterpret_cast<uintptr_t *>(dest.base())
+                                    [child_cursor - children_begin] =
+                                        reinterpret_cast<uintptr_t>(
+                                            dest.rlp_data());
+                            }
+                        }
+#endif
                         continue;
                     }
                     // copy any contiguous digests directly into dest, since a
@@ -959,12 +1252,37 @@ void append_digest(byte_string &out, bytes32_t const &hash)
 NodeId OffsetTrie::fresh_id()
 {
     NodeId const fresh = next_id_;
+#if defined(MONAD_ZKVM_ZISK)
+    // Every fresh id has a slot in the fresh tables.
+    MONAD_ASSERT(
+        static_cast<uint64_t>(fresh) - OVERLAY_BASE < FRESH_HASH_SLOTS);
+#endif
     next_id_ = NodeId{static_cast<uint64_t>(next_id_) + 1};
     return fresh;
 }
 
 NodeId OffsetTrie::put_node(NodeId const id, byte_string node)
 {
+#if defined(MONAD_ZKVM_ZISK)
+    if (id == NULL_ID) {
+        NodeId const fresh = fresh_id();
+        new_nodes_[static_cast<uint64_t>(fresh) - OVERLAY_BASE] =
+            new byte_string(std::move(node));
+        return fresh;
+    }
+    drop_hash(id); // bytes changed; the cached hash is stale
+    uint64_t const node_id = static_cast<uint64_t>(id);
+    byte_string *&slot = node_id < OVERLAY_BASE
+                             ? modified_blob_nodes_[node_id >> 2]
+                             : new_nodes_[node_id - OVERLAY_BASE];
+    if (slot == nullptr) {
+        slot = new byte_string(std::move(node));
+    }
+    else {
+        *slot = std::move(node);
+    }
+    return id;
+#else
     if (id == NULL_ID) {
         NodeId const fresh = fresh_id();
         overlay_[fresh] = std::move(node);
@@ -973,6 +1291,7 @@ NodeId OffsetTrie::put_node(NodeId const id, byte_string node)
     drop_hash(id); // bytes changed; the cached hash is stale
     overlay_[id] = std::move(node);
     return id;
+#endif
 }
 
 NodeId OffsetTrie::put_branch(
@@ -1060,7 +1379,8 @@ OffsetTrie::upsert_node(NodeId const id, NibblesView const key)
             ? key.data()
             : nullptr;
 #endif
-    drop_hash(id); // dirtied along the descent
+    // dirtied along the descent
+    [[maybe_unused]] NodeCacheEntry *const cached_node = drop_hash(id);
     // Leaf split/overwrite, shared by both leaf types. Only re-emitting the
     // displaced old leaf differs (`reput_old`): a storage leaf keeps its
     // value, an account leaf its fields and storage edge. `reput_old` runs
@@ -1124,6 +1444,9 @@ OffsetTrie::upsert_node(NodeId const id, NibblesView const key)
                 NodeId child = e.child();
                 unsigned const cp = common_prefix_length(path, key);
                 if (cp == path.nibble_size()) { // full prefix -> descend
+#if defined(MONAD_ZKVM_ZISK)
+                    mark_dirty(cached_node, 0);
+#endif
                     return upsert_node(child, key.substr(cp));
                 }
                 // diverge mid-extension
@@ -1150,6 +1473,11 @@ OffsetTrie::upsert_node(NodeId const id, NibblesView const key)
                 unsigned const nib = key.get(0);
                 std::array<node_id_wire_t, 16> children = b.children();
                 NodeId const child = NodeId{children[nib]};
+#if defined(MONAD_ZKVM_ZISK)
+                if (child != NULL_ID) {
+                    mark_dirty(cached_node, nib);
+                }
+#endif
                 // Recurse into the slot: a NULL_ID child lets upsert_node
                 // allocate the leaf; an existing child keeps its stable id.
                 // Only rewrite the branch when a previously-empty slot
@@ -1203,8 +1531,12 @@ OffsetTrie::erase_node(NodeId const id, NibblesView const key)
                     return OffsetTrie::EraseResult::Unmodified;
                 }
                 // child survived; fold the ext path into it if it collapsed
-                // to a leaf/ext, but keep `id` of the ext node
-                drop_hash(id);
+                // to a leaf/ext, but keep `id` of the ext node. A branch child
+                // leaves the extension's bytes alone and changes its ref.
+                [[maybe_unused]] NodeCacheEntry *const self = drop_hash(id);
+#if defined(MONAD_ZKVM_ZISK)
+                mark_dirty(self, 0);
+#endif
                 NodeViewBase const child = get_current(child_id);
                 return match(
                     child,
@@ -1229,6 +1561,15 @@ OffsetTrie::erase_node(NodeId const id, NibblesView const key)
                 if (erase_child == OffsetTrie::EraseResult::Unmodified) {
                     return OffsetTrie::EraseResult::Unmodified;
                 }
+#if defined(MONAD_ZKVM_ZISK)
+                // The child keeps its ID, so this canonical branch still has
+                // at least two children. Mark its changed reference without
+                // rewriting the branch, preserving any patchable priming RLP.
+                if (erase_child == OffsetTrie::EraseResult::Modified) {
+                    mark_dirty(drop_hash(id), branch);
+                    return OffsetTrie::EraseResult::Modified;
+                }
+#endif
                 drop_hash(id);
                 if (erase_child == OffsetTrie::EraseResult::Erased) {
                     children[branch] = to_node_id_wire_t(NULL_ID);

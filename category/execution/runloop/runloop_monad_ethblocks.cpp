@@ -168,10 +168,8 @@ Result<void> process_monad_block(
 
     // Sender and authority recovery
     auto const sender_recovery_begin = std::chrono::steady_clock::now();
-    auto const recovered_senders =
-        recover_senders(block.transactions, priority_pool);
-    auto const recovered_authorities =
-        recover_authorities(block.transactions, priority_pool);
+    auto const [recovered_senders, recovered_authorities] =
+        recover_signers(block.transactions, priority_pool);
     [[maybe_unused]] auto const sender_recovery_time =
         std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - sender_recovery_begin);
@@ -366,10 +364,8 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
         Block parent_block;
         get_block_with_retry(
             block_db, block_num - 1, parent_block, block_db_timeout);
-        auto const recovered_senders =
-            recover_senders(parent_block.transactions, priority_pool);
-        auto const recovered_authorities =
-            recover_authorities(parent_block.transactions, priority_pool);
+        auto const [recovered_senders, recovered_authorities] =
+            recover_signers(parent_block.transactions, priority_pool);
         std::vector<Address> senders(parent_block.transactions.size());
         for (unsigned j = 0; j < recovered_senders.size(); ++j) {
             if (recovered_senders[j].has_value()) {
@@ -394,10 +390,11 @@ Result<std::pair<uint64_t, uint64_t>> runloop_monad_ethblocks(
             Block grandparent_block;
             get_block_with_retry(
                 block_db, block_num - 2, grandparent_block, block_db_timeout);
-            auto const grandparent_recovered_senders =
-                recover_senders(grandparent_block.transactions, priority_pool);
-            auto const grandparent_recovered_authorities = recover_authorities(
-                grandparent_block.transactions, priority_pool);
+            auto const
+                [grandparent_recovered_senders,
+                 grandparent_recovered_authorities] =
+                    recover_signers(
+                        grandparent_block.transactions, priority_pool);
             std::vector<Address> grandparent_senders(
                 grandparent_block.transactions.size());
             for (unsigned j = 0; j < grandparent_recovered_senders.size();

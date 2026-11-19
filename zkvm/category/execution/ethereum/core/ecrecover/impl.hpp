@@ -15,11 +15,14 @@
 
 #pragma once
 
+#include <category/core/assert.h>
 #include <category/core/config.hpp>
 #include <category/crypto/keccak.h>
+#include <category/execution/ethereum/core/ecrecover/types.hpp>
 
 #include <c-interface-accelerators/zkvm_accelerators.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <span>
@@ -50,6 +53,18 @@ MONAD_NAMESPACE_BEGIN
     std::memcpy(out.data(), key_hash + 12, out.size());
 
     return true;
+}
+
+// The ecrecover accelerator takes one signature per call, so a batch is a loop.
+inline void recover_addresses(
+    std::span<RecoverAddressInput const> const in,
+    std::span<RecoverAddressOutput> const out)
+{
+    MONAD_ASSERT(in.size() == out.size());
+    for (size_t i = 0; i < in.size(); ++i) {
+        out[i].ok =
+            recover_address(out[i].address, in[i].msg, in[i].sig, in[i].recid);
+    }
 }
 
 MONAD_NAMESPACE_END

@@ -16,6 +16,7 @@
 #pragma once
 
 #include <category/core/config.hpp>
+#include <category/execution/ethereum/core/ecrecover/types.hpp>
 
 #include <cstdint>
 #include <span>
@@ -28,5 +29,14 @@ MONAD_NAMESPACE_BEGIN
 bool recover_address(
     std::span<uint8_t, 20> const out, std::span<uint8_t const, 32> const msg,
     std::span<uint8_t const, 64> const sig, uint8_t recid);
+
+/// Batched recover_address: `out[i]` receives the result for `in[i]`, which
+/// must be exactly what recover_address would return for it. Elements succeed
+/// or fail independently. `in` and `out` must have the same size and may be
+/// of any size, including zero. An implementation is free to process the
+/// elements in parallel lanes and in any order.
+void recover_addresses(
+    std::span<RecoverAddressInput const> in,
+    std::span<RecoverAddressOutput> out);
 
 MONAD_NAMESPACE_END

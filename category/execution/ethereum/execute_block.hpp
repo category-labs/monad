@@ -67,10 +67,20 @@ Result<std::vector<Receipt>> execute_block(
     ChainContext<traits> const &chain_ctx, ExecutionEventRecorder *,
     bool trace_transfers = false);
 
-std::vector<std::optional<Address>>
-recover_senders(std::span<Transaction const>, fiber::PriorityPool &);
+/// The signers of a block's transactions. `senders[i]` is the sender of
+/// transaction `i` and `authorities[i][j]` the authority of its `j`-th EIP-7702
+/// authorization entry; an element is nullopt if its signature does not
+/// recover.
+struct RecoveredSigners
+{
+    std::vector<std::optional<Address>> senders;
+    std::vector<std::vector<std::optional<Address>>> authorities;
+};
 
-std::vector<std::vector<std::optional<Address>>>
-recover_authorities(std::span<Transaction const>, fiber::PriorityPool &);
+/// Recovers every sender and authority of `transactions`. All of their
+/// signatures are pooled into one sequence and recovered in batches through
+/// recover_addresses, with the batches spread over the pool's threads.
+RecoveredSigners
+recover_signers(std::span<Transaction const>, fiber::PriorityPool &);
 
 MONAD_NAMESPACE_END

@@ -145,6 +145,8 @@ using node_id_wire_t = uint32_t;
 
 inline constexpr size_t HASH_RLP_LEN = KECCAK256_SIZE + 1; // 0xa0 ‖ 32 B
 using hash_rlp_view = std::span<unsigned char const, HASH_RLP_LEN>;
+// Size of a digest node in the blob: its tag followed by 32 hash bytes.
+inline constexpr size_t DIGEST_NODE_LEN = KECCAK256_SIZE + 1;
 // Widest that run can get: 1 + 8 for the nonce, 1 + 32 for the balance. Both
 // are RLP-zeroless, so real accounts sit far below this.
 inline constexpr size_t MAX_NONCE_BALANCE_RLP_LEN = 42;
@@ -638,6 +640,22 @@ class OffsetTrie
         }
     }
 
+#if defined(MONAD_ZKVM_ZISK)
+    // Keep the 16 children 8-byte aligned, with a zero sentinel before
+    // them to stop digest runs during claims. Two padding slots preserve
+    // alignment; the second is the sentinel read by the loop.
+    static constexpr size_t BRANCH_CHILD_COUNT = 16;
+    static constexpr size_t PRIMED_CHILDREN_OFFSET = 2;
+    alignas(8) node_id_wire_t
+        primed_slots_[PRIMED_CHILDREN_OFFSET + BRANCH_CHILD_COUNT]{};
+
+    // Constructor-only marks: a nonzero byte identifies an unclaimed node.
+    unsigned char *claim_marks_{nullptr};
+    // Claims made during priming, counted in DIGEST_NODE_LEN units per node.
+    size_t claimed_bytes_{0};
+
+#endif
+
     NodeId next_id_{OVERLAY_BASE}; // fresh-id counter (>= OVERLAY_BASE)
 public:
     // Wrap the read-only node blob, structurally validate it, and prime the
@@ -790,8 +808,14 @@ private:
 
     // The node's full canonical Ethereum RLP. Reads `node`'s fields and
     // resolves its children through child_ref.
-    template <bool priming_pass = false>
-    node_rlp_span encode_rlp(NodeViewBase node, node_rlp_span dest);
+    // On ZisK, reuse the supplied aligned array of 16 child ids, or copy
+    // the branch's children locally when none is supplied.
+    // claim_children validates and claims children during ZisK priming.
+    // It requires a branch and a supplied array with a zero sentinel before it.
+    template <bool priming_pass = false, bool claim_children = false>
+    node_rlp_span encode_rlp(
+        NodeViewBase node, node_rlp_span dest,
+        node_id_wire_t const *children = nullptr);
 
     NodeId fresh_id();
 

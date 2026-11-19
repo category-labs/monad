@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/state3/state_interface.hpp>
 #include <category/vm/evm/access_status.hpp>
 #include <category/vm/evm/page_storage_status.hpp>
 #include <category/vm/evm/storage_status.hpp>
@@ -34,8 +35,6 @@
 #include <category/execution/ethereum/state3/version_stack.hpp>
 #include <category/execution/ethereum/types/incarnation.hpp>
 #include <category/vm/code.hpp>
-#include <category/vm/evm/explicit_traits.hpp>
-#include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
 
 #include <immer/map_transient.hpp>
@@ -203,36 +202,6 @@ void State::set_original_nonce(Address const &address, uint64_t const nonce)
     account->nonce = nonce;
 }
 
-bool State::account_exists(Address const &address)
-{
-    return recent_account(address).has_value();
-}
-
-bool State::account_is_dead(Address const &address)
-{
-    return is_dead(recent_account(address));
-}
-
-bool State::account_has_code_or_nonce(Address const &address)
-{
-    auto const &account = recent_account(address);
-    if (!account.has_value()) {
-        return false;
-    }
-
-    auto const &account_val = account.value();
-    return account_val.nonce > 0 || account_val.code_hash != NULL_HASH;
-}
-
-uint64_t State::get_nonce(Address const &address)
-{
-    auto const &account = recent_account(address);
-    if (MONAD_LIKELY(account.has_value())) {
-        return account.value().nonce;
-    }
-    return 0;
-}
-
 uint256_t State::get_balance(Address const &address)
 {
     auto const &account = recent_account(address);
@@ -246,15 +215,6 @@ uint256_t State::get_balance(Address const &address)
 uint256_t State::get_original_balance(Address const &address)
 {
     return original_account_state(address).get_balance_pessimistic();
-}
-
-bytes32_t State::get_code_hash(Address const &address)
-{
-    auto const &account = recent_account(address);
-    if (MONAD_LIKELY(account.has_value())) {
-        return account.value().code_hash;
-    }
-    return NULL_HASH;
 }
 
 bool State::is_destructed(Address const &address)
@@ -424,18 +384,24 @@ AccessStatus State::access_account(Address const &address)
     return account_state.access();
 }
 
-template <Traits traits>
-AccessStatus State::access_storage(Address const &address, bytes32_t const &key)
+template <bool page>
+AccessStatus
+State::access_storage_impl(Address const &address, bytes32_t const &key)
 {
     auto &account_state = current_account_state(address);
     auto const slot_status = account_state.access_storage(key);
-    if constexpr (traits::mip_8_active()) {
+    if constexpr (page) {
         return account_state.page_tracker_.access_page(key);
     }
-    return slot_status;
+    else {
+        return slot_status;
+    }
 }
 
-EXPLICIT_TRAITS_MEMBER(State::access_storage);
+template AccessStatus
+State::access_storage_impl<false>(Address const &, bytes32_t const &);
+template AccessStatus
+State::access_storage_impl<true>(Address const &, bytes32_t const &);
 
 PageStorageStatus State::update_page(
     Address const &address, bytes32_t const &key, StorageStatus const status)
@@ -444,23 +410,9 @@ PageStorageStatus State::update_page(
     return account_state.page_tracker_.update_page(key, status);
 }
 
-template <Traits traits>
-bool State::selfdestruct_to_self_burns([[maybe_unused]] Address const &address)
-{
-    if constexpr (!traits::eip_6780_active()) {
-        return true;
-    }
-    else if constexpr (traits::eip_8246_active()) {
-        return false;
-    }
-    else {
-        return is_current_incarnation(address);
-    }
-}
-
-template <Traits traits>
+template <SelfdestructRule rule>
 std::pair<bool, uint256_t>
-State::selfdestruct(Address const &address, Address const &beneficiary)
+State::selfdestruct_impl(Address const &address, Address const &beneficiary)
 {
     auto &account_state = current_account_state(address);
     uint256_t const balance = get_balance(address);
@@ -469,8 +421,13 @@ State::selfdestruct(Address const &address, Address const &beneficiary)
         add_to_balance(beneficiary, balance);
         subtract_from_balance(address, balance);
     }
-    else if (selfdestruct_to_self_burns<traits>(address)) {
+    else if constexpr (rule == SelfdestructRule::DeleteAll) {
         subtract_from_balance(address, balance);
+    }
+    else if constexpr (rule == SelfdestructRule::DeleteCreatedInTransaction) {
+        if (is_current_incarnation(address)) {
+            subtract_from_balance(address, balance);
+        }
     }
 
     bool const inserted = account_state.destruct();
@@ -479,7 +436,15 @@ State::selfdestruct(Address const &address, Address const &beneficiary)
     return {inserted, balance};
 }
 
-EXPLICIT_TRAITS_MEMBER(State::selfdestruct);
+template std::pair<bool, uint256_t>
+State::selfdestruct_impl<SelfdestructRule::DeleteAll>(
+    Address const &, Address const &);
+template std::pair<bool, uint256_t>
+State::selfdestruct_impl<SelfdestructRule::DeleteCreatedInTransaction>(
+    Address const &, Address const &);
+template std::pair<bool, uint256_t>
+State::selfdestruct_impl<SelfdestructRule::ClearCreatedInTransaction>(
+    Address const &, Address const &);
 
 // Overwrite every slot this transaction touched with zero: a slot only read has
 // an entry in the original map, a slot written has one in both. Zero rather
@@ -499,8 +464,8 @@ void State::zero_storage(Address const &address, AccountState &account_state)
 }
 
 // YP (87)
-template <Traits traits>
-void State::destruct_suicides()
+template <SelfdestructRule rule>
+void State::destruct_suicides_impl()
 {
     MONAD_ASSERT(!version_);
 
@@ -514,7 +479,7 @@ void State::destruct_suicides()
         }
         auto &account = account_state.account_;
 
-        if constexpr (!traits::eip_6780_active()) {
+        if constexpr (rule == SelfdestructRule::DeleteAll) {
             account.reset();
             continue;
         }
@@ -524,7 +489,7 @@ void State::destruct_suicides()
             continue;
         }
 
-        if constexpr (!traits::eip_8246_active()) {
+        if constexpr (rule == SelfdestructRule::DeleteCreatedInTransaction) {
             account.reset();
             continue;
         }
@@ -541,7 +506,11 @@ void State::destruct_suicides()
     }
 }
 
-EXPLICIT_TRAITS_MEMBER(State::destruct_suicides);
+template void State::destruct_suicides_impl<SelfdestructRule::DeleteAll>();
+template void
+State::destruct_suicides_impl<SelfdestructRule::DeleteCreatedInTransaction>();
+template void
+State::destruct_suicides_impl<SelfdestructRule::ClearCreatedInTransaction>();
 
 // YP (88)
 void State::destruct_touched_dead()

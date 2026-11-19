@@ -136,6 +136,7 @@ struct StateHost final : public StateHostBase
 
         MONAD_TRY
         {
+            auto const timer = time_host();
             return !state_.account_is_dead(address);
         }
         MONAD_CATCH(...)
@@ -150,6 +151,7 @@ struct StateHost final : public StateHostBase
     {
         MONAD_TRY
         {
+            auto const timer = time_host();
             auto const [result, transferred_balance] =
                 state_.selfdestruct<traits>(address, beneficiary);
 
@@ -177,6 +179,7 @@ struct StateHost final : public StateHostBase
     {
         MONAD_TRY
         {
+            auto const timer = time_host();
             if (msg.kind == vm::CallKind::Create ||
                 msg.kind == vm::CallKind::Create2) {
                 auto result =
@@ -207,6 +210,7 @@ struct StateHost final : public StateHostBase
     {
         MONAD_TRY
         {
+            auto const timer = time_host();
             if (is_precompile<traits>(address)) {
                 return AccessStatus::Warm;
             }
@@ -224,6 +228,7 @@ struct StateHost final : public StateHostBase
     {
         MONAD_TRY
         {
+            auto const timer = time_host();
             return state_.access_storage<traits>(address, key);
         }
         MONAD_CATCH(...)
@@ -240,6 +245,7 @@ struct StateHost final : public StateHostBase
         if constexpr (traits::mip_8_active()) {
             MONAD_TRY
             {
+                auto const timer = time_host();
                 return state_.update_page(address, key, status);
             }
             MONAD_CATCH(...)

@@ -24,15 +24,6 @@
 #include <array>
 #include <cstdint>
 
-// Bias stack_lower_bound from the array's beginning. With StackTop's one-past
-// pointer, a bias of one makes both one- and two-operand checks compare
-// directly against stack_lower_bound (>= and > respectively).
-#if defined(MONAD_ZKVM_ZISK)
-    #define MONAD_VM_STACK_LOWER_BOUND_BIAS 1
-#else
-    #define MONAD_VM_STACK_LOWER_BOUND_BIAS 0
-#endif
-
 // ZisK passes the stack limit instead of the code analysis to avoid loading
 // it from ctx on each overflow check. Code metadata is read through FrameCode.
 // Other targets keep passing the analysis and load the limit from ctx.

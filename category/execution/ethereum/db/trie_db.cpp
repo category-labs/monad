@@ -37,6 +37,7 @@
 #include <category/execution/monad/db/page_commit_builder.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
 #include <category/mpt/db.hpp>
+#include <category/mpt/nibbles_buffer.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/nibbles_view_fmt.hpp>
 #include <category/mpt/node.hpp>
@@ -99,10 +100,10 @@ std::optional<Account> TrieDb::read_account(Address const &addr)
     }
     auto const res = db_.find(
         curr_root_,
-        concat(
+        NibblesBuffer{
             prefix_,
             STATE_NIBBLE,
-            NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})}),
+            NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})}},
         block_number_);
     // result stays nullopt if absent at the finalized baseline.
     if (res.has_error()) {
@@ -160,12 +161,12 @@ storage_page_t TrieDb::load_storage_page(
 {
     auto const res = db_.find(
         curr_root_,
-        concat(
+        NibblesBuffer{
             prefix_,
             STATE_NIBBLE,
             NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
             NibblesView{
-                keccak256({lookup_key.bytes, sizeof(lookup_key.bytes)})}),
+                keccak256({lookup_key.bytes, sizeof(lookup_key.bytes)})}},
         block_number_);
     storage_page_t page;
     if (res.has_error()) {
@@ -187,10 +188,10 @@ vm::SharedIntercode TrieDb::read_code(bytes32_t const &code_hash)
     // TODO read intercode object
     auto const res = db_.find(
         curr_root_,
-        concat(
+        NibblesBuffer{
             prefix_,
             CODE_NIBBLE,
-            NibblesView{to_byte_string_view(code_hash.bytes)}),
+            NibblesView{to_byte_string_view(code_hash.bytes)}},
         block_number_);
     if (res.has_error()) {
         return vm::make_shared_intercode({});

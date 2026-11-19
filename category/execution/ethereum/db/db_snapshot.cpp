@@ -471,17 +471,9 @@ public:
         unsigned const src_nibbles = node_path.nibble_size();
         MONAD_ASSERT(length_ + 1 + src_nibbles <= buffer_.size() * 2);
 
-        // Append branch nibble
         set_nibble(buffer_.data(), length_, branch);
         ++length_;
-
-        if (src_nibbles == 0) {
-            return;
-        }
-
-        for (unsigned i = 0; i < src_nibbles; ++i) {
-            set_nibble(buffer_.data(), length_ + i, node_path.get(i));
-        }
+        copy_nibbles(buffer_.data(), length_, node_path);
         length_ = static_cast<uint8_t>(length_ + src_nibbles);
     }
 

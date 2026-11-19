@@ -41,6 +41,7 @@
 #include <category/mpt/ondisk_db_config.hpp>
 #include <category/mpt/test/test_fixtures_gtest.hpp>
 #include <category/mpt/traverse_util.hpp>
+#include <category/mpt/update.hpp>
 #include <category/mpt/util.hpp>
 #include <category/vm/evm/call_status.hpp>
 #include <category/vm/vm.hpp>
@@ -56,6 +57,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -372,6 +374,34 @@ TEST_F(OnDiskTrieDbFixture, get_proposal_block_ids)
         auto proposals = get_proposal_block_ids(db, 10);
         EXPECT_EQ(std::set(proposals.begin(), proposals.end()), block_ids);
     }
+}
+
+TEST_F(OnDiskTrieDbFixture, get_proposal_block_ids_skips_old_format_prefix)
+{
+    TrieDb tdb{db};
+    tdb.reset_root(
+        load_header(tdb.get_root(), db, BlockHeader{.number = 8}), 8);
+    tdb.set_block_and_prefix(8);
+    commit_sequential(tdb, StateDeltas({}), Code{}, BlockHeader{.number = 9});
+
+    tdb.set_block_and_prefix(9);
+    bytes32_t block_id;
+    std::memset(block_id.bytes, 0x55, sizeof(block_id.bytes));
+    commit_simple(tdb, StateDeltas({}), Code{}, block_id, {.number = 10});
+
+    // An old-format proposal: a value under a 17-nibble prefix, ordered
+    // before the real proposal (first block-id nibble 1 < 5).
+    auto const old_key = mpt::concat(
+        PROPOSAL_NIBBLE, mpt::NibblesView{0x1111111111111111_bytes});
+    auto const old_value = 0x01_bytes;
+    auto old_update = mpt::make_update(old_key, old_value);
+    mpt::UpdateList updates;
+    updates.push_front(old_update);
+    db.upsert(db.load_root_for_version(10), std::move(updates), 10);
+
+    auto const proposals = get_proposal_block_ids(db, 10);
+    ASSERT_EQ(proposals.size(), 1);
+    EXPECT_EQ(proposals.front(), block_id);
 }
 
 // Tests the !is_current_block path in finalize: commit two blocks as proposals,

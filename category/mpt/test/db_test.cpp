@@ -2198,6 +2198,44 @@ TEST(RangedGetTest, path_longer_than_min_and_max)
     EXPECT_EQ(num_results, 2);
 }
 
+TEST(RangedGetTest, sibling_after_rejected_child_keeps_its_path)
+{
+    Db db{std::make_unique<StateMachineAlwaysVarLen>()};
+    Node::SharedPtr root;
+
+    // Under 0x123 the children are branches 4 and 5. Branch 4 passes
+    // should_visit (0x1234 is a prefix of min) but its full key is below min,
+    // so its down() rejects it; branch 5 is in range. All nodes are in memory,
+    // so both children are visited by the same machine.
+    Nibbles const min{0x123456_bytes};
+    Nibbles const max{0x124000_bytes};
+    Nibbles const k_rejected{0x12340000_bytes};
+    Nibbles const k_in{0x12350000_bytes};
+    Nibbles const k_other{0x90000000_bytes};
+    auto const val = 0xdeadbeef_bytes;
+
+    uint64_t const block_id = 0;
+    UpdateList ul;
+    auto u1 = make_update(k_rejected, val);
+    auto u2 = make_update(k_in, val);
+    auto u3 = make_update(k_other, val);
+    ul.push_front(u1);
+    ul.push_front(u2);
+    ul.push_front(u3);
+    root = db.upsert(std::move(root), std::move(ul), block_id);
+
+    std::vector<Nibbles> keys;
+    RangedGetMachine range_machine{
+        min,
+        max,
+        [&keys](NibblesView const key, monad::byte_string_view const) {
+            keys.emplace_back(key);
+        }};
+    ASSERT_TRUE(db.traverse(root, range_machine, block_id));
+    ASSERT_EQ(keys.size(), 1);
+    EXPECT_EQ(NibblesView{keys.front()}, NibblesView{k_in});
+}
+
 TEST_F(OnDiskDbFixture, rw_query_old_version)
 {
     auto const &kv = fixed_updates::kv;

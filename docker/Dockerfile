@@ -219,6 +219,19 @@ RUN cd src && cmake -B build-zkvm -S zkvm/guest \
     -DCMAKE_BUILD_TYPE=Release
 RUN cd src && cmake --build build-zkvm --target monad-zkvm-guest-zisk --parallel
 
+FROM base_rust AS test_zisk_host
+
+# ziskos's host build compiles ZisK's C library with gcc, g++ and NASM.
+RUN apt-get update && \
+    apt-get install -y g++ nasm && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+COPY . src
+
+RUN cd src/zkvm/zisk/ecrecover-test && \
+    RUSTFLAGS="-C linker=${CC:?}" cargo test --release --locked
+
 FROM base_vm_test AS vm_fuzz
 
 ARG LLVM_VERSION

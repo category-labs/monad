@@ -16,8 +16,10 @@
 #![no_main]
 ziskos::entrypoint!(main);
 
-// zkvm/guest/execute_witness.cpp reads the RLP witness and writes the 32-byte
-// post-state root through the eth-act I/O functions supplied by ziskos.
+mod ecrecover;
+mod ecrecover_tables;
+
+// The C++ guest reads the witness and writes the block hash through ZisK I/O.
 extern "C" {
     fn monad_zkvm_execute_witness();
 }

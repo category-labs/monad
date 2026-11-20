@@ -18,9 +18,11 @@
 #if !defined(MONAD_ZKVM_ZISK)
     #include_next <category/core/runtime/uint256/overrides.hpp>
 #else
+    #include <category/core/assert.h>
     #include <category/core/likely.h>
     #include <category/core/runtime/uint256/intrinsics.hpp>
 
+    #include <bit>
     #include <cstdint>
 
 namespace monad::uint256::overrides
@@ -192,5 +194,138 @@ namespace monad::uint256::overrides
         }
         return x < y;
     }
+
+    // Compare two 8-byte-aligned 32-byte blocks via ZisK DMA.
+    // On CSR 0x814, ZisK's transpiler reads the immediately following addi
+    // for the second pointer and length, emitting one comparison for the pair.
+    // One asm block prevents the compiler from inserting code between them.
+    [[gnu::always_inline]] inline bool
+    zisk_equal32(uint64_t const *const a, uint64_t const *const b) noexcept
+    {
+        uint64_t differ;
+        // Enable CSR instructions locally, then restore the assembler options.
+        asm(".option push\n\t"
+            ".option arch, +zicsr\n\t"
+            // DMA comparison (0x814): a (%1) in, difference flag (%0) out.
+            "csrrs %0, 0x814, %1\n\t"
+            // Metadata for ZisK: b (%2), length 32; no b + 32 is computed.
+            "addi x0, %2, 32\n\t"
+            ".option pop"
+            // %0: register output; '&' prevents overlap with input registers.
+            : "=&r"(differ)
+            : "r"(a), // %1
+              "r"(b), // %2
+              // Declare both 32-byte reads so the compiler preserves their
+              // data.
+              "m"(*reinterpret_cast<uint64_t const(*)[4]>(a)),
+              "m"(*reinterpret_cast<uint64_t const(*)[4]>(b)));
+        return differ == 0; // Zero means all 32 bytes match.
+    }
+
+    // arith256 computes a*b+c as a low and a high 256-bit result.
+    struct DivisionProductParams
+    {
+        uint64_t const *a;
+        uint64_t const *b;
+        uint64_t const *c;
+        uint64_t *low;
+        uint64_t *high;
+    };
+
+    // Verify that q·v + r == u in 512 bits and r < v (requires v != 0).
+    template <typename U>
+    [[gnu::always_inline]] inline div_result<U> verify_division_hint(
+        U const &u, U const &v, uint64_t const (&qr)[8]) noexcept
+    {
+        alignas(8) uint64_t d[8]; // q·v + r, low half then high half
+        DivisionProductParams p{
+            qr, reinterpret_cast<uint64_t const *>(&v), qr + 4, d, d + 4};
+        asm volatile(".option push\n\t"
+                     ".option arch, +zicsr\n\t"
+                     "csrs 0x801, %0\n\t"
+                     ".option pop"
+                     :
+                     : "r"(&p)
+                     : "memory");
+        U const q{qr[0], qr[1], qr[2], qr[3]};
+        U const r{qr[4], qr[5], qr[6], qr[7]};
+        alignas(8) constexpr uint64_t zero_words[4]{};
+        MONAD_ASSERT(
+            zisk_equal32(d, reinterpret_cast<uint64_t const *>(&u)) &&
+            zisk_equal32(d + 4, zero_words));
+        MONAD_ASSERT(r < v);
+        return {.quot = q, .rem = r};
+    }
+
+    // Call fcall 19 directly to avoid div_rem256_c's copies and
+    // zero-initialisation.
+    template <typename U>
+    [[gnu::always_inline]] inline div_result<U>
+    hinted_division(U const &u, U const &v) noexcept
+    {
+        static_assert(alignof(U) >= 8);
+        static_assert(sizeof(U) == 4 * sizeof(uint64_t));
+        alignas(8) uint64_t qr[8]; // the quotient, then the remainder
+        asm volatile(".option push\n\t"
+                     ".option arch, +zicsr\n\t"
+                     "csrs 0x8F2, %[u]\n\t" // a parameter: the four words at u
+                     "csrs 0x8F2, %[v]\n\t"
+                     "csrwi 0x8C0, 19\n\t" // FCALL_UINT256_DIV_ID
+                     "csrs 0x815, %[qr]\n\t" // inputcpy: the eight result words
+                     "addi x0, %[qr], 64\n\t"
+                     ".option pop"
+                     :
+                     : [u] "r"(&u), [v] "r"(&v), [qr] "r"(qr)
+                     : "memory");
+        return verify_division_hint(u, v, qr);
+    }
+
+    // The caller handles zero divisors and constant evaluation.
+    template <typename U>
+    [[gnu::always_inline]] inline div_result<U>
+    divide(U const &u, U const &v) noexcept
+    {
+        uint64_t const v_high = v[1] | v[2] | v[3];
+        // For v = 2^k, a shift and mask replace the division hint and its
+        // verification. Check the low word first to quickly reject common
+        // divisors with multiple set bits (e.g. decimal scales).
+        if ((v[0] & (v[0] - 1)) == 0) {
+            unsigned k = 256; // no single bit found
+            if (v[0] != 0) {
+                if (v_high == 0) {
+                    k = static_cast<unsigned>(std::countr_zero(v[0]));
+                }
+            }
+            else if (v[1] != 0) {
+                if ((v[1] & (v[1] - 1)) == 0 && (v[2] | v[3]) == 0) {
+                    k = 64 + static_cast<unsigned>(std::countr_zero(v[1]));
+                }
+            }
+            else if (v[2] != 0) {
+                if ((v[2] & (v[2] - 1)) == 0 && v[3] == 0) {
+                    k = 128 + static_cast<unsigned>(std::countr_zero(v[2]));
+                }
+            }
+            else if ((v[3] & (v[3] - 1)) == 0) {
+                k = 192 + static_cast<unsigned>(std::countr_zero(v[3]));
+            }
+            if (k < 256) {
+                return {.quot = u >> U{k}, .rem = u & (v - 1)};
+            }
+        }
+        // For 64-bit operands, use native division instead of the hint.
+        if ((u[1] | u[2] | u[3] | v_high) == 0) {
+            return {.quot = U{u[0] / v[0]}, .rem = U{u[0] % v[0]}};
+        }
+        // Read operands in place; keep results separate for x /= x.
+        return hinted_division(u, v);
+    }
+
+}
+
+// Preserve the shared DMA helper used by the interpreter.
+namespace monad
+{
+    using uint256::overrides::zisk_equal32;
 }
 #endif

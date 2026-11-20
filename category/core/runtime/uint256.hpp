@@ -1036,6 +1036,13 @@ udivrem(words_t<M> const &u, words_t<N> const &v) noexcept
 [[gnu::always_inline]] constexpr div_result<uint256_t>
 udivrem(uint256_t const &u, uint256_t const &v) noexcept
 {
+    if constexpr (uint256::overrides::enabled) {
+        if !consteval {
+            if (v != 0) {
+                return uint256::overrides::divide(u, v);
+            }
+        }
+    }
     auto const r = udivrem(u.as_words(), v.as_words());
     return {.quot = uint256_t{r.quot}, .rem = uint256_t{r.rem}};
 }

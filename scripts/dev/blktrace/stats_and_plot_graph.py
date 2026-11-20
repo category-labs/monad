@@ -13,35 +13,63 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#!/usr/bin/python
-import csv, pygal, sys, re
-import numpy as np
+
+import argparse
+import re
+from collections.abc import Iterable
+from pathlib import Path
+
 import pandas as pd
+import pygal
 
-MAXLINES=1000000
+MAX_PLOT_POINTS = 1_000_000
+MAX_VALID_LATENCY = 1_000_000_000
+LATENCY = re.compile(r"\((\s*\d+\s*)\)")
 
-pattern = re.compile(r'\((\s*\d+\s*)\)')
 
-print(f"Reading {sys.argv[1]} ...")
-data = []
-with open(sys.argv[1], "r") as file:
-    log_data = file.read()
-    
-data = [int(match.group(1)) for match in pattern.finditer(log_data)] 
-# blktrace sometimes outputs latencies clearly uint64_t overflows, so filter those out
-data = [x for x in data if x < 1000000000]
+def read_latencies(lines: Iterable[str]) -> list[int]:
+    latencies = []
+    for line in lines:
+        for match in LATENCY.finditer(line):
+            latency = int(match.group(1))
+            # blkparse can emit wrapped unsigned latencies.
+            if latency < MAX_VALID_LATENCY:
+                latencies.append(latency)
+    return latencies
 
-# stats
-df = pd.DataFrame(data, columns=['latency'])
-perc = [.25, .50, .75, .90, .99, .999]
-print(df.describe(percentiles=perc).apply(lambda s: s.apply('{0:.2f}'.format)))
- 
-data = [int(match.group(1)) for match in pattern.finditer(log_data)][:MAXLINES]
 
-print("Rendering ...")
-chart = pygal.Line(stroke=False,logarithmic=True)
-chart.title = 'i/o latencies'
-chart.add('reads', data, dots_size=0.12)
-chart.render_to_file('io_latencies.svg')
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Summarize and plot blkparse read latencies")
+    parser.add_argument("trace", type=Path, help="Text output from blkparse")
+    parser.add_argument("-o", "--output", type=Path, default=Path("io_latencies.svg"), help="Output SVG path")
+    args = parser.parse_args()
 
-print("You may need to reduce MAXLINES in the script to get a SVG renderer to actually render io_latencies.svg")
+    print(f"Reading {args.trace} ...")
+    try:
+        with args.trace.open(encoding="utf-8") as file:
+            latencies = read_latencies(file)
+    except (OSError, UnicodeError) as error:
+        parser.exit(1, f"{parser.prog}: {error}\n")
+
+    if not latencies:
+        parser.exit(1, f"{parser.prog}: no valid latencies found in {args.trace}\n")
+
+    percentiles = [.25, .50, .75, .90, .99, .999]
+    frame = pd.DataFrame(latencies, columns=["latency"])
+    print(frame.describe(percentiles=percentiles).to_string(float_format="{:.2f}".format))
+
+    # Zero is a valid measurement for the summary, but has no logarithm.
+    points = [latency or None for latency in latencies[:MAX_PLOT_POINTS]]
+    if all(latency is None for latency in points):
+        print("No positive latencies in the plot range; skipped the logarithmic chart.")
+        return
+
+    print(f"Rendering {args.output} ...")
+    chart = pygal.Line(stroke=False, logarithmic=True)
+    chart.title = "I/O latencies"
+    chart.add("reads", points, dots_size=0.12)
+    chart.render_to_file(args.output)
+
+
+if __name__ == "__main__":
+    main()

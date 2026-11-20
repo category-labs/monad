@@ -121,3 +121,31 @@ Docker copies `flake.nix`, `flake.lock`, `nix/` and
 nixpkgs provides dependency packaging and binary substitutes, avoiding
 manual toolchain bootstrap scripts. Cold-build time depends on available
 substitutes and builder resources.
+
+## Regenerating the interpreter frame policy
+
+After changing a handler or the RISC-V compiler, run this from the repository
+root in the ZisK development shell, with the submodules initialized. Use the
+same CMake settings as the guest you want to check. For the reference recipe:
+
+```sh
+export MONAD_ZKVM_CMAKE_ARGS="-DMONAD_ZKVM_NO_MERGE_CONSTRAINTS=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMONAD_ZKVM_NO_DIRTY_ACCOUNTS=ON -DMONAD_ZKVM_VARCODE_CACHE=ON -DMONAD_ZKVM_WIDE_MEMORY_SIZE=ON -DMONAD_ZKVM_KECCAKF_MEMO=ON"
+python3 nix/regenerate-frame-opcodes.py \
+    --binutils-prefix "$RISCV_TOOLCHAIN_DIR/bin/riscv64-none-elf-"
+```
+
+The tool runs Cargo on a temporary source copy with an empty `keeps_frame`
+list. The reference ELF audit reads the local symbols emitted at the manual
+`jalr` instructions in the prefix and lag dispatch macros. It follows each
+handler from entry and verifies the native frame and callee-saved registers
+at the marked addresses, including zero-offset jumps. Both marker families
+must be present, and every listed site must be reached and checked. The
+build manifest records their count as `interpreter_manual_jumps`.
+An unsafe jump in any revision or lag copy excludes that opcode. Production
+and the deferred-gas self-test share a policy; the eager-gas self-test has its
+own. The tool rebuilds and audits all three until they pass. Only then does
+it replace `category/vm/interpreter/frame_opcodes.inc`. Use `--check` to
+compare without writing. A link failure (including a slot overflow), a jump
+in a separate helper or PUSH pair, or an unsafe jump in an already excluded
+handler stops generation for inspection. Probe ELFs are never executed.
+Ordinary builds use the checked-in list.

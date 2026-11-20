@@ -25,7 +25,8 @@
 namespace monad::vm::runtime
 {
     template <Traits traits>
-    inline void sha3(
+    // Keep the memory expansion and hash outside the fixed-size opcode slot.
+    MONAD_VM_RUNTIME_NOINLINE inline void sha3(
         Context *ctx, uint256_t *result_ptr, uint256_t const *offset_ptr,
         uint256_t const *size_ptr)
     {

@@ -186,6 +186,7 @@ namespace
         int64_t refund;
         size_t output;
         unsigned accesses;
+        std::vector<uint8_t> output_bytes;
     };
 
     template <typename Traits = GasTraits>
@@ -209,7 +210,12 @@ namespace
             result.gas_left,
             result.gas_refund,
             result.output_size,
-            host.accesses};
+            host.accesses,
+            result.output_size == 0
+                ? std::vector<uint8_t>{}
+                : std::vector<uint8_t>{
+                      result.output_data,
+                      result.output_data + result.output_size}};
     }
 
     bool failed_cleanly(Outcome const &r)
@@ -278,6 +284,61 @@ extern "C" uint32_t monad_zkvm_deferred_gas_test()
                                    r.gas == gas - 11 && r.output == 0 &&
                                    r.refund == 0 && r.accesses == 0;
     }
+    // Distinct bytes expose carries and zero-fill around both wide SHR
+    // boundaries.
+    for (unsigned shift : {127u, 128u, 129u, 191u, 192u, 193u, 255u}) {
+        bytes32_t input{};
+        for (unsigned i = 0; i < sizeof(input.bytes); ++i) {
+            input.bytes[i] = static_cast<uint8_t>(0x81u + i);
+        }
+        std::vector<uint8_t> code{PUSH32};
+        code.insert(code.end(), std::begin(input.bytes), std::end(input.bytes));
+        code.insert(
+            code.end(), {PUSH1, static_cast<uint8_t>(shift), SHR, PUSH32});
+        auto const expected =
+            store_be_as<bytes32_t>(load_be<uint256_t>(input) >> shift);
+        code.insert(code.end(), expected.bytes, expected.bytes + 32);
+        code.insert(code.end(), {EQ, PUSH2, 0, 0, JUMPI, 0xfe});
+        code[code.size() - 3] = static_cast<uint8_t>(code.size());
+        code.insert(code.end(), {JUMPDEST, STOP});
+        auto const result = run(code, 29);
+        boundary &= result.status == CallStatus::Success && result.gas == 0;
+        boundary &= failed_cleanly(run(code, 28));
+    }
+    // Exercise all five pair prefixes plus an ordinary fall-through prefix.
+    for (auto op : {ADD, SHL, SHR, SAR, PUSH1, POP}) {
+        std::vector<uint8_t> code{PUSH0, PUSH1, 1, static_cast<uint8_t>(op)};
+        if (op == PUSH1) {
+            code.push_back(2);
+        }
+        code.push_back(STOP);
+        int64_t const cost = op == POP ? 7 : 8;
+        for (int64_t gas = 0; gas <= cost + 1; ++gas) {
+            auto const r = run(code, gas);
+            boundary &= gas < cost ? failed_cleanly(r)
+                                   : r.status == CallStatus::Success &&
+                                         r.gas == gas - cost;
+        }
+        // The temporary PUSH1 must still overflow a full stack.
+        code.insert(code.begin(), 1023, PUSH0);
+        boundary &= failed_cleanly(run(code, 10000));
+    }
+    // Consecutive PUSH1s must charge each immediate and stop at stack capacity.
+    for (size_t const count : {1, 2, 3, 1023, 1024, 1025}) {
+        std::vector<uint8_t> code;
+        for (size_t i = 0; i < count; ++i) {
+            code.insert(code.end(), {PUSH1, static_cast<uint8_t>(i)});
+        }
+        code.push_back(STOP);
+        int64_t const cost = 3 * static_cast<int64_t>(count);
+        for (int64_t const gas : {int64_t{0}, cost - 1, cost, cost + 1}) {
+            auto const result = run(code, gas);
+            boundary &= gas < cost || count > 1024
+                            ? failed_cleanly(result)
+                            : result.status == CallStatus::Success &&
+                                  result.gas == gas - cost;
+        }
+    }
     check(boundary);
     // At exactly the required gas, RETURN and REVERT retain their status.
     std::array<uint8_t, 5> const ret{PUSH1, 0, PUSH1, 0, RETURN};
@@ -298,6 +359,302 @@ extern "C" uint32_t monad_zkvm_deferred_gas_test()
     check(reads);
 
     bool effects = true;
+    // Compare PUSH1 pairs with PUSH2 (same gas, no pair prefix), checking
+    // values and every gas budget through the exact success boundary.
+    auto const verify_immediate_pair =
+        [&](auto const op,
+            uint8_t const immediate,
+            bool const has_operand,
+            std::array<uint8_t, 32> const &operand,
+            std::array<uint8_t, 32> const &expected,
+            std::span<uint8_t const>
+                calldata) {
+            for (bool const fused : {false, true}) {
+                std::vector<uint8_t> code;
+                if (has_operand) {
+                    code.push_back(PUSH32);
+                    code.insert(code.end(), operand.begin(), operand.end());
+                }
+                code.push_back(fused ? PUSH1 : PUSH2);
+                if (!fused) {
+                    code.push_back(0);
+                }
+                code.insert(
+                    code.end(), {immediate, static_cast<uint8_t>(op), PUSH32});
+                code.insert(code.end(), expected.begin(), expected.end());
+                code.insert(code.end(), {EQ, PUSH2, 0, 0, JUMPI, 0xfe});
+                code[code.size() - 3] = static_cast<uint8_t>(code.size());
+                code.insert(code.end(), {JUMPDEST, STOP});
+                int64_t const cost =
+                    20 + (has_operand ? 3 : 0) + 3 + (op == SIGNEXTEND ? 5 : 3);
+                for (int64_t gas = 0; gas <= cost + 1; ++gas) {
+                    auto const result = run(code, gas, calldata);
+                    effects &= gas < cost
+                                   ? failed_cleanly(result)
+                                   : result.status == CallStatus::Success &&
+                                         result.gas == gas - cost;
+                }
+            }
+        };
+    // PUSH2 must decode both bytes and work with ordinary and fused-PUSH1
+    // followers, which use different prefix paths.
+    for (unsigned immediate : {0, 1, 255, 256, 0x1234, 65535}) {
+        for (bool pair_follower : {false, true}) {
+            std::vector<uint8_t> code{
+                PUSH2,
+                static_cast<uint8_t>(immediate >> 8),
+                static_cast<uint8_t>(immediate)};
+            if (pair_follower) {
+                code.insert(code.end(), {NOT, NOT});
+            }
+            else {
+                code.insert(code.end(), {DUP1, POP});
+            }
+            code.insert(code.end(), {PUSH0, MSTORE, PUSH1, 32, PUSH0, RETURN});
+            std::vector<uint8_t> expected(32);
+            expected[30] = static_cast<uint8_t>(immediate >> 8);
+            expected[31] = static_cast<uint8_t>(immediate);
+            int64_t const cost = pair_follower ? 22 : 21;
+            for (int64_t gas = 0; gas <= cost + 1; ++gas) {
+                auto const result = run(code, gas);
+                effects &= gas < cost ? failed_cleanly(result)
+                                      : result.status == CallStatus::Success &&
+                                            result.gas == gas - cost &&
+                                            result.output_bytes == expected;
+            }
+        }
+    }
+    for (auto follower : {STOP, NOT, JUMP, JUMPI}) {
+        std::vector<uint8_t> code(1024, PUSH0);
+        code.insert(code.end(), {PUSH2, 0, 0, static_cast<uint8_t>(follower)});
+        effects &= failed_cleanly(run(code, 10000));
+    }
+    std::array<uint8_t, 32> operand{};
+    operand.fill(0xa5);
+    for (uint8_t const immediate :
+         {0, 1, 7, 8, 9, 15, 16, 17, 23, 24, 25, 30, 31, 32, 255}) {
+        std::array<uint8_t, 32> expected;
+        expected.fill(0xff);
+        expected.back() = static_cast<uint8_t>(~immediate);
+        verify_immediate_pair(NOT, immediate, false, {}, expected, {});
+        expected.fill(0);
+        expected.back() = operand.back() & immediate;
+        verify_immediate_pair(AND, immediate, true, operand, expected, {});
+        for (uint8_t const sign_byte : {0x7f, 0x80}) {
+            auto signed_operand = operand;
+            expected = operand;
+            if (immediate < 32) {
+                size_t const sign_index = 31 - immediate;
+                signed_operand[sign_index] = sign_byte;
+                expected = signed_operand;
+                for (size_t i = 0; i < sign_index; ++i) {
+                    expected[i] = sign_byte & 0x80 ? 0xff : 0;
+                }
+            }
+            verify_immediate_pair(
+                SIGNEXTEND, immediate, true, signed_operand, expected, {});
+        }
+    }
+    std::array<uint8_t, 64> calldata;
+    for (size_t i = 0; i < calldata.size(); ++i) {
+        calldata[i] = static_cast<uint8_t>(i + 1);
+    }
+    for (size_t const length : {0, 1, 31, 32, 33, 64}) {
+        for (uint8_t const offset : {0, 1, 31, 32, 63, 64, 255}) {
+            std::array<uint8_t, 32> expected{};
+            for (size_t i = 0; i < expected.size() && offset + i < length;
+                 ++i) {
+                expected[i] = calldata[offset + i];
+            }
+            verify_immediate_pair(
+                CALLDATALOAD,
+                offset,
+                false,
+                {},
+                expected,
+                std::span{calldata}.first(length));
+        }
+    }
+    for (auto const op : {NOT, AND, SIGNEXTEND, CALLDATALOAD}) {
+        if (op == AND || op == SIGNEXTEND) {
+            std::array<uint8_t, 4> const code{
+                PUSH1, 0, static_cast<uint8_t>(op), STOP};
+            effects &= failed_cleanly(run(code, 100));
+        }
+        std::vector<uint8_t> code(1024, PUSH0);
+        code.insert(code.end(), {PUSH1, 0, static_cast<uint8_t>(op), STOP});
+        effects &= failed_cleanly(run(code, 10000));
+    }
+    // Compare fused swaps with ordinary PUSH2 + SWAP, including missing
+    // operands and every gas budget through successful execution.
+    for (unsigned depth = 1; depth <= 4; ++depth) {
+        for (unsigned count = 0; count <= 5; ++count) {
+            std::vector<uint8_t> fused;
+            for (unsigned value = 1; value <= count; ++value) {
+                fused.insert(
+                    fused.end(), {PUSH2, 0, static_cast<uint8_t>(value)});
+            }
+            auto ordinary = fused;
+            auto const swap = static_cast<uint8_t>(SWAP1 + depth - 1);
+            fused.insert(fused.end(), {PUSH1, 0xa5, swap});
+            ordinary.insert(ordinary.end(), {PUSH2, 0, 0xa5, swap});
+            // Return every resulting word so misplaced values are observable.
+            for (unsigned word = 0; word <= count; ++word) {
+                for (auto *code : {&fused, &ordinary}) {
+                    code->insert(
+                        code->end(),
+                        {PUSH2, 0, static_cast<uint8_t>(32 * word), MSTORE});
+                }
+            }
+            for (auto *code : {&fused, &ordinary}) {
+                code->insert(
+                    code->end(),
+                    {PUSH2,
+                     0,
+                     static_cast<uint8_t>(32 * (count + 1)),
+                     PUSH0,
+                     RETURN});
+            }
+            auto const successful = run(fused, 120);
+            effects &= count >= depth ? successful.status == CallStatus::Success
+                                      : failed_cleanly(successful);
+            if (count >= depth) {
+                std::vector<uint8_t> expected_bytes(32 * (count + 1));
+                for (unsigned word = 0; word <= count; ++word) {
+                    expected_bytes[32 * word + 31] = static_cast<uint8_t>(
+                        word == 0 ? count - depth + 1
+                                  : (word == depth ? 0xa5 : count - word + 1));
+                }
+                effects &= successful.output_bytes == expected_bytes;
+            }
+            for (int64_t gas = 0; gas <= 120; ++gas) {
+                auto const actual = run(fused, gas);
+                auto const expected = run(ordinary, gas);
+                effects &= actual.status == expected.status &&
+                           actual.gas == expected.gas &&
+                           actual.output_bytes == expected.output_bytes;
+            }
+        }
+        std::vector<uint8_t> full(1024, PUSH0);
+        full.insert(
+            full.end(),
+            {PUSH1, 1, static_cast<uint8_t>(SWAP1 + depth - 1), STOP});
+        effects &= failed_cleanly(run(full, 10000));
+    }
+    // Exercise immediate memory pairs with and without expansion, including
+    // unaligned offsets and exact gas boundaries. Verify the stored value.
+    for (bool const initialized_memory : {false, true}) {
+        for (uint8_t const offset : {0, 31, 64, 255}) {
+            std::vector<uint8_t> code;
+            if (initialized_memory) {
+                code = {PUSH0, PUSH2, 1, 0, MSTORE}; // Expand to 288 bytes.
+            }
+            code.insert(
+                code.end(),
+                {PUSH1,
+                 0xa5,
+                 PUSH1,
+                 offset,
+                 MSTORE,
+                 PUSH1,
+                 offset,
+                 MLOAD,
+                 PUSH1,
+                 0xa5,
+                 EQ,
+                 PUSH2,
+                 0,
+                 0,
+                 JUMPI,
+                 0xfe});
+            code[code.size() - 3] = static_cast<uint8_t>(code.size());
+            code.insert(code.end(), {JUMPDEST, STOP});
+            int64_t const memory_words =
+                (static_cast<int64_t>(offset) + 63) / 32;
+            int64_t const cost =
+                35 + (initialized_memory ? 35 : 3 * memory_words);
+            for (int64_t gas = 0; gas <= cost + 1; ++gas) {
+                auto const result = run(code, gas);
+                effects &= gas < cost ? failed_cleanly(result)
+                                      : result.status == CallStatus::Success &&
+                                            result.gas == gas - cost;
+            }
+        }
+    }
+    // Compare PUSH2 memory pairs with unfused PUSH3 at two-byte offsets.
+    for (unsigned offset : {0, 31, 255, 256, 4095, 65535}) {
+        for (bool warm : {false, true}) {
+            for (uint8_t push_opcode : {PUSH2, PUSH3}) {
+                std::vector<uint8_t> code;
+                auto const push_offset = [&] {
+                    code.push_back(push_opcode);
+                    if (push_opcode == PUSH3) {
+                        code.push_back(0);
+                    }
+                    code.insert(
+                        code.end(),
+                        {static_cast<uint8_t>(offset >> 8),
+                         static_cast<uint8_t>(offset)});
+                };
+                if (warm) {
+                    code.push_back(PUSH0);
+                    push_offset();
+                    code.push_back(MSTORE);
+                }
+                code.insert(code.end(), {PUSH1, 0xa5});
+                push_offset();
+                code.push_back(MSTORE);
+                push_offset();
+                code.insert(
+                    code.end(),
+                    {MLOAD, PUSH0, MSTORE, PUSH1, 32, PUSH0, RETURN});
+                int64_t const words = (offset + 63) / 32;
+                int64_t const cost =
+                    25 + (warm ? 8 : 0) + 3 * words + words * words / 512;
+                std::vector<uint8_t> expected(32);
+                expected.back() = 0xa5;
+                for (int64_t gas :
+                     {int64_t{0},
+                      int64_t{2},
+                      int64_t{3},
+                      int64_t{5},
+                      int64_t{6},
+                      cost - 1,
+                      cost,
+                      cost + 1}) {
+                    auto const result = run(code, gas);
+                    effects &= gas < cost
+                                   ? failed_cleanly(result)
+                                   : result.status == CallStatus::Success &&
+                                         result.gas == gas - cost &&
+                                         result.output_bytes == expected;
+                }
+            }
+        }
+    }
+    std::vector<uint8_t> push2_memory_stack{PUSH0, PUSH2, 0, 0, MSTORE};
+    push2_memory_stack.insert(
+        push2_memory_stack.end(), {PUSH2, 0, 0, MSTORE, STOP});
+    effects &= failed_cleanly(run(push2_memory_stack, 10000));
+    for (auto op : {MLOAD, MSTORE}) {
+        push2_memory_stack = {PUSH0, PUSH2, 0, 0, MSTORE};
+        push2_memory_stack.insert(push2_memory_stack.end(), 1024, PUSH0);
+        push2_memory_stack.insert(
+            push2_memory_stack.end(),
+            {PUSH2, 0, 0, static_cast<uint8_t>(op), STOP});
+        effects &= failed_cleanly(run(push2_memory_stack, 10000));
+    }
+    // A warm memory range must not hide a missing MSTORE value or a full stack.
+    std::vector<uint8_t> memory_stack{PUSH0, PUSH1, 0, MSTORE};
+    memory_stack.insert(memory_stack.end(), {PUSH1, 0, MSTORE, STOP});
+    effects &= failed_cleanly(run(memory_stack, 10000));
+    for (auto const op : {MLOAD, MSTORE}) {
+        memory_stack = {PUSH0, PUSH1, 0, MSTORE};
+        memory_stack.insert(memory_stack.end(), 1024, PUSH0);
+        memory_stack.insert(
+            memory_stack.end(), {PUSH1, 0, static_cast<uint8_t>(op), STOP});
+        effects &= failed_cleanly(run(memory_stack, 10000));
+    }
     for (auto const [op, operands] :
          std::array<std::pair<uint8_t, unsigned>, 8>{
              {{MSTORE, 2},
@@ -677,6 +1034,55 @@ extern "C" uint32_t monad_zkvm_deferred_gas_test()
                                 : berlin.status == CallStatus::Success;
     }
     check(selectors && extraction && bounds);
+    // Check every PUSH1 mask width, with and without the optional AND.
+    bool masks = true;
+    for (unsigned k = 0; k < 256; ++k) {
+        std::array<uint8_t, 32> expected{};
+        for (unsigned bit = 0; bit < k; ++bit) {
+            expected[31 - bit / 8] |= uint8_t{1} << (bit % 8);
+        }
+        for (bool apply : {false, true}) {
+            std::vector<uint8_t> code;
+            if (apply) {
+                code.push_back(PUSH32);
+                code.insert(code.end(), 32, 0xff);
+            }
+            code.insert(
+                code.end(),
+                {PUSH1, 1, PUSH1, 1, PUSH1, static_cast<uint8_t>(k), SHL, SUB});
+            if (apply) {
+                code.push_back(AND);
+            }
+            code.push_back(PUSH32);
+            code.insert(code.end(), expected.begin(), expected.end());
+            code.push_back(EQ);
+            size_t const jump = code.size();
+            code.insert(code.end(), {PUSH2, 0, 0, JUMPI, 0xfe});
+            code[jump + 2] = static_cast<uint8_t>(code.size());
+            code.insert(code.end(), {JUMPDEST, STOP});
+            int64_t const cost = apply ? 41 : 35;
+            auto const result = run(code, cost);
+            masks &= result.status == CallStatus::Success && result.gas == 0 &&
+                     result.output == 0 && result.refund == 0 &&
+                     result.accesses == 0;
+            for (int64_t gas = 0; gas < cost; ++gas) {
+                masks &= failed_cleanly(run(code, gas));
+            }
+        }
+    }
+    // Omitting the stores must not omit the temporary stack growth checks.
+    for (unsigned initial_size : {1021, 1022, 1023, 1024}) {
+        std::vector<uint8_t> code(initial_size, PUSH0);
+        code.insert(
+            code.end(), {PUSH1, 1, PUSH1, 1, PUSH1, 160, SHL, SUB, STOP});
+        auto const result = run(code, 10000);
+        masks &= initial_size == 1021 ? result.status == CallStatus::Success
+                                      : failed_cleanly(result);
+    }
+    std::array<uint8_t, 10> const missing_mask_operand{
+        PUSH1, 1, PUSH1, 1, PUSH1, 160, SHL, SUB, AND, STOP};
+    masks &= failed_cleanly(run(missing_mask_operand, 100));
+    check(masks);
     // Nonuniform immediate masks exercise byte order and all word boundaries.
     bool immediate_masks = true;
     for (unsigned width : {4u, 20u}) {

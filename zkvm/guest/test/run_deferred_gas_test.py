@@ -32,7 +32,7 @@ CASES = [
     "BLOCKHASH gas boundary", "SELFBALANCE gas boundary", "TLOAD gas boundary",
     "stack overflow", "CALL", "pure chain gas sweep", "exact-gas RETURN",
     "exact-gas REVERT", "affordable host reads", "dynamic effects, allocations and copy loops",
-    "selector chains and calldata fusions", "immediate AND masks",
+    "selector chains and calldata fusions", "mask widths and gas boundaries", "immediate AND masks",
 ]
 
 

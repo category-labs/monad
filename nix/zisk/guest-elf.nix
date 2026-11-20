@@ -4,6 +4,7 @@
 {
   stdenv,
   callPackage,
+  python3,
   writeText,
   src,
   rev,
@@ -96,6 +97,27 @@ stdenv.mkDerivation (finalAttrs: {
         echo "Guest ELF does not contain the expected build identity" >&2
         exit 1
       }
+    # Manual interpreter jumps must restore the native frame before dispatch.
+    ${python3}/bin/python3 - ${src}/nix/check-zisk.py \
+      "$out/monad-zkvm-zisk" \
+      ${riscv64-none-elf-toolchain}/bin/riscv64-none-elf- \
+      "$out/monad-zkvm-zisk.build.json" <<'PYTHON'
+import json
+import runpy
+import subprocess
+import sys
+from pathlib import Path
+checker, elf, prefix, manifest = sys.argv[1:]
+checks = runpy.run_path(checker)
+symbols = subprocess.check_output([prefix + "nm", "--print-size", "--defined-only", elf], text=True)
+disassembly = subprocess.check_output([prefix + "objdump", "-d", elf], text=True)
+count = checks["check_hand_made_jumps"](
+    disassembly, checks["manual_jump_addresses"](symbols), checks["parse_function_sizes"](symbols))
+path = Path(manifest)
+data = json.loads(path.read_text())
+data["interpreter_manual_jumps"] = count
+path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
+PYTHON
     runHook postInstallCheck
   '';
 })

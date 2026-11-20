@@ -25,9 +25,10 @@
     #include <cstdint>
 
 /**
- * Inline handlers into their opcode slots in execute.cpp. Tail-called helpers
- * remain separate functions (MONAD_VM_TWIN_CALL); handler pointers carry no
- * calling-convention attribute (MONAD_VM_POINTER_CALL).
+ * Inline handlers into their opcode slots in execute.cpp. Slots contain copies
+ * specialized by instruction-pointer lag, or relays to oversized bodies.
+ * Tail-called helpers remain separate functions (MONAD_VM_TWIN_CALL); handler
+ * pointers carry no calling-convention attribute (MONAD_VM_POINTER_CALL).
  */
     #define MONAD_VM_INSTRUCTION_CALL __attribute__((always_inline)) inline
     #define MONAD_VM_INLINE_INSTRUCTION_CALL MONAD_VM_INSTRUCTION_CALL

@@ -48,7 +48,8 @@ check_license() {
     local num_lines=${#patterns[@]}
 
     # Read the first num_lines (+1 for potential blank line) into an array
-    mapfile -n $((num_lines + 1)) -t lines < "$file"
+    local lines=()
+    mapfile -n $((num_lines + 1)) -t lines < "$file" || return 1
 
     # Check first line (copyright) with regex
     if ! [[ "${lines[0]}" =~ ${patterns[0]} ]]; then
@@ -90,8 +91,11 @@ while IFS= read -r -d '' file; do
     new_files["$file"]=1
 done < <(git diff --cached --name-only --diff-filter=A -z --)
 
-for file in $(git ls-files -- '*.rs' '*.h' '*.hpp' '*.c' '*.cpp' '*.S'); do
-    directory=$(dirname "$file")
+while IFS= read -r -d '' file; do
+    directory=.
+    if [[ "$file" == */* ]]; then
+        directory=${file%/*}
+    fi
 
     if [ "$directory" == "utils/clang-tidy-auto-const" ]; then
         continue
@@ -110,12 +114,12 @@ for file in $(git ls-files -- '*.rs' '*.h' '*.hpp' '*.c' '*.cpp' '*.S'); do
         continue
     fi
 
-    exit_code=$((exit_code + 1))
+    exit_code=1
 
-    echo "$file" >&2
-done
+    printf '%s\n' "$file" >&2
+done < <(git ls-files -z -- '*.rs' '*.h' '*.hpp' '*.c' '*.cpp' '*.S')
 
-for file in $(git ls-files -- '*.py' '*CMakeLists.txt' '*.cmake'); do
+while IFS= read -r -d '' file; do
     license_lines=("${PYTHON_LICENSE_LINES[@]}")
     if [ -n "${new_files[$file]+x}" ]; then
         license_lines=("${NEW_PYTHON_LICENSE_LINES[@]}")
@@ -125,9 +129,9 @@ for file in $(git ls-files -- '*.py' '*CMakeLists.txt' '*.cmake'); do
         continue
     fi
 
-    exit_code=$((exit_code + 1))
+    exit_code=1
 
-    echo "$file" >&2
-done
+    printf '%s\n' "$file" >&2
+done < <(git ls-files -z -- '*.py' '*CMakeLists.txt' '*.cmake')
 
 exit $exit_code

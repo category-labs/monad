@@ -98,11 +98,17 @@ struct monad_executor_state
 // block hash lookups (e.g. the BLOCKHASH opcode) fail except for blocks
 // simulated by `eth_simulateV1` and its base block. Though,
 // `monad_executor_run_transactions` rejects all requests.
+//
+// A nonzero `domain_chain_id` creates the executor of that private domain:
+// `dbpath` is the domain's database, and `monad_executor_eth_call_submit`
+// executes under the domain's rules, as the domain of the L1 chain the request
+// names. The other requests are rejected.
 struct monad_executor *monad_executor_create(
     struct monad_executor_pool_config low_pool_conf,
     struct monad_executor_pool_config high_pool_conf,
     struct monad_executor_pool_config block_pool_conf,
-    unsigned tx_exec_num_fibers, uint64_t node_lru_max_mem, char const *dbpath);
+    unsigned tx_exec_num_fibers, uint64_t node_lru_max_mem, char const *dbpath,
+    uint64_t domain_chain_id);
 
 void monad_executor_destroy(struct monad_executor *);
 

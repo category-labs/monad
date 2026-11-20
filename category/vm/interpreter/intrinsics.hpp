@@ -15,8 +15,31 @@
 
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
+#include <utility>
+
 // Host reads of interpreter bits and bytes. Guest builds override them through
 // their shadow header.
 
 // Bit I % 64 of WORD.
 #define MONAD_VM_TEST_BIT(WORD, I) (((WORD) >> ((I) & 63)) & 1)
+
+namespace monad::vm::interpreter
+{
+    namespace detail
+    {
+        // Assemble K big-endian bytes directly to avoid a temporary and a
+        // software byte swap on targets without a byte-swap instruction.
+        template <size_t K>
+        [[gnu::always_inline]] inline uint64_t
+        load_be_k(uint8_t const *const p) noexcept
+        {
+            static_assert(K >= 1 && K <= 8);
+            return [p]<size_t... Is>(std::index_sequence<Is...>) {
+                return (
+                    (static_cast<uint64_t>(p[Is]) << (8 * (K - 1 - Is))) | ...);
+            }(std::make_index_sequence<K>{});
+        }
+    }
+}

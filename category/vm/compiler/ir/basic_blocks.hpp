@@ -369,7 +369,7 @@ namespace monad::vm::compiler::basic_blocks
         current_offset++;
 
         auto const operands = eip8024_operands(opcode, imm);
-        auto const [min_stack, stack_increase] =
+        auto const [min_stack, stack_outputs] =
             eip8024_stack_effect(opcode, operands);
 
         if (opcode == EXCHANGE) {
@@ -379,7 +379,7 @@ namespace monad::vm::compiler::basic_blocks
                 info.min_gas,
                 min_stack,
                 operands,
-                stack_increase,
+                stack_outputs,
                 info.dynamic_gas);
         }
         return Instruction(
@@ -388,7 +388,7 @@ namespace monad::vm::compiler::basic_blocks
             info.min_gas,
             min_stack,
             operands.first,
-            stack_increase,
+            stack_outputs,
             info.dynamic_gas);
     }
 
@@ -434,7 +434,7 @@ namespace monad::vm::compiler::basic_blocks
             }
         }
 
-        auto const imm_size = info.num_args;
+        auto const imm_size = info.immediate_bytes;
         uint256_t imm_value{0};
 
         if (imm_size > 0) {
@@ -453,7 +453,7 @@ namespace monad::vm::compiler::basic_blocks
             info.min_gas,
             info.min_stack,
             info.index,
-            info.stack_increase,
+            info.stack_outputs,
             info.dynamic_gas);
     }
 

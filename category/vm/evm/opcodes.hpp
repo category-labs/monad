@@ -37,14 +37,14 @@ namespace monad::vm::compiler
         std::string_view name;
 
         /**
-         * The number of argument bytes that follow this opcode in a binary EVM
+         * The number of immediate bytes that follow this opcode in a binary EVM
          * program.
          *
          * This value is 0 for all instructions other than the `PUSHN` family,
          * each of which expects N bytes to follow, and `DUPN`, `SWAPN` and
          * `EXCHANGE`, which expect one.
          */
-        uint8_t num_args;
+        uint8_t immediate_bytes;
 
         /**
          * The minimum EVM stack size required to execute this instruction.
@@ -52,9 +52,11 @@ namespace monad::vm::compiler
         uint8_t min_stack;
 
         /**
-         * The EVM stack size increase after executing this instruction.
+         * The number of stack values replacing the min_stack input values.
+         * Includes preserved values for DUP and SWAP; the net size change is
+         * stack_outputs - min_stack.
          */
-        uint8_t stack_increase;
+        uint8_t stack_outputs;
 
         /**
          * Whether the gas cost of this instruction is determined at runtime.
@@ -82,15 +84,15 @@ namespace monad::vm::compiler
     {
         return std::tie(
                    a.name,
-                   a.num_args,
+                   a.immediate_bytes,
                    a.min_stack,
-                   a.stack_increase,
+                   a.stack_outputs,
                    a.min_gas) ==
                std::tie(
                    b.name,
-                   b.num_args,
+                   b.immediate_bytes,
                    b.min_stack,
-                   b.stack_increase,
+                   b.stack_outputs,
                    b.min_gas);
     }
 
@@ -678,7 +680,7 @@ namespace monad::vm::compiler
     struct Eip8024StackEffect
     {
         uint8_t min_stack;
-        uint8_t stack_increase;
+        uint8_t stack_outputs;
     };
 
     constexpr Eip8024StackEffect eip8024_stack_effect(

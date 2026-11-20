@@ -126,7 +126,7 @@ namespace monad::vm::utils::evm_as::internal
                 return false;
             }
 
-            vstack_size = (vstack_size - info.min_stack) + info.stack_increase;
+            vstack_size = (vstack_size - info.min_stack) + info.stack_outputs;
 
             return check_stackoverflow();
         }
@@ -167,7 +167,7 @@ namespace monad::vm::utils::evm_as::internal
 
         bool operator()(Eip8024I const &eip8024)
         {
-            auto const [min_stack, stack_increase] =
+            auto const [min_stack, stack_outputs] =
                 compiler::eip8024_stack_effect(
                     eip8024.opcode, {eip8024.n, eip8024.m});
 
@@ -176,7 +176,7 @@ namespace monad::vm::utils::evm_as::internal
                 return false;
             }
 
-            vstack_size = (vstack_size - min_stack) + stack_increase;
+            vstack_size = (vstack_size - min_stack) + stack_outputs;
 
             return check_stackoverflow();
         }

@@ -40,13 +40,17 @@ namespace monad::vm::interpreter
             if constexpr (debug_enabled) {
                 trace(*analysis, gas_remaining, instr_ptr);
             }
+            // Resolve the table once for the tail-call chain.
+#if defined(MONAD_ZKVM_ZISK)
+            auto const *const table_base = instruction_table<traits>.data();
+#endif
             instruction_table<traits>[*instr_ptr](
                 *ctx,
                 *analysis,
                 stack_bottom,
                 stack_top,
                 gas_remaining,
-                instr_ptr);
+                instr_ptr MONAD_VM_TBL_ARG);
         }
     }
 
@@ -60,7 +64,7 @@ namespace monad::vm::interpreter
         ctx.add256_params.cin = 0;
         ctx.sub256_params.cin = 1;
 #endif
-        trampoline(ctx, analysis, stack_ptr, core_loop<traits>);
+        trampoline<core_loop<traits>>(ctx, analysis, stack_ptr);
     }
 
     EXPLICIT_TRAITS(execute);

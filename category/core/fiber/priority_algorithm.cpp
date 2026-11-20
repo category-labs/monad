@@ -15,6 +15,7 @@
 
 #include <category/core/fiber/priority_algorithm.hpp>
 
+#include <category/core/assert.h>
 #include <category/core/fiber/config.hpp>
 #include <category/core/fiber/priority_properties.hpp>
 #include <category/core/fiber/priority_queue.hpp>
@@ -50,6 +51,23 @@ void PriorityAlgorithm::awakened(
         rqueue_.push(ctx);
         recent_ = true;
     }
+}
+
+bool PriorityAlgorithm::awakened_from_remote(
+    boost::fibers::context *const ctx) noexcept
+{
+    // Runs on the waking thread, so it touches only the shared rqueue_, never
+    // lqueue_ or recent_, which belong to the owning thread.
+    MONAD_ASSERT(!ctx->is_context(boost::fibers::type::pinned_context));
+    // A fiber started with launch::dispatch can block before awakened() has
+    // given it properties; rqueue_ orders by them, so let the owner's
+    // dispatcher schedule it.
+    if (!ctx->get_properties()) {
+        return false;
+    }
+    ctx->detach();
+    rqueue_.push(ctx);
+    return true;
 }
 
 context *PriorityAlgorithm::pick_next() noexcept

@@ -68,9 +68,22 @@
 #define MONAD_VM_TWIN_CALL MONAD_VM_INSTRUCTION_CALL
 #define MONAD_VM_POINTER_CALL MONAD_VM_INSTRUCTION_CALL
 
+// stack_lower_bound points at the stack's first element.
+#define MONAD_VM_STACK_LOWER_BOUND_BIAS 0
+
+// Handlers receive the code analysis and load the stack limit from ctx.
+#define MONAD_VM_DISPATCH_STATE_TYPE Intercode const &
+#define MONAD_VM_DISPATCH_STATE_PARAM Intercode const &analysis
+#define MONAD_VM_DISPATCH_STATE_ARG analysis
+#define MONAD_VM_CODE_VIEW analysis
+#define MONAD_VM_STACK_LIMIT ctx.stack_limit
+
 // All dispatching handlers must use MONAD_VM_TBL_PARAM and MONAD_VM_TBL_ARG,
 // which pass no table base here: handlers read the table directly.
 #define MONAD_VM_TBL_TYPE
 #define MONAD_VM_TBL_PARAM
 #define MONAD_VM_TBL_ARG
 #define MONAD_VM_TABLE_REF instruction_table<traits>
+
+// Every handler checks gas where it charges it.
+#define MONAD_VM_SHOULD_CHECK_GAS(Instr, DYNAMIC) true

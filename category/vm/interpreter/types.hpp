@@ -29,8 +29,8 @@ namespace monad::vm::interpreter
     // Use void const * to pass either a slot base or a pointer table without
     // making InstrEval recursive.
     using InstrEval = void MONAD_VM_POINTER_CALL (*)(
-        runtime::Context &, Intercode const &, uint256_t const *, StackTop,
-        int64_t, uint8_t const *MONAD_VM_TBL_TYPE);
+        runtime::Context &, MONAD_VM_DISPATCH_STATE_TYPE, uint256_t const *,
+        StackTop, int64_t, uint8_t const *MONAD_VM_TBL_TYPE);
 
     using InstrTable = std::array<InstrEval, 256>;
 }

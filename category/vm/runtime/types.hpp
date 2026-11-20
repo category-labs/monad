@@ -292,6 +292,10 @@ namespace monad::vm::runtime
         exit_stack_ptr_t exit_stack_ptr = nullptr;
         bool is_stack_unwinding_active = false;
 
+        // One-past stack limit, cached by interpreter::execute.
+        // Keep after members whose offsets are used by assembly.
+        uint256_t const *stack_limit = nullptr;
+
 #if defined(MONAD_ZKVM_ZISK)
         // Shared temporary for SWAP1-16: no nested SWAP can occur between
         // saving and restoring it. Keep last to preserve assembly offsets.
@@ -302,6 +306,17 @@ namespace monad::vm::runtime
         ZiskAdd256Params add256_params{nullptr, nullptr, 0, nullptr};
         // SUB uses carry-in 1 for a + ~b + 1.
         ZiskAdd256Params sub256_params{nullptr, nullptr, 1, nullptr};
+
+        // execute() initializes code metadata here; handlers pass the stack
+        // limit. Bias the code pointer by one so jumps can skip JUMPDEST with
+        // one add.
+        uint8_t const *landing_base = nullptr;
+        size_t code_bound = 0;
+        uint64_t const *jumpdest_words = nullptr;
+
+        // Saved by core_loop so handlers can reload their biased lower bound
+        // after runtime calls, alongside stack_limit.
+        uint256_t const *frame_stack_lower_bound = nullptr;
 #endif
 
         [[gnu::always_inline]]

@@ -32,6 +32,12 @@
 // SHIFT is the net stack change from earlier fused opcodes; 0 checks the
 // stack at handler entry.
 #define MONAD_VM_CHECK_REQUIREMENTS_AT(Instr, SHIFT, EXIT)                     \
+    MONAD_VM_CHECK_REQUIREMENTS_AT_EXITS(Instr, SHIFT, EXIT, EXIT, EXIT)
+
+// The same checks, with the gas test leaving through GAS_EXIT(OutOfGas) and
+// the overflow test through OVERFLOW_EXIT(Error).
+#define MONAD_VM_CHECK_REQUIREMENTS_AT_EXITS(                                  \
+    Instr, SHIFT, EXIT, GAS_EXIT, OVERFLOW_EXIT)                               \
     do {                                                                       \
         static_assert(!compiler::has_operand_dependent_stack_effect(Instr));   \
         static constexpr auto info = compiler::opcode_table<traits>[Instr];    \
@@ -39,8 +45,11 @@
         if constexpr (info.min_gas > 0) {                                      \
             gas_remaining -= info.min_gas;                                     \
                                                                                \
-            if (MONAD_UNLIKELY(gas_remaining < 0)) {                           \
-                EXIT(OutOfGas);                                                \
+            if constexpr (MONAD_VM_SHOULD_CHECK_GAS(                           \
+                              Instr, info.dynamic_gas)) {                      \
+                if (MONAD_UNLIKELY(gas_remaining < 0)) {                       \
+                    GAS_EXIT(OutOfGas);                                        \
+                }                                                              \
             }                                                                  \
         }                                                                      \
                                                                                \
@@ -48,28 +57,36 @@
             break;                                                             \
         }                                                                      \
                                                                                \
-        auto const stack_size =                                                \
-            (stack_top.next_slot() + (SHIFT)) - stack_bottom;                  \
-        MONAD_DEBUG_ASSERT(stack_size <= 1024);                                \
+        /* Compare against pointer bounds: addition costs less than            \
+         * subtracting pointers on ZisK. */                                    \
+        uint256_t const *const stack_at = stack_top.next_slot() + (SHIFT);     \
+        MONAD_DEBUG_ASSERT(                                                    \
+            stack_at -                                                         \
+                (stack_lower_bound - MONAD_VM_STACK_LOWER_BOUND_BIAS) <=       \
+            1024);                                                             \
                                                                                \
-        if constexpr (info.min_stack > 0) {                                    \
-            if (MONAD_UNLIKELY(stack_size < info.min_stack)) {                 \
-                EXIT(Error);                                                   \
-            }                                                                  \
+        if (MONAD_UNLIKELY(                                                    \
+                !::monad::vm::interpreter::stack_holds<info.min_stack>(        \
+                    stack_top + (SHIFT), stack_lower_bound))) {                \
+            EXIT(Error);                                                       \
         }                                                                      \
                                                                                \
         if constexpr (info.stack_outputs > 0) {                                \
             static constexpr auto delta = info.stack_outputs - info.min_stack; \
-            static constexpr auto max_safe_size = 1024 - delta;                \
+            /* Reuse the cached limit to avoid rebuilding it or subtracting    \
+             * pointers. For growing opcodes, delta == 1, so the adjustment    \
+             * limit - 1024 is zero. */                                        \
+            static constexpr auto limit = 1025 - delta;                        \
                                                                                \
             /* We only need to emit the overflow check if this instruction     \
              * could actually cause an overflow; if the instruction could only \
              * leave the stack with >1024 elements if it _began_ with >1024,   \
              * then we assume that the input stack was valid and elide the     \
              * check. */                                                       \
-            if constexpr (max_safe_size < 1024) {                              \
-                if (MONAD_UNLIKELY(stack_size > max_safe_size)) {              \
-                    EXIT(Error);                                               \
+            if constexpr (limit <= 1024) {                                     \
+                if (MONAD_UNLIKELY(                                            \
+                        stack_at >= MONAD_VM_STACK_LIMIT + (limit - 1024))) {  \
+                    OVERFLOW_EXIT(Error);                                      \
                 }                                                              \
             }                                                                  \
         }                                                                      \
@@ -80,12 +97,68 @@ namespace monad::vm::interpreter
 {
     using enum runtime::StatusCode;
 
-    template <uint8_t Instr, Traits traits>
+    // Checkpoints of targets that defer gas checks (MONAD_VM_SHOULD_CHECK_GAS).
+    // Keep gas checks before observable effects and jumps. Other opcodes
+    // still charge gas, but may defer exhaustion to the next checkpoint.
+    // Host reads also need a checkpoint: even a discarded read may require
+    // a witness entry. STOP, RETURN and REVERT check before ending the frame.
+    consteval bool
+    should_check_gas(uint8_t const op, bool const dynamic_gas) noexcept
+    {
+        using enum compiler::EvmOpCode;
+        // Existing memory is frame-local; growth checks gas before resizing.
+        if (op == MLOAD || op == MSTORE || op == MSTORE8) {
+            return false;
+        }
+        return dynamic_gas || op == JUMP || op == JUMPI || op == GAS ||
+               op == TSTORE || op == SELFDESTRUCT || op == BLOCKHASH ||
+               op == SELFBALANCE || op == TLOAD;
+    }
+
+    // Separate entry points for the same errors; keep them out of line.
+    [[noreturn, gnu::noinline, gnu::cold]] inline void
+    exit_out_of_gas(runtime::Context &ctx) noexcept
+    {
+        ctx.exit(OutOfGas);
+    }
+
+    [[noreturn, gnu::noinline, gnu::cold]] inline void
+    exit_stack_overflow(runtime::Context &ctx) noexcept
+    {
+        ctx.exit(Error);
+    }
+
+    // Shared operand-count check for individual opcodes and fused sequences.
+    template <int32_t Required>
+    [[gnu::always_inline]] inline bool
+    stack_holds(StackTop const top, uint256_t const *const stack_lower_bound)
+    {
+        auto const *const stack_top = top.next_slot();
+        if constexpr (Required == 0) {
+            return true;
+        }
+        else if constexpr (Required == MONAD_VM_STACK_LOWER_BOUND_BIAS) {
+            return stack_top >= stack_lower_bound;
+        }
+        else if constexpr (Required == MONAD_VM_STACK_LOWER_BOUND_BIAS + 1) {
+            return stack_top > stack_lower_bound;
+        }
+        else {
+            return stack_top >=
+                   stack_lower_bound +
+                       (Required - MONAD_VM_STACK_LOWER_BOUND_BIAS);
+        }
+    }
+
+    template <uint8_t Instr, Traits traits, typename Analysis>
     [[gnu::always_inline]] inline void check_requirements(
-        runtime::Context &ctx, Intercode const &,
-        uint256_t const *const stack_bottom, StackTop const stack_top,
+        runtime::Context &ctx, Analysis const &,
+        uint256_t const *const stack_lower_bound, StackTop const stack_top,
         int64_t &gas_remaining)
     {
+        // MONAD_VM_STACK_LIMIT may name the handlers' second argument; this
+        // caller has the analysis there.
+        [[maybe_unused]] uint256_t const *const stack_limit = ctx.stack_limit;
         MONAD_VM_CHECK_REQUIREMENTS(Instr, ctx.exit);
     }
 
@@ -97,7 +170,7 @@ namespace monad::vm::interpreter
 
     template <uint8_t Instr, Traits traits>
     [[gnu::always_inline]] inline Eip8024Operands check_requirements_eip8024(
-        runtime::Context &ctx, uint256_t const *const stack_bottom,
+        runtime::Context &ctx, uint256_t const *const stack_lower_bound,
         StackTop const stack_top, int64_t &gas_remaining, uint8_t const imm)
     {
         static constexpr auto info = compiler::opcode_table<traits>[Instr];
@@ -116,7 +189,9 @@ namespace monad::vm::interpreter
         ptrdiff_t const min_stack =
             compiler::eip8024_stack_effect(Instr, operands).min_stack;
 
-        auto const stack_size = stack_top.next_slot() - stack_bottom;
+        auto const stack_size =
+            stack_top.next_slot() -
+            (stack_lower_bound - MONAD_VM_STACK_LOWER_BOUND_BIAS);
         MONAD_DEBUG_ASSERT(stack_size <= 1024);
         if (MONAD_UNLIKELY(stack_size < min_stack)) {
             ctx.exit(Error);

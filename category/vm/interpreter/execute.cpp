@@ -42,8 +42,8 @@ namespace monad::vm::interpreter
         extern "C" [[gnu::section(".monad_vm_slot." #NAME "." #OP)]] void      \
             monad_vm_slot_##NAME##_##OP(                                       \
                 runtime::Context &ctx,                                         \
-                Intercode const &analysis,                                     \
-                uint256_t const *const stack_bottom,                           \
+                MONAD_VM_DISPATCH_STATE_PARAM,                                 \
+                uint256_t const *const stack_lower_bound,                      \
                 StackTop const stack_top,                                      \
                 int64_t const gas_remaining,                                   \
                 uint8_t const *const instr_ptr,                                \
@@ -53,8 +53,8 @@ namespace monad::vm::interpreter
                 instruction_table<EvmTraits<REV>>[0x##OP];                     \
             __attribute__((musttail)) return handler(                          \
                 ctx,                                                           \
-                analysis,                                                      \
-                stack_bottom,                                                  \
+                MONAD_VM_DISPATCH_STATE_ARG,                                   \
+                stack_lower_bound,                                             \
                 stack_top,                                                     \
                 gas_remaining,                                                 \
                 instr_ptr,                                                     \
@@ -119,7 +119,11 @@ namespace monad::vm::interpreter
             uint256_t *stack_ptr, void *)
         {
             StackTop const stack_top{stack_ptr};
-            auto const *const stack_bottom = stack_ptr;
+            auto const *const stack_lower_bound =
+                stack_ptr + MONAD_VM_STACK_LOWER_BOUND_BIAS;
+#if defined(MONAD_ZKVM_ZISK)
+            ctx->frame_stack_lower_bound = stack_lower_bound;
+#endif
             auto const *const instr_ptr = analysis->code();
             auto const gas_remaining = ctx->gas_remaining;
 
@@ -145,8 +149,12 @@ namespace monad::vm::interpreter
 #endif
             first(
                 *ctx,
+#if defined(MONAD_ZKVM_ZISK)
+                ctx->stack_limit,
+#else
                 *analysis,
-                stack_bottom,
+#endif
+                stack_lower_bound,
                 stack_top,
                 gas_remaining,
                 instr_ptr MONAD_VM_TBL_ARG);
@@ -158,10 +166,18 @@ namespace monad::vm::interpreter
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t *const stack_ptr)
     {
+        // Cache the one-past stack limit for comparisons with
+        // StackTop::next_slot().
+        ctx.stack_limit = stack_ptr + runtime::EvmStackAllocatorMeta::size;
+
 #if defined(MONAD_ZKVM_ZISK)
-        // The carry-ins are fixed; zisk_add256 sets the pointers on every call.
+        // The carry-ins are fixed; ADD and SUB set the pointers on every call.
         ctx.add256_params.cin = 0;
         ctx.sub256_params.cin = 1;
+        // Keep code metadata in ctx; handlers pass the stack limit instead.
+        ctx.landing_base = analysis.code() + 1;
+        ctx.code_bound = analysis.size();
+        ctx.jumpdest_words = analysis.jumpdest_words();
 #endif
         trampoline<core_loop<traits>>(ctx, analysis, stack_ptr);
     }

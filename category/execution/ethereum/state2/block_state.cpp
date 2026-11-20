@@ -24,7 +24,8 @@
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
 #include <category/execution/ethereum/db/db.hpp>
 #include <limits>
-#if defined(MONAD_ZKVM_ZISK) && !defined(MONAD_ZKVM_SELFTEST)
+#if defined(MONAD_ZKVM_ZISK) && !defined(MONAD_ZKVM_SELFTEST) &&               \
+    !defined(MONAD_ZKVM_GAS_SELFTEST)
     #include <category/execution/ethereum/db/partial_trie_db.hpp>
 #endif
 #include <category/execution/ethereum/state2/block_state.hpp>
@@ -51,7 +52,8 @@ namespace
     // The ZisK witness uses PartialTrieDb. Self-tests also use a stub Db.
     auto &read_db(Db &db) noexcept
     {
-#if defined(MONAD_ZKVM_ZISK) && !defined(MONAD_ZKVM_SELFTEST)
+#if defined(MONAD_ZKVM_ZISK) && !defined(MONAD_ZKVM_SELFTEST) &&               \
+    !defined(MONAD_ZKVM_GAS_SELFTEST)
         return static_cast<PartialTrieDb &>(db);
 #else
         return db;

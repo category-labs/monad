@@ -15,7 +15,7 @@
 
 #pragma once
 
-#include <category/vm/interpreter/intrinsics.hpp>
+#include <category/vm/interpreter/jumpdest_map.hpp>
 #include <category/vm/runtime/bin.hpp>
 
 #include <algorithm>
@@ -41,42 +41,8 @@ namespace monad::vm::interpreter
         static constexpr size_t end_padding_size = 32 + 1;
 
     public:
-        // One bit per code byte. Explicit 64-bit words define the layout for
-        // precompile access, unlike std::vector<bool>'s opaque storage.
-        class JumpdestMap
-        {
-            std::vector<uint64_t> words_;
-
-        public:
-            JumpdestMap() = default;
-
-            explicit JumpdestMap(size_t const bits)
-                : words_((bits + 63) / 64, 0)
-            {
-            }
-
-            void set(size_t const i) noexcept
-            {
-                // Set bit i % 64 in word i / 64.
-                words_[i >> 6] |= uint64_t{1} << (i & 63);
-            }
-
-            bool test(size_t const i) const noexcept
-            {
-                // Read bit i % 64 from word i / 64.
-                return MONAD_VM_TEST_BIT(words_[i >> 6], i);
-            }
-
-            size_t word_count() const noexcept
-            {
-                return words_.size();
-            }
-
-            uint64_t *words() noexcept
-            {
-                return words_.data();
-            }
-        };
+        // One bit per code byte (jumpdest_map.hpp).
+        using JumpdestMap = interpreter::JumpdestMap;
 
         explicit Intercode(std::span<uint8_t const> const);
 
@@ -110,6 +76,25 @@ namespace monad::vm::interpreter
         bool is_jumpdest(size_t const pc) const noexcept
         {
             return pc < *code_size_ && jumpdest_map_.test(pc);
+        }
+
+        uint64_t const *jumpdest_words() const noexcept
+        {
+            return jumpdest_map_.words();
+        }
+
+        // Requires pc < 2^16: callers use load_be_k<2>, which combines exactly
+        // two bytes and leaves the upper bits zero. A map that covers this
+        // range, with zero bits beyond the code, needs no bounds check. Keep
+        // size_t to avoid another zero-extension of the already decoded value.
+        bool is_jumpdest16(size_t const pc) const noexcept
+        {
+            if constexpr (JumpdestMap::covers_push2) {
+                return jumpdest_map_.test(pc);
+            }
+            else {
+                return is_jumpdest(pc);
+            }
         }
 
         [[gnu::always_inline]]

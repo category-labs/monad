@@ -60,13 +60,8 @@ add_test_fixtures(
 
 add_test_fixtures(
   MonadSpecTestFixtures
-  "https://github.com/monad-developers/execution-specs/releases/download/tests-monad@v1.2.2/fixtures_monad.tar.gz"
-  c96c822d2e187e9168aa20f2c158c8a2de96ea076f6e6c473a1b6d3fc5c064df)
-
-add_test_fixtures(
-  MonadAmsterdamSpecTestFixtures
-  "https://github.com/monad-developers/execution-specs/releases/download/tests-monad_eip7708%2B7843%2B7981%2B7997%2B8024%2B8246%40v0.3.1/fixtures_monad_eip7708+7843+7981+7997+8024+8246.tar.gz"
-  9ee1075421aa620b08690c9df9a302a9c11654c0ef0eaed561f650936288f98e)
+  "https://github.com/monad-developers/execution-specs/releases/download/tests-monad@v1.3.0/fixtures_monad.tar.gz"
+  a19da286fec086ecd82ce06057e0afa3219d4f28bc1e07a3adffad2e1bd4757e)
 
 add_executable(monad-ethereum-test)
 target_link_libraries(monad-ethereum-test PRIVATE GTest::gtest monad-test-utils)
@@ -151,13 +146,7 @@ add_monad_test(FORK MONAD_EIGHT)
 add_monad_test(FORK MONAD_NINE)
 add_monad_test(FORK MONAD_TEN)
 
-# MONAD_NEXT Amsterdam spec tests, from a separate fixtures release.
-include(${CMAKE_CURRENT_SOURCE_DIR}/exclude/MONAD_NEXT_amsterdam.cmake)
-list(JOIN MONAD_NEXT_amsterdam_excluded_tests ":" TESTS_EXCLUDED)
-add_sharded_test(MONAD_NEXT_amsterdam_monad_ethereum_test
-                 COMMAND monad-ethereum-test --fork MONAD_NEXT
-                         --blockchain-tests ${CMAKE_BINARY_DIR}/src/MonadAmsterdamSpecTestFixtures/blockchain_tests
-                         --gtest_filter=-:${TESTS_EXCLUDED})
+add_monad_test(FORK MONAD_NEXT_AMSTERDAM)
 
 add_ethereum_test(FORK berlin)
 add_ethereum_test(FORK london)

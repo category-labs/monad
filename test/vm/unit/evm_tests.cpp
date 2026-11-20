@@ -740,7 +740,7 @@ namespace
              ++evm_rev) {
             result.push_back(static_cast<EvmRevision>(evm_rev));
         }
-        for (auto monad_rev = 0; monad_rev <= MONAD_NEXT; ++monad_rev) {
+        for (auto monad_rev = 0; monad_rev <= MONAD_MAX_REVISION; ++monad_rev) {
             result.push_back(static_cast<monad_revision>(monad_rev));
         }
         return result;

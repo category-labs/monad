@@ -64,7 +64,9 @@
     template decltype(f<::monad::MonadTraits<MONAD_TEN>>)                      \
         f<::monad::MonadTraits<MONAD_TEN>>;                                    \
     template decltype(f<::monad::MonadTraits<MONAD_NEXT>>)                     \
-        f<::monad::MonadTraits<MONAD_NEXT>>;
+        f<::monad::MonadTraits<MONAD_NEXT>>;                                   \
+    template decltype(f<::monad::MonadTraits<MONAD_NEXT_AMSTERDAM>>)           \
+        f<::monad::MonadTraits<MONAD_NEXT_AMSTERDAM>>;
 
 #define EXPLICIT_TRAITS(f)                                                     \
     EXPLICIT_EVM_TRAITS(f)                                                     \
@@ -94,7 +96,8 @@
     template class c<::monad::MonadTraits<MONAD_EIGHT>>;                       \
     template class c<::monad::MonadTraits<MONAD_NINE>>;                        \
     template class c<::monad::MonadTraits<MONAD_TEN>>;                         \
-    template class c<::monad::MonadTraits<MONAD_NEXT>>;
+    template class c<::monad::MonadTraits<MONAD_NEXT>>;                        \
+    template class c<::monad::MonadTraits<MONAD_NEXT_AMSTERDAM>>;
 
 #define EXPLICIT_TRAITS_CLASS(c)                                               \
     EXPLICIT_EVM_TRAITS_CLASS(c)                                               \
@@ -112,7 +115,8 @@
     template struct c<::monad::MonadTraits<MONAD_EIGHT>>;                      \
     template struct c<::monad::MonadTraits<MONAD_NINE>>;                       \
     template struct c<::monad::MonadTraits<MONAD_TEN>>;                        \
-    template struct c<::monad::MonadTraits<MONAD_NEXT>>;
+    template struct c<::monad::MonadTraits<MONAD_NEXT>>;                       \
+    template struct c<::monad::MonadTraits<MONAD_NEXT_AMSTERDAM>>;
 
 // Template member functions
 //
@@ -166,7 +170,8 @@
     template void id<&f<::monad::MonadTraits<MONAD_EIGHT>>>();                 \
     template void id<&f<::monad::MonadTraits<MONAD_NINE>>>();                  \
     template void id<&f<::monad::MonadTraits<MONAD_TEN>>>();                   \
-    template void id<&f<::monad::MonadTraits<MONAD_NEXT>>>();
+    template void id<&f<::monad::MonadTraits<MONAD_NEXT>>>();                  \
+    template void id<&f<::monad::MonadTraits<MONAD_NEXT_AMSTERDAM>>>();
 
 #define EXPLICIT_MONAD_TRAITS_MEMBER_HELPER(f, id)                             \
     EXPLICIT_TRAITS_MEMBER_FN(id)                                              \

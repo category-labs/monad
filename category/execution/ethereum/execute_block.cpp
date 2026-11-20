@@ -38,6 +38,7 @@
 #include <category/execution/ethereum/execute_block.hpp>
 #include <category/execution/ethereum/execute_block_header.hpp>
 #include <category/execution/ethereum/execute_transaction.hpp>
+#include <category/execution/ethereum/execution_modalities.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/process_requests.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
@@ -298,7 +299,8 @@ Result<std::vector<Receipt>> execute_block(
     std::span<std::unique_ptr<trace::StateTracer>> const state_tracers,
     trace::StateTracer &system_call_state_tracer,
     ChainContext<traits> const &chain_ctx,
-    ExecutionEventRecorder *const exec_recorder, bool const trace_transfers)
+    ExecutionEventRecorder *const exec_recorder, bool const trace_transfers,
+    std::optional<bytes32_t> *const requests_hash_out)
 {
     static_assert(traits::evm_rev() >= EvmRevision::SpuriousDragon);
 
@@ -350,8 +352,12 @@ Result<std::vector<Receipt>> execute_block(
                 chain_ctx,
                 retvals));
         if (MONAD_UNLIKELY(
+                !skip_requests_hash_validation(chain_ctx.mode) &&
                 computed_requests_hash != block.header.requests_hash.value())) {
             return BlockError::InvalidRequestsHash;
+        }
+        if (requests_hash_out != nullptr) {
+            *requests_hash_out = computed_requests_hash;
         }
     }
 

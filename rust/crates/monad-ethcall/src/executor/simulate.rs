@@ -215,10 +215,20 @@ impl MonadExecutor {
             block_override_vec_ctx: block_overrides.as_mut_ptr() as *mut std::ffi::c_void,
         });
 
+        let config = ffi::monad_eth_simulate_config {
+            chain_config,
+            revision: ffi::MONAD_ETH_SIMULATE_REVISION_DEFAULT,
+            gas_limit,
+            max_calls,
+            max_output_size,
+            validation,
+            emit_native_transfer_logs,
+        };
+
         unsafe {
             ffi::monad_executor_eth_simulate_submit(
                 self.eth_call_executor,
-                chain_config,
+                &config,
                 rlp_encoded_senders.as_ptr(),
                 rlp_encoded_senders.len(),
                 rlp_encoded_txns.as_ptr(),
@@ -230,13 +240,8 @@ impl MonadExecutor {
                 rlp_encoded_block_id.len(),
                 rlp_encoded_grandparent_id.as_ptr(),
                 rlp_encoded_grandparent_id.len(),
-                gas_limit,
-                max_calls,
-                max_output_size,
                 state_overrides.as_mut_ptr(),
                 block_overrides.as_mut_ptr(),
-                validation,
-                emit_native_transfer_logs,
                 Some(eth_simulate_v1_submit_callback),
                 Box::into_raw(sender_ctx) as *mut std::ffi::c_void,
             );

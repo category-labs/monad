@@ -238,6 +238,53 @@ TYPED_TEST(TraitsTest, access_precompile)
         AccessStatus::Cold);
 }
 
+// EIP-3651: the coinbase is warm for the whole transaction. The host answers
+// without loading it into State, where it is likely to cause a false conflict
+// in BlockState::can_merge with the previous transaction's priority-fee
+// credit. The coinbase still enters the read set once the transaction uses it.
+TYPED_TEST(TraitsTest, access_coinbase)
+{
+    static constexpr auto coinbase{
+        0xbebebebebebebebebebebebebebebebebebebebe_address};
+
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
+    db_t tdb{db};
+    vm::VM vm;
+    BlockState bs{tdb, vm};
+    State state{bs, Incarnation{0, 0}};
+    BlockHashBufferFinalized const block_hash_buffer;
+    NoopCallTracer call_tracer;
+    Transaction tx{};
+    auto const chain_ctx =
+        ChainContext<typename TestFixture::Trait>::debug_empty();
+    uint256_t base_fee{0};
+    trace::StateTracer noop_state_tracer = std::monostate{};
+    vm::TxContext tx_context = EMPTY_TX_CONTEXT;
+    tx_context.block_coinbase = coinbase;
+    StateHost<typename TestFixture::Trait> host{
+        call_tracer,
+        noop_state_tracer,
+        tx_context,
+        block_hash_buffer,
+        state,
+        tx,
+        base_fee,
+        0,
+        chain_ctx};
+
+    if constexpr (TestFixture::Trait::eip_3651_active()) {
+        EXPECT_EQ(host.access_account(coinbase), AccessStatus::Warm);
+        EXPECT_FALSE(state.original().contains(coinbase));
+    }
+    else {
+        EXPECT_EQ(host.access_account(coinbase), AccessStatus::Cold);
+    }
+
+    // Actually reading the coinbase puts it in the read set.
+    (void)host.get_balance(coinbase);
+    EXPECT_TRUE(state.original().contains(coinbase));
+}
+
 TEST(StateHostTest, host_methods_rethrow_pruned_read)
 {
     using traits = MonadTraits<MONAD_NEXT>;

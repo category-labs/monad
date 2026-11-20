@@ -40,8 +40,15 @@
 
 using namespace monad::vm::runtime;
 
+// The x86 JIT calls monad_vm_runtime_increase_capacity with a 32-bit Bin
+// argument. Preserve that ABI; the guest has no JIT and may use a wider Bin.
+#ifdef MONAD_ZKVM_WIDE_MEMORY_SIZE
+static_assert(sizeof(Bin<31>) == sizeof(Bin<31>::rep));
+static_assert(alignof(Bin<31>) == alignof(Bin<31>::rep));
+#else
 static_assert(sizeof(Bin<31>) == sizeof(uint32_t));
 static_assert(alignof(Bin<31>) == alignof(uint32_t));
+#endif
 static_assert(std::is_standard_layout_v<Bin<31>>);
 
 extern "C" void monad_vm_runtime_increase_capacity(
@@ -97,8 +104,8 @@ namespace monad::vm::runtime
                     .input_data = msg->input_data,
                     .code = code.data(),
                     .return_data = {},
-                    .input_data_size = static_cast<uint32_t>(msg->input_size),
-                    .code_size = static_cast<uint32_t>(code.size()),
+                    .input_data_size = static_cast<env_size_t>(msg->input_size),
+                    .code_size = static_cast<env_size_t>(code.size()),
                     .return_data_size = 0,
                     .tx_context = host.get_tx_context(),
                 },
@@ -150,6 +157,37 @@ namespace monad::vm::runtime
             return CallStatus::OutOfGas;
         }
 
+#if defined(MONAD_ZKVM_ZISK)
+        // Read the 64-bit limbs directly to avoid staging a 32-byte copy on the
+        // stack.
+        auto const load_limb = [](uint8_t const *const bytes,
+                                  unsigned const index) {
+            uint64_t limb;
+            __builtin_memcpy(&limb, bytes + sizeof(limb) * index, sizeof(limb));
+            return limb;
+        };
+        auto const fits_memory_offset = [&](uint8_t const *const bytes) {
+            return ((load_limb(bytes, 0) >> Memory::offset_bits) |
+                    load_limb(bytes, 1) | load_limb(bytes, 2) |
+                    load_limb(bytes, 3)) == 0;
+        };
+        if (!fits_memory_offset(result.size)) {
+            return CallStatus::OutOfGas;
+        }
+
+        auto const size = Memory::Offset::unsafe_from(
+            static_cast<Memory::Offset::rep>(load_limb(result.size, 0)));
+        if (*size == 0) {
+            return std::span<uint8_t const>({});
+        }
+
+        if (!fits_memory_offset(result.offset)) {
+            return CallStatus::OutOfGas;
+        }
+
+        auto const offset = Memory::Offset::unsafe_from(
+            static_cast<Memory::Offset::rep>(load_limb(result.offset, 0)));
+#else
         auto const size_word = std::bit_cast<uint256_t>(result.size);
         if (!is_bounded_by_bits<Memory::offset_bits>(size_word)) {
             return CallStatus::OutOfGas;
@@ -168,6 +206,7 @@ namespace monad::vm::runtime
 
         auto const offset =
             Memory::Offset::unsafe_from(static_cast<uint32_t>(offset_word));
+#endif
 
         auto const memory_end = offset + size;
 

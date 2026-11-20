@@ -49,12 +49,22 @@ namespace monad::vm::runtime
             ctx->deduct_gas(size * bin<8>);
         }
 
+#if defined(MONAD_ZKVM_ZISK)
+        guest_emit_log(
+            host_of(*ctx),
+            ctx->env.recipient,
+            ctx->memory.data + *offset,
+            *size,
+            topics.data(),
+            topics.size());
+#else
         ctx->host->emit_log(
             ctx->env.recipient,
             ctx->memory.data + *offset,
             *size,
             topics.data(),
             topics.size());
+#endif
     }
 
     EXPLICIT_TRAITS(log_impl);

@@ -78,6 +78,25 @@ public:
         return nullptr;
     }
 
+#ifdef MONAD_ZKVM_ZISK
+    // Reuse the const lookup on this mutable container, then allow the
+    // caller to update the value without searching again.
+    [[nodiscard]] bytes32_t *find_mut(bytes32_t const &key)
+    {
+        return const_cast<bytes32_t *>(find(key));
+    }
+
+    // Insert without another lookup; the caller must have checked absence.
+    void insert_absent(bytes32_t const &key, bytes32_t const &value)
+    {
+        if (!slot_index_ && MONAD_UNLIKELY(entries_.capacity() == 0)) {
+            entries_.reserve(32); // Match the initial capacity used by upsert.
+        }
+        entries_.emplace_back(key, value);
+        slot_index_.on_insert(entries_);
+    }
+#endif
+
     void upsert(bytes32_t const &key, bytes32_t const &value)
     {
         std::uint64_t const tail = key_tail(key);
@@ -249,16 +268,19 @@ public:
         return {};
     }
 
+    // Reuse the caller's current-value lookup; null means no overlay entry.
     StorageStatus set_storage(
         bytes32_t const &key, bytes32_t const &value,
-        bytes32_t const &original_value)
+        bytes32_t const &original_value, bytes32_t const *const stored_value)
     {
-        bytes32_t current_value = original_value;
-        {
-            if (auto const *const it = storage_.find(key); it) {
-                current_value = *it;
-            }
-        }
+#ifdef MONAD_ZKVM_ZISK
+        // Borrow the current value instead of copying its 32 bytes.
+        bytes32_t const &current_value =
+            stored_value ? *stored_value : original_value;
+#else
+        bytes32_t const current_value =
+            stored_value ? *stored_value : original_value;
+#endif
         if (value == bytes32_t{}) {
             return zero_out_key(key, original_value, current_value);
         }
@@ -367,6 +389,11 @@ public:
     // Reuse the block entry for slot reads and merge, without an address
     // lookup. Block entries are never moved or erased.
     StateDelta *block_delta_{nullptr};
+
+    // Cached values imply warm slots only until an unwarmed read/write or
+    // rollback breaks that invariant. Never reset: this row survives rollback.
+    // Keep a full word for inexpensive aligned loads on ZisK.
+    std::uint64_t cached_slots_may_be_cold_{0};
 #endif
 
     explicit OriginalAccountState(std::optional<Account> &&account)

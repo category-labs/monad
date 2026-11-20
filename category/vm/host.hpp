@@ -24,6 +24,7 @@
 #include <category/vm/evm/page_storage_status.hpp>
 #include <category/vm/evm/result.hpp>
 #include <category/vm/evm/storage_status.hpp>
+#include <category/vm/evm/traits.hpp>
 #include <category/vm/evm/tx_context.hpp>
 #include <category/vm/runtime/types.hpp>
 
@@ -36,6 +37,17 @@
 
 namespace monad::vm
 {
+#if defined(MONAD_ZKVM_ZISK)
+    namespace runtime
+    {
+        struct SstoreStatus
+        {
+            AccessStatus access;
+            StorageStatus storage;
+        };
+    }
+#endif
+
     class VM;
 
     class Host
@@ -90,6 +102,25 @@ namespace monad::vm
         virtual PageStorageStatus
         update_page(Address const &, bytes32_t const &key, StorageStatus) = 0;
 
+#if defined(MONAD_ZKVM_ZISK)
+        /// Warm the slot and return its previous access status.
+        /// Read into value only if warm or can_pay_cold_access is true.
+        /// The caller must charge cold-access gas before using value.
+        virtual AccessStatus sload_into(
+            Address const &address, bytes32_t const &key,
+            bool can_pay_cold_access, uint256_t &value) noexcept = 0;
+
+        // Warm the slot, then write if it was warm or the cold access is
+        // affordable.
+        virtual runtime::SstoreStatus sstore_into(
+            Address const &address, bytes32_t const &key,
+            bytes32_t const &value, bool can_pay_cold_access) noexcept = 0;
+
+        /// Read the EIP-7702 delegate directly from the stored code.
+        virtual std::optional<Address>
+        delegate_of(monad_address const &address) const noexcept = 0;
+#endif
+
         /// Capture `std::current_exception()`.
         /// IMPORTANT: Make sure to call this from inside a `catch` block.
         void capture_current_exception() const noexcept
@@ -118,30 +149,18 @@ namespace monad::vm
             runtime_context_->stack_unwind();
         }
 
-        std::optional<Address> resolve_delegation(Address const &addr) const
+        std::optional<Address>
+        resolve_delegation(monad_address const &addr) const
         {
-            // Copy up to |code_size| bytes of the bytecode. Then test
-            // whether the code begins with the prefix 0xEF0100, if so,
-            // then drop these three bytes and interpret the remainder as
-            // the delegate address.
+#if defined(MONAD_ZKVM_ZISK)
+            return delegate_of(addr);
+#else
+            // Read one extra byte to reject longer code.
             uint8_t code_buffer[evm::delegation_indicator_size + 1];
-            size_t const actual_code_size = copy_code(
+            size_t const size = copy_code(
                 addr, 0, code_buffer, evm::delegation_indicator_size + 1);
-
-            std::span const code{code_buffer, actual_code_size};
-
-            if (!evm::is_delegated(code)) {
-                return std::nullopt;
-            }
-
-            // Copy the delegate address from the code buffer.
-            Address designation;
-            std::ranges::copy(
-                code.subspan(
-                    evm::delegation_indicator_prefix_bytes.size(),
-                    sizeof(Address)),
-                designation.bytes);
-            return designation;
+            return evm::designation_of({code_buffer, size});
+#endif
         }
 
     private:
@@ -168,3 +187,49 @@ namespace monad::vm
         mutable std::exception_ptr active_exception_;
     };
 }
+
+#if defined(MONAD_ZKVM_ZISK)
+namespace monad::vm::runtime
+{
+    [[gnu::always_inline]] inline Host &host_of(Context const &ctx) noexcept
+    {
+        return *ctx.host;
+    }
+
+    // The witness uses StateHost<traits>. Defining these calls alongside the
+    // concrete host lets the compiler inline its methods.
+    template <Traits traits>
+    AccessStatus guest_sload_into(
+        Host &, Address const &, bytes32_t const &, bool, uint256_t &) noexcept;
+
+    template <Traits traits>
+    SstoreStatus guest_sstore_into(
+        Host &, Address const &, bytes32_t const &, bytes32_t const &,
+        bool can_pay_cold_access) noexcept;
+
+    template <Traits traits>
+    AccessStatus guest_access_account(Host &, Address const &) noexcept;
+
+    template <Traits traits>
+    vm::Result guest_call(Host &, Message const &) noexcept;
+
+    bytes32_t guest_get_transient_storage(
+        Host const &, Address const &, bytes32_t const &) noexcept;
+
+    void guest_set_transient_storage(
+        Host &, Address const &, bytes32_t const &, bytes32_t const &) noexcept;
+
+    TxContext const *guest_get_tx_context(Host const &) noexcept;
+
+    size_t guest_get_code_size(Host const &, Address const &) noexcept;
+
+    uint256_t guest_get_balance(Host const &, Address const &) noexcept;
+
+    void guest_emit_log(
+        Host &, Address const &, uint8_t const *, size_t, bytes32_t const[],
+        size_t) noexcept;
+
+    std::optional<Address>
+    guest_delegate_of(Host const &, monad_address const &) noexcept;
+}
+#endif

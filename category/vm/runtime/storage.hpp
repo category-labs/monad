@@ -40,8 +40,14 @@ namespace monad::vm::runtime
         uint256_t const *const key_ptr)
     {
         auto const key = store_be_as<bytes32_t>(*key_ptr);
+
+#if defined(MONAD_ZKVM_ZISK)
         auto const value =
+            guest_get_transient_storage(host_of(*ctx), ctx->env.recipient, key);
+#else
+        bytes32_t const value =
             ctx->host->get_transient_storage(ctx->env.recipient, key);
+#endif
 
         *result_ptr = load_be<uint256_t>(value);
     }
@@ -58,7 +64,12 @@ namespace monad::vm::runtime
         auto const key = store_be_as<bytes32_t>(*key_ptr);
         auto const val = store_be_as<bytes32_t>(*val_ptr);
 
+#if defined(MONAD_ZKVM_ZISK)
+        guest_set_transient_storage(
+            host_of(*ctx), ctx->env.recipient, key, val);
+#else
         ctx->host->set_transient_storage(ctx->env.recipient, key, val);
+#endif
     }
 
     bool debug_tstore_stack(

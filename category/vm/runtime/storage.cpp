@@ -40,17 +40,29 @@ namespace monad::vm::runtime
     {
         static_assert(traits::evm_rev() >= EvmRevision::Berlin);
 
+        // SLOAD replaces the key on the stack. Save it before writing the
+        // result.
         auto const key = store_be_as<bytes32_t>(*key_ptr);
 
+#if defined(MONAD_ZKVM_ZISK)
+        if (guest_sload_into<traits>(
+                host_of(*ctx),
+                ctx->env.recipient,
+                key,
+                ctx->gas_remaining >= traits::cold_storage_cost(),
+                *result_ptr) == AccessStatus::Cold) {
+            ctx->deduct_gas(traits::cold_storage_cost());
+        }
+#else
         auto const access_status =
             ctx->host->access_storage(ctx->env.recipient, key);
         if (access_status == AccessStatus::Cold) {
             ctx->deduct_gas(traits::cold_storage_cost());
         }
 
-        auto const value = ctx->host->get_storage(ctx->env.recipient, key);
-
+        bytes32_t const value = ctx->host->get_storage(ctx->env.recipient, key);
         *result_ptr = load_be<uint256_t>(value);
+#endif
     }
 
     EXPLICIT_TRAITS(sload);
@@ -102,6 +114,22 @@ namespace monad::vm::runtime
             ctx->deduct_gas(gas_used);
         }
         else {
+#if defined(MONAD_ZKVM_ZISK)
+            // An unaffordable cold write was skipped; deduct_gas exits before
+            // storage_status is used.
+            auto const [access_status, storage_status] =
+                guest_sstore_into<traits>(
+                    host_of(*ctx),
+                    ctx->env.recipient,
+                    key,
+                    value,
+                    ctx->gas_remaining >=
+                        traits::cold_storage_cost() + min_gas);
+            if (access_status == AccessStatus::Cold) {
+                ctx->deduct_gas(traits::cold_storage_cost() + min_gas);
+            }
+            auto const evmc_status = storage_status;
+#else
             auto const access_status =
                 ctx->host->access_storage(ctx->env.recipient, key);
             if (access_status == AccessStatus::Cold) {
@@ -110,8 +138,10 @@ namespace monad::vm::runtime
 
             auto const storage_status =
                 ctx->host->set_storage(ctx->env.recipient, key, value);
+            auto const evmc_status = storage_status;
+#endif
 
-            auto [gas_used, gas_refund] = store_cost<traits>(storage_status);
+            auto [gas_used, gas_refund] = store_cost<traits>(evmc_status);
 
             gas_used -= min_gas;
 

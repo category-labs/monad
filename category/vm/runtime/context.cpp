@@ -103,15 +103,23 @@ namespace monad::vm::runtime
                     .depth = msg->depth,
                     .recipient = msg->recipient,
                     .sender = msg->sender,
-                    .value = msg->value,
-                    .create2_salt = msg->create2_salt,
+                    .value = static_cast<bytes32_t>(msg->value),
+#if defined(MONAD_ZKVM_ZISK)
+        // Only CREATE2 reads the salt directly from its message.
+#else
+                    .create2_salt = static_cast<bytes32_t>(msg->create2_salt),
+#endif
                     .input_data = msg->input_data,
                     .code = code.data(),
                     .return_data = {},
                     .input_data_size = static_cast<env_size_t>(msg->input_size),
                     .code_size = static_cast<env_size_t>(code.size()),
                     .return_data_size = 0,
+#if defined(MONAD_ZKVM_ZISK)
+                    .tx_context = guest_get_tx_context(host),
+#else
                     .tx_context = host.get_tx_context(),
+#endif
                 },
             .result = {},
             .memory =
@@ -287,6 +295,17 @@ namespace monad::vm::runtime
             Cases{
                 [](CallStatus ec) { return vm::Result{ec}; },
                 [this](std::span<uint8_t const> output) {
+#if defined(MONAD_ZKVM_ZISK)
+                    // Attach the buffer already allocated by copy_result_data.
+                    vm::Result call_result{
+                        result.status == Success ? CallStatus::Success
+                                                 : CallStatus::Revert,
+                        gas_remaining,
+                        result.status == Success ? gas_refund : 0};
+                    call_result.output_data = output.data();
+                    call_result.output_size = output.size();
+                    return call_result;
+#else
                     return vm::Result{vm::RawResult{
                         .status_code = result.status == Success
                                            ? CallStatus::Success
@@ -297,6 +316,7 @@ namespace monad::vm::runtime
                         .output_size = output.size(),
                         .create_address = {},
                     }};
+#endif
                 }},
             copy_result_data<traits>());
     }

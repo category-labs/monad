@@ -19,9 +19,11 @@
 #include <category/core/config.hpp>
 #include <category/core/likely.h>
 #include <category/core/log.hpp>
+#include <category/core/monad_exception.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/fmt/bytes_fmt.hpp>
 #include <category/execution/ethereum/db/db.hpp>
+#include <limits>
 #if defined(MONAD_ZKVM_ZISK) && !defined(MONAD_ZKVM_SELFTEST)
     #include <category/execution/ethereum/db/partial_trie_db.hpp>
 #endif
@@ -71,13 +73,13 @@ BlockState::BlockState(Db &db, vm::VM &monad_vm)
 }
 
 #ifdef MONAD_ZKVM_ZISK
-StateDelta &BlockState::read_account_delta(Address const &address)
+StateDelta &BlockState::read_account_delta(monad_address const &address)
 {
     // Find or insert in one lookup; read the DB only when creating an entry.
     struct DeferredAccountRead
     {
         Db &db;
-        Address const &address;
+        monad_address const &address;
 
         operator StateDelta() const
         {
@@ -87,31 +89,80 @@ StateDelta &BlockState::read_account_delta(Address const &address)
     };
 
     MONAD_ASSERT(state_);
-    return state_->try_emplace(address, DeferredAccountRead{db_, address})
-        .first->second;
+    auto &delta =
+        state_->try_emplace(address, DeferredAccountRead{db_, address})
+            .first->second;
+    // Apply deferred fees before exposing the beneficiary's account.
+    if (MONAD_UNLIKELY(address == beneficiary_) &&
+        has_pending_beneficiary_credit_) {
+        apply_beneficiary_credit(delta);
+    }
+    return delta;
+}
+
+void BlockState::defer_beneficiary_credit(
+    uint256_t const &credit, Incarnation const incarnation)
+{
+    if (!has_pending_beneficiary_credit_) {
+        first_credit_incarnation_ = incarnation;
+        has_pending_beneficiary_credit_ = true;
+    }
+    // Every partial sum is no larger than the last, so the account's balance
+    // overflows with one credit at a time exactly when it does with the sum:
+    // this and the check where the sum is credited are add_to_balance's.
+    MONAD_ASSERT_THROW(
+        std::numeric_limits<uint256_t>::max() - credit >=
+            pending_beneficiary_credit_,
+        "balance overflow");
+    pending_beneficiary_credit_ += credit;
+}
+
+void BlockState::apply_beneficiary_credit(StateDelta &delta)
+{
+    // As add_to_balance has it: an absent account is created by the first
+    // credit, with that transaction's incarnation.
+    auto &account = delta.account.second;
+    if (!account.has_value()) {
+        account = Account{.incarnation = first_credit_incarnation_};
+    }
+    MONAD_ASSERT_THROW(
+        std::numeric_limits<uint256_t>::max() - pending_beneficiary_credit_ >=
+            account->balance,
+        "balance overflow");
+    account->balance += pending_beneficiary_credit_;
+    pending_beneficiary_credit_ = 0;
+    has_pending_beneficiary_credit_ = false;
+}
+
+void BlockState::flush_beneficiary_credit()
+{
+    if (has_pending_beneficiary_credit_) {
+        (void)read_account_delta(beneficiary_);
+    }
 }
 #endif
 
-std::optional<Account> BlockState::read_account(Address const &address)
+std::optional<Account> BlockState::read_account(monad_address const &address)
 {
 #ifdef MONAD_ZKVM_ZISK
     return read_account_delta(address).account.second;
 #else
+    Address const owned_address{address};
     // block state
     {
         StateDeltas::const_accessor it{};
         MONAD_ASSERT(state_);
-        if (MONAD_LIKELY(state_->find(it, address))) {
+        if (MONAD_LIKELY(state_->find(it, owned_address))) {
             return it->second.account.second;
         }
     }
     // database
     {
-        auto const result = db_.read_account(address);
+        auto const result = db_.read_account(owned_address);
         StateDeltas::const_accessor it{};
         state_->emplace(
             it,
-            address,
+            owned_address,
             StateDelta{.account = {result, result}, .storage = {}});
         return it->second.account.second;
     }
@@ -120,8 +171,8 @@ std::optional<Account> BlockState::read_account(Address const &address)
 
 #ifdef MONAD_ZKVM_ZISK
 bytes32_t const &BlockState::read_storage(
-    StateDelta &delta, Address const &address, Incarnation const incarnation,
-    bytes32_t const &key)
+    StateDelta &delta, monad_address const &address,
+    Incarnation const incarnation, bytes32_t const &key)
 {
     // Keep using the supplied entry across the DB read: guest execution is
     // single-threaded, and map insertions preserve pointers.
@@ -143,7 +194,7 @@ bytes32_t const &BlockState::read_storage(
     struct DeferredStorageRead
     {
         BlockState &block_state;
-        Address const &address;
+        monad_address const &address;
         Incarnation incarnation;
         bytes32_t const &key;
         bool has_original_storage;
@@ -178,20 +229,22 @@ bytes32_t const &BlockState::read_storage(
 #endif
 
 bytes32_t BlockState::read_storage(
-    Address const &address, Incarnation const incarnation, bytes32_t const &key)
+    monad_address const &address, Incarnation const incarnation,
+    bytes32_t const &key)
 {
 #ifdef MONAD_ZKVM_ZISK
-    StateDeltas::accessor it{};
     MONAD_ASSERT(state_);
-    MONAD_ASSERT(state_->find(it, address));
+    auto const it = state_->find(address);
+    MONAD_ASSERT(it != state_->end());
     return read_storage(it->second, address, incarnation, key);
 #else
+    Address const owned_address{address};
     bool read_storage = false;
     // block state
     {
         StateDeltas::const_accessor it{};
         MONAD_ASSERT(state_);
-        MONAD_ASSERT(state_->find(it, address));
+        MONAD_ASSERT(state_->find(it, owned_address));
         auto const &account = it->second.account.second;
         if (!account || incarnation != account->incarnation) {
             return {};
@@ -212,10 +265,10 @@ bytes32_t BlockState::read_storage(
     {
         bytes32_t result{};
         if (read_storage) {
-            result = db_.read_storage(address, incarnation, key);
+            result = db_.read_storage(owned_address, incarnation, key);
         }
         StateDeltas::accessor it{};
-        MONAD_ASSERT(state_->find(it, address));
+        MONAD_ASSERT(state_->find(it, owned_address));
         // The host must recheck the account after releasing the lock for the
         // read.
         auto const &account = it->second.account.second;
@@ -232,7 +285,11 @@ bytes32_t BlockState::read_storage(
 #endif
 }
 
+#if defined(MONAD_ZKVM_VARCODE_CACHE)
+vm::SharedVarcode const &BlockState::read_code_ref(bytes32_t const &code_hash)
+#else
 vm::SharedVarcode BlockState::read_code(bytes32_t const &code_hash)
+#endif
 {
     // vm
     if (auto vcode = vm_.find_varcode(code_hash)) {
@@ -260,6 +317,13 @@ vm::SharedVarcode BlockState::read_code(bytes32_t const &code_hash)
         return vm_.try_insert_varcode(code_hash, result);
     }
 }
+
+#if defined(MONAD_ZKVM_VARCODE_CACHE)
+vm::SharedVarcode BlockState::read_code(bytes32_t const &code_hash)
+{
+    return read_code_ref(code_hash);
+}
+#endif
 
 bool BlockState::can_merge(State &state) const
 {

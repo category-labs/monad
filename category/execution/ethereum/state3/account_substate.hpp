@@ -131,6 +131,34 @@ public:
 #endif
         return AccessStatus::Cold;
     }
+#ifdef MONAD_ZKVM_ZISK
+
+    // Test warmth without mutation; sload_into handles cold slots separately.
+    [[nodiscard]] bool is_accessed_storage(bytes32_t const &key) const
+    {
+        std::uint64_t const tail = key_tail(key);
+        if (warm_slot_index_) {
+            return warm_slot_index_.lookup(key, tail, accessed_storage_) != 0;
+        }
+        MONAD_SLOT_SCAN
+        for (auto const &k : accessed_storage_) {
+            if (key_equals(key, tail, k)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // The caller must have checked that the slot is cold.
+    void add_accessed_storage(bytes32_t const &key)
+    {
+        if (MONAD_UNLIKELY(accessed_storage_.capacity() == 0)) {
+            accessed_storage_.reserve(32);
+        }
+        accessed_storage_.push_back(key);
+        warm_slot_index_.on_insert(accessed_storage_);
+    }
+#endif
 
     // Undo operations, for the journal only. Each reverses exactly one
     // journalled transition.
@@ -150,6 +178,18 @@ public:
     }
 
     // Warm slots are appended; reverse replay must remove the last key.
+#ifdef MONAD_ZKVM_ZISK
+    // The guest's journal does not keep the key: accessed_storage_ grows only
+    // by a push_back that a warm-slot record follows whenever a frame is open,
+    // and shrinks only here, so reverse replay always finds its key last. The
+    // host build keeps the key and checks it.
+    void undo_warm_slot()
+    {
+        MONAD_ASSERT(!accessed_storage_.empty());
+        accessed_storage_.pop_back();
+        warm_slot_index_.reset();
+    }
+#else
     void undo_warm_slot(bytes32_t const &key)
     {
         MONAD_ASSERT(!accessed_storage_.empty());
@@ -158,10 +198,8 @@ public:
                 accessed_storage_.back().bytes, key.bytes, sizeof(key.bytes)) ==
             0);
         accessed_storage_.pop_back();
-#ifdef MONAD_ZKVM_ZISK
-        warm_slot_index_.reset();
-#endif
     }
+#endif
 };
 
 // Guard against unintended growth of the per-account substate.

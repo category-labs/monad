@@ -34,6 +34,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <utility>
 
 namespace monad::vm::runtime
@@ -56,8 +57,16 @@ namespace monad::vm::runtime
         return env_flags;
     }
 
+#if defined(MONAD_ZKVM_ZISK)
+    // Inline to avoid argument/result copies and let each caller's constant
+    // call kind and flags eliminate unused branches.
+    #define MONAD_VM_CALL_IMPL_INLINE [[gnu::always_inline]] inline
+#else
+    #define MONAD_VM_CALL_IMPL_INLINE
+#endif
+
     template <Traits traits>
-    uint256_t call_impl(
+    MONAD_VM_CALL_IMPL_INLINE uint256_t call_impl(
         Context *ctx, uint256_t const &gas_word, uint256_t const &address,
         bool const has_value, bytes32_t const &value,
         uint256_t const &args_offset_word, uint256_t const &args_size_word,
@@ -83,7 +92,12 @@ namespace monad::vm::runtime
 
         auto const dest_address = address_from_uint256(address);
 
+#if defined(MONAD_ZKVM_ZISK)
+        auto const access_status =
+            guest_access_account<traits>(host_of(*ctx), dest_address);
+#else
         auto const access_status = ctx->host->access_account(dest_address);
+#endif
         if (access_status == AccessStatus::Cold) {
             ctx->deduct_gas(traits::cold_account_cost());
         }
@@ -105,32 +119,45 @@ namespace monad::vm::runtime
             }
         }
 
-        auto const code_address = [&]() -> Address {
+        // Keep the delegate alive until its address is copied into the message.
+        auto const delegate_address = [&]() -> std::optional<Address> {
             if constexpr (traits::eip_7702_active()) {
-                // EIP-7702: if the code address starts with 0xEF0100, then
-                // treat it as a delegated call in the context of the
-                // current authority.
-                if (auto delegate_address =
-                        ctx->host->resolve_delegation(dest_address)) {
-                    auto const access_status =
-                        ctx->host->access_account(*delegate_address);
-                    ctx->gas_remaining -= (access_status == AccessStatus::Cold
-                                               ? traits::cold_account_cost()
-                                               : 0) +
-                                          100;
-                    return *delegate_address;
-                }
+#if defined(MONAD_ZKVM_ZISK) && !defined(MONAD_ZKVM_GAS_SELFTEST)
+                return guest_delegate_of(host_of(*ctx), dest_address);
+#else
+                return ctx->host->resolve_delegation(dest_address);
+#endif
             }
-            return dest_address;
+            return std::nullopt;
         }();
+        if (delegate_address) {
+#if defined(MONAD_ZKVM_ZISK)
+            auto const access_status =
+                guest_access_account<traits>(host_of(*ctx), *delegate_address);
+#else
+            auto const access_status =
+                ctx->host->access_account(*delegate_address);
+#endif
+            ctx->gas_remaining -= (access_status == AccessStatus::Cold
+                                       ? traits::cold_account_cost()
+                                       : 0) +
+                                  100;
+        }
 
-        auto const recipient = (call_kind == CallKind::Call || static_call)
-                                   ? dest_address
-                                   : ctx->env.recipient;
-
-        auto const sender = (call_kind == CallKind::DelegateCall)
-                                ? ctx->env.sender
-                                : ctx->env.recipient;
+#if defined(MONAD_ZKVM_ZISK)
+        using MessageAddress = Address const &;
+#else
+        using MessageAddress = Address const;
+#endif
+        MessageAddress code_address =
+            delegate_address ? *delegate_address : dest_address;
+        MessageAddress recipient =
+            (call_kind == vm::CallKind::Call || static_call)
+                ? dest_address
+                : ctx->env.recipient;
+        MessageAddress sender = call_kind == vm::CallKind::DelegateCall
+                                    ? ctx->env.sender
+                                    : ctx->env.recipient;
 
         if (call_kind == CallKind::Call) {
             if (has_value && !ctx->host->account_exists(dest_address)) {
@@ -158,7 +185,29 @@ namespace monad::vm::runtime
             return 0;
         }
 
-        auto const message = Message{
+#if defined(MONAD_ZKVM_ZISK)
+        // CALL messages never read create2_salt; CREATE2 builds its own
+        // message.
+        vm::Message message;
+        message.kind = call_kind;
+        message.flags = message_flags(
+            static_cast<uint32_t>(ctx->env.flags),
+            static_call,
+            delegate_address.has_value() && *delegate_address != dest_address);
+        message.depth = static_cast<int32_t>(ctx->env.depth + 1);
+        message.gas = gas;
+        message.recipient = recipient;
+        message.sender = sender;
+        message.input_data =
+            (*args_size > 0) ? ctx->memory.data + *args_offset : nullptr;
+        message.input_size = *args_size;
+        message.value = value;
+        message.code_address = code_address;
+        message.memory_handle = ctx->memory.data_handle;
+        message.memory = ctx->memory.data + ctx->memory.size;
+        message.memory_capacity = ctx->memory.capacity - ctx->memory.size;
+#else
+        auto const message = vm::Message{
             .kind = call_kind,
             .flags = message_flags(
                 static_cast<uint32_t>(ctx->env.flags),
@@ -178,24 +227,47 @@ namespace monad::vm::runtime
             .memory = ctx->memory.data + ctx->memory.size,
             .memory_capacity = ctx->memory.capacity - ctx->memory.size,
         };
+#endif
 
-        auto const result = ctx->host->call(message).release_raw();
-
-        ctx->env.set_return_data(result.output_data, result.output_size);
+        // Even after releasing its buffer, result's destructor remains
+        // non-trivial: longjmp must not bypass it. Destroy the result before
+        // propagate_stack_unwind, keeping the gas and status needed afterward.
+        int64_t gas_left;
+        int64_t gas_refund;
+        bool success;
+        {
+#if defined(MONAD_ZKVM_ZISK)
+            auto result = guest_call<traits>(host_of(*ctx), message);
+            // The environment takes ownership of the output buffer, which
+            // survives the destruction of result below.
+            auto const *const output_data =
+                std::exchange(result.output_data, nullptr);
+#else
+            auto const result = ctx->host->call(message).release_raw();
+#endif
+#if defined(MONAD_ZKVM_ZISK)
+            ctx->env.set_return_data(output_data, result.output_size);
+#else
+            ctx->env.set_return_data(result.output_data, result.output_size);
+#endif
+            gas_left = result.gas_left;
+            gas_refund = result.gas_refund;
+            success = result.status_code == CallStatus::Success;
+        }
 
         // Unwind the stack after setting return data, so that return data
         // is deallocated by the `Environment` destructor.
         ctx->propagate_stack_unwind();
 
-        ctx->deduct_gas(gas - result.gas_left);
-        ctx->gas_refund += result.gas_refund;
+        ctx->deduct_gas(gas - gas_left);
+        ctx->gas_refund += gas_refund;
 
         auto const copy_size =
-            std::min(static_cast<size_t>(*ret_size), result.output_size);
+            std::min(static_cast<size_t>(*ret_size), ctx->env.return_data_size);
         std::copy_n(
-            result.output_data, copy_size, ctx->memory.data + *ret_offset);
+            ctx->env.return_data, copy_size, ctx->memory.data + *ret_offset);
 
-        return (result.status_code == CallStatus::Success) ? 1 : 0;
+        return success ? 1 : 0;
     }
 
     EXPLICIT_TRAITS(call_impl);

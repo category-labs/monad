@@ -45,10 +45,10 @@ class NullDb final : public Db
 public:
     bool is_page_encoded() const override;
 
-    std::optional<Account> read_account(Address const &) override;
+    std::optional<Account> read_account(monad_address const &) override;
 
-    bytes32_t
-    read_storage(Address const &, Incarnation, bytes32_t const &) override;
+    bytes32_t read_storage(
+        monad_address const &, Incarnation, bytes32_t const &) override;
 
     storage_page_t
     read_storage_page(Address const &, Incarnation, bytes32_t const &) override;

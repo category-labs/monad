@@ -31,7 +31,7 @@ MONAD_NAMESPACE_BEGIN
 class State;
 
 template <Traits traits>
-bool is_precompile(Address const &);
+bool is_precompile(monad_address const &);
 
 template <Traits traits>
 std::optional<vm::Result> check_call_precompile(

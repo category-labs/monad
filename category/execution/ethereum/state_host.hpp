@@ -40,6 +40,10 @@
 
 #include <functional>
 #include <utility>
+#if defined(MONAD_ZKVM_ZISK)
+    #include <cstdint>
+    #include <cstring>
+#endif
 
 MONAD_NAMESPACE_BEGIN
 
@@ -71,7 +75,8 @@ public:
     get_storage(Address const &, bytes32_t const &key) const override;
 
     virtual StorageStatus set_storage(
-        Address const &, bytes32_t const &key, bytes32_t const &value) override;
+        Address const &, bytes32_t const &key,
+        bytes32_t const &value) noexcept override;
 
     virtual uint256_t get_balance(Address const &) const override;
 
@@ -82,6 +87,11 @@ public:
     virtual size_t copy_code(
         Address const &, size_t offset, uint8_t *data,
         size_t size) const override;
+
+#if defined(MONAD_ZKVM_ZISK)
+    virtual std::optional<Address>
+    delegate_of(monad_address const &) const noexcept override;
+#endif
 
     virtual vm::TxContext const *get_tx_context() const noexcept override;
 
@@ -150,8 +160,10 @@ struct StateHost final : public StateHostBase
     {
         MONAD_TRY
         {
+            monad_address const &from = address;
+            monad_address const &to = beneficiary;
             auto const [result, transferred_balance] =
-                state_.selfdestruct<traits>(address, beneficiary);
+                state_.selfdestruct<traits>(from, to);
 
             call_tracer_.on_self_destruct(
                 address, beneficiary, transferred_balance);
@@ -207,9 +219,20 @@ struct StateHost final : public StateHostBase
     {
         MONAD_TRY
         {
+#if defined(MONAD_ZKVM_ZISK)
+            // All precompiles start with eight zero bytes. Reject other
+            // addresses here to avoid calling the out-of-line resolver.
+            std::uint64_t address_prefix;
+            std::memcpy(&address_prefix, address.bytes, sizeof(address_prefix));
+            if (MONAD_UNLIKELY(address_prefix == 0) &&
+                is_precompile<traits>(address)) {
+                return AccessStatus::Warm;
+            }
+#else
             if (is_precompile<traits>(address)) {
                 return AccessStatus::Warm;
             }
+#endif
             return state_.access_account(address);
         }
         MONAD_CATCH(...)
@@ -233,9 +256,43 @@ struct StateHost final : public StateHostBase
         stack_unwind();
     }
 
+#if defined(MONAD_ZKVM_ZISK)
+    virtual AccessStatus sload_into(
+        Address const &address, bytes32_t const &key,
+        bool const can_pay_cold_access, uint256_t &value) noexcept override
+    {
+        MONAD_TRY
+        {
+            return state_.sload_into<traits>(
+                address, key, can_pay_cold_access, value);
+        }
+        MONAD_CATCH(...)
+        {
+            capture_current_exception();
+        }
+        stack_unwind();
+    }
+
+    vm::runtime::SstoreStatus sstore_into(
+        Address const &address, bytes32_t const &key, bytes32_t const &value,
+        bool const can_pay_cold_access) noexcept override
+    {
+        MONAD_TRY
+        {
+            return state_.sstore_into<traits>(
+                address, key, value, can_pay_cold_access);
+        }
+        MONAD_CATCH(...)
+        {
+            capture_current_exception();
+        }
+        stack_unwind();
+    }
+#endif
+
     virtual PageStorageStatus update_page(
         Address const &address, bytes32_t const &key,
-        StorageStatus const status) override
+        StorageStatus const status) noexcept override
     {
         if constexpr (traits::mip_8_active()) {
             MONAD_TRY

@@ -55,11 +55,8 @@ FROM scratch AS test_fixtures
 ADD --checksum=sha256:3e2b02d49fe903eda4fd8caca5cbf0d139c470e97e1de9a85299b1b034f97099 \
     https://github.com/ethereum/execution-spec-tests/releases/download/v5.4.0/fixtures_develop.tar.gz \
     /fixtures/
-ADD --checksum=sha256:c96c822d2e187e9168aa20f2c158c8a2de96ea076f6e6c473a1b6d3fc5c064df \
-    https://github.com/monad-developers/execution-specs/releases/download/tests-monad@v1.2.2/fixtures_monad.tar.gz \
-    /fixtures/
-ADD --checksum=sha256:9ee1075421aa620b08690c9df9a302a9c11654c0ef0eaed561f650936288f98e \
-    https://github.com/monad-developers/execution-specs/releases/download/tests-monad_eip7708%2B7843%2B7981%2B7997%2B8024%2B8246%40v0.3.1/fixtures_monad_eip7708+7843+7981+7997+8024+8246.tar.gz \
+ADD --checksum=sha256:a19da286fec086ecd82ce06057e0afa3219d4f28bc1e07a3adffad2e1bd4757e \
+    https://github.com/monad-developers/execution-specs/releases/download/tests-monad@v1.3.0/fixtures_monad.tar.gz \
     /fixtures/
 
 FROM base AS build_and_test

@@ -160,7 +160,7 @@ TEST(async_compile_test, trait_ids_distinct)
 {
     // One revision per line so the roster stays readable and diffs cleanly.
     // clang-format off
-    std::array<uint64_t, 20> const ids{
+    std::array<uint64_t, 21> const ids{
         EvmTraits<EvmRevision::Berlin>::id(),
         EvmTraits<EvmRevision::London>::id(),
         EvmTraits<EvmRevision::Paris>::id(),
@@ -180,13 +180,15 @@ TEST(async_compile_test, trait_ids_distinct)
         MonadTraits<MONAD_EIGHT>::id(),
         MonadTraits<MONAD_NINE>::id(),
         MonadTraits<MONAD_TEN>::id(),
-        MonadTraits<MONAD_NEXT>::id()};
+        MonadTraits<MONAD_NEXT>::id(),
+        MonadTraits<MONAD_NEXT_AMSTERDAM>::id()};
     // clang-format on
 
     // Trip-wire: adding a revision to either family shifts these sentinels,
     // forcing the id list above to be extended so coverage stays exhaustive.
     static_assert(
-        MONAD_NEXT == 11, "a monad_revision was added; extend the list above");
+        MONAD_MAX_REVISION == 12,
+        "a monad_revision was added; extend the list above");
     static_assert(
         std::to_underlying(EvmRevision::Experimental) == 16,
         "an EvmRevision was added; extend the list above");

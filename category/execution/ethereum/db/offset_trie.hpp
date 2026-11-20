@@ -94,6 +94,13 @@ struct node_rlp_span : private std::span<unsigned char>
         return std::span<unsigned char>::data();
     }
 
+    // Prepend one byte. Caller must ensure the remaining span is nonempty.
+    node_rlp_span prepend_unchecked(unsigned char const byte) const
+    {
+        std::span<unsigned char>::data()[size() - 1] = byte;
+        return node_rlp_span{std::span<unsigned char>::first(size() - 1)};
+    }
+
     // Prepend length bytes to the encoded tail. Caller must ensure length <=
     // size().
     node_rlp_span prepend_unchecked(
@@ -612,6 +619,8 @@ template <class... Fs>
 class OffsetTrie
 {
     byte_string_view blob_;
+    // Cache the extent after the header for a single unsigned bounds check.
+    uint64_t blob_span_;
 #if defined(MONAD_ZKVM_ZISK)
     // Direct slots point to separately allocated byte_strings, or null.
     // The objects stay put; replacing their contents may move their buffers.
@@ -778,6 +787,14 @@ public:
     // hash cache (see prime()). Aborts if the blob is malformed.
     explicit OffsetTrie(byte_string_view blob);
 
+#ifdef MONAD_ZKVM_ZISK
+    // Used to estimate capacity for per-account caches.
+    [[nodiscard]] size_t blob_size() const noexcept
+    {
+        return blob_.size();
+    }
+#endif
+
     // Account-trie root, NULL_ID while the trie is empty. upsert_node and
     // erase_node keep a materialised root's id stable, so a caller only
     // reassigns it across the empty/non-empty transitions — exactly as
@@ -797,9 +814,13 @@ public:
     {
         // NULL_ID resolves to the blob's first magic byte, i.e. the EMPTY
         // tag
+        //
+        // Subtracting HEADER_LEN makes low IDs wrap past the upper bound.
+        // read_root limits the blob size, so one unsigned comparison rejects
+        // both low and high out-of-range IDs.
         MONAD_ASSERT(
-            id == NULL_ID || (static_cast<uint64_t>(id) >= HEADER_LEN &&
-                              static_cast<uint64_t>(id) < blob_.size()));
+            id == NULL_ID ||
+            static_cast<uint64_t>(id) - HEADER_LEN < blob_span_);
         return NodeViewBase{blob_.data() + static_cast<uint64_t>(id)};
     }
 

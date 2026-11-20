@@ -38,6 +38,7 @@
 #include <cstdint>
 #include <cstring>
 #include <new>
+#include <optional>
 #include <span>
 #include <utility>
 #include <vector>
@@ -65,6 +66,9 @@ NodeId OffsetTrie::read_root(byte_string_view const blob)
 
 OffsetTrie::OffsetTrie(byte_string_view const blob)
     : blob_(blob)
+    // This unsigned subtraction may wrap for a short blob. read_root then
+    // rejects it before construction completes or any lookup can run.
+    , blob_span_{blob_.size() - HEADER_LEN}
     , root{read_root(blob_)}
 {
     unsigned char const *const base = blob_.data();
@@ -239,13 +243,17 @@ OffsetTrie::OffsetTrie(byte_string_view const blob)
         // View the current window as a fixed-size array without copying it.
         auto &window =
             *reinterpret_cast<unsigned char(*)[MAX_NODE_RLP]>(walk_window);
+        // Keep non-branch encoding behind a call: LTO inlining enlarged the
+        // constructor and increased execution cost in the measured build.
         node_rlp_span const rem =
             tag == BRANCH
                 ? encode_rlp<true, true>(
                       node,
                       node_rlp_span{window},
                       primed_slots_ + PRIMED_CHILDREN_OFFSET)
-                : encode_rlp<true>(node, node_rlp_span{window}); // priming pass
+                : [&]() __attribute__((noinline)) {
+                      return encode_rlp<true>(node, node_rlp_span{window});
+                  }();
 #else
         node_rlp_span const rem =
             encode_rlp<true>(node, node_rlp_span{rlp_buf}); // priming pass
@@ -837,13 +845,26 @@ OffsetTrie::node_rlp_span OffsetTrie::encode_rlp(
         }
         return d;
     };
-    // Prepend the list header for payload [s.end(), dest.end()); return the
-    // final span.
-    auto const wrap = [](OffsetTrie::node_rlp_span const s) {
-        size_t const payload_len = s.rlp_size();
-        size_t const hdr_len = rlp::list_length(payload_len) - payload_len;
-        rlp::encode_list_prefix_compact(s.last(hdr_len), payload_len);
-        return s.shrink(hdr_len);
+    // Prepend the list prefix directly; node payloads need at most three bytes.
+    auto const wrap = [](OffsetTrie::node_rlp_span const payload) {
+        size_t const payload_len = payload.rlp_size();
+        if (payload_len <= 55) {
+            payload.back() = static_cast<unsigned char>(0xC0 + payload_len);
+            return payload.shrink(1);
+        }
+        if (payload_len <= 0xFF) {
+            auto const header = payload.last(2);
+            header[0] = static_cast<unsigned char>(0xF8);
+            header[1] = static_cast<unsigned char>(payload_len);
+            return payload.shrink(2);
+        }
+        // Ensure the payload length fits in the two-byte field below.
+        MONAD_ASSERT(payload_len <= 0xFFFF);
+        auto const header = payload.last(3);
+        header[0] = static_cast<unsigned char>(0xF9);
+        header[1] = static_cast<unsigned char>(payload_len >> 8);
+        header[2] = static_cast<unsigned char>(payload_len & 0xFF);
+        return payload.shrink(3);
     };
     return match(
         node, Cases {
@@ -868,16 +889,16 @@ OffsetTrie::node_rlp_span OffsetTrie::encode_rlp(
                 //
                 // Widen wire IDs once to use native 64-bit arithmetic.
                 //
-                // Priming already validated all child IDs as blob offsets;
-                // only mutation needs the overlay and bounds checks here.
-                auto const blob_digest_at = [this](uint64_t const w) {
+                // Keep the blob address across byte stores, which may alias
+                // blob_ and otherwise force the compiler to reload it.
+                unsigned char const *const blob_data = blob_.data();
+                auto const blob_digest_at = [&](uint64_t const w) {
                     if constexpr (priming_pass) {
-                        // Before encoding a node, claim_child checks that
-                        // each nonzero child points to an earlier node in
-                        // the blob. Inlined children were checked on
-                        // earlier turns.
-                        return w != 0 && NodeViewBase{blob_.data() + w}.tag() ==
-                                             Tag::DIGEST;
+                        // Children are validated before this read, either by
+                        // the constructor or by this encode's claim step.
+                        // Inlined children's references were checked earlier.
+                        return w != 0 &&
+                               NodeViewBase{blob_data + w}.tag() == Tag::DIGEST;
                     }
                     else {
                         return w != 0 &&
@@ -919,17 +940,23 @@ OffsetTrie::node_rlp_span OffsetTrie::encode_rlp(
                     asm("" : "+r"(child_cursor));
 #endif
                     uint64_t const child_offset = *child_cursor;
+                    if (child_offset == 0) {
+                        // 0x80 encodes an empty child. The full branch fits
+                        // within MAX_NODE_RLP, so this byte always has room.
+                        static_assert(
+                            3 + 16 * HASH_RLP_LEN + 1 <= MAX_NODE_RLP);
+                        dest = dest.prepend_unchecked(0x80);
+                        continue;
+                    }
 #if defined(MONAD_ZKVM_ZISK)
                     if constexpr (claim_children) {
                         // Before reading the child, require a previously seen
                         // node that no other parent has claimed.
-                        if (child_offset != 0) {
-                            MONAD_ASSERT(
-                                child_offset < blob_size &&
-                                unclaimed_node_marks[child_offset] != 0);
-                            unclaimed_node_marks[child_offset] = 0;
-                            claimed_node_bytes += DIGEST_NODE_LEN;
-                        }
+                        MONAD_ASSERT(
+                            child_offset < blob_size &&
+                            unclaimed_node_marks[child_offset] != 0);
+                        unclaimed_node_marks[child_offset] = 0;
+                        claimed_node_bytes += DIGEST_NODE_LEN;
                     }
 #endif
                     if (!digest_at(child_offset)) {
@@ -943,12 +970,9 @@ OffsetTrie::node_rlp_span OffsetTrie::encode_rlp(
                             static_assert(
                                 MAX_NODE_RLP - (3 + 16 * HASH_RLP_LEN + 1) >=
                                 16 * sizeof(uintptr_t));
-                            if (child_offset != 0) {
-                                reinterpret_cast<uintptr_t *>(dest.base())
-                                    [child_cursor - children_begin] =
-                                        reinterpret_cast<uintptr_t>(
-                                            dest.rlp_data());
-                            }
+                            reinterpret_cast<uintptr_t *>(
+                                dest.base())[child_cursor - children_begin] =
+                                reinterpret_cast<uintptr_t>(dest.rlp_data());
                         }
 #endif
                         continue;
@@ -976,7 +1000,7 @@ OffsetTrie::node_rlp_span OffsetTrie::encode_rlp(
                             // Offset zero reads the validated header's EMPTY
                             // tag, never DIGEST, so no separate null check is
                             // needed.
-                            if (NodeViewBase{blob_.data() + previous_child}
+                            if (NodeViewBase{blob_data + previous_child}
                                     .tag() != Tag::DIGEST) {
                                 break;
                             }
@@ -1020,9 +1044,9 @@ OffsetTrie::node_rlp_span OffsetTrie::encode_rlp(
                     // A complete branch needs at most 532 bytes, within
                     // MAX_NODE_RLP, so this copy needs no extra room check.
                     dest = dest.prepend_unchecked(
-                        blob_.data() + (preceding_offset + HASH_RLP_LEN),
+                        blob_data + (preceding_offset + HASH_RLP_LEN),
                         digests_length);
-                    // The next decrement skips the whole copied run.
+                    // The next decrement skips the copied run.
                     child_cursor = run_begin;
                 }
 #if defined(MONAD_ZKVM_ZISK)
@@ -1370,129 +1394,213 @@ void OffsetTrie::fold_ext_node_path_maybe(
 // Returned paths borrow a suffix of the caller's key, which must outlive them.
 // The extension path remains an owning copy: writes may replace its storage.
 std::pair<NodeId, NibblesView>
-OffsetTrie::upsert_node(NodeId const id, NibblesView const key)
+OffsetTrie::upsert_node(NodeId id, NibblesView key)
 {
+    using Result = std::pair<NodeId, NibblesView>;
 #if defined(MONAD_ZKVM_ZISK)
     // Keep the full key so leaf_path_equals can realign an odd-depth suffix.
     unsigned char const *const whole_key =
         key.nibble_size() == MAX_PATH_NIBBLES && !key.begin_nibble()
             ? key.data()
             : nullptr;
+    // Consume both nibbles of each key byte through unchanged branches.
+    // Stop at the first missing child or other node; the general loop resumes
+    // there with the remaining key.
+    if (whole_key != nullptr) {
+        NodeCacheEntry *const *const node_cache = blob_node_cache_;
+        byte_string *const *const modified_nodes = modified_blob_nodes_;
+        // Invalidate the parent hash and mark the child we descend into dirty.
+        auto const invalidate_parent =
+            [node_cache](uint64_t const node_id, unsigned const bit) {
+                if (NodeCacheEntry *const cached = node_cache[node_id >> 2]) {
+                    cached->hash_stale = 1;
+                    cached->dirty_children |= uint64_t{1} << bit;
+                }
+            };
+        // Check entry bounds once. Later IDs are nonnull children of original
+        // branches, already validated by the constructor. Keep checking the
+        // overlay: rewritten nodes must fall back to the general loop.
+        unsigned char const *const blob = blob_.data();
+        uint64_t const blob_span = blob_span_;
+        auto const child_branch =
+            [&](NodeId const child_id) -> unsigned char const * {
+            uint64_t const node_id = static_cast<uint64_t>(child_id);
+            if (modified_nodes[node_id >> 2] != nullptr) {
+                return nullptr;
+            }
+            return blob[node_id] == BRANCH ? blob + node_id : nullptr;
+        };
+        unsigned char const *key_cursor = whole_key;
+        unsigned consumed_high_nibble = 0;
+        unsigned char const *high_nibble_branch =
+            static_cast<uint64_t>(id) - HEADER_LEN < blob_span
+                ? child_branch(id)
+                : nullptr;
+        while (high_nibble_branch != nullptr) {
+            unsigned const key_byte = *key_cursor;
+            NodeId const high_child =
+                BranchView{NodeViewBase{high_nibble_branch}}.child(
+                    key_byte >> 4);
+            if (high_child == NULL_ID) {
+                break;
+            }
+            invalidate_parent(static_cast<uint64_t>(id), key_byte >> 4);
+            id = high_child;
+            consumed_high_nibble = 1;
+            unsigned char const *const low_nibble_branch = child_branch(id);
+            if (low_nibble_branch == nullptr) {
+                break;
+            }
+            NodeId const low_child =
+                BranchView{NodeViewBase{low_nibble_branch}}.child(
+                    key_byte & 0xf);
+            if (low_child == NULL_ID) {
+                break;
+            }
+            invalidate_parent(static_cast<uint64_t>(id), key_byte & 0xf);
+            id = low_child;
+            consumed_high_nibble = 0;
+            ++key_cursor;
+            if (key_cursor == whole_key + MAX_PATH_NIBBLES / 2) {
+                break;
+            }
+            high_nibble_branch = child_branch(id);
+        }
+        // Account for a high nibble consumed without its low nibble.
+        key = NibblesView{
+            2 * static_cast<unsigned>(key_cursor - whole_key) +
+                consumed_high_nibble,
+            MAX_PATH_NIBBLES,
+            whole_key};
+    }
 #endif
-    // dirtied along the descent
-    [[maybe_unused]] NodeCacheEntry *const cached_node = drop_hash(id);
-    // Leaf split/overwrite, shared by both leaf types. Only re-emitting the
-    // displaced old leaf differs (`reput_old`): a storage leaf keeps its
-    // value, an account leaf its fields and storage edge. `reput_old` runs
-    // ahead of every other put_* here, which is what lets it still read the
-    // displaced leaf's bytes.
-    auto const split_leaf =
-        [&](NibblesView const path,
-            auto const &reput_old) -> std::pair<NodeId, NibblesView> {
-    // exact match -> overwrite (reuse id + its path)
+    // Descend to existing children by updating id/key instead of recursing.
+    // A result finishes the upsert; nullopt continues at the next node.
+    for (;;) {
+        // dirtied along the descent
+        [[maybe_unused]] NodeCacheEntry *const cached_node = drop_hash(id);
+        // Leaf split/overwrite, shared by both leaf types. Only re-emitting the
+        // displaced old leaf differs (`reput_old`): a storage leaf keeps its
+        // value, an account leaf its fields and storage edge. `reput_old` runs
+        // ahead of every other put_* here, which is what lets it still read the
+        // displaced leaf's bytes.
+        auto const split_leaf = [&](NibblesView const path,
+                                    auto const &reput_old) -> Result {
+        // exact match -> overwrite (reuse id + its path)
 #if defined(MONAD_ZKVM_ZISK)
-        if (leaf_path_equals(path, key, whole_key)) {
+            if (leaf_path_equals(path, key, whole_key)) {
 #else
-        if (path == key) {
+            if (path == key) {
 #endif
-            return {id, key};
-        }
-        // old leaf + new key meet at a fresh branch, wrapped in an
-        // extension for their shared prefix.
-        unsigned const cp = common_prefix_length(path, key);
-        MONAD_ASSERT(cp < path.nibble_size() && cp < key.nibble_size());
-        std::array<node_id_wire_t, 16> children{};
-        children[path.get(cp)] =
-            to_node_id_wire_t(reput_old(path.substr(cp + 1)));
-        NodeId const leaf = fresh_id();
-        children[key.get(cp)] = to_node_id_wire_t(leaf);
-        if (cp > 0) {
-            NodeId const branch = put_branch(NULL_ID, children);
-            put_ext(id, key.substr(0, cp), branch);
-        }
-        else {
-            put_branch(id, children);
-        }
-        return {leaf, key.substr(cp + 1)};
-    };
+                return {id, key};
+            }
+            // old leaf + new key meet at a fresh branch, wrapped in an
+            // extension for their shared prefix.
+            unsigned const common_nibbles = common_prefix_length(path, key);
+            MONAD_ASSERT(
+                common_nibbles < path.nibble_size() &&
+                common_nibbles < key.nibble_size());
+            std::array<node_id_wire_t, 16> children{};
+            children[path.get(common_nibbles)] =
+                to_node_id_wire_t(reput_old(path.substr(common_nibbles + 1)));
+            NodeId const leaf = fresh_id();
+            children[key.get(common_nibbles)] = to_node_id_wire_t(leaf);
+            if (common_nibbles > 0) {
+                NodeId const branch = put_branch(NULL_ID, children);
+                put_ext(id, key.substr(0, common_nibbles), branch);
+            }
+            else {
+                put_branch(id, children);
+            }
+            return {leaf, key.substr(common_nibbles + 1)};
+        };
 
-    return match(
-        get_current(id),
-        Cases{
-            [&](NullView) -> std::pair<NodeId, NibblesView> {
-                // Empty slot (or an empty trie's root): a fresh leaf
-                // holding the whole remaining key, which the caller
-                // materialises.
-                return {fresh_id(), key};
-            },
-            [&](StorageLeafView l) -> std::pair<NodeId, NibblesView> {
-                bytes32_t const v = l.value();
-                return split_leaf(
-                    l.path(), [&](NibblesView const remaining_path) {
-                        return put_storage(NULL_ID, remaining_path, v);
-                    });
-            },
-            [&](AccountLeafView l) -> std::pair<NodeId, NibblesView> {
-                return split_leaf(
-                    l.path(), [&, l](NibblesView const remaining_path) {
-                        return clone_acct(NULL_ID, l, remaining_path);
-                    });
-            },
-            [&](ExtView e) -> std::pair<NodeId, NibblesView> {
-                Nibbles const owned_path{e.path()};
-                NibblesView const path{owned_path};
-                NodeId child = e.child();
-                unsigned const cp = common_prefix_length(path, key);
-                if (cp == path.nibble_size()) { // full prefix -> descend
+        std::optional<Result> const result = match(
+            get_current(id),
+            Cases{
+                [&](NullView) -> std::optional<Result> {
+                    // Empty slot (or an empty trie's root): a fresh leaf
+                    // holding the whole remaining key, which the caller
+                    // materialises.
+                    return Result{fresh_id(), key};
+                },
+                [&](StorageLeafView leaf) -> std::optional<Result> {
+                    bytes32_t const value = leaf.value();
+                    return split_leaf(
+                        leaf.path(), [&](NibblesView const remaining_path) {
+                            return put_storage(NULL_ID, remaining_path, value);
+                        });
+                },
+                [&](AccountLeafView leaf) -> std::optional<Result> {
+                    return split_leaf(
+                        leaf.path(),
+                        [&, leaf](NibblesView const remaining_path) {
+                            return clone_acct(NULL_ID, leaf, remaining_path);
+                        });
+                },
+                [&](ExtView extension) -> std::optional<Result> {
+                    Nibbles const owned_path{extension.path()};
+                    NibblesView const path{owned_path};
+                    NodeId child = extension.child();
+                    unsigned const common_nibbles =
+                        common_prefix_length(path, key);
+                    if (common_nibbles ==
+                        path.nibble_size()) { // full prefix -> descend
 #if defined(MONAD_ZKVM_ZISK)
-                    mark_dirty(cached_node, 0);
+                        mark_dirty(cached_node, 0);
 #endif
-                    return upsert_node(child, key.substr(cp));
-                }
-                // diverge mid-extension
-                std::array<node_id_wire_t, 16> children{};
-                if (cp + 1 < path.nibble_size()) {
-                    child = put_ext(NULL_ID, path.substr(cp + 1), child);
-                }
-                children[path.get(cp)] = to_node_id_wire_t(child);
+                        key = key.substr(common_nibbles);
+                        id = child;
+                        return std::nullopt;
+                    }
+                    // diverge mid-extension
+                    std::array<node_id_wire_t, 16> children{};
+                    if (common_nibbles + 1 < path.nibble_size()) {
+                        child = put_ext(
+                            NULL_ID, path.substr(common_nibbles + 1), child);
+                    }
+                    children[path.get(common_nibbles)] =
+                        to_node_id_wire_t(child);
 
-                NodeId const leaf = fresh_id();
-                children[key.get(cp)] = to_node_id_wire_t(leaf);
+                    NodeId const leaf = fresh_id();
+                    children[key.get(common_nibbles)] = to_node_id_wire_t(leaf);
 
-                if (cp > 0) {
-                    NodeId const branch = put_branch(NULL_ID, children);
-                    put_ext(id, key.substr(0, cp), branch);
-                }
-                else {
-                    put_branch(id, children);
-                }
-                return {leaf, key.substr(cp + 1)};
-            },
-            [&](BranchView b) -> std::pair<NodeId, NibblesView> {
-                MONAD_ASSERT(key.nibble_size() > 0); // never ends at branch
-                unsigned const nib = key.get(0);
-                std::array<node_id_wire_t, 16> children = b.children();
-                NodeId const child = NodeId{children[nib]};
+                    if (common_nibbles > 0) {
+                        NodeId const branch = put_branch(NULL_ID, children);
+                        put_ext(id, key.substr(0, common_nibbles), branch);
+                    }
+                    else {
+                        put_branch(id, children);
+                    }
+                    return Result{leaf, key.substr(common_nibbles + 1)};
+                },
+                [&](BranchView branch) -> std::optional<Result> {
+                    MONAD_ASSERT(key.nibble_size() > 0); // never ends at branch
+                    unsigned const child_index = key.get(0);
+                    std::array<node_id_wire_t, 16> children = branch.children();
+                    NodeId const child = NodeId{children[child_index]};
+                    key = key.substr(1);
+                    if (child != NULL_ID) {
 #if defined(MONAD_ZKVM_ZISK)
-                if (child != NULL_ID) {
-                    mark_dirty(cached_node, nib);
-                }
+                        mark_dirty(cached_node, child_index);
 #endif
-                // Recurse into the slot: a NULL_ID child lets upsert_node
-                // allocate the leaf; an existing child keeps its stable id.
-                // Only rewrite the branch when a previously-empty slot
-                // fills.
-                auto const result = upsert_node(child, key.substr(1));
-                if (child == NULL_ID) {
-                    children[nib] = to_node_id_wire_t(result.first);
+                        id = child;
+                        return std::nullopt;
+                    }
+                    // Filling an empty slot rewrites the saved branch.
+                    auto const result = upsert_node(NULL_ID, key);
+                    children[child_index] = to_node_id_wire_t(result.first);
                     put_branch(id, children);
-                }
-                return result;
-            },
-            [&](DigestView) -> std::pair<NodeId, NibblesView> {
-                MONAD_ABORT("incomplete witness: upsert hit a Digest");
-            },
-        });
+                    return result;
+                },
+                [&](DigestView) -> std::optional<Result> {
+                    MONAD_ABORT("incomplete witness: upsert hit a Digest");
+                },
+            });
+        if (result.has_value()) {
+            return *result;
+        }
+    }
 }
 
 OffsetTrie::EraseResult

@@ -263,6 +263,38 @@ namespace monad::vm::interpreter
     using enum runtime::StatusCode;
     using enum compiler::EvmOpCode;
 
+    [[gnu::always_inline]] inline bool opcode_at_is(
+        uint8_t const *instructions, size_t offset, compiler::EvmOpCode opcode)
+    {
+        return instructions[offset] == static_cast<uint8_t>(opcode);
+    }
+
+#if defined(MONAD_ZKVM_ZISK)
+    // Compare N bytecode bytes with a constant pattern using ZisK's DMA
+    // comparator (CSR 0x814). The following instruction encodes the length.
+    template <size_t N, size_t M>
+    [[gnu::always_inline]] inline bool code_matches(
+        uint8_t const *const instructions,
+        unsigned char const (&pattern)[M]) noexcept
+    {
+        static_assert(N <= M);
+        uint64_t mismatch;
+        asm(".option push\n\t"
+            ".option arch, +zicsr\n\t"
+            "csrrs %0, 0x814, %1\n\t"
+            "addi x0, %2, %5\n\t"
+            ".option pop"
+            : "=&r"(mismatch)
+            : "r"(instructions),
+              "r"(pattern),
+              "m"(*reinterpret_cast<uint8_t const(*)[N]>(instructions)),
+              "m"(pattern),
+              "i"(N));
+        return mismatch == 0;
+    }
+
+#endif
+
     // Static gas and stack requirements, computed from the opcode table.
     // Track required operands and peak height, not just net stack change.
     struct FusedRequirements
@@ -307,6 +339,16 @@ namespace monad::vm::interpreter
     }
 
 #if defined(MONAD_ZKVM_ZISK)
+    // Sum base gas, including only the static part of dynamic-cost opcodes.
+    // The caller must charge their dynamic cost separately.
+    template <Traits traits, compiler::EvmOpCode... Ops>
+    consteval int64_t static_gas()
+    {
+        return (
+            static_cast<int64_t>(compiler::opcode_table<traits>[Ops].min_gas) +
+            ...);
+    }
+
     // Subtract first, then test the sign. Laundering prevents GCC from
     // replacing this with a comparison that needs another constant load.
     [[gnu::always_inline]] inline bool
@@ -1216,12 +1258,218 @@ namespace monad::vm::interpreter
         MONAD_VM_NEXT(CALLER);
     }
 
+#if defined(MONAD_ZKVM_ZISK) && !defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
+    // Test whether the call transfers zero wei; byte order does not matter.
+    [[gnu::always_inline]] inline bool
+    call_value_is_zero(runtime::Context const &ctx) noexcept
+    {
+        // Separate 8-byte reads avoid staging a 32-byte DMA copy on the stack.
+        unsigned char const *const value_bytes = ctx.env.value.bytes;
+        uint64_t value_word_0, value_word_1, value_word_2, value_word_3;
+        __builtin_memcpy(&value_word_0, value_bytes, 8);
+        __builtin_memcpy(&value_word_1, value_bytes + 8, 8);
+        __builtin_memcpy(&value_word_2, value_bytes + 16, 8);
+        __builtin_memcpy(&value_word_3, value_bytes + 24, 8);
+        return (value_word_0 | value_word_1 | value_word_2 | value_word_3) == 0;
+    }
+
+    // Recognize a via-IR ABI check with a non-taken error branch:
+    //   PUSH0 (or PUSH1 <minimum>) CALLDATASIZE PUSH1 3 NOT ADD SLT
+    //   PUSH2 <revert> JUMPI
+    // Return its bytecode length when enough argument bytes follow the
+    // 4-byte selector; otherwise return zero. Needs three temporary slots.
+    template <Traits traits>
+    [[gnu::always_inline]] inline size_t ir_bound_length(
+        runtime::Context const &ctx, uint8_t const *const bound_code) noexcept
+    {
+        bool const push0 = bound_code[0] == static_cast<std::uint8_t>(PUSH0);
+        if (push0 && traits::evm_rev() < EvmRevision::Shanghai) {
+            return 0;
+        }
+        if (!push0 && bound_code[0] != static_cast<std::uint8_t>(PUSH1)) {
+            return 0;
+        }
+        size_t const minimum_argument_bytes = push0 ? 0 : bound_code[1];
+        auto const *const check_code = bound_code + (push0 ? 1 : 2);
+        if (!(check_code[0] == static_cast<std::uint8_t>(CALLDATASIZE) &&
+              check_code[1] == static_cast<std::uint8_t>(PUSH1) &&
+              check_code[2] == 3 &&
+              check_code[3] == static_cast<std::uint8_t>(NOT) &&
+              check_code[4] == static_cast<std::uint8_t>(ADD) &&
+              check_code[5] == static_cast<std::uint8_t>(SLT) &&
+              check_code[6] == static_cast<std::uint8_t>(PUSH2) &&
+              check_code[9] == static_cast<std::uint8_t>(JUMPI))) {
+            return 0;
+        }
+        uint64_t const calldata_size = ctx.env.input_data_size;
+        if (calldata_size < 4 || calldata_size - 4 < minimum_argument_bytes) {
+            return 0;
+        }
+        return static_cast<size_t>(check_code - bound_code) + 10;
+    }
+
+    // Fixed bytes from JUMPI through POP, excluding the jump destination.
+    alignas(8) inline constexpr unsigned char nonpayable_push0_tail[8] = {
+        static_cast<unsigned char>(JUMPI),
+        static_cast<unsigned char>(PUSH0),
+        static_cast<unsigned char>(DUP1),
+        static_cast<unsigned char>(REVERT),
+        static_cast<unsigned char>(JUMPDEST),
+        static_cast<unsigned char>(POP)};
+    alignas(8) inline constexpr unsigned char nonpayable_push1_tail[8] = {
+        static_cast<unsigned char>(JUMPI),
+        static_cast<unsigned char>(PUSH1),
+        0,
+        static_cast<unsigned char>(DUP1),
+        static_cast<unsigned char>(REVERT),
+        static_cast<unsigned char>(JUMPDEST),
+        static_cast<unsigned char>(POP)};
+
+    // Legacy Solidity's non-payable check:
+    //   CALLVALUE DUP1 ISZERO PUSH2 <ok> JUMPI PUSH1 0 DUP1 REVERT
+    //   ok: JUMPDEST POP                     (or PUSH0 DUP1 REVERT)
+    // With zero value, jump over REVERT and remove the temporary CALLVALUE.
+    // Unsupported patterns use ordinary dispatch.
+    template <Traits traits>
+    [[gnu::noinline]] MONAD_VM_TWIN_CALL void callvalue_nonpayable(
+        runtime::Context &ctx, MONAD_VM_DISPATCH_STATE_PARAM,
+        uint256_t const *stack_lower_bound, StackTop stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+    {
+        auto const *const instructions = instr_ptr;
+        // PUSH0 occupies one byte less than PUSH1 0, shifting the success
+        // label.
+        size_t success_offset;
+        bool matches_revert_tail;
+        if (opcode_at_is(instructions, 7, PUSH0)) {
+            success_offset = 10;
+            matches_revert_tail =
+                code_matches<6>(instructions + 6, nonpayable_push0_tail);
+        }
+        else {
+            success_offset = 11;
+            matches_revert_tail =
+                code_matches<7>(instructions + 6, nonpayable_push1_tail);
+        }
+        size_t const jump_destination = detail::load_be_k<2>(instructions + 4);
+        size_t const callvalue_offset =
+            static_cast<size_t>(instructions - MONAD_VM_CODE_VIEW.code());
+        // The full pattern proves this destination is a JUMPDEST instruction,
+        // so no bitmap lookup is needed.
+        if (MONAD_UNLIKELY(!(
+                matches_revert_tail && opcode_at_is(instructions, 2, ISZERO) &&
+                opcode_at_is(instructions, 3, PUSH2) &&
+                jump_destination == callvalue_offset + success_offset &&
+                stack_top.next_slot() <= MONAD_VM_STACK_LIMIT - 3 &&
+                call_value_is_zero(ctx)))) {
+            // Execute CALLVALUE directly to avoid re-entering this helper.
+            MONAD_VM_CHECK(CALLVALUE);
+            push(stack_top, load_be<uint256_t>(ctx.env.value));
+            MONAD_VM_NEXT(CALLVALUE);
+        }
+        // Charge through POP before checking gas: this path has no side
+        // effects.
+        gas_remaining -= static_gas<
+            traits,
+            CALLVALUE,
+            DUP1,
+            ISZERO,
+            PUSH2,
+            JUMPI,
+            JUMPDEST,
+            POP>();
+        if (MONAD_UNLIKELY(gas_remaining < 0)) {
+            MONAD_VM_MUST_TAIL return ctx.exit(OutOfGas);
+        }
+        MONAD_VM_FUSED_NEXT(success_offset + 2, 0);
+    }
+
+    // Fuse CALLVALUE PUSH2 <revert> JUMPI when the call transfers zero wei.
+    // Also skip a recognized ABI length check when enough arguments exist.
+    template <Traits traits>
+    [[gnu::noinline]] MONAD_VM_TWIN_CALL void callvalue_ir(
+        runtime::Context &ctx, MONAD_VM_DISPATCH_STATE_PARAM,
+        uint256_t const *stack_lower_bound, StackTop stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+    {
+        auto const *const instructions = instr_ptr;
+        if (MONAD_UNLIKELY(
+                !(instructions[4] == static_cast<std::uint8_t>(JUMPI) &&
+                  stack_top.next_slot() <= MONAD_VM_STACK_LIMIT - 3 &&
+                  call_value_is_zero(ctx)))) {
+            // Execute CALLVALUE directly to avoid re-entering this helper.
+            MONAD_VM_CHECK(CALLVALUE);
+            push(stack_top, load_be<uint256_t>(ctx.env.value));
+            MONAD_VM_NEXT(CALLVALUE);
+        }
+        // These pure instructions defer the gas check to the next checkpoint.
+        gas_remaining -= static_gas<traits, CALLVALUE, PUSH2, JUMPI>();
+        size_t const calldata_check_bytecode_length =
+            ir_bound_length<traits>(ctx, instructions + 5);
+        if (calldata_check_bytecode_length != 0) {
+            gas_remaining -= instructions[5] == static_cast<std::uint8_t>(PUSH0)
+                                 ? static_gas<
+                                       traits,
+                                       PUSH0,
+                                       CALLDATASIZE,
+                                       PUSH1,
+                                       NOT,
+                                       ADD,
+                                       SLT,
+                                       PUSH2,
+                                       JUMPI>()
+                                 : static_gas<
+                                       traits,
+                                       PUSH1,
+                                       CALLDATASIZE,
+                                       PUSH1,
+                                       NOT,
+                                       ADD,
+                                       SLT,
+                                       PUSH2,
+                                       JUMPI>();
+        }
+        instr_ptr += 5 + calldata_check_bytecode_length;
+        MONAD_VM_LAUNDER(instr_ptr);
+        MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
+            ctx,
+            MONAD_VM_DISPATCH_STATE_ARG,
+            stack_lower_bound,
+            stack_top,
+            gas_remaining,
+            instr_ptr MONAD_VM_TBL_ARG);
+    }
+#endif
+
     template <Traits traits>
     MONAD_VM_INSTRUCTION_CALL void callvalue(
         runtime::Context &ctx, MONAD_VM_DISPATCH_STATE_PARAM,
         uint256_t const *stack_lower_bound, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
+#if defined(MONAD_ZKVM_ZISK) && !defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
+        // Solidity reads the call's value for its non-payable test, each
+        // generator's in a twin: DUP1 follows in the legacy one, PUSH2 in
+        // the via-IR one.
+        if (instr_ptr[1] == static_cast<std::uint8_t>(DUP1)) {
+            MONAD_VM_MUST_TAIL return callvalue_nonpayable<traits>(
+                ctx,
+                MONAD_VM_DISPATCH_STATE_ARG,
+                stack_lower_bound,
+                stack_top,
+                gas_remaining,
+                instr_ptr MONAD_VM_TBL_ARG);
+        }
+        if (instr_ptr[1] == static_cast<std::uint8_t>(PUSH2)) {
+            MONAD_VM_MUST_TAIL return callvalue_ir<traits>(
+                ctx,
+                MONAD_VM_DISPATCH_STATE_ARG,
+                stack_lower_bound,
+                stack_top,
+                gas_remaining,
+                instr_ptr MONAD_VM_TBL_ARG);
+        }
+#endif
         MONAD_VM_CHECK(CALLVALUE);
         push(stack_top, load_be<uint256_t>(ctx.env.value));
 
@@ -1240,12 +1488,268 @@ namespace monad::vm::interpreter
         MONAD_VM_NEXT(CALLDATALOAD);
     }
 
+#if defined(MONAD_ZKVM_ZISK) && !defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
+    // Aligned storage for the three selector-extraction patterns. Only the
+    // first 5, 6 or 41 bytes are compared; trailing padding is ignored.
+    alignas(8) inline constexpr unsigned char selector_push0_pattern[8] = {
+        static_cast<unsigned char>(PUSH0),
+        static_cast<unsigned char>(CALLDATALOAD),
+        static_cast<unsigned char>(PUSH1),
+        0xe0,
+        static_cast<unsigned char>(SHR)};
+    alignas(8) inline constexpr unsigned char selector_push1_pattern[8] = {
+        static_cast<unsigned char>(PUSH1),
+        0,
+        static_cast<unsigned char>(CALLDATALOAD),
+        static_cast<unsigned char>(PUSH1),
+        0xe0,
+        static_cast<unsigned char>(SHR)};
+    alignas(8) inline constexpr unsigned char selector_div_pattern[48] = {
+        static_cast<unsigned char>(PUSH1),
+        0,
+        static_cast<unsigned char>(CALLDATALOAD),
+        static_cast<unsigned char>(PUSH29),
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        static_cast<unsigned char>(SWAP1),
+        static_cast<unsigned char>(DIV),
+        static_cast<unsigned char>(PUSH4),
+        0xff,
+        0xff,
+        0xff,
+        0xff,
+        static_cast<unsigned char>(AND)};
+
+    // These fusions use deferred gas checks; eager mode keeps per-opcode
+    // dispatch. Recognize one of these selector extractions:
+    //
+    //     PUSH1 0 CALLDATALOAD PUSH1 0xe0 SHR
+    //     PUSH0 CALLDATALOAD PUSH1 0xe0 SHR
+    //     PUSH1 0 CALLDATALOAD PUSH29 1 << 224 SWAP1 DIV PUSH4 0xffffffff AND
+    //
+    // Charge its gas, push the first four calldata bytes and return the
+    // bytecode length. Return zero without changes for an unknown pattern.
+    // The caller guarantees four calldata bytes and room for two stack slots.
+    template <Traits traits>
+    [[gnu::always_inline]] inline size_t push_selector(
+        runtime::Context const &ctx, uint8_t const *const extraction_code,
+        StackTop const stack_top, int64_t &gas_remaining)
+    {
+        size_t extraction_length = 0;
+        if (traits::evm_rev() >= EvmRevision::Shanghai &&
+            opcode_at_is(extraction_code, 0, PUSH0)) {
+            if (code_matches<5>(extraction_code, selector_push0_pattern)) {
+                gas_remaining -=
+                    static_gas<traits, PUSH0, CALLDATALOAD, PUSH1, SHR>();
+                extraction_length = 5;
+            }
+        }
+        else if (opcode_at_is(extraction_code, 0, PUSH1)) {
+            if (code_matches<6>(extraction_code, selector_push1_pattern)) {
+                gas_remaining -=
+                    static_gas<traits, PUSH1, CALLDATALOAD, PUSH1, SHR>();
+                extraction_length = 6;
+            }
+            // Offset 33 is safe with the code's 33-byte zero padding. A
+            // nonzero SWAP1 there guarantees enough real code for the 41-byte
+            // comparison to remain within the padded allocation.
+            else if (
+                opcode_at_is(extraction_code, 33, SWAP1) &&
+                code_matches<41>(extraction_code, selector_div_pattern)) {
+                gas_remaining -= static_gas<
+                    traits,
+                    PUSH1,
+                    CALLDATALOAD,
+                    PUSH29,
+                    SWAP1,
+                    DIV,
+                    PUSH4,
+                    AND>();
+                extraction_length = 41;
+            }
+        }
+        if (extraction_length != 0) {
+            stack_top[1] = uint256_t{detail::load_be_k<4>(ctx.env.input_data)};
+        }
+        return extraction_length;
+    }
+
+    // Fuse the calldata-size check with an optional selector extraction:
+    //
+    //     CALLDATASIZE LT PUSH2 <fallback> JUMPI          (not taken)
+    //     CALLDATASIZE LT ISZERO PUSH2 <dispatch> JUMPI   (taken)
+    //
+    // Requires 4 on the stack and at least four calldata bytes. Consume the
+    // 4, then extract the selector if the following code matches a known form.
+    // Otherwise execute CALLDATASIZE here and resume ordinary dispatch.
+    template <Traits traits>
+    [[gnu::noinline]] MONAD_VM_TWIN_CALL void calldata_selector(
+        runtime::Context &ctx, MONAD_VM_DISPATCH_STATE_PARAM,
+        uint256_t const *stack_lower_bound, StackTop stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+    {
+        auto const *const instructions = instr_ptr;
+        bool const falls_through = opcode_at_is(instructions, 2, PUSH2) &&
+                                   opcode_at_is(instructions, 5, JUMPI);
+        bool const jumps_to_dispatch = opcode_at_is(instructions, 2, ISZERO) &&
+                                       opcode_at_is(instructions, 3, PUSH2) &&
+                                       opcode_at_is(instructions, 6, JUMPI);
+        if (MONAD_UNLIKELY(!(
+                (falls_through || jumps_to_dispatch) &&
+                ctx.env.input_data_size >= 4 &&
+                stack_holds<1>(stack_top, stack_lower_bound) &&
+                stack_top.next_slot() < MONAD_VM_STACK_LIMIT &&
+                stack_top[0][0] == 4 &&
+                (stack_top[0][1] | stack_top[0][2] | stack_top[0][3]) == 0))) {
+            // Execute CALLDATASIZE directly to avoid re-entering this helper.
+            MONAD_VM_CHECK(CALLDATASIZE);
+            push(stack_top, ctx.env.input_data_size);
+            MONAD_VM_NEXT(CALLDATASIZE);
+        }
+        // A taken jump checks gas at JUMPDEST; otherwise the next checkpoint
+        // does.
+        uint8_t const *extraction_code;
+        if (falls_through) {
+            gas_remaining -=
+                static_gas<traits, CALLDATASIZE, LT, PUSH2, JUMPI>();
+            extraction_code = instructions + 6;
+        }
+        else {
+            gas_remaining -=
+                static_gas<traits, CALLDATASIZE, LT, ISZERO, PUSH2, JUMPI>();
+            extraction_code =
+                fused_branch(ctx, instructions + 2, true, gas_remaining);
+        }
+        size_t const extraction_length = push_selector<traits>(
+            ctx, extraction_code, stack_top - 1, gas_remaining);
+        instr_ptr = extraction_code + extraction_length;
+        MONAD_VM_LAUNDER(instr_ptr);
+        MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
+            ctx,
+            MONAD_VM_DISPATCH_STATE_ARG,
+            stack_lower_bound,
+            stack_top - (extraction_length == 0 ? 1 : 0),
+            gas_remaining,
+            instr_ptr MONAD_VM_TBL_ARG);
+    }
+
+    // Fuse the ABI decoder's remaining-length check:
+    //
+    //     CALLDATASIZE SUB PUSH1 <minimum> DUP2 LT ISZERO PUSH2 <decode> JUMPI
+    //
+    // Replace the top offset with calldata_size - offset, then jump if enough
+    // bytes remain. Unsupported patterns and subtraction underflow fall back.
+    template <Traits traits>
+    [[gnu::noinline]] MONAD_VM_TWIN_CALL void calldata_bound(
+        runtime::Context &ctx, MONAD_VM_DISPATCH_STATE_PARAM,
+        uint256_t const *stack_lower_bound, StackTop stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+    {
+        auto const *const instructions = instr_ptr;
+        uint64_t const calldata_size = ctx.env.input_data_size;
+        if (MONAD_UNLIKELY(
+                !(opcode_at_is(instructions, 2, PUSH1) &&
+                  opcode_at_is(instructions, 4, DUP2) &&
+                  opcode_at_is(instructions, 5, LT) &&
+                  opcode_at_is(instructions, 6, ISZERO) &&
+                  opcode_at_is(instructions, 7, PUSH2) &&
+                  opcode_at_is(instructions, 10, JUMPI) &&
+                  stack_holds<1>(stack_top, stack_lower_bound) &&
+                  stack_top.next_slot() < MONAD_VM_STACK_LIMIT - 1 &&
+                  (stack_top[0][1] | stack_top[0][2] | stack_top[0][3]) == 0 &&
+                  stack_top[0][0] <= calldata_size))) {
+            // Execute CALLDATASIZE directly to avoid re-entering this helper.
+            MONAD_VM_CHECK(CALLDATASIZE);
+            push(stack_top, ctx.env.input_data_size);
+            MONAD_VM_NEXT(CALLDATASIZE);
+        }
+        // A taken jump checks gas at JUMPDEST; otherwise the next checkpoint
+        // does.
+        gas_remaining -= static_gas<
+            traits,
+            CALLDATASIZE,
+            SUB,
+            PUSH1,
+            DUP2,
+            LT,
+            ISZERO,
+            PUSH2,
+            JUMPI>();
+        uint256_t &calldata_offset = stack_top[0];
+        uint64_t const remaining_bytes = calldata_size - calldata_offset[0];
+        calldata_offset = uint256_t{remaining_bytes};
+        instr_ptr = fused_branch(
+            ctx,
+            instructions + 6,
+            remaining_bytes >= instructions[3],
+            gas_remaining);
+        MONAD_VM_LAUNDER(instr_ptr);
+        MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
+            ctx,
+            MONAD_VM_DISPATCH_STATE_ARG,
+            stack_lower_bound,
+            stack_top,
+            gas_remaining,
+            instr_ptr MONAD_VM_TBL_ARG);
+    }
+#endif
+
     template <Traits traits>
     MONAD_VM_INSTRUCTION_CALL void calldatasize(
         runtime::Context &ctx, MONAD_VM_DISPATCH_STATE_PARAM,
         uint256_t const *stack_lower_bound, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
+#if defined(MONAD_ZKVM_ZISK) && !defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
+        // Solidity reads the calldata's size for two idioms, each with a
+        // twin: the dispatch prologue (LT follows) and the ABI decoder's
+        // bound (SUB follows).
+        if (instr_ptr[1] == static_cast<std::uint8_t>(LT)) {
+            MONAD_VM_MUST_TAIL return calldata_selector<traits>(
+                ctx,
+                MONAD_VM_DISPATCH_STATE_ARG,
+                stack_lower_bound,
+                stack_top,
+                gas_remaining,
+                instr_ptr MONAD_VM_TBL_ARG);
+        }
+        if (instr_ptr[1] == static_cast<std::uint8_t>(SUB)) {
+            MONAD_VM_MUST_TAIL return calldata_bound<traits>(
+                ctx,
+                MONAD_VM_DISPATCH_STATE_ARG,
+                stack_lower_bound,
+                stack_top,
+                gas_remaining,
+                instr_ptr MONAD_VM_TBL_ARG);
+        }
+#endif
         MONAD_VM_CHECK(CALLDATASIZE);
         push(stack_top, ctx.env.input_data_size);
 
@@ -1738,6 +2242,314 @@ namespace monad::vm::interpreter
     // Stack
 
 #if defined(MONAD_ZKVM_ZISK)
+    // Recognize this Solidity loop over [..., len, dst, src, i]:
+    //   h: JUMPDEST DUP4 DUP2 LT ISZERO PUSH2 <end> JUMPI
+    //      DUP2 DUP2 ADD MLOAD DUP4 DUP3 ADD MSTORE PUSH1 0x20 ADD
+    //      PUSH2 <h> JUMP
+    // Each turn copies 32 bytes from src+i to dst+i, then adds 32 to i.
+    // Enter after a fall-through JUMPDEST, with instr_ptr on DUP4. Validate
+    // the full pattern and bounds before batching copies and gas charges.
+    // Unsupported cases resume ordinary dispatch without changing the frame.
+    template <Traits traits>
+    [[gnu::noinline]] MONAD_VM_TWIN_CALL void copy_loop(
+        runtime::Context &ctx, MONAD_VM_DISPATCH_STATE_PARAM,
+        uint256_t const *stack_lower_bound, StackTop stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+    {
+        alignas(8) static constexpr uint8_t condition_pattern[8] = {
+            static_cast<uint8_t>(LT),
+            static_cast<uint8_t>(ISZERO),
+            static_cast<uint8_t>(PUSH2)};
+        alignas(8) static constexpr uint8_t copy_pattern[16] = {
+            static_cast<uint8_t>(JUMPI),
+            static_cast<uint8_t>(DUP2),
+            static_cast<uint8_t>(DUP2),
+            static_cast<uint8_t>(ADD),
+            static_cast<uint8_t>(MLOAD),
+            static_cast<uint8_t>(DUP4),
+            static_cast<uint8_t>(DUP3),
+            static_cast<uint8_t>(ADD),
+            static_cast<uint8_t>(MSTORE),
+            static_cast<uint8_t>(PUSH1),
+            32,
+            static_cast<uint8_t>(ADD),
+            static_cast<uint8_t>(PUSH2)};
+        auto const *const loop_instructions = instr_ptr;
+        auto const fits_memory_offset = [](uint256_t const &x) {
+            return (x[1] | x[2] | x[3]) == 0 && x[0] < (uint64_t{1} << 28);
+        };
+        // PUSH2 immediates at loop_instructions + 5 and loop_instructions + 20
+        // encode the exit and loop PCs.
+        size_t const exit_pc = detail::load_be_k<2>(loop_instructions + 5);
+        size_t const loop_pc = detail::load_be_k<2>(loop_instructions + 20);
+        // Check all four operands before forming references into the stack.
+        if (!stack_holds<4>(stack_top, stack_lower_bound) ||
+            stack_top.next_slot() > MONAD_VM_STACK_LIMIT - 3) {
+            MONAD_VM_DISPATCH(0, 0, *instr_ptr);
+        }
+        uint256_t const &loop_index = stack_top[0];
+        uint256_t const &source_offset = stack_top[-1];
+        uint256_t const &destination_offset = stack_top[-2];
+        uint256_t const &loop_end_index = stack_top[-3];
+        // Entry through JUMPDEST guarantees the preceding opcode is JUMPDEST.
+        // Compare fixed spans around the two variable jump destinations.
+        // The copy span includes PUSH1 0x20; ADD (advance by 32 bytes).
+        if (!(code_matches<3>(loop_instructions + 2, condition_pattern) &&
+              code_matches<13>(loop_instructions + 7, copy_pattern) &&
+              opcode_at_is(loop_instructions, 22, JUMP) &&
+              // The back jump must target the JUMPDEST at the loop's start.
+              loop_pc ==
+                  static_cast<size_t>(
+                      loop_instructions - 1 - MONAD_VM_CODE_VIEW.code()) &&
+              fits_memory_offset(loop_end_index) &&
+              fits_memory_offset(loop_index) &&
+              fits_memory_offset(source_offset) &&
+              fits_memory_offset(destination_offset) &&
+              loop_index[0] < loop_end_index[0])) {
+            MONAD_VM_DISPATCH(0, 0, *instr_ptr);
+        }
+
+        uint64_t const initial_index = loop_index[0];
+        uint64_t const source_offset_u64 = source_offset[0];
+        uint64_t const destination_offset_u64 = destination_offset[0];
+        uint64_t const iteration_count =
+            (loop_end_index[0] - initial_index + 31) >> 5;
+        uint64_t const last_iteration_index =
+            initial_index + 32 * (iteration_count - 1);
+        // The furthest words' offsets are MLOAD's and MSTORE's: under 2^28.
+        if (source_offset_u64 + last_iteration_index >= (uint64_t{1} << 28) ||
+            destination_offset_u64 + last_iteration_index >=
+                (uint64_t{1} << 28)) {
+            MONAD_VM_DISPATCH(0, 0, *instr_ptr);
+        }
+        uint64_t const required_memory_size =
+            std::max(source_offset_u64, destination_offset_u64) +
+            last_iteration_index + 32;
+        int64_t memory_expansion_gas = 0;
+        auto new_memory_size = ctx.memory.size;
+        auto new_memory_cost = ctx.memory.cost;
+        if (required_memory_size > ctx.memory.size) {
+            auto const required_word_count =
+                runtime::Context::memory_size_to_word_count(
+                    runtime::Bin<29>::unsafe_from(required_memory_size));
+            auto const rounded_memory_size =
+                runtime::Context::word_count_to_memory_size(
+                    required_word_count);
+            if (MONAD_UNLIKELY(
+                    ctx.memory.capacity < *rounded_memory_size ||
+                    !ctx.is_memory_size_in_bound<traits>(
+                        rounded_memory_size))) {
+                MONAD_VM_DISPATCH(0, 0, *instr_ptr);
+            }
+            auto const expanded_memory_cost =
+                runtime::Context::memory_cost_from_word_count<traits>(
+                    required_word_count);
+            memory_expansion_gas = expanded_memory_cost - ctx.memory.cost;
+            new_memory_size = *rounded_memory_size;
+            new_memory_cost = expanded_memory_cost;
+        }
+        // A turn from the head's DUP4 to the next head, and the exit.
+        static constexpr int64_t iteration_gas = static_gas<
+            traits,
+            DUP4,
+            DUP2,
+            LT,
+            ISZERO,
+            PUSH2,
+            JUMPI,
+            DUP2,
+            DUP2,
+            ADD,
+            MLOAD,
+            DUP4,
+            DUP3,
+            ADD,
+            MSTORE,
+            PUSH1,
+            ADD,
+            PUSH2,
+            JUMP,
+            JUMPDEST>();
+        static constexpr int64_t exit_gas = static_gas<
+            traits,
+            DUP4,
+            DUP2,
+            LT,
+            ISZERO,
+            PUSH2,
+            JUMPI,
+            JUMPDEST>();
+        gas_remaining -= iteration_gas * static_cast<int64_t>(iteration_count) +
+                         exit_gas + memory_expansion_gas;
+        if (MONAD_UNLIKELY(!MONAD_VM_CODE_VIEW.is_jumpdest16(exit_pc))) {
+            MONAD_VM_MUST_TAIL return ctx.exit(Error);
+        }
+        if (MONAD_UNLIKELY(gas_remaining < 0)) {
+            MONAD_VM_MUST_TAIL return ctx.exit(OutOfGas);
+        }
+        ctx.memory.size = new_memory_size;
+        ctx.memory.cost = new_memory_cost;
+        uint8_t *const memory_data = ctx.memory.data;
+        uint64_t const copy_byte_count = 32 * iteration_count;
+        // The turns read no word an earlier one wrote when the ranges are
+        // apart: one copy. Otherwise word by word, in their order.
+        if (destination_offset_u64 + copy_byte_count <= source_offset_u64 ||
+            source_offset_u64 + copy_byte_count <= destination_offset_u64) {
+            std::memcpy(
+                memory_data + destination_offset_u64 + initial_index,
+                memory_data + source_offset_u64 + initial_index,
+                copy_byte_count);
+        }
+        else {
+            for (uint64_t k = initial_index; k <= last_iteration_index;
+                 k += 32) {
+                uint64_t copied_word[4];
+                std::memcpy(
+                    copied_word, memory_data + source_offset_u64 + k, 32);
+                std::memcpy(
+                    memory_data + destination_offset_u64 + k, copied_word, 32);
+            }
+        }
+        // Leave the index at or beyond the loop bound, as ordinary execution
+        // does.
+        stack_top[0] = uint256_t{last_iteration_index + 32};
+        instr_ptr = MONAD_VM_CODE_VIEW.code() + exit_pc + 1;
+        MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
+            ctx,
+            MONAD_VM_DISPATCH_STATE_ARG,
+            stack_lower_bound,
+            stack_top,
+            gas_remaining,
+            instr_ptr MONAD_VM_TBL_ARG);
+    }
+
+    // The end of Solidity's finalize_allocation,
+    //
+    //     PUSH8 0xffffffffffffffff DUP3 GT OR PUSH2 <panic> JUMPI
+    //     PUSH1 0x40 MSTORE JUMP
+    //
+    // Stack: [..., return address, new free memory pointer, overflow flag].
+    // Fuse only the successful path with memory already covering [0x40, 0x60).
+    // Other cases execute PUSH8 here, then resume ordinary dispatch.
+    template <Traits traits>
+    [[gnu::noinline]] MONAD_VM_TWIN_CALL void push8_alloc(
+        runtime::Context &ctx, MONAD_VM_DISPATCH_STATE_PARAM,
+        uint256_t const *stack_lower_bound, StackTop stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+    {
+        alignas(8) static constexpr uint8_t limit_pattern[16] = {
+            255,
+            255,
+            255,
+            255,
+            255,
+            255,
+            255,
+            255,
+            static_cast<uint8_t>(DUP3),
+            static_cast<uint8_t>(GT),
+            static_cast<uint8_t>(OR),
+            static_cast<uint8_t>(PUSH2)};
+        alignas(8) static constexpr uint8_t store_pattern[8] = {
+            static_cast<uint8_t>(JUMPI),
+            static_cast<uint8_t>(PUSH1),
+            64,
+            static_cast<uint8_t>(MSTORE),
+            static_cast<uint8_t>(JUMP)};
+        auto const *const instructions = instr_ptr;
+        // Validate the three operands and two temporary slots before reading.
+        if (!stack_holds<3>(stack_top, stack_lower_bound) ||
+            stack_top.next_slot() > MONAD_VM_STACK_LIMIT - 2) {
+            MONAD_VM_CHECK(PUSH8);
+            push_impl<8, traits>::push(stack_top, instr_ptr);
+            MONAD_VM_NEXT_PUSH(PUSH8);
+        }
+        uint256_t const &pointer_wrapped = stack_top[0];
+        uint256_t const &free_memory_pointer = stack_top[-1];
+        uint256_t const &return_address = stack_top[-2];
+        auto const return_pc = static_cast<size_t>(return_address[0]);
+        // Skip the variable panic destination between the fixed spans.
+        if (!(code_matches<12>(instructions + 1, limit_pattern) &&
+              code_matches<5>(instructions + 15, store_pattern) &&
+              (pointer_wrapped[0] | pointer_wrapped[1] | pointer_wrapped[2] |
+               pointer_wrapped[3]) == 0 &&
+              (free_memory_pointer[1] | free_memory_pointer[2] |
+               free_memory_pointer[3]) == 0 &&
+              ctx.memory.size >= 0x60 &&
+              (return_address[1] | return_address[2] | return_address[3]) ==
+                  0 &&
+              MONAD_VM_CODE_VIEW.is_jumpdest(return_pc))) {
+            // Execute PUSH8 directly to avoid re-entering this helper.
+            MONAD_VM_CHECK(PUSH8);
+            push_impl<8, traits>::push(stack_top, instr_ptr);
+            MONAD_VM_NEXT_PUSH(PUSH8);
+        }
+        static constexpr int64_t sequence_gas = static_gas<
+            traits,
+            PUSH8,
+            DUP3,
+            GT,
+            OR,
+            PUSH2,
+            JUMPI,
+            PUSH1,
+            MSTORE,
+            JUMP,
+            JUMPDEST>();
+        gas_remaining -= sequence_gas;
+        if (MONAD_UNLIKELY(gas_remaining < 0)) {
+            MONAD_VM_MUST_TAIL return ctx.exit(OutOfGas);
+        }
+        runtime::mstore_at<traits>(
+            &ctx,
+            runtime::Memory::Offset::unsafe_from(0x40),
+            &free_memory_pointer);
+        instr_ptr = MONAD_VM_CODE_VIEW.code() + return_pc + 1;
+        MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
+            ctx,
+            MONAD_VM_DISPATCH_STATE_ARG,
+            stack_lower_bound,
+            stack_top - 3,
+            gas_remaining,
+            instr_ptr MONAD_VM_TBL_ARG);
+    }
+
+    // Fuse PUSH4/PUSH20 <mask> AND: replace the top value with value & mask.
+    // Keep this helper separate to limit register pressure in ordinary PUSHs.
+    template <size_t N, Traits traits>
+    [[gnu::noinline]] MONAD_VM_TWIN_CALL void push_and(
+        runtime::Context &ctx, MONAD_VM_DISPATCH_STATE_PARAM,
+        uint256_t const *stack_lower_bound, StackTop stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+    {
+        static constexpr auto requirements = fused_requirements<
+            traits,
+            static_cast<compiler::EvmOpCode>(PUSH0 + N),
+            AND>();
+        if (MONAD_UNLIKELY(!MONAD_VM_FUSED_CHARGE_PURE(requirements))) {
+            gas_remaining += requirements.gas;
+            MONAD_VM_CHECK(PUSH0 + N);
+            MONAD_VM_CHECK_AT(AND, 1);
+        }
+        auto &value = *stack_top;
+        if constexpr (N == 4) {
+            value[0] &= detail::load_be_k<4>(instr_ptr + 1);
+            value[1] = 0;
+            value[2] = 0;
+            value[3] = 0;
+        }
+        else {
+            static_assert(N == 20);
+            // PUSH20 stores the mask big-endian, most significant bytes first:
+            // offset: 0       1..4       5..12      13..20     21
+            //         PUSH20  [word 2]   [word 1]   [word 0]   AND
+            value[0] &= detail::read_unaligned(instr_ptr + 13);
+            value[1] &= detail::read_unaligned(instr_ptr + 5);
+            value[2] &= detail::load_be_k<4>(instr_ptr + 1);
+            value[3] = 0;
+        }
+        MONAD_VM_FUSED_NEXT(N + 2, 0);
+    }
 
 #endif
 
@@ -1755,7 +2567,7 @@ namespace monad::vm::interpreter
         // Code padding makes the lookahead safe.
         // Reuse the next opcode for fusion checks and normal dispatch.
         [[maybe_unused]] uint8_t next_opcode = 0;
-        if constexpr (N == 1 || N == 2) {
+        if constexpr (N == 1 || N == 2 || N == 4 || N == 8 || N == 20) {
             next_opcode = *(instr_ptr + N + 1);
         }
         if constexpr (N == 1) {
@@ -1897,12 +2709,38 @@ namespace monad::vm::interpreter
                 }
             }
         }
+        // Check the full allocation suffix in a separate helper.
+    #if !defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
+        if constexpr (N == 8) {
+            if (next_opcode == static_cast<std::uint8_t>(DUP3)) {
+                MONAD_VM_MUST_TAIL return push8_alloc<traits>(
+                    ctx,
+                    MONAD_VM_DISPATCH_STATE_ARG,
+                    stack_lower_bound,
+                    stack_top,
+                    gas_remaining,
+                    instr_ptr MONAD_VM_TBL_ARG);
+            }
+        }
+    #endif
+        // PUSH4 <mask> AND and PUSH20 <mask> AND in their twin.
+        if constexpr (N == 4 || N == 20) {
+            if (next_opcode == static_cast<std::uint8_t>(AND)) {
+                MONAD_VM_MUST_TAIL return push_and<N, traits>(
+                    ctx,
+                    MONAD_VM_DISPATCH_STATE_ARG,
+                    stack_lower_bound,
+                    stack_top,
+                    gas_remaining,
+                    instr_ptr MONAD_VM_TBL_ARG);
+            }
+        }
 #endif
         MONAD_VM_CHECK(PUSH0 + N);
         push_impl<N, traits>::push(stack_top, instr_ptr);
 
 #if defined(MONAD_ZKVM_ZISK)
-        if constexpr (N == 1 || N == 2) {
+        if constexpr (N == 1 || N == 2 || N == 4 || N == 8 || N == 20) {
             MONAD_VM_NEXT_PUSH_OP(PUSH0 + N, next_opcode);
         }
 #endif
@@ -1952,11 +2790,70 @@ namespace monad::vm::interpreter
                 }
                 // Keep the gas deduction before the branch, as in push2_jumpi.
                 MONAD_VM_LAUNDER(gas_remaining);
+                // Byte offsets within each 11-byte selector test:
+                //   0     1      2..5       6   7      8..9         10
+                //   DUP1  PUSH4  [selector] EQ  PUSH2  [destination] JUMPI
+                // Compare the selector at +2 with the value on the stack.
+                // A failed test preserves that value for the next test.
+                while (uint256_t{detail::load_be_k<4>(instr_ptr + 2)} !=
+                       *stack_top) {
+                    instr_ptr += 11; // Skip the entire failed test.
+                    // Continue the loop only if the next bytes form another
+                    // selector test; otherwise leave via normal dispatch.
+                    // Tail padding makes these lookahead reads safe.
+                    if (*instr_ptr != static_cast<std::uint8_t>(DUP1) ||
+                        *(instr_ptr + 1) != static_cast<std::uint8_t>(PUSH4) ||
+                        *(instr_ptr + 6) != static_cast<std::uint8_t>(EQ) ||
+                        *(instr_ptr + 7) != static_cast<std::uint8_t>(PUSH2) ||
+                        *(instr_ptr + 10) != static_cast<std::uint8_t>(JUMPI)) {
+                        MONAD_VM_DISPATCH(0, 0, *instr_ptr);
+                    }
+    #if defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
+                    // The first test validated the unchanged stack.
+                    MONAD_VM_CHARGE(DUP1);
+                    MONAD_VM_CHARGE(PUSH4);
+                    MONAD_VM_CHARGE(EQ);
+                    MONAD_VM_CHARGE(PUSH2);
+                    MONAD_VM_CHARGE(JUMPI);
+    #else
+                    gas_remaining -= requirements.gas;
+    #endif
+                }
+                // A selector matched: take its jump. fused_branch expects
+                // the EQ at +6, followed by PUSH2 <dst> JUMPI.
+                instr_ptr =
+                    fused_branch(ctx, instr_ptr + 6, true, gas_remaining);
+                MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
+                    ctx,
+                    MONAD_VM_DISPATCH_STATE_ARG,
+                    stack_lower_bound,
+                    stack_top,
+                    gas_remaining,
+                    instr_ptr MONAD_VM_TBL_ARG);
+            }
+            // Split the selector search around a pivot:
+            //   0     1      2..5    6   7      8..9         10
+            //   DUP1  PUSH4  [pivot] GT  PUSH2  [destination] JUMPI
+            // GT compares the top (pivot) with the value below (selector),
+            // so the jump is taken when selector < pivot.
+            if (next_opcode == static_cast<std::uint8_t>(PUSH4) &&
+                *(instr_ptr + 6) == static_cast<std::uint8_t>(GT) &&
+                *(instr_ptr + 7) == static_cast<std::uint8_t>(PUSH2) &&
+                *(instr_ptr + 10) == static_cast<std::uint8_t>(JUMPI)) {
+                static constexpr auto requirements =
+                    fused_requirements<traits, DUP1, PUSH4, GT, PUSH2, JUMPI>();
+                if (MONAD_UNLIKELY(!MONAD_VM_FUSED_CHARGE_PURE(requirements))) {
+                    gas_remaining += requirements.gas;
+                    MONAD_VM_CHECK(DUP1);
+                    MONAD_VM_CHECK_AT(PUSH4, 1);
+                    MONAD_VM_CHECK_AT(GT, 2);
+                    MONAD_VM_CHECK_AT(PUSH2, 1);
+                    MONAD_VM_CHECK_AT(JUMPI, 2);
+                }
+                MONAD_VM_LAUNDER(gas_remaining);
                 bool const take_jump =
-                    (uint256_t{detail::load_be_k<4>(instr_ptr + 2)} ==
+                    (uint256_t{detail::load_be_k<4>(instr_ptr + 2)} >
                      *stack_top);
-                // fused_branch expects a pointer to EQ, followed by
-                // PUSH2 <dst> JUMPI.
                 instr_ptr =
                     fused_branch(ctx, instr_ptr + 6, take_jump, gas_remaining);
                 MONAD_VM_MUST_TAIL return MONAD_VM_TABLE_REF[*instr_ptr](
@@ -2189,7 +3086,26 @@ namespace monad::vm::interpreter
             static_cast<uint64_t>(instr_ptr - MONAD_VM_CODE_VIEW.code()));
         MONAD_VM_CHECK(JUMPDEST);
 
+#if defined(MONAD_ZKVM_ZISK) && !defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
+        // Falling through into DUP4 DUP2 may enter a memory copy loop, which
+        // copy_loop runs whole: the dispatch's target, as push1_mask's.
+        instr_ptr += 1;
+        MONAD_VM_LAUNDER(instr_ptr);
+        bool const monad_vm_loop =
+            *instr_ptr == static_cast<std::uint8_t>(DUP4) &&
+            *(instr_ptr + 1) == static_cast<std::uint8_t>(DUP2);
+        auto const monad_vm_next =
+            monad_vm_loop ? &copy_loop<traits> : MONAD_VM_TABLE_REF[*instr_ptr];
+        MONAD_VM_MUST_TAIL return monad_vm_next(
+            ctx,
+            MONAD_VM_DISPATCH_STATE_ARG,
+            stack_lower_bound,
+            stack_top,
+            gas_remaining,
+            instr_ptr MONAD_VM_TBL_ARG);
+#else
         MONAD_VM_NEXT(JUMPDEST);
+#endif
     }
 
     // Logging

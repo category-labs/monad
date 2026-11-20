@@ -188,16 +188,22 @@ namespace
         unsigned accesses;
     };
 
-    Outcome run(std::span<uint8_t const> code, int64_t gas)
+    template <typename Traits = GasTraits>
+    Outcome
+    run(std::span<uint8_t const> code, int64_t gas,
+        std::span<uint8_t const> input = {}, uint8_t call_value = 0)
     {
         CountingHost host;
         vm::Message msg{};
         msg.gas = gas;
+        msg.value.bytes[31] = call_value;
+        msg.input_data = input.data();
+        msg.input_size = input.size();
         auto ctx = runtime::Context::from(host, &msg, code);
         interpreter::Intercode analysis{code};
         std::array<uint256_t, 1024> stack;
-        interpreter::execute<GasTraits>(ctx, analysis, stack.data());
-        auto result = ctx.copy_to_result<GasTraits>();
+        interpreter::execute<Traits>(ctx, analysis, stack.data());
+        auto result = ctx.copy_to_result<Traits>();
         return {
             result.status_code,
             result.gas_left,
@@ -306,6 +312,401 @@ extern "C" uint32_t monad_zkvm_deferred_gas_test()
         code.push_back(op);
         effects &= failed_cleanly(run(code, 2 * operands - 1));
     }
+    // The allocation suffix stores 0x80 at 0x40 and returns to its caller.
+    // Cover both the fused path and fallback for memory expansion or panic.
+    for (bool const initialized_memory : {false, true}) {
+        for (uint8_t const overflow_flag : {0, 1}) {
+            std::vector<uint8_t> code;
+            if (initialized_memory) {
+                code = {PUSH1, 0, PUSH1, 0x40, MSTORE};
+            }
+            code.push_back(PUSH2);
+            size_t const return_operand = code.size();
+            code.insert(
+                code.end(), {0, 0, PUSH1, 0x80, PUSH1, overflow_flag, PUSH8});
+            code.insert(code.end(), 8, 0xff);
+            code.insert(code.end(), {DUP3, GT, OR, PUSH2});
+            size_t const panic_operand = code.size();
+            code.insert(code.end(), {0, 0, JUMPI, PUSH1, 0x40, MSTORE, JUMP});
+            code[return_operand + 1] = static_cast<uint8_t>(code.size());
+            code.insert(
+                code.end(),
+                {JUMPDEST, PUSH1, 0x40, MLOAD, PUSH1, 0x80, EQ, PUSH2});
+            size_t const success_operand = code.size();
+            code.insert(code.end(), {0, 0, JUMPI});
+            code[panic_operand + 1] = static_cast<uint8_t>(code.size());
+            code.insert(code.end(), {JUMPDEST, 0xfe});
+            code[success_operand + 1] = static_cast<uint8_t>(code.size());
+            code.insert(code.end(), {JUMPDEST, STOP});
+            int64_t const cost = initialized_memory ? 93 : 84;
+            auto const result = run(code, cost);
+            effects &= overflow_flag ? failed_cleanly(result)
+                                     : result.status == CallStatus::Success &&
+                                           result.gas == 0;
+            effects &= failed_cleanly(run(code, cost - 1));
+        }
+    }
+    // Compare batched copies with a byte model that preserves word order,
+    // including overlap, partial lengths, zero turns and memory growth.
+    for (auto const params : std::array<std::array<unsigned, 4>, 6>{
+             {{0, 128, 64, 0},
+              {0, 16, 64, 0},
+              {16, 0, 64, 0},
+              {0, 0, 33, 0},
+              {0, 128, 0, 0},
+              {0, 128, 65, 32}}}) {
+        auto const [src, dst, len, first] = params;
+        std::array<uint8_t, 256> expected{};
+        std::vector<uint8_t> code;
+        for (unsigned word = 0; word < 4; ++word) {
+            code.push_back(PUSH32);
+            for (unsigned byte = 0; byte < 32; ++byte) {
+                uint8_t const v = static_cast<uint8_t>(word * 32 + byte + 1);
+                expected[word * 32 + byte] = v;
+                code.push_back(v);
+            }
+            code.insert(
+                code.end(), {PUSH1, static_cast<uint8_t>(word * 32), MSTORE});
+        }
+        unsigned turns = 0;
+        for (unsigned i = first; i < len; i += 32) {
+            std::array<uint8_t, 32> temp;
+            std::copy_n(expected.begin() + src + i, 32, temp.begin());
+            std::copy(temp.begin(), temp.end(), expected.begin() + dst + i);
+            ++turns;
+        }
+        for (unsigned v : {len, dst, src, first}) {
+            code.insert(
+                code.end(),
+                {PUSH2, static_cast<uint8_t>(v >> 8), static_cast<uint8_t>(v)});
+        }
+        size_t const head = code.size();
+        code.push_back(JUMPDEST);
+        size_t const body = code.size();
+        code.insert(
+            code.end(),
+            {DUP4,
+             DUP2,
+             LT,
+             ISZERO,
+             PUSH2,
+             0,
+             0,
+             JUMPI,
+             DUP2,
+             DUP2,
+             ADD,
+             MLOAD,
+             DUP4,
+             DUP3,
+             ADD,
+             MSTORE,
+             PUSH1,
+             32,
+             ADD,
+             PUSH2,
+             static_cast<uint8_t>(head >> 8),
+             static_cast<uint8_t>(head),
+             JUMP});
+        code[body + 5] = static_cast<uint8_t>(code.size() >> 8);
+        code[body + 6] = static_cast<uint8_t>(code.size());
+        code.push_back(JUMPDEST);
+        for (unsigned word = 0; word < 8; ++word) {
+            code.insert(
+                code.end(),
+                {PUSH1, static_cast<uint8_t>(word * 32), MLOAD, PUSH32});
+            code.insert(
+                code.end(),
+                expected.begin() + word * 32,
+                expected.begin() + (word + 1) * 32);
+            code.push_back(EQ);
+            size_t const jump = code.size();
+            code.insert(code.end(), {PUSH2, 0, 0, JUMPI, 0xfe});
+            code[jump + 1] = static_cast<uint8_t>(code.size() >> 8);
+            code[jump + 2] = static_cast<uint8_t>(code.size());
+            code.push_back(JUMPDEST);
+        }
+        code.push_back(STOP);
+        int64_t const cost = 307 + 67 * turns;
+        auto const result = run(code, cost);
+        effects &= result.status == CallStatus::Success && result.gas == 0 &&
+                   result.accesses == 0;
+        effects &= failed_cleanly(run(code, cost - 1));
+        effects &= failed_cleanly(run(code, 61)); // OOG at loop entry.
+    }
     check(effects);
+    // Two selector tests: first match, second match, or neither. Sweep gas
+    // through both tests and the taken jump's JUMPDEST charge.
+    bool selectors = true;
+    for (uint8_t selector = 0; selector <= 2; ++selector) {
+        std::array<uint8_t, 27> const code{
+            PUSH1, selector, DUP1,  PUSH4, 0,    0,     0,    1,        EQ,
+            PUSH2, 0,        25,    JUMPI, DUP1, PUSH4, 0,    0,        0,
+            2,     EQ,       PUSH2, 0,     25,   JUMPI, STOP, JUMPDEST, STOP};
+        int64_t const cost = selector == 1 ? 26 : selector == 2 ? 48 : 47;
+        for (int64_t gas = 0; gas <= 50; ++gas) {
+            auto const result = run(code, gas);
+            selectors &= gas < cost
+                             ? failed_cleanly(result)
+                             : result.status == CallStatus::Success &&
+                                   result.gas == gas - cost &&
+                                   result.refund == 0 && result.output == 0 &&
+                                   result.accesses == 0;
+        }
+    }
+    // Exercise both prologues and all three selector encodings at every gas
+    // boundary. The bytecode checks the extracted value before stopping.
+    std::array<uint8_t, 8> const input{0x12, 0x34, 0x56, 0x78, 0, 0, 0, 0};
+    auto patch_jump = [](std::vector<uint8_t> &code, size_t push) {
+        code[push + 1] = static_cast<uint8_t>(code.size() >> 8);
+        code[push + 2] = static_cast<uint8_t>(code.size());
+    };
+    auto expect_top = [&](std::vector<uint8_t> &code, uint256_t value) {
+        code.push_back(PUSH32);
+        for (unsigned i = 32; i != 0; --i) {
+            code.push_back(static_cast<uint8_t>(
+                value[(i - 1) / 8] >> (8 * ((i - 1) % 8))));
+        }
+        code.push_back(EQ);
+        size_t const jump = code.size();
+        code.insert(code.end(), {PUSH2, 0, 0, JUMPI, 0xfe});
+        patch_jump(code, jump);
+        code.insert(code.end(), {JUMPDEST, STOP});
+    };
+    bool extraction = true;
+    for (bool taken : {false, true}) {
+        for (unsigned form = 0; form != 3; ++form) {
+            std::vector<uint8_t> code{PUSH1, 4, CALLDATASIZE, LT};
+            if (taken) {
+                code.push_back(ISZERO);
+            }
+            size_t const branch = code.size();
+            code.insert(code.end(), {PUSH2, 0, 0, JUMPI});
+            if (taken) {
+                code.push_back(STOP);
+                patch_jump(code, branch);
+                code.push_back(JUMPDEST);
+            }
+            if (form == 0) {
+                code.push_back(PUSH0);
+            }
+            else {
+                code.insert(code.end(), {PUSH1, 0});
+            }
+            code.push_back(CALLDATALOAD);
+            if (form < 2) {
+                code.insert(code.end(), {PUSH1, 224, SHR});
+            }
+            else {
+                code.insert(code.end(), {PUSH29, 1});
+                code.insert(code.end(), 28, 0);
+                code.insert(
+                    code.end(), {SWAP1, DIV, PUSH4, 255, 255, 255, 255, AND});
+            }
+            expect_top(code, uint256_t{0x12345678});
+            if (!taken) {
+                patch_jump(code, branch);
+                code.insert(code.end(), {JUMPDEST, STOP});
+            }
+            int64_t const cost = (taken ? 25 : 21) +
+                                 (form == 0   ? 11
+                                  : form == 1 ? 12
+                                              : 23) +
+                                 20;
+            for (int64_t gas = 0; gas <= cost + 1; ++gas) {
+                auto const r = run(code, gas, input);
+                extraction &= gas < cost ? failed_cleanly(r)
+                                         : r.status == CallStatus::Success &&
+                                               r.gas == gas - cost;
+            }
+            for (size_t len = 0; len < 4; ++len) {
+                auto const r = run(code, 100, std::span{input}.first(len));
+                extraction &= r.status == CallStatus::Success &&
+                              r.gas == 100 - (taken ? 24 : 22);
+            }
+            if (form == 0) {
+                extraction &= failed_cleanly(
+                    run<EvmTraits<EvmRevision::Berlin>>(code, 100, input));
+            }
+        }
+    }
+    // Truncated extraction must fall back without a 41-byte DMA read beyond
+    // the bytecode padding. An incomplete PUSH reads zero-padded immediates.
+    for (bool const long_prefix : {false, true}) {
+        std::vector<uint8_t> code{
+            PUSH1, 4, CALLDATASIZE, LT, PUSH2, 0, 0, JUMPI, PUSH1};
+        if (long_prefix) {
+            code.insert(code.end(), {0, CALLDATALOAD, PUSH29, 1});
+            code.insert(code.end(), 28, 0);
+            code.insert(code.end(), {SWAP1, DIV, PUSH4, 255, 255, 255, 255});
+        }
+        int64_t const cost = long_prefix ? 41 : 24;
+        auto const result = run(code, cost, input);
+        extraction &= result.status == CallStatus::Success && result.gas == 0;
+        extraction &= failed_cleanly(run(code, cost - 1, input));
+    }
+    // One spare slot suffices for selector extraction; a full stack must fail.
+    for (size_t height : {size_t{1023}, size_t{1024}}) {
+        std::vector<uint8_t> code(height - 1, PUSH0);
+        code.insert(
+            code.end(),
+            {PUSH1,
+             4,
+             CALLDATASIZE,
+             LT,
+             PUSH2,
+             0,
+             0,
+             JUMPI,
+             PUSH0,
+             CALLDATALOAD,
+             PUSH1,
+             224,
+             SHR,
+             STOP});
+        auto const r = run(code, 10000, input);
+        extraction &= height == 1023 ? r.status == CallStatus::Success
+                                     : failed_cleanly(r);
+    }
+    std::array<uint8_t, 7> const empty_selector{
+        CALLDATASIZE, LT, PUSH2, 0, 0, JUMPI, STOP};
+    extraction &= failed_cleanly(run(empty_selector, 100, input));
+
+    // Sweep the ABI bounds check's gas; check the computed remainder too.
+    bool bounds = true;
+    for (uint8_t offset : {uint8_t{0}, uint8_t{4}, uint8_t{9}}) {
+        std::vector<uint8_t> code{
+            PUSH1,
+            offset,
+            CALLDATASIZE,
+            SUB,
+            PUSH1,
+            4,
+            DUP2,
+            LT,
+            ISZERO,
+            PUSH2,
+            0,
+            14,
+            JUMPI,
+            0xfe,
+            JUMPDEST};
+        expect_top(code, uint256_t{input.size()} - offset);
+        for (int64_t gas = 0; gas <= 55; ++gas) {
+            auto const r = run(code, gas, input);
+            bounds &=
+                gas < 54 ? failed_cleanly(r)
+                         : r.status == CallStatus::Success && r.gas == gas - 54;
+        }
+    }
+    // The ABI sequence needs two spare slots for PUSH1 followed by DUP2.
+    for (size_t height : {size_t{1022}, size_t{1023}}) {
+        std::vector<uint8_t> code(height - 1, PUSH0);
+        code.insert(
+            code.end(),
+            {PUSH1, 0, CALLDATASIZE, SUB, PUSH1, 4, DUP2, LT, ISZERO});
+        size_t const jump = code.size();
+        code.insert(code.end(), {PUSH2, 0, 0, JUMPI, 0xfe});
+        patch_jump(code, jump);
+        code.insert(code.end(), {JUMPDEST, STOP});
+        auto const r = run(code, 10000, input);
+        bounds &= height == 1022 ? r.status == CallStatus::Success
+                                 : failed_cleanly(r);
+    }
+    std::array<uint8_t, 12> const empty_bounds{
+        CALLDATASIZE,
+        SUB,
+        PUSH1,
+        4,
+        DUP2,
+        LT,
+        ISZERO,
+        PUSH2,
+        0,
+        0,
+        JUMPI,
+        STOP};
+    bounds &= failed_cleanly(run(empty_bounds, 100, input));
+    // Non-payable checks: zero value takes the fast path; nonzero reverts.
+    for (bool const push_zero : {false, true}) {
+        uint8_t const success_pc = push_zero ? 10 : 11;
+        std::vector<uint8_t> code{
+            CALLVALUE, DUP1, ISZERO, PUSH2, 0, success_pc, JUMPI};
+        if (push_zero) {
+            code.push_back(PUSH0);
+        }
+        else {
+            code.insert(code.end(), {PUSH1, 0});
+        }
+        code.insert(code.end(), {DUP1, REVERT, JUMPDEST, POP, STOP});
+        for (int64_t gas = 0; gas <= 25; ++gas) {
+            auto const result = run(code, gas);
+            extraction &= gas < 24 ? failed_cleanly(result)
+                                   : result.status == CallStatus::Success &&
+                                         result.gas == gas - 24;
+        }
+        extraction &= run(code, 100, {}, 1).status == CallStatus::Revert;
+    }
+    for (bool const push_zero : {false, true}) {
+        std::vector<uint8_t> code{CALLVALUE, PUSH2, 0, 0, JUMPI};
+        if (push_zero) {
+            code.push_back(PUSH0);
+        }
+        else {
+            code.insert(code.end(), {PUSH1, 4});
+        }
+        code.insert(code.end(), {CALLDATASIZE, PUSH1, 3, NOT, ADD, SLT});
+        size_t const bound_branch = code.size();
+        code.insert(code.end(), {PUSH2, 0, 0, JUMPI, STOP});
+        patch_jump(code, 1);
+        patch_jump(code, bound_branch);
+        code.insert(code.end(), {JUMPDEST, PUSH1, 0, DUP1, REVERT});
+        int64_t const cost = push_zero ? 44 : 45;
+        for (int64_t gas = 0; gas <= cost + 1; ++gas) {
+            auto const result = run(code, gas, input);
+            extraction &= gas < cost ? failed_cleanly(result)
+                                     : result.status == CallStatus::Success &&
+                                           result.gas == gas - cost;
+        }
+        extraction &= run(code, 100, input, 1).status == CallStatus::Revert;
+        extraction &= run(code, 100, std::span{input}.first(3)).status ==
+                      CallStatus::Revert;
+        auto const berlin =
+            run<EvmTraits<EvmRevision::Berlin>>(code, 100, input);
+        extraction &= push_zero ? failed_cleanly(berlin)
+                                : berlin.status == CallStatus::Success;
+    }
+    check(selectors && extraction && bounds);
+    // Nonuniform immediate masks exercise byte order and all word boundaries.
+    bool immediate_masks = true;
+    for (unsigned width : {4u, 20u}) {
+        std::array<uint8_t, 32> value{};
+        std::array<uint8_t, 32> mask{};
+        std::array<uint8_t, 32> expected{};
+        for (unsigned i = 0; i < 32; ++i) {
+            value[i] = static_cast<uint8_t>(0xa5 ^ (i * 7));
+            if (i >= 32 - width) {
+                mask[i] = static_cast<uint8_t>(i * 13 + 1);
+            }
+            expected[i] = value[i] & mask[i];
+        }
+        std::vector<uint8_t> code{PUSH32};
+        code.insert(code.end(), value.begin(), value.end());
+        code.push_back(static_cast<uint8_t>(PUSH0 + width));
+        code.insert(code.end(), mask.end() - width, mask.end());
+        code.insert(code.end(), {AND, PUSH32});
+        code.insert(code.end(), expected.begin(), expected.end());
+        code.push_back(EQ);
+        size_t const jump = code.size();
+        code.insert(code.end(), {PUSH2, 0, 0, JUMPI, 0xfe});
+        code[jump + 2] = static_cast<uint8_t>(code.size());
+        code.insert(code.end(), {JUMPDEST, STOP});
+        auto const result = run(code, 29);
+        immediate_masks &= result.status == CallStatus::Success &&
+                           result.gas == 0 && result.output == 0 &&
+                           result.refund == 0 && result.accesses == 0;
+        immediate_masks &= failed_cleanly(run(code, 28));
+    }
+    check(immediate_masks);
     return failures;
 }

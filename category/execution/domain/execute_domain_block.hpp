@@ -75,6 +75,13 @@ ChainContext<traits> domain_chain_context(
     std::vector<std::vector<std::optional<Address>>> const &authorities,
     ExecutionMode const &mode = {});
 
+// What a domain block does to the domain's state before its transactions. The
+// domain keeps its block hashes in its own state (EIP-2935), where BLOCKHASH
+// reads them, so this stores the hash of the parent of `header`'s block.
+template <Traits traits>
+    requires is_monad_trait_v<traits>
+void execute_domain_block_header(BlockState &, BlockHeader const &header);
+
 // The Ethereum header a domain block executes under at revision `traits`.
 // Execution fills in parent_hash, transactions_root, state_root, receipts_root,
 // logs_bloom and gas_used.

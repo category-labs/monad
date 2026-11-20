@@ -587,7 +587,24 @@ namespace monad::vm::interpreter
     {
         MONAD_VM_CHECK(SIGNEXTEND);
         auto &&[b, x] = top_two(stack_top);
-        x = signextend(b, x);
+#if defined(MONAD_ZKVM_ZISK)
+        // Byte indices 0..7 place the sign bit in the low 64-bit word.
+        if ((b[1] | b[2] | b[3]) == 0 && b[0] < 8) {
+            unsigned const sign_shift = static_cast<unsigned>(56 - 8 * b[0]);
+            // Move the sign bit to bit 63, then shift back arithmetically.
+            int64_t const signed_low_word =
+                static_cast<int64_t>(x[0] << sign_shift) >> sign_shift;
+            // Fill the upper words with zeros or ones according to the sign.
+            uint64_t const sign_fill =
+                static_cast<uint64_t>(signed_low_word >> 63);
+            x[0] = static_cast<uint64_t>(signed_low_word);
+            x[1] = sign_fill;
+            x[2] = sign_fill;
+            x[3] = sign_fill;
+            MONAD_VM_NEXT(SIGNEXTEND);
+        }
+#endif
+        signextend_to(b, x);
 
         MONAD_VM_NEXT(SIGNEXTEND);
     }
@@ -1139,13 +1156,43 @@ namespace monad::vm::interpreter
     }
 
     // Memory & Storage
+
+    // Isolate rare memory growth to avoid register spills on MLOAD's fast path.
+    // Continue dispatch here instead of returning to mload. Gas and stack
+    // checks have already run; do not repeat them.
+    // This split regressed MSTORE, where memory growth is more frequent.
+    template <Traits traits>
+    [[gnu::noinline, gnu::cold]] MONAD_VM_TWIN_CALL void mload_grow(
+        runtime::Context &ctx, Intercode const &analysis,
+        uint256_t const *stack_bottom, StackTop stack_top,
+        int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
+    {
+        call_runtime(runtime::mload<traits>, ctx, stack_top, gas_remaining);
+
+        MONAD_VM_NEXT(MLOAD);
+    }
+
     template <Traits traits>
     MONAD_VM_INSTRUCTION_CALL void mload(
         runtime::Context &ctx, Intercode const &analysis,
         uint256_t const *stack_bottom, StackTop stack_top,
         int64_t gas_remaining, uint8_t const *instr_ptr MONAD_VM_TBL_PARAM)
     {
-        MONAD_VM_CHECKED_RUNTIME_CALL(MLOAD, runtime::mload<traits>);
+        MONAD_VM_CHECK(MLOAD);
+
+        ctx.gas_remaining = gas_remaining;
+        auto const offset = ctx.get_memory_offset(*stack_top);
+        if (MONAD_UNLIKELY(ctx.memory.size < *offset + 32)) {
+            MONAD_VM_MUST_TAIL return mload_grow<traits>(
+                ctx,
+                analysis,
+                stack_bottom,
+                stack_top,
+                gas_remaining,
+                instr_ptr MONAD_VM_TBL_ARG);
+        }
+        runtime::mload_at<traits>(&ctx, &*stack_top, offset);
+        gas_remaining = ctx.gas_remaining;
 
         MONAD_VM_NEXT(MLOAD);
     }
@@ -1323,7 +1370,20 @@ namespace monad::vm::interpreter
     {
         MONAD_VM_CHECK(SWAP1 + (N - 1));
 
-        swap_slots(*stack_top, stack_top[-N]);
+#if defined(MONAD_ZKVM_ZISK)
+        // Reuse Context's scratch slot to avoid a local 32-byte stack frame.
+        {
+            uint256_t *const monad_t = &ctx.swap_scratch;
+            *monad_t = *stack_top;
+            *stack_top = stack_top[-static_cast<std::ptrdiff_t>(N)];
+            stack_top[-static_cast<std::ptrdiff_t>(N)] = *monad_t;
+        }
+#else
+        // Keep the temporary as uint256_t to avoid an AVX round trip.
+        uint256_t const top = *stack_top;
+        *stack_top = stack_top[-static_cast<std::ptrdiff_t>(N)];
+        stack_top[-static_cast<std::ptrdiff_t>(N)] = top;
+#endif
 
         MONAD_VM_NEXT(SWAP1 + (N - 1));
     }

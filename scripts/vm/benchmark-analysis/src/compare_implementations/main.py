@@ -14,11 +14,12 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import argparse
-import json
 import pathlib
 
 import pandas as pd
 from scipy.stats import gmean
+
+from benchmark_results import load_timings, select_pairs, split_implementations
 
 
 def parse_args() -> argparse.Namespace:
@@ -61,21 +62,8 @@ def parse_args() -> argparse.Namespace:
 def load_results(
     filename: pathlib.Path,
 ) -> pd.DataFrame:
-    def _split_benchmark_impl(row: pd.Series) -> tuple[str, str]:
-        parts = row["name"].split("/")
-        return ("/".join(parts[:-1]), parts[-1])
-
-    with open(filename, "r") as f:
-        json_data = json.load(f)
-
-    df = pd.json_normalize(json_data["benchmarks"])
-
-    df = df[df.name.str.endswith("_mean")]
-    df.name = df.name.str.removesuffix("_mean")
-    df.name = df.name.str.removeprefix("execute/")
-    df[["name", "implementation"]] = df.apply(_split_benchmark_impl, axis="columns", result_type="expand")
-
-    return df
+    df = split_implementations(load_timings(filename, "cpu_time", aggregate=True, prefix="execute/"))
+    return df.assign(name=df.name.str.removeprefix("execute/"))
 
 
 def compute_speedup(
@@ -85,20 +73,19 @@ def compute_speedup(
     *,
     cutoff: int = 0,
 ) -> pd.DataFrame:
-    df = df.pivot(index="name", columns="implementation", values="cpu_time")
-    df["speedup"] = df[a_impl] / df[b_impl]
-    df = df[df[b_impl] >= cutoff]
-
-    cols = pd.Index([a_impl, b_impl, "speedup"])
-    df = df[cols]
-    df.columns = cols
-
-    return df
+    values = df.pivot_table(index="name", columns="implementation", values="cpu_time", aggfunc="mean")
+    pairs = select_pairs(values, a_impl, b_impl)
+    pairs = pairs[pairs[b_impl] >= cutoff]
+    if pairs.empty:
+        raise ValueError("No paired benchmarks meet the minimum time")
+    return pairs.assign(speedup=pairs[a_impl] / pairs[b_impl])
 
 
 def main() -> None:
     args = parse_args()
-    df = load_results(args.filename)
-    df = compute_speedup(df, args.a_impl, args.b_impl, cutoff=args.cutoff)
+    try:
+        df = compute_speedup(load_results(args.filename), args.a_impl, args.b_impl, cutoff=args.cutoff)
+    except (ValueError, OSError, KeyError) as error:
+        raise SystemExit(str(error)) from None
     print(df.to_markdown())
     print(f"Geomean: {gmean(df['speedup'])}")

@@ -51,3 +51,11 @@ $ uv run --directory scripts/vm/benchmark-analysis \
 ```
 to generate a table showing the speedup of the `compiler` implementation over
 `interpreter`.
+
+Both reports normalize timings to nanoseconds and compare only benchmarks that
+have results on both sides. The version comparison uses the mean of iteration
+runs by default. Pass `--aggregate` to read the emitted mean aggregate instead.
+The implementation comparison's `--min` threshold is in nanoseconds.
+
+Run the regression tests with `uv run python -m unittest discover -s tests`
+from this directory.

@@ -3,8 +3,8 @@
 Executes block witnesses in ZisK and SP1 using a shared C++ guest. The guest
 currently uses Ethereum mainnet rules. It reads an
 [RLP execution witness](../category/execution/ethereum/rlp/execution_witness.hpp),
-executes the block, and outputs the 32-byte block hash with the computed state
-root sealed into the header.
+executes the block, checks the computed state root against the witness header,
+and outputs the 32-byte block hash.
 
 ## Layout
 

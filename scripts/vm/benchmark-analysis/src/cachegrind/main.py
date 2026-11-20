@@ -29,7 +29,7 @@ positional arguments:
 options:
   -h, --help     show this help message and exit
   --config FILE  Cache details config
-  -o FILE        Save the report to this file (default: /dev/stdout)
+  -o FILE        Save the full report to this file; otherwise print the estimated time
   -v,--verbose   Toggle verbose output
 
 ## Acknowledgements
@@ -42,9 +42,9 @@ https://pythonspeed.com/articles/consistent-benchmarking-in-ci/
 import argparse
 import datetime
 import json
-from subprocess import check_call, check_output
-from tempfile import NamedTemporaryFile, _TemporaryFileWrapper
-from typing import Dict, List
+from subprocess import DEVNULL, CalledProcessError, check_call, check_output
+from tempfile import NamedTemporaryFile
+from typing import IO, Dict, List
 
 DataT = Dict[str, int]
 RawT = Dict[str, str | int]
@@ -53,7 +53,10 @@ ReportT = Dict[str, RawT | DataT | MetadataT]
 
 
 def git_rev() -> str:
-    return check_output(["git", "rev-parse", "HEAD"]).strip().decode('ascii')
+    try:
+        return check_output(["git", "rev-parse", "HEAD"], stderr=DEVNULL, text=True).strip()
+    except (CalledProcessError, OSError):
+        return "unknown"
 
 
 def estimate_time(data: DataT) -> int:
@@ -73,20 +76,16 @@ def generate_report(cg: RawT) -> ReportT:
     metadata: MetadataT = {}
     report: ReportT = {'raw': cg, 'data': data, 'metadata': metadata}
 
-    assert (
-        isinstance(cg['DLmr'], int)
-        and isinstance(cg['DLmw'], int)
-        and isinstance(cg['ILmr'], int)
-        and isinstance(cg['I1mr'], int)
-        and isinstance(cg['D1mw'], int)
-        and isinstance(cg['D1mr'], int)
-        and isinstance(cg['Ir'], int)
-        and isinstance(cg['Dr'], int)
-        and isinstance(cg['Dw'], int)
-    )
-    ram_hits = cg['DLmr'] + cg['DLmw'] + cg['ILmr']
-    ll_hits = cg['I1mr'] + cg['D1mw'] + cg['D1mr'] - ram_hits
-    total_memory_rw = cg['Ir'] + cg['Dr'] + cg['Dw']
+    counters: DataT = {}
+    for name in ("DLmr", "DLmw", "ILmr", "I1mr", "D1mw", "D1mr", "Ir", "Dr", "Dw"):
+        value = cg.get(name)
+        if not isinstance(value, int):
+            raise ValueError(f"Cachegrind report is missing an integer {name} counter")
+        counters[name] = value
+
+    ram_hits = counters["DLmr"] + counters["DLmw"] + counters["ILmr"]
+    ll_hits = counters["I1mr"] + counters["D1mw"] + counters["D1mr"] - ram_hits
+    total_memory_rw = counters["Ir"] + counters["Dr"] + counters["Dw"]
     l1_hits = total_memory_rw - ll_hits - ram_hits
     assert total_memory_rw == l1_hits + ll_hits + ram_hits
 
@@ -101,22 +100,27 @@ def generate_report(cg: RawT) -> ReportT:
     return report
 
 
-def parse_cachegrind_file(cg_file: _TemporaryFileWrapper) -> RawT:
-    """
-    Parses a cachegrind out file and returns a dictionary with the summary data.
-    """
+def parse_cachegrind_file(cg_file: IO[str]) -> RawT:
+    """Return the summary counters and raw log from a Cachegrind output file."""
+    events: list[str] = []
+    summary: list[str] = []
+    for line in cg_file:
+        if line.startswith("events:"):
+            events = line.partition(":")[2].split()
+        elif line.startswith("summary:"):
+            summary = line.partition(":")[2].split()
 
-    lines = iter(cg_file)
-    for line in lines:
-        if line.startswith("events: "):
-            header = line[len("events: ") :].strip()
-            break
-    *_, last_line = lines
-    assert last_line.startswith("summary: ")
-    last_line = last_line[len("summary:") :].strip()
-    report: RawT = dict(zip(header.split(), [int(i) for i in last_line.split()]))
+    if not events or not summary:
+        raise ValueError("Cachegrind output is missing an events or summary record")
+    if len(events) != len(summary) or len(set(events)) != len(events):
+        raise ValueError("Cachegrind events and summary do not identify the same counters")
+
+    try:
+        report: RawT = dict(zip(events, map(int, summary)))
+    except ValueError:
+        raise ValueError("Cachegrind summary contains a non-integer counter") from None
     cg_file.seek(0)
-    report['log'] = cg_file.read()
+    report["log"] = cg_file.read()
     return report
 
 
@@ -128,25 +132,25 @@ def cachegrind(verbose: bool, cache_config: list[str], args_list: List[str]) -> 
     """
     verbose_flag: List[str] = list([x for x in ['-v'] if verbose])
     march: str = check_output(["uname", "-m"]).strip().decode('ascii')
-    temp_file = NamedTemporaryFile("r+")
-    cmd: List[str] = (
-        [
-            "setarch",
-            march,
-            "-R",
-            "valgrind",
-            "--instr-at-start=no",
-            "--tool=cachegrind",
-            "--cache-sim=yes",
-            "--branch-sim=yes",
-            "--cachegrind-out-file=" + temp_file.name,
-        ]
-        + cache_config
-        + verbose_flag
-        + args_list
-    )
-    check_call(cmd)
-    return parse_cachegrind_file(temp_file)
+    with NamedTemporaryFile("r+", encoding="utf-8") as temp_file:
+        cmd: List[str] = (
+            [
+                "setarch",
+                march,
+                "-R",
+                "valgrind",
+                "--instr-at-start=no",
+                "--tool=cachegrind",
+                "--cache-sim=yes",
+                "--branch-sim=yes",
+                "--cachegrind-out-file=" + temp_file.name,
+            ]
+            + cache_config
+            + verbose_flag
+            + args_list
+        )
+        check_call(cmd)
+        return parse_cachegrind_file(temp_file.file)
 
 
 def prepare_cache_args(config: Dict[str, Dict[str, int]]) -> List[str]:
@@ -179,19 +183,27 @@ def main() -> None:
     argparser = argparse.ArgumentParser(description="Cachegrind benchmark runner")
     argparser.add_argument("--config", metavar="FILE", type=str, help="Cache details config", required=False)
     argparser.add_argument(
-        "-o", metavar="FILE", type=str, help="Save the report to this file (default: /dev/stdout)", required=False
+        "-o",
+        metavar="FILE",
+        type=str,
+        help="Save the full report to this file; otherwise print the estimated time",
+        required=False,
     )
-    argparser.add_argument(
-        "-v,--verbose", dest='verbose', action='store_true', help="Toggle verbose output", required=False
-    )
+    argparser.add_argument("-v", "--verbose", action="store_true", help="Toggle verbose output")
     argparser.add_argument("program", nargs=argparse.REMAINDER, help="Program to benchmark along with its arguments")
     args = argparser.parse_args()
 
-    # Load cache config, if any
-    cache_config = []
-    if args.config:
-        cache_config = load_cache_config(args.config)
-    report = generate_report(cachegrind(args.verbose, cache_config, args.program))
+    program = args.program
+    if program and program[0] == "--":
+        program = program[1:]
+    if not program:
+        argparser.error("a program to benchmark is required")
+
+    try:
+        cache_config = load_cache_config(args.config) if args.config else []
+        report = generate_report(cachegrind(args.verbose, cache_config, program))
+    except (ValueError, OSError, CalledProcessError, KeyError) as error:
+        argparser.exit(1, f"{argparser.prog}: {error}\n")
     if args.o:
         with open(args.o, 'w') as outfile:
             json.dump(report, outfile, indent=2)

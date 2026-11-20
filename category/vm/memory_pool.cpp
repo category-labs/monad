@@ -58,12 +58,22 @@ namespace monad::vm
         if (old_head == &empty_head_) {
             void *const p = std::aligned_alloc(32, alloc_capacity_);
             MONAD_ASSERT(p);
+#if defined(MONAD_ZKVM_ZISK)
+            // The guest's bump allocator returns untouched heap memory
+            // (zkvm/core/libc.cpp). ZisK constrains reads before any write to
+            // return zero (state-machines/mem/pil/mem.pil), so no fill is
+            // needed. Recycled buffers still need Memory::clear on release,
+            // then the pointer-word clear below to remove dealloc's free-list
+            // link.
+            (void)0;
+#else
             runtime::non_temporal_bzero(p, alloc_capacity_);
+#endif
             return reinterpret_cast<uint8_t *>(p);
         }
 
         MONAD_ASAN_UNPOISON(old_head, alloc_capacity_);
-        // This clears the memory buffer:
+        // Clear the free-list link written by dealloc.
         std::memset(static_cast<void *>(&old_head->next), 0, sizeof(Node *));
         return reinterpret_cast<uint8_t *>(old_head);
     }

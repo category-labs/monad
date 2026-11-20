@@ -443,7 +443,8 @@ namespace
         BlockHeader const &header, std::vector<Transaction> const &transactions,
         bool const trace_transaction, uint64_t const transaction_index,
         BlockState &block_state, LazyBlockHash const &buffer,
-        fiber::FiberGroup &tx_exec_pool, enum monad_tracer_config tracer_config)
+        fiber::FiberGroup &tx_exec_pool, enum monad_tracer_config tracer_config,
+        bool const private_domain)
     {
         MONAD_ASSERT_THROW(
             transactions.size() == senders.size(),
@@ -471,8 +472,16 @@ namespace
             authorities_view{authorities.data(), transactions_size};
 
         // Execute block header
-        execute_block_header<traits>(
-            block_state, header, /*exec_recorder=*/nullptr);
+        if (private_domain) {
+            if constexpr (is_monad_trait_v<traits>) {
+                domain::execute_domain_block_header<traits>(
+                    block_state, header);
+            }
+        }
+        else {
+            execute_block_header<traits>(
+                block_state, header, /*exec_recorder=*/nullptr);
+        }
         BlockMetrics metrics{};
 
         std::vector<std::unique_ptr<trace::StateTracer>> state_tracers{};
@@ -489,6 +498,10 @@ namespace
 
         auto const chain_context = [&] {
             if constexpr (is_monad_trait_v<traits>) {
+                if (private_domain) {
+                    return domain::domain_chain_context<traits>(
+                        senders_and_authorities, senders, authorities);
+                }
                 return ChainContext<traits>{
                     .grandparent_senders_and_authorities =
                         grandparent_senders_and_authorities,
@@ -1934,14 +1947,6 @@ struct monad_executor
             return;
         }
 
-        if (domain_chain_id_.has_value()) {
-            result->status_code = std::to_underlying(CallStatus::Rejected);
-            result->message = strdup(PRIVATE_DOMAIN_UNSUPPORTED_ERR_MSG);
-            MONAD_ASSERT(result->message);
-            complete(result, user);
-            return;
-        }
-
         if (block_number == 0) {
             result->status_code = std::to_underlying(CallStatus::Rejected);
             result->message = strdup(CANNOT_TRACE_GENESIS_ERR_MSG);
@@ -1996,7 +2001,7 @@ struct monad_executor
                         1, std::memory_order_relaxed);
                 };
                 try {
-                    auto const chain = make_chain(chain_config);
+                    RequestChain const chain{chain_config, domain_chain_id_};
 
                     // Load transactions, senders, and authorities for
                     // `block_number`.
@@ -2088,12 +2093,13 @@ struct monad_executor
                                 block_state,
                                 block_hash_buffer,
                                 *tx_exec_group->group,
-                                tracer_config);
+                                tracer_config,
+                                chain.private_domain());
                             MONAD_ASSERT(false);
                         }
                         else {
                             auto const rev =
-                                dynamic_cast<MonadChain *>(chain.get())
+                                dynamic_cast<MonadChain const *>(chain.get())
                                     ->get_monad_revision(
                                         block_header.timestamp);
                             // NOLINTBEGIN(clang-analyzer-core.CallAndMessage)
@@ -2116,7 +2122,8 @@ struct monad_executor
                                 block_state,
                                 block_hash_buffer,
                                 *tx_exec_group->group,
-                                tracer_config);
+                                tracer_config,
+                                chain.private_domain());
                             // NOLINTEND(clang-analyzer-core.CallAndMessage)
                             MONAD_ASSERT(false);
                         }

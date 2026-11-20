@@ -100,9 +100,9 @@ struct monad_executor_state
 // `monad_executor_run_transactions` rejects all requests.
 //
 // A nonzero `domain_chain_id` creates the executor of that private domain:
-// `dbpath` is the domain's database, and `monad_executor_eth_call_submit`
-// executes under the domain's rules, as the domain of the L1 chain the request
-// names. The other requests are rejected.
+// `dbpath` is the domain's database, and `monad_executor_eth_call_submit` and
+// `monad_executor_run_transactions` execute under the domain's rules, as the
+// domain of the L1 chain the request names. `eth_simulateV1` is rejected.
 struct monad_executor *monad_executor_create(
     struct monad_executor_pool_config low_pool_conf,
     struct monad_executor_pool_config high_pool_conf,

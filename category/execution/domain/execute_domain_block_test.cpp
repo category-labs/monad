@@ -19,6 +19,7 @@
 #include <category/core/fiber/priority_pool.hpp>
 #include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
+#include <category/core/monad_exception.hpp>
 #include <category/execution/domain/chain_id.hpp>
 #include <category/execution/domain/derive_domain_block.hpp>
 #include <category/execution/domain/execute_domain_block.hpp>
@@ -282,6 +283,13 @@ TEST_F(ExecuteDomainBlockTest, block_environment_is_the_domain_block)
     EXPECT_EQ(slot(3), bytes32_t{static_cast<uint64_t>(DOMAIN_GAS_PRICE)});
     EXPECT_EQ(slot(4), bytes32_t{0x100 + NUMBER - 1});
     EXPECT_EQ(slot(5), bytes32_t{TIMESTAMP});
+}
+
+TEST_F(ExecuteDomainBlockTest, chain_is_a_domain_of_its_l1)
+{
+    EXPECT_NO_THROW((DomainChain{l1_chain, DOMAIN}));
+    // Another network's domain, with the same high bits.
+    EXPECT_THROW((DomainChain{l1_chain, DOMAIN + 1}), MonadException);
 }
 
 TEST_F(ExecuteDomainBlockTest, parent_hash_is_kept_in_state)

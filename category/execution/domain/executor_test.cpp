@@ -385,8 +385,15 @@ TEST_F(PrivateDomainExecutorTest, rejects_the_db_of_another_domain)
         execute_all(executor);
     }
     open_db(true);
+    // Another domain of the same network.
     EXPECT_DEATH(
-        (PrivateDomainExecutor{l1_chain_, DOMAIN + 1, HUB, *db_, vm_, pool_}),
+        (PrivateDomainExecutor{
+            l1_chain_,
+            DOMAIN + (uint64_t{1} << NETWORK_CHAIN_ID_BITS),
+            HUB,
+            *db_,
+            vm_,
+            pool_}),
         "db is not that of domain");
     EXPECT_DEATH(
         (PrivateDomainExecutor{

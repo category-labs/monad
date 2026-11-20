@@ -15,6 +15,8 @@
 
 #pragma once
 
+#include <category/core/runtime/uint256/types.hpp>
+
 #include <cstdint>
 
 // Guest shadow headers can enable backend overrides. Host operators retain
@@ -22,6 +24,9 @@
 namespace monad::uint256::overrides
 {
     inline constexpr bool enabled = false;
+
+    template <typename U>
+    div_result<U> divide(U const &, U const &) noexcept;
 
     template <typename U>
     constexpr bool is_nonzero(U const &) noexcept;

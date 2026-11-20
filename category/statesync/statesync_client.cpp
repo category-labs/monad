@@ -18,6 +18,7 @@
 #include <category/core/bytes.hpp>
 #include <category/core/keccak.hpp>
 #include <category/core/likely.h>
+#include <category/core/seeded_fast_hash.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
@@ -43,6 +44,11 @@ using namespace monad;
 using namespace monad::mpt;
 
 unsigned const MONAD_SQPOLL_DISABLED = unsigned(-1);
+
+void monad_statesync_client_set_hash_seed()
+{
+    set_hash_seed();
+}
 
 monad_statesync_client_context *monad_statesync_client_context_create(
     char const *const dbname_path, unsigned const sq_thread_cpu,

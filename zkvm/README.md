@@ -88,6 +88,42 @@ Cargo caches CMake builds by compiler path and configuration under
 `OUT_DIR`. Nix's immutable compiler paths identify the toolchains.
 Development builds default to `monad-zkvm;commit=none;build=none`.
 
+### ZisK build options
+
+**Default** is the value with no overrides. **Reference** is the value in
+`nix build .#zisk-elf`. For **Environment** rows, export the variable
+directly before running Cargo. For **CMake** rows, pass a definition through
+`MONAD_ZKVM_CMAKE_ARGS`, for example
+`MONAD_ZKVM_CMAKE_ARGS="-DMONAD_ZKVM_GAS_SELFTEST=ON"`.
+Cargo caches each configuration separately under `OUT_DIR`.
+
+| Option | Default | Reference | Set via | Effect when ON |
+| --- | --- | --- | --- | --- |
+| `MONAD_ZKVM_FUSE_DUP` | ON | ON | Environment | Pass the source of DUP2–DUP16 to the following opcode. OFF removes the 40-byte DUP prefix and restores seven handler copies per slot. |
+| `MONAD_ZKVM_FUSE_SWAP1` | ON | ON | Environment | Use SWAP1 follower prefixes and fused pairs. OFF frees 40 bytes per handler copy. PUSH1 followed by SWAP1 belongs to the PUSH1 family. |
+| `MONAD_ZKVM_FUSE_SOLIDITY_SELECTOR` | ON | ON | Environment | Fuse the calldata-size prologue, selector extraction and EQ/GT selector tests. ABI argument bounds checks are independent. |
+| `MONAD_ZKVM_FUSE_SOLIDITY_ALLOC_FINALIZE` | ON | ON | Environment | Fuse Solidity’s successful allocation finalization: check the new free-memory pointer, store it at 0x40 and jump back to the caller. |
+| `MONAD_ZKVM_FUSE_SOLIDITY_COPY_LOOP` | ON | ON | Environment | Batch Solidity memory-copy loops that advance by 32 bytes per iteration. |
+| `MONAD_ZKVM_ZISK_DMA` | OFF | ON | Environment | Use patched GCC to lower eligible memory operations to ZisK DMA. |
+| `MONAD_ZKVM_ZISK_LTO` | OFF | ON | Environment | Optimize across C and C++ translation units before linking the guest archive into the ELF. |
+| `MONAD_ZKVM_KECCAKF_MEMO` | ON | ON | CMake | Cache Keccak-f states using executor-supplied indices. The table occupies 100 MiB of BSS. |
+| `MONAD_ZKVM_WIDE_MEMORY_SIZE` | OFF | ON | CMake | Use 64-bit EVM memory sizes and capacities. |
+| `MONAD_ZKVM_VARCODE_CACHE` | OFF | ON | CMake | Reuse VM code wrappers by code hash. |
+| `MONAD_ZKVM_NO_DIRTY_ACCOUNTS` | OFF | ON | CMake | Omit dirty-account tracking. Requires reserve-balance tracking to be inactive. |
+| `MONAD_ZKVM_NO_MERGE_CONSTRAINTS` | OFF | ON | CMake | Skip recording conflict constraints during sequential transaction execution. |
+| `MONAD_ZKVM_CHECK_SEQUENTIAL_MERGE` | OFF | OFF | CMake | Assert that each sequential transaction can merge. Requires NO_MERGE_CONSTRAINTS=OFF. |
+| `MONAD_ZKVM_SELFTEST` | OFF | OFF | CMake | Run the State self-test instead of executing a witness. |
+| `MONAD_ZKVM_GAS_SELFTEST` | OFF | OFF | CMake | Run the interpreter gas-boundary and State rollback tests. |
+| `MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE` | OFF | OFF | CMake | Check gas at every opcode. Requires GAS_SELFTEST=ON. |
+
+To measure one fusion family, build once with all families enabled and once
+with only that family set to OFF. Compare aggregate COST on the same witnesses
+and check each public block hash. Report the fixed corpus and recent sample
+separately.
+
+### Running the guest
+
+
 ```sh
 # 1. Build the guest ELF in the development shell.
 nix develop .#zisk

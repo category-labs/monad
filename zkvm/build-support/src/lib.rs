@@ -77,11 +77,11 @@ impl Backend {
             ("CMAKE_PREFIX_PATH".into(), prefix_path),
         ];
         if let Self::Zisk = self {
-            for option in ZISK_OPTIONS {
+            for (option, default) in ZISK_OPTIONS {
                 println!("cargo:rerun-if-env-changed={option}");
                 defines.push((
                     option.into(),
-                    env::var(option).unwrap_or_else(|_| "OFF".into()),
+                    env::var(option).unwrap_or_else(|_| default.into()),
                 ));
             }
         }
@@ -179,7 +179,25 @@ impl Backend {
             if !enabled("MONAD_ZKVM_SELFTEST") || enabled("MONAD_ZKVM_GAS_SELFTEST") {
                 let out_dir = PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR unset"));
                 let slots_ld = out_dir.join("slots.ld");
-                std::fs::write(&slots_ld, zisk_slots_ld()).expect("write slots.ld");
+                let prefix_enabled = |file| {
+                    let path = build_dir.join(file);
+                    match std::fs::read_to_string(&path).as_deref() {
+                        Ok("1") => true,
+                        Ok("0") => false,
+                        other => panic!(
+                            "invalid prefix configuration in {}: {other:?}",
+                            path.display()
+                        ),
+                    }
+                };
+                std::fs::write(
+                    &slots_ld,
+                    zisk_slots_ld(
+                        prefix_enabled("swap1-prefix.enabled"),
+                        prefix_enabled("dup-prefix.enabled"),
+                    ),
+                )
+                .expect("write slots.ld");
                 println!(
                     "cargo:rustc-link-arg-bin=monad-zkvm-zisk=-T{}",
                     slots_ld.display()
@@ -307,9 +325,16 @@ fn sp1_zkevm_dir() -> PathBuf {
     zkevm
 }
 
-/// The ZisK compiler options, read from the environment and OFF by default.
-/// The reference Nix build turns all of them on.
-const ZISK_OPTIONS: [&str; 2] = ["MONAD_ZKVM_ZISK_DMA", "MONAD_ZKVM_ZISK_LTO"];
+/// ZisK build options accepted directly from the environment and their defaults.
+const ZISK_OPTIONS: [(&str, &str); 7] = [
+    ("MONAD_ZKVM_ZISK_DMA", "OFF"),
+    ("MONAD_ZKVM_ZISK_LTO", "OFF"),
+    ("MONAD_ZKVM_FUSE_DUP", "ON"),
+    ("MONAD_ZKVM_FUSE_SWAP1", "ON"),
+    ("MONAD_ZKVM_FUSE_SOLIDITY_SELECTOR", "ON"),
+    ("MONAD_ZKVM_FUSE_SOLIDITY_ALLOC_FINALIZE", "ON"),
+    ("MONAD_ZKVM_FUSE_SOLIDITY_COPY_LOOP", "ON"),
+];
 
 /// Environment variables cmake-rs reads for the guest build.
 const CMAKE_ENV: [&str; 3] = ["CMAKE", "CMAKE_GENERATOR", "CMAKE_PREFIX_PATH"];
@@ -318,24 +343,35 @@ fn manifest_dir() -> PathBuf {
     PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR unset"))
 }
 
-/// Lay out 4-KiB opcode slots, newest revision first. Six handler copies
-/// encode instruction-pointer lags 0..5, in address order 4, 5, 0, 1, 2, 3.
-/// Each has a 64-byte prefix region. Fused pairs and oversized handlers follow
-/// the slots. Linker assertions reject missing or misplaced entries; moving
-/// the location counter backwards rejects a copy that exceeds its region.
-fn zisk_slots_ld() -> String {
+/// Lay out 4-KiB opcode slots, newest revision first. SWAP2–SWAP16 reserve 40 prefix
+/// bytes per copy. DUP and SWAP1 each add another 40 when enabled.
+/// Fused pairs and oversized handlers follow the slots. The linker rejects
+/// misplaced entries and copies that exceed their region.
+fn zisk_slots_ld(fuse_swap1: bool, fuse_dup: bool) -> String {
     const SLOT: usize = 0x1000;
     // Prefix-region offset, prefix-section suffix, and handler-section suffix.
     // Keep these offsets in sync with instruction_table.hpp::lag_offset.
-    const COPIES: [(usize, &str, &str); 6] = [
-        (0, "_4", "4"),
-        (684, "_5", "5"),
-        (1368, "", ""),
-        (2048, "_1", "1"),
-        (2728, "_2", "2"),
-        (3412, "_3", "3"),
-    ];
-    const PREFIX_SIZE: usize = 0x40;
+    let copies: &[(usize, &str, &str)] = if fuse_dup {
+        &[
+            (0, "_4", "4"),
+            (684, "_5", "5"),
+            (1368, "", ""),
+            (2048, "_1", "1"),
+            (2728, "_2", "2"),
+            (3412, "_3", "3"),
+        ]
+    } else {
+        &[
+            (0, "_4", "4"),
+            (584, "_5", "5"),
+            (1168, "_6", "6"),
+            (if fuse_swap1 { 1760 } else { 1752 }, "", ""),
+            (2336, "_1", "1"),
+            (2920, "_2", "2"),
+            (3504, "_3", "3"),
+        ]
+    };
+    let prefix_size = 104 + 40 * usize::from(fuse_swap1) + 40 * usize::from(fuse_dup);
     let mut ld = String::from(
         "SECTIONS {\n    .monad_vm_slots : ALIGN(0x400) {\n        \
          FILL(0x13000000)\n        monad_vm_slots = .;\n",
@@ -343,9 +379,9 @@ fn zisk_slots_ld() -> String {
     for (rank, rev) in (8..=15).rev().enumerate() {
         for op in 0..256 {
             let slot_address = (rank * 256 + op) * SLOT;
-            for (copy_offset, prefix_suffix, handler_suffix) in COPIES {
+            for &(copy_offset, prefix_suffix, handler_suffix) in copies {
                 let prefix_address = slot_address + copy_offset;
-                let handler_address = prefix_address + PREFIX_SIZE;
+                let handler_address = prefix_address + prefix_size;
                 let symbol_suffix = if handler_suffix.is_empty() {
                     String::new()
                 } else {
@@ -369,6 +405,9 @@ fn zisk_slots_ld() -> String {
         "        . = monad_vm_slots + {:#x};\n        \
          KEEP(*(.monad_vm_push1*))\n        \
          KEEP(*(.monad_vm_push2*))\n        \
+         KEEP(*(.monad_vm_swap1*))\n        \
+         KEEP(*(.monad_vm_swapn*))\n        \
+         KEEP(*(.monad_vm_dup*))\n        \
          KEEP(*(.monad_vm_body*))\n    }}\n}} INSERT AFTER .text;\n",
         8 * 256 * SLOT
     );

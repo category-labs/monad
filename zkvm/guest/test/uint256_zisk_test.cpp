@@ -223,6 +223,146 @@ void check_software()
 }
 
 #ifdef MONAD_ZKVM_UINT256_SELFTEST
+    #include <category/vm/evm/opcodes.hpp>
+    #include <category/vm/interpreter/execute.hpp>
+    #include <category/vm/runtime/allocator.hpp>
+    #include <category/vm/runtime/math.hpp>
+
+namespace arithmetic_tests
+{
+    using namespace monad;
+    using namespace monad::vm;
+    using namespace monad::vm::compiler;
+
+    constexpr auto word = uint256_t{1} << 64;
+    constexpr auto high_bit = uint256_t{1} << 255;
+    constexpr auto max_word = ~uint256_t{0};
+    constexpr auto modulus = high_bit - 1;
+
+    struct ArithmeticCase
+    {
+        EvmOpCode opcode;
+        uint256_t left;
+        uint256_t right;
+        uint256_t mod;
+        uint256_t expected;
+    };
+
+    // For the full-width modular cases, max_word % modulus == 1 and
+    // (high_bit + 1) % modulus == 2. Neither sum nor product fits in 256 bits.
+    constexpr std::array cases{
+        ArithmeticCase{ADD, word - 1, 1, 0, word},
+        ArithmeticCase{ADD, max_word, 1, 0, 0},
+        ArithmeticCase{SUB, word, 1, 0, word - 1},
+        ArithmeticCase{SUB, 0, 1, 0, max_word},
+        ArithmeticCase{MUL, high_bit + 3, 2, 0, 6},
+        ArithmeticCase{MUL, max_word, max_word, 0, 1},
+        ArithmeticCase{ADDMOD, max_word, high_bit + 1, 0, 0},
+        ArithmeticCase{MULMOD, max_word, high_bit + 1, 0, 0},
+        ArithmeticCase{ADDMOD, max_word, high_bit + 1, modulus, 3},
+        ArithmeticCase{MULMOD, max_word, high_bit + 1, modulus, 2},
+        ArithmeticCase{ADDMOD, max_word, high_bit + 1, 1, 0},
+        ArithmeticCase{MULMOD, max_word, high_bit + 1, 1, 0},
+    };
+
+    constexpr bool is_modular(EvmOpCode const opcode)
+    {
+        return opcode == ADDMOD || opcode == MULMOD;
+    }
+
+    bool check_opcode(ArithmeticCase const &test)
+    {
+        std::array<uint8_t, 3 * 33 + 2> bytecode;
+        size_t size = 0;
+        auto const push = [&](uint256_t const &value) {
+            bytecode[size++] = PUSH32;
+            for (size_t i = 32; i > 0; --i) {
+                size_t const byte = i - 1;
+                bytecode[size++] =
+                    static_cast<uint8_t>(value[byte / 8] >> (8 * (byte % 8)));
+            }
+        };
+        // The EVM pops the left operand first. The result replaces the
+        // deepest input, which is the modulus for the three-input opcodes.
+        if (is_modular(test.opcode)) {
+            push(test.mod);
+        }
+        push(test.right);
+        push(test.left);
+        bytecode[size++] = test.opcode;
+        bytecode[size++] = STOP;
+
+        interpreter::Intercode const code{{bytecode.data(), size}};
+        alignas(32) std::array<uint256_t, runtime::EvmStackAllocatorMeta::size>
+            stack;
+        auto ctx = runtime::Context::empty(nullptr, 0);
+        ctx.gas_remaining = 100;
+        interpreter::execute<EvmTraits<EvmRevision::Berlin>>(
+            ctx, code, stack.data());
+        return ctx.result.status == runtime::StatusCode::Success &&
+               stack[0] == test.expected;
+    }
+
+    bool check_modular_helper(ArithmeticCase const &test)
+    {
+        auto const compute = test.opcode == ADDMOD ? &addmod : &mulmod;
+        // The value-returning helpers must also work when the caller assigns
+        // the result back to any of the original variables.
+        for (size_t output = 0; output < 3; ++output) {
+            std::array words{test.left, test.right, test.mod};
+            words[output] = compute(words[0], words[1], words[2]);
+            if (words[output] != test.expected) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    bool check_modular_output_aliasing(ArithmeticCase const &test)
+    {
+        auto const compute =
+            test.opcode == ADDMOD ? &runtime::addmod : &runtime::mulmod;
+        // Exercise the precompile's actual pointer aliasing with both
+        // operands as well as the modulus used as output by the interpreter.
+        std::array const inputs{test.left, test.right, test.mod};
+        for (size_t output = 0; output < inputs.size(); ++output) {
+            auto words = inputs;
+            compute(&words[output], &words[0], &words[1], &words[2]);
+            for (size_t i = 0; i < words.size(); ++i) {
+                if (words[i] != (i == output ? test.expected : inputs[i])) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    std::uint32_t check_arithmetic()
+    {
+        // One failure bit per opcode case, followed by the helper and alias
+        // checks for each modular case.
+        constexpr auto modular_cases =
+            std::ranges::count_if(cases, [](ArithmeticCase const &test) {
+                return is_modular(test.opcode);
+            });
+        static_assert(cases.size() + 2 * modular_cases <= 32);
+        std::uint32_t failures = 0;
+        unsigned modular_bit = cases.size();
+        for (unsigned i = 0; i < cases.size(); ++i) {
+            auto const &test = cases[i];
+            failures |= std::uint32_t{!check_opcode(test)} << i;
+            if (is_modular(test.opcode)) {
+                failures |= std::uint32_t{!check_modular_helper(test)}
+                            << modular_bit++;
+                failures |= std::uint32_t{!check_modular_output_aliasing(test)}
+                            << modular_bit++;
+            }
+        }
+        return failures;
+    }
+
+}
+
 // The Rust launcher calls the same entry symbol in both build modes.
 extern "C" void monad_zkvm_execute_witness()
 {
@@ -234,6 +374,9 @@ extern "C" void monad_zkvm_execute_witness()
     if (test == 0) {
         check_software();
         failures = 0;
+    }
+    else if (test == 1) {
+        failures = arithmetic_tests::check_arithmetic();
     }
     // A rejected hint must halt before reaching the completion marker.
     unsigned char output[32]{0, 0, 0, 0, 'U', '2', '5', '6', test};

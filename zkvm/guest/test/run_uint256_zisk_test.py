@@ -35,7 +35,7 @@ def main():
     with TemporaryDirectory() as tmp:
         directory = Path(tmp)
         for selector, name in enumerate(
-            ('software overrides',)
+            ('software overrides', 'arithmetic opcodes and helpers')
         ):
             input_path = directory / f"{selector}.input"
             output_path = directory / f"{selector}.output"
@@ -56,7 +56,7 @@ def main():
                 check=False,
             )
 
-            if selector <= 0:
+            if selector <= 1:
                 output = output_path.read_bytes() if output_path.exists() else b""
                 if result.returncode != 0 or output[:9] != bytes(4) + b"U256" + bytes([selector]):
                     raise SystemExit(

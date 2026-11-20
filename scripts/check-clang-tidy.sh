@@ -20,11 +20,13 @@ EOF
 while [[ "$#" -gt 0 ]]; do
   case "$1" in
     -p|--build-dir)
+      if [[ $# -lt 2 || "$2" == -* ]]; then usage; fi
       BUILD_DIR="$2"
       shift
       shift
       ;;
     -d|--driver)
+      if [[ $# -lt 2 || "$2" == -* ]]; then usage; fi
       RUN_CLANG_TIDY="$2"
       shift
       shift

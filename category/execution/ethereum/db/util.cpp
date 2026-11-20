@@ -640,6 +640,29 @@ bool OnDiskMachine::cache() const
              table == TableType::TxHash || table == TableType::BlockHash));
 }
 
+// Commit rewrites the accounts and slots written in recent blocks far more
+// often than others, and execution reads them through DbCache, which leaves
+// their paths unloaded.
+bool OnDiskMachine::cache_recent() const
+{
+    return table == TableType::State;
+}
+
+// Keys are recorded from the table nibble on, so that a key written under
+// one proposal is found again under the next proposal and the finalized
+// section, which share its subtrie.
+std::optional<size_t>
+OnDiskMachine::recent_key_prefix_len(unsigned char const first_nibble) const
+{
+    if (first_nibble == PROPOSAL_NIBBLE) {
+        return PROPOSAL_PREFIX_LEN - TABLE_PREFIX_LEN;
+    }
+    if (first_nibble == FINALIZED_NIBBLE) {
+        return FINALIZED_PREFIX_LEN - TABLE_PREFIX_LEN;
+    }
+    return std::nullopt;
+}
+
 bool OnDiskMachine::compact() const
 {
     return depth >= prefix_len();

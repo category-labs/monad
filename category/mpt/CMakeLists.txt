@@ -59,6 +59,8 @@ add_library(
   "ondisk_db_config.hpp"
   "request.hpp"
   "read_node_blocking.cpp"
+  "recent_node_cache.cpp"
+  "recent_node_cache.hpp"
   "state_machine.hpp"
   "state_machine_kind.cpp"
   "state_machine_kind.hpp"

@@ -19,6 +19,8 @@
 #include <category/async/config.hpp>
 #include <category/async/detail/scope_polyfill.hpp>
 #include <category/async/util.hpp>
+#include <category/core/byte_string.hpp>
+#include <category/core/hex.hpp>
 #include <category/core/test_util/gtest_signal_stacktrace_printer.hpp> // NOLINT
 #include <category/mpt/config.hpp>
 #include <category/mpt/db_stats_shm.hpp>
@@ -26,8 +28,10 @@
 #include <category/mpt/node.hpp>
 #include <category/mpt/trie.hpp>
 #include <category/mpt/update.hpp>
+#include <category/mpt/util.hpp>
 
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <iostream>
 #include <ostream>
@@ -188,4 +192,125 @@ TEST_F(CompactionTest, an_upsert_publishes_lifetime_totals_to_the_sidecar)
     EXPECT_GT(
         published->nodes_created_or_updated,
         aux.last_upsert_stats().nodes_created_or_updated);
+}
+
+namespace
+{
+    monad::byte_string filler_key(uint32_t const i)
+    {
+        monad::byte_string key(32, 0);
+        key[0] = static_cast<unsigned char>(0x20 | (i & 0xf));
+        for (unsigned b = 0; b < 4; ++b) {
+            key[1 + b] = static_cast<unsigned char>(i >> (8 * (3 - b)));
+        }
+        return key;
+    }
+
+    unsigned branch_of(Node const &node, unsigned const nibble)
+    {
+        return node.to_child_index(nibble);
+    }
+
+    // a, a2, b and c share the parent under nibble 1; a and a2 sit in an
+    // earlier compaction offset unit than b and c.
+    template <class Machine>
+    struct CompactionCacheFixture
+        : public monad::test::OnDiskTrieBase<::testing::Test>
+    {
+        Machine sm;
+        monad::byte_string const a =
+            0x1000000000000000000000000000000000000000000000000000000000000000_bytes;
+        monad::byte_string const b =
+            0x1100000000000000000000000000000000000000000000000000000000000000_bytes;
+        monad::byte_string const c =
+            0x1200000000000000000000000000000000000000000000000000000000000000_bytes;
+        monad::byte_string const a2 =
+            0x1300000000000000000000000000000000000000000000000000000000000000_bytes;
+        monad::byte_string const d =
+            0x3000000000000000000000000000000000000000000000000000000000000000_bytes;
+        monad::byte_string const value =
+            0xdeadbeefcafebabedeadbeefcafebabedeadbeefcafebabedeadbeefcafebabe_bytes;
+        virtual_chunk_offset_t a_offset{INVALID_VIRTUAL_OFFSET};
+        virtual_chunk_offset_t b_offset{INVALID_VIRTUAL_OFFSET};
+
+        void write(
+            uint64_t const version, std::vector<monad::byte_string> const &keys)
+        {
+            std::vector<Update> updates;
+            updates.reserve(keys.size());
+            for (auto const &key : keys) {
+                updates.push_back(make_update(key, value));
+            }
+            root = monad::test::upsert_vector(
+                aux, sm, std::move(root), std::move(updates), version);
+        }
+
+        Node const &parent() const
+        {
+            return *root->next(branch_of(*root, 1));
+        }
+
+        void SetUp() override
+        {
+            // a and a2 share the parent from the start, so neither is
+            // rewritten later.
+            write(0, {a, a2});
+            std::vector<monad::byte_string> filler;
+            filler.reserve(4096);
+            for (uint32_t i = 0; i < 4096; ++i) {
+                filler.push_back(filler_key(i));
+            }
+            write(1, filler);
+            write(2, {b, c});
+            a_offset =
+                aux.physical_to_virtual(parent().fnext(branch_of(parent(), 0)));
+            b_offset =
+                aux.physical_to_virtual(parent().fnext(branch_of(parent(), 1)));
+            ASSERT_LT(
+                compact_virtual_chunk_offset_t{a_offset},
+                compact_virtual_chunk_offset_t{b_offset});
+        }
+
+        // Compaction rewrites a, a2 and their parent, and leaves b and c
+        // where they are.
+        void compact_a()
+        {
+            aux.tl(timeline_id::primary).compact_offsets = compact_offset_pair{
+                .fast = compact_virtual_chunk_offset_t{b_offset},
+                .slow = MIN_COMPACT_VIRTUAL_OFFSET};
+            write(3, {d});
+            ASSERT_NE(
+                aux.physical_to_virtual(parent().fnext(branch_of(parent(), 0))),
+                a_offset);
+        }
+    };
+
+    using CompactionCacheTest =
+        CompactionCacheFixture<monad::test::StateMachineAlways<
+            monad::test::MerkleCompute,
+            monad::test::StateMachineConfig{.cache_depth = 1000}>>;
+
+    // Caches the root and the parent only.
+    using CompactionReadTest =
+        CompactionCacheFixture<monad::test::StateMachineAlways<
+            monad::test::MerkleCompute,
+            monad::test::StateMachineConfig{.cache_depth = 2}>>;
+}
+
+TEST_F(CompactionCacheTest, compaction_keeps_in_memory_children_it_leaves_alone)
+{
+    ASSERT_NE(parent().next(branch_of(parent(), 1)), nullptr);
+    ASSERT_NE(parent().next(branch_of(parent(), 2)), nullptr);
+    compact_a();
+    EXPECT_NE(parent().next(branch_of(parent(), 1)), nullptr);
+    EXPECT_NE(parent().next(branch_of(parent(), 2)), nullptr);
+}
+
+TEST_F(CompactionReadTest, compaction_does_not_cache_nodes_it_reads)
+{
+    ASSERT_EQ(parent().next(branch_of(parent(), 0)), nullptr);
+    ASSERT_EQ(parent().next(branch_of(parent(), 3)), nullptr);
+    compact_a();
+    EXPECT_EQ(parent().next(branch_of(parent(), 0)), nullptr);
+    EXPECT_EQ(parent().next(branch_of(parent(), 3)), nullptr);
 }

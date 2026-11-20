@@ -219,14 +219,17 @@ struct CompactTNode : public TNodeBase
     bool const cache_node{false};
     Node::SharedPtr node{nullptr};
 
+    // `was_cached`: the node was in memory before compaction reached it, as
+    // opposed to read from disk for it.
     template <any_tnode Parent>
     CompactTNode(
-        Parent *const parent, unsigned const index, Node::SharedPtr ptr)
+        Parent *const parent, unsigned const index, bool const was_cached,
+        Node::SharedPtr ptr)
         : Base(
               parent, tnode_type::compact,
               static_cast<uint8_t>(ptr ? ptr->number_of_children() : 0))
         , index(static_cast<uint8_t>(index))
-        , cache_node(parent->type == tnode_type::update || ptr != nullptr)
+        , cache_node(parent->type == tnode_type::update || was_cached)
         , node(std::move(ptr))
     {
         MONAD_ASSERT(parent != nullptr);
@@ -257,12 +260,13 @@ struct CompactTNode : public TNodeBase
     }
 
     template <any_tnode Parent>
-    static unique_ptr_type
-    make(Parent *const parent, unsigned const index, Node::SharedPtr node)
+    static unique_ptr_type make(
+        Parent *const parent, unsigned const index, bool const was_cached,
+        Node::SharedPtr node)
     {
         MONAD_ASSERT(parent);
         return allocators::allocate_unique<allocator_type, &CompactTNode::pool>(
-            parent, index, std::move(node));
+            parent, index, was_cached, std::move(node));
     }
 };
 

@@ -576,6 +576,9 @@ Node::SharedPtr UpdateAux::do_update(
 
     tl(tid).curr_upsert_auto_expire_version =
         calc_auto_expire_version(version, tid);
+    if (tid == timeline_id::primary) {
+        recent_node_cache_.record_writes(updates, sm, version);
+    }
     UpdateList root_updates;
     byte_string const compact_offsets_bytes =
         tl(tid).compact_offsets.serialize();
@@ -596,6 +599,9 @@ Node::SharedPtr UpdateAux::do_update(
         tid, tl(tid).curr_upsert_auto_expire_version);
 
     auto const upsert_duration = upsert_timer.elapsed();
+    if (root && tid == timeline_id::primary) {
+        recent_node_cache_.after_upsert(*root, sm, version);
+    }
     // Unconditional so that an upsert run without compaction is never folded
     // into the next compacted upsert's figures.
     last_upsert_stats_ = stats_.delta_since(prev_upsert_stats_);

@@ -50,6 +50,7 @@
 #include <category/execution/runloop/runloop_monad.hpp>
 #include <category/execution/runloop/runloop_monad_ethblocks.hpp>
 #include <category/mpt/ondisk_db_config.hpp>
+#include <category/mpt/recent_node_cache.hpp>
 #include <category/statesync/statesync_server_network.hpp>
 #include <category/statesync/statesync_thread.hpp>
 #include <category/vm/evm/traits.hpp>
@@ -143,6 +144,8 @@ try {
     unsigned nthreads = 4;
     unsigned nfibers = 256;
     bool no_compaction = false;
+    mpt::RecentNodeCacheConfig recent_node_cache{.window_versions = 100};
+    uint64_t recent_node_cache_mb = 1024;
     bool trace_calls = false;
     bool as_eth_blocks = false;
     std::chrono::seconds block_db_timeout = std::chrono::seconds::zero();
@@ -178,6 +181,16 @@ try {
     cli.add_option("--nthreads", nthreads, "number of threads");
     cli.add_option("--nfibers", nfibers, "number of fibers");
     cli.add_flag("--no-compaction", no_compaction, "disable compaction");
+    cli.add_option(
+        "--trie-recent-blocks",
+        recent_node_cache.window_versions,
+        "keep state trie nodes a commit writes, and trie nodes a read loads, "
+        "in memory for this many blocks (0: written nodes are freed at once "
+        "and loaded nodes stay)");
+    cli.add_option(
+        "--trie-recent-mb",
+        recent_node_cache_mb,
+        "memory bound for the nodes --trie-recent-blocks keeps (0 = none)");
     cli.add_option(
         "--sq-thread-cpu,--sq_thread_cpu",
         sq_thread_cpu,
@@ -265,6 +278,9 @@ try {
     catch (CLI::ParseError const &e) {
         return cli.exit(e);
     }
+    if (recent_node_cache_mb != 0) {
+        recent_node_cache.max_bytes = recent_node_cache_mb << 20;
+    }
 
     init_root_logger(log_level);
     LOG_INFO("running with commit '{}'", GIT_COMMIT_HASH);
@@ -342,10 +358,10 @@ try {
                                      ? std::optional<unsigned>{}
                                      : std::optional<unsigned>{sq_thread_cpu},
                 .dbname_path = dbname_path,
-                .stats_file_path =
-                    db_stats_file.empty()
-                        ? std::optional<fs::path>{}
-                        : std::optional<fs::path>{db_stats_file}}};
+                .stats_file_path = db_stats_file.empty()
+                                       ? std::optional<fs::path>{}
+                                       : std::optional<fs::path>{db_stats_file},
+                .recent_node_cache = recent_node_cache}};
         }
         // In memory db: initialize state machine based on chain revision
         auto const *const monad_chain =

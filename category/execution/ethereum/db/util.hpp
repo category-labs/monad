@@ -114,6 +114,9 @@ struct OnDiskMachine : public MachineBase
 {
     virtual mpt::state_machine_kind kind() const override;
     virtual bool cache() const override;
+    virtual bool cache_recent() const override;
+    virtual std::optional<size_t>
+    recent_key_prefix_len(unsigned char first_nibble) const override;
     virtual bool compact() const override;
     virtual bool auto_expire() const override;
     virtual std::unique_ptr<StateMachine> clone() const override;

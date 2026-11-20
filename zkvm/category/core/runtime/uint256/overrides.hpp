@@ -232,6 +232,31 @@ namespace monad::uint256::overrides
         uint64_t *high;
     };
 
+    // Verify that q·v + r == u in 512 bits and r < v (requires v != 0).
+    template <typename U>
+    [[gnu::always_inline]] inline div_result<U> verify_division_hint(
+        U const &u, U const &v, uint64_t const (&qr)[8]) noexcept
+    {
+        alignas(8) uint64_t d[8]; // q·v + r, low half then high half
+        DivisionProductParams p{
+            qr, reinterpret_cast<uint64_t const *>(&v), qr + 4, d, d + 4};
+        asm volatile(".option push\n\t"
+                     ".option arch, +zicsr\n\t"
+                     "csrs 0x801, %0\n\t"
+                     ".option pop"
+                     :
+                     : "r"(&p)
+                     : "memory");
+        U const q{qr[0], qr[1], qr[2], qr[3]};
+        U const r{qr[4], qr[5], qr[6], qr[7]};
+        alignas(8) constexpr uint64_t zero_words[4]{};
+        MONAD_ASSERT(
+            zisk_equal32(d, reinterpret_cast<uint64_t const *>(&u)) &&
+            zisk_equal32(d + 4, zero_words));
+        MONAD_ASSERT(r < v);
+        return {.quot = q, .rem = r};
+    }
+
     // Call fcall 19 directly to avoid div_rem256_c's copies and
     // zero-initialisation.
     template <typename U>
@@ -252,24 +277,7 @@ namespace monad::uint256::overrides
                      :
                      : [u] "r"(&u), [v] "r"(&v), [qr] "r"(qr)
                      : "memory");
-        alignas(8) uint64_t d[8]; // q·v + r, low half then high half
-        DivisionProductParams p{
-            qr, reinterpret_cast<uint64_t const *>(&v), qr + 4, d, d + 4};
-        asm volatile(".option push\n\t"
-                     ".option arch, +zicsr\n\t"
-                     "csrs 0x801, %0\n\t"
-                     ".option pop"
-                     :
-                     : "r"(&p)
-                     : "memory");
-        U const q{qr[0], qr[1], qr[2], qr[3]};
-        U const r{qr[4], qr[5], qr[6], qr[7]};
-        alignas(8) constexpr uint64_t zero_words[4]{};
-        MONAD_ASSERT(
-            zisk_equal32(d, reinterpret_cast<uint64_t const *>(&u)) &&
-            zisk_equal32(d + 4, zero_words));
-        MONAD_ASSERT(r < v);
-        return {.quot = q, .rem = r};
+        return verify_division_hint(u, v, qr);
     }
 
     // The caller handles zero divisors and constant evaluation.

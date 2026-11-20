@@ -24,6 +24,7 @@
 #include <category/mpt/util.hpp>
 
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cassert>
 #include <cstddef>
@@ -35,7 +36,6 @@
 #include <optional>
 #include <span>
 #include <utility>
-#include <vector>
 
 MONAD_MPT_NAMESPACE_BEGIN
 
@@ -579,14 +579,15 @@ Node::SharedPtr make_node(
     size_t const data_size, int64_t const version)
 {
     auto const number_of_children = static_cast<size_t>(std::popcount(mask));
-    std::vector<uint16_t> child_data_offsets;
-    child_data_offsets.reserve(children.size());
+    std::array<uint16_t, Node::max_number_of_children> child_data_offsets;
+    size_t valid_children = 0;
     uint16_t total_child_data_size = 0;
     for (auto const &child : children) {
         if (child.is_valid()) {
             MONAD_ASSERT(mask & (1u << child.branch));
+            MONAD_ASSERT(valid_children < child_data_offsets.size());
             total_child_data_size += child.len;
-            child_data_offsets.push_back(total_child_data_size);
+            child_data_offsets[valid_children++] = total_child_data_size;
         }
     }
 
@@ -605,7 +606,7 @@ Node::SharedPtr make_node(
 
     std::copy_n(
         (byte_string_view::pointer)child_data_offsets.data(),
-        child_data_offsets.size() * sizeof(uint16_t),
+        valid_children * sizeof(uint16_t),
         reinterpret_cast<unsigned char *>(node->child_off_data().data()));
 
     // Must initialize child pointers after copying child_data_offset

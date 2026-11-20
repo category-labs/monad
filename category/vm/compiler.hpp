@@ -19,6 +19,7 @@
 #include <category/vm/code.hpp>
 #include <category/vm/compiler/ir/x86.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/runtime/types.hpp>
 #include <category/vm/utils/debug.hpp>
 #include <category/vm/utils/log_utils.hpp>
 #include <category/vm/varcode_cache.hpp>
@@ -31,6 +32,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstdint>
 #include <mutex>
 #include <span>
 #include <thread>
@@ -223,10 +225,11 @@ namespace monad::vm
         void compile_loop();
         void dispense_compile_jobs();
 
-        static constexpr asmjit::JitAllocator::CreateParams
-            asmjit_create_params_{
-                .options = asmjit::JitAllocatorOptions::kUseDualMapping,
-            };
+        asmjit::JitAllocator::CreateParams const asmjit_create_params_{
+            .options = asmjit::JitAllocatorOptions::kUseDualMapping,
+            .near_address = reinterpret_cast<uintptr_t>(
+                &monad_vm_runtime_increase_memory_raw_v1),
+        };
 
         asmjit::JitRuntime asmjit_rt_;
         VarcodeCache varcode_cache_;

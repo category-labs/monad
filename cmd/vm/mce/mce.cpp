@@ -27,7 +27,9 @@
 #include <category/vm/compiler/ir/x86/types.hpp>
 #include <category/vm/evm/result.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/runtime/types.hpp>
 
+#include <asmjit/core/jit_allocator.h>
 #include <asmjit/core/jit_runtime.h>
 
 #include <CLI/CLI.hpp>
@@ -211,7 +213,11 @@ int mce_main(arguments const &args)
         abort();
     }
 
-    asmjit::JitRuntime rt{};
+    asmjit::JitAllocator::CreateParams const rt_params{
+        .near_address = reinterpret_cast<uintptr_t>(
+            &monad_vm_runtime_increase_memory_raw_v1),
+    };
+    asmjit::JitRuntime rt{&rt_params};
 
     // Must be declared after `rt`: ~Nativecode releases its code via `rt`.
     Binary bin;

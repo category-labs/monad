@@ -72,26 +72,55 @@ namespace monad::vm::interpreter
         #define MONAD_VM_SEVENTH_COPY(...)
         #define MONAD_VM_GROUP_SIZE "6"
     #endif
-    // Each 4-KiB opcode slot holds six copies with DUP prefixes or seven
-    // without them. Each copy starts with: [SWAPn: 40][optional DUPn:
-    // 40][optional SWAP1: 40][overflow, PUSH2, PUSH1: 64 bytes][handler].
-    // Prefixes execute the pending stack operation or jump to a fused pair. a3
-    // points to the next free word; a1 is the limit, a4 the gas, a5 the
-    // instruction address minus the copy's lag. Keep prefix offsets fixed.
-    #define MONAD_VM_LEAD_SECTION(                                             \
-        NAME, OP, SUFFIX, COPY, PAD, HEAD2, HEAD1, SIZE1)                      \
-        asm(".pushsection .monad_vm_lead" #SUFFIX "." #NAME "." #OP            \
-            ",\"ax\",@progbits\n"                                              \
-            ".option push\n"                                                   \
-            ".option norelax\n"                                                \
+    #if defined(MONAD_ZKVM_NO_SWAPN_FUSION)
+        #define MONAD_VM_SWAPN_SECTION(NAME, OP, COPY, SUFFIX) ""
+    #else
+        #define MONAD_VM_SWAPN_SECTION(NAME, OP, COPY, SUFFIX)                 \
             ".type monad_vm_slot_" #NAME "_" #OP "_lead_swapn" #SUFFIX         \
             ", @function\n"                                                    \
             ".size monad_vm_slot_" #NAME "_" #OP "_lead_swapn" #SUFFIX         \
             ", 40\n"                                                           \
             "monad_vm_slot_" #NAME "_" #OP "_lead_swapn" #SUFFIX               \
-            ":\n" MONAD_VM_SWAPN_HEAD(NAME, OP, COPY, SUFFIX)                  \
-                MONAD_VM_DUP_SECTION(NAME, OP, SUFFIX)                         \
-                    MONAD_VM_SWAP1_SECTION(NAME, OP, COPY, SUFFIX) PAD         \
+            ":\n" MONAD_VM_SWAPN_HEAD(NAME, OP, COPY, SUFFIX)
+    #endif
+    #if defined(MONAD_ZKVM_NO_COMPARISON_FUSION)
+        #define MONAD_VM_BOOL_SECTION(NAME, OP, COPY, SUFFIX) ""
+    #else
+        #define MONAD_VM_BOOL_SECTION(NAME, OP, COPY, SUFFIX)                  \
+            ".type monad_vm_slot_" #NAME "_" #OP "_lead_bool" #SUFFIX          \
+            ", @function\n"                                                    \
+            ".size monad_vm_slot_" #NAME "_" #OP "_lead_bool" #SUFFIX ", 28\n" \
+            "monad_vm_slot_" #NAME "_" #OP "_lead_bool" #SUFFIX                \
+            ":\n" MONAD_VM_BOOL_HEAD(NAME, OP, COPY, SUFFIX)
+    // Match the actual optional prefixes emitted below. File-scope extended
+    // assembly cannot use C++ constexpr operands under GCC LTO.
+    asm(".equ monad_vm_compare_distance, 92");
+        #if !defined(MONAD_ZKVM_NO_DUP_FUSION)
+    asm(".set monad_vm_compare_distance, monad_vm_compare_distance + 40");
+        #endif
+        #if !defined(MONAD_ZKVM_NO_SWAP1_PREFIX)
+    asm(".set monad_vm_compare_distance, monad_vm_compare_distance + 40");
+        #endif
+        #if !defined(MONAD_ZKVM_NO_SWAPN_FUSION)
+    asm(".set monad_vm_compare_distance, monad_vm_compare_distance + 40");
+        #endif
+    #endif
+    // Each 4-KiB opcode slot holds six copies with DUP prefixes or seven
+    // without them. Each copy starts with: [optional comparison: 28][optional
+    // SWAPn: 40][optional DUPn: 40][optional SWAP1: 40][overflow, PUSH2, PUSH1:
+    // 64 bytes][handler]. Prefixes execute the pending stack operation or jump
+    // to a fused pair. a3 points to the next free word; a1 is the limit, a4 the
+    // gas, a5 the instruction address minus the copy's lag. Keep prefix offsets
+    // fixed.
+    #define MONAD_VM_LEAD_SECTION(                                             \
+        NAME, OP, SUFFIX, COPY, PAD, HEAD2, HEAD1, SIZE1)                      \
+        asm(".pushsection .monad_vm_lead" #SUFFIX "." #NAME "." #OP            \
+            ",\"ax\",@progbits\n"                                              \
+            ".option push\n"                                                   \
+            ".option norelax\n" MONAD_VM_BOOL_SECTION(NAME, OP, COPY, SUFFIX)  \
+                MONAD_VM_SWAPN_SECTION(NAME, OP, COPY, SUFFIX)                 \
+                    MONAD_VM_DUP_SECTION(NAME, OP, SUFFIX)                     \
+                        MONAD_VM_SWAP1_SECTION(NAME, OP, COPY, SUFFIX) PAD     \
             "1:\ttail monad_vm_stack_overflow\n"                               \
             ".type monad_vm_slot_" #NAME "_" #OP "_lead2" #SUFFIX              \
             ", @function\n"                                                    \
@@ -143,6 +172,69 @@ namespace monad::vm::interpreter
     #define MONAD_VM_DUP_THEN(NAME, OP, SUFFIX)                                \
         "\ttail monad_vm_slot_" #NAME "_" #OP "_dup" #SUFFIX                   \
         "\n" MONAD_VM_NOP5 "\tnop\n\tnop\n\tnop\n"
+    // Copy DUPn's operand, then dispatch directly to the follower's PUSH
+    // prefix. a5 already carries this copy's lag; no group advance is needed.
+    // Keep each prefix at 40 bytes. Eager gas checks use the ordinary handler.
+    #define MONAD_VM_DUP_PUSH1_AT(NAME, COPY, NEXT_BYTE, TARGET_OFFSET)        \
+        "\tcsrs 0x813, a7\n\taddi zero, a3, 32\n\taddi a3, a3, 32\n"           \
+        "\tbgeu a3, a1, 1f\n"                                                  \
+        "\tlbu t1, " NEXT_BYTE "(a5)\n\tslli t0, t1, 12\n\tadd a7, a6, t0\n"   \
+        "monad_vm_manual_jump_lag_dup_push1_" #NAME "_" #COPY                  \
+        ": jr " TARGET_OFFSET "(a7)\n"                                         \
+        "\tnop\n\tnop\n"
+    #define MONAD_VM_DUP_PUSH1_COPY(NAME, OP)                                  \
+        MONAD_VM_DUP_PUSH1_AT(NAME, 0, "2", "1332")
+    #define MONAD_VM_DUP_PUSH1_COPY_1(NAME, OP)                                \
+        MONAD_VM_DUP_PUSH1_AT(NAME, 1, "3", "2016")
+    #define MONAD_VM_DUP_PUSH1_COPY_2(NAME, OP)                                \
+        MONAD_VM_DUP_PUSH1_AT(NAME, 2, "4", "-1396")
+    #define MONAD_VM_DUP_PUSH1_COPY_3(NAME, OP)                                \
+        MONAD_VM_DUP_PUSH1_AT(NAME, 3, "5", "-712")
+    #define MONAD_VM_DUP_PUSH1_COPY_4(NAME, OP)                                \
+        MONAD_VM_DUP_PUSH1_AT(NAME, 4, "6", "-32")
+    #define MONAD_VM_DUP_PUSH1_COPY_5(NAME, OP)                                \
+        MONAD_VM_DUP_PUSH1_AT(NAME, 5, "7", "648")
+    #define MONAD_VM_DUP_PUSH1(NAME, OP, SUFFIX)                               \
+        MONAD_VM_LEAD_CAT(MONAD_VM_DUP_PUSH1_COPY, SUFFIX)(NAME, OP)
+    #define MONAD_VM_DUP_PAIR_PUSH1(REV, NAME, OP)
+    #define MONAD_VM_DUP_PUSH2_AT(NAME, COPY, NEXT_BYTE, TARGET_OFFSET)        \
+        "\tcsrs 0x813, a7\n\taddi zero, a3, 32\n\taddi a3, a3, 32\n"           \
+        "\tlbu t1, " NEXT_BYTE "(a5)\n\tslli t0, t1, 12\n\tadd a7, a6, t0\n"   \
+        "monad_vm_manual_jump_lag_dup_push2_" #NAME "_" #COPY                  \
+        ": jr " TARGET_OFFSET "(a7)\n"                                         \
+        "\tnop\n\tnop\n\tnop\n"
+    #define MONAD_VM_DUP_PUSH2_COPY(NAME, OP)                                  \
+        MONAD_VM_DUP_PUSH2_AT(NAME, 0, "3", "1992")
+    #define MONAD_VM_DUP_PUSH2_COPY_1(NAME, OP)                                \
+        MONAD_VM_DUP_PUSH2_AT(NAME, 1, "4", "-1420")
+    #define MONAD_VM_DUP_PUSH2_COPY_2(NAME, OP)                                \
+        MONAD_VM_DUP_PUSH2_AT(NAME, 2, "5", "-736")
+    #define MONAD_VM_DUP_PUSH2_COPY_3(NAME, OP)                                \
+        MONAD_VM_DUP_PUSH2_AT(NAME, 3, "6", "-56")
+    #define MONAD_VM_DUP_PUSH2_COPY_4(NAME, OP)                                \
+        MONAD_VM_DUP_PUSH2_AT(NAME, 4, "7", "624")
+    #define MONAD_VM_DUP_PUSH2_COPY_5(NAME, OP)                                \
+        MONAD_VM_DUP_PUSH2_AT(NAME, 5, "8", "1308")
+    #define MONAD_VM_DUP_PUSH2(NAME, OP, SUFFIX)                               \
+        MONAD_VM_LEAD_CAT(MONAD_VM_DUP_PUSH2_COPY, SUFFIX)(NAME, OP)
+    #define MONAD_VM_DUP_PAIR_PUSH2(REV, NAME, OP)
+    #if !defined(MONAD_ZKVM_NO_DUP_FUSION)
+    static_assert(
+        push_prefix_offset(0, 1) == -1332 &&
+        push_prefix_offset(1, 1) == -2016 && push_prefix_offset(2, 1) == 1396 &&
+        push_prefix_offset(3, 1) == 712 && push_prefix_offset(4, 1) == 32 &&
+        push_prefix_offset(5, 1) == -648 && push_prefix_offset(0, 2) == -1992 &&
+        push_prefix_offset(1, 2) == 1420 && push_prefix_offset(2, 2) == 736 &&
+        push_prefix_offset(3, 2) == 56 && push_prefix_offset(4, 2) == -624 &&
+        push_prefix_offset(5, 2) == -1308);
+    #endif
+    #if !defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
+        #define MONAD_VM_DUP_OF_60 ~, PUSH1 // PUSH1
+        #define MONAD_VM_DUP_OF_61 ~, PUSH2 // PUSH2
+    #endif
+    #define MONAD_VM_DUP_OF_14 ~, THEN // EQ
+    #define MONAD_VM_DUP_OF_15 ~, THEN // ISZERO
+    #define MONAD_VM_DUP_OF_35 ~, THEN // CALLDATALOAD
     #define MONAD_VM_DUP_OF_01 ~, THEN // ADD
     #define MONAD_VM_DUP_OF_03 ~, THEN // SUB
     #define MONAD_VM_DUP_OF_10 ~, THEN // LT
@@ -155,7 +247,7 @@ namespace monad::vm::interpreter
     #define MONAD_VM_DUP_HEAD(NAME, OP, SUFFIX)                                \
         MONAD_VM_DUP_PICK(MONAD_VM_LEAD_KIND(MONAD_VM_DUP_OF_##OP, PLAIN, ~))( \
             NAME, OP, SUFFIX)
-    // DUPn and SWAPn pairs receive the selected stack word's address in a7.
+    // a7 carries the selected stack word's address or the comparison result.
     // The wrapper recovers the follower's bytecode address from a5 and LAG.
     #define MONAD_VM_SOURCE_PAIR_IN(                                           \
         FAMILY, HANDLER, SOURCE_TYPE, REV, NAME, OP, SUFFIX, LAG)              \
@@ -169,7 +261,7 @@ namespace monad::vm::interpreter
                     int64_t const gas_remaining,                               \
                     uint8_t const *const instr_ptr,                            \
                     void const *const table_base,                              \
-                    SOURCE_TYPE *const source)                                 \
+                    SOURCE_TYPE const source)                                  \
         {                                                                      \
             __attribute__((musttail)) return HANDLER<                          \
                 0x##OP,                                                        \
@@ -184,9 +276,51 @@ namespace monad::vm::interpreter
                 source);                                                       \
         }
     #define MONAD_VM_DUP_THEN_IN(...)                                          \
-        MONAD_VM_SOURCE_PAIR_IN(dup, dup_then, uint256_t const, __VA_ARGS__)
+        MONAD_VM_SOURCE_PAIR_IN(dup, dup_then, uint256_t const *, __VA_ARGS__)
     #define MONAD_VM_SWAPN_THEN_IN(...)                                        \
-        MONAD_VM_SOURCE_PAIR_IN(swapn, swapn_then, uint256_t, __VA_ARGS__)
+        MONAD_VM_SOURCE_PAIR_IN(swapn, swapn_then, uint256_t *, __VA_ARGS__)
+    #define MONAD_VM_BOOL_THEN_IN(...)                                         \
+        MONAD_VM_SOURCE_PAIR_IN(bool, comparison_then, uint64_t, __VA_ARGS__)
+    #define MONAD_VM_BOOL_PLAIN(NAME, OP, COPY, SUFFIX)                        \
+        "\tsd a7, -32(a3)\n\tsd zero, -24(a3)\n"                               \
+        "\tsd zero, -16(a3)\n\tsd zero, -8(a3)\n"                              \
+        "\tj monad_vm_slot_" #NAME "_" #OP #SUFFIX "\n\tnop\n\tnop\n"
+    #define MONAD_VM_BOOL_THEN(NAME, OP, COPY, SUFFIX)                         \
+        "\ttail monad_vm_slot_" #NAME "_" #OP "_bool" #SUFFIX "\n" MONAD_VM_NOP5
+    // ISZERO keeps the inverted bit in a7. POP discards the unwritten slot.
+    // On wrap, advance a5 by the group size after reading the next opcode.
+    #define MONAD_VM_BOOL_ACTION_not "\tseqz a7, a7\n\taddi a4, a4, -3\n"
+    #define MONAD_VM_BOOL_ACTION_pop "\taddi a3, a3, -32\n\taddi a4, a4, -2\n"
+    #define MONAD_VM_BOOL_TARGET_not "-monad_vm_compare_distance"
+    #define MONAD_VM_BOOL_TARGET_pop ""
+    #define MONAD_VM_BOOL_NEXT(KIND, NAME, COPY, NEXT, STEP, OFFSET, PAD)      \
+        MONAD_VM_BOOL_ACTION_##KIND                                            \
+            "\tlbu t2, " NEXT "(a5)\n"                                         \
+            "\tslli t2, t2, 12\n\tadd t3, a6, t2\n" STEP                       \
+            "monad_vm_manual_jump_lag_bool_" #KIND "_" #NAME "_" #COPY         \
+            ": jr " OFFSET MONAD_VM_BOOL_TARGET_##KIND "(t3)\n" PAD
+    #if defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
+        #define MONAD_VM_BOOL_NOT MONAD_VM_BOOL_PLAIN
+        #define MONAD_VM_BOOL_POP MONAD_VM_BOOL_PLAIN
+    #else
+        #define MONAD_VM_BOOL_NOT(NAME, OP, COPY, SUFFIX)                      \
+            MONAD_VM_LEAD_CAT(MONAD_VM_NEXT_COPY_, COPY)(                      \
+                MONAD_VM_BOOL_NEXT, not, NAME)
+        #define MONAD_VM_BOOL_POP(NAME, OP, COPY, SUFFIX)                      \
+            MONAD_VM_LEAD_CAT(MONAD_VM_NEXT_COPY_, COPY)(                      \
+                MONAD_VM_BOOL_NEXT, pop, NAME)
+    #endif
+    // Select how the next opcode consumes the boolean in a7.
+    // NOT/POP handle ISZERO/POP directly when gas checks are deferred;
+    // THEN enters comparison_then. PLAIN writes the boolean to the stack.
+    #define MONAD_VM_BOOL_OF_15 ~, NOT // ISZERO
+    #define MONAD_VM_BOOL_OF_17 ~, THEN // OR
+    #define MONAD_VM_BOOL_OF_50 ~, POP // POP
+    #define MONAD_VM_BOOL_OF_61 ~, THEN // PUSH2
+    #define MONAD_VM_BOOL_PICK(KIND) MONAD_VM_LEAD_CAT(MONAD_VM_BOOL_, KIND)
+    #define MONAD_VM_BOOL_HEAD(NAME, OP, COPY, SUFFIX)                         \
+        MONAD_VM_BOOL_PICK(MONAD_VM_LEAD_KIND(                                 \
+            MONAD_VM_BOOL_OF_##OP, PLAIN, ~))(NAME, OP, COPY, SUFFIX)
     #define MONAD_VM_DUP_PAIR_PLAIN(REV, NAME, OP)
     #define MONAD_VM_DUP_PAIR_THEN(REV, NAME, OP)                              \
         MONAD_VM_DUP_THEN_IN(REV, NAME, OP, , 0)                               \
@@ -220,6 +354,10 @@ namespace monad::vm::interpreter
     #define MONAD_VM_SWAPN_THEN(NAME, OP, COPY, SUFFIX)                        \
         "\ttail monad_vm_slot_" #NAME "_" #OP "_swapn" #SUFFIX                 \
         "\n" MONAD_VM_NOP5 "\tnop\n\tnop\n\tnop\n"
+    #define MONAD_VM_SWAPN_OF_01 ~, THEN // ADD
+    #define MONAD_VM_SWAPN_OF_03 ~, THEN // SUB
+    #define MONAD_VM_SWAPN_OF_16 ~, THEN // AND
+    #define MONAD_VM_SWAPN_OF_52 ~, THEN // MSTORE
     #define MONAD_VM_SWAPN_OF_50 ~, POP // POP
     #define MONAD_VM_SWAPN_OF_90 ~, THEN // SWAP1
     #define MONAD_VM_SWAPN_OF_91 ~, THEN // SWAP2
@@ -241,22 +379,44 @@ namespace monad::vm::interpreter
         MONAD_VM_SEVENTH_COPY(MONAD_VM_SWAPN_THEN_IN(REV, NAME, OP, _6, 6))
     #define MONAD_VM_SWAPN_PAIR_PICK(KIND)                                     \
         MONAD_VM_LEAD_CAT(MONAD_VM_SWAPN_PAIR_, KIND)
-    #define MONAD_VM_SWAPN_PAIR(REV, NAME, OP)                                 \
-        MONAD_VM_SWAPN_PAIR_PICK(MONAD_VM_LEAD_KIND(                           \
-            MONAD_VM_SWAPN_OF_##OP, PLAIN, ~))(REV, NAME, OP)
-    // a3 points one past the top. Swap the words at -32 and -64 via
-    // Context::swap_scratch. The caller passes a5 at the follower's lag.
+    #if defined(MONAD_ZKVM_NO_SWAPN_FUSION)
+        #define MONAD_VM_SWAPN_PAIR(REV, NAME, OP)
+    #else
+        #define MONAD_VM_SWAPN_PAIR(REV, NAME, OP)                             \
+            MONAD_VM_SWAPN_PAIR_PICK(MONAD_VM_LEAD_KIND(                       \
+                MONAD_VM_SWAPN_OF_##OP, PLAIN, ~))(REV, NAME, OP)
+    #endif
+    #define MONAD_VM_BOOL_PAIR_PLAIN(REV, NAME, OP)
+    #define MONAD_VM_BOOL_PAIR_POP(REV, NAME, OP)
+    #define MONAD_VM_BOOL_PAIR_THEN(REV, NAME, OP)                             \
+        MONAD_VM_BOOL_THEN_IN(REV, NAME, OP, , 0)                              \
+        MONAD_VM_BOOL_THEN_IN(REV, NAME, OP, _1, 1)                            \
+        MONAD_VM_BOOL_THEN_IN(REV, NAME, OP, _2, 2)                            \
+        MONAD_VM_BOOL_THEN_IN(REV, NAME, OP, _3, 3)                            \
+        MONAD_VM_BOOL_THEN_IN(REV, NAME, OP, _4, 4)                            \
+        MONAD_VM_BOOL_THEN_IN(REV, NAME, OP, _5, 5)                            \
+        MONAD_VM_SEVENTH_COPY(MONAD_VM_BOOL_THEN_IN(REV, NAME, OP, _6, 6))
+    #define MONAD_VM_BOOL_PAIR_PICK(KIND)                                      \
+        MONAD_VM_LEAD_CAT(MONAD_VM_BOOL_PAIR_, KIND)
+    #define MONAD_VM_BOOL_PAIR_NOT(REV, NAME, OP)
+    #if defined(MONAD_ZKVM_NO_COMPARISON_FUSION)
+        #define MONAD_VM_BOOL_PAIR(REV, NAME, OP)
+    #else
+        #define MONAD_VM_BOOL_PAIR(REV, NAME, OP)                              \
+            MONAD_VM_BOOL_PAIR_PICK(MONAD_VM_LEAD_KIND(                        \
+                MONAD_VM_BOOL_OF_##OP, PLAIN, ~))(REV, NAME, OP)
+    #endif
+    // Save the second word in the spare slot at a3, then move both words
+    // down together. ZisK DMA supports overlap; the spare slot exists even
+    // at the EVM stack limit. Keep this prefix at 40 bytes.
     #define MONAD_VM_SWAP1_PLAIN(NAME, OP, COPY, SUFFIX)                       \
-        "\taddi t1, a0, monad_vm_swap_scratch_offset\n"                        \
-        "\taddi t4, a3, -32\n"                                                 \
-        "\taddi t5, a3, -64\n"                                                 \
+        "\taddi t4, a3, -64\n"                                                 \
+        "\taddi t1, a3, -32\n"                                                 \
         "\tcsrs 0x813, t4\n"                                                   \
-        "\taddi zero, t1, 32\n"                                                \
-        "\tcsrs 0x813, t5\n"                                                   \
-        "\taddi zero, t4, 32\n"                                                \
+        "\taddi zero, a3, 32\n"                                                \
         "\tcsrs 0x813, t1\n"                                                   \
-        "\taddi zero, t5, 32\n"                                                \
-        "\tj monad_vm_slot_" #NAME "_" #OP #SUFFIX "\n"
+        "\taddi zero, t4, 64\n"                                                \
+        "\tj monad_vm_slot_" #NAME "_" #OP #SUFFIX "\n\tnop\n\tnop\n\tnop\n"
     // POP discards the deeper word brought to the top. Only the old top
     // needs copying, to the second slot for SWAP1 or the slot in a7 for SWAPn.
     #define MONAD_VM_POP_MOVE_swap1                                            \
@@ -278,29 +438,14 @@ namespace monad::vm::interpreter
         #else
             #define MONAD_VM_POP_OFFSET(OFFSET) OFFSET
         #endif
-        #define MONAD_VM_SWAP_POP_0(KIND, NAME)                                \
-            MONAD_VM_SWAP_POP_AT(                                              \
-                KIND, NAME, 0, "1", "", MONAD_VM_POP_OFFSET("576"), "\tnop\n")
-        #define MONAD_VM_SWAP_POP_1(KIND, NAME)                                \
-            MONAD_VM_SWAP_POP_AT(                                              \
-                KIND,                                                          \
-                NAME,                                                          \
-                1,                                                             \
-                "2",                                                           \
-                "",                                                            \
-                MONAD_VM_POP_OFFSET("1160"),                                   \
-                "\tnop\n")
-        #define MONAD_VM_SWAP_POP_2(KIND, NAME)                                \
-            MONAD_VM_SWAP_POP_AT(                                              \
-                KIND,                                                          \
-                NAME,                                                          \
-                2,                                                             \
-                "3",                                                           \
-                "",                                                            \
-                MONAD_VM_POP_OFFSET("1744"),                                   \
-                "\tnop\n")
-        #define MONAD_VM_SWAP_POP_3(KIND, NAME)                                \
-            MONAD_VM_SWAP_POP_AT(                                              \
+        #define MONAD_VM_NEXT_COPY_0(EMIT, KIND, NAME)                         \
+            EMIT(KIND, NAME, 0, "1", "", MONAD_VM_POP_OFFSET("576"), "\tnop\n")
+        #define MONAD_VM_NEXT_COPY_1(EMIT, KIND, NAME)                         \
+            EMIT(KIND, NAME, 1, "2", "", MONAD_VM_POP_OFFSET("1160"), "\tnop\n")
+        #define MONAD_VM_NEXT_COPY_2(EMIT, KIND, NAME)                         \
+            EMIT(KIND, NAME, 2, "3", "", MONAD_VM_POP_OFFSET("1744"), "\tnop\n")
+        #define MONAD_VM_NEXT_COPY_3(EMIT, KIND, NAME)                         \
+            EMIT(                                                              \
                 KIND,                                                          \
                 NAME,                                                          \
                 3,                                                             \
@@ -308,8 +453,8 @@ namespace monad::vm::interpreter
                 "",                                                            \
                 MONAD_VM_POP_OFFSET("-1760"),                                  \
                 "\tnop\n")
-        #define MONAD_VM_SWAP_POP_4(KIND, NAME)                                \
-            MONAD_VM_SWAP_POP_AT(                                              \
+        #define MONAD_VM_NEXT_COPY_4(EMIT, KIND, NAME)                         \
+            EMIT(                                                              \
                 KIND,                                                          \
                 NAME,                                                          \
                 4,                                                             \
@@ -317,32 +462,23 @@ namespace monad::vm::interpreter
                 "",                                                            \
                 MONAD_VM_POP_OFFSET("-1176"),                                  \
                 "\tnop\n")
-        #define MONAD_VM_SWAP_POP_5(KIND, NAME)                                \
-            MONAD_VM_SWAP_POP_AT(                                              \
-                KIND,                                                          \
-                NAME,                                                          \
-                5,                                                             \
-                "6",                                                           \
-                "",                                                            \
-                MONAD_VM_POP_OFFSET("-592"),                                   \
-                "\tnop\n")
-        #define MONAD_VM_SWAP_POP_6(KIND, NAME)                                \
-            MONAD_VM_SWAP_POP_AT(                                              \
-                KIND, NAME, 6, "7", MONAD_VM_STEP_GROUP, "0", "")
+        #define MONAD_VM_NEXT_COPY_5(EMIT, KIND, NAME)                         \
+            EMIT(KIND, NAME, 5, "6", "", MONAD_VM_POP_OFFSET("-592"), "\tnop\n")
+        #define MONAD_VM_NEXT_COPY_6(EMIT, KIND, NAME)                         \
+            EMIT(KIND, NAME, 6, "7", MONAD_VM_STEP_GROUP, "0", "")
     #else
-        #define MONAD_VM_SWAP_POP_0(KIND, NAME)                                \
-            MONAD_VM_SWAP_POP_AT(KIND, NAME, 0, "1", "", "680", "\tnop\n")
-        #define MONAD_VM_SWAP_POP_1(KIND, NAME)                                \
-            MONAD_VM_SWAP_POP_AT(KIND, NAME, 1, "2", "", "1360", "\tnop\n")
-        #define MONAD_VM_SWAP_POP_2(KIND, NAME)                                \
-            MONAD_VM_SWAP_POP_AT(KIND, NAME, 2, "3", "", "2044", "\tnop\n")
-        #define MONAD_VM_SWAP_POP_3(KIND, NAME)                                \
-            MONAD_VM_SWAP_POP_AT(KIND, NAME, 3, "4", "", "-1368", "\tnop\n")
-        #define MONAD_VM_SWAP_POP_4(KIND, NAME)                                \
-            MONAD_VM_SWAP_POP_AT(KIND, NAME, 4, "5", "", "-684", "\tnop\n")
-        #define MONAD_VM_SWAP_POP_5(KIND, NAME)                                \
-            MONAD_VM_SWAP_POP_AT(                                              \
-                KIND, NAME, 5, "6", MONAD_VM_STEP_GROUP, "0", "")
+        #define MONAD_VM_NEXT_COPY_0(EMIT, KIND, NAME)                         \
+            EMIT(KIND, NAME, 0, "1", "", "680", "\tnop\n")
+        #define MONAD_VM_NEXT_COPY_1(EMIT, KIND, NAME)                         \
+            EMIT(KIND, NAME, 1, "2", "", "1360", "\tnop\n")
+        #define MONAD_VM_NEXT_COPY_2(EMIT, KIND, NAME)                         \
+            EMIT(KIND, NAME, 2, "3", "", "2044", "\tnop\n")
+        #define MONAD_VM_NEXT_COPY_3(EMIT, KIND, NAME)                         \
+            EMIT(KIND, NAME, 3, "4", "", "-1368", "\tnop\n")
+        #define MONAD_VM_NEXT_COPY_4(EMIT, KIND, NAME)                         \
+            EMIT(KIND, NAME, 4, "5", "", "-684", "\tnop\n")
+        #define MONAD_VM_NEXT_COPY_5(EMIT, KIND, NAME)                         \
+            EMIT(KIND, NAME, 5, "6", MONAD_VM_STEP_GROUP, "0", "")
     #endif
     #if defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE)
         #define MONAD_VM_SWAPN_POP(NAME, OP, COPY, SUFFIX)                     \
@@ -352,9 +488,11 @@ namespace monad::vm::interpreter
             MONAD_VM_SWAP1_PLAIN(NAME, OP, COPY, SUFFIX)
     #else
         #define MONAD_VM_SWAPN_POP(NAME, OP, COPY, SUFFIX)                     \
-            MONAD_VM_LEAD_CAT(MONAD_VM_SWAP_POP_, COPY)(swapn, NAME)
+            MONAD_VM_LEAD_CAT(MONAD_VM_NEXT_COPY_, COPY)(                      \
+                MONAD_VM_SWAP_POP_AT, swapn, NAME)
         #define MONAD_VM_SWAP1_POP(NAME, OP, COPY, SUFFIX)                     \
-            MONAD_VM_LEAD_CAT(MONAD_VM_SWAP_POP_, COPY)(swap1, NAME)
+            MONAD_VM_LEAD_CAT(MONAD_VM_NEXT_COPY_, COPY)(                      \
+                MONAD_VM_SWAP_POP_AT, swap1, NAME)
     #endif
     #define MONAD_VM_SWAP1_JUMP(NAME, OP, COPY, SUFFIX)                        \
         "\ttail monad_vm_slot_" #NAME "_" #OP "_swap1\n" MONAD_VM_NOP5         \
@@ -562,15 +700,18 @@ namespace monad::vm::interpreter
             compiler::opcode_table<EvmTraits<REV>>[PUSH2].min_gas == 3 &&      \
             sizeof(uint256_t) == 32 &&                                         \
             (fuse_dup                                                          \
-                 ? (slot_handler_offset == (fuse_swap1 ? 1552 : 1512) &&       \
+                 ? (slot_handler_offset == (fuse_swap1 ? 1512 : 1472) +        \
+                                               swapn_prefix_bytes +            \
+                                               comparison_prefix_bytes &&      \
                     lag_offset(1) == 680 && lag_offset(2) == 1360 &&           \
                     lag_offset(3) == 2044 && lag_offset(4) == -1368 &&         \
                     lag_offset(5) == -684)                                     \
                  : (!fuse_swap1 ||                                             \
-                    (slot_handler_offset == 1904 && lag_offset(1) == 576 &&    \
-                     lag_offset(2) == 1160 && lag_offset(3) == 1744 &&         \
-                     lag_offset(4) == -1760 && lag_offset(5) == -1176 &&       \
-                     lag_offset(6) == -592))) &&                               \
+                    (slot_handler_offset == 1864 + swapn_prefix_bytes +        \
+                                                comparison_prefix_bytes &&     \
+                     lag_offset(1) == 576 && lag_offset(2) == 1160 &&          \
+                     lag_offset(3) == 1744 && lag_offset(4) == -1760 &&        \
+                     lag_offset(5) == -1176 && lag_offset(6) == -592))) &&     \
             prefix_back_offset(0, 1) == 32 &&                                  \
             prefix_back_offset(0, 2) == 56 &&                                  \
             prefix_back_offset(2, 1) == 28 && prefix_back_offset(2, 2) == 52); \
@@ -789,22 +930,39 @@ namespace monad::vm::interpreter
     #define MONAD_VM_RELAY_OF_04 ~, RELAY // DIV
     #define MONAD_VM_RELAY_OF_06 ~, RELAY // MOD
     #define MONAD_VM_RELAY_OF_08 ~, RELAY // ADDMOD
+    #define MONAD_VM_RELAY_OF_0a ~, RELAY // EXP
     // These bodies exceed a copy region with the current runtime inlining.
     #define MONAD_VM_RELAY_OF_37 ~, RELAY // CALLDATACOPY
     #define MONAD_VM_RELAY_OF_39 ~, RELAY // CODECOPY
     #define MONAD_VM_RELAY_OF_3e ~, RELAY // RETURNDATACOPY
-    #define MONAD_VM_RELAY_OF_20 ~, RELAY // SHA3
+    #if !defined(MONAD_ZKVM_NO_SWAPN_FUSION) ||                                \
+        (defined(MONAD_ZKVM_NO_DUP_FUSION) &&                                  \
+         !defined(MONAD_ZKVM_NO_SWAP1_PREFIX))
+        #define MONAD_VM_RELAY_OF_20 ~, RELAY // SHA3
+    #endif
+    #if defined(MONAD_ZKVM_NO_DUP_FUSION) &&                                   \
+        !defined(MONAD_ZKVM_NO_SWAP1_PREFIX) &&                                \
+        !defined(MONAD_ZKVM_NO_SWAPN_FUSION) &&                                \
+        !defined(MONAD_ZKVM_NO_COMPARISON_FUSION)
+        // Seven copies with all three prefixes leave too little room for
+        // MSTORE8.
+        #define MONAD_VM_RELAY_OF_53 ~, RELAY // MSTORE8
+    #endif
     #define MONAD_VM_RELAY_OF_55 ~, RELAY // SSTORE
     #define MONAD_VM_RELAY_OF_5e ~, RELAY // MCOPY
     #if defined(MONAD_ZKVM_GAS_CHECK_EVERY_OPCODE) ||                          \
-        defined(MONAD_ZKVM_NO_DUP_FUSION)
-        // DUP1 exceeds its copy region with eager gas checks or seven copies.
+        (defined(MONAD_ZKVM_NO_DUP_FUSION) &&                                  \
+         (!defined(MONAD_ZKVM_NO_COMPARISON_FUSION) ||                         \
+          !defined(MONAD_ZKVM_NO_SWAPN_FUSION)))
+        // Seven copies need a relay when either comparison or SWAPn prefixes
+        // are present.
         #define MONAD_VM_RELAY_OF_80 ~, RELAY // DUP1
     #endif
     #define MONAD_VM_SLOT_PICK(KIND) MONAD_VM_LEAD_CAT(MONAD_VM_SLOT_, KIND)
 
     #define MONAD_VM_SLOT(REV, NAME, OP)                                       \
         MONAD_VM_LEAD(REV, NAME, OP)                                           \
+        MONAD_VM_BOOL_PAIR(REV, NAME, OP)                                      \
         MONAD_VM_SWAPN_PAIR(REV, NAME, OP)                                     \
         MONAD_VM_DUP_PAIR(REV, NAME, OP)                                       \
         MONAD_VM_SWAP1_PAIR(REV, NAME, OP)                                     \
@@ -857,9 +1015,14 @@ namespace monad::vm::interpreter
     MONAD_VM_SLOTS(EvmRevision::Amsterdam, 15)
 
     #undef MONAD_VM_SOURCE_PAIR_IN
+    #undef MONAD_VM_SWAPN_SECTION
     #undef MONAD_VM_SWAPN_THEN_IN
     #undef MONAD_VM_SWAPN_PLAIN
     #undef MONAD_VM_SWAPN_THEN
+    #undef MONAD_VM_SWAPN_OF_01
+    #undef MONAD_VM_SWAPN_OF_03
+    #undef MONAD_VM_SWAPN_OF_16
+    #undef MONAD_VM_SWAPN_OF_52
     #undef MONAD_VM_SWAPN_OF_50
     #undef MONAD_VM_SWAPN_OF_90
     #undef MONAD_VM_SWAPN_OF_91
@@ -878,6 +1041,29 @@ namespace monad::vm::interpreter
     #undef MONAD_VM_POP_PAD_swapn
     #undef MONAD_VM_POP_OFFSET
     #undef MONAD_VM_SWAPN_POP
+    #undef MONAD_VM_BOOL_THEN_IN
+    #undef MONAD_VM_BOOL_PLAIN
+    #undef MONAD_VM_BOOL_THEN
+    #undef MONAD_VM_BOOL_ACTION_not
+    #undef MONAD_VM_BOOL_ACTION_pop
+    #undef MONAD_VM_BOOL_TARGET_not
+    #undef MONAD_VM_BOOL_TARGET_pop
+    #undef MONAD_VM_BOOL_NEXT
+    #undef MONAD_VM_BOOL_NOT
+    #undef MONAD_VM_BOOL_POP
+    #undef MONAD_VM_BOOL_OF_15
+    #undef MONAD_VM_BOOL_OF_17
+    #undef MONAD_VM_BOOL_OF_50
+    #undef MONAD_VM_BOOL_OF_61
+    #undef MONAD_VM_BOOL_PICK
+    #undef MONAD_VM_BOOL_SECTION
+    #undef MONAD_VM_BOOL_HEAD
+    #undef MONAD_VM_BOOL_PAIR_PLAIN
+    #undef MONAD_VM_BOOL_PAIR_POP
+    #undef MONAD_VM_BOOL_PAIR_THEN
+    #undef MONAD_VM_BOOL_PAIR_PICK
+    #undef MONAD_VM_BOOL_PAIR_NOT
+    #undef MONAD_VM_BOOL_PAIR
     #undef MONAD_VM_SLOTS
     #undef MONAD_VM_SLOTS_16
     #undef MONAD_VM_SLOT
@@ -886,8 +1072,10 @@ namespace monad::vm::interpreter
     #undef MONAD_VM_RELAY_OF_37
     #undef MONAD_VM_RELAY_OF_39
     #undef MONAD_VM_RELAY_OF_3e
+    #undef MONAD_VM_RELAY_OF_53
     #undef MONAD_VM_RELAY_OF_55
     #undef MONAD_VM_RELAY_OF_5e
+    #undef MONAD_VM_RELAY_OF_0a
     #undef MONAD_VM_RELAY_OF_08
     #undef MONAD_VM_RELAY_OF_06
     #undef MONAD_VM_RELAY_OF_04
@@ -964,14 +1152,37 @@ namespace monad::vm::interpreter
     #undef MONAD_VM_SWAP1_JUMP
     #undef MONAD_VM_SWAP1_THEN
     #undef MONAD_VM_SWAP1_POP
-    #undef MONAD_VM_SWAP_POP_5
-    #undef MONAD_VM_SWAP_POP_4
-    #undef MONAD_VM_SWAP_POP_3
-    #undef MONAD_VM_SWAP_POP_2
-    #undef MONAD_VM_SWAP_POP_1
-    #undef MONAD_VM_SWAP_POP_0
+    #undef MONAD_VM_NEXT_COPY_5
+    #undef MONAD_VM_NEXT_COPY_4
+    #undef MONAD_VM_NEXT_COPY_3
+    #undef MONAD_VM_NEXT_COPY_2
+    #undef MONAD_VM_NEXT_COPY_1
+    #undef MONAD_VM_NEXT_COPY_0
     #undef MONAD_VM_DUP_PLAIN
     #undef MONAD_VM_DUP_THEN
+    #undef MONAD_VM_DUP_PUSH1_AT
+    #undef MONAD_VM_DUP_PUSH1
+    #undef MONAD_VM_DUP_PAIR_PUSH1
+    #undef MONAD_VM_DUP_PUSH1_COPY
+    #undef MONAD_VM_DUP_PUSH1_COPY_1
+    #undef MONAD_VM_DUP_PUSH1_COPY_2
+    #undef MONAD_VM_DUP_PUSH1_COPY_3
+    #undef MONAD_VM_DUP_PUSH1_COPY_4
+    #undef MONAD_VM_DUP_PUSH1_COPY_5
+    #undef MONAD_VM_DUP_PUSH2_AT
+    #undef MONAD_VM_DUP_PUSH2
+    #undef MONAD_VM_DUP_PAIR_PUSH2
+    #undef MONAD_VM_DUP_PUSH2_COPY
+    #undef MONAD_VM_DUP_PUSH2_COPY_1
+    #undef MONAD_VM_DUP_PUSH2_COPY_2
+    #undef MONAD_VM_DUP_PUSH2_COPY_3
+    #undef MONAD_VM_DUP_PUSH2_COPY_4
+    #undef MONAD_VM_DUP_PUSH2_COPY_5
+    #undef MONAD_VM_DUP_OF_60
+    #undef MONAD_VM_DUP_OF_61
+    #undef MONAD_VM_DUP_OF_14
+    #undef MONAD_VM_DUP_OF_15
+    #undef MONAD_VM_DUP_OF_35
     #undef MONAD_VM_DUP_OF_01
     #undef MONAD_VM_DUP_OF_03
     #undef MONAD_VM_DUP_OF_10
@@ -994,7 +1205,7 @@ namespace monad::vm::interpreter
     #undef MONAD_VM_GROUP_SIZE
     #undef MONAD_VM_PLAIN1_6
     #undef MONAD_VM_PLAIN2_6
-    #undef MONAD_VM_SWAP_POP_6
+    #undef MONAD_VM_NEXT_COPY_6
     #undef MONAD_VM_RELAY_OF_20
     #undef MONAD_VM_LEADS
     #undef MONAD_VM_SWAP1_SECTION
@@ -1060,7 +1271,8 @@ namespace monad::vm::interpreter
     {
         // Cache the one-past stack limit for comparisons with
         // StackTop::next_slot().
-        ctx.stack_limit = stack_ptr + runtime::EvmStackAllocatorMeta::size;
+        ctx.stack_limit =
+            stack_ptr + runtime::EvmStackAllocatorMeta::max_stack_height;
 
 #if defined(MONAD_ZKVM_ZISK)
         // The carry-ins are fixed; ADD and SUB set the pointers on every call.

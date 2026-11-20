@@ -73,12 +73,18 @@ namespace monad::vm::runtime
         std::memcpy(&t0, addr.bytes + 12, 8);
         t0 = bswap(t0);
 
+#if defined(MONAD_ZKVM_ZISK)
+        // Construct from low to high words without a temporary byte array.
+        // t2 holds the address's top 32 bits; the remaining 96 bits stay zero.
+        return uint256_t{t0, t1, uint64_t{t2}, uint64_t{0}};
+#else
         alignas(uint256_t) uint8_t ret[32];
         std::memcpy(ret, &t0, 8);
         std::memcpy(ret + 8, &t1, 8);
         std::memcpy(ret + 16, &t2, 4);
         std::memset(ret + 20, 0, 12);
         return std::bit_cast<uint256_t>(ret);
+#endif
     }
 
     template <uint64_t N>
@@ -86,8 +92,9 @@ namespace monad::vm::runtime
     [[gnu::always_inline]]
     constexpr bool is_bounded_by_bits(uint256_t const &x)
     {
-        static constexpr uint64_t mask = ~((uint64_t{1} << N) - 1);
-        return ((x[0] & mask) | x[1] | x[2] | x[3]) == 0;
+        // Shifting detects bits outside the low N bits without loading a mask.
+        // N < 64 keeps the shift well-defined.
+        return ((x[0] >> N) | x[1] | x[2] | x[3]) == 0;
     }
 
     template <typename T>

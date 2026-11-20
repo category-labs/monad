@@ -16,12 +16,14 @@
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/host.hpp>
 #include <category/vm/interpreter/execute.hpp>
+#include <category/vm/runtime/allocator.hpp>
 #include <category/vm/runtime/types.hpp>
 
 #include <array>
 #include <cstdint>
 #include <initializer_list>
 #include <span>
+#include <utility>
 #include <vector>
 
 namespace
@@ -202,7 +204,7 @@ namespace
         msg.input_size = input.size();
         auto ctx = runtime::Context::from(host, &msg, code);
         interpreter::Intercode analysis{code};
-        std::array<uint256_t, 1024> stack;
+        std::array<uint256_t, runtime::EvmStackAllocatorMeta::size> stack;
         interpreter::execute<Traits>(ctx, analysis, stack.data());
         auto result = ctx.copy_to_result<Traits>();
         return {
@@ -261,6 +263,88 @@ namespace
         return true;
     }
 
+    bool comparison_prefixes()
+    {
+        for (auto comparison : {LT, GT, SLT, SGT, EQ, ISZERO}) {
+            for (uint8_t operand : {0, 1}) {
+                // The high bit catches a partial 256-bit store and
+                // distinguishes signed from unsigned comparisons. Keep a second
+                // word for OR.
+                std::vector<uint8_t> prefix{PUSH32};
+                prefix.resize(33, 0);
+                prefix[1] = 0x80;
+                if (comparison != ISZERO) {
+                    prefix.push_back(DUP1);
+                }
+                if (comparison == EQ && operand == 1) {
+                    prefix.push_back(DUP1);
+                }
+                else {
+                    prefix.insert(prefix.end(), {PUSH3, 0, 0, operand});
+                }
+                prefix.push_back(static_cast<uint8_t>(comparison));
+                for (auto follower : {OR, POP, PUSH2, JUMPI, JUMPDEST}) {
+                    auto make_program = [&](bool separate) {
+                        auto code = prefix;
+                        for (unsigned i = 0; i < 7; ++i) {
+                            if (separate) {
+                                code.push_back(JUMPDEST);
+                            }
+                            code.push_back(ISZERO);
+                        }
+                        if (separate) {
+                            code.push_back(JUMPDEST);
+                        }
+                        if (follower == JUMPI) {
+                            // The taken path returns a word; the fallthrough
+                            // stops.
+                            auto const target =
+                                static_cast<uint8_t>(code.size() + 5);
+                            code.insert(
+                                code.end(),
+                                {PUSH2,
+                                 0,
+                                 target,
+                                 JUMPI,
+                                 STOP,
+                                 JUMPDEST,
+                                 PUSH1,
+                                 9});
+                        }
+                        else if (follower == PUSH2) {
+                            code.insert(code.end(), {PUSH2, 0x12, 0x34, POP});
+                        }
+                        else {
+                            code.push_back(static_cast<uint8_t>(follower));
+                        }
+                        code.insert(
+                            code.end(),
+                            {PUSH0, MSTORE, PUSH1, 32, PUSH0, RETURN});
+                        return code;
+                    };
+                    auto const program = make_program(false);
+                    auto const actual = run(program, 1000);
+                    auto const expected = run(make_program(true), 1008);
+                    if (actual.status != CallStatus::Success ||
+                        expected.status != CallStatus::Success ||
+                        actual.gas != expected.gas ||
+                        actual.output_bytes != expected.output_bytes ||
+                        !failed_cleanly(run(program, 999 - actual.gas))) {
+                        return false;
+                    }
+                }
+            }
+        }
+        std::vector<uint8_t> full_stack(1024, PUSH0);
+        full_stack.insert(
+            full_stack.end(), {ISZERO, ISZERO, PUSH2, 0, 0, JUMPI, STOP});
+        // The jump below is taken with the inverted comparison result.
+        std::array<uint8_t, 8> const invalid_jump{
+            PUSH0, PUSH0, LT, ISZERO, PUSH2, 0xff, 0xff, JUMPI};
+        return failed_cleanly(run(full_stack, 10000)) &&
+               failed_cleanly(run(invalid_jump, 100));
+    }
+
     bool swapn_prefixes()
     {
         for (unsigned depth = 2; depth <= 16; ++depth) {
@@ -308,6 +392,66 @@ namespace
         std::array<uint8_t, 6> const short_stack{
             PUSH0, PUSH0, PUSH0, SWAP2, SWAP3, STOP};
         return failed_cleanly(run(short_stack, 100));
+    }
+
+    bool full_stack_swaps()
+    {
+        using Stack = runtime::EvmStackAllocatorMeta;
+        constexpr size_t height = Stack::max_stack_height;
+        uint256_t const sentinel{std::array<uint64_t, 4>{
+            0x0123456789abcdef,
+            0xfedcba9876543210,
+            0xa5a5a5a5a5a5a5a5,
+            0x5a5a5a5a5a5a5a5a}};
+
+        for (bool const followed_by_swap2 : {false, true}) {
+            std::vector<uint8_t> code;
+            code.insert(code.end(), height - 3, PUSH0);
+            std::array<uint256_t, 3> values;
+            for (size_t i = 0; i < values.size(); ++i) {
+                uint8_t const byte = static_cast<uint8_t>(0x11 * (i + 1));
+                uint64_t const word = 0x0101010101010101ULL * byte;
+                values[i] =
+                    uint256_t{std::array<uint64_t, 4>{word, word, word, word}};
+                code.push_back(PUSH32);
+                code.insert(code.end(), 32, byte);
+            }
+            code.push_back(SWAP1);
+            if (followed_by_swap2) {
+                code.push_back(SWAP2);
+            }
+            // STOP selects the ordinary SWAP1 prefix, without a push.
+            code.push_back(STOP);
+            int64_t const gas = static_cast<int64_t>(
+                2 * (height - 3) + 9 + 3 + (followed_by_swap2 ? 3 : 0));
+
+            CountingHost host;
+            vm::Message msg{};
+            msg.gas = gas;
+            auto ctx = runtime::Context::from(host, &msg, code);
+            interpreter::Intercode analysis{code};
+            // Guard the physical allocation, including ZisK's spare slot.
+            std::array<uint256_t, Stack::size + 1> stack{};
+            stack[Stack::size] = sentinel;
+            interpreter::execute<GasTraits>(ctx, analysis, stack.data());
+            auto const result = ctx.copy_to_result<GasTraits>();
+            std::array<uint256_t, 3> const expected =
+                followed_by_swap2 ? std::array{values[1], values[2], values[0]}
+                                  : std::array{values[0], values[2], values[1]};
+            if (result.status_code != CallStatus::Success ||
+                result.gas_left != 0 || host.accesses != 0 ||
+                stack[Stack::size] != sentinel) {
+                return false;
+            }
+            for (size_t i = 0; i < height; ++i) {
+                uint256_t const value =
+                    i < height - 3 ? uint256_t{0} : expected[i - (height - 3)];
+                if (stack[i] != value) {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     bool swap1_prefixes()
@@ -387,7 +531,6 @@ namespace
                failed_cleanly(run(bad_jump, 100)) &&
                failed_cleanly(run(full_stack, 10000));
     }
-
 }
 
 extern "C" uint32_t monad_zkvm_deferred_gas_test()
@@ -558,6 +701,28 @@ extern "C" uint32_t monad_zkvm_deferred_gas_test()
                 }
             }
         };
+    // Check no carry, carries across each 64-bit boundary and 256-bit wrap.
+    for (uint8_t const immediate : {0, 1, 2, 255}) {
+        for (unsigned full_words = 0; full_words <= 4; ++full_words) {
+            for (uint8_t const low_byte : {0, 1, 254, 255}) {
+                std::array<uint8_t, 32> addend{};
+                addend.fill(0x42);
+                for (unsigned i = 0; i < full_words * 8; ++i) {
+                    addend[31 - i] = 0xff;
+                }
+                addend[31] = low_byte;
+                auto expected = addend;
+                unsigned carry = immediate;
+                for (unsigned i = 32; i != 0; --i) {
+                    unsigned const sum = expected[i - 1] + carry;
+                    expected[i - 1] = static_cast<uint8_t>(sum);
+                    carry = sum >> 8;
+                }
+                verify_immediate_pair(
+                    ADD, immediate, true, addend, expected, {});
+            }
+        }
+    }
     // PUSH2 must decode both bytes and work with ordinary and fused-PUSH1
     // followers, which use different prefix paths.
     for (unsigned immediate : {0, 1, 255, 256, 0x1234, 65535}) {
@@ -953,7 +1118,9 @@ extern "C" uint32_t monad_zkvm_deferred_gas_test()
         effects &= failed_cleanly(run(code, cost - 1));
         effects &= failed_cleanly(run(code, 61)); // OOG at loop entry.
     }
-    check(effects && swap1_prefixes() && dup_prefixes() && swapn_prefixes());
+    check(
+        effects && full_stack_swaps() && swap1_prefixes() && dup_prefixes() &&
+        swapn_prefixes() && comparison_prefixes());
     // Two selector tests: first match, second match, or neither. Sweep gas
     // through both tests and the taken jump's JUMPDEST charge.
     bool selectors = true;
@@ -1247,14 +1414,15 @@ extern "C" uint32_t monad_zkvm_deferred_gas_test()
     check(masks);
     // Nonuniform immediate masks exercise byte order and all word boundaries.
     bool immediate_masks = true;
-    for (unsigned width : {4u, 20u}) {
+    for (auto const &[width, all_ones] :
+         {std::pair{4u, false}, std::pair{20u, false}, std::pair{20u, true}}) {
         std::array<uint8_t, 32> value{};
         std::array<uint8_t, 32> mask{};
         std::array<uint8_t, 32> expected{};
         for (unsigned i = 0; i < 32; ++i) {
             value[i] = static_cast<uint8_t>(0xa5 ^ (i * 7));
             if (i >= 32 - width) {
-                mask[i] = static_cast<uint8_t>(i * 13 + 1);
+                mask[i] = all_ones ? 0xff : static_cast<uint8_t>(i * 13 + 1);
             }
             expected[i] = value[i] & mask[i];
         }

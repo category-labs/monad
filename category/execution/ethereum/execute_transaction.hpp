@@ -71,6 +71,18 @@ public:
     vm::Result operator()(State &, StateHost<traits> &);
 };
 
+struct ZkvmSequentialExecutor;
+
+// Only the serialized guest executor may skip merge-conflict checks.
+// It merges each transaction before the next starts. Reads may populate
+// BlockState caches, but insert matching original/current values.
+// A private token ties this permission to the scheduler, not the EVM traits.
+class SequentialExecutionToken
+{
+    SequentialExecutionToken() = default;
+    friend struct ZkvmSequentialExecutor;
+};
+
 template <Traits traits>
 class ExecuteTransaction : public ExecuteTransactionNoValidation<traits>
 {
@@ -113,6 +125,10 @@ public:
     ~ExecuteTransaction() = default;
 
     Result<Receipt> operator()();
+
+    // Execute and merge without waiting, conflict checking or retrying.
+    // CHECK_SEQUENTIAL_MERGE restores can_merge as a diagnostic assertion.
+    Result<Receipt> execute(SequentialExecutionToken);
 };
 
 MONAD_NAMESPACE_END

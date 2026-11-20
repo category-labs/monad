@@ -13,4 +13,8 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-set(MONAD_TEN_excluded_tests "")
+set(MONAD_TEN_excluded_tests
+    # The fixtures treat the staking precompile (0x1000) as a cold, empty
+    # account; fix pending in monad-developers/execution-specs.
+    "BlockchainTests.for_monad_ten/berlin/eip2929_gas_cost_increases/call/call_precompile_range_boundaries.json"
+)

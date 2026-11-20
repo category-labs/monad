@@ -33,6 +33,7 @@
 #include <category/core/rlp/decode_error.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/core/seeded_fast_hash.hpp>
+#include <category/execution/domain/execute_domain_block.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/chain/chain_config.h>
@@ -138,9 +139,55 @@ namespace
         "failed to recover the grandparent transactions context";
     char const *const TRANSACTION_OUT_OF_BOUNDS_ERR_MSG =
         "transaction out of bounds";
+    char const *const PRIVATE_DOMAIN_L1_ERR_MSG =
+        "a private domain needs a Monad chain configuration";
+    char const *const PRIVATE_DOMAIN_UNSUPPORTED_ERR_MSG =
+        "not supported on a private domain";
     namespace eth_simulate_json = monad::rpc::eth_simulateV1::json_fields;
     static ankerl::unordered_dense::segmented_set<Address>
         empty_senders_and_authorities{};
+
+    // The chain a request executes on: the L1 that `chain_config` names, or
+    // the private domain `domain_chain_id` of it.
+    class RequestChain
+    {
+        std::unique_ptr<Chain> l1_;
+        std::optional<domain::DomainChain> domain_;
+
+    public:
+        RequestChain(
+            monad_chain_config const chain_config,
+            std::optional<uint64_t> const domain_chain_id)
+            : l1_{make_chain(chain_config)}
+        {
+            if (domain_chain_id.has_value()) {
+                auto const *const l1 =
+                    dynamic_cast<MonadChain const *>(l1_.get());
+                MONAD_ASSERT_THROW(l1 != nullptr, PRIVATE_DOMAIN_L1_ERR_MSG);
+                domain_.emplace(*l1, *domain_chain_id);
+            }
+        }
+
+        bool private_domain() const
+        {
+            return domain_.has_value();
+        }
+
+        Chain const *get() const
+        {
+            return domain_.has_value() ? &*domain_ : l1_.get();
+        }
+
+        Chain const &operator*() const
+        {
+            return *get();
+        }
+
+        Chain const *operator->() const
+        {
+            return get();
+        }
+    };
 
     class StateDb
     {
@@ -233,7 +280,7 @@ namespace
         vm::VM &vm, BlockHashBuffer const &buffer,
         monad_state_override const &state_overrides,
         CallTracerBase &call_tracer, trace::StateTracer &state_tracer,
-        Simulation const &execution_mode)
+        Simulation const &execution_mode, bool const private_domain)
     {
         Transaction enriched_txn{txn};
 
@@ -260,12 +307,6 @@ namespace
 
         State state{block_state, incarnation};
 
-        {
-            State state{block_state, incarnation};
-            BOOST_OUTCOME_TRY(validate_ethereum_transaction<traits>(
-                enriched_txn, sender, state, state_tracer, execution_mode));
-        }
-
         auto const senders = std::vector{sender};
         auto const authorities_vec =
             std::vector<std::vector<std::optional<Address>>>{{authorities}};
@@ -278,6 +319,13 @@ namespace
         // sender's balance.
         auto const chain_context = [&] {
             if constexpr (is_monad_trait_v<traits>) {
+                if (private_domain) {
+                    return domain::domain_chain_context<traits>(
+                        senders_and_authorities,
+                        senders,
+                        authorities_vec,
+                        execution_mode);
+                }
                 return ChainContext<traits>{
                     .grandparent_senders_and_authorities =
                         empty_senders_and_authorities,
@@ -293,6 +341,26 @@ namespace
                 return ChainContext<traits>{};
             }
         }();
+
+        {
+            State state{block_state, incarnation};
+            if (private_domain) {
+                // A private domain's own validation: it charges nothing and
+                // has no native token.
+                BOOST_OUTCOME_TRY(validate_transaction<traits>(
+                    enriched_txn,
+                    sender,
+                    state,
+                    header.base_fee_per_gas.value_or(0),
+                    authorities,
+                    state_tracer,
+                    chain_context));
+            }
+            else {
+                BOOST_OUTCOME_TRY(validate_ethereum_transaction<traits>(
+                    enriched_txn, sender, state, state_tracer, execution_mode));
+            }
+        }
 
         auto const tx_context = get_tx_context<traits>(
             enriched_txn,
@@ -1411,6 +1479,9 @@ struct monad_executor
     // page-encoded primary does not have.
     std::optional<mpt::Db> secondary_db_;
 
+    // The private domain whose database this is, if it is one's.
+    std::optional<uint64_t> domain_chain_id_;
+
     // The VM for executing eth calls needs to unconditionally use the
     // interpreter rather than the compiler. If it uses the compiler, then
     // out-of-gas errors can be misreported as generic failures.
@@ -1465,13 +1536,15 @@ struct monad_executor
         monad_executor_pool_config const &high_pool_config,
         monad_executor_pool_config const &block_pool_config,
         unsigned const tx_exec_num_fibers, uint64_t const node_lru_max_mem,
-        std::optional<std::string> const &triedb_path)
+        std::optional<std::string> const &triedb_path,
+        std::optional<uint64_t> const domain_chain_id)
         : db_{
               triedb_path.has_value()
                   ? std::make_unique<mpt::Db>(
                         make_db_config(*triedb_path, node_lru_max_mem))
                   : nullptr}
         , secondary_db_{db_ ? db_->open_secondary_timeline() : std::nullopt}
+        , domain_chain_id_{domain_chain_id}
         , high_gas_pool_{Pool::Type::high, high_pool_config}
         , low_gas_pool_{Pool::Type::low, low_pool_config}
         , trace_thread_pool_{block_pool_config.num_threads, true}
@@ -1608,7 +1681,7 @@ struct monad_executor
                         transaction.gas_limit = MONAD_ETH_CALL_LOW_GAS_LIMIT;
                     }
 
-                    auto const chain = make_chain(chain_config);
+                    RequestChain const chain{chain_config, domain_chain_id_};
 
                     LazyBlockHash block_hash_buffer{db, block_number};
                     StateDb state_db{db};
@@ -1664,12 +1737,13 @@ struct monad_executor
                                 *state_overrides,
                                 *call_tracer,
                                 state_tracer,
-                                execution_mode);
+                                execution_mode,
+                                chain.private_domain());
                             MONAD_ASSERT(false);
                         }
                         else {
                             auto const rev =
-                                dynamic_cast<MonadChain *>(chain.get())
+                                dynamic_cast<MonadChain const *>(chain.get())
                                     ->get_monad_revision(
                                         block_header.timestamp);
                             SWITCH_MONAD_TRAITS(
@@ -1687,7 +1761,8 @@ struct monad_executor
                                 *state_overrides,
                                 *call_tracer,
                                 state_tracer,
-                                execution_mode);
+                                execution_mode,
+                                chain.private_domain());
                             MONAD_ASSERT(false);
                         }
                     }();
@@ -1854,6 +1929,14 @@ struct monad_executor
             tracer_config != STATEDIFF_TRACER) {
             result->status_code = std::to_underlying(CallStatus::Rejected);
             result->message = strdup(PRESTATE_TRACER_SUPPORT_ERR_MSG);
+            MONAD_ASSERT(result->message);
+            complete(result, user);
+            return;
+        }
+
+        if (domain_chain_id_.has_value()) {
+            result->status_code = std::to_underlying(CallStatus::Rejected);
+            result->message = strdup(PRIVATE_DOMAIN_UNSUPPORTED_ERR_MSG);
             MONAD_ASSERT(result->message);
             complete(result, user);
             return;
@@ -2098,6 +2181,14 @@ struct monad_executor
     {
         monad_executor_result *const result = new monad_executor_result();
 
+        if (domain_chain_id_.has_value()) {
+            result->status_code = std::to_underlying(CallStatus::Rejected);
+            result->message = strdup(PRIVATE_DOMAIN_UNSUPPORTED_ERR_MSG);
+            MONAD_ASSERT(result->message);
+            complete(result, user);
+            return;
+        }
+
         if (!trace_block_group_.try_enqueue()) {
             result->status_code = std::to_underlying(CallStatus::Rejected);
             result->message = strdup(ETH_SIMULATE_EXCEED_QUEUE_SIZE_ERR_MSG);
@@ -2250,7 +2341,7 @@ monad_executor *monad_executor_create(
     monad_executor_pool_config const high_pool_conf,
     monad_executor_pool_config const block_pool_conf,
     unsigned const tx_exec_num_fibers, uint64_t const node_lru_max_mem,
-    char const *const dbpath)
+    char const *const dbpath, uint64_t const domain_chain_id)
 {
     uint64_t const hash_seed = set_hash_seed();
     LOG_INFO("rpc: hashtable seed: {}", hash_seed);
@@ -2271,7 +2362,8 @@ monad_executor *monad_executor_create(
         block_pool_conf,
         tx_exec_num_fibers,
         node_lru_max_mem,
-        triedb_path);
+        triedb_path,
+        domain_chain_id == 0 ? std::nullopt : std::optional{domain_chain_id});
 
     return e;
 }

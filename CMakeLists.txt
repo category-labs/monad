@@ -312,6 +312,7 @@ target_link_libraries(
   PUBLIC monad_core
          monad_async
          monad_trie
+         monad_domain_rules
          monad_execution_ethereum
          monad_execution_native
          monad_execution_runloop

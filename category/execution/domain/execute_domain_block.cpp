@@ -30,6 +30,7 @@
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/execute_block.hpp>
+#include <category/execution/ethereum/execution_modalities.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/process_requests.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
@@ -47,6 +48,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <variant>
 #include <vector>
 
@@ -73,6 +75,30 @@ GenesisState DomainChain::get_genesis_state() const
 {
     return GenesisState{};
 }
+
+template <Traits traits>
+    requires is_monad_trait_v<traits>
+ChainContext<traits> domain_chain_context(
+    ankerl::unordered_dense::segmented_set<Address> const
+        &senders_and_authorities,
+    std::vector<Address> const &senders,
+    std::vector<std::vector<std::optional<Address>>> const &authorities,
+    ExecutionMode const &mode)
+{
+    // Reserve balance checks, the only users of the earlier blocks' sender
+    // sets, are off in a private domain.
+    static ankerl::unordered_dense::segmented_set<Address> const none;
+    return ChainContext<traits>{
+        .grandparent_senders_and_authorities = none,
+        .parent_senders_and_authorities = none,
+        .senders_and_authorities = senders_and_authorities,
+        .senders = senders,
+        .authorities = authorities,
+        .private_domain = true,
+        .mode = mode};
+}
+
+EXPLICIT_MONAD_TRAITS(domain_chain_context);
 
 template <Traits traits>
     requires is_monad_trait_v<traits>
@@ -135,18 +161,10 @@ Result<std::vector<Receipt>> execute_domain_block(
     }
 
     auto const authorities = recover_authorities(transactions, priority_pool);
-    // Reserve balance checks, the only users of the sender sets, are off in
-    // a private domain.
-    ankerl::unordered_dense::segmented_set<Address> const none;
     auto const senders_and_authorities =
         combine_senders_and_authorities(derived.senders, authorities);
-    ChainContext<traits> const chain_ctx{
-        .grandparent_senders_and_authorities = none,
-        .parent_senders_and_authorities = none,
-        .senders_and_authorities = senders_and_authorities,
-        .senders = derived.senders,
-        .authorities = authorities,
-        .private_domain = true};
+    auto const chain_ctx = domain_chain_context<traits>(
+        senders_and_authorities, derived.senders, authorities);
 
     std::vector<std::unique_ptr<CallTracerBase>> call_tracers;
     std::vector<std::unique_ptr<trace::StateTracer>> state_tracers;

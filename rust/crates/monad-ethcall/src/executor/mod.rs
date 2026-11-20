@@ -15,6 +15,7 @@
 
 use std::{
     ffi::{CStr, CString},
+    num::NonZeroU64,
     path::Path,
     ptr::NonNull,
 };
@@ -89,6 +90,28 @@ impl MonadExecutor {
         )
     }
 
+    /// The executor of the private domain `domain_chain_id`, whose triedb is at `triedb_path`.
+    /// It executes calls under the domain's rules.
+    pub fn new_private_domain(
+        low_pool_config: ffi::PoolConfig,
+        high_pool_config: ffi::PoolConfig,
+        block_pool_config: ffi::PoolConfig,
+        tx_exec_num_fibers: u32,
+        node_lru_max_mem: u64,
+        triedb_path: &Path,
+        domain_chain_id: NonZeroU64,
+    ) -> Self {
+        Self::create(
+            low_pool_config,
+            high_pool_config,
+            block_pool_config,
+            tx_exec_num_fibers,
+            node_lru_max_mem,
+            Some(triedb_path),
+            Some(domain_chain_id),
+        )
+    }
+
     pub fn new_with_db_path(
         low_pool_config: ffi::PoolConfig,
         high_pool_config: ffi::PoolConfig,
@@ -96,6 +119,26 @@ impl MonadExecutor {
         tx_exec_num_fibers: u32,
         node_lru_max_mem: u64,
         triedb_path: Option<&Path>,
+    ) -> Self {
+        Self::create(
+            low_pool_config,
+            high_pool_config,
+            block_pool_config,
+            tx_exec_num_fibers,
+            node_lru_max_mem,
+            triedb_path,
+            None,
+        )
+    }
+
+    fn create(
+        low_pool_config: ffi::PoolConfig,
+        high_pool_config: ffi::PoolConfig,
+        block_pool_config: ffi::PoolConfig,
+        tx_exec_num_fibers: u32,
+        node_lru_max_mem: u64,
+        triedb_path: Option<&Path>,
+        domain_chain_id: Option<NonZeroU64>,
     ) -> Self {
         monad_cxx::init_cxx_logging(tracing::Level::WARN);
 
@@ -113,6 +156,8 @@ impl MonadExecutor {
                 dbpath
                     .as_ref()
                     .map_or(std::ptr::null(), |path| path.as_c_str().as_ptr()),
+                // Zero means the L1.
+                domain_chain_id.map_or(0, NonZeroU64::get),
             )
         };
 

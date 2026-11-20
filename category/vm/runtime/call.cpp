@@ -13,7 +13,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <iostream>
 #include <category/core/address.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/int.hpp>
@@ -27,6 +26,7 @@
 #include <category/vm/runtime/call.hpp>
 #include <category/vm/runtime/transmute.hpp>
 #include <category/vm/runtime/types.hpp>
+#include <iostream>
 
 #include <evmc/evmc.h>
 
@@ -63,7 +63,7 @@ namespace monad::vm::runtime
         evmc_call_kind const call_kind, bool const static_call,
         int64_t const remaining_block_base_gas)
     {
-        //auto start_time = std::chrono::steady_clock::now();
+        // auto start_time = std::chrono::steady_clock::now();
         static_assert(traits::evm_rev() >= MONAD_ETH_BERLIN);
 
         ctx->env.clear_return_data();
@@ -172,12 +172,12 @@ namespace monad::vm::runtime
             .memory_capacity = ctx->memory.capacity - ctx->memory.size,
         };
 
-        //auto end_time = std::chrono::steady_clock::now();
-        //auto start_time2 = std::chrono::steady_clock::now();
+        // auto end_time = std::chrono::steady_clock::now();
+        // auto start_time2 = std::chrono::steady_clock::now();
         auto const result = ctx->host->call(message).release_raw();
-        //auto end_time2 = std::chrono::steady_clock::now();
+        // auto end_time2 = std::chrono::steady_clock::now();
 
-        //auto start_time3 = std::chrono::steady_clock::now();
+        // auto start_time3 = std::chrono::steady_clock::now();
         ctx->env.set_return_data(result.output_data, result.output_size);
 
         // Unwind the stack after setting return data, so that return data
@@ -192,10 +192,11 @@ namespace monad::vm::runtime
         std::copy_n(
             result.output_data, copy_size, ctx->memory.data + *ret_offset);
 
-        //auto end_time3 = std::chrono::steady_clock::now();
-        //std::cout << "runtim call 1 ns = " << (end_time - start_time).count() << std::endl;
-        //std::cout << "runtim call 2 ns = " << (end_time2 - start_time2).count() << std::endl;
-        //std::cout << "runtim call 3 ns = " << (end_time3 - start_time3).count() << std::endl;
+        // auto end_time3 = std::chrono::steady_clock::now();
+        // std::cout << "runtim call 1 ns = " << (end_time - start_time).count()
+        // << std::endl; std::cout << "runtim call 2 ns = " << (end_time2 -
+        // start_time2).count() << std::endl; std::cout << "runtim call 3 ns = "
+        // << (end_time3 - start_time3).count() << std::endl;
         return (result.status_code == EVMC_SUCCESS) ? 1 : 0;
     }
 

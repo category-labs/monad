@@ -675,12 +675,12 @@ static void do_run(
                 PUSH0,
                 PUSH0,
                 PUSH0,
-                PUSH1, 0xff, // gas
+                PUSH1,
+                0xff, // gas
                 CALL,
                 POP,
                 PUSH0,
-                JUMP
-            };
+                JUMP};
 
 #if 0
             auto const contract = monad::vm::fuzzing::generate_program<traits>(

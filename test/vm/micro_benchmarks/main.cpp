@@ -343,8 +343,7 @@ print_results(std::vector<BenchmarkResult> const &results, OutputFormat format)
 
 static bytes32_t init_execute_state(
     Address const &code_address, Address const &sender_address,
-    std::vector<uint8_t> const &bytecode,
-    PreState const &pre_state,
+    std::vector<uint8_t> const &bytecode, PreState const &pre_state,
     BenchTestStateRef test_state)
 {
     byte_string_view const raw_code{bytecode.data(), bytecode.size()};
@@ -387,7 +386,8 @@ static bytes32_t init_execute_state(
             .nonce = 1,
         };
         StateDeltas::const_accessor ac;
-        deltas.emplace(ac, a, std::make_pair(std::nullopt, std::make_optional(acct)));
+        deltas.emplace(
+            ac, a, std::make_pair(std::nullopt, std::make_optional(acct)));
         auto icode = make_shared_intercode(raw_code);
         code.emplace(code_hash, std::move(icode));
     }
@@ -412,8 +412,8 @@ static double execute_iteration(
 
     Address const sender_address{200};
 
-    auto const code_hash =
-        init_execute_state(code_address, sender_address, bytecode, pre_state, test_state);
+    auto const code_hash = init_execute_state(
+        code_address, sender_address, bytecode, pre_state, test_state);
     auto const icode =
         vm.try_insert_varcode_raw(code_hash, bytecode)->intercode();
     auto const vcode =
@@ -496,7 +496,12 @@ static std::pair<double, double> execute_against_base(
     for (uint32_t i = 0; i < (iteration_count >> 4) + 1; ++i) {
         // warmup
         (void)execute_iteration(
-            vm, memory_pool, base_code_address, base_bytecode, base_calldata, pre_state);
+            vm,
+            memory_pool,
+            base_code_address,
+            base_bytecode,
+            base_calldata,
+            pre_state);
         (void)execute_iteration(
             vm, memory_pool, code_address, bytecode, calldata, pre_state);
     }
@@ -505,7 +510,12 @@ static std::pair<double, double> execute_against_base(
     double best = std::numeric_limits<double>::max();
     for (size_t i = 0; i < iteration_count; ++i) {
         auto const base_t = execute_iteration(
-            vm, memory_pool, base_code_address, base_bytecode, base_calldata, pre_state);
+            vm,
+            memory_pool,
+            base_code_address,
+            base_bytecode,
+            base_calldata,
+            pre_state);
         base_best = std::min(base_t, base_best);
         auto const t = execute_iteration(
             vm, memory_pool, code_address, bytecode, calldata, pre_state);
@@ -960,15 +970,16 @@ int main(int argc, char **argv)
          .iteration_count = 100,
          .subject_seqs = any_store_load_math_builders,
          .effect_free_subject_seqs = effect_free_any_store_load_math_builders,
-         .pre_state = []{
-            PreSlots slots;
-            auto const off = KernelBuilder<traits>::free_memory_start;
-            auto const n = 10'000 * 3 * 32;
-            for (size_t i = 0; i < n; i += 3 * 32) {
-                slots.emplace_back(uint256_t{off + i}, uint256_t{1});
-            }
-            return PreState{std::move(slots), {}};
-         }()})
+         .pre_state =
+             [] {
+                 PreSlots slots;
+                 auto const off = KernelBuilder<traits>::free_memory_start;
+                 auto const n = 10'000 * 3 * 32;
+                 for (size_t i = 0; i < n; i += 3 * 32) {
+                     slots.emplace_back(uint256_t{off + i}, uint256_t{1});
+                 }
+                 return PreState{std::move(slots), {}};
+             }()})
         .make_calldata([](size_t num_inputs) {
             auto const off = KernelBuilder<traits>::free_memory_start;
             std::vector<uint8_t> cd(10'000 * num_inputs * 32, 0);
@@ -1011,15 +1022,16 @@ int main(int argc, char **argv)
          .iteration_count = 100,
          .subject_seqs = any_load_math_builders,
          .effect_free_subject_seqs = effect_free_any_load_math_builders,
-         .pre_state = []{
-            PreSlots slots;
-            auto const off = KernelBuilder<traits>::free_memory_start;
-            auto const n = 10'000 * 32;
-            for (size_t i = 0; i < n; i += 32) {
-                slots.emplace_back(uint256_t{off + i}, uint256_t{0});
-            }
-            return PreState{std::move(slots), {}};
-         }()})
+         .pre_state =
+             [] {
+                 PreSlots slots;
+                 auto const off = KernelBuilder<traits>::free_memory_start;
+                 auto const n = 10'000 * 32;
+                 for (size_t i = 0; i < n; i += 32) {
+                     slots.emplace_back(uint256_t{off + i}, uint256_t{0});
+                 }
+                 return PreState{std::move(slots), {}};
+             }()})
         .make_calldata([](size_t num_inputs) {
             auto const off = KernelBuilder<traits>::free_memory_start;
             std::vector<uint8_t> cd(10'000 * num_inputs * 32, 0);
@@ -1058,15 +1070,16 @@ int main(int argc, char **argv)
          .has_output = false,
          .iteration_count = 100,
          .subject_seqs = any_store_math_builders,
-         .pre_state = []{
-            PreSlots slots;
-            auto const off = KernelBuilder<traits>::free_memory_start;
-            auto const n = 10'000 * 2 * 32;
-            for (size_t i = 0; i < n; i += 64) {
-                slots.emplace_back(uint256_t{off + i}, uint256_t{0});
-            }
-            return PreState{std::move(slots), {}};
-         }()})
+         .pre_state =
+             [] {
+                 PreSlots slots;
+                 auto const off = KernelBuilder<traits>::free_memory_start;
+                 auto const n = 10'000 * 2 * 32;
+                 for (size_t i = 0; i < n; i += 64) {
+                     slots.emplace_back(uint256_t{off + i}, uint256_t{0});
+                 }
+                 return PreState{std::move(slots), {}};
+             }()})
         .make_calldata([](size_t num_inputs) {
             auto const off = KernelBuilder<traits>::free_memory_start;
             std::vector<uint8_t> cd(10'000 * num_inputs * 32, 0);
@@ -1476,7 +1489,15 @@ int main(int argc, char **argv)
          .has_output = true,
          .iteration_count = 100,
          .subject_seqs = {KernelBuilder<traits>{}.call()},
-         .effect_free_subject_seqs = {{KernelBuilder<traits>{}.pop().pop().pop().pop().pop().pop().pop().push(1)}}})
+         .effect_free_subject_seqs = {{KernelBuilder<traits>{}
+                                           .pop()
+                                           .pop()
+                                           .pop()
+                                           .pop()
+                                           .pop()
+                                           .pop()
+                                           .pop()
+                                           .push(1)}}})
         .make_calldata([](size_t num_inputs) {
             std::vector<uint8_t> cd(10'000 * num_inputs * 32, 0);
             for (size_t i = 0; i < cd.size(); i += num_inputs * 32) {
@@ -1501,17 +1522,26 @@ int main(int argc, char **argv)
          .has_output = true,
          .iteration_count = 100,
          .subject_seqs = {KernelBuilder<traits>{}.call()},
-         .effect_free_subject_seqs = {{KernelBuilder<traits>{}.pop().pop().pop().pop().pop().pop().pop().push(1)}},
-         .pre_state = []{
-            PreCodes codes;
-            auto const n = 10'000 * 7 * 32;
-            for (size_t i = 0; i < n; i += 7 * 32) {
-                std::vector<uint8_t> c;
-                compile(KernelBuilder<traits>{}.push(i), c);
-                codes.emplace_back(Address{5000 + i}, std::move(c));
-            }
-            return PreState{{}, std::move(codes)};
-         }()})
+         .effect_free_subject_seqs = {{KernelBuilder<traits>{}
+                                           .pop()
+                                           .pop()
+                                           .pop()
+                                           .pop()
+                                           .pop()
+                                           .pop()
+                                           .pop()
+                                           .push(1)}},
+         .pre_state =
+             [] {
+                 PreCodes codes;
+                 auto const n = 10'000 * 7 * 32;
+                 for (size_t i = 0; i < n; i += 7 * 32) {
+                     std::vector<uint8_t> c;
+                     compile(KernelBuilder<traits>{}.push(i), c);
+                     codes.emplace_back(Address{5000 + i}, std::move(c));
+                 }
+                 return PreState{{}, std::move(codes)};
+             }()})
         .make_calldata([](size_t num_inputs) {
             std::vector<uint8_t> cd(10'000 * num_inputs * 32, 0);
             for (size_t i = 0; i < cd.size(); i += num_inputs * 32) {

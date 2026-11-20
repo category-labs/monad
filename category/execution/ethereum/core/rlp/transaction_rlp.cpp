@@ -31,17 +31,23 @@
 #include <category/execution/ethereum/rlp/decode.hpp>
 #include <category/execution/ethereum/rlp/encode2.hpp>
 
+#include <boost/outcome/success_failure.hpp>
 #include <boost/outcome/try.hpp>
 
+#include <bit>
 #include <cassert>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
+#include <functional>
 #include <optional>
 #include <utility>
 #include <vector>
 
 MONAD_RLP_NAMESPACE_BEGIN
+
+using BOOST_OUTCOME_V2_NAMESPACE::success;
 
 // Encode
 byte_string encode_access_list(AccessList const &access_list)
@@ -184,6 +190,80 @@ byte_string encode_transaction_for_signing(Transaction const &txn)
     }
 }
 
+namespace
+{
+    // Values below 0x80 use one byte; larger values add a one-byte prefix.
+    size_t unsigned_rlp_size(uint256_t const &n)
+    {
+        size_t const w = count_significant_words(n.as_words());
+        if (w == 0 || (w == 1 && n[0] < 0x80)) {
+            return 1;
+        }
+        size_t const top =
+            8 - static_cast<size_t>(std::countl_zero(n[w - 1])) / 8;
+        return 1 + (w - 1) * 8 + top;
+    }
+}
+
+// Canonical RLP lets us reuse the fields before the signature verbatim.
+// Rebuild the list header, preserving the type byte or adding the
+// EIP-155 legacy suffix (chain ID, 0, 0) as needed.
+byte_string signing_payload(Transaction const &txn, byte_string_view enc)
+{
+    MONAD_ASSERT(!enc.empty());
+    bool const legacy_encoding = enc[0] >= 0xc0;
+    if (legacy_encoding) {
+        MONAD_ASSERT(txn.type == TransactionType::legacy);
+    }
+    else if (MONAD_UNLIKELY(txn.type == TransactionType::legacy)) {
+        // A 0x00 envelope has typed fields but legacy signing rules.
+        return encode_transaction_for_signing(txn);
+    }
+    else {
+        MONAD_ASSERT(enc[0] == static_cast<unsigned char>(txn.type));
+        enc = enc.substr(1);
+    }
+    auto const payload = parse_list_metadata(enc);
+    MONAD_ASSERT(payload.has_value() && enc.empty());
+
+    // Rebuild legacy v with from_v's wrapping arithmetic; get_v rejects
+    // some chain IDs accepted by the decoder.
+    auto const &sig = txn.sc.signature;
+    uint256_t const v = !legacy_encoding ? uint256_t{sig.y_parity}
+                        : txn.sc.chain_id.has_value()
+                            ? *txn.sc.chain_id * 2u + 35u + sig.y_parity
+                            : uint256_t{27u + sig.y_parity};
+    size_t const sig_size = unsigned_rlp_size(v) + unsigned_rlp_size(sig.r) +
+                            unsigned_rlp_size(sig.s);
+    MONAD_ASSERT(sig_size <= payload.value().size());
+    byte_string_view const body =
+        payload.value().substr(0, payload.value().size() - sig_size);
+
+    byte_string const tail =
+        legacy_encoding && txn.sc.chain_id.has_value()
+            ? encode_unsigned(*txn.sc.chain_id) + byte_string{0x80, 0x80}
+            : byte_string{};
+    size_t const list = body.size() + tail.size();
+
+    byte_string out;
+    out.resize_and_overwrite(
+        (legacy_encoding ? 0 : 1) + list_header_size(list) + list,
+        [&](unsigned char *const buf, size_t const n) {
+            unsigned char *p = buf;
+            if (!legacy_encoding) {
+                *p++ = static_cast<unsigned char>(txn.type);
+            }
+            append_list_header(p, list);
+            std::memcpy(p, body.data(), body.size());
+            p += body.size();
+            std::memcpy(p, tail.data(), tail.size());
+            p += tail.size();
+            MONAD_ASSERT(p == buf + n);
+            return n;
+        });
+    return out;
+}
+
 // Decode
 Result<std::vector<bytes32_t>> decode_access_entry_keys(byte_string_view &enc)
 {
@@ -282,12 +362,24 @@ Result<AuthorizationList> decode_authorization_list(byte_string_view &enc)
     return auth_list;
 }
 
-Result<Transaction> decode_transaction_legacy(byte_string_view &enc)
+static Result<void>
+decode_transaction_legacy_into(Transaction &txn, byte_string_view &enc)
 {
-    Transaction txn;
     BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
 
     txn.type = TransactionType::legacy;
+#if defined(MONAD_ZKVM_ZISK)
+    // The integers decoded where the transaction keeps them.
+    BOOST_OUTCOME_TRY(decode_unsigned_into(payload, txn.nonce));
+    BOOST_OUTCOME_TRY(decode_unsigned_into(payload, txn.max_fee_per_gas));
+    BOOST_OUTCOME_TRY(decode_unsigned_into(payload, txn.gas_limit));
+    BOOST_OUTCOME_TRY(txn.to, decode_optional_address(payload));
+    BOOST_OUTCOME_TRY(decode_unsigned_into(payload, txn.value));
+    BOOST_OUTCOME_TRY(txn.data, decode_string(payload));
+    BOOST_OUTCOME_TRY(txn.sc, decode_sc(payload));
+    BOOST_OUTCOME_TRY(decode_unsigned_into(payload, txn.sc.signature.r));
+    BOOST_OUTCOME_TRY(decode_unsigned_into(payload, txn.sc.signature.s));
+#else
     BOOST_OUTCOME_TRY(txn.nonce, decode_unsigned<uint64_t>(payload));
     BOOST_OUTCOME_TRY(txn.max_fee_per_gas, decode_unsigned<uint256_t>(payload));
     BOOST_OUTCOME_TRY(txn.gas_limit, decode_unsigned<uint64_t>(payload));
@@ -297,17 +389,25 @@ Result<Transaction> decode_transaction_legacy(byte_string_view &enc)
     BOOST_OUTCOME_TRY(txn.sc, decode_sc(payload));
     BOOST_OUTCOME_TRY(txn.sc.signature.r, decode_unsigned<uint256_t>(payload));
     BOOST_OUTCOME_TRY(txn.sc.signature.s, decode_unsigned<uint256_t>(payload));
+#endif
 
     if (MONAD_UNLIKELY(!payload.empty())) {
         return DecodeError::InputTooLong;
     }
 
+    return success();
+}
+
+Result<Transaction> decode_transaction_legacy(byte_string_view &enc)
+{
+    Transaction txn;
+    BOOST_OUTCOME_TRY(decode_transaction_legacy_into(txn, enc));
     return txn;
 }
 
-Result<Transaction> decode_transaction_eip2718(byte_string_view &enc)
+static Result<void>
+decode_transaction_eip2718_into(Transaction &txn, byte_string_view &enc)
 {
-    Transaction txn;
     if (MONAD_UNLIKELY(enc.empty())) {
         return DecodeError::InputTooShort;
     }
@@ -321,6 +421,23 @@ Result<Transaction> decode_transaction_eip2718(byte_string_view &enc)
     BOOST_OUTCOME_TRY(auto payload, parse_list_metadata(enc));
 
     txn.sc.chain_id = uint256_t{};
+#if defined(MONAD_ZKVM_ZISK)
+    // The integers decoded where the transaction keeps them.
+    BOOST_OUTCOME_TRY(decode_unsigned_into(payload, *txn.sc.chain_id));
+    BOOST_OUTCOME_TRY(decode_unsigned_into(payload, txn.nonce));
+
+    if (txn.type == TransactionType::eip1559 ||
+        txn.type == TransactionType::eip4844 ||
+        txn.type == TransactionType::eip7702) {
+        BOOST_OUTCOME_TRY(
+            decode_unsigned_into(payload, txn.max_priority_fee_per_gas));
+    }
+
+    BOOST_OUTCOME_TRY(decode_unsigned_into(payload, txn.max_fee_per_gas));
+    BOOST_OUTCOME_TRY(decode_unsigned_into(payload, txn.gas_limit));
+    BOOST_OUTCOME_TRY(txn.to, decode_optional_address(payload));
+    BOOST_OUTCOME_TRY(decode_unsigned_into(payload, txn.value));
+#else
     BOOST_OUTCOME_TRY(*txn.sc.chain_id, decode_unsigned<uint256_t>(payload));
     BOOST_OUTCOME_TRY(txn.nonce, decode_unsigned<uint64_t>(payload));
 
@@ -335,6 +452,7 @@ Result<Transaction> decode_transaction_eip2718(byte_string_view &enc)
     BOOST_OUTCOME_TRY(txn.gas_limit, decode_unsigned<uint64_t>(payload));
     BOOST_OUTCOME_TRY(txn.to, decode_optional_address(payload));
     BOOST_OUTCOME_TRY(txn.value, decode_unsigned<uint256_t>(payload));
+#endif
     BOOST_OUTCOME_TRY(txn.data, decode_string(payload));
     BOOST_OUTCOME_TRY(txn.access_list, decode_access_list(payload));
 
@@ -360,15 +478,28 @@ Result<Transaction> decode_transaction_eip2718(byte_string_view &enc)
             txn.authorization_list, decode_authorization_list(payload));
     }
 
+#if defined(MONAD_ZKVM_ZISK)
+    BOOST_OUTCOME_TRY(decode_unsigned_into(payload, txn.sc.signature.y_parity));
+    BOOST_OUTCOME_TRY(decode_unsigned_into(payload, txn.sc.signature.r));
+    BOOST_OUTCOME_TRY(decode_unsigned_into(payload, txn.sc.signature.s));
+#else
     BOOST_OUTCOME_TRY(
         txn.sc.signature.y_parity, decode_unsigned<uint8_t>(payload));
     BOOST_OUTCOME_TRY(txn.sc.signature.r, decode_unsigned<uint256_t>(payload));
     BOOST_OUTCOME_TRY(txn.sc.signature.s, decode_unsigned<uint256_t>(payload));
+#endif
 
     if (MONAD_UNLIKELY(!payload.empty() || !enc.empty())) {
         return DecodeError::InputTooLong;
     }
 
+    return success();
+}
+
+Result<Transaction> decode_transaction_eip2718(byte_string_view &enc)
+{
+    Transaction txn;
+    BOOST_OUTCOME_TRY(decode_transaction_eip2718_into(txn, enc));
     return txn;
 }
 
@@ -395,16 +526,28 @@ decode_transaction_list(byte_string_view &enc, Out const raw_transactions)
     std::vector<Transaction> transactions;
     BOOST_OUTCOME_TRY(auto ls, parse_list_metadata(enc));
 
-    // TODO: Reserve txn vector size for better perf
+    // Count list items by their headers to avoid vector reallocations.
+    // Leave malformed-header errors to the decoding loop below.
+    {
+        size_t count = 0;
+        for (auto rest = ls; !rest.empty() && parse_metadata(rest).has_value();
+             ++count) {
+        }
+        transactions.reserve(count);
+        if constexpr (keep_raw_transactions) {
+            raw_transactions.get().reserve(count);
+        }
+    }
     while (!ls.empty()) {
         if (ls[0] >= 0xc0) {
             auto const before = ls;
-            BOOST_OUTCOME_TRY(auto tx, decode_transaction_legacy(ls));
+            // Decode in place: moving would copy the 256-bit fields.
+            BOOST_OUTCOME_TRY(decode_transaction_legacy_into(
+                transactions.emplace_back(), ls));
             if constexpr (keep_raw_transactions) {
                 raw_transactions.get().push_back(
                     before.substr(0, before.size() - ls.size()));
             }
-            transactions.emplace_back(std::move(tx));
         }
         else {
             BOOST_OUTCOME_TRY(auto str, parse_string_metadata(ls));
@@ -413,8 +556,8 @@ decode_transaction_list(byte_string_view &enc, Out const raw_transactions)
             if constexpr (keep_raw_transactions) {
                 raw_transactions.get().push_back(str);
             }
-            BOOST_OUTCOME_TRY(auto tx, decode_transaction_eip2718(str));
-            transactions.emplace_back(std::move(tx));
+            BOOST_OUTCOME_TRY(decode_transaction_eip2718_into(
+                transactions.emplace_back(), str));
         }
     }
     MONAD_ASSERT(ls.empty());

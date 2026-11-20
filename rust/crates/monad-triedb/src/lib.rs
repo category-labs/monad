@@ -77,6 +77,20 @@ pub struct StorageStats {
     pub disk_used_bytes: u64,
 }
 
+/// Space accounting from the live-byte counters, in bytes. Truly free space is
+/// free chunks plus slow-list garbage; the fast list counts as used. While the
+/// counters are unknown, the slow live figure is `None` and truly free equals
+/// free chunks. Safe on a read-only handle while execution is writing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SpaceStats {
+    pub chunk_capacity_bytes: u64,
+    pub free_chunk_bytes: u64,
+    pub fast_written_bytes: u64,
+    pub slow_written_bytes: u64,
+    pub slow_live_bytes: Option<u64>,
+    pub truly_free_bytes: u64,
+}
+
 /// Lifetime totals of the trie updates performed by the process writing the
 /// db, read from the statistics sidecar that process publishes. They restart
 /// at zero when that process does. `fast` and `slow` name the two node rings.
@@ -463,6 +477,30 @@ impl TriedbHandle {
         StorageStats {
             disk_capacity_bytes: out.disk_capacity_bytes,
             disk_used_bytes: out.disk_used_bytes,
+        }
+    }
+
+    /// Space accounting from the live-byte counters. Safe on a read-only
+    /// handle while execution writes.
+    pub fn space_stats(&self) -> SpaceStats {
+        let mut out = ffi::triedb_space_stats {
+            chunk_capacity_bytes: 0,
+            free_chunk_bytes: 0,
+            fast_written_bytes: 0,
+            slow_written_bytes: 0,
+            slow_live_bytes: 0,
+            truly_free_bytes: 0,
+            live_bytes_known: 0,
+        };
+        unsafe { ffi::triedb_space_stats_read(self.db_ptr, &mut out) };
+        let known = out.live_bytes_known != 0;
+        SpaceStats {
+            chunk_capacity_bytes: out.chunk_capacity_bytes,
+            free_chunk_bytes: out.free_chunk_bytes,
+            fast_written_bytes: out.fast_written_bytes,
+            slow_written_bytes: out.slow_written_bytes,
+            slow_live_bytes: known.then_some(out.slow_live_bytes),
+            truly_free_bytes: out.truly_free_bytes,
         }
     }
 

@@ -417,13 +417,17 @@ std::pair<bool, Node::SharedPtr> create_node_with_expired_branches(
         auto const child_branch = static_cast<uint8_t>(std::countr_zero(mask));
         auto const child_index = orig->to_child_index(child_branch);
         auto const single_child = orig->move_next(child_index);
+        auto const child_offset = orig->fnext(child_index);
         if (!single_child) {
             node_receiver_t recv{
                 [aux = &aux,
                  sm = sm.clone(),
                  tnode = std::move(tnode),
                  child_branch,
+                 child_offset,
                  tid](Node::SharedPtr read_node) {
+                    aux->record_superseded(
+                        child_offset, read_node->get_disk_size());
                     auto new_node = make_node(
                         *read_node,
                         concat(
@@ -442,10 +446,11 @@ std::pair<bool, Node::SharedPtr> create_node_with_expired_branches(
                         tid);
                     propagate_upward(*aux, *sm, tnode->parent(), tid);
                 },
-                orig->fnext(child_index)};
+                child_offset};
             async_read(aux, std::move(recv));
             return {false, nullptr};
         }
+        aux.record_superseded(child_offset, single_child->get_disk_size());
         return {
             true,
             make_node(
@@ -544,6 +549,9 @@ Node::SharedPtr create_node_from_children_if_any(
             orig_mask, static_cast<unsigned>(std::countr_zero(mask)));
         MONAD_ASSERT(children[j].ptr);
         auto const node = std::move(children[j].ptr);
+        if (children[j].offset != INVALID_OFFSET) {
+            aux.record_superseded(children[j].offset, node->get_disk_size());
+        }
         /* Note: there's a potential superfluous extension hash recomputation
         when node coaleases upon erases, because we compute node hash when path
         is not yet the final form. There's not yet a good way to avoid this
@@ -854,6 +862,7 @@ void upsert_(
              sm = sm.clone(),
              parent = &parent,
              tid,
+             old_offset,
              updates = std::move(updates)](Node::SharedPtr read_node) mutable {
                 // continue recurse down the trie starting from `old`
                 upsert_(
@@ -862,7 +871,7 @@ void upsert_(
                     *parent,
                     *entry,
                     std::move(read_node),
-                    INVALID_OFFSET,
+                    old_offset,
                     std::move(updates),
                     tid,
                     prefix_index);
@@ -872,6 +881,9 @@ void upsert_(
             old_offset};
         async_read(aux, std::move(recv));
         return;
+    }
+    if (old_offset != INVALID_OFFSET) {
+        aux.record_superseded(old_offset, old->get_disk_size());
     }
     MONAD_ASSERT(old_prefix_index != INVALID_PATH_INDEX);
     auto const old_prefix_index_start = old_prefix_index;
@@ -1128,8 +1140,13 @@ void expire_(
     if (!node) {
         MONAD_ASSERT(node_offset != INVALID_OFFSET);
         node_receiver_t recv{
-            [aux = &aux, sm = sm.clone(), parent = &parent, branch, index, tid](
-                Node::SharedPtr read_node) {
+            [aux = &aux,
+             sm = sm.clone(),
+             parent = &parent,
+             branch,
+             index,
+             node_offset,
+             tid](Node::SharedPtr read_node) {
                 expire_(
                     *aux,
                     *sm,
@@ -1137,7 +1154,7 @@ void expire_(
                     branch,
                     index,
                     std::move(read_node),
-                    INVALID_OFFSET,
+                    node_offset,
                     false,
                     tid);
                 propagate_upward(*aux, *sm, parent, tid);
@@ -1146,6 +1163,9 @@ void expire_(
         aux.collect_expire_stats(true);
         async_read(aux, std::move(recv));
         return;
+    }
+    if (node_offset != INVALID_OFFSET) {
+        aux.record_superseded(node_offset, node->get_disk_size());
     }
     MONAD_ASSERT(sm.auto_expire() == true && sm.compact() == true);
     if (node->version < aux.tl(tid).curr_upsert_auto_expire_version) {
@@ -1280,6 +1300,9 @@ void compact_(
         aux.collect_compaction_read_stats(node_offset, recv.bytes_to_read, tid);
         async_read(aux, std::move(recv));
         return;
+    }
+    if (node_offset != INVALID_OFFSET) {
+        aux.record_superseded(node_offset, node->get_disk_size());
     }
     // Only compact nodes < compaction range (either fast or slow) to slow,
     // otherwise rewrite to fast list
@@ -1697,6 +1720,7 @@ async_write_node_set_spare(UpdateAux &aux, Node &node, bool write_to_fast)
          aux.metadata_ctx().main()->at(off.id)->in_fast_list) ||
         (!write_to_fast &&
          aux.metadata_ctx().main()->at(off.id)->in_slow_list));
+    aux.record_written(write_to_fast, node.get_disk_size());
     unsigned const pages = num_pages(off.offset, node.get_disk_size());
     off.set_spare(static_cast<uint16_t>(node_disk_pages_spare_15{pages}));
     return off;
@@ -1738,7 +1762,10 @@ void flush_buffered_writes(UpdateAux &aux)
 chunk_offset_t write_new_root_node(
     UpdateAux &aux, Node &root, uint64_t const version, timeline_id const tid)
 {
-    auto const offset_written_to = async_write_node_set_spare(aux, root, true);
+    auto const offset_written_to = [&] {
+        UpdateAux::uncounted_writes const uncounted{aux};
+        return async_write_node_set_spare(aux, root, true);
+    }();
     flush_buffered_writes(aux);
     // advance fast and slow ring's latest offset in db metadata
     aux.metadata_ctx().advance_db_offsets_to(

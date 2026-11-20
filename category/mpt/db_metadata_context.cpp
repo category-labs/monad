@@ -24,6 +24,7 @@
 #include <category/mpt/config.hpp>
 #include <category/mpt/db_metadata_context.hpp>
 #include <category/mpt/detail/db_metadata.hpp>
+#include <category/mpt/detail/space_counters.hpp>
 #include <category/mpt/detail/timeline.hpp>
 #include <category/mpt/state_machine_kind.hpp>
 #include <category/mpt/trie.hpp>
@@ -42,6 +43,7 @@
 #include <sys/mman.h>
 #include <thread>
 #include <unistd.h>
+#include <utility>
 #include <vector>
 
 MONAD_MPT_NAMESPACE_BEGIN
@@ -495,6 +497,143 @@ void DbMetadataContext::set_latest_finalized_version(
     };
     do_(copies_[0].main);
     do_(copies_[1].main);
+}
+
+void DbMetadataContext::write_space_counters(
+    std::optional<std::pair<detail::list_bytes, uint64_t>> const
+        &counters) noexcept
+{
+    auto const store = [](uint64_t &field, uint64_t const value) {
+        std::atomic_ref<uint64_t>(field).store(
+            value, std::memory_order_relaxed);
+    };
+    auto do_ = [&](detail::db_metadata *m) {
+        auto const g = m->hold_dirty();
+        auto &c = m->space_counters;
+        std::atomic_ref<uint64_t> const sequence(c.sequence);
+        uint64_t const writing = sequence.load(std::memory_order_relaxed) | 1;
+        sequence.store(writing, std::memory_order_relaxed);
+        std::atomic_thread_fence(std::memory_order_release);
+        if (counters.has_value()) {
+            store(c.finalized_version, counters->second);
+            store(c.fast_live, counters->first.fast);
+            store(c.slow_live, counters->first.slow);
+            store(c.marker, detail::db_metadata::SPACE_COUNTERS_MARKER);
+        }
+        else {
+            store(c.marker, 0);
+        }
+        sequence.store(writing + 1, std::memory_order_release);
+    };
+    do_(copies_[0].main);
+    do_(copies_[1].main);
+}
+
+void DbMetadataContext::set_space_counters(
+    detail::list_bytes const live, uint64_t const finalized_version) noexcept
+{
+    write_space_counters(std::pair{live, finalized_version});
+}
+
+std::optional<std::pair<detail::list_bytes, uint64_t>>
+DbMetadataContext::space_counters() const noexcept
+{
+    // A writer that died mid-update leaves `sequence` odd; give up rather
+    // than wait for it.
+    constexpr int max_reads = 64;
+    auto &c = copies_[0].main->space_counters;
+    auto const load = [](uint64_t &field) {
+        return std::atomic_ref<uint64_t>(field).load(std::memory_order_relaxed);
+    };
+    std::atomic_ref<uint64_t> const sequence(c.sequence);
+    for (int i = 0; i < max_reads; ++i) {
+        uint64_t const before = sequence.load(std::memory_order_acquire);
+        if ((before & 1) == 0) {
+            bool const recorded =
+                load(c.marker) == detail::db_metadata::SPACE_COUNTERS_MARKER;
+            detail::list_bytes const live{
+                .fast = load(c.fast_live), .slow = load(c.slow_live)};
+            uint64_t const version = load(c.finalized_version);
+            std::atomic_thread_fence(std::memory_order_acquire);
+            if (sequence.load(std::memory_order_relaxed) == before) {
+                if (!recorded) {
+                    return std::nullopt;
+                }
+                return std::pair{live, version};
+            }
+        }
+        std::this_thread::yield();
+    }
+    return std::nullopt;
+}
+
+std::optional<uint32_t>
+DbMetadataContext::list_chunk_count(chunk_list const list) const noexcept
+{
+    constexpr int max_reads = 64;
+    auto const *const m = copies_[0].main;
+    auto const &ids = list == chunk_list::free   ? m->free_list
+                      : list == chunk_list::fast ? m->fast_list
+                                                 : m->slow_list;
+    auto const load_id = [](uint32_t const &id) {
+        return std::atomic_ref<uint32_t>(const_cast<uint32_t &>(id))
+            .load(std::memory_order_acquire);
+    };
+    auto const in_list = [list](detail::db_metadata::chunk_info_t const &ci) {
+        switch (list) {
+        case chunk_list::free:
+            return !ci.in_fast_list && !ci.in_slow_list;
+        case chunk_list::fast:
+            return static_cast<bool>(ci.in_fast_list);
+        case chunk_list::slow:
+            return static_cast<bool>(ci.in_slow_list);
+        }
+        return false;
+    };
+    for (int i = 0; i < max_reads; ++i) {
+        uint32_t const begin = load_id(ids.begin);
+        uint32_t const end = load_id(ids.end);
+        if (begin == detail::db_metadata::NULL_CHUNK &&
+            end == detail::db_metadata::NULL_CHUNK) {
+            return 0;
+        }
+        if (begin < m->chunk_info_count && end < m->chunk_info_count) {
+            auto const b =
+                m->atomic_load_chunk_info(begin, std::memory_order_acquire);
+            auto const e =
+                m->atomic_load_chunk_info(end, std::memory_order_acquire);
+            uint32_t const count =
+                static_cast<uint32_t>(
+                    e.insertion_count() - b.insertion_count()) +
+                1;
+            if (in_list(b) && in_list(e) && count <= m->chunk_info_count &&
+                load_id(ids.begin) == begin && load_id(ids.end) == end) {
+                return count;
+            }
+        }
+        std::this_thread::yield();
+    }
+    return std::nullopt;
+}
+
+std::optional<std::pair<detail::list_bytes, uint64_t>>
+DbMetadataContext::valid_space_counters() const noexcept
+{
+    auto const counters = space_counters();
+    if (!counters.has_value() || timeline_active(timeline_id::secondary)) {
+        return std::nullopt;
+    }
+    uint64_t const stamp = counters->second;
+    if (stamp != get_latest_finalized_version() &&
+        stamp != db_history_max_version(timeline_id::primary)) {
+        return std::nullopt;
+    }
+    return counters;
+}
+
+void DbMetadataContext::invalidate_space_counters() noexcept
+{
+    write_space_counters(std::nullopt);
 }
 
 void DbMetadataContext::set_latest_verified_version(

@@ -25,6 +25,7 @@
 #include <category/mpt/db_stats_shm.hpp>
 #include <category/mpt/detail/collected_stats.hpp>
 #include <category/mpt/detail/db_metadata.hpp>
+#include <category/mpt/detail/space_counters.hpp>
 #include <category/mpt/detail/timeline.hpp>
 #include <category/mpt/detail/unsigned_20.hpp>
 #include <category/mpt/state_machine.hpp>
@@ -46,10 +47,13 @@
 #include <iterator>
 #include <linux/fs.h>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <ranges>
+#include <stop_token>
 #include <string>
 #include <sys/ioctl.h>
+#include <thread>
 #include <utility>
 
 MONAD_MPT_NAMESPACE_BEGIN
@@ -65,6 +69,18 @@ namespace
         double const fractional = result - result_floor;
         auto const r = static_cast<double>(rand()) / RAND_MAX;
         return result_floor + static_cast<uint32_t>(r <= fractional);
+    }
+
+    // INVALID_BLOCK_NUM means none.
+    constexpr uint64_t newer_version(uint64_t const a, uint64_t const b)
+    {
+        if (a == INVALID_BLOCK_NUM) {
+            return b;
+        }
+        if (b == INVALID_BLOCK_NUM) {
+            return a;
+        }
+        return std::max(a, b);
     }
 
     constexpr double percent(uint64_t const num, uint64_t const denom)
@@ -272,6 +288,7 @@ void UpdateAux::clear_ondisk_db()
         {metadata_ctx_->main()->fast_list.begin, 0},
         {metadata_ctx_->main()->slow_list.begin, 0});
     rewind_to_match_offsets();
+    reset_space_counters_to_empty();
     return;
 }
 
@@ -300,6 +317,10 @@ static std::optional<chunk_offset_t> post_root_fast_offset_(
 void UpdateAux::rewind_to_version(uint64_t const version)
 {
     MONAD_ASSERT(is_on_disk());
+    if (auto const counters = metadata_ctx_->space_counters();
+        !counters.has_value() || counters->second != version) {
+        invalidate_space_counters();
+    }
     MONAD_ASSERT(
         metadata_ctx_->version_is_valid_ondisk(version, timeline_id::primary) ||
         metadata_ctx_->version_is_valid_ondisk(
@@ -383,6 +404,7 @@ void UpdateAux::rewind_to_version(uint64_t const version)
 
 UpdateAux::~UpdateAux()
 {
+    stop_space_walk();
     if (io != nullptr) {
         node_writer_fast.reset();
         node_writer_slow.reset();
@@ -394,6 +416,7 @@ UpdateAux::~UpdateAux()
 void UpdateAux::init(AsyncIO &io_, std::optional<uint64_t> const history_len)
 {
     // Safe to call on an already-initialized instance: tear down first
+    stop_space_walk();
     if (io != nullptr) {
         io = nullptr;
         node_writer_fast.reset();
@@ -442,10 +465,17 @@ void UpdateAux::init(AsyncIO &io_, std::optional<uint64_t> const history_len)
     }
 
     metadata_ctx_ = std::make_unique<DbMetadataContext>(io_);
+    space_ = std::make_unique<detail::space_accounting>();
 
     if (metadata_ctx_->is_new_pool()) {
+        space_->live = detail::list_bytes{};
         metadata_ctx_->init_new_pool(
             history_len, initial_insertion_count_on_pool_creation_);
+        if (!io->is_read_only()) {
+            metadata_ctx_->set_space_counters(
+                detail::list_bytes{},
+                metadata_ctx_->get_latest_finalized_version());
+        }
         if (history_len.has_value()) {
             enable_dynamic_history_length_ = false;
         }
@@ -454,6 +484,7 @@ void UpdateAux::init(AsyncIO &io_, std::optional<uint64_t> const history_len)
         }
     }
     else { // resume from an existing db and its underlying storage
+        load_space_counters();
         if (!io->is_read_only()) {
             // Reset/init node writer's offsets, destroy contents after
             // fast_offset.id chunck
@@ -555,6 +586,8 @@ Node::SharedPtr UpdateAux::do_update(
             timeline_id::primary);
     }
     MONAD_ASSERT(is_on_disk());
+    poll_space_walk();
+    begin_space_delta();
     set_can_write_to_fast(can_write_to_fast);
 
     if (prev_root) {
@@ -600,6 +633,7 @@ Node::SharedPtr UpdateAux::do_update(
     // into the next compacted upsert's figures.
     last_upsert_stats_ = stats_.delta_since(prev_upsert_stats_);
     prev_upsert_stats_ = stats_;
+    flush_space_delta(version);
     if (stats_publisher_ != nullptr) {
         stats_publisher_->publish_update_stats(stats_);
     }
@@ -945,6 +979,20 @@ void UpdateAux::advance_compact_offsets(
         }
     }
 
+    bool const slow_overridden =
+        space_ && space_->slow_collection_override.has_value();
+    if (slow_overridden) {
+        compact_virtual_chunk_offset_t const slow_writer{
+            physical_to_virtual(node_writer_slow->sender().offset())};
+        uint32_t const slow_room =
+            slow_writer > tl(tid).compact_offsets.slow
+                ? uint32_t{slow_writer - tl(tid).compact_offsets.slow}
+                : 0;
+        tl(tid).compact_offset_range_slow_.set_value(
+            std::min(*space_->slow_collection_override, slow_room));
+        tl(tid).compact_offsets.slow += tl(tid).compact_offset_range_slow_;
+    }
+
     auto const fast_disk_usage =
         num_chunks(chunk_list::fast) / (double)io->chunk_count();
     uint64_t const max_version = metadata_ctx_->db_history_max_version(tid);
@@ -1003,6 +1051,9 @@ void UpdateAux::advance_compact_offsets(
             std::min(to_advance, max_compact_offset_range); // Cap at 32MB
         tl(tid).compact_offset_range_fast_.set_value(to_advance);
         tl(tid).compact_offsets.fast += tl(tid).compact_offset_range_fast_;
+    }
+    if (slow_overridden) {
+        return;
     }
     constexpr double usage_limit_start_compact_slow = 0.6;
     constexpr double slow_usage_limit_start_compact_slow = 0.2;
@@ -1082,6 +1133,429 @@ void UpdateAux::free_compacted_chunks()
     free_chunks_from_ci_till_count(
         metadata_ctx_->main()->slow_list_begin(),
         chunks_to_remove_before_count_slow_);
+}
+
+void UpdateAux::record_written(
+    bool const to_fast, uint32_t const bytes) noexcept
+{
+    if (!space_ || !space_->count_writes) {
+        return;
+    }
+    (to_fast ? space_->upsert_delta.written.fast
+             : space_->upsert_delta.written.slow) += bytes;
+}
+
+void UpdateAux::record_superseded(
+    chunk_offset_t const old_offset, uint32_t const bytes) noexcept
+{
+    if (!space_) {
+        return;
+    }
+    bool const in_fast = metadata_ctx_->main()->at(old_offset.id)->in_fast_list;
+    (in_fast ? space_->upsert_delta.superseded.fast
+             : space_->upsert_delta.superseded.slow) += bytes;
+}
+
+void UpdateAux::set_settlement_key(std::optional<bytes32_t> const key) noexcept
+{
+    if (space_) {
+        space_->settlement_key = key;
+    }
+}
+
+// An unkeyed upsert changes what the persisted counters describe once its
+// root is published, before flush_space_delta() restamps them, so a crash in
+// between must find them not recorded.
+void UpdateAux::begin_space_delta()
+{
+    if (space_ && !io->is_read_only() && !space_->settlement_key.has_value()) {
+        metadata_ctx_->invalidate_space_counters();
+    }
+}
+
+void UpdateAux::flush_space_delta(uint64_t const version)
+{
+    if (!space_) {
+        return;
+    }
+    std::lock_guard const lock(space_->mutex);
+    if (space_->settlement_key.has_value()) {
+        space_->table.add(
+            *space_->settlement_key, version, space_->upsert_delta);
+    }
+    else {
+        apply_space_delta(space_->upsert_delta, version);
+    }
+    space_->upsert_delta = {};
+}
+
+void UpdateAux::apply_space_delta(
+    detail::space_delta const &delta, uint64_t const version)
+{
+    if (space_->live.has_value()) {
+        space_->live = detail::apply(*space_->live, delta);
+        space_->live_version = newer_version(space_->live_version, version);
+        if (!io->is_read_only()) {
+            metadata_ctx_->set_space_counters(
+                *space_->live, space_->live_version);
+        }
+    }
+    if (space_->walk_running) {
+        space_->since_walk.add(delta);
+        space_->since_walk_version =
+            newer_version(space_->since_walk_version, version);
+    }
+}
+
+void UpdateAux::settle_space_counters(
+    uint64_t const version, bytes32_t const &winner)
+{
+    if (!space_) {
+        return;
+    }
+    poll_space_walk();
+    {
+        std::lock_guard const lock(space_->mutex);
+        auto const won = space_->table.settle(version, winner);
+        if (won.has_value()) {
+            apply_space_delta(*won, version);
+            return;
+        }
+        std::optional<uint64_t> counted_through;
+        if (space_->live.has_value()) {
+            counted_through = space_->live_version;
+        }
+        else if (space_->walk_running) {
+            counted_through =
+                newer_version(space_->walk_version, space_->since_walk_version);
+        }
+        if (!counted_through.has_value() ||
+            (*counted_through != INVALID_BLOCK_NUM &&
+             version <= *counted_through)) {
+            return;
+        }
+    }
+    // Committed before this process opened the pool, so its sums are gone.
+    LOG_INFO(
+        "Live-byte counters have no sums for the proposal finalized at "
+        "version {}; counting again by a walk",
+        version);
+    invalidate_space_counters();
+}
+
+void UpdateAux::update_finalized_version(uint64_t const version)
+{
+    metadata_ctx_->set_latest_finalized_version(version);
+    if (!space_) {
+        return;
+    }
+    std::lock_guard const lock(space_->mutex);
+    if (space_->live.has_value() &&
+        newer_version(space_->live_version, version) == version) {
+        space_->live_version = version;
+        metadata_ctx_->set_space_counters(*space_->live, version);
+    }
+}
+
+void UpdateAux::set_space_counters_prefix(NibblesView const prefix)
+{
+    if (space_) {
+        std::lock_guard const lock(space_->mutex);
+        space_->prefix = Nibbles{prefix};
+    }
+}
+
+void UpdateAux::stop_space_walk() noexcept
+{
+    if (space_ && space_->walk_thread.joinable()) {
+        space_->walk_thread.request_stop();
+        space_->walk_thread.join();
+    }
+}
+
+void UpdateAux::cancel_space_walk()
+{
+    stop_space_walk();
+    std::lock_guard const lock(space_->mutex);
+    space_->walk_running = false;
+    space_->walk_done = false;
+    space_->walk_gave_up = false;
+    space_->walk_attempts = 0;
+    space_->walk_result.reset();
+    space_->since_walk = {};
+    space_->since_walk_version = INVALID_BLOCK_NUM;
+    space_->next_walk_version = INVALID_BLOCK_NUM;
+}
+
+void UpdateAux::finish_space_walk()
+{
+    space_->walk_running = false;
+    space_->next_walk_version = INVALID_BLOCK_NUM;
+    auto const seconds =
+        std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::steady_clock::now() - space_->walk_started)
+            .count();
+    if (!space_->walk_result.has_value()) {
+        if (space_->live.has_value()) {
+            LOG_INFO(
+                "Live-byte counter walk of version {} lost its version after "
+                "{} s; counters unchanged",
+                space_->walk_version,
+                seconds);
+        }
+        return;
+    }
+    auto const counted = space_->live;
+    space_->live = detail::apply(*space_->walk_result, space_->since_walk);
+    space_->live_version = newer_version(
+        space_->live_version,
+        newer_version(space_->walk_version, space_->since_walk_version));
+    metadata_ctx_->set_space_counters(*space_->live, space_->live_version);
+    if (counted.has_value()) {
+        LOG_INFO(
+            "Live-byte counters recounted by walk of version {} in {} s: "
+            "fast {} bytes (counted {}), slow {} bytes (counted {})",
+            space_->walk_version,
+            seconds,
+            space_->live->fast,
+            counted->fast,
+            space_->live->slow,
+            counted->slow);
+    }
+    else {
+        LOG_INFO(
+            "Live-byte counters filled by walk of version {} in {} s: fast {} "
+            "bytes, slow {} bytes",
+            space_->walk_version,
+            seconds,
+            space_->live->fast,
+            space_->live->slow);
+    }
+}
+
+void UpdateAux::poll_space_walk()
+{
+    constexpr unsigned max_walk_attempts = 3;
+    if (!space_ || io->is_read_only()) {
+        return;
+    }
+    std::unique_lock const lock(space_->mutex);
+    if (space_->walk_running) {
+        if (!space_->walk_done) {
+            return;
+        }
+        finish_space_walk();
+        if (space_->live.has_value()) {
+            return;
+        }
+        if (++space_->walk_attempts >= max_walk_attempts) {
+            space_->walk_gave_up = true;
+            LOG_WARNING(
+                "Live-byte counter walk lost its version {} times; counters "
+                "stay unknown",
+                space_->walk_attempts);
+            return;
+        }
+    }
+    else if (space_->live.has_value()) {
+        if (space_->live_version == INVALID_BLOCK_NUM) {
+            return;
+        }
+        if (space_->next_walk_version == INVALID_BLOCK_NUM) {
+            space_->next_walk_version =
+                space_->live_version + space_->walk_interval;
+            return;
+        }
+        if (space_->live_version < space_->next_walk_version) {
+            return;
+        }
+    }
+    else if (space_->walk_gave_up) {
+        return;
+    }
+    if (metadata_ctx_->timeline_active(timeline_id::secondary)) {
+        return;
+    }
+    uint64_t const finalized = metadata_ctx_->get_latest_finalized_version();
+    uint64_t const version =
+        finalized != INVALID_BLOCK_NUM &&
+                metadata_ctx_->version_is_valid_ondisk(
+                    finalized, timeline_id::primary)
+            ? finalized
+            : metadata_ctx_->db_history_max_version(timeline_id::primary);
+    if (version == INVALID_BLOCK_NUM) {
+        space_->live = detail::list_bytes{};
+        space_->live_version = finalized;
+        metadata_ctx_->set_space_counters(*space_->live, finalized);
+        return;
+    }
+    chunk_offset_t const root = metadata_ctx_->get_root_offset_at_version(
+        version, timeline_id::primary);
+    space_->since_walk = {};
+    space_->since_walk_version = INVALID_BLOCK_NUM;
+    space_->walk_version = version;
+    space_->walk_started = std::chrono::steady_clock::now();
+    space_->walk_result.reset();
+    space_->walk_done = false;
+    space_->walk_running = true;
+    if (space_->live.has_value()) {
+        LOG_INFO("Live-byte counter recount by walk of version {}", version);
+    }
+    else {
+        LOG_INFO(
+            "Live-byte counter walk of version {} started (attempt {} of {})",
+            version,
+            space_->walk_attempts + 1,
+            max_walk_attempts);
+    }
+    if (space_->walk_thread.joinable()) {
+        space_->walk_thread.join();
+    }
+    space_->walk_thread =
+        std::jthread([this, root, version, prefix = space_->prefix](
+                         std::stop_token const stop) {
+            auto const keep_going = [&] {
+                while (space_->walk_paused.load(std::memory_order_acquire)) {
+                    if (stop.stop_requested()) {
+                        return false;
+                    }
+                    std::this_thread::sleep_for(std::chrono::milliseconds{1});
+                }
+                return !stop.stop_requested();
+            };
+            auto const result = detail::walk_live_bytes(
+                *this, root, version, timeline_id::primary, prefix, keep_going);
+            std::lock_guard const walk_lock(space_->mutex);
+            space_->walk_result = result;
+            space_->walk_done = true;
+        });
+}
+
+void UpdateAux::wait_for_space_walk_unit_testing_only()
+{
+    for (;;) {
+        poll_space_walk();
+        {
+            std::lock_guard const lock(space_->mutex);
+            if (!space_->walk_running) {
+                return;
+            }
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    }
+}
+
+void UpdateAux::slow_collection_override_unit_testing_only(
+    std::optional<uint32_t> const units) noexcept
+{
+    if (space_) {
+        space_->slow_collection_override = units;
+    }
+}
+
+size_t UpdateAux::pending_settlements_unit_testing_only() const
+{
+    if (!space_) {
+        return 0;
+    }
+    std::lock_guard const lock(space_->mutex);
+    return space_->table.size();
+}
+
+void UpdateAux::pause_space_walk_unit_testing_only(bool const paused) noexcept
+{
+    if (space_) {
+        space_->walk_paused.store(paused, std::memory_order_release);
+    }
+}
+
+void UpdateAux::space_walk_interval_unit_testing_only(uint64_t const versions)
+{
+    if (space_) {
+        std::lock_guard const lock(space_->mutex);
+        space_->walk_interval = versions;
+        space_->next_walk_version = INVALID_BLOCK_NUM;
+    }
+}
+
+void UpdateAux::load_space_counters()
+{
+    auto const counters = metadata_ctx_->valid_space_counters();
+    std::lock_guard const lock(space_->mutex);
+    if (counters.has_value()) {
+        space_->live = counters->first;
+        space_->live_version = counters->second;
+    }
+    else {
+        space_->live.reset();
+        space_->live_version = INVALID_BLOCK_NUM;
+    }
+}
+
+void UpdateAux::invalidate_space_counters()
+{
+    metadata_ctx_->invalidate_space_counters();
+    if (space_) {
+        cancel_space_walk();
+        std::lock_guard const lock(space_->mutex);
+        space_->live.reset();
+        space_->live_version = INVALID_BLOCK_NUM;
+    }
+}
+
+void UpdateAux::reset_space_counters_to_empty()
+{
+    if (space_) {
+        cancel_space_walk();
+        std::lock_guard const lock(space_->mutex);
+        space_->live = detail::list_bytes{};
+        space_->live_version = metadata_ctx_->get_latest_finalized_version();
+        space_->table = detail::settlement_table{};
+    }
+    metadata_ctx_->set_space_counters(
+        detail::list_bytes{}, metadata_ctx_->get_latest_finalized_version());
+}
+
+std::optional<detail::list_bytes> UpdateAux::live_bytes() const
+{
+    if (!space_) {
+        return std::nullopt;
+    }
+    std::lock_guard const lock(space_->mutex);
+    return space_->live;
+}
+
+detail::list_bytes UpdateAux::written_bytes() const noexcept
+{
+    auto const list_written =
+        [this](chunk_list const list, chunk_offset_t const end) -> uint64_t {
+        uint32_t const n = metadata_ctx_->list_chunk_count(list).value_or(0);
+        if (n == 0 || end == INVALID_OFFSET) {
+            return 0;
+        }
+        return uint64_t{n - 1} * io->chunk_capacity(end.id) + end.offset;
+    };
+    return {
+        .fast = list_written(
+            chunk_list::fast, metadata_ctx_->get_start_of_wip_fast_offset()),
+        .slow = list_written(
+            chunk_list::slow, metadata_ctx_->get_start_of_wip_slow_offset())};
+}
+
+UpdateAux::uncounted_writes::uncounted_writes(UpdateAux &aux) noexcept
+    : aux_{aux}
+    , prev_{!aux.space_ || aux.space_->count_writes}
+{
+    if (aux_.space_) {
+        aux_.space_->count_writes = false;
+    }
+}
+
+UpdateAux::uncounted_writes::~uncounted_writes()
+{
+    if (aux_.space_) {
+        aux_.space_->count_writes = prev_;
+    }
 }
 
 uint32_t UpdateAux::num_chunks(chunk_list const list) const noexcept
@@ -1394,6 +1868,7 @@ void UpdateAux::collect_compacted_nodes_stats(
 void UpdateAux::activate_secondary_timeline()
 {
     MONAD_ASSERT(is_on_disk());
+    invalidate_space_counters();
     metadata_ctx_->activate_secondary_header();
     // The secondary timeline starts completely empty; its compaction state
     // is initialised on the first secondary upsert from the prev_root's
@@ -1404,6 +1879,7 @@ void UpdateAux::activate_secondary_timeline()
 void UpdateAux::deactivate_secondary_timeline()
 {
     MONAD_ASSERT(is_on_disk());
+    invalidate_space_counters();
     metadata_ctx_->deactivate_secondary_header();
     tl(timeline_id::secondary) = timeline_compaction_state{};
 }
@@ -1411,6 +1887,7 @@ void UpdateAux::deactivate_secondary_timeline()
 void UpdateAux::promote_secondary_to_primary()
 {
     MONAD_ASSERT(is_on_disk());
+    invalidate_space_counters();
     metadata_ctx_->promote_secondary_to_primary_header();
     std::swap(tl(timeline_id::primary), tl(timeline_id::secondary));
     LOG_INFO("Promoted secondary timeline to primary");

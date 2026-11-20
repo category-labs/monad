@@ -71,6 +71,7 @@ namespace detail
     struct db_metadata
     {
         static constexpr char const *MAGIC = "MONAD008";
+        static constexpr uint64_t SPACE_COUNTERS_MARKER = 0x31544E4345434150;
         static constexpr unsigned MAGIC_STRING_LEN = 8;
 
         friend class MONAD_MPT_NAMESPACE::DbMetadataContext;
@@ -282,12 +283,29 @@ namespace detail
         // on every pool that already exists.
         uint64_t recorded_device_size;
 
+        // Live bytes per list as of `finalized_version`, valid only while
+        // `marker` is SPACE_COUNTERS_MARKER. `sequence` is odd while the
+        // fields are being written, so a reader in another process can tell
+        // a torn read. Carved from the padding below, which every existing
+        // pool has zeroed, so old pools read as not recorded.
+        struct space_counters_t
+        {
+            uint64_t sequence;
+            uint64_t marker;
+            uint64_t finalized_version;
+            uint64_t fast_live;
+            uint64_t slow_live;
+        } space_counters;
+
+        static_assert(sizeof(space_counters_t) == 40);
+
         // padding for adding future atomics without requiring DB reset.
         // Sized so sizeof(db_metadata) stays at 4480 regardless of how
         // timeline_state_t grows in subsequent PRs.
         uint8_t future_variables_unused
             [4040 - sizeof(root_offsets_ring_t) - 2 * sizeof(timeline_state_t) -
-             16 - sizeof(pending_shrink_grow_t) - sizeof(uint64_t)];
+             16 - sizeof(pending_shrink_grow_t) - sizeof(uint64_t) -
+             sizeof(space_counters_t)];
 
         // used to know if the metadata was being
         // updated when the process suddenly exited

@@ -17,15 +17,20 @@
 
 #include <category/core/byte_string.hpp>
 #include <category/core/mem/allocators.hpp>
-
-#include <utility>
-
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/node.hpp>
+#include <category/mpt/scratch_pool.hpp>
 #include <category/mpt/util.hpp>
 
+#include <algorithm>
+#include <bit>
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <new>
 #include <optional>
-#include <vector>
+#include <span>
+#include <utility>
 
 MONAD_MPT_NAMESPACE_BEGIN
 
@@ -112,35 +117,41 @@ protected:
     }
 };
 
+// `children` and `path` point into storage that trails the struct, so a tnode
+// is one ScratchPool block. Create with make().
 struct UpdateTNode : public UpdateExpireBase
 {
     using Base = UpdateExpireBase;
-    uint16_t orig_mask{0};
+    uint16_t const orig_mask;
     // UpdateTNode keeps old node alive only when old is leaf node, as
     // opt_leaf_data has to be valid in memory when it works the way back to
     // recompute leaf data
-    Node::SharedPtr old{};
-    std::vector<ChildData> children{};
-    Nibbles path{};
-    std::optional<byte_string_view> opt_leaf_data{std::nullopt};
-    int64_t version{0};
+    Node::SharedPtr old;
+    std::span<ChildData> const children;
+    NibblesView const path;
+    std::optional<byte_string_view> opt_leaf_data;
+    int64_t version;
 
-    explicit UpdateTNode(
-        uint16_t const orig_mask, UpdateTNode *const parent = nullptr,
-        uint8_t const branch = INVALID_BRANCH, NibblesView const path = {},
-        int64_t const version = 0,
-        std::optional<byte_string_view> const opt_leaf_data = std::nullopt,
-        Node::SharedPtr old = {})
-        : Base(
-              parent, tnode_type::update,
-              static_cast<uint8_t>(std::popcount(orig_mask)), branch, orig_mask)
-        , orig_mask(orig_mask)
-        , old(std::move(old))
-        , children(npending)
-        , path(path)
-        , opt_leaf_data(opt_leaf_data)
-        , version(version)
+    struct Deleter
     {
+        void operator()(UpdateTNode *) const noexcept;
+    };
+
+    using unique_ptr_type = std::unique_ptr<UpdateTNode, Deleter>;
+
+    static unique_ptr_type make(
+        uint16_t orig_mask, UpdateTNode *parent = nullptr,
+        uint8_t branch = INVALID_BRANCH, NibblesView path = {},
+        int64_t version = 0,
+        std::optional<byte_string_view> opt_leaf_data = std::nullopt,
+        Node::SharedPtr old = {});
+
+    UpdateTNode(UpdateTNode const &) = delete;
+    UpdateTNode &operator=(UpdateTNode const &) = delete;
+
+    ~UpdateTNode()
+    {
+        std::destroy(children.begin(), children.end());
     }
 
     UpdateTNode *parent() const noexcept
@@ -162,46 +173,75 @@ struct UpdateTNode : public UpdateExpireBase
         return static_cast<uint8_t>(bitmask_index(parent()->orig_mask, branch));
     }
 
-    using allocator_type = allocators::malloc_free_allocator<UpdateTNode>;
-
-    static allocator_type &pool()
+private:
+    UpdateTNode(
+        uint16_t const orig_mask, UpdateTNode *const parent,
+        uint8_t const branch, std::span<ChildData> const children,
+        NibblesView const path, int64_t const version,
+        std::optional<byte_string_view> const opt_leaf_data,
+        Node::SharedPtr old)
+        : Base(
+              parent, tnode_type::update, static_cast<uint8_t>(children.size()),
+              branch, orig_mask)
+        , orig_mask(orig_mask)
+        , old(std::move(old))
+        , children(children)
+        , path(path)
+        , opt_leaf_data(opt_leaf_data)
+        , version(version)
     {
-        static allocator_type v;
-        return v;
     }
 
-    using unique_ptr_type = std::unique_ptr<
-        UpdateTNode, allocators::unique_ptr_allocator_deleter<
-                         allocator_type, &UpdateTNode::pool>>;
-
-    static unique_ptr_type make(UpdateTNode v)
+    static constexpr size_t
+    alloc_size(size_t const number_of_children, size_t const path_bytes)
     {
-        return allocators::allocate_unique<allocator_type, &UpdateTNode::pool>(
-            std::move(v));
+        return sizeof(UpdateTNode) + number_of_children * sizeof(ChildData) +
+               path_bytes;
     }
 };
 
-using tnode_unique_ptr = UpdateTNode::unique_ptr_type;
+static_assert(sizeof(UpdateTNode) == 96);
+static_assert(alignof(UpdateTNode) == 8);
+static_assert(sizeof(UpdateTNode) % alignof(ChildData) == 0);
 
-inline tnode_unique_ptr make_tnode(
-    uint16_t const orig_mask, UpdateTNode *const parent = nullptr,
-    uint8_t const branch = INVALID_BRANCH, NibblesView const path = {},
-    int64_t const version = 0,
-    std::optional<byte_string_view> const opt_leaf_data = std::nullopt,
-    Node::SharedPtr old = {})
+inline UpdateTNode::unique_ptr_type UpdateTNode::make(
+    uint16_t const orig_mask, UpdateTNode *const parent, uint8_t const branch,
+    NibblesView const path, int64_t const version,
+    std::optional<byte_string_view> const opt_leaf_data, Node::SharedPtr old)
 {
-    return UpdateTNode::make(UpdateTNode{
+    auto const number_of_children =
+        static_cast<size_t>(std::popcount(orig_mask));
+    auto const path_bytes = path.data_span();
+    auto *const mem = static_cast<std::byte *>(ScratchPool::local().allocate(
+        alloc_size(number_of_children, path_bytes.size())));
+    auto *const children =
+        reinterpret_cast<ChildData *>(mem + sizeof(UpdateTNode));
+    std::uninitialized_value_construct_n(children, number_of_children);
+    auto *const path_data =
+        reinterpret_cast<unsigned char *>(children + number_of_children);
+    std::ranges::copy(path_bytes, path_data);
+    unsigned const begin_nibble = path.begin_nibble();
+    return unique_ptr_type{::new (mem) UpdateTNode{
         orig_mask,
         parent,
         branch,
-        path,
+        {children, number_of_children},
+        NibblesView{begin_nibble, begin_nibble + path.nibble_size(), path_data},
         version,
         opt_leaf_data,
-        std::move(old)});
+        std::move(old)}};
 }
 
-static_assert(sizeof(UpdateTNode) == 104);
-static_assert(alignof(UpdateTNode) == 8);
+inline void
+UpdateTNode::Deleter::operator()(UpdateTNode *const tnode) const noexcept
+{
+    auto const bytes =
+        alloc_size(tnode->children.size(), tnode->path.data_size());
+    tnode->~UpdateTNode();
+    ScratchPool::local().deallocate(tnode, bytes);
+}
+
+using tnode_unique_ptr = UpdateTNode::unique_ptr_type;
 
 struct CompactTNode : public TNodeBase
 {
@@ -238,7 +278,7 @@ struct CompactTNode : public TNodeBase
         node = std::move(ptr);
     }
 
-    using allocator_type = allocators::malloc_free_allocator<CompactTNode>;
+    using allocator_type = ScratchAllocator<CompactTNode>;
 
     static allocator_type &pool()
     {
@@ -307,7 +347,7 @@ struct ExpireTNode : public UpdateExpireBase
         MONAD_ASSERT(node != nullptr);
     }
 
-    using allocator_type = allocators::malloc_free_allocator<ExpireTNode>;
+    using allocator_type = ScratchAllocator<ExpireTNode>;
 
     static allocator_type &pool()
     {

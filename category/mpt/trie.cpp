@@ -30,12 +30,14 @@
 #include <category/mpt/node.hpp>
 #include <category/mpt/node_cursor.hpp>
 #include <category/mpt/request.hpp>
+#include <category/mpt/scratch_pool.hpp>
 #include <category/mpt/state_machine.hpp>
 #include <category/mpt/update.hpp>
 #include <category/mpt/upward_tnode.hpp>
 #include <category/mpt/util.hpp>
 
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cassert>
 #include <concepts>
@@ -186,7 +188,7 @@ Node::SharedPtr upsert(
     Node::SharedPtr old, UpdateList &&updates, bool const write_root,
     timeline_id const tid)
 {
-    auto sentinel = make_tnode(1 /*mask*/);
+    auto sentinel = UpdateTNode::make(1 /*mask*/);
     ChildData &entry = sentinel->children[0];
     sentinel->children[0] = ChildData{.branch = 0};
     if (old) {
@@ -459,21 +461,22 @@ std::pair<bool, Node::SharedPtr> create_node_with_expired_branches(
     }
     uint16_t total_child_data_size = 0;
     // no need to update version (max of children or itself)
-    std::vector<unsigned> orig_indexes;
-    std::vector<uint16_t> child_data_offsets;
-    orig_indexes.reserve(number_of_children);
-    child_data_offsets.reserve(number_of_children);
+    std::array<unsigned, Node::max_number_of_children> orig_indexes;
+    std::array<uint16_t, Node::max_number_of_children> child_data_offsets;
+    size_t kept = 0;
     auto const orig_off = orig->child_off_data();
     for (auto const [orig_index, branch] : NodeChildrenRange(orig->mask)) {
         if (mask & (1u << branch)) {
-            orig_indexes.push_back(orig_index);
+            orig_indexes[kept] = orig_index;
             uint16_t const len = static_cast<uint16_t>(
                 orig_off[orig_index] -
                 (orig_index > 0 ? (uint16_t)orig_off[orig_index - 1] : 0));
             total_child_data_size += len;
-            child_data_offsets.push_back(total_child_data_size);
+            child_data_offsets[kept] = total_child_data_size;
+            ++kept;
         }
     }
+    MONAD_ASSERT(kept == number_of_children);
     auto node = Node::make(
         calculate_node_size(
             number_of_children,
@@ -489,7 +492,7 @@ std::pair<bool, Node::SharedPtr> create_node_with_expired_branches(
 
     std::copy_n(
         (byte_string_view::pointer)child_data_offsets.data(),
-        child_data_offsets.size() * sizeof(uint16_t),
+        kept * sizeof(uint16_t),
         reinterpret_cast<unsigned char *>(node->child_off_data().data()));
 
     // Must initialize child pointers after copying child_data_offset
@@ -803,7 +806,8 @@ void create_new_trie_from_requests_(
 {
     // version will be updated bottom up
     uint16_t const mask = requests.mask;
-    std::vector<ChildData> children(size_t(std::popcount(mask)));
+    std::vector<ChildData, ScratchAllocator<ChildData>> children(
+        size_t(std::popcount(mask)));
     for (auto const [index, branch] : NodeChildrenRange(mask)) {
         children[index].branch = branch;
         sm.down(branch);
@@ -969,7 +973,7 @@ void dispatch_updates_impl_(
     Node *old = old_ptr.get();
     uint16_t const orig_mask = old->mask | requests.mask;
     // tnode->version will be updated bottom up
-    auto tnode = make_tnode(
+    auto tnode = UpdateTNode::make(
         orig_mask,
         &parent,
         entry.branch,
@@ -978,7 +982,7 @@ void dispatch_updates_impl_(
         opt_leaf_data,
         opt_leaf_data.has_value() ? old_ptr : Node::SharedPtr{});
     MONAD_ASSERT(tnode->children.size() == size_t(std::popcount(orig_mask)));
-    auto &children = tnode->children;
+    auto const children = tnode->children;
 
     for (auto const [index, branch] : NodeChildrenRange(orig_mask)) {
         if ((1 << branch) & requests.mask) {
@@ -1046,12 +1050,12 @@ void mismatch_handler_(
         old.path_nibble_view().get(old_prefix_index);
     uint16_t const orig_mask =
         static_cast<uint16_t>(1u << old_nibble | requests.mask);
-    auto tnode = make_tnode(orig_mask, &parent, entry.branch, path);
+    auto tnode = UpdateTNode::make(orig_mask, &parent, entry.branch, path);
     auto const number_of_children =
         static_cast<unsigned>(std::popcount(orig_mask));
     MONAD_ASSERT(
         tnode->children.size() == number_of_children && number_of_children > 0);
-    auto &children = tnode->children;
+    auto const children = tnode->children;
 
     for (auto const [index, branch] : NodeChildrenRange(orig_mask)) {
         if ((1 << branch) & requests.mask) {

@@ -14,6 +14,8 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #[cfg(feature = "alloy")]
+use alloy_consensus::{SignableTransaction, Transaction};
+#[cfg(feature = "alloy")]
 use itertools::Itertools;
 
 #[cfg(feature = "alloy")]
@@ -94,7 +96,7 @@ impl ExecutedBlock {
     }
 
     /// Creates an alloy block with a full transaction list.
-    pub fn to_alloy_rpc(&self) -> alloy_rpc_types::Block {
+    pub fn to_alloy_rpc(&self) -> monad_transaction::rpc::Block {
         let header = self.to_alloy_rpc_header();
 
         let transactions = self
@@ -102,13 +104,13 @@ impl ExecutedBlock {
             .iter()
             .enumerate()
             .map(|(tx_idx, tx)| {
-                use alloy_consensus::{transaction::Recovered, Transaction};
+                use alloy_consensus::transaction::Recovered;
 
                 let inner = tx.to_alloy();
                 let effective_gas_price = inner.effective_gas_price(header.base_fee_per_gas);
                 let sender = alloy_primitives::Address::from(tx.sender.bytes);
 
-                alloy_rpc_types::Transaction {
+                monad_transaction::rpc::Transaction {
                     inner: Recovered::new_unchecked(inner, sender),
                     block_hash: Some(header.hash),
                     block_number: Some(header.number),
@@ -119,7 +121,7 @@ impl ExecutedBlock {
             })
             .collect();
 
-        alloy_rpc_types::Block {
+        monad_transaction::rpc::Block {
             header,
             uncles: Vec::default(),
             transactions: alloy_rpc_types::BlockTransactions::Full(transactions),
@@ -130,12 +132,14 @@ impl ExecutedBlock {
     /// Iterate over alloy transactions.
     pub fn iter_alloy_tx_envelopes(
         &self,
-    ) -> impl Iterator<Item = alloy_consensus::TxEnvelope> + '_ {
+    ) -> impl Iterator<Item = monad_transaction::TxEnvelope> + '_ {
         self.txns.iter().map(|tx| tx.to_alloy())
     }
 
     /// Iterate over alloy rpc transactions.
-    pub fn iter_alloy_rpc_txs(&self) -> impl Iterator<Item = alloy_rpc_types::Transaction> + '_ {
+    pub fn iter_alloy_rpc_txs(
+        &self,
+    ) -> impl Iterator<Item = monad_transaction::rpc::Transaction> + '_ {
         let block_hash = alloy_primitives::FixedBytes::from(self.end.eth_block_hash.bytes);
         let block_number = self.start.eth_block_input.number;
         let block_timestamp = self.start.eth_block_input.timestamp;
@@ -152,10 +156,9 @@ impl ExecutedBlock {
 
             let tx = tx.to_alloy_recovered();
 
-            let effective_gas_price =
-                alloy_consensus::Transaction::effective_gas_price(tx.inner(), base_fee);
+            let effective_gas_price = tx.inner().effective_gas_price(base_fee);
 
-            alloy_rpc_types::Transaction {
+            monad_transaction::rpc::Transaction {
                 inner: tx,
                 block_hash: Some(block_hash),
                 block_number: Some(block_number),
@@ -169,7 +172,7 @@ impl ExecutedBlock {
     /// Iterate over alloy rpc transaction receipts.
     pub fn iter_alloy_rpc_tx_receipts(
         &self,
-    ) -> impl Iterator<Item = alloy_rpc_types::TransactionReceipt> + '_ {
+    ) -> impl Iterator<Item = monad_transaction::rpc::TransactionReceipt> + '_ {
         let block_hash = Some(alloy_primitives::FixedBytes::from(
             self.end.eth_block_hash.bytes,
         ));
@@ -225,19 +228,22 @@ impl ExecutedBlock {
 
             let receipt = match tx.header.txn_type {
                 ffi::MONAD_TXN_LEGACY => {
-                    alloy_consensus::ReceiptEnvelope::Legacy(receipt_with_bloom)
+                    monad_transaction::ReceiptEnvelope::Legacy(receipt_with_bloom)
                 }
                 ffi::MONAD_TXN_EIP2930 => {
-                    alloy_consensus::ReceiptEnvelope::Eip2930(receipt_with_bloom)
+                    monad_transaction::ReceiptEnvelope::Eip2930(receipt_with_bloom)
                 }
                 ffi::MONAD_TXN_EIP1559 => {
-                    alloy_consensus::ReceiptEnvelope::Eip1559(receipt_with_bloom)
+                    monad_transaction::ReceiptEnvelope::Eip1559(receipt_with_bloom)
                 }
                 ffi::MONAD_TXN_EIP4844 => {
                     unreachable!("ExecutedTxn encountered unsupported EIP4844 tx type");
                 }
                 ffi::MONAD_TXN_EIP7702 => {
-                    alloy_consensus::ReceiptEnvelope::Eip7702(receipt_with_bloom)
+                    monad_transaction::ReceiptEnvelope::Eip7702(receipt_with_bloom)
+                }
+                ffi::MONAD_TXN_MONAD => {
+                    monad_transaction::ReceiptEnvelope::Monad(receipt_with_bloom)
                 }
                 _ => panic!(
                     "ExecutedTxn encountered unknown tx type {}",
@@ -256,7 +262,7 @@ impl ExecutedBlock {
                 )
             };
 
-            alloy_rpc_types::TransactionReceipt {
+            monad_transaction::rpc::TransactionReceipt {
                 inner: receipt,
                 transaction_hash,
                 transaction_index,
@@ -264,10 +270,7 @@ impl ExecutedBlock {
                 block_number,
                 gas_used: tx.receipt.gas_used,
                 // TODO(andr-dev): Don't build TxEnvelope just to calculate effective gas price
-                effective_gas_price: alloy_consensus::Transaction::effective_gas_price(
-                    &tx.to_alloy(),
-                    base_fee,
-                ),
+                effective_gas_price: tx.to_alloy().effective_gas_price(base_fee),
                 blob_gas_used: None,
                 blob_gas_price: None,
                 from,
@@ -323,7 +326,7 @@ pub struct ExecutedTxn {
 #[cfg(feature = "alloy")]
 impl ExecutedTxn {
     /// Creates an alloy tx envelope.
-    pub fn to_alloy(&self) -> alloy_consensus::TxEnvelope {
+    pub fn to_alloy(&self) -> monad_transaction::TxEnvelope {
         let to = if self.header.is_contract_creation {
             alloy_primitives::TxKind::Create
         } else {
@@ -338,14 +341,7 @@ impl ExecutedTxn {
 
         let txn_hash = alloy_primitives::TxHash::from(self.hash.bytes);
 
-        let chain_id = TryInto::<u64>::try_into(alloy_primitives::U256::from_limbs(
-            self.header.chain_id.limbs,
-        ))
-        .unwrap();
-        let gas_price = TryInto::<u128>::try_into(alloy_primitives::U256::from_limbs(
-            self.header.max_fee_per_gas.limbs,
-        ))
-        .unwrap();
+        let gas_price = alloy_primitives::U256::from_limbs(self.header.max_fee_per_gas.limbs);
         let value = alloy_primitives::U256::from_limbs(self.header.value.limbs);
         let input = alloy_primitives::Bytes::copy_from_slice(&self.input);
 
@@ -396,13 +392,51 @@ impl ExecutedTxn {
             )
             .collect_vec();
 
+        if self.header.txn_type == ffi::MONAD_TXN_MONAD {
+            assert!(self.header.monad_access_list_present <= 1);
+            assert!(self.authorization_list.is_empty());
+            assert!(self.header.monad_access_list_present != 0 || access_list.is_empty());
+            let tx = monad_transaction::TxMonad {
+                chain_id: alloy_primitives::U256::from_limbs(self.header.chain_id.limbs)
+                    .try_into()
+                    .expect("validated native chain id fits in u64"),
+                nonce: self.header.nonce,
+                gas_limit: self.header.gas_limit,
+                max_fee_per_gas: gas_price
+                    .try_into()
+                    .expect("validated native max fee fits in u128"),
+                max_priority_fee_per_gas: alloy_primitives::U256::from_limbs(
+                    self.header.max_priority_fee_per_gas.limbs,
+                )
+                .try_into()
+                .expect("validated native priority fee fits in u128"),
+                to,
+                value,
+                input,
+                access_list: (self.header.monad_access_list_present != 0).then_some(access_list),
+            }
+            .into_signed(txn_signature);
+            assert_eq!(
+                *tx.hash(),
+                txn_hash,
+                "native event transaction commitment mismatch"
+            );
+            return monad_transaction::TxEnvelope::Monad(tx);
+        }
+
+        let chain_id = TryInto::<u64>::try_into(alloy_primitives::U256::from_limbs(
+            self.header.chain_id.limbs,
+        ))
+        .unwrap();
         match self.header.txn_type {
             ffi::MONAD_TXN_LEGACY => {
-                alloy_consensus::TxEnvelope::Legacy(alloy_consensus::Signed::new_unchecked(
+                monad_transaction::TxEnvelope::Legacy(alloy_consensus::Signed::new_unchecked(
                     alloy_consensus::TxLegacy {
                         chain_id: (chain_id != 0).then_some(chain_id),
                         nonce: self.header.nonce,
-                        gas_price,
+                        gas_price: gas_price
+                            .try_into()
+                            .expect("Ethereum gas price fits in u128"),
                         gas_limit: self.header.gas_limit,
                         to,
                         value,
@@ -413,11 +447,13 @@ impl ExecutedTxn {
                 ))
             }
             ffi::MONAD_TXN_EIP2930 => {
-                alloy_consensus::TxEnvelope::Eip2930(alloy_consensus::Signed::new_unchecked(
+                monad_transaction::TxEnvelope::Eip2930(alloy_consensus::Signed::new_unchecked(
                     alloy_consensus::TxEip2930 {
                         chain_id,
                         nonce: self.header.nonce,
-                        gas_price,
+                        gas_price: gas_price
+                            .try_into()
+                            .expect("Ethereum gas price fits in u128"),
                         gas_limit: self.header.gas_limit,
                         to,
                         value,
@@ -429,12 +465,14 @@ impl ExecutedTxn {
                 ))
             }
             ffi::MONAD_TXN_EIP1559 => {
-                alloy_consensus::TxEnvelope::Eip1559(alloy_consensus::Signed::new_unchecked(
+                monad_transaction::TxEnvelope::Eip1559(alloy_consensus::Signed::new_unchecked(
                     alloy_consensus::TxEip1559 {
                         chain_id,
                         nonce: self.header.nonce,
                         gas_limit: self.header.gas_limit,
-                        max_fee_per_gas: gas_price,
+                        max_fee_per_gas: gas_price
+                            .try_into()
+                            .expect("Ethereum fee cap fits in u128"),
                         max_priority_fee_per_gas: alloy_primitives::U256::from_limbs(
                             self.header.max_priority_fee_per_gas.limbs,
                         )
@@ -453,7 +491,7 @@ impl ExecutedTxn {
                 unreachable!("ExecutedTxn encountered unsupported EIP4844 tx type");
             }
             ffi::MONAD_TXN_EIP7702 => {
-                alloy_consensus::TxEnvelope::Eip7702(alloy_consensus::Signed::new_unchecked(
+                monad_transaction::TxEnvelope::Eip7702(alloy_consensus::Signed::new_unchecked(
                     alloy_consensus::TxEip7702 {
                         chain_id,
                         nonce: self.header.nonce,
@@ -488,7 +526,7 @@ impl ExecutedTxn {
     /// Creates a recovered alloy tx envelope.
     pub fn to_alloy_recovered(
         &self,
-    ) -> alloy_consensus::transaction::Recovered<alloy_consensus::TxEnvelope> {
+    ) -> alloy_consensus::transaction::Recovered<monad_transaction::TxEnvelope> {
         alloy_consensus::transaction::Recovered::new_unchecked(
             self.to_alloy(),
             alloy_primitives::Address::from(self.sender.bytes),
@@ -560,4 +598,140 @@ pub struct ExecutedTxnSignedAuthorization {
     pub y_parity: u8,
     pub r: monad_c_uint256_ne,
     pub s: monad_c_uint256_ne,
+}
+
+#[cfg(all(test, feature = "alloy"))]
+mod native_tests {
+    use alloy_eips::{Decodable2718, Encodable2718};
+    use alloy_primitives::U256;
+    use monad_transaction::TxEnvelope;
+
+    use super::*;
+
+    fn quantity(value: U256) -> monad_c_uint256_ne {
+        monad_c_uint256_ne {
+            limbs: value.into_limbs(),
+        }
+    }
+
+    #[test]
+    fn native_event_projection_preserves_sdk_commitments_and_rpc_fields() {
+        let vectors: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../category/execution/ethereum/core/test/monad_type40_vectors.json"
+        ))
+        .unwrap();
+        for vector in vectors["vectors"].as_array().unwrap() {
+            let bytes = hex::decode(
+                vector["canonical"]
+                    .as_str()
+                    .unwrap()
+                    .trim_start_matches("0x"),
+            )
+            .unwrap();
+            if matches!(vector["name"].as_str(), Some("wide-fees" | "wide-chain-id")) {
+                assert!(TxEnvelope::decode_2718_exact(&bytes).is_err());
+                continue;
+            }
+            let envelope = TxEnvelope::decode_2718_exact(&bytes).unwrap();
+            let signed = envelope.as_monad().unwrap();
+            let tx = signed.tx();
+            let header = monad_c_eth_txn_header {
+                txn_type: ffi::MONAD_TXN_MONAD,
+                monad_access_list_present: u8::from(tx.access_list.is_some()),
+                chain_id: quantity(U256::from(tx.chain_id)),
+                nonce: tx.nonce,
+                gas_limit: tx.gas_limit,
+                max_fee_per_gas: quantity(U256::from(tx.max_fee_per_gas)),
+                max_priority_fee_per_gas: quantity(U256::from(tx.max_priority_fee_per_gas)),
+                value: quantity(tx.value),
+                to: monad_address {
+                    bytes: envelope.to().unwrap_or_default().into_array(),
+                },
+                is_contract_creation: tx.to.is_create(),
+                r: quantity(signed.signature().r()),
+                s: quantity(signed.signature().s()),
+                y_parity: signed.signature().v(),
+                max_fee_per_blob_gas: quantity(U256::ZERO),
+                data_length: tx.input.len() as u32,
+                blob_versioned_hash_length: 0,
+                access_list_count: tx.access_list.as_ref().map_or(0, |list| list.len() as u32),
+                auth_list_count: 0,
+            };
+            let event = ExecutedTxn {
+                header,
+                hash: monad_bytes32 {
+                    bytes: envelope.hash().0,
+                },
+                sender: monad_address {
+                    bytes: envelope.recover_signer().unwrap().into_array(),
+                },
+                input: tx.input.to_vec().into_boxed_slice(),
+                access_list: tx
+                    .access_list
+                    .iter()
+                    .flat_map(|list| list.iter())
+                    .map(|item| ExecutedTxnAccessListEntry {
+                        address: monad_address {
+                            bytes: item.address.into_array(),
+                        },
+                        storage_keys: item
+                            .storage_keys
+                            .iter()
+                            .map(|key| monad_bytes32 { bytes: key.0 })
+                            .collect(),
+                    })
+                    .collect(),
+                authorization_list: Box::default(),
+                receipt: monad_c_eth_txn_receipt {
+                    status: true,
+                    log_count: 0,
+                    gas_used: 21000,
+                },
+                logs: Box::default(),
+                call_frames: None,
+            };
+            assert_eq!(event.to_alloy().encoded_2718(), bytes, "{}", vector["name"]);
+            assert_eq!(
+                event.to_alloy_recovered().signer().as_slice(),
+                &event.sender.bytes
+            );
+            let rpc = monad_transaction::rpc::Transaction {
+                inner: event.to_alloy_recovered(),
+                effective_gas_price: Some(envelope.effective_gas_price(Some(1))),
+                ..Default::default()
+            };
+            let json = serde_json::to_value(rpc).unwrap();
+            assert_eq!(json["type"], "0x40");
+            assert_eq!(json["hash"], vector["hash"]);
+            assert_eq!(
+                json["maxFeePerGas"],
+                serde_json::json!(format!("{:#x}", tx.max_fee_per_gas))
+            );
+            assert_eq!(json.get("accessList").is_some(), tx.access_list.is_some());
+            let mut boundary_tx = tx.clone();
+            boundary_tx.chain_id = u64::MAX;
+            boundary_tx.max_fee_per_gas = u128::MAX;
+            boundary_tx.max_priority_fee_per_gas = u128::MAX;
+            boundary_tx.value = U256::MAX;
+            let boundary_tx = boundary_tx.into_signed(*signed.signature());
+            let mut boundary = event.clone();
+            boundary.header.chain_id = quantity(U256::from(u64::MAX));
+            boundary.header.max_fee_per_gas = quantity(U256::from(u128::MAX));
+            boundary.header.max_priority_fee_per_gas = quantity(U256::from(u128::MAX));
+            boundary.header.value = quantity(U256::MAX);
+            boundary.hash.bytes = boundary_tx.hash().0;
+            assert_eq!(boundary.to_alloy(), TxEnvelope::Monad(boundary_tx));
+
+            // Invalid event quantities must fail before reconstruction can truncate them.
+            for field in 0..3 {
+                let mut invalid = event.clone();
+                match field {
+                    0 => invalid.header.chain_id = quantity(U256::ONE << 64),
+                    1 => invalid.header.max_fee_per_gas = quantity(U256::ONE << 128),
+                    _ => invalid.header.max_priority_fee_per_gas = quantity(U256::ONE << 128),
+                }
+                assert!(std::panic::catch_unwind(|| invalid.to_alloy()).is_err());
+            }
+        }
+    }
 }

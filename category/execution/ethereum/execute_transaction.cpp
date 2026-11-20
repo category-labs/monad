@@ -24,6 +24,10 @@
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
+#if defined(MONAD_ZKVM_ZISK) && !defined(MONAD_ZKVM_SELFTEST) &&               \
+    !defined(MONAD_ZKVM_GAS_SELFTEST)
+    #include <category/execution/ethereum/chain/ethereum_mainnet.hpp>
+#endif
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/event/record_txn_events.hpp>
@@ -64,6 +68,22 @@
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
+#if defined(MONAD_ZKVM_ZISK)
+// Use a 128-bit product when the fee fits in 64 bits.
+[[gnu::always_inline]] inline uint256_t
+multiply_fee_by_gas(uint256_t const &fee, uint64_t const gas)
+{
+    if (MONAD_LIKELY((fee[1] | fee[2] | fee[3]) == 0)) {
+        unsigned __int128 const product =
+            static_cast<unsigned __int128>(fee[0]) * gas;
+        return uint256_t{
+            static_cast<uint64_t>(product),
+            static_cast<uint64_t>(product >> 64)};
+    }
+    return fee * gas;
+}
+
+#endif
 // YP Sec 6.2 "irrevocable_change"
 template <Traits traits>
 constexpr void irrevocable_change(
@@ -82,14 +102,46 @@ constexpr void irrevocable_change(
                        ? calc_blob_fee(tx, excess_blob_gas, blob_schedule)
                        : 0;
     }
+#if defined(MONAD_ZKVM_ZISK)
+    auto const upfront_cost = multiply_fee_by_gas(
+        gas_price<traits>(tx, base_fee_per_gas), tx.gas_limit);
+#else
     auto const upfront_cost =
         tx.gas_limit * gas_price<traits>(tx, base_fee_per_gas);
+#endif
     state.subtract_from_balance(sender, upfront_cost + blob_gas);
 }
 
 MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_NAMESPACE_BEGIN
+
+namespace
+{
+    // The ZisK witness entry point supplies EthereumMainnet for every block.
+    uint256_t transaction_chain_id(Chain const &chain)
+    {
+#if defined(MONAD_ZKVM_ZISK) && !defined(MONAD_ZKVM_SELFTEST) &&               \
+    !defined(MONAD_ZKVM_GAS_SELFTEST)
+        return static_cast<EthereumMainnet const &>(chain)
+            .EthereumMainnet::get_chain_id();
+#else
+        return chain.get_chain_id();
+#endif
+    }
+
+    BlobSchedule
+    transaction_blob_schedule(Chain const &chain, uint64_t timestamp)
+    {
+#if defined(MONAD_ZKVM_ZISK) && !defined(MONAD_ZKVM_SELFTEST) &&               \
+    !defined(MONAD_ZKVM_GAS_SELFTEST)
+        return static_cast<EthereumMainnet const &>(chain)
+            .EthereumMainnet::get_blob_schedule(timestamp);
+#else
+        return chain.get_blob_schedule(timestamp);
+#endif
+    }
+}
 
 template <Traits traits>
 ExecuteTransactionNoValidation<traits>::ExecuteTransactionNoValidation(
@@ -101,6 +153,7 @@ ExecuteTransactionNoValidation<traits>::ExecuteTransactionNoValidation(
     , sender_{sender}
     , authorities_{authorities}
     , header_{header}
+    , calldata_tokens_{tokens_in_calldata(tx)}
 {
 }
 
@@ -216,7 +269,9 @@ vm::Message ExecuteTransactionNoValidation<traits>::to_message(
         .kind = to_address.first,
         .flags = 0,
         .depth = 0,
-        .gas = static_cast<int64_t>(tx_.gas_limit - intrinsic_gas<traits>(tx_)),
+        .gas = static_cast<int64_t>(
+            tx_.gas_limit -
+            intrinsic_gas_counted<traits>(tx_, calldata_tokens_)),
         .recipient = to_address.second,
         .sender = sender_,
         .input_data = tx_.data.data(),
@@ -252,7 +307,7 @@ vm::Result ExecuteTransactionNoValidation<traits>::operator()(
         sender_,
         header_.base_fee_per_gas.value_or(0),
         header_.excess_blob_gas.value_or(0),
-        chain_.get_blob_schedule(header_.timestamp));
+        transaction_blob_schedule(chain_, header_.timestamp));
 
     uint64_t auth_refund = 0u;
     if constexpr (traits::eip_7702_active()) {
@@ -348,8 +403,8 @@ Result<vm::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
         tx_,
         sender_,
         header_,
-        chain_.get_chain_id(),
-        chain_.get_blob_schedule(header_.timestamp));
+        transaction_chain_id(chain_),
+        transaction_blob_schedule(chain_, header_.timestamp));
     StateHost<traits> host{
         call_tracer_,
         state_tracer_,
@@ -383,15 +438,26 @@ Receipt ExecuteTransaction<traits>::execute_final(
         static_cast<uint64_t>(result.gas_refund));
     auto const gas_cost =
         gas_price<traits>(tx_, header_.base_fee_per_gas.value_or(0));
+#if defined(MONAD_ZKVM_ZISK)
+    state.add_to_balance(sender_, multiply_fee_by_gas(gas_cost, gas_refund));
+#else
     state.add_to_balance(sender_, gas_cost * gas_refund);
+#endif
 
     auto gas_used = tx_.gas_limit - gas_refund;
 
+    // EIP-7623
     if constexpr (traits::eip_7623_active()) {
-        auto const floor_gas = floor_data_gas<traits>(tx_);
+        auto const floor_gas =
+            floor_data_gas_counted<traits>(tx_, calldata_tokens_);
         if (gas_used < floor_gas) {
             auto const delta = floor_gas - gas_used;
+#if defined(MONAD_ZKVM_ZISK)
+            state.subtract_from_balance(
+                sender_, multiply_fee_by_gas(gas_cost, delta));
+#else
             state.subtract_from_balance(sender_, gas_cost * delta);
+#endif
 
             gas_used = floor_gas;
         }
@@ -440,8 +506,9 @@ Result<Receipt> ExecuteTransaction<traits>::operator()()
             tx_,
             header_.base_fee_per_gas,
             header_.excess_blob_gas,
-            chain_.get_chain_id(),
-            chain_.get_blob_schedule(header_.timestamp));
+            transaction_chain_id(chain_),
+            transaction_blob_schedule(chain_, header_.timestamp),
+            calldata_tokens_);
         if (validation_result.has_error()) {
             prev_.wait();
             return std::move(validation_result).as_failure();

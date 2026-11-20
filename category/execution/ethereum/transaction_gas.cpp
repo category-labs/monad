@@ -14,9 +14,11 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/assert.h>
+#include <category/core/bit_primitives.hpp>
 #include <category/core/checked_math.hpp>
 #include <category/core/config.hpp>
 #include <category/core/int.hpp>
+#include <category/core/thread_local.h>
 #include <category/execution/ethereum/chain/blob_schedule.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
@@ -26,14 +28,30 @@
 #include <category/vm/evm/traits.hpp>
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
-#include <iterator>
-#include <utility>
+#include <optional>
 
 MONAD_NAMESPACE_BEGIN
 
 namespace
 {
+    template <unsigned_integral UInt>
+    constexpr UInt compute_priority_fee(
+        TransactionType const type, UInt const &max_fee,
+        UInt const &max_priority_fee, UInt const &base_fee) noexcept
+    {
+        MONAD_ASSERT(max_fee >= base_fee);
+        UInt const fee_headroom = max_fee - base_fee;
+        if (type == TransactionType::eip1559 ||
+            type == TransactionType::eip4844 ||
+            type == TransactionType::eip7702) {
+            return std::min(max_priority_fee, fee_headroom);
+        }
+        // Legacy transactions pay their full gas price: the remainder is tip.
+        return fee_headroom;
+    }
+
     // Approximates `factor * e ** (n/d) using Taylor expansion
     uint256_t fake_exponential(
         uint256_t const factor, uint256_t const n, uint256_t const d)
@@ -95,38 +113,52 @@ constexpr uint64_t g_extra_cost_init(Transaction const &tx) noexcept
     return 0u;
 }
 
-std::pair<uint64_t, uint64_t> tokens_in_calldata(Transaction const &tx) noexcept
+CalldataTokens tokens_in_calldata(Transaction const &tx) noexcept
 {
-    auto const zeros = static_cast<uint64_t>(std::count_if(
-        std::cbegin(tx.data), std::cend(tx.data), [](unsigned char c) {
-            return c == 0x00;
-        }));
+    // Count aligned word_count between byte-wise head and tail scans.
+    // Sum nonzero bits first, converting to a byte count only once.
+    auto const *cursor = tx.data.data();
+    size_t remaining_bytes = tx.data.size();
+    uint64_t zeros = 0;
+    while (remaining_bytes != 0 &&
+           (reinterpret_cast<uintptr_t>(cursor) & 7) != 0) {
+        zeros += (*cursor == 0x00);
+        ++cursor;
+        --remaining_bytes;
+    }
+    size_t const word_count = remaining_bytes >> 3;
+    uint64_t nonzero_bits = 0;
+    for (; remaining_bytes >= 8; cursor += 8, remaining_bytes -= 8) {
+        nonzero_bits += bits::nonzero_byte_bits(
+            *reinterpret_cast<uint64_t const *>(cursor));
+    }
+    zeros += (word_count * 8u) - (nonzero_bits >> 3);
+    for (; remaining_bytes != 0; ++cursor, --remaining_bytes) {
+        zeros += (*cursor == 0x00);
+    }
     auto const nonzeros = tx.data.size() - zeros;
-    return {zeros, nonzeros};
+    return CalldataTokens{zeros, nonzeros};
 }
-
-// YP, Eqn. 60, first summation
-template <Traits traits>
-uint64_t g_data(Transaction const &tx) noexcept
-{
-    static_assert(traits::evm_rev() >= EvmRevision::Istanbul);
-
-    auto const [zeros, nonzeros] = tokens_in_calldata(tx);
-
-    // EIP-2028
-    return zeros * 4u + nonzeros * 16u;
-}
-
-EXPLICIT_TRAITS(g_data);
 
 template <Traits traits>
 uint64_t intrinsic_gas(Transaction const &tx) noexcept
 {
+    return intrinsic_gas_counted<traits>(tx, tokens_in_calldata(tx));
+}
+
+EXPLICIT_TRAITS(intrinsic_gas);
+
+template <Traits traits>
+uint64_t intrinsic_gas_counted(
+    Transaction const &tx, CalldataTokens const calldata_tokens) noexcept
+{
     static_assert(traits::evm_rev() >= EvmRevision::Berlin);
 
     // EIP-2930: access-list and storage-key cost (active since Berlin)
-    uint64_t gas = 21'000 + g_data<traits>(tx) + g_txn_create(tx) +
-                   g_access_and_storage(tx);
+    // EIP-2028 prices the calldata bytes.
+    uint64_t gas =
+        21'000 + (calldata_tokens.zeros * 4u + calldata_tokens.nonzeros * 16u) +
+        g_txn_create(tx) + g_access_and_storage(tx);
 
     // EIP-3860: per-word initcode cost
     if constexpr (traits::eip_3860_active()) {
@@ -144,40 +176,73 @@ uint64_t intrinsic_gas(Transaction const &tx) noexcept
     return gas;
 }
 
-EXPLICIT_TRAITS(intrinsic_gas);
+EXPLICIT_TRAITS(intrinsic_gas_counted);
 
 template <Traits traits>
 uint64_t floor_data_gas(Transaction const &tx) noexcept
 {
-    auto const [zeros, nonzeros] = tokens_in_calldata(tx);
-    uint64_t gas = 21'000 + (zeros * 10u + nonzeros * 40u);
+    return floor_data_gas_counted<traits>(tx, tokens_in_calldata(tx));
+}
+
+EXPLICIT_TRAITS(floor_data_gas);
+
+template <Traits traits>
+uint64_t floor_data_gas_counted(
+    Transaction const &tx, CalldataTokens const calldata_tokens) noexcept
+{
+    // EIP-7623
+    uint64_t gas =
+        21'000 + (calldata_tokens.zeros * 10u + calldata_tokens.nonzeros * 40u);
     if constexpr (traits::eip_7981_active()) {
         gas += g_access_list_data(tx);
     }
     return gas;
 }
 
-EXPLICIT_TRAITS(floor_data_gas);
+EXPLICIT_TRAITS(floor_data_gas_counted);
 
 constexpr uint256_t priority_fee_per_gas(
     Transaction const &tx, uint256_t const &base_fee_per_gas) noexcept
 {
-    MONAD_ASSERT(tx.max_fee_per_gas >= base_fee_per_gas);
-    auto const max_priority_fee_per_gas = tx.max_fee_per_gas - base_fee_per_gas;
-
-    if (tx.type == TransactionType::eip1559 ||
-        tx.type == TransactionType::eip4844 ||
-        tx.type == TransactionType::eip7702) {
-        return std::min(tx.max_priority_fee_per_gas, max_priority_fee_per_gas);
-    }
-    // EIP-1559: "Legacy Ethereum transactions will still work and
-    // be included in blocks, but they will not benefit directly from
-    // the new pricing system. This is due to the fact that upgrading
-    // from legacy transactions to new transactions results in the
-    // legacy transaction’s gas_price entirely being consumed either
-    // by the base_fee_per_gas and the priority_fee_per_gas."
-    return max_priority_fee_per_gas;
+    return compute_priority_fee(
+        tx.type,
+        tx.max_fee_per_gas,
+        tx.max_priority_fee_per_gas,
+        base_fee_per_gas);
 }
+
+#if defined(MONAD_ZKVM_ZISK)
+namespace
+{
+    // Use 64-bit arithmetic only when all three fees fit.
+    struct Fees64
+    {
+        uint64_t base_fee;
+        uint64_t priority_fee;
+    };
+
+    [[gnu::always_inline]] inline std::optional<Fees64> try_compute_fees64(
+        Transaction const &tx, uint256_t const &base_fee_per_gas) noexcept
+    {
+        auto const fits_uint64 = [](uint256_t const &x) {
+            return (x[1] | x[2] | x[3]) == 0;
+        };
+        if (MONAD_UNLIKELY(
+                !fits_uint64(tx.max_fee_per_gas) ||
+                !fits_uint64(tx.max_priority_fee_per_gas) ||
+                !fits_uint64(base_fee_per_gas))) {
+            return std::nullopt;
+        }
+        uint64_t const base_fee = base_fee_per_gas[0];
+        uint64_t const priority_fee = compute_priority_fee(
+            tx.type,
+            tx.max_fee_per_gas[0],
+            tx.max_priority_fee_per_gas[0],
+            base_fee);
+        return Fees64{base_fee, priority_fee};
+    }
+}
+#endif
 
 template <Traits traits>
 uint256_t
@@ -186,6 +251,14 @@ gas_price(Transaction const &tx, uint256_t const &base_fee_per_gas) noexcept
     if constexpr (!traits::eip_1559_header_active()) {
         return tx.max_fee_per_gas;
     }
+#if defined(MONAD_ZKVM_ZISK)
+    // The sum does not overflow: it is at most max_fee_per_gas.
+    if (auto const fees = try_compute_fees64(tx, base_fee_per_gas);
+        MONAD_LIKELY(fees.has_value())) {
+        return uint256_t{fees->priority_fee + fees->base_fee};
+    }
+#endif
+    // EIP-1559
     return priority_fee_per_gas(tx, base_fee_per_gas) + base_fee_per_gas;
 }
 
@@ -221,6 +294,16 @@ uint256_t calculate_txn_award(
     if constexpr (!traits::eip_1559_header_active()) {
         return gas_used * gas_price<traits>(tx, base_fee_per_gas);
     }
+#if defined(MONAD_ZKVM_ZISK)
+    // Two 64-bit factors produce an exact 128-bit award.
+    if (auto const fees = try_compute_fees64(tx, base_fee_per_gas);
+        MONAD_LIKELY(fees.has_value())) {
+        unsigned __int128 const award =
+            static_cast<unsigned __int128>(gas_used) * fees->priority_fee;
+        return uint256_t{
+            static_cast<uint64_t>(award), static_cast<uint64_t>(award >> 64)};
+    }
+#endif
     return gas_used * priority_fee_per_gas(tx, base_fee_per_gas);
 }
 
@@ -238,10 +321,32 @@ uint256_t get_base_fee_per_blob_gas(
     uint64_t const excess_blob_gas, BlobSchedule const &blob_schedule) noexcept
 {
     constexpr uint256_t MIN_BASE_FEE_PER_BLOB_GAS = 1;
-    return fake_exponential(
+
+    // Zero excess_blob_gas gas is valid, so an empty cache needs a separate
+    // flag.
+    struct BlobFeeCache
+    {
+        uint64_t excess_blob_gas;
+        uint64_t update_fraction;
+        uint256_t base_fee;
+        bool valid;
+    };
+
+    // Constant initialization avoids guest guard and teardown support.
+    static MONAD_THREAD_LOCAL BlobFeeCache cache{};
+
+    uint64_t const update_fraction =
+        blob_schedule.blob_base_fee_update_fraction;
+    if (cache.valid && cache.excess_blob_gas == excess_blob_gas &&
+        cache.update_fraction == update_fraction) {
+        return cache.base_fee;
+    }
+    uint256_t const base_fee = fake_exponential(
         MIN_BASE_FEE_PER_BLOB_GAS,
         uint256_t{excess_blob_gas},
-        uint256_t{blob_schedule.blob_base_fee_update_fraction});
+        uint256_t{update_fraction});
+    cache = BlobFeeCache{excess_blob_gas, update_fraction, base_fee, true};
+    return base_fee;
 }
 
 template <Traits traits>

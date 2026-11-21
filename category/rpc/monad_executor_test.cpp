@@ -124,8 +124,13 @@ namespace
     constexpr size_t call_tracer_max_size = 1024 * 1024; // 1 MB
     constexpr bytes32_t transfer_sig =
         abi_encode_event_signature("Transfer(address,address,uint256)");
+    // A private domain of the devnet.
+    constexpr uint64_t PRIVATE_DOMAIN = (uint64_t{0x51} << 16) | 20143;
 
-    auto create_executor(std::string const &dbname)
+    // An executor of the L1, or of the private domain `domain_chain_id` if it
+    // is not zero.
+    auto create_executor(
+        std::string const &dbname, uint64_t const domain_chain_id = 0)
     {
         monad_executor_pool_config const conf = {1, 2, max_timeout, 1000};
         unsigned const tx_exec_num_fibers = 10;
@@ -136,7 +141,7 @@ namespace
             tx_exec_num_fibers,
             node_lru_max_mem,
             dbname.c_str(),
-            0);
+            domain_chain_id);
     }
 
     std::vector<uint8_t> to_vec(byte_string const &bs)
@@ -2679,6 +2684,142 @@ TEST_F(EthCallFixture, trace_block_slot_number)
     EXPECT_EQ(stored, store_be_as<bytes32_t>(uint256_t{round}));
 
     monad_executor_destroy(executor);
+}
+
+// A private domain's block is replayed under the domain's rules: as the
+// domain's chain, for a sender that cannot pay for gas, and without the L1's
+// staking state.
+TEST_F(EthCallFixture, private_domain_trace_block)
+{
+    static constexpr Address ADDR_A =
+        0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_address;
+    static constexpr uint256_t GAS_PRICE{50'000'000'000};
+
+    // CHAINID PUSH0 SSTORE
+    byte_string const contract_code{0x46, 0x5f, 0x55};
+    auto const contract_code_hash = to_bytes(keccak256(contract_code));
+    auto const contract_icode = vm::make_shared_intercode(contract_code);
+
+    commit_sequential(
+        tdb,
+        StateDeltas(
+            {{ADDR_A,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{
+                           .balance = 0, .code_hash = contract_code_hash}}}}}),
+        Code{{contract_code_hash, contract_icode}},
+        BlockHeader{.number = 0});
+
+    for (uint64_t i = 1; i < 255; ++i) {
+        commit_sequential(tdb, StateDeltas({}), {}, BlockHeader{.number = i});
+    }
+
+    Transaction tx;
+    tx.type = TransactionType::eip1559;
+    tx.max_fee_per_gas = GAS_PRICE;
+    tx.gas_limit = 100000u;
+    tx.nonce = 1;
+    tx.to = ADDR_A;
+    tx.sc = SignatureAndChain{{1, 1, 1}, uint256_t{PRIVATE_DOMAIN}};
+
+    auto const sender = recover_sender(tx);
+    ASSERT_TRUE(sender.has_value());
+
+    commit_sequential(
+        tdb,
+        StateDeltas(
+            {{*sender,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{.balance = 0, .nonce = tx.nonce}}}}}),
+        {},
+        BlockHeader{.number = 255});
+
+    BlockHeader header = slotnum_header(256, 1234);
+    header.base_fee_per_gas = GAS_PRICE;
+    std::vector<Receipt> const receipts = {Receipt{
+        .status = std::to_underlying(CallStatus::Success), .gas_used = 20000u}};
+    std::vector<std::vector<CallFrame>> const call_frames = {{}};
+    std::vector<Transaction> const transactions = {tx};
+    std::vector<Address> const senders = {*sender};
+
+    commit_sequential(
+        tdb,
+        StateDeltas({}),
+        {},
+        header,
+        receipts,
+        call_frames,
+        senders,
+        transactions,
+        {},
+        std::vector<Withdrawal>{});
+
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_block_id = to_vec(rlp::encode_bytes32(bytes32_t{256}));
+    auto const rlp_parent_id = to_vec(rlp::encode_bytes32(bytes32_t{255}));
+    auto const rlp_grandparent_id = to_vec(rlp::encode_bytes32(bytes32_t{254}));
+
+    // Replayed as an L1 block, the transaction is of another chain and its
+    // sender cannot pay for it.
+    for (uint64_t const domain_chain_id : {PRIVATE_DOMAIN, uint64_t{0}}) {
+        SCOPED_TRACE(domain_chain_id);
+        auto *executor = create_executor(dbname.string(), domain_chain_id);
+        struct callback_context ctx;
+        boost::fibers::future<void> f = ctx.promise.get_future();
+        monad_executor_run_transactions(
+            executor,
+            CHAIN_CONFIG_MONAD_DEVNET,
+            rlp_header.data(),
+            rlp_header.size(),
+            256,
+            rlp_block_id.data(),
+            rlp_block_id.size(),
+            rlp_parent_id.data(),
+            rlp_parent_id.size(),
+            rlp_grandparent_id.data(),
+            rlp_grandparent_id.size(),
+            -1,
+            complete_callback,
+            (void *)&ctx,
+            STATEDIFF_TRACER);
+        f.get();
+
+        if (domain_chain_id == 0) {
+            EXPECT_EQ(
+                ctx.result->status_code,
+                std::to_underlying(CallStatus::Rejected));
+            monad_executor_destroy(executor);
+            continue;
+        }
+        ASSERT_EQ(
+            ctx.result->status_code, std::to_underlying(CallStatus::Success));
+
+        std::vector<uint8_t> const encoded_trace(
+            ctx.result->encoded_trace,
+            ctx.result->encoded_trace + ctx.result->encoded_trace_len);
+        auto const trace_json = nlohmann::json::from_cbor(encoded_trace);
+
+        ASSERT_EQ(trace_json.size(), 1);
+        auto const &post = trace_json[0]["result"]["post"];
+        auto const &storage =
+            post["0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]["storage"];
+        ASSERT_EQ(storage.size(), 1);
+        auto const stored =
+            from_hex<bytes32_t>(storage.begin().value().get<std::string>())
+                .value();
+        EXPECT_EQ(stored, store_be_as<bytes32_t>(uint256_t{PRIVATE_DOMAIN}));
+        // Nothing is charged, so no balance changes: the sender's nonce does.
+        EXPECT_EQ(post.size(), 2);
+        for (auto const &[address, account] : post.items()) {
+            EXPECT_FALSE(account.contains("balance")) << address;
+        }
+
+        monad_executor_destroy(executor);
+    }
 }
 
 TEST_F(EthCallFixture, trace_transaction_with_prestate)
@@ -10682,9 +10823,6 @@ TEST(EthCallFixtureNoDb, trace_is_rejected)
 
 namespace
 {
-    // A private domain of the devnet.
-    constexpr uint64_t PRIVATE_DOMAIN = (uint64_t{0x51} << 16) | 20143;
-
     // Adds a contract that returns CHAINID to `state_override`.
     void add_chain_id_contract(
         monad_state_override *const state_override, Address const &contract)
@@ -10883,41 +11021,6 @@ TEST(EthCallFixtureNoDb, private_domain_rejects_an_ethereum_chain_config)
         "a private domain needs a Monad chain configuration");
 
     monad_state_override_destroy(state_override);
-    monad_executor_destroy(executor);
-}
-
-TEST(EthCallFixtureNoDb, private_domain_trace_is_rejected)
-{
-    auto *const executor = create_executor_without_db(PRIVATE_DOMAIN);
-
-    BlockHeader const header{.number = 256};
-    auto const rlp_header = to_vec(rlp::encode_block_header(header));
-    auto const rlp_block_id = to_vec(rlp_finalized_id);
-
-    struct callback_context ctx;
-    boost::fibers::future<void> f = ctx.promise.get_future();
-    monad_executor_run_transactions(
-        executor,
-        CHAIN_CONFIG_MONAD_DEVNET,
-        rlp_header.data(),
-        rlp_header.size(),
-        header.number,
-        rlp_block_id.data(),
-        rlp_block_id.size(),
-        rlp_block_id.data(),
-        rlp_block_id.size(),
-        rlp_block_id.data(),
-        rlp_block_id.size(),
-        -1,
-        complete_callback,
-        (void *)&ctx,
-        PRESTATE_TRACER);
-    f.get();
-
-    EXPECT_EQ(
-        ctx.result->status_code, std::to_underlying(CallStatus::Rejected));
-    EXPECT_STREQ(ctx.result->message, "not supported on a private domain");
-
     monad_executor_destroy(executor);
 }
 

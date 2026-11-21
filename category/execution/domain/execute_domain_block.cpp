@@ -102,6 +102,20 @@ EXPLICIT_MONAD_TRAITS(domain_chain_context);
 
 template <Traits traits>
     requires is_monad_trait_v<traits>
+void execute_domain_block_header(
+    BlockState &block_state, BlockHeader const &header)
+{
+    State state{block_state, Incarnation{header.number, 0}};
+    deploy_block_hash_history_contract<traits>(state);
+    set_block_hash_history<traits>(state, header);
+    MONAD_ASSERT(block_state.can_merge(state));
+    block_state.merge(state);
+}
+
+EXPLICIT_MONAD_TRAITS(execute_domain_block_header);
+
+template <Traits traits>
+    requires is_monad_trait_v<traits>
 BlockHeader execution_header(DerivedDomainBlock const &block)
 {
     BlockHeader header{
@@ -149,16 +163,7 @@ Result<std::vector<Receipt>> execute_domain_block(
     auto const &transactions = derived.transactions;
     MONAD_ASSERT(derived.senders.size() == transactions.size());
 
-    // The domain keeps its block hashes in its own state (EIP-2935), where
-    // BLOCKHASH reads them: the parent's hash is stored before the block's
-    // transactions run.
-    {
-        State state{block_state, Incarnation{header.number, 0}};
-        deploy_block_hash_history_contract<traits>(state);
-        set_block_hash_history<traits>(state, header);
-        MONAD_ASSERT(block_state.can_merge(state));
-        block_state.merge(state);
-    }
+    execute_domain_block_header<traits>(block_state, header);
 
     auto const authorities = recover_authorities(transactions, priority_pool);
     auto const senders_and_authorities =

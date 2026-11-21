@@ -36,6 +36,12 @@ quick_status_code_from_enum<
          {}},
         {DomainDerivationError::AheadOfHub,
          "the domain has blocks the hub has not recorded",
+         {}},
+        {DomainDerivationError::MalformedInputQueue,
+         "the domain's input queue on the hub is malformed",
+         {}},
+        {DomainDerivationError::BehindCheckpoint,
+         "the hub's checkpoint is past the domain's next block",
          {}}};
     return mappings;
 }

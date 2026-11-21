@@ -27,6 +27,7 @@
 #include <category/execution/ethereum/block_hash_buffer/util.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/core/withdrawal.hpp>
+#include <category/execution/ethereum/db/util.hpp>
 #include <category/execution/ethereum/execute_block.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
@@ -34,6 +35,7 @@
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/db/commit_block.hpp>
 #include <category/mpt/db.hpp>
+#include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/util.hpp>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
@@ -55,6 +57,7 @@ PrivateDomainExecutor::PrivateDomainExecutor(
     , domain_chain_id_{domain_chain_id}
     , l1_chain_id_{static_cast<uint64_t>(l1_chain.get_chain_id())}
     , hub_{hub}
+    , mpt_db_{db}
     , db_{db}
     , vm_{vm}
     , priority_pool_{priority_pool}
@@ -72,6 +75,21 @@ bytes32_t PrivateDomainExecutor::latest_block_hash() const
 {
     MONAD_ASSERT(next_block_ > 0);
     return block_hashes_.get(next_block_ - 1);
+}
+
+std::optional<bytes32_t>
+PrivateDomainExecutor::block_hash(uint64_t const number) const
+{
+    MONAD_ASSERT(number < next_block_);
+    // The buffer keeps the latest blocks' hashes only: this reads the block's
+    // header, which the db stores as the encoding the hash is of.
+    auto const header = mpt_db_.find(
+        mpt::concat(FINALIZED_NIBBLE, mpt::NibblesView{block_header_nibbles}),
+        number);
+    if (header.has_error()) {
+        return std::nullopt;
+    }
+    return to_bytes(keccak256(header.value().node->value()));
 }
 
 template <Traits traits>

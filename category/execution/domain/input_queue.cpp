@@ -249,4 +249,44 @@ Result<std::optional<PendingDomainInputs>> read_pending_domain_inputs(
     return std::optional{std::move(pending)};
 }
 
+Result<std::optional<AttestedDomainBlock>> read_attested_domain_block(
+    L1Source const &l1, Address const &hub, uint64_t const domain_chain_id,
+    uint64_t const l1_block_number)
+{
+    QueueReader const queue{l1, hub, domain_chain_id, l1_block_number};
+
+    BOOST_OUTCOME_TRY(
+        auto const hash, queue.read(attested_block_hash_slot(domain_chain_id)));
+    if (hash == bytes32_t{}) {
+        return std::optional<AttestedDomainBlock>{};
+    }
+
+    // The checkpoint covers the blocks before the first one the queue still
+    // holds, and the domain's latest block if the queue holds none.
+    BOOST_OUTCOME_TRY(auto const state_word, queue.page_word(STATE_WORD));
+    auto const state = load_hub_word<QueueStateWord>(state_word);
+    uint64_t next_block = 0;
+    if (state.tail.native() == state.head.native()) {
+        BOOST_OUTCOME_TRY(auto const latest, queue.page_word(LATEST_WORD));
+        next_block = load_hub_word<LatestBlockWord>(latest)
+                         .domain_block_number.native() +
+                     1;
+    }
+    else {
+        BOOST_OUTCOME_TRY(
+            auto const word, queue.data_word(state.tail.native()));
+        if (word.bytes[0] != BLOCK) {
+            return DomainDerivationError::MalformedInputQueue;
+        }
+        next_block =
+            load_hub_word<BlockEntryWord>(word).domain_block_number.native();
+    }
+    // A checkpoint covers the registering L1 block, the domain's block 0.
+    if (next_block == 0) {
+        return DomainDerivationError::MalformedInputQueue;
+    }
+    return std::optional{
+        AttestedDomainBlock{.number = next_block - 1, .hash = hash}};
+}
+
 MONAD_DOMAIN_NAMESPACE_END

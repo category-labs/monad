@@ -26,6 +26,8 @@ add_library(
   "derive_domain_block.cpp"
   "derive_domain_block.hpp"
   "domain_block.hpp"
+  "execute_domain_block.cpp"
+  "execute_domain_block.hpp"
   "hpke.cpp"
   "hpke.hpp"
   "inputs.hpp"

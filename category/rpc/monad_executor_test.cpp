@@ -23,6 +23,7 @@
 #include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
 #include <category/core/runtime/uint256.hpp>
+#include <category/execution/domain/spoke.hpp>
 #include <category/execution/ethereum/block_hash_history.hpp>
 #include <category/execution/ethereum/chain/chain_config.h>
 #include <category/execution/ethereum/core/account.hpp>
@@ -2699,6 +2700,12 @@ TEST_F(EthCallFixture, private_domain_trace_block)
     byte_string const contract_code{0x46, 0x5f, 0x55};
     auto const contract_code_hash = to_bytes(keccak256(contract_code));
     auto const contract_icode = vm::make_shared_intercode(contract_code);
+    // A spoke that admits every call frame: PUSH1 1 PUSH0 MSTORE PUSH1 32
+    // PUSH0 RETURN
+    byte_string const spoke_code{
+        0x60, 0x01, 0x5f, 0x52, 0x60, 0x20, 0x5f, 0xf3};
+    auto const spoke_code_hash = to_bytes(keccak256(spoke_code));
+    auto const spoke_icode = vm::make_shared_intercode(spoke_code);
 
     commit_sequential(
         tdb,
@@ -2708,8 +2715,15 @@ TEST_F(EthCallFixture, private_domain_trace_block)
                   .account =
                       {std::nullopt,
                        Account{
-                           .balance = 0, .code_hash = contract_code_hash}}}}}),
-        Code{{contract_code_hash, contract_icode}},
+                           .balance = 0, .code_hash = contract_code_hash}}}},
+             {domain::DOMAIN_SPOKE,
+              StateDelta{
+                  .account =
+                      {std::nullopt,
+                       Account{.balance = 0, .code_hash = spoke_code_hash}}}}}),
+        Code{
+            {contract_code_hash, contract_icode},
+            {spoke_code_hash, spoke_icode}},
         BlockHeader{.number = 0});
 
     for (uint64_t i = 1; i < 255; ++i) {
@@ -10823,6 +10837,33 @@ TEST(EthCallFixtureNoDb, trace_is_rejected)
 
 namespace
 {
+    // Puts a spoke that admits every call frame of a private domain, or none,
+    // where a domain's spoke is.
+    void
+    add_spoke(monad_state_override *const state_override, bool const admits)
+    {
+        // PUSH1 admits PUSH0 MSTORE PUSH1 32 PUSH0 RETURN
+        std::vector<uint8_t> const code{
+            0x60,
+            static_cast<uint8_t>(admits ? 1 : 0),
+            0x5f,
+            0x52,
+            0x60,
+            0x20,
+            0x5f,
+            0xf3};
+        add_override_address(
+            state_override,
+            domain::DOMAIN_SPOKE.bytes,
+            sizeof(domain::DOMAIN_SPOKE.bytes));
+        set_override_code(
+            state_override,
+            domain::DOMAIN_SPOKE.bytes,
+            sizeof(domain::DOMAIN_SPOKE.bytes),
+            code.data(),
+            code.size());
+    }
+
     // Adds a contract that returns CHAINID to `state_override`.
     void add_chain_id_contract(
         monad_state_override *const state_override, Address const &contract)
@@ -10853,6 +10894,7 @@ TEST(EthCallFixtureNoDb, private_domain_call_executes_as_the_domain)
         auto *const executor = create_executor_without_db(domain_chain_id);
         auto *const state_override = monad_state_override_create();
         add_chain_id_contract(state_override, contract);
+        add_spoke(state_override, true);
 
         callback_context ctx;
         run_eth_call(
@@ -10901,6 +10943,7 @@ TEST(EthCallFixtureNoDb, private_domain_call_is_gasless)
         auto *const executor = create_executor_without_db(domain_chain_id);
         auto *const state_override = monad_state_override_create();
         add_chain_id_contract(state_override, contract);
+        add_spoke(state_override, true);
 
         callback_context ctx;
         run_eth_call(executor, tx, header, sender, state_override, ctx);
@@ -10969,6 +11012,41 @@ TEST(EthCallFixtureNoDb, private_domain_call_with_value_is_rejected)
                 std::to_underlying(CallStatus::Rejected));
             EXPECT_STREQ(ctx.result->message, "insufficient balance");
         }
+
+        monad_state_override_destroy(state_override);
+        monad_executor_destroy(executor);
+    }
+}
+
+// A call's frames are checked against the domain's spoke, as a transaction's
+// are.
+TEST(EthCallFixtureNoDb, private_domain_call_is_checked_by_the_spoke)
+{
+    static constexpr Address sender =
+        0x00000000000000000000000000000000deadbeef_address;
+    static constexpr Address contract =
+        0xcccccccccccccccccccccccccccccccccccccccc_address;
+
+    for (bool const admits : {true, false}) {
+        SCOPED_TRACE(admits);
+        auto *const executor = create_executor_without_db(PRIVATE_DOMAIN);
+        auto *const state_override = monad_state_override_create();
+        add_chain_id_contract(state_override, contract);
+        add_spoke(state_override, admits);
+
+        callback_context ctx;
+        run_eth_call(
+            executor,
+            Transaction{.gas_limit = 100'000, .to = contract},
+            BlockHeader{.number = 1000},
+            sender,
+            state_override,
+            ctx);
+
+        EXPECT_EQ(
+            ctx.result->status_code,
+            std::to_underlying(
+                admits ? CallStatus::Success : CallStatus::Revert));
 
         monad_state_override_destroy(state_override);
         monad_executor_destroy(executor);

@@ -66,7 +66,8 @@ public:
 };
 
 // The context a private domain's transactions execute in, given those of
-// its block: their senders, their authorities and both combined.
+// its block: their senders, their authorities and both combined. Every call
+// frame is checked against the access policies of the domain's spoke.
 template <Traits traits>
     requires is_monad_trait_v<traits>
 ChainContext<traits> domain_chain_context(

@@ -25,6 +25,7 @@
 #include <category/execution/domain/config.hpp>
 #include <category/execution/domain/derive_domain_block.hpp>
 #include <category/execution/domain/execute_domain_block.hpp>
+#include <category/execution/domain/spoke.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/block_hash_history.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
@@ -100,6 +101,7 @@ ChainContext<traits> domain_chain_context(
         .senders = senders,
         .authorities = authorities,
         .private_domain = true,
+        .domain_spoke = DOMAIN_SPOKE,
         .mode = mode};
 }
 

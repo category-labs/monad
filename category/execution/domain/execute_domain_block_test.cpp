@@ -22,6 +22,7 @@
 #include <category/execution/domain/chain_id.hpp>
 #include <category/execution/domain/derive_domain_block.hpp>
 #include <category/execution/domain/execute_domain_block.hpp>
+#include <category/execution/domain/spoke.hpp>
 #include <category/execution/domain/system_transaction.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/block_hash_history.hpp>
@@ -50,6 +51,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -70,6 +72,8 @@ namespace
     Address const SENDER{0x5e};
     Address const COUNTER{0xc0};
     Address const ENV{0xe0};
+    Address const HUB{0xab};
+    Address const DENYING_POLICY{0xa0};
 
     // Increments slot 1.
     byte_string const COUNTER_CODE{
@@ -96,6 +100,10 @@ namespace
                                0x41, 0x60, 0x02, 0x55, 0x48, 0x60, 0x03, 0x55,
                                0x60, 0x01, 0x43, 0x03, 0x40, 0x60, 0x04, 0x55,
                                0x42, 0x60, 0x05, 0x55, 0x00};
+
+    // canCall returns false.
+    byte_string const DENYING_POLICY_CODE{
+        0x5f, 0x5f, 0x52, 0x60, 0x20, 0x5f, 0xf3};
 
     struct TestL1Chain final : MonadChain
     {
@@ -146,15 +154,25 @@ namespace
                         std::nullopt,
                         Account{.code_hash = to_bytes(keccak256(code))}}};
             };
+            // The domain's state holds its spoke, as from its genesis.
+            auto const spoke_code =
+                domain_spoke_code(DOMAIN, DOMAIN & NETWORK_CHAIN_ID_MASK, HUB);
             commit_simple(
                 tdb,
                 StateDeltas{
-                    {COUNTER, account(COUNTER_CODE)}, {ENV, account(ENV_CODE)}},
+                    {COUNTER, account(COUNTER_CODE)},
+                    {ENV, account(ENV_CODE)},
+                    {DOMAIN_SPOKE, account(spoke_code)},
+                    {DENYING_POLICY, account(DENYING_POLICY_CODE)}},
                 Code{
                     {to_bytes(keccak256(COUNTER_CODE)),
                      vm::make_shared_intercode(COUNTER_CODE)},
                     {to_bytes(keccak256(ENV_CODE)),
-                     vm::make_shared_intercode(ENV_CODE)}},
+                     vm::make_shared_intercode(ENV_CODE)},
+                    {to_bytes(keccak256(spoke_code)),
+                     vm::make_shared_intercode(spoke_code)},
+                    {to_bytes(keccak256(DENYING_POLICY_CODE)),
+                     vm::make_shared_intercode(DENYING_POLICY_CODE)}},
                 bytes32_t{1},
                 BlockHeader{.number = 0});
             for (uint64_t n = 0; n < NUMBER; ++n) {
@@ -297,6 +315,34 @@ TEST_F(ExecuteDomainBlockTest, parent_hash_is_kept_in_state)
             BLOCK_HISTORY_ADDRESS,
             bytes32_t{(NUMBER - 1) % BLOCK_HISTORY_LENGTH}),
         bytes32_t{0x100 + NUMBER - 1});
+}
+
+TEST_F(ExecuteDomainBlockTest, call_frames_are_checked_against_the_spoke)
+{
+    BlockState block_state{tdb, vm};
+    {
+        // The spoke names the counter's policy in accessPolicies, its fourth
+        // storage variable.
+        byte_string key(64, 0);
+        std::ranges::copy(COUNTER.bytes, key.begin() + 12);
+        key[63] = 3;
+        bytes32_t policy{};
+        std::ranges::copy(DENYING_POLICY.bytes, policy.bytes + 12);
+        State state{block_state, Incarnation{NUMBER, 0}};
+        EXPECT_TRUE(state.account_exists(DOMAIN_SPOKE));
+        state.set_storage(DOMAIN_SPOKE, to_bytes(keccak256(key)), policy);
+        ASSERT_TRUE(block_state.can_merge(state));
+        block_state.merge(state);
+    }
+
+    auto const receipts = execute(
+        block_state,
+        {transaction(0, COUNTER), transaction(1, ENV)},
+        {SENDER, SENDER});
+
+    EXPECT_EQ(statuses(receipts), (std::vector<uint64_t>{0, 1}));
+    State state{block_state, Incarnation{NUMBER + 1, 0}};
+    EXPECT_EQ(read_storage(state, COUNTER, bytes32_t{1}), bytes32_t{});
 }
 
 TEST_F(ExecuteDomainBlockTest, monad_precompiles_are_off)

@@ -108,6 +108,12 @@ struct StateHost final : public StateHostBase
     std::optional<uint256_t> base_fee_per_gas_;
     uint64_t i_;
     ChainContext<traits> const &chain_ctx_;
+    // The depth of the access check of a private domain that is running, or
+    // -1 outside one.
+    int32_t domain_access_check_depth_{-1};
+    // Whether an access check of a private domain has denied a call frame of
+    // the transaction.
+    bool domain_access_denied_{false};
 
     StateHost(
         CallTracerBase &call_tracer, trace::StateTracer &state_tracer,
@@ -262,9 +268,9 @@ struct StateHost final : public StateHostBase
     }
 };
 
-static_assert(sizeof(StateHost<EvmTraits<EvmRevision::LatestStable>>) == 136);
+static_assert(sizeof(StateHost<EvmTraits<EvmRevision::LatestStable>>) == 144);
 static_assert(alignof(StateHost<EvmTraits<EvmRevision::LatestStable>>) == 8);
-static_assert(sizeof(StateHost<MonadTraits<MONAD_NEXT>>) == 136);
+static_assert(sizeof(StateHost<MonadTraits<MONAD_NEXT>>) == 144);
 static_assert(alignof(StateHost<MonadTraits<MONAD_NEXT>>) == 8);
 
 MONAD_NAMESPACE_END

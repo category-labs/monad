@@ -24,6 +24,7 @@
 #include <category/vm/evm/traits.hpp>
 
 #include <cstdint>
+#include <optional>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -57,6 +58,7 @@ class PrivateDomainExecutor
     uint64_t domain_chain_id_;
     uint64_t l1_chain_id_;
     Address hub_;
+    mpt::Db const &mpt_db_;
     TrieDb db_;
     vm::VM &vm_;
     fiber::PriorityPool &priority_pool_;
@@ -82,6 +84,10 @@ public:
 
     // The hash of the block before next_block(), which must not be 0.
     bytes32_t latest_block_hash() const;
+
+    // The hash of block `number`, which must be before next_block(). None if
+    // the block has left the db's history.
+    std::optional<bytes32_t> block_hash(uint64_t number) const;
 
     // Executes `block`, which must be the next block. A block that fails to
     // execute is an error.

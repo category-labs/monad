@@ -403,6 +403,76 @@ try {
         return outcome::success();
     };
 
+    // The hub's validators attest the hash of the domain's last block at each
+    // checkpoint. Once the domain is derived up to finalized L1 block
+    // `l1_block`, the latest checkpoint the hub holds as of it covers a block
+    // the domain has executed, whose hash must be the attested one.
+    bytes32_t checked_attestation{};
+    auto const check_attestation = [&](uint64_t const l1_block) {
+        auto const hash = l1.read_storage(
+            l1_block, hub, domain::attested_block_hash_slot(domain_chain_id));
+        if (hash.has_value() && hash.value() == checked_attestation) {
+            return true;
+        }
+        auto const attested = domain::read_attested_domain_block(
+            l1, hub, domain_chain_id, l1_block);
+        if (attested.has_error()) {
+            LOG_ERROR(
+                "cannot read private domain {}'s attested checkpoint as of L1 "
+                "block {}: {}",
+                domain_chain_id,
+                l1_block,
+                attested.assume_error().message().c_str());
+            return false;
+        }
+        if (!attested.value().has_value()) {
+            return true;
+        }
+        auto const &[number, attested_hash] = *attested.value();
+        if (!executor.has_value() || number >= executor->next_block()) {
+            LOG_ERROR(
+                "DomainHub {} attests private domain {}'s block {} as of L1 "
+                "block {}, which the domain does not derive by then",
+                hub_hex,
+                domain_chain_id,
+                number,
+                l1_block);
+            return false;
+        }
+        auto const executed_hash = executor->block_hash(number);
+        if (!executed_hash.has_value()) {
+            LOG_WARNING(
+                "private domain {}'s block {} has left the domain db's "
+                "history: its hash is not checked against the hash {} that "
+                "DomainHub {} attests for it",
+                domain_chain_id,
+                number,
+                hex(to_byte_string_view(attested_hash.bytes)),
+                hub_hex);
+        }
+        else if (*executed_hash != attested_hash) {
+            LOG_ERROR(
+                "private domain {}'s block {} has hash {}, but DomainHub {} "
+                "attests hash {} for it as of L1 block {}",
+                domain_chain_id,
+                number,
+                hex(to_byte_string_view(executed_hash->bytes)),
+                hub_hex,
+                hex(to_byte_string_view(attested_hash.bytes)),
+                l1_block);
+            return false;
+        }
+        else {
+            LOG_INFO(
+                "private domain {}'s block {} has the attested hash {}",
+                domain_chain_id,
+                number,
+                hex(to_byte_string_view(attested_hash.bytes)));
+        }
+        checked_attestation = attested_hash;
+        return true;
+    };
+
     if (start.pending.has_value()) {
         LOG_INFO(
             "deriving private domain {} from block {}, from the {} block(s) "
@@ -420,6 +490,9 @@ try {
                 "deriving private domain {} from the hub's state failed: {}",
                 domain_chain_id,
                 derived.assume_error().message().c_str());
+            return EXIT_FAILURE;
+        }
+        if (!check_attestation(start.pending_l1_block)) {
             return EXIT_FAILURE;
         }
     }
@@ -453,6 +526,9 @@ try {
         }
         if (!derived.value()) {
             std::this_thread::sleep_for(POLL_INTERVAL);
+        }
+        else if (!check_attestation(deriver.cursor().next_l1_block - 1)) {
+            return EXIT_FAILURE;
         }
     }
     LOG_INFO("stopped at L1 block {}", deriver.cursor().next_l1_block);

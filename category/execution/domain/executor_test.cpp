@@ -350,6 +350,22 @@ TEST_F(PrivateDomainExecutorTest, keeps_block_hashes_in_state)
     EXPECT_EQ(block_hash_in_state(2), bytes32_t{});
 }
 
+TEST_F(PrivateDomainExecutorTest, reads_the_hash_of_any_executed_block)
+{
+    // More blocks than the block hash buffer keeps.
+    for (int i = 0; i < 300; ++i) {
+        append({});
+    }
+    PrivateDomainExecutor executor{l1_chain_, DOMAIN, HUB, *db_, vm_, pool_};
+    execute_all(executor);
+
+    EXPECT_EQ(
+        executor.block_hash(0), compute_block_hash(read_domain_header(0)));
+    EXPECT_EQ(
+        executor.block_hash(150), compute_block_hash(read_domain_header(150)));
+    EXPECT_EQ(executor.block_hash(299), executor.latest_block_hash());
+}
+
 TEST_F(PrivateDomainExecutorTest, continues_after_a_restart)
 {
     append({});

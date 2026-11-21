@@ -50,6 +50,17 @@ struct PendingDomainInputs
         PendingDomainInputs const &, PendingDomainInputs const &) = default;
 };
 
+// A domain's latest attested checkpoint: the domain's last block it covers,
+// and the hash the hub's validators attested for that block.
+struct AttestedDomainBlock
+{
+    uint64_t number{};
+    bytes32_t hash{};
+
+    friend bool operator==(
+        AttestedDomainBlock const &, AttestedDomainBlock const &) = default;
+};
+
 // The storage slot of the hub that holds `domain_chain_id`'s attested block
 // hash.
 bytes32_t attested_block_hash_slot(uint64_t domain_chain_id);
@@ -63,6 +74,13 @@ bytes32_t input_queue_slot(uint64_t domain_chain_id, uint64_t index);
 // DomainDerivationError::MalformedInputQueue on a queue the hub cannot have
 // written.
 Result<std::optional<PendingDomainInputs>> read_pending_domain_inputs(
+    L1Source const &, Address const &hub, uint64_t domain_chain_id,
+    uint64_t l1_block_number);
+
+// Reads `domain_chain_id`'s attested checkpoint from the storage of `hub` as
+// of finalized L1 block `l1_block_number`. Empty until a checkpoint is
+// attested. Fails like read_pending_domain_inputs.
+Result<std::optional<AttestedDomainBlock>> read_attested_domain_block(
     L1Source const &, Address const &hub, uint64_t domain_chain_id,
     uint64_t l1_block_number);
 

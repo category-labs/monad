@@ -501,6 +501,99 @@ namespace
     using Source = DerivationStart::Source;
 }
 
+TEST(AttestedBlock, none_until_a_checkpoint_is_attested)
+{
+    FakeHub hub;
+    EXPECT_EQ(
+        read_attested_domain_block(hub, HUB, DOMAIN, L1_BLOCK).value(),
+        std::nullopt);
+
+    hub.open_block(0, 5);
+    hub.open_block(1, 6);
+    EXPECT_EQ(
+        read_attested_domain_block(hub, HUB, DOMAIN, L1_BLOCK).value(),
+        std::nullopt);
+}
+
+TEST(AttestedBlock, is_the_block_before_the_first_the_queue_holds)
+{
+    FakeHub hub;
+    hub.open_block(0, 5);
+    hub.open_block(1, 6);
+    hub.attest(bytes32_t{0xaa});
+    hub.open_block(2, 8);
+    hub.open_block(3, 9);
+
+    EXPECT_EQ(
+        read_attested_domain_block(hub, HUB, DOMAIN, L1_BLOCK).value(),
+        (AttestedDomainBlock{.number = 1, .hash = bytes32_t{0xaa}}));
+}
+
+TEST(AttestedBlock, is_the_latest_block_when_the_queue_is_empty)
+{
+    FakeHub hub;
+    hub.open_block(0, 5);
+    hub.open_block(1, 6);
+    hub.open_block(2, 8);
+    hub.attest(bytes32_t{0xbb});
+
+    EXPECT_EQ(
+        read_attested_domain_block(hub, HUB, DOMAIN, L1_BLOCK).value(),
+        (AttestedDomainBlock{.number = 2, .hash = bytes32_t{0xbb}}));
+}
+
+TEST(AttestedBlock, is_as_of_the_l1_block)
+{
+    FakeHub hub;
+    hub.open_block(0, 5);
+    hub.attest(bytes32_t{0xaa});
+    hub.seal(6);
+    hub.open_block(1, 8);
+    hub.attest(bytes32_t{0xbb});
+
+    EXPECT_EQ(
+        read_attested_domain_block(hub, HUB, DOMAIN, 7).value(),
+        (AttestedDomainBlock{.number = 0, .hash = bytes32_t{0xaa}}));
+    EXPECT_EQ(
+        read_attested_domain_block(hub, HUB, DOMAIN, L1_BLOCK).value(),
+        (AttestedDomainBlock{.number = 1, .hash = bytes32_t{0xbb}}));
+}
+
+TEST(AttestedBlock, rejects_a_queue_the_hub_cannot_have_written)
+{
+    {
+        // The first entry the checkpoint leaves opens no block.
+        FakeHub hub;
+        hub.open_block(0, 5);
+        hub.attest(bytes32_t{0xaa});
+        hub.push_input(1, 0, bytes(10, 1));
+        auto const attested =
+            read_attested_domain_block(hub, HUB, DOMAIN, L1_BLOCK);
+        ASSERT_TRUE(attested.has_error());
+        EXPECT_EQ(attested.error(), DomainDerivationError::MalformedInputQueue);
+    }
+    {
+        // A checkpoint that does not cover the domain's genesis.
+        FakeHub hub;
+        hub.attest(bytes32_t{0xaa});
+        hub.open_block(0, 5);
+        auto const attested =
+            read_attested_domain_block(hub, HUB, DOMAIN, L1_BLOCK);
+        ASSERT_TRUE(attested.has_error());
+        EXPECT_EQ(attested.error(), DomainDerivationError::MalformedInputQueue);
+    }
+}
+
+TEST(AttestedBlock, fails_like_the_l1_source)
+{
+    FakeHub hub;
+    hub.history_start = L1_BLOCK + 1;
+    auto const attested =
+        read_attested_domain_block(hub, HUB, DOMAIN, L1_BLOCK);
+    ASSERT_TRUE(attested.has_error());
+    EXPECT_EQ(attested.error(), mpt::DbError::version_no_longer_exist);
+}
+
 TEST(DerivationStart, logs_while_the_l1_has_them)
 {
     auto const hub = two_blocks();

@@ -15,16 +15,21 @@
 
 #pragma once
 
+#include <category/core/address.hpp>
 #include <category/core/int.hpp>
 #include <category/core/result.hpp>
 #include <category/execution/domain/config.hpp>
 #include <category/execution/ethereum/chain/genesis_state.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
+#include <category/execution/ethereum/execution_modalities.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/vm/evm/traits.hpp>
 
+#include <ankerl/unordered_dense.h>
+
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 MONAD_NAMESPACE_BEGIN
@@ -58,6 +63,17 @@ public:
     // Empty: a domain starts with no accounts.
     GenesisState get_genesis_state() const override;
 };
+
+// The context a private domain's transactions execute in, given those of
+// its block: their senders, their authorities and both combined.
+template <Traits traits>
+    requires is_monad_trait_v<traits>
+ChainContext<traits> domain_chain_context(
+    ankerl::unordered_dense::segmented_set<Address> const
+        &senders_and_authorities,
+    std::vector<Address> const &senders,
+    std::vector<std::vector<std::optional<Address>>> const &authorities,
+    ExecutionMode const &mode = {});
 
 // The Ethereum header a domain block executes under at revision `traits`.
 // Execution fills in parent_hash, transactions_root, state_root, receipts_root,

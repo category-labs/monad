@@ -77,4 +77,9 @@ template <Traits traits>
 bool is_domain_system_relayer(
     ChainContext<traits> const &, Address const &sender);
 
+// The spoke whose access policies every call frame of the context's private
+// domain block is checked against, or null if its frames are not checked.
+template <Traits traits>
+Address const *domain_access_spoke(ChainContext<traits> const &);
+
 MONAD_NAMESPACE_END

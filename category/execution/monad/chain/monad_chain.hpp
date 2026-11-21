@@ -54,6 +54,10 @@ struct ChainContext<T>
     // Set when executing a private domain block. See PROTOCOL.md in
     // category-labs/monad-domains for the rules it changes.
     bool private_domain{false};
+    // Set to the domain's spoke to check each call frame of a private domain
+    // block against the access policy the spoke holds for the frame's
+    // contract. A frame the policy denies reverts its transaction.
+    std::optional<Address> domain_spoke{};
 
     ExecutionMode mode{};
 

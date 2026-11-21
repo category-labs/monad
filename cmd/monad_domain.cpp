@@ -34,7 +34,10 @@
 #include <category/execution/domain/domain_block.hpp>
 #include <category/execution/domain/executor.hpp>
 #include <category/execution/domain/hpke.hpp>
+#include <category/execution/domain/input_queue.hpp>
 #include <category/execution/domain/l1_source.hpp>
+#include <category/execution/domain/statesync.hpp>
+#include <category/execution/domain/statesync_listener.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/log_level_map.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
@@ -66,6 +69,9 @@
 #include <tuple>
 #include <unordered_map>
 #include <utility>
+#include <vector>
+
+#include <unistd.h>
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
@@ -111,7 +117,11 @@ try {
     CLI::App cli{
         "Derive one private domain's blocks from the finalized chain of an L1 "
         "node, reading its triedb read-only, and execute them into a triedb of "
-        "the domain's own.",
+        "the domain's own. Without that triedb, the domain is derived from "
+        "what the DomainHub's state holds of it: from its registration if no "
+        "checkpoint is attested, otherwise from its state at the checkpoint, "
+        "which --statesync-peer provides and the attested block hash "
+        "verifies.",
         "monad-domain"};
     monad::cli::HelpFormatter{GIT_COMMIT_HASH}.install(cli);
 
@@ -120,6 +130,9 @@ try {
     std::tuple<uint64_t, fs::path> domain;
     std::string hub_hex;
     fs::path domain_db_path;
+    std::string statesync_peer;
+    std::string statesync_listen;
+    std::vector<std::string> statesync_allow;
     auto log_level = quill::LogLevel::Info;
 
     std::unordered_map<std::string, monad_chain_config> const CHAIN_CONFIG_MAP =
@@ -150,6 +163,26 @@ try {
            "the domain's own triedb, created when the domain's genesis is "
            "derived")
         ->required();
+    cli.add_option(
+           "--statesync-peer",
+           statesync_peer,
+           "a monad-domain of the same domain to get the domain's state from "
+           "if there is no domain triedb and the hub has an attested "
+           "checkpoint; the state goes over plain TCP")
+        ->type_name("IP:PORT");
+    auto *const statesync_listen_option =
+        cli.add_option(
+               "--statesync-listen",
+               statesync_listen,
+               "serve the domain's state at this address to the peers "
+               "--statesync-allow names")
+            ->type_name("IP:PORT");
+    cli.add_option(
+           "--statesync-allow",
+           statesync_allow,
+           "an address that may get the domain's state; may be repeated")
+        ->type_name("IP")
+        ->needs(statesync_listen_option);
     cli.add_option("--log-level", log_level, "level of logging")
         ->transform(CLI::CheckedTransformer(log_level_map, CLI::ignore_case));
 
@@ -233,35 +266,109 @@ try {
     mpt::Db l1_db{io_ctx};
     domain::TrieDbL1Source const l1{l1_db};
 
-    // Derivation continues with the block after the domain db's last, at the
-    // L1 block the hub recorded it in.
-    uint64_t const next_block =
-        executor.has_value() ? executor->next_block() : 0;
-    auto start =
-        domain::find_derivation_start(l1, hub, domain_chain_id, next_block);
-    if (start.has_error()) {
-        if (start.assume_error() == mpt::DbError::version_no_longer_exist) {
-            LOG_ERROR(
-                "the L1 block that private domain {}'s next block is derived "
-                "from has left the L1 db's history, which starts at {}",
-                domain_chain_id,
-                l1_db.get_earliest_version());
-        }
-        else {
-            LOG_ERROR(
-                "cannot find where to continue private domain {}: {}",
-                domain_chain_id,
-                start.assume_error().message().c_str());
-        }
+    std::optional<domain::StatesyncListener> statesync_listener;
+    if (!statesync_listen.empty()) {
+        statesync_listener.emplace(
+            statesync_listen, statesync_allow, domain_chain_id, domain_db_path);
+        LOG_INFO(
+            "serving private domain {}'s state on port {}",
+            domain_chain_id,
+            statesync_listener->port());
+    }
+
+    // Derivation continues with the block after the domain db's last: from
+    // the logs of the L1 blocks while the L1 db has them, otherwise from the
+    // blocks the hub's state holds, and from a peer's state at the hub's
+    // checkpoint only if those start after the domain's next block.
+    using Source = domain::DerivationStart::Source;
+    auto planned = domain::plan_derivation_start(
+        l1,
+        hub,
+        domain_chain_id,
+        executor.has_value() ? executor->next_block() : 0);
+    if (planned.has_error()) {
+        LOG_ERROR(
+            "cannot find where to continue private domain {}: {}",
+            domain_chain_id,
+            planned.assume_error().message().c_str());
         return EXIT_FAILURE;
     }
+    auto const start = std::move(planned).value();
+    if (start.source == Source::Checkpoint) {
+        // The blocks up to the checkpoint are neither in the L1 db's history
+        // nor in the hub's state: the domain's state at the checkpoint comes
+        // from a peer, and is checked against the block hash the hub
+        // attested.
+        uint64_t const checkpoint_block = start.pending->next_block - 1;
+        auto const &checkpoint_hash = start.pending->attested_block_hash;
+        if (statesync_peer.empty()) {
+            LOG_ERROR(
+                "private domain {}'s blocks up to {} have left the L1 db's "
+                "history, which starts at {}, and DomainHub {}'s input queue: "
+                "pass --statesync-peer to get the domain's state at block {} "
+                "from another monad-domain",
+                domain_chain_id,
+                checkpoint_block,
+                l1_db.get_earliest_version(),
+                hub_hex,
+                checkpoint_block);
+            return EXIT_FAILURE;
+        }
+        LOG_INFO(
+            "syncing private domain {}'s state at block {}, hash {}, from {}",
+            domain_chain_id,
+            checkpoint_block,
+            hex(to_byte_string_view(checkpoint_hash.bytes)),
+            statesync_peer);
+        // The state is loaded beside the domain db, and becomes it once it is
+        // verified: until then a domain db that is behind stays as it is.
+        fs::path syncing_path{domain_db_path};
+        syncing_path += ".statesync";
+        fs::remove(syncing_path);
+        auto const peer = domain::connect_statesync_peer(statesync_peer);
+        if (peer.has_error()) {
+            LOG_ERROR("cannot connect to statesync peer {}", statesync_peer);
+            return EXIT_FAILURE;
+        }
+        auto syncing_config = domain_db_config(false);
+        syncing_config.dbname_path = syncing_path;
+        auto const synced = domain::sync_domain_state(
+            peer.value(),
+            domain_chain_id,
+            checkpoint_block,
+            checkpoint_hash,
+            syncing_config);
+        ::close(peer.value());
+        if (synced.has_error()) {
+            fs::remove(syncing_path);
+            LOG_ERROR(
+                "syncing private domain {}'s state at block {} from {} "
+                "failed: {}",
+                domain_chain_id,
+                checkpoint_block,
+                statesync_peer,
+                synced.assume_error().message().c_str());
+            return EXIT_FAILURE;
+        }
+        if (executor.has_value()) {
+            LOG_INFO(
+                "replacing private domain {}'s db, whose next block is {}, "
+                "with the synced state",
+                domain_chain_id,
+                executor->next_block());
+            executor.reset();
+            domain_db.reset();
+        }
+        fs::rename(syncing_path, domain_db_path);
+        LOG_INFO(
+            "synced private domain {}'s state at block {}",
+            domain_chain_id,
+            checkpoint_block);
+        open_executor(std::nullopt);
+        MONAD_ASSERT(executor->next_block() == start.cursor.next_block);
+    }
     domain::PrivateDomainDeriver deriver{
-        l1, key.value(), domain_chain_id, hub, start.value()};
-    LOG_INFO(
-        "deriving private domain {} from DomainHub {}, from L1 block {}",
-        domain_chain_id,
-        hub_hex,
-        deriver.cursor().next_l1_block);
+        l1, key.value(), domain_chain_id, hub, start.cursor};
 
     auto const on_block =
         [&](domain::DerivedDomainBlock const &block) -> Result<void> {
@@ -289,9 +396,39 @@ try {
                 executed.assume_error().message().c_str());
             return std::move(executed).as_failure();
         }
-        LOG_INFO("executed domain block {}", block.number);
+        LOG_INFO(
+            "executed domain block {}, hash {}",
+            block.number,
+            hex(to_byte_string_view(executor->latest_block_hash().bytes)));
         return outcome::success();
     };
+
+    if (start.pending.has_value()) {
+        LOG_INFO(
+            "deriving private domain {} from block {}, from the {} block(s) "
+            "from block {} in DomainHub {}'s state as of L1 block {}",
+            domain_chain_id,
+            start.cursor.next_block,
+            start.pending->blocks.size(),
+            start.pending->next_block,
+            hub_hex,
+            start.pending_l1_block);
+        auto const derived = deriver.derive_pending(
+            *start.pending, start.pending_l1_block, on_block);
+        if (derived.has_error()) {
+            LOG_ERROR(
+                "deriving private domain {} from the hub's state failed: {}",
+                domain_chain_id,
+                derived.assume_error().message().c_str());
+            return EXIT_FAILURE;
+        }
+    }
+    LOG_INFO(
+        "deriving private domain {} from DomainHub {}'s logs, from L1 block "
+        "{}",
+        domain_chain_id,
+        hub_hex,
+        deriver.cursor().next_l1_block);
 
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);

@@ -90,6 +90,14 @@ bool is_domain_system_relayer(
 
 EXPLICIT_MONAD_TRAITS(is_domain_system_relayer);
 
+template <Traits traits>
+Address const *domain_access_spoke(ChainContext<traits> const &ctx)
+{
+    return ctx.domain_spoke.has_value() ? &*ctx.domain_spoke : nullptr;
+}
+
+EXPLICIT_MONAD_TRAITS(domain_access_spoke);
+
 ankerl::unordered_dense::segmented_set<Address> combine_senders_and_authorities(
     std::span<Address const> const senders,
     std::span<std::vector<std::optional<Address>> const> const authorities)

@@ -21,6 +21,9 @@
 #include <category/core/keccak.hpp>
 #include <category/core/likely.h>
 #include <category/core/runtime/uint256.hpp>
+#include <category/execution/ethereum/chain/chain.hpp>
+#include <category/execution/ethereum/core/contract/abi_encode.hpp>
+#include <category/execution/ethereum/core/contract/abi_signatures.hpp>
 #include <category/execution/ethereum/create_contract_address.hpp>
 #include <category/execution/ethereum/execute_message.hpp>
 #include <category/execution/ethereum/native_transfer_log.hpp>
@@ -36,6 +39,7 @@
 #include <category/vm/evm/revision.hpp>
 #include <category/vm/evm/traits.hpp>
 
+#include <algorithm>
 #include <cstdint>
 #include <optional>
 #include <utility>
@@ -44,6 +48,79 @@ MONAD_NAMESPACE_BEGIN
 
 namespace
 {
+
+    // The gas one access check of a private domain may use: the spoke's lookup
+    // of the policy, its call to the policy and the policy's storage reads.
+    constexpr int64_t DOMAIN_ACCESS_CHECK_GAS = 50'000;
+
+    // Calldata of the spoke's canCall(address caller, address context, bytes
+    // data) for the frame `msg`.
+    byte_string encode_can_call(vm::Message const &msg)
+    {
+        constexpr uint32_t selector =
+            abi_encode_selector("canCall(address,address,bytes)");
+        byte_string calldata{
+            static_cast<uint8_t>(selector >> 24),
+            static_cast<uint8_t>(selector >> 16),
+            static_cast<uint8_t>(selector >> 8),
+            static_cast<uint8_t>(selector)};
+        AbiEncoder encoder;
+        encoder.add_address(msg.sender);
+        encoder.add_address(msg.recipient);
+        encoder.add_bytes({msg.input_data, msg.input_size});
+        calldata += encoder.encode_final();
+        return calldata;
+    }
+
+    // Whether `result` returns the ABI encoding of true and nothing else.
+    bool returns_true(vm::Result const &result)
+    {
+        auto const expected = abi_encode_bool(true);
+        return result.status_code == CallStatus::Success &&
+               result.output_size == sizeof(expected.bytes) &&
+               std::equal(
+                   result.output_data,
+                   result.output_data + result.output_size,
+                   expected.bytes);
+    }
+
+    // Asks `spoke` whether the frame `msg` of a private domain may run, in a
+    // static call that `gas`, the frame's gas, pays for. The spoke may call
+    // the policy of the frame's contract, which may call nothing. Anything but
+    // true from within DOMAIN_ACCESS_CHECK_GAS denies the frame.
+    template <Traits traits>
+    bool check_domain_access(
+        StateHost<traits> &host, State &state, vm::Message const &msg,
+        Address const &spoke, int64_t &gas)
+    {
+        if (gas < DOMAIN_ACCESS_CHECK_GAS) {
+            return false;
+        }
+        auto const calldata = encode_can_call(msg);
+        vm::Message const check{
+            .kind = vm::CallKind::Call,
+            .flags = std::to_underlying(vm::CallFlags::Static),
+            .depth = msg.depth + 1,
+            .gas = DOMAIN_ACCESS_CHECK_GAS,
+            .recipient = spoke,
+            .sender = msg.sender,
+            .input_data = calldata.data(),
+            .input_size = calldata.size(),
+            .value = {},
+            .create2_salt = {},
+            .code_address = spoke,
+            .memory_handle = msg.memory_handle,
+            .memory = msg.memory,
+            .memory_capacity = msg.memory_capacity,
+        };
+        host.domain_access_check_depth_ = check.depth;
+        auto const result = execute_call_message<traits>(&host, state, check);
+        host.domain_access_check_depth_ = -1;
+        MONAD_ASSERT(
+            result.gas_left >= 0 && result.gas_left <= DOMAIN_ACCESS_CHECK_GAS);
+        gas -= DOMAIN_ACCESS_CHECK_GAS - result.gas_left;
+        return !host.domain_access_denied_ && returns_true(result);
+    }
 
     bool sender_has_balance(State &state, vm::Message const &msg) noexcept
     {
@@ -293,6 +370,13 @@ vm::Result execute_create_message(
                 host->chain_ctx_)) {
             result.status_code = CallStatus::ReserveBalanceViolation;
         }
+        if (MONAD_UNLIKELY(
+                host->domain_access_denied_ &&
+                result.status_code == CallStatus::Success)) {
+            // A denied frame reverts the transaction, whatever its callers
+            // made of it.
+            result = vm::Result{CallStatus::Revert, result.gas_left};
+        }
     }
 
     if (result.status_code == CallStatus::Success) {
@@ -324,25 +408,55 @@ vm::Result execute_call_message(
     auto &call_tracer = host->get_call_tracer();
     call_tracer.on_enter(msg);
 
+    if (MONAD_UNLIKELY(
+            host->domain_access_check_depth_ >= 0 &&
+            msg.depth > host->domain_access_check_depth_ + 1)) {
+        // The policy of an access check has called something.
+        host->domain_access_denied_ = true;
+        vm::Result result{CallStatus::Revert, msg.gas};
+        call_tracer.on_exit(result);
+        return result;
+    }
+
     if (auto result = pre_call<traits>(*host, msg, state); result.has_value()) {
         call_tracer.on_exit(result.value());
         return std::move(result.value());
     }
 
+    bool const private_domain = is_private_domain(host->chain_ctx_);
+
+    // The frame that runs: on a private domain it pays for its access check.
+    std::optional<vm::Message> checked;
+    if (MONAD_UNLIKELY(private_domain)) {
+        auto const *const spoke = domain_access_spoke(host->chain_ctx_);
+        if (spoke != nullptr && host->domain_access_check_depth_ < 0) {
+            checked.emplace(msg);
+            if (!check_domain_access<traits>(
+                    *host, state, msg, *spoke, checked->gas)) {
+                host->domain_access_denied_ = true;
+                vm::Result result{CallStatus::Revert, checked->gas};
+                reject_frame(*host, state);
+                call_tracer.on_exit(result);
+                return result;
+            }
+        }
+    }
+    vm::Message const &frame = checked.has_value() ? *checked : msg;
+
     vm::Result result;
     if (auto maybe_result =
-            is_private_domain(host->chain_ctx_)
-                ? check_call_domain_precompile<traits>(msg)
+            private_domain
+                ? check_call_domain_precompile<traits>(frame)
                 : check_call_precompile<traits>(
-                      state, call_tracer, msg, host->log_native_transfers_);
+                      state, call_tracer, frame, host->log_native_transfers_);
         maybe_result.has_value()) {
         result = std::move(maybe_result.value());
     }
     else {
-        auto const hash = state.get_code_hash(msg.code_address);
+        auto const hash = state.get_code_hash(frame.code_address);
         auto const code = state.read_code(hash);
         trace::on_read_code(host->state_tracer_, hash, code->intercode());
-        result = state.vm().execute<traits>(*host, &msg, hash, code);
+        result = state.vm().execute<traits>(*host, &frame, hash, code);
     }
 
     if (msg.depth == 0) {
@@ -356,6 +470,13 @@ vm::Result execute_call_message(
                 host->chain_ctx_)) {
             result.status_code = CallStatus::ReserveBalanceViolation;
             result.gas_refund = 0;
+        }
+        if (MONAD_UNLIKELY(
+                host->domain_access_denied_ &&
+                result.status_code == CallStatus::Success)) {
+            // A denied frame reverts the transaction, whatever its callers
+            // made of it.
+            result = vm::Result{CallStatus::Revert, result.gas_left};
         }
     }
 

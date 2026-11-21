@@ -37,4 +37,12 @@ bool is_domain_system_relayer(ChainContext<traits> const &, Address const &)
 
 EXPLICIT_EVM_TRAITS(is_domain_system_relayer);
 
+template <Traits traits>
+Address const *domain_access_spoke(ChainContext<traits> const &)
+{
+    return nullptr;
+}
+
+EXPLICIT_EVM_TRAITS(domain_access_spoke);
+
 MONAD_NAMESPACE_END

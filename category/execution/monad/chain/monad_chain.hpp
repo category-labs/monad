@@ -52,6 +52,10 @@ struct ChainContext<T>
     std::vector<Address> const &senders;
     std::vector<std::vector<std::optional<Address>>> const &authorities;
     bool private_domain{false};
+    // Set to the domain's spoke to check each call frame of a private domain
+    // block against the access policy the spoke holds for the frame's
+    // contract. A frame the policy denies reverts its transaction.
+    std::optional<Address> domain_spoke{};
 
     ExecutionMode mode{};
 

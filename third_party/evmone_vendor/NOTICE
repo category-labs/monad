@@ -1,0 +1,10 @@
+This directory contains code vendored from the evmone project
+(https://github.com/ipsilon/evmone, v0.24.0), licensed under the Apache
+License v2.0. See LICENSE for the full license text.
+
+bn254.*, ecc.hpp, modarith.hpp and pairing/ are copied unchanged from
+lib/evmone_precompiles.
+
+bn254_precompiles.cpp / bn254_precompiles.hpp are derived from the
+alt_bn128 precompiles in test/state/precompiles.cpp, under the evmone
+Apache-2.0 copyright.

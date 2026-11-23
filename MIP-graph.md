@@ -65,6 +65,18 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 | `SELECTOR_EVAL_GRAPH`      | `0xd259ffd8`                 |
 | `SELECTOR_EVAL_GRAPH_INTO` | `0x2a054e80`                 |
 
+### Failure
+
+Requirements stated with MUST and MUST NOT on a graph or on a call (its
+calldata, inputs and outputs) are conditions for the call to succeed. An
+implementation MUST fail a call that does not meet one of them, and a call
+that this specification says fails.
+
+A failed call reverts and consumes all gas given to it. It makes no changes to
+storage. The revert data is the same for every failure (see
+[Open Questions](#open-questions)): callers cannot tell why a call failed, and
+implementations need not detect failures in any particular order.
+
 ### Types and shapes
 
 All tensors have a tensor type which is an element type (or dtype) and
@@ -99,28 +111,17 @@ account as EVM code will fail at once.
 Graphs are deployed as ordinary contract code, with `CREATE` or
 `CREATE2`, subject to the usual code size limit.
 
-Tensors can also be stored as the code of an account and used directly
-in graphcode as `TensorRef` nodes (see Ops) or passed as arguments to
-`graphEval` invocations **CLAUDE: reference the section for this**.
-Tensors living in contract code are represented as literal tensors
-(see `Literal` in section Ops) and can be stored at any offset.
-**CLAUDE: try to add Markdown links when we reference a section**
-
-**CLAUDE: we're getting rid of the "first byte is 00" condition. This
-is so that someone may be able to e.g. deploy a tensor as a Literal node and
-have someone else read it as a TensorRef, and I don't really see a reason to keep it**
-Its code is a `0x00` byte (`STOP`, so a call that executes it stops at
-once), then any number of tensors, each encoded as a `Literal` node's
-parameters (see Ops). A reference to a tensor is the account's address
-and the byte offset of the tensor's encoding in its code, counted from
-the code's first byte.
+Tensors can also be stored in the code of an account and used directly
+in graphcode as `TensorRef` nodes (see [Ops](#ops)) or passed as code
+inputs to `evalGraph` and `evalGraphInto` (see
+[Precompile interface](#precompile-interface)). Tensors living in contract
+code are represented as literal tensors (see `Literal` in [Ops](#ops)) and
+can be stored at any offset of any account's code, including a graph's: a
+`TensorRef` can read another graph's `Literal` node. A reference to a tensor
+is the account's address and the byte offset of the tensor's encoding in its
+code, counted from the code's first byte.
 
 ### Graph encoding
-
-**CLAUDE: are you sure this is how RFC keywords are used? In this section we don't
-use them to constrain the implementation, but inputs to it, which is maybe odd. Perhaps
-we should say something like "an implementation MUST reject a graph that doesn't follow
-blah blah"**
 
 All integers are little-endian. A graph's code MUST follow the structure below:
 
@@ -131,7 +132,7 @@ graph :=
     n_inputs: u8                  at most MAX_GRAPH_INPUTS
     inputs: type[n_inputs]
     n_outputs: u8                 at most MAX_GRAPH_OUTPUTS
-    outputs: u16[node_id]
+    outputs: node_id[n_outputs]
     n_ops: u16                    at most MAX_GRAPH_OPS
     ops: op[n_ops]
 
@@ -157,7 +158,6 @@ with each node consisting of an opcode, a list of parameters
 reduction operation) and a list of inputs (given as a list of ids that
 reference previous nodes).
 
-
 Nodes are 0-indexed, starting with the graph's inputs followed by its
 ops in order. An op's inputs MUST be the ids of earlier nodes, and
 every output in the list `outputs` MUST be the id of a node. An output
@@ -168,7 +168,7 @@ outputs. A valid graph MUST NOT have any trailing bytes.
 
 | id | op          | params                                   | inputs              |
 |----|-------------|------------------------------------------|---------------------|
-| 0  | `Scalar`    | see Scalar nodes                         | see Scalar nodes    |
+| 0  | `Scalar`    | see [Scalar nodes](#scalar-nodes)        | see [Scalar nodes](#scalar-nodes) |
 | 1  | `Literal`   | `type`, then its elements                | 0                   |
 | 2  | `TensorRef` | `type`, `address: u8[20]`, `offset: u32` | 0                   |
 | 3  | `Reshape`   | `shape`                                  | 1                   |
@@ -187,10 +187,11 @@ Validation rules and results, with `x` and `y` the inputs:
 - `Literal`: its elements follow the type, little-endian, and the result is
   that tensor.
 - `TensorRef`: the result has the given type. Its elements are read when the
-  graph is evaluated, from the tensor at `offset` in the code of `address`,
-  little-endian. Evaluation fails if that code doesn't start with `0x00`, if
-  `offset` is 0, if the tensor's encoded type differs from the given type, or
-  if its elements extend past the end of the code.
+  graph is evaluated, from the tensor at `offset` in the code of `address`
+  (see [Graph and tensor storage](#graph-and-tensor-storage)), little-endian.
+  Evaluation fails if the tensor's encoding (its type, then its elements)
+  extends past the end of the code, or if its type differs from the given
+  type.
 - `Reshape`: `x` and `shape` MUST have the same element count. The result has
   `x`'s dtype and elements, in the same row-major order, and the given shape.
 - `Concat`: `x` and `y` MUST have the same dtype and rank, `axis` MUST be less
@@ -232,7 +233,7 @@ program, over a register file of `MAX_SCALAR_REGISTERS` registers:
 scalar :=
     output_shape: shape
     n_inputs: u8                       at most MAX_SCALAR_INPUTS
-    inputs: u16[n_inputs]              node ids: registers 0 .. n_inputs - 1
+    inputs: node_id[n_inputs]          registers 0 .. n_inputs - 1
     n_constants: u8
     constants: constant[n_constants]   registers n_inputs .. n_inputs + n_constants - 1
     n_fns: u8                          1 to MAX_SCALAR_FNS
@@ -313,8 +314,9 @@ provided in the assets of this MIP.
 ### Validation
 
 A graph's validity is a function of its code alone. A graph is valid if its
-code follows the encoding above, every op and fn satisfies its validation
-rules, and its memory fits the arena:
+code follows [Graph encoding](#graph-encoding), every op and fn satisfies its
+validation rules in [Ops](#ops) and [Scalar nodes](#scalar-nodes), and its
+memory fits the arena:
 
 - each graph input, and each op's result other than a `Literal`'s or a
   `Reshape`'s, takes the next region of the arena, its size rounded up to a
@@ -339,7 +341,8 @@ A call evaluates the graph in the code of the account it names:
 2. The call's inputs MUST match the graph's inputs in number, and each MUST
    have exactly the dtype and shape the graph declares.
 3. The ops are evaluated in order, each from the results of earlier nodes.
-4. The outputs are returned or stored, as the method says.
+4. The outputs are returned or stored, as the method says (see
+   [Precompile interface](#precompile-interface)).
 
 Evaluation reads no state other than the code of the accounts that `TensorRef`
 nodes and code inputs name and, for storage inputs, the caller's storage.
@@ -393,11 +396,11 @@ array MUST have at most `MAX_CALL_TENSORS` elements.
 `byteOrder` is 0 for big-endian and 1 for little-endian. It applies to the
 elements only. `location` is one of:
 
-| location    | input payload                                                                                                             | output payload                     |
-|-------------|---------------------------------------------------------------------------------------------------------------------------|------------------------------------|
-| 0 (literal) | the elements, exactly the tensor's size in bytes                                                                          | empty: returned                    |
-| 1 (code)    | `abi.encode(address account, uint32 offset)`: a tensor in a data account, as for `TensorRef`, its elements in `byteOrder` | not allowed                        |
-| 2 (storage) | `abi.encode(uint256 slot)`: the caller's storage                                                                          | `abi.encode(uint256 slot)`: stored |
+| location    | input payload                                                                                                                  | output payload                     |
+|-------------|--------------------------------------------------------------------------------------------------------------------------------|------------------------------------|
+| 0 (literal) | the elements, exactly the tensor's size in bytes                                                                               | empty: returned                    |
+| 1 (code)    | `abi.encode(address account, uint32 offset)`: a tensor in `account`'s code, as for `TensorRef`, its elements in `byteOrder`    | not allowed                        |
+| 2 (storage) | `abi.encode(uint256 slot)`: the caller's storage (see [Storage references](#storage-references))                               | `abi.encode(uint256 slot)`: stored |
 
 Any other `byteOrder` or `location`, or a payload of the wrong length, fails.
 
@@ -408,7 +411,8 @@ Any other `byteOrder` or `location`, or a payload of the wrong length, fails.
   others, in order, each in its `byteOrder`.
 
 The precompile accepts `CALL`, `STATICCALL` and `DELEGATECALL`. A `CALL` MUST
-send no value. `CALLCODE`, and calls through an EIP-7702 delegation to the
+send no value. `CALLCODE`, and calls through an
+[EIP-7702](https://eips.ethereum.org/EIPS/eip-7702) delegation to the
 precompile's address, fail.
 
 ### Storage references
@@ -424,19 +428,11 @@ tensor of `s` bytes takes `ceil(s / 32)` slots; when it is stored, the bytes
 after its elements in the last slot are zero.
 
 Storage reads and writes are the transaction's own: they warm their slots and
-count toward later accesses as `SLOAD` and `SSTORE` do, and under MIP-8, writes
+count toward later accesses as `SLOAD` and `SSTORE` do, and under
+[MIP-8](./MIP-8.md), writes
 are recorded for their pages. Outputs are stored after the whole graph has
 been evaluated. Two stored outputs MUST NOT start at the same slot or occupy
 overlapping slots. Slots whose value doesn't change are not written.
-
-### Failure
-
-**CLAUDE: maybe move this up so we specify what failure means before we talk about failing?**
-Whenever this spec describes that the graph eval precompile "MUST fail",
-the call reverts and consumes all gas given to it. A failed call makes no
-changes to storage. The revert data is the same for every failure (see Open
-Questions): callers cannot tell why a call failed, and implementations need not
-detect failures in any particular order.
 
 ### Gas costs
 
@@ -444,7 +440,8 @@ The gas schedule is not yet set. Its structure:
 
 - `G_CALL` per call.
 - Loading a graph's code, and code inputs' and `TensorRef` nodes' accounts, is
-  priced as a code load, as in MIP-20. For the graph's own code, that price
+  priced as a code load, as in [MIP-20](./MIP-20.md). For the graph's own
+  code, that price
   also covers validation, a linear pass.
 - Each op's cost is a function of its static types: per element for `Scalar`
   nodes (the sum over the node's fns of a price per fn and dtype, times the
@@ -471,9 +468,12 @@ A precompile can be called from existing contracts and toolchains without
 compiler changes. Graphs live in account code because code is immutable,
 addressable by `CREATE2`, priced on load by MIP-20, and needs validating only
 once. The magic number's first byte, `INVALID`, keeps a graph account from
-running as EVM code; data accounts use `SSTORE2`'s leading `STOP` for the
-same reason. Weights beyond the code size limit are split across data
-accounts and read with `TensorRef`.
+running as EVM code. Tensors need no such marker: they can be read from any
+offset of any account's code, so a graph's `Literal` can be shared with other
+graphs, and weights beyond the code size limit can be split across several
+accounts. An account whose code starts with a tensor still stops or fails at
+once if called, because its first byte is a dtype id: 0 is `STOP`, and 1 to 7
+are arithmetic opcodes that fail on an empty stack.
 
 ### Integer dtypes of at most 64 bits
 

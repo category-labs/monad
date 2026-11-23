@@ -20,7 +20,6 @@
 #include <category/core/result.hpp>
 #include <category/execution/domain/config.hpp>
 #include <category/execution/domain/execute_domain_block.hpp>
-#include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/vm/evm/traits.hpp>
 
@@ -61,7 +60,6 @@ class PrivateDomainExecutor
     TrieDb db_;
     vm::VM &vm_;
     fiber::PriorityPool &priority_pool_;
-    BlockHashBufferFinalized block_hashes_;
     uint64_t next_block_{0};
 
     template <Traits traits>
@@ -71,7 +69,8 @@ class PrivateDomainExecutor
 public:
     // Executes as the domain `domain_chain_id` of the L1 `l1_chain`, whose
     // DomainHub is `hub`, and continues after the db's latest finalized
-    // block. The db must match the encoding of the blocks' revisions.
+    // block. The db must match the encoding of the blocks' revisions, and a
+    // db that already has blocks must be this domain's.
     PrivateDomainExecutor(
         MonadChain const &l1_chain, uint64_t domain_chain_id,
         Address const &hub, mpt::Db &, vm::VM &, fiber::PriorityPool &);

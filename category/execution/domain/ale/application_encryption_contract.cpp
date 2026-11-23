@@ -18,6 +18,7 @@
 #include <category/core/keccak.hpp>
 #include <category/execution/domain/ale/application_encryption_contract.hpp>
 #include <category/execution/domain/ale/application_encryption_error.hpp>
+#include <category/execution/domain/hpke.hpp>
 #include <category/execution/ethereum/core/contract/abi_decode.hpp>
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
 #include <category/execution/ethereum/core/contract/abi_signatures.hpp>
@@ -250,24 +251,39 @@ Result<byte_string> ApplicationEncryptionContract::precompile_seal(
     BOOST_OUTCOME_TRY(
         byte_string_view app_ctx, abi_decode_dynamic_bytes_tail(input));
 
+    if (!input.empty()) {
+        return AbiDecodeError::InputTooLong;
+    }
+
     // Associated data binds the sealed blob to an intended recipient
     // context.
     auto const ad = sealed_blob_ad(dest_domain.native(), to_addr, app_ctx);
 
     BOOST_OUTCOME_TRY(
-        auto const key,
+        auto const destination_key,
         read_destination_key(
             state_,
             encryption_context_.spoke,
             SPOKE_VIEWING_KEYS_SLOT,
             dest_domain.native()));
     auto const seal_index = next_seal_index();
-    [[maybe_unused]] auto const randomness_input = sealed_blob_randomness_input(
-        tx_origin_, tx_nonce_, seal_index, msg_sender, key, ad, blob);
+    auto const randomness_input = sealed_blob_randomness_input(
+        tx_origin_,
+        tx_nonce_,
+        seal_index,
+        msg_sender,
+        destination_key,
+        ad,
+        blob);
 
-    // TODO: Pass blob, key, ad and randomness_input to
-    // encryption_context_.key.seal() and ABI-encode the ciphertext.
-    return ApplicationEncryptionError::NotImplemented;
+    auto const ciphertext = encryption_context_.key.seal(
+        blob, destination_key, ad, randomness_input);
+    if (ciphertext.has_error()) {
+        return ApplicationEncryptionError::SealFailed;
+    }
+    AbiEncoder encoder;
+    encoder.add_bytes(ciphertext.value());
+    return encoder.encode_final();
 }
 
 Result<byte_string> ApplicationEncryptionContract::precompile_unseal(

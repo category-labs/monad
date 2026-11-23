@@ -19,7 +19,7 @@
 #include <category/execution/domain/ale/application_encryption_error.hpp>
 #include <category/execution/domain/hpke.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
-#include <category/execution/ethereum/core/contract/abi_decode_error.hpp>
+#include <category/execution/ethereum/core/contract/abi_decode.hpp>
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
@@ -89,6 +89,10 @@ MC4CAQAwBQYDK2VuBCIEIBERERERERERERERERERERERERERERERERERERERERER
 
     constexpr auto DESTINATION_KEY =
         0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f_bytes32;
+
+    // Public key for the raw X25519 private key 0x22 * 32.
+    constexpr auto RECIPIENT_KEY =
+        0x0faa684ed28867b97f4a6a2dee5df8ce974e76b7018e3f22a1c4cf2678570f20_bytes32;
 }
 
 struct ApplicationEncryptionContractTest : public ::testing::Test
@@ -111,14 +115,34 @@ struct ApplicationEncryptionContractTest : public ::testing::Test
             ALE_CA, ApplicationEncryptionContract::SEAL_INDEX_SLOT));
     }
 
-    byte_string seal_input()
+    byte_string seal_input(
+        byte_string_view const blob = byte_string{0xab},
+        byte_string_view const app_ctx = byte_string{0xcd})
     {
         AbiEncoder encoder;
-        encoder.add_bytes(byte_string{0xab});
+        encoder.add_bytes(blob);
         encoder.add_uint(u64_be{DESTINATION_DOMAIN});
         encoder.add_address(Address{0x1234});
-        encoder.add_bytes(byte_string{0xcd});
+        encoder.add_bytes(app_ctx);
         return encoder.encode_final();
+    }
+
+    byte_string seal_calldata()
+    {
+        return byte_string{0x60, 0x7c, 0x42, 0xc9} + seal_input();
+    }
+
+    static vm::Message seal_call(byte_string_view const input)
+    {
+        return {
+            .kind = vm::CallKind::Call,
+            .depth = 1,
+            .gas = 1'000,
+            .recipient = ALE_CA,
+            .sender = Address{0x4321},
+            .input_data = input.data(),
+            .input_size = input.size(),
+            .code_address = ALE_CA};
     }
 
     void seal(
@@ -126,9 +150,32 @@ struct ApplicationEncryptionContractTest : public ::testing::Test
         Address const &sender = Address{1})
     {
         auto const result = target.precompile_seal(seal_input(), sender, {});
-        ASSERT_TRUE(result.has_error());
-        EXPECT_EQ(
-            result.assume_error(), ApplicationEncryptionError::NotImplemented);
+        ASSERT_TRUE(result.has_value());
+    }
+
+    vm::Result execute_seal()
+    {
+        using traits = MonadTraits<MONAD_NEXT>;
+        auto chain_ctx = ChainContext<traits>::debug_empty();
+        chain_ctx.private_domain = true;
+        chain_ctx.encryption_context = &encryption_context;
+        BlockHashBufferFinalized const block_hashes;
+        auto tx_context = EMPTY_TX_CONTEXT;
+        tx_context.tx_origin = TX_ORIGIN;
+        Transaction const tx{.nonce = TX_NONCE};
+        trace::StateTracer state_tracer{std::monostate{}};
+        StateHost<traits> host{
+            call_tracer,
+            state_tracer,
+            tx_context,
+            block_hashes,
+            state,
+            tx,
+            std::nullopt,
+            0,
+            chain_ctx};
+        auto const input = seal_calldata();
+        return execute_call_message<traits>(&host, state, seal_call(input));
     }
 };
 
@@ -208,21 +255,11 @@ TEST_F(
 
 TEST_F(
     ApplicationEncryptionContractTest,
-    dispatch_checks_context_and_rolls_back_seal_index)
+    dispatch_requires_domain_and_transaction_context)
 {
     using traits = MonadTraits<MONAD_NEXT>;
-    state.set_nonce(SPOKE_CA, 1);
-    state.set_storage(SPOKE_CA, DESTINATION_KEY_SLOT, DESTINATION_KEY);
-    byte_string const input =
-        byte_string{0x60, 0x7c, 0x42, 0xc9} + seal_input();
-    vm::Message const msg{
-        .kind = vm::CallKind::Call,
-        .gas = 1'000,
-        .recipient = ALE_CA,
-        .sender = Address{0x4321},
-        .input_data = input.data(),
-        .input_size = input.size(),
-        .code_address = ALE_CA};
+    auto const input = seal_calldata();
+    auto const msg = seal_call(input);
 
     auto const missing_context =
         check_call_precompile<traits>(state, call_tracer, msg, false);
@@ -254,7 +291,6 @@ TEST_F(
     EXPECT_EQ(public_context->status_code, CallStatus::Rejected);
 
     chain_ctx.private_domain = true;
-    BlockHashBufferFinalized const block_hashes;
     auto tx_context = EMPTY_TX_CONTEXT;
     tx_context.tx_origin = TX_ORIGIN;
     Transaction const tx{.nonce = TX_NONCE};
@@ -266,27 +302,56 @@ TEST_F(
         state, call_tracer, msg, false, &chain_ctx, &tx_context);
     ASSERT_TRUE(missing_transaction.has_value());
     EXPECT_EQ(missing_transaction->status_code, CallStatus::Rejected);
+}
 
-    trace::StateTracer state_tracer{std::monostate{}};
-    StateHost<traits> host{
-        call_tracer,
-        state_tracer,
-        tx_context,
-        block_hashes,
-        state,
-        tx,
-        std::nullopt,
-        0,
-        chain_ctx};
+TEST_F(
+    ApplicationEncryptionContractTest,
+    dispatch_seal_matches_independent_ciphertext_vector)
+{
+    state.set_nonce(SPOKE_CA, 1);
+    state.set_storage(SPOKE_CA, DESTINATION_KEY_SLOT, DESTINATION_KEY);
     state.set_transient_storage(
         ALE_CA, ApplicationEncryptionContract::SEAL_INDEX_SLOT, bytes32_t{7});
-    auto const result = execute_call_message<traits>(&host, state, msg);
+    auto const result = execute_seal();
+    ASSERT_EQ(result.status_code, CallStatus::Success);
+    EXPECT_EQ(result.gas_left, 900);
+    EXPECT_EQ(result.gas_refund, 0);
+    EXPECT_EQ(seal_index(state), 8);
+
+    // Python cryptography 50.0.2, RFC 9180 labeled HKDF and independently
+    // encoded ABI inputs: private key 0x11 * 32, TX_ORIGIN, TX_NONCE, index 7,
+    // caller 0x4321, DESTINATION_KEY, destination 0x510000004eaf, recipient
+    // 0x1234, app context 0xcd and plaintext 0xab. The return is ABI bytes.
+    auto const expected =
+        from_hex(
+            "0000000000000000000000000000000000000000000000000000000000000020"
+            "0000000000000000000000000000000000000000000000000000000000000031"
+            "c01aa8e09b4db03f5956ff9b8803eef6da11382f020db816637b5f0b343ef252"
+            "596eee1d791f07e68fd9761fa563356368000000000000000000000000000000")
+            .value();
+    EXPECT_EQ(
+        (byte_string_view{result.output_data, result.output_size}), expected);
+}
+
+TEST_F(
+    ApplicationEncryptionContractTest, dispatch_seal_failure_rolls_back_index)
+{
+    state.set_nonce(SPOKE_CA, 1);
+    // This nonzero low-order point passes the registry lookup but HPKE
+    // rejects it because X25519 produces an all-zero shared secret.
+    bytes32_t low_order_key{};
+    low_order_key.bytes[0] = 1;
+    state.set_storage(SPOKE_CA, DESTINATION_KEY_SLOT, low_order_key);
+    state.set_transient_storage(
+        ALE_CA, ApplicationEncryptionContract::SEAL_INDEX_SLOT, bytes32_t{7});
+    auto const result = execute_seal();
     EXPECT_EQ(result.status_code, CallStatus::Revert);
+    EXPECT_EQ(result.gas_left, 0);
     EXPECT_EQ(
         (std::string_view{
             reinterpret_cast<char const *>(result.output_data),
             result.output_size}),
-        "application encryption is not implemented");
+        "application encryption failed");
     EXPECT_EQ(seal_index(state), 7);
 }
 
@@ -389,11 +454,125 @@ TEST_F(ApplicationEncryptionContractTest, seal_reads_destination_key)
 
     state.set_storage(SPOKE_CA, DESTINATION_KEY_SLOT, DESTINATION_KEY);
     auto const installed = contract.precompile_seal(input, Address{0x4321}, {});
-    ASSERT_TRUE(installed.has_error());
-    // A successful lookup reaches the remaining encryption stub.
-    EXPECT_EQ(
-        installed.assume_error(), ApplicationEncryptionError::NotImplemented);
+    ASSERT_TRUE(installed.has_value());
     EXPECT_EQ(seal_index(state), 1);
+}
+
+TEST_F(ApplicationEncryptionContractTest, seal_encrypts_dynamic_arguments)
+{
+    state.set_nonce(SPOKE_CA, 1);
+    state.set_storage(SPOKE_CA, DESTINATION_KEY_SLOT, RECIPIENT_KEY);
+
+    for (auto const &[blob_size, ctx_size] : {
+             std::pair{0uz, 0uz},
+             std::pair{1uz, 1uz},
+             std::pair{31uz, 32uz},
+             std::pair{32uz, 31uz},
+             std::pair{33uz, 65uz},
+             std::pair{65uz, 33uz},
+         }) {
+        SCOPED_TRACE(blob_size);
+        SCOPED_TRACE(ctx_size);
+        byte_string const blob(blob_size, 0xab);
+        byte_string const app_ctx(ctx_size, 0xcd);
+        auto const result = contract.precompile_seal(
+            seal_input(blob, app_ctx), Address{0x4321}, {});
+        ASSERT_TRUE(result.has_value());
+
+        byte_string_view output = result.value();
+        auto const offset = abi_decode_fixed<u256_be>(output);
+        ASSERT_TRUE(offset.has_value());
+        EXPECT_EQ(offset.value().native(), 32);
+        auto const decoded = abi_decode_dynamic_bytes_tail(output);
+        ASSERT_TRUE(decoded.has_value());
+        EXPECT_TRUE(output.empty());
+        auto const payload = decoded.value();
+        ASSERT_EQ(payload.size(), blob.size() + 32 + 16);
+
+        auto const opened = domain::detail::hpke_base_open_x25519(
+            byte_string(32, 0x22),
+            payload.substr(0, 32),
+            {},
+            sealed_blob_ad(DESTINATION_DOMAIN, Address{0x1234}, app_ctx),
+            payload.substr(32));
+        ASSERT_TRUE(opened.has_value());
+        EXPECT_EQ(opened.value(), blob);
+    }
+}
+
+TEST_F(ApplicationEncryptionContractTest, seal_rejects_truncated_arguments)
+{
+    state.set_nonce(SPOKE_CA, 1);
+    state.set_storage(SPOKE_CA, DESTINATION_KEY_SLOT, RECIPIENT_KEY);
+    auto const encoded =
+        seal_input(byte_string(33, 0xab), byte_string(65, 0xcd));
+    for (size_t size = 0; size < encoded.size(); ++size) {
+        SCOPED_TRACE(size);
+        auto const result = contract.precompile_seal(
+            byte_string_view{encoded}.substr(0, size), Address{0x4321}, {});
+        ASSERT_TRUE(result.has_error());
+        EXPECT_EQ(result.assume_error(), AbiDecodeError::InputTooShort);
+        EXPECT_EQ(seal_index(state), 0);
+    }
+}
+
+TEST_F(ApplicationEncryptionContractTest, seal_rejects_trailing_bytes)
+{
+    state.set_nonce(SPOKE_CA, 1);
+    state.set_storage(SPOKE_CA, DESTINATION_KEY_SLOT, RECIPIENT_KEY);
+    state.set_transient_storage(
+        ALE_CA, ApplicationEncryptionContract::SEAL_INDEX_SLOT, bytes32_t{7});
+
+    for (auto const &suffix : {
+             byte_string{0},
+             byte_string{0xab},
+             byte_string(32, 0),
+             byte_string(33, 0xab),
+         }) {
+        SCOPED_TRACE(suffix.size());
+        auto const result = contract.precompile_seal(
+            seal_input() + suffix, Address{0x4321}, {});
+        ASSERT_TRUE(result.has_error());
+        EXPECT_EQ(result.assume_error(), AbiDecodeError::InputTooLong);
+        EXPECT_EQ(seal_index(state), 7);
+    }
+}
+
+TEST_F(ApplicationEncryptionContractTest, seal_rejects_nonzero_value)
+{
+    auto const result =
+        contract.precompile_seal({}, Address{0x4321}, bytes32_t{1});
+    ASSERT_TRUE(result.has_error());
+    EXPECT_EQ(result.assume_error(), ApplicationEncryptionError::ValueNonZero);
+    EXPECT_EQ(seal_index(state), 0);
+}
+
+TEST_F(
+    ApplicationEncryptionContractTest,
+    seal_repeats_after_parent_revert_and_changes_with_index)
+{
+    state.set_nonce(SPOKE_CA, 1);
+    state.set_storage(SPOKE_CA, DESTINATION_KEY_SLOT, DESTINATION_KEY);
+    state.push();
+    auto const discarded = execute_seal();
+    ASSERT_EQ(discarded.status_code, CallStatus::Success);
+    EXPECT_EQ(seal_index(state), 1);
+    state.pop_reject();
+    EXPECT_EQ(seal_index(state), 0);
+
+    auto const repeated = execute_seal();
+    ASSERT_EQ(repeated.status_code, CallStatus::Success);
+    EXPECT_EQ(seal_index(state), 1);
+    EXPECT_EQ(
+        (byte_string_view{repeated.output_data, repeated.output_size}),
+        (byte_string_view{discarded.output_data, discarded.output_size}));
+
+    auto const next = execute_seal();
+    ASSERT_EQ(next.status_code, CallStatus::Success);
+    EXPECT_EQ(seal_index(state), 2);
+    EXPECT_NE(
+        (byte_string_view{next.output_data, next.output_size}),
+        (byte_string_view{repeated.output_data, repeated.output_size}));
 }
 
 TEST_F(

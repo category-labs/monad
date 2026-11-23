@@ -92,13 +92,13 @@ abi_decode_dynamic_bytes_tail(byte_string_view &enc)
         return AbiDecodeError::InputTooShort;
     }
 
-    const size_t length = static_cast<size_t>(value.native());
-    const size_t padding = (-length) & 31uz;
+    size_t const length = static_cast<size_t>(value.native());
+    size_t const padding = (-length) & 31uz;
     if (MONAD_UNLIKELY(enc.size() - length < padding)) {
         return AbiDecodeError::InputTooShort;
     }
 
-    const size_t padded = length + padding;
+    size_t const padded = length + padding;
     byte_string_view output = enc.substr(0, length);
     enc.remove_prefix(padded);
     return output;

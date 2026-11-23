@@ -38,6 +38,7 @@ enum class ApplicationEncryptionError
     UnsealFailed,
     SpokeNotFound,
     DestinationKeyNotFound,
+    SealFailed,
 };
 
 MONAD_NAMESPACE_END

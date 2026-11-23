@@ -88,6 +88,8 @@ public:
         byte_string_view input, Address const &msg_sender,
         uint256_be_t const &msg_value);
 
+    // seal(bytes,uint64,address,bytes) -> bytes.
+    // Returns ABI bytes containing enc || ciphertext || tag.
     Result<byte_string> precompile_seal(
         byte_string_view input, Address const &msg_sender,
         uint256_be_t const &msg_value);

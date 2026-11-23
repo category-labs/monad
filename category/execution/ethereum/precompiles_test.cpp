@@ -422,9 +422,8 @@ TYPED_TEST(TraitsTest, application_encryption_unavailable)
     State state{block_state, Incarnation{0, 0}};
     NoopCallTracer call_tracer;
     vm::Message const msg{.code_address = address};
-    EXPECT_FALSE(
-        check_call_precompile<traits>(state, call_tracer, msg, false)
-            .has_value());
+    EXPECT_FALSE(check_call_precompile<traits>(state, call_tracer, msg, false)
+                     .has_value());
 }
 
 TYPED_TEST(TraitsTest, ecrecover)

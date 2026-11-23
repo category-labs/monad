@@ -190,7 +190,7 @@ EXPLICIT_TRAITS(check_call_eth_precompile);
 template <Traits traits>
 std::optional<vm::Result> check_call_precompile(
     State &, CallTracerBase &, vm::Message const &msg, bool,
-    ChainContext<traits> const *)
+    ChainContext<traits> const *, vm::TxContext const *, Transaction const *)
 {
     return check_call_eth_precompile<traits>(msg);
 }

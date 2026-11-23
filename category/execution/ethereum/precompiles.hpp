@@ -33,6 +33,12 @@ MONAD_NAMESPACE_BEGIN
 
 class State;
 struct CallTracerBase;
+struct Transaction;
+
+namespace vm
+{
+    struct TxContext;
+}
 
 template <typename T>
 struct ChainContext;
@@ -57,7 +63,9 @@ std::optional<vm::Result> check_call_eth_precompile(vm::Message const &);
 template <Traits traits>
 std::optional<vm::Result> check_call_precompile(
     State &, CallTracerBase &, vm::Message const &, bool log_native_transfers,
-    ChainContext<traits> const *chain_context = nullptr);
+    ChainContext<traits> const *chain_context = nullptr,
+    vm::TxContext const *tx_context = nullptr,
+    Transaction const *transaction = nullptr);
 
 using precompiled_gas_cost_fn = std::optional<uint64_t>(byte_string_view);
 

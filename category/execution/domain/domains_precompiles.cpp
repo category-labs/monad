@@ -16,9 +16,11 @@
 #include <category/core/config.hpp>
 #include <category/core/likely.h>
 #include <category/execution/domain/ale/application_encryption_contract.hpp>
+#include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/tx_context.hpp>
 
 #include <cstdint>
 #include <optional>
@@ -30,7 +32,8 @@ template <Traits traits, typename Contract, Address contract_address>
 std::optional<vm::Result> check_call_domain_precompile(
     State &state, CallTracerBase &call_tracer, vm::Message const &msg,
     bool const log_native_transfers,
-    ChainContext<traits> const *const chain_context)
+    ChainContext<traits> const *const chain_context,
+    vm::TxContext const *const tx_context, Transaction const *const transaction)
 {
     if (msg.code_address != contract_address) {
         return std::nullopt;
@@ -38,7 +41,8 @@ std::optional<vm::Result> check_call_domain_precompile(
 
     if (MONAD_UNLIKELY(
             chain_context == nullptr || !chain_context->private_domain ||
-            chain_context->encryption_context == nullptr)) {
+            chain_context->encryption_context == nullptr ||
+            tx_context == nullptr || transaction == nullptr)) {
         return vm::Result{CallStatus::Rejected};
     }
     if (MONAD_UNLIKELY(msg.kind != vm::CallKind::Call) || (msg.flags != 0)) {
@@ -56,6 +60,8 @@ std::optional<vm::Result> check_call_domain_precompile(
         state,
         call_tracer,
         *chain_context->encryption_context,
+        tx_context->tx_origin,
+        transaction->nonce,
         log_native_transfers};
     auto const res = (contract.*method)(input, msg.sender, msg.value);
     if (MONAD_LIKELY(res.has_value())) {
@@ -93,7 +99,8 @@ template <Traits traits>
 std::optional<vm::Result> check_call_precompile(
     State &state, CallTracerBase &call_tracer, vm::Message const &msg,
     bool const log_native_transfers,
-    ChainContext<traits> const *const chain_context)
+    ChainContext<traits> const *const chain_context,
+    vm::TxContext const *const tx_context, Transaction const *const transaction)
 {
     if (auto maybe_result = check_call_eth_precompile<traits>(msg)) {
         return maybe_result;
@@ -108,7 +115,9 @@ std::optional<vm::Result> check_call_precompile(
                         call_tracer,                                           \
                         msg,                                                   \
                         log_native_transfers,                                  \
-                        chain_context)) {                                      \
+                        chain_context,                                         \
+                        tx_context,                                            \
+                        transaction)) {                                        \
                 return maybe_result;                                           \
             }                                                                  \
         }                                                                      \

@@ -13,11 +13,11 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/assert.h>
 #include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
 #include <category/execution/domain/ale/application_encryption_contract.hpp>
 #include <category/execution/domain/ale/application_encryption_error.hpp>
-#include <category/execution/domain/hpke.hpp>
 #include <category/execution/ethereum/core/contract/abi_decode.hpp>
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
 #include <category/execution/ethereum/core/contract/abi_signatures.hpp>
@@ -28,11 +28,14 @@
 #include <boost/outcome/try.hpp>
 
 #include <algorithm>
+#include <limits>
 #include <string_view>
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
 constexpr std::string_view SEALED_BLOB_AD_LABEL = "monad-sealed-blob-v1";
+constexpr std::string_view SEALED_BLOB_RANDOMNESS_LABEL =
+    "monad-precompile-randomness-v1";
 
 struct PrecompileSelector
 {
@@ -86,6 +89,24 @@ byte_string sealed_blob_ad(
     return encoder.encode_final();
 }
 
+byte_string sealed_blob_randomness_input(
+    Address const &tx_origin, uint64_t const tx_nonce,
+    uint64_t const seal_index, Address const &caller,
+    bytes32_t const &destination_key, byte_string_view const ad,
+    byte_string_view const blob)
+{
+    AbiEncoder encoder;
+    encoder.add_string(SEALED_BLOB_RANDOMNESS_LABEL);
+    encoder.add_address(tx_origin);
+    encoder.add_uint(u64_be{tx_nonce});
+    encoder.add_uint(u64_be{seal_index});
+    encoder.add_address(caller);
+    encoder.add_bytes({destination_key.bytes, sizeof(destination_key.bytes)});
+    encoder.add_bytes(ad);
+    encoder.add_bytes(blob);
+    return encoder.encode_final();
+}
+
 Result<bytes32_t> read_destination_key(
     State &state, Address const &spoke, uint256_t const &mapping_slot,
     uint64_t destination_domain)
@@ -110,11 +131,14 @@ Result<bytes32_t> read_destination_key(
 ApplicationEncryptionContract::ApplicationEncryptionContract(
     State &state, CallTracerBase &tracer,
     ApplicationEncryptionContext const &encryption_context,
+    Address const &tx_origin, uint64_t const tx_nonce,
     bool const log_native_transfers)
     : state_{state}
     , call_tracer_{tracer}
     , log_native_transfers_{log_native_transfers}
     , encryption_context_{encryption_context}
+    , tx_origin_{tx_origin}
+    , tx_nonce_{tx_nonce}
 {
 }
 
@@ -190,8 +214,22 @@ Result<byte_string> ApplicationEncryptionContract::precompile_seal_message(
     return ApplicationEncryptionError::NotImplemented;
 }
 
+uint64_t ApplicationEncryptionContract::next_seal_index()
+{
+    // Transient storage shares the index within one transaction and rolls
+    // increments back when the calling frame reverts.
+    auto const index = load_be<uint256_t>(
+        state_.get_transient_storage(ALE_CA, SEAL_INDEX_SLOT));
+    MONAD_ASSERT(index < uint256_t{std::numeric_limits<uint64_t>::max()});
+    auto const seal_index = static_cast<uint64_t>(index);
+    state_.set_transient_storage(
+        ALE_CA, SEAL_INDEX_SLOT, bytes32_t{seal_index + 1});
+    return seal_index;
+}
+
 Result<byte_string> ApplicationEncryptionContract::precompile_seal(
-    byte_string_view input, Address const &, uint256_be_t const &msg_value)
+    byte_string_view input, Address const &msg_sender,
+    uint256_be_t const &msg_value)
 {
     if (std::ranges::any_of(
             msg_value.bytes, [](uint8_t const byte) { return byte != 0; })) {
@@ -208,28 +246,27 @@ Result<byte_string> ApplicationEncryptionContract::precompile_seal(
     BOOST_OUTCOME_TRY(abi_decode_fixed<u256_be>(input));
 
     BOOST_OUTCOME_TRY(
-        [[maybe_unused]]
-        byte_string_view blob,
-        abi_decode_dynamic_bytes_tail(input));
+        byte_string_view blob, abi_decode_dynamic_bytes_tail(input));
     BOOST_OUTCOME_TRY(
         byte_string_view app_ctx, abi_decode_dynamic_bytes_tail(input));
 
     // Associated data binds the sealed blob to an intended recipient
     // context.
-    [[maybe_unused]] auto const ad =
-        sealed_blob_ad(dest_domain.native(), to_addr, app_ctx);
+    auto const ad = sealed_blob_ad(dest_domain.native(), to_addr, app_ctx);
 
     BOOST_OUTCOME_TRY(
-        [[maybe_unused]] auto const key,
+        auto const key,
         read_destination_key(
             state_,
             encryption_context_.spoke,
             SPOKE_VIEWING_KEYS_SLOT,
             dest_domain.native()));
-    // TODO: derive deterministic randomness
-    // from seed_D, the counter, msg.sender, tx_ctx, epk, ad and blob.
-    // TODO: Seal the blob with ad, update the counter and encode the
-    // ciphertext.
+    auto const seal_index = next_seal_index();
+    [[maybe_unused]] auto const randomness_input = sealed_blob_randomness_input(
+        tx_origin_, tx_nonce_, seal_index, msg_sender, key, ad, blob);
+
+    // TODO: Pass blob, key, ad and randomness_input to
+    // encryption_context_.key.seal() and ABI-encode the ciphertext.
     return ApplicationEncryptionError::NotImplemented;
 }
 
@@ -258,7 +295,7 @@ Result<byte_string> ApplicationEncryptionContract::precompile_unseal(
     [[maybe_unused]] auto const ad = sealed_blob_ad(
         encryption_context_.domain_chain_id, msg_sender, app_ctx);
     // TODO: Open with encryption_context_.key and ad, then encode the
-    // plaintext. Do not increment the counter.
+    // plaintext. Do not increment the Seal index.
     // TODO: Enforce empty revert data for every unseal failure and the
     // specified length-based gas charge in the wrapper before registration.
     return ApplicationEncryptionError::NotImplemented;

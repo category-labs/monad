@@ -335,7 +335,9 @@ vm::Result execute_call_message(
             call_tracer,
             msg,
             host->log_native_transfers_,
-            &host->chain_ctx_);
+            &host->chain_ctx_,
+            host->get_tx_context(),
+            &host->tx_);
         maybe_result.has_value()) {
         result = std::move(maybe_result.value());
     }

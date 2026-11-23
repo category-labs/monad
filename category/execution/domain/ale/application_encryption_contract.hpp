@@ -39,6 +39,14 @@ constexpr Address ALE_CA = Address{0x1A7E};
 byte_string sealed_blob_ad(
     uint64_t dest_domain, Address const &to, byte_string_view app_ctx);
 
+// abi.encode("monad-precompile-randomness-v1", address tx_origin,
+// uint64 tx_nonce, uint64 seal_index, address caller, bytes destination_key,
+// bytes ad, bytes blob).
+byte_string sealed_blob_randomness_input(
+    Address const &tx_origin, uint64_t tx_nonce, uint64_t seal_index,
+    Address const &caller, bytes32_t const &destination_key,
+    byte_string_view ad, byte_string_view blob);
+
 // Read a destination public key from the spoke's storage. The spoke address
 // and mapping slot must come from trusted execution configuration.
 Result<bytes32_t> read_destination_key(
@@ -47,16 +55,23 @@ Result<bytes32_t> read_destination_key(
 
 class ApplicationEncryptionContract
 {
-    [[maybe_unused]] State &state_;
+    State &state_;
     [[maybe_unused]] CallTracerBase &call_tracer_;
     [[maybe_unused]] bool log_native_transfers_;
     ApplicationEncryptionContext const &encryption_context_;
+    Address const tx_origin_;
+    uint64_t const tx_nonce_;
+
+    uint64_t next_seal_index();
 
 public:
     static constexpr uint256_t SPOKE_VIEWING_KEYS_SLOT{7};
+    // Transient slot under ALE_CA, shared by blob Seal calls in a transaction.
+    static constexpr bytes32_t SEAL_INDEX_SLOT{0};
 
     ApplicationEncryptionContract(
         State &, CallTracerBase &, ApplicationEncryptionContext const &,
+        Address const &tx_origin, uint64_t tx_nonce,
         bool log_native_transfers = false);
 
     using PrecompileFunc =

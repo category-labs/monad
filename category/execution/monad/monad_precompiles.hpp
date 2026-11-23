@@ -36,6 +36,7 @@ bool is_precompile(Address const &);
 template <Traits traits>
 std::optional<vm::Result> check_call_precompile(
     State &, CallTracerBase &, vm::Message const &msg,
-    bool log_native_transfers, ChainContext<traits> const *chain_context);
+    bool log_native_transfers, ChainContext<traits> const *chain_context,
+    vm::TxContext const *tx_context, Transaction const *transaction);
 
 MONAD_NAMESPACE_END

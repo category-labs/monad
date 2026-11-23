@@ -23,6 +23,7 @@
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
+#include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/state_host.hpp>
@@ -56,6 +57,9 @@ namespace
     constexpr uint64_t SOURCE_DOMAIN = 0x520000004eaf;
     constexpr uint64_t DESTINATION_DOMAIN = 0x510000004eaf;
     constexpr Address SPOKE_CA{0x12345678};
+    constexpr auto TX_ORIGIN =
+        0x89abcdef0123456789abcdef0123456789abcdef_address;
+    constexpr uint64_t TX_NONCE = 0xfedcba9876543210;
 
     domain::PrivateDomainKey load_test_key()
     {
@@ -99,7 +103,33 @@ struct ApplicationEncryptionContractTest : public ::testing::Test
     ApplicationEncryptionContext const encryption_context{
         SOURCE_DOMAIN, key, SPOKE_CA};
     ApplicationEncryptionContract contract{
-        state, call_tracer, encryption_context};
+        state, call_tracer, encryption_context, TX_ORIGIN, TX_NONCE};
+
+    static uint256_t seal_index(State &current_state)
+    {
+        return load_be<uint256_t>(current_state.get_transient_storage(
+            ALE_CA, ApplicationEncryptionContract::SEAL_INDEX_SLOT));
+    }
+
+    byte_string seal_input()
+    {
+        AbiEncoder encoder;
+        encoder.add_bytes(byte_string{0xab});
+        encoder.add_uint(u64_be{DESTINATION_DOMAIN});
+        encoder.add_address(Address{0x1234});
+        encoder.add_bytes(byte_string{0xcd});
+        return encoder.encode_final();
+    }
+
+    void seal(
+        ApplicationEncryptionContract &target,
+        Address const &sender = Address{1})
+    {
+        auto const result = target.precompile_seal(seal_input(), sender, {});
+        ASSERT_TRUE(result.has_error());
+        EXPECT_EQ(
+            result.assume_error(), ApplicationEncryptionError::NotImplemented);
+    }
 };
 
 TEST(ApplicationEncryptionPrecompile, domain_availability)
@@ -176,18 +206,15 @@ TEST_F(
     }
 }
 
-TEST_F(ApplicationEncryptionContractTest, dispatch_receives_encryption_context)
+TEST_F(
+    ApplicationEncryptionContractTest,
+    dispatch_checks_context_and_rolls_back_seal_index)
 {
     using traits = MonadTraits<MONAD_NEXT>;
     state.set_nonce(SPOKE_CA, 1);
     state.set_storage(SPOKE_CA, DESTINATION_KEY_SLOT, DESTINATION_KEY);
-    AbiEncoder encoder;
-    encoder.add_bytes(byte_string{0xab});
-    encoder.add_uint(u64_be{DESTINATION_DOMAIN});
-    encoder.add_address(Address{0x1234});
-    encoder.add_bytes(byte_string{0xcd});
     byte_string const input =
-        byte_string{0x60, 0x7c, 0x42, 0xc9} + encoder.encode_final();
+        byte_string{0x60, 0x7c, 0x42, 0xc9} + seal_input();
     vm::Message const msg{
         .kind = vm::CallKind::Call,
         .gas = 1'000,
@@ -208,10 +235,9 @@ TEST_F(ApplicationEncryptionContractTest, dispatch_receives_encryption_context)
     EXPECT_FALSE(
         check_call_precompile<traits>(state, call_tracer, unrelated_msg, false)
             .has_value());
-    EXPECT_FALSE(
-        check_call_precompile<MonadTraits<MONAD_TEN>>(
-            state, call_tracer, msg, false)
-            .has_value());
+    EXPECT_FALSE(check_call_precompile<MonadTraits<MONAD_TEN>>(
+                     state, call_tracer, msg, false)
+                     .has_value());
 
     auto chain_ctx = ChainContext<traits>::debug_empty();
     chain_ctx.private_domain = true;
@@ -229,18 +255,31 @@ TEST_F(ApplicationEncryptionContractTest, dispatch_receives_encryption_context)
 
     chain_ctx.private_domain = true;
     BlockHashBufferFinalized const block_hashes;
-    Transaction const tx{};
+    auto tx_context = EMPTY_TX_CONTEXT;
+    tx_context.tx_origin = TX_ORIGIN;
+    Transaction const tx{.nonce = TX_NONCE};
+    auto const missing_tx_context = check_call_precompile<traits>(
+        state, call_tracer, msg, false, &chain_ctx, nullptr, &tx);
+    ASSERT_TRUE(missing_tx_context.has_value());
+    EXPECT_EQ(missing_tx_context->status_code, CallStatus::Rejected);
+    auto const missing_transaction = check_call_precompile<traits>(
+        state, call_tracer, msg, false, &chain_ctx, &tx_context);
+    ASSERT_TRUE(missing_transaction.has_value());
+    EXPECT_EQ(missing_transaction->status_code, CallStatus::Rejected);
+
     trace::StateTracer state_tracer{std::monostate{}};
     StateHost<traits> host{
         call_tracer,
         state_tracer,
-        EMPTY_TX_CONTEXT,
+        tx_context,
         block_hashes,
         state,
         tx,
         std::nullopt,
         0,
         chain_ctx};
+    state.set_transient_storage(
+        ALE_CA, ApplicationEncryptionContract::SEAL_INDEX_SLOT, bytes32_t{7});
     auto const result = execute_call_message<traits>(&host, state, msg);
     EXPECT_EQ(result.status_code, CallStatus::Revert);
     EXPECT_EQ(
@@ -248,6 +287,7 @@ TEST_F(ApplicationEncryptionContractTest, dispatch_receives_encryption_context)
             reinterpret_cast<char const *>(result.output_data),
             result.output_size}),
         "application encryption is not implemented");
+    EXPECT_EQ(seal_index(state), 7);
 }
 
 TEST_F(ApplicationEncryptionContractTest, destination_key_rejects_missing_spoke)
@@ -329,18 +369,14 @@ TEST_F(
 
 TEST_F(ApplicationEncryptionContractTest, seal_reads_destination_key)
 {
-    AbiEncoder encoder;
-    encoder.add_bytes(byte_string{0xab});
-    encoder.add_uint(u64_be{DESTINATION_DOMAIN});
-    encoder.add_address(Address{0x1234});
-    encoder.add_bytes(byte_string{0xcd});
-    auto const input = encoder.encode_final();
+    auto const input = seal_input();
 
     auto const absent_spoke =
         contract.precompile_seal(input, Address{0x4321}, {});
     ASSERT_TRUE(absent_spoke.has_error());
     EXPECT_EQ(
         absent_spoke.assume_error(), ApplicationEncryptionError::SpokeNotFound);
+    EXPECT_EQ(seal_index(state), 0);
 
     state.set_nonce(SPOKE_CA, 1);
     auto const absent_key =
@@ -349,6 +385,7 @@ TEST_F(ApplicationEncryptionContractTest, seal_reads_destination_key)
     EXPECT_EQ(
         absent_key.assume_error(),
         ApplicationEncryptionError::DestinationKeyNotFound);
+    EXPECT_EQ(seal_index(state), 0);
 
     state.set_storage(SPOKE_CA, DESTINATION_KEY_SLOT, DESTINATION_KEY);
     auto const installed = contract.precompile_seal(input, Address{0x4321}, {});
@@ -356,6 +393,7 @@ TEST_F(ApplicationEncryptionContractTest, seal_reads_destination_key)
     // A successful lookup reaches the remaining encryption stub.
     EXPECT_EQ(
         installed.assume_error(), ApplicationEncryptionError::NotImplemented);
+    EXPECT_EQ(seal_index(state), 1);
 }
 
 TEST_F(
@@ -497,12 +535,163 @@ TEST_F(ApplicationEncryptionContractTest, unseal_rejects_truncated_arguments)
     }
 }
 
+TEST(ApplicationEncryptionRandomnessInput, binary_fields_match_abi_fixture)
+{
+    auto const blob =
+        from_hex("000102030405060708090a0b0c0d0e0f101112131415161718"
+                 "191a1b1c1d1e1f20")
+            .value();
+    // Independently encoded in Python from the eight-word ABI head and
+    // length-prefixed tails. The nonce and index exceed uint32_t; the blob
+    // spans two words and the public key contains a leading zero byte.
+    auto const expected =
+        from_hex(
+            "0000000000000000000000000000000000000000000000000000000000000100"
+            "00000000000000000000000089abcdef0123456789abcdef0123456789abcdef"
+            "000000000000000000000000000000000000000000000000fedcba9876543210"
+            "0000000000000000000000000000000000000000000000000000000100000007"
+            "0000000000000000000000000123456789abcdef0123456789abcdef01234567"
+            "0000000000000000000000000000000000000000000000000000000000000140"
+            "0000000000000000000000000000000000000000000000000000000000000180"
+            "00000000000000000000000000000000000000000000000000000000000001c0"
+            "000000000000000000000000000000000000000000000000000000000000001e"
+            "6d6f6e61642d707265636f6d70696c652d72616e646f6d6e6573732d76310000"
+            "0000000000000000000000000000000000000000000000000000000000000020"
+            "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+            "0000000000000000000000000000000000000000000000000000000000000002"
+            "0102000000000000000000000000000000000000000000000000000000000000"
+            "0000000000000000000000000000000000000000000000000000000000000021"
+            "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+            "2000000000000000000000000000000000000000000000000000000000000000")
+            .value();
+
+    EXPECT_EQ(
+        sealed_blob_randomness_input(
+            TX_ORIGIN,
+            TX_NONCE,
+            0x100000007,
+            0x0123456789abcdef0123456789abcdef01234567_address,
+            DESTINATION_KEY,
+            byte_string{0x01, 0x02},
+            blob),
+        expected);
+}
+
+TEST(ApplicationEncryptionRandomnessInput, separates_dynamic_fields)
+{
+    // The same concatenated AD and plaintext must encode differently when
+    // their boundary changes, including when one field becomes empty.
+    auto const first = sealed_blob_randomness_input(
+        TX_ORIGIN,
+        TX_NONCE,
+        0,
+        Address{1},
+        DESTINATION_KEY,
+        byte_string{0x01},
+        byte_string{0x02});
+    auto const second = sealed_blob_randomness_input(
+        TX_ORIGIN,
+        TX_NONCE,
+        0,
+        Address{1},
+        DESTINATION_KEY,
+        byte_string{0x01, 0x02},
+        {});
+
+    EXPECT_NE(first, second);
+}
+
+TEST_F(
+    ApplicationEncryptionContractTest,
+    seal_index_restores_parent_value_on_revert)
+{
+    state.set_nonce(SPOKE_CA, 1);
+    state.set_storage(SPOKE_CA, DESTINATION_KEY_SLOT, DESTINATION_KEY);
+    state.push();
+    seal(contract);
+    EXPECT_EQ(seal_index(state), 1);
+
+    state.push();
+    seal(contract);
+    seal(contract);
+    EXPECT_EQ(seal_index(state), 3);
+    state.pop_reject();
+
+    EXPECT_EQ(seal_index(state), 1);
+    seal(contract);
+    state.pop_accept();
+    EXPECT_EQ(seal_index(state), 2);
+}
+
+TEST_F(
+    ApplicationEncryptionContractTest,
+    seal_index_parent_revert_undoes_accepted_child)
+{
+    state.set_nonce(SPOKE_CA, 1);
+    state.set_storage(SPOKE_CA, DESTINATION_KEY_SLOT, DESTINATION_KEY);
+    state.push();
+    seal(contract);
+    state.push();
+    seal(contract);
+    state.pop_accept();
+    EXPECT_EQ(seal_index(state), 2);
+
+    state.pop_reject();
+    EXPECT_EQ(seal_index(state), 0);
+}
+
+TEST_F(
+    ApplicationEncryptionContractTest, seal_index_is_local_to_each_transaction)
+{
+    State setup{block_state, Incarnation{0, 0}};
+    setup.set_nonce(SPOKE_CA, 1);
+    setup.set_storage(SPOKE_CA, DESTINATION_KEY_SLOT, DESTINATION_KEY);
+    block_state.merge(setup);
+
+    State other{block_state, Incarnation{0, 1}};
+    ApplicationEncryptionContract other_contract{
+        other, call_tracer, encryption_context, TX_ORIGIN, TX_NONCE + 1};
+    EXPECT_EQ(seal_index(state), 0);
+    EXPECT_EQ(seal_index(other), 0);
+
+    seal(contract);
+    seal(other_contract);
+    seal(contract);
+    EXPECT_EQ(seal_index(state), 2);
+    EXPECT_EQ(seal_index(other), 1);
+
+    ASSERT_TRUE(block_state.can_merge(state));
+    block_state.merge(state);
+    ASSERT_TRUE(block_state.can_merge(other));
+    block_state.merge(other);
+
+    State next{block_state, Incarnation{0, 2}};
+    EXPECT_EQ(seal_index(next), 0);
+    EXPECT_EQ(seal_index(state), 2);
+    EXPECT_EQ(seal_index(other), 1);
+}
+
+TEST_F(
+    ApplicationEncryptionContractTest,
+    seal_index_is_shared_by_contract_instances)
+{
+    state.set_nonce(SPOKE_CA, 1);
+    state.set_storage(SPOKE_CA, DESTINATION_KEY_SLOT, DESTINATION_KEY);
+    seal(contract);
+    EXPECT_EQ(seal_index(state), 1);
+
+    ApplicationEncryptionContract another{
+        state, call_tracer, encryption_context, TX_ORIGIN, TX_NONCE};
+    seal(another, Address{2});
+    EXPECT_EQ(seal_index(state), 2);
+}
+
 TEST(ApplicationEncryptionAd, binary_context_spans_two_words)
 {
-    auto const app_ctx = from_hex(
-                             "000102030405060708090a0b0c0d0e0f10111213141516171"
-                             "8191a1b1c1d1e1f20")
-                             .value();
+    auto const app_ctx =
+        from_hex("000102030405060708090a0b0c0d0e0f10111213141516171"
+                 "8191a1b1c1d1e1f20")
+            .value();
     // Independently encoded from the ABI tuple layout in Python. Each literal
     // below is one word; the label excludes its terminating null byte.
     auto const expected =

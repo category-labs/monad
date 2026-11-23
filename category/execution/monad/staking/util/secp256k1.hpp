@@ -26,9 +26,27 @@
 
 MONAD_STAKING_NAMESPACE_BEGIN
 
+// SEC 2, version 2.0, Section 2.4.1: n, the order of the base point G.
+// Scalar arithmetic is modulo n, independently of the coordinate field modulus.
+// https://www.secg.org/sec2-v2.pdf#page=13
+inline constexpr uint256_t SECP256K1_SCALAR_ORDER = [] {
+    using namespace monad::literals;
+    return 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141_u256;
+}();
+
+// SEC 2, version 2.0, Section 2.4.1: G in compressed form. The prefix 0x02
+// selects its even y-coordinate; the remaining 32 bytes encode its
+// x-coordinate. https://www.secg.org/sec2-v2.pdf#page=13
+inline constexpr byte_string_fixed<33> SECP256K1_GENERATOR_COMPRESSED{
+    0x02, 0x79, 0xbe, 0x66, 0x7e, 0xf9, 0xdc, 0xbb, 0xac, 0x55, 0xa0,
+    0x62, 0x95, 0xce, 0x87, 0x0b, 0x07, 0x02, 0x9b, 0xfc, 0xdb, 0x2d,
+    0xce, 0x28, 0xd9, 0x59, 0xf2, 0x81, 0x5b, 0x16, 0xf8, 0x17, 0x98};
+
 Address address_from_secpkey(byte_string_fixed<65> const &);
 
 secp256k1_context const *get_secp_context();
+
+secp256k1_pubkey const &get_secp_generator();
 
 class Secp256k1Pubkey
 {

@@ -141,6 +141,56 @@ namespace monad::staking::test
         return secp_pubkey_serialized;
     }
 
+    ReceiverKeyProof prove_receiver_key_registration(
+        uint256_be_t const &chain_id, Address const &validator_address,
+        byte_string_fixed<48> const &bls_pubkey, Address const &auth_address,
+        bytes32_t const &secret, std::optional<bytes32_t> nonce_override)
+    {
+        auto const public_key =
+            serialize_secp_pubkey(gen_secp_keypair(secret).first);
+        auto const base = receiver_key_registration_base(
+            chain_id, validator_address, bls_pubkey, auth_address, public_key);
+        MONAD_ASSERT(base.has_value());
+        // Test-only deterministic nonce; production proof generation uses fresh
+        // randomness. This fixture binds its nonce to the registration inputs.
+        byte_string nonce_input{
+            to_byte_string_view("staking-test/receiver-key-proof/v1")};
+        nonce_input += to_byte_string_view(secret.bytes);
+        nonce_input += to_byte_string_view(chain_id.bytes);
+        nonce_input += to_byte_string_view(validator_address.bytes);
+        nonce_input += to_byte_string_view(bls_pubkey);
+        nonce_input += to_byte_string_view(auth_address.bytes);
+        auto const nonce =
+            nonce_override.value_or(to_bytes(blake3(nonce_input)));
+        auto image = *base;
+        auto v0 = *base;
+        MONAD_ASSERT(
+            secp256k1_ec_pubkey_tweak_mul(
+                secp_context.get(), &image, secret.bytes) == 1);
+        MONAD_ASSERT(
+            secp256k1_ec_pubkey_tweak_mul(
+                secp_context.get(), &v0, nonce.bytes) == 1);
+        auto const u0 = gen_secp_keypair(nonce).first;
+        auto const encoded_image = serialize_secp_pubkey(image);
+        auto const challenge = receiver_key_registration_challenge(
+            *base, public_key, encoded_image, u0, v0);
+        auto z = secret;
+        if (challenge == bytes32_t{}) {
+            z = nonce;
+        }
+        else {
+            MONAD_ASSERT(
+                secp256k1_ec_seckey_tweak_mul(
+                    secp_context.get(), z.bytes, challenge.bytes) == 1);
+            if (secp256k1_ec_seckey_tweak_add(
+                    secp_context.get(), z.bytes, nonce.bytes) != 1) {
+                z = bytes32_t{};
+            }
+        }
+        return ReceiverKeyProof{
+            .image = encoded_image, .challenge = challenge, .response = z};
+    }
+
     std::tuple<byte_string, byte_string, byte_string, Address>
     craft_add_validator_input_raw(
         Address const &auth_address, uint256_t const &stake,

@@ -47,4 +47,14 @@ secp256k1_context const *get_secp_context()
     return secp_context.get();
 }
 
+secp256k1_pubkey const &get_secp_generator()
+{
+    static auto const generator = [] {
+        Secp256k1Pubkey const parsed{SECP256K1_GENERATOR_COMPRESSED};
+        MONAD_ASSERT(parsed.is_valid());
+        return parsed.get();
+    }();
+    return generator;
+}
+
 MONAD_STAKING_NAMESPACE_END

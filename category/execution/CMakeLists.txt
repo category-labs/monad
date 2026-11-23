@@ -288,6 +288,10 @@ add_library(
   "monad/staking/util/constants.hpp"
   "monad/staking/util/delegator.cpp"
   "monad/staking/util/delegator.hpp"
+  "monad/staking/util/receiver_key.cpp"
+  "monad/staking/util/receiver_key.hpp"
+  "monad/staking/util/rfc9380_secp256k1.cpp"
+  "monad/staking/util/rfc9380_secp256k1.hpp"
   "monad/staking/util/secp256k1.cpp"
   "monad/staking/util/secp256k1.hpp"
   "monad/staking/util/staking_error.cpp"
@@ -395,6 +399,7 @@ target_link_libraries(
   PUBLIC monad_core
   PUBLIC monad_trie
   PUBLIC magic_enum::magic_enum
+  PRIVATE monad_crypto
   PUBLIC secp256k1
   PUBLIC quill::quill)
 monad_compile_options(monad_execution_native)

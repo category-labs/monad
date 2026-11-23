@@ -15,8 +15,10 @@
 
 #include <category/core/bytes.hpp>
 #include <category/execution/ethereum/core/contract/big_endian.hpp>
+#include <category/execution/monad/staking/util/receiver_key.hpp>
 
 #include <blst.h>
+#include <optional>
 #include <secp256k1.h>
 
 namespace monad::staking::test
@@ -37,6 +39,11 @@ namespace monad::staking::test
 
     byte_string_fixed<65>
     serialize_secp_pubkey_uncompressed(secp256k1_pubkey const &pubkey);
+
+    ReceiverKeyProof prove_receiver_key_registration(
+        uint256_be_t const &chain_id, Address const &validator_address,
+        byte_string_fixed<48> const &bls_pubkey, Address const &auth_address,
+        bytes32_t const &secret, std::optional<bytes32_t> nonce = std::nullopt);
 
     std::tuple<byte_string, byte_string, byte_string, Address>
     craft_add_validator_input_raw(

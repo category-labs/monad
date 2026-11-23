@@ -17,6 +17,7 @@
 #include <category/core/blake3.hpp>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/hex.hpp>
 #include <category/core/int.hpp>
 #include <category/core/monad_exception.hpp>
 #include <category/core/result.hpp>
@@ -52,7 +53,9 @@
 #include <category/execution/monad/staking/staking_contract.hpp>
 #include <category/execution/monad/staking/test/input_generation.hpp>
 #include <category/execution/monad/staking/traits.hpp>
+#include <category/execution/monad/staking/util/bls.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
+#include <category/execution/monad/staking/util/rfc9380_secp256k1.hpp>
 #include <category/execution/monad/staking/util/staking_error.hpp>
 #include <category/execution/monad/system_sender.hpp>
 #include <category/mpt/db.hpp>
@@ -95,6 +98,12 @@ using namespace monad::staking::test;
 namespace
 {
     constexpr uint256_t REWARD{1 * MON};
+
+    auto const RECEIVER_PROOF_BLS_KEY = [] {
+        byte_string_fixed<48> key;
+        blst_p1_compress(key.data(), blst_p1_generator());
+        return key;
+    }();
 
     constexpr bytes32_t TRANSFER_SIGNATURE =
         abi_encode_event_signature("Transfer(address,address,uint256)");
@@ -608,6 +617,128 @@ TEST_F(StakeLatest, validator_changes_commission)
 ////////////////////////////
 // Input Validation Tests //
 ////////////////////////////
+
+TEST(ReceiverKeyProof, rfc9380_secp256k1_public_vector)
+{
+    // RFC 9380, Appendix J.8.1 (compressed P).
+    // https://www.rfc-editor.org/rfc/rfc9380#appendix-J.8.1
+    std::pair<std::string, std::string> const vectors[] = {
+        {"",
+         "03c1cae290e291aee617ebaef1be6d73861479c48b841eaba9b7b5852ddfeb1346"},
+        {"abc",
+         "023377e01eab42db296b512293120c6cee72b6ecf9f9205760bd9ff11fb3cb2c4b"},
+        {"abcdef0123456789",
+         "02bac54083f293f1fe08e4a70137260aa90783a5cb84d3f35848b324d0674b0e3a"},
+        {"q128_" + std::string(128, 'q'),
+         "03e2167bc785333a37aa562f021f1e881defb853839babf52a7f72b102e41890e9"},
+        {"a512_" + std::string(512, 'a'),
+         "02e3c8d35aaaf0b9b647e88a0a0a7ee5d5bed5ad38238152e4e6fd8c1f8cb7c998"},
+    };
+    for (auto const &[message, expected] : vectors) {
+        auto const point = hash_to_secp256k1(
+            to_byte_string_view(message),
+            to_byte_string_view(
+                "QUUX-V01-CS02-with-secp256k1_XMD:SHA-256_SSWU_RO_"));
+        ASSERT_TRUE(point.has_value());
+        auto const encoded = from_hex(expected);
+        ASSERT_TRUE(encoded.has_value());
+        auto const actual = serialize_secp_pubkey(*point);
+        EXPECT_TRUE(std::ranges::equal(actual, *encoded));
+    }
+}
+
+TEST(ReceiverKeyProof, registration_context_vector)
+{
+    // Independently derived with RustCrypto k256 RFC 9380 hash-to-curve/field.
+    auto const chain_id = store_be_as<uint256_be_t>(uint256_t{1});
+    auto const validator = 0x1234_address;
+    auto const auth = 0x4321_address;
+    auto const key =
+        serialize_secp_pubkey(gen_secp_keypair(bytes32_t{7}).first);
+    auto const base = receiver_key_registration_base(
+        chain_id, validator, RECEIVER_PROOF_BLS_KEY, auth, key);
+    ASSERT_TRUE(base.has_value());
+    auto const expected_base = from_hex(
+        "033822b6e5f97106014a04e6350fa5f6e5be473c95de9fe4da555de6c5ded22aa8");
+    ASSERT_TRUE(expected_base.has_value());
+    EXPECT_TRUE(
+        std::ranges::equal(serialize_secp_pubkey(*base), *expected_base));
+    auto const proof = prove_receiver_key_registration(
+        chain_id,
+        validator,
+        RECEIVER_PROOF_BLS_KEY,
+        auth,
+        bytes32_t{7},
+        bytes32_t{11});
+    auto const expected_image = from_hex(
+        "03df8fd82d207507a799d5aa08cbdc593a8e11126d69e1b27a1b95e06efc51766b");
+    auto const expected_challenge = from_hex(
+        "f7f6d281558f6499309e625f49aa5ce58af26c03580173dbc79a2065f65f60dd");
+    auto const expected_response = from_hex(
+        "c7bfc18956ebc0305454b09b03a88a4e6c87c6af4c56699bf648ab7cdb561e90");
+    ASSERT_TRUE(expected_image.has_value());
+    ASSERT_TRUE(expected_challenge.has_value());
+    ASSERT_TRUE(expected_response.has_value());
+    EXPECT_TRUE(std::ranges::equal(proof.image, *expected_image));
+    EXPECT_TRUE(std::ranges::equal(proof.challenge.bytes, *expected_challenge));
+    EXPECT_TRUE(std::ranges::equal(proof.response.bytes, *expected_response));
+    EXPECT_TRUE(
+        verify_receiver_key_registration(
+            chain_id, validator, RECEIVER_PROOF_BLS_KEY, auth, key, proof)
+            .has_value());
+    auto other_bls_key = RECEIVER_PROOF_BLS_KEY;
+    other_bls_key[0] ^= 0x20; // Negate the compressed BLS point.
+    ASSERT_TRUE(BlsPubkey{other_bls_key}.is_valid());
+    EXPECT_FALSE(verify_receiver_key_registration(
+        chain_id, validator, other_bls_key, auth, key, proof));
+    auto const wrong_key =
+        serialize_secp_pubkey(gen_secp_keypair(bytes32_t{8}).first);
+    EXPECT_FALSE(verify_receiver_key_registration(
+        chain_id, 0x5678_address, RECEIVER_PROOF_BLS_KEY, auth, key, proof));
+    EXPECT_FALSE(verify_receiver_key_registration(
+        chain_id,
+        validator,
+        RECEIVER_PROOF_BLS_KEY,
+        0x4322_address,
+        key,
+        proof));
+    EXPECT_FALSE(verify_receiver_key_registration(
+        chain_id, validator, RECEIVER_PROOF_BLS_KEY, auth, wrong_key, proof));
+}
+
+TEST(ReceiverKeyProof, rejects_invalid_scalars_and_identity_commitments)
+{
+    auto const key =
+        serialize_secp_pubkey(gen_secp_keypair(bytes32_t{7}).first);
+    auto const proof = prove_receiver_key_registration(
+        uint256_be_t{},
+        0x1234_address,
+        RECEIVER_PROOF_BLS_KEY,
+        0x4321_address,
+        bytes32_t{7},
+        bytes32_t{11});
+    auto const order = store_be_as<bytes32_t>(SECP256K1_SCALAR_ORDER);
+    for (auto const &[challenge, response] : {
+             std::pair{bytes32_t{}, bytes32_t{}},
+             std::pair{bytes32_t{}, bytes32_t{1}},
+             std::pair{bytes32_t{1}, bytes32_t{}},
+             std::pair{
+                 bytes32_t{1}, bytes32_t{7}}, // A = 7G - public_key = infinity.
+             std::pair{order, proof.response},
+             std::pair{proof.challenge, order},
+         }) {
+        auto invalid = proof;
+        invalid.challenge = challenge;
+        invalid.response = response;
+        EXPECT_FALSE(verify_receiver_key_registration(
+            uint256_be_t{},
+            0x1234_address,
+            RECEIVER_PROOF_BLS_KEY,
+            0x4321_address,
+            key,
+            invalid));
+    }
+}
 
 TEST_F(StakeLatest, add_validator_revert_invalid_input_size)
 {

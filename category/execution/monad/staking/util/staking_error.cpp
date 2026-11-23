@@ -69,6 +69,9 @@ quick_status_code_from_enum<monad::staking::StakingError>::value_mappings()
         {StakingError::DelegationTooSmall, "delegation is too small", {}},
         {StakingError::ExternalRewardTooSmall, "external reward too small", {}},
         {StakingError::ExternalRewardTooLarge, "external reward too large", {}},
+        {StakingError::InvalidReceiverProof,
+         "invalid receiver proof of possession",
+         {}},
     };
 
     return v;

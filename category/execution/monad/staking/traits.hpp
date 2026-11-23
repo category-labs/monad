@@ -27,4 +27,10 @@ consteval bool tracks_proposer_val_id()
     return traits::monad_rev() >= MONAD_FIVE;
 }
 
+template <Traits traits>
+consteval bool admits_receiver_keys()
+{
+    return traits::monad_rev() >= MONAD_NEXT;
+}
+
 MONAD_STAKING_NAMESPACE_END

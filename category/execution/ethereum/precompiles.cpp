@@ -188,8 +188,9 @@ std::optional<vm::Result> check_call_eth_precompile(vm::Message const &msg)
 EXPLICIT_TRAITS(check_call_eth_precompile);
 
 template <Traits traits>
-std::optional<vm::Result>
-check_call_precompile(State &, CallTracerBase &, vm::Message const &msg, bool)
+std::optional<vm::Result> check_call_precompile(
+    State &, CallTracerBase &, vm::Message const &msg, bool,
+    uint256_be_t const &)
 {
     return check_call_eth_precompile<traits>(msg);
 }

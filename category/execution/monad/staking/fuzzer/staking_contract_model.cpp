@@ -19,7 +19,6 @@
 #include <category/core/bytes.hpp>
 #include <category/core/int.hpp>
 #include <category/core/result.hpp>
-#include <category/core/runtime/unaligned.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
@@ -31,6 +30,7 @@
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/monad/staking/fuzzer/staking_contract_model.hpp>
 #include <category/execution/monad/staking/staking_contract.hpp>
+#include <category/execution/monad/staking/test/input_generation.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
 #include <category/execution/monad/staking/util/delegator.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
@@ -418,27 +418,19 @@ namespace monad::staking::test
 
     template <Traits traits>
     Result<u64_be> StakingContractModel::precompile_add_validator(
-        byte_string_view message, byte_string_view secp_signature,
-        byte_string_view bls_signature, Address const &sender,
+        ValidatorRegistration const &registration, Address const &sender,
         uint256_be_t const &value)
     {
-        AbiEncoder encoder;
-        encoder.add_uint<u32_be>(
-            abi_encode_selector("addValidator(bytes,bytes,bytes)"));
-        encoder.add_bytes(message);
-        encoder.add_bytes(secp_signature);
-        encoder.add_bytes(bls_signature);
-        auto const input = encoder.encode_final();
-
-        auto res = dispatch<traits>(input, sender, value);
+        auto const selector =
+            registration.receiver_proof
+                ? abi_encode_selector(
+                      "addValidator(bytes,bytes,bytes,(bytes,bytes32,bytes32))")
+                : abi_encode_selector("addValidator(bytes,bytes,bytes)");
         BOOST_OUTCOME_TRY(
-            auto const val_id, decode_u64_be_result(std::move(res)));
-
-        byte_string_view reader{message};
-        reader.remove_prefix(81);
-        auto const addr =
-            unaligned_load<Address>(reader.substr(0, sizeof(Address)).data());
-
+            auto const val_id,
+            decode_u64_be_result(dispatch<traits>(
+                selector, registration.encode(), sender, value)));
+        auto const &addr = registration.auth_address;
         auto const epoch = contract_.vars.in_epoch_delay_period.load()
                                ? contract_.vars.epoch.load().native() + 2
                                : contract_.vars.epoch.load().native() + 1;
@@ -457,12 +449,11 @@ namespace monad::staking::test
     Result<void> StakingContractModel::precompile_delegate(
         u64_be val_id, Address const &sender, uint256_be_t const &value)
     {
+        constexpr auto selector = abi_encode_selector("delegate(uint64)");
         AbiEncoder encoder;
-        encoder.add_uint<u32_be>(abi_encode_selector("delegate(uint64)"));
         encoder.add_uint<u64_be>(val_id);
-        auto const input = encoder.encode_final();
-
-        auto res = dispatch<traits>(input, sender, value);
+        auto res =
+            dispatch<traits>(selector, encoder.encode_final(), sender, value);
         BOOST_OUTCOME_TRY(decode_true_result(std::move(res)));
 
         auto const epoch = contract_.vars.in_epoch_delay_period.load()
@@ -486,15 +477,14 @@ namespace monad::staking::test
         u64_be val_id, u256_be const &stake, u8_be withdrawal_id,
         Address const &sender, uint256_be_t const &value)
     {
+        constexpr auto selector =
+            abi_encode_selector("undelegate(uint64,uint256,uint8)");
         AbiEncoder encoder;
-        encoder.add_uint<u32_be>(
-            abi_encode_selector("undelegate(uint64,uint256,uint8)"));
         encoder.add_uint(val_id);
         encoder.add_uint(stake);
         encoder.add_uint(withdrawal_id);
-        auto const input = encoder.encode_final();
-
-        auto res = dispatch<traits>(input, sender, value);
+        auto res =
+            dispatch<traits>(selector, encoder.encode_final(), sender, value);
         BOOST_OUTCOME_TRY(decode_true_result(std::move(res)));
 
         auto const this_epoch = contract_.vars.epoch.load().native();
@@ -535,11 +525,11 @@ namespace monad::staking::test
             unaccumulated_rewards(val_id, sender) +
             contract_.vars.delegator(val_id, sender).rewards().load().native();
 
+        constexpr auto selector = abi_encode_selector("compound(uint64)");
         AbiEncoder encoder;
-        encoder.add_uint<u32_be>(abi_encode_selector("compound(uint64)"));
         encoder.add_uint<u64_be>(val_id);
-        auto const input = encoder.encode_final();
-        auto res = dispatch<traits>(input, sender, value);
+        auto res =
+            dispatch<traits>(selector, encoder.encode_final(), sender, value);
         BOOST_OUTCOME_TRY(decode_true_result(std::move(res)));
 
         unit_bias_rewards_[{val_id.native(), sender}] -= stake * UNIT_BIAS;
@@ -564,12 +554,12 @@ namespace monad::staking::test
     {
         auto const reward = withdrawal_reward(val_id, sender, withdrawal_id);
 
+        constexpr auto selector = abi_encode_selector("withdraw(uint64,uint8)");
         AbiEncoder encoder;
-        encoder.add_uint<u32_be>(abi_encode_selector("withdraw(uint64,uint8)"));
         encoder.add_uint(val_id);
         encoder.add_uint(withdrawal_id);
-        auto const input = encoder.encode_final();
-        auto res = dispatch<traits>(input, sender, value);
+        auto res =
+            dispatch<traits>(selector, encoder.encode_final(), sender, value);
         if (res.has_value()) {
             error_bound_ += 1;
             unit_bias_rewards_[{val_id.native(), sender}] -= reward * UNIT_BIAS;
@@ -589,11 +579,11 @@ namespace monad::staking::test
             unaccumulated_rewards(val_id, sender) +
             contract_.vars.delegator(val_id, sender).rewards().load().native();
 
+        constexpr auto selector = abi_encode_selector("claimRewards(uint64)");
         AbiEncoder encoder;
-        encoder.add_uint<u32_be>(abi_encode_selector("claimRewards(uint64)"));
         encoder.add_uint<u64_be>(val_id);
-        auto const input = encoder.encode_final();
-        auto res = dispatch<traits>(input, sender, value);
+        auto res =
+            dispatch<traits>(selector, encoder.encode_final(), sender, value);
         if (res.has_value()) {
             error_bound_ += 3;
             unit_bias_rewards_[{val_id.native(), sender}] -= stake * UNIT_BIAS;
@@ -608,13 +598,13 @@ namespace monad::staking::test
         u64_be val_id, u256_be const &new_commission, Address const &sender,
         uint256_be_t const &value)
     {
+        constexpr auto selector =
+            abi_encode_selector("changeCommission(uint64,uint256)");
         AbiEncoder encoder;
-        encoder.add_uint<u32_be>(
-            abi_encode_selector("changeCommission(uint64,uint256)"));
         encoder.add_uint<u64_be>(val_id);
         encoder.add_uint<u256_be>(new_commission);
-        auto const input = encoder.encode_final();
-        auto res = dispatch<traits>(input, sender, value);
+        auto res =
+            dispatch<traits>(selector, encoder.encode_final(), sender, value);
         return decode_true_result(std::move(res));
     }
 
@@ -625,11 +615,11 @@ namespace monad::staking::test
     Result<void> StakingContractModel::precompile_external_reward(
         u64_be val_id, Address const &sender, uint256_be_t const &value)
     {
+        constexpr auto selector = abi_encode_selector("externalReward(uint64)");
         AbiEncoder encoder;
-        encoder.add_uint<u32_be>(abi_encode_selector("externalReward(uint64)"));
         encoder.add_uint<u64_be>(val_id);
-        auto const input = encoder.encode_final();
-        auto res = dispatch<traits>(input, sender, value);
+        auto res =
+            dispatch<traits>(selector, encoder.encode_final(), sender, value);
         if (res.has_value()) {
             auto const rew = load_be<uint256_t>(value);
             distribute_reward(val_id, u256_be{rew});
@@ -646,13 +636,13 @@ namespace monad::staking::test
         u64_be val_id, Address const &addr, Address const &sender,
         uint256_be_t const &value)
     {
+        constexpr auto selector =
+            abi_encode_selector("getDelegator(uint64,address)");
         AbiEncoder encoder;
-        encoder.add_uint<u32_be>(
-            abi_encode_selector("getDelegator(uint64,address)"));
         encoder.add_uint<u64_be>(val_id);
         encoder.add_address(addr);
-        auto const input = encoder.encode_final();
-        BOOST_OUTCOME_TRY(dispatch<traits>(input, sender, value));
+        BOOST_OUTCOME_TRY(
+            dispatch<traits>(selector, encoder.encode_final(), sender, value));
         error_bound_ += 3;
         return outcome::success();
     }
@@ -741,14 +731,18 @@ namespace monad::staking::test
 
     template <Traits traits>
     Result<byte_string> StakingContractModel::dispatch(
-        byte_string const &input, Address const &sender,
-        uint256_be_t const &value)
+        uint32_t const selector, byte_string_view const arguments,
+        Address const &sender, uint256_be_t const &value)
     {
+        auto const selector_bytes = u32_be{selector};
+        auto const input =
+            byte_string{to_byte_string_view(selector_bytes.bytes)} + arguments;
+        byte_string_view msg_input{input};
+        auto const [function, _] =
+            contract_.precompile_dispatch<traits>(msg_input);
+
         pre_call(value);
-        byte_string_view msg_input(input);
-        msg_input.remove_prefix(28);
-        auto [f, _] = contract_.precompile_dispatch<traits>(msg_input);
-        auto res = (contract_.*f)(msg_input, (sender), (value));
+        auto res = (contract_.*function)(msg_input, sender, value);
         post_call(res);
         return res;
     }

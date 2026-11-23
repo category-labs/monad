@@ -50,10 +50,12 @@ class StakingContract
     State &state_;
     CallTracerBase &call_tracer_;
     bool const log_native_transfers_;
+    uint256_be_t const chain_id_;
 
 public:
     StakingContract(
-        State &, CallTracerBase &, bool log_native_transfers = false);
+        State &, CallTracerBase &, bool log_native_transfers = false,
+        uint256_be_t const &chain_id = {});
 
     struct WithdrawalRequest
     {
@@ -90,7 +92,6 @@ public:
             0x0000000000000000000000000000000000000000000000000000000000000003_bytes32};
         static constexpr auto AddressProposerValId{
             0x0000000000000000000000000000000000000000000000000000000000000004_bytes32};
-
         // Working valsets get namespaces 0x1, 0x2, 0x3
         static constexpr auto AddressValsetExecution{
             0x0100000000000000000000000000000000000000000000000000000000000000_bytes32};
@@ -112,6 +113,7 @@ public:
             static constexpr u8_be Accumulator = 0x0A;
             static constexpr u8_be Delegator = 0x0B;
             static constexpr u8_be WithdrawalRequest = 0x0C;
+            static constexpr u8_be ValIdReceiver = 0x0D;
         };
 
     public:
@@ -203,6 +205,23 @@ public:
             } const key{
                 .ns = Namespace::ValIdBls,
                 .address = bls_eth_address,
+                .slots = {}};
+
+            return {state_, STAKING_CA, std::bit_cast<bytes32_t>(key)};
+        }
+
+        // Receiver keys, like consensus keys, belong to one validator.
+        StorageVariable<u64_be>
+        val_id_receiver(Address const &receiver_address) noexcept
+        {
+            struct
+            {
+                u8_be ns;
+                Address address;
+                uint8_t slots[11];
+            } key{
+                .ns = Namespace::ValIdReceiver,
+                .address = receiver_address,
                 .slots = {}};
 
             return {state_, STAKING_CA, std::bit_cast<bytes32_t>(key)};
@@ -543,7 +562,6 @@ private:
     // Helper function for getting a valset. used by the three valset getters.
     Result<byte_string>
     get_valset(byte_string_view, StorageArray<u64_be> const &);
-
     // Low level helpers for validator and delegator lists
     template <typename Key, typename Ptr>
     Result<void> linked_list_insert(Key const &, Ptr const &);
@@ -592,7 +610,7 @@ public:
 
     Result<byte_string> precompile_fallback(
         byte_string_view, Address const &, uint256_be_t const &);
-    template <Traits traits>
+    template <Traits traits, bool receiver_enabled = false>
     Result<byte_string> precompile_add_validator(
         byte_string_view, Address const &, uint256_be_t const &);
     template <Traits traits>

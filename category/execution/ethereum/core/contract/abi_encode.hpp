@@ -156,6 +156,11 @@ public:
         add_dynamic(abi_encode_bytes(data));
     }
 
+    void add_tuple(byte_string encoded_tuple)
+    {
+        add_dynamic(std::move(encoded_tuple));
+    }
+
     byte_string encode_final()
     {
         for (auto const [unresolved, tail_cumsum] : unresolved_offsets_) {

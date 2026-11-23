@@ -69,6 +69,7 @@ public:
     using Keys_t = KeysPacked;
     using AddressFlags_t = AddressFlags;
     using UnclaimedRewards_t = u256_be;
+    using ReceiverKey_t = byte_string_fixed<33>;
 
     struct Offsets
     {
@@ -83,6 +84,8 @@ public:
             keys + StorageVariable<Keys_t>::N;
         static constexpr size_t unclaimed_rewards =
             address_flags + StorageVariable<AddressFlags_t>::N;
+        static constexpr size_t receiver_key =
+            unclaimed_rewards + StorageVariable<UnclaimedRewards_t>::N;
     };
 
     ValExecution(State &state, Address const &address, bytes32_t key);
@@ -113,6 +116,12 @@ public:
     StorageVariable<Keys_t> keys()
     {
         return {state_, address_, key_ + Offsets::keys};
+    }
+
+    // Immutable DKG receiver key; appended without moving existing fields.
+    StorageVariable<ReceiverKey_t> receiver_key() noexcept
+    {
+        return {state_, address_, key_ + Offsets::receiver_key};
     }
 
     // Auth address and flags packed into a single slot. See the helpers for

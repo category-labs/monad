@@ -59,6 +59,7 @@ enum class StakingError
     DelegationTooSmall,
     ExternalRewardTooSmall,
     ExternalRewardTooLarge,
+    InvalidReceiverProof,
 };
 
 MONAD_STAKING_NAMESPACE_END

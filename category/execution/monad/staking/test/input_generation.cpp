@@ -28,6 +28,8 @@
 #include <blst.h>
 #include <secp256k1.h>
 
+#include <algorithm>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -191,10 +193,31 @@ namespace monad::staking::test
             .image = encoded_image, .challenge = challenge, .response = z};
     }
 
-    std::tuple<byte_string, byte_string, byte_string, Address>
-    craft_add_validator_input_raw(
+    static byte_string encode_receiver_key_proof(ReceiverKeyProof const &proof)
+    {
+        AbiEncoder encoder;
+        encoder.add_bytes(to_byte_string_view(proof.image));
+        encoder.add_uint(std::bit_cast<u256_be>(proof.challenge));
+        encoder.add_uint(std::bit_cast<u256_be>(proof.response));
+        return encoder.encode_final();
+    }
+
+    byte_string ValidatorRegistration::encode() const
+    {
+        AbiEncoder encoder;
+        encoder.add_bytes(message);
+        encoder.add_bytes(to_byte_string_view(secp_signature));
+        encoder.add_bytes(to_byte_string_view(bls_signature));
+        if (receiver_proof) {
+            encoder.add_tuple(encode_receiver_key_proof(*receiver_proof));
+        }
+        return encoder.encode_final();
+    }
+
+    ValidatorRegistration make_validator_registration(
         Address const &auth_address, uint256_t const &stake,
-        uint256_t const &commission, bytes32_t const secret)
+        uint256_t const &commission, bytes32_t const secret,
+        bool const receiver_enabled, std::optional<bytes32_t> receiver_override)
     {
         auto const [bls_pubkey, bls_seckey] = gen_bls_keypair(secret);
         auto const [secp_pubkey, secp_seckey] = gen_secp_keypair(secret);
@@ -212,31 +235,42 @@ namespace monad::staking::test
         byte_string message;
         message += to_byte_string_view(secp_pubkey_serialized);
         message += to_byte_string_view(bls_pubkey_serialized);
+        std::optional<ReceiverKeyProof> receiver_proof;
+        if (receiver_enabled) {
+            auto const receiver_secret = receiver_override.value_or(
+                to_bytes(blake3(to_byte_string_view(secret.bytes))));
+            message += to_byte_string_view(
+                serialize_secp_pubkey(gen_secp_keypair(receiver_secret).first));
+            receiver_proof = prove_receiver_key_registration(
+                {},
+                sign_address,
+                bls_pubkey_serialized,
+                auth_address,
+                receiver_secret);
+        }
         message += to_byte_string_view(auth_address.bytes);
         message += to_byte_string_view(store_be_as<bytes32_t>(stake).bytes);
         message += to_byte_string_view(u256_be{commission}.bytes);
 
-        // sign with both keys
-        byte_string const secp_sig{
-            to_byte_string_view(sign_secp(message, secp_seckey))};
-        byte_string const bls_sig{
-            to_byte_string_view(sign_bls(message, bls_seckey))};
-
-        return {message, secp_sig, bls_sig, sign_address};
+        auto const secp_signature = sign_secp(message, secp_seckey);
+        auto const bls_signature = sign_bls(message, bls_seckey);
+        return {
+            std::move(message),
+            secp_signature,
+            bls_signature,
+            receiver_proof,
+            auth_address,
+            sign_address};
     }
 
     std::pair<byte_string, Address> craft_add_validator_input(
         Address const &auth_address, uint256_t const &stake,
-        uint256_t const &commission, bytes32_t const secret)
+        uint256_t const &commission, bytes32_t const secret,
+        bool const receiver_enabled)
     {
-        auto const [message, secp_sig, bls_sig, sign_address] =
-            craft_add_validator_input_raw(
-                auth_address, stake, commission, secret);
-        AbiEncoder encoder;
-        encoder.add_bytes(message);
-        encoder.add_bytes(secp_sig);
-        encoder.add_bytes(bls_sig);
-        return {encoder.encode_final(), sign_address};
+        auto const val = make_validator_registration(
+            auth_address, stake, commission, secret, receiver_enabled);
+        return {val.encode(), val.sign_address};
     }
 
     byte_string craft_undelegate_input(

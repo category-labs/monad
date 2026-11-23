@@ -20,6 +20,7 @@
 #include <category/core/runtime/unaligned.hpp>
 #include <category/execution/monad/staking/fuzzer/staking_contract_machine.hpp>
 #include <category/execution/monad/staking/test/input_generation.hpp>
+#include <category/execution/monad/staking/traits.hpp>
 #include <category/execution/monad/staking/util/bls.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
 #include <category/execution/monad/staking/util/secp256k1.hpp>
@@ -95,11 +96,9 @@ namespace monad::staking::test
                               << "active validators, close to maximum active"
                               << std::endl;
                     for (size_t i = 1; i < ACTIVE_VALSET_SIZE; ++i) {
-                        auto const [signer, msg, secp, bls, sender, value] =
-                            gen_precompile_add_validator_input(
-                                ACTIVE_VALIDATOR_STAKE, MAX_STAKE);
                         model_precompile_add_validator(
-                            signer, msg, secp, bls, sender, value);
+                            gen_precompile_add_validator_input(
+                                ACTIVE_VALIDATOR_STAKE, MAX_STAKE));
                         assert_all_invariants();
                     }
                     MONAD_ASSERT(
@@ -112,11 +111,9 @@ namespace monad::staking::test
                           << "active validators, to fill up a bitset bucket"
                           << std::endl;
                 for (size_t i = 0; i < max_initial_active_vals; ++i) {
-                    auto const [signer, msg, secp, bls, sender, value] =
-                        gen_precompile_add_validator_input(
-                            ACTIVE_VALIDATOR_STAKE, MAX_STAKE);
                     model_precompile_add_validator(
-                        signer, msg, secp, bls, sender, value);
+                        gen_precompile_add_validator_input(
+                            ACTIVE_VALIDATOR_STAKE, MAX_STAKE));
                     assert_all_invariants();
                 }
                 MONAD_ASSERT(
@@ -785,11 +782,8 @@ namespace monad::staking::test
     {
         auto const &v = validator_auth_addresses_;
         if (v.empty()) {
-            auto const [signer, msg, secp, bls, sender, value] =
-                gen_precompile_add_validator_input(
-                    MIN_VALIDATE_STAKE, MAX_STAKE);
-            model_precompile_add_validator(
-                signer, msg, secp, bls, sender, value);
+            model_precompile_add_validator(gen_precompile_add_validator_input(
+                MIN_VALIDATE_STAKE, MAX_STAKE));
             MONAD_ASSERT(!validator_auth_addresses_.empty());
         }
         return validator_auth_addresses_
@@ -804,11 +798,9 @@ namespace monad::staking::test
             MONAD_ASSERT(model_.val_execution(v).exists());
             return v;
         }
-        auto const [signer, msg, secp, bls, sender, value] =
-            gen_precompile_add_validator_input(
-                MIN_VALIDATE_STAKE, MAX_DELEGABLE_STAKE);
-        auto const v = model_precompile_add_validator(
-            signer, msg, secp, bls, sender, value);
+        auto const v =
+            model_precompile_add_validator(gen_precompile_add_validator_input(
+                MIN_VALIDATE_STAKE, MAX_DELEGABLE_STAKE));
         MONAD_ASSERT(model_.val_execution(v).exists());
         return v;
     }
@@ -831,11 +823,8 @@ namespace monad::staking::test
     std::pair<u64_be, Address> StakingContractMachine<traits>::gen_delegator()
     {
         if (all_delegators_.empty()) {
-            auto const [signer, msg, secp, bls, sender, value] =
-                gen_precompile_add_validator_input(
-                    MIN_VALIDATE_STAKE, MAX_STAKE);
-            model_precompile_add_validator(
-                signer, msg, secp, bls, sender, value);
+            model_precompile_add_validator(gen_precompile_add_validator_input(
+                MIN_VALIDATE_STAKE, MAX_STAKE));
             MONAD_ASSERT(!all_delegators_.empty());
         }
         auto const &[v, a] = all_delegators_.sample(engine_);
@@ -1267,18 +1256,7 @@ namespace monad::staking::test
     }
 
     template <Traits traits>
-    Address
-    StakingContractMachine<traits>::get_add_validator_message_auth_address(
-        byte_string const &msg)
-    {
-        Address a;
-        std::memcpy(a.bytes, &msg[81], sizeof(a.bytes));
-        return a;
-    }
-
-    template <Traits traits>
-    std::tuple<
-        Address, byte_string, byte_string, byte_string, Address, uint256_be_t>
+    typename StakingContractMachine<traits>::AddValidatorInput
     StakingContractMachine<traits>::gen_precompile_add_validator_input(
         uint256_t const &min_stake, uint256_t const &max_stake)
     {
@@ -1293,38 +1271,44 @@ namespace monad::staking::test
         auto const commission = gen_bound_biased_uint256(0, MAX_COMMISSION);
         auto const secret = store_be_as<bytes32_t>(gen_uint256());
 
-        auto [msg, secp, bls, signer] = craft_add_validator_input_raw(
-            auth_address, stake, commission, secret);
-
-        return {signer, msg, secp, bls, sender, value};
+        return {
+            make_validator_registration(
+                auth_address,
+                stake,
+                commission,
+                secret,
+                admits_receiver_keys<traits>()),
+            sender,
+            value};
     }
 
     template <Traits traits>
     u64_be StakingContractMachine<traits>::model_precompile_add_validator(
-        Address const &signer, byte_string const &msg, byte_string const &secp,
-        byte_string const &bls, Address const &sender,
-        uint256_be_t const &value)
+        AddValidatorInput const &input)
     {
-        auto result = model_.precompile_add_validator<traits>(
-            msg, secp, bls, sender, value);
+        auto const &registration = input.registration;
+        auto const result =
+            model_.precompile_add_validator<traits>(
+                registration, input.sender, input.value);
         MONAD_ASSERT(result.has_value());
 
         auto const val_id = result.value();
 
         all_val_ids_.push_back(val_id);
-        if (load_be<uint256_t>(value) <= MAX_DELEGABLE_STAKE) {
+        if (load_be<uint256_t>(input.value) <= MAX_DELEGABLE_STAKE) {
             MONAD_ASSERT(model_.val_execution(val_id).exists());
             auto const ins = delegable_val_ids_.insert(val_id.native());
             MONAD_ASSERT(ins);
         }
 
-        auto const auth_address = get_add_validator_message_auth_address(msg);
+        auto const &auth_address = registration.auth_address;
 
         auto const ins1 =
             all_delegators_.insert({val_id.native(), auth_address});
         MONAD_ASSERT(ins1);
 
-        auto [_, ins2] = val_id_to_signer_.insert({val_id.native(), signer});
+        auto [_, ins2] = val_id_to_signer_.insert(
+            {val_id.native(), registration.sign_address});
         MONAD_ASSERT(ins2);
 
         validator_auth_addresses_.emplace_back(val_id, auth_address);
@@ -1335,32 +1319,32 @@ namespace monad::staking::test
     template <Traits traits>
     void StakingContractMachine<traits>::precompile_add_validator()
     {
-        auto const [signer, msg, secp, bls, sender, value] =
+        auto const input =
             gen_precompile_add_validator_input(MIN_VALIDATE_STAKE, MAX_STAKE);
-
+        auto const &registration = input.registration;
         auto const balance_before = model_.balance_of(STAKING_CA);
         auto const last_val_id_before = model_.last_val_id();
 
-        auto const v = model_precompile_add_validator(
-            signer, msg, secp, bls, sender, value);
-
-        auto const balance_after = model_.balance_of(STAKING_CA);
-
-        auto const stake = load_be<uint256_t>(value);
-
-        MONAD_ASSERT(balance_after - balance_before == stake);
+        auto const v = model_precompile_add_validator(input);
+        auto const stake = load_be<uint256_t>(input.value);
+        MONAD_ASSERT(model_.balance_of(STAKING_CA) - balance_before == stake);
 
         auto const last_val_id_after = model_.last_val_id();
 
         MONAD_ASSERT(last_val_id_after == last_val_id_before + 1);
 
-        byte_string_view reader{msg};
+        byte_string_view reader{registration.message};
         auto const secp_pubkey_compressed =
             unaligned_load<byte_string_fixed<33>>(
                 consume_bytes(reader, 33).data());
         auto const bls_pubkey_compressed =
             unaligned_load<byte_string_fixed<48>>(
                 consume_bytes(reader, 48).data());
+        byte_string_fixed<33> receiver_pubkey{};
+        if constexpr (admits_receiver_keys<traits>()) {
+            receiver_pubkey = unaligned_load<byte_string_fixed<33>>(
+                consume_bytes(reader, 33).data());
+        }
         auto const auth_address = unaligned_load<Address>(
             consume_bytes(reader, sizeof(Address)).data());
         auto const signed_stake = unaligned_load<uint256_be_t>(
@@ -1373,6 +1357,8 @@ namespace monad::staking::test
         auto const keys = model_.val_execution(v).keys().load();
         MONAD_ASSERT(keys.secp_pubkey == secp_pubkey_compressed);
         MONAD_ASSERT(keys.bls_pubkey == bls_pubkey_compressed);
+        MONAD_ASSERT(
+            model_.val_execution(v).receiver_key().load() == receiver_pubkey);
 
         MONAD_ASSERT(
             model_.val_execution(v).commission().load().native() == commission);
@@ -1565,12 +1551,10 @@ namespace monad::staking::test
         auto wis = available_withdrawal_ids_.find(key);
 
         if (wis != available_withdrawal_ids_.end() && wis->second.empty()) {
-            auto const [signer, msg, secp, bls, asender, avalue] =
-                gen_precompile_add_validator_input(
-                    MIN_VALIDATE_STAKE, MAX_DELEGABLE_STAKE);
-            val_id = model_precompile_add_validator(
-                signer, msg, secp, bls, asender, avalue);
-            sender = get_add_validator_message_auth_address(msg);
+            auto const registration = gen_precompile_add_validator_input(
+                MIN_VALIDATE_STAKE, MAX_DELEGABLE_STAKE);
+            val_id = model_precompile_add_validator(registration);
+            sender = registration.registration.auth_address;
             wis = available_withdrawal_ids_.end();
             key = {val_id.native(), sender};
             del_stake =

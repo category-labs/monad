@@ -16,9 +16,11 @@
 #include <category/execution/monad/staking/util/receiver_key.hpp>
 
 #include <category/core/int.hpp>
+#include <category/execution/ethereum/core/contract/abi_decode.hpp>
 #include <category/execution/monad/staking/util/rfc9380_secp256k1.hpp>
 
 #include <algorithm>
+#include <bit>
 
 MONAD_STAKING_ANONYMOUS_NAMESPACE_BEGIN
 
@@ -91,6 +93,18 @@ std::optional<secp256k1_pubkey> reconstruct(
 MONAD_STAKING_ANONYMOUS_NAMESPACE_END
 
 MONAD_STAKING_NAMESPACE_BEGIN
+
+Result<ReceiverKeyProof> decode_receiver_key_proof(byte_string_view &input)
+{
+    BOOST_OUTCOME_TRY(abi_decode_fixed<u256_be>(input)); // image tail offset
+    BOOST_OUTCOME_TRY(auto const challenge, abi_decode_fixed<u256_be>(input));
+    BOOST_OUTCOME_TRY(auto const response, abi_decode_fixed<u256_be>(input));
+    BOOST_OUTCOME_TRY(auto const image, abi_decode_bytes_tail<33>(input));
+    return ReceiverKeyProof{
+        .image = image,
+        .challenge = std::bit_cast<bytes32_t>(challenge),
+        .response = std::bit_cast<bytes32_t>(response)};
+}
 
 std::optional<secp256k1_pubkey> receiver_key_registration_base(
     uint256_be_t const &chain_id, Address const &validator_address,

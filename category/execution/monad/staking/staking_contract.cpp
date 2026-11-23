@@ -40,6 +40,7 @@
 #include <category/execution/monad/staking/util/bls.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
 #include <category/execution/monad/staking/util/delegator.hpp>
+#include <category/execution/monad/staking/util/receiver_key.hpp>
 #include <category/execution/monad/staking/util/secp256k1.hpp>
 #include <category/execution/monad/staking/util/staking_error.hpp>
 #include <category/execution/monad/system_sender.hpp>
@@ -69,6 +70,8 @@ struct PrecompileSelector
 {
     static constexpr uint32_t ADD_VALIDATOR =
         abi_encode_selector("addValidator(bytes,bytes,bytes)");
+    static constexpr uint32_t ADD_VALIDATOR_WITH_RECEIVER_KEY = abi_encode_selector(
+        "addValidator(bytes,bytes,bytes,(bytes,bytes32,bytes32))");
     static constexpr uint32_t DELEGATE =
         abi_encode_selector("delegate(uint64)");
     static constexpr uint32_t UNDELEGATE =
@@ -105,6 +108,7 @@ struct PrecompileSelector
 };
 
 static_assert(PrecompileSelector::ADD_VALIDATOR == 0xf145204c);
+static_assert(PrecompileSelector::ADD_VALIDATOR_WITH_RECEIVER_KEY == 0x3e4616bf);
 static_assert(PrecompileSelector::DELEGATE == 0x84994fec);
 static_assert(PrecompileSelector::UNDELEGATE == 0x5cf41514);
 static_assert(PrecompileSelector::COMPOUND == 0xb34fea67);
@@ -162,6 +166,8 @@ constexpr uint64_t TRANSFER_COSTS = 11800;
 constexpr uint64_t EC_RECOVER_COST = 3000;
 constexpr uint64_t BLS_VERIFY_COST = 150000;
 constexpr uint64_t MEMORY_EXPANSION_COST = 4000;
+constexpr uint64_t RECEIVER_EQDL_VERIFY_COST = 50000;
+constexpr uint64_t FALLBACK_GAS = 40000;
 
 struct OpCount
 {
@@ -192,6 +198,9 @@ constexpr uint64_t ADD_VALIDATOR_OP_COST = compute_costs(OpCount{
                                                .events = 3,
                                                .transfers = 0}) +
                                            EC_RECOVER_COST + BLS_VERIFY_COST;
+constexpr uint64_t ADD_VALIDATOR_WITH_RECEIVER_OP_COST =
+    ADD_VALIDATOR_OP_COST + COLD_SLOAD + WARM_SSTORE + 2 * COLD_SSTORE +
+    RECEIVER_EQDL_VERIFY_COST;
 
 constexpr uint64_t DELEGATE_OP_COST = compute_costs(OpCount{
     .warm_sloads = 21,
@@ -322,6 +331,7 @@ constexpr uint64_t LINKED_LIST_GETTER_OP_COST = compute_costs(OpCount{
                                                 MEMORY_EXPANSION_COST;
 
 static_assert(ADD_VALIDATOR_OP_COST == 505125);
+static_assert(ADD_VALIDATOR_WITH_RECEIVER_OP_COST == 587925);
 static_assert(DELEGATE_OP_COST == 260850);
 static_assert(UNDELEGATE_OP_COST == 147750);
 static_assert(WITHDRAW_OP_COST == 68675);
@@ -387,10 +397,12 @@ MONAD_STAKING_ANONYMOUS_NAMESPACE_END
 MONAD_STAKING_NAMESPACE_BEGIN
 
 StakingContract::StakingContract(
-    State &state, CallTracerBase &call_tracer, bool const log_native_transfers)
+    State &state, CallTracerBase &call_tracer, bool const log_native_transfers,
+    uint256_be_t const &chain_id)
     : state_{state}
     , call_tracer_{call_tracer}
     , log_native_transfers_{log_native_transfers}
+    , chain_id_{chain_id}
     , vars{state}
 {
 }
@@ -801,7 +813,7 @@ std::pair<StakingContract::PrecompileFunc, uint64_t>
 StakingContract::precompile_dispatch(byte_string_view &input)
 {
     if (MONAD_UNLIKELY(input.size() < 4)) {
-        return make_pair(&StakingContract::precompile_fallback, 40000);
+        return make_pair(&StakingContract::precompile_fallback, FALLBACK_GAS);
     }
 
     auto const signature = load_be_unsafe<uint32_t>(input.substr(0, 4).data());
@@ -809,10 +821,18 @@ StakingContract::precompile_dispatch(byte_string_view &input)
 
     switch (signature) {
     case PrecompileSelector::ADD_VALIDATOR:
-        // [21, 22, 6, 15, 9, 3, 0]
+        // A network upgrade may retire this selector when receiver-key
+        // enrollment opens or in a later revision.
         return {
             &StakingContract::precompile_add_validator<traits>,
             ADD_VALIDATOR_OP_COST};
+    case PrecompileSelector::ADD_VALIDATOR_WITH_RECEIVER_KEY:
+        if constexpr (admits_receiver_keys<traits>()) {
+            return {
+                &StakingContract::precompile_add_validator<traits, true>,
+                ADD_VALIDATOR_WITH_RECEIVER_OP_COST};
+        }
+        break;
     case PrecompileSelector::DELEGATE:
         // [21, 17, 6, 14, 5, 2, 0]
         return {
@@ -856,7 +876,7 @@ StakingContract::precompile_dispatch(byte_string_view &input)
                 GET_PROPOSER_VAL_ID_OP_COST};
         }
         else {
-            return {&StakingContract::precompile_fallback, 40000};
+            return {&StakingContract::precompile_fallback, FALLBACK_GAS};
         }
     case PrecompileSelector::GET_VALIDATOR:
         // [0, 12, 0, 0, 0, 0, 0]
@@ -897,8 +917,9 @@ StakingContract::precompile_dispatch(byte_string_view &input)
             &StakingContract::precompile_get_delegators<traits>,
             LINKED_LIST_GETTER_OP_COST};
     default:
-        return {&StakingContract::precompile_fallback, 40000};
+        break;
     }
+    return {&StakingContract::precompile_fallback, FALLBACK_GAS};
 }
 
 EXPLICIT_MONAD_TRAITS_MEMBER(StakingContract::precompile_dispatch);
@@ -1145,22 +1166,25 @@ Result<byte_string> StakingContract::precompile_fallback(
     return StakingError::MethodNotSupported;
 }
 
-template <Traits traits>
+template <Traits traits, bool receiver_enabled>
 Result<byte_string> StakingContract::precompile_add_validator(
     byte_string_view input, Address const &, uint256_be_t const &msg_value)
 {
-    constexpr size_t MESSAGE_SIZE = 33 /* compressed secp pubkey */ +
-                                    48 /* compressed bls pubkey */ +
-                                    sizeof(Address) /* auth address */ +
-                                    sizeof(u256_be) /* signed stake */ +
-                                    sizeof(u256_be) /* commission rate */;
+    constexpr size_t MESSAGE_SIZE =
+        33 /* compressed secp pubkey */ + 48 /* compressed bls pubkey */ +
+        (receiver_enabled ? 33 : 0) + sizeof(Address) /* auth address */ +
+        sizeof(u256_be) /* signed stake */ +
+        sizeof(u256_be) /* commission rate */;
     // decode the head
     BOOST_OUTCOME_TRY(
         abi_decode_fixed<u256_be>(input)); // skip message tail offset
     BOOST_OUTCOME_TRY(
         abi_decode_fixed<u256_be>(input)); // skip secp sig tail offset
     BOOST_OUTCOME_TRY(
-        abi_decode_fixed<u256_be>(input)); // sip bls sig tail offset
+        abi_decode_fixed<u256_be>(input)); // skip bls sig tail offset
+    if constexpr (receiver_enabled) {
+        BOOST_OUTCOME_TRY(abi_decode_fixed<u256_be>(input));
+    }
 
     // decode bytes with known lengths from the tail
     BOOST_OUTCOME_TRY(
@@ -1169,6 +1193,11 @@ Result<byte_string> StakingContract::precompile_add_validator(
         auto const secp_signature_compressed, abi_decode_bytes_tail<64>(input));
     BOOST_OUTCOME_TRY(
         auto const bls_signature_compressed, abi_decode_bytes_tail<96>(input));
+    ReceiverKeyProof receiver_proof{};
+    if constexpr (receiver_enabled) {
+        BOOST_OUTCOME_TRY(auto const proof, decode_receiver_key_proof(input));
+        receiver_proof = proof;
+    }
 
     if (MONAD_UNLIKELY(!input.empty())) {
         return StakingError::InvalidInput;
@@ -1180,6 +1209,11 @@ Result<byte_string> StakingContract::precompile_add_validator(
         unaligned_load<byte_string_fixed<33>>(consume_bytes(reader, 33).data());
     auto const bls_pubkey_compressed =
         unaligned_load<byte_string_fixed<48>>(consume_bytes(reader, 48).data());
+    byte_string_fixed<33> receiver_pubkey_compressed{};
+    if constexpr (receiver_enabled) {
+        receiver_pubkey_compressed = unaligned_load<byte_string_fixed<33>>(
+            consume_bytes(reader, 33).data());
+    }
     auto const auth_address =
         unaligned_load<Address>(consume_bytes(reader, sizeof(Address)).data());
     auto const signed_stake = unaligned_load<uint256_be_t>(
@@ -1213,6 +1247,21 @@ Result<byte_string> StakingContract::precompile_add_validator(
         return StakingError::SecpSignatureVerificationFailed;
     }
 
+    auto const secp_eth_address = address_from_secpkey(secp_pubkey.serialize());
+    std::optional<Secp256k1Pubkey> receiver_pubkey;
+    if constexpr (receiver_enabled) {
+        receiver_pubkey = verify_receiver_key_registration(
+            chain_id_,
+            secp_eth_address,
+            bls_pubkey_compressed,
+            auth_address,
+            receiver_pubkey_compressed,
+            receiver_proof);
+        if (MONAD_UNLIKELY(!receiver_pubkey)) {
+            return StakingError::InvalidReceiverProof;
+        }
+    }
+
     // Verify BLS signature
     BlsPubkey const bls_pubkey(bls_pubkey_compressed);
     if (MONAD_UNLIKELY(!bls_pubkey.is_valid())) {
@@ -1232,7 +1281,6 @@ Result<byte_string> StakingContract::precompile_add_validator(
     }
 
     // Check if validator already exists
-    auto const secp_eth_address = address_from_secpkey(secp_pubkey.serialize());
     auto const bls_eth_address = address_from_bls_key(bls_pubkey.serialize());
     auto val_id_storage = vars.val_id(secp_eth_address);
     auto val_id_bls_storage = vars.val_id_bls(bls_eth_address);
@@ -1243,6 +1291,14 @@ Result<byte_string> StakingContract::precompile_add_validator(
     }
 
     u64_be const val_id = vars.last_val_id.load().native() + 1;
+    if constexpr (receiver_enabled) {
+        auto owner = vars.val_id_receiver(
+            address_from_secpkey(receiver_pubkey->serialize()));
+        if (MONAD_UNLIKELY(owner.load_checked().has_value())) {
+            return StakingError::ValidatorExists;
+        }
+        owner.store(val_id);
+    }
     val_id_storage.store(val_id);
     val_id_bls_storage.store(val_id);
     vars.last_val_id.store(val_id);
@@ -1252,6 +1308,9 @@ Result<byte_string> StakingContract::precompile_add_validator(
     val.keys().store(KeysPacked{
         .secp_pubkey = secp_pubkey_compressed,
         .bls_pubkey = bls_pubkey_compressed});
+    if constexpr (receiver_enabled) {
+        val.receiver_key().store(receiver_pubkey_compressed);
+    }
     val.address_flags().store(AddressFlags{
         .auth_address = auth_address, .flags = ValidatorFlagsStakeTooLow});
     val.commission().store(commission);

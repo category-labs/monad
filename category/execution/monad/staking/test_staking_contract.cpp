@@ -265,11 +265,12 @@ struct StakeTraits : public MonadTraitsTest<MonadRevisionT>
         uint256_t const &commission = 0,
         bytes32_t const &secret = bytes32_t{0x1000})
     {
-        auto const [input, sign_address] =
-            craft_add_validator_input(auth_address, stake, commission, secret);
+        constexpr bool receiver_enabled = admits_receiver_keys<Trait>();
+        auto const [input, sign_address] = craft_add_validator_input(
+            auth_address, stake, commission, secret, receiver_enabled);
         auto const msg_value = store_be_as<uint256_be_t>(stake);
         state.push();
-        auto res = contract.precompile_add_validator<Trait>(
+        auto res = contract.precompile_add_validator<Trait, receiver_enabled>(
             input, auth_address, msg_value);
         BOOST_OUTCOME_TRYV(post_call(res));
         auto const &id_output = res.value();
@@ -747,51 +748,36 @@ TEST_F(StakeLatest, add_validator_revert_invalid_input_size)
 
     byte_string_view const too_short{};
     auto res =
-        contract.precompile_add_validator<Trait>(too_short, sender, value);
+        contract.precompile_add_validator<Trait, true>(too_short, sender, value);
     EXPECT_EQ(res.assume_error(), AbiDecodeError::InputTooShort);
 
     auto [too_long, _] =
         craft_add_validator_input(sender, MIN_VALIDATE_STAKE, 0);
     too_long.append({0xFF});
-    res = contract.precompile_add_validator<Trait>(too_long, sender, value);
+    res = contract.precompile_add_validator<Trait, true>(too_long, sender, value);
     EXPECT_EQ(res.assume_error(), StakingError::InvalidInput);
 }
 
 TEST_F(StakeLatest, add_validator_revert_bad_signature)
 {
-    auto const [message, good_secp_sig, good_bls_sig, _] =
-        craft_add_validator_input_raw(0xababab_address, MIN_VALIDATE_STAKE);
+    auto const registration =
+        make_validator_registration(0xababab_address, MIN_VALIDATE_STAKE);
     auto const value = store_be_as<uint256_be_t>(MIN_VALIDATE_STAKE);
+    auto invalid = registration;
+    invalid.secp_signature = sign_secp(
+        registration.message, gen_secp_keypair(bytes32_t{0x2000}).second);
+    EXPECT_EQ(
+        (contract.precompile_add_validator<Trait, true>(invalid.encode(), {}, value)
+             .assume_error()),
+        StakingError::SecpSignatureVerificationFailed);
 
-    // bad secp signature
-    {
-        auto const bad_secp_keys = gen_secp_keypair(bytes32_t{0x2000});
-        auto const bad_secp_sig = sign_secp(message, bad_secp_keys.second);
-
-        AbiEncoder encoder;
-        encoder.add_bytes(message);
-        encoder.add_bytes(to_byte_string_view(bad_secp_sig));
-        encoder.add_bytes(good_bls_sig);
-        auto const res = contract.precompile_add_validator<Trait>(
-            encoder.encode_final(), 0xdead_address, value);
-        EXPECT_EQ(
-            res.assume_error(), StakingError::SecpSignatureVerificationFailed);
-    }
-
-    // bad bls signature
-    {
-        auto const bad_bls_keys = gen_bls_keypair(bytes32_t{0x2000});
-        auto const bad_bls_sig = sign_bls(message, bad_bls_keys.second);
-
-        AbiEncoder encoder;
-        encoder.add_bytes(message);
-        encoder.add_bytes(good_secp_sig);
-        encoder.add_bytes(to_byte_string_view(bad_bls_sig));
-        auto const res = contract.precompile_add_validator<Trait>(
-            encoder.encode_final(), 0xdead_address, value);
-        EXPECT_EQ(
-            res.assume_error(), StakingError::BlsSignatureVerificationFailed);
-    }
+    invalid = registration;
+    invalid.bls_signature = sign_bls(
+        registration.message, gen_bls_keypair(bytes32_t{0x2000}).second);
+    EXPECT_EQ(
+        (contract.precompile_add_validator<Trait, true>(invalid.encode(), {}, value)
+             .assume_error()),
+        StakingError::BlsSignatureVerificationFailed);
 }
 
 TEST_F(StakeLatest, add_validator_revert_msg_value_not_signed)
@@ -800,7 +786,7 @@ TEST_F(StakeLatest, add_validator_revert_msg_value_not_signed)
     auto const [input, address] =
         craft_add_validator_input(0xababab_address, 2 * MIN_VALIDATE_STAKE);
     auto const res =
-        contract.precompile_add_validator<Trait>(input, address, value);
+        contract.precompile_add_validator<Trait, true>(input, address, value);
     EXPECT_EQ(res.assume_error(), StakingError::InvalidInput);
 }
 
@@ -809,11 +795,12 @@ TEST_F(StakeLatest, add_validator_revert_already_exists)
     auto const value = store_be_as<uint256_be_t>(MIN_VALIDATE_STAKE);
     auto const [input, address] =
         craft_add_validator_input(0xababab_address, MIN_VALIDATE_STAKE);
-    EXPECT_FALSE(contract.precompile_add_validator<Trait>(input, address, value)
-                     .has_error());
+    EXPECT_FALSE(
+        (contract.precompile_add_validator<Trait, true>(input, address, value)
+             .has_error()));
     EXPECT_EQ(
-        contract.precompile_add_validator<Trait>(input, address, value)
-            .assume_error(),
+        (contract.precompile_add_validator<Trait, true>(input, address, value)
+             .assume_error()),
         StakingError::ValidatorExists);
 }
 
@@ -823,7 +810,7 @@ TEST_F(StakeLatest, add_validator_revert_minimum_stake_not_met)
     auto const [input, address] =
         craft_add_validator_input(0xababab_address, uint256_t{1});
     auto const res =
-        contract.precompile_add_validator<Trait>(input, address, value);
+        contract.precompile_add_validator<Trait, true>(input, address, value);
     EXPECT_EQ(res.assume_error(), StakingError::InsufficientStake);
 }
 

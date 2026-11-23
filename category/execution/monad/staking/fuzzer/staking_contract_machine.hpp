@@ -14,6 +14,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/execution/monad/staking/fuzzer/staking_contract_model.hpp>
+#include <category/execution/monad/staking/test/input_generation.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/fuzzing/choice.hpp>
 
@@ -200,17 +201,17 @@ namespace monad::staking::test
         std::optional<u256_be> gen_distribute_priority_fees_input();
         bool distribute_priority_fees();
 
-        Address get_add_validator_message_auth_address(byte_string const &);
+        struct AddValidatorInput
+        {
+            ValidatorRegistration registration;
+            Address sender;
+            uint256_be_t value;
+        };
 
-        std::tuple<
-            Address, byte_string, byte_string, byte_string, Address,
-            uint256_be_t>
-        gen_precompile_add_validator_input(
+        AddValidatorInput gen_precompile_add_validator_input(
             uint256_t const &min_stake, uint256_t const &max_stake);
 
-        u64_be model_precompile_add_validator(
-            Address const &, byte_string const &, byte_string const &,
-            byte_string const &, Address const &, uint256_be_t const &);
+        u64_be model_precompile_add_validator(AddValidatorInput const &);
 
         void precompile_add_validator();
 

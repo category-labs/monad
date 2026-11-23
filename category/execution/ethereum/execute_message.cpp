@@ -331,7 +331,11 @@ vm::Result execute_call_message(
 
     vm::Result result;
     if (auto maybe_result = check_call_precompile<traits>(
-            state, call_tracer, msg, host->log_native_transfers_);
+            state,
+            call_tracer,
+            msg,
+            host->log_native_transfers_,
+            host->get_tx_context()->chain_id);
         maybe_result.has_value()) {
         result = std::move(maybe_result.value());
     }

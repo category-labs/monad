@@ -52,7 +52,8 @@ std::optional<vm::Result> check_call_eth_precompile(vm::Message const &);
 
 template <Traits traits>
 std::optional<vm::Result> check_call_precompile(
-    State &, CallTracerBase &, vm::Message const &, bool log_native_transfers);
+    State &, CallTracerBase &, vm::Message const &, bool log_native_transfers,
+    uint256_be_t const &chain_id = {});
 
 using precompiled_gas_cost_fn = std::optional<uint64_t>(byte_string_view);
 

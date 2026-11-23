@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <category/core/result.hpp>
 #include <category/execution/ethereum/core/contract/big_endian.hpp>
 #include <category/execution/monad/staking/util/secp256k1.hpp>
 
@@ -23,12 +24,16 @@
 MONAD_STAKING_NAMESPACE_BEGIN
 
 // BTX DKG specification, Section 2.1: BVE.PoPVerify.
+// ABI tuple (bytes image, bytes32 challenge, bytes32 response). Admission
+// requires image to contain exactly 33 bytes before constructing this value.
 struct ReceiverKeyProof
 {
     byte_string_fixed<33> image;
     bytes32_t challenge;
     bytes32_t response;
 };
+
+Result<ReceiverKeyProof> decode_receiver_key_proof(byte_string_view &input);
 
 std::optional<secp256k1_pubkey> receiver_key_registration_base(
     uint256_be_t const &chain_id, Address const &validator_address,

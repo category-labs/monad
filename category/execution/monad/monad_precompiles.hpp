@@ -33,9 +33,4 @@ class State;
 template <Traits traits>
 bool is_precompile(Address const &);
 
-template <Traits traits>
-std::optional<vm::Result> check_call_precompile(
-    State &, CallTracerBase &, vm::Message const &msg,
-    bool log_native_transfers);
-
 MONAD_NAMESPACE_END

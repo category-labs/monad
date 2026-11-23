@@ -31,13 +31,14 @@
 #include <category/vm/evm/traits.hpp>
 #include <cstdint>
 #include <optional>
+#include <type_traits>
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
 template <Traits traits, typename Contract, Address contract_address>
 std::optional<vm::Result> check_call_monad_precompile(
     State &state, CallTracerBase &call_tracer, vm::Message const &msg,
-    bool const log_native_transfers)
+    bool const log_native_transfers, uint256_be_t const &chain_id)
 {
 
     if (msg.code_address != contract_address) {
@@ -55,7 +56,14 @@ std::optional<vm::Result> check_call_monad_precompile(
         return vm::Result{CallStatus::OutOfGas};
     }
 
-    Contract contract = Contract{state, call_tracer, log_native_transfers};
+    auto contract = [&] {
+        if constexpr (std::is_same_v<Contract, staking::StakingContract>) {
+            return Contract{state, call_tracer, log_native_transfers, chain_id};
+        }
+        else {
+            return Contract{state, call_tracer, log_native_transfers};
+        }
+    }();
     auto const res = (contract.*method)(input, msg.sender, msg.value);
     if (MONAD_LIKELY(res.has_value())) {
         int64_t const gas_left = msg.gas - static_cast<int64_t>(cost);
@@ -95,7 +103,7 @@ EXPLICIT_MONAD_TRAITS(is_precompile);
 template <Traits traits>
 std::optional<vm::Result> check_call_precompile(
     State &state, CallTracerBase &call_tracer, vm::Message const &msg,
-    bool const log_native_transfers)
+    bool const log_native_transfers, uint256_be_t const &chain_id)
 {
     if (auto maybe_result = check_call_eth_precompile<traits>(msg)) {
         return maybe_result;
@@ -106,7 +114,11 @@ std::optional<vm::Result> check_call_precompile(
         if constexpr ((cond)) {                                                \
             if (auto maybe_result =                                            \
                     check_call_monad_precompile<traits, contract, addr>(       \
-                        state, call_tracer, msg, log_native_transfers)) {      \
+                        state,                                                 \
+                        call_tracer,                                           \
+                        msg,                                                   \
+                        log_native_transfers,                                  \
+                        chain_id)) {                                           \
                 return maybe_result;                                           \
             }                                                                  \
         }                                                                      \

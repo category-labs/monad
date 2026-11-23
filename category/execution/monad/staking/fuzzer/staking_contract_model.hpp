@@ -24,6 +24,8 @@
 
 namespace monad::staking::test
 {
+    struct ValidatorRegistration;
+
     class StakingContractModel
     {
         vm::VM vm_;
@@ -165,9 +167,13 @@ namespace monad::staking::test
 
         template <Traits traits>
         Result<u64_be> precompile_add_validator(
-            byte_string_view message, byte_string_view secp_signature,
-            byte_string_view bls_signature, Address const &sender,
+            ValidatorRegistration const &, Address const &sender,
             uint256_be_t const &value);
+
+        template <Traits traits>
+        Result<byte_string> dispatch(
+            uint32_t selector, byte_string_view arguments,
+            Address const &sender, uint256_be_t const &value);
 
         template <Traits traits>
         Result<void> precompile_delegate(
@@ -221,10 +227,5 @@ namespace monad::staking::test
 
         template <typename T>
         void post_call(Result<T> const &);
-
-        template <Traits traits>
-        Result<byte_string> dispatch(
-            byte_string const &input, Address const &sender,
-            uint256_be_t const &value);
     };
 }

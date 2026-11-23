@@ -38,6 +38,7 @@
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
+#include <category/execution/ethereum/transaction_gas.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/reserve_balance/reserve_balance_contract.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
@@ -310,6 +311,33 @@ TEST_F(ExecuteDomainBlockTest, monad_precompiles_are_off)
          transaction(1, RESERVE_BALANCE_CA, {0xde, 0xad, 0xbe, 0xef})},
         {SENDER, SENDER});
     EXPECT_EQ(statuses(receipts), (std::vector<uint64_t>{1, 1}));
+}
+
+TEST_F(ExecuteDomainBlockTest, monad_precompile_addresses_are_cold)
+{
+    BlockState block_state{tdb, vm};
+    // A creation whose initcode reads the balance of an address (PUSH20,
+    // BALANCE, POP, STOP), with gas for a warm read but not for a cold one.
+    auto const read_balance = [](uint64_t const nonce, Address const &address) {
+        auto tx = transaction(
+            nonce,
+            std::nullopt,
+            byte_string{0x73} +
+                byte_string{address.bytes, sizeof(address.bytes)} +
+                byte_string{0x31, 0x50, 0x00});
+        tx.gas_limit = intrinsic_gas<traits>(tx) + 1'000;
+        return tx;
+    };
+    static_assert(traits::cold_account_cost() > 1'000);
+    // The ecrecover precompile is warm; the Monad precompile addresses are
+    // ordinary accounts on a domain, so their first access is cold.
+    auto const receipts = execute(
+        block_state,
+        {read_balance(0, Address{0x01}),
+         read_balance(1, staking::STAKING_CA),
+         read_balance(2, RESERVE_BALANCE_CA)},
+        {SENDER, SENDER, SENDER});
+    EXPECT_EQ(statuses(receipts), (std::vector<uint64_t>{1, 0, 0}));
 }
 
 TEST(DomainExecutionInputs, follow_the_derived_block_and_the_revision)

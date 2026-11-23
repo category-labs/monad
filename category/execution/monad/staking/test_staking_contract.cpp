@@ -41,6 +41,7 @@
 #include <category/execution/ethereum/execute_transaction.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/native_transfer_log.hpp>
+#include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
@@ -758,6 +759,239 @@ TEST_F(StakeLatest, add_validator_revert_invalid_input_size)
     EXPECT_EQ(res.assume_error(), StakingError::InvalidInput);
 }
 
+struct ReceiverEnrollment : StakeLatest
+{
+    static constexpr auto AUTH = 0xabcdef_address;
+    u64_be id{};
+    u64_be other{};
+
+    void SetUp() override
+    {
+        StakeLatest::SetUp();
+        auto create = [&](bytes32_t const secret) {
+            auto const [input, address] = craft_add_validator_input(
+                AUTH, ACTIVE_VALIDATOR_STAKE * 4, 0, secret, false);
+            state.push();
+            auto result = contract.precompile_add_validator<Trait>(
+                input,
+                address,
+                store_be_as<uint256_be_t>(ACTIVE_VALIDATOR_STAKE * 4));
+            EXPECT_TRUE(post_call(result).has_value());
+            state.add_to_balance(STAKING_CA, ACTIVE_VALIDATOR_STAKE * 4);
+            byte_string_view output{result.value()};
+            return abi_decode_fixed<u64_be>(output).value();
+        };
+        id = create(bytes32_t{10});
+        other = create(bytes32_t{11});
+    }
+
+    byte_string enrollment(
+        u64_be const validator, bytes32_t const secret,
+        u64_be const proof_validator, uint256_be_t const &chain_id = {})
+    {
+        auto const key = serialize_secp_pubkey(gen_secp_keypair(secret).first);
+        auto const keys =
+            contract.vars.val_execution(proof_validator).keys().load();
+        auto const validator_address =
+            proof_validator == id || proof_validator == other
+                ? address_from_secpkey(
+                      Secp256k1Pubkey{keys.secp_pubkey}.serialize())
+                : AUTH;
+        auto const proof = prove_receiver_key_registration(
+            chain_id, validator_address, keys.bls_pubkey, AUTH, secret);
+        return craft_add_receiver_key_input(validator, key, proof);
+    }
+
+    Result<byte_string> enroll(
+        u64_be const validator, bytes32_t const secret,
+        u64_be const proof_validator)
+    {
+        state.push();
+        auto result = contract.precompile_add_receiver_key(
+            enrollment(validator, secret, proof_validator), AUTH, {});
+        BOOST_OUTCOME_TRYV(post_call(result));
+        return result;
+    }
+};
+
+TEST_F(ReceiverEnrollment, dispatch_verifies_enrollment_for_the_execution_chain)
+{
+    auto const chain_id = store_be_as<uint256_be_t>(uint256_t{143});
+    auto const other_chain_id = store_be_as<uint256_be_t>(uint256_t{10143});
+    auto const selector = u32_be{abi_encode_selector(
+        "addReceiverKey(uint64,bytes,(bytes,bytes32,bytes32))")};
+    auto const input = byte_string{to_byte_string_view(selector.bytes)} +
+                       enrollment(id, bytes32_t{21}, id, chain_id);
+    vm::Message msg{};
+    msg.kind = vm::CallKind::Call;
+    msg.code_address = STAKING_CA;
+    msg.sender = AUTH;
+    msg.gas = 119575;
+    msg.input_data = input.data();
+    msg.input_size = input.size();
+
+    state.push();
+    auto const wrong_chain = check_call_precompile<Trait>(
+        state, call_tracer, msg, false, other_chain_id);
+    state.pop_reject();
+    ASSERT_TRUE(wrong_chain.has_value());
+    EXPECT_EQ(wrong_chain->status_code, CallStatus::Revert);
+    EXPECT_FALSE(contract.vars.val_execution(id).has_receiver_key());
+
+    state.push();
+    auto const matching_chain =
+        check_call_precompile<Trait>(state, call_tracer, msg, false, chain_id);
+    ASSERT_TRUE(matching_chain.has_value());
+    ASSERT_EQ(matching_chain->status_code, CallStatus::Success);
+    state.pop_accept();
+    EXPECT_TRUE(contract.vars.val_execution(id).has_receiver_key());
+}
+
+TEST_F(
+    ReceiverEnrollment, admits_key_and_preserves_existing_get_validator_record)
+{
+    auto const before =
+        contract.precompile_get_validator(abi_encode_uint(id), {}, {});
+    ASSERT_TRUE(before.has_value());
+    auto const logs_before = state.logs().size();
+    ASSERT_TRUE(enroll(id, bytes32_t{21}, id).has_value());
+    ASSERT_EQ(state.logs().size(), logs_before + 1);
+    auto const &log = state.logs().back();
+    EXPECT_EQ(log.address, STAKING_CA);
+    ASSERT_EQ(log.topics.size(), 2);
+    EXPECT_EQ(
+        log.topics[0], abi_encode_event_signature("ReceiverKeyAdded(uint64)"));
+    EXPECT_EQ(log.topics[1], abi_encode_uint(id));
+    EXPECT_TRUE(log.data.empty());
+
+    auto const after =
+        contract.precompile_get_validator(abi_encode_uint(id), {}, {});
+    ASSERT_TRUE(after.has_value());
+    EXPECT_EQ(before.value(), after.value());
+    auto const key =
+        serialize_secp_pubkey(gen_secp_keypair(bytes32_t{21}).first);
+    AbiEncoder expected;
+    expected.add_bytes(to_byte_string_view(key));
+    EXPECT_EQ(
+        contract.precompile_get_receiver_key(abi_encode_uint(id), {}, {})
+            .value(),
+        expected.encode_final());
+    EXPECT_EQ(
+        contract.vars
+            .val_id_receiver(
+                address_from_secpkey(serialize_secp_pubkey_uncompressed(
+                    gen_secp_keypair(bytes32_t{21}).first)))
+            .load(),
+        id);
+}
+
+TEST_F(ReceiverEnrollment, rejects_overwrite_and_cross_validator_key_reuse)
+{
+    ASSERT_TRUE(enroll(id, bytes32_t{21}, id).has_value());
+    for (auto secret : {bytes32_t{21}, bytes32_t{22}}) {
+        EXPECT_EQ(
+            enroll(id, secret, id).assume_error(),
+            StakingError::ReceiverKeyExists);
+    }
+    EXPECT_EQ(
+        enroll(other, bytes32_t{21}, other).assume_error(),
+        StakingError::ValidatorExists);
+    EXPECT_FALSE(contract.vars.val_execution(other).has_receiver_key());
+}
+
+TEST_F(
+    ReceiverEnrollment,
+    rejects_wrong_authority_value_validator_and_proof_context)
+{
+    auto const input = enrollment(id, bytes32_t{21}, id);
+    EXPECT_EQ(
+        contract.precompile_add_receiver_key(input, 0x0123_address, {})
+            .assume_error(),
+        StakingError::RequiresAuthAddress);
+    EXPECT_EQ(
+        contract.precompile_add_receiver_key(input, AUTH, uint256_be_t{1})
+            .assume_error(),
+        StakingError::ValueNonZero);
+    EXPECT_EQ(
+        enroll(u64_be{999}, bytes32_t{21}, u64_be{999}).assume_error(),
+        StakingError::UnknownValidator);
+    EXPECT_EQ(
+        enroll(id, bytes32_t{21}, other).assume_error(),
+        StakingError::InvalidReceiverProof);
+    EXPECT_FALSE(contract.vars.val_execution(id).has_receiver_key());
+    auto const key = serialize_secp_pubkey_uncompressed(
+        gen_secp_keypair(bytes32_t{21}).first);
+    EXPECT_EQ(
+        contract.vars.val_id_receiver(address_from_secpkey(key))
+            .load()
+            .native(),
+        0);
+    auto trailing = input;
+    trailing.push_back(0);
+    EXPECT_TRUE(
+        contract.precompile_add_receiver_key(trailing, AUTH, {}).has_error());
+    EXPECT_TRUE(contract.precompile_add_receiver_key({}, AUTH, {}).has_error());
+}
+
+TEST_F(
+    ReceiverEnrollment,
+    receiver_getter_handles_empty_unknown_and_malformed_calls)
+{
+    AbiEncoder empty;
+    empty.add_bytes(to_byte_string_view(byte_string_fixed<33>{}));
+    auto const expected = empty.encode_final();
+    for (auto validator : {id, u64_be{999}}) {
+        EXPECT_EQ(
+            contract
+                .precompile_get_receiver_key(abi_encode_uint(validator), {}, {})
+                .value(),
+            expected);
+    }
+    EXPECT_EQ(
+        contract
+            .precompile_get_receiver_key(
+                abi_encode_uint(id), {}, uint256_be_t{1})
+            .assume_error(),
+        StakingError::ValueNonZero);
+    EXPECT_TRUE(contract.precompile_get_receiver_key({}, {}, {}).has_error());
+    auto trailing = byte_string{abi_encode_uint(id)};
+    trailing.push_back(0);
+    EXPECT_TRUE(
+        contract.precompile_get_receiver_key(trailing, {}, {}).has_error());
+}
+
+TYPED_TEST(StakeAllRevisions, receiver_methods_fork_and_gas)
+{
+    for (auto const &[selector, enabled, gas] :
+         {std::tuple{
+              abi_encode_selector("addValidator(bytes,bytes,bytes)"),
+              true,
+              uint64_t{505125}},
+          std::tuple{
+              abi_encode_selector(
+                  "addValidator(bytes,bytes,bytes,(bytes,bytes32,bytes32))"),
+              TestFixture::REV >= MONAD_NEXT,
+              uint64_t{587925}},
+          std::tuple{
+              abi_encode_selector(
+                  "addReceiverKey(uint64,bytes,(bytes,bytes32,bytes32))"),
+              TestFixture::REV >= MONAD_NEXT,
+              uint64_t{119575}},
+          std::tuple{
+              abi_encode_selector("getReceiverKey(uint64)"),
+              TestFixture::REV >= MONAD_NEXT,
+              uint64_t{16200}}}) {
+        auto const encoded = u32_be{selector};
+        byte_string_view input = to_byte_string_view(encoded.bytes);
+        auto const [method, cost] =
+            this->contract
+                .template precompile_dispatch<typename TestFixture::Trait>(
+                    input);
+        EXPECT_EQ(cost, enabled ? gas : uint64_t{40000});
+        EXPECT_EQ(method == &StakingContract::precompile_fallback, !enabled);
+    }
+}
+
 TEST_F(StakeLatest, add_validator_revert_bad_signature)
 {
     auto const registration =
@@ -778,6 +1012,28 @@ TEST_F(StakeLatest, add_validator_revert_bad_signature)
         (contract.precompile_add_validator<Trait, true>(invalid.encode(), {}, value)
              .assume_error()),
         StakingError::BlsSignatureVerificationFailed);
+}
+
+TEST_F(StakeLatest, add_validator_rejects_duplicate_receiver_across_validators)
+{
+    auto const create = [&](bytes32_t secret) {
+        auto const registration = make_validator_registration(
+            0xababab_address,
+            MIN_VALIDATE_STAKE,
+            0,
+            secret,
+            true,
+            bytes32_t{7});
+        state.push();
+        auto result = contract.precompile_add_validator<Trait, true>(
+            registration.encode(),
+            registration.auth_address,
+            store_be_as<uint256_be_t>(MIN_VALIDATE_STAKE));
+        return post_call(result);
+    };
+    ASSERT_TRUE(create(bytes32_t{10}).has_value());
+    EXPECT_EQ(
+        create(bytes32_t{11}).assume_error(), StakingError::ValidatorExists);
 }
 
 TEST_F(StakeLatest, add_validator_revert_msg_value_not_signed)

@@ -214,6 +214,17 @@ namespace monad::staking::test
         return encoder.encode_final();
     }
 
+    byte_string craft_add_receiver_key_input(
+        u64_be const id, byte_string_fixed<33> const &key,
+        ReceiverKeyProof const &proof)
+    {
+        AbiEncoder encoder;
+        encoder.add_uint(id);
+        encoder.add_bytes(to_byte_string_view(key));
+        encoder.add_tuple(encode_receiver_key_proof(proof));
+        return encoder.encode_final();
+    }
+
     ValidatorRegistration make_validator_registration(
         Address const &auth_address, uint256_t const &stake,
         uint256_t const &commission, bytes32_t const secret,

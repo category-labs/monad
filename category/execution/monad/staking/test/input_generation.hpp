@@ -65,6 +65,9 @@ namespace monad::staking::test
         bool receiver_enabled = true,
         std::optional<bytes32_t> receiver_secret = std::nullopt);
 
+    byte_string craft_add_receiver_key_input(
+        u64_be, byte_string_fixed<33> const &, ReceiverKeyProof const &);
+
     std::pair<byte_string, Address> craft_add_validator_input(
         Address const &auth_address, uint256_t const &stake,
         uint256_t const &commission = 0, bytes32_t secret = bytes32_t{0x1000},

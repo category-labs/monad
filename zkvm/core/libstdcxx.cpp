@@ -54,9 +54,7 @@ void operator delete(void *, std::size_t) noexcept {}
 
 void operator delete[](void *, std::size_t) noexcept {}
 
-// Weak since SP1 backend's libzkevm.a, exports its own strong abort()
-// on ZisK no other definition exists, so this fallback is used.
-extern "C" [[gnu::weak]] [[noreturn]] void abort() noexcept
+extern "C" [[noreturn]] void abort() noexcept
 {
     zkvm_halt(1);
 }

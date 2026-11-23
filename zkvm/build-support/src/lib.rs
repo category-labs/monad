@@ -13,42 +13,36 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! Build-script helpers for the ZisK and SP1 RISC-V guests.
-//! Both build `zkvm/guest/CMakeLists.txt`; ZisK links the archive through
-//! rustc, while SP1 links a standalone ELF against the SDK's `libzkevm.a`.
+//! Build-script helpers for the RISC-V zkVM guests. Each backend builds
+//! `zkvm/guest/CMakeLists.txt` into a static archive and links it through
+//! rustc.
 
 use std::{
     env,
     path::{Path, PathBuf},
 };
-#[cfg(feature = "sp1")]
-use std::process::Command;
 
 #[derive(Clone, Copy, Debug)]
 pub enum Backend {
     Zisk,
-    Sp1,
 }
 
 impl Backend {
     fn name(self) -> &'static str {
         match self {
             Self::Zisk => "zisk",
-            Self::Sp1 => "sp1",
         }
     }
 
     fn guest_target(self) -> &'static str {
         match self {
             Self::Zisk => "monad-zkvm-guest-zisk",
-            Self::Sp1 => "monad-zkvm-guest-sp1",
         }
     }
 
     fn guest_triple(self) -> &'static str {
         match self {
             Self::Zisk => "riscv64ima-zisk-zkvm-elf",
-            Self::Sp1 => "riscv64im-succinct-zkvm-elf",
         }
     }
 
@@ -76,13 +70,15 @@ impl Backend {
             ("RISCV_TOOLCHAIN_DIR".into(), toolchain_dir.clone()),
             ("CMAKE_PREFIX_PATH".into(), prefix_path),
         ];
-        if let Self::Zisk = self {
-            for option in ZISK_OPTIONS {
-                println!("cargo:rerun-if-env-changed={option}");
-                defines.push((
-                    option.into(),
-                    env::var(option).unwrap_or_else(|_| "OFF".into()),
-                ));
+        match self {
+            Self::Zisk => {
+                for option in ZISK_OPTIONS {
+                    println!("cargo:rerun-if-env-changed={option}");
+                    defines.push((
+                        option.into(),
+                        env::var(option).unwrap_or_else(|_| "OFF".into()),
+                    ));
+                }
             }
         }
 
@@ -127,8 +123,8 @@ impl Backend {
                 .join("guest-build")
                 .join(&key),
         );
-        // SP1's caller targets the host. Set the guest triple explicitly so
-        // cmake-rs selects RISC-V flags instead of host flags such as -m64.
+        // Set the guest triple explicitly so cmake-rs selects RISC-V flags
+        // even if the calling crate targets the host (e.g. -m64).
         // The guest CMakeLists.txt supplies the remaining bare-metal flags.
         cfg.target(self.guest_triple())
             .profile("Release")
@@ -149,135 +145,22 @@ impl Backend {
         cfg.build().join("build")
     }
 
-    /// Build the guest archive and emit Cargo link directives.
-    /// Used by ZisK, where `ziskos` supplies `_start`.
+    /// Build the guest archive and emit Cargo link directives. The backend's
+    /// Rust entrypoint crate (e.g. `ziskos`) supplies `_start`.
     pub fn build_guest_lib(self) {
         let build_dir = self.build_guest_archive();
 
-        if let Self::Zisk = self {
-            let align_ld = manifest_dir().join("align.ld");
-            println!("cargo:rerun-if-changed={}", align_ld.display());
-            println!("cargo:rustc-link-arg=-T{}", align_ld.display());
+        match self {
+            Self::Zisk => {
+                let align_ld = manifest_dir().join("align.ld");
+                println!("cargo:rerun-if-changed={}", align_ld.display());
+                println!("cargo:rustc-link-arg=-T{}", align_ld.display());
+            }
         }
         println!("cargo:rustc-link-arg=--gc-sections");
         println!("cargo:rustc-link-search=native={}", build_dir.display());
         println!("cargo:rustc-link-lib=static={}", self.guest_target());
     }
-
-    /// Build the SP1 guest ELF from `program/main.c`, the guest archive, and
-    /// the SDK's `libzkevm.a`, which supplies the runtime and accelerators.
-    /// The SDK library, headers, and linker script come from one checkout.
-    #[cfg(feature = "sp1")]
-    pub fn build_guest_elf(self) -> PathBuf {
-        assert!(matches!(self, Self::Sp1), "build_guest_elf is SP1-only");
-
-        let repo_root = locate_repo_root(&manifest_dir());
-        let gcc = riscv_gcc(&riscv_toolchain_dir());
-
-        let build_dir = self.build_guest_archive();
-        let archive = build_dir.join(format!("lib{}.a", self.guest_target()));
-
-        let zkevm = sp1_zkevm_dir();
-        let libzkevm = sp1_build::build_program_staticlib(
-            zkevm
-                .join("libzkevm-cabi")
-                .to_str()
-                .expect("cabi path is utf-8"),
-        );
-        let include = zkevm.join("include");
-
-        let main_c = repo_root.join("zkvm/sp1/program/main.c");
-        let out_dir = PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR unset"));
-        let main_o = out_dir.join("main.o");
-        let elf = out_dir.join("monad-zkvm-guest-sp1.elf");
-
-        // The SDK's zkvm.ld plus our overlay adding the C++ guest's RELRO
-        // sections (see relro.ld).
-        let zkvm_ld = zkevm.join("zkvm.ld");
-        let relro_ld = repo_root.join("zkvm/sp1/program/relro.ld");
-
-        println!("cargo:rerun-if-changed={}", main_c.display());
-        println!("cargo:rerun-if-changed={}", relro_ld.display());
-
-        let status = Command::new(&gcc)
-            .args([
-                "-march=rv64im",
-                "-mabi=lp64",
-                "-mcmodel=medany",
-                "-nostdlib",
-                "-ffreestanding",
-                "-fno-builtin",
-                "-O2",
-                "-Wall",
-                "-Wextra",
-                "-c",
-            ])
-            .arg(format!("-I{}", include.display()))
-            .arg("-o")
-            .arg(&main_o)
-            .arg(&main_c)
-            .status()
-            .unwrap_or_else(|e| panic!("failed to spawn {}: {e}", gcc.display()));
-        assert!(
-            status.success(),
-            "gcc failed compiling {}",
-            main_c.display()
-        );
-
-        let lld = sp1_build::find_lld().expect(
-            "ld.lld not found on PATH and no SP1 toolchain has a bundled copy. \
-             Install lld (`apt install lld`) or run `sp1up`.",
-        );
-        // Unreachable archive sections reference symbols this guest doesn't
-        // provide. Discard them before resolving references.
-        let status = Command::new(&lld)
-            .args(["-nostdlib", "-static", "--gc-sections"])
-            .arg(format!("-T{}", zkvm_ld.display()))
-            .arg(format!("-T{}", relro_ld.display()))
-            .arg("-o")
-            .arg(&elf)
-            .arg(&main_o)
-            .arg(&archive)
-            .arg(&libzkevm)
-            .status()
-            .unwrap_or_else(|e| panic!("failed to spawn {}: {e}", lld.display()));
-        assert!(status.success(), "ld.lld failed linking {}", elf.display());
-
-        elf
-    }
-}
-
-/// Locate the SDK sources in Cargo's `sp1-build` git checkout.
-#[cfg(feature = "sp1")]
-fn sp1_zkevm_dir() -> PathBuf {
-    let meta = cargo_metadata::MetadataCommand::new()
-        .exec()
-        .expect("cargo metadata failed while locating the sp1-build checkout");
-    // Match the git-sourced sp1-build (our dep), not the crates.io `sp1-build`
-    // the prover pulls in — only the git checkout carries the zkevm/ tree.
-    let pkg = meta
-        .packages
-        .iter()
-        .find(|p| {
-            p.name == "sp1-build"
-                && p.source
-                    .as_ref()
-                    .map_or(false, |s| s.repr.contains("succinctlabs/sp1"))
-        })
-        .expect("git-sourced sp1-build not found in cargo metadata");
-    // <checkout>/crates/build/Cargo.toml -> <checkout> -> <checkout>/zkevm
-    let manifest = pkg.manifest_path.clone().into_std_path_buf();
-    let checkout = manifest
-        .ancestors()
-        .nth(3)
-        .expect("unexpected sp1-build manifest path layout");
-    let zkevm = checkout.join("zkevm");
-    assert!(
-        zkevm.join("libzkevm-cabi/Cargo.toml").exists(),
-        "SP1 zkevm source not found at {} — sp1-build git checkout incomplete?",
-        zkevm.display()
-    );
-    zkevm
 }
 
 /// The ZisK compiler options, read from the environment and OFF by default.
@@ -325,7 +208,6 @@ fn emit_rerun_directives(repo_root: &Path) {
         // never reads.
         "third_party/blst",
         "third_party/cthash",
-        "third_party/ethash_vendor",
         "third_party/immer",
         "third_party/komihash",
         "third_party/nlohmann_json",

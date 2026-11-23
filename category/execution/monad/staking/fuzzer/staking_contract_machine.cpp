@@ -754,7 +754,7 @@ namespace monad::staking::test
             MONAD_ASSERT(res.has_value());
         }
         for (; i < n; ++i) {
-            auto const res1 = model_.syscall_snapshot();
+            auto const res1 = model_.template syscall_snapshot<traits>();
             MONAD_ASSERT(res1.has_value());
             auto const res2 = model_.syscall_on_epoch_change(++epoch);
             MONAD_ASSERT(res2.has_value());
@@ -1018,7 +1018,7 @@ namespace monad::staking::test
         else {
             next_epoch = model_.epoch() + 1;
             if (!model_.in_epoch_delay_period()) {
-                auto const res = model_.syscall_snapshot();
+                auto const res = model_.template syscall_snapshot<traits>();
                 MONAD_ASSERT(res.has_value());
             }
             auto const res = model_.syscall_on_epoch_change(next_epoch);
@@ -1048,7 +1048,7 @@ namespace monad::staking::test
             auto const res = model_.syscall_on_epoch_change(model_.epoch() + 1);
             MONAD_ASSERT(res.has_value());
         }
-        auto const res = model_.syscall_snapshot();
+        auto const res = model_.template syscall_snapshot<traits>();
         MONAD_ASSERT(res.has_value());
 
         // Post conditions:
@@ -1069,6 +1069,11 @@ namespace monad::staking::test
         auto const valset_consensus_length = model_valset_consensus.length();
         for (uint64_t i = 0; i < valset_consensus_length; ++i) {
             auto const v = model_valset_consensus.get(i).load().native();
+            if constexpr (requires_receiver_keys<traits>()) {
+                MONAD_ASSERT(
+                    model_.val_execution(v).receiver_key().load() !=
+                    byte_string_fixed<33>{});
+            }
             valset_consensus.insert(v);
         }
 
@@ -1350,7 +1355,8 @@ namespace monad::staking::test
         auto const id = model_precompile_add_validator(legacy);
         syscall_snapshot();
         auto const selected_before = model_.valset_consensus().length();
-        MONAD_ASSERT(selected_before == 1);
+        MONAD_ASSERT(
+            selected_before == (requires_receiver_keys<traits>() ? 0 : 1));
 
         auto const &auth = legacy.registration.auth_address;
         auto const secret = store_be_as<bytes32_t>(gen_uint256());

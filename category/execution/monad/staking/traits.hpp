@@ -27,8 +27,17 @@ consteval bool tracks_proposer_val_id()
     return traits::monad_rev() >= MONAD_FIVE;
 }
 
+// Enrollment and snapshot enforcement can be scheduled independently.
 template <Traits traits>
 consteval bool admits_receiver_keys()
+{
+    return traits::monad_rev() >= MONAD_NEXT;
+}
+
+// For network rollout, activate enforcement after enrollment so validators
+// have time to enroll before the first enforcing snapshot.
+template <Traits traits>
+consteval bool requires_receiver_keys()
 {
     return traits::monad_rev() >= MONAD_NEXT;
 }

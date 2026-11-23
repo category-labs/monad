@@ -240,7 +240,7 @@ struct StakeTraits : public MonadTraitsTest<MonadRevisionT>
     Result<void> syscall_snapshot()
     {
         state.push();
-        auto res = contract.syscall_snapshot({}, 0);
+        auto res = contract.syscall_snapshot<Trait>({}, 0);
         return post_call(res);
     }
 
@@ -935,6 +935,29 @@ TEST_F(
 
 TEST_F(
     ReceiverEnrollment,
+    snapshot_freezes_membership_and_keeps_keyless_candidates)
+{
+    ASSERT_TRUE(
+        contract.syscall_snapshot<MonadTraits<MONAD_FIVE>>({}, 0).has_value());
+    ASSERT_EQ(contract.vars.valset_consensus.length(), 2);
+    ASSERT_TRUE(syscall_on_epoch_change(contract.vars.epoch.load().native() + 1)
+                    .has_value());
+    ASSERT_TRUE(enroll(id, bytes32_t{21}, id).has_value());
+    ASSERT_TRUE(syscall_snapshot().has_value());
+    ASSERT_EQ(contract.vars.valset_consensus.length(), 1);
+    EXPECT_EQ(contract.vars.valset_consensus.get(0).load(), id);
+    EXPECT_EQ(contract.vars.valset_snapshot.length(), 2);
+    EXPECT_EQ(contract.vars.valset_execution.length(), 2);
+    ASSERT_TRUE(enroll(other, bytes32_t{22}, other).has_value());
+    EXPECT_EQ(contract.vars.valset_consensus.length(), 1);
+    ASSERT_TRUE(syscall_on_epoch_change(contract.vars.epoch.load().native() + 1)
+                    .has_value());
+    ASSERT_TRUE(syscall_snapshot().has_value());
+    EXPECT_EQ(contract.vars.valset_consensus.length(), 2);
+}
+
+TEST_F(
+    ReceiverEnrollment,
     receiver_getter_handles_empty_unknown_and_malformed_calls)
 {
     AbiEncoder empty;
@@ -1074,7 +1097,7 @@ TEST_F(StakeLatest, nonpayable_functions_revert)
 {
     // syscalls
     EXPECT_EQ(
-        contract.syscall_snapshot({}, 5 * MON).assume_error(),
+        contract.syscall_snapshot<Trait>({}, 5 * MON).assume_error(),
         StakingError::ValueNonZero);
     EXPECT_EQ(
         contract.syscall_on_epoch_change({}, 5 * MON).assume_error(),

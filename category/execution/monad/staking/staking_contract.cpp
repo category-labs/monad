@@ -1914,6 +1914,7 @@ Result<void> StakingContract::syscall_reward(
 
 EXPLICIT_MONAD_TRAITS_MEMBER(StakingContract::syscall_reward);
 
+template <Traits traits>
 Result<void> StakingContract::syscall_snapshot(
     byte_string_view input, uint256_t const &value)
 {
@@ -1974,6 +1975,11 @@ Result<void> StakingContract::syscall_snapshot(
         // into a separate loop.
         auto const flags = val_execution.get_flags();
         if (MONAD_LIKELY(flags == ValidatorFlagsOk)) {
+            if constexpr (requires_receiver_keys<traits>()) {
+                if (!val_execution.has_receiver_key()) {
+                    continue;
+                }
+            }
             uint256_t const stake = val_execution.stake().load().native();
             candidates.emplace_back(val_id, stake);
         }
@@ -2017,10 +2023,16 @@ Result<void> StakingContract::syscall_snapshot(
         slot_to_replace.store(swapped_id);
     }
 
+    uint64_t const current_epoch = vars.epoch.load().native();
+    if (MONAD_UNLIKELY(current_epoch == std::numeric_limits<uint64_t>::max())) {
+        return StakingError::InvalidEpochChange;
+    }
     vars.in_epoch_delay_period.store(true);
 
     return outcome::success();
 }
+
+EXPLICIT_MONAD_TRAITS_MEMBER(StakingContract::syscall_snapshot);
 
 Result<void> StakingContract::distribute_priority_fees(uint256_t const &fees)
 {

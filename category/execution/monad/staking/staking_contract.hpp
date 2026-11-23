@@ -587,6 +587,8 @@ public:
 
     Result<byte_string> precompile_get_validator(
         byte_string_view, Address const &, uint256_be_t const &);
+    Result<byte_string> precompile_get_receiver_key(
+        byte_string_view, Address const &, uint256_be_t const &);
     Result<byte_string> precompile_get_delegator(
         byte_string_view, Address const &, uint256_be_t const &);
     Result<byte_string> precompile_get_withdrawal_request(

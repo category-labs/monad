@@ -74,6 +74,8 @@ struct PrecompileSelector
         "addValidator(bytes,bytes,bytes,(bytes,bytes32,bytes32))");
     static constexpr uint32_t ADD_RECEIVER_KEY = abi_encode_selector(
         "addReceiverKey(uint64,bytes,(bytes,bytes32,bytes32))");
+    static constexpr uint32_t GET_RECEIVER_KEY =
+        abi_encode_selector("getReceiverKey(uint64)");
     static constexpr uint32_t DELEGATE =
         abi_encode_selector("delegate(uint64)");
     static constexpr uint32_t UNDELEGATE =
@@ -854,6 +856,12 @@ StakingContract::precompile_dispatch(byte_string_view &input)
                 ADD_RECEIVER_KEY_OP_COST};
         }
         break;
+    case PrecompileSelector::GET_RECEIVER_KEY:
+        if constexpr (admits_receiver_keys<traits>()) {
+            return {
+                &StakingContract::precompile_get_receiver_key, 2 * COLD_SLOAD};
+        }
+        break;
     case PrecompileSelector::DELEGATE:
         // [21, 17, 6, 14, 5, 2, 0]
         return {
@@ -975,6 +983,20 @@ StakingContract::get_validators_for_delegator(
 {
     return linked_list_traverse<Address, u64_be>(
         delegator, start_val_id, limit);
+}
+
+Result<byte_string> StakingContract::precompile_get_receiver_key(
+    byte_string_view input, Address const &, uint256_be_t const &msg_value)
+{
+    BOOST_OUTCOME_TRY(function_not_payable(msg_value));
+    BOOST_OUTCOME_TRY(auto const id, abi_decode_fixed<u64_be>(input));
+    if (MONAD_UNLIKELY(!input.empty())) {
+        return StakingError::InvalidInput;
+    }
+    auto const key = vars.val_execution(id).receiver_key().load();
+    AbiEncoder encoder;
+    encoder.add_bytes(to_byte_string_view(key));
+    return encoder.encode_final();
 }
 
 Result<byte_string> StakingContract::precompile_get_validator(

@@ -18,12 +18,15 @@
 #include <category/core/bytes.hpp>
 #include <category/core/int.hpp>
 #include <category/core/runtime/unaligned.hpp>
+#include <category/execution/ethereum/core/contract/abi_encode.hpp>
+#include <category/execution/ethereum/core/contract/abi_signatures.hpp>
 #include <category/execution/monad/staking/fuzzer/staking_contract_machine.hpp>
 #include <category/execution/monad/staking/test/input_generation.hpp>
 #include <category/execution/monad/staking/traits.hpp>
 #include <category/execution/monad/staking/util/bls.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
 #include <category/execution/monad/staking/util/secp256k1.hpp>
+#include <category/execution/monad/staking/util/staking_error.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/fuzzing/choice.hpp>
@@ -56,6 +59,25 @@ namespace
         data.remove_prefix(num_bytes);
         return ret;
     }
+
+    monad::staking::ReceiverKeyProof corrupt_receiver_proof(
+        monad::staking::ReceiverKeyProof proof, uint64_t const sample)
+    {
+        auto const bit = static_cast<uint8_t>(1u << ((sample >> 8) % 8));
+        auto const index = (sample >> 16) % 32;
+        switch (sample % 3) {
+        case 0:
+            proof.image[index + 1] ^= bit;
+            break;
+        case 1:
+            proof.challenge.bytes[index] ^= bit;
+            break;
+        case 2:
+            proof.response.bytes[index] ^= bit;
+            break;
+        }
+        return proof;
+    }
 }
 
 namespace monad::staking::test
@@ -75,6 +97,10 @@ namespace monad::staking::test
             config.many_active_validators_prob >= 0 &&
             config.many_active_validators_prob <= 1);
 
+        if constexpr (admits_receiver_keys<traits>()) {
+            fuzz_receiver_enrollment();
+        }
+        auto const initial_active = model_.valset_execution().length();
         constexpr size_t max_initial_active_vals = 260;
 
         // The max initial active validators must be able to fill up
@@ -95,7 +121,8 @@ namespace monad::staking::test
                               << " "
                               << "active validators, close to maximum active"
                               << std::endl;
-                    for (size_t i = 1; i < ACTIVE_VALSET_SIZE; ++i) {
+                    for (size_t i = initial_active; i < ACTIVE_VALSET_SIZE - 1;
+                         ++i) {
                         model_precompile_add_validator(
                             gen_precompile_add_validator_input(
                                 ACTIVE_VALIDATOR_STAKE, MAX_STAKE));
@@ -110,7 +137,8 @@ namespace monad::staking::test
                 std::cout << "Spam insert " << max_initial_active_vals << " "
                           << "active validators, to fill up a bitset bucket"
                           << std::endl;
-                for (size_t i = 0; i < max_initial_active_vals; ++i) {
+                for (size_t i = initial_active; i < max_initial_active_vals;
+                     ++i) {
                     model_precompile_add_validator(
                         gen_precompile_add_validator_input(
                             ACTIVE_VALIDATOR_STAKE, MAX_STAKE));
@@ -1258,7 +1286,8 @@ namespace monad::staking::test
     template <Traits traits>
     typename StakingContractMachine<traits>::AddValidatorInput
     StakingContractMachine<traits>::gen_precompile_add_validator_input(
-        uint256_t const &min_stake, uint256_t const &max_stake)
+        uint256_t const &min_stake, uint256_t const &max_stake,
+        bool const receiver_enabled)
     {
         MONAD_ASSERT(min_stake >= MIN_VALIDATE_STAKE);
         MONAD_ASSERT(max_stake >= min_stake);
@@ -1273,11 +1302,7 @@ namespace monad::staking::test
 
         return {
             make_validator_registration(
-                auth_address,
-                stake,
-                commission,
-                secret,
-                admits_receiver_keys<traits>()),
+                auth_address, stake, commission, secret, receiver_enabled),
             sender,
             value};
     }
@@ -1287,9 +1312,8 @@ namespace monad::staking::test
         AddValidatorInput const &input)
     {
         auto const &registration = input.registration;
-        auto const result =
-            model_.precompile_add_validator<traits>(
-                registration, input.sender, input.value);
+        auto const result = model_.precompile_add_validator<traits>(
+            registration, input.sender, input.value);
         MONAD_ASSERT(result.has_value());
 
         auto const val_id = result.value();
@@ -1317,6 +1341,50 @@ namespace monad::staking::test
     }
 
     template <Traits traits>
+    void StakingContractMachine<traits>::fuzz_receiver_enrollment()
+    {
+        // Register through the legacy selector under the current revision.
+        syscall_on_epoch_change();
+        auto const legacy = gen_precompile_add_validator_input(
+            ACTIVE_VALIDATOR_STAKE, MAX_DELEGABLE_STAKE, false);
+        auto const id = model_precompile_add_validator(legacy);
+        syscall_snapshot();
+        auto const selected_before = model_.valset_consensus().length();
+        MONAD_ASSERT(selected_before == 1);
+
+        auto const &auth = legacy.registration.auth_address;
+        auto const secret = store_be_as<bytes32_t>(gen_uint256());
+        auto const key = serialize_secp_pubkey(gen_secp_keypair(secret).first);
+        auto const bls_pubkey =
+            model_.val_execution(id).keys().load().bls_pubkey;
+        auto const proof = prove_receiver_key_registration(
+            {}, legacy.registration.sign_address, bls_pubkey, auth, secret);
+        constexpr auto selector = abi_encode_selector(
+            "addReceiverKey(uint64,bytes,(bytes,bytes32,bytes32))");
+        auto const input = craft_add_receiver_key_input(id, key, proof);
+        auto const invalid = craft_add_receiver_key_input(
+            id, key, corrupt_receiver_proof(proof, gen()));
+        auto const rejected =
+            model_.template dispatch<traits>(selector, invalid, auth, {});
+        MONAD_ASSERT(
+            rejected.has_error() &&
+            rejected.error() == StakingError::InvalidReceiverProof);
+        MONAD_ASSERT(
+            model_.val_execution(id).receiver_key().load() ==
+            byte_string_fixed<33>{});
+
+        auto const accepted =
+            model_.template dispatch<traits>(selector, input, auth, {});
+        MONAD_ASSERT(accepted.has_value());
+        MONAD_ASSERT(model_.val_execution(id).receiver_key().load() == key);
+        MONAD_ASSERT(model_.valset_consensus().length() == selected_before);
+
+        syscall_snapshot();
+        auto const selected = model_.valset_consensus();
+        MONAD_ASSERT(selected.length() == 1 && selected.get(0).load() == id);
+    }
+
+    template <Traits traits>
     void StakingContractMachine<traits>::precompile_add_validator()
     {
         auto const input =
@@ -1325,6 +1393,18 @@ namespace monad::staking::test
         auto const balance_before = model_.balance_of(STAKING_CA);
         auto const last_val_id_before = model_.last_val_id();
 
+        if constexpr (admits_receiver_keys<traits>()) {
+            auto invalid = registration;
+            invalid.receiver_proof =
+                corrupt_receiver_proof(*registration.receiver_proof, gen());
+            auto const rejected = model_.precompile_add_validator<traits>(
+                invalid, input.sender, input.value);
+            MONAD_ASSERT(
+                rejected.has_error() &&
+                rejected.error() == StakingError::InvalidReceiverProof);
+            MONAD_ASSERT(model_.last_val_id() == last_val_id_before);
+            MONAD_ASSERT(model_.balance_of(STAKING_CA) == balance_before);
+        }
         auto const v = model_precompile_add_validator(input);
         auto const stake = load_be<uint256_t>(input.value);
         MONAD_ASSERT(model_.balance_of(STAKING_CA) - balance_before == stake);

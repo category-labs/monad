@@ -15,6 +15,7 @@
 
 #include <category/execution/monad/staking/fuzzer/staking_contract_model.hpp>
 #include <category/execution/monad/staking/test/input_generation.hpp>
+#include <category/execution/monad/staking/traits.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/fuzzing/choice.hpp>
 
@@ -209,10 +210,12 @@ namespace monad::staking::test
         };
 
         AddValidatorInput gen_precompile_add_validator_input(
-            uint256_t const &min_stake, uint256_t const &max_stake);
+            uint256_t const &min_stake, uint256_t const &max_stake,
+            bool receiver_enabled = admits_receiver_keys<traits>());
 
         u64_be model_precompile_add_validator(AddValidatorInput const &);
 
+        void fuzz_receiver_enrollment();
         void precompile_add_validator();
 
         std::tuple<u64_be, Address, uint256_be_t>

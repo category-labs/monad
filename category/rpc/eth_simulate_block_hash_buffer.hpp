@@ -33,12 +33,15 @@ MONAD_NAMESPACE_BEGIN
 // simulated blocks.
 class EthSimulateBlockHashBuffer : public LazyBlockHash
 {
-    using LazyBlockHash::N;
+public:
+    static constexpr auto N = LazyBlockHash::N;
 
+private:
     uint64_t const n_;
     uint64_t i_;
     std::optional<bytes32_t const> const base_block_hash_;
-    std::array<bytes32_t, N> simulated_block_hashes_;
+    std::array<bytes32_t, EthSimulateBlockHashBuffer::N>
+        simulated_block_hashes_;
 
 public:
     EthSimulateBlockHashBuffer(

@@ -47,6 +47,7 @@ enum class SimulationError
     InvalidBlockGap,
     GasLimitExceeded,
     UnsupportedChainConfig,
+    UnsupportedMaxBlocksValue,
 };
 
 struct SimulationErrorResponse

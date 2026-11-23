@@ -81,6 +81,17 @@ TEST(SimulationErrorTest, UnsupportedChainConfig)
     EXPECT_EQ(info.message, "only Monad chain configurations are supported");
 }
 
+TEST(SimulationErrorTest, UnsupportedMaxBlocksValue)
+{
+    Result<void>::error_type const error =
+        SimulationError::UnsupportedMaxBlocksValue;
+
+    auto const info = simulation_error_info(error);
+
+    EXPECT_EQ(info.status_code, CallStatus::Rejected);
+    EXPECT_EQ(info.message, "max blocks exceeds the supported maximum of 256");
+}
+
 TEST(SimulationErrorTest, BlockDomain)
 {
     Result<void>::error_type const error = BlockError::GasAboveLimit;

@@ -119,7 +119,7 @@ namespace
     constexpr unsigned max_timeout = std::numeric_limits<unsigned>::max();
     auto const rlp_finalized_id = rlp::encode_bytes32(bytes32_t{});
     auto const simulate_gas_limit = std::numeric_limits<uint64_t>::max();
-    constexpr size_t simulate_max_calls = 256;
+    constexpr size_t simulate_max_blocks = 256;
     constexpr size_t simulate_max_output_size = 1024 * 1024; // 1 MB
     constexpr size_t call_tracer_max_size = 1024 * 1024; // 1 MB
     constexpr bytes32_t transfer_sig =
@@ -5562,7 +5562,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_simple_transfer)
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
         simulate_gas_limit,
-        simulate_max_calls,
+        simulate_max_blocks,
         simulate_max_output_size,
         state_override,
         block_override,
@@ -5678,7 +5678,7 @@ TEST_F(EthCallFixture, eth_simulate_slot_number)
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
         simulate_gas_limit,
-        simulate_max_calls,
+        simulate_max_blocks,
         simulate_max_output_size,
         state_override,
         block_override,
@@ -5815,7 +5815,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_slot_number_across_amsterdam)
             rlp_finalized_id.data(),
             rlp_finalized_id.size(),
             simulate_gas_limit,
-            simulate_max_calls,
+            simulate_max_blocks,
             simulate_max_output_size,
             so,
             bo,
@@ -5953,7 +5953,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_simple_transfers_multiple_blocks)
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
         simulate_gas_limit,
-        simulate_max_calls,
+        simulate_max_blocks,
         simulate_max_output_size,
         state_overrides,
         block_overrides,
@@ -6054,7 +6054,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_single_call_block_255)
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
         simulate_gas_limit,
-        simulate_max_calls,
+        simulate_max_blocks,
         simulate_max_output_size,
         so_overrides,
         bo_overrides,
@@ -6113,7 +6113,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_empty_input)
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
         simulate_gas_limit,
-        simulate_max_calls,
+        simulate_max_blocks,
         simulate_max_output_size,
         so_overrides,
         bo_overrides,
@@ -6190,7 +6190,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_block_override_synthetic_gap)
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
         simulate_gas_limit,
-        simulate_max_calls,
+        simulate_max_blocks,
         simulate_max_output_size,
         so_overrides,
         bo_overrides,
@@ -6293,7 +6293,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_block_override_no_synthetic_gaps)
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
         simulate_gas_limit,
-        simulate_max_calls,
+        simulate_max_blocks,
         simulate_max_output_size,
         so_overrides,
         bo_overrides,
@@ -6405,7 +6405,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_stress_queue_rejection)
             rlp_finalized_id.data(),
             rlp_finalized_id.size(),
             simulate_gas_limit,
-            simulate_max_calls,
+            simulate_max_blocks,
             simulate_max_output_size,
             subs[i]->so,
             subs[i]->bo,
@@ -6572,7 +6572,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance)
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
         simulate_gas_limit,
-        simulate_max_calls,
+        simulate_max_blocks,
         simulate_max_output_size,
         so,
         bo,
@@ -6730,7 +6730,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance_chain_context_buffer)
             rlp_finalized_id.data(),
             rlp_finalized_id.size(),
             simulate_gas_limit,
-            simulate_max_calls,
+            simulate_max_blocks,
             simulate_max_output_size,
             so,
             bo,
@@ -6874,7 +6874,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_reserve_balance_chain_context_buffer)
             rlp_finalized_id.data(),
             rlp_finalized_id.size(),
             simulate_gas_limit,
-            simulate_max_calls,
+            simulate_max_blocks,
             simulate_max_output_size,
             so,
             bo,
@@ -7107,7 +7107,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_call_types)
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
         simulate_gas_limit,
-        simulate_max_calls,
+        simulate_max_blocks,
         simulate_max_output_size,
         so,
         bo,
@@ -7255,7 +7255,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_state_changes_across_blocks)
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
         simulate_gas_limit,
-        simulate_max_calls,
+        simulate_max_blocks,
         simulate_max_output_size,
         so,
         bo,
@@ -7478,7 +7478,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_deploy_and_call)
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
         simulate_gas_limit,
-        simulate_max_calls,
+        simulate_max_blocks,
         simulate_max_output_size,
         so,
         bo,
@@ -7696,7 +7696,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_native_transfer_logs)
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
         simulate_gas_limit,
-        simulate_max_calls,
+        simulate_max_blocks,
         simulate_max_output_size,
         so,
         bo,
@@ -7842,7 +7842,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_trace_transfers_across_amsterdam)
             rlp_finalized_id.data(),
             rlp_finalized_id.size(),
             simulate_gas_limit,
-            simulate_max_calls,
+            simulate_max_blocks,
             simulate_max_output_size,
             so,
             bo,
@@ -8016,7 +8016,7 @@ TYPED_TEST(EthCallEncodingFixture, eth_simulate_v1_time_travel)
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
         simulate_gas_limit,
-        simulate_max_calls,
+        simulate_max_blocks,
         simulate_max_output_size,
         so,
         bo,
@@ -8146,7 +8146,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_blockhash_reads)
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
         simulate_gas_limit,
-        simulate_max_calls,
+        simulate_max_blocks,
         simulate_max_output_size,
         so,
         bo,
@@ -8291,7 +8291,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_legacy_transactions)
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
         simulate_gas_limit,
-        simulate_max_calls,
+        simulate_max_blocks,
         simulate_max_output_size,
         state_overrides,
         block_overrides,
@@ -8405,7 +8405,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_typed_transactions_2930_and_1559)
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
         simulate_gas_limit,
-        simulate_max_calls,
+        simulate_max_blocks,
         simulate_max_output_size,
         state_overrides,
         block_overrides,
@@ -8533,7 +8533,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_typed_transaction_7702)
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
         simulate_gas_limit,
-        simulate_max_calls,
+        simulate_max_blocks,
         simulate_max_output_size,
         state_overrides,
         block_overrides,
@@ -8689,7 +8689,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_all_transaction_formats_single_block)
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
         simulate_gas_limit,
-        simulate_max_calls,
+        simulate_max_blocks,
         simulate_max_output_size,
         state_overrides,
         block_overrides,
@@ -8808,7 +8808,7 @@ TEST_F(
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
         simulate_gas_limit,
-        simulate_max_calls,
+        simulate_max_blocks,
         simulate_max_output_size,
         state_overrides,
         block_overrides,
@@ -8931,7 +8931,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_gas_limit_enforcement)
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
         total_gas_limit,
-        simulate_max_calls,
+        simulate_max_blocks,
         simulate_max_output_size,
         state_override,
         block_override,
@@ -9027,7 +9027,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_simple_transfer_withdrawals_monad)
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
         simulate_gas_limit,
-        simulate_max_calls,
+        simulate_max_blocks,
         simulate_max_output_size,
         state_override,
         block_override,
@@ -9168,7 +9168,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_state_override_graceful_failure)
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
         simulate_gas_limit,
-        simulate_max_calls,
+        simulate_max_blocks,
         simulate_max_output_size,
         state_override,
         block_override,
@@ -9244,7 +9244,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_transaction_input_too_long_causes_death)
             rlp_finalized_id.data(),
             rlp_finalized_id.size(),
             simulate_gas_limit,
-            simulate_max_calls,
+            simulate_max_blocks,
             simulate_max_output_size,
             state_override,
             block_override,
@@ -9329,7 +9329,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_beacon_roots)
             rlp_finalized_id.data(),
             rlp_finalized_id.size(),
             simulate_gas_limit,
-            simulate_max_calls,
+            simulate_max_blocks,
             simulate_max_output_size,
             state_overrides,
             block_overrides,
@@ -9477,7 +9477,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_block_history_state_override)
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
         simulate_gas_limit,
-        simulate_max_calls,
+        simulate_max_blocks,
         simulate_max_output_size,
         state_overrides,
         block_overrides,
@@ -9586,7 +9586,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_deploy_over_storage_override)
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
         simulate_gas_limit,
-        simulate_max_calls,
+        simulate_max_blocks,
         simulate_max_output_size,
         state_overrides,
         block_overrides,
@@ -9728,7 +9728,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_output_size_enforcement)
             rlp_finalized_id.data(),
             rlp_finalized_id.size(),
             simulate_gas_limit,
-            simulate_max_calls,
+            simulate_max_blocks,
             std::numeric_limits<size_t>::max(), // Max output size, virtually
                                                 // unlimited.
             state_override,
@@ -9767,7 +9767,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_output_size_enforcement)
             rlp_finalized_id.data(),
             rlp_finalized_id.size(),
             simulate_gas_limit,
-            simulate_max_calls,
+            simulate_max_blocks,
             actual_cbor_output_size,
             state_override,
             block_override,
@@ -9808,7 +9808,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_output_size_enforcement)
             rlp_finalized_id.data(),
             rlp_finalized_id.size(),
             simulate_gas_limit,
-            simulate_max_calls,
+            simulate_max_blocks,
             max_output_size,
             state_override,
             block_override,
@@ -9856,7 +9856,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_output_size_enforcement)
             rlp_finalized_id.data(),
             rlp_finalized_id.size(),
             simulate_gas_limit,
-            simulate_max_calls,
+            simulate_max_blocks,
             output_max_size,
             state_override,
             block_override,
@@ -9909,7 +9909,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_output_size_enforcement)
             rlp_finalized_id.data(),
             rlp_finalized_id.size(),
             simulate_gas_limit,
-            simulate_max_calls,
+            simulate_max_blocks,
             mixed_max_size,
             state_override,
             block_override,
@@ -10095,7 +10095,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_empty_state_override_zeros_storage)
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
         simulate_gas_limit,
-        simulate_max_calls,
+        simulate_max_blocks,
         simulate_max_output_size,
         state_overrides,
         block_overrides,
@@ -10582,7 +10582,7 @@ TEST(EthCallFixtureNoDb, eth_simulate_v1_with_state_overrides)
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
         simulate_gas_limit,
-        simulate_max_calls,
+        simulate_max_blocks,
         simulate_max_output_size,
         so,
         bo,
@@ -10716,7 +10716,7 @@ TEST(EthCallFixtureNoDb, eth_simulate_v1_rejects_ethereum_chain_configs)
                 rlp_finalized_id.data(),
                 rlp_finalized_id.size(),
                 simulate_gas_limit,
-                simulate_max_calls,
+                simulate_max_blocks,
                 simulate_max_output_size,
                 state_overrides,
                 block_overrides,
@@ -10734,6 +10734,65 @@ TEST(EthCallFixtureNoDb, eth_simulate_v1_rejects_ethereum_chain_configs)
                 "only Monad chain configurations are supported");
         }
     }
+
+    monad_block_override_vec_destroy(block_overrides);
+    monad_state_override_vec_destroy(state_overrides);
+    monad_executor_destroy(executor);
+}
+
+// EthSimulateBlockHashBuffer only retains 256 simulated block hashes, so a
+// larger max_blocks is rejected as a misconfiguration even when the request
+// itself would fit.
+TEST(EthCallFixtureNoDb, eth_simulate_v1_rejects_unsupported_max_blocks)
+{
+    static constexpr Address sender =
+        0x00000000000000000000000000000000deadbeef_address;
+    static constexpr Address recipient =
+        0x00000000000000000000000000000000feedface_address;
+
+    auto *const executor = create_executor_without_db();
+    auto *const state_overrides = monad_state_override_vec_create(1);
+    auto *const block_overrides = monad_block_override_vec_create(1);
+    Transaction const tx{.gas_limit = 100'000, .to = recipient};
+    auto const rlp_senders = to_vec(rlp::encode_list2(
+        rlp::encode_list2(rlp::encode_address(std::make_optional(sender)))));
+    auto const rlp_calls = to_vec(rlp::encode_list2(
+        rlp::encode_list2(rlp::encode_string2(rlp::encode_transaction(tx)))));
+    BlockHeader const header{.number = 1, .gas_limit = 200'000'000};
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    callback_context ctx;
+    auto future = ctx.promise.get_future();
+    monad_executor_eth_simulate_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_senders.data(),
+        rlp_senders.size(),
+        rlp_calls.data(),
+        rlp_calls.size(),
+        header.number,
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        rlp_finalized_id.data(),
+        rlp_finalized_id.size(),
+        simulate_gas_limit,
+        simulate_max_blocks + 1,
+        simulate_max_output_size,
+        state_overrides,
+        block_overrides,
+        true, // validation
+        false, // emit_native_transfer_logs
+        complete_callback,
+        (void *)&ctx);
+    future.get();
+
+    EXPECT_EQ(
+        ctx.result->status_code, std::to_underlying(CallStatus::Rejected));
+    EXPECT_STREQ(
+        ctx.result->message, "max blocks exceeds the supported maximum of 256");
 
     monad_block_override_vec_destroy(block_overrides);
     monad_state_override_vec_destroy(state_overrides);
@@ -10803,7 +10862,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_validation_modes_match_for_eoa)
             rlp_finalized_id.data(),
             rlp_finalized_id.size(),
             simulate_gas_limit,
-            simulate_max_calls,
+            simulate_max_blocks,
             simulate_max_output_size,
             state_overrides,
             block_overrides,
@@ -10955,7 +11014,7 @@ TEST_F(
                 rlp_finalized_id.data(),
                 rlp_finalized_id.size(),
                 simulate_gas_limit,
-                simulate_max_calls,
+                simulate_max_blocks,
                 simulate_max_output_size,
                 state_overrides,
                 block_overrides,
@@ -11085,7 +11144,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_relaxed_sender_validation)
             rlp_finalized_id.data(),
             rlp_finalized_id.size(),
             simulate_gas_limit,
-            simulate_max_calls,
+            simulate_max_blocks,
             simulate_max_output_size,
             state_overrides,
             block_overrides,
@@ -11310,7 +11369,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_validation_false_matches_eth_call)
             rlp_finalized_id.data(),
             rlp_finalized_id.size(),
             simulate_gas_limit,
-            simulate_max_calls,
+            simulate_max_blocks,
             simulate_max_output_size,
             state_overrides,
             block_overrides,
@@ -11487,7 +11546,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_max_sender_nonce_differs_from_eth_call)
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
         simulate_gas_limit,
-        simulate_max_calls,
+        simulate_max_blocks,
         simulate_max_output_size,
         state_overrides,
         block_overrides,
@@ -11602,7 +11661,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_validation_false_bounds_sender_nonce)
             rlp_finalized_id.data(),
             rlp_finalized_id.size(),
             simulate_gas_limit,
-            simulate_max_calls,
+            simulate_max_blocks,
             simulate_max_output_size,
             state_overrides,
             block_overrides,
@@ -11711,7 +11770,7 @@ TEST_F(
         rlp_finalized_id.data(),
         rlp_finalized_id.size(),
         simulate_gas_limit,
-        simulate_max_calls,
+        simulate_max_blocks,
         simulate_max_output_size,
         state_overrides,
         block_overrides,
@@ -11834,7 +11893,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_nonce_moved_by_earlier_authorization)
             rlp_finalized_id.data(),
             rlp_finalized_id.size(),
             simulate_gas_limit,
-            simulate_max_calls,
+            simulate_max_blocks,
             simulate_max_output_size,
             state_overrides,
             block_overrides,
@@ -11948,7 +12007,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_authorization_raises_sender_nonce_to_max)
             rlp_finalized_id.data(),
             rlp_finalized_id.size(),
             simulate_gas_limit,
-            simulate_max_calls,
+            simulate_max_blocks,
             simulate_max_output_size,
             state_overrides,
             block_overrides,
@@ -12122,7 +12181,7 @@ TEST_F(EthCallFixture, eth_simulate_v1_validation_controls_base_fee)
             rlp_finalized_id.data(),
             rlp_finalized_id.size(),
             simulate_gas_limit,
-            simulate_max_calls,
+            simulate_max_blocks,
             simulate_max_output_size,
             state_overrides,
             block_overrides,

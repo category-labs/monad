@@ -886,11 +886,20 @@ namespace
         mpt::Db *const db, vm::VM &vm, fiber::FiberGroup &tx_exec_pool,
         struct monad_state_override_vec const &state_overrides,
         struct monad_block_override_vec const &block_overrides,
-        uint64_t const gas_limit, size_t const max_calls, size_t const max_size,
-        Simulation const execution_mode, bool emit_native_transfer_logs)
+        uint64_t const gas_limit, size_t const max_blocks,
+        size_t const max_size, Simulation const execution_mode,
+        bool emit_native_transfer_logs)
     {
         // TODO(dhil): Decide on the default timestamp increment.
         static constexpr uint64_t DEFAULT_TIMESTAMP_INCREMENT = 1;
+
+        // TODO(dhil): Once we have endowed the C API with error codes, then
+        // this error should be returned at startup time rather than request
+        // submission time.
+        if (MONAD_UNLIKELY(max_blocks > EthSimulateBlockHashBuffer::N)) {
+            return Result<nlohmann::json>::error_type{
+                SimulationError::UnsupportedMaxBlocksValue};
+        }
 
         if (MONAD_UNLIKELY(
                 calls.size() != senders.size() ||
@@ -913,7 +922,7 @@ namespace
         // Validate the inputs before constructing the simulation objects. This
         // validation procedure returns an error on bad input.
         BOOST_OUTCOME_TRY(eth_simulate_validate_inputs(
-            max_calls,
+            max_blocks,
             DEFAULT_TIMESTAMP_INCREMENT,
             calls,
             block_overrides,
@@ -2092,8 +2101,9 @@ struct monad_executor
         struct monad_block_override_vec const *const block_overrides,
         BlockHeader const &block_header, uint64_t const block_number,
         bytes32_t const &block_id, bytes32_t const &grandparent_id,
-        uint64_t const gas_limit, size_t const max_calls, size_t const max_size,
-        bool const validation, bool emit_native_transfer_logs,
+        uint64_t const gas_limit, size_t const max_blocks,
+        size_t const max_size, bool const validation,
+        bool emit_native_transfer_logs,
         void (*complete)(monad_executor_result *, void *user), void *const user)
     {
         monad_executor_result *const result = new monad_executor_result();
@@ -2121,7 +2131,7 @@ struct monad_executor
              chain_config = chain_config,
              db = select_db(block_number),
              gas_limit = gas_limit,
-             max_calls = max_calls,
+             max_blocks = max_blocks,
              max_size = max_size,
              execution_mode = Simulation{validation},
              emit_native_transfer_logs = emit_native_transfer_logs,
@@ -2198,7 +2208,7 @@ struct monad_executor
                                 *state_overrides,
                                 *block_overrides,
                                 gas_limit,
-                                max_calls,
+                                max_blocks,
                                 max_size,
                                 execution_mode,
                                 emit_native_transfer_logs);
@@ -2470,7 +2480,7 @@ void monad_executor_eth_simulate_submit(
     uint8_t const *const rlp_block_id, size_t rlp_block_id_len,
     uint8_t const *const rlp_grandparent_block_id,
     size_t const rlp_grandparent_block_id_len, uint64_t gas_limit,
-    size_t max_calls, size_t max_output_size,
+    size_t max_blocks, size_t max_output_size,
     struct monad_state_override_vec const *const state_overrides,
     struct monad_block_override_vec const *const block_overrides,
     bool const validation, bool emit_native_transfer_logs,
@@ -2533,7 +2543,7 @@ void monad_executor_eth_simulate_submit(
         block_id,
         grandparent_block_id,
         gas_limit,
-        max_calls,
+        max_blocks,
         max_output_size,
         validation,
         emit_native_transfer_logs,

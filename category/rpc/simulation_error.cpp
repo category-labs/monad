@@ -52,6 +52,7 @@ namespace
         case SimulationError::GasLimitExceeded:
             return CallStatus::InternalError;
         case SimulationError::UnsupportedChainConfig:
+        case SimulationError::UnsupportedMaxBlocksValue:
             return CallStatus::Rejected;
         }
         return CallStatus::InternalError;
@@ -145,6 +146,9 @@ quick_status_code_from_enum<monad::SimulationError>::value_mappings()
         {SimulationError::GasLimitExceeded, "gas limit exceeded", {}},
         {SimulationError::UnsupportedChainConfig,
          "only Monad chain configurations are supported",
+         {}},
+        {SimulationError::UnsupportedMaxBlocksValue,
+         "max blocks exceeds the supported maximum of 256",
          {}},
     };
 

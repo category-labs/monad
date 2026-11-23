@@ -70,12 +70,22 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 Requirements stated with MUST and MUST NOT on a graph or on a call (its
 calldata, inputs and outputs) are conditions for the call to succeed. An
 implementation MUST fail a call that does not meet one of them, and a call
-that this specification says fails.
+that this specification says fails. This holds for every requirement and
+failure, wherever this specification states it, including those that concern
+an op whose result no output depends on.
+
+This specification does not say when a requirement is checked or a failure is
+found. An implementation MAY check that a graph is valid before evaluating
+it, MAY check each requirement while evaluating the graph, when it reaches the
+op the requirement concerns, or MAY do any mix of the two. The sections
+[Validation](#validation) and [Evaluation](#evaluation) group requirements by
+what they depend on (the graph's code alone, or also state and the call's
+inputs), not by when they are checked.
 
 A failed call reverts and consumes all gas given to it. It makes no changes to
 storage. The revert data is the same for every failure (see
-[Open Questions](#open-questions)): callers cannot tell why a call failed, and
-implementations need not detect failures in any particular order.
+[Open Questions](#open-questions)): callers cannot tell why or when a call
+failed, and implementations need not detect failures in any particular order.
 
 ### Types and shapes
 
@@ -112,16 +122,29 @@ Graphs are deployed as ordinary contract code, with `CREATE` or
 `CREATE2`, subject to the usual code size limit.
 
 Tensors can also be stored in the code of an account and used directly
-in graphcode as `TensorRef` nodes (see [Ops](#ops)) or passed as code
-inputs to `evalGraph` and `evalGraphInto` (see
+in graphcode as `TensorRef` nodes (see [Op semantics](#op-semantics)) or
+passed as code inputs to `evalGraph` and `evalGraphInto` (see
 [Precompile interface](#precompile-interface)). Tensors living in contract
-code are represented as literal tensors (see `Literal` in [Ops](#ops)) and
-can be stored at any offset of any account's code, including a graph's: a
-`TensorRef` can read another graph's `Literal` node. A reference to a tensor
-is the account's address and the byte offset of the tensor's encoding in its
-code, counted from the code's first byte.
+code are represented as literal tensors (see `Literal` in
+[Op validity](#op-validity)) and can be stored at any offset of any
+account's code, including a graph's: a `TensorRef` can read another graph's
+`Literal` node. A reference to a tensor is the account's address and the byte
+offset of the tensor's encoding in its code, counted from the code's first
+byte.
 
-### Graph encoding
+### Validation
+
+A graph is valid if it meets every requirement in this section. These
+requirements depend only on the graph's code. They also define every node's
+tensor type, which [Evaluation](#evaluation) and [Gas costs](#gas-costs) use.
+A call to an invalid graph fails; when that failure is found is not specified
+(see [Failure](#failure)).
+
+Whether a graph is valid can be decided in one pass over its code, linear in
+its length. Implementations MAY keep the result of checking these
+requirements, the tensor types and the arena layout as metadata.
+
+#### Graph encoding
 
 All integers are little-endian. A graph's code MUST follow the structure below:
 
@@ -164,70 +187,65 @@ every output in the list `outputs` MUST be the id of a node. An output
 MAY be a graph input, and a single node MAY appear as multiple
 outputs. A valid graph MUST NOT have any trailing bytes.
 
-### Ops
+#### Op validity
 
-| id | op          | params                                   | inputs              |
-|----|-------------|------------------------------------------|---------------------|
-| 0  | `Scalar`    | see [Scalar nodes](#scalar-nodes)        | see [Scalar nodes](#scalar-nodes) |
-| 1  | `Literal`   | `type`, then its elements                | 0                   |
-| 2  | `TensorRef` | `type`, `address: u8[20]`, `offset: u32` | 0                   |
-| 3  | `Reshape`   | `shape`                                  | 1                   |
-| 4  | `Concat`    | `axis: u8`                               | 2                   |
-| 5  | `MatMul`    | none                                     | 2                   |
-| 6  | `QMatMul`   | `frac_bits: u8`, `dtype: u8`             | 2                   |
-| 7  | `CumSum`    | `axis: u8`                               | 1                   |
-| 8  | `ArgMin`    | none                                     | 1                   |
-| 9  | `ArgMax`    | none                                     | 1                   |
-| 10 | `ReduceSum` | `axis: u8`                               | 1                   |
-| 11 | `ReduceMax` | `axis: u8`                               | 1                   |
-| 12 | `Gather`    | `axis: u8`                               | 2 (values, indices) |
+| id | op          | params                                   | inputs                                    |
+|----|-------------|------------------------------------------|-------------------------------------------|
+| 0  | `Scalar`    | see [Scalar node validity](#scalar-node-validity) | see [Scalar node validity](#scalar-node-validity) |
+| 1  | `Literal`   | `type`, then its elements                | 0                                         |
+| 2  | `TensorRef` | `type`, `address: u8[20]`, `offset: u32` | 0                                         |
+| 3  | `Reshape`   | `shape`                                  | 1                                         |
+| 4  | `Concat`    | `axis: u8`                               | 2                                         |
+| 5  | `MatMul`    | none                                     | 2                                         |
+| 6  | `QMatMul`   | `frac_bits: u8`, `dtype: u8`             | 2                                         |
+| 7  | `CumSum`    | `axis: u8`                               | 1                                         |
+| 8  | `ArgMin`    | none                                     | 1                                         |
+| 9  | `ArgMax`    | none                                     | 1                                         |
+| 10 | `ReduceSum` | `axis: u8`                               | 1                                         |
+| 11 | `ReduceMax` | `axis: u8`                               | 1                                         |
+| 12 | `Gather`    | `axis: u8`                               | 2 (values, indices)                       |
 
-Validation rules and results, with `x` and `y` the inputs:
+Any other opcode is invalid.
 
-- `Literal`: its elements follow the type, little-endian, and the result is
-  that tensor.
-- `TensorRef`: the result has the given type. Its elements are read when the
-  graph is evaluated, from the tensor at `offset` in the code of `address`
-  (see [Graph and tensor storage](#graph-and-tensor-storage)), little-endian.
-  Evaluation fails if the tensor's encoding (its type, then its elements)
-  extends past the end of the code, or if its type differs from the given
-  type.
-- `Reshape`: `x` and `shape` MUST have the same element count. The result has
-  `x`'s dtype and elements, in the same row-major order, and the given shape.
+Every node has a tensor type. A graph input's is the type declared in
+`inputs`, and an op's is its result type, given below together with the rules
+its params and inputs MUST meet, with `x` and `y` the inputs:
+
+- `Scalar`: see [Scalar node validity](#scalar-node-validity).
+- `Literal`: `type` is followed by the tensor's elements, as many bytes as
+  `type`'s byte size. The result type is `type`.
+- `TensorRef`: the result type is `type`. The requirements on the tensor that
+  `address` and `offset` refer to depend on that account's code, so they are
+  in [Op semantics](#op-semantics).
+- `Reshape`: `shape` MUST have the same element count as `x`. The result type
+  is `x`'s dtype with `shape`.
 - `Concat`: `x` and `y` MUST have the same dtype and rank, `axis` MUST be less
-  than the rank, and the dimensions other than `axis` MUST be equal. The
-  result joins them along `axis`; its dimension there, the sum of theirs, MUST
-  be at most 65535.
+  than the rank, and their dimensions other than `axis` MUST be equal. The sum
+  of their dimensions along `axis` MUST be at most `MAX_DIM`. The result type
+  is `x`'s, with that sum as its dimension along `axis`.
 - `MatMul`: `x` and `y` MUST be `int8` matrices (rank 2), `[m, k]` and
-  `[k, n]`. The result is the `int32` matrix `[m, n]` of their exact product.
+  `[k, n]`. The result type is the `int32` matrix `[m, n]`.
 - `QMatMul`: `x` and `y` MUST be matrices of the same dtype, `[m, k]` and
   `[k, n]`. `frac_bits` MUST be at least 1 and at most the bit width of
-  `dtype` and `MAX_FRACTIONAL_BITS`. Each element of the `[m, n]` result is
-  the sum of its `k` products, computed modulo 2^128 (as a signed 128-bit
-  value for signed dtypes, unsigned otherwise), shifted right by `frac_bits`
-  rounding toward negative infinity, then wrapped to `dtype`.
-- `CumSum`: `axis` MUST be less than `x`'s rank. The result has `x`'s type;
-  each element is the sum of `x`'s elements up to and including its position
-  along `axis`, wrapping to the dtype.
-- `ArgMin` and `ArgMax`: `x` MUST have at least one element. The result is a
-  rank-0 tensor of `x`'s dtype: the row-major index of the first smallest
-  (largest) element, wrapped to that dtype.
+  `dtype` and `MAX_FRACTIONAL_BITS`. The result type is the `dtype` matrix
+  `[m, n]`.
+- `CumSum`: `axis` MUST be less than `x`'s rank. The result type is `x`'s.
+- `ArgMin` and `ArgMax`: `x` MUST have at least one element. The result type
+  is `x`'s dtype with rank 0.
 - `ReduceSum` and `ReduceMax`: `axis` MUST be less than `x`'s rank, and `x`'s
-  dimension along it MUST be at least 1. The result has `x`'s dtype and shape,
-  with dimension 1 along `axis`, and holds the sum (wrapping) or the largest
-  element along `axis`.
+  dimension along it MUST be at least 1. The result type is `x`'s, with
+  dimension 1 along `axis`.
 - `Gather`: `axis` MUST be less than the rank of `x`, and
   `rank(x) - 1 + rank(indices)` MUST be at most `MAX_RANK`. `indices` MAY have
-  any dtype. The result's shape is `x`'s dimensions before `axis`, then
-  `indices`' dimensions, then `x`'s dimensions after `axis`; each of its
-  elements is the element of `x` with `axis` coordinate given by the
-  corresponding index. Evaluation fails if any index is negative or at least
-  `x`'s dimension along `axis`.
+  any dtype. The result type has `x`'s dtype, and its shape is `x`'s
+  dimensions before `axis`, then `indices`' dimensions, then `x`'s dimensions
+  after `axis`.
 
-### Scalar nodes
+#### Scalar node validity
 
-A `Scalar` node computes every element of its output with the same short
-program, over a register file of `MAX_SCALAR_REGISTERS` registers:
+A `Scalar` node's params describe a short program over a register file of
+`MAX_SCALAR_REGISTERS` registers (see
+[Scalar node semantics](#scalar-node-semantics)):
 
 ```
 scalar :=
@@ -250,8 +268,6 @@ fn :=
     destination: u8                    omitted for the last fn
 ```
 
-Validation:
-
 - `n_inputs + n_constants` MUST be at most `MAX_SCALAR_REGISTERS`.
 - Each input MUST broadcast to `output_shape`: its rank MUST be at most the
   output's, and, matching axes from the last, each of its dimensions MUST be
@@ -261,62 +277,44 @@ Validation:
   earlier fn.
 - Every destination MUST be at least `n_inputs + n_constants` and below
   `MAX_SCALAR_REGISTERS`. Input and constant registers are never written.
-- Each register has the dtype of the value it holds. A fn's operands MUST
-  have the dtypes the fn table requires, and its destination takes on the
-  fn's result dtype.
+- A destination MAY be one of the fn's own operands.
 
-The node's result has shape `output_shape` and the dtype of the last fn's
-result. For each element of the output, independently: the input registers
-hold the corresponding elements of the inputs, broadcast as above; the
-constant registers hold the constants; the fns run in order, each reading its
-operands and then writing its result to its destination; and the last fn's
-result is the output element. A destination MAY be one of the fn's own
-operands.
+Each register has a dtype once it holds a value: an input register has its
+input's dtype, a constant register its constant's dtype, and a destination
+the result dtype of the fn that last wrote it. A fn's operands MUST have the
+dtypes that [Scalar fn validity](#scalar-fn-validity) requires. The node's
+result type is `output_shape` with the dtype of the last fn's result.
 
-Scalar functions, with `a` and `b` the operands, `T` their common dtype and
-`w` its bit width. `frac_bits`, written `f`, MUST be at least 1 and at most `w`
-and `MAX_FRACTIONAL_BITS`.
+#### Scalar fn validity
 
-| id | fn         | params              | operands         | result  | value                                                                        |
-| -- | ---------- | ------------------- | ---------------- | ------- | ---------------------------------------------------------------------------- |
-| 0  | `Add`      | none                | `T`, `T`         | `T`     | `a + b`, wrapping                                                            |
-| 1  | `Sub`      | none                | `T`, `T`         | `T`     | `a - b`, wrapping                                                            |
-| 2  | `Mul`      | none                | `T`, `T`         | `T`     | `a * b`, wrapping                                                            |
-| 3  | `Divc`     | `divisor: u64`, not 0 | `T`            | `T`     | `a / divisor`, truncated toward zero                                         |
-| 4  | `Div`      | none                | `T`, `T`         | `T`     | `a / b`, truncated toward zero, wrapping; fails if `b = 0`                   |
-| 5  | `Lt`       | none                | `T`, `T`         | `uint8` | 1 if `a < b`, else 0                                                         |
-| 6  | `Le`       | none                | `T`, `T`         | `uint8` | 1 if `a <= b`, else 0                                                        |
-| 7  | `Eq`       | none                | `T`, `T`         | `uint8` | 1 if `a = b`, else 0                                                         |
-| 8  | `Where`    | none                | `uint8`, `T`, `T`| `T`     | `a` if the condition is nonzero, else `b`                                    |
-| 9  | `Min`      | none                | `T`, `T`         | `T`     | the smaller                                                                  |
-| 10 | `Max`      | none                | `T`, `T`         | `T`     | the larger                                                                   |
-| 11 | `Saturate` | `dtype: u8`         | any `T`          | `dtype` | `a` clamped to `dtype`'s range                                               |
-| 12 | `QMul`     | `frac_bits: u8`     | `T`, `T`         | `T`     | `floor(a * b / 2^f)`, wrapping                                               |
-| 13 | `QDiv`     | `frac_bits: u8`     | `T`, `T`         | `T`     | `a * 2^f / b`, truncated toward zero, wrapping; fails if `b = 0`             |
-| 14 | `QExp`     | `frac_bits: u8`     | `T`              | `T`     | `e^(a / 2^f) * 2^f`, by the algorithm below, saturating at `T`'s maximum     |
-| 15 | `QInvSqrt` | `frac_bits: u8`     | `T`              | `T`     | `floor(sqrt(floor(2^(3f) / a)))`, saturating; fails if `a <= 0`              |
-| 16 | `ISqrt`    | none                | unsigned `T`     | `T`     | `floor(sqrt(a))`                                                             |
+With `T` the operands' common dtype and `w` its bit width:
 
-Any other fn id is invalid. Intermediate values are exact: `Div`'s and
-`QDiv`'s quotients, and `QMul`'s product, are computed without overflow
-before wrapping, so, for example, `Div` of `T`'s minimum by -1 is `T`'s
-minimum.
+| id | fn         | params          | operands          | result  |
+| -- | ---------- | --------------- | ----------------- | ------- |
+| 0  | `Add`      | none            | `T`, `T`          | `T`     |
+| 1  | `Sub`      | none            | `T`, `T`          | `T`     |
+| 2  | `Mul`      | none            | `T`, `T`          | `T`     |
+| 3  | `Divc`     | `divisor: u64`  | `T`               | `T`     |
+| 4  | `Div`      | none            | `T`, `T`          | `T`     |
+| 5  | `Lt`       | none            | `T`, `T`          | `uint8` |
+| 6  | `Le`       | none            | `T`, `T`          | `uint8` |
+| 7  | `Eq`       | none            | `T`, `T`          | `uint8` |
+| 8  | `Where`    | none            | `uint8`, `T`, `T` | `T`     |
+| 9  | `Min`      | none            | `T`, `T`          | `T`     |
+| 10 | `Max`      | none            | `T`, `T`          | `T`     |
+| 11 | `Saturate` | `dtype: u8`     | any `T`           | `dtype` |
+| 12 | `QMul`     | `frac_bits: u8` | `T`, `T`          | `T`     |
+| 13 | `QDiv`     | `frac_bits: u8` | `T`, `T`          | `T`     |
+| 14 | `QExp`     | `frac_bits: u8` | `T`               | `T`     |
+| 15 | `QInvSqrt` | `frac_bits: u8` | `T`               | `T`     |
+| 16 | `ISqrt`    | none            | unsigned `T`      | `T`     |
 
-`QExp` is defined by the following algorithm, not by the real exponential.
-Write `a / 2^f`, with 64 fractional bits, as `k ln 2 + r` with `r` in
-`[0, ln 2)`, using `ln 2` with 64 fractional bits rounded to nearest. `e^r` is
-the sum of the first 21 terms of its Taylor series, evaluated by Horner's rule
-with 63 fractional bits, rounding down at each step, with coefficients
-`floor(2^63 / n!)`. The result is `e^r * 2^(k + f)`, rounded down, and
-saturates at `T`'s maximum. A normative reference implementation will be
-provided in the assets of this MIP.
+Any other fn id is invalid. `Divc`'s `divisor` MUST NOT be 0. `frac_bits`
+MUST be at least 1 and at most `w` and `MAX_FRACTIONAL_BITS`.
 
-### Validation
+#### Memory
 
-A graph's validity is a function of its code alone. A graph is valid if its
-code follows [Graph encoding](#graph-encoding), every op and fn satisfies its
-validation rules in [Ops](#ops) and [Scalar nodes](#scalar-nodes), and its
-memory fits the arena:
+A graph's memory MUST fit the arena:
 
 - each graph input, and each op's result other than a `Literal`'s or a
   `Reshape`'s, takes the next region of the arena, its size rounded up to a
@@ -327,21 +325,18 @@ A `Literal`'s elements stay in the code, and a `Reshape`'s result is its
 input's elements, so neither uses arena memory. Scalar nodes' registers are not
 part of the arena.
 
-Validation is a single pass over the code, linear in its length.
-Implementations MAY validate a graph when it is deployed or when its code is
-first loaded, and MAY keep the result of validation, the tensor types and the
-arena layout as metadata.
-
 ### Evaluation
 
-A call evaluates the graph in the code of the account it names:
+A call evaluates the graph in the code of the account it names. That code
+MUST start with `GRAPH_MAGIC` and MUST be a valid graph (see
+[Validation](#validation)).
 
-1. If that code doesn't start with `GRAPH_MAGIC`, or the graph is invalid,
-   the call fails.
-2. The call's inputs MUST match the graph's inputs in number, and each MUST
+1. The call's inputs MUST match the graph's inputs in number, and each MUST
    have exactly the dtype and shape the graph declares.
-3. The ops are evaluated in order, each from the results of earlier nodes.
-4. The outputs are returned or stored, as the method says (see
+2. The ops are evaluated in order, each from the results of earlier nodes, as
+   [Op semantics](#op-semantics) defines. Each result has its node's tensor
+   type (see [Op validity](#op-validity)).
+3. The outputs are returned or stored, as the method says (see
    [Precompile interface](#precompile-interface)).
 
 Evaluation reads no state other than the code of the accounts that `TensorRef`
@@ -349,6 +344,89 @@ nodes and code inputs name and, for storage inputs, the caller's storage.
 Implementations MAY evaluate ops and elements in any order, and MAY fuse,
 split or compile them, provided the outputs and the effects on state are those
 this section defines.
+
+#### Op semantics
+
+With `x` and `y` an op's inputs:
+
+- `Scalar`: see [Scalar node semantics](#scalar-node-semantics).
+- `Literal`: the result is the tensor in the params, its elements
+  little-endian.
+- `TensorRef`: the result is the tensor at `offset` in the code of `address`
+  (see [Graph and tensor storage](#graph-and-tensor-storage)), its elements
+  little-endian. The call fails if that tensor's encoding, its type followed
+  by its elements, extends past the end of the code, or if its type differs
+  from `type`.
+- `Reshape`: the result has `x`'s elements, in the same row-major order.
+- `Concat`: the result is `x` and `y` joined along `axis`, `x` first.
+- `MatMul`: the result is the exact product of `x` and `y`.
+- `QMatMul`: each element of the result is the sum of its `k` products,
+  computed modulo 2^128 (as a signed 128-bit value for signed dtypes,
+  unsigned otherwise), shifted right by `frac_bits` rounding toward negative
+  infinity, then wrapped to `dtype`.
+- `CumSum`: each element of the result is the sum of `x`'s elements up to and
+  including its position along `axis`, wrapping to the dtype.
+- `ArgMin` and `ArgMax`: the result is the row-major index of the first
+  smallest (largest) element of `x`, wrapped to `x`'s dtype.
+- `ReduceSum` and `ReduceMax`: each element of the result is the sum
+  (wrapping) or the largest of the elements of `x` along `axis` at its
+  position.
+- `Gather`: each element of the result is the element of `x` with `axis`
+  coordinate given by the corresponding index. The call fails if any index
+  is negative or at least `x`'s dimension along `axis`.
+
+#### Scalar node semantics
+
+A `Scalar` node computes each element of its result independently, as
+follows:
+
+1. Each input register holds the input's element that corresponds to the
+   result element: matching axes from the last, the input's coordinate along
+   each axis is 0 where its dimension is 1, and the result element's
+   coordinate otherwise.
+2. Each constant register holds its constant.
+3. The fns run in order. Each reads its operands, then writes its result to
+   its destination, so a destination that is also an operand is read before
+   it is written.
+4. The last fn's result is the result element.
+
+#### Scalar fn semantics
+
+With `a` and `b` the operands (for `Where`, the two after the condition), `T`
+their dtype and `f` the `frac_bits` param:
+
+| id | fn         | value                                                                        |
+| -- | ---------- | ---------------------------------------------------------------------------- |
+| 0  | `Add`      | `a + b`, wrapping                                                            |
+| 1  | `Sub`      | `a - b`, wrapping                                                            |
+| 2  | `Mul`      | `a * b`, wrapping                                                            |
+| 3  | `Divc`     | `a / divisor`, truncated toward zero                                         |
+| 4  | `Div`      | `a / b`, truncated toward zero, wrapping; fails if `b = 0`                   |
+| 5  | `Lt`       | 1 if `a < b`, else 0                                                         |
+| 6  | `Le`       | 1 if `a <= b`, else 0                                                        |
+| 7  | `Eq`       | 1 if `a = b`, else 0                                                         |
+| 8  | `Where`    | `a` if the condition is nonzero, else `b`                                    |
+| 9  | `Min`      | the smaller                                                                  |
+| 10 | `Max`      | the larger                                                                   |
+| 11 | `Saturate` | `a` clamped to `dtype`'s range                                               |
+| 12 | `QMul`     | `floor(a * b / 2^f)`, wrapping                                               |
+| 13 | `QDiv`     | `a * 2^f / b`, truncated toward zero, wrapping; fails if `b = 0`             |
+| 14 | `QExp`     | `e^(a / 2^f) * 2^f`, by the algorithm below, saturating at `T`'s maximum     |
+| 15 | `QInvSqrt` | `floor(sqrt(floor(2^(3f) / a)))`, saturating; fails if `a <= 0`              |
+| 16 | `ISqrt`    | `floor(sqrt(a))`                                                             |
+
+Intermediate values are exact: `Div`'s and `QDiv`'s quotients, and `QMul`'s
+product, are computed without overflow before wrapping, so, for example, `Div`
+of `T`'s minimum by -1 is `T`'s minimum.
+
+`QExp` is defined by the following algorithm, not by the real exponential.
+Write `a / 2^f`, with 64 fractional bits, as `k ln 2 + r` with `r` in
+`[0, ln 2)`, using `ln 2` with 64 fractional bits rounded to nearest. `e^r` is
+the sum of the first 21 terms of its Taylor series, evaluated by Horner's rule
+with 63 fractional bits, rounding down at each step, with coefficients
+`floor(2^63 / n!)`. The result is `e^r * 2^(k + f)`, rounded down, and
+saturates at `T`'s maximum. A normative reference implementation will be
+provided in the assets of this MIP.
 
 ### Precompile interface
 
@@ -441,8 +519,7 @@ The gas schedule is not yet set. Its structure:
 - `G_CALL` per call.
 - Loading a graph's code, and code inputs' and `TensorRef` nodes' accounts, is
   priced as a code load, as in [MIP-20](./MIP-20.md). For the graph's own
-  code, that price
-  also covers validation, a linear pass.
+  code, that price also covers validation, a linear pass.
 - Each op's cost is a function of its static types: per element for `Scalar`
   nodes (the sum over the node's fns of a price per fn and dtype, times the
   output's element count), `m * n * k` products for `MatMul` and `QMatMul`,
@@ -451,9 +528,9 @@ The gas schedule is not yet set. Its structure:
 - Arena memory, per byte of the graph's rounded sizes.
 - Storage inputs and outputs, per slot, as `SLOAD` and `SSTORE`.
 
-Every term except the references depends only on the graph, so a graph's
-evaluation cost is a constant that validation can compute and keep. The
-precompile charges it before evaluating anything.
+Every term except the references depends only on the graph's code, so an
+implementation can compute a graph's cost once and keep it. A call whose gas
+does not cover the cost fails.
 
 ### Chain Specifics
 
@@ -466,7 +543,7 @@ activation, calls to `GRAPH_EVAL_ADDRESS` behave as calls to an empty account.
 
 A precompile can be called from existing contracts and toolchains without
 compiler changes. Graphs live in account code because code is immutable,
-addressable by `CREATE2`, priced on load by MIP-20, and needs validating only
+addressable by `CREATE2`, priced on load by MIP-20, and can be validated
 once. The magic number's first byte, `INVALID`, keeps a graph account from
 running as EVM code. Tensors need no such marker: they can be read from any
 offset of any account's code, so a graph's `Literal` can be shared with other
@@ -488,8 +565,9 @@ for the same chain in compiled EVM code and 31.7 ns in interpreted EVM code.
 
 ### Static shapes and a bounded, never-reused arena
 
-With static shapes, validation knows every tensor's type, the whole memory
-layout and all of the evaluation cost except references, before any call. The
+With static shapes, every tensor's type, the whole memory layout and all of
+the evaluation cost except references follow from the graph's code, so an
+implementation can work them out before any call. The
 memory rule (the sum of the results' rounded sizes) is one that a graph's
 author can work out by hand. Reusing freed regions would use less memory, but
 would make the allocator's choices part of consensus.

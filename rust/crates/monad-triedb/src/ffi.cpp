@@ -784,6 +784,10 @@ validator_set *triedb_read_valset(
         std::memcpy(
             valset->validators[i].bls_pubkey, ret.value()[i].bls_pubkey, 48);
         std::memcpy(
+            valset->validators[i].receiver_pubkey,
+            ret.value()[i].receiver_pubkey,
+            33);
+        std::memcpy(
             valset->validators[i].stake, ret.value()[i].stake.bytes, 32);
     }
 

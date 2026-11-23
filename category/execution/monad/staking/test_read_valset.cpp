@@ -118,6 +118,18 @@ protected:
                     .store(CONSENSUS_STAKE);
             }
 
+            for (uint64_t id = 1;
+                 id <= SNAPSHOT_VALSET_LENGTH + CONSENSUS_VALSET_LENGTH;
+                 ++id) {
+                // Keep a legacy member without a receiver key in each view.
+                if (id == 1 || id == SNAPSHOT_VALSET_LENGTH + 1) {
+                    continue;
+                }
+                ValExecution::ReceiverKey_t receiver{};
+                receiver.fill(static_cast<uint8_t>(id));
+                contract.vars.val_execution(id).receiver_key().store(receiver);
+            }
+
             contract.vars.epoch.store(TEST_EPOCH);
             contract.vars.in_epoch_delay_period.store(in_epoch_delay_period());
 
@@ -153,8 +165,12 @@ TEST_F(ReadValsetBeforeBoundary, get_this_epoch_valset)
     auto const set = read_valset(*ro, TEST_BLOCK_NUM, TEST_EPOCH);
     ASSERT_TRUE(set.has_value());
     EXPECT_EQ(set.value().size(), CONSENSUS_VALSET_LENGTH);
-    for (auto const &validator : set.value()) {
+    for (size_t i = 0; i < set->size(); ++i) {
+        auto const &validator = (*set)[i];
         EXPECT_EQ(load_be<uint256_t>(validator.stake), CONSENSUS_STAKE);
+        for (auto const byte : validator.receiver_pubkey) {
+            EXPECT_EQ(byte, i == 0 ? 0 : SNAPSHOT_VALSET_LENGTH + i + 1);
+        }
     }
 }
 
@@ -191,8 +207,12 @@ TEST_F(ReadValsetAfterBoundary, get_this_epoch_valset)
     // expect the snapshot view when requesting current epoch valset
     ASSERT_TRUE(set.has_value());
     EXPECT_EQ(set.value().size(), SNAPSHOT_VALSET_LENGTH);
-    for (auto const &validator : set.value()) {
+    for (size_t i = 0; i < set->size(); ++i) {
+        auto const &validator = (*set)[i];
         EXPECT_EQ(load_be<uint256_t>(validator.stake), SNAPSHOT_STAKE);
+        for (auto const byte : validator.receiver_pubkey) {
+            EXPECT_EQ(byte, i == 0 ? 0 : i + 1);
+        }
     }
 }
 

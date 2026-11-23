@@ -38,6 +38,7 @@ struct Validator
 {
     uint8_t secp_pubkey[33];
     uint8_t bls_pubkey[48];
+    uint8_t receiver_pubkey[33];
     uint256_be_t stake;
 };
 

@@ -83,6 +83,9 @@ read_valset(mpt::Db &db, size_t const block_num, uint64_t const requested_epoch)
         auto const keys = contract.vars.val_execution(val_id).keys().load();
         std::memcpy(valset[i].secp_pubkey, keys.secp_pubkey.data(), 33);
         std::memcpy(valset[i].bls_pubkey, keys.bls_pubkey.data(), 48);
+        auto const receiver =
+            contract.vars.val_execution(val_id).receiver_key().load();
+        std::memcpy(valset[i].receiver_pubkey, receiver.data(), 33);
         std::memcpy(valset[i].stake.bytes, stake.bytes, 32);
     }
     return valset;

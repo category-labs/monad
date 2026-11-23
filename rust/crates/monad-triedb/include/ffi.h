@@ -216,6 +216,7 @@ typedef struct validator_data
 {
     uint8_t secp_pubkey[33];
     uint8_t bls_pubkey[48];
+    uint8_t receiver_pubkey[33];
     // big endian u256
     uint8_t stake[32];
 } validator_data;

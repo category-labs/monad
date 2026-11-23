@@ -330,11 +330,9 @@ vm::Result execute_call_message(
     }
 
     vm::Result result;
-    // A private domain has no Monad precompiles: they read and write the
-    // L1's staking and reserve balance state.
     if (auto maybe_result =
             is_private_domain(host->chain_ctx_)
-                ? check_call_eth_precompile<traits>(msg)
+                ? check_call_domain_precompile<traits>(msg)
                 : check_call_precompile<traits>(
                       state, call_tracer, msg, host->log_native_transfers_);
         maybe_result.has_value()) {

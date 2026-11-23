@@ -20,10 +20,10 @@
 # 1. Cross-compile (RISC-V): invoked standalone as the top-level CMake
 #    project (via `cmake -S zkvm/guest ...`, typically from the build-support
 #    crate). The caller sets MONAD_ZKVM_GUEST_TARGET to a backend suffix
-#    (zisk or sp1) — used only to name the resulting archive
-#    (monad-zkvm-guest-<suffix>). This file drives the full bare-metal
-#    build and bundles everything, monad-zkvm-guest included, into a single
-#    STATIC archive.
+#    (currently only zisk), which selects backend-specific flags and names
+#    the resulting archive (monad-zkvm-guest-<suffix>). This file drives the
+#    full bare-metal build and bundles everything, monad-zkvm-guest included,
+#    into a single STATIC archive.
 #
 # 2. Host x86: invoked from the root host CMakeLists.txt via
 #    add_subdirectory(zkvm/guest). MONAD_ZKVM_GUEST_TARGET is not set;
@@ -38,9 +38,9 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
 
     project(monad-zkvm-guest LANGUAGES C CXX ASM)
 
-    if(NOT MONAD_ZKVM_GUEST_TARGET MATCHES "^(zisk|sp1)$")
+    if(NOT MONAD_ZKVM_GUEST_TARGET MATCHES "^(zisk)$")
         message(FATAL_ERROR
-            "MONAD_ZKVM_GUEST_TARGET must be 'zisk' or 'sp1', got "
+            "MONAD_ZKVM_GUEST_TARGET must be 'zisk', got "
             "'${MONAD_ZKVM_GUEST_TARGET}'")
     endif()
     if(MONAD_COMPILER_TESTING)
@@ -74,7 +74,7 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         set(_monad_zkvm_interpreter_tune "-mtune=generic-ooo")
     endif()
 
-    # Tune C++ inlining for both guests to reduce call overhead.
+    # Tune C++ inlining to reduce call overhead.
     # Allow more overall growth while limiting individual inlining candidates.
     # Unroll eligible loops to reduce comparisons and branches.
     string(APPEND CMAKE_CXX_FLAGS
@@ -88,12 +88,9 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
 
     set(_guest_target "monad-zkvm-guest-${MONAD_ZKVM_GUEST_TARGET}")
 
-    # Expose the backend as a compile definition, for the places where the two
-    # diverge: the Keccak-f[1600] precompile is reached by a different entry on
-    # each (zkvm/category/crypto/keccak.h).
-    if(MONAD_ZKVM_GUEST_TARGET STREQUAL "sp1")
-        add_compile_definitions(MONAD_ZKVM_SP1)
-    elseif(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
+    # Expose the backend as a compile definition for code that calls its
+    # precompiles directly (e.g. zkvm/category/crypto/keccak.h).
+    if(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
         add_compile_definitions(MONAD_ZKVM_ZISK)
 
         # Lower eligible block memory operations, including struct copies,
@@ -309,43 +306,6 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
             "libc.a not found via compiler query")
     endif()
 
-    # ZisK uses Zbb's cpop instruction. Other guests use libgcc's
-    # __popcountdi2 from _popcountsi2.o. Give it a separate section so
-    # --gc-sections can discard it when unused.
-    set(_libgcc_objs "")
-    if(NOT MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
-        execute_process(
-            COMMAND ${CMAKE_C_COMPILER} ${_arch_query} -print-libgcc-file-name
-            OUTPUT_VARIABLE _libgcc_a
-            OUTPUT_STRIP_TRAILING_WHITESPACE
-        )
-        set(_libgcc_dir "${CMAKE_CURRENT_BINARY_DIR}/_libgcc_objs")
-        file(MAKE_DIRECTORY "${_libgcc_dir}")
-        if(NOT EXISTS "${_libgcc_a}")
-            message(FATAL_ERROR
-                "libgcc.a not found via compiler query")
-        endif()
-        execute_process(
-            COMMAND ${CMAKE_AR} x "${_libgcc_a}" "_popcountsi2.o"
-            WORKING_DIRECTORY "${_libgcc_dir}"
-        )
-        if(NOT EXISTS "${_libgcc_dir}/_popcountsi2.o")
-            message(FATAL_ERROR
-                "Failed to extract __popcountdi2 from ${_libgcc_a}")
-        endif()
-        execute_process(
-            COMMAND ${CMAKE_OBJCOPY} --rename-section .text=.text.libgcc_popcount
-                    "${_libgcc_dir}/_popcountsi2.o"
-            RESULT_VARIABLE _objcopy_rc
-        )
-        if(NOT _objcopy_rc EQUAL 0)
-            message(FATAL_ERROR
-                "Failed to give __popcountdi2 a section of its own")
-        endif()
-        set(_libgcc_objs "${_libgcc_dir}/_popcountsi2.o")
-    endif()
-
-
     # ---- Bare-metal libc / libstdc++ stubs ----
 
     add_library(monad-zkvm-core OBJECT
@@ -537,7 +497,6 @@ if(DEFINED MONAD_ZKVM_GUEST_TARGET)
         $<TARGET_OBJECTS:monad-vm-interpreter>
         $<TARGET_OBJECTS:monad-vm-mempool>
         ${_libc_objs}
-        ${_libgcc_objs}
     )
     monad_compile_options(${_guest_target})
     monad_riscv_compile_options(${_guest_target})

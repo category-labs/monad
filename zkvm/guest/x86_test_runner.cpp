@@ -13,8 +13,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// x86 host driver — parallel role to the Rust scaffolds in zkvm/zisk/ and
-// zkvm/sp1/program/. Implements read_input / write_output (eth-act ABI from
+// x86 host driver — parallel role to the Rust scaffold in zkvm/zisk/.
+// Implements read_input / write_output (eth-act ABI from
 // third_party/zkevm-standards io-interface/zkvm_io.h) against a --input
 // <path> CLI; output goes to stdout or --output <path>. The driver compiles
 // directly into the executable alongside zkvm/guest/ffi.cpp; no intermediate

@@ -60,6 +60,7 @@ enum class StakingError
     ExternalRewardTooSmall,
     ExternalRewardTooLarge,
     InvalidReceiverProof,
+    ReceiverKeyExists,
 };
 
 MONAD_STAKING_NAMESPACE_END

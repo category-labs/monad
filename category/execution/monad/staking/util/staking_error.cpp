@@ -72,6 +72,7 @@ quick_status_code_from_enum<monad::staking::StakingError>::value_mappings()
         {StakingError::InvalidReceiverProof,
          "invalid receiver proof of possession",
          {}},
+        {StakingError::ReceiverKeyExists, "receiver key already set", {}},
     };
 
     return v;

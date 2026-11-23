@@ -124,6 +124,14 @@ public:
         return {state_, address_, key_ + Offsets::receiver_key};
     }
 
+    bool has_receiver_key() const noexcept
+    {
+        return StorageVariable<bytes32_t>{
+                   state_, address_, key_ + Offsets::receiver_key}
+                   .load()
+                   .bytes[0] != 0;
+    }
+
     // Auth address and flags packed into a single slot. See the helpers for
     // getting these individually.
     StorageVariable<AddressFlags_t> address_flags()

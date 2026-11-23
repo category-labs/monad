@@ -72,6 +72,8 @@ struct PrecompileSelector
         abi_encode_selector("addValidator(bytes,bytes,bytes)");
     static constexpr uint32_t ADD_VALIDATOR_WITH_RECEIVER_KEY = abi_encode_selector(
         "addValidator(bytes,bytes,bytes,(bytes,bytes32,bytes32))");
+    static constexpr uint32_t ADD_RECEIVER_KEY = abi_encode_selector(
+        "addReceiverKey(uint64,bytes,(bytes,bytes32,bytes32))");
     static constexpr uint32_t DELEGATE =
         abi_encode_selector("delegate(uint64)");
     static constexpr uint32_t UNDELEGATE =
@@ -109,6 +111,7 @@ struct PrecompileSelector
 
 static_assert(PrecompileSelector::ADD_VALIDATOR == 0xf145204c);
 static_assert(PrecompileSelector::ADD_VALIDATOR_WITH_RECEIVER_KEY == 0x3e4616bf);
+static_assert(PrecompileSelector::ADD_RECEIVER_KEY == 0x3a3b9a22);
 static_assert(PrecompileSelector::DELEGATE == 0x84994fec);
 static_assert(PrecompileSelector::UNDELEGATE == 0x5cf41514);
 static_assert(PrecompileSelector::COMPOUND == 0xb34fea67);
@@ -201,6 +204,16 @@ constexpr uint64_t ADD_VALIDATOR_OP_COST = compute_costs(OpCount{
 constexpr uint64_t ADD_VALIDATOR_WITH_RECEIVER_OP_COST =
     ADD_VALIDATOR_OP_COST + COLD_SLOAD + WARM_SSTORE + 2 * COLD_SSTORE +
     RECEIVER_EQDL_VERIFY_COST;
+
+constexpr uint64_t ADD_RECEIVER_KEY_OP_COST = compute_costs(OpCount{
+                                                  .warm_sloads = 0,
+                                                  .cold_sloads = 6,
+                                                  .warm_sstores = 2,
+                                                  .warm_sstore_nonzero = 0,
+                                                  .cold_sstores = 1,
+                                                  .events = 1,
+                                                  .transfers = 0}) +
+                                              RECEIVER_EQDL_VERIFY_COST;
 
 constexpr uint64_t DELEGATE_OP_COST = compute_costs(OpCount{
     .warm_sloads = 21,
@@ -332,6 +345,7 @@ constexpr uint64_t LINKED_LIST_GETTER_OP_COST = compute_costs(OpCount{
 
 static_assert(ADD_VALIDATOR_OP_COST == 505125);
 static_assert(ADD_VALIDATOR_WITH_RECEIVER_OP_COST == 587925);
+static_assert(ADD_RECEIVER_KEY_OP_COST == 119575);
 static_assert(DELEGATE_OP_COST == 260850);
 static_assert(UNDELEGATE_OP_COST == 147750);
 static_assert(WITHDRAW_OP_COST == 68675);
@@ -833,6 +847,13 @@ StakingContract::precompile_dispatch(byte_string_view &input)
                 ADD_VALIDATOR_WITH_RECEIVER_OP_COST};
         }
         break;
+    case PrecompileSelector::ADD_RECEIVER_KEY:
+        if constexpr (admits_receiver_keys<traits>()) {
+            return {
+                &StakingContract::precompile_add_receiver_key,
+                ADD_RECEIVER_KEY_OP_COST};
+        }
+        break;
     case PrecompileSelector::DELEGATE:
         // [21, 17, 6, 14, 5, 2, 0]
         return {
@@ -1322,6 +1343,55 @@ Result<byte_string> StakingContract::precompile_add_validator(
 }
 
 EXPLICIT_MONAD_TRAITS_MEMBER(StakingContract::precompile_add_validator)
+
+Result<byte_string> StakingContract::precompile_add_receiver_key(
+    byte_string_view input, Address const &sender, uint256_be_t const &value)
+{
+    BOOST_OUTCOME_TRY(function_not_payable(value));
+    BOOST_OUTCOME_TRY(auto const id, abi_decode_fixed<u64_be>(input));
+    BOOST_OUTCOME_TRY(abi_decode_fixed<u256_be>(input));
+    BOOST_OUTCOME_TRY(abi_decode_fixed<u256_be>(input));
+    BOOST_OUTCOME_TRY(auto const key, abi_decode_bytes_tail<33>(input));
+    BOOST_OUTCOME_TRY(auto const proof, decode_receiver_key_proof(input));
+    if (MONAD_UNLIKELY(!input.empty())) {
+        return StakingError::InvalidInput;
+    }
+    auto validator = vars.val_execution(id);
+    auto const auth = validator.address_flags().load().auth_address;
+    if (MONAD_UNLIKELY(auth == Address{})) {
+        return StakingError::UnknownValidator;
+    }
+    if (MONAD_UNLIKELY(sender != auth)) {
+        return StakingError::RequiresAuthAddress;
+    }
+    if (MONAD_UNLIKELY(validator.has_receiver_key())) {
+        return StakingError::ReceiverKeyExists;
+    }
+    auto const keys = validator.keys().load();
+    auto const receiver_pubkey = verify_receiver_key_registration(
+        chain_id_,
+        address_from_secpkey(Secp256k1Pubkey{keys.secp_pubkey}.serialize()),
+        keys.bls_pubkey,
+        auth,
+        key,
+        proof);
+    if (MONAD_UNLIKELY(!receiver_pubkey)) {
+        return StakingError::InvalidReceiverProof;
+    }
+    auto owner = vars.val_id_receiver(
+        address_from_secpkey(receiver_pubkey->serialize()));
+    if (MONAD_UNLIKELY(owner.load_checked().has_value())) {
+        return StakingError::ValidatorExists;
+    }
+    validator.receiver_key().store(key);
+    owner.store(id);
+    constexpr auto signature =
+        abi_encode_event_signature("ReceiverKeyAdded(uint64)");
+    emit_log(EventBuilder(STAKING_CA, signature)
+                 .add_topic(abi_encode_uint(id))
+                 .build());
+    return byte_string{abi_encode_bool(true)};
+}
 
 template <Traits traits>
 Result<void> StakingContract::delegate(

@@ -613,6 +613,8 @@ public:
     template <Traits traits, bool receiver_enabled = false>
     Result<byte_string> precompile_add_validator(
         byte_string_view, Address const &, uint256_be_t const &);
+    Result<byte_string> precompile_add_receiver_key(
+        byte_string_view, Address const &, uint256_be_t const &);
     template <Traits traits>
     Result<byte_string> precompile_delegate(
         byte_string_view, Address const &, uint256_be_t const &);

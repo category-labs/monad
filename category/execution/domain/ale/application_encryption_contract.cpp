@@ -37,6 +37,10 @@ MONAD_ANONYMOUS_NAMESPACE_BEGIN
 constexpr std::string_view SEALED_BLOB_AD_LABEL = "monad-sealed-blob-v1";
 constexpr std::string_view SEALED_BLOB_RANDOMNESS_LABEL =
     "monad-precompile-randomness-v1";
+constexpr std::string_view SEALED_MESSAGE_AD_LABEL =
+    "monad-cross-domain-encryption-v1";
+constexpr std::string_view SEALED_MESSAGE_RANDOMNESS_LABEL =
+    "monad-cross-domain-randomness-v1";
 
 struct PrecompileSelector
 {
@@ -105,6 +109,36 @@ byte_string sealed_blob_randomness_input(
     encoder.add_bytes({destination_key.bytes, sizeof(destination_key.bytes)});
     encoder.add_bytes(ad);
     encoder.add_bytes(blob);
+    return encoder.encode_final();
+}
+
+byte_string sealed_message_ad(
+    uint64_t const source_domain, uint64_t const destination_domain,
+    uint256_t const &sequence_number)
+{
+    AbiEncoder encoder;
+    encoder.add_string(SEALED_MESSAGE_AD_LABEL);
+    encoder.add_uint(u64_be{source_domain});
+    encoder.add_uint(u64_be{destination_domain});
+    encoder.add_uint(u256_be{sequence_number});
+    return encoder.encode_final();
+}
+
+byte_string sealed_message_randomness_input(
+    uint256_t const &sequence_number, Address const &from,
+    Address const &tx_origin, uint64_t const tx_nonce,
+    bytes32_t const &destination_key, byte_string_view const ad,
+    byte_string_view const plaintext)
+{
+    AbiEncoder encoder;
+    encoder.add_string(SEALED_MESSAGE_RANDOMNESS_LABEL);
+    encoder.add_uint(u256_be{sequence_number});
+    encoder.add_address(from);
+    encoder.add_address(tx_origin);
+    encoder.add_uint(u64_be{tx_nonce});
+    encoder.add_bytes({destination_key.bytes, sizeof(destination_key.bytes)});
+    encoder.add_bytes(ad);
+    encoder.add_bytes(plaintext);
     return encoder.encode_final();
 }
 
@@ -178,41 +212,62 @@ ApplicationEncryptionContract::precompile_dispatch(byte_string_view &input)
 EXPLICIT_MONAD_TRAITS(ApplicationEncryptionContract::precompile_dispatch);
 
 Result<byte_string> ApplicationEncryptionContract::precompile_seal_message(
-    byte_string_view input, Address const &, uint256_be_t const &msg_value)
+    byte_string_view input, Address const &msg_sender,
+    uint256_be_t const &msg_value)
 {
     if (std::ranges::any_of(
             msg_value.bytes, [](uint8_t const byte) { return byte != 0; })) {
         return ApplicationEncryptionError::ValueNonZero;
     }
+    if (msg_sender != encryption_context_.spoke) {
+        return ApplicationEncryptionError::UnauthorizedCaller;
+    }
 
     BOOST_OUTCOME_TRY(
         auto const destination_domain, abi_decode_fixed<u64_be>(input));
     BOOST_OUTCOME_TRY(
-        [[maybe_unused]] auto const sequence_number,
-        abi_decode_fixed<u256_be>(input));
-
-    // Skip the plaintext offset and read its tail after the three-word head.
-    BOOST_OUTCOME_TRY(abi_decode_fixed<u256_be>(input));
-    BOOST_OUTCOME_TRY(
-        [[maybe_unused]] byte_string_view plaintext,
-        abi_decode_dynamic_bytes_tail(input));
+        auto const sequence_number, abi_decode_fixed<u256_be>(input));
 
     BOOST_OUTCOME_TRY(
-        [[maybe_unused]] auto const key,
+        auto const plaintext_offset, abi_decode_fixed<u256_be>(input));
+    if (plaintext_offset.native() != uint256_t{3 * sizeof(u256_be)}) {
+        return AbiDecodeError::InvalidEncoding;
+    }
+    BOOST_OUTCOME_TRY(
+        byte_string_view plaintext, abi_decode_dynamic_bytes_tail(input));
+    if (!input.empty()) {
+        return AbiDecodeError::InputTooLong;
+    }
+
+    // The spoke encodes its own msg.sender as the first plaintext word.
+    byte_string_view plaintext_fields = plaintext;
+    BOOST_OUTCOME_TRY(
+        auto const from, abi_decode_fixed<Address>(plaintext_fields));
+
+    BOOST_OUTCOME_TRY(
+        auto const destination_key,
         read_destination_key(
             state_,
             encryption_context_.spoke,
             SPOKE_VIEWING_KEYS_SLOT,
             destination_domain.native()));
 
-    // TODO: Encode AD with encryption_context_.domain_chain_id as source:
-    // abi.encode("monad-cross-domain-encryption-v1", source_domain,
-    // destination_domain, sequence_number), preserving the uint256 nonce.
-    // TODO: Derive randomness from the domain seed, sequence number, caller,
-    // transaction context, destination key, AD and plaintext.
-    // TODO: HPKE Seal the opaque plaintext and ABI-encode the ciphertext as
-    // bytes for IDomainEncryption. The spoke encodes (from, to, data).
-    return ApplicationEncryptionError::NotImplemented;
+    auto const sequence = sequence_number.native();
+    auto const ad = sealed_message_ad(
+        encryption_context_.domain_chain_id,
+        destination_domain.native(),
+        sequence);
+    auto const randomness_input = sealed_message_randomness_input(
+        sequence, from, tx_origin_, tx_nonce_, destination_key, ad, plaintext);
+
+    auto const ciphertext = encryption_context_.key.seal(
+        plaintext, destination_key, ad, randomness_input);
+    if (ciphertext.has_error()) {
+        return ApplicationEncryptionError::SealFailed;
+    }
+    AbiEncoder encoder;
+    encoder.add_bytes(ciphertext.value());
+    return encoder.encode_final();
 }
 
 uint64_t ApplicationEncryptionContract::next_seal_index()

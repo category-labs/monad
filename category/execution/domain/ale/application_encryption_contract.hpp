@@ -47,6 +47,21 @@ byte_string sealed_blob_randomness_input(
     Address const &caller, bytes32_t const &destination_key,
     byte_string_view ad, byte_string_view blob);
 
+// abi.encode("monad-cross-domain-encryption-v1", uint64 source_domain,
+// uint64 destination_domain, uint256 sequence_number).
+byte_string sealed_message_ad(
+    uint64_t source_domain, uint64_t destination_domain,
+    uint256_t const &sequence_number);
+
+// abi.encode("monad-cross-domain-randomness-v1", uint256 sequence_number,
+// address from, address tx_origin, uint64 tx_nonce, bytes destination_key,
+// bytes ad, bytes plaintext). `from` is the original sender in the plaintext.
+byte_string sealed_message_randomness_input(
+    uint256_t const &sequence_number, Address const &from,
+    Address const &tx_origin, uint64_t tx_nonce,
+    bytes32_t const &destination_key, byte_string_view ad,
+    byte_string_view plaintext);
+
 // Read a destination public key from the spoke's storage. The spoke address
 // and mapping slot must come from trusted execution configuration.
 Result<bytes32_t> read_destination_key(
@@ -83,7 +98,7 @@ public:
     precompile_dispatch(byte_string_view &);
 
     // IDomainEncryption.sealMessage(uint64,uint256,bytes) -> bytes.
-    // The spoke supplies its source nonce and the encoded message plaintext.
+    // The spoke supplies its sequence number and abi.encode(from, to, body).
     Result<byte_string> precompile_seal_message(
         byte_string_view input, Address const &msg_sender,
         uint256_be_t const &msg_value);

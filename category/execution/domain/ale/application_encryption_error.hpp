@@ -39,6 +39,7 @@ enum class ApplicationEncryptionError
     SpokeNotFound,
     DestinationKeyNotFound,
     SealFailed,
+    UnauthorizedCaller,
 };
 
 MONAD_NAMESPACE_END

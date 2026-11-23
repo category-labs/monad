@@ -57,6 +57,9 @@ namespace
     constexpr uint64_t SOURCE_DOMAIN = 0x520000004eaf;
     constexpr uint64_t DESTINATION_DOMAIN = 0x510000004eaf;
     constexpr Address SPOKE_CA{0x12345678};
+    constexpr Address MESSAGE_FROM{0x4321};
+    constexpr Address MESSAGE_TO{0x1234};
+    constexpr uint256_t MESSAGE_SEQUENCE = (uint256_t{1} << 200) | 7;
     constexpr auto TX_ORIGIN =
         0x89abcdef0123456789abcdef0123456789abcdef_address;
     constexpr uint64_t TX_NONCE = 0xfedcba9876543210;
@@ -132,14 +135,33 @@ struct ApplicationEncryptionContractTest : public ::testing::Test
         return byte_string{0x60, 0x7c, 0x42, 0xc9} + seal_input();
     }
 
-    static vm::Message seal_call(byte_string_view const input)
+    static byte_string message_plaintext(byte_string_view const body)
+    {
+        AbiEncoder encoder;
+        encoder.add_address(MESSAGE_FROM);
+        encoder.add_address(MESSAGE_TO);
+        encoder.add_bytes(body);
+        return encoder.encode_final();
+    }
+
+    static byte_string seal_message_input(byte_string_view const plaintext)
+    {
+        AbiEncoder encoder;
+        encoder.add_uint(u64_be{DESTINATION_DOMAIN});
+        encoder.add_uint(u256_be{MESSAGE_SEQUENCE});
+        encoder.add_bytes(plaintext);
+        return encoder.encode_final();
+    }
+
+    static vm::Message seal_call(
+        byte_string_view const input, Address const &sender = Address{0x4321})
     {
         return {
             .kind = vm::CallKind::Call,
             .depth = 1,
             .gas = 1'000,
             .recipient = ALE_CA,
-            .sender = Address{0x4321},
+            .sender = sender,
             .input_data = input.data(),
             .input_size = input.size(),
             .code_address = ALE_CA};
@@ -154,6 +176,20 @@ struct ApplicationEncryptionContractTest : public ::testing::Test
     }
 
     vm::Result execute_seal()
+    {
+        auto const input = seal_calldata();
+        return execute_ale_call(seal_call(input));
+    }
+
+    vm::Result execute_seal_message(
+        byte_string_view const plaintext, Address const &sender = SPOKE_CA)
+    {
+        auto const input =
+            byte_string{0x57, 0x60, 0xb0, 0x4f} + seal_message_input(plaintext);
+        return execute_ale_call(seal_call(input, sender));
+    }
+
+    vm::Result execute_ale_call(vm::Message const &message)
     {
         using traits = MonadTraits<MONAD_NEXT>;
         auto chain_ctx = ChainContext<traits>::debug_empty();
@@ -174,8 +210,7 @@ struct ApplicationEncryptionContractTest : public ::testing::Test
             std::nullopt,
             0,
             chain_ctx};
-        auto const input = seal_calldata();
-        return execute_call_message<traits>(&host, state, seal_call(input));
+        return execute_call_message<traits>(&host, state, message);
     }
 };
 
@@ -579,11 +614,8 @@ TEST_F(
     ApplicationEncryptionContractTest,
     seal_message_dispatches_solidity_selector)
 {
-    AbiEncoder encoder;
-    encoder.add_uint(u64_be{DESTINATION_DOMAIN});
-    encoder.add_uint(u256_be{uint256_t{1} << 200});
-    encoder.add_bytes(byte_string{0xab});
-    auto const arguments = encoder.encode_final();
+    auto const arguments =
+        seal_message_input(message_plaintext(byte_string{0xab}));
 
     byte_string input{0x57, 0x60, 0xb0, 0x4f};
     input += arguments;
@@ -598,35 +630,85 @@ TEST_F(
 }
 
 TEST_F(
-    ApplicationEncryptionContractTest, seal_message_decodes_dynamic_plaintext)
+    ApplicationEncryptionContractTest, seal_message_round_trips_dynamic_bodies)
 {
     state.set_nonce(SPOKE_CA, 1);
-    state.set_storage(SPOKE_CA, DESTINATION_KEY_SLOT, DESTINATION_KEY);
+    state.set_storage(SPOKE_CA, DESTINATION_KEY_SLOT, RECIPIENT_KEY);
+    auto const ad =
+        sealed_message_ad(SOURCE_DOMAIN, DESTINATION_DOMAIN, MESSAGE_SEQUENCE);
+    auto const wrong_ad = sealed_message_ad(
+        SOURCE_DOMAIN, DESTINATION_DOMAIN, MESSAGE_SEQUENCE + 1);
 
     for (size_t const size : {0uz, 1uz, 31uz, 32uz, 33uz, 65uz}) {
         SCOPED_TRACE(size);
-        AbiEncoder encoder;
-        encoder.add_uint(u64_be{DESTINATION_DOMAIN});
-        encoder.add_uint(u256_be{uint256_t{1} << 200});
-        encoder.add_bytes(byte_string(size, 0xab));
-        auto const input = encoder.encode_final();
+        auto const plaintext = message_plaintext(byte_string(size, 0xab));
+        auto const result = contract.precompile_seal_message(
+            seal_message_input(plaintext), SPOKE_CA, {});
+        ASSERT_TRUE(result.has_value());
 
-        auto const result =
-            contract.precompile_seal_message(input, SPOKE_CA, {});
-        ASSERT_TRUE(result.has_error());
-        EXPECT_EQ(
-            result.assume_error(), ApplicationEncryptionError::NotImplemented);
+        byte_string_view output = result.value();
+        auto const offset = abi_decode_fixed<u256_be>(output);
+        ASSERT_TRUE(offset.has_value());
+        EXPECT_EQ(offset.value().native(), 32);
+        auto const decoded = abi_decode_dynamic_bytes_tail(output);
+        ASSERT_TRUE(decoded.has_value());
+        EXPECT_TRUE(output.empty());
+        auto const payload = decoded.value();
+        ASSERT_EQ(payload.size(), plaintext.size() + 32 + 16);
+
+        byte_string const recipient_key(32, 0x22);
+        auto const opened = domain::detail::hpke_base_open_x25519(
+            recipient_key, payload.substr(0, 32), {}, ad, payload.substr(32));
+        ASSERT_TRUE(opened.has_value());
+        EXPECT_EQ(opened.value(), plaintext);
+        EXPECT_TRUE(domain::detail::hpke_base_open_x25519(
+                        recipient_key,
+                        payload.substr(0, 32),
+                        {},
+                        wrong_ad,
+                        payload.substr(32))
+                        .has_error());
     }
+}
+
+TEST_F(
+    ApplicationEncryptionContractTest,
+    dispatch_seal_message_matches_independent_ciphertext_vector)
+{
+    state.set_nonce(SPOKE_CA, 1);
+    state.set_storage(SPOKE_CA, DESTINATION_KEY_SLOT, RECIPIENT_KEY);
+    state.set_transient_storage(
+        ALE_CA, ApplicationEncryptionContract::SEAL_INDEX_SLOT, bytes32_t{9});
+    auto const plaintext = message_plaintext(byte_string{0xab});
+    auto const result = execute_seal_message(plaintext);
+    ASSERT_EQ(result.status_code, CallStatus::Success);
+    EXPECT_EQ(seal_index(state), 9);
+
+    // Generated in Python by encoding the ABI words, deriving the ephemeral
+    // input with HMAC-SHA256, and applying RFC 9180 labeled HKDF.
+    // Python cryptography 46.0.5 supplies X25519 and AES-GCM.
+    // Source and recipient private keys are 0x11 * 32 and 0x22 * 32.
+    auto const expected =
+        from_hex(
+            "0000000000000000000000000000000000000000000000000000000000000020"
+            "00000000000000000000000000000000000000000000000000000000000000d0"
+            "8481dad014c233716067500fd3769d3158db2cdb526586b589cfaeaa3ad19055"
+            "34bd21af24f93b710c16bba76e96dcebc183ae6823524e38f00ddacd496800f7"
+            "f6046334842e201e17a3c0c2f21eac4d620cf28fca1080f5c926bb06c418f529"
+            "58bfe074ae52d0458430d78580da97dd9599469b0cfae8cb6e4c313ffe28e091"
+            "d9bf9e35bd5095caecc88e47a214892dab512a4267c7c0c6a8ff52d4e5a73231"
+            "6064e4d23f32986430d7315e818356861511c47a5f5ea6d36306c8dfc7d5a790"
+            "d66b100a2bd981162bc108c8deea546100000000000000000000000000000000")
+            .value();
+    EXPECT_EQ(
+        (byte_string_view{result.output_data, result.output_size}), expected);
 }
 
 TEST_F(
     ApplicationEncryptionContractTest, seal_message_rejects_truncated_arguments)
 {
-    AbiEncoder encoder;
-    encoder.add_uint(u64_be{DESTINATION_DOMAIN});
-    encoder.add_uint(u256_be{uint256_t{1} << 200});
-    encoder.add_bytes(byte_string(33, 0xab));
-    auto const encoded = encoder.encode_final();
+    auto const encoded =
+        seal_message_input(message_plaintext(byte_string(33, 0xab)));
 
     for (size_t size = 0; size < encoded.size(); ++size) {
         SCOPED_TRACE(size);
@@ -636,6 +718,42 @@ TEST_F(
         ASSERT_TRUE(result.has_error());
         EXPECT_EQ(result.assume_error(), AbiDecodeError::InputTooShort);
     }
+}
+
+TEST_F(ApplicationEncryptionContractTest, seal_message_rejects_invalid_calldata)
+{
+    auto const truncated_from =
+        contract.precompile_seal_message(seal_message_input({}), SPOKE_CA, {});
+    ASSERT_TRUE(truncated_from.has_error());
+    EXPECT_EQ(truncated_from.assume_error(), AbiDecodeError::InputTooShort);
+
+    auto input = seal_message_input(message_plaintext(byte_string{0xab}));
+    input.push_back(0);
+    auto const trailing = contract.precompile_seal_message(input, SPOKE_CA, {});
+    ASSERT_TRUE(trailing.has_error());
+    EXPECT_EQ(trailing.assume_error(), AbiDecodeError::InputTooLong);
+
+    input.pop_back();
+    input[3 * sizeof(u256_be) - 1] = 0;
+    auto const bad_offset =
+        contract.precompile_seal_message(input, SPOKE_CA, {});
+    ASSERT_TRUE(bad_offset.has_error());
+    EXPECT_EQ(bad_offset.assume_error(), AbiDecodeError::InvalidEncoding);
+}
+
+TEST_F(
+    ApplicationEncryptionContractTest, dispatch_seal_message_rejects_non_spoke)
+{
+    state.set_nonce(SPOKE_CA, 1);
+    state.set_storage(SPOKE_CA, DESTINATION_KEY_SLOT, RECIPIENT_KEY);
+    auto const result = execute_seal_message(
+        message_plaintext(byte_string{0xab}), MESSAGE_FROM);
+    ASSERT_EQ(result.status_code, CallStatus::Revert);
+    EXPECT_EQ(
+        (std::string_view{
+            reinterpret_cast<char const *>(result.output_data),
+            result.output_size}),
+        "application encryption caller is not authorized");
 }
 
 TEST_F(ApplicationEncryptionContractTest, seal_message_rejects_nonzero_value)
@@ -648,11 +766,7 @@ TEST_F(ApplicationEncryptionContractTest, seal_message_rejects_nonzero_value)
 
 TEST_F(ApplicationEncryptionContractTest, seal_message_reads_destination_key)
 {
-    AbiEncoder encoder;
-    encoder.add_uint(u64_be{DESTINATION_DOMAIN});
-    encoder.add_uint(u256_be{uint256_t{1} << 200});
-    encoder.add_bytes(byte_string{0xab});
-    auto const input = encoder.encode_final();
+    auto const input = seal_message_input(message_plaintext(byte_string{0xab}));
 
     auto const absent_spoke =
         contract.precompile_seal_message(input, SPOKE_CA, {});
@@ -668,12 +782,71 @@ TEST_F(ApplicationEncryptionContractTest, seal_message_reads_destination_key)
         absent_key.assume_error(),
         ApplicationEncryptionError::DestinationKeyNotFound);
 
-    state.set_storage(SPOKE_CA, DESTINATION_KEY_SLOT, DESTINATION_KEY);
+    state.set_storage(SPOKE_CA, DESTINATION_KEY_SLOT, RECIPIENT_KEY);
     auto const installed =
         contract.precompile_seal_message(input, SPOKE_CA, {});
-    ASSERT_TRUE(installed.has_error());
+    EXPECT_TRUE(installed.has_value());
+}
+
+TEST_F(ApplicationEncryptionContractTest, seal_message_rejects_invalid_key)
+{
+    state.set_nonce(SPOKE_CA, 1);
+    bytes32_t low_order_key{};
+    low_order_key.bytes[0] = 1;
+    state.set_storage(SPOKE_CA, DESTINATION_KEY_SLOT, low_order_key);
+    auto const result = contract.precompile_seal_message(
+        seal_message_input(message_plaintext(byte_string{0xab})), SPOKE_CA, {});
+    ASSERT_TRUE(result.has_error());
+    EXPECT_EQ(result.assume_error(), ApplicationEncryptionError::SealFailed);
+}
+
+TEST(ApplicationEncryptionMessageEncoding, matches_abi_fixtures)
+{
+    // Generated with Python using 32-byte big-endian words, offsets relative
+    // to the tuple start, and length-prefixed, zero-padded dynamic tails.
+    auto const expected_ad =
+        from_hex(
+            "0000000000000000000000000000000000000000000000000000000000000080"
+            "0000000000000000000000000000000000000000000000000000520000004eaf"
+            "0000000000000000000000000000000000000000000000000000510000004eaf"
+            "0000000000000100000000000000000000000000000000000000000000000007"
+            "0000000000000000000000000000000000000000000000000000000000000020"
+            "6d6f6e61642d63726f73732d646f6d61696e2d656e6372797074696f6e2d7631")
+            .value();
     EXPECT_EQ(
-        installed.assume_error(), ApplicationEncryptionError::NotImplemented);
+        sealed_message_ad(SOURCE_DOMAIN, DESTINATION_DOMAIN, MESSAGE_SEQUENCE),
+        expected_ad);
+
+    // The original sender and transaction origin occupy distinct head words.
+    auto const expected_randomness_input =
+        from_hex(
+            "0000000000000000000000000000000000000000000000000000000000000100"
+            "0000000000000100000000000000000000000000000000000000000000000007"
+            "0000000000000000000000000000000000000000000000000000000000004321"
+            "00000000000000000000000089abcdef0123456789abcdef0123456789abcdef"
+            "000000000000000000000000000000000000000000000000fedcba9876543210"
+            "0000000000000000000000000000000000000000000000000000000000000140"
+            "0000000000000000000000000000000000000000000000000000000000000180"
+            "00000000000000000000000000000000000000000000000000000000000001c0"
+            "0000000000000000000000000000000000000000000000000000000000000020"
+            "6d6f6e61642d63726f73732d646f6d61696e2d72616e646f6d6e6573732d7631"
+            "0000000000000000000000000000000000000000000000000000000000000020"
+            "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+            "0000000000000000000000000000000000000000000000000000000000000002"
+            "0102000000000000000000000000000000000000000000000000000000000000"
+            "0000000000000000000000000000000000000000000000000000000000000002"
+            "0003000000000000000000000000000000000000000000000000000000000000")
+            .value();
+    EXPECT_EQ(
+        sealed_message_randomness_input(
+            MESSAGE_SEQUENCE,
+            MESSAGE_FROM,
+            TX_ORIGIN,
+            TX_NONCE,
+            DESTINATION_KEY,
+            byte_string{0x01, 0x02},
+            byte_string{0x00, 0x03}),
+        expected_randomness_input);
 }
 
 TEST_F(ApplicationEncryptionContractTest, unseal_decodes_dynamic_arguments)

@@ -30,12 +30,10 @@ stdenv.mkDerivation (finalAttrs: {
     nativeBuildInputs
     buildInputs
     hardeningDisable
+    env
     cargoRoot
     cargoDeps
     ;
-  env = buildEnv.env // {
-    MONAD_ZKVM_CMAKE_ARGS = "-DMONAD_ZKVM_KECCAKF_MEMO=ON";
-  };
   strictDeps = true;
   # Preserve the guest ELF exactly as linked.
   dontUseCmakeConfigure = true;

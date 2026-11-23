@@ -24,7 +24,6 @@
 #include <category/execution/domain/executor.hpp>
 #include <category/execution/domain/spoke.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
-#include <category/execution/ethereum/block_hash_buffer/util.hpp>
 #include <category/execution/ethereum/core/rlp/block_rlp.hpp>
 #include <category/execution/ethereum/core/withdrawal.hpp>
 #include <category/execution/ethereum/execute_block.hpp>
@@ -45,6 +44,25 @@
 #include <utility>
 #include <vector>
 
+MONAD_DOMAIN_ANONYMOUS_NAMESPACE_BEGIN
+
+// A domain always keeps its block hashes in state from its first block, so
+// BLOCKHASH never falls back to a block hash buffer.
+struct NoBlockHashBuffer final : BlockHashBuffer
+{
+    uint64_t n() const override
+    {
+        return 0;
+    }
+
+    bytes32_t const &get(uint64_t const n) const override
+    {
+        MONAD_ABORT_PRINTF("hash of domain block %lu was not in state", n);
+    }
+};
+
+MONAD_DOMAIN_ANONYMOUS_NAMESPACE_END
+
 MONAD_DOMAIN_NAMESPACE_BEGIN
 
 PrivateDomainExecutor::PrivateDomainExecutor(
@@ -64,8 +82,16 @@ PrivateDomainExecutor::PrivateDomainExecutor(
         return;
     }
     next_block_ = finalized + 1;
-    MONAD_ASSERT(
-        init_block_hash_buffer_from_triedb(db, next_block_, block_hashes_));
+    // The spoke's code carries the domain chain id, the L1 chain id and the
+    // hub, so it tells whether this db is the configured domain's.
+    auto const spoke = db_.read_account(DOMAIN_SPOKE);
+    auto const expected = to_bytes(
+        keccak256(domain_spoke_code(domain_chain_id_, l1_chain_id_, hub_)));
+    MONAD_ASSERT_PRINTF(
+        spoke.has_value() && spoke->code_hash == expected,
+        "db is not that of domain %lu of L1 chain %lu",
+        domain_chain_id_,
+        l1_chain_id_);
 }
 
 template <Traits traits>
@@ -75,11 +101,13 @@ PrivateDomainExecutor::execute_block(DerivedDomainBlock const &block)
 {
     MONAD_ASSERT(block.senders.size() == block.transactions.size());
 
-    auto header = execution_header<traits>(block);
+    bytes32_t parent_hash{};
     if (block.number > 0) {
-        header.parent_hash = block_hashes_.get(block.number - 1);
         db_.set_block_and_prefix(block.number - 1);
+        parent_hash = to_bytes(
+            keccak256(rlp::encode_block_header(db_.read_eth_header())));
     }
+    auto const header = domain_execution_inputs<traits>(block, parent_hash);
     // Before genesis the db is empty, and so is every read.
     BlockState block_state{db_, vm_};
     if (block.number == 0) {
@@ -92,7 +120,12 @@ PrivateDomainExecutor::execute_block(DerivedDomainBlock const &block)
     BOOST_OUTCOME_TRY(
         auto const receipts,
         execute_domain_block<traits>(
-            chain_, block, header, block_state, block_hashes_, priority_pool_));
+            chain_,
+            block,
+            header,
+            block_state,
+            NoBlockHashBuffer{},
+            priority_pool_));
     auto [state, code, _] = std::move(block_state).release();
 
     // The block is finalized at once, so its proposal id only has to be
@@ -111,11 +144,7 @@ PrivateDomainExecutor::execute_block(DerivedDomainBlock const &block)
         {},
         traits::eip_4895_active() ? std::optional{std::vector<Withdrawal>{}}
                                   : std::nullopt);
-    auto const eth_header = db_.read_eth_header();
     db_.finalize(block.number, id);
-    block_hashes_.set(
-        block.number,
-        to_bytes(keccak256(rlp::encode_block_header(eth_header))));
     return outcome::success();
 }
 

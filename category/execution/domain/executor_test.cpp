@@ -373,3 +373,23 @@ TEST_F(PrivateDomainExecutorTest, continues_after_a_restart)
     EXPECT_NE(read_domain_header(2).state_root, before.state_root);
     EXPECT_EQ(block_hash_in_state(1), compute_block_hash(before));
 }
+
+TEST_F(PrivateDomainExecutorTest, rejects_the_db_of_another_domain)
+{
+    // The db has worker threads, so the death test must start a new process.
+    GTEST_FLAG_SET(death_test_style, "threadsafe");
+    append({});
+    {
+        PrivateDomainExecutor executor{
+            l1_chain_, DOMAIN, HUB, *db_, vm_, pool_};
+        execute_all(executor);
+    }
+    open_db(true);
+    EXPECT_DEATH(
+        (PrivateDomainExecutor{l1_chain_, DOMAIN + 1, HUB, *db_, vm_, pool_}),
+        "db is not that of domain");
+    EXPECT_DEATH(
+        (PrivateDomainExecutor{
+            l1_chain_, DOMAIN, Address{0xbad}, *db_, vm_, pool_}),
+        "db is not that of domain");
+}

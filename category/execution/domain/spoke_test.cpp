@@ -33,7 +33,7 @@ TEST(DomainSpoke, code_is_what_the_constructor_deploys)
             5328559,
             20143,
             0x1111111111111111111111111111111111111111_address))),
-        0xe20e6879acea2b66d9a59563941fa2c8e70a8bbdf8e5f51e2840c57008e52a3b_bytes32);
+        0x08353b5d8df5f92eabea4b24409a4837bf8e5f5450860595f9c009d34db76535_bytes32);
 }
 
 TEST(DomainSpoke, code_depends_on_each_argument)

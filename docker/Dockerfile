@@ -242,3 +242,4 @@ FROM base AS runner
 COPY --from=build_and_test /src/build/category/mpt/monad-mpt /usr/local/bin/
 COPY --from=build_and_test /src/build/cmd/monad-cli /usr/local/bin/
 COPY --from=build_and_test /src/build/cmd/monad /usr/local/bin/
+COPY --from=build_and_test /src/build/cmd/monad-domain /usr/local/bin/

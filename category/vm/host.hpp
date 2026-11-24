@@ -25,6 +25,7 @@
 #include <category/vm/evm/result.hpp>
 #include <category/vm/evm/storage_status.hpp>
 #include <category/vm/evm/tx_context.hpp>
+#include <category/vm/runtime/engine_timer.hpp>
 #include <category/vm/runtime/types.hpp>
 
 #include <algorithm>
@@ -142,6 +143,15 @@ namespace monad::vm
                     sizeof(Address)),
                 designation.bytes);
             return designation;
+        }
+
+    protected:
+        [[nodiscard, gnu::always_inline]]
+        runtime::EngineTimer::Scope time_host() const noexcept
+        {
+            return {
+                runtime_context_ ? &runtime_context_->engine_timer : nullptr,
+                runtime::EngineTimer::Host};
         }
 
     private:

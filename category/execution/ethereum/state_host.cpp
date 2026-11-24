@@ -54,6 +54,7 @@ StateHostBase::get_storage(Address const &address, bytes32_t const &key) const
 {
     MONAD_TRY
     {
+        auto const timer = time_host();
         return state_.get_storage(address, key);
     }
     MONAD_CATCH(...)
@@ -68,6 +69,7 @@ StorageStatus StateHostBase::set_storage(
 {
     MONAD_TRY
     {
+        auto const timer = time_host();
         return state_.set_storage(address, key, value);
     }
     MONAD_CATCH(...)
@@ -81,6 +83,7 @@ uint256_t StateHostBase::get_balance(Address const &address) const
 {
     MONAD_TRY
     {
+        auto const timer = time_host();
         return state_.get_balance(address);
     }
     MONAD_CATCH(...)
@@ -94,6 +97,7 @@ size_t StateHostBase::get_code_size(Address const &address) const
 {
     MONAD_TRY
     {
+        auto const timer = time_host();
         if (MONAD_UNLIKELY(trace::is_code_tracer(state_tracer_))) {
             bytes32_t const hash = state_.get_code_hash(address);
             if (hash == NULL_HASH) {
@@ -117,6 +121,7 @@ bytes32_t StateHostBase::get_code_hash(Address const &address) const
 {
     MONAD_TRY
     {
+        auto const timer = time_host();
         if (state_.account_is_dead(address)) {
             return bytes32_t{};
         }
@@ -135,6 +140,7 @@ size_t StateHostBase::copy_code(
 {
     MONAD_TRY
     {
+        auto const timer = time_host();
         if (MONAD_UNLIKELY(trace::is_code_tracer(state_tracer_))) {
             bytes32_t const hash = state_.get_code_hash(address);
             if (hash != NULL_HASH) {
@@ -166,6 +172,7 @@ bytes32_t StateHostBase::get_block_hash(int64_t const block_number) const
 {
     MONAD_TRY
     {
+        auto const timer = time_host();
         MONAD_ASSERT(block_number >= 0);
         if (bytes32_t const block_hash = get_block_hash_history(
                 state_, static_cast<uint64_t>(block_number));
@@ -190,6 +197,7 @@ void StateHostBase::emit_log(
 {
     MONAD_TRY
     {
+        auto const timer = time_host();
         Receipt::Log log{.data = {data, data_size}, .address = address};
         for (auto i = 0u; i < num_topics; ++i) {
             log.topics.emplace_back(topics[i]);
@@ -210,6 +218,7 @@ bytes32_t StateHostBase::get_transient_storage(
 {
     MONAD_TRY
     {
+        auto const timer = time_host();
         return state_.get_transient_storage(address, key);
     }
     MONAD_CATCH(...)
@@ -224,6 +233,7 @@ void StateHostBase::set_transient_storage(
 {
     MONAD_TRY
     {
+        auto const timer = time_host();
         return state_.set_transient_storage(address, key, value);
     }
     MONAD_CATCH(...)

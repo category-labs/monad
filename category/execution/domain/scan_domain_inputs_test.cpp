@@ -147,10 +147,10 @@ namespace
         return EventBuilder(
                    HUB,
                    abi_encode_event_signature(
-                       "EncryptedL1MessageRecorded(uint64,uint64,address,"
+                       "EncryptedMessageRecorded(uint64,uint64,uint256,"
                        "bytes,uint256,uint256)"))
             .add_topic(abi_encode_uint(u64_be{DOMAIN}))
-            .add_topic(abi_encode_address(MESSAGE_FROM))
+            .add_topic(abi_encode_uint(u64_be{NETWORK_CHAIN_ID}))
             .add_data(encoded)
             .build();
     }

@@ -64,11 +64,11 @@ static_assert(
     0x5407b49426d6ce93eaf2b804f06575113f1ce26f67ada45a1307db40662a528a_bytes32);
 
 constexpr bytes32_t ENCRYPTED_L1_MESSAGE_RECORDED_SIGNATURE =
-    abi_encode_event_signature("EncryptedL1MessageRecorded(uint64,"
-                               "uint64,address,bytes,uint256,uint256)");
+    abi_encode_event_signature("EncryptedMessageRecorded(uint64,"
+                               "uint64,uint256,bytes,uint256,uint256)");
 static_assert(
     ENCRYPTED_L1_MESSAGE_RECORDED_SIGNATURE ==
-    0xb2679e875836e5ada3566e7b1304e7638ec7301653b9fbcb920dbe0aee7b4831_bytes32);
+    0x14dc905122d2021a2b19c1b63408e249684fc8edbaa2b6dd3d23829ba4ed5f62_bytes32);
 
 constexpr size_t ABI_WORD_SIZE = 32;
 
@@ -114,8 +114,8 @@ constexpr std::array HUB_EVENTS{
         .signature = L1_MESSAGE_RECORDED_SIGNATURE,
         .topic_count = 4,
         .head_words = 5},
-    // topics: signature, domainChainId, from
-    // head:   sourceChainId, offset(ciphertext), nonce, fee
+    // topics: signature, domainChainId, sourceChainId
+    // head:   sourceNonce, offset(ciphertext), nonce, fee
     HubEventSpec{
         .event = HubEvent::EncryptedMessageRecorded,
         .signature = ENCRYPTED_L1_MESSAGE_RECORDED_SIGNATURE,

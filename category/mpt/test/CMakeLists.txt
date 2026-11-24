@@ -49,6 +49,9 @@ add_trie_test(TARGET dual_timeline_test SOURCES "dual_timeline_test.cpp")
 add_trie_test(TARGET load_all_test SOURCES "load_all_test.cpp")
 add_trie_test(TARGET many_nested_updates SOURCES "many_nested_updates.cpp"
               LINK_LIBRARIES Boost::json)
+target_compile_definitions(
+  many_nested_updates
+  PRIVATE MONAD_MPT_TEST_CORPUS_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 add_trie_test(TARGET merkle_trie_test SOURCES "merkle_trie_test.cpp")
 add_trie_test(TARGET min_truncated_offsets_test SOURCES
               "min_truncated_offsets_test.cpp")

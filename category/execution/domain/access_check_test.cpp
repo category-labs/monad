@@ -255,8 +255,8 @@ namespace
                 .prev_randao = bytes32_t{7},
                 .transactions = {tx},
                 .senders = {sender}};
-            auto header = execution_header<traits>(derived);
-            header.parent_hash = block_hashes.get(NUMBER - 1);
+            auto const header = domain_execution_inputs<traits>(
+                derived, block_hashes.get(NUMBER - 1));
             DomainChain const chain{l1_chain, DOMAIN};
 
             auto const authorities =

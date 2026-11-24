@@ -100,15 +100,16 @@ PrivateDomainExecutor::PrivateDomainExecutor(
 bytes32_t PrivateDomainExecutor::latest_block_hash() const
 {
     MONAD_ASSERT(next_block_ > 0);
-    return block_hashes_.get(next_block_ - 1);
+    auto const hash = block_hash(next_block_ - 1);
+    MONAD_ASSERT(hash.has_value());
+    return *hash;
 }
 
 std::optional<bytes32_t>
 PrivateDomainExecutor::block_hash(uint64_t const number) const
 {
     MONAD_ASSERT(number < next_block_);
-    // The buffer keeps the latest blocks' hashes only: this reads the block's
-    // header, which the db stores as the encoding the hash is of.
+    // The db stores the block's header as the encoding the hash is of.
     auto const header = mpt_db_.find(
         mpt::concat(FINALIZED_NIBBLE, mpt::NibblesView{block_header_nibbles}),
         number);

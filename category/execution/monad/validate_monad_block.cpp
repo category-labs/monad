@@ -152,7 +152,7 @@ Result<void> static_validate_monad_body(
 
         if (kind == SyscallKind::Reward &&
             MONAD_UNLIKELY(
-                it->value > staking::limits::maximum_block_reward<traits>())) {
+                it->value > staking::limits::maximum_block_reward())) {
             return MonadBlockError::InvalidRewardValue;
         }
     }

@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include "category/execution/monad/graph_eval/unaligned.hpp"
 #include <category/core/assert.h>
 #include <category/execution/monad/graph_eval/config.hpp>
 #include <category/execution/monad/graph_eval/constants.hpp>
@@ -79,35 +80,10 @@ MONAD_GRAPH_EVAL_ANONYMOUS_NAMESPACE_BEGIN
 // Reading validated bytecode, so without bounds checks
 //
 
-template <typename T>
-[[gnu::always_inline]] inline T take(std::span<uint8_t const> &code)
-{
-    return read_next_unchecked<T>(code);
-}
-
-[[gnu::always_inline]] inline void
-skip(std::span<uint8_t const> &code, size_t const n)
-{
-    code = code.subspan(n);
-}
-
-// A shape: its rank, then a uint16 a dimension
-[[gnu::always_inline]] inline void skip_shape(std::span<uint8_t const> &code)
-{
-    skip(code, 2 * size_t{take<uint8_t>(code)});
-}
-
-// A tensor type: its dtype, then its shape
-[[gnu::always_inline]] inline void skip_type(std::span<uint8_t const> &code)
-{
-    skip(code, 1);
-    skip_shape(code);
-}
-
 // A fn's params, or none for std::monostate
 template <FineFn Fn>
 [[gnu::always_inline]] inline FnParams<Fn>
-take_params(std::span<uint8_t const> &code)
+take_params(uint8_t const *&code)
 {
     if constexpr (std::is_same_v<FnParams<Fn>, std::monostate>) {
         return {};
@@ -124,30 +100,6 @@ take_params(std::span<uint8_t const> &code)
 // T with alignment 1, to read and write elements at any address, as a
 // Literal's are in the code. It has to be formed here, from T: an aligned(1)
 // typedef given as a template argument loses its attribute (FINDINGS.md)
-template <typename T>
-struct Unaligned
-{
-    typedef T type __attribute__((aligned(1)));
-};
-
-template <typename T>
-using unaligned_t = typename Unaligned<T>::type;
-
-static_assert(alignof(unaligned_t<uint64_t>) == 1);
-
-template <typename T>
-[[gnu::always_inline]] inline unaligned_t<T> const *
-as_elements(uint8_t const *const data)
-{
-    return reinterpret_cast<unaligned_t<T> const *>(data);
-}
-
-template <typename T>
-[[gnu::always_inline]] inline unaligned_t<T> *as_elements(uint8_t *const data)
-{
-    return reinterpret_cast<unaligned_t<T> *>(data);
-}
-
 //
 // Scalar kernels: out[i] = f(x[i], ...) for i < n, every operand a full
 // chunk. They run in blocks of B elements, whose inner loop has a fixed
@@ -358,52 +310,47 @@ struct SaturateF
     }
 };
 
-// Divc by a power of two, 2^shift, negated if the divisor is negative, for a
-// shift less than T's width: a shift, which vectorizes, with 2^shift - 1
-// added to a negative signed x first, so that it rounds toward zero, as the
-// division does. Neither the sum nor the negation can overflow T, and the
-// negation wraps as the division does
+// Divc by a power of two, 2^shift, for a shift less than T's width: a shift,
+// which vectorizes, with 2^shift - 1 added to a negative signed x first, so
+// that it rounds toward zero, as the division does. The sum can't overflow T
 template <typename T>
 struct DivcPow2F
 {
     unsigned shift;
-    bool negate;
 
     T operator()(T const x) const
     {
-        T quotient;
         if constexpr (std::is_signed_v<T>) {
             T const bias = static_cast<T>((wrap_t<T>{1} << shift) - 1);
-            quotient = static_cast<T>((x < 0 ? x + bias : x) >> shift);
+            return static_cast<T>((x < 0 ? x + bias : x) >> shift);
         }
         else {
-            quotient = static_cast<T>(x >> shift);
+            return static_cast<T>(x >> shift);
         }
-        return negate ? static_cast<T>(wrap_t<T>{0} - wrap_t<T>(quotient))
-                      : quotient;
     }
 };
 
-// Divc by any divisor but 0 and -1, which the validator rejects: in int64,
-// truncating toward zero, then wrapped to T, as the graphcode's Div does. A
-// uint64 x is divided by the divisor's magnitude, then negated, wrapping.
-// Scalar: x86 has no vector integer division
+// Divc by any unsigned divisor but 0, which the validator rejects, truncating
+// toward zero. A signed x is divided by its magnitude, then the quotient gets
+// x's sign back: |quotient| <= |x|, so it fits T. All of it is in uint64_t,
+// so nothing overflows, including for T's minimum or a divisor of 2^63 or
+// more. Scalar: x86 has no vector integer division
 template <typename T>
 struct DivcF
 {
-    int64_t divisor;
+    uint64_t divisor;
 
     T operator()(T const x) const
     {
-        if constexpr (std::is_same_v<T, uint64_t>) {
+        if constexpr (std::is_signed_v<T>) {
             uint64_t const magnitude =
-                divisor < 0 ? uint64_t{0} - static_cast<uint64_t>(divisor)
-                            : static_cast<uint64_t>(divisor);
-            uint64_t const quotient = x / magnitude;
-            return divisor < 0 ? uint64_t{0} - quotient : quotient;
+                x < 0 ? uint64_t{0} - static_cast<uint64_t>(x)
+                      : static_cast<uint64_t>(x);
+            uint64_t const quotient = magnitude / divisor;
+            return static_cast<T>(x < 0 ? uint64_t{0} - quotient : quotient);
         }
         else {
-            return static_cast<T>(static_cast<int64_t>(x) / divisor);
+            return static_cast<T>(static_cast<uint64_t>(x) / divisor);
         }
     }
 };
@@ -620,20 +567,17 @@ FnResult run_fn(
                 return {Dtype::uint8, GraphEvalError::Success};
             }
             else if constexpr (Fn == FineFn::Divc) {
-                int64_t const divisor = params;
-                uint64_t const magnitude =
-                    divisor < 0 ? uint64_t{0} - static_cast<uint64_t>(divisor)
-                                : static_cast<uint64_t>(divisor);
-                if (std::has_single_bit(magnitude)) {
+                uint64_t const divisor = params;
+                if (std::has_single_bit(divisor)) {
                     auto const shift =
-                        static_cast<unsigned>(std::countr_zero(magnitude));
+                        static_cast<unsigned>(std::countr_zero(divisor));
                     if (shift >= 8 * sizeof(T)) {
                         // |x| < 2^shift, so every quotient is 0, and a shift
                         // by T's width or more is undefined
                         std::memset(out.data, 0, out.n * sizeof(T));
                     }
                     else {
-                        apply1<T, T>(a, out, DivcPow2F<T>{shift, divisor < 0});
+                        apply1<T, T>(a, out, DivcPow2F<T>{shift});
                     }
                 }
                 else {
@@ -882,12 +826,12 @@ void expand_chunk(ScalarInput &input, size_t const n, uint8_t *const out)
 
 // Moves `code` past `n_fns` fns, without running them: for a node with no
 // elements, where no chunk's walk finds where the program ends
-void skip_fns(std::span<uint8_t const> &code, size_t const n_fns)
+void skip_fns(uint8_t const *&code, size_t const n_fns)
 {
     for (size_t i = 0; i < n_fns; i++) {
         visit_fn(take<FineFn>(code), [&]<FineFn Fn>() {
             (void)take_params<Fn>(code);
-            skip(code, FnArity<Fn> + (i + 1 < n_fns ? 1 : 0));
+            skip_bytes(code, FnArity<Fn> + (i + 1 < n_fns ? 1 : 0));
         });
     }
 }
@@ -897,12 +841,11 @@ MONAD_GRAPH_EVAL_ANONYMOUS_NAMESPACE_END
 MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
 
 FineInterpreter::FineInterpreter(
-    Finecode const &finecode, std::span<uint8_t const> const code, State &state,
+    Finecode const &finecode, State &state,
     std::span<TensorInput const> const inputs,
     CallerStorage *const caller_storage,
     std::optional<size_t> const output_count, uint8_t *const arena)
     : finecode_(finecode)
-    , code_(code)
     , state_(state)
     , inputs_(inputs)
     , caller_storage_(caller_storage)
@@ -916,7 +859,7 @@ Tensor FineInterpreter::node(size_t const id) const
     uint32_t const location = finecode_.node_location(id);
     uint8_t const *const data =
         (location & FINE_CODE_LOCATION)
-            ? code_.data() + (location & ~FINE_CODE_LOCATION)
+            ? finecode_.ops() + (location & ~FINE_CODE_LOCATION)
             : arena_ + location;
     return Tensor{finecode_.node_type(id), const_cast<uint8_t *>(data)};
 }
@@ -968,7 +911,7 @@ Result<void> FineInterpreter::load_inputs()
 }
 
 Result<void> FineInterpreter::run_scalar(
-    std::span<uint8_t const> &code, size_t const id, ScalarRegisters &file)
+    uint8_t const *&code, size_t const id, ScalarRegisters &file)
 {
     Tensor const output = node(id);
     Shape const &shape = output.type().shape();
@@ -981,7 +924,7 @@ Result<void> FineInterpreter::run_scalar(
         static_cast<size_t>(std::min<uint64_t>(SCALAR_CHUNK, size));
 
     // The inputs: registers 0 to n_inputs - 1
-    skip_shape(code);
+    skip<Shape>(code);
     size_t const n_inputs = take<uint8_t>(code);
     std::array<ScalarInput, MAX_SCALAR_INPUTS> inputs;
     for (size_t i = 0; i < n_inputs; i++) {
@@ -1015,8 +958,8 @@ Result<void> FineInterpreter::run_scalar(
     for (size_t i = n_inputs; i < n_inputs + n_constants; i++) {
         auto const dtype = take<Dtype>(code);
         size_t const element_size = dtype_size(dtype);
-        std::memcpy(file.blocks[i], code.data(), element_size);
-        skip(code, element_size);
+        std::memcpy(file.blocks[i], code, element_size);
+        skip_bytes(code, element_size);
         fill_uniform(file.blocks[i], element_size, longest);
         registers[i] = {file.blocks[i], true, dtype};
     }
@@ -1025,7 +968,7 @@ Result<void> FineInterpreter::run_scalar(
     // ends where the program does, which is where `code` goes on from; with
     // no elements, no chunk runs, so the program is walked just to find that
     size_t const n_fns = take<uint8_t>(code);
-    std::span<uint8_t const> const program = code;
+    uint8_t const *const program = code;
     if (size == 0) {
         skip_fns(code, n_fns);
         return outcome::success();
@@ -1049,7 +992,7 @@ Result<void> FineInterpreter::run_scalar(
         // element, which is then copied across the chunk. The per-fn lambda
         // is always inlined: left to itself, GCC inlines some of the 17 and
         // calls the rest, as run_scalar reaches --param large-function-growth
-        std::span<uint8_t const> pc = program;
+        uint8_t const *pc = program;
         for (size_t f = 0; f < n_fns; f++) {
             bool const last = f + 1 == n_fns;
             GraphEvalError error = visit_fn(
@@ -1301,114 +1244,13 @@ void arg_extreme(Tensor const &x, Tensor &out, Better const better)
     });
 }
 
-// QMatMul: as matmul.cpp's matmul(), reading x and y at any address. Its
-// templates can't be reused by giving them alignment-1 element types, which
-// lose their attribute as template arguments (FINDINGS.md), so this is their
-// algorithm again, with the alignment-1 types formed inside
-
-template <typename Sum, typename T>
-using shift_t = std::conditional_t<
-    std::is_signed_v<T>,
-    std::conditional_t<sizeof(Sum) == 8, int64_t, __int128>, Sum>;
-
-template <typename Sum, typename T>
-using wide_t =
-    std::conditional_t<2 * sizeof(T) <= sizeof(Sum), shift_t<Sum, T>, Sum>;
-
-template <typename Sum, size_t C, typename T, typename Out>
-[[gnu::always_inline]] inline void dot_columns(
-    unaligned_t<T> const *const xi, unaligned_t<T> const *const y,
-    size_t const k, size_t const n, size_t const j, unsigned const bits,
-    Out *const out)
-{
-    using Wide = wide_t<Sum, T>;
-    Sum sums[C] = {};
-    for (size_t p = 0; p < k; p++) {
-        // Sign-extends an int8, as intended
-        auto const a =
-            static_cast<Wide>(T{xi[p]}); // NOLINT(bugprone-signed-char-misuse)
-        auto const *const row = y + p * n + j;
-#pragma GCC unroll 4
-        for (size_t c = 0; c < C; c++) {
-            sums[c] += static_cast<Sum>(a * static_cast<Wide>(T{row[c]}));
-        }
-    }
-#pragma GCC unroll 4
-    for (size_t c = 0; c < C; c++) {
-        out[j + c] =
-            static_cast<Out>(static_cast<shift_t<Sum, T>>(sums[c]) >> bits);
-    }
-}
-
-template <typename Sum, typename T, typename Out>
-[[gnu::noinline]] void qmatmul_any(
-    uint8_t const *const x_data, uint8_t const *const y_data, size_t const m,
-    size_t const k, size_t const n, unsigned const bits, Out *const out)
-{
-    auto const *const x = as_elements<T>(x_data);
-    auto const *const y = as_elements<T>(y_data);
-    if (n == 1) {
-        // A column: each row's dot product with it, both read contiguously,
-        // which GCC vectorizes, as matmul.cpp's matvec_generic
-        using Wide = wide_t<Sum, T>;
-        using Product = std::conditional_t<
-            sizeof(T) <= 2,
-            std::conditional_t<std::is_signed_v<T>, int32_t, uint32_t>,
-            Wide>;
-        for (size_t i = 0; i < m; i++) {
-            auto const *__restrict const row = x + i * k;
-            auto const *__restrict const column = y;
-            Sum sum = 0;
-            for (size_t p = 0; p < k; p++) {
-                auto const product = static_cast<Product>(
-                    static_cast<Product>(T{row[p]}) *
-                    static_cast<Product>(T{column[p]}));
-                sum += static_cast<Sum>(static_cast<Wide>(product));
-            }
-            out[i] =
-                static_cast<Out>(static_cast<shift_t<Sum, T>>(sum) >> bits);
-        }
-        return;
-    }
-    for (size_t i = 0; i < m; i++) {
-        size_t j = 0;
-        for (; j + 4 <= n; j += 4) {
-            dot_columns<Sum, 4, T>(x + i * k, y, k, n, j, bits, out + i * n);
-        }
-        for (; j < n; j++) {
-            dot_columns<Sum, 1, T>(x + i * k, y, k, n, j, bits, out + i * n);
-        }
-    }
-}
-
-// Sums in 64 bits when every bit that reaches out is below bit 64, as
-// matmul() chooses, else in 128
-void qmatmul(Tensor const &x, Tensor const &y, unsigned const bits, Tensor &out)
-{
-    size_t const m = x.type().shape().dimensions()[0];
-    size_t const k = x.type().shape().dimensions()[1];
-    size_t const n = y.type().shape().dimensions()[1];
-    visit_dtype(x.type().dtype(), [&]<typename T>() {
-        visit_dtype(out.type().dtype(), [&]<typename Out>() {
-            Out *const outs = reinterpret_cast<Out *>(out.data());
-            if (sizeof(T) <= 2 || bits + 8 * sizeof(Out) <= 64) {
-                qmatmul_any<uint64_t, T>(
-                    x.data(), y.data(), m, k, n, bits, outs);
-            }
-            else {
-                qmatmul_any<unsigned __int128, T>(
-                    x.data(), y.data(), m, k, n, bits, outs);
-            }
-        });
-    });
-}
 
 MONAD_GRAPH_EVAL_ANONYMOUS_NAMESPACE_END
 
 MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
 
 Result<void> FineInterpreter::run_op(
-    FineOp const op, std::span<uint8_t const> &code, size_t const id,
+    FineOp const op, uint8_t const *&code, size_t const id,
     ScalarRegisters &file)
 {
     auto const input = [&] { return node(take<uint16_t>(code)); };
@@ -1417,13 +1259,13 @@ Result<void> FineInterpreter::run_op(
         return run_scalar(code, id, file);
     case FineOp::Literal:
         // In place: its node location is its data in the code
-        skip_type(code);
-        skip(code, finecode_.node_type(id).size_bytes());
+        skip<TensorType>(code);
+        skip_bytes(code, finecode_.node_type(id).size_bytes());
         return outcome::success();
     case FineOp::Reshape:
         // A view: its node location is its input's
-        skip_shape(code);
-        skip(code, sizeof(uint16_t));
+        skip<Shape>(code);
+        skip<uint16_t>(code);
         return outcome::success();
     default:
         break;
@@ -1431,7 +1273,7 @@ Result<void> FineInterpreter::run_op(
     Tensor out = node(id);
     switch (op) {
     case FineOp::TensorRef: {
-        skip_type(code);
+        skip<TensorType>(code);
         auto const address = take<Address>(code);
         auto const offset = take<uint32_t>(code);
         return load_code_tensor(
@@ -1453,7 +1295,7 @@ Result<void> FineInterpreter::run_op(
     }
     case FineOp::QMatMul: {
         auto const bits = take<uint8_t>(code);
-        skip(code, 1); // The output's dtype, which its node type has
+        skip<Dtype>(code); // The output's dtype, which its node type has
         Tensor const x = input();
         Tensor const y = input();
         qmatmul(x, y, bits, out);
@@ -1513,9 +1355,7 @@ Result<GraphOutputs> FineInterpreter::run()
     // Every Scalar node's registers, at the same address
     ScalarRegisters file;
 
-    std::span<uint8_t const> code{
-        finecode_.ops(),
-        static_cast<size_t>(code_.data() + code_.size() - finecode_.ops())};
+    uint8_t const *code = finecode_.ops();
     size_t const n_inputs = finecode_.n_inputs();
     for (size_t i = 0; i < finecode_.n_ops(); i++) {
         BOOST_OUTCOME_TRY(run_op(take<FineOp>(code), code, n_inputs + i, file));

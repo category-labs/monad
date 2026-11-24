@@ -38,6 +38,9 @@ enum class FineVersion : uint8_t
     Invalid
 };
 
+using node_id_t = uint16_t;
+using register_id_t = uint8_t;
+
 template<>
 [[gnu::always_inline]]
 inline Result<FineVersion> read_next<FineVersion>(std::span<uint8_t const> &input) {
@@ -90,6 +93,8 @@ enum class FineOp : uint8_t
 
     Invalid
 };
+
+constexpr size_t N_FINE_OPS = static_cast<size_t>(FineOp::Invalid);
 
 template <FineOp>
 struct FineOpInfo;
@@ -179,6 +184,12 @@ inline Result<FineOp> read_next<FineOp>(std::span<uint8_t const> &input)
     return static_cast<FineOp>(id);
 }
 
+template <>
+[[gnu::always_inline]] inline FineOp take<FineOp>(uint8_t const *&code)
+{
+    return static_cast<FineOp>(take<std::underlying_type_t<FineOp>>(code));
+}
+
 template <typename F>
 [[gnu::always_inline]]
 inline auto visit_op(FineOp const op, F &&f)
@@ -221,7 +232,7 @@ enum class FineFn : uint8_t
     Add,
     Sub,
     Mul,
-    Divc, /* int64_t divisor */
+    Divc, /* uint64_t divisor */
     Div,
 
     Lt,
@@ -274,7 +285,7 @@ struct FineFnInfo<FineFn::Mul> : FineFnInfoImpl<std::monostate, 2>
 };
 
 template <>
-struct FineFnInfo<FineFn::Divc> : FineFnInfoImpl<int64_t, 1>
+struct FineFnInfo<FineFn::Divc> : FineFnInfoImpl<uint64_t, 1>
 {
 };
 
@@ -360,6 +371,12 @@ inline Result<FineFn> read_next<FineFn>(std::span<uint8_t const> &input)
     return static_cast<FineFn>(id);
 }
 
+template <>
+[[gnu::always_inline]] inline FineFn take<FineFn>(uint8_t const *&code)
+{
+    return static_cast<FineFn>(take<std::underlying_type_t<FineFn>>(code));
+}
+
 template <typename F>
 [[gnu::always_inline]]
 inline auto visit_fn(FineFn const fn, F &&f)
@@ -408,15 +425,33 @@ inline auto visit_fn(FineFn const fn, F &&f)
 }
 
 // Where a node's data is: with this bit set, the rest of a node location is an
-// offset into the code (a Literal's data, in place); otherwise it's an offset
-// into the arena, a multiple of TENSOR_DATA_ALIGNMENT
+// offset from the start of the ops (a Literal's data, in place in the code);
+// otherwise it's an offset into the arena, a multiple of TENSOR_DATA_ALIGNMENT
 constexpr uint32_t FINE_CODE_LOCATION = uint32_t{1} << 31;
 
 class Finecode
 {
     friend class FinecodeValidator;
     friend class FineInterpreter;
+    friend class FineFastInterpreter;
 
+    Finecode() = default;
+
+    uint8_t const *ops_{nullptr};
+    size_t n_ops_{0};
+
+    std::vector<TensorType> tensor_types_;
+    // Each node's location, as FINE_CODE_LOCATION describes: inputs and most
+    // ops get arena memory of their own, bump-allocated, each rounded up to
+    // TENSOR_DATA_ALIGNMENT; a Reshape shares its input's, and a Literal's is
+    // its data in the code, as an offset from ops_
+    std::vector<uint32_t> node_locations_;
+    size_t n_inputs_{0};
+    std::vector<node_id_t> output_ids_;
+
+    GraphEvalError validation_result_{GraphEvalError::InternalError};
+
+public:
     constexpr GraphEvalError validation_result() const
     {
         return validation_result_;
@@ -443,7 +478,7 @@ class Finecode
         return n_inputs_;
     }
 
-    constexpr std::vector<uint16_t> const &output_ids() const
+    constexpr std::vector<node_id_t> const &output_ids() const
     {
         return output_ids_;
     }
@@ -458,22 +493,6 @@ class Finecode
         return tensor_types_[node_id];
     }
 
-private:
-    Finecode() = default;
-
-    uint8_t const *ops_{nullptr};
-    size_t n_ops_{0};
-
-    std::vector<TensorType> tensor_types_;
-    // Each node's location, as FINE_CODE_LOCATION describes: inputs and most
-    // ops get arena memory of their own, bump-allocated, each rounded up to
-    // TENSOR_DATA_ALIGNMENT; a Reshape shares its input's, and a Literal's is
-    // its data in the code
-    std::vector<uint32_t> node_locations_;
-    size_t n_inputs_{0};
-    std::vector<uint16_t> output_ids_;
-
-    GraphEvalError validation_result_{GraphEvalError::InternalError};
 };
 
 Finecode validate(std::span<uint8_t const>);

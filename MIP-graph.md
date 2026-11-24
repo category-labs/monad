@@ -11,18 +11,18 @@ created: 2026-11-23
 
 ## Abstract
 
-Add a precompile at address `0x1002` that evaluates a graph of integer
-tensor operations. A graph is stored as the code of an ordinary
-account, in a compact binary format. Graphs support a fixed set of
-tensor operations on signed and unsigned integer types of at most 64
-bits, with no support for control flow, side-effects, floating point
-or dynamic shapes. Callers pass the graph's inputs by value, by
-reference to another account's code or by reference to the caller's
-storage, and receive the outputs back or have them written to the
-caller's storage.
+Add a precompile at address `0x1002` that evaluates a graph of tensor
+operations. A graph is stored as the code of an ordinary account, in a
+compact binary format. Graphs support a fixed set of tensor operations
+on signed and unsigned integer types most 64 bits wide, with no
+support for control flow, side-effects, floating point or dynamic
+shapes. Callers pass the graph's inputs by value, by reference to
+another account's code or by reference to the caller's storage, and
+receive the outputs back or have them written to the caller's storage.
 
 ## Motivation
 
+**CLAUDE: Let's see if we can find a neural network example with gas**
 Numeric work in EVM code is expensive. Every value is a 256-bit word,
 so a 32-bit multiplication with wrapping takes a multiplication and a
 sign extension, and a 16.16 fixed-point multiplication takes eight

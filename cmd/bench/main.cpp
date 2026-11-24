@@ -23,9 +23,12 @@
 // ignored. Bytecode runs in the monad
 // VM's interpreter (--interpreted) or its native compiler (--compiled), as the
 // code of an account, with the storage in --storage's file, that a sender
-// calls with the calldata, under a Monad revision (--revision). Each call
-// starts from the same state, in a State of its own. Calls the code makes to
-// other accounts are interpreted in both modes.
+// calls with the calldata, under a Monad revision (--revision), with the other
+// accounts in --accounts' file, an address and its code in hex a line. With
+// --deploy, the .bc file is creation code, with any constructor arguments
+// appended: it runs once, interpreted, and the code it returns is the code the
+// calls run. Each call starts from the same state, in a State of its own.
+// Calls the code makes to other accounts are interpreted in both modes.
 //
 // A graph runs on the inputs in the evalGraph or evalGraphInto calldata in a
 // .dat file, which it needs, with the accounts in --accounts' file, an address
@@ -35,11 +38,14 @@
 // lite compiler (--lite), compiled with IREE (--iree), compiled with XLA
 // (--xla), or compiled with Halide, with the hand-written schedule (--halide)
 // or an autoscheduler (--halide-mullapudi2016, --halide-adams2019,
-// --halide-li2018). Each call is timed from the inputs, decoded, in memory, to
-// the outputs written, in the same way for each engine: the interpreter copies
-// the inputs into its arena, as the precompile does, and so does the lite
-// compiler's graph, at the offsets its compiler chose, and a graph compiled
-// with IREE, XLA or Halide is given copies of them made in the call, aligned.
+// --halide-li2018). --fine FILE also runs FILE, Fine bytecode in hex for the
+// same graph, in the Fine interpreter, once a FILE, and --fine-fast FILE in
+// the fast Fine interpreter. Each call is timed from
+// the inputs, decoded, in memory, to the outputs written, in the same way for
+// each engine: the interpreter copies the inputs into its arena, as the
+// precompile does, and so do the Fine interpreter and the lite compiler's
+// graph, at the offsets its compiler chose, and a graph compiled with IREE,
+// XLA or Halide is given copies of them made in the call, aligned.
 // With --node-times, the interpreter's and the lite compiler's times are also
 // broken down by node, each in a pass of its own after it's timed, and printed
 // after every mode's timing, with the lite compiler's input copy timed apart,
@@ -73,6 +79,9 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/execution/monad/graph_eval/constants.hpp>
+#include <category/execution/monad/graph_eval/fine.hpp>
+#include <category/execution/monad/graph_eval/fine_fast_interpreter.hpp>
+#include <category/execution/monad/graph_eval/fine_interpreter.hpp>
 #include <category/execution/monad/graph_eval/graphcode.hpp>
 #include <category/execution/monad/graph_eval/interpreter.hpp>
 #include <category/execution/monad/graph_eval/lite_compiler.hpp>
@@ -507,6 +516,11 @@ namespace
         bool xla = false;
         bool halide = false;
         std::vector<std::string> halide_schedulers;
+        // Fine bytecode files for the same graph, each run in the Fine
+        // interpreter
+        std::vector<std::filesystem::path> fine;
+        // The same, each run in the fast Fine interpreter
+        std::vector<std::filesystem::path> fine_fast;
     };
 
     struct AlignedFree
@@ -569,22 +583,17 @@ namespace
 
         // The interpreter, as run_graph sets it up, from the inputs as
         // literals
+        std::vector<TensorInput> tensor_inputs;
+        tensor_inputs.reserve(inputs.size());
+        for (size_t i = 0; i < inputs.size(); i++) {
+            tensor_inputs.push_back(TensorInput{
+                gc.tensor_types()[i],
+                ByteOrder::LittleEndian,
+                byte_string_view{inputs[i]}});
+        }
         auto const interpret = [&](NodeTimes *const times = nullptr) {
-            std::vector<TensorInput> tensor_inputs;
-            tensor_inputs.reserve(inputs.size());
-            for (size_t i = 0; i < inputs.size(); i++) {
-                tensor_inputs.push_back(TensorInput{
-                    gc.tensor_types()[i],
-                    ByteOrder::LittleEndian,
-                    byte_string_view{inputs[i]}});
-            }
             Interpreter interpreter{
-                state,
-                std::move(tensor_inputs),
-                nullptr,
-                std::nullopt,
-                gc,
-                arena};
+                state, tensor_inputs, nullptr, std::nullopt, gc, arena};
             interpreter.time_nodes(times);
             auto result = interpreter.run();
             if (result.has_error()) {
@@ -627,7 +636,7 @@ namespace
         // The interpreter's time by node, printed after every mode's timing
         std::string node_report;
         if (modes.interpreted) {
-            std::vector<Tensor> outputs;
+            GraphOutputs outputs;
             auto const interpreted_outputs = [&](size_t const i) {
                 return byte_string_view{
                     outputs[i].data(), outputs[i].type().size_bytes()};
@@ -657,7 +666,7 @@ namespace
 
         if (modes.lite) {
             auto const start = Clock::now();
-            auto compiled = LiteCompiler::compile(gc, state);
+            auto compiled = LiteCompiler::compile(gc);
             if (compiled.has_error()) {
                 die("the lite compiler couldn't compile the graph: " +
                     std::string{compiled.error().message().c_str()});
@@ -666,7 +675,8 @@ namespace
             LiteCompiledGraph &graph = compiled.value();
             // Like the interpreter, it reads its inputs from the arena, at
             // the offsets its compiler chose, so each call copies them there,
-            // and leaves its outputs in the arena too
+            // and leaves its outputs in the arena too. Its TensorRefs read
+            // the same state as the interpreter's, on every call
             auto const call_once = [&] {
                 for (size_t i = 0; i < inputs.size(); i++) {
                     std::memcpy(
@@ -675,7 +685,7 @@ namespace
                         inputs[i].size());
                 }
                 auto const result =
-                    graph.run(std::span<uint8_t>{arena, ARENA_SIZE});
+                    graph.run(std::span<uint8_t>{arena, ARENA_SIZE}, state);
                 if (result.has_error()) {
                     die("lite failed: " +
                         std::string{result.error().message().c_str()});
@@ -724,6 +734,60 @@ namespace
                     "  input copy, before run: " + format_time(copy_ns) + "\n";
             }
         }
+
+        // Each Fine bytecode file: the same graph, in Fine's format, run by
+        // a Fine interpreter, FineInterpreter for --fine and
+        // FineFastInterpreter for --fine-fast, on the same inputs, which it
+        // copies into its arena as the interpreter does. It's validated once,
+        // outside the timing, as the interpreter's graphcode is
+        auto const run_fine_files =
+            [&]<typename Engine>(
+                std::vector<std::filesystem::path> const &paths,
+                std::string const &engine) {
+                for (auto const &fine_path : paths) {
+                    std::string const name =
+                        engine + " " + fine_path.stem().string();
+                    byte_string const fine_code = read_hex(fine_path);
+                    Finecode const finecode = graph_eval::validate(
+                        std::span<uint8_t const>{fine_code});
+                    auto const run_fine = [&] {
+                        Engine interpreter{
+                            finecode,
+                            state,
+                            tensor_inputs,
+                            nullptr,
+                            std::nullopt,
+                            arena};
+                        auto result = interpreter.run();
+                        if (result.has_error()) {
+                            die(name + " failed: " +
+                                std::string{
+                                    result.error().message().c_str()});
+                        }
+                        return std::move(result.value());
+                    };
+                    GraphOutputs outputs;
+                    auto const fine_outputs = [&](size_t const i) {
+                        return byte_string_view{
+                            outputs[i].data(), outputs[i].type().size_bytes()};
+                    };
+                    std::memset(arena, 0xa5, ARENA_SIZE);
+                    outputs = run_fine();
+                    check(name, fine_outputs);
+                    measure(
+                        name,
+                        timing,
+                        1000,
+                        [](size_t) {},
+                        [&](size_t) { run_fine(); });
+                    std::memset(arena, 0xa5, ARENA_SIZE);
+                    outputs = run_fine();
+                    check(name, fine_outputs);
+                }
+            };
+        run_fine_files.template operator()<FineInterpreter>(modes.fine, "fine");
+        run_fine_files.template operator()<FineFastInterpreter>(
+            modes.fine_fast, "fine-fast");
 
         // A compiled graph's outputs go at the start of the arena, each
         // aligned, and the rest of it is scratch
@@ -871,8 +935,13 @@ namespace
     // The code, its account's storage, and the call to it
     struct EvmCase
     {
+        // The code the calls run, or with `deploy`, the creation code, with
+        // any constructor arguments, whose output is that code
         byte_string code;
+        bool deploy;
         std::vector<std::pair<bytes32_t, bytes32_t>> storage;
+        // Other accounts and their code, which the code can read
+        std::vector<std::pair<Address, byte_string>> accounts;
         byte_string calldata;
         int64_t gas;
         // The output the calls must return, if given
@@ -950,49 +1019,153 @@ namespace
                to_hex(to_bytes(keccak256(output)));
     }
 
+    Address const EVM_CODE_ADDRESS{0xc0de};
+    Address const EVM_SENDER_ADDRESS{0x5e4de4};
+
+    // The code's account, with its storage, the case's other accounts, and
+    // the sender's, set up in a State and committed, as JsonState sets up a
+    // test's, which encodes the storage as the revision does
+    template <Traits traits>
+    auto evm_test_state(EvmCase const &c, byte_string const &code)
+    {
+        auto test_state =
+            monad::test::JsonState{}.make_test_state<traits::mip_8_active()>();
+        vm::VM setup_vm;
+        BlockState setup{test_state->trie_db, setup_vm};
+        State state{setup, Incarnation{0, 0}};
+        uint256_t const balance = 1'000'000'000'000'000'000;
+        state.create_contract(EVM_CODE_ADDRESS);
+        state.set_code(EVM_CODE_ADDRESS, code);
+        state.add_to_balance(EVM_CODE_ADDRESS, balance);
+        state.set_nonce(EVM_CODE_ADDRESS, 1);
+        for (auto const &[slot, value] : c.storage) {
+            if (value != bytes32_t{}) {
+                state.set_storage(EVM_CODE_ADDRESS, slot, value);
+            }
+        }
+        for (auto const &[address, account_code] : c.accounts) {
+            state.create_contract(address);
+            state.set_code(address, account_code);
+            state.set_nonce(address, 1);
+        }
+        state.add_to_balance(EVM_SENDER_ADDRESS, balance);
+        state.set_nonce(EVM_SENDER_ADDRESS, 1);
+        setup.merge(state);
+        auto [released_state, released_code, _] = std::move(setup).release();
+        monad::test::commit_simple(
+            test_state->trie_db,
+            *released_state,
+            released_code,
+            NULL_HASH_BLAKE3,
+            BlockHeader{.number = 1});
+        return test_state;
+    }
+
+    // A call to the code's account, in a State of its own, so that each
+    // starts from the same state, and with its own message memory
+    template <Traits traits>
+    struct EvmCall
+    {
+        vm::MemoryPool::Ref memory;
+        State state;
+        monad::test::TestHost<traits> host;
+        evmc_message message;
+        vm::runtime::Context context;
+        std::optional<evmc::Result> result;
+
+        EvmCall(
+            vm::VM &vm, BlockState &block_state,
+            BlockHashBuffer const &block_hash_buffer, Transaction const &tx,
+            Address const &sender, std::optional<uint256_t> const &base_fee,
+            std::vector<std::optional<Address>> const &authorities,
+            BlockHeader const &header, Chain const &chain,
+            Address const &recipient, byte_string const &calldata,
+            byte_string const &code, int64_t const gas)
+            : memory{vm.message_memory_ref()}
+            , state{block_state, Incarnation{2, 1}}
+            , host{block_hash_buffer, state, tx, sender, base_fee, authorities, header, chain}
+            , message{
+                  .kind = EVMC_CALL,
+                  .flags = 0,
+                  .depth = 0,
+                  .gas = gas,
+                  .recipient = recipient,
+                  .sender = sender,
+                  .input_data = calldata.data(),
+                  .input_size = calldata.size(),
+                  .value = {},
+                  .create2_salt = {},
+                  .code_address = recipient,
+                  .memory_handle = memory.get(),
+                  .memory = memory.get(),
+                  .memory_capacity = vm.message_memory_capacity()}
+            , context{vm::runtime::Context::from(
+                  &host.get_evmc_host().get_interface(),
+                  host.get_evmc_host().to_context(),
+                  &message,
+                  {code.data(), code.size()})}
+        {
+        }
+    };
+
+    // The code the creation code in `c` returns: run once, interpreted, as
+    // the code of the code's account, with no calldata, so that constructor
+    // arguments appended to it are read with CODECOPY, as in a CREATE, and
+    // the case's other accounts in place. Fails unless it succeeds
+    template <Traits traits>
+    byte_string deploy_code(EvmCase const &c)
+    {
+        auto const test_state = evm_test_state<traits>(c, c.code);
+        auto const icode = vm::make_shared_intercode(c.code);
+        vm::VM vm{vm::VM::InterpreterOnly};
+        BlockState block_state{test_state->trie_db, vm};
+        monad::test::TestBlockHashBuffer const block_hash_buffer{};
+        Transaction const tx{};
+        MonadDevnet const chain{};
+        byte_string const no_calldata;
+        EvmCall<traits> call{
+            vm,
+            block_state,
+            block_hash_buffer,
+            tx,
+            EVM_SENDER_ADDRESS,
+            std::nullopt,
+            {},
+            BlockHeader{.number = 2},
+            chain,
+            EVM_CODE_ADDRESS,
+            no_calldata,
+            c.code,
+            c.gas};
+        call.result = vm.execute_intercode_raw<traits>(call.context, icode);
+        call.context.template return_to<traits>(nullptr);
+        if (call.result->status_code != EVMC_SUCCESS) {
+            die(std::format(
+                "the creation code failed, with status {}",
+                static_cast<int>(call.result->status_code)));
+        }
+        byte_string code{call.result->output_data, call.result->output_size};
+        std::printf(
+            "deployed: the creation code returned %zu bytes of code, using "
+            "%lld gas\n",
+            code.size(),
+            static_cast<long long>(c.gas - call.result->gas_left));
+        return code;
+    }
+
     template <Traits traits>
     void
     bench_evm(EvmCase const &c, EvmModes const &modes, Timing const &timing)
     {
-        byte_string const &code = c.code;
+        byte_string const code = c.deploy ? deploy_code<traits>(c) : c.code;
         byte_string const &calldata = c.calldata;
         int64_t const gas = c.gas;
         std::optional<byte_string> const &expected = c.expected;
-        Address const code_address{0xc0de};
-        Address const sender_address{0x5e4de4};
+        Address const &code_address = EVM_CODE_ADDRESS;
+        Address const &sender_address = EVM_SENDER_ADDRESS;
 
-        // The code's account, with its storage, and the sender's, set up in
-        // a State and committed, as JsonState sets up a test's, which encodes
-        // the storage as the revision does
-        auto const test_state =
-            monad::test::JsonState{}.make_test_state<traits::mip_8_active()>();
+        auto const test_state = evm_test_state<traits>(c, code);
         auto const icode = vm::make_shared_intercode(code);
-        {
-            vm::VM setup_vm;
-            BlockState setup{test_state->trie_db, setup_vm};
-            State state{setup, Incarnation{0, 0}};
-            uint256_t const balance = 1'000'000'000'000'000'000;
-            state.create_contract(code_address);
-            state.set_code(code_address, code);
-            state.add_to_balance(code_address, balance);
-            state.set_nonce(code_address, 1);
-            for (auto const &[slot, value] : c.storage) {
-                if (value != bytes32_t{}) {
-                    state.set_storage(code_address, slot, value);
-                }
-            }
-            state.add_to_balance(sender_address, balance);
-            state.set_nonce(sender_address, 1);
-            setup.merge(state);
-            auto [released_state, released_code, _] =
-                std::move(setup).release();
-            monad::test::commit_simple(
-                test_state->trie_db,
-                *released_state,
-                released_code,
-                NULL_HASH_BLAKE3,
-                BlockHeader{.number = 1});
-        }
 
         // InterpreterOnly, so that no compile runs in the background
         vm::VM vm{vm::VM::InterpreterOnly};
@@ -1003,52 +1176,7 @@ namespace
         std::vector<std::optional<Address>> const authorities{};
         BlockHeader const header{.number = 2};
         MonadDevnet const chain{};
-
-        // A call, in a State of its own, so that each starts from the same
-        // state, and with its own message memory
-        struct Call
-        {
-            vm::MemoryPool::Ref memory;
-            State state;
-            monad::test::TestHost<traits> host;
-            evmc_message message;
-            vm::runtime::Context context;
-            std::optional<evmc::Result> result;
-
-            Call(
-                vm::VM &vm, BlockState &block_state,
-                BlockHashBuffer const &block_hash_buffer, Transaction const &tx,
-                Address const &sender, std::optional<uint256_t> const &base_fee,
-                std::vector<std::optional<Address>> const &authorities,
-                BlockHeader const &header, Chain const &chain,
-                Address const &recipient, byte_string const &calldata,
-                byte_string const &code, int64_t const gas)
-                : memory{vm.message_memory_ref()}
-                , state{block_state, Incarnation{2, 1}}
-                , host{block_hash_buffer, state, tx, sender, base_fee, authorities, header, chain}
-                , message{
-                      .kind = EVMC_CALL,
-                      .flags = 0,
-                      .depth = 0,
-                      .gas = gas,
-                      .recipient = recipient,
-                      .sender = sender,
-                      .input_data = calldata.data(),
-                      .input_size = calldata.size(),
-                      .value = {},
-                      .create2_salt = {},
-                      .code_address = recipient,
-                      .memory_handle = memory.get(),
-                      .memory = memory.get(),
-                      .memory_capacity = vm.message_memory_capacity()}
-                , context{vm::runtime::Context::from(
-                      &host.get_evmc_host().get_interface(),
-                      host.get_evmc_host().to_context(),
-                      &message,
-                      {code.data(), code.size()})}
-            {
-            }
-        };
+        using Call = EvmCall<traits>;
 
         std::optional<EvmOutcome> first;
         auto const run_mode =
@@ -1180,6 +1308,7 @@ int main(int argc, char **argv)
     std::optional<std::filesystem::path> expect;
     std::optional<std::filesystem::path> storage;
     std::optional<std::filesystem::path> accounts;
+    bool deploy = false;
     std::optional<std::filesystem::path> dump_ir;
 
     app.add_option(
@@ -1202,6 +1331,18 @@ int main(int argc, char **argv)
         "--lite",
         graph_modes.lite,
         "Graph: run compiled with the lite compiler");
+    app.add_option(
+           "--fine",
+           graph_modes.fine,
+           "Graph: run this file of Fine bytecode in hex, the same graph in "
+           "Fine's format, in the Fine interpreter; can be repeated")
+        ->check(CLI::ExistingFile);
+    app.add_option(
+           "--fine-fast",
+           graph_modes.fine_fast,
+           "Graph: as --fine, in the fast Fine interpreter, whose Scalar fns "
+           "are chained by tail calls; can be repeated")
+        ->check(CLI::ExistingFile);
     app.add_flag("--iree", graph_modes.iree, "Graph: run compiled with IREE");
     app.add_flag("--xla", graph_modes.xla, "Graph: run compiled with XLA");
     app.add_flag(
@@ -1259,10 +1400,17 @@ int main(int argc, char **argv)
     app.add_option(
            "--accounts",
            accounts,
-           "Graph: a file of the accounts whose code the graph's TensorRefs, "
-           "or the calldata's code references, read: an address and its code "
-           "a line, in hex")
+           "A file of accounts and their code, an address and its code a "
+           "line, in hex: for a graph, the code its TensorRefs, or the "
+           "calldata's code references, read; for bytecode, other accounts "
+           "the code reads, as with EXTCODECOPY")
         ->check(CLI::ExistingFile);
+    app.add_flag(
+        "--deploy",
+        deploy,
+        "Bytecode: the .bc file is creation code, with any constructor "
+        "arguments appended; it runs once, interpreted, and the code it "
+        "returns is the code the calls run");
 
     CLI11_PARSE(app, argc, argv);
 
@@ -1285,9 +1433,10 @@ int main(int argc, char **argv)
     if (extension == ".bc") {
         if (graph_modes.lite || graph_modes.iree || graph_modes.xla ||
             graph_modes.halide || !graph_modes.halide_schedulers.empty() ||
-            graph_modes.node_times || dump_ir || accounts) {
-            die("--lite, --iree, --xla, --halide*, --node-times, --dump-ir "
-                "and --accounts are for .gc files");
+            !graph_modes.fine.empty() || !graph_modes.fine_fast.empty() ||
+            graph_modes.node_times || dump_ir) {
+            die("--lite, --fine, --fine-fast, --iree, --xla, --halide*, "
+                "--node-times and --dump-ir are for .gc files");
         }
         if (!interpreted && !compiled) {
             die("give --interpreted, --compiled, or both");
@@ -1298,19 +1447,25 @@ int main(int argc, char **argv)
         }
         EvmCase const c{
             .code = read_hex(input),
+            .deploy = deploy,
             .storage = storage ? read_storage(*storage)
                                : std::vector<std::pair<bytes32_t, bytes32_t>>{},
+            .accounts = accounts
+                            ? read_accounts(*accounts)
+                            : std::vector<std::pair<Address, byte_string>>{},
             .calldata = calldata ? read_hex(*calldata) : byte_string{},
             .gas = gas,
             .expected =
                 expect ? std::optional{read_hex(*expect)} : std::nullopt};
         print_environment(cpu);
         std::printf(
-            "bytecode %s: %zu bytes, %zu storage slots, calldata %zu bytes, "
-            "%s, gas %lld\n",
+            "bytecode %s: %zu bytes%s, %zu storage slots, %zu other "
+            "accounts, calldata %zu bytes, %s, gas %lld\n",
             input.filename().c_str(),
             c.code.size(),
+            deploy ? " of creation code" : "",
             c.storage.size(),
+            c.accounts.size(),
             c.calldata.size(),
             revision_name.c_str(),
             static_cast<long long>(gas));
@@ -1324,11 +1479,12 @@ int main(int argc, char **argv)
             die("--compiled is for .bc files; give --lite, --iree, --xla or "
                 "--halide*");
         }
-        if (!interpreted && !graph_modes.lite && !graph_modes.iree &&
+        if (!interpreted && !graph_modes.lite && graph_modes.fine.empty() &&
+            graph_modes.fine_fast.empty() && !graph_modes.iree &&
             !graph_modes.xla && !graph_modes.halide &&
             graph_modes.halide_schedulers.empty()) {
-            die("give one or more of --interpreted, --lite, --iree, --xla, "
-                "--halide*");
+            die("give one or more of --interpreted, --lite, --fine, "
+                "--fine-fast, --iree, --xla, --halide*");
         }
         if (graph_modes.node_times && !interpreted && !graph_modes.lite) {
             die("--node-times times the interpreter and the lite compiler; "

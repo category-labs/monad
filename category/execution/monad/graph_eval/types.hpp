@@ -27,15 +27,15 @@ MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
 
 enum class Dtype : uint8_t
 {
-    int8 = 0,
-    uint8,
-    int16,
+    uint8 = 0,
     uint16,
-    int32,
     uint32,
-    int64,
     uint64,
-    Last_valid_dtype = uint64,
+    int8,
+    int16,
+    int32,
+    int64,
+    Last_valid_dtype = int64,
 };
 
 constexpr size_t N_DTYPES = static_cast<size_t>(Dtype::Last_valid_dtype) + 1;

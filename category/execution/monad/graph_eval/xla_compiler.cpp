@@ -563,8 +563,8 @@ std::string XlaCompiler::hlo_wrap64(
     if (!dtype_signed(to)) {
         return hlo_convert(bits, to, shape);
     }
-    auto const same_width =
-        static_cast<Dtype>(static_cast<uint8_t>(to) + 1); // The unsigned one
+    // The unsigned one: a dtype's id is 4 * signed + log2(bytes)
+    auto const same_width = static_cast<Dtype>(static_cast<uint8_t>(to) & 3);
     return bitcast(hlo_convert(bits, same_width, shape), to);
 }
 
@@ -1169,9 +1169,10 @@ XlaCompiler::xla_op(QDivOp const &op, std::vector<std::string> const &values)
                 if (!sign) {
                     return hlo_convert(x, dtype, shape);
                 }
-                // To the unsigned dtype of the same width, then reinterpreted
+                // To the unsigned dtype of the same width (a dtype's id is
+                // 4 * signed + log2(bytes)), then reinterpreted
                 Dtype const same_width =
-                    static_cast<Dtype>(static_cast<uint8_t>(dtype) + 1);
+                    static_cast<Dtype>(static_cast<uint8_t>(dtype) & 3);
                 std::string const as_unsigned =
                     from == Dtype::uint64 ? x : bitcast(x, u64_shape);
                 if (dtype == Dtype::int64) {

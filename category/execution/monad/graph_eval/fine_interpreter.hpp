@@ -58,8 +58,6 @@ struct ScalarRegisters;
 class FineInterpreter
 {
     Finecode const &finecode_;
-    // The bytes the Finecode was validated from, which Literals point into
-    std::span<uint8_t const> const code_;
     State &state_;
     std::span<TensorInput const> const inputs_;
     // The caller's storage, for storage references, under DELEGATECALL only
@@ -75,19 +73,17 @@ class FineInterpreter
     Result<void> check_inputs() const;
     Result<void> load_inputs();
 
-    // Each runs the op whose params start `code`, the bytecode after its
+    // Each runs the op whose params start at `code`, the bytecode after its
     // opcode, for node `id`, and moves `code` past it
     Result<void>
-    run_scalar(std::span<uint8_t const> &code, size_t id, ScalarRegisters &);
-    Result<void> run_op(
-        FineOp op, std::span<uint8_t const> &code, size_t id,
-        ScalarRegisters &);
+    run_scalar(uint8_t const *&code, size_t id, ScalarRegisters &);
+    Result<void>
+    run_op(FineOp op, uint8_t const *&code, size_t id, ScalarRegisters &);
 
 public:
     FineInterpreter(
-        Finecode const &, std::span<uint8_t const> code, State &,
-        std::span<TensorInput const> inputs, CallerStorage *,
-        std::optional<size_t> output_count, uint8_t *arena);
+        Finecode const &, State &, std::span<TensorInput const> inputs,
+        CallerStorage *, std::optional<size_t> output_count, uint8_t *arena);
 
     Result<GraphOutputs> run();
 };

@@ -317,4 +317,85 @@ inline Result<void> expect_next(std::span<uint8_t const> &input)
     return outcome::success();
 }
 
+template <typename T>
+[[gnu::always_inline]] inline T take(uint8_t const *&code) = delete;
+
+template <dtype_t T>
+[[gnu::always_inline]] inline T take(uint8_t const *&code)
+{
+    std::remove_cv_t<T> result{};
+    std::memcpy(&result, code, sizeof(result));
+    code += sizeof(T);
+    return result;
+}
+
+template <>
+[[gnu::always_inline]] inline Dtype take<Dtype>(uint8_t const *&code)
+{
+    return static_cast<Dtype>(take<std::underlying_type_t<Dtype>>(code));
+}
+
+template <>
+[[gnu::always_inline]] inline Shape take<Shape>(uint8_t const *&code)
+{
+    auto const rank = take<uint8_t>(code);
+    std::array<uint16_t, MAX_RANK> dimensions{};
+    for (size_t i = 0; i < rank; i++) {
+        dimensions[i] = take<uint16_t>(code);
+    }
+    return Shape::checked(rank, dimensions).assume_value();
+}
+
+template <>
+[[gnu::always_inline]] inline TensorType take<TensorType>(uint8_t const *&code)
+{
+    auto const dtype = take<Dtype>(code);
+    auto const shape = take<Shape>(code);
+    return TensorType::checked(dtype, shape).assume_value();
+}
+
+template <>
+[[gnu::always_inline]] inline Address take<Address>(uint8_t const *&code)
+{
+    Address address;
+    std::memcpy(address.bytes, code, sizeof(address.bytes));
+    code += sizeof(address.bytes);
+    return address;
+}
+
+template <typename T>
+[[gnu::always_inline]] inline void skip(uint8_t const *&code) = delete;
+
+template <dtype_t T>
+[[gnu::always_inline]] inline void skip(uint8_t const *&code)
+{
+    code += sizeof(T);
+}
+
+template <>
+[[gnu::always_inline]] inline void skip<Dtype>(uint8_t const *&code)
+{
+    skip<std::underlying_type_t<Dtype>>(code);
+}
+
+template <>
+[[gnu::always_inline]] inline void skip<Shape>(uint8_t const *&code)
+{
+    auto const rank = take<uint8_t>(code);
+    code += size_t{rank} * sizeof(uint16_t);
+}
+
+template <>
+[[gnu::always_inline]] inline void skip<TensorType>(uint8_t const *&code)
+{
+    skip<Dtype>(code);
+    skip<Shape>(code);
+}
+
+[[gnu::always_inline]] inline void
+skip_bytes(uint8_t const *&code, size_t bytes)
+{
+    code += bytes;
+}
+
 MONAD_GRAPH_EVAL_NAMESPACE_END

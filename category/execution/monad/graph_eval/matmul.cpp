@@ -16,6 +16,7 @@
 // This file is compiled with -march=znver4, for AVX-512 with VNNI, which every
 // validator's CPU has; see category/execution/CMakeLists.txt
 
+#include "category/execution/monad/graph_eval/unaligned.hpp"
 #include <category/core/assert.h>
 #include <category/execution/monad/graph_eval/config.hpp>
 #include <category/execution/monad/graph_eval/matmul.hpp>
@@ -318,6 +319,81 @@ void matmul_any(
     }
 }
 
+template <typename Sum, typename T>
+using shift_t = std::conditional_t<
+    std::is_signed_v<T>,
+    std::conditional_t<sizeof(Sum) == 8, int64_t, __int128>, Sum>;
+
+template <typename Sum, typename T>
+using wide_t =
+    std::conditional_t<2 * sizeof(T) <= sizeof(Sum), shift_t<Sum, T>, Sum>;
+
+template <typename Sum, size_t C, typename T, typename Out>
+[[gnu::always_inline]] inline void dot_columns(
+    unaligned_t<T> const *const xi, unaligned_t<T> const *const y,
+    size_t const k, size_t const n, size_t const j, unsigned const bits,
+    Out *const out)
+{
+    using Wide = wide_t<Sum, T>;
+    Sum sums[C] = {};
+    for (size_t p = 0; p < k; p++) {
+        // Sign-extends an int8, as intended
+        auto const a =
+            static_cast<Wide>(T{xi[p]}); // NOLINT(bugprone-signed-char-misuse)
+        auto const *const row = y + p * n + j;
+#pragma GCC unroll 4
+        for (size_t c = 0; c < C; c++) {
+            sums[c] += static_cast<Sum>(a * static_cast<Wide>(T{row[c]}));
+        }
+    }
+#pragma GCC unroll 4
+    for (size_t c = 0; c < C; c++) {
+        out[j + c] =
+            static_cast<Out>(static_cast<shift_t<Sum, T>>(sums[c]) >> bits);
+    }
+}
+
+template <typename Sum, typename T, typename Out>
+[[gnu::noinline]] void qmatmul_any(
+    uint8_t const *const x_data, uint8_t const *const y_data, size_t const m,
+    size_t const k, size_t const n, unsigned const bits, Out *const out)
+{
+    auto const *const x = as_elements<T>(x_data);
+    auto const *const y = as_elements<T>(y_data);
+    if (n == 1) {
+        // A column: each row's dot product with it, both read contiguously,
+        // which GCC vectorizes, as matmul.cpp's matvec_generic
+        using Wide = wide_t<Sum, T>;
+        using Product = std::conditional_t<
+            sizeof(T) <= 2,
+            std::conditional_t<std::is_signed_v<T>, int32_t, uint32_t>,
+            Wide>;
+        for (size_t i = 0; i < m; i++) {
+            auto const *__restrict const row = x + i * k;
+            auto const *__restrict const column = y;
+            Sum sum = 0;
+            for (size_t p = 0; p < k; p++) {
+                auto const product = static_cast<Product>(
+                    static_cast<Product>(T{row[p]}) *
+                    static_cast<Product>(T{column[p]}));
+                sum += static_cast<Sum>(static_cast<Wide>(product));
+            }
+            out[i] =
+                static_cast<Out>(static_cast<shift_t<Sum, T>>(sum) >> bits);
+        }
+        return;
+    }
+    for (size_t i = 0; i < m; i++) {
+        size_t j = 0;
+        for (; j + 4 <= n; j += 4) {
+            dot_columns<Sum, 4, T>(x + i * k, y, k, n, j, bits, out + i * n);
+        }
+        for (; j < n; j++) {
+            dot_columns<Sum, 1, T>(x + i * k, y, k, n, j, bits, out + i * n);
+        }
+    }
+}
+
 MONAD_GRAPH_EVAL_ANONYMOUS_NAMESPACE_END
 
 MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
@@ -402,6 +478,29 @@ void matmul(Tensor const &x, Tensor const &y, unsigned const bits, Tensor &out)
             else {
                 matmul_any<unsigned __int128>(
                     x_data, y_data, m, k, n, bits, out_data);
+            }
+        });
+    });
+}
+
+
+// Sums in 64 bits when every bit that reaches out is below bit 64, as
+// matmul() chooses, else in 128
+void qmatmul(Tensor const &x, Tensor const &y, unsigned const bits, Tensor &out)
+{
+    size_t const m = x.type().shape().dimensions()[0];
+    size_t const k = x.type().shape().dimensions()[1];
+    size_t const n = y.type().shape().dimensions()[1];
+    visit_dtype(x.type().dtype(), [&]<typename T>() {
+        visit_dtype(out.type().dtype(), [&]<typename Out>() {
+            Out *const outs = reinterpret_cast<Out *>(out.data());
+            if (sizeof(T) <= 2 || bits + 8 * sizeof(Out) <= 64) {
+                qmatmul_any<uint64_t, T>(
+                    x.data(), y.data(), m, k, n, bits, outs);
+            }
+            else {
+                qmatmul_any<unsigned __int128, T>(
+                    x.data(), y.data(), m, k, n, bits, outs);
             }
         });
     });

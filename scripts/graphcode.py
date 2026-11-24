@@ -67,6 +67,7 @@ point, with the number of fractional bits given, at most 63.
     qexp(a, 48)  qinvsqrt(a, 48)    e^a and 1/sqrt(a), rounding down and
                                     saturating; qinvsqrt fails if a has an
                                     element that isn't positive
+    isqrt(a)                        an unsigned dtype; floor(sqrt(a))
     gather(a, indices, 0)           the slices of a along an axis at each of
                                     indices, of any dtype, as numpy.take does;
                                     fails if an index isn't in [0, length)
@@ -201,6 +202,7 @@ OPS = {
     "qinvsqrt": ("QInvSqrt", ["node", "bits"]),
     "gather": ("Gather", ["node", "node", "axis"]),
     "concat": ("Concat", ["node", "node", "axis"]),
+    "isqrt": ("ISqrt", ["node"]),
 }
 
 

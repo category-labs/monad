@@ -41,4 +41,6 @@ void matmul_i8(Tensor const &x, Tensor const &y, Tensor &out);
 // `bits`, rounding down, and wrapped to out's dtype
 void matmul(Tensor const &x, Tensor const &y, unsigned bits, Tensor &out);
 
+void qmatmul(Tensor const &x, Tensor const &y, unsigned const bits, Tensor &out);
+
 MONAD_GRAPH_EVAL_NAMESPACE_END

@@ -91,7 +91,7 @@ class ScalarValidator
 
     Result<Dtype> read_fn_arg()
     {
-        BOOST_OUTCOME_TRY(auto const id, read_next<uint8_t>(code_));
+        BOOST_OUTCOME_TRY(auto const id, read_next<register_id_t>(code_));
         if (id >= MAX_SCALAR_REGISTERS) {
             return GraphEvalError::GraphValidationError;
         }
@@ -122,7 +122,7 @@ class ScalarValidator
     [[gnu::always_inline]]
     Result<size_t> read_output_register()
     {
-        BOOST_OUTCOME_TRY(auto const reg, read_next<uint8_t>(code_));
+        BOOST_OUTCOME_TRY(auto const reg, read_next<register_id_t>(code_));
         if (reg < first_gp_reg() || reg >= MAX_SCALAR_REGISTERS) {
             return GraphEvalError::GraphValidationError;
         }
@@ -183,10 +183,10 @@ Result<Dtype> ScalarValidator::validate_fn<FineFn::Mul>(
 
 template <>
 Result<Dtype> ScalarValidator::validate_fn<FineFn::Divc>(
-    int64_t const &denominator,
+    uint64_t const &denominator,
     std::array<Dtype, FnArity<FineFn::Divc>> const &args)
 {
-    if (denominator == 0 || denominator == int64_t{-1}) {
+    if (denominator == 0) {
         return GraphEvalError::DivisionByZero;
     }
     return args[0];
@@ -348,8 +348,6 @@ Result<std::tuple<std::span<uint8_t const>, Dtype>> ScalarValidator::validate()
 class FinecodeValidator
 {
     std::span<uint8_t const> code_;
-    // The code's first byte, which a Literal's location is an offset from
-    uint8_t const *const code_begin_;
     // Always a multiple of TENSOR_DATA_ALIGNMENT, as is ARENA_SIZE
     size_t memory_usage_ = 0;
     // Set by validate_op for an op whose result needs no memory of its own,
@@ -359,7 +357,6 @@ class FinecodeValidator
 
     explicit FinecodeValidator(std::span<uint8_t const> const code)
         : code_(code)
-        , code_begin_(code.data())
     {
     }
 
@@ -380,7 +377,7 @@ class FinecodeValidator
     [[gnu::always_inline]]
     Result<TensorType const *> read_op_input()
     {
-        BOOST_OUTCOME_TRY(auto const input_id, read_next<uint16_t>(code_));
+        BOOST_OUTCOME_TRY(auto const input_id, read_next<node_id_t>(code_));
         if (input_id >= finecode_.tensor_types_.size()) {
             return GraphEvalError::InvalidInput;
         }
@@ -482,8 +479,9 @@ FinecodeValidator::validate_op<FineOp::Literal>(TensorType const &ty)
     if (code_.size() < ty.size_bytes()) {
         return GraphEvalError::GraphValidationError;
     }
-    // The data stays in the code, unaligned, where the interpreter reads it
-    auto const offset = static_cast<size_t>(code_.data() - code_begin_);
+    // The data stays in the code, unaligned, where the interpreter reads it;
+    // its location is an offset from the start of the ops
+    auto const offset = static_cast<size_t>(code_.data() - finecode_.ops_);
     if (offset >= FINE_CODE_LOCATION) {
         return GraphEvalError::GraphValidationError;
     }
@@ -688,7 +686,7 @@ Result<void> FinecodeValidator::validate()
         return GraphEvalError::GraphValidationError;
     }
     for (size_t i = 0; i < n_outputs; i++) {
-        BOOST_OUTCOME_TRY(auto const output_id, read_next<uint16_t>(code_));
+        BOOST_OUTCOME_TRY(auto const output_id, read_next<node_id_t>(code_));
         finecode_.output_ids_.push_back(output_id);
     }
 

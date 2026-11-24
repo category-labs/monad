@@ -41,6 +41,7 @@
 #include <iostream>
 #include <map>
 #include <ostream>
+#include <string>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -60,14 +61,11 @@ TYPED_TEST_SUITE(ManyNestedUpdates, TrieTypes);
 
 inline ::boost::json::value read_corpus(std::string_view const suffix)
 {
-    auto path = std::filesystem::path(__FILE__);
-    path = std::filesystem::path(path).remove_filename() /
-           (path.filename()
-                .replace_extension()
-                .string()
-                .append("_")
-                .append(suffix)
-                .append(".json"));
+    // Not derived from __FILE__, which is relative when the compiler is given
+    // relative paths (ccache base_dir, -ffile-prefix-map).
+    std::filesystem::path const path =
+        std::filesystem::path{MONAD_MPT_TEST_CORPUS_DIR} /
+        ("many_nested_updates_" + std::string{suffix} + ".json");
     std::cout << "  read_corpus(" << path << ")" << std::endl;
     std::ifstream s(path);
     MONAD_ASSERT(s);

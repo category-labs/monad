@@ -26,8 +26,8 @@ This script finds usages of all explicit trait instantiation macros:
 
 It checks for overlaps according to these rules:
 
-1. Use of `EXPLICIT_EVM_TRAITS*` in one TU and either `EXPLICIT_MONAD_TRAITS*`
-   or `EXPLICIT_EVM_TRAITS*` in another TU (with the same argument to the macro) is an overlap.
+1. The same trait family must not be instantiated in multiple TUs, except for
+   the two runtime-specific Monad dispatcher functions listed below.
 2. Duplicated uses of the same macro with the same argument in the same file is an overlap.
 3. It's explicitly OK to use `EXPLICIT_MONAD_TRAITS*` and `EXPLICIT_EVM_TRAITS*`
    with the same argument in different TUs.
@@ -55,6 +55,27 @@ class MacroUsage(NamedTuple):
     line_number: int
     macro_name: str
     argument: str
+
+
+# monad_execution and monad_domain link different precompile dispatcher objects.
+MONAD_RUNTIME_FUNCTIONS = {"check_call_precompile", "is_precompile"}
+MONAD_RUNTIME_DISPATCHERS = {
+    os.path.realpath(os.path.join(os.path.dirname(__file__), "..", path))
+    for path in (
+        "category/execution/monad/monad_precompiles.cpp",
+        "category/execution/domain/domains_precompiles.cpp",
+    )
+}
+
+
+def is_alternative_monad_dispatcher(argument: str, usages: List[MacroUsage]) -> bool:
+    return (
+        argument in MONAD_RUNTIME_FUNCTIONS
+        and len({usage.file_path for usage in usages}) == 2
+        and {os.path.realpath(usage.file_path) for usage in usages}
+        == MONAD_RUNTIME_DISPATCHERS
+        and all(usage.macro_name == "EXPLICIT_MONAD_TRAITS" for usage in usages)
+    )
 
 
 def check_header_file(file_path: str, pattern: re.Pattern, root_path: str) -> None:
@@ -194,8 +215,7 @@ def check_overlaps(
         if len(by_file) <= 1:
             continue  # All usages in same file, no cross-TU overlap
 
-        # Check for Rule 1: EXPLICIT_EVM_TRAITS in one TU and
-        # (EXPLICIT_MONAD_TRAITS or EXPLICIT_EVM_TRAITS) in another TU
+        # Track which trait families each translation unit instantiates.
         files_with_evm = set()
         files_with_monad = set()
 
@@ -242,6 +262,13 @@ def check_overlaps(
         # Check if EXPLICIT_MONAD_TRAITS (or EXPLICIT_TRAITS) is used in multiple files
         # This also violates Rule 1
         if len(files_with_monad) > 1:
+            monad_usages = [
+                usage
+                for file_path in files_with_monad
+                for usage in by_file[file_path]
+            ]
+            if is_alternative_monad_dispatcher(argument, monad_usages):
+                continue
             rel_paths = [get_relative_path(f, root_path) for f in files_with_monad]
             errors.append(
                 f"OVERLAP: {argument} has Monad traits instantiated in multiple TUs: "

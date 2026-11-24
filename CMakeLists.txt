@@ -206,7 +206,10 @@ configure_file(cmake/test_resource_data.h.in test/test_resource_data.h @ONLY)
 
 set(TOP_CURRENT_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}")
 function(monad_add_test target)
-  cmake_parse_arguments(AT "NO_CUSTOM_MAIN" "" "PROPERTIES" ${ARGN})
+  cmake_parse_arguments(AT "NO_CUSTOM_MAIN" "RUNTIME" "PROPERTIES" ${ARGN})
+  if(NOT AT_RUNTIME)
+    set(AT_RUNTIME monad_execution)
+  endif()
   # Exactly one main provider per branch: gtest's main for NO_CUSTOM_MAIN,
   # otherwise monad_gtest_main. Linking both would make the resolution of
   # main order-dependent between the two archives.
@@ -224,7 +227,7 @@ function(monad_add_test target)
   target_compile_options(${target} PUBLIC "-Wno-missing-field-initializers"
   )# TODO
   target_include_directories(${target} PRIVATE "${TOP_CURRENT_BINARY_DIR}/test")
-  target_link_libraries(${target} monad_execution GTest::GTest)
+  target_link_libraries(${target} ${AT_RUNTIME} GTest::GTest)
   gtest_discover_tests(
     ${target} DISCOVERY_MODE PRE_TEST
     PROPERTIES ENVIRONMENT ASAN_OPTIONS=abort_on_error=1 ENVIRONMENT
@@ -304,29 +307,33 @@ add_subdirectory("category/rpc")
 add_subdirectory("category/statesync")
 add_subdirectory("category/vm")
 
-# Assemble all the object libraries into complete monad runtime library,
-# monad_execution
-add_library(monad_execution)
-target_link_libraries(
-  monad_execution
-  PUBLIC monad_core
-         monad_async
-         monad_trie
-         monad_execution_ethereum
-         monad_execution_native
-         monad_execution_runloop
-         monad_precompiles
-         monad_rpc
-         monad_statesync
-         monad-vm
-         monad-vm-compiler
-         monad-vm-evm
-         monad-vm-interpreter
-         monad-vm-runtime
-         monad-vm-utils)
+# Each runtime links its own Monad precompile dispatcher.
+foreach(runtime monad_execution monad_domain)
+  add_library(${runtime})
+  target_link_libraries(
+    ${runtime}
+    PUBLIC monad_core
+           monad_async
+           monad_trie
+           monad_execution_ethereum
+           monad_execution_native
+           monad_execution_runloop
+           monad_precompiles
+           monad_rpc
+           monad_statesync
+           monad-vm
+           monad-vm-compiler
+           monad-vm-evm
+           monad-vm-interpreter
+           monad-vm-runtime
+           monad-vm-utils)
+endforeach()
+target_link_libraries(monad_execution PUBLIC monad_precompiles_native)
+target_link_libraries(monad_domain PUBLIC monad_domain_execution)
 
 if(BUILD_SHARED_LIBS)
   target_link_options(monad_execution PRIVATE LINKER:-z,defs)
+  target_link_options(monad_domain PRIVATE LINKER:-z,defs)
 endif()
 
 include(cmake/c_headers.cmake)

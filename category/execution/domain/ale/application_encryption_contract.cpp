@@ -13,24 +13,34 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
 #include <category/core/assert.h>
+#include <category/core/byte_string.hpp>
+#include <category/core/bytes.hpp>
+#include <category/core/config.hpp>
 #include <category/core/int.hpp>
 #include <category/core/keccak.hpp>
+#include <category/core/result.hpp>
+#include <category/execution/domain/ale/application_encryption_context.hpp>
 #include <category/execution/domain/ale/application_encryption_contract.hpp>
 #include <category/execution/domain/ale/application_encryption_error.hpp>
 #include <category/execution/domain/hpke.hpp>
 #include <category/execution/ethereum/core/contract/abi_decode.hpp>
+#include <category/execution/ethereum/core/contract/abi_decode_error.hpp>
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
 #include <category/execution/ethereum/core/contract/abi_signatures.hpp>
 #include <category/execution/ethereum/core/contract/big_endian.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/traits.hpp>
 
 #include <boost/outcome/try.hpp>
 
 #include <algorithm>
+#include <cstdint>
 #include <limits>
 #include <string_view>
+#include <utility>
 
 MONAD_ANONYMOUS_NAMESPACE_BEGIN
 
@@ -234,7 +244,7 @@ Result<byte_string> ApplicationEncryptionContract::precompile_seal_message(
         return AbiDecodeError::InvalidEncoding;
     }
     BOOST_OUTCOME_TRY(
-        byte_string_view plaintext, abi_decode_dynamic_bytes_tail(input));
+        byte_string_view const plaintext, abi_decode_dynamic_bytes_tail(input));
     if (!input.empty()) {
         return AbiDecodeError::InputTooLong;
     }
@@ -302,9 +312,9 @@ Result<byte_string> ApplicationEncryptionContract::precompile_seal(
     BOOST_OUTCOME_TRY(abi_decode_fixed<u256_be>(input));
 
     BOOST_OUTCOME_TRY(
-        byte_string_view blob, abi_decode_dynamic_bytes_tail(input));
+        byte_string_view const blob, abi_decode_dynamic_bytes_tail(input));
     BOOST_OUTCOME_TRY(
-        byte_string_view app_ctx, abi_decode_dynamic_bytes_tail(input));
+        byte_string_view const app_ctx, abi_decode_dynamic_bytes_tail(input));
 
     if (!input.empty()) {
         return AbiDecodeError::InputTooLong;
@@ -355,10 +365,10 @@ Result<byte_string> ApplicationEncryptionContract::precompile_unseal(
     BOOST_OUTCOME_TRY(abi_decode_fixed<u256_be>(input));
 
     BOOST_OUTCOME_TRY(
-        [[maybe_unused]] byte_string_view sealed_blob,
+        [[maybe_unused]] byte_string_view const sealed_blob,
         abi_decode_dynamic_bytes_tail(input));
     BOOST_OUTCOME_TRY(
-        byte_string_view app_ctx, abi_decode_dynamic_bytes_tail(input));
+        byte_string_view const app_ctx, abi_decode_dynamic_bytes_tail(input));
 
     // Unseal (sealed_blob, app_ctx) for msg_sender on the executing domain.
     // TODO: Specify the length-based gas schedule. Input excludes the selector.

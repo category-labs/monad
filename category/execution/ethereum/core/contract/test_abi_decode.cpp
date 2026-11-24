@@ -24,6 +24,7 @@
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
 #include <category/execution/ethereum/core/contract/big_endian.hpp>
 
+#include <cstddef>
 #include <limits>
 
 #include <gtest/gtest.h>

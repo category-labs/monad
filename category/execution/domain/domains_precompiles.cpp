@@ -13,13 +13,19 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
+#include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
 #include <category/core/likely.h>
 #include <category/execution/domain/ale/application_encryption_contract.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
+#include <category/vm/evm/call_status.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
+#include <category/vm/evm/message.hpp>
+#include <category/vm/evm/result.hpp>
+#include <category/vm/evm/traits.hpp>
 #include <category/vm/evm/tx_context.hpp>
 
 #include <cstdint>

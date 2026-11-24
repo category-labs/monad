@@ -29,6 +29,7 @@
 #include <category/vm/evm/message.hpp>
 #include <category/vm/evm/result.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/evm/tx_context.hpp>
 #include <cstdint>
 #include <optional>
 

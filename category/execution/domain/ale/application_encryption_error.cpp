@@ -21,6 +21,8 @@
     #include <boost/outcome/experimental/status-code/generic_code.hpp>
 #endif
 
+#include <initializer_list>
+
 BOOST_OUTCOME_SYSTEM_ERROR2_NAMESPACE_BEGIN
 
 std::initializer_list<quick_status_code_from_enum<

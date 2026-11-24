@@ -13,41 +13,58 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <category/core/address.hpp>
 #include <category/core/assert.h>
+#include <category/core/byte_string.hpp>
+#include <category/core/bytes.hpp>
 #include <category/core/hex.hpp>
+#include <category/core/int.hpp>
+#include <category/core/runtime/uint256.hpp>
 #include <category/execution/domain/ale/application_encryption_contract.hpp>
 #include <category/execution/domain/ale/application_encryption_error.hpp>
 #include <category/execution/domain/hpke.hpp>
 #include <category/execution/ethereum/block_hash_buffer.hpp>
 #include <category/execution/ethereum/core/contract/abi_decode.hpp>
+#include <category/execution/ethereum/core/contract/abi_decode_error.hpp>
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
+#include <category/execution/ethereum/execute_message.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/ethereum/state_host.hpp>
 #include <category/execution/ethereum/trace/call_tracer.hpp>
+#include <category/execution/ethereum/trace/state_tracer.hpp>
 #include <category/execution/ethereum/tx_context.hpp>
 #include <category/execution/monad/chain/monad_chain.hpp>
 #include <category/execution/monad/reserve_balance/reserve_balance_contract.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
 #include <category/mpt/db.hpp>
+#include <category/vm/evm/access_status.hpp>
+#include <category/vm/evm/call_status.hpp>
+#include <category/vm/evm/message.hpp>
+#include <category/vm/evm/monad/revision.h>
+#include <category/vm/evm/result.hpp>
+#include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
 
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
 
 #include <cstddef>
-#include <cstdlib>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <ios>
 #include <memory>
 #include <optional>
+#include <stdlib.h>
 #include <string>
 #include <string_view>
 #include <unistd.h>
 #include <utility>
+#include <variant>
 #include <vector>
 
 using namespace monad;

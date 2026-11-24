@@ -65,6 +65,7 @@ MONAD_AWS_RENAME(PEM_read_bio_PrivateKey)
 
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
+#include <category/core/bytes.hpp>
 #include <category/core/likely.h>
 #include <category/core/result.hpp>
 #include <category/execution/domain/config.hpp>

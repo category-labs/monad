@@ -28,6 +28,10 @@ struct RingConfig
     unsigned entries{128}; //!< Number of submission queue entries
     //! If set, turn on kernel polling of submission ring on the specified CPU
     std::optional<unsigned> sq_thread_cpu{};
+    //! Number of completion queue entries; 0 leaves the kernel default of
+    //! twice the submission queue. Must cover every operation that can be in
+    //! flight at once, as the kernel may drop completions that do not fit.
+    unsigned cq_entries{0};
 
     RingConfig() = default;
 

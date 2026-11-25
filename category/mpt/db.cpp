@@ -26,6 +26,7 @@
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
+#include <category/core/config.hpp>
 #include <category/core/io/buffers.hpp>
 #include <category/core/io/ring.hpp>
 #include <category/core/log.hpp>
@@ -54,6 +55,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <bit>
 #include <cerrno>
 #include <chrono>
 #include <condition_variable>
@@ -78,6 +80,22 @@
 
 #undef BLOCK_SIZE // without this concurrentqueue.h gets sad
 #include <concurrentqueue.h>
+
+MONAD_ANONYMOUS_NAMESPACE_BEGIN
+
+// Size the completion queue to hold every read that can be in flight
+monad::io::RingConfig read_ring_config(
+    unsigned const uring_entries, std::optional<unsigned> const sq_thread_cpu,
+    unsigned const rd_buffers, unsigned const concurrent_read_io_limit)
+{
+    monad::io::RingConfig config{uring_entries, sq_thread_cpu};
+    unsigned const max_in_flight =
+        concurrent_read_io_limit > 0 ? concurrent_read_io_limit : rd_buffers;
+    config.cq_entries = std::bit_ceil(2 * max_in_flight);
+    return config;
+}
+
+MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_MPT_NAMESPACE_BEGIN
 
@@ -121,8 +139,9 @@ AsyncIOContext::AsyncIOContext(ReadOnlyOnDiskDbConfig const &options)
             async::storage_pool::mode::open_existing,
             pool_options};
     }()}
-    , read_ring{monad::io::RingConfig{
-          options.uring_entries, options.sq_thread_cpu}}
+    , read_ring{read_ring_config(
+          options.uring_entries, options.sq_thread_cpu, options.rd_buffers,
+          options.concurrent_read_io_limit)}
     , buffers{io::make_buffers_for_read_only(
           read_ring, options.rd_buffers,
           async::AsyncIO::MONAD_IO_BUFFERS_READ_SIZE)}
@@ -164,7 +183,9 @@ AsyncIOContext::AsyncIOContext(OnDiskDbConfig const &options)
                            : async::storage_pool::mode::truncate,
             pool_options};
     }()}
-    , read_ring{{options.uring_entries, options.sq_thread_cpu}}
+    , read_ring{read_ring_config(
+          options.uring_entries, options.sq_thread_cpu, options.rd_buffers,
+          options.concurrent_read_io_limit)}
     , write_ring{io::RingConfig{options.wr_buffers}}
     , buffers{io::make_buffers_for_segregated_read_write(
           read_ring, *write_ring, options.rd_buffers, options.wr_buffers,

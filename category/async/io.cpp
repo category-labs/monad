@@ -458,10 +458,10 @@ void AsyncIO::submit_request_(
 void AsyncIO::poll_uring_while_submission_queue_full_()
 {
     auto *ring = &uring_.get_ring();
-    // if completions is getting close to full, drain some to prevent
-    // completions getting dropped, which would break everything.
-    auto const max_cq_entries =
-        eager_completions_ ? 0 : (ring->cq.ring_entries >> 1);
+    // Drain completions once more are waiting than the submission queue
+    // holds (any at all in eager mode), so they do not pile up and get
+    // dropped, which would break everything.
+    auto const max_cq_entries = eager_completions_ ? 0 : ring->sq.ring_entries;
     while (io_uring_cq_ready(ring) > max_cq_entries) {
         if (!poll_uring_(false, 0)) {
             break;

@@ -520,7 +520,7 @@ mod test {
 
         let snapshot = SnapshotEventRing::<ExecEventDecoder>::new_from_zstd_bytes(
             SNAPSHOT_NAME,
-            SNAPSHOT_ZSTD_BYTES,
+            &crate::test_utils::upgrade_legacy_snapshot(SNAPSHOT_ZSTD_BYTES),
             None,
         )
         .unwrap();

@@ -58,6 +58,9 @@ void init_txn_header_start(
         .sender = sender,
         .txn_header = {
             .txn_type = std::bit_cast<monad_c_transaction_type>(txn.type),
+            .monad_access_list_present = txn.monad_access_list_present ||
+                                         (txn.type == TransactionType::monad &&
+                                          !txn.access_list.empty()),
             .chain_id = txn.sc.chain_id.value_or(0),
             .nonce = txn.nonce,
             .gas_limit = txn.gas_limit,
@@ -347,7 +350,7 @@ void record_txn_header_events(
                     .r = e.sc.signature.r,
                     .s = e.sc.signature.s,
                 },
-            .authority = authorities[index].value_or({}),
+            .authority = authorities[index].value_or(Address{}),
             .is_valid_authority = authorities[index].has_value()};
         exec_recorder->commit(auth_list_entry);
         ++index;

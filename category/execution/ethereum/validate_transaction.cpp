@@ -52,6 +52,15 @@ Result<void> static_validate_transaction(
 {
     static_assert(traits::evm_rev() >= EvmRevision::Berlin);
 
+    // The phase-0 native profile shares Alloy's outer chain-ID and fee bounds.
+    // Keep structural decoding and event storage wide.
+    if (tx.type == TransactionType::monad &&
+        ((tx.sc.chain_id &&
+          *tx.sc.chain_id > std::numeric_limits<uint64_t>::max()) ||
+         tx.max_fee_per_gas >> 128 || tx.max_priority_fee_per_gas >> 128)) {
+        return TransactionError::NativeQuantityOverflow;
+    }
+
     // EIP-155
     if (MONAD_LIKELY(tx.sc.chain_id.has_value())) {
         if (MONAD_UNLIKELY(tx.sc.chain_id.value() != chain_id)) {
@@ -66,7 +75,10 @@ Result<void> static_validate_transaction(
         (tx.type == TransactionType::eip1559 &&
          traits::eip_1559_header_active()) ||
         (tx.type == TransactionType::eip4844 && traits::eip_4844_active()) ||
-        (tx.type == TransactionType::eip7702 && traits::eip_7702_active());
+        (tx.type == TransactionType::eip7702 && traits::eip_7702_active()) ||
+        (tx.type == TransactionType::monad && is_monad_trait_v<traits> &&
+         traits::evm_rev() >= EvmRevision::Prague && chain_id == 20143 &&
+         tx.sc.chain_id.has_value());
     if (MONAD_UNLIKELY(!type_supported)) {
         return TransactionError::TypeNotSupported;
     }

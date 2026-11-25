@@ -38,6 +38,7 @@ enum class TransactionType : char
     eip4844,
     eip7702,
     LAST,
+    monad = 0x40,
 };
 
 struct AccessEntry
@@ -85,6 +86,8 @@ struct Transaction
     uint256_t value{};
     std::optional<Address> to{};
     TransactionType type{};
+    // Feature presence is part of the canonical transaction commitment.
+    bool monad_access_list_present{};
     byte_string data{};
     AccessList access_list{};
     uint256_t max_priority_fee_per_gas{};

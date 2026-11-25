@@ -60,7 +60,8 @@ TestStateRef<page_encoded> JsonState::make_test_state() const
     test_state->trie_db.finalize(0, NULL_HASH_BLAKE3);
     auto const hash = keccak256(
         rlp::encode_block_header(test_state->trie_db.read_eth_header()));
-    MONAD_ASSERT(to_bytes(hash) == init_state_hash.value());
+    MONAD_ASSERT(
+        !init_state_hash.has_value() || to_bytes(hash) == *init_state_hash);
 
     return test_state;
 }

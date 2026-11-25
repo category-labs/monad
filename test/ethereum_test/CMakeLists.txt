@@ -63,6 +63,11 @@ add_test_fixtures(
   "https://github.com/monad-developers/execution-specs/releases/download/tests-monad@v1.3.0/fixtures_monad.tar.gz"
   a19da286fec086ecd82ce06057e0afa3219d4f28bc1e07a3adffad2e1bd4757e)
 
+add_test_fixtures(
+  MonadMainnetReplayFixtures
+  "https://github.com/category-labs/monad/releases/download/mainnet-replay-v1/fixtures_monad_mainnet_replay.tar.zst"
+  183279b9cae654cbc90d550fdf8cae09ce1459563a2f8b2b4b4e95a8552c0ada)
+
 add_executable(monad-ethereum-test)
 target_link_libraries(monad-ethereum-test PRIVATE GTest::gtest monad-test-utils)
 target_sources(
@@ -147,6 +152,11 @@ add_monad_test(FORK MONAD_NINE)
 add_monad_test(FORK MONAD_TEN)
 
 add_monad_test(FORK MONAD_NEXT_AMSTERDAM)
+
+# 300 blocks sampled from Monad mainnet, with the state each one touches.
+add_sharded_test(monad_mainnet_replay
+                 COMMAND monad-ethereum-test --blockchain-tests
+                         ${CMAKE_BINARY_DIR}/src/MonadMainnetReplayFixtures)
 
 add_ethereum_test(FORK berlin)
 add_ethereum_test(FORK london)

@@ -29,6 +29,8 @@ add_library(
   "domains_precompiles.cpp"
   "execute_domain_block.cpp"
   "execute_domain_block.hpp"
+  "executor.cpp"
+  "executor.hpp"
   "hpke.cpp"
   "hpke.hpp"
   "inputs.hpp"
@@ -36,6 +38,8 @@ add_library(
   "l1_source.hpp"
   "scan_domain_inputs.cpp"
   "scan_domain_inputs.hpp"
+  "spoke.cpp"
+  "spoke.hpp"
   "system_transaction.cpp"
   "system_transaction.hpp")
 

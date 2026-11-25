@@ -127,7 +127,7 @@ struct NodeId {
 
 struct Graph {
     magic: [uint8:2];            // magic == GRAPH_MAGIC
-    version: uint8;              // version == 1
+    version: uint8;              // version == GRAPH_VERSION
     n_inputs: uint8;             // 0 <= n_inputs <= MAX_GRAPH_INPUTS
     inputs: [Type:n_inputs];
     n_outputs: uint8;            // 0 <= n_outputs <= MAX_GRAPH_OUTPUTS
@@ -141,15 +141,15 @@ Graphcode encodes a computation graph as a list of topologically ordered nodes, 
 `n_inputs + n_ops - 1`. Nodes 0 to `n_inputs - 1` are the graph's inputs, with node `n_inputs`
 corresponding to `ops[0]`, `n_inputs+1` corresponding to `ops[1]` and so forth.
 
-Each entry in `outputs` must be a node id below `n_inputs + n_ops`. An output may be a graph input, and the
+Each entry in `outputs` MUST be a node id below `n_inputs + n_ops`. An output may be a graph input, and the
 same node may appear more than once in `outputs`.
 
 #### Operation Definition
 
 The `ops` list in a graph definition contains the operation nodes.
 Each operation node consists of an opcode, a list of operation-specific parameters and a list of inputs which
-must match the arity of the operation. Each input is provided as a node id, and
-must refer only to previous nodes (either inputs or operations). That is, the inputs of `ops[i]` must
+MUST match the arity of the operation. Each input is provided as a node id, and
+MUST refer only to previous nodes (either inputs or operations). That is, the inputs of `ops[i]` MUST
 be in the range `[0, n_inputs + i)`.
 
 ```
@@ -238,7 +238,7 @@ ARITY(Concat) = 2
 
 ```
 struct PARAMETERS(QMatMul) {
-    frac_bits: uint8; // 0 <= frac_bits <= bit_width(out_dtype)
+    frac_bits: uint8; // 0 <= frac_bits <= 64
     out_dtype: Dtype;
 }
 
@@ -354,6 +354,8 @@ A `Scalar` node is valid if, in addition:
 - Every fn's operands have a dtype combination listed for it in [Scalar Evaluation](#scalar-evaluation).
   An input register has its input's dtype, a constant register its constant's dtype, and a
   destination the result dtype of the fn that last wrote it.
+- Every `QMul`, `QDiv`, `QExp` and `QInvSqrt` fn's `frac_bits` is at most $\mathrm{bit\_width}(T)$,
+  where $T$ is the dtype of the fn's operands.
 
 The node's output type is `output_shape` with the result dtype of the last fn.
 
@@ -374,7 +376,7 @@ Graphcode is deployed as the code of an ordinary account, by a contract-creation
 `CREATE` or `CREATE2`, subject to the usual code size limit and TBD code deposit cost.
 
 [EIP-3541](https://eips.ethereum.org/EIPS/eip-3541) makes contract creation fail when the code it
-would deploy starts with the byte `0xef`. This MIP makes one exception: creation does not fail for
+would deploy starts with the byte `0xef`. This MIP adds one exception: creation does not fail for
 that reason when the code starts with `GRAPH_MAGIC`. Code that starts with `0xef` followed by any
 other byte is still rejected. Whether creation should also fail when code that starts with
 `GRAPH_MAGIC` is not valid graphcode is an open question (see [Open Questions](#open-questions)).
@@ -400,18 +402,18 @@ interface IGraphEval {
     enum Location { Literal, CodeRef }
 
     struct TensorInput {
-        TensorType type;
+        TensorType ty;
         Location location;
         bytes payload;
     }
 
     struct Tensor {
-        TensorType type;
+        TensorType ty;
         bytes data;
     }
 
     function evalGraph(address graph, TensorInput[] calldata inputs)
-        external view returns (Tensor[] memory outputs);
+        external returns (Tensor[] memory outputs);
 }
 ```
 
@@ -426,12 +428,12 @@ In a `TensorInput` declaration, `byteOrder` is 0 for big-endian and 1 for little
 | Literal    | the tensor's elements                                                                                |
 | TensorRef  | `abi.encode(address account, uint32 offset)`: a tensor in `account`'s code, as in the `TensorRef` op |
 
-A payload of the wrong length for the provided `location` and `type` causes the call to revert.
+A payload of the wrong length for the provided `location` and `ty` causes the call to fail.
 
 `evalGraph` returns the graph's outputs, in the order of its `outputs` list, as `Tensor`s whose
 elements are big-endian.
 
-The precompile MUST be invoked via `CALL` that sends no value. A `CALL` must send no value.
+The precompile MUST be invoked via `CALL` that sends no value.
 `STATICCALL`, `DELEGATECALL`, `CALLCODE`, and calls through an
 [EIP-7702](https://eips.ethereum.org/EIPS/eip-7702) delegation to the precompile's address MUST fail,
 as with the MIP-4 reserve balance introspection precompile.
@@ -441,7 +443,7 @@ as with the MIP-4 reserve balance introspection precompile.
 A call to `evalGraph(graph, inputs)` evaluates the graphcode in the code of the account `graph`:
 
 1. The code of `graph` MUST be valid graphcode according to the conditions in [Graphcode](#graphcode).
-2. `inputs` MUST have exactly `graph.n_inputs` elements. For each `i`, the type `inputs[i].type`
+2. `inputs` MUST have exactly `graph.n_inputs` elements. For each `i`, the type `inputs[i].ty`
    MUST be equal to `graph.inputs[i]`.
 3. The ops are evaluated in order, each from the outputs of earlier nodes, as
    [Operation Evaluation](#operation-evaluation) describes.
@@ -455,7 +457,7 @@ and MAY fuse, split or compile them, provided the outputs are those this section
 
 Every failure condition in this specification must be checked, including in nodes whose outputs
 are unused. Implementations MAY check conditions before or during evaluation, in any order, provided
-they preserve the specified success of failure outcome.
+they preserve the specified success or failure outcome.
 
 A failed call reverts and consumes all gas given to it. The revert data is the same for every
 failure (see [Open Questions](#open-questions)): callers cannot tell why or when a call failed, and
@@ -722,18 +724,31 @@ fn's `frac_bits`:
 | `ISqrt`    | unsigned `T`      | `T`      | $\lfloor \sqrt{a} \rfloor$                                                             |
 
 Intermediate values are exact: `Div`'s and `QDiv`'s quotients and `QMul`'s product are computed
-without overflow before wrapping, so, for example, `Div` of $T$'s minimum by $-1$ is $T$'s minimum.
-**CLAUDE: make the above `Div` more concrete, pick say int8 or int64**
+without overflow before wrapping, so, for example, `Div` of the `Int8` value $-128$ by $-1$ is
+$\mathrm{wrap}_{\mathrm{Int8}}(128) = -128$.
 
 #### `QExp` semantics
 
-**CLAUDE: rewrite this into pseudocode**
-`QExp` is defined by the following algorithm, not by the real exponential. Write $a / 2^f$, with 64
-fractional bits, as $k \ln 2 + r$ with $r$ in $[0, \ln 2)$, using $\ln 2$ with 64 fractional bits
-rounded to nearest. $e^r$ is the sum of the first 21 terms of its Taylor series, evaluated by
-Horner's rule with 63 fractional bits, rounding down at each step, with coefficients
-$\lfloor 2^{63} / n! \rfloor$. The result is $e^r \cdot 2^{k + f}$, rounded down, and saturates at
-$T$'s maximum. A normative reference implementation will be provided in the assets of this MIP.
+`QExp` is defined by the following algorithm, not by the real exponential. It writes $a / 2^f$ as
+$k \ln 2 + r$, with $r$ in $[0, \ln 2)$, sums the first 21 terms of the Taylor series of $e^r$ by
+Horner's rule, and multiplies the sum by $2^{k + f}$. All arithmetic is exact, with no overflow, and
+`floor` rounds toward negative infinity.
+
+```
+QExp(a, f):                        // a of dtype T, 0 <= f <= bit_width(T)
+    LN2 = 0xb17217f7d1cf79ac       // ln 2 with 64 fractional bits, rounded to nearest
+    C[n] = floor(2^63 / n!)        // for 0 <= n <= 20: 1 / n! with 63 fractional bits
+    v = a * 2^(64 - f)             // a / 2^f with 64 fractional bits
+    k = floor(v / LN2)
+    r = v - k * LN2                // 0 <= r < LN2
+    s = floor(r / 2)               // r with 63 fractional bits
+    p = C[20]
+    for n = 19 down to 0:          // p ends as e^r with 63 fractional bits
+        p = C[n] + floor(p * s / 2^63)
+    return min(floor(p * 2^(k + f - 63)), max_T)   // max_T is T's maximum
+```
+
+A normative reference implementation will be provided in the assets of this MIP.
 
 ### Gas Costs
 
@@ -745,7 +760,7 @@ The gas schedule is not yet set, but we outline a general structure here.
   defining its own cost function.
   - `Scalar` nodes price in a flat cost, an extra for any input that needs broadcasting, and
     a per-fn gas cost paid for each output element, for a total fee of
-    $$G_{base} + G_{input_broadcasting} + (\sum_i G_{fns[i]}) \times size(output)$$
+    $$G_{opcode} + G_{inputbroadcasting} + (\sum_i G_{fns[i]}) \times size(output)$$
     It is likely that an efficient pricing scheme will involve fractional gas costs for cheap fns.
 - Arena memory, per byte of the graph's allocated memory size (see [Memory](#memory)).
 
@@ -768,7 +783,7 @@ Graphcode's header follows the one that
 two magic bytes starting with `0xef`, then a version byte. EOF's magic is `0xef 0x00`, and
 graphcode's is `0xef 0x7f`. As in EIP-3540, the first version is 1.
 [EIP-3541](https://eips.ethereum.org/EIPS/eip-3541) reserved code starting with `0xef` for such
-formats, which EIP-7702's delegation indicator `0xef0100` also uses. Because of it, no account on
+formats, which [EIP-7702](https://eips.ethereum.org/EIPS/eip-7702)'s delegation indicator `0xef0100` also uses. Because of it, no account on
 Monad has code starting with `0xef 0x7f`, so no existing contract can be mistaken for graphcode, and
 graphcode run as EVM code fails at once.
 
@@ -800,6 +815,7 @@ stores a linear layer's weights (output features by input features).
 
 ### Static shapes and a bounded, never-reused arena
 
+**TODO SELF: rewrite**
 With static shapes, every tensor's type, the whole memory layout and all of the evaluation cost
 except references follow from the graph's code, so an implementation can work them out before any
 call. The memory usage of a graph can be worked out by hand by the author (the sum of the outputs' rounded sizes) is one that a graph's author can work
@@ -809,24 +825,30 @@ of consensus.
 ### Scalar nodes
 
 Elementwise arithmetic is common and easy to optimize; an implementation may, for example, choose
-to AOT-compile long chains of elementiwse operations into compact blocks of SIMD instructions.
+to AOT-compile long chains of elementwise operations into compact blocks of SIMD instructions.
 Unlike whole-tensor operations such as matrix multiplication, elementwise operations can be streamed
 over input tensors without ever materializing intermediate results, reducing memory pressure.
 Reifying elementwise pipelines into `Scalar` nodes serves two purposes:
-* It reduces memory pressure on the end-user by guaranteeing that implementations can stream execution
+* It reduces memory usage of many common graphs by guaranteeing that implementations can stream execution
   without relying on complex analysis passes.
 * It makes it easier for implementations to optimize aggressively. The register count and the 64-bit
-  limit on dtypes mean each register fits in a general-purpose register of x86-64, so a node with
+  limit on dtypes mean each graph register fits in a general-purpose register of x86-64, so a node with
   single-element tensors can be compiled by emitting a fixed instruction sequence per fn, effectively
   moving register allocation off the hot path. A prototype template compiler built this way on asmjit
   took about 0.5 µs per node plus 9 to 11 ns per instruction emitted.
 
 ### No storage access
 
-The precompile reads only code and writes nothing. A contract that keeps tensors in storage reads
-them with `SLOAD` and passes them as literal inputs, and stores outputs with `SSTORE`, paying the usual
-costs. This keeps the precompile free of `DELEGATECALL`-only rules, static-context checks and rules on
-overlapping writes, and lets `evalGraph` be called from `view` functions.
+Graphcode has no storage-access operations. A contract that keeps tensors in storage must read
+them with `SLOAD` and pass them as literal inputs, and then store the outputs with `SSTORE`.
+
+An earlier draft also let a call refer to the caller's storage, allowing inputs and outputs to
+be passed by reference to the caller's storage. That design would let storage accesses be priced
+more cheaply. A contract pays the [EIP-2929](https://eips.ethereum.org/EIPS/eip-2929) cold access cost for every slot it reads or writes, even under
+MIP-8, which charges an `SSTORE`'s page write once per page. A precompile that
+knows in advance every slot a call reads and writes could instead charge for access once per page,
+without extending the EVM with page-level storage operations. This approach was left out to minimize
+complexity but can be added later as a new endpoint, with no change to graphcode.
 
 ### A single failure outcome
 
@@ -901,4 +923,4 @@ not touch storage.
 
 ## Copyright
 
-Copyright and related rights waived via [CC0](../LICENSE.md).
+Copyright and related rights waived via CC0.

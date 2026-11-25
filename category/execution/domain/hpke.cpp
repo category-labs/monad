@@ -27,14 +27,20 @@ MONAD_AWS_RENAME(BIO_new_file)
 MONAD_AWS_RENAME(ERR_clear_error)
 MONAD_AWS_RENAME(ERR_get_error)
 
+MONAD_AWS_RENAME(EVP_HPKE_CTX_cleanup)
 MONAD_AWS_RENAME(EVP_HPKE_CTX_free)
+MONAD_AWS_RENAME(EVP_HPKE_CTX_max_overhead)
 MONAD_AWS_RENAME(EVP_HPKE_CTX_new)
 MONAD_AWS_RENAME(EVP_HPKE_CTX_open)
+MONAD_AWS_RENAME(EVP_HPKE_CTX_seal)
 MONAD_AWS_RENAME(EVP_HPKE_CTX_setup_recipient)
+MONAD_AWS_RENAME(EVP_HPKE_CTX_setup_sender_with_seed_for_testing)
+MONAD_AWS_RENAME(EVP_HPKE_CTX_zero)
 
 MONAD_AWS_RENAME(EVP_HPKE_KEY_free)
 MONAD_AWS_RENAME(EVP_HPKE_KEY_init)
 MONAD_AWS_RENAME(EVP_HPKE_KEY_new)
+MONAD_AWS_RENAME(EVP_HPKE_KEY_private_key)
 
 MONAD_AWS_RENAME(EVP_PKEY_free)
 MONAD_AWS_RENAME(EVP_PKEY_get_raw_private_key)
@@ -43,6 +49,10 @@ MONAD_AWS_RENAME(EVP_PKEY_id)
 MONAD_AWS_RENAME(EVP_hpke_aes_128_gcm)
 MONAD_AWS_RENAME(EVP_hpke_hkdf_sha256)
 MONAD_AWS_RENAME(EVP_hpke_x25519_hkdf_sha256)
+MONAD_AWS_RENAME(EVP_sha256)
+
+MONAD_AWS_RENAME(HKDF)
+MONAD_AWS_RENAME(HMAC)
 
 MONAD_AWS_RENAME(OPENSSL_cleanse)
 
@@ -55,6 +65,7 @@ MONAD_AWS_RENAME(PEM_read_bio_PrivateKey)
 
 #include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
+#include <category/core/bytes.hpp>
 #include <category/core/likely.h>
 #include <category/core/result.hpp>
 #include <category/execution/domain/config.hpp>
@@ -64,8 +75,12 @@ MONAD_AWS_RENAME(PEM_read_bio_PrivateKey)
 
 #include <openssl/base.h>
 #include <openssl/bio.h>
+#include <openssl/curve25519.h>
+#include <openssl/digest.h>
 #include <openssl/err.h>
 #include <openssl/evp.h>
+#include <openssl/hkdf.h>
+#include <openssl/hmac.h>
 #include <openssl/hpke.h>
 #include <openssl/mem.h>
 #include <openssl/pem.h>
@@ -87,6 +102,7 @@ namespace
     constexpr uint8_t FRAME_VERSION = 0x01;
     constexpr std::string_view TRANSACTION_AD_LABEL =
         "monad-transaction-encryption-v1";
+    constexpr std::string_view SEED_AD_LABEL = "monad-seed-key-v1";
 
     constexpr size_t KEY_SIZE = 32; // X25519 private and public keys
     constexpr size_t TAG_SIZE = 16;
@@ -112,6 +128,16 @@ namespace
                 "allocation failed while opening a private domain transaction");
         }
         return PrivateDomainHpkeError::DecryptionFailed;
+    }
+
+    Result<byte_string> encryption_failed()
+    {
+        while (uint32_t const error = ERR_get_error()) {
+            MONAD_ASSERT(
+                ERR_GET_REASON(error) != ERR_R_MALLOC_FAILURE,
+                "allocation failed while sealing a private domain payload");
+        }
+        return PrivateDomainHpkeError::EncryptionFailed;
     }
 
     Result<byte_string> hpke_base_open(
@@ -190,12 +216,12 @@ namespace
             return PrivateDomainHpkeError::KeyLoadFailed;
         }
 
-        std::array<uint8_t, KEY_SIZE> raw{};
+        std::array<uint8_t, X25519_PRIVATE_KEY_LEN> raw{};
         size_t raw_size = raw.size();
         if (EVP_PKEY_id(pkey.get()) != EVP_PKEY_X25519 ||
             EVP_PKEY_get_raw_private_key(pkey.get(), raw.data(), &raw_size) !=
                 1 ||
-            raw_size != KEY_SIZE) {
+            raw_size != raw.size()) {
             OPENSSL_cleanse(raw.data(), raw.size());
             ERR_clear_error();
             return PrivateDomainHpkeError::InvalidPrivateKey;
@@ -227,6 +253,38 @@ void PrivateDomainKey::PrivateKeyDeleter::operator()(
 PrivateDomainKey::PrivateDomainKey(PrivateKeyPtr key)
     : key_{std::move(key)}
 {
+    // HKDF-SHA256(raw private key, zero salt, abi.encode(label)), 32 bytes.
+    // Use the stored private bytes without additional X25519 clamping.
+    AbiEncoder encoder;
+    encoder.add_string(SEED_AD_LABEL);
+    auto const info = encoder.encode_final();
+
+    std::array<uint8_t, X25519_PRIVATE_KEY_LEN> raw{};
+    size_t raw_size = 0;
+    MONAD_ASSERT(
+        EVP_HPKE_KEY_private_key(
+            key_.get(), raw.data(), &raw_size, raw.size()) == 1 &&
+            raw_size == raw.size(),
+        "failed to export the private domain key");
+
+    bytes32_t const salt{};
+    int const result = HKDF(
+        seed_.bytes,
+        sizeof(seed_.bytes),
+        EVP_sha256(),
+        raw.data(),
+        raw.size(),
+        salt.bytes,
+        sizeof(salt.bytes),
+        info.data(),
+        info.size());
+    OPENSSL_cleanse(raw.data(), raw.size());
+    MONAD_ASSERT(result == 1, "failed to derive the private domain Seal seed");
+}
+
+PrivateDomainKey::~PrivateDomainKey()
+{
+    OPENSSL_cleanse(seed_.bytes, sizeof(seed_.bytes));
 }
 
 byte_string private_domain_transaction_ad(uint64_t const domain_chain_id)
@@ -263,6 +321,77 @@ Result<byte_string> PrivateDomainKey::open_transaction(
     return plaintext;
 }
 
+Result<byte_string> PrivateDomainKey::seal(
+    byte_string_view const plaintext, byte_string_view const pubkey,
+    byte_string_view const ad, byte_string_view const randomness_input) const
+{
+    ERR_clear_error();
+    bssl::ScopedEVP_HPKE_CTX ctx;
+
+    std::array<uint8_t, X25519_PUBLIC_VALUE_LEN> enc{};
+    size_t enc_size = 0;
+    bytes32_t randomness;
+    unsigned int randomness_size = 0;
+    // Construct the ephemeral private key
+    auto *const hmac = HMAC(
+        EVP_sha256(),
+        seed_.bytes,
+        sizeof(seed_.bytes),
+        randomness_input.data(),
+        randomness_input.size(),
+        randomness.bytes,
+        &randomness_size);
+    if (MONAD_UNLIKELY(!hmac || randomness_size != sizeof(randomness.bytes))) {
+        OPENSSL_cleanse(randomness.bytes, sizeof(randomness.bytes));
+        return encryption_failed();
+    }
+
+    // AWS-LC accepts the ephemeral X25519 private input directly here.
+    int const setup_result = EVP_HPKE_CTX_setup_sender_with_seed_for_testing(
+        ctx.get(),
+        enc.data(),
+        &enc_size,
+        enc.size(),
+        EVP_hpke_x25519_hkdf_sha256(),
+        EVP_hpke_hkdf_sha256(),
+        EVP_hpke_aes_128_gcm(),
+        pubkey.data(),
+        pubkey.size(),
+        nullptr,
+        0,
+        randomness.bytes,
+        sizeof(randomness.bytes));
+    OPENSSL_cleanse(randomness.bytes, sizeof(randomness.bytes));
+    if (MONAD_UNLIKELY(setup_result != 1 || enc_size != enc.size())) {
+        return encryption_failed();
+    }
+
+    size_t const overhead = EVP_HPKE_CTX_max_overhead(ctx.get());
+    byte_string payload{enc.data(), enc.size()};
+    if (MONAD_UNLIKELY(
+            plaintext.size() > payload.max_size() - enc.size() - overhead)) {
+        return PrivateDomainHpkeError::EncryptionFailed;
+    }
+    payload.resize(enc.size() + plaintext.size() + overhead);
+    size_t ciphertext_size = 0;
+    if (MONAD_UNLIKELY(
+            EVP_HPKE_CTX_seal(
+                ctx.get(),
+                payload.data() + enc.size(),
+                &ciphertext_size,
+                payload.size() - enc.size(),
+                plaintext.data(),
+                plaintext.size(),
+                ad.data(),
+                ad.size()) != 1)) {
+        return encryption_failed();
+    }
+    MONAD_ASSERT(
+        ciphertext_size == payload.size() - enc.size(),
+        "unexpected HPKE ciphertext size");
+    return payload;
+}
+
 Result<PrivateDomainKey>
 PrivateDomainKey::load(std::filesystem::path const &path)
 {
@@ -288,7 +417,8 @@ quick_status_code_from_enum<
         {PrivateDomainHpkeError::InvalidPrivateKey,
          "invalid private domain X25519 key",
          {errc::invalid_argument}},
-        {PrivateDomainHpkeError::DecryptionFailed, "decryption failed", {}}};
+        {PrivateDomainHpkeError::DecryptionFailed, "decryption failed", {}},
+        {PrivateDomainHpkeError::EncryptionFailed, "encryption failed", {}}};
     return mappings;
 }
 

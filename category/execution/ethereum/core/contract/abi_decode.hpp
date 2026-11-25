@@ -24,6 +24,7 @@
 #include <category/execution/ethereum/core/contract/abi_decode_error.hpp>
 #include <category/execution/ethereum/core/contract/big_endian.hpp>
 
+#include <cstddef>
 #include <cstring>
 #include <type_traits>
 
@@ -78,6 +79,27 @@ abi_decode_dynamic_bytes_tail(byte_string_view &enc)
 
     byte_string_fixed<N> output{};
     std::memcpy(output.data(), enc.data(), N);
+    enc.remove_prefix(padded);
+    return output;
+}
+
+// For precompiles where the payload length is only known dynamically.
+inline Result<byte_string_view>
+abi_decode_dynamic_bytes_tail(byte_string_view &enc)
+{
+    BOOST_OUTCOME_TRY(auto const value, abi_decode_fixed<u256_be>(enc));
+    if (MONAD_UNLIKELY(enc.size() < value.native())) {
+        return AbiDecodeError::InputTooShort;
+    }
+
+    size_t const length = static_cast<size_t>(value.native());
+    size_t const padding = (-length) & 31uz;
+    if (MONAD_UNLIKELY(enc.size() - length < padding)) {
+        return AbiDecodeError::InputTooShort;
+    }
+
+    size_t const padded = length + padding;
+    byte_string_view output = enc.substr(0, length);
     enc.remove_prefix(padded);
     return output;
 }

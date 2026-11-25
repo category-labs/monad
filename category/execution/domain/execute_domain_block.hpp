@@ -73,12 +73,14 @@ BlockHeader domain_execution_inputs(
 // domain rules, which exist from MONAD_TEN: an earlier revision aborts.
 // `block_state` holds the domain's state as of the previous
 // block, `header` is the block's domain_execution_inputs, and `block_hashes`
-// serves BLOCKHASH. Returns one receipt per transaction.
+// serves BLOCKHASH. The encryption context and its key must outlive execution.
+// Returns one receipt per transaction.
 template <Traits traits>
     requires is_monad_trait_v<traits>
 Result<std::vector<Receipt>> execute_domain_block(
     DomainChain const &chain, DerivedDomainBlock const &,
     BlockHeader const &header, BlockState &,
-    BlockHashBuffer const &block_hashes, fiber::PriorityPool &);
+    BlockHashBuffer const &block_hashes, fiber::PriorityPool &,
+    ApplicationEncryptionContext const *encryption_context = nullptr);
 
 MONAD_DOMAIN_NAMESPACE_END

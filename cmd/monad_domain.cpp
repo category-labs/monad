@@ -29,12 +29,14 @@
 #include <category/core/keccak.hpp>
 #include <category/core/log.hpp>
 #include <category/core/result.hpp>
+#include <category/execution/domain/ale/application_encryption_context.hpp>
 #include <category/execution/domain/chain_id.hpp>
 #include <category/execution/domain/deriver.hpp>
 #include <category/execution/domain/domain_block.hpp>
 #include <category/execution/domain/executor.hpp>
 #include <category/execution/domain/hpke.hpp>
 #include <category/execution/domain/l1_source.hpp>
+#include <category/execution/domain/spoke.hpp>
 #include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/log_level_map.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
@@ -183,6 +185,8 @@ try {
         return EXIT_FAILURE;
     }
     Address const hub = *from_hex<Address>(hub_hex);
+    ApplicationEncryptionContext const encryption_context{
+        domain_chain_id, key.value(), domain::DOMAIN_SPOKE};
 
     // The domain db is created when the domain's genesis is derived.
     std::optional<fiber::PriorityPool> priority_pool;
@@ -217,7 +221,13 @@ try {
         priority_pool.emplace(EXECUTION_THREADS, EXECUTION_FIBERS);
         vm.emplace();
         executor.emplace(
-            *chain, domain_chain_id, hub, *domain_db, *vm, *priority_pool);
+            *chain,
+            domain_chain_id,
+            hub,
+            *domain_db,
+            *vm,
+            *priority_pool,
+            &encryption_context);
         LOG_INFO(
             "executing private domain {} into {}, from domain block {}",
             domain_chain_id,

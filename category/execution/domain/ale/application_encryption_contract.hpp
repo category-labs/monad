@@ -1,0 +1,120 @@
+// Copyright (C) 2025-26 Category Labs, Inc.
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+#pragma once
+
+#include <category/core/address.hpp>
+#include <category/core/byte_string.hpp>
+#include <category/core/bytes.hpp>
+#include <category/core/config.hpp>
+#include <category/core/result.hpp>
+#include <category/execution/domain/ale/application_encryption_context.hpp>
+#include <category/vm/evm/traits.hpp>
+
+#include <cstdint>
+#include <utility>
+
+MONAD_NAMESPACE_BEGIN
+
+class State;
+struct CallTracerBase;
+
+// TODO(cmcl): Stub precompile address
+constexpr Address ALE_CA = Address{0x1A7E};
+
+// Encoding the associated data
+// abi.encode("monad-sealed-blob-v1", dest_domain, to, app_ctx).
+byte_string sealed_blob_ad(
+    uint64_t dest_domain, Address const &to, byte_string_view app_ctx);
+
+// abi.encode("monad-precompile-randomness-v1", address tx_origin,
+// uint64 tx_nonce, uint64 seal_index, address caller, bytes destination_key,
+// bytes ad, bytes blob).
+byte_string sealed_blob_randomness_input(
+    Address const &tx_origin, uint64_t tx_nonce, uint64_t seal_index,
+    Address const &caller, bytes32_t const &destination_key,
+    byte_string_view ad, byte_string_view blob);
+
+// abi.encode("monad-cross-domain-encryption-v1", uint64 source_domain,
+// uint64 destination_domain, uint256 sequence_number).
+byte_string sealed_message_ad(
+    uint64_t source_domain, uint64_t destination_domain,
+    uint256_t const &sequence_number);
+
+// abi.encode("monad-cross-domain-randomness-v1", uint256 sequence_number,
+// address from, address tx_origin, uint64 tx_nonce, bytes destination_key,
+// bytes ad, bytes plaintext). `from` is the original sender in the plaintext.
+byte_string sealed_message_randomness_input(
+    uint256_t const &sequence_number, Address const &from,
+    Address const &tx_origin, uint64_t tx_nonce,
+    bytes32_t const &destination_key, byte_string_view ad,
+    byte_string_view plaintext);
+
+// Read a destination public key from the spoke's storage. The spoke address
+// and mapping slot must come from trusted execution configuration.
+Result<bytes32_t> read_destination_key(
+    State &state, Address const &spoke, uint256_t const &mapping_slot,
+    uint64_t destination_domain);
+
+class ApplicationEncryptionContract
+{
+    State &state_;
+    [[maybe_unused]] CallTracerBase &call_tracer_;
+    [[maybe_unused]] bool log_native_transfers_;
+    ApplicationEncryptionContext const &encryption_context_;
+    Address const tx_origin_;
+    uint64_t const tx_nonce_;
+
+    uint64_t next_seal_index();
+
+public:
+    static constexpr uint256_t SPOKE_VIEWING_KEYS_SLOT{7};
+    // Transient slot under ALE_CA, shared by blob Seal calls in a transaction.
+    static constexpr bytes32_t SEAL_INDEX_SLOT{0};
+
+    ApplicationEncryptionContract(
+        State &, CallTracerBase &, ApplicationEncryptionContext const &,
+        Address const &tx_origin, uint64_t tx_nonce,
+        bool log_native_transfers = false);
+
+    using PrecompileFunc =
+        Result<byte_string> (ApplicationEncryptionContract::*)(
+            byte_string_view, Address const &, uint256_be_t const &);
+
+    template <Traits traits>
+    static std::pair<PrecompileFunc, uint64_t>
+    precompile_dispatch(byte_string_view &);
+
+    // IDomainEncryption.sealMessage(uint64,uint256,bytes) -> bytes.
+    // The spoke supplies its sequence number and abi.encode(from, to, body).
+    Result<byte_string> precompile_seal_message(
+        byte_string_view input, Address const &msg_sender,
+        uint256_be_t const &msg_value);
+
+    // seal(bytes,uint64,address,bytes) -> bytes.
+    // Returns ABI bytes containing enc || ciphertext || tag.
+    Result<byte_string> precompile_seal(
+        byte_string_view input, Address const &msg_sender,
+        uint256_be_t const &msg_value);
+
+    Result<byte_string> precompile_unseal(
+        byte_string_view input, Address const &msg_sender,
+        uint256_be_t const &msg_value);
+
+    Result<byte_string> precompile_fallback(
+        byte_string_view, Address const &, uint256_be_t const &);
+};
+
+MONAD_NAMESPACE_END

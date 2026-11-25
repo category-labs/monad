@@ -44,7 +44,13 @@ add_library(
   "spoke.cpp"
   "spoke.hpp"
   "system_transaction.cpp"
-  "system_transaction.hpp")
+  "system_transaction.hpp"
+  # application-level encryption precompile
+  "ale/application_encryption_contract.cpp"
+  "ale/application_encryption_contract.hpp"
+  "ale/application_encryption_context.hpp"
+  "ale/application_encryption_error.cpp"
+  "ale/application_encryption_error.hpp")
 
 target_link_libraries(
   monad_domain_execution

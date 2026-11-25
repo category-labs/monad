@@ -19,7 +19,9 @@
 #include <category/core/bytes.hpp>
 #include <category/core/fiber/priority_pool.hpp>
 #include <category/core/int.hpp>
+#include <category/core/monad_exception.hpp>
 #include <category/core/result.hpp>
+#include <category/execution/domain/chain_id.hpp>
 #include <category/execution/domain/config.hpp>
 #include <category/execution/domain/derive_domain_block.hpp>
 #include <category/execution/domain/execute_domain_block.hpp>
@@ -30,6 +32,7 @@
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/execute_block.hpp>
+#include <category/execution/ethereum/execution_modalities.hpp>
 #include <category/execution/ethereum/metrics/block_metrics.hpp>
 #include <category/execution/ethereum/process_requests.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
@@ -47,6 +50,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <variant>
 #include <vector>
 
@@ -57,6 +61,9 @@ DomainChain::DomainChain(
     : l1_chain_{l1_chain}
     , domain_chain_id_{domain_chain_id}
 {
+    MONAD_ASSERT_THROW(
+        (domain_chain_id & NETWORK_CHAIN_ID_MASK) == l1_chain.get_chain_id(),
+        "the private domain is not a domain of the L1 chain");
 }
 
 uint256_t DomainChain::get_chain_id() const
@@ -73,6 +80,30 @@ GenesisState DomainChain::get_genesis_state() const
 {
     return GenesisState{};
 }
+
+template <Traits traits>
+    requires is_monad_trait_v<traits>
+ChainContext<traits> domain_chain_context(
+    ankerl::unordered_dense::segmented_set<Address> const
+        &senders_and_authorities,
+    std::vector<Address> const &senders,
+    std::vector<std::vector<std::optional<Address>>> const &authorities,
+    ExecutionMode const &mode)
+{
+    // Reserve balance checks, the only users of the earlier blocks' sender
+    // sets, are off in a private domain.
+    static ankerl::unordered_dense::segmented_set<Address> const none;
+    return ChainContext<traits>{
+        .grandparent_senders_and_authorities = none,
+        .parent_senders_and_authorities = none,
+        .senders_and_authorities = senders_and_authorities,
+        .senders = senders,
+        .authorities = authorities,
+        .private_domain = true,
+        .mode = mode};
+}
+
+EXPLICIT_MONAD_TRAITS(domain_chain_context);
 
 template <Traits traits>
     requires is_monad_trait_v<traits>
@@ -143,18 +174,10 @@ Result<std::vector<Receipt>> execute_domain_block(
     }
 
     auto const authorities = recover_authorities(transactions, priority_pool);
-    // Reserve balance checks, the only users of the sender sets, are off in
-    // a private domain.
-    ankerl::unordered_dense::segmented_set<Address> const none;
     auto const senders_and_authorities =
         combine_senders_and_authorities(derived.senders, authorities);
-    ChainContext<traits> const chain_ctx{
-        .grandparent_senders_and_authorities = none,
-        .parent_senders_and_authorities = none,
-        .senders_and_authorities = senders_and_authorities,
-        .senders = derived.senders,
-        .authorities = authorities,
-        .private_domain = true};
+    auto const chain_ctx = domain_chain_context<traits>(
+        senders_and_authorities, derived.senders, authorities);
 
     std::vector<std::unique_ptr<CallTracerBase>> call_tracers{
         transactions.size()};

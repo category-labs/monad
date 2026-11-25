@@ -135,7 +135,8 @@ namespace
             conf,
             tx_exec_num_fibers,
             node_lru_max_mem,
-            dbname.c_str());
+            dbname.c_str(),
+            0);
     }
 
     std::vector<uint8_t> to_vec(byte_string const &bs)
@@ -6345,7 +6346,8 @@ TEST_F(EthCallFixture, eth_simulate_v1_stress_queue_rejection)
         block_conf,
         tx_exec_num_fibers,
         node_lru_max_mem,
-        dbname.string().c_str());
+        dbname.string().c_str(),
+        0);
 
     // Build a minimal valid simulation payload (one call, no overrides).
     Address const sender = ADDR_A;
@@ -10283,12 +10285,21 @@ TEST_F(EthCallFixture, eth_call_discards_oversized_low_gas_trace_on_retry)
 
 namespace
 {
-    monad_executor *create_executor_without_db()
+    // An executor of the L1, or of the private domain `domain_chain_id` if it
+    // is not zero.
+    monad_executor *
+    create_executor_without_db(uint64_t const domain_chain_id = 0)
     {
         monad_executor_pool_config const conf = {1, 2, max_timeout, 1000};
         unsigned const tx_exec_num_fibers = 10;
         return monad_executor_create(
-            conf, conf, conf, tx_exec_num_fibers, node_lru_max_mem, nullptr);
+            conf,
+            conf,
+            conf,
+            tx_exec_num_fibers,
+            node_lru_max_mem,
+            nullptr,
+            domain_chain_id);
     }
 
     void run_eth_call(
@@ -10666,6 +10677,302 @@ TEST(EthCallFixtureNoDb, trace_is_rejected)
         ctx.result->status_code, std::to_underlying(CallStatus::Rejected));
     EXPECT_STREQ(ctx.result->message, "cannot trace without a database");
 
+    monad_executor_destroy(executor);
+}
+
+namespace
+{
+    // A private domain of the devnet.
+    constexpr uint64_t PRIVATE_DOMAIN = (uint64_t{0x51} << 16) | 20143;
+
+    // Adds a contract that returns CHAINID to `state_override`.
+    void add_chain_id_contract(
+        monad_state_override *const state_override, Address const &contract)
+    {
+        // CHAINID PUSH0 MSTORE PUSH1 32 PUSH0 RETURN
+        std::vector<uint8_t> const code{
+            0x46, 0x5f, 0x52, 0x60, 0x20, 0x5f, 0xf3};
+        add_override_address(
+            state_override, contract.bytes, sizeof(contract.bytes));
+        set_override_code(
+            state_override,
+            contract.bytes,
+            sizeof(contract.bytes),
+            code.data(),
+            code.size());
+    }
+}
+
+TEST(EthCallFixtureNoDb, private_domain_call_executes_as_the_domain)
+{
+    static constexpr Address sender =
+        0x00000000000000000000000000000000deadbeef_address;
+    static constexpr Address contract =
+        0xcccccccccccccccccccccccccccccccccccccccc_address;
+
+    for (uint64_t const domain_chain_id : {uint64_t{0}, PRIVATE_DOMAIN}) {
+        SCOPED_TRACE(domain_chain_id);
+        auto *const executor = create_executor_without_db(domain_chain_id);
+        auto *const state_override = monad_state_override_create();
+        add_chain_id_contract(state_override, contract);
+
+        callback_context ctx;
+        run_eth_call(
+            executor,
+            Transaction{.gas_limit = 100'000, .to = contract},
+            BlockHeader{.number = 1000},
+            sender,
+            state_override,
+            ctx);
+
+        ASSERT_EQ(
+            ctx.result->status_code, std::to_underlying(CallStatus::Success));
+        ASSERT_EQ(ctx.result->output_data_len, sizeof(bytes32_t));
+        bytes32_t const expected = store_be_as<bytes32_t>(
+            uint256_t{domain_chain_id == 0 ? 20143 : PRIVATE_DOMAIN});
+        EXPECT_EQ(
+            std::memcmp(
+                ctx.result->output_data,
+                expected.bytes,
+                sizeof(expected.bytes)),
+            0);
+
+        monad_state_override_destroy(state_override);
+        monad_executor_destroy(executor);
+    }
+}
+
+// A private domain charges nothing for gas, so a sender without a balance can
+// offer any gas price there.
+TEST(EthCallFixtureNoDb, private_domain_call_is_gasless)
+{
+    static constexpr Address sender =
+        0x00000000000000000000000000000000deadbeef_address;
+    static constexpr Address contract =
+        0xcccccccccccccccccccccccccccccccccccccccc_address;
+    BlockHeader const header{
+        .number = 1000, .base_fee_per_gas = uint256_t{50'000'000'000}};
+    Transaction const tx{
+        .max_fee_per_gas = uint256_t{50'000'000'000},
+        .gas_limit = 100'000,
+        .to = contract,
+        .type = TransactionType::eip1559};
+
+    for (uint64_t const domain_chain_id : {uint64_t{0}, PRIVATE_DOMAIN}) {
+        SCOPED_TRACE(domain_chain_id);
+        auto *const executor = create_executor_without_db(domain_chain_id);
+        auto *const state_override = monad_state_override_create();
+        add_chain_id_contract(state_override, contract);
+
+        callback_context ctx;
+        run_eth_call(executor, tx, header, sender, state_override, ctx);
+
+        if (domain_chain_id == 0) {
+            EXPECT_EQ(
+                ctx.result->status_code,
+                std::to_underlying(CallStatus::Rejected));
+            EXPECT_STREQ(ctx.result->message, "insufficient balance");
+        }
+        else {
+            EXPECT_EQ(
+                ctx.result->status_code,
+                std::to_underlying(CallStatus::Success));
+        }
+
+        monad_state_override_destroy(state_override);
+        monad_executor_destroy(executor);
+    }
+}
+
+// A private domain has no native token, so a call cannot carry value even
+// from a sender whose balance is overridden.
+TEST(EthCallFixtureNoDb, private_domain_call_with_value_is_rejected)
+{
+    static constexpr Address sender =
+        0x00000000000000000000000000000000deadbeef_address;
+    static constexpr Address recipient =
+        0x00000000000000000000000000000000feedface_address;
+    bytes32_t const balance = store_be_as<bytes32_t>(uint256_t{1_ether});
+
+    for (uint64_t const domain_chain_id : {uint64_t{0}, PRIVATE_DOMAIN}) {
+        SCOPED_TRACE(domain_chain_id);
+        auto *const executor = create_executor_without_db(domain_chain_id);
+        auto *const state_override = monad_state_override_create();
+        add_override_address(
+            state_override, sender.bytes, sizeof(sender.bytes));
+        set_override_balance(
+            state_override,
+            sender.bytes,
+            sizeof(sender.bytes),
+            balance.bytes,
+            sizeof(balance.bytes));
+
+        callback_context ctx;
+        run_eth_call(
+            executor,
+            Transaction{
+                .gas_limit = 100'000,
+                .value = uint256_t{1'000},
+                .to = recipient,
+                .type = TransactionType::eip1559},
+            BlockHeader{.number = 1000},
+            sender,
+            state_override,
+            ctx);
+
+        if (domain_chain_id == 0) {
+            EXPECT_EQ(
+                ctx.result->status_code,
+                std::to_underlying(CallStatus::Success));
+        }
+        else {
+            EXPECT_EQ(
+                ctx.result->status_code,
+                std::to_underlying(CallStatus::Rejected));
+            EXPECT_STREQ(ctx.result->message, "insufficient balance");
+        }
+
+        monad_state_override_destroy(state_override);
+        monad_executor_destroy(executor);
+    }
+}
+
+TEST(EthCallFixtureNoDb, private_domain_rejects_an_ethereum_chain_config)
+{
+    static constexpr Address sender =
+        0x00000000000000000000000000000000deadbeef_address;
+    static constexpr Address recipient =
+        0x00000000000000000000000000000000feedface_address;
+
+    auto *const executor = create_executor_without_db(PRIVATE_DOMAIN);
+    auto *const state_override = monad_state_override_create();
+    Transaction const tx{.gas_limit = 100'000, .to = recipient};
+    BlockHeader const header{.number = 1000};
+    auto const rlp_tx = to_vec(rlp::encode_transaction(tx));
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_sender =
+        to_vec(rlp::encode_address(std::make_optional(sender)));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+    monad_executor_eth_call_submit(
+        executor,
+        CHAIN_CONFIG_ETHEREUM_MAINNET,
+        rlp_tx.data(),
+        rlp_tx.size(),
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_sender.data(),
+        rlp_sender.size(),
+        header.number,
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        state_override,
+        complete_callback,
+        &ctx,
+        NOOP_TRACER,
+        call_tracer_max_size,
+        true);
+    f.get();
+
+    EXPECT_EQ(
+        ctx.result->status_code, std::to_underlying(CallStatus::InternalError));
+    EXPECT_STREQ(
+        ctx.result->message,
+        "a private domain needs a Monad chain configuration");
+
+    monad_state_override_destroy(state_override);
+    monad_executor_destroy(executor);
+}
+
+TEST(EthCallFixtureNoDb, private_domain_trace_is_rejected)
+{
+    auto *const executor = create_executor_without_db(PRIVATE_DOMAIN);
+
+    BlockHeader const header{.number = 256};
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    struct callback_context ctx;
+    boost::fibers::future<void> f = ctx.promise.get_future();
+    monad_executor_run_transactions(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_header.data(),
+        rlp_header.size(),
+        header.number,
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        -1,
+        complete_callback,
+        (void *)&ctx,
+        PRESTATE_TRACER);
+    f.get();
+
+    EXPECT_EQ(
+        ctx.result->status_code, std::to_underlying(CallStatus::Rejected));
+    EXPECT_STREQ(ctx.result->message, "not supported on a private domain");
+
+    monad_executor_destroy(executor);
+}
+
+TEST(EthCallFixtureNoDb, private_domain_eth_simulate_v1_is_rejected)
+{
+    static constexpr Address sender =
+        0x00000000000000000000000000000000deadbeef_address;
+    static constexpr Address recipient =
+        0x00000000000000000000000000000000feedface_address;
+
+    auto *const executor = create_executor_without_db(PRIVATE_DOMAIN);
+    auto *const state_overrides = monad_state_override_vec_create(1);
+    auto *const block_overrides = monad_block_override_vec_create(1);
+    Transaction const tx{.gas_limit = 100'000, .to = recipient};
+    auto const rlp_senders = to_vec(rlp::encode_list2(
+        rlp::encode_list2(rlp::encode_address(std::make_optional(sender)))));
+    auto const rlp_calls = to_vec(rlp::encode_list2(
+        rlp::encode_list2(rlp::encode_string2(rlp::encode_transaction(tx)))));
+    BlockHeader const header{.number = 1, .gas_limit = 200'000'000};
+    auto const rlp_header = to_vec(rlp::encode_block_header(header));
+    auto const rlp_block_id = to_vec(rlp_finalized_id);
+
+    callback_context ctx;
+    auto future = ctx.promise.get_future();
+    monad_executor_eth_simulate_submit(
+        executor,
+        CHAIN_CONFIG_MONAD_DEVNET,
+        rlp_senders.data(),
+        rlp_senders.size(),
+        rlp_calls.data(),
+        rlp_calls.size(),
+        header.number,
+        rlp_header.data(),
+        rlp_header.size(),
+        rlp_block_id.data(),
+        rlp_block_id.size(),
+        rlp_finalized_id.data(),
+        rlp_finalized_id.size(),
+        simulate_gas_limit,
+        simulate_max_calls,
+        simulate_max_output_size,
+        state_overrides,
+        block_overrides,
+        true,
+        false, // emit_native_transfer_logs
+        complete_callback,
+        (void *)&ctx);
+    future.get();
+
+    EXPECT_EQ(
+        ctx.result->status_code, std::to_underlying(CallStatus::Rejected));
+    EXPECT_STREQ(ctx.result->message, "not supported on a private domain");
+
+    monad_block_override_vec_destroy(block_overrides);
+    monad_state_override_vec_destroy(state_overrides);
     monad_executor_destroy(executor);
 }
 

@@ -15,19 +15,28 @@
 
 project(monad_domain_execution)
 
+# The rules a private domain's blocks execute under. They are part of
+# monad_execution, whose RPC executor runs a domain's calls under them.
 add_library(
-  monad_domain_execution OBJECT
+  monad_domain_rules OBJECT
   # domain
   "chain_id.cpp"
   "chain_id.hpp"
   "config.hpp"
+  "domain_block.hpp"
+  "execute_domain_block.cpp"
+  "execute_domain_block.hpp")
+
+target_link_libraries(monad_domain_rules PUBLIC monad_execution_native)
+monad_compile_options(monad_domain_rules)
+
+add_library(
+  monad_domain_execution OBJECT
+  # domain
   "derivation_error.cpp"
   "derivation_error.hpp"
   "derive_domain_block.cpp"
   "derive_domain_block.hpp"
-  "domain_block.hpp"
-  "execute_domain_block.cpp"
-  "execute_domain_block.hpp"
   "executor.cpp"
   "executor.hpp"
   "hpke.cpp"

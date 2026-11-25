@@ -49,6 +49,12 @@ namespace
     byte_string
     encode_receipt_db(Receipt const &receipt, size_t const log_index_begin)
     {
+        if (receipt.calls_executed) {
+            return rlp::encode_list2(
+                rlp::encode_string2(rlp::encode_receipt(receipt)),
+                rlp::encode_unsigned(log_index_begin),
+                rlp::encode_unsigned(receipt.calls_executed));
+        }
         return rlp::encode_list2(
             rlp::encode_string2(rlp::encode_receipt(receipt)),
             rlp::encode_unsigned(log_index_begin));

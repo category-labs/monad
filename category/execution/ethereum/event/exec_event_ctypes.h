@@ -204,6 +204,7 @@ struct monad_exec_txn_evm_output
     struct monad_c_eth_txn_receipt
         receipt;                   ///< Incremental Ethereum receipt
     uint32_t call_frame_count;     ///< Number of call frames
+    uint32_t calls_executed;       ///< Attempted native entries, independent of tracing
 };
 
 /// Event recorded when a transaction emits a LOG

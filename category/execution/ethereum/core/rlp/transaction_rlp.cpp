@@ -150,12 +150,14 @@ namespace
         };
         auto features = field(1, encode_unsigned(txn.nonce));
         features += field(2, encode_unsigned(txn.gas_limit));
-        features += field(
-            3,
-            encode_list2(
-                field(1, encode_address(txn.to)),
-                field(2, encode_unsigned(txn.value)),
-                field(3, encode_string2(txn.data))));
+        if (!txn.calls) {
+            features += field(
+                3,
+                encode_list2(
+                    field(1, encode_address(txn.to)),
+                    field(2, encode_unsigned(txn.value)),
+                    field(3, encode_string2(txn.data))));
+        }
         if (txn.monad_access_list_present || !txn.access_list.empty()) {
             features += field(4, encode_access_list(txn.access_list));
         }
@@ -171,6 +173,16 @@ namespace
             encode_list2(
                 encode_unsigned(txn.max_priority_fee_per_gas),
                 encode_unsigned(txn.max_fee_per_gas)));
+        if (txn.calls) {
+            byte_string calls;
+            for (auto const &call : *txn.calls) {
+                calls += encode_list2(
+                    field(1, encode_address(call.to)),
+                    field(2, encode_unsigned(call.value)),
+                    field(3, encode_string2(call.data)));
+            }
+            features += field(MONAD_CALLS_FEATURE, encode_list2(calls));
+        }
         return byte_string(1, 0x40) +
                encode_list2(
                    encode_unsigned(txn.sc.chain_id.value_or(0)),
@@ -362,6 +374,37 @@ namespace
         return std::pair{previous, pair};
     }
 
+    Result<TransactionCall> decode_monad_call(byte_string_view &value)
+    {
+        TransactionCall result;
+        BOOST_OUTCOME_TRY(auto call, parse_list_metadata(value));
+        uint8_t previous = 0;
+        for (uint8_t expected = 1; expected <= 3; ++expected) {
+            BOOST_OUTCOME_TRY(auto pair, decode_feature(call, previous));
+            auto &[key, field] = pair;
+            if (key != expected) {
+                return DecodeError::NonCanonical;
+            }
+            if (key == 1) {
+                BOOST_OUTCOME_TRY(result.to, decode_optional_address(field));
+            }
+            else if (key == 2) {
+                BOOST_OUTCOME_TRY(
+                    result.value, decode_unsigned<uint256_t>(field));
+            }
+            else {
+                BOOST_OUTCOME_TRY(result.data, decode_string(field));
+            }
+            if (!field.empty()) {
+                return DecodeError::InputTooLong;
+            }
+        }
+        if (!call.empty()) {
+            return DecodeError::InputTooLong;
+        }
+        return result;
+    }
+
     Result<Transaction> decode_monad_transaction(byte_string_view &enc)
     {
         Transaction txn;
@@ -376,7 +419,7 @@ namespace
             return DecodeError::InputTooLong;
         }
         uint8_t previous = 0;
-        uint8_t present = 0;
+        uint16_t present = 0;
         while (!features.empty()) {
             BOOST_OUTCOME_TRY(auto pair, decode_feature(features, previous));
             auto &[key, value] = pair;
@@ -391,33 +434,10 @@ namespace
                 break;
             }
             case 3: {
-                BOOST_OUTCOME_TRY(auto call, parse_list_metadata(value));
-                uint8_t call_previous = 0;
-                for (uint8_t expected = 1; expected <= 3; ++expected) {
-                    BOOST_OUTCOME_TRY(
-                        auto call_pair, decode_feature(call, call_previous));
-                    auto &[call_key, field] = call_pair;
-                    if (call_key != expected) {
-                        return DecodeError::NonCanonical;
-                    }
-                    if (call_key == 1) {
-                        BOOST_OUTCOME_TRY(
-                            txn.to, decode_optional_address(field));
-                    }
-                    else if (call_key == 2) {
-                        BOOST_OUTCOME_TRY(
-                            txn.value, decode_unsigned<uint256_t>(field));
-                    }
-                    else {
-                        BOOST_OUTCOME_TRY(txn.data, decode_string(field));
-                    }
-                    if (!field.empty()) {
-                        return DecodeError::InputTooLong;
-                    }
-                }
-                if (!call.empty()) {
-                    return DecodeError::InputTooLong;
-                }
+                BOOST_OUTCOME_TRY(auto call, decode_monad_call(value));
+                txn.to = call.to;
+                txn.value = call.value;
+                txn.data = std::move(call.data);
                 break;
             }
             case 4: {
@@ -450,16 +470,35 @@ namespace
                 }
                 break;
             }
+            case MONAD_CALLS_FEATURE: {
+                BOOST_OUTCOME_TRY(auto calls, parse_list_metadata(value));
+                txn.calls.emplace();
+                while (!calls.empty()) {
+                    BOOST_OUTCOME_TRY(auto call, decode_monad_call(calls));
+                    if (!txn.calls->empty() && !call.to) {
+                        return DecodeError::NonCanonical;
+                    }
+                    txn.calls->push_back(std::move(call));
+                }
+                if (txn.calls->empty()) {
+                    return DecodeError::NonCanonical;
+                }
+                break;
+            }
             default:
                 return DecodeError::InvalidTxnType;
             }
-            present |= static_cast<uint8_t>(1u << key);
+            present |= static_cast<uint16_t>(1u << key);
             if (!value.empty()) {
                 return DecodeError::InputTooLong;
             }
         }
-        if ((present & 0xce) != 0xce) {
+        if ((present & 0xc6) != 0xc6) {
             return DecodeError::InputTooShort;
+        }
+        if (bool(present & (1u << 3)) ==
+            bool(present & (1u << MONAD_CALLS_FEATURE))) {
+            return DecodeError::NonCanonical;
         }
         return txn;
     }

@@ -40,6 +40,9 @@ struct Receipt
     uint64_t status{}; // R_z
     uint64_t gas_used{}; // R_u
     TransactionType type{}; // R_x
+    // Execution metadata, excluded from canonical receipt RLP and its trie
+    // root. Zero denotes an absent count in historical records.
+    uint32_t calls_executed{};
     std::vector<Log> logs{}; // R_l
 
     void add_log(Receipt::Log const &);

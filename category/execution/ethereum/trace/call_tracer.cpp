@@ -221,7 +221,10 @@ void CallTracer::on_enter(vm::Message const &msg)
         return;
     }
 
-    auto const depth = static_cast<uint64_t>(msg.depth);
+    // The batch root is a tracing frame only; EVM call depth is unchanged.
+    auto const depth =
+        static_cast<uint64_t>(msg.depth) +
+        (tx_.is_batch() && frames_stack_.has_active_frame() ? 1u : 0u);
 
     // This is to conform with quicknode RPC
     Address const from = msg.kind == vm::CallKind::DelegateCall ||
@@ -297,6 +300,14 @@ void CallTracer::on_exit(vm::Result const &res)
                            : byte_string{res.output_data, res.output_size};
     }
     frame.status = res.status_code;
+    if (tx_.is_batch() && frame.depth == 0 &&
+        res.status_code != CallStatus::Success) {
+        for (auto &entry : frames_) {
+            if (entry.logs) {
+                entry.logs->clear();
+            }
+        }
+    }
 
     if (frame.type == CallType::CREATE || frame.type == CallType::CREATE2) {
         frame.to = is_zero(res.create_address)

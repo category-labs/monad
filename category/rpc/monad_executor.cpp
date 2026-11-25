@@ -260,6 +260,14 @@ namespace
 
         State state{block_state, incarnation};
 
+        // Like scalar CREATE, batch CREATE derives its address from the
+        // selected state, including nonce overrides. The batch consumes its
+        // outer nonce before entering CREATE, so retain the original value in
+        // the simulated transaction instead of the unvalidated request nonce.
+        if (enriched_txn.is_batch()) {
+            enriched_txn.nonce = state.get_nonce(sender);
+        }
+
         {
             State state{block_state, incarnation};
             BOOST_OUTCOME_TRY(validate_ethereum_transaction<traits>(
@@ -687,6 +695,32 @@ namespace
                 call_result[eth_simulate_json::error] = {
                     {eth_simulate_json::message,
                      eth_simulate_json::execution_reverted}};
+            }
+
+            if (auto const &batch = block.transactions[tx_idx].calls) {
+                auto entries = nlohmann::json::array();
+                for (auto const &frame : call_frames[tx_idx]) {
+                    if (frame.depth == 1) {
+                        entries.emplace_back(nlohmann::json{
+                            {eth_simulate_json::return_data,
+                             format_hex(frame.output)},
+                            {eth_simulate_json::status,
+                             frame.status == CallStatus::Success ? "0x1"
+                                                                 : "0x0"},
+                        });
+                    }
+                }
+                if (entries.size() != receipts[tx_idx].calls_executed ||
+                    entries.size() > batch->size()) {
+                    return SimulationError::InvalidData;
+                }
+                while (entries.size() < batch->size()) {
+                    entries.emplace_back(nlohmann::json{
+                        {eth_simulate_json::return_data, "0x"},
+                        {eth_simulate_json::status, nullptr},
+                    });
+                }
+                call_result[eth_simulate_json::calls] = std::move(entries);
             }
 
             txns.emplace_back(std::move(call_result));

@@ -98,6 +98,44 @@ TEST(MonadTransaction, BlockItemsRequireExactStringFraming)
     }
 }
 
+TEST(MonadTransaction, BatchPreservesOrderedCallsAndFeatureIdentity)
+{
+    Transaction tx{
+        .sc = {.chain_id = 143},
+        .gas_limit = 100'000,
+        .type = TransactionType::monad,
+        .calls = std::vector<TransactionCall>{
+            {.to = Address{}, .value = 1, .data = byte_string{1, 0, 2}},
+            {.to = Address{}, .value = 2, .data = byte_string{3}}}};
+    auto const bytes = rlp::encode_transaction(tx);
+    byte_string_view view{bytes};
+    auto const decoded = rlp::decode_transaction(view);
+    ASSERT_TRUE(decoded.has_value());
+    EXPECT_EQ(decoded.value(), tx);
+    EXPECT_TRUE(view.empty());
+    auto const digest = rlp::encode_transaction_for_signing(tx);
+    std::reverse(tx.calls->begin(), tx.calls->end());
+    EXPECT_NE(rlp::encode_transaction_for_signing(tx), digest);
+    tx.calls->resize(1);
+    auto single = tx;
+    single.to = tx.calls->front().to;
+    single.value = tx.calls->front().value;
+    single.data = tx.calls->front().data;
+    single.calls.reset();
+    EXPECT_NE(rlp::encode_transaction(single), rlp::encode_transaction(tx));
+}
+
+TEST(MonadTransaction, BatchRejectsEmptyAndMisplacedCreation)
+{
+    for (auto const &calls : std::vector<std::vector<TransactionCall>>{
+             {}, {{.to = Address{}}, {}}, {{}, {}}}) {
+        Transaction const tx{.type = TransactionType::monad, .calls = calls};
+        auto const bytes = rlp::encode_transaction(tx);
+        byte_string_view view{bytes};
+        EXPECT_FALSE(rlp::decode_transaction(view).has_value());
+    }
+}
+
 TEST(MonadTransaction, SdkVectorsPreserveCanonicalIdentityAndRecoverSender)
 {
     for (auto const &vector : vectors()) {

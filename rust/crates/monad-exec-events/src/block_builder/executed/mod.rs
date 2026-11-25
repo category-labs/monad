@@ -177,12 +177,14 @@ impl ExecutedBlockBuilder {
                                  sender,
                                  header,
                                  input,
+                                 canonical_transaction,
                                  access_list,
                                  authorization_list,
                                  output,
                              }| {
                                 let TxnOutputReassemblyState {
                                     receipt,
+                                    calls_executed,
                                     logs,
                                     call_frames,
                                 } = output.expect("ExecutedBlockBuilder populated output");
@@ -192,9 +194,11 @@ impl ExecutedBlockBuilder {
                                     sender,
                                     header,
                                     input,
+                                    canonical_transaction,
                                     access_list: access_list.into_boxed_slice(),
                                     authorization_list: authorization_list.into_boxed_slice(),
                                     receipt,
+                                    calls_executed,
                                     logs: logs
                                         .into_vec()
                                         .into_iter()
@@ -224,6 +228,7 @@ impl ExecutedBlockBuilder {
                 txn_header_start: txn_start,
                 data_bytes,
                 blob_bytes: _,
+                canonical_bytes,
             } => {
                 let state = self.state.as_mut()?;
 
@@ -245,6 +250,7 @@ impl ExecutedBlockBuilder {
                     sender,
                     header: txn_header,
                     input: data_bytes,
+                    canonical_transaction: canonical_bytes,
                     access_list: Vec::default(),
                     authorization_list: Vec::default(),
                     output: None,
@@ -351,6 +357,7 @@ impl ExecutedBlockBuilder {
                     monad_exec_txn_evm_output {
                         receipt,
                         call_frame_count,
+                        calls_executed,
                     },
             } => {
                 let state = self.state.as_mut()?;
@@ -366,6 +373,11 @@ impl ExecutedBlockBuilder {
 
                 txn_ref.output = Some(TxnOutputReassemblyState {
                     receipt,
+                    calls_executed: if txn_ref.header.txn_type == crate::ffi::MONAD_TXN_MONAD {
+                        calls_executed
+                    } else {
+                        0
+                    },
                     logs: (0..receipt.log_count as usize)
                         .map(|_| None)
                         .collect_vec()

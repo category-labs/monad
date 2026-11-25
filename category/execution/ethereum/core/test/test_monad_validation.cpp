@@ -52,7 +52,7 @@ namespace
     }
 }
 
-TEST(MonadValidation, ActivationIsDevnetAndPragueOnly)
+TEST(MonadValidation, ActivationRequiresMonadPragueRules)
 {
     auto tx = transaction();
     EXPECT_TRUE(validate(tx).has_value());
@@ -71,7 +71,7 @@ TEST(MonadValidation, ActivationIsDevnetAndPragueOnly)
     EXPECT_EQ(validate(tx).error(), TransactionError::TypeNotSupported);
     tx.type = TransactionType::monad;
     tx.sc.chain_id = 143;
-    EXPECT_EQ(validate(tx, 143).error(), TransactionError::TypeNotSupported);
+    EXPECT_TRUE(validate(tx, 143).has_value());
     EXPECT_EQ(validate(tx).error(), TransactionError::WrongChainId);
     tx.sc.chain_id.reset();
     EXPECT_EQ(validate(tx).error(), TransactionError::TypeNotSupported);
@@ -93,6 +93,30 @@ TEST(MonadValidation, NativeFeesUseUint128AndDynamicPricing)
     EXPECT_EQ(validate(tx).error(), TransactionError::NativeQuantityOverflow);
     tx = transaction(6);
     EXPECT_EQ(validate(tx).error(), TransactionError::NonceExceedsMax);
+}
+
+TEST(MonadValidation, BatchIntrinsicChargesAllDataAndAccessListBytes)
+{
+    auto tx = transaction();
+    tx.to.reset();
+    tx.value = 0;
+    tx.data.clear();
+    tx.access_list = {{.a = Address{}, .keys = {bytes32_t{}}}};
+    tx.calls = std::vector<TransactionCall>{
+        {.to = Address{}, .data = byte_string{0, 1}},
+        {.to = Address{}, .data = byte_string{2}}};
+    auto const expected =
+        21'000 + 21'000 + 4 + 32 + 2'400 + 1'900 + 40 * (20 + 32);
+    EXPECT_EQ(intrinsic_gas<NativeTraits>(tx), expected);
+    EXPECT_EQ(
+        floor_data_gas<NativeTraits>(tx), 21'000 + 10 + 80 + 40 * (20 + 32));
+    tx.gas_limit = expected;
+    EXPECT_TRUE(validate(tx).has_value());
+    --tx.gas_limit;
+    EXPECT_EQ(
+        validate(tx).error(), TransactionError::IntrinsicGasGreaterThanLimit);
+    tx.calls->front().to.reset();
+    EXPECT_EQ(intrinsic_gas<NativeTraits>(tx), expected + 32'000 + 2);
 }
 
 TEST(MonadValidation, ExistingAccessListCreationAndCalldataGasApply)
@@ -133,4 +157,35 @@ TEST(MonadValidation, NativeBoundsDoNotChangeDecoderOrEthereumValidation)
     EXPECT_EQ(validate(tx).error(), TransactionError::NativeQuantityOverflow);
     tx = transaction(7);
     EXPECT_EQ(validate(tx).error(), TransactionError::NativeQuantityOverflow);
+}
+
+TEST(MonadValidation, BatchIntrinsicAndFloorIncludeAllSignedInputs)
+{
+    auto tx = transaction();
+    tx.to.reset();
+    tx.value = 0;
+    tx.data.clear();
+    tx.calls = std::vector<TransactionCall>{
+        {.data = byte_string{0, 1, 0}},
+        {.to = Address{}, .value = 1, .data = byte_string{2, 0}}};
+    tx.access_list = {{.a = Address{}, .keys = {bytes32_t{}}}};
+    EXPECT_EQ(intrinsic_gas<NativeTraits>(tx), 80'426);
+    EXPECT_EQ(floor_data_gas<NativeTraits>(tx), 23'190);
+    tx.gas_limit = 80'425;
+    EXPECT_EQ(
+        validate(tx).error(), TransactionError::IntrinsicGasGreaterThanLimit);
+    tx.gas_limit = 80'426;
+    EXPECT_TRUE(validate(tx).has_value());
+
+    tx.calls->front().to = Address{};
+    tx.calls->front().data.clear();
+    tx.calls->back().data = byte_string(10'000, 1);
+    tx.access_list.clear();
+    EXPECT_EQ(intrinsic_gas<NativeTraits>(tx), 202'000);
+    EXPECT_EQ(floor_data_gas<NativeTraits>(tx), 421'000);
+    tx.gas_limit = 420'999;
+    EXPECT_EQ(
+        validate(tx).error(), TransactionError::IntrinsicGasGreaterThanLimit);
+    tx.gas_limit = 421'000;
+    EXPECT_TRUE(validate(tx).has_value());
 }

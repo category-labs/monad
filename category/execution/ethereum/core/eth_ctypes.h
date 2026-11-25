@@ -79,6 +79,7 @@ struct monad_c_eth_txn_header
     enum monad_c_transaction_type
         txn_type;                        ///< EIP-2718 transaction type
     uint8_t monad_access_list_present;   ///< Native feature 0x04 was present (0/1)
+    uint32_t canonical_tx_length;        ///< Trailing canonical native transaction bytes, or zero
     monad_c_uint256_ne chain_id;         ///< T_c: EIP-155 blockchain identifier
     uint64_t nonce;                      ///< T_n: num txns sent by this sender
     uint64_t gas_limit;                  ///< T_g: max usable gas (upfront xfer)

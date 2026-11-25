@@ -30,6 +30,7 @@
 
 #include <cstdint>
 #include <span>
+#include <vector>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -49,7 +50,8 @@ template <Traits traits>
 class ExecuteTransactionNoValidation
 {
     vm::Message to_message(
-        vm::MemoryPool::Ref &msg_memory, uint32_t msg_memory_capacity) const;
+        vm::MemoryPool::Ref &msg_memory, uint32_t msg_memory_capacity,
+        int64_t gas) const;
 
     uint64_t process_authorizations(State &, StateHost<traits> &);
 
@@ -59,6 +61,7 @@ protected:
     Address const &sender_;
     std::span<std::optional<Address> const> const authorities_;
     BlockHeader const &header_;
+    uint32_t calls_executed_{};
 
 public:
     ExecuteTransactionNoValidation(

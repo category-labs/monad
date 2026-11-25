@@ -209,7 +209,7 @@ vm::Result execute_create_message(
          * sender does not have sufficient balance
          */
         if constexpr (traits::bumps_nonce_on_unfunded_create()) {
-            if (!msg.depth) {
+            if (!msg.depth && !host->tx_.is_batch()) {
                 uint64_t const nonce = state.get_nonce(msg.sender);
                 MONAD_ASSERT(nonce != UINT64_MAX);
                 state.set_nonce(msg.sender, nonce + 1);
@@ -220,14 +220,18 @@ vm::Result execute_create_message(
         return result;
     }
 
-    auto const nonce = state.get_nonce(msg.sender);
-    if (nonce == UINT64_MAX) {
+    bool const batch_create = msg.depth == 0 && host->tx_.is_batch();
+    auto const nonce =
+        batch_create ? host->tx_.nonce : state.get_nonce(msg.sender);
+    if (!batch_create && nonce == UINT64_MAX) {
         // this overflow can only happen for msg.depth != 0
         vm::Result result{CallStatus::ArgumentOutOfRange, msg.gas};
         call_tracer.on_exit(result);
         return result;
     }
-    state.set_nonce(msg.sender, nonce + 1);
+    if (!batch_create) {
+        state.set_nonce(msg.sender, nonce + 1);
+    }
 
     Address const contract_address = [&] {
         if (msg.kind == vm::CallKind::Create) {
@@ -282,7 +286,7 @@ vm::Result execute_create_message(
             state, contract_address, std::move(result));
     }
 
-    if (msg.depth == 0) {
+    if (msg.depth == 0 && !host->tx_.is_batch()) {
         if (revert_transaction<traits>(
                 msg.sender,
                 host->tx_,
@@ -342,7 +346,7 @@ vm::Result execute_call_message(
         result = state.vm().execute<traits>(*host, &msg, hash, code);
     }
 
-    if (msg.depth == 0) {
+    if (msg.depth == 0 && !host->tx_.is_batch()) {
         if (revert_transaction<traits>(
                 msg.sender,
                 host->tx_,

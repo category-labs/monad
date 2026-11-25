@@ -34,6 +34,7 @@ pub(super) struct TxnReassemblyState {
     pub sender: monad_address,
     pub header: monad_c_eth_txn_header,
     pub input: Box<[u8]>,
+    pub canonical_transaction: Box<[u8]>,
     pub access_list: Vec<ExecutedTxnAccessListEntry>,
     pub authorization_list: Vec<ExecutedTxnSignedAuthorization>,
     pub output: Option<TxnOutputReassemblyState>,
@@ -42,6 +43,7 @@ pub(super) struct TxnReassemblyState {
 #[derive(Debug)]
 pub(super) struct TxnOutputReassemblyState {
     pub receipt: monad_c_eth_txn_receipt,
+    pub calls_executed: u32,
     pub logs: Box<[Option<ExecutedTxnLog>]>,
     pub call_frames: Option<Box<[Option<ExecutedTxnCallFrame>]>>,
 }

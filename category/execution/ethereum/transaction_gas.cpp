@@ -47,10 +47,26 @@ namespace
     }
 }
 
+// Gas arithmetic saturates so malformed size combinations cannot wrap below a
+// limit.
+constexpr uint64_t gas_add(uint64_t a, uint64_t b) noexcept
+{
+    return a > std::numeric_limits<uint64_t>::max() - b
+               ? std::numeric_limits<uint64_t>::max()
+               : a + b;
+}
+
+constexpr uint64_t gas_mul(uint64_t a, uint64_t b) noexcept
+{
+    return b && a > std::numeric_limits<uint64_t>::max() / b
+               ? std::numeric_limits<uint64_t>::max()
+               : a * b;
+}
+
 // Intrinsic gas related functions
 constexpr auto g_txn_create(Transaction const &tx) noexcept
 {
-    if (!tx.to.has_value()) {
+    if (tx.is_create()) {
         return 32'000u;
     }
     return 0u;
@@ -59,9 +75,9 @@ constexpr auto g_txn_create(Transaction const &tx) noexcept
 // EIP-2930
 constexpr auto g_access_and_storage(Transaction const &tx) noexcept
 {
-    uint64_t g = tx.access_list.size() * 2'400u;
+    uint64_t g = gas_mul(tx.access_list.size(), 2'400u);
     for (auto const &i : tx.access_list) {
-        g += i.keys.size() * 1'900u;
+        g = gas_add(g, gas_mul(i.keys.size(), 1'900u));
     }
     return g;
 }
@@ -70,35 +86,47 @@ constexpr auto g_access_and_storage(Transaction const &tx) noexcept
 // Without EIP-7976, the 64 per-byte cost specified by EIP-7981 is 40 per-byte
 constexpr uint64_t g_access_list_data(Transaction const &tx) noexcept
 {
-    uint64_t g = tx.access_list.size() * 20u;
+    uint64_t g = gas_mul(tx.access_list.size(), 20u);
     for (auto const &i : tx.access_list) {
-        g += i.keys.size() * 32u;
+        g = gas_add(g, gas_mul(i.keys.size(), 32u));
     }
-    return g * 40u;
+    return gas_mul(g, 40u);
 }
 
 // EIP-7702
 constexpr auto g_authorization(Transaction const &tx) noexcept
 {
     constexpr uint64_t per_empty_account_cost = 25'000u;
-    return per_empty_account_cost * tx.authorization_list.size();
+    return gas_mul(per_empty_account_cost, tx.authorization_list.size());
 }
 
 constexpr uint64_t g_extra_cost_init(Transaction const &tx) noexcept
 {
-    if (!tx.to.has_value()) {
-        return ((tx.data.length() + 31u) / 32u) * 2u;
+    if (tx.is_create()) {
+        auto const &data = tx.calls ? tx.calls->front().data : tx.data;
+        return gas_mul(data.length() / 32u + (data.length() % 32u != 0), 2u);
     }
     return 0u;
 }
 
 std::pair<uint64_t, uint64_t> tokens_in_calldata(Transaction const &tx) noexcept
 {
-    auto const zeros = static_cast<uint64_t>(std::count_if(
-        std::cbegin(tx.data), std::cend(tx.data), [](unsigned char c) {
-            return c == 0x00;
-        }));
-    auto const nonzeros = tx.data.size() - zeros;
+    uint64_t zeros = 0;
+    uint64_t nonzeros = 0;
+    auto const count = [&](byte_string const &data) {
+        auto const z =
+            static_cast<uint64_t>(std::count(data.begin(), data.end(), 0));
+        zeros = gas_add(zeros, z);
+        nonzeros = gas_add(nonzeros, data.size() - z);
+    };
+    if (tx.calls) {
+        for (auto const &call : *tx.calls) {
+            count(call.data);
+        }
+    }
+    else {
+        count(tx.data);
+    }
     return {zeros, nonzeros};
 }
 
@@ -111,7 +139,7 @@ uint64_t g_data(Transaction const &tx) noexcept
     auto const [zeros, nonzeros] = tokens_in_calldata(tx);
 
     // EIP-2028
-    return zeros * 4u + nonzeros * 16u;
+    return gas_add(gas_mul(zeros, 4u), gas_mul(nonzeros, 16u));
 }
 
 EXPLICIT_TRAITS(g_data);
@@ -122,20 +150,25 @@ uint64_t intrinsic_gas(Transaction const &tx) noexcept
     static_assert(traits::evm_rev() >= EvmRevision::Berlin);
 
     // EIP-2930: access-list and storage-key cost (active since Berlin)
-    uint64_t gas = 21'000 + g_data<traits>(tx) + g_txn_create(tx) +
-                   g_access_and_storage(tx);
+    uint64_t gas = gas_add(
+        gas_add(21'000, g_data<traits>(tx)),
+        gas_add(g_txn_create(tx), g_access_and_storage(tx)));
 
     // EIP-3860: per-word initcode cost
     if constexpr (traits::eip_3860_active()) {
-        gas += g_extra_cost_init(tx);
+        gas = gas_add(gas, g_extra_cost_init(tx));
     }
     // EIP-7702: authorization-list cost
     if constexpr (traits::eip_7702_active()) {
-        gas += g_authorization(tx);
+        gas = gas_add(gas, g_authorization(tx));
     }
     // EIP-7981: increase access-list cost (Amsterdam)
-    if constexpr (traits::eip_7981_active()) {
-        gas += g_access_list_data(tx);
+    if (traits::eip_7981_active() || tx.is_batch()) {
+        gas = gas_add(gas, g_access_list_data(tx));
+    }
+
+    if (tx.calls && !tx.calls->empty()) {
+        gas = gas_add(gas, gas_mul(MONAD_CALL_ENTRY_GAS, tx.calls->size() - 1));
     }
 
     return gas;
@@ -147,9 +180,10 @@ template <Traits traits>
 uint64_t floor_data_gas(Transaction const &tx) noexcept
 {
     auto const [zeros, nonzeros] = tokens_in_calldata(tx);
-    uint64_t gas = 21'000 + (zeros * 10u + nonzeros * 40u);
-    if constexpr (traits::eip_7981_active()) {
-        gas += g_access_list_data(tx);
+    uint64_t gas =
+        gas_add(21'000, gas_add(gas_mul(zeros, 10u), gas_mul(nonzeros, 40u)));
+    if (traits::eip_7981_active() || tx.is_batch()) {
+        gas = gas_add(gas, g_access_list_data(tx));
     }
     return gas;
 }

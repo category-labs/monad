@@ -19,17 +19,42 @@ use alloy_network::{
 };
 use alloy_primitives::{Address, Bytes, TxKind, U256};
 use alloy_rpc_types_eth::{AccessList, TransactionInput, TransactionInputKind, TransactionRequest};
-use monad_transaction::{rpc, TxEnvelope, TxMonad, TxType, TypedTransaction, MONAD_TX_TYPE};
+use monad_transaction::{
+    rpc, validate_batch, MonadCall, TxEnvelope, TxMonad, TxType, TypedTransaction, MONAD_TX_TYPE,
+};
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::MonadNetwork;
 
 /// Ethereum request fields with explicit `0x40` selection and native validation.
 /// `Default` retains Ethereum inference; [`Self::native`] opts into Monad encoding.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
-#[serde(transparent)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct MonadTransactionRequest {
     pub inner: TransactionRequest,
+    pub calls: Option<Vec<MonadCall>>,
+    pub(crate) rpc_projection: bool,
+}
+
+impl Serialize for MonadTransactionRequest {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        if self.rpc_projection {
+            return Err(serde::ser::Error::custom(
+                "native RPC calls are an execution projection; fetch the raw transaction",
+            ));
+        }
+        #[derive(Serialize)]
+        struct Request<'a> {
+            #[serde(flatten)]
+            inner: &'a TransactionRequest,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            calls: &'a Option<Vec<MonadCall>>,
+        }
+        Request {
+            inner: &self.inner,
+            calls: &self.calls,
+        }
+        .serialize(serializer)
+    }
 }
 
 impl MonadTransactionRequest {
@@ -39,6 +64,8 @@ impl MonadTransactionRequest {
                 transaction_type: Some(MONAD_TX_TYPE),
                 ..Default::default()
             },
+            calls: None,
+            rpc_projection: false,
         }
     }
 
@@ -51,8 +78,18 @@ impl MonadTransactionRequest {
         self
     }
 
+    /// Select an atomic batch. Scalar call fields must be absent.
+    pub fn with_calls(mut self, calls: Vec<MonadCall>) -> Self {
+        self.inner.transaction_type = Some(MONAD_TX_TYPE);
+        self.calls = Some(calls);
+        self
+    }
+
     /// Validate supplied fields without requiring the fields supplied by fillers.
     pub fn validate(&self) -> Result<(), &'static str> {
+        if self.rpc_projection {
+            return Err("native RPC calls are an execution projection; fetch the raw transaction");
+        }
         if let Some(ty) = self.inner.transaction_type {
             TxType::try_from(ty).map_err(|_| "unsupported transaction type")?;
         }
@@ -60,6 +97,19 @@ impl MonadTransactionRequest {
             .input
             .unique_input()
             .map_err(|_| "input and data disagree")?;
+        if let Some(calls) = &self.calls {
+            if !self.is_native() {
+                return Err("calls requires transaction type 0x40");
+            }
+            if self.inner.to.is_some()
+                || self.inner.value.is_some()
+                || self.inner.input.input.is_some()
+                || self.inner.input.data.is_some()
+            {
+                return Err("calls cannot be combined with to, value, input or data");
+            }
+            validate_batch(calls)?;
+        }
         if !self.is_native() {
             return Ok(());
         }
@@ -130,9 +180,21 @@ impl<'de> Deserialize<'de> for MonadTransactionRequest {
             }
         }
         let value = deserializer.deserialize_map(RequestVisitor)?;
-        let inner: TransactionRequest =
+        let mut inner: TransactionRequest =
             serde_json::from_value(value.clone()).map_err(serde::de::Error::custom)?;
-        let request = Self { inner };
+        let calls = value
+            .get("calls")
+            .map(|calls| serde_json::from_value::<Vec<MonadCall>>(calls.clone()))
+            .transpose()
+            .map_err(serde::de::Error::custom)?;
+        if calls.is_some() && inner.transaction_type.is_none() {
+            inner.transaction_type = Some(MONAD_TX_TYPE);
+        }
+        let request = Self {
+            inner,
+            calls,
+            rpc_projection: false,
+        };
         if request.is_native() {
             // Reject future feature requests instead of silently signing a different transaction.
             for key in value
@@ -154,6 +216,7 @@ impl<'de> Deserialize<'de> for MonadTransactionRequest {
                         | "maxFeePerGas"
                         | "maxPriorityFeePerGas"
                         | "accessList"
+                        | "calls"
                 ) {
                     return Err(serde::de::Error::custom(format!(
                         "unsupported native field: {key}"
@@ -168,7 +231,11 @@ impl<'de> Deserialize<'de> for MonadTransactionRequest {
 
 impl From<TransactionRequest> for MonadTransactionRequest {
     fn from(inner: TransactionRequest) -> Self {
-        Self { inner }
+        Self {
+            inner,
+            calls: None,
+            rpc_projection: false,
+        }
     }
 }
 impl From<TxMonad> for MonadTransactionRequest {
@@ -181,19 +248,29 @@ impl From<TxMonad> for MonadTransactionRequest {
                 gas: Some(tx.gas_limit),
                 max_fee_per_gas: Some(tx.max_fee_per_gas),
                 max_priority_fee_per_gas: Some(tx.max_priority_fee_per_gas),
-                to: Some(tx.to),
-                value: Some(tx.value),
-                input: TransactionInput::new(tx.input),
+                to: tx.calls.is_none().then_some(tx.to),
+                value: tx.calls.is_none().then_some(tx.value),
+                input: if tx.calls.is_none() {
+                    TransactionInput::new(tx.input)
+                } else {
+                    TransactionInput::default()
+                },
                 access_list: tx.access_list,
                 ..Default::default()
             },
+            calls: tx.calls,
+            rpc_projection: false,
         }
     }
 }
 impl From<TypedTransaction> for MonadTransactionRequest {
     fn from(tx: TypedTransaction) -> Self {
         match tx {
-            TypedTransaction::Ethereum(tx) => Self { inner: tx.into() },
+            TypedTransaction::Ethereum(tx) => Self {
+                inner: tx.into(),
+                calls: None,
+                rpc_projection: false,
+            },
             TypedTransaction::Monad(tx) => tx.into(),
         }
     }
@@ -206,7 +283,9 @@ impl From<TxEnvelope> for MonadTransactionRequest {
 impl From<rpc::Transaction> for MonadTransactionRequest {
     fn from(tx: rpc::Transaction) -> Self {
         let from = tx.inner.signer();
-        let mut request: Self = tx.into_inner().into();
+        let projection = tx.native_execution == rpc::NativeExecution::Projection;
+        let mut request: Self = tx.inner.into_inner().into();
+        request.rpc_projection = projection;
         request.inner.from = Some(from);
         request
     }
@@ -369,6 +448,7 @@ impl NetworkTransactionBuilder<MonadNetwork> for MonadTransactionRequest {
                 to: tx.to.unwrap_or(TxKind::Create),
                 value: tx.value.unwrap_or_default(),
                 input: tx.input.into_input().unwrap_or_default(),
+                calls: self.calls,
                 access_list: tx.access_list,
             }
             .into())

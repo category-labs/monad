@@ -111,6 +111,13 @@ impl ExecutedBlock {
                 let sender = alloy_primitives::Address::from(tx.sender.bytes);
 
                 monad_transaction::rpc::Transaction {
+                    native_execution: if tx.header.txn_type == ffi::MONAD_TXN_MONAD {
+                        monad_transaction::rpc::NativeExecution::Mined {
+                            calls_executed: tx.native_call_count(),
+                        }
+                    } else {
+                        Default::default()
+                    },
                     inner: Recovered::new_unchecked(inner, sender),
                     block_hash: Some(header.hash),
                     block_number: Some(header.number),
@@ -154,11 +161,19 @@ impl ExecutedBlock {
         self.txns.iter().enumerate().map(move |(tx_idx, tx)| {
             let transaction_index = Some(tx_idx as u64);
 
+            let native_execution = if tx.header.txn_type == ffi::MONAD_TXN_MONAD {
+                monad_transaction::rpc::NativeExecution::Mined {
+                    calls_executed: tx.native_call_count(),
+                }
+            } else {
+                Default::default()
+            };
             let tx = tx.to_alloy_recovered();
 
             let effective_gas_price = tx.inner().effective_gas_price(base_fee);
 
             monad_transaction::rpc::Transaction {
+                native_execution,
                 inner: tx,
                 block_hash: Some(block_hash),
                 block_number: Some(block_number),
@@ -253,7 +268,7 @@ impl ExecutedBlock {
 
             let from = alloy_primitives::Address::from(tx.sender.bytes);
 
-            let (to, contract_address) = if tx.header.is_contract_creation {
+            let (mut to, contract_address) = if tx.header.is_contract_creation {
                 (None, Some(from.create(tx.header.nonce)))
             } else {
                 (
@@ -261,6 +276,22 @@ impl ExecutedBlock {
                     None,
                 )
             };
+
+            if tx.header.txn_type == ffi::MONAD_TXN_MONAD {
+                let canonical = tx.to_alloy();
+                to = if tx.native_call_count() == 1 {
+                    canonical
+                        .as_monad()
+                        .unwrap()
+                        .tx()
+                        .first_call()
+                        .to
+                        .to()
+                        .copied()
+                } else {
+                    None
+                };
+            }
 
             monad_transaction::rpc::TransactionReceipt {
                 inner: receipt,
@@ -316,17 +347,36 @@ pub struct ExecutedTxn {
     pub sender: monad_address,
     pub header: monad_c_eth_txn_header,
     pub input: Box<[u8]>,
+    pub canonical_transaction: Box<[u8]>,
     pub access_list: Box<[ExecutedTxnAccessListEntry]>,
     pub authorization_list: Box<[ExecutedTxnSignedAuthorization]>,
     pub receipt: monad_c_eth_txn_receipt,
+    pub calls_executed: u32,
     pub logs: Box<[ExecutedTxnLog]>,
     pub call_frames: Option<Box<[ExecutedTxnCallFrame]>>,
 }
 
 #[cfg(feature = "alloy")]
 impl ExecutedTxn {
+    fn native_call_count(&self) -> u32 {
+        // Events predating canonical transaction payloads only carried CALL.
+        if self.calls_executed == 0 && self.canonical_transaction.is_empty() {
+            1
+        } else {
+            self.calls_executed
+        }
+    }
+
     /// Creates an alloy tx envelope.
     pub fn to_alloy(&self) -> monad_transaction::TxEnvelope {
+        if !self.canonical_transaction.is_empty() {
+            use alloy_eips::Decodable2718;
+            let tx = monad_transaction::TxEnvelope::decode_2718_exact(&self.canonical_transaction)
+                .expect("canonical native event transaction");
+            assert!(tx.is_monad());
+            assert_eq!(tx.hash().as_slice(), self.hash.bytes);
+            return tx;
+        }
         let to = if self.header.is_contract_creation {
             alloy_primitives::TxKind::Create
         } else {
@@ -414,6 +464,7 @@ impl ExecutedTxn {
                 value,
                 input,
                 access_list: (self.header.monad_access_list_present != 0).then_some(access_list),
+                calls: None,
             }
             .into_signed(txn_signature);
             assert_eq!(
@@ -656,6 +707,7 @@ mod native_tests {
                 blob_versioned_hash_length: 0,
                 access_list_count: tx.access_list.as_ref().map_or(0, |list| list.len() as u32),
                 auth_list_count: 0,
+                canonical_tx_length: bytes.len() as u32,
             };
             let event = ExecutedTxn {
                 header,
@@ -666,6 +718,7 @@ mod native_tests {
                     bytes: envelope.recover_signer().unwrap().into_array(),
                 },
                 input: tx.input.to_vec().into_boxed_slice(),
+                canonical_transaction: bytes.clone().into_boxed_slice(),
                 access_list: tx
                     .access_list
                     .iter()
@@ -687,6 +740,7 @@ mod native_tests {
                     log_count: 0,
                     gas_used: 21000,
                 },
+                calls_executed: 1,
                 logs: Box::default(),
                 call_frames: None,
             };
@@ -695,26 +749,51 @@ mod native_tests {
                 event.to_alloy_recovered().signer().as_slice(),
                 &event.sender.bytes
             );
-            let rpc = monad_transaction::rpc::Transaction {
-                inner: event.to_alloy_recovered(),
-                effective_gas_price: Some(envelope.effective_gas_price(Some(1))),
-                ..Default::default()
-            };
-            let json = serde_json::to_value(rpc).unwrap();
-            assert_eq!(json["type"], "0x40");
-            assert_eq!(json["hash"], vector["hash"]);
-            assert_eq!(
-                json["maxFeePerGas"],
-                serde_json::json!(format!("{:#x}", tx.max_fee_per_gas))
-            );
-            assert_eq!(json.get("accessList").is_some(), tx.access_list.is_some());
+            for attempted in 1..=tx.calls.as_ref().map_or(1, Vec::len) {
+                let mut executed = event.clone();
+                executed.calls_executed = attempted as u32;
+                let rpc = monad_transaction::rpc::Transaction {
+                    native_execution: monad_transaction::rpc::NativeExecution::Mined {
+                        calls_executed: executed.native_call_count(),
+                    },
+                    inner: executed.to_alloy_recovered(),
+                    effective_gas_price: Some(envelope.effective_gas_price(Some(1))),
+                    ..Default::default()
+                };
+                let json = serde_json::to_value(rpc).unwrap();
+                assert_eq!(json["type"], "0x40");
+                assert_eq!(json["hash"], vector["hash"]);
+                assert_eq!(json["calls"].as_array().unwrap().len(), attempted);
+                assert_eq!(
+                    json["maxFeePerGas"],
+                    serde_json::json!(format!("{:#x}", tx.max_fee_per_gas))
+                );
+                assert_eq!(
+                    json["accessList"],
+                    serde_json::to_value(tx.access_list.clone().unwrap_or_default()).unwrap()
+                );
+                assert_eq!(executed.to_alloy().encoded_2718(), bytes);
+            }
+            let mut corrupt = event.clone();
+            corrupt.hash.bytes[0] ^= 1;
+            assert!(std::panic::catch_unwind(|| corrupt.to_alloy()).is_err());
+
+            // Only historical single-CALL events lack the canonical payload.
+            if tx.is_batch() {
+                continue;
+            }
+            let mut historical = event.clone();
+            historical.canonical_transaction = Box::default();
+            historical.calls_executed = 0;
+            assert_eq!(historical.native_call_count(), 1);
+            assert_eq!(historical.to_alloy().encoded_2718(), bytes);
             let mut boundary_tx = tx.clone();
             boundary_tx.chain_id = u64::MAX;
             boundary_tx.max_fee_per_gas = u128::MAX;
             boundary_tx.max_priority_fee_per_gas = u128::MAX;
             boundary_tx.value = U256::MAX;
             let boundary_tx = boundary_tx.into_signed(*signed.signature());
-            let mut boundary = event.clone();
+            let mut boundary = historical.clone();
             boundary.header.chain_id = quantity(U256::from(u64::MAX));
             boundary.header.max_fee_per_gas = quantity(U256::from(u128::MAX));
             boundary.header.max_priority_fee_per_gas = quantity(U256::from(u128::MAX));
@@ -724,7 +803,7 @@ mod native_tests {
 
             // Invalid event quantities must fail before reconstruction can truncate them.
             for field in 0..3 {
-                let mut invalid = event.clone();
+                let mut invalid = historical.clone();
                 match field {
                     0 => invalid.header.chain_id = quantity(U256::ONE << 64),
                     1 => invalid.header.max_fee_per_gas = quantity(U256::ONE << 128),

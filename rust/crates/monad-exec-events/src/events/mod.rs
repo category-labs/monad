@@ -59,6 +59,7 @@ pub enum ExecEvent {
         txn_header_start: monad_exec_txn_header_start,
         data_bytes: Box<[u8]>,
         blob_bytes: Box<[u8]>,
+        canonical_bytes: Box<[u8]>,
     },
     TxnAccessListEntry {
         txn_index: usize,
@@ -122,6 +123,7 @@ pub enum ExecEventRef<'ring> {
         txn_header_start: &'ring monad_exec_txn_header_start,
         data_bytes: &'ring [u8],
         blob_bytes: &'ring [u8],
+        canonical_bytes: &'ring [u8],
     },
     TxnAccessListEntry {
         txn_index: usize,
@@ -211,11 +213,13 @@ impl<'ring> ExecEventRef<'ring> {
                 txn_header_start: txn_start,
                 data_bytes,
                 blob_bytes: blobs,
+                canonical_bytes,
             } => ExecEvent::TxnHeaderStart {
                 txn_index,
                 txn_header_start: *txn_start,
                 data_bytes: data_bytes.to_vec().into_boxed_slice(),
                 blob_bytes: blobs.to_vec().into_boxed_slice(),
+                canonical_bytes: canonical_bytes.to_vec().into_boxed_slice(),
             },
             Self::TxnAccessListEntry {
                 txn_index,
@@ -352,8 +356,8 @@ impl EventDecoder for ExecEventDecoder {
                 ref_from_bytes(bytes).expect("BlockVerified event valid"),
             ),
             ffi::MONAD_EXEC_TXN_HEADER_START => {
-                let (txn_header_start, [data_bytes, blob_bytes]) =
-                    ref_from_bytes_with_trailing::<monad_exec_txn_header_start, 2>(
+                let (txn_header_start, [data_bytes, blob_bytes, canonical_bytes]) =
+                    ref_from_bytes_with_trailing::<monad_exec_txn_header_start, 3>(
                         bytes,
                         |txn_header_start| {
                             [
@@ -364,6 +368,15 @@ impl EventDecoder for ExecEventDecoder {
                                 .unwrap()
                                 .checked_mul(size_of::<ffi::monad_bytes32>())
                                 .unwrap(),
+                                if txn_header_start.txn_header.txn_type == ffi::MONAD_TXN_MONAD {
+                                    txn_header_start
+                                        .txn_header
+                                        .canonical_tx_length
+                                        .try_into()
+                                        .unwrap()
+                                } else {
+                                    0
+                                },
                             ]
                         },
                     )
@@ -377,6 +390,7 @@ impl EventDecoder for ExecEventDecoder {
                     txn_header_start,
                     data_bytes,
                     blob_bytes,
+                    canonical_bytes,
                 }
             }
             ffi::MONAD_EXEC_TXN_ACCESS_LIST_ENTRY => {

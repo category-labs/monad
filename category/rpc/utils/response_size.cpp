@@ -157,6 +157,21 @@ namespace rpc::eth_simulateV1
                  3); // NOTE(dhil): Return status is always 3
                      // bytes, either 0x0 or 0x1.
 
+            if (auto const &batch = block.transactions[tx_idx].calls) {
+                carried_size += eth_simulate_json::calls.size() +
+                                sizeof(nlohmann::json::array_t);
+                carried_size +=
+                    batch->size() * (sizeof(nlohmann::json::object_t) +
+                                     2 * sizeof(nlohmann::json::value_t) +
+                                     eth_simulate_json::return_data.size() +
+                                     eth_simulate_json::status.size() + 6);
+                for (auto const &frame : call_frames[tx_idx]) {
+                    if (frame.depth == 1) {
+                        carried_size += value_size(frame.output);
+                    }
+                }
+            }
+
             // Calculate the size of each log entry
             size_t log_index_cnt = 0;
             if (call_frames[tx_idx][0].status == CallStatus::Success) {

@@ -17,6 +17,7 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
 #include <category/execution/ethereum/core/ecrecover.hpp>
+#include <category/execution/ethereum/core/ecrecover/types.hpp>
 #include <category/execution/ethereum/core/rlp/transaction_rlp.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/trace/event_trace.hpp>
@@ -32,11 +33,26 @@ std::optional<Address> recover_authority(AuthorizationEntry const &auth_entry)
     return recover_address(auth_entry.sc.signature, auth_encoding);
 }
 
+std::optional<RecoverAddressInput>
+make_authority_recover_input(AuthorizationEntry const &auth_entry)
+{
+    byte_string const auth_encoding =
+        rlp::encode_authorization_entry_for_signing(auth_entry);
+    return make_recover_address_input(auth_entry.sc.signature, auth_encoding);
+}
+
 std::optional<Address> recover_sender(Transaction const &tx)
 {
     TRACE_TXN_EVENT(StartSenderRecovery);
     byte_string const tx_encoding = rlp::encode_transaction_for_signing(tx);
     return recover_address(tx.sc.signature, tx_encoding);
+}
+
+std::optional<RecoverAddressInput>
+make_sender_recover_input(Transaction const &tx)
+{
+    byte_string const tx_encoding = rlp::encode_transaction_for_signing(tx);
+    return make_recover_address_input(tx.sc.signature, tx_encoding);
 }
 
 MONAD_NAMESPACE_END

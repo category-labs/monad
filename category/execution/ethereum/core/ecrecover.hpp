@@ -20,11 +20,48 @@
 #include <category/core/config.hpp>
 #include <category/core/keccak.hpp>
 #include <category/execution/ethereum/core/ecrecover/impl.hpp>
+#include <category/execution/ethereum/core/ecrecover/types.hpp>
 #include <category/execution/ethereum/core/signature.hpp>
 
+#include <cstring>
 #include <optional>
 
 MONAD_NAMESPACE_BEGIN
+
+/// Prepares the recovery of the Ethereum address that signed `encoding` with
+/// the given ECDSA signature, for recover_address or a recover_addresses
+/// batch. Returns nullopt for a malformed signature (y_parity > 1, r or s out
+/// of range, malleable s), which has no signer.
+inline std::optional<RecoverAddressInput> make_recover_address_input(
+    Secp256k1Signature const &sig, byte_string_view const encoding)
+{
+    static_assert(sizeof(RecoverAddressInput::sig) == 2 * sizeof(sig.r));
+
+    if (!sig.is_valid()) {
+        return std::nullopt;
+    }
+
+    RecoverAddressInput input;
+    auto const encoding_hash = keccak256(encoding);
+    std::memcpy(input.msg, encoding_hash.bytes, sizeof(input.msg));
+    store_be(input.sig, sig.r);
+    store_be(input.sig + sizeof(sig.r), sig.s);
+    input.recid = sig.y_parity;
+    return input;
+}
+
+/// Converts one recover_addresses result to an address; nullopt if ECDSA
+/// recovery failed.
+inline std::optional<Address> to_address(RecoverAddressOutput const &output)
+{
+    if (!output.ok) {
+        return std::nullopt;
+    }
+    Address result;
+    static_assert(sizeof(result.bytes) == sizeof(output.address));
+    std::memcpy(result.bytes, output.address, sizeof(result.bytes));
+    return result;
+}
 
 /// Recovers the Ethereum address that signed `encoding` with the given ECDSA
 /// signature. Rejects malformed signatures up-front (y_parity > 1, malleable
@@ -32,20 +69,14 @@ MONAD_NAMESPACE_BEGIN
 inline std::optional<Address>
 recover_address(Secp256k1Signature const &sig, byte_string_view const encoding)
 {
-    if (!sig.is_valid()) {
+    auto const input = make_recover_address_input(sig, encoding);
+    if (!input.has_value()) {
         return std::nullopt;
     }
 
-    auto const encoding_hash = keccak256(encoding);
-
-    uint8_t signature[sizeof(sig.r) * 2];
-    store_be(signature, sig.r);
-    store_be(signature + sizeof(sig.r), sig.s);
-
     Address result;
 
-    if (!recover_address(
-            result.bytes, encoding_hash.bytes, signature, sig.y_parity)) {
+    if (!recover_address(result.bytes, input->msg, input->sig, input->recid)) {
         return std::nullopt;
     }
 

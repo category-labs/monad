@@ -289,15 +289,13 @@ TYPED_TEST(TraitsTest, call_frames_stress_test)
 
     fiber::PriorityPool pool{1, 1};
 
-    auto const recovered_senders =
-        recover_senders(block.value().transactions, pool);
+    auto const [recovered_senders, recovered_authorities] =
+        recover_signers(block.value().transactions, pool);
     std::vector<Address> senders(block.value().transactions.size());
     for (unsigned i = 0; i < recovered_senders.size(); ++i) {
         MONAD_ASSERT(recovered_senders[i].has_value());
         senders[i] = recovered_senders[i].value();
     }
-    auto const recovered_authorities =
-        recover_authorities(block.value().transactions, pool);
     std::vector<std::vector<CallFrame>> call_frames(
         block.value().transactions.size());
     std::vector<std::unique_ptr<CallTracerBase>> call_tracers;
@@ -466,15 +464,13 @@ TYPED_TEST(TraitsTest, assertion_exception)
 
     fiber::PriorityPool pool{1, 1};
 
-    auto const recovered_senders =
-        recover_senders(block.value().transactions, pool);
+    auto const [recovered_senders, recovered_authorities] =
+        recover_signers(block.value().transactions, pool);
     std::vector<Address> senders(block.value().transactions.size());
     for (unsigned i = 0; i < recovered_senders.size(); ++i) {
         MONAD_ASSERT(recovered_senders[i].has_value());
         senders[i] = recovered_senders[i].value();
     }
-    auto const recovered_authorities =
-        recover_authorities(block.value().transactions, pool);
     std::vector<std::vector<CallFrame>> call_frames(
         block.value().transactions.size());
     std::vector<std::unique_ptr<CallTracerBase>> call_tracers;
@@ -774,15 +770,13 @@ TYPED_TEST(TraitsTest, call_frames_refund)
 
     fiber::PriorityPool pool{1, 1};
 
-    auto const recovered_senders =
-        recover_senders(block.value().transactions, pool);
+    auto const [recovered_senders, recovered_authorities] =
+        recover_signers(block.value().transactions, pool);
     std::vector<Address> senders(block.value().transactions.size());
     for (unsigned i = 0; i < recovered_senders.size(); ++i) {
         MONAD_ASSERT(recovered_senders[i].has_value());
         senders[i] = recovered_senders[i].value();
     }
-    auto const recovered_authorities =
-        recover_authorities(block.value().transactions, pool);
     std::vector<std::vector<CallFrame>> call_frames(
         block.value().transactions.size());
     std::vector<std::unique_ptr<CallTracerBase>> call_tracers;

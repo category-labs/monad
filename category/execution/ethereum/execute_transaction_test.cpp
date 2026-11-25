@@ -54,6 +54,467 @@ using namespace monad;
 
 using db_t = TrieDb;
 
+namespace
+{
+    class NativeBatchTest : public ::testing::Test
+    {
+    protected:
+        using BatchTraits = MonadTraits<MONAD_TEN>;
+        static constexpr auto sender =
+            0x5353535353535353535353535353535353535353_address;
+        static constexpr auto target =
+            0xbebebebebebebebebebebebebebebebebebebebe_address;
+        static constexpr auto recipient =
+            0xcccccccccccccccccccccccccccccccccccccccc_address;
+        mpt::Db db{std::make_unique<InMemoryMachine>()};
+        TrieDb trie{db};
+        vm::VM vm;
+        BlockState block_state{trie, vm};
+        std::vector<CallFrame> frames;
+
+        void initialize(byte_string code = {}, uint64_t nonce = 0)
+        {
+            State state{block_state, Incarnation{0, 0}};
+            state.add_to_balance(sender, 1'000'000);
+            state.set_nonce(sender, nonce);
+            if (!code.empty()) {
+                state.create_contract(target);
+                state.set_nonce(target, 1);
+                state.set_code(target, code);
+            }
+            block_state.merge(state);
+        }
+
+        Receipt
+        run(std::vector<TransactionCall> calls, uint64_t nonce = 0,
+            uint64_t gas = 200'000, bool pending_sender = false)
+        {
+            Transaction const tx{
+                .sc = {.signature = {.r = 1, .s = 1}, .chain_id = 20143},
+                .nonce = nonce,
+                .max_fee_per_gas = 1,
+                .gas_limit = gas,
+                .type = TransactionType::monad,
+                .calls = std::move(calls)};
+            MonadDevnet const chain;
+            BlockHeader const header{.number = 1, .base_fee_per_gas = 1};
+            BlockHashBufferFinalized const hashes;
+            BlockMetrics metrics{};
+            CallTracer tracer{tx, frames};
+            trace::StateTracer state_tracer{std::monostate{}};
+            ankerl::unordered_dense::segmented_set<Address> const empty{};
+            ankerl::unordered_dense::segmented_set<Address> parent;
+            if (pending_sender) {
+                parent.insert(sender);
+            }
+            std::vector<Address> const senders{sender};
+            std::vector<std::vector<std::optional<Address>>> const authorities{
+                {}};
+            ChainContext<BatchTraits> const context{
+                empty, parent, empty, senders, authorities};
+            boost::fibers::promise<void> ready;
+            auto previous = ready.get_future();
+            ready.set_value();
+            auto const result = ExecuteTransaction<BatchTraits>{
+                chain,
+                0,
+                tx,
+                sender,
+                {},
+                header,
+                hashes,
+                block_state,
+                metrics,
+                previous,
+                tracer,
+                state_tracer,
+                context,
+                nullptr}();
+            EXPECT_TRUE(result.has_value());
+            return result.value();
+        }
+    };
+}
+
+TEST_F(NativeBatchTest, OrderedTransfersConsumeOneNonceAndOneGasLimit)
+{
+    initialize();
+    auto const receipt =
+        run({{.to = target, .value = 7}, {.to = recipient, .value = 11}});
+    EXPECT_EQ(receipt.status, 1);
+    EXPECT_EQ(receipt.gas_used, 200'000);
+    EXPECT_EQ(receipt.calls_executed, 2);
+    State state{block_state, Incarnation{0, 1}};
+    EXPECT_EQ(state.get_nonce(sender), 1);
+    EXPECT_EQ(state.get_balance(sender), 1'000'000 - 200'000 - 18);
+    EXPECT_EQ(state.get_balance(target), 7);
+    EXPECT_EQ(state.get_balance(recipient), 11);
+    ASSERT_EQ(frames.size(), 3);
+    EXPECT_EQ(frames[0].from, sender);
+    EXPECT_EQ(frames[0].to, sender);
+    EXPECT_EQ(frames[0].value, 0);
+    EXPECT_TRUE(frames[0].input.empty());
+    EXPECT_EQ(frames[1].depth, 1);
+    EXPECT_EQ(frames[2].depth, 1);
+}
+
+TEST_F(NativeBatchTest, LargeBatchSharesTheRemainingGasBudget)
+{
+    // Return the gas available at the start of each entry.
+    initialize(from_hex("5a60005260206000f3").value());
+    {
+        State state{block_state, Incarnation{0, 0}};
+        state.add_to_balance(sender, 100'000'000);
+        block_state.merge(state);
+    }
+
+    constexpr uint64_t call_count = 1'000;
+    constexpr uint64_t input_size = 128;
+    constexpr uint64_t gas_limit = 25'000'000;
+    std::vector<TransactionCall> calls(
+        call_count, {.to = target, .data = byte_string(input_size, 1)});
+    auto const receipt = run(std::move(calls), 0, gas_limit);
+    ASSERT_EQ(receipt.status, 1);
+    EXPECT_EQ(receipt.gas_used, gas_limit);
+    EXPECT_EQ(receipt.calls_executed, call_count);
+    ASSERT_EQ(frames.size(), call_count + 1);
+
+    auto remaining = gas_limit - call_count * (21'000 + 16 * input_size);
+    for (size_t i = 1; i < frames.size(); ++i) {
+        auto const &frame = frames[i];
+        EXPECT_EQ(frame.gas, remaining);
+        EXPECT_EQ(
+            frame.output,
+            byte_string{store_be_as<bytes32_t>(uint256_t{remaining - 2})});
+        remaining -= frame.gas_used;
+    }
+    State state{block_state, Incarnation{0, 1}};
+    EXPECT_EQ(state.get_nonce(sender), 1);
+    EXPECT_EQ(state.get_balance(sender), 101'000'000 - gas_limit);
+}
+
+TEST_F(NativeBatchTest, UnfundedEntryRollsBackEarlierEffectsAndStopsTheBatch)
+{
+    initialize(from_hex("602a60005560006000a000").value());
+    auto const receipt = run(
+        {{.to = target, .value = 7},
+         {.to = recipient, .value = 1'000'000},
+         {.to = recipient, .value = 1}});
+    EXPECT_EQ(receipt.status, 0);
+    EXPECT_EQ(receipt.gas_used, 200'000);
+    EXPECT_EQ(receipt.calls_executed, 2);
+    EXPECT_TRUE(receipt.logs.empty());
+    State state{block_state, Incarnation{0, 1}};
+    EXPECT_EQ(state.get_nonce(sender), 1);
+    EXPECT_EQ(state.get_balance(sender), 800'000);
+    EXPECT_EQ(state.get_balance(target), 0);
+    EXPECT_EQ(state.get_balance(recipient), 0);
+    EXPECT_EQ(state.get_storage(target, bytes32_t{}), bytes32_t{});
+    ASSERT_EQ(frames.size(), 3);
+    EXPECT_EQ(frames[0].status, CallStatus::InsufficientBalance);
+    for (auto const &frame : frames) {
+        EXPECT_TRUE(!frame.logs || frame.logs->empty());
+    }
+}
+
+TEST_F(NativeBatchTest, TransientStorageSurvivesBetweenEntries)
+{
+    initialize(from_hex("3615600b57602a60005d005b60005c60005500").value());
+    auto const receipt =
+        run({{.to = target, .data = byte_string{1}}, {.to = target}});
+    EXPECT_EQ(receipt.status, 1);
+    State state{block_state, Incarnation{0, 1}};
+    state.access_account(target);
+    EXPECT_EQ(
+        state.get_storage(target, bytes32_t{}),
+        store_be_as<bytes32_t>(uint256_t{42}));
+}
+
+TEST_F(NativeBatchTest, FirstCreationUsesTheOriginalNonce)
+{
+    initialize({}, 25);
+    auto const receipt =
+        run({{.data = from_hex("60006000f3").value()},
+             {.to = recipient, .value = 7}},
+            25);
+    EXPECT_EQ(receipt.status, 1);
+    State state{block_state, Incarnation{0, 1}};
+    EXPECT_EQ(state.get_nonce(sender), 26);
+    EXPECT_EQ(state.get_nonce(create_contract_address(sender, 25)), 1);
+    EXPECT_EQ(state.get_nonce(create_contract_address(sender, 26)), 0);
+    EXPECT_EQ(state.get_balance(recipient), 7);
+}
+
+TEST_F(NativeBatchTest, EarlierEntryCanFundALaterValueTransfer)
+{
+    // Return 100,000 wei to CALLER through an ordinary nested CALL.
+    initialize(from_hex("6000600060006000620186a0335af15000").value());
+    {
+        State state{block_state, Incarnation{0, 0}};
+        state.add_to_balance(target, 100'000);
+        block_state.merge(state);
+    }
+    auto const receipt =
+        run({{.to = target}, {.to = recipient, .value = 850'000}});
+    EXPECT_EQ(receipt.status, 1);
+    EXPECT_EQ(receipt.calls_executed, 2);
+    State state{block_state, Incarnation{0, 1}};
+    EXPECT_EQ(state.get_balance(sender), 50'000);
+    EXPECT_EQ(state.get_balance(target), 0);
+    EXPECT_EQ(state.get_balance(recipient), 850'000);
+}
+
+TEST_F(NativeBatchTest, GasExhaustionRollsBackTheWholeBatch)
+{
+    initialize(from_hex("602a60005500").value());
+    {
+        State state{block_state, Incarnation{0, 0}};
+        state.create_contract(recipient);
+        state.set_code(recipient, from_hex("5b600056").value());
+        block_state.merge(state);
+    }
+    auto const receipt =
+        run({{.to = target}, {.to = recipient}, {.to = target}}, 0, 100'000);
+    EXPECT_EQ(receipt.status, 0);
+    EXPECT_EQ(receipt.calls_executed, 2);
+    EXPECT_EQ(receipt.gas_used, 100'000);
+    State state{block_state, Incarnation{0, 1}};
+    state.access_account(target);
+    EXPECT_EQ(state.get_storage(target, bytes32_t{}), bytes32_t{});
+    EXPECT_EQ(state.get_nonce(sender), 1);
+    ASSERT_EQ(frames.size(), 3);
+    EXPECT_EQ(frames[2].status, CallStatus::OutOfGas);
+    EXPECT_LT(frames[2].gas, frames[1].gas);
+}
+
+TEST_F(NativeBatchTest, FailingCreationStillConsumesOnlyTheOuterNonce)
+{
+    initialize({}, 25);
+    auto const receipt =
+        run({{.data = from_hex("60006000fd").value()},
+             {.to = recipient, .value = 7}},
+            25);
+    EXPECT_EQ(receipt.status, 0);
+    EXPECT_EQ(receipt.calls_executed, 1);
+    State state{block_state, Incarnation{0, 1}};
+    EXPECT_EQ(state.get_nonce(sender), 26);
+    EXPECT_FALSE(state.account_exists(create_contract_address(sender, 25)));
+    EXPECT_EQ(state.get_balance(recipient), 0);
+}
+
+TEST_F(NativeBatchTest, NestedCreationRetainsItsOwnNonceRules)
+{
+    // CREATE with empty initcode on each invocation.
+    initialize(from_hex("600060006000f05000").value());
+    auto const receipt = run({{.to = target}, {.to = target}});
+    EXPECT_EQ(receipt.status, 1);
+    State state{block_state, Incarnation{0, 1}};
+    EXPECT_EQ(state.get_nonce(sender), 1);
+    EXPECT_EQ(state.get_nonce(target), 3);
+    EXPECT_TRUE(state.account_exists(create_contract_address(target, 1)));
+    EXPECT_TRUE(state.account_exists(create_contract_address(target, 2)));
+}
+
+TEST_F(NativeBatchTest, ReserveIsCheckedAfterTheLastEntry)
+{
+    // First invocation retains seven wei; the second sends them back to CALLER.
+    initialize(
+        from_hex("361560145760006000600060006007335af150005b00").value());
+    auto const receipt = run(
+        {{.to = target, .value = 7}, {.to = target, .data = byte_string{1}}},
+        0,
+        200'000,
+        true);
+    EXPECT_EQ(receipt.status, 1);
+    State state{block_state, Incarnation{0, 1}};
+    EXPECT_EQ(state.get_balance(sender), 800'000);
+    EXPECT_EQ(state.get_balance(target), 0);
+}
+
+TEST_F(NativeBatchTest, FinalReserveViolationRollsBackEveryEntry)
+{
+    initialize();
+    auto const receipt =
+        run({{.to = target, .value = 7}, {.to = recipient, .value = 11}},
+            0,
+            200'000,
+            true);
+    EXPECT_EQ(receipt.status, 0);
+    EXPECT_EQ(receipt.calls_executed, 2);
+    State state{block_state, Incarnation{0, 1}};
+    EXPECT_EQ(state.get_balance(sender), 800'000);
+    EXPECT_EQ(state.get_balance(target), 0);
+    EXPECT_EQ(state.get_balance(recipient), 0);
+}
+
+TEST_F(NativeBatchTest, StorageWarmnessIsSharedBetweenEntries)
+{
+    initialize(from_hex("6000545000").value());
+    EXPECT_EQ(run({{.to = target}, {.to = target}}).status, 1);
+    ASSERT_EQ(frames.size(), 3);
+    EXPECT_EQ(
+        frames[1].gas_used - frames[2].gas_used,
+        BatchTraits::cold_storage_cost());
+}
+
+TEST_F(NativeBatchTest, CallMemoryIsIndependent)
+{
+    initialize(from_hex("36600060003760206000f3").value());
+    EXPECT_EQ(
+        run({{.to = target, .data = byte_string{42}}, {.to = target}}).status,
+        1);
+    ASSERT_EQ(frames.size(), 3);
+    ASSERT_EQ(frames[1].output.size(), 32);
+    EXPECT_EQ(frames[1].output[0], 42);
+    EXPECT_EQ(frames[2].output, byte_string(32, 0));
+    EXPECT_EQ(frames[0].output, frames[2].output);
+}
+
+TEST_F(NativeBatchTest, CreationIsRolledBackWhenALaterEntryFails)
+{
+    initialize();
+    auto const receipt = run(
+        {{.data = from_hex("60006000f3").value()},
+         {.to = recipient, .value = 900'000}});
+    EXPECT_EQ(receipt.status, 0);
+    EXPECT_EQ(receipt.calls_executed, 2);
+    State state{block_state, Incarnation{0, 1}};
+    EXPECT_FALSE(state.account_exists(create_contract_address(sender, 0)));
+    EXPECT_EQ(state.get_nonce(sender), 1);
+}
+
+TEST_F(NativeBatchTest, AlreadyDelegatedSenderCanExecuteAnOrderedBatch)
+{
+    initialize(from_hex("60003560005500").value());
+    {
+        State state{block_state, Incarnation{0, 0}};
+        state.set_code(sender, from_hex("ef0100" + to_hex(target)).value());
+        block_state.merge(state);
+    }
+    byte_string first(32, 0);
+    byte_string second(32, 0);
+    first.back() = 1;
+    second.back() = 2;
+    auto const receipt =
+        run({{.to = sender, .data = first}, {.to = sender, .data = second}});
+    EXPECT_EQ(receipt.status, 1);
+    State state{block_state, Incarnation{0, 1}};
+    state.access_account(sender);
+    EXPECT_EQ(
+        state.get_storage(sender, bytes32_t{}),
+        store_be_as<bytes32_t>(uint256_t{2}));
+    EXPECT_EQ(state.get_nonce(sender), 1);
+}
+
+TEST_F(NativeBatchTest, WholeBatchRetriesDiscardSpeculativeEffects)
+{
+    static constexpr auto sender =
+        0x5353535353535353535353535353535353535353_address;
+    static constexpr auto contract =
+        0xbebebebebebebebebebebebebebebebebebebebe_address;
+    static constexpr auto predecessor_sender =
+        0xcccccccccccccccccccccccccccccccccccccccc_address;
+
+    mpt::Db db{std::make_unique<InMemoryMachine>()};
+    db_t tdb{db};
+    vm::VM vm;
+    BlockState block_state{tdb, vm};
+    bytes32_t const slot{};
+    auto const large_output_size = store_be_as<bytes32_t>(uint256_t{4'096});
+    auto const small_output_size = store_be_as<bytes32_t>(uint256_t{32});
+
+    {
+        State initial_state{block_state, Incarnation{0, 0}};
+        initial_state.add_to_balance(sender, 1'000'000);
+        initial_state.create_contract(contract);
+        initial_state.set_code(contract, from_hex("6000546000f3").value());
+        initial_state.set_storage(contract, slot, large_output_size);
+        block_state.merge(initial_state);
+    }
+
+    Transaction const transaction{
+        .sc = {.signature = {.r = 1, .s = 1}, .chain_id = 20143},
+        .max_fee_per_gas = 1,
+        .gas_limit = 100'000,
+        .type = TransactionType::monad,
+        .calls =
+            std::vector<TransactionCall>{
+                {.to = contract}, {.to = recipient, .value = 5}},
+    };
+    MonadDevnet const chain;
+    BlockHeader const header{.number = 1, .base_fee_per_gas = 1};
+    BlockHashBufferFinalized const block_hash_buffer;
+    BlockMetrics metrics{};
+    std::vector<CallFrame> call_frames;
+    CallTracer call_tracer{
+        transaction, call_frames, 3 * sizeof(CallFrame) + 64};
+    trace::StateTracer state_tracer{std::monostate{}};
+    std::vector<Address> const senders{predecessor_sender, sender};
+    std::vector<std::vector<std::optional<Address>>> const authorities(2);
+    auto const senders_and_authorities =
+        combine_senders_and_authorities(senders, authorities);
+    ankerl::unordered_dense::segmented_set<Address> const ancestor_senders;
+    ChainContext<BatchTraits> const chain_context{
+        ancestor_senders,
+        ancestor_senders,
+        senders_and_authorities,
+        senders,
+        authorities};
+    boost::fibers::promise<void> predecessor;
+    boost::fibers::future<void> predecessor_future = predecessor.get_future();
+    boost::fibers::promise<Result<Receipt>> result_promise;
+    auto result_future = result_promise.get_future();
+    bool execution_finished = false;
+
+    boost::fibers::fiber execution{
+        boost::fibers::launch::dispatch, [&] {
+            try {
+                result_promise.set_value(ExecuteTransaction<BatchTraits>{
+                    chain,
+                    1,
+                    transaction,
+                    sender,
+                    {},
+                    header,
+                    block_hash_buffer,
+                    block_state,
+                    metrics,
+                    predecessor_future,
+                    call_tracer,
+                    state_tracer,
+                    chain_context,
+                    nullptr}());
+            }
+            catch (...) {
+                result_promise.set_exception(std::current_exception());
+            }
+            execution_finished = true;
+        }};
+
+    EXPECT_FALSE(execution_finished);
+    {
+        State predecessor_state{block_state, Incarnation{header.number, 1}};
+        predecessor_state.set_storage(contract, slot, small_output_size);
+        EXPECT_TRUE(block_state.can_merge(predecessor_state));
+        block_state.merge(predecessor_state);
+    }
+    predecessor.set_value();
+    execution.join();
+
+    auto const result = result_future.get();
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value().status, 1u);
+    EXPECT_EQ(metrics.num_retries, 1);
+    ASSERT_EQ(call_frames.size(), 3);
+    EXPECT_EQ(call_frames.front().status, CallStatus::Success);
+    EXPECT_EQ(call_frames[1].output.size(), 32);
+    EXPECT_EQ(result.value().calls_executed, 2);
+    State state{block_state, Incarnation{2, 0}};
+    EXPECT_EQ(state.get_nonce(sender), 1);
+    EXPECT_EQ(state.get_balance(recipient), 5);
+    EXPECT_EQ(state.get_balance(sender), 899'995);
+}
+
 TYPED_TEST(TraitsTest, speculative_call_trace_size_limit_is_discarded_on_retry)
 {
     static constexpr auto sender =

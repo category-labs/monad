@@ -182,6 +182,46 @@ fn creation_access_list_presence_and_wide_values_survive_request_round_trips() {
 }
 
 #[test]
+fn batch_requests_preserve_signed_calls_and_reject_scalar_collisions() {
+    use monad_transaction::MonadCall;
+    let calls = vec![MonadCall {
+        to: TxKind::Call(alloy_primitives::Address::ZERO),
+        value: U256::MAX,
+        input: Bytes::from_static(&[1, 2]),
+    }];
+    let mut request = complete();
+    request.inner.to = None;
+    request.inner.value = None;
+    request.inner.input = Default::default();
+    let request = request.with_calls(calls.clone());
+    let json = serde_json::to_value(&request).unwrap();
+    let parsed: MonadTransactionRequest = serde_json::from_value(json.clone()).unwrap();
+    let TypedTransaction::Monad(tx) = parsed.build_unsigned().unwrap() else {
+        panic!("native batch expected")
+    };
+    assert_eq!(tx.calls, Some(calls));
+    assert_eq!(
+        serde_json::to_value(<MonadTransactionRequest as From<TxMonad>>::from(tx)).unwrap(),
+        json
+    );
+    for field in ["to", "value", "input", "data"] {
+        let mut invalid = json.clone();
+        invalid[field] = serde_json::json!(match field {
+            "to" => "0x0000000000000000000000000000000000000000",
+            "value" => "0x0",
+            _ => "0x",
+        });
+        assert!(
+            serde_json::from_value::<MonadTransactionRequest>(invalid).is_err(),
+            "{field}"
+        );
+    }
+    let mut empty = json;
+    empty["calls"] = serde_json::json!([]);
+    assert!(serde_json::from_value::<MonadTransactionRequest>(empty).is_err());
+}
+
+#[test]
 fn fee_and_chain_bounds_reject_overflow_without_narrowing_value() {
     let mut request = serde_json::to_value(complete()).unwrap();
     request["maxFeePerGas"] = json!(format!("0x{:x}", u128::MAX));
@@ -231,10 +271,16 @@ fn rpc_response_to_request_preserves_sender_and_native_commitment() {
     let sig = signer().sign_hash_sync(&native.signature_hash()).unwrap();
     let envelope: TxEnvelope = native.into_signed(sig).into();
     let response = monad_alloy::rpc::Transaction {
+        native_execution: Default::default(),
         inner: envelope.clone().try_into_recovered().unwrap(),
         effective_gas_price: Some(1),
         ..Default::default()
     };
+    let projection: monad_alloy::rpc::Transaction =
+        serde_json::from_value(serde_json::to_value(&response).unwrap()).unwrap();
+    let projected_request: MonadTransactionRequest = projection.into();
+    assert!(serde_json::to_value(&projected_request).is_err());
+    assert!(projected_request.build_unsigned().is_err());
     let request: MonadTransactionRequest = response.into();
     assert_eq!(request.inner.from, Some(signer().address()));
     assert_eq!(request.inner.gas_price, None);
@@ -267,10 +313,11 @@ async fn ethereum_wallet_paths_preserve_types_and_hashes() {
             inner.authorization_list = Some(vec![]);
         }
         let expected = inner.clone().build(&wallet).await.unwrap();
-        let actual = MonadTransactionRequest { inner }
-            .build(&wallet)
-            .await
-            .unwrap();
+        let actual =
+            <MonadTransactionRequest as From<alloy_rpc_types_eth::TransactionRequest>>::from(inner)
+                .build(&wallet)
+                .await
+                .unwrap();
         assert_eq!(actual.ty(), ty);
         assert_eq!(actual.encoded_2718(), expected.encoded_2718());
         assert_eq!(actual.hash(), expected.hash());

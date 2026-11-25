@@ -683,9 +683,17 @@ Result<std::pair<Receipt, size_t>> decode_receipt_db(byte_string_view &enc)
 {
     BOOST_OUTCOME_TRY(
         auto encoded_receipt, parse_encoded_receipt_ignore_log_index(enc));
-    BOOST_OUTCOME_TRY(auto const receipt, rlp::decode_receipt(encoded_receipt));
+    BOOST_OUTCOME_TRY(auto receipt, rlp::decode_receipt(encoded_receipt));
     BOOST_OUTCOME_TRY(
         auto const log_index_begin, rlp::decode_unsigned<size_t>(enc));
+    if (!enc.empty()) {
+        BOOST_OUTCOME_TRY(
+            receipt.calls_executed, rlp::decode_unsigned<uint32_t>(enc));
+        if (receipt.type != TransactionType::monad ||
+            receipt.calls_executed == 0) {
+            return rlp::DecodeError::NonCanonical;
+        }
+    }
     if (MONAD_UNLIKELY(!enc.empty())) {
         return rlp::DecodeError::InputTooLong;
     }

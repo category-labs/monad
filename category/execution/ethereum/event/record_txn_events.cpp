@@ -60,6 +60,10 @@ void init_txn_header_start(
             .monad_access_list_present = txn.monad_access_list_present ||
                                          (txn.type == TransactionType::monad &&
                                           !txn.access_list.empty()),
+            .canonical_tx_length =
+                txn.type == TransactionType::monad
+                    ? static_cast<uint32_t>(rlp::encode_transaction(txn).size())
+                    : 0u,
             .chain_id = txn.sc.chain_id.value_or(0),
             .nonce = txn.nonce,
             .gas_limit = txn.gas_limit,
@@ -67,7 +71,7 @@ void init_txn_header_start(
             .max_priority_fee_per_gas = txn.max_priority_fee_per_gas,
             .value = txn.value,
             .to = txn.to ? *txn.to : Address{},
-            .is_contract_creation = !txn.to,
+            .is_contract_creation = txn.is_create(),
             .r = txn.sc.signature.r,
             .s = txn.sc.signature.s,
             .y_parity = txn.sc.signature.y_parity == 1,
@@ -307,12 +311,16 @@ void record_txn_header_events(
     }
 
     // TXN_HEADER_START
+    auto const canonical = transaction.type == TransactionType::monad
+                               ? rlp::encode_transaction(transaction)
+                               : byte_string{};
     ReservedEvent const txn_header_start =
         exec_recorder->reserve_txn_event<monad_exec_txn_header_start>(
             MONAD_EXEC_TXN_HEADER_START,
             txn_num,
             as_bytes(std::span{transaction.data}),
-            as_bytes(std::span{transaction.blob_versioned_hashes}));
+            as_bytes(std::span{transaction.blob_versioned_hashes}),
+            as_bytes(std::span{canonical}));
     init_txn_header_start(transaction, sender, txn_header_start.payload);
     exec_recorder->commit(txn_header_start);
 
@@ -377,7 +385,8 @@ void record_txn_output_events(
             {.status = receipt.status == 1,
              .log_count = static_cast<uint32_t>(receipt.logs.size()),
              .gas_used = receipt.gas_used},
-        .call_frame_count = static_cast<uint32_t>(call_frames.size())};
+        .call_frame_count = static_cast<uint32_t>(call_frames.size()),
+        .calls_executed = receipt.calls_executed};
     exec_recorder->commit(txn_evm_output);
 
     // TXN_LOG

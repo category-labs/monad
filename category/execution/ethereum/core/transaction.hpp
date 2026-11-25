@@ -77,6 +77,19 @@ using AuthorizationList = std::vector<AuthorizationEntry>;
 static_assert(sizeof(AuthorizationList) == 24);
 static_assert(alignof(AuthorizationList) == 8);
 
+inline constexpr uint8_t MONAD_CALLS_FEATURE = 0x08;
+inline constexpr uint64_t MONAD_CALL_ENTRY_GAS = 21'000;
+
+struct TransactionCall
+{
+    std::optional<Address> to{};
+    uint256_t value{};
+    byte_string data{};
+
+    friend bool
+    operator==(TransactionCall const &, TransactionCall const &) = default;
+};
+
 struct Transaction
 {
     SignatureAndChain sc{};
@@ -94,11 +107,25 @@ struct Transaction
     uint256_t max_fee_per_blob_gas{};
     std::vector<bytes32_t> blob_versioned_hashes{};
     AuthorizationList authorization_list{};
+    // Complete signed CALLS payload, including entries not reached in
+    // execution. A one-entry batch remains distinct from the scalar CALL
+    // feature.
+    std::optional<std::vector<TransactionCall>> calls{};
+
+    constexpr bool is_batch() const noexcept
+    {
+        return calls.has_value();
+    }
+
+    constexpr bool is_create() const noexcept
+    {
+        return calls ? (!calls->empty() && !calls->front().to) : !to;
+    }
 
     friend bool operator==(Transaction const &, Transaction const &) = default;
 };
 
-static_assert(sizeof(Transaction) == 384);
+static_assert(sizeof(Transaction) == 416);
 static_assert(alignof(Transaction) == 8);
 
 std::optional<Address> recover_sender(Transaction const &);

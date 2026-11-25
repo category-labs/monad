@@ -157,6 +157,31 @@ impl TxEnvelope {
             None
         }
     }
+    /// Complete signed CALLS list, independent of public RPC projections.
+    pub fn native_calls(&self) -> Option<&[crate::MonadCall]> {
+        self.as_monad().and_then(|tx| tx.tx().calls.as_deref())
+    }
+
+    pub fn first_call_input(&self) -> &Bytes {
+        self.native_calls()
+            .and_then(|calls| calls.first())
+            .map_or_else(|| self.input(), |call| &call.input)
+    }
+
+    /// Calldata across every signed entry, including entries execution may not reach.
+    pub fn call_inputs(&self) -> impl Iterator<Item = &Bytes> {
+        self.native_calls()
+            .into_iter()
+            .flatten()
+            .map(|call| &call.input)
+            .chain(std::iter::once(self.input()).take(usize::from(self.native_calls().is_none())))
+    }
+
+    /// Maximum native outflow for conservative reserve forecasting only.
+    pub fn max_value_outflow(&self) -> U256 {
+        self.as_monad()
+            .map_or_else(|| self.value(), |tx| tx.tx().max_value_outflow())
+    }
     pub const fn tx_type(&self) -> TxType {
         match self {
             Self::Legacy(_) => TxType::Legacy,

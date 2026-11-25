@@ -23,11 +23,15 @@ mod receipt;
 pub mod rpc;
 mod typed;
 pub use envelope::{TxEnvelope, TxType};
-pub use native::TxMonad;
+pub use native::{validate_batch, MonadCall, TxMonad};
 pub use receipt::ReceiptEnvelope;
 pub use typed::TypedTransaction;
 
 /// Universal transaction type selected by the main transaction design.
 pub const MONAD_TX_TYPE: u8 = 0x40;
-/// This experimental transaction profile is enabled only on a fresh development chain.
+/// Feature registry key for the ordered, atomic call list.
+pub const MONAD_CALLS_FEATURE: u8 = 0x08;
+/// Intrinsic gas for each entry after the first.
+pub const MONAD_CALL_ENTRY_GAS: u64 = 21_000;
+/// Chain ID of the standard Monad development network.
 pub const MONAD_DEVNET_CHAIN_ID: u64 = 20143;

@@ -49,6 +49,17 @@ Result<void> static_validate_transaction(
 {
     static_assert(traits::evm_rev() >= EvmRevision::Berlin);
 
+    if (tx.calls) {
+        if (tx.type != TransactionType::monad || tx.calls->empty() || tx.to ||
+            tx.value != 0 || !tx.data.empty() ||
+            std::any_of(
+                tx.calls->begin() + 1, tx.calls->end(), [](auto const &call) {
+                    return !call.to;
+                })) {
+            return TransactionError::TypeNotSupported;
+        }
+    }
+
     // The phase-0 native profile shares Alloy's outer chain-ID and fee bounds.
     // Keep structural decoding and event storage wide.
     if (tx.type == TransactionType::monad &&
@@ -74,7 +85,7 @@ Result<void> static_validate_transaction(
         (tx.type == TransactionType::eip4844 && traits::eip_4844_active()) ||
         (tx.type == TransactionType::eip7702 && traits::eip_7702_active()) ||
         (tx.type == TransactionType::monad && is_monad_trait_v<traits> &&
-         traits::evm_rev() >= EvmRevision::Prague && chain_id == 20143 &&
+         traits::evm_rev() >= EvmRevision::Prague &&
          tx.sc.chain_id.has_value());
     if (MONAD_UNLIKELY(!type_supported)) {
         return TransactionError::TypeNotSupported;
@@ -102,8 +113,9 @@ Result<void> static_validate_transaction(
         // size has always been twice the max code size, and so it's not
         // appropriate to use `traits::max_initcode_size()` instead.
         if (MONAD_UNLIKELY(
-                !tx.to.has_value() &&
-                tx.data.size() > 2 * traits::max_code_size())) {
+                tx.is_create() &&
+                (tx.calls ? tx.calls->front().data.size() : tx.data.size()) >
+                    2 * traits::max_code_size())) {
             return TransactionError::InitCodeLimitExceeded;
         }
     }

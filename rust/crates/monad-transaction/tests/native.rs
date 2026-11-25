@@ -79,6 +79,89 @@ fn change_features(raw: &[u8], change: impl FnOnce(&mut Vec<Vec<u8>>)) -> Vec<u8
 }
 
 #[test]
+fn batches_preserve_order_feature_identity_and_all_signed_inputs() {
+    use alloy_primitives::{Bytes, TxKind};
+    use monad_transaction::{MonadCall, TxMonad};
+    let signature = Signature::new(U256::ONE, U256::ONE, false);
+    let call = MonadCall {
+        to: TxKind::Call(Address::ZERO),
+        value: U256::ONE,
+        input: Bytes::from_static(&[1, 0, 2]),
+    };
+    let mut batch = TxMonad {
+        chain_id: 143,
+        gas_limit: 100_000,
+        calls: Some(vec![call.clone()]),
+        ..Default::default()
+    };
+    let single = TxMonad {
+        to: call.to,
+        value: call.value,
+        input: call.input.clone(),
+        calls: None,
+        ..batch.clone()
+    };
+    assert_ne!(single.signature_hash(), batch.signature_hash());
+    batch.calls.as_mut().unwrap().push(MonadCall {
+        value: U256::MAX,
+        ..call
+    });
+    let signed: TxEnvelope = batch.clone().into_signed(signature).into();
+    let canonical = signed.encoded_2718();
+    assert_eq!(TxEnvelope::decode_2718_exact(&canonical).unwrap(), signed);
+    assert_eq!(
+        TxEnvelope::decode_submission(&batch.encode_submission(&signature)).unwrap(),
+        signed
+    );
+    assert_eq!(
+        serde_json::from_value::<TxEnvelope>(serde_json::to_value(&signed).unwrap()).unwrap(),
+        signed
+    );
+    let digest = batch.signature_hash();
+    batch.calls.as_mut().unwrap().reverse();
+    assert_ne!(digest, batch.signature_hash());
+    assert_eq!(batch.max_value_outflow(), U256::MAX);
+}
+
+#[test]
+fn batch_decoding_rejects_empty_mixed_and_misplaced_creation() {
+    use alloy_primitives::TxKind;
+    use monad_transaction::{MonadCall, TxMonad};
+    let signature = Signature::new(U256::ONE, U256::ONE, false);
+    let call = MonadCall {
+        to: TxKind::Call(Address::ZERO),
+        ..Default::default()
+    };
+    for calls in [
+        vec![],
+        vec![call.clone(), MonadCall::default()],
+        vec![MonadCall::default(), MonadCall::default()],
+    ] {
+        let tx: TxEnvelope = TxMonad {
+            calls: Some(calls),
+            ..Default::default()
+        }
+        .into_signed(signature)
+        .into();
+        assert!(TxEnvelope::decode_2718_exact(&tx.encoded_2718()).is_err());
+    }
+    let single: TxEnvelope = TxMonad::default().into_signed(signature).into();
+    let single = change_features(&single.encoded_2718(), |_| {});
+    let batch: TxEnvelope = TxMonad {
+        calls: Some(vec![call]),
+        ..Default::default()
+    }
+    .into_signed(signature)
+    .into();
+    let mut batch_feature = Vec::new();
+    change_features(&batch.encoded_2718(), |features| {
+        batch_feature = features.last().unwrap().clone()
+    });
+    let mixed = change_features(&single, |features| features.push(batch_feature));
+    assert!(TxEnvelope::decode_2718_exact(&mixed).is_err());
+}
+
+#[test]
 fn sdk_vectors_agree_on_bytes_hash_digest_sender_and_network_framing() {
     for v in vectors() {
         let raw = bytes(&v.canonical);
@@ -243,6 +326,7 @@ fn rpc_roundtrip_retains_native_widths_and_ethereum_gas_price() {
     ));
     for tx in [native, legacy] {
         let rpc = rpc::Transaction {
+            native_execution: Default::default(),
             effective_gas_price: Some(tx.effective_gas_price(Some(1))),
             inner: Recovered::new_unchecked(tx.clone(), Address::ZERO),
             block_hash: Some(B256::ZERO),
@@ -259,10 +343,10 @@ fn rpc_roundtrip_retains_native_widths_and_ethereum_gas_price() {
             encoded["gasPrice"],
             serde_json::json!(format!("{:#x}", rpc.effective_gas_price.unwrap()))
         );
-        assert_eq!(
-            serde_json::from_value::<rpc::Transaction>(encoded).unwrap(),
-            rpc
-        );
+        let decoded = serde_json::from_value::<rpc::Transaction>(encoded.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&decoded).unwrap(), encoded);
+        assert_eq!(decoded.inner.tx_hash(), rpc.inner.tx_hash());
+        assert_eq!(decoded.canonical_envelope().is_err(), tx.is_monad());
     }
 }
 
@@ -408,14 +492,17 @@ fn native_numeric_bounds_preserve_canonical_bytes_and_signing_traits() {
 fn native_rpc_gas_price_never_saturates() {
     let envelope = TxEnvelope::decode_2718_exact(&bytes(&vectors()[1].canonical)).unwrap();
     let rpc = rpc::Transaction {
+        native_execution: Default::default(),
         inner: Recovered::new_unchecked(envelope, Address::ZERO),
         effective_gas_price: Some(u128::MAX),
         ..Default::default()
     };
     let mut json = serde_json::to_value(&rpc).unwrap();
     assert_eq!(
-        serde_json::from_value::<rpc::Transaction>(json.clone()).unwrap(),
-        rpc
+        serde_json::from_value::<rpc::Transaction>(json.clone())
+            .unwrap()
+            .effective_gas_price,
+        Some(u128::MAX)
     );
     json["gasPrice"] = serde_json::json!(format!("{:#x}", U256::ONE << 128));
     assert!(serde_json::from_value::<rpc::Transaction>(json).is_err());

@@ -96,3 +96,84 @@ fn receipt_price_rejects_invalid_quantities_and_duplicate_aliases() {
         }
     }
 }
+
+#[test]
+fn batch_rpc_projects_attempts_without_losing_local_canonical_intent() {
+    use alloy_consensus::{transaction::Recovered, SignableTransaction};
+    use alloy_eips::Encodable2718;
+    use alloy_primitives::{Bytes, Signature, TxKind, U256};
+    use monad_transaction::{rpc, MonadCall, TxEnvelope, TxMonad};
+    let calls = (1..=3)
+        .map(|i| MonadCall {
+            to: TxKind::Call(Address::repeat_byte(i)),
+            value: U256::from(i),
+            input: Bytes::from(vec![i]),
+        })
+        .collect::<Vec<_>>();
+    let envelope: TxEnvelope = TxMonad {
+        chain_id: 143,
+        gas_limit: 100_000,
+        calls: Some(calls.clone()),
+        ..Default::default()
+    }
+    .into_signed(Signature::new(U256::ONE, U256::ONE, false))
+    .into();
+    let mut response = rpc::Transaction {
+        inner: Recovered::new_unchecked(envelope.clone(), Address::ZERO),
+        ..Default::default()
+    };
+    for count in 0..=3 {
+        response.block_number = (count > 0).then_some(1);
+        response.native_execution = if count == 0 {
+            rpc::NativeExecution::Pending
+        } else {
+            rpc::NativeExecution::Mined {
+                calls_executed: count,
+            }
+        };
+        let json = serde_json::to_value(&response).unwrap();
+        assert_eq!(
+            json["calls"],
+            serde_json::to_value(&calls[..count as usize]).unwrap()
+        );
+        assert_eq!(
+            json["to"],
+            if count == 1 {
+                json!(calls[0].to)
+            } else {
+                Value::Null
+            }
+        );
+        assert_eq!(
+            json["value"],
+            if count == 1 {
+                json!("0x1")
+            } else {
+                json!("0x0")
+            }
+        );
+        assert_eq!(
+            json["input"],
+            if count == 1 {
+                json!("0x01")
+            } else {
+                json!("0x")
+            }
+        );
+        assert_eq!(json["accessList"], json!([]));
+        assert_eq!(
+            response.canonical_envelope().unwrap().encoded_2718(),
+            envelope.encoded_2718()
+        );
+        let projection: rpc::Transaction = serde_json::from_value(json.clone()).unwrap();
+        assert_eq!(projection.inner.hash(), envelope.hash());
+        assert!(projection.canonical_envelope().is_err());
+        assert_eq!(serde_json::to_value(projection).unwrap(), json);
+    }
+    for count in [0, 4] {
+        response.native_execution = rpc::NativeExecution::Mined {
+            calls_executed: count,
+        };
+        assert!(serde_json::to_value(&response).is_err());
+    }
+}

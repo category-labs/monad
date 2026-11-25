@@ -68,6 +68,7 @@ fn receipt(tx: &TxEnvelope) -> Value {
 }
 fn transaction(tx: &TxEnvelope) -> rpc::Transaction {
     rpc::Transaction {
+        native_execution: Default::default(),
         inner: tx.clone().try_into_recovered().unwrap(),
         block_hash: Some(B256::with_last_byte(1)),
         block_number: Some(1),
@@ -456,7 +457,9 @@ async fn typed_transaction_receipt_and_full_block_reads_keep_native_identity() {
         .unwrap()
         .unwrap();
     assert_eq!(tx.inner.inner().ty(), 0x40);
-    assert_eq!(tx.inner.inner().encoded_2718(), signed().encoded_2718());
+    assert_eq!(tx.inner.tx_hash(), signed().hash());
+    assert!(tx.canonical_envelope().is_err());
+    assert_eq!(tx.calls().unwrap().unwrap().len(), 1);
     let receipt = provider
         .get_transaction_receipt(*signed().hash())
         .await
@@ -472,8 +475,6 @@ async fn typed_transaction_receipt_and_full_block_reads_keep_native_identity() {
         .unwrap();
     let included = block.transactions.as_transactions().unwrap();
     assert_eq!(included.len(), 1);
-    assert_eq!(
-        included[0].inner.inner().encoded_2718(),
-        signed().encoded_2718()
-    );
+    assert_eq!(included[0].inner.tx_hash(), signed().hash());
+    assert!(included[0].canonical_envelope().is_err());
 }

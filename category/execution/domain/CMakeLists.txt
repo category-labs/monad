@@ -26,6 +26,9 @@ add_library(
   "derive_domain_block.cpp"
   "derive_domain_block.hpp"
   "domain_block.hpp"
+  "domains_precompiles.cpp"
+  "execute_domain_block.cpp"
+  "execute_domain_block.hpp"
   "hpke.cpp"
   "hpke.hpp"
   "inputs.hpp"
@@ -45,6 +48,5 @@ monad_compile_options(monad_domain_execution)
 file(GLOB_RECURSE domain_tests CONFIGURE_DEPENDS *_test.cpp)
 foreach(test_file ${domain_tests})
   get_filename_component(test_name ${test_file} NAME_WLE)
-  monad_add_test(${test_name} ${test_file})
-  target_link_libraries(${test_name} monad_domain_execution)
+  monad_add_test(${test_name} ${test_file} RUNTIME monad_domain)
 endforeach()

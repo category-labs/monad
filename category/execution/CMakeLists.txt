@@ -27,6 +27,7 @@ add_library(
   monad_execution_ethereum OBJECT
   # ethereum/chain
   "ethereum/chain/chain_config.h"
+  "ethereum/chain/chain.cpp"
   "ethereum/chain/chain.hpp"
   "ethereum/chain/ethereum_mainnet.cpp"
   "ethereum/chain/ethereum_mainnet.hpp"
@@ -245,8 +246,6 @@ add_library(
   "monad/dispatch_transaction.hpp"
   "monad/min_base_fee.cpp"
   "monad/min_base_fee.h"
-  "monad/monad_precompiles.cpp"
-  "monad/monad_precompiles.hpp"
   "monad/monad_precompiles_gas_cost_impl.cpp"
   "monad/monad_transaction_gas.cpp"
   "monad/monad_transaction_gas.hpp"
@@ -404,6 +403,14 @@ target_link_libraries(
     monad_execution_runloop
     PUBLIC monad_execution_native)
 monad_compile_options(monad_execution_runloop)
+
+# Public Monad precompile dispatcher.
+add_library(
+  monad_precompiles_native OBJECT
+  "monad/monad_precompiles.cpp"
+  "monad/monad_precompiles.hpp")
+target_link_libraries(monad_precompiles_native PUBLIC monad_execution_native)
+monad_compile_options(monad_precompiles_native)
 
 # ##############################################################################
 # unit tests

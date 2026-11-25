@@ -18,6 +18,7 @@
 #include <category/core/int.hpp>
 #include <category/core/runtime/uint256.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/gas_profile.hpp>
 #include <category/vm/runtime/bin.hpp>
 #include <category/vm/runtime/types.hpp>
 
@@ -63,7 +64,10 @@ namespace monad::vm::runtime
             auto const dst = ctx->get_memory_offset(*dst_ptr);
             ctx->expand_memory<traits>(max(dst, src) + size);
             auto const size_in_words = shr_ceil<5>(size);
-            ctx->deduct_gas(size_in_words * bin<3>);
+            ctx->deduct_gas(gas_profile::tag(
+                gas_profile::CopyMcopy,
+                *size_in_words,
+                size_in_words * bin<3>));
             std::memmove(
                 ctx->memory.data + *dst, ctx->memory.data + *src, *size);
         }

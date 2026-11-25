@@ -67,9 +67,12 @@
 #include <category/execution/monad/validate_monad_transaction.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/vm/evm/monad/revision.h>
+#include <category/vm/evm/opcodes.hpp>
 #include <category/vm/evm/revision.hpp>
 #include <category/vm/evm/switch_traits.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/gas_profile.hpp>
+#include <category/vm/utils/scope_exit.hpp>
 
 #include <monad/test/config.hpp>
 
@@ -245,6 +248,7 @@ private:
 };
 
 static fiber::PriorityPool *pool_ = nullptr;
+static std::ostream *gas_profile_out_ = nullptr;
 
 static ankerl::unordered_dense::segmented_set<Address> const
     empty_senders_and_authorities{};
@@ -497,6 +501,39 @@ Result<std::vector<Receipt>> execute_and_record(
 }
 
 template <Traits traits>
+void write_gas_profile(
+    std::string const &name, uint64_t const block_number,
+    vm::gas_profile::Session const &session)
+{
+    namespace gp = vm::gas_profile;
+    for (size_t i = 0; i < session.txs.size(); ++i) {
+        auto const &rec = session.txs[i];
+        EXPECT_EQ(rec.cells[gp::Untagged].gas, 0) << name << " tx " << i;
+        EXPECT_EQ(
+            rec.tagged, static_cast<int64_t>(rec.intrinsic) + rec.exec_gas)
+            << name << " tx " << i;
+        auto c = nlohmann::json::object();
+        for (size_t k = 0; k < rec.cells.size(); ++k) {
+            auto const &cell = rec.cells[k];
+            if (cell.units == 0 && cell.gas == 0) {
+                continue;
+            }
+            auto const &info = vm::compiler::opcode_table<traits>[k % 256];
+            auto const key =
+                k < 256 && !vm::compiler::is_unknown_opcode_info<traits>(info)
+                    ? "op:" + std::string{info.name}
+                    : gp::component_name(static_cast<gp::Component>(k));
+            c[key] = {cell.count, cell.units, cell.gas};
+        }
+        *gas_profile_out_
+            << nlohmann::json{{"test", name}, {"block", block_number}, {"tx", i}, {"gas_limit", rec.gas_limit}, {"gas_used", rec.gas_used}, {"intrinsic", rec.intrinsic}, {"exec_gas", rec.exec_gas}, {"status", rec.status}, {"c", std::move(c)}}
+                   .dump()
+            << '\n';
+    }
+    EXPECT_TRUE(gas_profile_out_->flush()) << "cannot write the gas profile";
+}
+
+template <Traits traits>
 void process_test(
     std::string const &name, nlohmann::json const &j_contents,
     vm::VM::Mode const vm_mode, bool enable_tracing,
@@ -564,6 +601,16 @@ void process_test(
         }
 
         uint64_t const curr_block_number = block.value().header.number;
+        vm::gas_profile::Session gas_profile_session;
+        vm::utils::scope_exit const end_gas_profile{[] {
+            vm::gas_profile::session = nullptr;
+            vm::gas_profile::current = nullptr;
+        }};
+        bool const profile_gas =
+            gas_profile_out_ != nullptr && vm_mode == vm::VM::InterpreterOnly;
+        if (profile_gas) {
+            vm::gas_profile::session = &gas_profile_session;
+        }
         auto const result = execute_and_record<traits>(
             chain,
             block.value(),
@@ -574,6 +621,10 @@ void process_test(
             senders_and_authorities_map,
             enable_tracing,
             opt_exec_recorder ? std::addressof(*opt_exec_recorder) : nullptr);
+        if (profile_gas && !result.has_error()) {
+            write_gas_profile<traits>(
+                name, curr_block_number, gas_profile_session);
+        }
 
         ExecutionEvents exec_events{};
         bool check_exec_events = false; // Won't do gtest checks if disabled
@@ -783,6 +834,11 @@ void process_test(
 MONAD_ANONYMOUS_NAMESPACE_END
 
 MONAD_TEST_NAMESPACE_BEGIN
+
+void set_gas_profile_output(std::ostream *const out)
+{
+    gas_profile_out_ = out;
+}
 
 void BlockchainTest::SetUpTestSuite()
 {

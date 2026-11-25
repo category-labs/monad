@@ -1,3 +1,50 @@
-/category/vm  @baltoli @andreaslyn
-/test/vm      @baltoli @andreaslyn
-/cmd/vm       @baltoli @andreaslyn
+# Execution
+/category/execution/        @Baltoli @goodlyrottenapple @dhil @mkolosick @andreaslyn
+/test/ethereum_test/        @Baltoli @goodlyrottenapple @dhil @mkolosick @andreaslyn
+/test/unit/                 @Baltoli @goodlyrottenapple @dhil @mkolosick @andreaslyn
+/test/utils/                @Baltoli @goodlyrottenapple @dhil @mkolosick @andreaslyn
+/test/data/                 @Baltoli @goodlyrottenapple @dhil @mkolosick @andreaslyn
+
+# VM
+/category/vm/               @Baltoli @goodlyrottenapple @dhil @andreaslyn
+/test/vm/                   @Baltoli @goodlyrottenapple @dhil @andreaslyn
+/cmd/vm/                    @Baltoli @goodlyrottenapple @dhil @andreaslyn
+
+# Core / crypto / RPC
+/category/core/             @Baltoli @dhil @goodlyrottenapple @maxkozlovsky @kjcamann
+/category/event/            @Baltoli @dhil @goodlyrottenapple @kjcamann
+/category/crypto/           @Baltoli @dhil @goodlyrottenapple @kjcamann
+/category/rpc/              @Baltoli @dhil @andr-dev
+
+# Storage
+/category/mpt/              @maxkozlovsky @Chen-Yifan @Baltoli @kkuehlz
+/category/async/            @maxkozlovsky @Chen-Yifan @Baltoli @kkuehlz
+/category/statesync/        @maxkozlovsky @Chen-Yifan @Baltoli @kkuehlz
+/rust/                      @Baltoli @andr-dev @dhil @kkuehlz
+/cmd/monad/                 @maxkozlovsky @Chen-Yifan @Baltoli @dhil @andreaslyn @kkuehlz
+/cmd/monad_cli.cpp          @maxkozlovsky @Chen-Yifan @Baltoli @dhil @andreaslyn @kkuehlz
+
+# Binaries build (monad, monad-cli, vm tools)
+/cmd/CMakeLists.txt         @Baltoli @dhil @maxkozlovsky @Chen-Yifan
+
+# Infra / build
+/.github/                   @Baltoli @goodlyrottenapple @dhil @category-labs/devops
+/cmake/                     @Baltoli @goodlyrottenapple @dhil
+/scripts/                   @Baltoli @goodlyrottenapple @dhil
+/docker/                    @Baltoli @goodlyrottenapple @dhil @category-labs/devops
+/third_party/               @Baltoli @goodlyrottenapple @dhil
+/.gitmodules                @Baltoli @goodlyrottenapple @dhil
+/CMakeLists.txt             @Baltoli @goodlyrottenapple @dhil
+
+# zkvm and its nix packaging
+/zkvm/                      @Baltoli @goodlyrottenapple @dhil @mkolosick @anne-laure-s
+/nix/                       @Baltoli @goodlyrottenapple @dhil @mkolosick @anne-laure-s
+/flake.nix                  @Baltoli @goodlyrottenapple @dhil @mkolosick @anne-laure-s
+/flake.lock                 @Baltoli @goodlyrottenapple @dhil @mkolosick @anne-laure-s
+
+# Policy / legal
+/SECURITY.md                @Baltoli @jhunsaker @ronaldstoner
+/LICENSE                    @Baltoli @jhunsaker
+
+# Ownership changes
+/CODEOWNERS                 @Baltoli @jhunsaker

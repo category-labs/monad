@@ -461,7 +461,7 @@ void AsyncIO::poll_uring_while_submission_queue_full_()
     // if completions is getting close to full, drain some to prevent
     // completions getting dropped, which would break everything.
     auto const max_cq_entries =
-        eager_completions_ ? 0 : (*ring->cq.kring_entries >> 1);
+        eager_completions_ ? 0 : (ring->cq.ring_entries >> 1);
     while (io_uring_cq_ready(ring) > max_cq_entries) {
         if (!poll_uring_(false, 0)) {
             break;
@@ -726,12 +726,12 @@ AsyncIO::io_uring_ring_entries_left(bool const for_wr_ring) const noexcept
         auto *ring = &wr_uring_->get_ring();
         return {
             io_uring_sq_space_left(ring),
-            *ring->cq.kring_entries - io_uring_cq_ready(ring)};
+            ring->cq.ring_entries - io_uring_cq_ready(ring)};
     }
     auto *ring = &uring_.get_ring();
     return {
         io_uring_sq_space_left(ring),
-        *ring->cq.kring_entries - io_uring_cq_ready(ring)};
+        ring->cq.ring_entries - io_uring_cq_ready(ring)};
 }
 
 void AsyncIO::dump_fd_to(size_t const which, std::filesystem::path const &path)

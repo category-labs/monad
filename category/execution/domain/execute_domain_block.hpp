@@ -85,11 +85,18 @@ template <Traits traits>
 BlockHeader domain_execution_inputs(
     DerivedDomainBlock const &, bytes32_t const &parent_hash);
 
-// Executes a derived domain block's transactions in order under the private
-// domain rules, which exist from MONAD_TEN: an earlier revision aborts.
-// `block_state` holds the domain's state as of the previous
-// block, `header` is the block's domain_execution_inputs, and `block_hashes`
-// serves BLOCKHASH. Returns one receipt per transaction.
+// What a domain block does to the domain's state before its transactions. The
+// domain keeps its block hashes in its own state (EIP-2935), where BLOCKHASH
+// reads them, so this stores the hash of the parent of `header`'s block. The
+// private domain rules exist from MONAD_TEN: an earlier revision aborts.
+template <Traits traits>
+    requires is_monad_trait_v<traits>
+void execute_domain_block_header(BlockState &, BlockHeader const &header);
+
+// Executes a derived domain block: execute_domain_block_header, then its
+// transactions in order under the private domain rules. `block_state` holds
+// the domain's state as of the previous block and `header` is the block's
+// domain_execution_inputs. Returns one receipt per transaction.
 template <Traits traits>
     requires is_monad_trait_v<traits>
 Result<std::vector<Receipt>> execute_domain_block(

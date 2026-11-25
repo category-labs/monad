@@ -148,10 +148,8 @@ EXPLICIT_MONAD_TRAITS(domain_execution_inputs);
 
 template <Traits traits>
     requires is_monad_trait_v<traits>
-Result<std::vector<Receipt>> execute_domain_block(
-    DomainChain const &chain, DerivedDomainBlock const &derived,
-    BlockHeader const &header, BlockState &block_state,
-    BlockHashBuffer const &block_hashes, fiber::PriorityPool &priority_pool)
+void execute_domain_block_header(
+    BlockState &block_state, BlockHeader const &header)
 {
     // No private domain runs an earlier revision. Some of those would not
     // store the parent's hash in state: see set_block_hash_history.
@@ -159,19 +157,26 @@ Result<std::vector<Receipt>> execute_domain_block(
         traits::monad_rev() >= MONAD_TEN,
         "private domains are not supported before MONAD_TEN");
 
+    State state{block_state, Incarnation{header.number, 0}};
+    deploy_block_hash_history_contract<traits>(state);
+    set_block_hash_history<traits>(state, header);
+    MONAD_ASSERT(block_state.can_merge(state));
+    block_state.merge(state);
+}
+
+EXPLICIT_MONAD_TRAITS(execute_domain_block_header);
+
+template <Traits traits>
+    requires is_monad_trait_v<traits>
+Result<std::vector<Receipt>> execute_domain_block(
+    DomainChain const &chain, DerivedDomainBlock const &derived,
+    BlockHeader const &header, BlockState &block_state,
+    BlockHashBuffer const &block_hashes, fiber::PriorityPool &priority_pool)
+{
     auto const &transactions = derived.transactions;
     MONAD_ASSERT(derived.senders.size() == transactions.size());
 
-    // The domain keeps its block hashes in its own state (EIP-2935), where
-    // BLOCKHASH reads them: the parent's hash is stored before the block's
-    // transactions run.
-    {
-        State state{block_state, Incarnation{header.number, 0}};
-        deploy_block_hash_history_contract<traits>(state);
-        set_block_hash_history<traits>(state, header);
-        MONAD_ASSERT(block_state.can_merge(state));
-        block_state.merge(state);
-    }
+    execute_domain_block_header<traits>(block_state, header);
 
     auto const authorities = recover_authorities(transactions, priority_pool);
     auto const senders_and_authorities =

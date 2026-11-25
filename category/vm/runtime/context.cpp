@@ -83,7 +83,7 @@ namespace monad::vm::runtime
         std::span<uint8_t const> const code) noexcept
     {
         return Context{
-            .host = &host,
+            .host = GuardedHost{&host},
             .gas_remaining = msg->gas,
             .gas_refund = 0,
             .env =
@@ -112,7 +112,7 @@ namespace monad::vm::runtime
         uint8_t *const memory_handle, uint32_t const memory_capacity) noexcept
     {
         return Context{
-            .host = nullptr,
+            .host = GuardedHost{nullptr},
             .gas_remaining = 0,
             .gas_refund = 0,
             .env =

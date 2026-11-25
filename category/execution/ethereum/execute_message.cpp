@@ -35,6 +35,7 @@
 #include <category/vm/evm/result.hpp>
 #include <category/vm/evm/revision.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/gas_profile.hpp>
 
 #include <cstdint>
 #include <optional>
@@ -102,7 +103,10 @@ vm::Result deploy_contract_code(
     }
     else {
         result.create_address = address;
-        result.gas_left -= deploy_cost;
+        result.gas_left -= vm::gas_profile::tag(
+            vm::gas_profile::CodeDepositBytes,
+            static_cast<int64_t>(result.output_size),
+            deploy_cost);
         state.set_code(address, {result.output_data, result.output_size});
     }
     return result;
@@ -334,6 +338,17 @@ vm::Result execute_call_message(
             state, call_tracer, msg, host->log_native_transfers_);
         maybe_result.has_value()) {
         result = std::move(maybe_result.value());
+        int64_t const gas = msg.gas - result.gas_left;
+        if (result.status_code != CallStatus::Success) {
+            vm::gas_profile::charge(vm::gas_profile::HaltBurn, gas, gas);
+        }
+        else if (
+            (msg.flags & std::to_underlying(vm::CallFlags::Delegated)) == 0) {
+            vm::gas_profile::charge(
+                vm::gas_profile::precompile_component(msg.code_address.bytes),
+                static_cast<int64_t>(msg.input_size),
+                gas);
+        }
     }
     else {
         auto const hash = state.get_code_hash(msg.code_address);

@@ -49,6 +49,7 @@
 #include <category/vm/evm/result.hpp>
 #include <category/vm/evm/revision.hpp>
 #include <category/vm/evm/traits.hpp>
+#include <category/vm/gas_profile.hpp>
 #include <category/vm/memory_pool.hpp>
 
 #include <boost/fiber/future/future.hpp>
@@ -287,10 +288,21 @@ vm::Result ExecuteTransactionNoValidation<traits>::operator()(
         }
     }
 
+    if constexpr (vm::gas_profile::enabled) {
+        profile_intrinsic_gas<traits>(tx_);
+    }
+    auto const frame = vm::gas_profile::frame_enter(msg.gas);
+
     auto result =
         (msg.kind == vm::CallKind::Create || msg.kind == vm::CallKind::Create2)
             ? ::monad::execute_create_message<traits>(&host, state, msg)
             : ::monad::execute_call_message<traits>(&host, state, msg);
+
+    vm::gas_profile::frame_exit(frame, result);
+    if constexpr (vm::gas_profile::enabled) {
+        vm::gas_profile::tx_exec(
+            intrinsic_gas<traits>(tx_), msg.gas - result.gas_left);
+    }
 
     result.gas_refund += auth_refund;
     return result;
@@ -343,6 +355,7 @@ Result<vm::Result> ExecuteTransaction<traits>::execute_impl2(State &state)
         state.set_validate_exact_balance(sender_);
         return std::move(validation).as_failure();
     }
+    vm::gas_profile::tx_begin(i_, tx_.gas_limit);
 
     auto const tx_context = get_tx_context<traits>(
         tx_,
@@ -409,6 +422,12 @@ Receipt ExecuteTransaction<traits>::execute_final(
     // finalize state, Eqn. 77-79
     state.destruct_suicides<traits>();
     state.destruct_touched_dead();
+
+    vm::gas_profile::tx_end(
+        i_,
+        gas_used,
+        static_cast<uint64_t>(result.gas_refund),
+        static_cast<uint32_t>(result.status_code));
 
     Receipt receipt{
         .status = result.status_code == CallStatus::Success ? 1u : 0u,

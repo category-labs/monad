@@ -1341,13 +1341,6 @@ Result<void> FineFastInterpreter::run_op(
         concat(x, y, axis, out);
         return outcome::success();
     }
-    case FineOp::MatMul: {
-        // int8: any address is aligned
-        Tensor const x = input();
-        Tensor const y = input();
-        matmul_i8(x, y, out);
-        return outcome::success();
-    }
     case FineOp::QMatMul: {
         auto const bits = take<uint8_t>(code);
         skip<Dtype>(code); // The output's dtype, which its node type has

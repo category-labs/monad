@@ -95,10 +95,6 @@ enum class FineOp : uint8_t
 
     Gather = 12,
 
-    // Temporary, until it's removed: not in the MIP, where QMatMul with
-    // frac_bits 0 replaces it. It has the first id after the MIP's opcodes
-    MatMul = 13,
-
     Invalid
 };
 
@@ -138,11 +134,6 @@ struct FineOpInfo<FineOp::Reshape> : FineOpInfoImpl<Shape, 1>
 
 template <>
 struct FineOpInfo<FineOp::Concat> : FineOpInfoImpl<uint8_t, 2>
-{
-};
-
-template <>
-struct FineOpInfo<FineOp::MatMul> : FineOpInfoImpl<std::monostate, 2>
 {
 };
 
@@ -204,7 +195,6 @@ inline Result<FineOp> read_next<FineOp>(std::span<uint8_t const> &input)
     case FineOp::ReduceSum:
     case FineOp::ReduceMax:
     case FineOp::Gather:
-    case FineOp::MatMul:
         return op;
     case FineOp::Invalid:
         break;
@@ -233,8 +223,6 @@ inline auto visit_op(FineOp const op, F &&f)
         return f.template operator()<FineOp::Reshape>();
     case FineOp::Concat:
         return f.template operator()<FineOp::Concat>();
-    case FineOp::MatMul:
-        return f.template operator()<FineOp::MatMul>();
     case FineOp::QMatMul:
         return f.template operator()<FineOp::QMatMul>();
     case FineOp::CumSum:

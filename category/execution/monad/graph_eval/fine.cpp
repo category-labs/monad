@@ -540,31 +540,6 @@ FinecodeValidator::validate_op<FineOp::Concat>(uint8_t const &axis)
 }
 
 template <>
-Result<TensorType>
-FinecodeValidator::validate_op<FineOp::MatMul>(std::monostate const &)
-{
-    BOOST_OUTCOME_TRY(auto const inputs, read_op_inputs<FineOp::MatMul>());
-    auto const &[x, y] = inputs;
-    if (x->shape().rank() != 2 || y->shape().rank() != 2) {
-        return GraphEvalError::RankError;
-    }
-    if (x->shape().dimensions()[1] != y->shape().dimensions()[0]) {
-        return GraphEvalError::ShapeError;
-    }
-    // TODO: figure out whether we want polymorphic matmul or just i8/u8
-    if (x->dtype() != Dtype::int8 || y->dtype() != Dtype::int8) {
-        return GraphEvalError::TypeError;
-    }
-
-    std::array<uint16_t, MAX_RANK> dimensions{};
-    dimensions[0] = x->shape().dimensions()[0];
-    dimensions[1] = y->shape().dimensions()[1];
-    BOOST_OUTCOME_TRY(auto const shape, Shape::checked(2, dimensions));
-    BOOST_OUTCOME_TRY(auto const type, TensorType::checked(Dtype::int32, shape));
-    return type;
-}
-
-template <>
 Result<TensorType> FinecodeValidator::validate_op<FineOp::QMatMul>(
     std::tuple<uint8_t, Dtype> const &params)
 {
@@ -578,7 +553,8 @@ Result<TensorType> FinecodeValidator::validate_op<FineOp::QMatMul>(
     if (x->shape().rank() != 2 || y->shape().rank() != 2) {
         return GraphEvalError::RankError;
     }
-    if (x->shape().dimensions()[1] != y->shape().dimensions()[0]) {
+    // x is [m, k] and y is [n, k]; the output is [m, n]
+    if (x->shape().dimensions()[1] != y->shape().dimensions()[1]) {
         return GraphEvalError::ShapeError;
     }
     if (x->dtype() != y->dtype()) {
@@ -586,7 +562,7 @@ Result<TensorType> FinecodeValidator::validate_op<FineOp::QMatMul>(
     }
     std::array<uint16_t, MAX_RANK> dimensions{};
     dimensions[0] = x->shape().dimensions()[0];
-    dimensions[1] = y->shape().dimensions()[1];
+    dimensions[1] = y->shape().dimensions()[0];
     BOOST_OUTCOME_TRY(auto const shape, Shape::checked(2, dimensions));
     BOOST_OUTCOME_TRY(auto const type, TensorType::checked(out_dtype, shape));
     return type;

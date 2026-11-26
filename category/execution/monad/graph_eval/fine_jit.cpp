@@ -1011,12 +1011,6 @@ Result<GraphOutputs> FineJit::run()
             concat(x, y, axis, out);
             break;
         }
-        case FineOp::MatMul: {
-            auto const x = take_input();
-            auto const y = take_input();
-            matmul_i8(x, y, out);
-            break;
-        }
         case FineOp::QMatMul: {
             auto const bits = take<uint8_t>(code_);
             skip<Dtype>(code_);

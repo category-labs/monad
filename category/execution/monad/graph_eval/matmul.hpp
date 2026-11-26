@@ -23,17 +23,20 @@
 
 MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
 
-// out = x * y, for an m x k int8 matrix x and a k x n int8 matrix y, into the
-// m x n int32 matrix out, all row-major. The products are exact: even 65535
-// products of -128 and -128 sum to less than 2^31. Uses AVX-512 with VNNI,
-// which matmul.cpp is compiled for
+// out = x * y^T, for an m x k int8 matrix x and an n x k int8 matrix y, into
+// the m x n int32 matrix out, all row-major: out[i][j] is the sum over l of
+// x[i][l] * y[j][l]. The products are exact: even 65535 products of -128 and
+// -128 sum to less than 2^31. Uses AVX-512 with VNNI, which matmul.cpp is
+// compiled for
 void matmul_i8(Tensor const &x, Tensor const &y, Tensor &out);
 
-// out = (x * y) >> bits, for an m x k matrix x and a k x n matrix y of the same
-// dtype, into the m x n matrix out of any dtype, all row-major. Each element's
-// products are summed exactly, wrapping at 128 bits, then shifted right by
-// `bits`, at most 64, rounding down, and wrapped to out's dtype. x and y may be
-// at any alignment
-void qmatmul(Tensor const &x, Tensor const &y, unsigned const bits, Tensor &out);
+// out = (x * y^T) >> bits, for an m x k matrix x and an n x k matrix y of the
+// same dtype, into the m x n matrix out of any dtype, all row-major: out[i][j]
+// is the sum over l of x[i][l] * y[j][l], shifted. Each element's products are
+// summed exactly, wrapping at 128 bits, then shifted right by `bits`, at most
+// 64, rounding down, and wrapped to out's dtype. x and y may be at any
+// alignment
+void qmatmul(
+    Tensor const &x, Tensor const &y, unsigned const bits, Tensor &out);
 
 MONAD_GRAPH_EVAL_NAMESPACE_END

@@ -11,36 +11,29 @@ created: 2026-11-23
 
 ## Abstract
 
-Add a precompile at address `0x1002` that evaluates a graph of tensor
-operations. A graph is stored as the code of an ordinary account, in a
-compact binary format. Graphs support a fixed set of tensor operations
-on signed and unsigned integer types at most 64 bits wide, with no
-support for control flow, side effects, floating point or dynamic
-shapes. Callers pass the graph's inputs by value or by reference to an
-account's code, and receive the outputs.
+Add a precompile at address `0x1002` that evaluates a graph of tensor operations. A graph is stored
+as the code of an ordinary account, in a compact binary format. Graphs support a fixed set of tensor
+operations on signed and unsigned integer types at most 64 bits wide, with no support for control
+flow, side effects, floating point or dynamic shapes. Callers pass the graph's inputs by value or by
+reference to an account's code, and receive the outputs.
 
 ## Motivation
 
-Numeric work in EVM code is expensive. Every value is a 256-bit word,
-so a 32-bit multiplication with wrapping takes a multiplication and a
-sign extension, and a 16.16 fixed-point multiplication takes eight
-opcodes and 30 gas. Loops over arrays pay for bounds checks, loop
-control and memory or storage accesses on every element. Workloads
-such as inference with quantized neural networks, order matching,
-pricing curves and simulations repeat the same arithmetic over many
-values or evaluate long chains of narrow integer operations, so most of the gas
-they use pays for this overhead rather than for the arithmetic. For
-example, a small MNIST digit
-classifier (an 8-filter convolution, max pooling and a dense layer with
-13,520 `int16` weights) written in Solidity uses 10.4 million gas per
-prediction and takes 1.15 ms in compiled EVM code. The same model, as a
-graph, takes about 23 µs in the reference implementation's interpreter.
+Numeric work in EVM code is expensive. Every value is a 256-bit word, so a 32-bit multiplication
+with wrapping takes a multiplication and a sign extension, and a 16.16 fixed-point multiplication
+takes eight opcodes and 30 gas. Loops over arrays pay for bounds checks, loop control and memory or
+storage accesses on every element. Workloads such as inference with quantized neural networks, order
+matching, pricing curves and simulations repeat the same arithmetic over many values or evaluate
+long chains of narrow integer operations, so most of the gas they use pays for this overhead rather
+than for the arithmetic. For example, a small MNIST digit classifier (an 8-filter convolution, max
+pooling and a dense layer with 13,520 `int16` weights) written in Solidity uses 10.4 million gas per
+prediction and takes 1.15 ms in compiled EVM code. The same model, as a graph, takes about 23 µs in
+the reference implementation's interpreter.
 
-A precompile that takes a whole computation as one graph of tensor
-operations can execute it with machine-width integer arithmetic,
-without per-element dispatch. Because the graph is fixed in advance,
-its validity, memory use and most of its cost are known before it
-runs, so implementations can validate and compile graphs ahead of time.
+A precompile that takes a whole computation as one graph of tensor operations can execute it
+efficiently with machine-width integer arithmetic. Because the graph is fixed in advance, its
+validity, memory use and most of its cost are known before it runs, so implementations can validate
+and compile graphs ahead of time.
 
 ## Specification
 
@@ -99,11 +92,10 @@ struct Type {
 }
 ```
 
-`Uint8` to `Uint64` are unsigned types of the corresponding bit width.
-`Int8` to `Int64` are signed types of the corresponding bit width, stored in two's complement.
-$\mathrm{byte\_width}$ is 1 for `Uint8` and `Int8`, 2 for `Uint16`
-and `Int16`, 4 for `Uint32` and `Int32`, and 8 for `Uint64` and `Int64`, and
-$\mathrm{bit\_width} = 8 \times \mathrm{byte\_width}$.
+`Uint8` to `Uint64` are unsigned types of the corresponding bit width. `Int8` to `Int64` are signed
+types of the corresponding bit width, stored in two's complement. $\mathrm{byte\_width}$ is 1 for
+`Uint8` and `Int8`, 2 for `Uint16` and `Int16`, 4 for `Uint32` and `Int32`, and 8 for `Uint64` and
+`Int64`, and $\mathrm{bit\_width} = 8 \times \mathrm{byte\_width}$.
 
 Given a shape $s$, we define $\mathrm{size}(s) = \prod_i s.\mathrm{dimensions}[i]$ and require that valid shapes satisfy
 $\mathrm{size}(s) < 2^{64}$.

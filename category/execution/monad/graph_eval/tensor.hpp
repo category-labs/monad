@@ -271,8 +271,8 @@ enum class Location : uint8_t
     Last_valid = Storage,
 };
 
-// A tensor in an account's code, at a byte offset counted from the code's
-// first byte, as EXTCODECOPY counts
+// A tensor's elements in an account's code, from a byte offset counted from
+// the code's first byte, as EXTCODECOPY counts
 struct CodeRef
 {
     Address address;

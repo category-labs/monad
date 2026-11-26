@@ -40,13 +40,12 @@ public:
     virtual void store(bytes32_t const &slot, bytes32_t const &value) = 0;
 };
 
-// Copies the tensor at `ref` in an account's code to `out`, in host order,
-// from `order`. As in SSTORE2, the code is a 0x00 byte, so that calling the
-// account stops at once, then the data: tensors encoded as a Literal's
-// parameters, one after another, so the first is at offset 1. The one at the
-// offset must have `out`'s type. InvalidTensorRef if it doesn't, if the code
-// doesn't start with 0x00, or if the offset is 0 or leaves no room for the
-// whole tensor
+// Copies the elements in an account's code from `ref`'s offset on to `out`, in
+// host order, from `order`. They're the size_bytes() bytes of `out`'s type,
+// row-major, and the code holds no type or marker for them, so any bytes of
+// any account's code can be read as a tensor of any type. InvalidTensorRef if
+// they run past the end of the code. An empty tensor can be at the end of the
+// code, which is offset 0 for an account with no code
 Result<void>
 load_code_tensor(State &, CodeRef const &ref, ByteOrder order, Tensor &out);
 

@@ -20,7 +20,6 @@
 #include <category/execution/ethereum/core/contract/big_endian.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/monad/graph_eval/config.hpp>
-#include <category/execution/monad/graph_eval/graph.hpp>
 #include <category/execution/monad/graph_eval/graph_eval_error.hpp>
 #include <category/execution/monad/graph_eval/references.hpp>
 #include <category/execution/monad/graph_eval/tensor.hpp>
@@ -32,7 +31,6 @@
 #include <cstdint>
 #include <cstring>
 #include <span>
-#include <tuple>
 
 MONAD_GRAPH_EVAL_ANONYMOUS_NAMESPACE_BEGIN
 
@@ -65,24 +63,14 @@ Result<void> load_code_tensor(
     State &state, CodeRef const &ref, ByteOrder const order, Tensor &out)
 {
     vm::SharedVarcode const varcode = state.get_code(ref.address);
-    std::span<uint8_t const> code = varcode->intercode()->code_span();
-    if (ref.offset == 0 || ref.offset >= code.size() || code[0] != 0x00) {
+    std::span<uint8_t const> const code = varcode->intercode()->code_span();
+    size_t const size = out.type().size_bytes();
+    // The offset is checked first, so that the subtraction can't wrap
+    if (ref.offset > code.size() || size > code.size() - ref.offset) {
         return GraphEvalError::InvalidTensorRef;
     }
-    code = code.subspan(ref.offset);
-    auto const tensor =
-        read_next<std::tuple<TensorType, std::span<uint8_t const>>>(code);
-    if (tensor.has_error()) {
-        return GraphEvalError::InvalidTensorRef;
-    }
-    auto const &[type, data] = tensor.value();
-    if (type != out.type()) {
-        return GraphEvalError::InvalidTensorRef;
-    }
-    // TODO: `order` applies to the elements only. Their header, before them,
-    // is always little-endian, like the rest of the graphcode, which is a bit
-    // of a quirk
-    copy_elements(type.dtype(), order, data, out.data());
+    copy_elements(
+        out.type().dtype(), order, code.subspan(ref.offset, size), out.data());
     return outcome::success();
 }
 

@@ -18,7 +18,8 @@
 //
 //     monad-bench <file.gc | file.bc> [file.dat] <modes...> [options]
 //
-// A .gc file is a graph's graphcode, a .bc file EVM runtime bytecode, and a
+// A .gc file is a graph's graphcode, Fine bytecode as scripts/finecode.py
+// writes it, a .bc file EVM runtime bytecode, and a
 // .dat file calldata, all in hex, where whitespace and a leading 0x are
 // ignored. Bytecode runs in the monad
 // VM's interpreter (--interpreted) or its native compiler (--compiled), as the
@@ -33,22 +34,13 @@
 // A graph runs on the inputs in the evalGraph or evalGraphInto calldata in a
 // .dat file, which it needs, with the accounts in --accounts' file, an address
 // and its code in hex a line, for the code its TensorRefs and the calldata's
-// code references read. scripts/graphcode.py writes all three from a .graph
-// file. The graph runs in the interpreter (--interpreted) or compiled with the
-// lite compiler (--lite). --fine FILE also runs FILE, Fine bytecode in hex for
-// the same graph, in the Fine interpreter, once a FILE, and --fine-fast FILE
-// in the fast Fine interpreter. Each call is timed from
-// the inputs, decoded, in memory, to the outputs written, in the same way for
-// each engine: the interpreter copies the inputs into its arena, as the
-// precompile does, and so do the Fine interpreter and the lite compiler's
-// graph, at the offsets its compiler chose.
-// With --node-times, the interpreter's and the lite compiler's times are also
-// broken down by node, each in a pass of its own after it's timed, and printed
-// after every mode's timing, with the lite compiler's input copy timed apart,
-// as it happens before its run.
+// code references read. The graph runs in the Fine interpreter (--interpreted)
+// or the fast Fine interpreter (--fast). Each call is timed from the inputs,
+// decoded, in memory, to the outputs written, in the same way for each engine:
+// it copies the inputs into its arena, as the precompile does.
 //
 // Each mode's results are checked before and after it's timed: a graph's
-// outputs against the interpreter's, and bytecode's status, gas and output
+// outputs against the Fine interpreter's, and bytecode's status, gas and output
 // against the first call's, and its output against the one in --expect's
 // file, if given. Each mode is timed in batches of calls of about a
 // millisecond, after a warm-up, for a set time, and the time per call is
@@ -74,9 +66,6 @@
 #include <category/execution/monad/graph_eval/fine.hpp>
 #include <category/execution/monad/graph_eval/fine_fast_interpreter.hpp>
 #include <category/execution/monad/graph_eval/fine_interpreter.hpp>
-#include <category/execution/monad/graph_eval/graphcode.hpp>
-#include <category/execution/monad/graph_eval/interpreter.hpp>
-#include <category/execution/monad/graph_eval/lite_compiler.hpp>
 #include <category/execution/monad/graph_eval/references.hpp>
 #include <category/execution/monad/graph_eval/tensor.hpp>
 #include <category/mpt/db.hpp>
@@ -123,8 +112,8 @@
 using namespace monad;
 using namespace monad::graph_eval;
 
-// The interpreter reads little-endian inputs, and the compiled graphs host
-// order ones, and the same bytes are given to both
+// The inputs are decoded into host order, then given to the Fine interpreters
+// as little-endian literals
 static_assert(std::endian::native == std::endian::little);
 
 namespace
@@ -333,8 +322,7 @@ namespace
     //
 
     // The accounts in an --accounts file: an address and its code, in hex, a
-    // line, as scripts/graphcode.py writes them from a graph's data
-    // statements. `#` starts a comment, and an address alone has no code
+    // line. `#` starts a comment, and an address alone has no code
     std::vector<std::pair<Address, byte_string>>
     read_accounts(std::filesystem::path const &path)
     {
@@ -375,7 +363,7 @@ namespace
     // encoding the precompile accepts. Their elements, which may be in the
     // calldata or an account's code, are loaded, in host order
     std::vector<byte_string> read_calldata_inputs(
-        byte_string const &calldata, Graphcode const &gc, State &state)
+        byte_string const &calldata, Finecode const &fc, State &state)
     {
         constexpr uint32_t EVAL_GRAPH = abi_encode_selector(
             "evalGraph(address,(uint8,uint16[],uint8,uint8,bytes)[])");
@@ -412,13 +400,13 @@ namespace
 
         // The inputs' tail: their number, their offsets, then each in turn
         auto const length = abi_decode_fixed<u256_be>(input);
-        if (length.has_error() || length.value().native() != gc.n_inputs()) {
+        if (length.has_error() || length.value().native() != fc.n_inputs()) {
             die("the calldata doesn't have the graph's " +
-                std::to_string(gc.n_inputs()) + " inputs");
+                std::to_string(fc.n_inputs()) + " inputs");
         }
         byte_string_view const elements = input;
         std::vector<uint64_t> offsets;
-        for (size_t i = 0; i < gc.n_inputs(); i++) {
+        for (size_t i = 0; i < fc.n_inputs(); i++) {
             auto const offset = abi_decode_fixed<u256_be>(input);
             if (offset.has_error()) {
                 fail();
@@ -426,7 +414,7 @@ namespace
             offsets.push_back(offset.value().native().as_words()[0]);
         }
         std::vector<byte_string> inputs;
-        for (size_t i = 0; i < gc.n_inputs(); i++) {
+        for (size_t i = 0; i < fc.n_inputs(); i++) {
             if (offsets[i] != elements.size() - input.size()) {
                 fail();
             }
@@ -435,7 +423,7 @@ namespace
                 fail();
             }
             TensorInput const &tensor_input = decoded.value();
-            TensorType const &type = gc.tensor_types()[i];
+            TensorType const &type = fc.node_type(i);
             if (!(tensor_input.type == type)) {
                 die("input " + std::to_string(i) +
                     " in the calldata doesn't have the graph's type for it");
@@ -472,15 +460,10 @@ namespace
 
     struct GraphModes
     {
+        // The Fine interpreter
         bool interpreted = false;
-        // After timing the interpreter, time each of its nodes too
-        bool node_times = false;
-        bool lite = false;
-        // Fine bytecode files for the same graph, each run in the Fine
-        // interpreter
-        std::vector<std::filesystem::path> fine;
-        // The same, each run in the fast Fine interpreter
-        std::vector<std::filesystem::path> fine_fast;
+        // The fast Fine interpreter
+        bool fast = false;
     };
 
     void bench_graph(
@@ -505,223 +488,90 @@ namespace
             }
         }
 
-        Graphcode const gc{std::span<uint8_t const>{graphcode}};
-        if (gc.validation_result() != GraphEvalError::Success) {
+        // Validated once, outside the timing, as the precompile's Intercode
+        // validates a graph once
+        Finecode const fc =
+            graph_eval::validate(std::span<uint8_t const>{graphcode});
+        if (fc.validation_result() != GraphEvalError::Success) {
             die("the graph doesn't validate");
         }
         std::vector<byte_string> const inputs =
-            read_calldata_inputs(read_hex(calldata_path), gc, state);
-        auto const output_type = [&](size_t const i) -> TensorType const & {
-            return gc.tensor_types()[gc.outputs()[i]];
-        };
+            read_calldata_inputs(read_hex(calldata_path), fc, state);
 
         auto *const arena = static_cast<uint8_t *>(
             std::aligned_alloc(TENSOR_DATA_ALIGNMENT, ARENA_SIZE));
         MONAD_ASSERT(arena);
 
-        // The interpreter, as run_graph sets it up, from the inputs as
-        // literals
+        // The inputs as literals, as run_graph is given them, already decoded
         std::vector<TensorInput> tensor_inputs;
         tensor_inputs.reserve(inputs.size());
         for (size_t i = 0; i < inputs.size(); i++) {
             tensor_inputs.push_back(TensorInput{
-                gc.tensor_types()[i],
+                fc.node_type(i),
                 ByteOrder::LittleEndian,
                 byte_string_view{inputs[i]}});
         }
-        auto const interpret = [&](NodeTimes *const times = nullptr) {
-            Interpreter interpreter{
-                state, tensor_inputs, nullptr, std::nullopt, gc, arena};
-            interpreter.time_nodes(times);
-            auto result = interpreter.run();
+        // One call in a Fine interpreter, FineInterpreter or
+        // FineFastInterpreter, which copies the inputs into its arena
+        auto const run = [&]<typename Engine>(std::string const &name) {
+            Engine engine{
+                fc, state, tensor_inputs, nullptr, std::nullopt, arena};
+            auto result = engine.run();
             if (result.has_error()) {
-                die("the interpreter failed: " +
+                die(name + " failed: " +
                     std::string{result.error().message().c_str()});
             }
             return std::move(result.value());
         };
 
-        // The outputs to check every mode's against: the interpreter's
+        // The outputs to check every mode's against: the Fine interpreter's
         std::vector<byte_string> expected;
-        for (Tensor const &output : interpret()) {
+        for (Tensor const &output :
+             run.template operator()<FineInterpreter>("interpreted")) {
             expected.emplace_back(output.data(), output.type().size_bytes());
         }
         std::printf(
             "graph %s: %zu ops, %zu inputs, %zu outputs; outputs checked "
-            "against the interpreter's\n\n",
+            "against the Fine interpreter's\n\n",
             path.filename().c_str(),
-            gc.tensor_types().size() - gc.n_inputs(),
-            gc.n_inputs(),
-            gc.outputs().size());
+            fc.n_ops(),
+            fc.n_inputs(),
+            fc.output_ids().size());
 
-        auto const check = [&](std::string const &name, auto const &outputs) {
+        auto const check = [&](std::string const &name,
+                               GraphOutputs const &outputs) {
             for (size_t i = 0; i < expected.size(); i++) {
-                byte_string_view const output = outputs(i);
+                byte_string_view const output{
+                    outputs[i].data(), outputs[i].type().size_bytes()};
                 if (output != byte_string_view{expected[i]}) {
                     die(name + ": output " + std::to_string(i) +
-                        " doesn't match the interpreter's");
+                        " doesn't match the Fine interpreter's");
                 }
             }
         };
         print_header();
 
-        // The interpreter's time by node, printed after every mode's timing
-        std::string node_report;
+        // A mode's outputs are checked before and after it's timed, each time
+        // from an arena filled with a pattern, so that an output it doesn't
+        // write is caught
+        auto const bench = [&]<typename Engine>(std::string const &name) {
+            std::memset(arena, 0xa5, ARENA_SIZE);
+            check(name, run.template operator()<Engine>(name));
+            measure(
+                name,
+                timing,
+                1000,
+                [](size_t) {},
+                [&](size_t) { run.template operator()<Engine>(name); });
+            std::memset(arena, 0xa5, ARENA_SIZE);
+            check(name, run.template operator()<Engine>(name));
+        };
         if (modes.interpreted) {
-            GraphOutputs outputs;
-            auto const interpreted_outputs = [&](size_t const i) {
-                return byte_string_view{
-                    outputs[i].data(), outputs[i].type().size_bytes()};
-            };
-            outputs = interpret();
-            check("interpreted", interpreted_outputs);
-            measure(
-                "interpreted",
-                timing,
-                1000,
-                [](size_t) {},
-                [&](size_t) { interpret(); });
-            outputs = interpret();
-            check("interpreted", interpreted_outputs);
-            if (modes.node_times) {
-                // In a pass of its own, as long as the timing's, so that
-                // reading the timestamp counter at each node doesn't slow
-                // the calls timed above
-                NodeTimes times;
-                auto const start = Clock::now();
-                while (elapsed_ns(start) < timing.seconds * 1e9) {
-                    interpret(&times);
-                }
-                node_report = "\ninterpreted, by node: " + times.report();
-            }
+            bench.template operator()<FineInterpreter>("interpreted");
         }
-
-        if (modes.lite) {
-            auto const start = Clock::now();
-            auto compiled = LiteCompiler::compile(gc);
-            if (compiled.has_error()) {
-                die("the lite compiler couldn't compile the graph: " +
-                    std::string{compiled.error().message().c_str()});
-            }
-            print_compile("lite", elapsed_ns(start));
-            LiteCompiledGraph &graph = compiled.value();
-            // Like the interpreter, it reads its inputs from the arena, at
-            // the offsets its compiler chose, so each call copies them there,
-            // and leaves its outputs in the arena too. Its TensorRefs read
-            // the same state as the interpreter's, on every call
-            auto const call_once = [&] {
-                for (size_t i = 0; i < inputs.size(); i++) {
-                    std::memcpy(
-                        arena + graph.input_offsets()[i],
-                        inputs[i].data(),
-                        inputs[i].size());
-                }
-                auto const result =
-                    graph.run(std::span<uint8_t>{arena, ARENA_SIZE}, state);
-                if (result.has_error()) {
-                    die("lite failed: " +
-                        std::string{result.error().message().c_str()});
-                }
-            };
-            auto const lite_outputs = [&](size_t const i) {
-                return byte_string_view{
-                    arena + graph.output_offsets()[i],
-                    output_type(i).size_bytes()};
-            };
-            std::memset(arena, 0xa5, ARENA_SIZE);
-            call_once();
-            check("lite", lite_outputs);
-            measure(
-                "lite",
-                timing,
-                1000,
-                [](size_t) {},
-                [&](size_t) { call_once(); });
-            std::memset(arena, 0xa5, ARENA_SIZE);
-            call_once();
-            check("lite", lite_outputs);
-            if (modes.node_times) {
-                NodeTimes times;
-                graph.time_kernels(&times);
-                auto const start = Clock::now();
-                while (elapsed_ns(start) < timing.seconds * 1e9) {
-                    call_once();
-                }
-                graph.time_kernels(nullptr);
-                // The input copy alone, in a loop, as it's outside run
-                constexpr size_t COPIES = 100000;
-                auto const copy_start = Clock::now();
-                for (size_t c = 0; c < COPIES; c++) {
-                    for (size_t i = 0; i < inputs.size(); i++) {
-                        std::memcpy(
-                            arena + graph.input_offsets()[i],
-                            inputs[i].data(),
-                            inputs[i].size());
-                    }
-                }
-                double const copy_ns =
-                    elapsed_ns(copy_start) / static_cast<double>(COPIES);
-                node_report +=
-                    "\nlite, by node: " + times.report() +
-                    "  input copy, before run: " + format_time(copy_ns) + "\n";
-            }
+        if (modes.fast) {
+            bench.template operator()<FineFastInterpreter>("fast");
         }
-
-        // Each Fine bytecode file: the same graph, in Fine's format, run by
-        // a Fine interpreter, FineInterpreter for --fine and
-        // FineFastInterpreter for --fine-fast, on the same inputs, which it
-        // copies into its arena as the interpreter does. It's validated once,
-        // outside the timing, as the interpreter's graphcode is
-        auto const run_fine_files =
-            [&]<typename Engine>(
-                std::vector<std::filesystem::path> const &paths,
-                std::string const &engine) {
-                for (auto const &fine_path : paths) {
-                    std::string const name =
-                        engine + " " + fine_path.stem().string();
-                    byte_string const fine_code = read_hex(fine_path);
-                    Finecode const finecode = graph_eval::validate(
-                        std::span<uint8_t const>{fine_code});
-                    auto const run_fine = [&] {
-                        Engine interpreter{
-                            finecode,
-                            state,
-                            tensor_inputs,
-                            nullptr,
-                            std::nullopt,
-                            arena};
-                        auto result = interpreter.run();
-                        if (result.has_error()) {
-                            die(name + " failed: " +
-                                std::string{
-                                    result.error().message().c_str()});
-                        }
-                        return std::move(result.value());
-                    };
-                    GraphOutputs outputs;
-                    auto const fine_outputs = [&](size_t const i) {
-                        return byte_string_view{
-                            outputs[i].data(), outputs[i].type().size_bytes()};
-                    };
-                    std::memset(arena, 0xa5, ARENA_SIZE);
-                    outputs = run_fine();
-                    check(name, fine_outputs);
-                    measure(
-                        name,
-                        timing,
-                        1000,
-                        [](size_t) {},
-                        [&](size_t) { run_fine(); });
-                    std::memset(arena, 0xa5, ARENA_SIZE);
-                    outputs = run_fine();
-                    check(name, fine_outputs);
-                }
-            };
-        run_fine_files.template operator()<FineInterpreter>(modes.fine, "fine");
-        run_fine_files.template operator()<FineFastInterpreter>(
-            modes.fine_fast, "fine-fast");
-
-        std::printf("%s", node_report.c_str());
         std::free(arena);
     }
 
@@ -1127,21 +977,10 @@ int main(int argc, char **argv)
     app.add_flag(
         "--compiled", compiled, "Bytecode: run compiled to native code");
     app.add_flag(
-        "--lite",
-        graph_modes.lite,
-        "Graph: run compiled with the lite compiler");
-    app.add_option(
-           "--fine",
-           graph_modes.fine,
-           "Graph: run this file of Fine bytecode in hex, the same graph in "
-           "Fine's format, in the Fine interpreter; can be repeated")
-        ->check(CLI::ExistingFile);
-    app.add_option(
-           "--fine-fast",
-           graph_modes.fine_fast,
-           "Graph: as --fine, in the fast Fine interpreter, whose Scalar fns "
-           "are chained by tail calls; can be repeated")
-        ->check(CLI::ExistingFile);
+        "--fast",
+        graph_modes.fast,
+        "Graph: run in the fast Fine interpreter, whose Scalar fns are "
+        "chained by tail calls");
 
     app.add_option("--cpu", cpu, "Pin to this CPU");
     app.add_option("--time", timing.seconds, "Seconds to time each mode for")
@@ -1167,12 +1006,6 @@ int main(int argc, char **argv)
            expect,
            "Bytecode: a file of the output the calls must return, in hex")
         ->check(CLI::ExistingFile);
-    app.add_flag(
-        "--node-times",
-        graph_modes.node_times,
-        "Graph: after timing the interpreter or the lite compiler, time each "
-        "of its nodes, in a pass of its own, and print the average time of "
-        "each");
     app.add_option(
            "--accounts",
            accounts,
@@ -1198,10 +1031,8 @@ int main(int argc, char **argv)
         die("calldata must be a .dat file");
     }
     if (extension == ".bc") {
-        if (graph_modes.lite || !graph_modes.fine.empty() ||
-            !graph_modes.fine_fast.empty() || graph_modes.node_times) {
-            die("--lite, --fine, --fine-fast and --node-times are for .gc "
-                "files");
+        if (graph_modes.fast) {
+            die("--fast is for .gc files");
         }
         if (!interpreted && !compiled) {
             die("give --interpreted, --compiled, or both");
@@ -1241,16 +1072,11 @@ int main(int argc, char **argv)
             die("a .gc file needs a .dat file of calldata for its inputs");
         }
         if (compiled) {
-            die("--compiled is for .bc files; give --lite");
+            die("--compiled is for .bc files; give --interpreted, --fast or "
+                "both");
         }
-        if (!interpreted && !graph_modes.lite && graph_modes.fine.empty() &&
-            graph_modes.fine_fast.empty()) {
-            die("give one or more of --interpreted, --lite, --fine, "
-                "--fine-fast");
-        }
-        if (graph_modes.node_times && !interpreted && !graph_modes.lite) {
-            die("--node-times times the interpreter and the lite compiler; "
-                "give --interpreted, --lite or both");
+        if (!interpreted && !graph_modes.fast) {
+            die("give --interpreted, --fast, or both");
         }
         print_environment(cpu);
         bench_graph(input, *calldata, accounts, graph_modes, timing);

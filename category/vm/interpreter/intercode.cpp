@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include "category/execution/monad/graph_eval/graphcode.hpp"
+#include "category/execution/monad/graph_eval/fine.hpp"
 #include <category/core/monad_exception.hpp>
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/interpreter/intercode.hpp>
@@ -35,9 +35,9 @@ namespace monad::vm::interpreter
         , graphcode_(std::nullopt)
     {
         if (code.size() > 2 && code[0] == 0xfe && code[1] == 0x7f) {
-            // From this Intercode's own copy of the code, which the Graphcode
+            // From this Intercode's own copy of the code, which the Finecode
             // keeps pointing into: the caller's may not outlive the call
-            graphcode_.emplace(code_span());
+            graphcode_.emplace(graph_eval::validate(code_span()));
         }
     }
 

@@ -39,111 +39,6 @@
 
 MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
 
-enum class Op : uint16_t
-{
-    Literal = 0,
-    TensorRef,
-    Add,
-    Sub,
-    Greater,
-    Ge,
-    Equal,
-    Reshape,
-    Where,
-    CumSum,
-    Saturate,
-    MatMul,
-    ArgMax,
-    ArgMin,
-    Clip,
-    Max,
-    Min,
-    Mul,
-    Div,
-    Cast,
-    Expand,
-    QMul,
-    QDiv,
-    QMatMul,
-    ReduceSum,
-    ReduceMax,
-    QExp,
-    QInvSqrt,
-    Gather,
-    Concat,
-    ISqrt,
-    Last_valid_op = ISqrt,
-};
-
-inline char const *op_name(Op const op)
-{
-    switch (op) {
-    case Op::Literal:
-        return "Literal";
-    case Op::TensorRef:
-        return "TensorRef";
-    case Op::Add:
-        return "Add";
-    case Op::Sub:
-        return "Sub";
-    case Op::Greater:
-        return "Greater";
-    case Op::Ge:
-        return "Ge";
-    case Op::Equal:
-        return "Equal";
-    case Op::Reshape:
-        return "Reshape";
-    case Op::Where:
-        return "Where";
-    case Op::CumSum:
-        return "CumSum";
-    case Op::Saturate:
-        return "Saturate";
-    case Op::MatMul:
-        return "MatMul";
-    case Op::ArgMax:
-        return "ArgMax";
-    case Op::ArgMin:
-        return "ArgMin";
-    case Op::Clip:
-        return "Clip";
-    case Op::Max:
-        return "Max";
-    case Op::Min:
-        return "Min";
-    case Op::Mul:
-        return "Mul";
-    case Op::Div:
-        return "Div";
-    case Op::Cast:
-        return "Cast";
-    case Op::Expand:
-        return "Expand";
-    case Op::QMul:
-        return "QMul";
-    case Op::QDiv:
-        return "QDiv";
-    case Op::QMatMul:
-        return "QMatMul";
-    case Op::ReduceSum:
-        return "ReduceSum";
-    case Op::ReduceMax:
-        return "ReduceMax";
-    case Op::QExp:
-        return "QExp";
-    case Op::QInvSqrt:
-        return "QInvSqrt";
-    case Op::Gather:
-        return "Gather";
-    case Op::Concat:
-        return "Concat";
-    case Op::ISqrt:
-        return "ISqrt";
-    }
-    MONAD_ABORT();
-}
-
 //
 // Reading graphcode. Each read_next<T> consumes a T from the front of its
 // input, which is in host byte order.
@@ -185,18 +80,6 @@ inline Result<Dtype> read_next<Dtype>(std::span<uint8_t const> &input)
         return GraphEvalError::TypeError;
     }
     return static_cast<Dtype>(ty_id);
-}
-
-template <>
-[[gnu::always_inline]]
-inline Result<Op> read_next<Op>(std::span<uint8_t const> &input)
-{
-    BOOST_OUTCOME_TRY(
-        auto const op_id, read_next<std::underlying_type_t<Op>>(input));
-    if (op_id > static_cast<std::underlying_type_t<Op>>(Op::Last_valid_op)) {
-        return GraphEvalError::InvalidOp;
-    }
-    return static_cast<Op>(op_id);
 }
 
 template <>

@@ -15,7 +15,7 @@
 
 #pragma once
 
-#include "category/execution/monad/graph_eval/graphcode.hpp"
+#include "category/execution/monad/graph_eval/fine.hpp"
 #include <category/vm/runtime/bin.hpp>
 
 #include <algorithm>
@@ -61,7 +61,7 @@ namespace monad::vm::interpreter
             return code_size_;
         }
 
-        std::optional<graph_eval::Graphcode> const &graphcode() const noexcept
+        std::optional<graph_eval::Finecode> const &graphcode() const noexcept
         {
             return graphcode_;
         }
@@ -99,7 +99,7 @@ namespace monad::vm::interpreter
         uint8_t const *padded_code_;
         code_size_t code_size_;
         JumpdestMap jumpdest_map_;
-        std::optional<graph_eval::Graphcode> graphcode_;
+        std::optional<graph_eval::Finecode> graphcode_;
 
         static uint8_t const *pad(std::span<uint8_t const> code);
 

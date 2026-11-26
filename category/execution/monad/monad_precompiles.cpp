@@ -21,7 +21,6 @@
 #include <category/execution/monad/staking/staking_contract.hpp>
 #include <category/execution/monad/staking/util/constants.hpp>
 #include <category/execution/monad/graph_eval/graph_eval.hpp>
-#include <category/execution/monad/graph_eval/interpreter.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
 #include <array>
 #include <chrono>

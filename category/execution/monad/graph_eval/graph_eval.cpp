@@ -24,10 +24,10 @@
 #include <category/execution/ethereum/trace/call_tracer.hpp>
 #include <category/execution/monad/graph_eval/config.hpp>
 #include <category/execution/monad/graph_eval/constants.hpp>
+#include <category/execution/monad/graph_eval/fine_interpreter.hpp>
 #include <category/execution/monad/graph_eval/graph.hpp>
 #include <category/execution/monad/graph_eval/graph_eval.hpp>
 #include <category/execution/monad/graph_eval/graph_eval_error.hpp>
-#include <category/execution/monad/graph_eval/interpreter.hpp>
 #include <category/execution/monad/graph_eval/references.hpp>
 #include <category/execution/monad/graph_eval/tensor.hpp>
 #include <category/vm/evm/explicit_traits.hpp>
@@ -220,12 +220,12 @@ Result<GraphOutputs> run_graph(
         // execute code that wasn't a graph at all.
         return GraphEvalError::GraphValidationError;
     }
-    Interpreter interpreter{
+    FineInterpreter interpreter{
+        *graphcode,
         state,
         inputs,
         caller_storage,
         output_count,
-        *graphcode,
         thread_arena()};
     return interpreter.run();
 }

@@ -14,8 +14,8 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 # monad-bench, which benchmarks graphs for the graph-eval precompile and EVM
-# bytecode in each engine that can run them; see main.cpp. It reads graphs as
-# the graphcode, calldata and accounts files scripts/graphcode.py writes
+# bytecode in each engine that can run them; see main.cpp. It reads a graph as
+# a file of Fine bytecode, a file of calldata and a file of accounts
 
 add_executable(monad-bench main.cpp)
 monad_compile_options(monad-bench)

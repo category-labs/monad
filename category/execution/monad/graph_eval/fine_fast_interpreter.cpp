@@ -971,7 +971,7 @@ Result<void> FineFastInterpreter::check_inputs() const
     return outcome::success();
 }
 
-// Copies each input into the arena, in host byte order, as Interpreter does
+// Copies each input into the arena, in host byte order
 Result<void> FineFastInterpreter::load_inputs()
 {
     for (size_t i = 0; i < inputs_.size(); i++) {

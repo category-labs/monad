@@ -225,6 +225,34 @@ public:
     }
 };
 
+// A graph's outputs, which point into the arena, in an array, so that returning
+// them allocates nothing
+struct GraphOutputs
+{
+    std::array<Tensor, MAX_GRAPH_OUTPUTS> tensors{};
+    size_t count = 0;
+
+    size_t size() const
+    {
+        return count;
+    }
+
+    Tensor const &operator[](size_t const i) const
+    {
+        return tensors[i];
+    }
+
+    Tensor const *begin() const
+    {
+        return tensors.data();
+    }
+
+    Tensor const *end() const
+    {
+        return tensors.data() + count;
+    }
+};
+
 // The byte order of a tensor's elements outside the interpreter: in the
 // calldata, in an account's code or in storage. Inside, they're in host order
 enum class ByteOrder : uint8_t
@@ -291,12 +319,6 @@ struct TensorOutput
     // Where the output is stored, or none if it's returned
     std::optional<StorageRef> destination;
 };
-
-// The shape numpy broadcasts `shapes` to: they're matched from their last
-// dimensions, and each of the result's dimensions is their common size along
-// it, a shape being repeated along any dimension where its size is 1 or it has
-// none. ShapeError if they don't broadcast together.
-Result<Shape> broadcast_shape(std::span<Shape const> shapes);
 
 // ABI-decode a TensorInput or a TensorOutput tuple. Only the canonical layout
 // is accepted. InvalidInput if a tag isn't one of its values, or a payload

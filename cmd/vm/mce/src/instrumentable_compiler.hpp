@@ -32,6 +32,7 @@
 #include <memory>
 #include <optional>
 #include <print>
+#include <utility>
 
 struct CompilerBinary
 {
@@ -45,9 +46,9 @@ class InstrumentableCompiler
 {
 public:
     InstrumentableCompiler(
-        asmjit::JitRuntime &rt,
+        std::shared_ptr<asmjit::JitRuntime> rt,
         monad::vm::compiler::native::CompilerConfig const &config)
-        : rt_(rt)
+        : rt_(std::move(rt))
         , config_(config)
     {
     }
@@ -104,6 +105,6 @@ public:
     }
 
 private:
-    asmjit::JitRuntime &rt_;
+    std::shared_ptr<asmjit::JitRuntime> rt_;
     monad::vm::compiler::native::CompilerConfig const &config_;
 };

@@ -34,6 +34,7 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 using namespace monad;
@@ -241,9 +242,11 @@ TEST(MonadVmInterface, VarcodeCache)
             static_cast<uint32_t>(bytecode0.size())),
         bytecode_cache_weight);
     auto icode0 = make_shared_intercode(bytecode0);
-    asmjit::JitRuntime asmjit_rt;
     auto ncode0 = std::make_shared<Nativecode>(
-        asmjit_rt, TestTraits::id(), nullptr, std::monostate{});
+        std::make_shared<asmjit::JitRuntime>(),
+        TestTraits::id(),
+        nullptr,
+        std::monostate{});
 
     ASSERT_FALSE(cache.get(hash0).has_value());
     cache.set(hash0, icode0, ncode0);

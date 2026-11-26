@@ -57,8 +57,9 @@ using namespace monad::vm::utils;
 
 namespace
 {
-    std::shared_ptr<monad::vm::compiler::native::Nativecode>
-    compile(asmjit::JitRuntime &rt, std::vector<uint8_t> const &bytecode)
+    std::shared_ptr<monad::vm::compiler::native::Nativecode> compile(
+        std::shared_ptr<asmjit::JitRuntime> const &rt,
+        std::vector<uint8_t> const &bytecode)
     {
         using traits = EvmTraits<EvmRevision::LatestStable>;
 
@@ -122,8 +123,8 @@ namespace
             std::vector<uint8_t> bytecode{};
             evm_as::compile(eb, bytecode);
 
-            asmjit::JitRuntime rt{};
-            auto native = compile(rt, bytecode);
+            auto native =
+                compile(std::make_shared<asmjit::JitRuntime>(), bytecode);
 
             [&]() { ASSERT_TRUE(native != nullptr); }();
 

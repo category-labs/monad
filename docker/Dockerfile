@@ -59,10 +59,17 @@ ADD --checksum=sha256:a19da286fec086ecd82ce06057e0afa3219d4f28bc1e07a3adffad2e1b
     https://github.com/monad-developers/execution-specs/releases/download/tests-monad@v1.3.0/fixtures_monad.tar.gz \
     /fixtures/
 
+# ccache directory from an earlier build: empty here; CI passes in the one its
+# last push saved (see compiler-cache in .github/actions/docker-stage).
+FROM scratch AS compiler_cache
+
 FROM base AS build_and_test
 
 COPY --from=test_fixtures /fixtures /fixtures
 ENV MONAD_TEST_FIXTURES_DIR=/fixtures
+
+COPY --from=compiler_cache / /ccache
+ENV CCACHE_DIR=/ccache CMAKE_C_COMPILER_LAUNCHER=ccache CMAKE_CXX_COMPILER_LAUNCHER=ccache
 
 COPY . src
 
@@ -76,10 +83,16 @@ ENV GIT_COMMIT_HASH=$GIT_COMMIT_HASH
 
 RUN cd src && CC=${CC:?} CXX=${CXX:?} CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:?} CMAKE_TOOLCHAIN_FILE=category/core/toolchains/${TOOLCHAIN:?}.cmake ./scripts/configure.sh
 
-RUN cd src && ./scripts/build.sh
+# Evict what this build did not use, so a saved cache stays one build's size.
+RUN cd src && start=$(date +%s) && ccache --zero-stats && ./scripts/build.sh && \
+    ccache --evict-older-than "$(( $(date +%s) - start + 1 ))s" && ccache --show-stats
 
 # security=insecure for tests which use io_uring
 RUN --security=insecure cd src && CC=${CC:?} CXX=${CXX:?} CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:?} ./scripts/test.sh
+
+# The cache CI saves after a build_and_test build.
+FROM scratch AS build_and_test_compiler_cache
+COPY --from=build_and_test /ccache /
 
 FROM base_vm_test AS build_and_test_vm
 

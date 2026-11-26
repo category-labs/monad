@@ -75,3 +75,4 @@ jobs:
           cache-from: |
             type=gha,scope=base
             type=gha,scope=test_fixtures
+          compiler-cache: ccache-${{ matrix.compiler.CC }}-${{ matrix.CMAKE_BUILD_TYPE }}

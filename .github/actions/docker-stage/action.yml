@@ -21,6 +21,13 @@ inputs:
   allow:
     description: Extra privileges for RUN steps.
     default: ''
+  compiler-cache:
+    description: >-
+      Actions cache key prefix for the stage's ccache directory, which the
+      build gets as the `compiler_cache` build context (empty until a save).
+      Pushes and manual runs build `<target>_compiler_cache` instead of
+      `target` and save it under the prefix; other events only read.
+    default: ''
   submodules:
     description: Check out the submodules, skipping unused test data.
     default: 'false'
@@ -55,6 +62,33 @@ runs:
         echo "gcc=$GCC_VERSION" >> "$GITHUB_OUTPUT"
         echo "llvm=$LLVM_VERSION" >> "$GITHUB_OUTPUT"
 
+    - name: Restore compiler cache
+      if: inputs.compiler-cache != ''
+      uses: actions/cache/restore@v6
+      with:
+        path: ${{ runner.temp }}/compiler_cache
+        key: ${{ inputs.compiler-cache }}-${{ github.sha }}
+        restore-keys: ${{ inputs.compiler-cache }}-
+
+    # The build reads the restored cache from compiler_cache.in. A save
+    # exports the new one to the path the restore step used, because
+    # actions/cache keys its entries on the path too.
+    - name: Prepare compiler cache
+      id: ccache
+      if: inputs.compiler-cache != ''
+      shell: bash
+      env:
+        TARGET: ${{ inputs.target }}
+      run: |
+        mkdir -p "$RUNNER_TEMP/compiler_cache"
+        mv "$RUNNER_TEMP/compiler_cache" "$RUNNER_TEMP/compiler_cache.in"
+        echo "contexts=compiler_cache=$RUNNER_TEMP/compiler_cache.in" >> "$GITHUB_OUTPUT"
+        if [[ "$GITHUB_EVENT_NAME" == push ||
+              "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+          echo "target=${TARGET}_compiler_cache" >> "$GITHUB_OUTPUT"
+          echo "outputs=type=local,dest=$RUNNER_TEMP/compiler_cache" >> "$GITHUB_OUTPUT"
+        fi
+
     - name: Build `${{ inputs.target }}` stage
       uses: docker/build-push-action@v7
       env:
@@ -68,8 +102,17 @@ runs:
           GCC_VERSION=${{ steps.toolchain.outputs.gcc }}
           LLVM_VERSION=${{ steps.toolchain.outputs.llvm }}
           ${{ inputs.build-args }}
+        build-contexts: ${{ steps.ccache.outputs.contexts }}
         allow: ${{ inputs.allow }}
         ulimit: "memlock=-1:-1"
-        target: ${{ inputs.target }}
+        target: ${{ steps.ccache.outputs.target || inputs.target }}
+        outputs: ${{ steps.ccache.outputs.outputs }}
         cache-from: ${{ inputs.cache-from }}
         cache-to: ${{ inputs.cache-to }}
+
+    - name: Save compiler cache
+      if: steps.ccache.outputs.outputs != ''
+      uses: actions/cache/save@v6
+      with:
+        path: ${{ runner.temp }}/compiler_cache
+        key: ${{ inputs.compiler-cache }}-${{ github.sha }}

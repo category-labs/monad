@@ -5,6 +5,7 @@ source "$(dirname "$0")/toolchain.env"
 packages=(
   apt-utils
   ca-certificates
+  ccache
   clang-${LLVM_VERSION}
   clang-tools-${LLVM_VERSION}
   clang-tidy-${LLVM_VERSION}

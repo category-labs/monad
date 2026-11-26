@@ -1,0 +1,131 @@
+#!/usr/bin/env python3
+
+# Copyright (C) 2025-26 Category Labs, Inc.
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+"""clang-tidy that skips a file when it passed before with the same inputs.
+
+check-clang-tidy.sh --cache-dir gives this script to run-clang-tidy in place
+of clang-tidy. A file's key hashes the flags, the effective configuration,
+the compile commands and the contents of every file the result depends on:
+this script, the plugins, the binaries and libraries that run, and what the
+preprocessor reads, as `clang -M` lists it with clang-tidy's own macro and
+arguments. A clean run leaves an empty file named by the key in
+CLANG_TIDY_CACHE_DIR, and a file whose key is there is skipped. Runs with
+findings leave nothing, so every finding comes from a real clang-tidy run.
+"""
+
+import hashlib
+import json
+import os
+import re
+import shlex
+import shutil
+import subprocess
+import sys
+
+import yaml
+
+
+def option(args, name):
+    return [a.split("=", 1)[1] for a in args if a.startswith(f"-{name}=")]
+
+
+def run(command, **kwargs):
+    return subprocess.run(
+        command, capture_output=True, text=True, check=True, **kwargs
+    ).stdout
+
+
+def program(name):
+    """An executable and the libraries it loads."""
+    path = shutil.which(name)
+    if path is None:
+        raise LookupError(name)
+    path = os.path.realpath(path)
+    libraries = re.findall(r"(/\S+) \(0x", run(["ldd", path]))
+    return {path, *map(os.path.realpath, libraries)}
+
+
+def source(entry):
+    return os.path.normpath(os.path.join(entry["directory"], entry["file"]))
+
+
+def preprocessor_inputs(entry, before, after):
+    args = entry.get("arguments") or shlex.split(entry["command"])
+    # clang-tidy defines __clang_analyzer__ ahead of the command-line macros.
+    command = [args[0], "-D__clang_analyzer__", *before]
+    rest = iter(args[1:])
+    for arg in rest:
+        if arg in ("-o", "-MF", "-MT", "-MQ"):
+            next(rest, None)
+        elif arg not in ("-c", "-MD", "-MMD", "-MP"):
+            command.append(arg)
+    out = run([*command, *after, "-M"], cwd=entry["directory"])
+    deps = out.replace("\\\n", " ").partition(": ")[2].split()
+    return program(args[0]) | {
+        os.path.normpath(os.path.join(entry["directory"], d)) for d in deps
+    }
+
+
+def key(clang_tidy, flags, path):
+    database = os.path.join(option(flags, "p")[0], "compile_commands.json")
+    with open(database) as f:
+        entries = [e for e in json.load(f) if source(e) == path]
+    if not entries:
+        raise LookupError(path)
+    config = run([clang_tidy, *flags, "--dump-config", path])
+    options = yaml.safe_load(config)
+    before = option(flags, "extra-arg-before")
+    before += options.get("ExtraArgsBefore") or []
+    after = option(flags, "extra-arg") + (options.get("ExtraArgs") or [])
+    inputs = {os.path.realpath(__file__), *program(clang_tidy)}
+    inputs |= {os.path.abspath(p) for p in option(flags, "load")}
+    for e in entries:
+        inputs |= preprocessor_inputs(e, before, after)
+    h = hashlib.sha256(json.dumps([flags, config, entries]).encode())
+    for p in sorted(inputs):
+        with open(p, "rb") as f:
+            digest = hashlib.file_digest(f, "sha256").digest()
+        h.update(p.encode() + b"\0" + digest)
+    return h.hexdigest()
+
+
+def main():
+    clang_tidy = os.environ["CLANG_TIDY"]
+    args = sys.argv[1:]
+    files = [a for a in args if not a.startswith("-")]
+    if len(files) != 1:
+        # Not a lint of one file, such as run-clang-tidy's -list-checks probe.
+        os.execvp(clang_tidy, [clang_tidy, *args])
+    try:
+        flags = [a for a in args if a != files[0]]
+        clean = os.path.join(
+            os.environ["CLANG_TIDY_CACHE_DIR"],
+            key(clang_tidy, flags, os.path.abspath(files[0])),
+        )
+    except (OSError, LookupError, subprocess.CalledProcessError):
+        clean = None
+    if clean and os.path.exists(clean):
+        os.utime(clean)  # Marks it used, so check-clang-tidy.sh keeps it.
+        return 0
+    status = subprocess.run([clang_tidy, *args]).returncode
+    if status == 0 and clean:
+        open(clean, "w").close()
+    return status
+
+
+if __name__ == "__main__":
+    sys.exit(main())

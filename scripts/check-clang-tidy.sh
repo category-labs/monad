@@ -6,6 +6,7 @@ source "$(dirname "$0")/ubuntu-build/toolchain.env"
 
 BUILD_DIR=build
 RUN_CLANG_TIDY="run-clang-tidy-$LLVM_VERSION"
+CACHE_DIR=
 
 usage() {
   cat >&2 <<EOF
@@ -13,6 +14,8 @@ Usage: $0 [options...] [-- CLANG_TIDY_ARGS...]
 Options:
   -p|--build-dir BUILD_DIR
   -d|--driver RUN_CLANG_TIDY
+  -c|--cache-dir CACHE_DIR  skip files whose inputs match a clean run
+                            recorded in CACHE_DIR, and record clean runs
 EOF
   exit 1
 }
@@ -26,6 +29,11 @@ while [[ "$#" -gt 0 ]]; do
       ;;
     -d|--driver)
       RUN_CLANG_TIDY="$2"
+      shift
+      shift
+      ;;
+    -c|--cache-dir)
+      CACHE_DIR="$2"
       shift
       shift
       ;;
@@ -63,11 +71,29 @@ mapfile -d '' -t inputs < <(\
     category/vm    \
     zkvm)
 
+CACHE_OPTIONS=()
+
+if [ -n "$CACHE_DIR" ]; then
+  mkdir -p "$CACHE_DIR"
+  touch "$CACHE_DIR/.start"
+  export CLANG_TIDY="clang-tidy-$LLVM_VERSION" CLANG_TIDY_CACHE_DIR="$CACHE_DIR"
+  CACHE_OPTIONS=(-clang-tidy-binary "$(dirname "$0")/clang-tidy-cached")
+fi
+
+status=0
 "${RUN_CLANG_TIDY}"                               \
   "${inputs[@]}"                                  \
   "${CUSTOM_PASS_OPTIONS[@]}"                     \
+  "${CACHE_OPTIONS[@]}"                           \
   -header-filter "category/.*"                    \
   -j "$(nproc)"                                   \
   -p "${BUILD_DIR}" "$@"                          \
   -extra-arg='-Wno-unknown-warning-option'        \
-  -quiet
+  -quiet || status=$?
+
+if [ -n "$CACHE_DIR" ]; then
+  # Keep only the results this run used or added.
+  find "$CACHE_DIR" -type f ! -newer "$CACHE_DIR/.start" -delete
+fi
+
+exit "$status"

@@ -1,8 +1,6 @@
 ### monad ignore
 
 build
-build-halide
-build-iree
 build-zkvm
 perf.data*
 scratch

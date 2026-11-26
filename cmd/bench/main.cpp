@@ -34,25 +34,18 @@
 // .dat file, which it needs, with the accounts in --accounts' file, an address
 // and its code in hex a line, for the code its TensorRefs and the calldata's
 // code references read. scripts/graphcode.py writes all three from a .graph
-// file. The graph runs in the interpreter (--interpreted), compiled with the
-// lite compiler (--lite), compiled with IREE (--iree), compiled with XLA
-// (--xla), or compiled with Halide, with the hand-written schedule (--halide)
-// or an autoscheduler (--halide-mullapudi2016, --halide-adams2019,
-// --halide-li2018). --fine FILE also runs FILE, Fine bytecode in hex for the
-// same graph, in the Fine interpreter, once a FILE, and --fine-fast FILE in
-// the fast Fine interpreter. Each call is timed from
+// file. The graph runs in the interpreter (--interpreted) or compiled with the
+// lite compiler (--lite). --fine FILE also runs FILE, Fine bytecode in hex for
+// the same graph, in the Fine interpreter, once a FILE, and --fine-fast FILE
+// in the fast Fine interpreter. Each call is timed from
 // the inputs, decoded, in memory, to the outputs written, in the same way for
 // each engine: the interpreter copies the inputs into its arena, as the
 // precompile does, and so do the Fine interpreter and the lite compiler's
-// graph, at the offsets its compiler chose, and a graph compiled with IREE,
-// XLA or Halide is given copies of them made in the call, aligned.
+// graph, at the offsets its compiler chose.
 // With --node-times, the interpreter's and the lite compiler's times are also
 // broken down by node, each in a pass of its own after it's timed, and printed
 // after every mode's timing, with the lite compiler's input copy timed apart,
-// as it happens before its run. With
-// --dump-ir, each compiled mode writes the IR its compiler dumps to a file:
-// the HLO before and after XLA's passes, Halide's lowered pipeline, or IREE's
-// MLIR before and after its pipeline.
+// as it happens before its run.
 //
 // Each mode's results are checked before and after it's timed: a graph's
 // outputs against the interpreter's, and bytecode's status, gas and output
@@ -60,8 +53,7 @@
 // file, if given. Each mode is timed in batches of calls of about a
 // millisecond, after a warm-up, for a set time, and the time per call is
 // reported as the minimum, median, 90th percentile and maximum over the
-// batches. Compiling is timed apart, once; Halide's first compile in a
-// process includes its JIT's one-time setup, of about 0.4 s.
+// batches. Compiling is timed apart, once.
 
 #include <category/core/address.hpp>
 #include <category/core/assert.h>
@@ -98,16 +90,6 @@
 #include <test/utils/test_state.hpp>
 #include <test/vm/utils/test_block_hash_buffer.hpp>
 #include <test/vm/utils/test_host.hpp>
-
-#ifdef MONAD_BENCH_IREE
-    #include <category/execution/monad/graph_eval/compiler.hpp>
-#endif
-#ifdef MONAD_BENCH_HALIDE
-    #include <category/execution/monad/graph_eval/halide_compiler.hpp>
-#endif
-#ifdef MONAD_BENCH_XLA
-    #include <category/execution/monad/graph_eval/xla_compiler.hpp>
-#endif
 
 #include <CLI/CLI.hpp>
 
@@ -287,24 +269,6 @@ namespace
     {
         std::printf(
             "%-22s compiled in %s\n", name.c_str(), format_time(ns).c_str());
-        std::fflush(stdout);
-    }
-
-    // Writes a compiled mode's IR, as its compiler dumps it, to
-    // <dir>/<name>.txt
-    [[maybe_unused]]
-    void write_ir(
-        std::filesystem::path const &dir, std::string const &name,
-        std::string const &ir)
-    {
-        std::filesystem::create_directories(dir);
-        std::filesystem::path const file = dir / (name + ".txt");
-        std::ofstream out(file);
-        out << ir;
-        if (!out) {
-            die("can't write " + file.string());
-        }
-        std::printf("%-22s IR written to %s\n", name.c_str(), file.c_str());
         std::fflush(stdout);
     }
 
@@ -512,10 +476,6 @@ namespace
         // After timing the interpreter, time each of its nodes too
         bool node_times = false;
         bool lite = false;
-        bool iree = false;
-        bool xla = false;
-        bool halide = false;
-        std::vector<std::string> halide_schedulers;
         // Fine bytecode files for the same graph, each run in the Fine
         // interpreter
         std::vector<std::filesystem::path> fine;
@@ -523,33 +483,11 @@ namespace
         std::vector<std::filesystem::path> fine_fast;
     };
 
-    struct AlignedFree
-    {
-        void operator()(uint8_t *const p) const
-        {
-            std::free(p);
-        }
-    };
-
-    using AlignedBuffer = std::unique_ptr<uint8_t, AlignedFree>;
-
-    AlignedBuffer aligned_buffer(size_t const size)
-    {
-        size_t const rounded =
-            std::max<size_t>(TENSOR_DATA_ALIGNMENT, (size + 63) / 64 * 64);
-        auto *const p = static_cast<uint8_t *>(
-            std::aligned_alloc(TENSOR_DATA_ALIGNMENT, rounded));
-        MONAD_ASSERT(p);
-        return AlignedBuffer{p};
-    }
-
     void bench_graph(
         std::filesystem::path const &path,
         std::filesystem::path const &calldata_path,
         std::optional<std::filesystem::path> const &accounts_path,
-        GraphModes const &modes,
-        std::optional<std::filesystem::path> const &dump_ir,
-        Timing const &timing)
+        GraphModes const &modes, Timing const &timing)
     {
         byte_string const graphcode = read_hex(path);
 
@@ -615,12 +553,6 @@ namespace
             gc.tensor_types().size() - gc.n_inputs(),
             gc.n_inputs(),
             gc.outputs().size());
-        if (dump_ir) {
-            std::printf(
-                "compiled modes write their IR to %s; their compile times "
-                "include dumping it\n\n",
-                dump_ir->c_str());
-        }
 
         auto const check = [&](std::string const &name, auto const &outputs) {
             for (size_t i = 0; i < expected.size(); i++) {
@@ -789,135 +721,6 @@ namespace
         run_fine_files.template operator()<FineFastInterpreter>(
             modes.fine_fast, "fine-fast");
 
-        // A compiled graph's outputs go at the start of the arena, each
-        // aligned, and the rest of it is scratch
-        std::vector<uint8_t *> outputs;
-        size_t offset = 0;
-        for (size_t i = 0; i < gc.outputs().size(); i++) {
-            outputs.push_back(arena + offset);
-            offset += (output_type(i).size_bytes() + 63) / 64 * 64;
-        }
-        std::span<uint8_t> const scratch{arena + offset, ARENA_SIZE - offset};
-        std::vector<AlignedBuffer> copies;
-        std::vector<uint8_t const *> copy_pointers;
-        for (auto const &input : inputs) {
-            copies.push_back(aligned_buffer(input.size()));
-            copy_pointers.push_back(copies.back().get());
-        }
-        auto const compiled_outputs = [&](size_t const i) {
-            return byte_string_view{outputs[i], output_type(i).size_bytes()};
-        };
-        // Times a compiled graph's `run`, given the copies made in the call
-        [[maybe_unused]]
-        auto const bench_compiled = [&](std::string const &name, auto &&run) {
-            auto const call_once = [&] {
-                for (size_t i = 0; i < inputs.size(); i++) {
-                    std::memcpy(
-                        copies[i].get(), inputs[i].data(), inputs[i].size());
-                }
-                if (run(copy_pointers, outputs, scratch).has_error()) {
-                    die(name + " failed");
-                }
-            };
-            std::memset(arena, 0xa5, offset);
-            call_once();
-            check(name, compiled_outputs);
-            measure(
-                name,
-                timing,
-                1000,
-                [](size_t) {},
-                [&](size_t) { call_once(); });
-            std::memset(arena, 0xa5, offset);
-            call_once();
-            check(name, compiled_outputs);
-        };
-
-        if (modes.iree) {
-#ifdef MONAD_BENCH_IREE
-            auto const start = Clock::now();
-            Compiler compiler{gc, state};
-            std::string ir;
-            auto compiled = compiler.compile(dump_ir ? &ir : nullptr);
-            if (compiled.has_error()) {
-                die("IREE couldn't compile the graph: " +
-                    std::string{compiled.error().message().c_str()});
-            }
-            print_compile("iree", elapsed_ns(start));
-            if (dump_ir) {
-                write_ir(*dump_ir, "iree", ir);
-            }
-            bench_compiled(
-                "iree", [&](auto const &in, auto const &out, auto s) {
-                    return compiled.value().run(in, out, s);
-                });
-#else
-            die("monad-bench was built without IREE (MONAD_GRAPH_EVAL_IREE)");
-#endif
-        }
-
-        if (modes.xla) {
-#ifdef MONAD_BENCH_XLA
-            auto const start = Clock::now();
-            XlaCompiler compiler{gc, state};
-            std::string ir;
-            auto compiled = compiler.compile(dump_ir ? &ir : nullptr);
-            if (compiled.has_error()) {
-                die("XLA couldn't compile the graph: " +
-                    std::string{compiled.error().message().c_str()});
-            }
-            print_compile("xla", elapsed_ns(start));
-            if (dump_ir) {
-                write_ir(*dump_ir, "xla", ir);
-            }
-            bench_compiled("xla", [&](auto const &in, auto const &out, auto s) {
-                return compiled.value().run(in, out, s);
-            });
-#else
-            die("monad-bench was built without XLA (MONAD_GRAPH_EVAL_XLA)");
-#endif
-        }
-
-        if (modes.halide || !modes.halide_schedulers.empty()) {
-#ifdef MONAD_BENCH_HALIDE
-            std::vector<std::string> schedules;
-            if (modes.halide) {
-                schedules.push_back("");
-            }
-            schedules.insert(
-                schedules.end(),
-                modes.halide_schedulers.begin(),
-                modes.halide_schedulers.end());
-            for (std::string const &scheduler : schedules) {
-                std::string const name =
-                    scheduler.empty() ? "halide" : "halide-" + scheduler;
-                auto const start = Clock::now();
-                HalideCompiler compiler{gc, state};
-                std::string ir;
-                std::string *const ir_out = dump_ir ? &ir : nullptr;
-                auto compiled =
-                    scheduler.empty()
-                        ? compiler.compile(ir_out)
-                        : compiler.compile(
-                              Halide::AutoschedulerParams{scheduler}, ir_out);
-                if (compiled.has_error()) {
-                    die("Halide couldn't compile the graph: " +
-                        std::string{compiled.error().message().c_str()});
-                }
-                print_compile(name, elapsed_ns(start));
-                if (dump_ir) {
-                    write_ir(*dump_ir, name, ir);
-                }
-                bench_compiled(
-                    name, [&](auto const &in, auto const &out, auto s) {
-                        return compiled.value().run(in, out, s);
-                    });
-            }
-#else
-            die("monad-bench was built without Halide "
-                "(MONAD_GRAPH_EVAL_HALIDE)");
-#endif
-        }
         std::printf("%s", node_report.c_str());
         std::free(arena);
     }
@@ -1298,9 +1101,6 @@ int main(int argc, char **argv)
     bool interpreted = false;
     bool compiled = false;
     GraphModes graph_modes;
-    bool mullapudi = false;
-    bool adams = false;
-    bool li = false;
     std::optional<int> cpu;
     Timing timing;
     std::string revision_name = monad_revision_to_string(MONAD_TEN);
@@ -1309,7 +1109,6 @@ int main(int argc, char **argv)
     std::optional<std::filesystem::path> storage;
     std::optional<std::filesystem::path> accounts;
     bool deploy = false;
-    std::optional<std::filesystem::path> dump_ir;
 
     app.add_option(
            "input",
@@ -1343,24 +1142,6 @@ int main(int argc, char **argv)
            "Graph: as --fine, in the fast Fine interpreter, whose Scalar fns "
            "are chained by tail calls; can be repeated")
         ->check(CLI::ExistingFile);
-    app.add_flag("--iree", graph_modes.iree, "Graph: run compiled with IREE");
-    app.add_flag("--xla", graph_modes.xla, "Graph: run compiled with XLA");
-    app.add_flag(
-        "--halide",
-        graph_modes.halide,
-        "Graph: run compiled with Halide, with the hand-written schedule");
-    app.add_flag(
-        "--halide-mullapudi2016",
-        mullapudi,
-        "Graph: run compiled with Halide, scheduled by Mullapudi2016");
-    app.add_flag(
-        "--halide-adams2019",
-        adams,
-        "Graph: run compiled with Halide, scheduled by Adams2019");
-    app.add_flag(
-        "--halide-li2018",
-        li,
-        "Graph: run compiled with Halide, scheduled by Li2018");
 
     app.add_option("--cpu", cpu, "Pin to this CPU");
     app.add_option("--time", timing.seconds, "Seconds to time each mode for")
@@ -1393,11 +1174,6 @@ int main(int argc, char **argv)
         "of its nodes, in a pass of its own, and print the average time of "
         "each");
     app.add_option(
-        "--dump-ir",
-        dump_ir,
-        "Graph: write each compiled mode's IR, as its compiler dumps it, to "
-        "<dir>/<mode>.txt");
-    app.add_option(
            "--accounts",
            accounts,
            "A file of accounts and their code, an address and its code a "
@@ -1414,15 +1190,6 @@ int main(int argc, char **argv)
 
     CLI11_PARSE(app, argc, argv);
 
-    if (mullapudi) {
-        graph_modes.halide_schedulers.push_back("Mullapudi2016");
-    }
-    if (adams) {
-        graph_modes.halide_schedulers.push_back("Adams2019");
-    }
-    if (li) {
-        graph_modes.halide_schedulers.push_back("Li2018");
-    }
     graph_modes.interpreted = interpreted;
 
     pin(cpu);
@@ -1431,12 +1198,10 @@ int main(int argc, char **argv)
         die("calldata must be a .dat file");
     }
     if (extension == ".bc") {
-        if (graph_modes.lite || graph_modes.iree || graph_modes.xla ||
-            graph_modes.halide || !graph_modes.halide_schedulers.empty() ||
-            !graph_modes.fine.empty() || !graph_modes.fine_fast.empty() ||
-            graph_modes.node_times || dump_ir) {
-            die("--lite, --fine, --fine-fast, --iree, --xla, --halide*, "
-                "--node-times and --dump-ir are for .gc files");
+        if (graph_modes.lite || !graph_modes.fine.empty() ||
+            !graph_modes.fine_fast.empty() || graph_modes.node_times) {
+            die("--lite, --fine, --fine-fast and --node-times are for .gc "
+                "files");
         }
         if (!interpreted && !compiled) {
             die("give --interpreted, --compiled, or both");
@@ -1476,22 +1241,19 @@ int main(int argc, char **argv)
             die("a .gc file needs a .dat file of calldata for its inputs");
         }
         if (compiled) {
-            die("--compiled is for .bc files; give --lite, --iree, --xla or "
-                "--halide*");
+            die("--compiled is for .bc files; give --lite");
         }
         if (!interpreted && !graph_modes.lite && graph_modes.fine.empty() &&
-            graph_modes.fine_fast.empty() && !graph_modes.iree &&
-            !graph_modes.xla && !graph_modes.halide &&
-            graph_modes.halide_schedulers.empty()) {
+            graph_modes.fine_fast.empty()) {
             die("give one or more of --interpreted, --lite, --fine, "
-                "--fine-fast, --iree, --xla, --halide*");
+                "--fine-fast");
         }
         if (graph_modes.node_times && !interpreted && !graph_modes.lite) {
             die("--node-times times the interpreter and the lite compiler; "
                 "give --interpreted, --lite or both");
         }
         print_environment(cpu);
-        bench_graph(input, *calldata, accounts, graph_modes, dump_ir, timing);
+        bench_graph(input, *calldata, accounts, graph_modes, timing);
     }
     else {
         die("the input must be a .gc or .bc file");

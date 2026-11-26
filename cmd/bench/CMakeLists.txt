@@ -24,17 +24,3 @@ target_link_libraries(
                       monad-vm::monad-vm-test-utils CLI11::CLI11)
 target_compile_definitions(
   monad-bench PRIVATE MONAD_BENCH_BUILD_TYPE="${CMAKE_BUILD_TYPE}")
-
-# The compiled-graph modes, with the compilers built
-if(MONAD_GRAPH_EVAL_IREE)
-  target_compile_definitions(monad-bench PRIVATE MONAD_BENCH_IREE)
-  target_link_libraries(monad-bench PRIVATE iree_compiler)
-endif()
-if(MONAD_GRAPH_EVAL_HALIDE)
-  target_compile_definitions(monad-bench PRIVATE MONAD_BENCH_HALIDE)
-  target_link_libraries(monad-bench PRIVATE halide)
-endif()
-if(MONAD_GRAPH_EVAL_XLA)
-  target_compile_definitions(monad-bench PRIVATE MONAD_BENCH_XLA)
-  target_link_libraries(monad-bench PRIVATE monad_xla)
-endif()

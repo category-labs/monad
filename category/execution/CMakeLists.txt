@@ -442,78 +442,6 @@ target_link_libraries(
   PUBLIC quill::quill)
 monad_compile_options(monad_execution_native)
 
-# graph_eval's IREE kernels, compiled ahead of time and embedded in kernel.cpp,
-# and its compiler, which builds graphs as MLIR, compiles them with IREE and
-# runs them. The interpreter doesn't use either, so they're only built with
-# MONAD_GRAPH_EVAL_IREE
-if(MONAD_GRAPH_EVAL_IREE)
-  target_sources(
-    monad_execution_native
-    PRIVATE "monad/graph_eval/compiler.cpp" "monad/graph_eval/compiler.hpp"
-            "monad/graph_eval/kernel.cpp" "monad/graph_eval/kernel.hpp")
-  target_link_libraries(monad_execution_native PRIVATE iree_compiler
-                                                       iree::runtime::unified)
-
-  set(GRAPH_EVAL_KERNELS_MLIR
-      "${CMAKE_CURRENT_SOURCE_DIR}/monad/graph_eval/kernels.mlir")
-  set(GRAPH_EVAL_KERNELS_VMFB
-      "${CMAKE_CURRENT_BINARY_DIR}/graph_eval_kernels.vmfb")
-  add_custom_command(
-    OUTPUT "${GRAPH_EVAL_KERNELS_VMFB}"
-    COMMAND "${MONAD_IREE_COMPILE}"
-            --iree-hal-target-device=local
-            --iree-hal-local-target-device-backends=llvm-cpu
-            --iree-llvmcpu-target-cpu=${MONAD_IREE_TARGET_CPU}
-            --iree-opt-data-tiling
-            --iree-opt-level=O2
-            "${GRAPH_EVAL_KERNELS_MLIR}" -o "${GRAPH_EVAL_KERNELS_VMFB}"
-    # libIREECompiler.so is the actual compiler behind iree-compile
-    DEPENDS "${GRAPH_EVAL_KERNELS_MLIR}" "${MONAD_IREE_COMPILE}"
-            "${MONAD_IREE_BUILD_DIR}/lib/libIREECompiler.so"
-    COMMENT "Compiling graph_eval kernels with IREE"
-    VERBATIM)
-  # Listing the .vmfb as a source attaches the command to the target;
-  # OBJECT_DEPENDS rebuilds kernel.cpp when it changes
-  target_sources(monad_execution_native PRIVATE "${GRAPH_EVAL_KERNELS_VMFB}")
-  set_property(
-    SOURCE "monad/graph_eval/kernel.cpp"
-    APPEND PROPERTY OBJECT_DEPENDS "${GRAPH_EVAL_KERNELS_VMFB}")
-  set_property(
-    SOURCE "monad/graph_eval/kernel.cpp"
-    APPEND
-    PROPERTY COMPILE_DEFINITIONS
-             "MONAD_GRAPH_EVAL_KERNELS_VMFB=\"${GRAPH_EVAL_KERNELS_VMFB}\"")
-endif()
-
-# graph_eval's Halide compiler, which builds graphs as Halide pipelines and
-# compiles them in-process. The interpreter doesn't use it, so it's only built
-# with MONAD_GRAPH_EVAL_HALIDE. It loads autoscheduler plugins from the Halide
-# build at run time
-if(MONAD_GRAPH_EVAL_HALIDE)
-  target_sources(
-    monad_execution_native
-    PRIVATE "monad/graph_eval/halide_compiler.cpp"
-            "monad/graph_eval/halide_compiler.hpp")
-  target_link_libraries(monad_execution_native PRIVATE halide)
-  set_property(
-    SOURCE "monad/graph_eval/halide_compiler.cpp"
-    APPEND
-    PROPERTY
-      COMPILE_DEFINITIONS
-      "MONAD_HALIDE_AUTOSCHEDULERS_DIR=\"${MONAD_HALIDE_BUILD_DIR}/src/autoschedulers\"")
-endif()
-
-# graph_eval's XLA compiler, which builds graphs as HLO modules and compiles
-# them in-process, with libmonad_xla.so. The interpreter doesn't use it, so
-# it's only built with MONAD_GRAPH_EVAL_XLA
-if(MONAD_GRAPH_EVAL_XLA)
-  target_sources(
-    monad_execution_native
-    PRIVATE "monad/graph_eval/xla_compiler.cpp"
-            "monad/graph_eval/xla_compiler.hpp")
-  target_link_libraries(monad_execution_native PRIVATE monad_xla)
-endif()
-
 # The graph kernels use AVX-512: the int8 matmul kernels with VNNI, the
 # interpreter's, Lite's and the fuse engines' with 64-bit multiplies and
 # 64-byte vectors. Every validator's CPU is a Zen 4, which has them, although
@@ -523,8 +451,7 @@ endif()
 # of the copies. This comes after the toolchain's -march, so it takes
 # precedence
 set_property(
-  SOURCE "monad/graph_eval/compiler.cpp"
-         "monad/graph_eval/fine.cpp"
+  SOURCE "monad/graph_eval/fine.cpp"
          "monad/graph_eval/fine_interpreter.cpp"
          "monad/graph_eval/fuse_claude.cpp"
          "monad/graph_eval/fuse_interpreted.cpp"
@@ -532,15 +459,12 @@ set_property(
          "monad/graph_eval/graph_eval.cpp"
          "monad/graph_eval/graph_eval_error.cpp"
          "monad/graph_eval/graphcode.cpp"
-         "monad/graph_eval/halide_compiler.cpp"
          "monad/graph_eval/interpreter.cpp"
-         "monad/graph_eval/kernel.cpp"
          "monad/graph_eval/lite_compiler.cpp"
          "monad/graph_eval/matmul.cpp"
          "monad/graph_eval/references.cpp"
          "monad/graph_eval/region_claude.cpp"
          "monad/graph_eval/tensor.cpp"
-         "monad/graph_eval/xla_compiler.cpp"
   APPEND PROPERTY COMPILE_OPTIONS "-march=znver4")
 
 target_link_libraries(

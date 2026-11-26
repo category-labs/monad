@@ -45,15 +45,6 @@ option(MONAD_COMPILER_BENCHMARKS "Build compiler benchmarks" OFF)
 option(MONAD_COMPILER_DUMP_ASM "Dump assembly files into build/asm" OFF)
 option(MONAD_COMPILER_STATS "Print statistics about the compiler" OFF)
 option(MONAD_COMPILER_HOT_PATH_STATS "Print statistics about the vm" OFF)
-option(MONAD_GRAPH_EVAL_IREE
-       "Build the IREE runtime, graph_eval's IREE kernels and its graph compiler (needs scripts/build_iree.sh)"
-       OFF)
-option(MONAD_GRAPH_EVAL_HALIDE
-       "Build graph_eval's Halide graph compiler (needs scripts/build_halide.sh)"
-       OFF)
-option(MONAD_GRAPH_EVAL_XLA
-       "Build graph_eval's XLA graph compiler (needs scripts/build_xla.sh)"
-       OFF)
 
 include(cmake/test.cmake)
 
@@ -190,100 +181,6 @@ find_package(TBB REQUIRED)
 
 # unordered_dense
 add_subdirectory("third_party/unordered_dense")
-
-# iree, for graph_eval's IREE kernels and compiled graphs, which the interpreter
-# doesn't use, so it's only built with MONAD_GRAPH_EVAL_IREE. The runtime is
-# built here. The compiler (LLVM/MLIR) is built out of tree by
-# scripts/build_iree.sh, used at build time to AOT-compile kernels and linked
-# to compile graphs at run time.
-if(MONAD_GRAPH_EVAL_IREE)
-  set(IREE_BUILD_COMPILER OFF)
-  set(IREE_BUILD_TESTS OFF)
-  set(IREE_BUILD_BENCHMARKS OFF)
-  set(IREE_BUILD_SAMPLES OFF)
-  set(IREE_BUILD_PYTHON_BINDINGS OFF)
-  # Third-party warnings under new compilers or sanitizers should not break
-  # the monad build
-  set(IREE_ENABLE_WERROR_FLAG OFF)
-  # Runtime: disable non-CPU backends
-  set(IREE_HAL_DRIVER_DEFAULTS OFF)
-  set(IREE_HAL_DRIVER_LOCAL_TASK ON)
-  set(IREE_HAL_DRIVER_LOCAL_SYNC ON)
-  set(IREE_HAL_EXECUTABLE_LOADER_DEFAULTS OFF)
-  set(IREE_HAL_EXECUTABLE_LOADER_EMBEDDED_ELF ON)
-  add_subdirectory(third_party/iree EXCLUDE_FROM_ALL SYSTEM)
-
-  # Out-of-tree IREE compiler, used to compile graph_eval kernels ahead of time
-  set(MONAD_IREE_BUILD_DIR "${PROJECT_SOURCE_DIR}/build-iree"
-      CACHE PATH "IREE compiler build directory (see scripts/build_iree.sh)")
-  set(MONAD_IREE_COMPILE "${MONAD_IREE_BUILD_DIR}/tools/iree-compile")
-  if(NOT EXISTS "${MONAD_IREE_COMPILE}")
-    message(FATAL_ERROR
-      "${MONAD_IREE_COMPILE} does not exist; run scripts/build_iree.sh or set "
-      "MONAD_IREE_BUILD_DIR")
-  endif()
-  # The kernels run on every node, so this must not be the build machine's CPU
-  set(MONAD_IREE_TARGET_CPU "znver4" CACHE STRING
-      "LLVM CPU that graph_eval kernels are compiled for")
-
-  # The same compiler as a library, for graph_eval's compiler. It exports the
-  # embedding API (iree/compiler/*.h) and the MLIR C API (mlir-c/*.h), which
-  # builds graphs. Linked directly: the loader stub
-  # (compiler/bindings/c/iree/compiler/loader) dlopens it, but only forwards
-  # the ireeCompiler* functions
-  add_library(iree_compiler SHARED IMPORTED)
-  set_target_properties(
-    iree_compiler PROPERTIES IMPORTED_LOCATION
-                             "${MONAD_IREE_BUILD_DIR}/lib/libIREECompiler.so")
-  target_include_directories(
-    iree_compiler SYSTEM
-    INTERFACE "${THIRD_PARTY_DIR}/iree/compiler/bindings/c"
-              "${THIRD_PARTY_DIR}/iree/third_party/llvm-project/mlir/include"
-              # Generated: mlir-c/Dialect/Linalg.h includes
-              # mlir/Dialect/Linalg/Passes.capi.h.inc
-              "${MONAD_IREE_BUILD_DIR}/llvm-project/tools/mlir/include")
-endif()
-
-# halide, for graph_eval's Halide graph compiler, which the interpreter doesn't
-# use, so it's only built with MONAD_GRAPH_EVAL_HALIDE. libHalide.so is both
-# the compiler and the runtime that compiled graphs link, so nothing is built
-# here: scripts/build_halide.sh builds it out of tree, against the system's
-# LLVM, whose libLLVM.so it also needs at run time
-if(MONAD_GRAPH_EVAL_HALIDE)
-  set(MONAD_HALIDE_BUILD_DIR "${PROJECT_SOURCE_DIR}/build-halide"
-      CACHE PATH "Halide build directory (see scripts/build_halide.sh)")
-  set(MONAD_HALIDE_LIBRARY "${MONAD_HALIDE_BUILD_DIR}/src/libHalide.so")
-  if(NOT EXISTS "${MONAD_HALIDE_LIBRARY}")
-    message(FATAL_ERROR
-      "${MONAD_HALIDE_LIBRARY} does not exist; run scripts/build_halide.sh or "
-      "set MONAD_HALIDE_BUILD_DIR")
-  endif()
-  add_library(halide SHARED IMPORTED)
-  set_target_properties(halide PROPERTIES IMPORTED_LOCATION
-                                          "${MONAD_HALIDE_LIBRARY}")
-  # SYSTEM: Halide.h doesn't build with monad's warnings as errors
-  target_include_directories(halide SYSTEM
-                             INTERFACE "${MONAD_HALIDE_BUILD_DIR}/include")
-endif()
-
-# monad_xla, for graph_eval's XLA graph compiler, which the interpreter doesn't
-# use, so it's only built with MONAD_GRAPH_EVAL_XLA. libmonad_xla.so holds
-# XLA's CPU compiler and runtime behind a C API, whose header is in
-# category/execution/monad/graph_eval/xla/monad_xla, so nothing is built
-# here: scripts/build_xla.sh builds it out of tree, with Bazel
-if(MONAD_GRAPH_EVAL_XLA)
-  set(MONAD_XLA_BUILD_DIR "${PROJECT_SOURCE_DIR}/build-xla"
-      CACHE PATH "XLA build directory (see scripts/build_xla.sh)")
-  set(MONAD_XLA_LIBRARY "${MONAD_XLA_BUILD_DIR}/libmonad_xla.so")
-  if(NOT EXISTS "${MONAD_XLA_LIBRARY}")
-    message(FATAL_ERROR
-      "${MONAD_XLA_LIBRARY} does not exist; run scripts/build_xla.sh or set "
-      "MONAD_XLA_BUILD_DIR")
-  endif()
-  add_library(monad_xla SHARED IMPORTED)
-  set_target_properties(monad_xla PROPERTIES IMPORTED_LOCATION
-                                             "${MONAD_XLA_LIBRARY}")
-endif()
 
 # ##############################################################################
 # unit tests

@@ -75,10 +75,16 @@ evmc::Result deploy_contract_code(
 
     MONAD_ASSERT(result.status_code == EVMC_SUCCESS);
 
-    // EIP-3541
+    // EIP-3541. Once graph eval is active, code starting with 0xef 0x7f,
+    // graphcode's GRAPH_MAGIC, is the one exception
     if constexpr (traits::evm_rev() >= MONAD_ETH_LONDON) {
         if (result.output_size > 0 && result.output_data[0] == 0xef) {
-            return evmc::Result{EVMC_CONTRACT_VALIDATION_FAILURE};
+            bool const graphcode = traits::graph_eval_active() &&
+                                   result.output_size > 1 &&
+                                   result.output_data[1] == 0x7f;
+            if (!graphcode) {
+                return evmc::Result{EVMC_CONTRACT_VALIDATION_FAILURE};
+            }
         }
     }
     // EIP-170

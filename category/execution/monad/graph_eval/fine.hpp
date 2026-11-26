@@ -34,7 +34,8 @@ MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
 
 enum class FineVersion : uint8_t
 {
-    V0 = 0 ,
+    // As in EIP-3540, the first version is 1
+    V1 = 1,
     Invalid
 };
 

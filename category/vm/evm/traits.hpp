@@ -89,6 +89,9 @@ namespace monad
         { T::mip_8_active() } -> std::same_as<bool>;
         { T::mip_11_active() } -> std::same_as<bool>;
         { T::mip_12_active() } -> std::same_as<bool>;
+        // The graph eval precompile, and deploying graphcode, whose GRAPH_MAGIC
+        // starts with 0xef, despite EIP-3541
+        { T::graph_eval_active() } -> std::same_as<bool>;
         { T::can_create_inside_delegated() } -> std::same_as<bool>;
         // If true, BLOBHASH/BLOBBASEFEE exist and return
         // stub data. Separate from eip_4844_active.
@@ -199,6 +202,11 @@ namespace monad
         }
 
         static consteval bool mip_12_active() noexcept
+        {
+            return false;
+        }
+
+        static consteval bool graph_eval_active() noexcept
         {
             return false;
         }
@@ -398,6 +406,14 @@ namespace monad
         static consteval bool mip_12_active() noexcept
         {
             return Rev >= MONAD_NEXT;
+        }
+
+        // TODO: PoC hack. Active from MONAD_NINE so blockchain test fixtures
+        // can use the plain Ethereum state root (MIP-8 page-encoded storage
+        // starts at MONAD_TEN). Must be MONAD_NEXT before merging.
+        static consteval bool graph_eval_active() noexcept
+        {
+            return Rev >= MONAD_NINE;
         }
 
         // Pricing version 1 activates the changes in:

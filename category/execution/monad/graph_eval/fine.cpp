@@ -667,8 +667,8 @@ FinecodeValidator::validate_op<FineOp::Gather>(uint8_t const &dim)
 Result<void> FinecodeValidator::validate()
 {
     BOOST_OUTCOME_TRY(expect_next<GRAPH_MAGIC>(code_));
-    // V0 is the only currently supported version.
-    BOOST_OUTCOME_TRY(expect_next<FineVersion::V0>(code_));
+    // V1 is the only currently supported version.
+    BOOST_OUTCOME_TRY(expect_next<FineVersion::V1>(code_));
     BOOST_OUTCOME_TRY(finecode_.n_inputs_, read_next<uint8_t>(code_));
     if (finecode_.n_inputs_ > MAX_GRAPH_INPUTS) {
         return GraphEvalError::GraphValidationError;

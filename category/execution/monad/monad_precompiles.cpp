@@ -226,11 +226,9 @@ std::optional<evmc::Result> check_call_precompile(
         ReserveBalanceContract,
         RESERVE_BALANCE_CA);
 
-    // TODO: PoC hack. Enabled from MONAD_NINE so blockchain test fixtures can
-    // use the plain Ethereum state root (MIP-8 page-encoded storage starts at
-    // MONAD_TEN). Must be MONAD_NEXT before merging.
+    // From the revision MonadTraits::graph_eval_active gives (a PoC hack)
     CASE(
-        traits::monad_rev() >= MONAD_NINE,
+        traits::graph_eval_active(),
         graph_eval::GraphEvalContract,
         graph_eval::GRAPH_EVAL_CA);
 

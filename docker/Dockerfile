@@ -108,6 +108,10 @@ RUN cd src/rust && cargo +nightly-2025-12-09 fmt --all --check
 RUN cd src/rust && CC=${CC:?} CXX=${CXX:?} CFLAGS="-march=haswell" CXXFLAGS="-march=haswell" ASMFLAGS="-march=haswell" RUSTFLAGS="-C linker=${CC:?}" cargo build --release --all-targets --all-features
 RUN cd src/rust && CC=${CC:?} CXX=${CXX:?} CFLAGS="-march=haswell" CXXFLAGS="-march=haswell" ASMFLAGS="-march=haswell" RUSTFLAGS="-C linker=${CC:?}" cargo test  --release --all-targets --all-features
 
+# Results of earlier clang-tidy runs. CI restores them from the Actions cache
+# and passes them in with --build-context; elsewhere this stays empty.
+FROM scratch AS clang_tidy_results
+
 FROM base_vm_test AS code_quality
 
 ARG LLVM_VERSION
@@ -127,7 +131,25 @@ RUN cd src && CMAKE_TOOLCHAIN_FILE=category/core/toolchains/gcc-avx2.cmake cmake
   -DMONAD_COMPILER_HOT_PATH_STATS=On
 
 RUN cd src && cmake --build build -t ConstCorrectnessChecks
-RUN cd src && ./scripts/check-clang-tidy.sh
+
+# clang-tidy skips files whose inputs match an earlier clean run. Its results
+# live in a cache mount, which keeps them when the run fails and between local
+# builds. CI seeds the mount from the clang_tidy_results build context and
+# reads it back through clang_tidy_results_out.
+RUN --mount=type=bind,from=clang_tidy_results,target=/clang-tidy-results-in \
+    --mount=type=cache,id=clang-tidy-results,target=/clang-tidy-results \
+    cp -a /clang-tidy-results-in/. /clang-tidy-results/ && \
+    cd src && ./scripts/check-clang-tidy.sh --cache-dir /clang-tidy-results
+
+FROM ubuntu:26.04 AS clang_tidy_results_export
+
+RUN --mount=type=cache,id=clang-tidy-results,target=/clang-tidy-results \
+    test -n "$(ls -A /clang-tidy-results)" && \
+    cp -a /clang-tidy-results /out
+
+FROM scratch AS clang_tidy_results_out
+
+COPY --from=clang_tidy_results_export /out /
 
 FROM base_rust AS code_quality_rust
 

@@ -56,6 +56,25 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # clang-tidy skips files whose inputs match a clean run in these
+      # results: main's latest, plus this branch's or pull request's own.
+      - name: Restore clang-tidy results of main
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/clang-tidy-results
+          key: 'clang-tidy:refs/heads/main:${{ github.run_id }}'
+          restore-keys: 'clang-tidy:refs/heads/main:'
+
+      - name: Restore clang-tidy results of this branch
+        if: github.ref != 'refs/heads/main'
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/clang-tidy-results
+          key: 'clang-tidy:${{ github.ref }}:${{ github.run_id }}'
+          restore-keys: 'clang-tidy:${{ github.ref }}:'
+
+      - run: mkdir -p "$RUNNER_TEMP/clang-tidy-results"
+
       - name: Build `code_quality` stage
         uses: ./.github/actions/docker-stage
         with:
@@ -63,3 +82,24 @@ jobs:
           setup: true
           submodules: true
           cache-from: type=gha,scope=base_vm_test
+          build-contexts: clang_tidy_results=${{ runner.temp }}/clang-tidy-results
+
+      # Also after a failed run, so the next run skips the files that passed.
+      # The job's builder is new, so no layer cache can stand in for the
+      # copy; --no-cache-filter would hide the cache mount too.
+      - name: Export clang-tidy results
+        id: export
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: |
+          rm -rf "$RUNNER_TEMP/clang-tidy-results"
+          docker buildx build --file docker/Dockerfile \
+            --target clang_tidy_results_out \
+            --output type=local,dest="$RUNNER_TEMP/clang-tidy-results" .
+
+      - name: Save clang-tidy results
+        if: ${{ !cancelled() && steps.export.outcome == 'success' }}
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/clang-tidy-results
+          key: 'clang-tidy:${{ github.ref }}:${{ github.run_id }}-${{ github.run_attempt }}'

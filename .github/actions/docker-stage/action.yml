@@ -18,6 +18,9 @@ inputs:
   cache-to:
     description: Layer cache to write.
     default: ''
+  build-contexts:
+    description: Extra named build contexts (name=path), one per line.
+    default: ''
   allow:
     description: Extra privileges for RUN steps.
     default: ''
@@ -68,6 +71,7 @@ runs:
           GCC_VERSION=${{ steps.toolchain.outputs.gcc }}
           LLVM_VERSION=${{ steps.toolchain.outputs.llvm }}
           ${{ inputs.build-args }}
+        build-contexts: ${{ inputs.build-contexts }}
         allow: ${{ inputs.allow }}
         ulimit: "memlock=-1:-1"
         target: ${{ inputs.target }}

@@ -31,7 +31,7 @@
 // calls run. Each call starts from the same state, in a State of its own.
 // Calls the code makes to other accounts are interpreted in both modes.
 //
-// A graph runs on the inputs in the evalGraph or evalGraphInto calldata in a
+// A graph runs on the inputs in the evalGraph calldata in a
 // .dat file, which it needs, with the accounts in --accounts' file, an address
 // and its code in hex a line, for the code its TensorRefs and the calldata's
 // code references read. The graph runs in the Fine interpreter (--interpreted)
@@ -359,17 +359,14 @@ namespace
         return accounts;
     }
 
-    // The inputs in evalGraph or evalGraphInto calldata, in the canonical ABI
-    // encoding the precompile accepts. Their elements, which may be in the
-    // calldata or an account's code, are loaded, in host order
+    // The inputs in evalGraph calldata, in the canonical ABI encoding the
+    // precompile accepts. Their elements, which may be in the calldata or an
+    // account's code, are loaded, in host order
     std::vector<byte_string> read_calldata_inputs(
         byte_string const &calldata, Finecode const &fc, State &state)
     {
         constexpr uint32_t EVAL_GRAPH = abi_encode_selector(
             "evalGraph(address,(uint8,uint16[],uint8,uint8,bytes)[])");
-        constexpr uint32_t EVAL_GRAPH_INTO = abi_encode_selector(
-            "evalGraphInto(address,(uint8,uint16[],uint8,uint8,bytes)[],(uint8,"
-            "uint8,bytes)[])");
         if (calldata.size() < 4) {
             die("the calldata has no selector");
         }
@@ -377,24 +374,19 @@ namespace
                                   static_cast<uint32_t>(calldata[1]) << 16 |
                                   static_cast<uint32_t>(calldata[2]) << 8 |
                                   static_cast<uint32_t>(calldata[3]);
-        if (selector != EVAL_GRAPH && selector != EVAL_GRAPH_INTO) {
-            die("the calldata isn't an evalGraph or evalGraphInto call");
+        if (selector != EVAL_GRAPH) {
+            die("the calldata isn't an evalGraph call");
         }
         byte_string_view input{calldata};
         input.remove_prefix(4);
         auto const fail = [] { die("the calldata's inputs don't decode"); };
 
-        // The graph's address, then the offsets of the inputs (and outputs)
+        // The graph's address, then the offset of the inputs
         if (abi_decode_fixed<Address>(input).has_error()) {
             fail();
         }
         auto const inputs_head = abi_decode_fixed<u256_be>(input);
-        size_t const heads = selector == EVAL_GRAPH ? 2 : 3;
-        if (heads == 3 && abi_decode_fixed<u256_be>(input).has_error()) {
-            fail();
-        }
-        if (inputs_head.has_error() ||
-            inputs_head.value().native() != heads * 32) {
+        if (inputs_head.has_error() || inputs_head.value().native() != 2 * 32) {
             fail();
         }
 
@@ -447,11 +439,6 @@ namespace
                     die("input " + std::to_string(i) +
                         "'s code reference doesn't hold a tensor of its type");
                 }
-            }
-            else {
-                die("input " + std::to_string(i) +
-                    " is a storage reference, which needs a caller's storage "
-                    "monad-bench doesn't have");
             }
             inputs.push_back(std::move(bytes));
         }
@@ -514,8 +501,7 @@ namespace
         // One call in a Fine interpreter, FineInterpreter or
         // FineFastInterpreter, which copies the inputs into its arena
         auto const run = [&]<typename Engine>(std::string const &name) {
-            Engine engine{
-                fc, state, tensor_inputs, nullptr, std::nullopt, arena};
+            Engine engine{fc, state, tensor_inputs, arena};
             auto result = engine.run();
             if (result.has_error()) {
                 die(name + " failed: " +
@@ -969,8 +955,7 @@ int main(int argc, char **argv)
     app.add_option(
            "calldata",
            calldata,
-           "A .dat file of calldata in hex; a graph's evalGraph or "
-           "evalGraphInto call")
+           "A .dat file of calldata in hex; a graph's evalGraph call")
         ->check(CLI::ExistingFile);
 
     app.add_flag("--interpreted", interpreted, "Run in the interpreter");

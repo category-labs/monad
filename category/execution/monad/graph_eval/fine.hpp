@@ -79,8 +79,7 @@ enum class FineOp : uint8_t
     TensorRef = 2,
 
     Reshape = 3,
-    // Id 4 is the MIP's Transpose, which isn't implemented, so read_next
-    // rejects it as an invalid opcode
+    Transpose = 4,
     Concat = 5,
 
     QMatMul = 6,
@@ -98,8 +97,7 @@ enum class FineOp : uint8_t
     Invalid
 };
 
-// One more than the largest opcode, so the size of a table indexed by opcode.
-// Not every id below it is an op: id 4, the MIP's Transpose, has none
+// One more than the largest opcode, so the size of a table indexed by opcode
 constexpr size_t N_FINE_OPS = static_cast<size_t>(FineOp::Invalid);
 
 template <FineOp>
@@ -133,7 +131,16 @@ struct FineOpInfo<FineOp::Reshape> : FineOpInfoImpl<Shape, 1>
 };
 
 template <>
-struct FineOpInfo<FineOp::Concat> : FineOpInfoImpl<uint8_t, 2>
+struct FineOpInfo<FineOp::Transpose>
+    : FineOpInfoImpl<std::tuple<uint8_t, uint8_t>, 1>
+{
+};
+
+// Params axis and n_inputs. Its n_inputs input ids follow them, read by its
+// validator and each engine, as Scalar's are, so its arity here is 0
+template <>
+struct FineOpInfo<FineOp::Concat>
+    : FineOpInfoImpl<std::tuple<uint8_t, uint8_t>, 0>
 {
 };
 
@@ -179,14 +186,14 @@ inline Result<FineOp> read_next<FineOp>(std::span<uint8_t const> &input)
 {
     BOOST_OUTCOME_TRY(
         auto const id, read_next<std::underlying_type_t<FineOp>>(input));
-    // A valid id is one of the enumerators below Invalid, not any id below it,
-    // since id 4 has no op
+    // A valid id is one of the enumerators below Invalid, each listed here
     auto const op = static_cast<FineOp>(id);
     switch (op) {
     case FineOp::Scalar:
     case FineOp::Literal:
     case FineOp::TensorRef:
     case FineOp::Reshape:
+    case FineOp::Transpose:
     case FineOp::Concat:
     case FineOp::QMatMul:
     case FineOp::CumSum:
@@ -221,6 +228,8 @@ inline auto visit_op(FineOp const op, F &&f)
         return f.template operator()<FineOp::TensorRef>();
     case FineOp::Reshape:
         return f.template operator()<FineOp::Reshape>();
+    case FineOp::Transpose:
+        return f.template operator()<FineOp::Transpose>();
     case FineOp::Concat:
         return f.template operator()<FineOp::Concat>();
     case FineOp::QMatMul:

@@ -33,8 +33,6 @@ inline constexpr Address GRAPH_EVAL_CA = Address{0x1002};
 struct CallContext
 {
     Address sender;
-    // Under DELEGATECALL, the caller, whose storage storage references are to
-    Address recipient;
     uint256_be_t value;
     bool delegatecall;
     // In a static context, so it can't write to storage
@@ -63,10 +61,6 @@ public:
     template <Traits traits>
     Result<byte_string>
     precompile_eval_graph(byte_string_view, CallContext const &);
-
-    template <Traits traits>
-    Result<byte_string>
-    precompile_eval_graph_into(byte_string_view, CallContext const &);
 
     Result<byte_string>
     precompile_fallback(byte_string_view, CallContext const &);

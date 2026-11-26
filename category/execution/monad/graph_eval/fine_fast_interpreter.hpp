@@ -19,12 +19,10 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/monad/graph_eval/config.hpp>
 #include <category/execution/monad/graph_eval/fine.hpp>
-#include <category/execution/monad/graph_eval/references.hpp>
 #include <category/execution/monad/graph_eval/tensor.hpp>
 
 #include <cstddef>
 #include <cstdint>
-#include <optional>
 #include <span>
 
 MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
@@ -65,10 +63,6 @@ class FineFastInterpreter
     Finecode const &finecode_;
     State &state_;
     std::span<TensorInput const> const inputs_;
-    // The caller's storage, for storage references, under DELEGATECALL only
-    CallerStorage *const caller_storage_;
-    // For evalGraphInto, its number of outputs, which must be the graph's
-    std::optional<size_t> const output_count_;
     uint8_t *const arena_;
 
     // Node `id`'s tensor, in the arena or, for a Literal, in the code. Only
@@ -88,7 +82,7 @@ class FineFastInterpreter
 public:
     FineFastInterpreter(
         Finecode const &, State &, std::span<TensorInput const> inputs,
-        CallerStorage *, std::optional<size_t> output_count, uint8_t *arena);
+        uint8_t *arena);
 
     Result<GraphOutputs> run();
 };

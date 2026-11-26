@@ -56,12 +56,6 @@ quick_status_code_from_enum<monad::graph_eval::GraphEvalError>::value_mappings()
          "tensor reference doesn't match its data",
          {}},
         {GraphEvalError::IndexError, "index is out of range", {}},
-        {GraphEvalError::StorageRefOutsideDelegateCall,
-         "storage reference outside a DELEGATECALL",
-         {}},
-        {GraphEvalError::StorageWriteInStaticCall,
-         "storage write in a static call",
-         {}},
     };
 
     return v;

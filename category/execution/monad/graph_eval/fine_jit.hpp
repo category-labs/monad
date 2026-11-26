@@ -23,7 +23,6 @@
 #include <category/execution/monad/graph_eval/tensor.hpp>
 
 #include <cstdint>
-#include <optional>
 #include <span>
 
 MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
@@ -35,10 +34,6 @@ class FineJit
     size_t const n_ops_;
     State &state_;
     std::span<TensorInput const> const inputs_;
-    CallerStorage *const caller_storage_;
-    // The caller's number of output references, if it gave any: run() fails
-    // unless the graph has that many outputs
-    std::optional<size_t> const output_count_;
     uint8_t *const arena_;
 
     Tensor node(size_t const id) const;
@@ -50,15 +45,12 @@ class FineJit
 public:
     FineJit(
         Finecode const &finecode, State &state,
-        std::span<TensorInput const> inputs, CallerStorage *caller_storage,
-        std::optional<size_t> output_count, uint8_t *arena)
+        std::span<TensorInput const> inputs, uint8_t *arena)
         : finecode_(finecode)
         , code_(finecode.ops())
         , n_ops_(finecode.n_ops())
         , state_(state)
         , inputs_(inputs)
-        , caller_storage_(caller_storage)
-        , output_count_(output_count)
         , arena_(arena)
     {
     }

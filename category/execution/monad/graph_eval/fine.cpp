@@ -23,6 +23,7 @@
 
 #include <array>
 #include <optional>
+#include <utility>
 
 MONAD_GRAPH_EVAL_ANONYMOUS_NAMESPACE_BEGIN
 
@@ -509,25 +510,56 @@ FinecodeValidator::validate_op<FineOp::Reshape>(Shape const &shape)
 }
 
 template <>
-Result<TensorType>
-FinecodeValidator::validate_op<FineOp::Concat>(uint8_t const &axis)
+Result<TensorType> FinecodeValidator::validate_op<FineOp::Transpose>(
+    std::tuple<uint8_t, uint8_t> const &params)
 {
-    BOOST_OUTCOME_TRY(auto const inputs, read_op_inputs<FineOp::Concat>());
-    auto const &[x, y] = inputs;
-    if (x->dtype() != y->dtype()) {
-        return GraphEvalError::TypeError;
-    }
-    if (x->shape().rank() != y->shape().rank() || axis >= x->shape().rank()) {
+    auto const &[axis0, axis1] = params;
+    BOOST_OUTCOME_TRY(auto const &[x], read_op_inputs<FineOp::Transpose>());
+    // A rank-0 x has no axis, so it fails here
+    if (axis0 >= x->shape().rank() || axis1 >= x->shape().rank()) {
         return GraphEvalError::RankError;
     }
-    for (size_t i = 0; i < x->shape().rank(); i++) {
-        if (i != axis &&
-            x->shape().dimensions()[i] != y->shape().dimensions()[i]) {
-            return GraphEvalError::ShapeError;
-        }
+    std::array<uint16_t, MAX_RANK> dimensions = x->shape().dimensions();
+    std::swap(dimensions[axis0], dimensions[axis1]);
+    BOOST_OUTCOME_TRY(
+        auto const shape, Shape::checked(x->shape().rank(), dimensions));
+    return TensorType::checked(x->dtype(), shape);
+}
+
+template <>
+Result<TensorType> FinecodeValidator::validate_op<FineOp::Concat>(
+    std::tuple<uint8_t, uint8_t> const &params)
+{
+    auto const &[axis, n_inputs] = params;
+    if (n_inputs < 2 || n_inputs > MAX_CONCAT_INPUTS) {
+        return GraphEvalError::ArityError;
     }
-    uint32_t const concat_len = uint32_t{x->shape().dimensions()[axis]} +
-                                uint32_t{y->shape().dimensions()[axis]};
+    // Each input after the first, x, must have x's dtype, rank and dimensions,
+    // except along axis
+    BOOST_OUTCOME_TRY(auto const x, read_op_input());
+    // A rank-0 x has no axis, so it fails here
+    if (axis >= x->shape().rank()) {
+        return GraphEvalError::RankError;
+    }
+    // At most MAX_CONCAT_INPUTS lengths of up to 65535 each, so no overflow
+    uint32_t concat_len = x->shape().dimensions()[axis];
+    for (size_t i = 1; i < n_inputs; i++) {
+        BOOST_OUTCOME_TRY(auto const y, read_op_input());
+        if (x->dtype() != y->dtype()) {
+            return GraphEvalError::TypeError;
+        }
+        if (x->shape().rank() != y->shape().rank()) {
+            return GraphEvalError::RankError;
+        }
+        for (size_t d = 0; d < x->shape().rank(); d++) {
+            if (d != axis &&
+                x->shape().dimensions()[d] != y->shape().dimensions()[d]) {
+                return GraphEvalError::ShapeError;
+            }
+        }
+        concat_len += uint32_t{y->shape().dimensions()[axis]};
+    }
+    // The output's length along axis, which the MIP's MAX_DIM, 65535, bounds
     if (concat_len > std::numeric_limits<uint16_t>::max()) {
         return GraphEvalError::ShapeError;
     }

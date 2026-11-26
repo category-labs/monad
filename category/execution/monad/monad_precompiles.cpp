@@ -112,9 +112,9 @@ std::optional<evmc::Result> check_call_monad_precompile(
         return std::nullopt;
     }
 
-    // Graph eval takes static calls and DELEGATECALLs too, under which its
-    // storage references are to the caller's storage. The other precompiles
-    // take plain calls only. EIP-7702 delegated calls are rejected either way
+    // Graph eval takes static calls and DELEGATECALLs too. The other
+    // precompiles take plain calls only. EIP-7702 delegated calls are rejected
+    // either way
     constexpr bool is_graph_eval =
         std::is_same_v<Contract, graph_eval::GraphEvalContract>;
     if constexpr (is_graph_eval) {
@@ -142,7 +142,6 @@ std::optional<evmc::Result> check_call_monad_precompile(
                 input,
                 graph_eval::CallContext{
                     .sender = msg.sender,
-                    .recipient = msg.recipient,
                     .value = msg.value,
                     .delegatecall = msg.kind == EVMC_DELEGATECALL,
                     .is_static = (msg.flags & EVMC_STATIC) != 0});

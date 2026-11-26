@@ -254,7 +254,7 @@ struct GraphOutputs
 };
 
 // The byte order of a tensor's elements outside the interpreter: in the
-// calldata, in an account's code or in storage. Inside, they're in host order
+// calldata or in an account's code. Inside, they're in host order
 enum class ByteOrder : uint8_t
 {
     BigEndian = 0,
@@ -262,13 +262,12 @@ enum class ByteOrder : uint8_t
     Last_valid = LittleEndian,
 };
 
-// Where a TensorInput's elements are, or where a TensorOutput's go
+// Where a TensorInput's elements are
 enum class Location : uint8_t
 {
-    Literal = 0, // In the calldata, or for an output, the return data
+    Literal = 0, // In the calldata
     Code = 1, // In an account's code, as for a TensorRef node
-    Storage = 2, // In contiguous slots of the caller's storage
-    Last_valid = Storage,
+    Last_valid = Code,
 };
 
 // A tensor's elements in an account's code, from a byte offset counted from
@@ -279,13 +278,6 @@ struct CodeRef
     uint32_t offset;
 };
 
-// A tensor's elements in the caller's storage, in the contiguous slots from
-// this one on, as load_storage_tensor reads them
-struct StorageRef
-{
-    bytes32_t slot;
-};
-
 // Solidity:
 // struct TensorInput {
 //     uint8 dtype;
@@ -294,39 +286,21 @@ struct StorageRef
 //     uint8 location;
 //     bytes payload;
 // }
-// The payload is the elements for a literal, abi.encode(address, uint32
-// offset) for a CodeRef, and abi.encode(uint256 slot) for a StorageRef. As
-// abi_decode_tensor_input reads it from the calldata, a literal's elements are
-// still in place there
+// The payload is the elements for a literal, and abi.encode(address, uint32
+// offset) for a CodeRef. As abi_decode_tensor_input reads it from the
+// calldata, a literal's elements are still in place there
 struct TensorInput
 {
     TensorType type;
     ByteOrder byte_order;
-    std::variant<byte_string_view, CodeRef, StorageRef> source;
+    std::variant<byte_string_view, CodeRef> source;
 };
 
-// Solidity:
-// struct TensorOutput {
-//     uint8 byteOrder;
-//     uint8 location;
-//     bytes payload;
-// }
-// An output is returned by value, for a literal, whose payload is empty, or
-// stored, for a StorageRef, whose payload is abi.encode(uint256 slot)
-struct TensorOutput
-{
-    ByteOrder byte_order;
-    // Where the output is stored, or none if it's returned
-    std::optional<StorageRef> destination;
-};
-
-// ABI-decode a TensorInput or a TensorOutput tuple. Only the canonical layout
-// is accepted. InvalidInput if a tag isn't one of its values, or a payload
-// isn't what its location takes, ShapeError if a literal's elements don't have
-// the size its type gives, and TypeError, RankError or ShapeError for an
-// invalid type
+// ABI-decode a TensorInput tuple. Only the canonical layout is accepted.
+// InvalidInput if a tag isn't one of its values, or a payload isn't what its
+// location takes, ShapeError if a literal's elements don't have the size its
+// type gives, and TypeError, RankError or ShapeError for an invalid type
 Result<TensorInput> abi_decode_tensor_input(byte_string_view &enc);
-Result<TensorOutput> abi_decode_tensor_output(byte_string_view &enc);
 
 // Copies the elements in `src`, of type `dtype`, to `dst`, converting them
 // between `order` and host order. The conversion is its own inverse, so this

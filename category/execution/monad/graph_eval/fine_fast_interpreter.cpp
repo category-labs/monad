@@ -931,14 +931,10 @@ MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
 
 FineFastInterpreter::FineFastInterpreter(
     Finecode const &finecode, State &state,
-    std::span<TensorInput const> const inputs,
-    CallerStorage *const caller_storage,
-    std::optional<size_t> const output_count, uint8_t *const arena)
+    std::span<TensorInput const> const inputs, uint8_t *const arena)
     : finecode_(finecode)
     , state_(state)
     , inputs_(inputs)
-    , caller_storage_(caller_storage)
-    , output_count_(output_count)
     , arena_(arena)
 {
 }
@@ -985,15 +981,6 @@ Result<void> FineFastInterpreter::load_inputs()
         else if (auto const *const ref = std::get_if<CodeRef>(&input.source)) {
             BOOST_OUTCOME_TRY(
                 load_code_tensor(state_, *ref, input.byte_order, tensor));
-        }
-        else {
-            // Storage references outside a DELEGATECALL were rejected before
-            MONAD_ASSERT(caller_storage_ != nullptr);
-            BOOST_OUTCOME_TRY(load_storage_tensor(
-                *caller_storage_,
-                std::get<StorageRef>(input.source),
-                input.byte_order,
-                tensor));
         }
     }
     return outcome::success();
@@ -1124,17 +1111,119 @@ AxisSplit split_at(Shape const &shape, size_t const axis)
     return split;
 }
 
-void concat(Tensor const &x, Tensor const &y, size_t const axis, Tensor &out)
+// The inputs joined along an axis, in order. Each input has out's dimensions
+// except along the axis, so for each coordinate before the axis, out's
+// elements are each input's elements in turn, each a contiguous block
+void concat(
+    std::span<Tensor const> const inputs, size_t const axis, Tensor &out)
 {
-    size_t const size = dtype_size(x.type().dtype());
-    AxisSplit const xs = split_at(x.type().shape(), axis);
-    AxisSplit const ys = split_at(y.type().shape(), axis);
-    uint64_t const x_row = xs.length * xs.inner * size;
-    uint64_t const y_row = ys.length * ys.inner * size;
-    for (uint64_t o = 0; o < xs.outer; o++) {
-        uint8_t *const row = out.data() + o * (x_row + y_row);
-        std::memcpy(row, x.data() + o * x_row, x_row);
-        std::memcpy(row + x_row, y.data() + o * y_row, y_row);
+    // With no elements there is nothing to copy, and the dimensions before
+    // the axis can multiply to more blocks than a loop could step through
+    if (out.type().shape().size() == 0) {
+        return;
+    }
+    size_t const size = dtype_size(out.type().dtype());
+    AxisSplit const s = split_at(out.type().shape(), axis);
+    uint8_t *dst = out.data();
+    for (uint64_t o = 0; o < s.outer; o++) {
+        for (Tensor const &x : inputs) {
+            uint64_t const block =
+                uint64_t{x.type().shape().dimensions()[axis]} * s.inner * size;
+            std::memcpy(dst, x.data() + o * block, block);
+            dst += block;
+        }
+    }
+}
+
+// Transpose's view of its input, [outer, a, middle, b, inner], with a and b
+// the dimensions along the lower and the higher of the two axes. Its output
+// is [outer, b, middle, a, inner]
+struct TransposeSplit
+{
+    uint64_t outer;
+    uint64_t a;
+    uint64_t middle;
+    uint64_t b;
+    uint64_t inner;
+};
+
+// x's element (o, i, m, j, k) is out's (o, j, m, i, k). For each o, j and m,
+// out's elements for every i and k are contiguous, and x's are `a` blocks of
+// inner contiguous elements, middle * b * inner elements apart: each block is
+// copied whole, or, for inner 1, as one element. E is an unsigned type of the
+// element's size
+template <typename E>
+void transpose_elements(
+    uint8_t const *const x_bytes, uint8_t *const out_bytes,
+    TransposeSplit const &s)
+{
+    auto const *const x = as_elements<E>(x_bytes);
+    E *const out = reinterpret_cast<E *>(out_bytes);
+    uint64_t const step = s.middle * s.b * s.inner;
+    for (uint64_t o = 0; o < s.outer; o++) {
+        for (uint64_t j = 0; j < s.b; j++) {
+            for (uint64_t m = 0; m < s.middle; m++) {
+                E *const dst =
+                    out + ((o * s.b + j) * s.middle + m) * s.a * s.inner;
+                auto const *const src =
+                    x + ((o * s.a * s.middle + m) * s.b + j) * s.inner;
+                if (s.inner == 1) {
+                    for (uint64_t i = 0; i < s.a; i++) {
+                        dst[i] = src[i * step];
+                    }
+                }
+                else {
+                    for (uint64_t i = 0; i < s.a; i++) {
+                        std::memcpy(
+                            dst + i * s.inner,
+                            src + i * step,
+                            s.inner * sizeof(E));
+                    }
+                }
+            }
+        }
+    }
+}
+
+// x with dimensions axis0 and axis1 swapped; with equal axes, a copy of x
+void transpose(
+    Tensor const &x, size_t const axis0, size_t const axis1, Tensor &out)
+{
+    TensorType const &type = x.type();
+    if (axis0 == axis1) {
+        std::memcpy(out.data(), x.data(), type.size_bytes());
+        return;
+    }
+    // With no elements there's nothing to copy, and the loops would still
+    // step through the dimensions other than the one of 0, whose product can
+    // be far more than any tensor's elements
+    if (type.shape().size() == 0) {
+        return;
+    }
+    size_t const lo = std::min(axis0, axis1);
+    size_t const hi = std::max(axis0, axis1);
+    auto const &dims = type.shape().dimensions();
+    TransposeSplit s{1, dims[lo], 1, dims[hi], 1};
+    for (size_t d = 0; d < lo; d++) {
+        s.outer *= dims[d];
+    }
+    for (size_t d = lo + 1; d < hi; d++) {
+        s.middle *= dims[d];
+    }
+    for (size_t d = hi + 1; d < type.shape().rank(); d++) {
+        s.inner *= dims[d];
+    }
+    switch (dtype_size(type.dtype())) {
+    case 1:
+        return transpose_elements<uint8_t>(x.data(), out.data(), s);
+    case 2:
+        return transpose_elements<uint16_t>(x.data(), out.data(), s);
+    case 4:
+        return transpose_elements<uint32_t>(x.data(), out.data(), s);
+    case 8:
+        return transpose_elements<uint64_t>(x.data(), out.data(), s);
+    default:
+        MONAD_ABORT();
     }
 }
 
@@ -1334,11 +1423,20 @@ Result<void> FineFastInterpreter::run_op(
         return load_code_tensor(
             state_, CodeRef{address, offset}, ByteOrder::LittleEndian, out);
     }
+    case FineOp::Transpose: {
+        auto const axis0 = take<uint8_t>(code);
+        auto const axis1 = take<uint8_t>(code);
+        transpose(input(), axis0, axis1, out);
+        return outcome::success();
+    }
     case FineOp::Concat: {
         auto const axis = take<uint8_t>(code);
-        Tensor const x = input();
-        Tensor const y = input();
-        concat(x, y, axis, out);
+        size_t const n_inputs = take<uint8_t>(code);
+        std::array<Tensor, MAX_CONCAT_INPUTS> inputs;
+        for (size_t i = 0; i < n_inputs; i++) {
+            inputs[i] = input();
+        }
+        concat(std::span<Tensor const>{inputs.data(), n_inputs}, axis, out);
         return outcome::success();
     }
     case FineOp::QMatMul: {
@@ -1395,9 +1493,6 @@ Result<GraphOutputs> FineFastInterpreter::run()
     }
     BOOST_OUTCOME_TRY(check_inputs());
     auto const &output_ids = finecode_.output_ids();
-    if (output_count_.has_value() && *output_count_ != output_ids.size()) {
-        return GraphEvalError::ArityError;
-    }
     BOOST_OUTCOME_TRY(load_inputs());
 
     // Every Scalar node's registers, at the same address

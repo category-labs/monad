@@ -34,6 +34,8 @@ constexpr std::size_t MAX_GRAPH_INPUTS = 8;
 constexpr std::size_t MAX_GRAPH_OUTPUTS = 8;
 constexpr std::size_t MAX_GRAPH_OPS = 16 * 1024; /* Arbitrary. */
 
+constexpr std::size_t MAX_CONCAT_INPUTS = 16;
+
 constexpr std::size_t MAX_SCALAR_INPUTS = 8;
 /* Max registers chosen so we can keep the register file in 32kb of L1 cache. */
 constexpr std::size_t MAX_SCALAR_REGISTERS = 14;

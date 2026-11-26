@@ -42,8 +42,8 @@ copy_big_endian(uint8_t *const dst, std::span<uint8_t const> const src)
     }
 }
 
-// A tag of a TensorInput or TensorOutput, a uint8 in the ABI: InvalidInput if
-// its word isn't one of the tag's values
+// A tag of a TensorInput, a uint8 in the ABI: InvalidInput if its word isn't
+// one of the tag's values
 template <typename Tag>
 Result<Tag> abi_decode_tag(byte_string_view &enc)
 {
@@ -173,49 +173,8 @@ Result<TensorInput> abi_decode_tensor_input(byte_string_view &enc)
             ref.offset = u32_be::unsafe_from(payload.data() + 60).native();
             return TensorInput{type, byte_order, ref};
         }
-    case Location::Storage:
-        // abi.encode(uint256 slot)
-        if (payload.size() != 32) {
-            return GraphEvalError::InvalidInput;
-        }
-        {
-            StorageRef ref{};
-            std::memcpy(ref.slot.bytes, payload.data(), 32);
-            return TensorInput{type, byte_order, ref};
-        }
     }
     MONAD_ABORT();
-}
-
-Result<TensorOutput> abi_decode_tensor_output(byte_string_view &enc)
-{
-    // Static: uint8 byteOrder and uint8 location, then dynamic: head(bytes),
-    // which the canonical layout puts right after the three head words
-    BOOST_OUTCOME_TRY(auto const byte_order, abi_decode_tag<ByteOrder>(enc));
-    BOOST_OUTCOME_TRY(auto const location, abi_decode_tag<Location>(enc));
-    // An output is returned, as a literal, or stored, but can't go to code
-    if (location == Location::Code) {
-        return GraphEvalError::InvalidInput;
-    }
-    BOOST_OUTCOME_TRY(auto const payload_head, abi_decode_fixed<u256_be>(enc));
-    if (payload_head.native() != 3 * 32) {
-        return GraphEvalError::InvalidInput;
-    }
-
-    // Dynamic: read tail(bytes), the payload: empty for a literal, and
-    // abi.encode(uint256 slot) for storage
-    BOOST_OUTCOME_TRY(auto const payload_size, abi_decode_length(enc));
-    if (payload_size != (location == Location::Literal ? 0 : 32)) {
-        return GraphEvalError::InvalidInput;
-    }
-    BOOST_OUTCOME_TRY(
-        auto const payload, abi_decode_padded_bytes(enc, payload_size));
-    TensorOutput output{byte_order, std::nullopt};
-    if (location == Location::Storage) {
-        output.destination.emplace();
-        std::memcpy(output.destination->slot.bytes, payload.data(), 32);
-    }
-    return output;
 }
 
 void copy_elements(

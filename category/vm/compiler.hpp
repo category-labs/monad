@@ -231,7 +231,7 @@ namespace monad::vm
                 &monad_vm_runtime_increase_memory_raw_v1),
         };
 
-        asmjit::JitRuntime asmjit_rt_;
+        std::shared_ptr<asmjit::JitRuntime> asmjit_rt_;
         VarcodeCache varcode_cache_;
         CompileJobMap compile_job_map_;
         CompileJobQueue compile_job_queue_;

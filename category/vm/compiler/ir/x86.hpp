@@ -33,7 +33,8 @@ namespace monad::vm::compiler::native
      */
     template <Traits traits>
     std::shared_ptr<Nativecode> compile(
-        asmjit::JitRuntime &rt, uint8_t const *contract_code,
+        std::shared_ptr<asmjit::JitRuntime> const &rt,
+        uint8_t const *contract_code,
         interpreter::code_size_t contract_code_size,
         CompilerConfig const & = {});
 
@@ -42,8 +43,8 @@ namespace monad::vm::compiler::native
      */
     template <Traits traits>
     std::shared_ptr<Nativecode> compile_basic_blocks(
-        asmjit::JitRuntime &rt, basic_blocks::BasicBlocksIR const &ir,
-        CompilerConfig const & = {});
+        std::shared_ptr<asmjit::JitRuntime> const &rt,
+        basic_blocks::BasicBlocksIR const &ir, CompilerConfig const & = {});
 
     /**
      * Upper bound on (estimated) native contract size in bytes.

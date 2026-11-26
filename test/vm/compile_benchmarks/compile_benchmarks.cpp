@@ -31,6 +31,7 @@
 #include <fstream>
 #include <ios>
 #include <iterator>
+#include <memory>
 #include <random>
 #include <vector>
 
@@ -72,7 +73,7 @@ namespace
 
         MONAD_ASSERT(
             program.size() <= *monad::vm::interpreter::code_size_t::max());
-        auto rt = asmjit::JitRuntime{};
+        auto const rt = std::make_shared<asmjit::JitRuntime>();
 
         for (auto _ : state) {
             auto fn = monad::vm::compiler::native::compile<
@@ -113,7 +114,7 @@ namespace
         MONAD_ASSERT(
             program.size() <= *monad::vm::interpreter::code_size_t::max());
 
-        auto rt = asmjit::JitRuntime{};
+        auto const rt = std::make_shared<asmjit::JitRuntime>();
 
         for (auto _ : state) {
             auto ncode = monad::vm::compiler::native::compile<

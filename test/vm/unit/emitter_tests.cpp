@@ -4783,11 +4783,10 @@ TEST(Emitter, AsmLogLabelsEachInstruction)
         STOP};
     auto const ir = basic_blocks::BasicBlocksIR::unsafe_from(bytecode);
 
-    asmjit::JitRuntime rt;
     CompilerConfig config{};
     config.asm_log_path = path.c_str();
     (void)compile_basic_blocks<EvmTraits<EvmRevision::LatestStable>>(
-        rt, ir, config);
+        std::make_shared<asmjit::JitRuntime>(), ir, config);
 
     std::ifstream log{path};
     std::vector<std::string> labels;

@@ -23,6 +23,8 @@
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/utils/debug.hpp>
 
+#include <asmjit/core/jit_runtime.h>
+
 #include <atomic>
 #include <chrono>
 #include <cstddef>
@@ -35,7 +37,8 @@ namespace monad::vm
 {
     Compiler::Compiler(
         bool const enable_async, size_t const compile_job_soft_limit)
-        : asmjit_rt_{&asmjit_create_params_}
+        : asmjit_rt_{std::make_shared<asmjit::JitRuntime>(
+              &asmjit_create_params_)}
         , compile_job_soft_limit_{compile_job_soft_limit}
         , enable_async_compilation_{enable_async}
     {

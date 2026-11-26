@@ -48,6 +48,7 @@
 #include <format>
 #include <ios>
 #include <iostream>
+#include <memory>
 #include <optional>
 #include <ostream>
 #include <print>
@@ -217,9 +218,8 @@ int mce_main(arguments const &args)
         .near_address = reinterpret_cast<uintptr_t>(
             &monad_vm_runtime_increase_memory_raw_v1),
     };
-    asmjit::JitRuntime rt{&rt_params};
+    auto const rt = std::make_shared<asmjit::JitRuntime>(&rt_params);
 
-    // Must be declared after `rt`: ~Nativecode releases its code via `rt`.
     Binary bin;
 
     native::CompilerConfig config{};
@@ -237,11 +237,11 @@ int mce_main(arguments const &args)
 
     monad::vm::Result const result = [&]() {
         if (args.instrument_execute) {
-            InstrumentableVM<true> vm(rt);
+            InstrumentableVM<true> vm(*rt);
             return vm.execute<traits>(bin, device);
         }
         else {
-            InstrumentableVM<false> vm(rt);
+            InstrumentableVM<false> vm(*rt);
             return vm.execute<traits>(bin, device);
         }
     }();

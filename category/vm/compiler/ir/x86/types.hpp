@@ -26,6 +26,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <memory>
+#include <utility>
 #include <variant>
 
 namespace monad::vm::compiler::native
@@ -55,9 +57,10 @@ namespace monad::vm::compiler::native
 
         /// If compilation failed, then `entrypoint` is `nullptr`.
         Nativecode(
-            asmjit::JitRuntime &asmjit_rt, uint64_t const chain_id,
-            entrypoint_t entry, CodeSizeEstimate const code_size_estimate)
-            : asmjit_rt_{asmjit_rt}
+            std::shared_ptr<asmjit::JitRuntime> asmjit_rt,
+            uint64_t const chain_id, entrypoint_t entry,
+            CodeSizeEstimate const code_size_estimate)
+            : asmjit_rt_{std::move(asmjit_rt)}
             , chain_id_{chain_id}
             , entrypoint_{entry}
             , code_size_estimate_{code_size_estimate}
@@ -119,12 +122,12 @@ namespace monad::vm::compiler::native
         ~Nativecode()
         {
             if (entrypoint_) {
-                asmjit_rt_.release(entrypoint_);
+                asmjit_rt_->release(entrypoint_);
             }
         }
 
     private:
-        asmjit::JitRuntime &asmjit_rt_;
+        std::shared_ptr<asmjit::JitRuntime> asmjit_rt_;
         uint64_t chain_id_;
         entrypoint_t entrypoint_;
         CodeSizeEstimate code_size_estimate_;

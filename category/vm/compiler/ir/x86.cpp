@@ -430,8 +430,9 @@ namespace
 
     template <Traits traits>
     std::shared_ptr<Nativecode> compile_contract(
-        asmjit::JitRuntime &rt, uint8_t const *contract_code,
-        code_size_t const contract_code_size, CompilerConfig const &config)
+        std::shared_ptr<asmjit::JitRuntime> const &rt,
+        uint8_t const *contract_code, code_size_t const contract_code_size,
+        CompilerConfig const &config)
     {
         auto const ir =
             basic_blocks::make_ir<traits>(contract_code, contract_code_size);
@@ -443,8 +444,9 @@ namespace monad::vm::compiler::native
 {
     template <Traits traits>
     std::shared_ptr<Nativecode> compile(
-        asmjit::JitRuntime &rt, uint8_t const *contract_code,
-        code_size_t const contract_code_size, CompilerConfig const &config)
+        std::shared_ptr<asmjit::JitRuntime> const &rt,
+        uint8_t const *contract_code, code_size_t const contract_code_size,
+        CompilerConfig const &config)
     {
         try {
             return ::compile_contract<traits>(
@@ -468,10 +470,10 @@ namespace monad::vm::compiler::native
 
     template <Traits traits>
     std::shared_ptr<Nativecode> compile_basic_blocks(
-        asmjit::JitRuntime &rt, basic_blocks::BasicBlocksIR const &ir,
-        CompilerConfig const &config)
+        std::shared_ptr<asmjit::JitRuntime> const &rt,
+        basic_blocks::BasicBlocksIR const &ir, CompilerConfig const &config)
     {
-        Emitter emit{rt, ir.codesize, config};
+        Emitter emit{*rt, ir.codesize, config};
         for (auto const &[d, _] : ir.jump_dests()) {
             emit.add_jump_dest(d);
         }
@@ -489,7 +491,7 @@ namespace monad::vm::compiler::native
             require_code_size_in_bound(emit, max_native_size);
         }
         size_t const size_estimate = emit.estimate_size();
-        auto entry = emit.finish_contract(rt);
+        auto entry = emit.finish_contract(*rt);
         MONAD_DEBUG_ASSERT(size_estimate <= *max_native_size);
         return std::make_shared<Nativecode>(
             rt,

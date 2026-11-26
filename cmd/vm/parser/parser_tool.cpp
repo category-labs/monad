@@ -30,6 +30,7 @@
 #include <ios>
 #include <iostream>
 #include <iterator>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -139,7 +140,7 @@ int main(int const argc, char **const argv)
         }
         MONAD_ASSERT(opcodes.size() <= *code_size_t::max());
         if (args.compile) {
-            auto rt = asmjit::JitRuntime{};
+            auto const rt = std::make_shared<asmjit::JitRuntime>();
             monad::vm::compiler::native::compile<
                 monad::EvmTraits<monad::EvmRevision::LatestStable>>(
                 rt,
@@ -166,7 +167,7 @@ int main(int const argc, char **const argv)
             auto opcodes = do_parse(config, filename, s, outfile, os);
             if (args.compile) {
                 auto outfile_asm = filename + ".asm";
-                auto rt = asmjit::JitRuntime{};
+                auto const rt = std::make_shared<asmjit::JitRuntime>();
                 monad::vm::compiler::native::compile<
                     monad::EvmTraits<monad::EvmRevision::LatestStable>>(
                     rt,

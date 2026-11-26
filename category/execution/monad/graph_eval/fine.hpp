@@ -67,34 +67,43 @@ struct FineFnInfoImpl
     static constexpr size_t ARITY = N;
 };
 
+// The opcodes, as the graph eval MIP numbers them, each given explicitly since
+// the bytecode stores them
 enum class FineOp : uint8_t
 {
     // Elementwise scalar operation.
     // Scalar(Shape outputShape, uint16_t[] inputs)
-    Scalar,
+    Scalar = 0,
 
-    Literal,
-    TensorRef,
+    Literal = 1,
+    TensorRef = 2,
 
-    Reshape,
-    Concat,
+    Reshape = 3,
+    // Id 4 is the MIP's Transpose, which isn't implemented, so read_next
+    // rejects it as an invalid opcode
+    Concat = 5,
 
-    MatMul,
-    QMatMul,
+    QMatMul = 6,
 
-    CumSum,
+    CumSum = 7,
 
-    ArgMin,
-    ArgMax,
+    ArgMin = 8,
+    ArgMax = 9,
 
-    ReduceSum,
-    ReduceMax,
+    ReduceSum = 10,
+    ReduceMax = 11,
 
-    Gather,
+    Gather = 12,
+
+    // Temporary, until it's removed: not in the MIP, where QMatMul with
+    // frac_bits 0 replaces it. It has the first id after the MIP's opcodes
+    MatMul = 13,
 
     Invalid
 };
 
+// One more than the largest opcode, so the size of a table indexed by opcode.
+// Not every id below it is an op: id 4, the MIP's Transpose, has none
 constexpr size_t N_FINE_OPS = static_cast<size_t>(FineOp::Invalid);
 
 template <FineOp>
@@ -179,10 +188,28 @@ inline Result<FineOp> read_next<FineOp>(std::span<uint8_t const> &input)
 {
     BOOST_OUTCOME_TRY(
         auto const id, read_next<std::underlying_type_t<FineOp>>(input));
-    if (id >= static_cast<std::underlying_type_t<FineOp>>(FineOp::Invalid)) {
-        return GraphEvalError::InvalidOp;
+    // A valid id is one of the enumerators below Invalid, not any id below it,
+    // since id 4 has no op
+    auto const op = static_cast<FineOp>(id);
+    switch (op) {
+    case FineOp::Scalar:
+    case FineOp::Literal:
+    case FineOp::TensorRef:
+    case FineOp::Reshape:
+    case FineOp::Concat:
+    case FineOp::QMatMul:
+    case FineOp::CumSum:
+    case FineOp::ArgMin:
+    case FineOp::ArgMax:
+    case FineOp::ReduceSum:
+    case FineOp::ReduceMax:
+    case FineOp::Gather:
+    case FineOp::MatMul:
+        return op;
+    case FineOp::Invalid:
+        break;
     }
-    return static_cast<FineOp>(id);
+    return GraphEvalError::InvalidOp;
 }
 
 template <>

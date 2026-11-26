@@ -156,12 +156,12 @@ struct FineOpInfo<FineOp::CumSum> : FineOpInfoImpl<uint8_t, 1>
 };
 
 template <>
-struct FineOpInfo<FineOp::ArgMin> : FineOpInfoImpl<std::monostate, 1>
+struct FineOpInfo<FineOp::ArgMin> : FineOpInfoImpl<uint8_t, 1>
 {
 };
 
 template <>
-struct FineOpInfo<FineOp::ArgMax> : FineOpInfoImpl<std::monostate, 1>
+struct FineOpInfo<FineOp::ArgMax> : FineOpInfoImpl<uint8_t, 1>
 {
 };
 

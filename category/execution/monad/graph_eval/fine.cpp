@@ -395,15 +395,6 @@ class FinecodeValidator
     template <FineOp Op>
     Result<TensorType> validate_op(OpParams<Op> const &);
 
-    Result<TensorType> validate_reduce()
-    {
-        BOOST_OUTCOME_TRY(auto const x, read_op_input());
-        if (x->shape().size() == 0) {
-            return GraphEvalError::ShapeError;
-        }
-        return TensorType::checked(x->dtype(), Shape{});
-    }
-
     Result<TensorType> validate_dim_reduce(uint8_t const &dim)
     {
         BOOST_OUTCOME_TRY(auto const x, read_op_input());
@@ -418,6 +409,15 @@ class FinecodeValidator
         BOOST_OUTCOME_TRY(
             auto const shape, Shape::checked(x->shape().rank(), dimensions));
         return TensorType::checked(x->dtype(), shape);
+    }
+
+    // ArgMin's and ArgMax's checks and shape are ReduceMax's, with Uint16
+    // elements whatever the input's dtype: each is an index along axis,
+    // below the input's dimension there, which is at most 65535
+    Result<TensorType> validate_arg_reduce(uint8_t const axis)
+    {
+        BOOST_OUTCOME_TRY(auto const reduced, validate_dim_reduce(axis));
+        return TensorType::checked(Dtype::uint16, reduced.shape());
     }
 
     Result<void> validate();
@@ -613,16 +613,16 @@ FinecodeValidator::validate_op<FineOp::CumSum>(uint8_t const &dim)
 
 template <>
 Result<TensorType>
-FinecodeValidator::validate_op<FineOp::ArgMin>(std::monostate const &)
+FinecodeValidator::validate_op<FineOp::ArgMin>(uint8_t const &axis)
 {
-    return validate_reduce();
+    return validate_arg_reduce(axis);
 }
 
 template <>
 Result<TensorType>
-FinecodeValidator::validate_op<FineOp::ArgMax>(std::monostate const &)
+FinecodeValidator::validate_op<FineOp::ArgMax>(uint8_t const &axis)
 {
-    return validate_reduce();
+    return validate_arg_reduce(axis);
 }
 
 template <>

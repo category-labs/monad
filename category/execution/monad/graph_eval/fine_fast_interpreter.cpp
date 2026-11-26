@@ -1371,21 +1371,57 @@ void reduce(Tensor const &x, size_t const axis, Tensor &out, F const f)
     });
 }
 
-// The row-major index of the first element that `better` prefers to all
-// before it, in x's dtype, wrapping. The validator rejects an empty x
+// ArgMin or ArgMax along an axis, which keeps length 1. Each element of out, a
+// uint16_t, is for one choice of the coordinates other than the axis: the
+// smallest index i along the axis such that `better` prefers no element along
+// the axis to element i. With `better` as <, that is the index of the first
+// smallest element; as >, of the first largest. The validator rejects an
+// empty axis, so every index is below the length along it, at most 65535.
+// Each outer block's rows are read in order, each element compared with the
+// best so far at its position, which is read from x at the index out holds
+// for that position. With one element a row (every dimension after the axis
+// is 1), each outer block is a contiguous run, scanned with its best value in
+// a local
 template <typename Better>
-void arg_extreme(Tensor const &x, Tensor &out, Better const better)
+void arg_extreme(
+    Tensor const &x, size_t const axis, Tensor &out, Better const better)
 {
+    // With no elements there is nothing to write, and the dimensions other
+    // than the one of 0 can multiply to more rows than a loop could step
+    // through
+    if (out.type().shape().size() == 0) {
+        return;
+    }
+    AxisSplit const s = split_at(x.type().shape(), axis);
     visit_dtype(x.type().dtype(), [&]<typename T>() {
         auto const *const xs = as_elements<T>(x.data());
-        uint64_t const n = x.type().shape().size();
-        uint64_t best = 0;
-        for (uint64_t i = 1; i < n; i++) {
-            if (better(T{xs[i]}, T{xs[best]})) {
-                best = i;
+        auto *const outs = reinterpret_cast<uint16_t *>(out.data());
+        for (uint64_t o = 0; o < s.outer; o++) {
+            auto const *const rows = xs + o * s.length * s.inner;
+            uint16_t *const best = outs + o * s.inner;
+            if (s.inner == 1) {
+                uint64_t index = 0;
+                T value = rows[0];
+                for (uint64_t r = 1; r < s.length; r++) {
+                    if (better(T{rows[r]}, value)) {
+                        index = r;
+                        value = rows[r];
+                    }
+                }
+                *best = static_cast<uint16_t>(index);
+                continue;
+            }
+            std::memset(best, 0, s.inner * sizeof(uint16_t));
+            for (uint64_t r = 1; r < s.length; r++) {
+                auto const *const row = rows + r * s.inner;
+                for (uint64_t k = 0; k < s.inner; k++) {
+                    T const current = rows[uint64_t{best[k]} * s.inner + k];
+                    if (better(T{row[k]}, current)) {
+                        best[k] = static_cast<uint16_t>(r);
+                    }
+                }
             }
         }
-        *reinterpret_cast<T *>(out.data()) = static_cast<T>(best);
     });
 }
 
@@ -1452,14 +1488,20 @@ Result<void> FineFastInterpreter::run_op(
         cumsum(input(), axis, out);
         return outcome::success();
     }
-    case FineOp::ArgMin:
-        arg_extreme(
-            input(), out, [](auto const a, auto const b) { return a < b; });
+    case FineOp::ArgMin: {
+        auto const axis = take<uint8_t>(code);
+        arg_extreme(input(), axis, out, [](auto const a, auto const b) {
+            return a < b;
+        });
         return outcome::success();
-    case FineOp::ArgMax:
-        arg_extreme(
-            input(), out, [](auto const a, auto const b) { return a > b; });
+    }
+    case FineOp::ArgMax: {
+        auto const axis = take<uint8_t>(code);
+        arg_extreme(input(), axis, out, [](auto const a, auto const b) {
+            return a > b;
+        });
         return outcome::success();
+    }
     case FineOp::ReduceSum: {
         auto const axis = take<uint8_t>(code);
         reduce(input(), axis, out, AddF{});

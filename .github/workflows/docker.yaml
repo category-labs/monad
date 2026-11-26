@@ -76,3 +76,30 @@ jobs:
             type=gha,scope=base
             type=gha,scope=test_fixtures
           compiler-cache: ccache-${{ matrix.compiler.CC }}-${{ matrix.CMAKE_BUILD_TYPE }}
+
+  prune:
+    name: prune compiler caches
+    needs: build
+    # Pushes and manual runs save new compiler caches, here and in rust.yml;
+    # delete the ones they replaced. Deleting needs this token, so it runs
+    # apart from the build jobs, which also run for pull requests.
+    if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    permissions:
+      actions: write
+
+    steps:
+      - name: Delete replaced compiler caches
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Saved as <compiler-cache>-<sha>: keep the newest per prefix.
+          gh cache list --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF" \
+              --key ccache- --limit 1000 --json id,key,createdAt \
+              --jq 'group_by(.key | sub("-[0-9a-f]{40}$"; ""))[]
+                    | sort_by(.createdAt)[:-1][] | "\(.id) \(.key)"' |
+            while read -r id key; do
+              echo "Deleting $key"
+              gh cache delete "$id" --repo "$GITHUB_REPOSITORY"
+            done

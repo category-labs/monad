@@ -26,7 +26,8 @@ inputs:
       Actions cache key prefix for the stage's ccache directory, which the
       build gets as the `compiler_cache` build context (empty until a save).
       Pushes and manual runs build `<target>_compiler_cache` instead of
-      `target` and save it under the prefix; other events only read.
+      `target` and save it under the prefix; other events only read. The
+      prune job in docker.yaml deletes the saves a newer one replaced.
     default: ''
   submodules:
     description: Check out the submodules, skipping unused test data.

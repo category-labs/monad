@@ -43,7 +43,4 @@ constexpr std::size_t MAX_RANK = 8;
 // The bytes 0xef 0x7f, read as a little-endian uint16
 constexpr uint16_t GRAPH_MAGIC = 0x7fef;
 
-// The most fractional bits a fixed-point op's parameter can give
-constexpr uint8_t MAX_FRACTIONAL_BITS = 63;
-
 MONAD_GRAPH_EVAL_NAMESPACE_END

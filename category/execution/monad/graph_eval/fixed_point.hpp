@@ -25,14 +25,14 @@
 #include <type_traits>
 
 // Arithmetic on fixed-point numbers: integers of any dtype read as multiples of
-// 2^-bits, where `bits`, the number of fractional bits, is an op parameter of
-// at most MAX_FRACTIONAL_BITS. Everything is integer arithmetic, so results are
-// the same on every machine; each function says how it rounds.
+// 2^-bits, where `bits`, the number of fractional bits, is an op parameter from
+// 0 to the dtype's width. Everything is integer arithmetic, so results are the
+// same on every machine; each function says how it rounds.
 
 MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
 
 // A two's complement type in which the product of two T's, or a T shifted left
-// by up to 63 bits, is exact
+// by up to 64 bits, is exact
 template <typename T>
 using fixed_point_wide_t =
     std::conditional_t<std::is_signed_v<T>, __int128, unsigned __int128>;
@@ -51,14 +51,22 @@ inline T q_mul(T const a, T const b, unsigned const bits)
 }
 
 // a * 2^bits / b, truncated toward zero and wrapping to T, for a nonzero b. The
-// shifted dividend is exact, and so is the quotient, which is no larger
+// shifted dividend is exact, and so is the quotient, which is no larger, except
+// for -2^127 / -1, from an int64_t a of -2^63 and 64 bits: 2^127 doesn't fit in
+// an __int128. So for a 64-bit signed T, dividing by -1 is done as negation, in
+// unsigned arithmetic, which wraps
 template <typename T>
 [[gnu::always_inline]]
 inline T q_div(T const a, T const b, unsigned const bits)
 {
     using Wide = fixed_point_wide_t<T>;
-    return static_cast<T>(
-        (static_cast<Wide>(a) << bits) / static_cast<Wide>(b));
+    Wide const dividend = static_cast<Wide>(a) << bits;
+    if constexpr (std::is_signed_v<T> && sizeof(T) == 8) {
+        if (b == -1) {
+            return static_cast<T>(-static_cast<unsigned __int128>(dividend));
+        }
+    }
+    return static_cast<T>(dividend / static_cast<Wide>(b));
 }
 
 // ln 2 with 64 fractional bits, rounded to nearest
@@ -79,7 +87,7 @@ inline constexpr std::array<uint64_t, EXP_TERMS> EXP_COEFFICIENTS = [] {
     return coefficients;
 }();
 
-// e^EXP_LIMIT is more than 2^64, and e^-EXP_LIMIT * 2^63 less than 1, so
+// e^EXP_LIMIT is more than 2^64, and e^-EXP_LIMIT * 2^64 less than 1, so
 // q_exp's result for any input at least this far from 0 is past every dtype's
 // range, or rounds down to 0, whatever the number of fractional bits
 inline constexpr int EXP_LIMIT = 45;
@@ -200,8 +208,10 @@ inline T q_inv_sqrt(T const x, unsigned const bits)
     }
     else {
         // The quotient is at least 2^128, and its root at least 2^64, past
-        // every dtype's range, when the divisor is at most 2^(exponent - 128)
-        if (divisor <= uint64_t{1} << (exponent - 128)) {
+        // every dtype's range, when the divisor is at most 2^(exponent - 128).
+        // With 64 bits, the exponent is 192, so that's every divisor, and
+        // 2^64 doesn't fit in a uint64_t
+        if (exponent >= 192 || divisor <= uint64_t{1} << (exponent - 128)) {
             return max;
         }
         // Otherwise it's below 2^128: divide 2^(exponent - 64) by the

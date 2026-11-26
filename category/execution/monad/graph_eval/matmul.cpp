@@ -315,10 +315,14 @@ void matmul_i8(Tensor const &x, Tensor const &y, Tensor &out)
 }
 
 // The sums wrap at 128 bits, but only their bits from `bits` to `bits` plus
-// Out's width reach out. When those are all below bit 64, summing in 64 bits,
-// wrapping, which keeps a sum's low 64 bits exactly, gives the same out, much
-// faster. For types up to 16 bits wide, every sum of up to 65535 products is
-// exact in 64 bits anyway. Otherwise the sums are in 128 bits
+// Out's width reach out, and with `bits` at most 64 those are all below bit
+// 128. When they are all below bit 64, summing in 64 bits, wrapping, which
+// keeps a sum's low 64 bits exactly, gives the same out, much faster. For types
+// up to 16 bits wide, every sum of up to 65535 products is exact in 64 bits
+// anyway. Such a sum is below 2^48 in magnitude, so shifting it right by 63
+// gives the same 0 or -1 as shifting it by 64, which is undefined for a 64-bit
+// integer; the 64-bit path's shift is capped at 63 for that. Otherwise the sums
+// are in 128 bits
 void qmatmul(Tensor const &x, Tensor const &y, unsigned const bits, Tensor &out)
 {
     size_t const m = x.type().shape().dimensions()[0];
@@ -329,7 +333,7 @@ void qmatmul(Tensor const &x, Tensor const &y, unsigned const bits, Tensor &out)
             Out *const outs = reinterpret_cast<Out *>(out.data());
             if (sizeof(T) <= 2 || bits + 8 * sizeof(Out) <= 64) {
                 qmatmul_any<uint64_t, T>(
-                    x.data(), y.data(), m, k, n, bits, outs);
+                    x.data(), y.data(), m, k, n, std::min(bits, 63u), outs);
             }
             else {
                 qmatmul_any<unsigned __int128, T>(

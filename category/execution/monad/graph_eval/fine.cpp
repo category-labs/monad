@@ -53,9 +53,7 @@ inline Result<Dtype> qbinop_fn(uint8_t const frac_bits, std::array<Dtype, 2> con
     if (x != y) {
         return GraphEvalError::TypeError;
     }
-    auto const bit_width = 8 * dtype_size(x);
-    if (frac_bits == 0 || frac_bits > bit_width ||
-        frac_bits > MAX_FRACTIONAL_BITS) {
+    if (frac_bits > 8 * dtype_size(x)) {
         return GraphEvalError::GraphValidationError;
     }
     return x;
@@ -65,9 +63,7 @@ inline Result<Dtype> qbinop_fn(uint8_t const frac_bits, std::array<Dtype, 2> con
 inline Result<Dtype> qunop_fn(uint8_t const frac_bits, std::array<Dtype, 1> const &args)
 {
     auto const &[x] = args;
-    auto const bit_width = 8 * dtype_size(x);
-    if (frac_bits == 0 || frac_bits > bit_width ||
-        frac_bits > MAX_FRACTIONAL_BITS) {
+    if (frac_bits > 8 * dtype_size(x)) {
         return GraphEvalError::GraphValidationError;
     }
     return x;
@@ -573,8 +569,8 @@ Result<TensorType> FinecodeValidator::validate_op<FineOp::QMatMul>(
     std::tuple<uint8_t, Dtype> const &params)
 {
     auto const &[frac_bits, out_dtype] = params;
-    auto const out_bits = 8 * dtype_size(out_dtype);
-    if (frac_bits == 0 || frac_bits > out_bits || frac_bits > MAX_FRACTIONAL_BITS) {
+    // Up to 64, whatever out_dtype's width
+    if (frac_bits > 64) {
         return GraphEvalError::GraphValidationError;
     }
     BOOST_OUTCOME_TRY(auto const inputs, read_op_inputs<FineOp::QMatMul>());

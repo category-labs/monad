@@ -32,8 +32,8 @@ void matmul_i8(Tensor const &x, Tensor const &y, Tensor &out);
 // out = (x * y) >> bits, for an m x k matrix x and a k x n matrix y of the same
 // dtype, into the m x n matrix out of any dtype, all row-major. Each element's
 // products are summed exactly, wrapping at 128 bits, then shifted right by
-// `bits`, rounding down, and wrapped to out's dtype. x and y may be at any
-// alignment
+// `bits`, at most 64, rounding down, and wrapped to out's dtype. x and y may be
+// at any alignment
 void qmatmul(Tensor const &x, Tensor const &y, unsigned const bits, Tensor &out);
 
 MONAD_GRAPH_EVAL_NAMESPACE_END

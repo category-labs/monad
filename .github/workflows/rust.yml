@@ -29,6 +29,7 @@ jobs:
           setup: true
           submodules: true
           cache-from: type=gha,scope=base_rust
+          compiler-cache: ccache-rust
 
       - name: Build `code_quality_rust` stage
         uses: ./.github/actions/docker-stage

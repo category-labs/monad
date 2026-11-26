@@ -112,14 +112,24 @@ RUN cd src && ./scripts/vm/test.sh
 
 FROM base_rust AS build_and_test_rust
 
+# monad-cxx and monad-triedb build C++ through CMake, which uses ccache.
+COPY --from=compiler_cache / /ccache
+ENV CCACHE_DIR=/ccache CMAKE_C_COMPILER_LAUNCHER=ccache CMAKE_CXX_COMPILER_LAUNCHER=ccache
+
 COPY . src
 
 ENV TRIEDB_TARGET="triedb_driver"
 
 RUN cd src/rust && cargo update --workspace --locked
 RUN cd src/rust && cargo +nightly-2025-12-09 fmt --all --check
-RUN cd src/rust && CC=${CC:?} CXX=${CXX:?} CFLAGS="-march=haswell" CXXFLAGS="-march=haswell" ASMFLAGS="-march=haswell" RUSTFLAGS="-C linker=${CC:?}" cargo build --release --all-targets --all-features
+RUN cd src/rust && start=$(date +%s) && ccache --zero-stats && \
+    CC=${CC:?} CXX=${CXX:?} CFLAGS="-march=haswell" CXXFLAGS="-march=haswell" ASMFLAGS="-march=haswell" RUSTFLAGS="-C linker=${CC:?}" cargo build --release --all-targets --all-features && \
+    ccache --evict-older-than "$(( $(date +%s) - start + 1 ))s" && ccache --show-stats
 RUN cd src/rust && CC=${CC:?} CXX=${CXX:?} CFLAGS="-march=haswell" CXXFLAGS="-march=haswell" ASMFLAGS="-march=haswell" RUSTFLAGS="-C linker=${CC:?}" cargo test  --release --all-targets --all-features
+
+# The cache CI saves after a build_and_test_rust build.
+FROM scratch AS build_and_test_rust_compiler_cache
+COPY --from=build_and_test_rust /ccache /
 
 FROM base_vm_test AS code_quality
 

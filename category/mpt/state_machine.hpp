@@ -60,6 +60,13 @@ struct StateMachine
     {
         return false;
     }
+
+    // False where the nodes below the current position stay out of the
+    // live-byte counters. Such a subtrie must only ever be replaced whole.
+    virtual bool counts_live_bytes_below() const
+    {
+        return true;
+    }
 };
 
 MONAD_MPT_NAMESPACE_END

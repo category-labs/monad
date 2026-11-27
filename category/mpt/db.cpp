@@ -89,7 +89,8 @@ struct Db::Impl
 
     virtual Node::SharedPtr upsert_fiber_blocking(
         Node::SharedPtr, UpdateList &&, uint64_t, bool enable_compaction,
-        bool can_write_to_fast, bool write_root) = 0;
+        bool can_write_to_fast, bool write_root,
+        std::optional<bytes32_t> settlement_key) = 0;
     virtual Node::SharedPtr copy_trie_fiber_blocking(
         Node::SharedPtr src_root, NibblesView src, Node::SharedPtr dest_root,
         NibblesView dest, uint64_t dest_version, bool write_root = true) = 0;
@@ -197,7 +198,8 @@ public:
     }
 
     virtual Node::SharedPtr upsert_fiber_blocking(
-        Node::SharedPtr, UpdateList &&, uint64_t, bool, bool, bool) override
+        Node::SharedPtr, UpdateList &&, uint64_t, bool, bool, bool,
+        std::optional<bytes32_t>) override
     {
         MONAD_ABORT();
     }
@@ -295,7 +297,7 @@ public:
 
     virtual Node::SharedPtr upsert_fiber_blocking(
         Node::SharedPtr root, UpdateList &&list, uint64_t const version, bool,
-        bool, bool) override
+        bool, bool, std::optional<bytes32_t>) override
     {
         return aux_.do_update(
             std::move(root),
@@ -375,6 +377,7 @@ public:
         bool can_write_to_fast;
         bool write_root;
         timeline_id tid;
+        std::optional<bytes32_t> settlement_key;
     };
 
     struct FiberCopyTrieRequest
@@ -510,6 +513,9 @@ private:
                     aux.rewind_to_version(latest_block_id);
                 }
             }
+            if (!options.count_live_bytes) {
+                aux.stop_counting_live_bytes();
+            }
         }
 
         void rodb_run(size_t const node_lru_max_mem)
@@ -617,7 +623,8 @@ private:
                     }
                     else if (auto *req = std::get_if<2>(&request);
                              req != nullptr) {
-                        req->promise.set_value(aux.do_update(
+                        aux.set_settlement_key(req->settlement_key);
+                        auto root = aux.do_update(
                             std::move(req->prev_root),
                             req->sm,
                             std::move(req->updates),
@@ -625,7 +632,9 @@ private:
                             req->enable_compaction,
                             req->can_write_to_fast,
                             req->write_root,
-                            req->tid));
+                            req->tid);
+                        aux.set_settlement_key(std::nullopt);
+                        req->promise.set_value(std::move(root));
                     }
                     else if (auto *req = std::get_if<3>(&request);
                              req != nullptr) {
@@ -885,7 +894,8 @@ public:
     virtual Node::SharedPtr upsert_fiber_blocking(
         Node::SharedPtr root, UpdateList &&updates, uint64_t const version,
         bool const enable_compaction, bool const can_write_to_fast,
-        bool const write_root) override
+        bool const write_root,
+        std::optional<bytes32_t> const settlement_key) override
     {
         MONAD_ASSERT(machine_ != nullptr);
         if (unflushed_version_ != INVALID_BLOCK_NUM &&
@@ -909,7 +919,8 @@ public:
             .enable_compaction = enable_compaction && compaction_,
             .can_write_to_fast = can_write_to_fast,
             .write_root = write_root,
-            .tid = tid_});
+            .tid = tid_,
+            .settlement_key = settlement_key});
         return fut.get();
     }
 
@@ -1050,7 +1061,8 @@ public:
     }
 
     virtual Node::SharedPtr upsert_fiber_blocking(
-        Node::SharedPtr, UpdateList &&, uint64_t, bool, bool, bool) override
+        Node::SharedPtr, UpdateList &&, uint64_t, bool, bool, bool,
+        std::optional<bytes32_t>) override
     {
         MONAD_ABORT();
     }
@@ -1255,7 +1267,7 @@ Node::SharedPtr Db::load_root_for_version(uint64_t const block_id) const
 Node::SharedPtr Db::upsert(
     Node::SharedPtr root, UpdateList list, uint64_t const block_id,
     bool const enable_compaction, bool const can_write_to_fast,
-    bool const write_root)
+    bool const write_root, std::optional<bytes32_t> const settlement_key)
 {
     MONAD_ASSERT(impl_);
     return impl_->upsert_fiber_blocking(
@@ -1264,7 +1276,8 @@ Node::SharedPtr Db::upsert(
         block_id,
         enable_compaction,
         can_write_to_fast,
-        write_root);
+        write_root,
+        settlement_key);
 }
 
 Node::SharedPtr Db::copy_trie(
@@ -1324,12 +1337,38 @@ bool Db::traverse_ordered(
         concurrency_limit);
 }
 
+void Db::settle_space_counters(uint64_t const version, bytes32_t const &winner)
+{
+    MONAD_ASSERT(impl_);
+    MONAD_ASSERT(!is_read_only());
+    if (is_on_disk()) {
+        impl_->aux().settle_space_counters(version, winner);
+    }
+}
+
+void Db::discard_settlement(bytes32_t const &settlement_key)
+{
+    MONAD_ASSERT(impl_);
+    MONAD_ASSERT(!is_read_only());
+    if (is_on_disk()) {
+        impl_->aux().discard_settlement(settlement_key);
+    }
+}
+
+void Db::set_space_counters_prefix(NibblesView const prefix)
+{
+    MONAD_ASSERT(impl_);
+    if (is_on_disk() && !is_read_only()) {
+        impl_->aux().set_space_counters_prefix(prefix);
+    }
+}
+
 void Db::update_finalized_version(uint64_t const version)
 {
     MONAD_ASSERT(impl_);
     MONAD_ASSERT(!is_read_only());
     if (is_on_disk()) {
-        impl_->aux().metadata_ctx().set_latest_finalized_version(version);
+        impl_->aux().update_finalized_version(version);
     } // noop for in memory db
 }
 
@@ -1425,9 +1464,28 @@ DbStorageStats Db::get_storage_stats() const
     if (!is_on_disk()) {
         return {0, 0};
     }
-    auto const [capacity, used] =
-        impl_->aux().io->storage_pool().device().capacity();
-    return {capacity, used};
+    auto const &aux = impl_->aux();
+    auto const [capacity, used] = aux.io->storage_pool().device().capacity();
+    DbStorageStats stats{
+        .disk_capacity_bytes = capacity, .disk_used_bytes = used};
+    stats.chunk_capacity_bytes = aux.io->chunk_capacity(0);
+    stats.free_chunk_bytes =
+        uint64_t{aux.metadata_ctx()
+                     .list_chunk_count(UpdateAux::chunk_list::free)
+                     .value_or(0)} *
+        stats.chunk_capacity_bytes;
+    auto const written = aux.written_bytes();
+    stats.fast_written_bytes = written.fast;
+    stats.slow_written_bytes = written.slow;
+    stats.truly_free_bytes = stats.free_chunk_bytes;
+    auto const counters = aux.metadata_ctx().valid_space_counters();
+    if (counters.has_value()) {
+        stats.live_bytes_known = true;
+        stats.slow_live_bytes = counters->first.slow;
+        stats.truly_free_bytes +=
+            written.slow - std::min(counters->first.slow, written.slow);
+    }
+    return stats;
 }
 
 size_t Db::prefetch(Node::SharedPtr const &root)

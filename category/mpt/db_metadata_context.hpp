@@ -22,6 +22,7 @@
 #include <category/core/detail/start_lifetime_as_polyfill.hpp>
 #include <category/mpt/config.hpp>
 #include <category/mpt/detail/db_metadata.hpp>
+#include <category/mpt/detail/space_counters.hpp>
 #include <category/mpt/detail/timeline.hpp>
 #include <category/mpt/state_machine_kind.hpp>
 #include <category/mpt/util.hpp>
@@ -31,8 +32,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <optional>
 #include <span>
 #include <sys/mman.h>
+#include <utility>
 
 MONAD_MPT_NAMESPACE_BEGIN
 
@@ -233,6 +236,13 @@ public:
 
     void append(chunk_list list, uint32_t idx);
     void remove(uint32_t idx) noexcept;
+    // Chunks from the start of `list` through `last`, its end by default.
+    // Safe while another thread or process moves chunks between lists;
+    // nullopt if the list never holds still long enough to read, or `last`
+    // is not in it.
+    std::optional<uint32_t> list_chunk_count(
+        chunk_list list,
+        std::optional<uint32_t> last = std::nullopt) const noexcept;
 
     // Initialize a brand new pool: chunk lists, version markers, magic,
     // root_offsets mapping, and optionally history length.
@@ -268,6 +278,18 @@ public:
     // Version metadata getters/setters
     uint64_t get_latest_finalized_version() const noexcept;
     void set_latest_finalized_version(uint64_t version) noexcept;
+
+    // Persisted live-byte counters and the finalized version they describe;
+    // nullopt when never recorded or invalidated.
+    void set_space_counters(
+        detail::list_bytes live, uint64_t finalized_version) noexcept;
+    std::optional<std::pair<detail::list_bytes, uint64_t>>
+    space_counters() const noexcept;
+    void invalidate_space_counters() noexcept;
+    // The persisted counters when they describe this pool: no secondary
+    // timeline, and stamped with the latest finalized or the newest version.
+    std::optional<std::pair<detail::list_bytes, uint64_t>>
+    valid_space_counters() const noexcept;
     uint64_t get_latest_verified_version() const noexcept;
     void set_latest_verified_version(uint64_t version) noexcept;
     uint64_t get_latest_voted_version() const noexcept;
@@ -315,12 +337,16 @@ public:
     // Inline accessors
     chunk_offset_t get_start_of_wip_fast_offset() const noexcept
     {
-        return copies_[0].main->db_offsets.start_of_wip_offset_fast;
+        return std::atomic_ref<chunk_offset_t>(
+                   copies_[0].main->db_offsets.start_of_wip_offset_fast)
+            .load(std::memory_order_acquire);
     }
 
     chunk_offset_t get_start_of_wip_slow_offset() const noexcept
     {
-        return copies_[0].main->db_offsets.start_of_wip_offset_slow;
+        return std::atomic_ref<chunk_offset_t>(
+                   copies_[0].main->db_offsets.start_of_wip_offset_slow)
+            .load(std::memory_order_acquire);
     }
 
     file_offset_t get_lower_bound_free_space() const noexcept
@@ -394,6 +420,11 @@ public:
     }
 
 private:
+    // Seqlock writer: nullopt marks the counters not recorded.
+    void write_space_counters(
+        std::optional<std::pair<detail::list_bytes, uint64_t>> const
+            &counters) noexcept;
+
     // Map ring storage from cnv chunks. Called by the constructor for
     // existing pools, and by init_new_pool after writing magic for new
     // pools. Each reserves a max-sized virtual address range sized for

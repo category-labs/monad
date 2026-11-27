@@ -74,6 +74,7 @@ TrieDb::TrieDb(mpt::Db &db, bool const enable_multiblock_cache)
     , cache_{enable_multiblock_cache ? std::make_unique<DbCache>() : nullptr}
     , page_encoded_{db_.state_machine_type() == mpt::state_machine_kind::monad}
 {
+    db_.set_space_counters_prefix(finalized_nibbles);
 }
 
 TrieDb::~TrieDb() = default;
@@ -218,6 +219,7 @@ void TrieDb::commit(
 
     MONAD_ASSERT(block_id != bytes32_t{});
     if (db_.is_on_disk() && block_id != proposal_block_id_) {
+        db_.discard_settlement(block_id);
         auto const dest_prefix = proposal_prefix(block_id);
         if (db_.get_latest_version() != INVALID_BLOCK_NUM) {
             MONAD_ASSERT(block_number != block_number_);
@@ -240,7 +242,8 @@ void TrieDb::commit(
         block_number_,
         true,
         true,
-        false);
+        false,
+        block_id);
 
     BlockHeader complete_header = header;
     MONAD_ASSERT(populate_header_fn);
@@ -248,7 +251,13 @@ void TrieDb::commit(
 
     builder.add_block_header(complete_header);
     curr_root_ = db_.upsert(
-        std::move(curr_root_), builder.build(prefix_), block_number_, false);
+        std::move(curr_root_),
+        builder.build(prefix_),
+        block_number_,
+        false,
+        true,
+        true,
+        block_id);
 
     if (cache_) {
         cache_->update_proposal_state(
@@ -311,6 +320,7 @@ void TrieDb::finalize(uint64_t const block_number, bytes32_t const &block_id)
             curr_root_ = std::move(root);
         }
     }
+    db_.settle_space_counters(block_number, block_id);
     db_.update_finalized_version(block_number);
     if (cache_) {
         cache_->on_finalize(block_number, block_id);

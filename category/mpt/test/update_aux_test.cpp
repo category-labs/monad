@@ -22,6 +22,7 @@
 #include <category/core/io/buffers.hpp>
 #include <category/core/io/ring.hpp>
 #include <category/mpt/detail/db_metadata.hpp>
+#include <category/mpt/detail/space_counters.hpp>
 #include <category/mpt/detail/timeline.hpp>
 #include <category/mpt/state_machine_kind.hpp>
 #include <category/mpt/test/db_metadata_test_access.hpp>
@@ -564,6 +565,59 @@ TEST(update_aux_test, activate_initializes_secondary_compaction_to_default)
             reset.compact_offsets.fast, default_state.compact_offsets.fast);
         EXPECT_EQ(
             reset.compact_offsets.slow, default_state.compact_offsets.slow);
+    });
+}
+
+TEST(update_aux_test, destructive_ops_invalidate_counters)
+{
+    with_rw_aux([](UpdateAux &aux) {
+        EXPECT_TRUE(aux.metadata_ctx().space_counters().has_value());
+        auto const record = [&] {
+            aux.metadata_ctx().set_space_counters(
+                detail::list_bytes{.fast = 1, .slow = 2},
+                aux.metadata_ctx().get_latest_finalized_version());
+        };
+        auto const expect_invalid = [&](char const *const op) {
+            EXPECT_FALSE(aux.metadata_ctx().space_counters().has_value()) << op;
+            EXPECT_FALSE(aux.live_bytes().has_value()) << op;
+        };
+        record();
+        aux.activate_secondary_timeline();
+        expect_invalid("activate");
+        record();
+        aux.deactivate_secondary_timeline();
+        expect_invalid("deactivate");
+    });
+}
+
+TEST(update_aux_test, clear_resets_counters_to_zero)
+{
+    with_rw_aux([](UpdateAux &aux) {
+        aux.metadata_ctx().set_space_counters(
+            detail::list_bytes{.fast = 1, .slow = 2},
+            aux.metadata_ctx().get_latest_finalized_version());
+        aux.clear_ondisk_db();
+        auto const counters = aux.metadata_ctx().space_counters();
+        ASSERT_TRUE(counters.has_value());
+        EXPECT_EQ(counters->first, detail::list_bytes{});
+        EXPECT_EQ(aux.live_bytes(), detail::list_bytes{});
+    });
+}
+
+TEST(update_aux_test, promote_invalidates_counters)
+{
+    with_rw_aux([](UpdateAux &aux) {
+        auto pro = aux.metadata_ctx().root_offsets(timeline_id::primary);
+        pro.push(chunk_offset_t{1, 0});
+        aux.activate_secondary_timeline();
+        auto sro = aux.metadata_ctx().root_offsets(timeline_id::secondary);
+        sro.push(chunk_offset_t{2, 0});
+        aux.metadata_ctx().set_space_counters(
+            detail::list_bytes{.fast = 1, .slow = 2},
+            aux.metadata_ctx().get_latest_finalized_version());
+        aux.promote_secondary_to_primary();
+        EXPECT_FALSE(aux.metadata_ctx().space_counters().has_value());
+        aux.deactivate_secondary_timeline();
     });
 }
 

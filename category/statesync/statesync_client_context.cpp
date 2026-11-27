@@ -55,6 +55,10 @@ monad_statesync_client_context::monad_statesync_client_context(
           .append = true,
           .compaction = false,
           .rewind_to_latest_finalized = true,
+          // prepare_current_state() drops the finalized subtrie and links
+          // its state and code back by copy_trie, which counting would
+          // subtract as garbage.
+          .count_live_bytes = false,
           .rd_buffers = 8192,
           .wr_buffers = wr_buffers,
           .uring_entries = 128,

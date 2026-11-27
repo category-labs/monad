@@ -504,6 +504,15 @@ bool MachineBase::is_variable_length() const
             table == TableType::Withdrawal || table == TableType::CallFrame);
 }
 
+// These tables are replaced whole every block. What is below their roots is
+// one block's data that never reaches the slow list, and leaving it out
+// spares reading each replaced block's data to subtract it.
+bool MachineBase::counts_live_bytes_below() const
+{
+    return table != TableType::Transaction && table != TableType::Receipt &&
+           table != TableType::Withdrawal && table != TableType::CallFrame;
+}
+
 void MachineBase::down(unsigned char const nibble)
 {
     ++depth;

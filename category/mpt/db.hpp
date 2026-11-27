@@ -66,6 +66,18 @@ struct DbStorageStats
 {
     uint64_t disk_capacity_bytes;
     uint64_t disk_used_bytes;
+    uint64_t chunk_capacity_bytes{0};
+    uint64_t free_chunk_bytes{0};
+    // From the start of each list to its end of written data.
+    uint64_t fast_written_bytes{0};
+    uint64_t slow_written_bytes{0};
+    // Live-byte counters as persisted at the latest finalized version; zero
+    // while unknown.
+    bool live_bytes_known{false};
+    uint64_t slow_live_bytes{0};
+    // Free chunks plus slow-list garbage; the fast list counts as used. Equal
+    // to free_chunk_bytes while the counters are unknown.
+    uint64_t truly_free_bytes{0};
 };
 
 // A Db is bound to one timeline. The constructors below produce a primary
@@ -128,10 +140,22 @@ public:
         Node::SharedPtr dest_root, NibblesView dest_prefix,
         uint64_t dest_version, bool write_root = true);
 
+    // `settlement_key` names the proposal this upsert belongs to: its
+    // effect on the live-byte counters waits for settle_space_counters().
     Node::SharedPtr upsert(
         Node::SharedPtr root, UpdateList, uint64_t block_id,
         bool enable_compaction = true, bool can_write_to_fast = true,
-        bool write_root = true);
+        bool write_root = true,
+        std::optional<bytes32_t> settlement_key = std::nullopt);
+
+    // Applies the finalized proposal's counted bytes and drops every other
+    // proposal at or below `version`.
+    void settle_space_counters(uint64_t version, bytes32_t const &winner);
+    // Drops what earlier upserts counted for proposal `settlement_key`, whose
+    // trie is about to be rebuilt from its parent.
+    void discard_settlement(bytes32_t const &settlement_key);
+    // Where the live-byte walk of a pool without counters starts.
+    void set_space_counters_prefix(NibblesView prefix);
 
     void update_finalized_version(uint64_t version);
     void update_verified_version(uint64_t version);

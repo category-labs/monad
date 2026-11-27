@@ -64,6 +64,23 @@ typedef struct triedb_storage_stats
 
 void triedb_storage_stats_read(TriedbRoInner *, triedb_storage_stats *out);
 
+// Space accounting from the live-byte counters, in bytes. Truly free space
+// is free chunks plus slow-list garbage; the fast list counts as used. While
+// live_bytes_known is 0, slow_live_bytes is 0 and truly free equals free
+// chunks. Safe on a read-only handle while the writer is live.
+typedef struct triedb_space_stats
+{
+    uint64_t chunk_capacity_bytes;
+    uint64_t free_chunk_bytes;
+    uint64_t fast_written_bytes;
+    uint64_t slow_written_bytes;
+    uint64_t slow_live_bytes;
+    uint64_t truly_free_bytes;
+    uint8_t live_bytes_known;
+} triedb_space_stats;
+
+void triedb_space_stats_read(TriedbRoInner *, triedb_space_stats *out);
+
 // Reader for the statistics sidecar a writing db publishes (the execution
 // binary's --db-stats-file). Independent of the db handle: the sidecar is a
 // separate path with its own lifetime, it is absent unless the writer was

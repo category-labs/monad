@@ -31,6 +31,10 @@ struct OnDiskDbConfig
     bool capture_io_latencies{false};
     bool eager_completions{false};
     bool rewind_to_latest_finalized{false};
+    // False for a writer that leaves counting to a later open: opening
+    // invalidates the persisted live-byte counters, and the next open that
+    // counts fills them by a walk.
+    bool count_live_bytes{true};
     unsigned rd_buffers{1024};
     unsigned wr_buffers{4};
     unsigned uring_entries{512};

@@ -130,7 +130,7 @@ TEST(db_metadata, ring_b_layout_matches_ring_a)
     // Layout order: root_offsets → root_offsets_state → ... →
     // secondary_timeline → secondary_timeline_state → primary_ring_idx →
     // secondary_timeline_active_ → reserved_timeline_[14] →
-    // pending_shrink_grow → recorded_device_size →
+    // pending_shrink_grow → recorded_device_size → space_counters →
     // future_variables_unused.
     auto const offset_secondary = offsetof(md, secondary_timeline);
     auto const offset_secondary_state = offsetof(md, secondary_timeline_state);
@@ -139,6 +139,7 @@ TEST(db_metadata, ring_b_layout_matches_ring_a)
     auto const offset_reserved = offsetof(md, reserved_timeline_);
     auto const offset_pending = offsetof(md, pending_shrink_grow);
     auto const offset_recorded_size = offsetof(md, recorded_device_size);
+    auto const offset_space = offsetof(md, space_counters);
     auto const offset_future = offsetof(md, future_variables_unused);
     EXPECT_EQ(
         offset_secondary_state - offset_secondary,
@@ -152,12 +153,14 @@ TEST(db_metadata, ring_b_layout_matches_ring_a)
     EXPECT_EQ(
         offset_recorded_size,
         offset_pending + sizeof(md::pending_shrink_grow_t));
-    EXPECT_EQ(offset_future, offset_recorded_size + sizeof(uint64_t));
+    EXPECT_EQ(offset_space, offset_recorded_size + sizeof(uint64_t));
+    EXPECT_EQ(offset_future, offset_space + sizeof(md::space_counters_t));
     // recorded_device_size reads as not-recorded on a pool that predates
     // it only while it stays inside the window the MONAD007 -> MONAD008
     // upgrade zeroed on every pool that already exists.
     EXPECT_GT(offset_recorded_size, offset_secondary);
     EXPECT_LT(offset_recorded_size, offsetof(md, free_list));
+    EXPECT_LT(offset_space, offsetof(md, free_list));
 }
 
 TEST(db_metadata, role_bytes_zero_initialized)

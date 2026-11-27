@@ -23,6 +23,7 @@
 #include <category/mpt/db_metadata_context.hpp>
 #include <category/mpt/detail/collected_stats.hpp>
 #include <category/mpt/detail/db_metadata.hpp>
+#include <category/mpt/detail/space_counters.hpp>
 #include <category/mpt/detail/timeline.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/node_cursor.hpp>
@@ -166,7 +167,9 @@ public:
     }
 };
 
-chunk_offset_t async_write_node_set_spare(UpdateAux &, Node &, bool is_fast);
+// `counted`: whether the write adds to the live-byte counters.
+chunk_offset_t async_write_node_set_spare(
+    UpdateAux &, Node &, bool is_fast, bool counted = true);
 
 chunk_offset_t
 write_new_root_node(UpdateAux &, Node &root, uint64_t version, timeline_id tid);
@@ -241,6 +244,28 @@ class UpdateAux
     detail::TrieUpdateCollectedStats last_upsert_stats_;
     // Not owned; outlives this aux when set.
     DbStatsPublisher *stats_publisher_{nullptr};
+    // Live-byte accounting; null for an in-memory aux, or after
+    // stop_counting_live_bytes().
+    std::unique_ptr<detail::space_accounting> space_;
+
+    void begin_space_delta(uint64_t version);
+    void subtract_dropped_subtries(timeline_id);
+    void flush_space_delta(uint64_t version, bool root_published);
+    // Callers hold space_->mutex.
+    void apply_space_delta(
+        detail::space_delta const &, uint64_t version, bool persist);
+    void finish_space_walk();
+
+    void load_space_counters();
+    // `upsert_machine` is the root state machine of an upsert, which a walk
+    // needs; null when called from elsewhere.
+    void poll_space_walk(StateMachine const *upsert_machine);
+    void stop_space_walk() noexcept;
+    // Drops a running walk and its collected changes along with the state
+    // they describe.
+    void cancel_space_walk();
+    void invalidate_space_counters();
+    void reset_space_counters_to_empty();
 
 public:
     // Allocate the first cnv chunk for db metadata copies
@@ -395,6 +420,61 @@ public:
 
     uint32_t num_chunks(chunk_list const list) const noexcept;
 
+    // Live-byte counters: live means reachable from the newest version, with
+    // a proposal's nodes counted only once it is finalized. Node writes and
+    // supersedes are collected per upsert and applied at its end, or, when a
+    // settlement key is set, held for that proposal until
+    // settle_space_counters() names the finalized one.
+    void record_written(bool to_fast, uint32_t bytes) noexcept;
+    void record_superseded(chunk_offset_t old_offset, uint32_t bytes) noexcept;
+    // `node` stopped being live along with its children, whose subtries are
+    // read and subtracted at the end of the upsert. `machine` is positioned
+    // at `node`, or null where every node below counts.
+    void
+    record_dropped_subtries(Node::SharedPtr node, StateMachine const *machine);
+    void set_settlement_key(std::optional<bytes32_t> key) noexcept;
+    // Applies the finalized proposal's sums in memory only:
+    // update_finalized_version() persists them, so a crash in between leaves
+    // the persisted counters matching the persisted finalized version.
+    void settle_space_counters(uint64_t version, bytes32_t const &winner);
+    void discard_settlement(bytes32_t const &key);
+    // Also persists known counters stamped with `version` unless they include
+    // a newer version, so they stay valid for the next open.
+    void update_finalized_version(uint64_t version);
+    std::optional<detail::list_bytes> live_bytes() const;
+    // Bytes from the start of each list to its end of written data.
+    detail::list_bytes written_bytes() const noexcept;
+    // Where the background walk of the counters starts, below the root. With
+    // a prefix the walk counts the finalized version, else the newest one.
+    void set_space_counters_prefix(NibblesView prefix);
+    // Also invalidates the persisted counters, which this aux's writes would
+    // leave stale.
+    void stop_counting_live_bytes();
+    void wait_for_space_walk_unit_testing_only();
+    void pause_space_walk_unit_testing_only(bool paused) noexcept;
+    size_t pending_settlements_unit_testing_only() const;
+
+    // WARNING: for unit testing only
+    // DO NOT invoke it outside of unit test
+    // Replaces the slow-list advance (64 KiB units), still bounded by the
+    // slow writer; nullopt restores the normal pace.
+    void slow_collection_override_unit_testing_only(
+        std::optional<uint32_t> units) noexcept;
+
+    // Writes that are not counted live: roots, which no parent references,
+    // and copy_trie's prefix nodes, which only live within one version.
+    class uncounted_writes
+    {
+        UpdateAux &aux_;
+        bool prev_;
+
+    public:
+        explicit uncounted_writes(UpdateAux &aux) noexcept;
+        ~uncounted_writes();
+        uncounted_writes(uncounted_writes const &) = delete;
+        uncounted_writes &operator=(uncounted_writes const &) = delete;
+    };
+
     // Timeline lifecycle. The metadata-header portion of each operation lives
     // on DbMetadataContext; these methods keep the per-timeline compaction
     // state (tl()) in sync with the header.
@@ -404,7 +484,7 @@ public:
 };
 
 static_assert(
-    sizeof(UpdateAux) == 128 + 3 * sizeof(detail::TrieUpdateCollectedStats));
+    sizeof(UpdateAux) == 136 + 3 * sizeof(detail::TrieUpdateCollectedStats));
 static_assert(alignof(UpdateAux) == 8);
 
 template <receiver Receiver>

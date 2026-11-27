@@ -17,7 +17,6 @@
 #include <category/core/bytes.hpp>
 #include <category/core/bytes_hash_compare.hpp>
 #include <category/core/config.hpp>
-#include <category/core/keccak.hpp>
 #include <category/execution/ethereum/db/db.hpp>
 #include <category/execution/ethereum/db/storage_key.hpp>
 #include <category/execution/ethereum/db/util.hpp>
@@ -57,6 +56,7 @@ CommitBuilder &
 PageCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
 {
     UpdateList account_updates;
+    KeccakQueue keccak_queue;
     for (auto const &[addr, delta] : state_deltas) {
         UpdateList storage_updates;
         std::optional<byte_string_view> value;
@@ -104,8 +104,8 @@ PageCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
                 StorageKey const sk{addr, inc, page_key};
                 proposal_post_state_.storage[sk] = page;
                 storage_updates.push_front(update_alloc_.emplace_back(Update{
-                    .key = hash_alloc_.emplace_back(
-                        keccak256({page_key.bytes, sizeof(page_key.bytes)})),
+                    .key = defer_keccak256(
+                        keccak_queue, {page_key.bytes, sizeof(page_key.bytes)}),
                     .value = is_empty ? std::nullopt
                                       : std::make_optional<byte_string_view>(
                                             bytes_alloc_.emplace_back(
@@ -121,14 +121,15 @@ PageCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
 
         if (!storage_updates.empty() || delta.account.first != account) {
             account_updates.push_front(update_alloc_.emplace_back(Update{
-                .key = hash_alloc_.emplace_back(
-                    keccak256({addr.bytes, sizeof(addr.bytes)})),
+                .key = defer_keccak256(
+                    keccak_queue, {addr.bytes, sizeof(addr.bytes)}),
                 .value = value,
                 .incarnation = reincarnated,
                 .next = std::move(storage_updates),
                 .version = static_cast<int64_t>(block_number_)}));
         }
     }
+    keccak_queue.flush();
 
     updates_.push_front(update_alloc_.emplace_back(Update{
         .key = state_nibbles,

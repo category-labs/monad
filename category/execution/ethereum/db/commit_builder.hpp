@@ -18,10 +18,14 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
+#include <category/crypto/hash256.h>
+#include <category/crypto/keccak_batch.h>
 #include <category/execution/ethereum/state2/proposal_post_state.hpp>
 #include <category/execution/ethereum/state2/state_deltas.hpp>
 #include <category/mpt/update.hpp>
 
+#include <array>
+#include <cstddef>
 #include <deque>
 #include <vector>
 
@@ -46,6 +50,23 @@ protected:
     // storage slot key, Paged based storage fills it with the actual storage
     // page keyed by storage page key.
     ProposalPostState proposal_post_state_;
+
+    // Fixed capacity so it lives on the caller's stack and never allocates.
+    class KeccakQueue
+    {
+        std::array<monad_keccak256_job, 64> jobs_;
+        size_t size_{0};
+
+    public:
+        void push(monad_keccak256_job const &);
+        void flush();
+    };
+
+    // The returned slot holds a copy of `input` until `queue` hashes it in
+    // place, at the latest on queue.flush(), so the caller's input may go out
+    // of scope first.
+    monad_hash256 const &
+    defer_keccak256(KeccakQueue &queue, byte_string_view input);
 
 public:
     explicit CommitBuilder(uint64_t block_number);

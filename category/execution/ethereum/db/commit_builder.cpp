@@ -20,6 +20,8 @@
 #include <category/core/byte_string.hpp>
 #include <category/core/config.hpp>
 #include <category/core/keccak.hpp>
+#include <category/crypto/hash256.h>
+#include <category/crypto/keccak_batch.h>
 #include <category/execution/ethereum/core/block.hpp>
 #include <category/execution/ethereum/core/receipt.hpp>
 #include <category/execution/ethereum/core/rlp/address_rlp.hpp>
@@ -44,6 +46,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <limits>
 #include <optional>
 #include <utility>
@@ -76,9 +79,34 @@ CommitBuilder::CommitBuilder(uint64_t const block_number)
 {
 }
 
+void CommitBuilder::KeccakQueue::push(monad_keccak256_job const &job)
+{
+    jobs_[size_++] = job;
+    if (size_ == jobs_.size()) {
+        flush();
+    }
+}
+
+void CommitBuilder::KeccakQueue::flush()
+{
+    monad_keccak256_batch(jobs_.data(), size_);
+    size_ = 0;
+}
+
+monad_hash256 const &
+CommitBuilder::defer_keccak256(KeccakQueue &queue, byte_string_view const input)
+{
+    auto &slot = hash_alloc_.emplace_back();
+    MONAD_ASSERT(input.size() <= sizeof(slot.bytes));
+    std::memcpy(slot.bytes, input.data(), input.size());
+    queue.push({.in = slot.bytes, .len = input.size(), .out = slot.bytes});
+    return slot;
+}
+
 CommitBuilder &CommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
 {
     UpdateList account_updates;
+    KeccakQueue keccak_queue;
     for (auto const &[addr, delta] : state_deltas) {
         UpdateList storage_updates;
         std::optional<byte_string_view> value;
@@ -90,8 +118,8 @@ CommitBuilder &CommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
                 if (delta.first != delta.second) {
                     storage_updates.push_front(
                         update_alloc_.emplace_back(Update{
-                            .key = hash_alloc_.emplace_back(
-                                keccak256({key.bytes, sizeof(key.bytes)})),
+                            .key = defer_keccak256(
+                                keccak_queue, {key.bytes, sizeof(key.bytes)}),
                             .value = delta.second == bytes32_t{}
                                          ? std::nullopt
                                          : std::make_optional<byte_string_view>(
@@ -114,14 +142,15 @@ CommitBuilder &CommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
                 account.has_value() && delta.account.first.has_value() &&
                 delta.account.first->incarnation != account->incarnation;
             account_updates.push_front(update_alloc_.emplace_back(Update{
-                .key = hash_alloc_.emplace_back(
-                    keccak256({addr.bytes, sizeof(addr.bytes)})),
+                .key = defer_keccak256(
+                    keccak_queue, {addr.bytes, sizeof(addr.bytes)}),
                 .value = value,
                 .incarnation = incarnation,
                 .next = std::move(storage_updates),
                 .version = static_cast<int64_t>(block_number_)}));
         }
     }
+    keccak_queue.flush();
 
     updates_.push_front(update_alloc_.emplace_back(Update{
         .key = state_nibbles,

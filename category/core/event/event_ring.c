@@ -106,8 +106,8 @@ size_t monad_event_ring_calc_storage(
 int monad_event_ring_init_file(
     struct monad_event_ring_size const *const ring_size,
     enum monad_event_content_type const content_type,
-    uint8_t const *const schema_hash, int const ring_fd,
-    off_t const ring_offset, char const *error_name)
+    uint8_t const *const schema_hash, unsigned const init_flags,
+    int const ring_fd, off_t const ring_offset, char const *error_name)
 {
     size_t ring_bytes;
     void *map_base;
@@ -163,6 +163,15 @@ int monad_event_ring_init_file(
             content_type);
     }
 
+    // Check that there are no invalid initialization flags
+    if ((init_flags & ~MONAD_EVENT_INIT_ALL_FLAGS) != 0) {
+        return FORMAT_ERRC(
+            EINVAL,
+            "event ring file `%s` has invalid init flags %x",
+            error_name,
+            init_flags);
+    }
+
     memset(&header, 0, sizeof header);
     memcpy(header.magic, MONAD_EVENT_RING_HEADER_VERSION, sizeof header.magic);
     memcpy(header.schema_hash, schema_hash, sizeof header.schema_hash);
@@ -198,12 +207,17 @@ int monad_event_ring_init_file(
     // To function correctly, all event descriptor's sequence number fields
     // need to be zero'ed out when creating a new event ring. Because we may
     // be given a file region that's already been used, memset the whole
-    // descriptor region to zero.
-    memset(
-        (uint8_t *)map_base + HEADER_SIZE,
-        0,
-        sizeof(struct monad_event_descriptor) *
-            header.size.descriptor_capacity);
+    // descriptor region to zero. We can skip this if the caller passes the
+    // behavior flag MONAD_EVENT_INIT_NO_ZERO_FILL, which is passed when the
+    // caller knows the initial memory is already zero'ed (e.g., when creating
+    // new files).
+    if ((init_flags & MONAD_EVENT_INIT_NO_ZERO_FILL) == 0) {
+        memset(
+            (uint8_t *)map_base + HEADER_SIZE,
+            0,
+            sizeof(struct monad_event_descriptor) *
+                header.size.descriptor_capacity);
+    }
 
     munmap(map_base, ring_bytes);
     return 0;

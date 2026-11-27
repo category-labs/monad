@@ -18,7 +18,7 @@
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/monad/graph_eval/config.hpp>
-#include <category/execution/monad/graph_eval/fine.hpp>
+#include <category/execution/monad/graph_eval/graphcode.hpp>
 #include <category/execution/monad/graph_eval/tensor.hpp>
 
 #include <cstddef>
@@ -28,10 +28,10 @@
 MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
 
 // A Scalar node's registers, which run() keeps on its stack, so that every
-// Scalar node of a run uses the same memory. Defined in fine_interpreter.cpp
+// Scalar node of a run uses the same memory. Defined in interpreter.cpp
 struct ScalarRegisters;
 
-// Runs Fine bytecode that validated, on its inputs, allocating nothing and
+// Runs graphcode that validated, on its inputs, allocating nothing and
 // checking nothing the validator checked. Each node's data is where the
 // validator's node location says: the arena for inputs and most ops, the
 // input's data for a Reshape, and the code itself for a Literal, unaligned.
@@ -52,9 +52,9 @@ struct ScalarRegisters;
 //   position: a constant, an input of one element, or the result of a fn
 //   whose operands are all uniform, which runs on one element and is then
 //   copied across the chunk. The last fn writes the output's chunk directly.
-class FineInterpreter
+class Interpreter
 {
-    Finecode const &finecode_;
+    Graphcode const &graphcode_;
     State &state_;
     std::span<TensorInput const> const inputs_;
     uint8_t *const arena_;
@@ -71,11 +71,11 @@ class FineInterpreter
     Result<void>
     run_scalar(uint8_t const *&code, size_t id, ScalarRegisters &);
     Result<void>
-    run_op(FineOp op, uint8_t const *&code, size_t id, ScalarRegisters &);
+    run_op(Opcode op, uint8_t const *&code, size_t id, ScalarRegisters &);
 
 public:
-    FineInterpreter(
-        Finecode const &, State &, std::span<TensorInput const> inputs,
+    Interpreter(
+        Graphcode const &, State &, std::span<TensorInput const> inputs,
         uint8_t *arena);
 
     Result<GraphOutputs> run();

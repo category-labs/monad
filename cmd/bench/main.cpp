@@ -18,7 +18,7 @@
 //
 //     monad-bench <file.gc | file.bc> [file.dat] <modes...> [options]
 //
-// A .gc file is a graph's graphcode, Fine bytecode as scripts/finecode.py
+// A .gc file is a graph's graphcode, as scripts/graphcode.py
 // writes it, a .bc file EVM runtime bytecode, and a
 // .dat file calldata, all in hex, where whitespace and a leading 0x are
 // ignored. Bytecode runs in the monad
@@ -34,13 +34,13 @@
 // A graph runs on the inputs in the evalGraph calldata in a
 // .dat file, which it needs, with the accounts in --accounts' file, an address
 // and its code in hex a line, for the code its TensorRefs and the calldata's
-// code references read. The graph runs in the Fine interpreter (--interpreted)
-// or the fast Fine interpreter (--fast). Each call is timed from the inputs,
+// code references read. The graph runs in the interpreter (--interpreted)
+// or the fast interpreter (--fast). Each call is timed from the inputs,
 // decoded, in memory, to the outputs written, in the same way for each engine:
 // it copies the inputs into its arena, as the precompile does.
 //
 // Each mode's results are checked before and after it's timed: a graph's
-// outputs against the Fine interpreter's, and bytecode's status, gas and output
+// outputs against the interpreter's, and bytecode's status, gas and output
 // against the first call's, and its output against the one in --expect's
 // file, if given. Each mode is timed in batches of calls of about a
 // millisecond, after a warm-up, for a set time, and the time per call is
@@ -63,9 +63,9 @@
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/monad/chain/monad_devnet.hpp>
 #include <category/execution/monad/graph_eval/constants.hpp>
-#include <category/execution/monad/graph_eval/fine.hpp>
-#include <category/execution/monad/graph_eval/fine_fast_interpreter.hpp>
-#include <category/execution/monad/graph_eval/fine_interpreter.hpp>
+#include <category/execution/monad/graph_eval/fast_interpreter.hpp>
+#include <category/execution/monad/graph_eval/graphcode.hpp>
+#include <category/execution/monad/graph_eval/interpreter.hpp>
 #include <category/execution/monad/graph_eval/tensor.hpp>
 #include <category/mpt/db.hpp>
 #include <category/vm/code.hpp>
@@ -358,7 +358,7 @@ namespace
     // elements stay in place in `calldata`, big-endian, and a code reference
     // stays a reference
     std::vector<TensorInput>
-    read_calldata_inputs(byte_string const &calldata, Finecode const &fc)
+    read_calldata_inputs(byte_string const &calldata, Graphcode const &fc)
     {
         constexpr uint32_t EVAL_GRAPH = abi_encode_selector(
             "evalGraph(address,((uint8,uint16[]),uint8,bytes)[])");
@@ -421,9 +421,9 @@ namespace
 
     struct GraphModes
     {
-        // The Fine interpreter
+        // The interpreter
         bool interpreted = false;
-        // The fast Fine interpreter
+        // The fast interpreter
         bool fast = false;
     };
 
@@ -451,7 +451,7 @@ namespace
 
         // Validated once, outside the timing, as the precompile's Intercode
         // validates a graph once
-        Finecode const fc =
+        Graphcode const fc =
             graph_eval::validate(std::span<uint8_t const>{graphcode});
         if (fc.validation_result() != GraphEvalError::Success) {
             die("the graph doesn't validate");
@@ -466,8 +466,8 @@ namespace
             std::aligned_alloc(TENSOR_DATA_ALIGNMENT, ARENA_SIZE));
         MONAD_ASSERT(arena);
 
-        // One call in a Fine interpreter, FineInterpreter or
-        // FineFastInterpreter, which copies the inputs into its arena
+        // One call in an interpreter, Interpreter or
+        // FastInterpreter, which copies the inputs into its arena
         auto const run = [&]<typename Engine>(std::string const &name) {
             Engine engine{fc, state, tensor_inputs, arena};
             auto result = engine.run();
@@ -478,15 +478,15 @@ namespace
             return std::move(result.value());
         };
 
-        // The outputs to check every mode's against: the Fine interpreter's
+        // The outputs to check every mode's against: the interpreter's
         std::vector<byte_string> expected;
         for (Tensor const &output :
-             run.template operator()<FineInterpreter>("interpreted")) {
+             run.template operator()<Interpreter>("interpreted")) {
             expected.emplace_back(output.data(), output.type().size_bytes());
         }
         std::printf(
             "graph %s: %zu ops, %zu inputs, %zu outputs; outputs checked "
-            "against the Fine interpreter's\n\n",
+            "against the interpreter's\n\n",
             path.filename().c_str(),
             fc.n_ops(),
             fc.n_inputs(),
@@ -499,7 +499,7 @@ namespace
                     outputs[i].data(), outputs[i].type().size_bytes()};
                 if (output != byte_string_view{expected[i]}) {
                     die(name + ": output " + std::to_string(i) +
-                        " doesn't match the Fine interpreter's");
+                        " doesn't match the interpreter's");
                 }
             }
         };
@@ -521,10 +521,10 @@ namespace
             check(name, run.template operator()<Engine>(name));
         };
         if (modes.interpreted) {
-            bench.template operator()<FineInterpreter>("interpreted");
+            bench.template operator()<Interpreter>("interpreted");
         }
         if (modes.fast) {
-            bench.template operator()<FineFastInterpreter>("fast");
+            bench.template operator()<FastInterpreter>("fast");
         }
         std::free(arena);
     }
@@ -932,7 +932,7 @@ int main(int argc, char **argv)
     app.add_flag(
         "--fast",
         graph_modes.fast,
-        "Graph: run in the fast Fine interpreter, whose Scalar fns are "
+        "Graph: run in the fast interpreter, whose Scalar fns are "
         "chained by tail calls");
 
     app.add_option("--cpu", cpu, "Pin to this CPU");

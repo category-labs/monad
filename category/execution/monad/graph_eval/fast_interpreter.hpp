@@ -18,7 +18,7 @@
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/monad/graph_eval/config.hpp>
-#include <category/execution/monad/graph_eval/fine.hpp>
+#include <category/execution/monad/graph_eval/graphcode.hpp>
 #include <category/execution/monad/graph_eval/tensor.hpp>
 
 #include <cstddef>
@@ -29,15 +29,15 @@ MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
 
 // A Scalar node's registers, which run() keeps on its stack, so that every
 // Scalar node of a run uses the same memory. Defined in
-// fine_fast_interpreter.cpp
+// fast_interpreter.cpp
 struct FastScalarRegisters;
 
-// FineInterpreter, except in how a Scalar node's fns are run on a chunk: each
+// Interpreter, except in how a Scalar node's fns are run on a chunk: each
 // fn has a handler, found in a table indexed by its opcode, which runs the
 // fn's kernel and then tail-calls the next fn's handler, rather than one loop
 // that switches on each fn. A kernel still switches on its operands' dtype.
 //
-// Runs Fine bytecode that validated, on its inputs, allocating nothing and
+// Runs graphcode that validated, on its inputs, allocating nothing and
 // checking nothing the validator checked. Each node's data is where the
 // validator's node location says: the arena for inputs and most ops, the
 // input's data for a Reshape, and the code itself for a Literal, unaligned.
@@ -58,9 +58,9 @@ struct FastScalarRegisters;
 //   position: a constant, an input of one element, or the result of a fn
 //   whose operands are all uniform, which runs on one element and is then
 //   copied across the chunk. The last fn writes the output's chunk directly.
-class FineFastInterpreter
+class FastInterpreter
 {
-    Finecode const &finecode_;
+    Graphcode const &graphcode_;
     State &state_;
     std::span<TensorInput const> const inputs_;
     uint8_t *const arena_;
@@ -77,11 +77,11 @@ class FineFastInterpreter
     Result<void>
     run_scalar(uint8_t const *&code, size_t id, FastScalarRegisters &);
     Result<void>
-    run_op(FineOp op, uint8_t const *&code, size_t id, FastScalarRegisters &);
+    run_op(Opcode op, uint8_t const *&code, size_t id, FastScalarRegisters &);
 
 public:
-    FineFastInterpreter(
-        Finecode const &, State &, std::span<TensorInput const> inputs,
+    FastInterpreter(
+        Graphcode const &, State &, std::span<TensorInput const> inputs,
         uint8_t *arena);
 
     Result<GraphOutputs> run();

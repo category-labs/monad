@@ -18,7 +18,7 @@
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
 #include <category/execution/monad/graph_eval/config.hpp>
-#include <category/execution/monad/graph_eval/fine.hpp>
+#include <category/execution/monad/graph_eval/graphcode.hpp>
 #include <category/execution/monad/graph_eval/references.hpp>
 #include <category/execution/monad/graph_eval/tensor.hpp>
 
@@ -27,9 +27,9 @@
 
 MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
 
-class FineJit
+class Jit
 {
-    Finecode const &finecode_;
+    Graphcode const &graphcode_;
     uint8_t const* code_;
     size_t const n_ops_;
     State &state_;
@@ -43,12 +43,11 @@ class FineJit
 
     Result<void> run_scalar(Tensor const out);
 public:
-    FineJit(
-        Finecode const &finecode, State &state,
+    Jit(Graphcode const &graphcode, State &state,
         std::span<TensorInput const> inputs, uint8_t *arena)
-        : finecode_(finecode)
-        , code_(finecode.ops())
-        , n_ops_(finecode.n_ops())
+        : graphcode_(graphcode)
+        , code_(graphcode.ops())
+        , n_ops_(graphcode.n_ops())
         , state_(state)
         , inputs_(inputs)
         , arena_(arena)

@@ -15,14 +15,14 @@
 
 #include "category/execution/monad/graph_eval/config.hpp"
 #include "category/execution/monad/graph_eval/constants.hpp"
-#include "category/execution/monad/graph_eval/fine.hpp"
 #include "category/execution/monad/graph_eval/fixed_point.hpp"
 #include "category/execution/monad/graph_eval/graph_eval_error.hpp"
+#include "category/execution/monad/graph_eval/graphcode.hpp"
 #include "category/execution/monad/graph_eval/matmul.hpp"
 #include "category/execution/monad/graph_eval/tensor.hpp"
 #include "category/execution/monad/graph_eval/unaligned.hpp"
 #include <bit>
-#include <category/execution/monad/graph_eval/fine_jit.hpp>
+#include <category/execution/monad/graph_eval/jit.hpp>
 #include <limits>
 
 MONAD_GRAPH_EVAL_ANONYMOUS_NAMESPACE_BEGIN
@@ -957,25 +957,25 @@ MONAD_GRAPH_EVAL_ANONYMOUS_NAMESPACE_END
 MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
 
 [[gnu::always_inline]]
-inline Tensor FineJit::node(size_t const id) const
+inline Tensor Jit::node(size_t const id) const
 {
     // TODO: this is bad
-    uint32_t const location = finecode_.node_location(id);
+    uint32_t const location = graphcode_.node_location(id);
     uint8_t const *const data =
-        (location & FINE_CODE_LOCATION)
-            ? finecode_.ops() + (location & ~FINE_CODE_LOCATION)
+        (location & CODE_LOCATION)
+            ? graphcode_.ops() + (location & ~CODE_LOCATION)
             : arena_ + location;
-    return Tensor{finecode_.node_type(id), const_cast<uint8_t *>(data)};
+    return Tensor{graphcode_.node_type(id), const_cast<uint8_t *>(data)};
 }
 
 // Copy the inputs into the arena.
-Result<void> FineJit::load_inputs()
+Result<void> Jit::load_inputs()
 {
-    if (inputs_.size() != finecode_.n_inputs()) {
+    if (inputs_.size() != graphcode_.n_inputs()) {
         return GraphEvalError::ArityError;
     }
     for (size_t i = 0; i < inputs_.size(); i++) {
-        TensorType const &expected = finecode_.node_type(i);
+        TensorType const &expected = graphcode_.node_type(i);
         if (inputs_[i].type.dtype() != expected.dtype()) {
             return GraphEvalError::TypeError;
         }
@@ -1000,7 +1000,7 @@ Result<void> FineJit::load_inputs()
 
 [[gnu::always_inline]]
 // TODO: this doesn't need to return a value
-Tensor FineJit::take_input()
+Tensor Jit::take_input()
 {
     return node(take<node_id_t>(code_));
 }
@@ -1030,7 +1030,7 @@ void fill_register(size_t n, uint8_t const *input, uint8_t *reg)
     std::fill_n(reg, n, *reinterpret_cast<unaligned_t<T> const *>(input));
 }
 
-Result<void> FineJit::run_scalar(Tensor const out)
+Result<void> Jit::run_scalar(Tensor const out)
 {
     auto const &shape = out.type().shape();
     auto const size = shape.size();
@@ -1081,30 +1081,30 @@ Result<void> FineJit::run_scalar(Tensor const out)
     }
 }
 
-Result<GraphOutputs> FineJit::run()
+Result<GraphOutputs> Jit::run()
 {
-    if (finecode_.validation_result() != GraphEvalError::Success) {
-        return finecode_.validation_result();
+    if (graphcode_.validation_result() != GraphEvalError::Success) {
+        return graphcode_.validation_result();
     }
 
     BOOST_OUTCOME_TRY(load_inputs());
 
-    for (size_t i = 0; i < finecode_.n_ops(); i++) {
-        auto const id = i + finecode_.n_inputs();
+    for (size_t i = 0; i < graphcode_.n_ops(); i++) {
+        auto const id = i + graphcode_.n_inputs();
         auto out = node(id);
-        auto const op = take<FineOp>(code_);
+        auto const op = take<Opcode>(code_);
         switch (op) {
-        case FineOp::Scalar: {
+        case Opcode::Scalar: {
             run_scalar(out);
             break;
         }
-        case FineOp::Literal: {
+        case Opcode::Literal: {
             // Literals are referenced in-place, no need to copy.
             skip<TensorType>(code_);
-            skip_bytes(code_, finecode_.node_type(id).size_bytes());
+            skip_bytes(code_, graphcode_.node_type(id).size_bytes());
             break;
         }
-        case FineOp::TensorRef: {
+        case Opcode::TensorRef: {
             skip<TensorType>(code_);
             auto const address = take<Address>(code_);
             auto const offset = take<uint32_t>(code_);
@@ -1112,20 +1112,20 @@ Result<GraphOutputs> FineJit::run()
                 load_code_tensor(state_, CodeRef{address, offset}, out));
             break;
         }
-        case FineOp::Reshape:
+        case Opcode::Reshape:
             // Reshapes have no effect other than affecting the list of node
             // types.
             skip<Shape>(code_);
             skip<node_id_t>(code_);
             break;
-        case FineOp::Transpose: {
+        case Opcode::Transpose: {
             auto const axis0 = take<uint8_t>(code_);
             auto const axis1 = take<uint8_t>(code_);
             auto const x = take_input();
             transpose(x, axis0, axis1, out);
             break;
         }
-        case FineOp::Concat: {
+        case Opcode::Concat: {
             auto const axis = take<uint8_t>(code_);
             size_t const n_inputs = take<uint8_t>(code_);
             std::array<Tensor, MAX_CONCAT_INPUTS> inputs;
@@ -1135,7 +1135,7 @@ Result<GraphOutputs> FineJit::run()
             concat(std::span<Tensor const>{inputs.data(), n_inputs}, axis, out);
             break;
         }
-        case FineOp::QMatMul: {
+        case Opcode::QMatMul: {
             auto const bits = take<uint8_t>(code_);
             skip<Dtype>(code_);
             auto const x = take_input();
@@ -1143,39 +1143,39 @@ Result<GraphOutputs> FineJit::run()
             qmatmul(x, y, bits, out);
             break;
         }
-        case FineOp::CumSum: {
+        case Opcode::CumSum: {
             auto const axis = take<uint8_t>(code_);
             auto const x = take_input();
             cumsum(x, axis, out);
             break;
         }
-        case FineOp::ArgMin: {
+        case Opcode::ArgMin: {
             auto const axis = take<uint8_t>(code_);
             auto const x = take_input();
             arg_extreme(
                 x, axis, out, [](auto const a, auto const b) { return a < b; });
             break;
         }
-        case FineOp::ArgMax: {
+        case Opcode::ArgMax: {
             auto const axis = take<uint8_t>(code_);
             auto const x = take_input();
             arg_extreme(
                 x, axis, out, [](auto const a, auto const b) { return a > b; });
             break;
         }
-        case FineOp::ReduceSum: {
+        case Opcode::ReduceSum: {
             auto const axis = take<uint8_t>(code_);
             auto const x = take_input();
             reduce_sum(x, axis, out);
             break;
         }
-        case FineOp::ReduceMax: {
+        case Opcode::ReduceMax: {
             auto const axis = take<uint8_t>(code_);
             auto const x = take_input();
             reduce_max(x, axis, out);
             break;
         }
-        case FineOp::Gather: {
+        case Opcode::Gather: {
             auto const axis = take<uint8_t>(code_);
             auto const x = take_input();
             auto const indices = take_input();
@@ -1184,13 +1184,13 @@ Result<GraphOutputs> FineJit::run()
             };
             break;
         }
-        case FineOp::Invalid:
+        case Opcode::Invalid:
             // Impossible, since the code has passed validation
             MONAD_ABORT();
         }
     }
 
-    auto const &output_ids = finecode_.output_ids();
+    auto const &output_ids = graphcode_.output_ids();
     GraphOutputs outputs;
     outputs.count = output_ids.size();
     for (size_t i = 0; i < output_ids.size(); i++) {

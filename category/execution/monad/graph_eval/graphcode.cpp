@@ -19,7 +19,7 @@
 #include "category/execution/monad/graph_eval/graph_eval_error.hpp"
 #include "category/execution/monad/graph_eval/tensor.hpp"
 #include "category/execution/monad/graph_eval/types.hpp"
-#include <category/execution/monad/graph_eval/fine.hpp>
+#include <category/execution/monad/graph_eval/graphcode.hpp>
 
 #include <array>
 #include <optional>
@@ -82,7 +82,7 @@ class ScalarValidator
     std::array<Dtype, MAX_SCALAR_REGISTERS> register_dtypes_;
     std::array<bool, MAX_SCALAR_REGISTERS> register_initialized_{false};
 
-    template <FineFn Fn>
+    template <ScalarFn Fn>
     Result<Dtype>
     validate_fn(FnParams<Fn> const &, std::array<Dtype, FnArity<Fn>> const &);
 
@@ -149,30 +149,33 @@ public:
 };
 
 template <>
-Result<Dtype> ScalarValidator::validate_fn<FineFn::Add>(
-    std::monostate const &, std::array<Dtype, FnArity<FineFn::Add>> const &args)
+Result<Dtype> ScalarValidator::validate_fn<ScalarFn::Add>(
+    std::monostate const &,
+    std::array<Dtype, FnArity<ScalarFn::Add>> const &args)
 {
     return binop_fn(args);
 }
 
 template <>
-Result<Dtype> ScalarValidator::validate_fn<FineFn::Sub>(
-    std::monostate const &, std::array<Dtype, FnArity<FineFn::Sub>> const &args)
+Result<Dtype> ScalarValidator::validate_fn<ScalarFn::Sub>(
+    std::monostate const &,
+    std::array<Dtype, FnArity<ScalarFn::Sub>> const &args)
 {
     return binop_fn(args);
 }
 
 template <>
-Result<Dtype> ScalarValidator::validate_fn<FineFn::Mul>(
-    std::monostate const &, std::array<Dtype, FnArity<FineFn::Mul>> const &args)
+Result<Dtype> ScalarValidator::validate_fn<ScalarFn::Mul>(
+    std::monostate const &,
+    std::array<Dtype, FnArity<ScalarFn::Mul>> const &args)
 {
     return binop_fn(args);
 }
 
 template <>
-Result<Dtype> ScalarValidator::validate_fn<FineFn::Divc>(
+Result<Dtype> ScalarValidator::validate_fn<ScalarFn::Divc>(
     uint64_t const &denominator,
-    std::array<Dtype, FnArity<FineFn::Divc>> const &args)
+    std::array<Dtype, FnArity<ScalarFn::Divc>> const &args)
 {
     if (denominator == 0) {
         return GraphEvalError::DivisionByZero;
@@ -181,37 +184,41 @@ Result<Dtype> ScalarValidator::validate_fn<FineFn::Divc>(
 }
 
 template <>
-Result<Dtype> ScalarValidator::validate_fn<FineFn::Div>(
-    std::monostate const &, std::array<Dtype, FnArity<FineFn::Div>> const &args)
+Result<Dtype> ScalarValidator::validate_fn<ScalarFn::Div>(
+    std::monostate const &,
+    std::array<Dtype, FnArity<ScalarFn::Div>> const &args)
 {
     return binop_fn(args);
 }
 
 template <>
-Result<Dtype> ScalarValidator::validate_fn<FineFn::Lt>(
-    std::monostate const &, std::array<Dtype, FnArity<FineFn::Lt>> const &args)
-{
-    return cmp_fn(args);
-}
-
-template <>
-Result<Dtype> ScalarValidator::validate_fn<FineFn::Le>(
-    std::monostate const &, std::array<Dtype, FnArity<FineFn::Le>> const &args)
-{
-    return cmp_fn(args);
-}
-
-template <>
-Result<Dtype> ScalarValidator::validate_fn<FineFn::Eq>(
-    std::monostate const &, std::array<Dtype, FnArity<FineFn::Eq>> const &args)
-{
-    return cmp_fn(args);
-}
-
-template <>
-Result<Dtype> ScalarValidator::validate_fn<FineFn::Where>(
+Result<Dtype> ScalarValidator::validate_fn<ScalarFn::Lt>(
     std::monostate const &,
-    std::array<Dtype, FnArity<FineFn::Where>> const &args)
+    std::array<Dtype, FnArity<ScalarFn::Lt>> const &args)
+{
+    return cmp_fn(args);
+}
+
+template <>
+Result<Dtype> ScalarValidator::validate_fn<ScalarFn::Le>(
+    std::monostate const &,
+    std::array<Dtype, FnArity<ScalarFn::Le>> const &args)
+{
+    return cmp_fn(args);
+}
+
+template <>
+Result<Dtype> ScalarValidator::validate_fn<ScalarFn::Eq>(
+    std::monostate const &,
+    std::array<Dtype, FnArity<ScalarFn::Eq>> const &args)
+{
+    return cmp_fn(args);
+}
+
+template <>
+Result<Dtype> ScalarValidator::validate_fn<ScalarFn::Where>(
+    std::monostate const &,
+    std::array<Dtype, FnArity<ScalarFn::Where>> const &args)
 {
     auto const &[cond, x, y] = args;
     if (cond != Dtype::uint8 || x != y) {
@@ -221,63 +228,65 @@ Result<Dtype> ScalarValidator::validate_fn<FineFn::Where>(
 }
 
 template <>
-Result<Dtype> ScalarValidator::validate_fn<FineFn::Min>(
-    std::monostate const &, std::array<Dtype, FnArity<FineFn::Min>> const &args)
+Result<Dtype> ScalarValidator::validate_fn<ScalarFn::Min>(
+    std::monostate const &,
+    std::array<Dtype, FnArity<ScalarFn::Min>> const &args)
 {
     return binop_fn(args);
 }
 
 template <>
-Result<Dtype> ScalarValidator::validate_fn<FineFn::Max>(
-    std::monostate const &, std::array<Dtype, FnArity<FineFn::Max>> const &args)
+Result<Dtype> ScalarValidator::validate_fn<ScalarFn::Max>(
+    std::monostate const &,
+    std::array<Dtype, FnArity<ScalarFn::Max>> const &args)
 {
     return binop_fn(args);
 }
 
 template <>
-Result<Dtype> ScalarValidator::validate_fn<FineFn::Saturate>(
+Result<Dtype> ScalarValidator::validate_fn<ScalarFn::Saturate>(
     Dtype const &result_dtype,
-    std::array<Dtype, FnArity<FineFn::Saturate>> const &)
+    std::array<Dtype, FnArity<ScalarFn::Saturate>> const &)
 {
     return result_dtype;
 }
 
 template <>
-Result<Dtype> ScalarValidator::validate_fn<FineFn::QMul>(
+Result<Dtype> ScalarValidator::validate_fn<ScalarFn::QMul>(
     uint8_t const &frac_bits,
-    std::array<Dtype, FnArity<FineFn::QMul>> const &args)
+    std::array<Dtype, FnArity<ScalarFn::QMul>> const &args)
 {
     return qbinop_fn(frac_bits, args);
 }
 
 template <>
-Result<Dtype> ScalarValidator::validate_fn<FineFn::QDiv>(
+Result<Dtype> ScalarValidator::validate_fn<ScalarFn::QDiv>(
     uint8_t const &frac_bits,
-    std::array<Dtype, FnArity<FineFn::QDiv>> const &args)
+    std::array<Dtype, FnArity<ScalarFn::QDiv>> const &args)
 {
     return qbinop_fn(frac_bits, args);
 }
 
 template <>
-Result<Dtype> ScalarValidator::validate_fn<FineFn::QExp>(
+Result<Dtype> ScalarValidator::validate_fn<ScalarFn::QExp>(
     uint8_t const &frac_bits,
-    std::array<Dtype, FnArity<FineFn::QExp>> const &args)
+    std::array<Dtype, FnArity<ScalarFn::QExp>> const &args)
 {
     return qunop_fn(frac_bits, args);
 }
 
 template <>
-Result<Dtype> ScalarValidator::validate_fn<FineFn::QInvSqrt>(
+Result<Dtype> ScalarValidator::validate_fn<ScalarFn::QInvSqrt>(
     uint8_t const &frac_bits,
-    std::array<Dtype, FnArity<FineFn::QInvSqrt>> const &args)
+    std::array<Dtype, FnArity<ScalarFn::QInvSqrt>> const &args)
 {
     return qunop_fn(frac_bits, args);
 }
 
 template <>
-Result<Dtype> ScalarValidator::validate_fn<FineFn::ISqrt>(
+Result<Dtype> ScalarValidator::validate_fn<ScalarFn::ISqrt>(
     std::monostate const &,
-    std::array<Dtype, FnArity<FineFn::ISqrt>> const &args)
+    std::array<Dtype, FnArity<ScalarFn::ISqrt>> const &args)
 {
     auto const &[x] = args;
     if (dtype_signed(x)) {
@@ -305,10 +314,10 @@ Result<std::tuple<std::span<uint8_t const>, Dtype>> ScalarValidator::validate()
 
     Dtype result_dtype = Dtype::uint8;
     for (size_t i = 0; i < n_fns; i++) {
-        BOOST_OUTCOME_TRY(auto const fn, read_next<FineFn>(code_));
+        BOOST_OUTCOME_TRY(auto const fn, read_next<ScalarFn>(code_));
         BOOST_OUTCOME_TRY(
             auto const fn_result_dtype,
-            visit_fn(fn, [&]<FineFn Fn>() -> Result<Dtype> {
+            visit_fn(fn, [&]<ScalarFn Fn>() -> Result<Dtype> {
                 BOOST_OUTCOME_TRY(
                     auto const params, read_next<FnParams<Fn>>(code_));
                 BOOST_OUTCOME_TRY(auto const args, read_fn_args<FnArity<Fn>>());
@@ -333,7 +342,7 @@ Result<std::tuple<std::span<uint8_t const>, Dtype>> ScalarValidator::validate()
     return {code_, result_dtype};
 }
 
-class FinecodeValidator
+class GraphcodeValidator
 {
     std::span<uint8_t const> code_;
     // Always a multiple of TENSOR_DATA_ALIGNMENT, as is ARENA_SIZE
@@ -341,9 +350,9 @@ class FinecodeValidator
     // Set by validate_op for an op whose result needs no memory of its own,
     // a Reshape or a Literal: its location
     std::optional<uint32_t> view_location_;
-    Finecode finecode_;
+    Graphcode graphcode_;
 
-    explicit FinecodeValidator(std::span<uint8_t const> const code)
+    explicit GraphcodeValidator(std::span<uint8_t const> const code)
         : code_(code)
     {
     }
@@ -366,13 +375,13 @@ class FinecodeValidator
     Result<TensorType const *> read_op_input()
     {
         BOOST_OUTCOME_TRY(auto const input_id, read_next<node_id_t>(code_));
-        if (input_id >= finecode_.tensor_types_.size()) {
+        if (input_id >= graphcode_.tensor_types_.size()) {
             return GraphEvalError::InvalidInput;
         }
-        return &finecode_.tensor_types_[input_id];
+        return &graphcode_.tensor_types_[input_id];
     }
 
-    template <FineOp Op>
+    template <Opcode Op>
     [[gnu::always_inline]]
     Result<std::array<TensorType const *, OpArity<Op>>> read_op_inputs()
     {
@@ -383,7 +392,7 @@ class FinecodeValidator
         return inputs;
     }
 
-    template <FineOp Op>
+    template <Opcode Op>
     Result<TensorType> validate_op(OpParams<Op> const &);
 
     Result<TensorType> validate_dim_reduce(uint8_t const &dim)
@@ -414,32 +423,32 @@ class FinecodeValidator
     Result<void> validate();
 
 public:
-    static Finecode validate(std::span<uint8_t const> const code)
+    static Graphcode validate(std::span<uint8_t const> const code)
     {
-        FinecodeValidator validator{code};
+        GraphcodeValidator validator{code};
         auto const validation_result = validator.validate();
         if (!validation_result.has_error()) {
-            validator.finecode_.validation_result_ = GraphEvalError::Success;
+            validator.graphcode_.validation_result_ = GraphEvalError::Success;
         }
         else if (
             validation_result.error().domain() ==
             system_error2::quick_status_code_from_enum_code<
                 GraphEvalError>::domain_type::get()) {
-            validator.finecode_.validation_result_ =
+            validator.graphcode_.validation_result_ =
                 static_cast<GraphEvalError>(validation_result.error().value());
         }
         else {
-            validator.finecode_.validation_result_ =
+            validator.graphcode_.validation_result_ =
                 GraphEvalError::InternalError;
         }
 
-        return std::move(validator.finecode_);
+        return std::move(validator.graphcode_);
     }
 };
 
 template <>
 Result<TensorType>
-FinecodeValidator::validate_op<FineOp::Scalar>(Shape const &output_shape)
+GraphcodeValidator::validate_op<Opcode::Scalar>(Shape const &output_shape)
 {
     BOOST_OUTCOME_TRY(auto const n_inputs, read_next<uint8_t>(code_));
     if (n_inputs > MAX_SCALAR_INPUTS) {
@@ -462,24 +471,24 @@ FinecodeValidator::validate_op<FineOp::Scalar>(Shape const &output_shape)
 
 template <>
 Result<TensorType>
-FinecodeValidator::validate_op<FineOp::Literal>(TensorType const &ty)
+GraphcodeValidator::validate_op<Opcode::Literal>(TensorType const &ty)
 {
     if (code_.size() < ty.size_bytes()) {
         return GraphEvalError::GraphValidationError;
     }
     // The data stays in the code, unaligned, where the interpreter reads it;
     // its location is an offset from the start of the ops
-    auto const offset = static_cast<size_t>(code_.data() - finecode_.ops_);
-    if (offset >= FINE_CODE_LOCATION) {
+    auto const offset = static_cast<size_t>(code_.data() - graphcode_.ops_);
+    if (offset >= CODE_LOCATION) {
         return GraphEvalError::GraphValidationError;
     }
-    view_location_ = static_cast<uint32_t>(offset) | FINE_CODE_LOCATION;
+    view_location_ = static_cast<uint32_t>(offset) | CODE_LOCATION;
     code_ = code_.subspan(ty.size_bytes());
     return ty;
 }
 
 template <>
-Result<TensorType> FinecodeValidator::validate_op<FineOp::TensorRef>(
+Result<TensorType> GraphcodeValidator::validate_op<Opcode::TensorRef>(
     std::tuple<TensorType, Address, uint32_t> const &params)
 {
     auto const &[ty, addr, offset] = params;
@@ -488,24 +497,24 @@ Result<TensorType> FinecodeValidator::validate_op<FineOp::TensorRef>(
 
 template <>
 Result<TensorType>
-FinecodeValidator::validate_op<FineOp::Reshape>(Shape const &shape)
+GraphcodeValidator::validate_op<Opcode::Reshape>(Shape const &shape)
 {
-    BOOST_OUTCOME_TRY(auto const &[input], read_op_inputs<FineOp::Reshape>());
+    BOOST_OUTCOME_TRY(auto const &[input], read_op_inputs<Opcode::Reshape>());
     if (input->shape().size() != shape.size()) {
         return GraphEvalError::ShapeError;
     }
     // A view of its input's data
-    view_location_ = finecode_.node_locations_[static_cast<size_t>(
-        input - finecode_.tensor_types_.data())];
+    view_location_ = graphcode_.node_locations_[static_cast<size_t>(
+        input - graphcode_.tensor_types_.data())];
     return TensorType::checked(input->dtype(), shape);
 }
 
 template <>
-Result<TensorType> FinecodeValidator::validate_op<FineOp::Transpose>(
+Result<TensorType> GraphcodeValidator::validate_op<Opcode::Transpose>(
     std::tuple<uint8_t, uint8_t> const &params)
 {
     auto const &[axis0, axis1] = params;
-    BOOST_OUTCOME_TRY(auto const &[x], read_op_inputs<FineOp::Transpose>());
+    BOOST_OUTCOME_TRY(auto const &[x], read_op_inputs<Opcode::Transpose>());
     // A rank-0 x has no axis, so it fails here
     if (axis0 >= x->shape().rank() || axis1 >= x->shape().rank()) {
         return GraphEvalError::RankError;
@@ -518,7 +527,7 @@ Result<TensorType> FinecodeValidator::validate_op<FineOp::Transpose>(
 }
 
 template <>
-Result<TensorType> FinecodeValidator::validate_op<FineOp::Concat>(
+Result<TensorType> GraphcodeValidator::validate_op<Opcode::Concat>(
     std::tuple<uint8_t, uint8_t> const &params)
 {
     auto const &[axis, n_inputs] = params;
@@ -563,7 +572,7 @@ Result<TensorType> FinecodeValidator::validate_op<FineOp::Concat>(
 }
 
 template <>
-Result<TensorType> FinecodeValidator::validate_op<FineOp::QMatMul>(
+Result<TensorType> GraphcodeValidator::validate_op<Opcode::QMatMul>(
     std::tuple<uint8_t, Dtype> const &params)
 {
     auto const &[frac_bits, out_dtype] = params;
@@ -571,7 +580,7 @@ Result<TensorType> FinecodeValidator::validate_op<FineOp::QMatMul>(
     if (frac_bits > 64) {
         return GraphEvalError::GraphValidationError;
     }
-    BOOST_OUTCOME_TRY(auto const inputs, read_op_inputs<FineOp::QMatMul>());
+    BOOST_OUTCOME_TRY(auto const inputs, read_op_inputs<Opcode::QMatMul>());
     auto const &[x, y] = inputs;
     if (x->shape().rank() != 2 || y->shape().rank() != 2) {
         return GraphEvalError::RankError;
@@ -593,9 +602,9 @@ Result<TensorType> FinecodeValidator::validate_op<FineOp::QMatMul>(
 
 template <>
 Result<TensorType>
-FinecodeValidator::validate_op<FineOp::CumSum>(uint8_t const &dim)
+GraphcodeValidator::validate_op<Opcode::CumSum>(uint8_t const &dim)
 {
-    BOOST_OUTCOME_TRY(auto const &[x], read_op_inputs<FineOp::CumSum>());
+    BOOST_OUTCOME_TRY(auto const &[x], read_op_inputs<Opcode::CumSum>());
     if (dim >= x->shape().rank()) {
         return GraphEvalError::RankError;
     }
@@ -604,37 +613,37 @@ FinecodeValidator::validate_op<FineOp::CumSum>(uint8_t const &dim)
 
 template <>
 Result<TensorType>
-FinecodeValidator::validate_op<FineOp::ArgMin>(uint8_t const &axis)
+GraphcodeValidator::validate_op<Opcode::ArgMin>(uint8_t const &axis)
 {
     return validate_arg_reduce(axis);
 }
 
 template <>
 Result<TensorType>
-FinecodeValidator::validate_op<FineOp::ArgMax>(uint8_t const &axis)
+GraphcodeValidator::validate_op<Opcode::ArgMax>(uint8_t const &axis)
 {
     return validate_arg_reduce(axis);
 }
 
 template <>
 Result<TensorType>
-FinecodeValidator::validate_op<FineOp::ReduceSum>(uint8_t const &dim)
+GraphcodeValidator::validate_op<Opcode::ReduceSum>(uint8_t const &dim)
 {
     return validate_dim_reduce(dim);
 }
 
 template <>
 Result<TensorType>
-FinecodeValidator::validate_op<FineOp::ReduceMax>(uint8_t const &dim)
+GraphcodeValidator::validate_op<Opcode::ReduceMax>(uint8_t const &dim)
 {
     return validate_dim_reduce(dim);
 }
 
 template <>
 Result<TensorType>
-FinecodeValidator::validate_op<FineOp::Gather>(uint8_t const &dim)
+GraphcodeValidator::validate_op<Opcode::Gather>(uint8_t const &dim)
 {
-    BOOST_OUTCOME_TRY(auto const inputs, read_op_inputs<FineOp::Gather>());
+    BOOST_OUTCOME_TRY(auto const inputs, read_op_inputs<Opcode::Gather>());
     auto const &[x, idx] = inputs;
     if (dim >= x->shape().rank()) {
         return GraphEvalError::RankError;
@@ -659,21 +668,21 @@ FinecodeValidator::validate_op<FineOp::Gather>(uint8_t const &dim)
     return TensorType::checked(x->dtype(), shape);
 }
 
-Result<void> FinecodeValidator::validate()
+Result<void> GraphcodeValidator::validate()
 {
     BOOST_OUTCOME_TRY(expect_next<GRAPH_MAGIC>(code_));
     // V1 is the only currently supported version.
-    BOOST_OUTCOME_TRY(expect_next<FineVersion::V1>(code_));
-    BOOST_OUTCOME_TRY(finecode_.n_inputs_, read_next<uint8_t>(code_));
-    if (finecode_.n_inputs_ > MAX_GRAPH_INPUTS) {
+    BOOST_OUTCOME_TRY(expect_next<GraphcodeVersion::V1>(code_));
+    BOOST_OUTCOME_TRY(graphcode_.n_inputs_, read_next<uint8_t>(code_));
+    if (graphcode_.n_inputs_ > MAX_GRAPH_INPUTS) {
         return GraphEvalError::GraphValidationError;
     }
 
-    for (size_t i = 0; i < finecode_.n_inputs_; i++) {
+    for (size_t i = 0; i < graphcode_.n_inputs_; i++) {
         BOOST_OUTCOME_TRY(auto const input_ty, read_next<TensorType>(code_));
-        finecode_.tensor_types_.push_back(input_ty);
+        graphcode_.tensor_types_.push_back(input_ty);
         BOOST_OUTCOME_TRY(auto const location, allocate(input_ty));
-        finecode_.node_locations_.push_back(location);
+        graphcode_.node_locations_.push_back(location);
     }
 
     BOOST_OUTCOME_TRY(auto const n_outputs, read_next<uint8_t>(code_));
@@ -682,37 +691,37 @@ Result<void> FinecodeValidator::validate()
     }
     for (size_t i = 0; i < n_outputs; i++) {
         BOOST_OUTCOME_TRY(auto const output_id, read_next<node_id_t>(code_));
-        finecode_.output_ids_.push_back(output_id);
+        graphcode_.output_ids_.push_back(output_id);
     }
 
-    BOOST_OUTCOME_TRY(finecode_.n_ops_, read_next<uint16_t>(code_));
-    if (finecode_.n_ops_ > MAX_GRAPH_OPS) {
+    BOOST_OUTCOME_TRY(graphcode_.n_ops_, read_next<uint16_t>(code_));
+    if (graphcode_.n_ops_ > MAX_GRAPH_OPS) {
         return GraphEvalError::GraphValidationError;
     }
 
-    for (auto const output_id : finecode_.output_ids_) {
-        if (output_id >= finecode_.n_inputs_ + finecode_.n_ops_) {
+    for (auto const output_id : graphcode_.output_ids_) {
+        if (output_id >= graphcode_.n_inputs_ + graphcode_.n_ops_) {
             return GraphEvalError::GraphValidationError;
         }
     }
 
-    finecode_.ops_ = code_.data();
+    graphcode_.ops_ = code_.data();
 
-    for (size_t i = 0; i < finecode_.n_ops_; i++) {
-        BOOST_OUTCOME_TRY(auto const opcode, read_next<FineOp>(code_));
-        BOOST_OUTCOME_TRY(visit_op(opcode, [&]<FineOp Op>() -> Result<void> {
+    for (size_t i = 0; i < graphcode_.n_ops_; i++) {
+        BOOST_OUTCOME_TRY(auto const opcode, read_next<Opcode>(code_));
+        BOOST_OUTCOME_TRY(visit_op(opcode, [&]<Opcode Op>() -> Result<void> {
             BOOST_OUTCOME_TRY(
                 auto const params, read_next<OpParams<Op>>(code_));
             view_location_.reset();
             BOOST_OUTCOME_TRY(auto const result_type, validate_op<Op>(params));
             if (view_location_) {
-                finecode_.node_locations_.push_back(*view_location_);
+                graphcode_.node_locations_.push_back(*view_location_);
             }
             else {
                 BOOST_OUTCOME_TRY(auto const location, allocate(result_type));
-                finecode_.node_locations_.push_back(location);
+                graphcode_.node_locations_.push_back(location);
             }
-            finecode_.tensor_types_.push_back(result_type);
+            graphcode_.tensor_types_.push_back(result_type);
             return outcome::success();
         }));
     }
@@ -723,9 +732,9 @@ Result<void> FinecodeValidator::validate()
     return outcome::success();
 }
 
-Finecode validate(std::span<uint8_t const> code)
+Graphcode validate(std::span<uint8_t const> code)
 {
-    return FinecodeValidator::validate(code);
+    return GraphcodeValidator::validate(code);
 }
 
 MONAD_GRAPH_EVAL_NAMESPACE_END

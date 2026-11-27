@@ -17,11 +17,11 @@
 #include <category/core/assert.h>
 #include <category/execution/monad/graph_eval/config.hpp>
 #include <category/execution/monad/graph_eval/constants.hpp>
-#include <category/execution/monad/graph_eval/fine.hpp>
-#include <category/execution/monad/graph_eval/fine_fast_interpreter.hpp>
+#include <category/execution/monad/graph_eval/fast_interpreter.hpp>
 #include <category/execution/monad/graph_eval/fixed_point.hpp>
 #include <category/execution/monad/graph_eval/graph.hpp>
 #include <category/execution/monad/graph_eval/graph_eval_error.hpp>
+#include <category/execution/monad/graph_eval/graphcode.hpp>
 #include <category/execution/monad/graph_eval/matmul.hpp>
 #include <category/execution/monad/graph_eval/references.hpp>
 #include <category/execution/monad/graph_eval/tensor.hpp>
@@ -77,7 +77,7 @@ MONAD_GRAPH_EVAL_ANONYMOUS_NAMESPACE_BEGIN
 //
 
 // A fn's params, or none for std::monostate
-template <FineFn Fn>
+template <ScalarFn Fn>
 [[gnu::always_inline]] inline FnParams<Fn> take_params(uint8_t const *&code)
 {
     if constexpr (std::is_same_v<FnParams<Fn>, std::monostate>) {
@@ -498,14 +498,14 @@ struct FnResult
 };
 
 // Runs fn Fn, whose params and operands are given, into `out`
-template <FineFn Fn>
+template <ScalarFn Fn>
 FnResult run_fn(
     [[maybe_unused]] FnParams<Fn> const &params,
     std::array<FastScalarRegister const *, FnArity<Fn>> const &args,
     FnOutput const &out)
 {
     FastScalarRegister const &a = *args[0];
-    if constexpr (Fn == FineFn::Where) {
+    if constexpr (Fn == ScalarFn::Where) {
         // Operands: condition, then the values, of the result's dtype
         FastScalarRegister const &x = *args[1];
         FastScalarRegister const &y = *args[2];
@@ -523,7 +523,7 @@ FnResult run_fn(
         });
         return {x.dtype, GraphEvalError::Success};
     }
-    else if constexpr (Fn == FineFn::Saturate) {
+    else if constexpr (Fn == ScalarFn::Saturate) {
         Dtype const to = params;
         visit_dtype(a.dtype, [&]<typename T>() {
             visit_dtype(to, [&]<typename To>() {
@@ -534,34 +534,34 @@ FnResult run_fn(
     }
     else {
         return visit_dtype(a.dtype, [&]<typename T>() -> FnResult {
-            if constexpr (Fn == FineFn::Add) {
+            if constexpr (Fn == ScalarFn::Add) {
                 apply2<T, T, T>(a, *args[1], out, AddF{});
             }
-            else if constexpr (Fn == FineFn::Sub) {
+            else if constexpr (Fn == ScalarFn::Sub) {
                 apply2<T, T, T>(a, *args[1], out, SubF{});
             }
-            else if constexpr (Fn == FineFn::Mul) {
+            else if constexpr (Fn == ScalarFn::Mul) {
                 apply2<T, T, T>(a, *args[1], out, MulF{});
             }
-            else if constexpr (Fn == FineFn::Min) {
+            else if constexpr (Fn == ScalarFn::Min) {
                 apply2<T, T, T>(a, *args[1], out, MinF{});
             }
-            else if constexpr (Fn == FineFn::Max) {
+            else if constexpr (Fn == ScalarFn::Max) {
                 apply2<T, T, T>(a, *args[1], out, MaxF{});
             }
-            else if constexpr (Fn == FineFn::Lt) {
+            else if constexpr (Fn == ScalarFn::Lt) {
                 apply2<uint8_t, T, T>(a, *args[1], out, LtF{});
                 return {Dtype::uint8, GraphEvalError::Success};
             }
-            else if constexpr (Fn == FineFn::Le) {
+            else if constexpr (Fn == ScalarFn::Le) {
                 apply2<uint8_t, T, T>(a, *args[1], out, LeF{});
                 return {Dtype::uint8, GraphEvalError::Success};
             }
-            else if constexpr (Fn == FineFn::Eq) {
+            else if constexpr (Fn == ScalarFn::Eq) {
                 apply2<uint8_t, T, T>(a, *args[1], out, EqF{});
                 return {Dtype::uint8, GraphEvalError::Success};
             }
-            else if constexpr (Fn == FineFn::Divc) {
+            else if constexpr (Fn == ScalarFn::Divc) {
                 uint64_t const divisor = params;
                 if (std::has_single_bit(divisor)) {
                     auto const shift =
@@ -579,23 +579,23 @@ FnResult run_fn(
                     apply1<T, T>(a, out, DivcF<T>{divisor});
                 }
             }
-            else if constexpr (Fn == FineFn::Div || Fn == FineFn::QDiv) {
+            else if constexpr (Fn == ScalarFn::Div || Fn == ScalarFn::QDiv) {
                 if (check<T>(*args[1], out.n, IsZero{})) {
                     return {a.dtype, GraphEvalError::DivisionByZero};
                 }
                 unsigned bits = 0;
-                if constexpr (Fn == FineFn::QDiv) {
+                if constexpr (Fn == ScalarFn::QDiv) {
                     bits = params;
                 }
                 apply2<T, T, T>(a, *args[1], out, QDivF{bits});
             }
-            else if constexpr (Fn == FineFn::QMul) {
+            else if constexpr (Fn == ScalarFn::QMul) {
                 apply2<T, T, T>(a, *args[1], out, QMulF{params});
             }
-            else if constexpr (Fn == FineFn::QExp) {
+            else if constexpr (Fn == ScalarFn::QExp) {
                 apply1<T, T>(a, out, QExpF{params});
             }
-            else if constexpr (Fn == FineFn::QInvSqrt) {
+            else if constexpr (Fn == ScalarFn::QInvSqrt) {
                 if (check<T>(a, out.n, IsZero{})) {
                     return {a.dtype, GraphEvalError::DivisionByZero};
                 }
@@ -606,7 +606,7 @@ FnResult run_fn(
                 }
                 apply1<T, T>(a, out, QInvSqrtF{params});
             }
-            else if constexpr (Fn == FineFn::ISqrt) {
+            else if constexpr (Fn == ScalarFn::ISqrt) {
                 if constexpr (std::is_unsigned_v<T>) {
                     apply1<T, T>(a, out, ISqrtF{});
                 }
@@ -753,7 +753,7 @@ void expand_chunk(ScalarInput &input, size_t const n, uint8_t *const out)
 void skip_fns(uint8_t const *&code, size_t const n_fns)
 {
     for (size_t i = 0; i < n_fns; i++) {
-        visit_fn(take<FineFn>(code), [&]<FineFn Fn>() {
+        visit_fn(take<ScalarFn>(code), [&]<ScalarFn Fn>() {
             (void)take_params<Fn>(code);
             skip_bytes(code, FnArity<Fn> + (i + 1 < n_fns ? 1 : 0));
         });
@@ -793,7 +793,7 @@ struct ChunkState
 using FnHandler =
     GraphEvalError (*)(ChunkState &chunk, uint8_t const *pc, size_t remaining);
 
-template <FineFn Fn>
+template <ScalarFn Fn>
 GraphEvalError
 run_fn_chained(ChunkState &chunk, uint8_t const *pc, size_t remaining);
 
@@ -801,15 +801,15 @@ template <size_t... Fns>
 consteval std::array<FnHandler, sizeof...(Fns)>
 make_fn_handlers(std::index_sequence<Fns...>)
 {
-    return {&run_fn_chained<static_cast<FineFn>(Fns)>...};
+    return {&run_fn_chained<static_cast<ScalarFn>(Fns)>...};
 }
 
 // Each fn's handler, at its opcode
-constexpr std::array<FnHandler, static_cast<size_t>(FineFn::Invalid)>
+constexpr std::array<FnHandler, static_cast<size_t>(ScalarFn::Invalid)>
     fn_handlers = make_fn_handlers(
-        std::make_index_sequence<static_cast<size_t>(FineFn::Invalid)>{});
+        std::make_index_sequence<static_cast<size_t>(ScalarFn::Invalid)>{});
 
-template <FineFn Fn>
+template <ScalarFn Fn>
 GraphEvalError
 run_fn_chained(ChunkState &chunk, uint8_t const *pc, size_t const remaining)
 {
@@ -837,7 +837,7 @@ run_fn_chained(ChunkState &chunk, uint8_t const *pc, size_t const remaining)
         return GraphEvalError::Success;
     }
     registers[dst] = {data, uniform, result.dtype};
-    auto const next = take<FineFn>(pc);
+    auto const next = take<ScalarFn>(pc);
     MONAD_GRAPH_MUST_TAIL return fn_handlers[static_cast<size_t>(next)](
         chunk, pc, remaining - 1);
 }
@@ -846,34 +846,34 @@ MONAD_GRAPH_EVAL_ANONYMOUS_NAMESPACE_END
 
 MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
 
-FineFastInterpreter::FineFastInterpreter(
-    Finecode const &finecode, State &state,
+FastInterpreter::FastInterpreter(
+    Graphcode const &graphcode, State &state,
     std::span<TensorInput const> const inputs, uint8_t *const arena)
-    : finecode_(finecode)
+    : graphcode_(graphcode)
     , state_(state)
     , inputs_(inputs)
     , arena_(arena)
 {
 }
 
-Tensor FineFastInterpreter::node(size_t const id) const
+Tensor FastInterpreter::node(size_t const id) const
 {
-    uint32_t const location = finecode_.node_location(id);
+    uint32_t const location = graphcode_.node_location(id);
     uint8_t const *const data =
-        (location & FINE_CODE_LOCATION)
-            ? finecode_.ops() + (location & ~FINE_CODE_LOCATION)
+        (location & CODE_LOCATION)
+            ? graphcode_.ops() + (location & ~CODE_LOCATION)
             : arena_ + location;
-    return Tensor{finecode_.node_type(id), const_cast<uint8_t *>(data)};
+    return Tensor{graphcode_.node_type(id), const_cast<uint8_t *>(data)};
 }
 
 // The call's inputs must have the graph's input types
-Result<void> FineFastInterpreter::check_inputs() const
+Result<void> FastInterpreter::check_inputs() const
 {
-    if (inputs_.size() != finecode_.n_inputs()) {
+    if (inputs_.size() != graphcode_.n_inputs()) {
         return GraphEvalError::ArityError;
     }
     for (size_t i = 0; i < inputs_.size(); i++) {
-        TensorType const &expected = finecode_.node_type(i);
+        TensorType const &expected = graphcode_.node_type(i);
         if (inputs_[i].type.dtype() != expected.dtype()) {
             return GraphEvalError::TypeError;
         }
@@ -885,7 +885,7 @@ Result<void> FineFastInterpreter::check_inputs() const
 }
 
 // Copies each input into the arena, in host byte order
-Result<void> FineFastInterpreter::load_inputs()
+Result<void> FastInterpreter::load_inputs()
 {
     for (size_t i = 0; i < inputs_.size(); i++) {
         TensorInput const &input = inputs_[i];
@@ -902,7 +902,7 @@ Result<void> FineFastInterpreter::load_inputs()
     return outcome::success();
 }
 
-Result<void> FineFastInterpreter::run_scalar(
+Result<void> FastInterpreter::run_scalar(
     uint8_t const *&code, size_t const id, FastScalarRegisters &file)
 {
     Tensor const output = node(id);
@@ -987,7 +987,7 @@ Result<void> FineFastInterpreter::run_scalar(
         chunk.output = output.data() + start * output_element_size;
         chunk.n = n;
         uint8_t const *pc = program;
-        auto const first = take<FineFn>(pc);
+        auto const first = take<ScalarFn>(pc);
         GraphEvalError error =
             fn_handlers[static_cast<size_t>(first)](chunk, pc, n_fns);
         if (error != GraphEvalError::Success) {
@@ -1345,20 +1345,20 @@ MONAD_GRAPH_EVAL_ANONYMOUS_NAMESPACE_END
 
 MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
 
-Result<void> FineFastInterpreter::run_op(
-    FineOp const op, uint8_t const *&code, size_t const id,
+Result<void> FastInterpreter::run_op(
+    Opcode const op, uint8_t const *&code, size_t const id,
     FastScalarRegisters &file)
 {
     auto const input = [&] { return node(take<uint16_t>(code)); };
     switch (op) {
-    case FineOp::Scalar:
+    case Opcode::Scalar:
         return run_scalar(code, id, file);
-    case FineOp::Literal:
+    case Opcode::Literal:
         // In place: its node location is its data in the code
         skip<TensorType>(code);
-        skip_bytes(code, finecode_.node_type(id).size_bytes());
+        skip_bytes(code, graphcode_.node_type(id).size_bytes());
         return outcome::success();
-    case FineOp::Reshape:
+    case Opcode::Reshape:
         // A view: its node location is its input's
         skip<Shape>(code);
         skip<uint16_t>(code);
@@ -1368,19 +1368,19 @@ Result<void> FineFastInterpreter::run_op(
     }
     Tensor out = node(id);
     switch (op) {
-    case FineOp::TensorRef: {
+    case Opcode::TensorRef: {
         skip<TensorType>(code);
         auto const address = take<Address>(code);
         auto const offset = take<uint32_t>(code);
         return load_code_tensor(state_, CodeRef{address, offset}, out);
     }
-    case FineOp::Transpose: {
+    case Opcode::Transpose: {
         auto const axis0 = take<uint8_t>(code);
         auto const axis1 = take<uint8_t>(code);
         transpose(input(), axis0, axis1, out);
         return outcome::success();
     }
-    case FineOp::Concat: {
+    case Opcode::Concat: {
         auto const axis = take<uint8_t>(code);
         size_t const n_inputs = take<uint8_t>(code);
         std::array<Tensor, MAX_CONCAT_INPUTS> inputs;
@@ -1390,7 +1390,7 @@ Result<void> FineFastInterpreter::run_op(
         concat(std::span<Tensor const>{inputs.data(), n_inputs}, axis, out);
         return outcome::success();
     }
-    case FineOp::QMatMul: {
+    case Opcode::QMatMul: {
         auto const bits = take<uint8_t>(code);
         skip<Dtype>(code); // The output's dtype, which its node type has
         Tensor const x = input();
@@ -1398,67 +1398,67 @@ Result<void> FineFastInterpreter::run_op(
         qmatmul(x, y, bits, out);
         return outcome::success();
     }
-    case FineOp::CumSum: {
+    case Opcode::CumSum: {
         auto const axis = take<uint8_t>(code);
         cumsum(input(), axis, out);
         return outcome::success();
     }
-    case FineOp::ArgMin: {
+    case Opcode::ArgMin: {
         auto const axis = take<uint8_t>(code);
         arg_extreme(input(), axis, out, [](auto const a, auto const b) {
             return a < b;
         });
         return outcome::success();
     }
-    case FineOp::ArgMax: {
+    case Opcode::ArgMax: {
         auto const axis = take<uint8_t>(code);
         arg_extreme(input(), axis, out, [](auto const a, auto const b) {
             return a > b;
         });
         return outcome::success();
     }
-    case FineOp::ReduceSum: {
+    case Opcode::ReduceSum: {
         auto const axis = take<uint8_t>(code);
         reduce(input(), axis, out, AddF{});
         return outcome::success();
     }
-    case FineOp::ReduceMax: {
+    case Opcode::ReduceMax: {
         auto const axis = take<uint8_t>(code);
         reduce(input(), axis, out, MaxF{});
         return outcome::success();
     }
-    case FineOp::Gather: {
+    case Opcode::Gather: {
         auto const axis = take<uint8_t>(code);
         Tensor const x = input();
         Tensor const indices = input();
         return gather(x, indices, axis, out);
     }
-    case FineOp::Scalar:
-    case FineOp::Literal:
-    case FineOp::Reshape:
+    case Opcode::Scalar:
+    case Opcode::Literal:
+    case Opcode::Reshape:
         // Handled above
-    case FineOp::Invalid:
+    case Opcode::Invalid:
         break;
     }
     MONAD_ABORT();
 }
 
-Result<GraphOutputs> FineFastInterpreter::run()
+Result<GraphOutputs> FastInterpreter::run()
 {
-    if (finecode_.validation_result() != GraphEvalError::Success) {
-        return finecode_.validation_result();
+    if (graphcode_.validation_result() != GraphEvalError::Success) {
+        return graphcode_.validation_result();
     }
     BOOST_OUTCOME_TRY(check_inputs());
-    auto const &output_ids = finecode_.output_ids();
+    auto const &output_ids = graphcode_.output_ids();
     BOOST_OUTCOME_TRY(load_inputs());
 
     // Every Scalar node's registers, at the same address
     FastScalarRegisters file;
 
-    uint8_t const *code = finecode_.ops();
-    size_t const n_inputs = finecode_.n_inputs();
-    for (size_t i = 0; i < finecode_.n_ops(); i++) {
-        BOOST_OUTCOME_TRY(run_op(take<FineOp>(code), code, n_inputs + i, file));
+    uint8_t const *code = graphcode_.ops();
+    size_t const n_inputs = graphcode_.n_inputs();
+    for (size_t i = 0; i < graphcode_.n_ops(); i++) {
+        BOOST_OUTCOME_TRY(run_op(take<Opcode>(code), code, n_inputs + i, file));
     }
 
     GraphOutputs outputs;

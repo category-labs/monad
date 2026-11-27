@@ -39,7 +39,8 @@ namespace monad::vm::interpreter
         static constexpr size_t end_padding_size = 32 + 1;
 
     public:
-        using JumpdestMap = std::vector<bool>;
+        // One bit per code byte, packed into 64-bit words.
+        using JumpdestMap = std::vector<uint64_t>;
 
         explicit Intercode(std::span<uint8_t const> const);
 
@@ -72,7 +73,8 @@ namespace monad::vm::interpreter
 
         bool is_jumpdest(size_t const pc) const noexcept
         {
-            return pc < *code_size_ && jumpdest_map_[pc];
+            return pc < *code_size_ &&
+                   ((jumpdest_map_[pc >> 6] >> (pc & 63)) & 1);
         }
 
         [[gnu::always_inline]]
@@ -90,12 +92,17 @@ namespace monad::vm::interpreter
         }
 
     private:
-        uint8_t const *padded_code_;
+        uint8_t *padded_code_;
         code_size_t code_size_;
         JumpdestMap jumpdest_map_;
 
-        static uint8_t const *pad(std::span<uint8_t const> code);
+        // Allocates the code buffer with its padding zeroed and the code bytes
+        // uninitialized; returns a pointer to the first code byte.
+        static uint8_t *allocate_padded(size_t code_size);
 
-        static JumpdestMap find_jumpdests(std::span<uint8_t const> code);
+        // `padded` must come from allocate_padded: the scan reads its zero
+        // padding past the end of the code.
+        static JumpdestMap
+        copy_and_find_jumpdests(std::span<uint8_t const> code, uint8_t *padded);
     };
 }

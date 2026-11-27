@@ -1143,7 +1143,7 @@ TEST_F(EthCallFixture, assertion_exception_depth2)
 // run during contract creation. Overriding an account's code with something
 // larger than Intercode's representable size limit must fail gracefully
 // (CallStatus::InternalError) rather than aborting the whole executor
-// process. See Intercode::pad's MONAD_ASSERT_THROW.
+// process. See Intercode::allocate_padded's MONAD_ASSERT_THROW.
 TEST_F(EthCallFixture, state_override_oversized_code_fails_gracefully)
 {
     auto const from = ADDR_A;

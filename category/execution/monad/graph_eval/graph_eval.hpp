@@ -53,10 +53,6 @@ public:
 
     template <Traits traits>
     Result<byte_string>
-    precompile_eval_op(byte_string_view, CallContext const &);
-
-    template <Traits traits>
-    Result<byte_string>
     precompile_eval_graph(byte_string_view, CallContext const &);
 
     Result<byte_string>

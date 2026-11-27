@@ -39,10 +39,6 @@
 #include <utility>
 #include <variant>
 
-#if defined(__AVX512BW__)
-    #include <immintrin.h>
-#endif
-
 MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
 
 // The elements of a chunk: each register's block holds a chunk of the widest
@@ -628,77 +624,6 @@ FnResult run_fn(
     }
 }
 
-// FAdd: Add, as a loop of AVX-512 intrinsics rather than map2, and inlined
-// into run_scalar rather than reached through run_fn. Wrapping addition gives
-// the same bits for a signed and an unsigned dtype, so only the lanes' width
-// matters. Each 64-byte block is loaded before it's stored, so the output may
-// be one of the operands, and no __restrict is needed. A last, partial block
-// is loaded and stored under a byte mask, which touches no byte outside the
-// chunk. Without AVX-512BW, FAdd runs Add's kernel
-#if defined(__AVX512BW__)
-template <size_t Bytes>
-[[gnu::always_inline]] inline __m512i
-add_lanes(__m512i const a, __m512i const b)
-{
-    if constexpr (Bytes == 1) {
-        return _mm512_add_epi8(a, b);
-    }
-    else if constexpr (Bytes == 2) {
-        return _mm512_add_epi16(a, b);
-    }
-    else if constexpr (Bytes == 4) {
-        return _mm512_add_epi32(a, b);
-    }
-    else {
-        return _mm512_add_epi64(a, b);
-    }
-}
-
-template <size_t Bytes>
-[[gnu::always_inline]] inline void fadd_bytes(
-    uint8_t const *const x, uint8_t const *const y, uint8_t *const out,
-    size_t const n_bytes)
-{
-    size_t i = 0;
-    for (; i + 64 <= n_bytes; i += 64) {
-        __m512i const a = _mm512_loadu_si512(x + i);
-        __m512i const b = _mm512_loadu_si512(y + i);
-        _mm512_storeu_si512(out + i, add_lanes<Bytes>(a, b));
-    }
-    if (i < n_bytes) {
-        __mmask64 const k = (uint64_t{1} << (n_bytes - i)) - 1;
-        __m512i const a = _mm512_maskz_loadu_epi8(k, x + i);
-        __m512i const b = _mm512_maskz_loadu_epi8(k, y + i);
-        _mm512_mask_storeu_epi8(out + i, k, add_lanes<Bytes>(a, b));
-    }
-}
-#endif
-
-[[gnu::always_inline]] inline FnResult
-fadd(ScalarRegister const &x, ScalarRegister const &y, FnOutput const &out)
-{
-#if defined(__AVX512BW__)
-    size_t const n_bytes = out.n * dtype_size(x.dtype);
-    switch (dtype_size(x.dtype)) {
-    case 1:
-        fadd_bytes<1>(x.data, y.data, out.data, n_bytes);
-        break;
-    case 2:
-        fadd_bytes<2>(x.data, y.data, out.data, n_bytes);
-        break;
-    case 4:
-        fadd_bytes<4>(x.data, y.data, out.data, n_bytes);
-        break;
-    default:
-        fadd_bytes<8>(x.data, y.data, out.data, n_bytes);
-        break;
-    }
-    return {x.dtype, GraphEvalError::Success};
-#else
-    return run_fn<FineFn::Add>({}, {&x, &y}, out);
-#endif
-}
-
 //
 // A Scalar node's inputs
 //
@@ -984,7 +909,7 @@ Result<void> FineInterpreter::run_scalar(
             GraphEvalError error = visit_fn(
                 take<FineFn>(pc),
                 [&]<FineFn Fn>() __attribute__((always_inline)) {
-                    [[maybe_unused]] auto const params = take_params<Fn>(pc);
+                    auto const params = take_params<Fn>(pc);
                     std::array<ScalarRegister const *, FnArity<Fn>> args;
                     bool uniform = true;
                     for (size_t a = 0; a < FnArity<Fn>; a++) {
@@ -996,15 +921,7 @@ Result<void> FineInterpreter::run_scalar(
                         last ? output.data() + start * output_element_size
                              : file.blocks[dst];
                     FnOutput const out{data, uniform ? size_t{1} : n};
-                    FnResult const result =
-                        [&]() __attribute__((always_inline)) -> FnResult {
-                        if constexpr (Fn == FineFn::FAdd) {
-                            return fadd(*args[0], *args[1], out);
-                        }
-                        else {
-                            return run_fn<Fn>(params, args, out);
-                        }
-                    }();
+                    FnResult const result = run_fn<Fn>(params, args, out);
                     if (result.error != GraphEvalError::Success) {
                         return result.error;
                     }

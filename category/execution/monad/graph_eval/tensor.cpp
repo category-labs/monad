@@ -66,8 +66,14 @@ Result<uint64_t> abi_decode_length(byte_string_view &enc)
     return length.as_words()[0];
 }
 
+bool all_zero(byte_string_view const bytes)
+{
+    return std::all_of(
+        bytes.begin(), bytes.end(), [](uint8_t const b) { return b == 0; });
+}
+
 // The next `size` bytes of `enc`, which are padded with zeros to a multiple of
-// 32 bytes, consuming the padding too
+// 32 bytes, consuming the padding too: InvalidInput if the padding isn't zero
 Result<byte_string_view>
 abi_decode_padded_bytes(byte_string_view &enc, uint64_t const size)
 {
@@ -81,14 +87,13 @@ abi_decode_padded_bytes(byte_string_view &enc, uint64_t const size)
         return AbiDecodeError::InputTooShort;
     }
     byte_string_view const data = enc.substr(0, static_cast<size_t>(size));
+    byte_string_view const padding = enc.substr(
+        static_cast<size_t>(size), static_cast<size_t>(padded_size - size));
+    if (MONAD_UNLIKELY(!all_zero(padding))) {
+        return GraphEvalError::InvalidInput;
+    }
     enc.remove_prefix(static_cast<size_t>(padded_size));
     return data;
-}
-
-bool all_zero(byte_string_view const bytes)
-{
-    return std::all_of(
-        bytes.begin(), bytes.end(), [](uint8_t const b) { return b == 0; });
 }
 
 MONAD_GRAPH_EVAL_ANONYMOUS_NAMESPACE_END
@@ -107,7 +112,8 @@ Result<TensorInput> abi_decode_tensor_input(byte_string_view &enc)
 
     // Dynamic: read tail(TensorType), the tuple (uint8 dtype, uint16[]
     // dimensions). Static: uint8 dtype
-    BOOST_OUTCOME_TRY(auto const dtype_be, abi_decode_fixed<u8_be>(enc));
+    BOOST_OUTCOME_TRY(
+        auto const dtype_be, abi_decode_fixed_checked<u8_be>(enc));
     auto const dtype_id = dtype_be.native();
     if (dtype_id > static_cast<uint8_t>(Dtype::Last_valid_dtype)) {
         return GraphEvalError::TypeError;
@@ -145,7 +151,8 @@ Result<TensorInput> abi_decode_tensor_input(byte_string_view &enc)
     // Size in bytes the data must have for this shape
     uint64_t expected_data_size = dtype_size(dtype);
     for (auto i = 0; i < rank; i++) {
-        BOOST_OUTCOME_TRY(auto const dim_be, abi_decode_fixed<u16_be>(enc));
+        BOOST_OUTCOME_TRY(
+            auto const dim_be, abi_decode_fixed_checked<u16_be>(enc));
         uint16_t const dim = dim_be.native();
         dimensions[static_cast<size_t>(i)] = dim;
         if (MONAD_UNLIKELY(__builtin_mul_overflow(

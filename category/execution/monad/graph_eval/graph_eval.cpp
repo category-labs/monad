@@ -53,11 +53,6 @@ MONAD_GRAPH_EVAL_ANONYMOUS_NAMESPACE_BEGIN
 
 struct PrecompileSelector
 {
-    // TODO: evalOp still takes the Tensor[] evalGraph took before TensorInput.
-    // It isn't implemented; update it with it, or delete it
-    static constexpr uint32_t EVAL_OP =
-        abi_encode_selector("evalOp(uint16,(uint8,uint16[],bytes)[])");
-
     static constexpr uint32_t EVAL_GRAPH = abi_encode_selector(
         "evalGraph(address,((uint8,uint16[]),uint8,bytes)[])");
 };
@@ -67,7 +62,6 @@ struct PrecompileSelector
 //
 
 // TODO: charge for reading tensors by reference
-constexpr uint64_t EVAL_OP_COST = 100;
 constexpr uint64_t EVAL_GRAPH_COST = 100;
 constexpr uint64_t FALLBACK_COST = 100;
 
@@ -203,8 +197,6 @@ GraphEvalContract::precompile_dispatch(byte_string_view &input)
     input.remove_prefix(4);
 
     switch (signature) {
-    case PrecompileSelector::EVAL_OP:
-        return {&GraphEvalContract::precompile_eval_op<traits>, EVAL_OP_COST};
     case PrecompileSelector::EVAL_GRAPH:
         return {
             &GraphEvalContract::precompile_eval_graph<traits>, EVAL_GRAPH_COST};
@@ -228,18 +220,6 @@ Result<void> function_not_payable(uint256_be_t const &value)
     return outcome::success();
 }
 
-template <Traits traits>
-Result<byte_string> GraphEvalContract::precompile_eval_op(
-    byte_string_view input, CallContext const &call)
-{
-    // TODO: Use the interpreter's kernels for this.
-    (void)input;
-    (void)call;
-    return GraphEvalError::InternalError;
-}
-
-EXPLICIT_MONAD_TRAITS_MEMBER(GraphEvalContract::precompile_eval_op);
-
 // evalGraph(address graph, TensorInput[] inputs) returns (Tensor[] outputs)
 template <Traits traits>
 Result<byte_string> GraphEvalContract::precompile_eval_graph(
@@ -249,7 +229,7 @@ Result<byte_string> GraphEvalContract::precompile_eval_graph(
 
     // Static: read GraphRef
     BOOST_OUTCOME_TRY(
-        auto const graph_address, abi_decode_fixed<Address>(input));
+        auto const graph_address, abi_decode_fixed_checked<Address>(input));
 
     // Dynamic: read head(TensorInput[]), the offset of its tail, which the
     // canonical encoding puts right after the two head words
@@ -262,6 +242,13 @@ Result<byte_string> GraphEvalContract::precompile_eval_graph(
         auto inputs,
         (abi_decode_dynamic_array_tail<TensorInput, MAX_INPUTS>(
             input, abi_decode_tensor_input)));
+
+    // The tails are read in place, in order, so the canonical encoding ends
+    // where the last input's payload, with its padding, ends, or after the
+    // array's length if there are no inputs
+    if (MONAD_UNLIKELY(!input.empty())) {
+        return GraphEvalError::InvalidInput;
+    }
 
     BOOST_OUTCOME_TRY(
         auto const outputs, run_graph(state_, graph_address, inputs));

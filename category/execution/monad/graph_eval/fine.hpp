@@ -277,10 +277,6 @@ enum class FineFn : uint8_t
 
     ISqrt,
 
-    // An experiment: Add's type and behavior, which the interpreter runs
-    // with a kernel of AVX-512 intrinsics inlined into run_scalar
-    FAdd,
-
     Invalid
 };
 
@@ -380,11 +376,6 @@ struct FineFnInfo<FineFn::ISqrt> : FineFnInfoImpl<std::monostate, 1>
 };
 
 template <>
-struct FineFnInfo<FineFn::FAdd> : FineFnInfoImpl<std::monostate, 2>
-{
-};
-
-template <>
 [[gnu::always_inline]]
 inline Result<FineFn> read_next<FineFn>(std::span<uint8_t const> &input)
 {
@@ -441,8 +432,6 @@ inline auto visit_fn(FineFn const fn, F &&f)
         return f.template operator()<FineFn::QInvSqrt>();
     case FineFn::ISqrt:
         return f.template operator()<FineFn::ISqrt>();
-    case FineFn::FAdd:
-        return f.template operator()<FineFn::FAdd>();
     case FineFn::Invalid:
         MONAD_ABORT();
     }

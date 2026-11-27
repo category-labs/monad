@@ -26,7 +26,9 @@
 #include <category/execution/monad/graph_eval/graph_eval_error.hpp>
 #include <category/execution/monad/graph_eval/types.hpp>
 
+#include <algorithm>
 #include <array>
+#include <concepts>
 #include <cstdint>
 #include <cstring>
 #include <optional>
@@ -297,8 +299,30 @@ struct TensorInput
     std::variant<byte_string_view, CodeRef> source;
 };
 
+// ABI-decode a T, a uint narrower than 256 bits or an address, from a whole
+// word: InvalidInput if the word's value doesn't fit in T. abi_decode_fixed
+// ignores the bytes above T, which the canonical encoding sets to zero
+template <typename T>
+    requires(BigEndianType<T> || std::same_as<T, Address>)
+Result<T> abi_decode_fixed_checked(byte_string_view &enc)
+{
+    static_assert(sizeof(T) < 32);
+    BOOST_OUTCOME_TRY(auto const word, abi_decode_fixed<u256_be>(enc));
+    constexpr size_t high_size = 32 - sizeof(T);
+    if (MONAD_UNLIKELY(std::any_of(
+            word.bytes, word.bytes + high_size, [](uint8_t const b) {
+                return b != 0;
+            }))) {
+        return GraphEvalError::InvalidInput;
+    }
+    T value{};
+    std::memcpy(value.bytes, word.bytes + high_size, sizeof(T));
+    return value;
+}
+
 // ABI-decode a TensorInput tuple. Only the canonical layout is accepted.
-// InvalidInput if a tag isn't one of its values, or a payload isn't what its
+// InvalidInput if the dtype or a dimension doesn't fit its type, a tag isn't
+// one of its values, a payload's padding isn't zero or a payload isn't what its
 // location takes, ShapeError if a literal's elements don't have the size its
 // type gives, and TypeError, RankError or ShapeError for an invalid type
 Result<TensorInput> abi_decode_tensor_input(byte_string_view &enc);

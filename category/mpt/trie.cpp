@@ -26,6 +26,7 @@
 #include <category/mpt/config.hpp>
 #include <category/mpt/deserialize_node_from_receiver_result.hpp>
 #include <category/mpt/detail/timeline.hpp>
+#include <category/mpt/nibbles_buffer.hpp>
 #include <category/mpt/nibbles_view.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/node_cursor.hpp>
@@ -426,10 +427,10 @@ std::pair<bool, Node::SharedPtr> create_node_with_expired_branches(
                  tid](Node::SharedPtr read_node) {
                     auto new_node = make_node(
                         *read_node,
-                        concat(
+                        NibblesBuffer{
                             tnode->node->path_nibble_view(),
                             child_branch,
-                            read_node->path_nibble_view()),
+                            read_node->path_nibble_view()},
                         read_node->opt_value(),
                         read_node->version);
                     fillin_parent_after_expiration(
@@ -450,10 +451,10 @@ std::pair<bool, Node::SharedPtr> create_node_with_expired_branches(
             true,
             make_node(
                 *single_child,
-                concat(
+                NibblesBuffer{
                     orig->path_nibble_view(),
                     child_branch,
-                    single_child->path_nibble_view()),
+                    single_child->path_nibble_view()},
                 single_child->opt_value(),
                 single_child->version)};
     }
@@ -551,7 +552,7 @@ Node::SharedPtr create_node_from_children_if_any(
         creating nodes and return in the recursion */
         return make_node(
             *node,
-            concat(path, children[j].branch, node->path_nibble_view()),
+            NibblesBuffer{path, children[j].branch, node->path_nibble_view()},
             node->has_value() ? std::make_optional(node->value())
                               : std::nullopt,
             version); // node is deallocated

@@ -22,6 +22,7 @@
 #include <category/execution/monad/db/storage_page.hpp>
 #include <category/mpt/db.hpp>
 #include <category/mpt/db_error.hpp>
+#include <category/mpt/nibbles_buffer.hpp>
 #include <category/mpt/state_machine_kind.hpp>
 #include <category/vm/vm.hpp>
 
@@ -83,9 +84,9 @@ public:
     {
         auto acc_leaf_res = db_.find(
             prefix_cursor_,
-            mpt::concat(
+            mpt::NibblesBuffer{
                 STATE_NIBBLE,
-                mpt::NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})}),
+                mpt::NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})}},
             block_number_);
         if (!acc_leaf_res.has_value()) {
             MONAD_ASSERT_THROW(
@@ -107,11 +108,11 @@ public:
         bytes32_t const lookup_key = storage_lookup_key(key);
         auto storage_leaf_res = db_.find(
             prefix_cursor_,
-            mpt::concat(
+            mpt::NibblesBuffer{
                 STATE_NIBBLE,
                 mpt::NibblesView{keccak256({addr.bytes, sizeof(addr.bytes)})},
                 mpt::NibblesView{
-                    keccak256({lookup_key.bytes, sizeof(lookup_key.bytes)})}),
+                    keccak256({lookup_key.bytes, sizeof(lookup_key.bytes)})}},
             block_number_);
         if (!storage_leaf_res.has_value()) {
             MONAD_ASSERT_THROW(
@@ -136,9 +137,9 @@ public:
         // TODO read intercode object
         auto code_leaf_res = db_.find(
             prefix_cursor_,
-            mpt::concat(
+            mpt::NibblesBuffer{
                 CODE_NIBBLE,
-                mpt::NibblesView{to_byte_string_view(code_hash.bytes)}),
+                mpt::NibblesView{to_byte_string_view(code_hash.bytes)}},
             block_number_);
         if (!code_leaf_res.has_value()) {
             MONAD_ASSERT_THROW(

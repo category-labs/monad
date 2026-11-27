@@ -23,6 +23,7 @@
 #include <category/mpt/config.hpp>
 #include <category/mpt/merkle/compact_encode.hpp>
 #include <category/mpt/merkle/node_reference.hpp>
+#include <category/mpt/nibbles_buffer.hpp>
 #include <category/mpt/node.hpp>
 
 #include <algorithm>
@@ -223,7 +224,7 @@ private:
 
         return state.len = encode_two_pieces_reference(
                 state.buffer,
-                concat(single_child.branch, node->path_nibble_view()),
+                NibblesBuffer{single_child.branch, node->path_nibble_view()},
                 (node->has_value()
                      ? LeafValueProcessor::process(*node)
                      : (node->has_path()
@@ -436,7 +437,7 @@ private:
 
         return state.len = encode_two_pieces_reference(
                    state.buffer,
-                   concat(single_child.branch, node->path_nibble_view()),
+                   NibblesBuffer{single_child.branch, node->path_nibble_view()},
                    /* second: branch hash or leaf value */
                    node->mask ? (node->bitpacked.data_len ? node->data()
                                                           : [&] -> byte_string {

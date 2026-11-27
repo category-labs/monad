@@ -59,6 +59,7 @@ add_trie_test(TARGET mixed_async_sync_loads_test SOURCES
               "mixed_async_sync_loads_test.cpp")
 add_trie_test(TARGET blocking_read_concurrency_test SOURCES
               "blocking_read_concurrency_test.cpp")
+add_trie_test(TARGET nibbles_buffer_test SOURCES "nibbles_buffer_test.cpp")
 add_trie_test(TARGET nibbles_view_test SOURCES "nibbles_view_test.cpp")
 add_trie_test(TARGET node_lru_cache_test SOURCES "node_lru_cache_test.cpp")
 add_trie_test(TARGET node_disk_pages_spare_test SOURCES

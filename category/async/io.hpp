@@ -389,7 +389,7 @@ public:
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wpedantic"
-        ConnectedOperationType state[0];
+        ConnectedOperationType state[];
 #pragma GCC diagnostic pop
 
         constexpr registered_io_buffer_with_connected_operation() = default;

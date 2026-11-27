@@ -37,6 +37,10 @@ Ring::Ring(RingConfig const &config)
             ret.sq_thread_cpu = *config.sq_thread_cpu;
             ret.sq_thread_idle = 60 * 1000;
         }
+        if (config.cq_entries > 2 * config.entries) {
+            ret.flags |= IORING_SETUP_CQSIZE;
+            ret.cq_entries = config.cq_entries;
+        }
         return ret;
     }()}
 {

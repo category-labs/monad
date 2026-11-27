@@ -59,7 +59,7 @@ struct PrecompileSelector
         abi_encode_selector("evalOp(uint16,(uint8,uint16[],bytes)[])");
 
     static constexpr uint32_t EVAL_GRAPH = abi_encode_selector(
-        "evalGraph(address,(uint8,uint16[],uint8,uint8,bytes)[])");
+        "evalGraph(address,((uint8,uint16[]),uint8,bytes)[])");
 };
 
 //
@@ -160,10 +160,9 @@ Result<GraphOutputs> run_graph(
 
 // abi.encode(tensors), as Solidity returns a Tensor[]: the offset of the
 // array, its length, each tensor's offset from the end of the length, then the
-// tensors, each with its elements in the byte order paired with it. Each
-// offset is filled in once its tensor's place is known
-byte_string
-abi_encode_tensors(std::span<std::pair<Tensor, ByteOrder> const> const tensors)
+// tensors, each with its elements big-endian. Each offset is filled in once its
+// tensor's place is known
+byte_string abi_encode_tensors(std::span<Tensor const> const tensors)
 {
     byte_string output;
     output += abi_encode_uint(u64_be{32});
@@ -177,7 +176,7 @@ abi_encode_tensors(std::span<std::pair<Tensor, ByteOrder> const> const tensors)
             output.data() + elements_start + 32 * i,
             offset.bytes,
             sizeof(offset.bytes));
-        abi_append_tensor(tensors[i].first, tensors[i].second, output);
+        abi_append_tensor(tensors[i], output);
     }
     return output;
 }
@@ -278,13 +277,7 @@ Result<byte_string> GraphEvalContract::precompile_eval_graph(
 
     BOOST_OUTCOME_TRY(
         auto const outputs, run_graph(state_, graph_address, inputs));
-
-    std::vector<std::pair<Tensor, ByteOrder>> returned;
-    returned.reserve(outputs.size());
-    for (Tensor const &output : outputs) {
-        returned.emplace_back(output, ByteOrder::BigEndian);
-    }
-    return abi_encode_tensors(returned);
+    return abi_encode_tensors({outputs.begin(), outputs.end()});
 }
 
 EXPLICIT_MONAD_TRAITS_MEMBER(GraphEvalContract::precompile_eval_graph);

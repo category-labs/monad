@@ -187,9 +187,12 @@ private:
 };
 
 // Solidity:
-// struct Tensor {
+// struct TensorType {
 //     uint8 dtype;
 //     uint16[] dimensions;
+// }
+// struct Tensor {
+//     TensorType ty;
 //     bytes data;
 // }
 class Tensor
@@ -253,13 +256,13 @@ struct GraphOutputs
     }
 };
 
-// The byte order of a tensor's elements outside the interpreter: in the
-// calldata or in an account's code. Inside, they're in host order
+// The byte order of a tensor's elements outside the interpreter: big-endian in
+// the calldata and the returned data, little-endian in an account's code.
+// Inside, they're in host order
 enum class ByteOrder : uint8_t
 {
     BigEndian = 0,
     LittleEndian = 1,
-    Last_valid = LittleEndian,
 };
 
 // Where a TensorInput's elements are
@@ -280,19 +283,17 @@ struct CodeRef
 
 // Solidity:
 // struct TensorInput {
-//     uint8 dtype;
-//     uint16[] dimensions;
-//     uint8 byteOrder;
-//     uint8 location;
+//     TensorType ty;
+//     Location location;
 //     bytes payload;
 // }
-// The payload is the elements for a literal, and abi.encode(address, uint32
-// offset) for a CodeRef. As abi_decode_tensor_input reads it from the
-// calldata, a literal's elements are still in place there
+// The payload is the elements, big-endian, for a literal, and
+// abi.encode(address, uint32 offset) for a CodeRef, whose elements in the code
+// are little-endian. As abi_decode_tensor_input reads it from the calldata, a
+// literal's elements are still in place there
 struct TensorInput
 {
     TensorType type;
-    ByteOrder byte_order;
     std::variant<byte_string_view, CodeRef> source;
 };
 
@@ -308,8 +309,8 @@ Result<TensorInput> abi_decode_tensor_input(byte_string_view &enc);
 void copy_elements(
     Dtype dtype, ByteOrder order, std::span<uint8_t const> src, uint8_t *dst);
 
-// Append an ABI-encoded tensor to a returndata buffer, with its elements in
-// `order`
-void abi_append_tensor(Tensor const &tensor, ByteOrder order, byte_string &out);
+// Append an ABI-encoded Tensor to a returndata buffer, with its elements
+// big-endian
+void abi_append_tensor(Tensor const &tensor, byte_string &out);
 
 MONAD_GRAPH_EVAL_NAMESPACE_END

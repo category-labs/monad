@@ -97,7 +97,16 @@ MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
 
 Result<TensorInput> abi_decode_tensor_input(byte_string_view &enc)
 {
-    // Static: uint8 dtype
+    // Dynamic: head(TensorType), static: uint8 location, then dynamic:
+    // head(bytes). The heads are the offsets of their tails from the start of
+    // the tuple. The tails are read in place, so only the canonical layout is
+    // accepted: the type right after the three head words, then the payload
+    BOOST_OUTCOME_TRY(auto const type_head, abi_decode_fixed<u256_be>(enc));
+    BOOST_OUTCOME_TRY(auto const location, abi_decode_tag<Location>(enc));
+    BOOST_OUTCOME_TRY(auto const payload_head, abi_decode_fixed<u256_be>(enc));
+
+    // Dynamic: read tail(TensorType), the tuple (uint8 dtype, uint16[]
+    // dimensions). Static: uint8 dtype
     BOOST_OUTCOME_TRY(auto const dtype_be, abi_decode_fixed<u8_be>(enc));
     auto const dtype_id = dtype_be.native();
     if (dtype_id > static_cast<uint8_t>(Dtype::Last_valid_dtype)) {
@@ -105,16 +114,11 @@ Result<TensorInput> abi_decode_tensor_input(byte_string_view &enc)
     }
     auto const dtype = static_cast<Dtype>(dtype_id);
 
-    // Dynamic: head(uint16[]), static: uint8 byteOrder and uint8 location,
-    // then dynamic: head(bytes). The heads are the offsets of their tails from
-    // the start of the tuple. The tails are read in place, so only the
-    // canonical layout is accepted: the dimensions right after the five head
-    // words, then the payload
+    // Dynamic: head(uint16[]), the offset of its tail from the start of the
+    // TensorType, which the canonical layout puts right after its two head
+    // words
     BOOST_OUTCOME_TRY(
         auto const dimensions_head, abi_decode_fixed<u256_be>(enc));
-    BOOST_OUTCOME_TRY(auto const byte_order, abi_decode_tag<ByteOrder>(enc));
-    BOOST_OUTCOME_TRY(auto const location, abi_decode_tag<Location>(enc));
-    BOOST_OUTCOME_TRY(auto const payload_head, abi_decode_fixed<u256_be>(enc));
 
     // Dynamic: read tail(uint16[]), whose length, a whole uint256, is the rank
     BOOST_OUTCOME_TRY(auto const rank_be, abi_decode_fixed<u256_be>(enc));
@@ -125,10 +129,14 @@ Result<TensorInput> abi_decode_tensor_input(byte_string_view &enc)
     }
     auto const rank = static_cast<uint8_t>(rank_256.as_words()[0]);
 
-    uint64_t const dimensions_offset = 5 * 32;
+    // The payload comes after the TensorType: its two head words, then the
+    // dimensions' length and each dimension
+    uint64_t const type_offset = 3 * 32;
+    uint64_t const dimensions_offset = 2 * 32;
     uint64_t const payload_offset =
-        dimensions_offset + 32 * (1 + uint64_t{rank});
-    if (dimensions_head.native() != dimensions_offset ||
+        type_offset + dimensions_offset + 32 * (1 + uint64_t{rank});
+    if (type_head.native() != type_offset ||
+        dimensions_head.native() != dimensions_offset ||
         payload_head.native() != payload_offset) {
         return GraphEvalError::InvalidInput;
     }
@@ -160,7 +168,7 @@ Result<TensorInput> abi_decode_tensor_input(byte_string_view &enc)
     BOOST_OUTCOME_TRY(TensorType const type, TensorType::checked(dtype, shape));
     switch (location) {
     case Location::Literal:
-        return TensorInput{type, byte_order, payload};
+        return TensorInput{type, payload};
     case Location::Code:
         // abi.encode(address, uint32): each a word, with its high bytes zero
         if (payload.size() != 64 || !all_zero(payload.substr(0, 12)) ||
@@ -171,7 +179,7 @@ Result<TensorInput> abi_decode_tensor_input(byte_string_view &enc)
             CodeRef ref{};
             std::memcpy(ref.address.bytes, payload.data() + 12, 20);
             ref.offset = u32_be::unsafe_from(payload.data() + 60).native();
-            return TensorInput{type, byte_order, ref};
+            return TensorInput{type, ref};
         }
     }
     MONAD_ABORT();
@@ -210,43 +218,51 @@ void copy_elements(
     }
 }
 
-// Append an ABI-encoded tensor to a returndata buffer
-void abi_append_tensor(
-    Tensor const &tensor, ByteOrder const order, byte_string &out)
+// Append an ABI-encoded Tensor to a returndata buffer, with its elements
+// big-endian
+void abi_append_tensor(Tensor const &tensor, byte_string &out)
 {
+    // The Tensor's head: head(TensorType) and head(bytes), the offsets of
+    // their tails from the start of the Tensor
     uint64_t const encoded_tensor_head_size =
-        32 /* dtype (uint8) */ + 32 /* head(uint16[]) */ + 32 /* head(bytes) */;
+        32 /* head(TensorType) */ + 32 /* head(bytes) */;
+    // The TensorType's head: dtype and head(uint16[]), the offset of its tail
+    // from the start of the TensorType
+    uint64_t const encoded_type_head_size =
+        32 /* dtype (uint8) */ + 32 /* head(uint16[]) */;
     uint64_t const encoded_dimensions_tail_size =
         32 /* size */ + 32 * tensor.type().shape().rank() /* dimensions */;
+    uint64_t const encoded_type_size =
+        encoded_type_head_size + encoded_dimensions_tail_size;
     auto const size_bytes = tensor.type().size_bytes();
     uint64_t const padded_size_bytes = 32 * ((size_bytes + 31) / 32);
     uint64_t const encoded_data_tail_size =
         32 /* size */ + padded_size_bytes /* data */;
     uint64_t const encoded_tensor_tail_size =
-        encoded_dimensions_tail_size + encoded_data_tail_size;
+        encoded_type_size + encoded_data_tail_size;
     auto const encoded_tensor_byte_size =
         encoded_tensor_head_size + encoded_tensor_tail_size;
     // TODO: can encoded_tensor_byte_size ever not fit in a size_t?
     out.reserve(out.size() + static_cast<size_t>(encoded_tensor_byte_size));
 
-    uint64_t const dimensions_start = encoded_tensor_head_size;
-    uint64_t const data_start =
-        encoded_tensor_head_size + encoded_dimensions_tail_size;
+    uint64_t const type_start = encoded_tensor_head_size;
+    uint64_t const data_start = encoded_tensor_head_size + encoded_type_size;
 
-    // Encode head
-    out += abi_encode_uint(u64_be{static_cast<uint8_t>(tensor.type().dtype())});
-    out += abi_encode_uint(u64_be{dimensions_start});
+    // Encode the Tensor's head
+    out += abi_encode_uint(u64_be{type_start});
     out += abi_encode_uint(u64_be{data_start});
 
+    // Encode the TensorType: its head, then the dimensions
+    out += abi_encode_uint(u64_be{static_cast<uint8_t>(tensor.type().dtype())});
+    out += abi_encode_uint(u64_be{encoded_type_head_size});
     auto const &shape = tensor.type().shape();
-    // Encode dimensions
     out += abi_encode_uint(u64_be{shape.rank()});
     for (auto i = 0; i < shape.rank(); i++) {
         out +=
             abi_encode_uint(u64_be{shape.dimensions()[static_cast<size_t>(i)]});
     }
 
-    // Encode data, converting it from host order to `order` and padding it
+    // Encode data, converting it from host order to big-endian and padding it
     // with zeros to a multiple of 32 bytes. resize_and_overwrite writes it in
     // place, without zero-filling it first.
     out += abi_encode_uint(u64_be{size_bytes});
@@ -256,7 +272,7 @@ void abi_append_tensor(
             uint8_t *const dst = buffer + data_offset;
             copy_elements(
                 tensor.type().dtype(),
-                order,
+                ByteOrder::BigEndian,
                 {tensor.data(), static_cast<size_t>(size_bytes)},
                 dst);
             std::memset(dst + size_bytes, 0, padded_size_bytes - size_bytes);

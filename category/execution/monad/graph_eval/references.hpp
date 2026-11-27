@@ -26,12 +26,11 @@
 MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
 
 // Copies the elements in an account's code from `ref`'s offset on to `out`, in
-// host order, from `order`. They're the size_bytes() bytes of `out`'s type,
-// row-major, and the code holds no type or marker for them, so any bytes of
-// any account's code can be read as a tensor of any type. InvalidTensorRef if
-// they run past the end of the code. An empty tensor can be at the end of the
-// code, which is offset 0 for an account with no code
-Result<void>
-load_code_tensor(State &, CodeRef const &ref, ByteOrder order, Tensor &out);
+// host order, from little-endian. They're the size_bytes() bytes of `out`'s
+// type, row-major, and the code holds no type or marker for them, so any bytes
+// of any account's code can be read as a tensor of any type. InvalidTensorRef
+// if they run past the end of the code. An empty tensor can be at the end of
+// the code, which is offset 0 for an account with no code
+Result<void> load_code_tensor(State &, CodeRef const &ref, Tensor &out);
 
 MONAD_GRAPH_EVAL_NAMESPACE_END

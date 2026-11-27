@@ -66,7 +66,6 @@
 #include <category/execution/monad/graph_eval/fine.hpp>
 #include <category/execution/monad/graph_eval/fine_fast_interpreter.hpp>
 #include <category/execution/monad/graph_eval/fine_interpreter.hpp>
-#include <category/execution/monad/graph_eval/references.hpp>
 #include <category/execution/monad/graph_eval/tensor.hpp>
 #include <category/mpt/db.hpp>
 #include <category/vm/code.hpp>
@@ -89,7 +88,6 @@
 
 #include <algorithm>
 #include <array>
-#include <bit>
 #include <cctype>
 #include <chrono>
 #include <cstdint>
@@ -111,10 +109,6 @@
 
 using namespace monad;
 using namespace monad::graph_eval;
-
-// The inputs are decoded into host order, then given to the Fine interpreters
-// as little-endian literals
-static_assert(std::endian::native == std::endian::little);
 
 namespace
 {
@@ -360,13 +354,14 @@ namespace
     }
 
     // The inputs in evalGraph calldata, in the canonical ABI encoding the
-    // precompile accepts. Their elements, which may be in the calldata or an
-    // account's code, are loaded, in host order
-    std::vector<byte_string> read_calldata_inputs(
-        byte_string const &calldata, Finecode const &fc, State &state)
+    // precompile accepts, decoded as the precompile decodes them: a literal's
+    // elements stay in place in `calldata`, big-endian, and a code reference
+    // stays a reference
+    std::vector<TensorInput>
+    read_calldata_inputs(byte_string const &calldata, Finecode const &fc)
     {
         constexpr uint32_t EVAL_GRAPH = abi_encode_selector(
-            "evalGraph(address,(uint8,uint16[],uint8,uint8,bytes)[])");
+            "evalGraph(address,((uint8,uint16[]),uint8,bytes)[])");
         if (calldata.size() < 4) {
             die("the calldata has no selector");
         }
@@ -405,7 +400,7 @@ namespace
             }
             offsets.push_back(offset.value().native().as_words()[0]);
         }
-        std::vector<byte_string> inputs;
+        std::vector<TensorInput> inputs;
         for (size_t i = 0; i < fc.n_inputs(); i++) {
             if (offsets[i] != elements.size() - input.size()) {
                 fail();
@@ -415,32 +410,11 @@ namespace
                 fail();
             }
             TensorInput const &tensor_input = decoded.value();
-            TensorType const &type = fc.node_type(i);
-            if (!(tensor_input.type == type)) {
+            if (!(tensor_input.type == fc.node_type(i))) {
                 die("input " + std::to_string(i) +
                     " in the calldata doesn't have the graph's type for it");
             }
-            byte_string bytes(type.size_bytes(), 0);
-            Tensor tensor{type, bytes.data()};
-            if (auto const *const literal =
-                    std::get_if<byte_string_view>(&tensor_input.source)) {
-                copy_elements(
-                    type.dtype(),
-                    tensor_input.byte_order,
-                    *literal,
-                    bytes.data());
-            }
-            else if (
-                auto const *const ref =
-                    std::get_if<CodeRef>(&tensor_input.source)) {
-                if (load_code_tensor(
-                        state, *ref, tensor_input.byte_order, tensor)
-                        .has_error()) {
-                    die("input " + std::to_string(i) +
-                        "'s code reference doesn't hold a tensor of its type");
-                }
-            }
-            inputs.push_back(std::move(bytes));
+            inputs.push_back(tensor_input);
         }
         return inputs;
     }
@@ -482,22 +456,16 @@ namespace
         if (fc.validation_result() != GraphEvalError::Success) {
             die("the graph doesn't validate");
         }
-        std::vector<byte_string> const inputs =
-            read_calldata_inputs(read_hex(calldata_path), fc, state);
+        // The inputs as run_graph is given them, already decoded. Their
+        // literals point into `calldata`
+        byte_string const calldata = read_hex(calldata_path);
+        std::vector<TensorInput> const tensor_inputs =
+            read_calldata_inputs(calldata, fc);
 
         auto *const arena = static_cast<uint8_t *>(
             std::aligned_alloc(TENSOR_DATA_ALIGNMENT, ARENA_SIZE));
         MONAD_ASSERT(arena);
 
-        // The inputs as literals, as run_graph is given them, already decoded
-        std::vector<TensorInput> tensor_inputs;
-        tensor_inputs.reserve(inputs.size());
-        for (size_t i = 0; i < inputs.size(); i++) {
-            tensor_inputs.push_back(TensorInput{
-                fc.node_type(i),
-                ByteOrder::LittleEndian,
-                byte_string_view{inputs[i]}});
-        }
         // One call in a Fine interpreter, FineInterpreter or
         // FineFastInterpreter, which copies the inputs into its arena
         auto const run = [&]<typename Engine>(std::string const &name) {

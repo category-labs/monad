@@ -976,11 +976,10 @@ Result<void> FineFastInterpreter::load_inputs()
         if (auto const *const data =
                 std::get_if<byte_string_view>(&input.source)) {
             copy_elements(
-                input.type.dtype(), input.byte_order, *data, tensor.data());
+                input.type.dtype(), ByteOrder::BigEndian, *data, tensor.data());
         }
         else if (auto const *const ref = std::get_if<CodeRef>(&input.source)) {
-            BOOST_OUTCOME_TRY(
-                load_code_tensor(state_, *ref, input.byte_order, tensor));
+            BOOST_OUTCOME_TRY(load_code_tensor(state_, *ref, tensor));
         }
     }
     return outcome::success();
@@ -1456,8 +1455,7 @@ Result<void> FineFastInterpreter::run_op(
         skip<TensorType>(code);
         auto const address = take<Address>(code);
         auto const offset = take<uint32_t>(code);
-        return load_code_tensor(
-            state_, CodeRef{address, offset}, ByteOrder::LittleEndian, out);
+        return load_code_tensor(state_, CodeRef{address, offset}, out);
     }
     case FineOp::Transpose: {
         auto const axis0 = take<uint8_t>(code);

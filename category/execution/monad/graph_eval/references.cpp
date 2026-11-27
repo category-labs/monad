@@ -28,8 +28,7 @@
 
 MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
 
-Result<void> load_code_tensor(
-    State &state, CodeRef const &ref, ByteOrder const order, Tensor &out)
+Result<void> load_code_tensor(State &state, CodeRef const &ref, Tensor &out)
 {
     vm::SharedVarcode const varcode = state.get_code(ref.address);
     std::span<uint8_t const> const code = varcode->intercode()->code_span();
@@ -39,7 +38,10 @@ Result<void> load_code_tensor(
         return GraphEvalError::InvalidTensorRef;
     }
     copy_elements(
-        out.type().dtype(), order, code.subspan(ref.offset, size), out.data());
+        out.type().dtype(),
+        ByteOrder::LittleEndian,
+        code.subspan(ref.offset, size),
+        out.data());
     return outcome::success();
 }
 

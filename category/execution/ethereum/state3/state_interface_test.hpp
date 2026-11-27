@@ -1219,6 +1219,76 @@ TYPED_TEST_P(StateInterfaceTest, RejectedRecreationRestoresIncarnation)
     EXPECT_TRUE(st.account_exists(A));
 }
 
+// Production keeps the transaction's original-storage cache across frame
+// rollback, including a zero cached while an account is re-created.
+TYPED_TEST_P(StateInterfaceTest, RejectedRecreationRetainsOriginalStorageCache)
+{
+    using namespace interface_test;
+    auto &st = this->given(
+        PreState{}.with(A, Account{.balance = 3}, {{word(5), word(7)}}));
+    st.push();
+    st.create_contract(A);
+    EXPECT_EQ(st.get_storage(A, word(5)), ZERO);
+    EXPECT_EQ(st.set_storage(A, word(5), word(9)), StorageStatus::Added);
+    st.pop_reject();
+    EXPECT_FALSE(st.is_current_incarnation(A));
+    EXPECT_EQ(st.get_balance(A), 3);
+    EXPECT_EQ(st.get_storage(A, word(5)), ZERO);
+
+    // The cache is transaction-local: rejecting the write did not change
+    // the block state or the witness value.
+    this->next_transaction();
+    auto &next = this->state();
+    EXPECT_TRUE(next.account_exists(A));
+    EXPECT_EQ(next.get_storage(A, word(5)), word(7));
+}
+
+TYPED_TEST_P(StateInterfaceTest, RejectedRecreationWithoutStoreRestoresStorage)
+{
+    using namespace interface_test;
+    auto &st = this->given(
+        PreState{}.with(A, Account{.balance = 3}, {{word(5), word(7)}}));
+    st.push();
+    st.create_contract(A);
+    EXPECT_EQ(st.get_storage(A, word(5)), ZERO);
+    st.pop_reject();
+    // A read under the new incarnation does not populate native original_.
+    EXPECT_EQ(st.get_storage(A, word(5)), word(7));
+}
+
+TYPED_TEST_P(StateInterfaceTest, AcceptedRecreationChildRetainsOriginalCache)
+{
+    using namespace interface_test;
+    auto &st = this->given(
+        PreState{}.with(A, Account{.balance = 3}, {{word(5), word(7)}}));
+    st.push();
+    st.push();
+    st.create_contract(A);
+    EXPECT_EQ(st.set_storage(A, word(5), word(9)), StorageStatus::Added);
+    EXPECT_EQ(st.set_storage(A, word(5), word(11)), StorageStatus::Assigned);
+    st.pop_accept();
+    st.pop_reject();
+    EXPECT_EQ(st.get_storage(A, word(5)), ZERO);
+    // Both the current fallback and SSTORE's original use the retained cache.
+    EXPECT_EQ(st.set_storage(A, word(5), word(13)), StorageStatus::Added);
+    EXPECT_EQ(st.get_storage(A, word(5)), word(13));
+}
+
+TYPED_TEST_P(StateInterfaceTest, RejectedRecreationOfEarlierTransactionSlot)
+{
+    using namespace interface_test;
+    auto &first = this->given(PreState{}.with(A, Account{.balance = 3}));
+    EXPECT_EQ(first.set_storage(A, word(5), word(7)), StorageStatus::Added);
+    this->next_transaction();
+    auto &st = this->state();
+    st.push();
+    st.create_contract(A);
+    EXPECT_EQ(st.set_storage(A, word(5), word(9)), StorageStatus::Added);
+    st.pop_reject();
+    // A block-written slot is not necessarily written in this transaction.
+    EXPECT_EQ(st.get_storage(A, word(5)), ZERO);
+}
+
 REGISTER_TYPED_TEST_SUITE_P(
     StateInterfaceTest, AccountExists, GetBalance, AddToBalance, GetNonce,
     SetNonce, GetCodeHash, AccountHasCodeOrNonce, CreateContract,
@@ -1243,6 +1313,10 @@ REGISTER_TYPED_TEST_SUITE_P(
     DestructSuicidesOnlyCreatedInTransaction, DestructTouchedDead,
     DestructTouchedDeadSparesTheUntouched,
     RecreatedAccountStartsWithEmptyStorage,
-    RejectedRecreationRestoresIncarnation);
+    RejectedRecreationRestoresIncarnation,
+    RejectedRecreationRetainsOriginalStorageCache,
+    RejectedRecreationWithoutStoreRestoresStorage,
+    AcceptedRecreationChildRetainsOriginalCache,
+    RejectedRecreationOfEarlierTransactionSlot);
 
 MONAD_TEST_NAMESPACE_END

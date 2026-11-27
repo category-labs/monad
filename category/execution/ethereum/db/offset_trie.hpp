@@ -529,8 +529,8 @@ public:
 
     // Account-trie root, NULL_ID while the trie is empty. upsert_node and
     // erase_node keep a materialised root's id stable, so a caller only
-    // reassigns it across the empty/non-empty transitions — exactly as
-    // PartialTrieDb::commit already threads a storage sub-root.
+    // reassigns it across the empty/non-empty transitions — exactly as the
+    // guest State's commit threads a storage sub-root.
     NodeId root;
 
     NodeViewBase empty() const
@@ -550,6 +550,20 @@ public:
             id == NULL_ID || (static_cast<uint64_t>(id) >= HEADER_LEN &&
                               static_cast<uint64_t>(id) < blob_.size()));
         return NodeViewBase{blob_.data() + static_cast<uint64_t>(id)};
+    }
+
+    // The id of a view the blob holds, i.e. one from get_original or
+    // find_original: its offset. The overlay is not addressable this way,
+    // and a view into it aborts.
+    NodeId id_of(NodeViewBase const v) const
+    {
+        // Compared as integers: a view outside the blob points into another
+        // array, where pointer subtraction is undefined.
+        auto const p = reinterpret_cast<uintptr_t>(v.bytes());
+        // NOLINTNEXTLINE(bugprone-suspicious-stringview-data-usage)
+        auto const base = reinterpret_cast<uintptr_t>(blob_.data());
+        MONAD_ASSERT(p >= base && p - base < blob_.size());
+        return NodeId{p - base};
     }
 
     // Current bytes for `id` — overlay entry if present, else the blob.

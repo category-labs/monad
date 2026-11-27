@@ -72,7 +72,6 @@
 #include <limits>
 #include <optional>
 #include <signal.h>
-#include <stdexcept>
 #include <string>
 #include <sys/sysinfo.h>
 #include <unistd.h>
@@ -154,7 +153,6 @@ try {
     std::optional<unsigned> ro_sq_thread_cpu;
     fs::path dbname_path;
     fs::path db_stats_file;
-    fs::path snapshot;
     fs::path dump_snapshot;
     std::string statesync;
     fs::path chain_rlp_path;
@@ -222,24 +220,8 @@ try {
            "timeout in seconds for reading blocks from blockdb (0 = no retry)")
         ->needs(as_eth_blocks_flag);
     cli.add_option("--chain-rlp", chain_rlp_path, "path to chain rlp file");
-    auto *const group =
-        cli.add_option_group("load", "methods to initialize the db");
-    group
-        ->add_option(
-            "--snapshot", snapshot, "snapshot file path to load db from")
-        ->check([](std::string const &s) -> std::string {
-            fs::path const path{s};
-            if (!fs::is_regular_file(path / "accounts")) {
-                return "missing accounts";
-            }
-            if (!fs::is_regular_file(path / "code")) {
-                return "missing code";
-            }
-            return "";
-        });
-    group->add_option(
+    cli.add_option(
         "--statesync", statesync, "socket for statesync communication");
-    group->require_option(0, 1);
     CLI::Option const *const exec_event_ring_option =
         cli.add_option(
                "--exec-event-ring",
@@ -370,25 +352,7 @@ try {
 
     // Note: in memory db block number is always zero
     uint64_t const init_block_num = [&] {
-        if (!snapshot.empty()) {
-            if (triedb.get_root() != nullptr) {
-                throw std::runtime_error(
-                    "can not load checkpoint into non-empty database");
-            }
-            LOG_INFO("Loading from binary checkpoint in {}", snapshot);
-            std::ifstream accounts(snapshot / "accounts");
-            std::ifstream code(snapshot / "code");
-            auto const n = std::stoul(snapshot.stem());
-            auto root = load_from_binary(raw_db, accounts, code, n);
-            // load the eth header for snapshot
-            BlockDb block_db{block_db_path};
-            Block block;
-            MONAD_ASSERT_PRINTF(
-                block_db.get(n, block), "FATAL: Could not load block %lu", n);
-            root = load_header(std::move(root), raw_db, block.header);
-            triedb.reset_root(std::move(root), n);
-        }
-        else if (triedb.get_root() == nullptr) {
+        if (triedb.get_root() == nullptr) {
             MONAD_ASSERT(statesync.empty());
             LOG_INFO("loading from genesis");
             GenesisState const genesis_state = chain->get_genesis_state();

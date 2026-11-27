@@ -35,27 +35,30 @@ quick_status_code_from_enum<monad::graph_eval::GraphEvalError>::value_mappings()
 {
     using monad::graph_eval::GraphEvalError;
 
+    // Every error has the same message. A failed precompile call reverts with
+    // its error's message as the revert data (check_call_monad_precompile), so
+    // the revert data doesn't identify the failure condition. Calldata too
+    // short for the shared ABI helpers fails with AbiDecodeError::InputTooShort
+    // instead, and reverts with that error's message
+    //
+    // TODO: consider standardizing on a small set of visible messages
     static std::initializer_list<mapping> const v = {
         {GraphEvalError::Success, "success", {errc::success}},
-        {GraphEvalError::MethodNotSupported, "method not supported", {}},
-        {GraphEvalError::ValueNonZero, "value is nonzero", {}},
-        {GraphEvalError::InvalidInput, "input is invalid", {}},
-        {GraphEvalError::ArityError, "wrong number of inputs or outputs", {}},
-        {GraphEvalError::RankError, "tensor rank is invalid", {}},
-        {GraphEvalError::ShapeError, "tensor shape is invalid", {}},
-        {GraphEvalError::TypeError, "tensor dtype is invalid", {}},
-        {GraphEvalError::InvalidOp, "op is invalid", {}},
-        {GraphEvalError::GraphValidationError, "graph is invalid", {}},
-        {GraphEvalError::OutOfMemory, "graph needs too much memory", {}},
-        {GraphEvalError::InternalError, "internal error", {}},
-        {GraphEvalError::DivisionByZero, "division by zero", {}},
-        {GraphEvalError::DomainError,
-         "argument is outside the op's domain",
-         {}},
-        {GraphEvalError::InvalidTensorRef,
-         "tensor reference doesn't match its data",
-         {}},
-        {GraphEvalError::IndexError, "index is out of range", {}},
+        {GraphEvalError::MethodNotSupported, "graph eval error", {}},
+        {GraphEvalError::ValueNonZero, "graph eval error", {}},
+        {GraphEvalError::InvalidInput, "graph eval error", {}},
+        {GraphEvalError::ArityError, "graph eval error", {}},
+        {GraphEvalError::RankError, "graph eval error", {}},
+        {GraphEvalError::ShapeError, "graph eval error", {}},
+        {GraphEvalError::TypeError, "graph eval error", {}},
+        {GraphEvalError::InvalidOp, "graph eval error", {}},
+        {GraphEvalError::GraphValidationError, "graph eval error", {}},
+        {GraphEvalError::OutOfMemory, "graph eval error", {}},
+        {GraphEvalError::InternalError, "graph eval error", {}},
+        {GraphEvalError::DivisionByZero, "graph eval error", {}},
+        {GraphEvalError::DomainError, "graph eval error", {}},
+        {GraphEvalError::InvalidTensorRef, "graph eval error", {}},
+        {GraphEvalError::IndexError, "graph eval error", {}},
     };
 
     return v;

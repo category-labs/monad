@@ -210,6 +210,15 @@ struct StateHost final : public StateHostBase
             if (is_precompile<traits>(address)) {
                 return AccessStatus::Warm;
             }
+            // EIP-3651: the coinbase is warm for the whole transaction. Answer
+            // without adding it to the transaction's read set; otherwise
+            // BlockState::can_merge is likely to see a false conflict with the
+            // previous transaction's priority-fee credit.
+            if constexpr (traits::eip_3651_active()) {
+                if (address == tx_context_.block_coinbase) {
+                    return AccessStatus::Warm;
+                }
+            }
             return state_.access_account(address);
         }
         MONAD_CATCH(...)

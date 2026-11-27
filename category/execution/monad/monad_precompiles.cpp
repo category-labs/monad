@@ -112,19 +112,7 @@ std::optional<evmc::Result> check_call_monad_precompile(
         return std::nullopt;
     }
 
-    // Graph eval takes static calls and DELEGATECALLs too. The other
-    // precompiles take plain calls only. EIP-7702 delegated calls are rejected
-    // either way
-    constexpr bool is_graph_eval =
-        std::is_same_v<Contract, graph_eval::GraphEvalContract>;
-    if constexpr (is_graph_eval) {
-        if (MONAD_UNLIKELY(
-                (msg.kind != EVMC_CALL && msg.kind != EVMC_DELEGATECALL) ||
-                (msg.flags & ~static_cast<uint32_t>(EVMC_STATIC)) != 0)) {
-            return evmc::Result{evmc_status_code::EVMC_REJECTED};
-        }
-    }
-    else if (MONAD_UNLIKELY(msg.kind != EVMC_CALL) || (msg.flags != 0)) {
+    if (MONAD_UNLIKELY(msg.kind != EVMC_CALL) || (msg.flags != 0)) {
         return evmc::Result{evmc_status_code::EVMC_REJECTED};
     }
 
@@ -137,14 +125,11 @@ std::optional<evmc::Result> check_call_monad_precompile(
 
     Contract contract = Contract{state, call_tracer};
     auto const res = [&] {
-        if constexpr (is_graph_eval) {
+        if constexpr (std::is_same_v<Contract, graph_eval::GraphEvalContract>) {
             return (contract.*method)(
                 input,
                 graph_eval::CallContext{
-                    .sender = msg.sender,
-                    .value = msg.value,
-                    .delegatecall = msg.kind == EVMC_DELEGATECALL,
-                    .is_static = (msg.flags & EVMC_STATIC) != 0});
+                    .sender = msg.sender, .value = msg.value});
         }
         else {
             return (contract.*method)(input, msg.sender, msg.value);

@@ -228,18 +228,6 @@ Result<void> function_not_payable(uint256_be_t const &value)
     return outcome::success();
 }
 
-// TODO: under DELEGATECALL, no value is transferred, msg.value being the
-// caller's own, so the check that the precompile isn't paid is skipped. It
-// used to be there for every call, and rejected payable callers that had been
-// paid
-Result<void> check_not_paid(CallContext const &call)
-{
-    if (call.delegatecall) {
-        return outcome::success();
-    }
-    return function_not_payable(call.value);
-}
-
 template <Traits traits>
 Result<byte_string> GraphEvalContract::precompile_eval_op(
     byte_string_view input, CallContext const &call)
@@ -257,7 +245,7 @@ template <Traits traits>
 Result<byte_string> GraphEvalContract::precompile_eval_graph(
     byte_string_view input, CallContext const &call)
 {
-    BOOST_OUTCOME_TRY(check_not_paid(call));
+    BOOST_OUTCOME_TRY(function_not_payable(call.value));
 
     // Static: read GraphRef
     BOOST_OUTCOME_TRY(

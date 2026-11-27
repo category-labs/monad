@@ -28,15 +28,12 @@ MONAD_GRAPH_EVAL_NAMESPACE_BEGIN
 
 inline constexpr Address GRAPH_EVAL_CA = Address{0x1002};
 
-// How the precompile was called. Unlike the other Monad precompiles, it takes
-// static calls and DELEGATECALLs too
+// How the precompile was called. Like the other Monad precompiles, it takes
+// plain calls only
 struct CallContext
 {
     Address sender;
     uint256_be_t value;
-    bool delegatecall;
-    // In a static context, so it can't write to storage
-    bool is_static;
 };
 
 class GraphEvalContract

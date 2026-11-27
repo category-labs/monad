@@ -17,7 +17,9 @@ zkvm/
 │   ├── execute_witness.cpp
 │   ├── build_identity.cpp  # the ELF's commit marker
 │   ├── execute_block.cpp
-│   ├── x86_test_runner.cpp
+│   ├── keccak_accel.hpp    # Keccak-256 over a backend's Keccak-f
+│   ├── x86/                # x86 backend: test runner, Keccak entry points, tests
+│   ├── zisk/               # ZisK backend: Keccak entry points
 │   └── CMakeLists.txt
 ├── build-support/        # Cargo/CMake build helpers
 └── zisk/                 # ZisK guest crate

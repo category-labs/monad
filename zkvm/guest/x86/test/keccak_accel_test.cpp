@@ -22,17 +22,24 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <format>
+#include <initializer_list>
 #include <map>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
+
+#include <sys/mman.h>
+#include <unistd.h>
 
 // aws-lc's Keccak-f[1600] and its Keccak-256 with Ethereum's padding
 // (<openssl/digest.h>). The root CMakeLists.txt prefixes aws-lc's symbols
@@ -69,15 +76,16 @@ namespace
         return digest;
     }
 
+    void software_keccakf(uint64_t state[25])
+    {
+        AWS_KeccakF1600(reinterpret_cast<uint64_t(*)[5]>(state));
+    }
+
     // The backend under test. Its lookups follow hint_mode, and its inserts
     // record what the memo files.
     struct Executor
     {
-        static void keccakf(uint64_t state[25])
-        {
-            AWS_KeccakF1600(reinterpret_cast<uint64_t(*)[5]>(state));
-        }
-
+        static void keccakf(uint64_t state[25]);
         static uint64_t get_index(uint64_t const *state);
         static void set_index(uint64_t index);
     };
@@ -94,7 +102,7 @@ namespace
         OutOfRange, // Return an index beyond the table's allocation.
         Unpublished, // Return the scratch index, which is not a published
                      // entry.
-        Mismatch // Return entry 0 regardless of the requested state.
+        Mismatch // Return mismatch_index regardless of the requested state.
     };
 
     using State = std::array<uint64_t, KECCAKF_LANES>;
@@ -108,6 +116,12 @@ namespace
     size_t verified_entry_count = 0;
     size_t hint_lookup_count = 0; // Hint requests since the last reset.
     Hint hint_mode = Hint::Find;
+    // Lookups still to answer as Hint::Find before hint_mode applies.
+    size_t honest_lookup_count = 0;
+    uint64_t mismatch_index = 0;
+    size_t permutation_count = 0; // Backend permutations since the last reset.
+    // The index set_index filed, until the permutation it announces runs.
+    std::optional<uint64_t> filed_index;
 
     // Fail the running test from any depth, including the backend's functions.
     void require(bool const ok, std::string_view const message)
@@ -141,6 +155,10 @@ namespace
         }
         hint_lookup_count = 0;
         hint_mode = Hint::Find;
+        honest_lookup_count = 0;
+        mismatch_index = 0;
+        permutation_count = 0;
+        filed_index.reset();
     }
 
     // Start with an empty guest memo and executor registry; each scenario
@@ -166,7 +184,7 @@ namespace
                 expected_state,
                 recorded_inputs[i].data(),
                 sizeof(expected_state));
-            Executor::keccakf(expected_state);
+            software_keccakf(expected_state);
             require(
                 std::memcmp(
                     keccakf_memo[i].out,
@@ -182,6 +200,8 @@ namespace
         // Compare the complete digest with the reference, independently of
         // whether the memo accepted, rejected or skipped a hint.
         std::array<uint8_t, 32> actual{};
+        size_t const entries = recorded_entry_count;
+        size_t const permutations = permutation_count;
         keccak256_memo<Executor>(input, input_length, actual.data());
         auto const expected = reference_keccak256(input, input_length);
         require(
@@ -192,6 +212,15 @@ namespace
                 static_cast<unsigned>(hint_mode)));
         // A completed digest must have published every registered entry.
         require(keccakf_memo_used == recorded_entry_count, "publication count");
+        require(!filed_index, "filed an index without permuting its entry");
+        // While the table has room, a permutation always publishes an entry,
+        // so a hit runs none.
+        require(
+            recorded_entry_count - entries ==
+                std::min(
+                    permutation_count - permutations,
+                    KECCAKF_MEMO_ENTRIES - entries),
+            "permuted without publishing an entry");
         State const zero{};
         // The next input slot (or the spare when full) must be ready for a
         // short digest, which does not overwrite all 200 bytes.
@@ -271,6 +300,23 @@ namespace
     };
 }
 
+void Executor::keccakf(uint64_t state[25])
+{
+    ++permutation_count;
+    if (filed_index) {
+        // The executor caches the state this permutation reads, not the
+        // entry, under the filed index.
+        require(
+            std::memcmp(
+                state,
+                recorded_inputs[*filed_index].data(),
+                KECCAKF_STATE_BYTES) == 0,
+            "permuted a state other than the filed entry's input");
+        filed_index.reset();
+    }
+    software_keccakf(state);
+}
+
 void Executor::set_index(uint64_t const index)
 {
     // The guest registers this index immediately before the real permutation.
@@ -284,6 +330,8 @@ void Executor::set_index(uint64_t const index)
         KECCAKF_STATE_BYTES);
     index_of_input.emplace(recorded_inputs[index], index);
     ++recorded_entry_count;
+    require(!filed_index, "filed two indices for one permutation");
+    filed_index = index;
 }
 
 uint64_t Executor::get_index(uint64_t const *const state)
@@ -291,7 +339,12 @@ uint64_t Executor::get_index(uint64_t const *const state)
     // Deliberately return bad hints in the adversarial modes. Rejection must
     // happen in the production memo code, not in this simulated executor.
     ++hint_lookup_count;
-    switch (hint_mode) {
+    Hint mode = hint_mode;
+    if (honest_lookup_count > 0) {
+        --honest_lookup_count;
+        mode = Hint::Find;
+    }
+    switch (mode) {
     case Hint::Missing:
         return KECCAKF_INDEX_NOT_FOUND;
     case Hint::OutOfRange:
@@ -300,7 +353,7 @@ uint64_t Executor::get_index(uint64_t const *const state)
         // The scratch input matches, but its output is not a cached result.
         return recorded_entry_count;
     case Hint::Mismatch:
-        return 0;
+        return mismatch_index;
     case Hint::Find: {
         State key;
         std::memcpy(key.data(), state, KECCAKF_STATE_BYTES);
@@ -345,6 +398,50 @@ TEST_P(KeccakEntryPoints, lengths_alignments_and_patterns)
             }
         }
     }
+}
+
+// Callers hash a buffer into itself (keccak_inplace_to_root_hash).
+TEST_P(KeccakEntryPoints, output_aliases_input)
+{
+    for (size_t const input_length :
+         {0u, 1u, 31u, 32u, 33u, 135u, 136u, 137u, 532u, 544u}) {
+        std::array<uint8_t, max_input_length> buffer;
+        std::memcpy(buffer.data(), longer.data(), buffer.size());
+        auto const expected = reference_keccak256(buffer.data(), input_length);
+        GetParam()(buffer.data(), input_length, buffer.data());
+        ASSERT_TRUE(std::equal(expected.begin(), expected.end(), buffer.data()))
+            << "length=" << input_length;
+    }
+}
+
+// The buffers above extend past every input, which hides a read outside it.
+// Place inputs flush against an inaccessible page on either side instead.
+TEST_P(KeccakEntryPoints, reads_stay_inside_input)
+{
+    auto const page_size = static_cast<size_t>(sysconf(_SC_PAGESIZE));
+    ASSERT_GE(page_size, max_input_length);
+    void *const mapping = mmap(
+        nullptr, 3 * page_size, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    ASSERT_NE(mapping, MAP_FAILED);
+    auto *const page = static_cast<uint8_t *>(mapping) + page_size;
+    ASSERT_EQ(mprotect(page, page_size, PROT_READ | PROT_WRITE), 0);
+    for (size_t i = 0; i < page_size; ++i) {
+        page[i] = static_cast<uint8_t>(i * 37 + 11);
+    }
+    uint8_t const *const page_begin = page;
+    uint8_t const *const page_end = page + page_size;
+    for (size_t input_length = 0; input_length <= max_input_length;
+         ++input_length) {
+        for (uint8_t const *const input :
+             {page_begin, page_end - input_length}) {
+            ASSERT_EQ(
+                digest_with(GetParam(), input, input_length),
+                reference_keccak256(input, input_length))
+                << "length=" << input_length
+                << ", page offset=" << input - page_begin;
+        }
+    }
+    ASSERT_EQ(munmap(mapping, 3 * page_size), 0);
 }
 
 // Every remainder, input alignment and pattern: misses followed by hits.
@@ -445,6 +542,136 @@ TEST(KeccakMemo, capacity_only_mismatch)
         hint_lookup_count == 3, "expected a hit, then a miss, then no lookup");
 }
 
+// The mirror of capacity_only_mismatch: the published entry has the non-zero
+// capacity, and a digest's first state, whose capacity is zero, has its rate.
+TEST(KeccakMemo, first_state_capacity_mismatch)
+{
+    reset();
+    check(longer.data(), KECCAK_RATE);
+    // Choose a second block that turns entry 0's output rate into a padded
+    // five-byte message: entry 2 then has that rate over a non-zero capacity.
+    uint8_t const message[5] = {1, 2, 3, 4, 5};
+    std::array<uint8_t, KECCAK_RATE> padded{};
+    std::memcpy(padded.data(), message, sizeof(message));
+    padded[sizeof(message)] = 0x01;
+    padded[KECCAK_RATE - 1] = 0x80;
+    std::array<uint8_t, 2 * KECCAK_RATE> input;
+    std::memcpy(input.data(), longer.data(), KECCAK_RATE);
+    auto const *const output_rate =
+        reinterpret_cast<uint8_t const *>(keccakf_memo[0].out);
+    for (size_t i = 0; i < KECCAK_RATE; ++i) {
+        input[KECCAK_RATE + i] =
+            static_cast<uint8_t>(padded[i] ^ output_rate[i]);
+    }
+    check(input.data(), input.size());
+    require(
+        std::memcmp(keccakf_memo[2].in, padded.data(), KECCAK_RATE) == 0,
+        "fixture rate is not the padded message");
+    State const zero{};
+    require(
+        std::memcmp(keccakf_memo[2].in + 17, zero.data(), 64) != 0,
+        "fixture has a zero capacity");
+
+    hint_mode = Hint::Mismatch;
+    mismatch_index = 2;
+    size_t const permutations = permutation_count;
+    // As the only block of a digest, then as the first of two.
+    check(message, sizeof(message));
+    check(padded.data(), padded.size());
+    require(
+        permutation_count == permutations + 3,
+        "accepted an entry with a different capacity");
+}
+
+// A state that differs from a published input in any one byte must miss.
+// Drive the policy directly: a sponge cannot choose its capacity.
+TEST(KeccakMemo, single_byte_mismatch)
+{
+    reset();
+    State base;
+    std::memcpy(base.data(), longer.data(), KECCAKF_STATE_BYTES);
+    auto const permute = [](State const &input) {
+        KeccakMemo<Executor> policy;
+        uint64_t *const state = policy.first();
+        std::memcpy(state, input.data(), KECCAKF_STATE_BYTES);
+        uint64_t const *const output = policy.permute(state);
+        policy.finish(state);
+        return output;
+    };
+    permute(base);
+    require(recorded_entry_count == 1, "fixture was not published");
+    for (size_t byte = 0; byte < KECCAKF_STATE_BYTES; ++byte) {
+        State probe = base;
+        reinterpret_cast<uint8_t *>(probe.data())[byte] ^= 0x01;
+        hint_mode = Hint::Mismatch;
+        uint64_t const *const output = permute(probe);
+        require(
+            output != keccakf_memo[0].out && recorded_entry_count == 2,
+            std::format("accepted a state that differs in byte {}", byte));
+        verify_entries(0);
+        truncate(1);
+    }
+    hint_mode = Hint::Mismatch;
+    require(
+        permute(base) == keccakf_memo[0].out && recorded_entry_count == 1,
+        "rejected an identical state");
+}
+
+// Inputs that extend earlier ones hit on the blocks they share and compute
+// the rest, on the general path and on the 532-byte one.
+TEST(KeccakMemo, shared_prefixes)
+{
+    reset();
+    // Each length, then the permutations left to run after the hits.
+    for (auto const &[input_length, expected_permutations] :
+         std::initializer_list<std::pair<size_t, size_t>>{
+             {136, 2},
+             {137, 1},
+             {272, 2},
+             {408, 2},
+             {532, 1},
+             {544, 2},
+             {1088, 5},
+             {1089, 1},
+             {532, 0}}) {
+        size_t const permutations = permutation_count;
+        check(longer.data(), input_length);
+        require(
+            permutation_count == permutations + expected_permutations,
+            std::format("shared prefix: length={}", input_length));
+    }
+}
+
+// A lie about a digest's first state ends its lookups, so dishonest_hints
+// never lies about a later one. Lie only after some hits.
+TEST(KeccakMemo, dishonest_hint_after_hits)
+{
+    for (auto const mode :
+         {Hint::Missing, Hint::OutOfRange, Hint::Unpublished, Hint::Mismatch}) {
+        for (size_t const input_length : {272u, 532u, 1088u}) {
+            size_t const states = input_length / KECCAK_RATE + 1;
+            for (size_t hits = 1; hits < states; ++hits) {
+                reset();
+                uint8_t const seed = 0x42;
+                check(&seed, 1);
+                check(longer.data(), input_length);
+                size_t const permutations = permutation_count;
+                size_t const lookups = hint_lookup_count;
+                honest_lookup_count = hits;
+                hint_mode = mode;
+                check(longer.data(), input_length);
+                require(
+                    permutation_count == permutations + states - hits,
+                    "did not recompute every state from the lie on");
+                require(
+                    hint_lookup_count == lookups + hits + 1,
+                    "expected a lookup per hit and one for the lie");
+                check(nullptr, 0);
+            }
+        }
+    }
+}
+
 TEST(KeccakMemo, full_table)
 {
     // Cross the end of the table with five down to zero free entries. Both
@@ -491,8 +718,12 @@ TEST(KeccakMemo, full_table)
         uint32_t const cached = 3;
         hint_mode = Hint::Find;
         size_t const lookups = hint_lookup_count;
+        size_t const permutations = permutation_count;
         check(&cached, sizeof(cached));
         require(hint_lookup_count == lookups + 1, "full table skipped lookup");
+        require(
+            permutation_count == permutations,
+            "full table recomputed a published entry");
     }
     verify_entries(0);
 

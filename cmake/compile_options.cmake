@@ -45,6 +45,14 @@ function(monad_compile_options target)
       target_compile_definitions(${target} PUBLIC "MONAD_COMPILER_HOT_PATH_STATS=1")
   endif()
 
+  if(MONAD_HARDENING)
+    target_compile_definitions(${target} PUBLIC "_GLIBCXX_ASSERTIONS")
+    target_compile_options(
+      ${target}
+      PRIVATE
+        "$<$<COMPILE_LANGUAGE:C,CXX>:-fsanitize=bounds;-fsanitize-trap=bounds;-fstrict-flex-arrays=3;-ftrivial-auto-var-init=zero>")
+  endif()
+
   target_compile_options(
     ${target}
     PUBLIC $<$<CXX_COMPILER_ID:GNU>:-Wno-attributes=clang::no_sanitize>)

@@ -166,7 +166,7 @@ public:
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wpedantic"
-    unsigned char fnext_data[0];
+    unsigned char fnext_data[];
 #pragma GCC diagnostic pop
 
     /* Member funcs and data layout that exceeds node struct size is organized

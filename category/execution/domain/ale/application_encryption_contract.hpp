@@ -40,10 +40,10 @@ byte_string sealed_blob_ad(
     uint64_t dest_domain, Address const &to, byte_string_view app_ctx);
 
 // abi.encode("monad-precompile-randomness-v1", address tx_origin,
-// uint64 tx_nonce, uint64 seal_index, address caller, bytes destination_key,
+// uint64 tx_nonce, uint64 call_sequence, address caller, bytes destination_key,
 // bytes ad, bytes blob).
 byte_string sealed_blob_randomness_input(
-    Address const &tx_origin, uint64_t tx_nonce, uint64_t seal_index,
+    Address const &tx_origin, uint64_t tx_nonce, uint64_t call_sequence,
     Address const &caller, bytes32_t const &destination_key,
     byte_string_view ad, byte_string_view blob);
 
@@ -54,11 +54,12 @@ byte_string sealed_message_ad(
     uint256_t const &sequence_number);
 
 // abi.encode("monad-cross-domain-randomness-v1", uint256 sequence_number,
-// address from, address tx_origin, uint64 tx_nonce, bytes destination_key,
-// bytes ad, bytes plaintext). `from` is the original sender in the plaintext.
+// address from, address tx_origin, uint64 tx_nonce, uint64 call_sequence,
+// bytes destination_key, bytes ad, bytes plaintext). `from` is the original
+// sender in the plaintext.
 byte_string sealed_message_randomness_input(
     uint256_t const &sequence_number, Address const &from,
-    Address const &tx_origin, uint64_t tx_nonce,
+    Address const &tx_origin, uint64_t tx_nonce, uint64_t call_sequence,
     bytes32_t const &destination_key, byte_string_view ad,
     byte_string_view plaintext);
 
@@ -76,17 +77,14 @@ class ApplicationEncryptionContract
     ApplicationEncryptionContext const &encryption_context_;
     Address const tx_origin_;
     uint64_t const tx_nonce_;
-
-    uint64_t next_seal_index();
+    uint64_t const call_sequence_;
 
 public:
     static constexpr uint256_t SPOKE_VIEWING_KEYS_SLOT{7};
-    // Transient slot under ALE_CA, shared by blob Seal calls in a transaction.
-    static constexpr bytes32_t SEAL_INDEX_SLOT{0};
 
     ApplicationEncryptionContract(
         State &, CallTracerBase &, ApplicationEncryptionContext const &,
-        Address const &tx_origin, uint64_t tx_nonce,
+        Address const &tx_origin, uint64_t tx_nonce, uint64_t call_sequence,
         bool log_native_transfers = false);
 
     using PrecompileFunc =

@@ -14,7 +14,6 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <category/core/address.hpp>
-#include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
@@ -38,7 +37,6 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <limits>
 #include <string_view>
 #include <utility>
 
@@ -106,7 +104,7 @@ byte_string sealed_blob_ad(
 
 byte_string sealed_blob_randomness_input(
     Address const &tx_origin, uint64_t const tx_nonce,
-    uint64_t const seal_index, Address const &caller,
+    uint64_t const call_sequence, Address const &caller,
     bytes32_t const &destination_key, byte_string_view const ad,
     byte_string_view const blob)
 {
@@ -114,7 +112,7 @@ byte_string sealed_blob_randomness_input(
     encoder.add_string(SEALED_BLOB_RANDOMNESS_LABEL);
     encoder.add_address(tx_origin);
     encoder.add_uint(u64_be{tx_nonce});
-    encoder.add_uint(u64_be{seal_index});
+    encoder.add_uint(u64_be{call_sequence});
     encoder.add_address(caller);
     encoder.add_bytes({destination_key.bytes, sizeof(destination_key.bytes)});
     encoder.add_bytes(ad);
@@ -137,8 +135,8 @@ byte_string sealed_message_ad(
 byte_string sealed_message_randomness_input(
     uint256_t const &sequence_number, Address const &from,
     Address const &tx_origin, uint64_t const tx_nonce,
-    bytes32_t const &destination_key, byte_string_view const ad,
-    byte_string_view const plaintext)
+    uint64_t const call_sequence, bytes32_t const &destination_key,
+    byte_string_view const ad, byte_string_view const plaintext)
 {
     AbiEncoder encoder;
     encoder.add_string(SEALED_MESSAGE_RANDOMNESS_LABEL);
@@ -146,6 +144,7 @@ byte_string sealed_message_randomness_input(
     encoder.add_address(from);
     encoder.add_address(tx_origin);
     encoder.add_uint(u64_be{tx_nonce});
+    encoder.add_uint(u64_be{call_sequence});
     encoder.add_bytes({destination_key.bytes, sizeof(destination_key.bytes)});
     encoder.add_bytes(ad);
     encoder.add_bytes(plaintext);
@@ -177,13 +176,14 @@ ApplicationEncryptionContract::ApplicationEncryptionContract(
     State &state, CallTracerBase &tracer,
     ApplicationEncryptionContext const &encryption_context,
     Address const &tx_origin, uint64_t const tx_nonce,
-    bool const log_native_transfers)
+    uint64_t const call_sequence, bool const log_native_transfers)
     : state_{state}
     , call_tracer_{tracer}
     , log_native_transfers_{log_native_transfers}
     , encryption_context_{encryption_context}
     , tx_origin_{tx_origin}
     , tx_nonce_{tx_nonce}
+    , call_sequence_{call_sequence}
 {
 }
 
@@ -268,7 +268,14 @@ Result<byte_string> ApplicationEncryptionContract::precompile_seal_message(
         destination_domain.native(),
         sequence);
     auto const randomness_input = sealed_message_randomness_input(
-        sequence, from, tx_origin_, tx_nonce_, destination_key, ad, plaintext);
+        sequence,
+        from,
+        tx_origin_,
+        tx_nonce_,
+        call_sequence_,
+        destination_key,
+        ad,
+        plaintext);
 
     auto const ciphertext = encryption_context_.key.seal(
         plaintext, destination_key, ad, randomness_input);
@@ -278,19 +285,6 @@ Result<byte_string> ApplicationEncryptionContract::precompile_seal_message(
     AbiEncoder encoder;
     encoder.add_bytes(ciphertext.value());
     return encoder.encode_final();
-}
-
-uint64_t ApplicationEncryptionContract::next_seal_index()
-{
-    // Transient storage shares the index within one transaction and rolls
-    // increments back when the calling frame reverts.
-    auto const index = load_be<uint256_t>(
-        state_.get_transient_storage(ALE_CA, SEAL_INDEX_SLOT));
-    MONAD_ASSERT(index < uint256_t{std::numeric_limits<uint64_t>::max()});
-    auto const seal_index = static_cast<uint64_t>(index);
-    state_.set_transient_storage(
-        ALE_CA, SEAL_INDEX_SLOT, bytes32_t{seal_index + 1});
-    return seal_index;
 }
 
 Result<byte_string> ApplicationEncryptionContract::precompile_seal(
@@ -331,11 +325,10 @@ Result<byte_string> ApplicationEncryptionContract::precompile_seal(
             encryption_context_.spoke,
             SPOKE_VIEWING_KEYS_SLOT,
             dest_domain.native()));
-    auto const seal_index = next_seal_index();
     auto const randomness_input = sealed_blob_randomness_input(
         tx_origin_,
         tx_nonce_,
-        seal_index,
+        call_sequence_,
         msg_sender,
         destination_key,
         ad,

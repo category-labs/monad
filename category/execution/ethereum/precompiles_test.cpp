@@ -346,9 +346,9 @@ namespace
                     .code_address = code_address};
 
                 NoopCallTracer call_tracer{};
-                vm::Result const result =
-                    check_call_precompile<traits>(s, call_tracer, input, false)
-                        .value();
+                vm::Result const result = check_call_precompile<traits>(
+                                              s, call_tracer, input, false, 0)
+                                              .value();
 
                 if (auto const *expected_value =
                         std::get_if<byte_string>(&test_case.expected)) {
@@ -422,8 +422,9 @@ TYPED_TEST(TraitsTest, application_encryption_unavailable)
     State state{block_state, Incarnation{0, 0}};
     NoopCallTracer call_tracer;
     vm::Message const msg{.code_address = address};
-    EXPECT_FALSE(check_call_precompile<traits>(state, call_tracer, msg, false)
-                     .has_value());
+    EXPECT_FALSE(
+        check_call_precompile<traits>(state, call_tracer, msg, false, 0)
+            .has_value());
 }
 
 TYPED_TEST(TraitsTest, ecrecover)

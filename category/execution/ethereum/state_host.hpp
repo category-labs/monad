@@ -108,6 +108,11 @@ struct StateHost final : public StateHostBase
     std::optional<uint256_t> base_fee_per_gas_;
     uint64_t i_;
     ChainContext<traits> const &chain_ctx_;
+    // Host calls per transaction attempt. REVERT retains the count because
+    // ciphertext can escape in revert data. Exceptional halts discard their
+    // outputs and restore the count, since VM engines may execute different
+    // calls before halting.
+    uint64_t call_sequence_{0};
 
     StateHost(
         CallTracerBase &call_tracer, trace::StateTracer &state_tracer,
@@ -177,9 +182,12 @@ struct StateHost final : public StateHostBase
     {
         MONAD_TRY
         {
+            vm::Result result;
+
+            auto const previous = call_sequence_++;
             if (msg.kind == vm::CallKind::Create ||
                 msg.kind == vm::CallKind::Create2) {
-                auto result =
+                result =
                     ::monad::execute_create_message<traits>(this, state_, msg);
 
                 // EIP-211
@@ -190,17 +198,29 @@ struct StateHost final : public StateHostBase
                         result.gas_refund,
                         result.create_address};
                 }
-                return result;
             }
             else {
-                return ::monad::execute_call_message<traits>(this, state_, msg);
+                result =
+                    ::monad::execute_call_message<traits>(this, state_, msg);
             }
+
+            maybe_reset_call_sequence(previous, result.status_code);
+
+            return result;
         }
         MONAD_CATCH(...)
         {
             capture_current_exception();
         }
         stack_unwind();
+    }
+
+    void maybe_reset_call_sequence(
+        uint64_t const previous, CallStatus const status) noexcept
+    {
+        if (status != CallStatus::Success && status != CallStatus::Revert) {
+            call_sequence_ = previous;
+        }
     }
 
     virtual AccessStatus access_account(Address const &address) override
@@ -259,9 +279,9 @@ struct StateHost final : public StateHostBase
     }
 };
 
-static_assert(sizeof(StateHost<EvmTraits<EvmRevision::LatestStable>>) == 136);
+static_assert(sizeof(StateHost<EvmTraits<EvmRevision::LatestStable>>) == 144);
 static_assert(alignof(StateHost<EvmTraits<EvmRevision::LatestStable>>) == 8);
-static_assert(sizeof(StateHost<MonadTraits<MONAD_NEXT>>) == 136);
+static_assert(sizeof(StateHost<MonadTraits<MONAD_NEXT>>) == 144);
 static_assert(alignof(StateHost<MonadTraits<MONAD_NEXT>>) == 8);
 
 MONAD_NAMESPACE_END

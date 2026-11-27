@@ -29,7 +29,6 @@
 #include <category/execution/ethereum/core/contract/abi_encode.hpp>
 #include <category/execution/ethereum/db/trie_db.hpp>
 #include <category/execution/ethereum/db/util.hpp>
-#include <category/execution/ethereum/execute_message.hpp>
 #include <category/execution/ethereum/precompiles.hpp>
 #include <category/execution/ethereum/state2/block_state.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
@@ -45,6 +44,7 @@
 #include <category/vm/evm/call_status.hpp>
 #include <category/vm/evm/message.hpp>
 #include <category/vm/evm/monad/revision.h>
+#include <category/vm/evm/opcodes.hpp>
 #include <category/vm/evm/result.hpp>
 #include <category/vm/evm/traits.hpp>
 #include <category/vm/vm.hpp>
@@ -117,6 +117,7 @@ MC4CAQAwBQYDK2VuBCIEIBERERERERERERERERERERERERERERERERERERERERER
 
 struct ApplicationEncryptionContractTest : public ::testing::Test
 {
+    using traits = MonadTraits<MONAD_NEXT>;
     vm::VM vm;
     mpt::Db db{std::make_unique<InMemoryMachine>()};
     TrieDb trie_db{db};
@@ -127,12 +128,34 @@ struct ApplicationEncryptionContractTest : public ::testing::Test
     ApplicationEncryptionContext const encryption_context{
         SOURCE_DOMAIN, key, SPOKE_CA};
     ApplicationEncryptionContract contract{
-        state, call_tracer, encryption_context, TX_ORIGIN, TX_NONCE};
+        state, call_tracer, encryption_context, TX_ORIGIN, TX_NONCE, 0};
 
-    static uint256_t seal_index(State &current_state)
+    ChainContext<traits> chain_ctx = ChainContext<traits>::debug_empty();
+    BlockHashBufferFinalized const block_hashes;
+    vm::TxContext const tx_context = [] {
+        auto context = EMPTY_TX_CONTEXT;
+        context.tx_origin = TX_ORIGIN;
+        return context;
+    }();
+    Transaction const tx{.nonce = TX_NONCE};
+    trace::StateTracer state_tracer{std::monostate{}};
+    StateHost<traits> host{
+        call_tracer,
+        state_tracer,
+        tx_context,
+        block_hashes,
+        state,
+        tx,
+        std::nullopt,
+        0,
+        chain_ctx};
+
+    explicit ApplicationEncryptionContractTest(
+        vm::VM::Mode const mode = vm::VM::Dual)
+        : vm{mode}
     {
-        return load_be<uint256_t>(current_state.get_transient_storage(
-            ALE_CA, ApplicationEncryptionContract::SEAL_INDEX_SLOT));
+        chain_ctx.private_domain = true;
+        chain_ctx.encryption_context = &encryption_context;
     }
 
     byte_string seal_input(
@@ -184,18 +207,10 @@ struct ApplicationEncryptionContractTest : public ::testing::Test
             .code_address = ALE_CA};
     }
 
-    void seal(
-        ApplicationEncryptionContract &target,
-        Address const &sender = Address{1})
-    {
-        auto const result = target.precompile_seal(seal_input(), sender, {});
-        ASSERT_TRUE(result.has_value());
-    }
-
     vm::Result execute_seal()
     {
         auto const input = seal_calldata();
-        return execute_ale_call(seal_call(input));
+        return execute_message(seal_call(input));
     }
 
     vm::Result execute_seal_message(
@@ -203,31 +218,22 @@ struct ApplicationEncryptionContractTest : public ::testing::Test
     {
         auto const input =
             byte_string{0x57, 0x60, 0xb0, 0x4f} + seal_message_input(plaintext);
-        return execute_ale_call(seal_call(input, sender));
+        return execute_message(seal_call(input, sender));
     }
 
-    vm::Result execute_ale_call(vm::Message const &message)
+    vm::Result execute_message(vm::Message message)
     {
-        using traits = MonadTraits<MONAD_NEXT>;
-        auto chain_ctx = ChainContext<traits>::debug_empty();
-        chain_ctx.private_domain = true;
-        chain_ctx.encryption_context = &encryption_context;
-        BlockHashBufferFinalized const block_hashes;
-        auto tx_context = EMPTY_TX_CONTEXT;
-        tx_context.tx_origin = TX_ORIGIN;
-        Transaction const tx{.nonce = TX_NONCE};
-        trace::StateTracer state_tracer{std::monostate{}};
-        StateHost<traits> host{
-            call_tracer,
-            state_tracer,
-            tx_context,
-            block_hashes,
-            state,
-            tx,
-            std::nullopt,
-            0,
-            chain_ctx};
-        return execute_call_message<traits>(&host, state, message);
+        return execute_message(message, host);
+    }
+
+    vm::Result
+    execute_message(vm::Message message, StateHost<traits> &execution_host)
+    {
+        auto memory = vm.message_memory_ref();
+        message.memory_handle = memory.get();
+        message.memory = memory.get();
+        message.memory_capacity = vm.message_memory_capacity();
+        return execution_host.call(message);
     }
 };
 
@@ -300,7 +306,7 @@ TEST_F(
     for (auto const address : {staking::STAKING_CA, RESERVE_BALANCE_CA}) {
         vm::Message const msg{.code_address = address};
         EXPECT_FALSE(
-            check_call_precompile<traits>(state, call_tracer, msg, false)
+            check_call_precompile<traits>(state, call_tracer, msg, false, 0)
                 .has_value());
     }
 }
@@ -314,31 +320,31 @@ TEST_F(
     auto const msg = seal_call(input);
 
     auto const missing_context =
-        check_call_precompile<traits>(state, call_tracer, msg, false);
+        check_call_precompile<traits>(state, call_tracer, msg, false, 0);
     ASSERT_TRUE(missing_context.has_value());
     EXPECT_EQ(missing_context->status_code, CallStatus::Rejected);
 
     auto unrelated_msg = msg;
     unrelated_msg.recipient = Address{0x1234};
     unrelated_msg.code_address = unrelated_msg.recipient;
-    EXPECT_FALSE(
-        check_call_precompile<traits>(state, call_tracer, unrelated_msg, false)
-            .has_value());
+    EXPECT_FALSE(check_call_precompile<traits>(
+                     state, call_tracer, unrelated_msg, false, 0)
+                     .has_value());
     EXPECT_FALSE(check_call_precompile<MonadTraits<MONAD_TEN>>(
-                     state, call_tracer, msg, false)
+                     state, call_tracer, msg, false, 0)
                      .has_value());
 
     auto chain_ctx = ChainContext<traits>::debug_empty();
     chain_ctx.private_domain = true;
     auto const missing_encryption_context = check_call_precompile<traits>(
-        state, call_tracer, msg, false, &chain_ctx);
+        state, call_tracer, msg, false, 0, &chain_ctx);
     ASSERT_TRUE(missing_encryption_context.has_value());
     EXPECT_EQ(missing_encryption_context->status_code, CallStatus::Rejected);
 
     chain_ctx.encryption_context = &encryption_context;
     chain_ctx.private_domain = false;
     auto const public_context = check_call_precompile<traits>(
-        state, call_tracer, msg, false, &chain_ctx);
+        state, call_tracer, msg, false, 0, &chain_ctx);
     ASSERT_TRUE(public_context.has_value());
     EXPECT_EQ(public_context->status_code, CallStatus::Rejected);
 
@@ -347,11 +353,11 @@ TEST_F(
     tx_context.tx_origin = TX_ORIGIN;
     Transaction const tx{.nonce = TX_NONCE};
     auto const missing_tx_context = check_call_precompile<traits>(
-        state, call_tracer, msg, false, &chain_ctx, nullptr, &tx);
+        state, call_tracer, msg, false, 0, &chain_ctx, nullptr, &tx);
     ASSERT_TRUE(missing_tx_context.has_value());
     EXPECT_EQ(missing_tx_context->status_code, CallStatus::Rejected);
     auto const missing_transaction = check_call_precompile<traits>(
-        state, call_tracer, msg, false, &chain_ctx, &tx_context);
+        state, call_tracer, msg, false, 0, &chain_ctx, &tx_context);
     ASSERT_TRUE(missing_transaction.has_value());
     EXPECT_EQ(missing_transaction->status_code, CallStatus::Rejected);
 }
@@ -362,18 +368,18 @@ TEST_F(
 {
     state.set_nonce(SPOKE_CA, 1);
     state.set_storage(SPOKE_CA, DESTINATION_KEY_SLOT, DESTINATION_KEY);
-    state.set_transient_storage(
-        ALE_CA, ApplicationEncryptionContract::SEAL_INDEX_SLOT, bytes32_t{7});
+    host.call_sequence_ = 6;
     auto const result = execute_seal();
     ASSERT_EQ(result.status_code, CallStatus::Success);
+    EXPECT_EQ(host.call_sequence_, 7);
     EXPECT_EQ(result.gas_left, 900);
     EXPECT_EQ(result.gas_refund, 0);
-    EXPECT_EQ(seal_index(state), 8);
 
     // Python cryptography 50.0.2, RFC 9180 labeled HKDF and independently
-    // encoded ABI inputs: private key 0x11 * 32, TX_ORIGIN, TX_NONCE, index 7,
-    // caller 0x4321, DESTINATION_KEY, destination 0x510000004eaf, recipient
-    // 0x1234, app context 0xcd and plaintext 0xab. The return is ABI bytes.
+    // encoded ABI inputs: private key 0x11 * 32, TX_ORIGIN, TX_NONCE, call
+    // sequence 7, caller 0x4321, DESTINATION_KEY, destination 0x510000004eaf,
+    // recipient 0x1234, app context 0xcd and plaintext 0xab. The return is ABI
+    // bytes.
     auto const expected =
         from_hex(
             "0000000000000000000000000000000000000000000000000000000000000020"
@@ -386,7 +392,8 @@ TEST_F(
 }
 
 TEST_F(
-    ApplicationEncryptionContractTest, dispatch_seal_failure_rolls_back_index)
+    ApplicationEncryptionContractTest,
+    dispatch_seal_failure_retains_call_sequence)
 {
     state.set_nonce(SPOKE_CA, 1);
     // This nonzero low-order point passes the registry lookup but HPKE
@@ -394,17 +401,16 @@ TEST_F(
     bytes32_t low_order_key{};
     low_order_key.bytes[0] = 1;
     state.set_storage(SPOKE_CA, DESTINATION_KEY_SLOT, low_order_key);
-    state.set_transient_storage(
-        ALE_CA, ApplicationEncryptionContract::SEAL_INDEX_SLOT, bytes32_t{7});
+    host.call_sequence_ = 6;
     auto const result = execute_seal();
     EXPECT_EQ(result.status_code, CallStatus::Revert);
     EXPECT_EQ(result.gas_left, 0);
+    EXPECT_EQ(host.call_sequence_, 7);
     EXPECT_EQ(
         (std::string_view{
             reinterpret_cast<char const *>(result.output_data),
             result.output_size}),
         "application encryption failed");
-    EXPECT_EQ(seal_index(state), 7);
 }
 
 TEST_F(ApplicationEncryptionContractTest, destination_key_rejects_missing_spoke)
@@ -493,7 +499,6 @@ TEST_F(ApplicationEncryptionContractTest, seal_reads_destination_key)
     ASSERT_TRUE(absent_spoke.has_error());
     EXPECT_EQ(
         absent_spoke.assume_error(), ApplicationEncryptionError::SpokeNotFound);
-    EXPECT_EQ(seal_index(state), 0);
 
     state.set_nonce(SPOKE_CA, 1);
     auto const absent_key =
@@ -502,12 +507,10 @@ TEST_F(ApplicationEncryptionContractTest, seal_reads_destination_key)
     EXPECT_EQ(
         absent_key.assume_error(),
         ApplicationEncryptionError::DestinationKeyNotFound);
-    EXPECT_EQ(seal_index(state), 0);
 
     state.set_storage(SPOKE_CA, DESTINATION_KEY_SLOT, DESTINATION_KEY);
     auto const installed = contract.precompile_seal(input, Address{0x4321}, {});
     ASSERT_TRUE(installed.has_value());
-    EXPECT_EQ(seal_index(state), 1);
 }
 
 TEST_F(ApplicationEncryptionContractTest, seal_encrypts_dynamic_arguments)
@@ -564,7 +567,6 @@ TEST_F(ApplicationEncryptionContractTest, seal_rejects_truncated_arguments)
             byte_string_view{encoded}.substr(0, size), Address{0x4321}, {});
         ASSERT_TRUE(result.has_error());
         EXPECT_EQ(result.assume_error(), AbiDecodeError::InputTooShort);
-        EXPECT_EQ(seal_index(state), 0);
     }
 }
 
@@ -572,8 +574,6 @@ TEST_F(ApplicationEncryptionContractTest, seal_rejects_trailing_bytes)
 {
     state.set_nonce(SPOKE_CA, 1);
     state.set_storage(SPOKE_CA, DESTINATION_KEY_SLOT, RECIPIENT_KEY);
-    state.set_transient_storage(
-        ALE_CA, ApplicationEncryptionContract::SEAL_INDEX_SLOT, bytes32_t{7});
 
     for (auto const &suffix : {
              byte_string{0},
@@ -586,7 +586,6 @@ TEST_F(ApplicationEncryptionContractTest, seal_rejects_trailing_bytes)
             seal_input() + suffix, Address{0x4321}, {});
         ASSERT_TRUE(result.has_error());
         EXPECT_EQ(result.assume_error(), AbiDecodeError::InputTooLong);
-        EXPECT_EQ(seal_index(state), 7);
     }
 }
 
@@ -596,35 +595,37 @@ TEST_F(ApplicationEncryptionContractTest, seal_rejects_nonzero_value)
         contract.precompile_seal({}, Address{0x4321}, bytes32_t{1});
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.assume_error(), ApplicationEncryptionError::ValueNonZero);
-    EXPECT_EQ(seal_index(state), 0);
 }
 
-TEST_F(
-    ApplicationEncryptionContractTest,
-    seal_repeats_after_parent_revert_and_changes_with_index)
+TEST_F(ApplicationEncryptionContractTest, seal_changes_with_call_sequence)
 {
     state.set_nonce(SPOKE_CA, 1);
     state.set_storage(SPOKE_CA, DESTINATION_KEY_SLOT, DESTINATION_KEY);
-    state.push();
-    auto const discarded = execute_seal();
-    ASSERT_EQ(discarded.status_code, CallStatus::Success);
-    EXPECT_EQ(seal_index(state), 1);
-    state.pop_reject();
-    EXPECT_EQ(seal_index(state), 0);
-
-    auto const repeated = execute_seal();
-    ASSERT_EQ(repeated.status_code, CallStatus::Success);
-    EXPECT_EQ(seal_index(state), 1);
-    EXPECT_EQ(
-        (byte_string_view{repeated.output_data, repeated.output_size}),
-        (byte_string_view{discarded.output_data, discarded.output_size}));
-
-    auto const next = execute_seal();
-    ASSERT_EQ(next.status_code, CallStatus::Success);
-    EXPECT_EQ(seal_index(state), 2);
+    auto const first = execute_seal();
+    ASSERT_EQ(first.status_code, CallStatus::Success);
+    EXPECT_EQ(host.call_sequence_, 1);
+    auto const second = execute_seal();
+    ASSERT_EQ(second.status_code, CallStatus::Success);
+    EXPECT_EQ(host.call_sequence_, 2);
     EXPECT_NE(
-        (byte_string_view{next.output_data, next.output_size}),
-        (byte_string_view{repeated.output_data, repeated.output_size}));
+        (byte_string_view{first.output_data, first.output_size}),
+        (byte_string_view{second.output_data, second.output_size}));
+}
+
+TEST_F(
+    ApplicationEncryptionContractTest, seal_message_changes_with_call_sequence)
+{
+    state.set_nonce(SPOKE_CA, 1);
+    state.set_storage(SPOKE_CA, DESTINATION_KEY_SLOT, RECIPIENT_KEY);
+    auto const plaintext = message_plaintext(byte_string{0xab});
+    auto const first = execute_seal_message(plaintext);
+    ASSERT_EQ(first.status_code, CallStatus::Success);
+    auto const second = execute_seal_message(plaintext);
+    ASSERT_EQ(second.status_code, CallStatus::Success);
+    EXPECT_EQ(host.call_sequence_, 2);
+    EXPECT_NE(
+        (byte_string_view{first.output_data, first.output_size}),
+        (byte_string_view{second.output_data, second.output_size}));
 }
 
 TEST_F(
@@ -694,28 +695,26 @@ TEST_F(
 {
     state.set_nonce(SPOKE_CA, 1);
     state.set_storage(SPOKE_CA, DESTINATION_KEY_SLOT, RECIPIENT_KEY);
-    state.set_transient_storage(
-        ALE_CA, ApplicationEncryptionContract::SEAL_INDEX_SLOT, bytes32_t{9});
     auto const plaintext = message_plaintext(byte_string{0xab});
     auto const result = execute_seal_message(plaintext);
     ASSERT_EQ(result.status_code, CallStatus::Success);
-    EXPECT_EQ(seal_index(state), 9);
 
     // Generated in Python by encoding the ABI words, deriving the ephemeral
     // input with HMAC-SHA256, and applying RFC 9180 labeled HKDF.
-    // Python cryptography 46.0.5 supplies X25519 and AES-GCM.
-    // Source and recipient private keys are 0x11 * 32 and 0x22 * 32.
+    // Python cryptography 50.0.2 supplies X25519 and AES-GCM.
+    // Call sequence is 1. Source and recipient private keys are 0x11 * 32 and
+    // 0x22 * 32.
     auto const expected =
         from_hex(
             "0000000000000000000000000000000000000000000000000000000000000020"
             "00000000000000000000000000000000000000000000000000000000000000d0"
-            "8481dad014c233716067500fd3769d3158db2cdb526586b589cfaeaa3ad19055"
-            "34bd21af24f93b710c16bba76e96dcebc183ae6823524e38f00ddacd496800f7"
-            "f6046334842e201e17a3c0c2f21eac4d620cf28fca1080f5c926bb06c418f529"
-            "58bfe074ae52d0458430d78580da97dd9599469b0cfae8cb6e4c313ffe28e091"
-            "d9bf9e35bd5095caecc88e47a214892dab512a4267c7c0c6a8ff52d4e5a73231"
-            "6064e4d23f32986430d7315e818356861511c47a5f5ea6d36306c8dfc7d5a790"
-            "d66b100a2bd981162bc108c8deea546100000000000000000000000000000000")
+            "a51b2cfd4632d81d220c158d80ba542d5361aa809fd2886ab777f3ec42e6d346"
+            "f30a8910f6e3b9598bfa65abee04a2c76701befd9aa5537a18673bef3a9f59cd"
+            "885c4425e2649c75c75949cd073f25653648057005ca343b17fe9220101f0ddb"
+            "6b9b44ca0a37f2d7f0969f024029d1e9203c17d91d9e633d410e3482c6a460d8"
+            "fa77de8591449623fe61dd4137f3efa3e579508cba55b0a60790219cf12fffd9"
+            "37c0c90060f9bcb1164f222985d5e5adc55aaaf9a89127415ad1dd9c667c10bd"
+            "47f104c7dd12362ff278db60e52855af00000000000000000000000000000000")
             .value();
     EXPECT_EQ(
         (byte_string_view{result.output_data, result.output_size}), expected);
@@ -837,14 +836,15 @@ TEST(ApplicationEncryptionMessageEncoding, matches_abi_fixtures)
     // The original sender and transaction origin occupy distinct head words.
     auto const expected_randomness_input =
         from_hex(
-            "0000000000000000000000000000000000000000000000000000000000000100"
+            "0000000000000000000000000000000000000000000000000000000000000120"
             "0000000000000100000000000000000000000000000000000000000000000007"
             "0000000000000000000000000000000000000000000000000000000000004321"
             "00000000000000000000000089abcdef0123456789abcdef0123456789abcdef"
             "000000000000000000000000000000000000000000000000fedcba9876543210"
-            "0000000000000000000000000000000000000000000000000000000000000140"
-            "0000000000000000000000000000000000000000000000000000000000000180"
-            "00000000000000000000000000000000000000000000000000000000000001c0"
+            "0000000000000000000000000000000000000000000000000000000100000007"
+            "0000000000000000000000000000000000000000000000000000000000000160"
+            "00000000000000000000000000000000000000000000000000000000000001a0"
+            "00000000000000000000000000000000000000000000000000000000000001e0"
             "0000000000000000000000000000000000000000000000000000000000000020"
             "6d6f6e61642d63726f73732d646f6d61696e2d72616e646f6d6e6573732d7631"
             "0000000000000000000000000000000000000000000000000000000000000020"
@@ -860,6 +860,7 @@ TEST(ApplicationEncryptionMessageEncoding, matches_abi_fixtures)
             MESSAGE_FROM,
             TX_ORIGIN,
             TX_NONCE,
+            0x100000007,
             DESTINATION_KEY,
             byte_string{0x01, 0x02},
             byte_string{0x00, 0x03}),
@@ -911,8 +912,8 @@ TEST(ApplicationEncryptionRandomnessInput, binary_fields_match_abi_fixture)
                  "191a1b1c1d1e1f20")
             .value();
     // Independently encoded in Python from the eight-word ABI head and
-    // length-prefixed tails. The nonce and index exceed uint32_t; the blob
-    // spans two words and the public key contains a leading zero byte.
+    // length-prefixed tails. The nonce and call sequence exceed uint32_t; the
+    // blob spans two words and the public key contains a leading zero byte.
     auto const expected =
         from_hex(
             "0000000000000000000000000000000000000000000000000000000000000100"
@@ -970,89 +971,200 @@ TEST(ApplicationEncryptionRandomnessInput, separates_dynamic_fields)
     EXPECT_NE(first, second);
 }
 
-TEST_F(
-    ApplicationEncryptionContractTest,
-    seal_index_restores_parent_value_on_revert)
+struct ApplicationEncryptionCallSequenceTest
+    : ApplicationEncryptionContractTest
+    , ::testing::WithParamInterface<vm::VM::Mode>
 {
-    state.set_nonce(SPOKE_CA, 1);
-    state.set_storage(SPOKE_CA, DESTINATION_KEY_SLOT, DESTINATION_KEY);
-    state.push();
-    seal(contract);
-    EXPECT_EQ(seal_index(state), 1);
+    static constexpr Address CALLER{0x5678};
 
-    state.push();
-    seal(contract);
-    seal(contract);
-    EXPECT_EQ(seal_index(state), 3);
-    state.pop_reject();
+    ApplicationEncryptionCallSequenceTest()
+        : ApplicationEncryptionContractTest{GetParam()}
+    {
+        state.set_nonce(SPOKE_CA, 1);
+        state.set_storage(SPOKE_CA, DESTINATION_KEY_SLOT, DESTINATION_KEY);
+    }
 
-    EXPECT_EQ(seal_index(state), 1);
-    seal(contract);
-    state.pop_accept();
-    EXPECT_EQ(seal_index(state), 2);
+    vm::Result execute_wrapper(uint8_t const exit_opcode)
+    {
+        // Copy calldata, CALL ALE, copy its return data, then RETURN, REVERT
+        // or halt exceptionally. The wrapper and its child share one host.
+        auto code =
+            from_hex("365f5f375f5f365f5f611a7e5af1503d5f5f3e3d5f").value();
+        code.push_back(exit_opcode);
+        state.set_nonce(CALLER, 1);
+        state.set_code(CALLER, code);
+        auto const input = seal_calldata();
+        auto message = seal_call(input);
+        message.recipient = CALLER;
+        message.code_address = CALLER;
+        message.gas = 100'000;
+        return execute_message(message);
+    }
+};
+
+TEST_P(ApplicationEncryptionCallSequenceTest, revert_retains_descendant_calls)
+{
+    auto const reverted = execute_wrapper(vm::compiler::EvmOpCode::REVERT);
+    ASSERT_EQ(reverted.status_code, CallStatus::Revert);
+    ASSERT_GT(reverted.output_size, 0);
+    EXPECT_EQ(host.call_sequence_, 2);
+
+    // Call the wrapper again with identical input. Its ALE call must use
+    // sequence 4; resetting on REVERT would reuse sequence 2 and its
+    // ciphertext.
+    auto const next = execute_wrapper(vm::compiler::EvmOpCode::REVERT);
+    ASSERT_EQ(next.status_code, CallStatus::Revert);
+    ASSERT_GT(next.output_size, 0);
+    EXPECT_EQ(host.call_sequence_, 4);
+    EXPECT_NE(
+        (byte_string_view{reverted.output_data, reverted.output_size}),
+        (byte_string_view{next.output_data, next.output_size}));
 }
 
-TEST_F(
-    ApplicationEncryptionContractTest,
-    seal_index_parent_revert_undoes_accepted_child)
+TEST_P(
+    ApplicationEncryptionCallSequenceTest,
+    exceptional_halt_restores_pre_call_sequence)
 {
-    state.set_nonce(SPOKE_CA, 1);
-    state.set_storage(SPOKE_CA, DESTINATION_KEY_SLOT, DESTINATION_KEY);
-    state.push();
-    seal(contract);
-    state.push();
-    seal(contract);
-    state.pop_accept();
-    EXPECT_EQ(seal_index(state), 2);
+    host.call_sequence_ = 7;
+    // Pass INVALID as the final opcode
+    auto const failed = execute_wrapper(0xfe);
+    EXPECT_EQ(failed.status_code, CallStatus::Failure);
+    EXPECT_EQ(failed.output_size, 0);
+    EXPECT_EQ(host.call_sequence_, 7);
 
-    state.pop_reject();
-    EXPECT_EQ(seal_index(state), 0);
+    auto const result = execute_seal();
+    ASSERT_EQ(result.status_code, CallStatus::Success);
+    EXPECT_EQ(host.call_sequence_, 8);
 }
 
-TEST_F(
-    ApplicationEncryptionContractTest, seal_index_is_local_to_each_transaction)
+TEST_P(
+    ApplicationEncryptionCallSequenceTest,
+    stack_underflow_reconciles_engine_call_sequences)
 {
-    State setup{block_state, Incarnation{0, 0}};
-    setup.set_nonce(SPOKE_CA, 1);
-    setup.set_storage(SPOKE_CA, DESTINATION_KEY_SLOT, DESTINATION_KEY);
-    block_state.merge(setup);
+    // CALL leaves one success flag. The second POP underflows in the same
+    // block: the compiler rejects it before CALL, while the interpreter
+    // reaches ALE before failing.
+    // Each test owns a fresh VM, so Dual interprets this first execution.
+    auto const code = from_hex("365f5f375f5f365f5f611a7e5af15050").value();
+    state.set_nonce(CALLER, 1);
+    state.set_code(CALLER, code);
 
-    State other{block_state, Incarnation{0, 1}};
-    ApplicationEncryptionContract other_contract{
-        other, call_tracer, encryption_context, TX_ORIGIN, TX_NONCE + 1};
-    EXPECT_EQ(seal_index(state), 0);
-    EXPECT_EQ(seal_index(other), 0);
+    std::vector<CallFrame> frames;
+    CallTracer tracer{tx, frames};
+    StateHost<traits> traced_host{
+        tracer,
+        state_tracer,
+        tx_context,
+        block_hashes,
+        state,
+        tx,
+        std::nullopt,
+        0,
+        chain_ctx};
+    traced_host.call_sequence_ = 7;
+    auto const input = seal_calldata();
+    auto message = seal_call(input);
+    message.recipient = CALLER;
+    message.code_address = CALLER;
+    message.gas = 100'000;
+    auto const failed = execute_message(message, traced_host);
+    EXPECT_EQ(failed.status_code, CallStatus::Failure);
+    EXPECT_EQ(failed.output_size, 0);
+    EXPECT_EQ(failed.gas_left, 0);
 
-    seal(contract);
-    seal(other_contract);
-    seal(contract);
-    EXPECT_EQ(seal_index(state), 2);
-    EXPECT_EQ(seal_index(other), 1);
+    auto const compiled = GetParam() == vm::VM::CompilerOnly;
+    ASSERT_EQ(frames.size(), compiled ? 1 : 2);
+    EXPECT_EQ(frames[0].to, CALLER);
+    if (!compiled) {
+        EXPECT_EQ(frames[1].to, ALE_CA);
+        EXPECT_EQ(frames[1].status, CallStatus::Success);
+        EXPECT_FALSE(frames[1].output.empty());
+    }
+    EXPECT_EQ(traced_host.call_sequence_, 7);
 
-    ASSERT_TRUE(block_state.can_merge(state));
-    block_state.merge(state);
-    ASSERT_TRUE(block_state.can_merge(other));
-    block_state.merge(other);
+    auto const next = execute_message(seal_call(input), traced_host);
+    ASSERT_EQ(next.status_code, CallStatus::Success);
+    EXPECT_EQ(traced_host.call_sequence_, 8);
 
-    State next{block_state, Incarnation{0, 2}};
-    EXPECT_EQ(seal_index(next), 0);
-    EXPECT_EQ(seal_index(state), 2);
-    EXPECT_EQ(seal_index(other), 1);
+    // Compare this mode's next Seal with the same direct sequence-8 reference.
+    // Calls inside the discarded frame must not affect the ciphertext.
+    ApplicationEncryptionContract direct{
+        state, call_tracer, encryption_context, TX_ORIGIN, TX_NONCE, 8};
+    auto const expected =
+        direct.precompile_seal(seal_input(), Address{0x4321}, {});
+    ASSERT_TRUE(expected.has_value());
+    EXPECT_EQ(
+        (byte_string_view{next.output_data, next.output_size}),
+        expected.value());
 }
 
-TEST_F(
-    ApplicationEncryptionContractTest,
-    seal_index_is_shared_by_contract_instances)
+TEST_P(ApplicationEncryptionCallSequenceTest, create_initcode_shares_counter)
 {
-    state.set_nonce(SPOKE_CA, 1);
-    state.set_storage(SPOKE_CA, DESTINATION_KEY_SLOT, DESTINATION_KEY);
-    seal(contract);
-    EXPECT_EQ(seal_index(state), 1);
+    // CALL the identity precompile, then deploy empty runtime code.
+    auto const initcode = from_hex("5f5f5f5f5f60045af1505f5ff3").value();
+    for (auto const kind : {vm::CallKind::Create, vm::CallKind::Create2}) {
+        SCOPED_TRACE(static_cast<int>(kind));
+        auto message = seal_call(initcode);
+        message.kind = kind;
+        message.gas = 100'000;
+        auto const previous = host.call_sequence_;
+        auto const result = execute_message(message);
+        ASSERT_EQ(result.status_code, CallStatus::Success);
+        EXPECT_EQ(result.output_size, 0);
+        EXPECT_EQ(host.call_sequence_, previous + 2);
+    }
+}
 
-    ApplicationEncryptionContract another{
-        state, call_tracer, encryption_context, TX_ORIGIN, TX_NONCE};
-    seal(another, Address{2});
-    EXPECT_EQ(seal_index(state), 2);
+TEST_P(
+    ApplicationEncryptionCallSequenceTest,
+    code_deposit_failure_restores_pre_call_sequence)
+{
+    // CALL identity, then return 1024 bytes: code deposit exceeds 100,000 gas.
+    auto const initcode = from_hex("5f5f5f5f5f60045af1506104005ff3").value();
+    for (auto const kind : {vm::CallKind::Create, vm::CallKind::Create2}) {
+        SCOPED_TRACE(static_cast<int>(kind));
+        auto message = seal_call(initcode);
+        message.kind = kind;
+        message.gas = 100'000;
+        auto const previous = host.call_sequence_;
+        auto const result = execute_message(message);
+        EXPECT_EQ(result.status_code, CallStatus::OutOfGas);
+        EXPECT_EQ(result.output_size, 0);
+        EXPECT_EQ(host.call_sequence_, previous);
+    }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    VmBackends, ApplicationEncryptionCallSequenceTest,
+    ::testing::Values(
+        vm::VM::InterpreterOnly, vm::VM::CompilerOnly, vm::VM::Dual));
+
+TEST_F(ApplicationEncryptionContractTest, call_sequence_is_local_to_host)
+{
+    State other_state{block_state, Incarnation{0, 1}};
+    StateHost<traits> other{
+        call_tracer,
+        state_tracer,
+        tx_context,
+        block_hashes,
+        other_state,
+        tx,
+        std::nullopt,
+        1,
+        chain_ctx};
+    EXPECT_EQ(host.call_sequence_, 0);
+    EXPECT_EQ(other.call_sequence_, 0);
+    vm::Message const message{
+        .kind = vm::CallKind::Call,
+        .depth = 1,
+        .gas = 1'000,
+        .recipient = Address{4},
+        .code_address = Address{4}};
+    ASSERT_EQ(host.call(message).status_code, CallStatus::Success);
+    ASSERT_EQ(other.call(message).status_code, CallStatus::Success);
+    ASSERT_EQ(host.call(message).status_code, CallStatus::Success);
+    EXPECT_EQ(host.call_sequence_, 2);
+    EXPECT_EQ(other.call_sequence_, 1);
 }
 
 TEST(ApplicationEncryptionAd, binary_context_spans_two_words)

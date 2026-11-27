@@ -335,6 +335,7 @@ vm::Result execute_call_message(
             call_tracer,
             msg,
             host->log_native_transfers_,
+            host->call_sequence_,
             &host->chain_ctx_,
             host->get_tx_context(),
             &host->tx_);

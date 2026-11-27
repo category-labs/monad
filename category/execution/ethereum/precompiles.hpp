@@ -63,7 +63,7 @@ std::optional<vm::Result> check_call_eth_precompile(vm::Message const &);
 template <Traits traits>
 std::optional<vm::Result> check_call_precompile(
     State &, CallTracerBase &, vm::Message const &, bool log_native_transfers,
-    ChainContext<traits> const *chain_context = nullptr,
+    uint64_t call_sequence, ChainContext<traits> const *chain_context = nullptr,
     vm::TxContext const *tx_context = nullptr,
     Transaction const *transaction = nullptr);
 

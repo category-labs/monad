@@ -37,7 +37,7 @@ MONAD_ANONYMOUS_NAMESPACE_BEGIN
 template <Traits traits, typename Contract, Address contract_address>
 std::optional<vm::Result> check_call_domain_precompile(
     State &state, CallTracerBase &call_tracer, vm::Message const &msg,
-    bool const log_native_transfers,
+    bool const log_native_transfers, uint64_t const call_sequence,
     ChainContext<traits> const *const chain_context,
     vm::TxContext const *const tx_context, Transaction const *const transaction)
 {
@@ -68,6 +68,7 @@ std::optional<vm::Result> check_call_domain_precompile(
         *chain_context->encryption_context,
         tx_context->tx_origin,
         transaction->nonce,
+        call_sequence,
         log_native_transfers};
     auto const res = (contract.*method)(input, msg.sender, msg.value);
     if (MONAD_LIKELY(res.has_value())) {
@@ -104,7 +105,7 @@ EXPLICIT_MONAD_TRAITS(is_precompile);
 template <Traits traits>
 std::optional<vm::Result> check_call_precompile(
     State &state, CallTracerBase &call_tracer, vm::Message const &msg,
-    bool const log_native_transfers,
+    bool const log_native_transfers, uint64_t const call_sequence,
     ChainContext<traits> const *const chain_context,
     vm::TxContext const *const tx_context, Transaction const *const transaction)
 {
@@ -121,6 +122,7 @@ std::optional<vm::Result> check_call_precompile(
                         call_tracer,                                           \
                         msg,                                                   \
                         log_native_transfers,                                  \
+                        call_sequence,                                         \
                         chain_context,                                         \
                         tx_context,                                            \
                         transaction)) {                                        \

@@ -577,7 +577,7 @@ void run_check_call_precompile_test(
 {
     NoopCallTracer call_tracer;
     auto const result =
-        check_call_precompile<traits>(state, call_tracer, msg, false);
+        check_call_precompile<traits>(state, call_tracer, msg, false, 0);
 
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result->status_code, expected_status);
@@ -660,7 +660,7 @@ TYPED_TEST(
     if constexpr (!TestFixture::Trait::mip_4_active()) {
         NoopCallTracer call_tracer;
         auto const result = check_call_precompile<typename TestFixture::Trait>(
-            this->state, call_tracer, make_msg(), false);
+            this->state, call_tracer, make_msg(), false, 0);
         EXPECT_FALSE(result.has_value());
         return;
     }

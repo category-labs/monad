@@ -83,7 +83,7 @@ TEST_F(DomainPrecompilesTest, dispatch_uses_ethereum_precompiles)
         .input_size = input.size(),
         .code_address = Address{4}};
     auto const result =
-        check_call_precompile<traits>(state, call_tracer, identity, false);
+        check_call_precompile<traits>(state, call_tracer, identity, false, 0);
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result->status_code, CallStatus::Success);
     EXPECT_EQ(result->gas_left, 982);
@@ -94,7 +94,7 @@ TEST_F(DomainPrecompilesTest, dispatch_uses_ethereum_precompiles)
          {staking::STAKING_CA, RESERVE_BALANCE_CA, Address{0x1234}}) {
         vm::Message const msg{.code_address = address};
         EXPECT_FALSE(
-            check_call_precompile<traits>(state, call_tracer, msg, false)
+            check_call_precompile<traits>(state, call_tracer, msg, false, 0)
                 .has_value());
     }
 }

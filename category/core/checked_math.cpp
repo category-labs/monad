@@ -61,6 +61,13 @@ Result<uint256_t> checked_sub(uint256_t const &x, uint256_t const &y) noexcept
 
 Result<uint256_t> checked_mul(uint256_t const &x, uint256_t const &y) noexcept
 {
+    // A 64 x 64-bit product fits in 128 bits and cannot overflow uint256_t.
+    if ((x[1] | x[2] | x[3] | y[1] | y[2] | y[3]) == 0) {
+        uint64_t hi;
+        uint64_t lo;
+        mulx(x[0], y[0], hi, lo);
+        return uint256_t{lo, hi, 0, 0};
+    }
     // Compute the full 512-bit product; overflow iff any upper word is set.
     auto const prod =
         truncating_mul<2 * uint256_t::num_words>(x.as_words(), y.as_words());

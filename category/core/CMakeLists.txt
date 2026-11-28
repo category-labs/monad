@@ -211,6 +211,7 @@ add_library(
   "runtime/non_temporal_memory.hpp"
   "runtime/uint256.hpp"
   "runtime/uint256/intrinsics.hpp"
+  "runtime/uint256/overrides.hpp"
   "runtime/uint256/portable.hpp"
   "runtime/uint256/types.hpp"
   "runtime/unaligned.hpp"

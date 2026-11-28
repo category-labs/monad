@@ -21,6 +21,7 @@
 #include <category/core/runtime/bit.hpp>
 #include <category/core/runtime/uint128.hpp>
 #include <category/core/runtime/uint256/intrinsics.hpp>
+#include <category/core/runtime/uint256/overrides.hpp>
 #include <category/core/runtime/uint256/portable.hpp>
 #include <category/core/runtime/uint256/types.hpp>
 #include <category/core/throw.hpp>
@@ -205,6 +206,9 @@ public:
     [[gnu::always_inline]]
     constexpr explicit operator bool() const noexcept
     {
+        if constexpr (uint256::overrides::enabled) {
+            return uint256::overrides::is_nonzero(*this);
+        }
         using namespace monad::uint256::intrinsics;
 
         auto const w0 = force(words_[0]);
@@ -293,6 +297,9 @@ public:
     friend constexpr bool
     operator<(uint256_t const &lhs, uint256_t const &rhs) noexcept
     {
+        if constexpr (uint256::overrides::enabled) {
+            return uint256::overrides::less(lhs, rhs);
+        }
         using namespace monad::uint256::intrinsics;
 
         auto [diff, carry] = subb(lhs, rhs);
@@ -348,6 +355,9 @@ public:
     [[gnu::always_inline]] friend constexpr bool
     operator==(uint256_t const &x, uint256_t const &y) noexcept
     {
+        if constexpr (uint256::overrides::enabled) {
+            return uint256::overrides::equal(x, y);
+        }
         using namespace monad::uint256::intrinsics;
 
         auto const e0 = force(x[0] ^ y[0]);
@@ -375,6 +385,9 @@ public:
     {
         if (MONAD_UNLIKELY(static_cast<uint64_t>(shift0) >= 256)) {
             return 0;
+        }
+        if constexpr (uint256::overrides::enabled) {
+            return uint256::overrides::shift_left(x, shift0);
         }
         auto shift = static_cast<uint8_t>(shift0);
         if (shift < 128) {
@@ -451,6 +464,9 @@ public:
         if (MONAD_UNLIKELY(
                 shift0[3] | shift0[2] | shift0[1] | (shift0[0] >= 256))) {
             return uint256_t{fill, fill, fill, fill};
+        }
+        if constexpr (uint256::overrides::enabled) {
+            return uint256::overrides::shift_right<type>(x, shift0, fill);
         }
         auto shift = static_cast<uint8_t>(shift0);
         uint64_t tail;
@@ -670,6 +686,9 @@ MONAD_NO_VECTORIZE
 constexpr uint256_t
 operator*(uint256_t const &lhs, uint256_t const &rhs) noexcept
 {
+    if constexpr (uint256::overrides::enabled) {
+        return uint256::overrides::multiply(lhs, rhs);
+    }
     return truncating_mul(lhs, rhs);
 }
 
@@ -1084,6 +1103,9 @@ sdivrem(uint256_t const &x, uint256_t const &y) noexcept
 [[gnu::always_inline]]
 constexpr bool slt(uint256_t const &x, uint256_t const &y) noexcept
 {
+    if constexpr (uint256::overrides::enabled) {
+        return uint256::overrides::slt(x, y);
+    }
     auto const x_neg = x[uint256_t::num_words - 1] >> 63;
     auto const y_neg = y[uint256_t::num_words - 1] >> 63;
     auto const diff = x_neg ^ y_neg;
@@ -1098,8 +1120,20 @@ MONAD_NO_VECTORIZE
 exp(uint256_t base, uint256_t const &exponent) noexcept
 {
     uint256_t result{1};
-    if (base == 2) {
-        return result << exponent;
+    // For a 64-bit base = 2^k in one word, compute 1 << (k * exponent).
+    // Bound the exponent before multiplying; shifts >= 256 produce zero.
+    if ((base[1] | base[2] | base[3]) == 0 && base[0] != 0 &&
+        (base[0] & (base[0] - 1)) == 0) {
+        uint64_t const base_bit_index =
+            static_cast<uint64_t>(std::countr_zero(base[0]));
+        if (base_bit_index == 0) {
+            return result;
+        }
+        if ((exponent[1] | exponent[2] | exponent[3]) != 0 ||
+            exponent[0] >= 256) {
+            return 0;
+        }
+        return result << uint256_t{base_bit_index * exponent[0]};
     }
 
     size_t const sig_words = count_significant_words(exponent.as_words());

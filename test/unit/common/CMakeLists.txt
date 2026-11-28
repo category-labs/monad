@@ -34,3 +34,16 @@ target_include_directories(monad_gtest_main
                            PRIVATE ${PROJECT_SOURCE_DIR}/test/unit/common/include)
 target_link_libraries(monad_gtest_main PUBLIC monad_execution GTest::GTest)
 monad_compile_options(monad_gtest_main)
+
+# Execution-level test helpers, linked into every monad_add_test executable.
+add_library(
+  monad_test_support STATIC
+  ${PROJECT_SOURCE_DIR}/test/unit/common/include/monad/test/contract.hpp
+  ${PROJECT_SOURCE_DIR}/test/unit/common/src/test/contract.cpp)
+target_include_directories(
+  monad_test_support PUBLIC ${PROJECT_SOURCE_DIR}/test/unit/common/include)
+target_link_libraries(monad_test_support PUBLIC monad_execution)
+monad_compile_options(monad_test_support)
+
+monad_add_test(contract_test
+               ${PROJECT_SOURCE_DIR}/test/unit/common/src/test/contract_test.cpp)

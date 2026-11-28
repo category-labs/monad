@@ -196,6 +196,22 @@ check_call_precompile(State &, CallTracerBase &, vm::Message const &msg, bool)
 
 EXPLICIT_EVM_TRAITS(check_call_precompile);
 
+template <Traits traits>
+bool is_domain_precompile(Address const &address)
+{
+    return is_eth_precompile<traits>(address);
+}
+
+EXPLICIT_TRAITS(is_domain_precompile);
+
+template <Traits traits>
+std::optional<vm::Result> check_call_domain_precompile(vm::Message const &msg)
+{
+    return check_call_eth_precompile<traits>(msg);
+}
+
+EXPLICIT_TRAITS(check_call_domain_precompile);
+
 static PrecompileResult
 from_impl_result(PrecompileImplResult result, uint8_t *out)
 {

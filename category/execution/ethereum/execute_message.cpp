@@ -330,8 +330,11 @@ vm::Result execute_call_message(
     }
 
     vm::Result result;
-    if (auto maybe_result = check_call_precompile<traits>(
-            state, call_tracer, msg, host->log_native_transfers_);
+    if (auto maybe_result =
+            is_private_domain(host->chain_ctx_)
+                ? check_call_domain_precompile<traits>(msg)
+                : check_call_precompile<traits>(
+                      state, call_tracer, msg, host->log_native_transfers_);
         maybe_result.has_value()) {
         result = std::move(maybe_result.value());
     }

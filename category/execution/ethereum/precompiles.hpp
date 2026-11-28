@@ -54,6 +54,14 @@ template <Traits traits>
 std::optional<vm::Result> check_call_precompile(
     State &, CallTracerBase &, vm::Message const &, bool log_native_transfers);
 
+// A private domain's precompiles are the Ethereum ones. It has none of
+// Monad's, which read and write the L1's staking and reserve balance state.
+template <Traits traits>
+bool is_domain_precompile(Address const &);
+
+template <Traits traits>
+std::optional<vm::Result> check_call_domain_precompile(vm::Message const &);
+
 using precompiled_gas_cost_fn = std::optional<uint64_t>(byte_string_view);
 
 template <Traits traits>

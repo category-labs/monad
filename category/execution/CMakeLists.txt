@@ -27,6 +27,7 @@ add_library(
   monad_execution_ethereum OBJECT
   # ethereum/chain
   "ethereum/chain/chain_config.h"
+  "ethereum/chain/chain.cpp"
   "ethereum/chain/chain.hpp"
   "ethereum/chain/ethereum_mainnet.cpp"
   "ethereum/chain/ethereum_mainnet.hpp"

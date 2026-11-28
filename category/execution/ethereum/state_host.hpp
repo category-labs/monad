@@ -207,7 +207,10 @@ struct StateHost final : public StateHostBase
     {
         MONAD_TRY
         {
-            if (is_precompile<traits>(address)) {
+            bool const precompile = is_private_domain(chain_ctx_)
+                                        ? is_domain_precompile<traits>(address)
+                                        : is_precompile<traits>(address);
+            if (precompile) {
                 return AccessStatus::Warm;
             }
             return state_.access_account(address);

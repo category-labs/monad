@@ -20,6 +20,7 @@
 #include <category/core/likely.h>
 #include <category/core/result.hpp>
 #include <category/execution/ethereum/chain/blob_schedule.hpp>
+#include <category/execution/ethereum/chain/chain.hpp>
 #include <category/execution/ethereum/core/transaction.hpp>
 #include <category/execution/ethereum/execution_modalities.hpp>
 #include <category/execution/ethereum/state3/state.hpp>
@@ -165,14 +166,14 @@ Result<void> validate_transaction(
     Transaction const &tx, Address const &sender, State &state,
     uint256_t const & /*base_fee_per_gas*/,
     std::span<std::optional<Address> const> const /*authorities*/,
-    trace::StateTracer &state_tracer, ExecutionMode const &mode)
+    trace::StateTracer &state_tracer, ChainContext<traits> const &ctx)
 {
     static_assert(is_evm_trait_v<traits>);
-    if (!sender_nonce_check(mode)) {
+    if (!sender_nonce_check(ctx.mode)) {
         BOOST_OUTCOME_TRY(validate_simulation_sender_nonce(sender, state));
     }
     return validate_ethereum_transaction<traits>(
-        tx, sender, state, state_tracer, mode);
+        tx, sender, state, state_tracer, ctx.mode);
 }
 
 EXPLICIT_EVM_TRAITS(validate_transaction);

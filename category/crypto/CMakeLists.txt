@@ -24,7 +24,12 @@ monad_compile_options(monad_crypto)
 target_sources(monad_crypto PRIVATE
   "hash256.h"
   "keccak.c"
-  "keccak.h")
+  "keccak.h"
+  "keccak_batch.c"
+  "keccak_batch.h"
+  "keccak_batch_avx2.cpp"
+  "keccak_batch_avx512.cpp"
+  "keccak_batch_impl.hpp")
 
 target_include_directories(monad_crypto PUBLIC "${CATEGORY_MAIN_DIR}")
 
@@ -69,3 +74,7 @@ set_source_files_properties(
   "${SILKPRE_VENDOR_DIR}/category/crypto/silkpre_vendor/bn128.cpp"
   TARGET_DIRECTORY monad_crypto
   PROPERTIES COMPILE_OPTIONS "-Wno-conversion;-Wno-sign-conversion")
+
+monad_add_test(keccak_batch_test keccak_batch_test.cpp)
+
+add_subdirectory("bench")

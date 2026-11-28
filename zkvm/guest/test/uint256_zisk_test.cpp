@@ -363,6 +363,117 @@ namespace arithmetic_tests
 
 }
 
+namespace division_tests
+{
+    using monad::udivrem;
+    using monad::uint256_t;
+
+    struct Operands
+    {
+        uint256_t dividend;
+        uint256_t divisor;
+    };
+
+    constexpr auto word = uint256_t{1} << 64;
+    constexpr auto max = ~uint256_t{0};
+    constexpr std::array cases{
+        // Native division at the 64-bit boundary, then wide operands.
+        Operands{word - 1, 3},
+        Operands{word, 3},
+        Operands{word - 1, word + 1},
+        Operands{max, word + 1},
+        Operands{max - 1, max},
+        Operands{max, max},
+        Operands{0, word + 1},
+        // Power-of-two boundaries in each limb.
+        Operands{max, 1},
+        Operands{max, word >> 1},
+        Operands{max, word},
+        Operands{max, word << 63},
+        Operands{max, word << 64},
+        Operands{max, word << 127},
+        Operands{max, word << 128},
+        Operands{max, word << 191},
+        // A low single bit does not make a multiword divisor a power of two.
+        Operands{max, (word << 64) + 1},
+    };
+    static_assert(cases.size() <= 32);
+
+    template <size_t N>
+    consteval auto references(std::array<Operands, N> const &inputs)
+    {
+        std::array<monad::div_result<uint256_t>, N> results{};
+        for (size_t i = 0; i < N; ++i) {
+            auto const &[dividend, divisor] = inputs[i];
+            // The word-array overload is the portable division algorithm.
+            auto const result =
+                udivrem(dividend.as_words(), divisor.as_words());
+            results[i] = {uint256_t{result.quot}, uint256_t{result.rem}};
+        }
+        return results;
+    }
+
+    [[gnu::noinline]] bool check_division(
+        Operands const &inputs, monad::div_result<uint256_t> const &expected)
+    {
+        auto const &[dividend, divisor] = inputs;
+        auto const qr = udivrem(dividend, divisor);
+        auto quotient = dividend;
+        auto remainder = dividend;
+        quotient /= divisor;
+        remainder %= divisor;
+        return qr.quot == expected.quot && qr.rem == expected.rem &&
+               quotient == expected.quot && remainder == expected.rem;
+    }
+
+    [[gnu::noinline]] bool check_self_assignment(uint256_t value)
+    {
+        auto remainder = value;
+        value /= value;
+        remainder %= remainder;
+        return value == 1 && remainder == 0;
+    }
+
+    uint32_t check_valid_divisions()
+    {
+        constexpr auto expected = references(cases);
+        uint32_t failures = 0;
+        for (size_t i = 0; i < cases.size(); ++i) {
+            failures |= uint32_t{!check_division(cases[i], expected[i])} << i;
+        }
+        static_assert(cases.size() < 32);
+        failures |= uint32_t{!check_self_assignment(word + 3)} << cases.size();
+        // Positive control for the same injection path as the rejected hints.
+        alignas(8) uint64_t const hint[8]{3, 0, 0, 0, 1, 0, 0, 0};
+        (void)monad::uint256::overrides::verify_division_hint<uint256_t>(
+            10, 3, hint);
+        return failures;
+    }
+
+    void inject_invalid_hint(uint8_t const test)
+    {
+        if (test == 1) {
+            // 2*3 + 1 = 7: only the low half mismatches.
+            alignas(8) uint64_t const hint[8]{2, 0, 0, 0, 1, 0, 0, 0};
+            (void)monad::uint256::overrides::verify_division_hint<uint256_t>(
+                10, 3, hint);
+        }
+        else if (test == 2) {
+            // 2*2^255 + 1 = 2^256 + 1: only the high half mismatches.
+            alignas(8) uint64_t const hint[8]{2, 0, 0, 0, 1, 0, 0, 0};
+            (void)monad::uint256::overrides::verify_division_hint<uint256_t>(
+                1, uint256_t{1} << 255, hint);
+        }
+        else {
+            // 2*3 + 4 = 10: the product matches, but the remainder is too
+            // large.
+            alignas(8) uint64_t const hint[8]{2, 0, 0, 0, 4, 0, 0, 0};
+            (void)monad::uint256::overrides::verify_division_hint<uint256_t>(
+                10, 3, hint);
+        }
+    }
+}
+
 // The Rust launcher calls the same entry symbol in both build modes.
 extern "C" void monad_zkvm_execute_witness()
 {
@@ -377,6 +488,12 @@ extern "C" void monad_zkvm_execute_witness()
     }
     else if (test == 1) {
         failures = arithmetic_tests::check_arithmetic();
+    }
+    else if (test == 2) {
+        failures = division_tests::check_valid_divisions();
+    }
+    else if (test >= 3 && test <= 5) {
+        division_tests::inject_invalid_hint(test - 2);
     }
     // A rejected hint must halt before reaching the completion marker.
     unsigned char output[32]{0, 0, 0, 0, 'U', '2', '5', '6', test};

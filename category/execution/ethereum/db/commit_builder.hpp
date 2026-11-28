@@ -47,6 +47,10 @@ protected:
     // page keyed by storage page key.
     ProposalPostState proposal_post_state_;
 
+    // Sizes proposal_post_state_ for one entry per account and per storage
+    // delta, so its tables don't regrow while add_state_deltas fills them.
+    void reserve_post_state(StateDeltas const &);
+
 public:
     explicit CommitBuilder(uint64_t block_number);
     virtual ~CommitBuilder() = default;

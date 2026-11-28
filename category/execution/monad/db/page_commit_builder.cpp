@@ -57,6 +57,15 @@ CommitBuilder &
 PageCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
 {
     UpdateList account_updates;
+    reserve_post_state(state_deltas);
+    // Storage changes in page granularity per account: keyed by page_key,
+    // value is the mutable storage_page_t being merged. Each first-touch of a
+    // page reads the current page from the db so subsequent slot writes at
+    // the same page_key compose into one update. Cleared for each account but
+    // declared once, so later accounts reuse its memory.
+    ankerl::unordered_dense::
+        segmented_map<bytes32_t, storage_page_t, BytesHashCompare<bytes32_t>>
+            pages;
     for (auto const &[addr, delta] : state_deltas) {
         UpdateList storage_updates;
         std::optional<byte_string_view> value;
@@ -68,16 +77,7 @@ PageCommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
             delta.account.first->incarnation != account->incarnation;
         if (account.has_value()) {
             Incarnation const inc = account->incarnation;
-            // Storage changes in page granularity per account: keyed by
-            // page_key, value is the mutable storage_page_t being merged. Each
-            // first-touch of a page reads the current page from the db so
-            // subsequent slot writes at the same page_key compose into one
-            // update.
-            ankerl::unordered_dense::segmented_map<
-                bytes32_t,
-                storage_page_t,
-                BytesHashCompare<bytes32_t>>
-                pages;
+            pages.clear();
 
             for (auto const &[key, slot_delta] : delta.storage) {
                 if (slot_delta.first != slot_delta.second) {

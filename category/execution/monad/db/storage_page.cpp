@@ -19,13 +19,16 @@ extern "C"
 #include <blake3_impl.h>
 }
 
+#include <category/core/assert.h>
 #include <category/core/byte_string.hpp>
 #include <category/core/bytes.hpp>
 #include <category/core/config.hpp>
 #include <category/core/likely.h>
 #include <category/core/result.hpp>
 #include <category/core/rlp/decode_error.hpp>
+#include <category/core/rlp/encode.hpp>
 #include <category/execution/ethereum/core/rlp/bytes_rlp.hpp>
+#include <category/execution/ethereum/rlp/encode2.hpp>
 #include <category/execution/monad/db/storage_page.hpp>
 
 #include <boost/outcome/try.hpp>
@@ -40,6 +43,7 @@ extern "C"
 #include <bit>
 #include <cstdint>
 #include <cstring>
+#include <span>
 
 MONAD_NAMESPACE_BEGIN
 
@@ -281,17 +285,40 @@ bytes32_t page_commit(storage_page_t const &page)
 //   - zero value in a pair
 //   - leading zero bytes in a value (non-minimal compact form)
 
-byte_string encode_storage_page(storage_page_t const &page)
+size_t encoded_storage_page_size(storage_page_t const &page)
 {
-    byte_string encoded;
-    encoded.reserve(page.size() * 34);
+    size_t size = 0;
+    for (bytes32_t const &value : page.values()) {
+        size += 1 + rlp::string_length(
+                        rlp::zeroless_view(to_byte_string_view(value.bytes)));
+    }
+    return size;
+}
+
+std::span<unsigned char>
+encode_storage_page(std::span<unsigned char> dest, storage_page_t const &page)
+{
     auto const values = page.values();
     size_t dense = 0;
     for (auto bits = page.bitmap(); bits != 0; bits &= bits - 1) {
-        encoded.push_back(lowest_offset(bits));
-        encoded += rlp::encode_bytes32_compact(values[dense]);
+        dest[0] = lowest_offset(bits);
+        dest = rlp::encode_string(
+            dest.subspan(1),
+            rlp::zeroless_view(to_byte_string_view(values[dense].bytes)));
         ++dense;
     }
+    return dest;
+}
+
+byte_string encode_storage_page(storage_page_t const &page)
+{
+    byte_string encoded;
+    encoded.resize_and_overwrite(
+        encoded_storage_page_size(page),
+        [&](unsigned char *const p, size_t const n) {
+            MONAD_ASSERT(encode_storage_page({p, n}, page).empty());
+            return n;
+        });
     return encoded;
 }
 

@@ -114,6 +114,35 @@ encode_string(std::span<unsigned char> d, byte_string_view const s)
 }
 
 /**
+ * Length of the header encode_string_prefix writes for a string of
+ * payload_size bytes.
+ */
+constexpr size_t string_prefix_length(size_t const payload_size)
+{
+    return payload_size <= 55 ? 1 : 1 + impl::length_length(payload_size);
+}
+
+/**
+ * Header of a string of payload_size bytes whose content the caller writes
+ * after it. A single byte below 0x80 encodes as itself with no header, so
+ * that case must go through encode_string instead.
+ */
+constexpr std::span<unsigned char>
+encode_string_prefix(std::span<unsigned char> d, size_t const payload_size)
+{
+    MONAD_ASSUME(d.size() > 0);
+    if (payload_size <= 55) {
+        d[0] = 0x80 + static_cast<unsigned char>(payload_size);
+        return d.subspan(1);
+    }
+    else {
+        d[0] = 0xB7 +
+               static_cast<unsigned char>(impl::length_length(payload_size));
+        return impl::encode_length(d.subspan(1), payload_size);
+    }
+}
+
+/**
  * max return value is 1 + sizeof(size_t) + s.size()
  */
 constexpr size_t list_length(size_t const concatenated_size)

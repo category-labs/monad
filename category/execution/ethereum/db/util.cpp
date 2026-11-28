@@ -22,6 +22,7 @@
 #include <category/core/log.hpp>
 #include <category/core/result.hpp>
 #include <category/core/rlp/decode_error.hpp>
+#include <category/core/rlp/encode.hpp>
 #include <category/core/runtime/unaligned.hpp>
 #include <category/execution/ethereum/core/account.hpp>
 #include <category/execution/ethereum/core/block.hpp>
@@ -68,7 +69,7 @@
 #include <functional>
 #include <istream>
 #include <memory>
-#include <optional>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -704,17 +705,67 @@ decode_transaction_db(byte_string_view &enc)
     return {transaction, sender};
 }
 
+namespace
+{
+    // One allocation of exactly `size` bytes, filled by `write`, which must
+    // use all of it.
+    template <typename Write>
+    byte_string encode_exact(size_t const size, Write const &write)
+    {
+        byte_string out;
+        out.resize_and_overwrite(
+            size, [&](unsigned char *const p, size_t const n) {
+                MONAD_ASSERT(write(std::span<unsigned char>{p, n}).empty());
+                return n;
+            });
+        return out;
+    }
+
+    // Minimal big-endian bytes of an unsigned integer, as RLP encodes it.
+    template <typename T>
+    class BigCompact
+    {
+        T big_endian_;
+
+    public:
+        explicit BigCompact(T const &n)
+            : big_endian_{bswap(n)}
+        {
+        }
+
+        byte_string_view view() const
+        {
+            return rlp::zeroless_view({as_bytes(big_endian_), sizeof(T)});
+        }
+    };
+}
+
 byte_string encode_account_db(Address const &address, Account const &account)
 {
-    byte_string encoded_account;
-    encoded_account += rlp::encode_address(address);
-    encoded_account += rlp::encode_unsigned(account.incarnation.to_int());
-    encoded_account += rlp::encode_unsigned(account.nonce);
-    encoded_account += rlp::encode_unsigned(account.balance);
-    if (account.code_hash != NULL_HASH) {
-        encoded_account += rlp::encode_bytes32(account.code_hash);
-    }
-    return rlp::encode_list2(encoded_account);
+    BigCompact const incarnation_bytes{account.incarnation.to_int()};
+    BigCompact const nonce_bytes{account.nonce};
+    BigCompact const balance_bytes{account.balance};
+    byte_string_view const addr = to_byte_string_view(address.bytes);
+    byte_string_view const incarnation = incarnation_bytes.view();
+    byte_string_view const nonce = nonce_bytes.view();
+    byte_string_view const balance = balance_bytes.view();
+    bool const has_code = account.code_hash != NULL_HASH;
+    byte_string_view const code_hash =
+        to_byte_string_view(account.code_hash.bytes);
+
+    size_t const payload =
+        rlp::string_length(addr) + rlp::string_length(incarnation) +
+        rlp::string_length(nonce) + rlp::string_length(balance) +
+        (has_code ? rlp::string_length(code_hash) : 0);
+    return encode_exact(
+        rlp::list_length(payload), [&](std::span<unsigned char> d) {
+            d = rlp::encode_list_prefix(d, payload);
+            d = rlp::encode_string(d, addr);
+            d = rlp::encode_string(d, incarnation);
+            d = rlp::encode_string(d, nonce);
+            d = rlp::encode_string(d, balance);
+            return has_code ? rlp::encode_string(d, code_hash) : d;
+        });
 }
 
 Result<std::pair<byte_string_view, byte_string_view>>
@@ -744,18 +795,36 @@ Result<Account> decode_account_db_ignore_address(byte_string_view &enc)
 
 byte_string encode_storage_db(bytes32_t const &key, bytes32_t const &val)
 {
-    byte_string encoded_storage;
-    encoded_storage += rlp::encode_bytes32_compact(key);
-    encoded_storage += rlp::encode_bytes32_compact(val);
-    return rlp::encode_list2(encoded_storage);
+    byte_string_view const k =
+        rlp::zeroless_view(to_byte_string_view(key.bytes));
+    byte_string_view const v =
+        rlp::zeroless_view(to_byte_string_view(val.bytes));
+    size_t const payload = rlp::string_length(k) + rlp::string_length(v);
+    return encode_exact(
+        rlp::list_length(payload), [&](std::span<unsigned char> d) {
+            d = rlp::encode_list_prefix(d, payload);
+            d = rlp::encode_string(d, k);
+            return rlp::encode_string(d, v);
+        });
 }
 
 byte_string
 encode_storage_page_db(bytes32_t const &key, storage_page_t const &page)
 {
-    return rlp::encode_list2(
-        rlp::encode_bytes32_compact(key),
-        rlp::encode_string2(encode_storage_page(page)));
+    byte_string_view const k =
+        rlp::zeroless_view(to_byte_string_view(key.bytes));
+    // Every page entry is at least two bytes, so the page string is never the
+    // lone byte that encode_string_prefix cannot frame.
+    size_t const page_size = encoded_storage_page_size(page);
+    size_t const payload = rlp::string_length(k) +
+                           rlp::string_prefix_length(page_size) + page_size;
+    return encode_exact(
+        rlp::list_length(payload), [&](std::span<unsigned char> d) {
+            d = rlp::encode_list_prefix(d, payload);
+            d = rlp::encode_string(d, k);
+            d = rlp::encode_string_prefix(d, page_size);
+            return encode_storage_page(d, page);
+        });
 }
 
 Result<std::pair<byte_string_view, byte_string_view>>

@@ -591,6 +591,7 @@ set(_guest_entry_source "${CMAKE_CURRENT_SOURCE_DIR}/execute_witness.cpp")
 if(MONAD_ZKVM_GUEST_TARGET STREQUAL "zisk")
     option(MONAD_ZKVM_UINT256_SELFTEST
         "Run uint256 tests instead of executing a witness" OFF)
+    # Arithmetic precompile cases require execution in ZisK.
     if(MONAD_ZKVM_UINT256_SELFTEST)
         set(_guest_entry_source "${CMAKE_CURRENT_SOURCE_DIR}/test/uint256_zisk_test.cpp")
     endif()

@@ -681,6 +681,110 @@ wide_mul(words_t<M> const &x, words_t<N> const &y) noexcept
     return truncating_mul<M + N>(x, y);
 }
 
+#ifdef MONAD_ZKVM_ZISK
+// ZisK's 256-bit multiply-add (CSR 0x801): dh·2^256 + dl = a·b + c, four
+// little-endian 64-bit limbs each.
+struct ZiskArith256Params
+{
+    uint64_t const *a;
+    uint64_t const *b;
+    uint64_t const *c;
+    uint64_t *dl;
+    uint64_t *dh;
+};
+
+// ZisK ABI for d = (a * b + c) mod module. Each operand has four 64-bit
+// limbs, least significant first. Callers must handle module == 0.
+struct ZiskArith256ModParams
+{
+    uint64_t const *a;
+    uint64_t const *b;
+    uint64_t const *c;
+    uint64_t const *module;
+    uint64_t *d;
+};
+
+extern "C" void syscall_arith256_mod(ZiskArith256ModParams *params);
+
+[[gnu::noinline]] inline uint256_t zisk_arith256_mod(
+    uint256_t const &a, uint256_t const &b, uint256_t const &c,
+    uint256_t const &mod) noexcept
+{
+    // uint256_t already matches the syscall's layout and alignment, so
+    // pass operands directly without copying them.
+    static_assert(alignof(uint256_t) >= 8);
+    static_assert(sizeof(uint256_t) == 4 * sizeof(uint64_t));
+    alignas(8) uint64_t D[4];
+    ZiskArith256ModParams p{
+        reinterpret_cast<uint64_t const *>(&a),
+        reinterpret_cast<uint64_t const *>(&b),
+        reinterpret_cast<uint64_t const *>(&c),
+        reinterpret_cast<uint64_t const *>(&mod),
+        D};
+    syscall_arith256_mod(&p);
+    // Keep output separate from inputs, including for x = mulmod(x, y, m).
+    return uint256_t{D[0], D[1], D[2], D[3]};
+}
+
+// Write (a * b + c) % mod directly to d via ZisK's port 0x802.
+// All pointers must be 8-byte aligned. d may alias inputs: opc_arith256_mod
+// and MemBusHelpers::mem_aligned_op read them before writing the result.
+[[gnu::always_inline]] inline void zisk_arith256_mod_to(
+    uint64_t *const d, uint64_t const *const a, uint64_t const *const b,
+    uint64_t const *const c, uint64_t const *const mod) noexcept
+{
+    ZiskArith256ModParams p{a, b, c, mod, d};
+    asm volatile(".option push\n\t"
+                 ".option arch, +zicsr\n\t"
+                 "csrs 0x802, %0\n\t"
+                 ".option pop"
+                 :
+                 : "r"(&p)
+                 : "memory");
+}
+
+// Aligned 256-bit constants, passed directly to the precompile.
+alignas(8) inline constexpr uint64_t zisk_zero_limbs[4]{0, 0, 0, 0};
+alignas(8) inline constexpr uint64_t zisk_one_limbs[4]{1, 0, 0, 0};
+
+// ZisK add256 parameters (CSR 0x811): c = a + b + cin.
+// Operands and result use four little-endian 64-bit limbs;
+// the instruction returns the carry-out.
+struct ZiskAdd256Params
+{
+    uint64_t const *a;
+    uint64_t const *b;
+    uint64_t cin;
+    uint64_t *c;
+};
+
+// Reuse caller-owned parameters to avoid a local stack frame.
+// The caller sets p.cin. dst may alias a or b: opc_add256 and the memory
+// trace (MemBusHelpers) read both operands before writing c.
+[[gnu::always_inline]] inline void zisk_add256(
+    ZiskAdd256Params &p, uint256_t const &a, uint256_t const &b,
+    uint256_t &dst) noexcept
+{
+    static_assert(alignof(uint256_t) >= 8);
+    static_assert(sizeof(uint256_t) == 4 * sizeof(uint64_t));
+    p.a = reinterpret_cast<uint64_t const *>(&a);
+    p.b = reinterpret_cast<uint64_t const *>(&b);
+    p.c = reinterpret_cast<uint64_t *>(&dst);
+    // ZisK requires a nonzero destination register distinct from the input.
+    // `=&r` prevents overlap; `csrs` (rd = x0) is not a valid add256 marker.
+    // Discard carry-out: EVM ADD keeps only the low 256 bits.
+    uint64_t cout;
+    asm volatile(".option push\n\t"
+                 ".option arch, +zicsr\n\t"
+                 "csrrs %0, 0x811, %1\n\t"
+                 ".option pop"
+                 : "=&r"(cout)
+                 : "r"(&p)
+                 : "memory");
+    (void)cout;
+}
+#endif
+
 MONAD_NO_VECTORIZE
 [[gnu::noinline]]
 constexpr uint256_t
@@ -939,6 +1043,16 @@ udivrem(uint256_t const &u, uint256_t const &v) noexcept
 constexpr uint256_t
 addmod(uint256_t const &x, uint256_t const &y, uint256_t const &mod) noexcept
 {
+#ifdef MONAD_ZKVM_ZISK
+    // Use (x * 1 + y) % mod for all runtime ZisK calls, avoiding even the
+    // software fast path's multiword arithmetic.
+    if (!std::is_constant_evaluated()) {
+        if (mod == 0) {
+            return 0;
+        }
+        return zisk_arith256_mod(x, 1, y, mod);
+    }
+#endif
     // Fast path when mod >= 2^192 and x, y < 2*mod
     if (mod[3] && (x[3] <= mod[3]) && (y[3] <= mod[3])) {
         // x, y < 2 * mod
@@ -976,6 +1090,14 @@ MONAD_NO_VECTORIZE
 constexpr uint256_t
 mulmod(uint256_t const &u, uint256_t const &v, uint256_t const &mod) noexcept
 {
+#ifdef MONAD_ZKVM_ZISK
+    if (!std::is_constant_evaluated()) {
+        if (mod == 0) {
+            return 0;
+        }
+        return zisk_arith256_mod(u, v, 0, mod);
+    }
+#endif
     auto const prod = wide_mul(u.as_words(), v.as_words());
     return uint256_t{udivrem(prod, mod.as_words()).rem};
 }

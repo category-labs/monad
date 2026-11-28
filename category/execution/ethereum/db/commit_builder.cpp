@@ -76,9 +76,22 @@ CommitBuilder::CommitBuilder(uint64_t const block_number)
 {
 }
 
+void CommitBuilder::reserve_post_state(StateDeltas const &state_deltas)
+{
+    size_t storage = 0;
+    for (auto const &[addr, delta] : state_deltas) {
+        storage += delta.storage.size();
+    }
+    proposal_post_state_.accounts.reserve(
+        proposal_post_state_.accounts.size() + state_deltas.size());
+    proposal_post_state_.storage.reserve(
+        proposal_post_state_.storage.size() + storage);
+}
+
 CommitBuilder &CommitBuilder::add_state_deltas(StateDeltas const &state_deltas)
 {
     UpdateList account_updates;
+    reserve_post_state(state_deltas);
     for (auto const &[addr, delta] : state_deltas) {
         UpdateList storage_updates;
         std::optional<byte_string_view> value;

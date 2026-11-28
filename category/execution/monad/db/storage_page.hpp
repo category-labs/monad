@@ -298,6 +298,10 @@ bytes32_t page_commit(storage_page_t const &page);
 // by the value encoded via encode_bytes32_compact. An empty page encodes as
 // the empty byte string.
 byte_string encode_storage_page(storage_page_t const &page);
+size_t encoded_storage_page_size(storage_page_t const &page);
+// Writes encode_storage_page(page) to the front of dest and returns the rest.
+std::span<unsigned char>
+encode_storage_page(std::span<unsigned char> dest, storage_page_t const &page);
 Result<storage_page_t> decode_storage_page(byte_string_view enc);
 
 MONAD_NAMESPACE_END

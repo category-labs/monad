@@ -129,6 +129,22 @@ TEST(rlp, encode_list_prefix_compact_preserves_payload)
     }
 }
 
+TEST(rlp, encode_string_prefix_matches_encode_string)
+{
+    for (size_t const size : {0u, 1u, 2u, 55u, 56u, 255u, 256u, 65536u}) {
+        byte_string const payload(size, 0xaa);
+        byte_string expected(monad::rlp::string_length(payload), 0);
+        EXPECT_TRUE(monad::rlp::encode_string(expected, payload).empty());
+
+        byte_string actual(expected.size(), 0);
+        auto const rest = monad::rlp::encode_string_prefix(actual, size);
+        ASSERT_EQ(rest.size(), size);
+        EXPECT_EQ(monad::rlp::string_prefix_length(size), actual.size() - size);
+        std::ranges::copy(payload, rest.begin());
+        EXPECT_EQ(actual, expected) << "payload size " << size;
+    }
+}
+
 TEST(rlp, string_length)
 {
     size_t result;

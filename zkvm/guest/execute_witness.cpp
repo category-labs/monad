@@ -44,6 +44,10 @@
 #include <utility>
 #include <vector>
 
+#if defined(MONAD_ZKVM_ZISK)
+    #include <category/crypto/keccak.h>
+#endif
+
 extern "C" void monad_zkvm_execute_witness(void)
 {
     std::uint8_t const *input = nullptr;
@@ -69,10 +73,19 @@ extern "C" void monad_zkvm_execute_witness(void)
             MONAD_ASSERT((reinterpret_cast<uintptr_t>(code->code()) & 7) == 0);
             MONAD_DEBUG_ASSERT(
                 std::ranges::equal(code->code_span(), bytes.value()));
+#if defined(MONAD_ZKVM_ZISK)
+            // Avoid memo lookup and insertion costs when hashing bytecode.
+            // Repeated states are safe to recompute.
+            monad::bytes32_t code_hash;
+            monad_zkvm_keccak256_fast_nomemo(
+                code->code(), bytes.value().size(), code_hash.bytes);
+            code_index.emplace(code_hash, code);
+#else
             code_index.emplace(
                 monad::to_bytes(
                     monad::keccak256({code->code(), bytes.value().size()})),
                 code);
+#endif
         }
     }
 

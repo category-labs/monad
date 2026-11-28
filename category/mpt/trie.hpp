@@ -26,6 +26,7 @@
 #include <category/mpt/detail/timeline.hpp>
 #include <category/mpt/node.hpp>
 #include <category/mpt/node_cursor.hpp>
+#include <category/mpt/recent_node_cache.hpp>
 #include <category/mpt/state_machine.hpp>
 #include <category/mpt/update.hpp>
 #include <category/mpt/upward_tnode.hpp>
@@ -242,6 +243,20 @@ class UpdateAux
     // Not owned; outlives this aux when set.
     DbStatsPublisher *stats_publisher_{nullptr};
 
+    RecentNodeCache recent_node_cache_;
+
+    // Upsert keeps a node's only child in memory whatever its position, so
+    // keeping the node keeps that child too; a child also kept in its own
+    // right counts twice.
+    static size_t kept_bytes(Node const &node)
+    {
+        size_t bytes = node.get_mem_size();
+        if (node.number_of_children() == 1 && node.next(0)) {
+            bytes += node.next(0)->get_mem_size();
+        }
+        return bytes;
+    }
+
 public:
     // Allocate the first cnv chunk for db metadata copies
     static constexpr unsigned cnv_chunks_for_db_metadata = 1;
@@ -304,6 +319,47 @@ public:
     void set_stats_publisher(DbStatsPublisher *const publisher) noexcept
     {
         stats_publisher_ = publisher;
+    }
+
+    void configure_recent_node_cache(RecentNodeCacheConfig const &config)
+    {
+        recent_node_cache_.configure(config);
+    }
+
+    // Whether `node`, just written at sm's position, stays in memory.
+    bool keep_written_node(
+        StateMachine const &sm, Node const &node, timeline_id const tid)
+    {
+        if (sm.cache()) {
+            return true;
+        }
+        // Only the primary timeline records the keys that bound the window.
+        return tid == timeline_id::primary && sm.cache_recent() &&
+               recent_node_cache_.keep(kept_bytes(node));
+    }
+
+    // Whether `node`, a copy of an existing node that the upsert moved below
+    // a new branch, stays in memory.
+    bool keep_moved_node(
+        StateMachine const &sm, Node const &node, timeline_id const tid)
+    {
+        if (sm.cache()) {
+            return true;
+        }
+        return tid == timeline_id::primary && sm.cache_recent() &&
+               recent_node_cache_.keep_copy(node.version, kept_bytes(node));
+    }
+
+    // Whether a find may attach the nodes it loads; only the key of a find
+    // from a primary-timeline version's root can be recorded, as only that
+    // timeline's upserts walk recorded keys.
+    bool
+    record_recent_find(bool const start_is_primary_root, NibblesView const key)
+    {
+        if (!recent_node_cache_.enabled()) {
+            return true;
+        }
+        return start_is_primary_root && recent_node_cache_.record_find(key);
     }
 
     // collect and print trie update stats
@@ -404,7 +460,8 @@ public:
 };
 
 static_assert(
-    sizeof(UpdateAux) == 128 + 3 * sizeof(detail::TrieUpdateCollectedStats));
+    sizeof(UpdateAux) == 128 + sizeof(RecentNodeCache) +
+                             3 * sizeof(detail::TrieUpdateCollectedStats));
 static_assert(alignof(UpdateAux) == 8);
 
 template <receiver Receiver>
@@ -505,6 +562,9 @@ struct fiber_find_request_t
     ::boost::fibers::promise<find_cursor_result_type> promise{};
     NodeCursor start{};
     NibblesView key{};
+    // `start` is a primary-timeline version's root, so `key` is the full
+    // path there.
+    bool start_is_primary_root{false};
 };
 #ifdef __GNUC__
     #pragma GCC diagnostic pop
@@ -530,7 +590,7 @@ is not race-free.
 */
 void find_notify_fiber_future(
     UpdateAux &, ::boost::fibers::promise<find_cursor_result_type>,
-    NodeCursor const &start, NibblesView key);
+    NodeCursor const &start, NibblesView key, bool attach = true);
 
 // rodb
 void find_owning_notify_fiber_future(

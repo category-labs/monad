@@ -90,6 +90,10 @@ private:
 
     explicit Db(std::unique_ptr<Impl> impl);
 
+    Result<NodeCursor> find_from(
+        NodeCursor const &, NibblesView, uint64_t block_id,
+        bool start_is_root) const;
+
 public:
     explicit Db(std::unique_ptr<StateMachine>); // in-memory
     Db(std::unique_ptr<StateMachine>, OnDiskDbConfig const &); // on-disk RW
@@ -119,6 +123,11 @@ public:
     // bound timeline. An empty key returns the start cursor as is.
     Result<NodeCursor>
     find(NodeCursor const &, NibblesView, uint64_t block_id) const;
+    // `root` must be a version's root. With the recent-node window on, only
+    // these finds, and only on the primary timeline, attach the nodes they
+    // load, as only their keys can be recorded for eviction.
+    Result<NodeCursor>
+    find(Node::SharedPtr const &root, NibblesView, uint64_t block_id) const;
     Result<NodeCursor> find(NibblesView prefix, uint64_t block_id) const;
 
     Node::SharedPtr load_root_for_version(uint64_t block_id) const;

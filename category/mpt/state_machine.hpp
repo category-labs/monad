@@ -21,6 +21,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <stddef.h>
 
 MONAD_MPT_NAMESPACE_BEGIN
@@ -53,6 +54,24 @@ struct StateMachine
     virtual void up(size_t) = 0;
     virtual Compute &get_compute() const = 0;
     virtual bool cache() const = 0;
+
+    // Outside cache(), a node written here stays in memory for the
+    // RecentNodeCache window. Must hold only below the positions
+    // recent_key_prefix_len() names, or the node is never released.
+    virtual bool cache_recent() const
+    {
+        return false;
+    }
+
+    // Leading nibbles RecentNodeCache strips from the paths it records, as
+    // decided by a path's first nibble alone; nullopt: such paths are not
+    // recorded. Positions within the stripped prefix must be in cache().
+    virtual std::optional<size_t>
+    recent_key_prefix_len(unsigned char /*first_nibble*/) const
+    {
+        return std::nullopt;
+    }
+
     virtual bool compact() const = 0;
     virtual bool is_variable_length() const = 0;
 

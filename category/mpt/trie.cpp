@@ -90,7 +90,7 @@ template <any_tnode Parent>
 void compact_(
     UpdateAux &, StateMachine &, Parent &, unsigned index, Node::SharedPtr,
     chunk_offset_t node_offset, bool copy_node_for_fast_or_slow,
-    timeline_id tid);
+    bool was_cached, timeline_id tid);
 
 void expire_(
     UpdateAux &, StateMachine &, UpdateExpireBase &parent, unsigned branch,
@@ -166,6 +166,7 @@ void maybe_expire_or_compact_child(
         return;
     }
     if (sm.compact() && min_offsets.any_below(aux.tl(tid).compact_offsets)) {
+        bool const was_cached = child_ptr != nullptr;
         compact_(
             aux,
             sm,
@@ -174,6 +175,7 @@ void maybe_expire_or_compact_child(
             std::move(child_ptr),
             child_offset,
             min_offsets.fast_below(aux.tl(tid).compact_offsets),
+            was_cached,
             tid);
     }
     else {
@@ -655,7 +657,8 @@ void create_node_compute_data_possibly_async(
     MONAD_ASSERT(entry.branch < 16);
     if (node) {
         parent.version = std::max(parent.version, node->version);
-        entry.finalize(std::move(node), sm.get_compute(), sm.cache());
+        bool const keep = aux.keep_written_node(sm, *node, tid);
+        entry.finalize(std::move(node), sm.get_compute(), keep);
         if (sm.auto_expire()) {
             MONAD_ASSERT(
                 entry.subtrie_min_version >=
@@ -822,7 +825,8 @@ void create_new_trie_from_requests_(
         aux, sm, mask, mask, children, path, opt_leaf_data, version, tid);
     MONAD_ASSERT(node);
     parent_version = std::max(parent_version, node->version);
-    entry.finalize(std::move(node), sm.get_compute(), sm.cache());
+    bool const keep = aux.keep_written_node(sm, *node, tid);
+    entry.finalize(std::move(node), sm.get_compute(), keep);
     if (sm.auto_expire()) {
         MONAD_ASSERT(
             entry.subtrie_min_version >=
@@ -1092,10 +1096,10 @@ void mismatch_handler_(
             auto &child = children[index];
             child.branch = branch;
             // Updated node inherits the version number directly from old node
-            child.finalize(
-                make_node(old, path_suffix, old.opt_value(), old.version),
-                sm.get_compute(),
-                sm.cache());
+            auto moved =
+                make_node(old, path_suffix, old.opt_value(), old.version);
+            bool const keep = aux.keep_moved_node(sm, *moved, tid);
+            child.finalize(std::move(moved), sm.get_compute(), keep);
             MONAD_ASSERT(child.offset == INVALID_OFFSET);
             // Note that it is possible that we recreate this node later after
             // done expiring all subtries under it
@@ -1253,7 +1257,8 @@ template <any_tnode Parent>
 void compact_(
     UpdateAux &aux, StateMachine &sm, Parent &parent, unsigned const index,
     Node::SharedPtr node, chunk_offset_t const node_offset,
-    bool const copy_node_for_fast_or_slow, timeline_id const tid)
+    bool const copy_node_for_fast_or_slow, bool const was_cached,
+    timeline_id const tid)
 {
     if (!node) {
         MONAD_ASSERT(node_offset != INVALID_OFFSET);
@@ -1273,6 +1278,7 @@ void compact_(
                     std::move(read_node),
                     node_offset,
                     copy_node_for_fast_or_slow,
+                    /*was_cached=*/false,
                     tid);
                 propagate_upward(*aux, *sm, parent, tid);
             },
@@ -1297,7 +1303,8 @@ void compact_(
     }
 
     // Only create CompactTNode when dispatching to children.
-    auto tnode = CompactTNode::make(&parent, index, std::move(node));
+    auto tnode =
+        CompactTNode::make(&parent, index, was_cached, std::move(node));
     Node &compact_node = *tnode->node;
     tnode->rewrite_to_fast = rewrite_to_fast;
     aux.collect_compacted_nodes_stats(
@@ -1313,18 +1320,19 @@ void compact_(
     auto const slow = compact_node.child_min_offset_slow_data();
     auto const ptrs = compact_node.child_next_data();
     for (unsigned j = 0; j < n; ++j) {
-        auto child_ptr = std::exchange(ptrs[j], Node::SharedPtr{});
         compact_offset_pair const child_min_offsets{fast[j], slow[j]};
         if (sm.compact() &&
             child_min_offsets.any_below(aux.tl(tid).compact_offsets)) {
+            bool const child_was_cached = ptrs[j] != nullptr;
             compact_(
                 aux,
                 sm,
                 *tnode,
                 j,
-                std::move(child_ptr),
+                std::exchange(ptrs[j], Node::SharedPtr{}),
                 fnext[j],
                 child_min_offsets.fast_below(aux.tl(tid).compact_offsets),
+                child_was_cached,
                 tid);
         }
         else {

@@ -55,14 +55,17 @@ namespace
         unsigned bytes_to_read; // required for sender too
         uint16_t buffer_off;
         unsigned const branch_index;
+        bool const attach;
 
         find_receiver(
             std::move_only_function<result<void>(NodeCursor const &)> cont_,
-            Node::SharedPtr parent_, unsigned char const branch)
+            Node::SharedPtr parent_, unsigned char const branch,
+            bool const attach_)
             : cont(std::move(cont_))
             , parent(std::move(parent_))
             , rd_offset(0, 0)
             , branch_index(parent->to_child_index(branch))
+            , attach(attach_)
         {
             chunk_offset_t const offset = parent->fnext(branch_index);
             auto const num_pages_to_load_node =
@@ -86,7 +89,9 @@ namespace
             if (node == nullptr) {
                 node = detail::deserialize_node_from_receiver_result(
                     std::move(buffer_), buffer_off, io_state);
-                parent->set_next(branch_index, node);
+                if (attach) {
+                    parent->set_next(branch_index, node);
+                }
             }
             MONAD_ASSERT(cont(NodeCursor{node}));
         }
@@ -184,7 +189,7 @@ namespace
 
 void find_notify_fiber_future(
     UpdateAux &aux, ::boost::fibers::promise<find_cursor_result_type> promise,
-    NodeCursor const &root, NibblesView const key)
+    NodeCursor const &root, NibblesView const key, bool const attach)
 {
     if (!root.is_valid()) {
         promise.set_value(
@@ -222,7 +227,8 @@ void find_notify_fiber_future(
             key.substr(static_cast<unsigned char>(prefix_index) + 1u);
         auto const child_index = node->to_child_index(branch);
         if (auto const &next = node->next(child_index); next != nullptr) {
-            find_notify_fiber_future(aux, std::move(promise), next, next_key);
+            find_notify_fiber_future(
+                aux, std::move(promise), next, next_key, attach);
             return;
         }
         if (aux.io->owning_thread_id() != get_tl_tid()) {
@@ -231,12 +237,14 @@ void find_notify_fiber_future(
                  find_result::need_to_continue_in_io_thread});
             return;
         }
-        auto cont = [&aux, p = std::move(promise), next_key](
+        auto cont = [&aux, p = std::move(promise), next_key, attach](
                         NodeCursor const &node_cursor) mutable -> result<void> {
-            find_notify_fiber_future(aux, std::move(p), node_cursor, next_key);
+            find_notify_fiber_future(
+                aux, std::move(p), node_cursor, next_key, attach);
             return success();
         };
-        find_receiver receiver(std::move(cont), std::move(node), branch);
+        find_receiver receiver(
+            std::move(cont), std::move(node), branch, attach);
         detail::initiate_async_read_update(
             *aux.io, std::move(receiver), receiver.bytes_to_read);
     }

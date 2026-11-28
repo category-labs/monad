@@ -16,8 +16,10 @@
 #include <category/core/monad_exception.hpp>
 #include <category/vm/evm/opcodes.hpp>
 #include <category/vm/interpreter/intercode.hpp>
+#include <category/vm/interpreter/jumpdest_scan.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -30,7 +32,8 @@ namespace monad::vm::interpreter
         : padded_code_(pad(code))
         , code_size_(
               code_size_t::unsafe_from(static_cast<uint32_t>(code.size())))
-        , jumpdest_map_(find_jumpdests(code))
+        // A truncated PUSH may advance past the code, but stays in the padding.
+        , jumpdest_map_(find_jumpdests(code_span()))
     {
     }
 
@@ -56,23 +59,43 @@ namespace monad::vm::interpreter
         return buffer + start_padding_size;
     }
 
+    namespace
+    {
+        // Advance by the opcode byte plus its immediate bytes (PUSH only).
+        // One lookup replaces range checks and subtraction during the scan,
+        // and holding the +1 here keeps an addiw out of the hot loop, which
+        // runs on every code byte of every distinct contract.
+        constexpr auto advance = [] {
+            std::array<uint8_t, 256> t{};
+            t.fill(1);
+            for (unsigned op = PUSH0; op <= PUSH32; ++op) {
+                t[op] = static_cast<uint8_t>(1 + op - PUSH0);
+            }
+            return t;
+        }();
+    }
+
     auto Intercode::find_jumpdests(std::span<uint8_t const> const code)
         -> JumpdestMap
     {
-        auto jumpdests = JumpdestMap(code.size(), false);
+        static_assert(end_padding_size >= PUSH32 - PUSH0);
+        auto jumpdests = JumpdestMap(code.size());
 
-        // No EIP-8024 case: an allowed immediate is never JUMPDEST or
-        // PUSH1-32, and a disallowed one is not an immediate.
-        for (size_t i = 0; i < code.size(); ++i) {
-            auto const op = code[i];
+        if (accelerated_find_jumpdests(code, jumpdests)) {
+            return jumpdests;
+        }
 
+        // Portable scan, when no backend accelerator handles the code.
+        // No EIP-8024 case: a valid immediate is never JUMPDEST or PUSH.
+        // Skip PUSH data: its bytes cannot be jump destinations.
+        uint8_t const *p = code.data();
+        uint8_t const *const end = p + code.size();
+        while (p < end) {
+            auto const op = *p;
             if (op == EvmOpCode::JUMPDEST) {
-                jumpdests[i] = true;
+                jumpdests.set(static_cast<size_t>(p - code.data()));
             }
-
-            if (is_push_opcode(op)) {
-                i += get_push_opcode_index(op);
-            }
+            p += advance[op];
         }
 
         return jumpdests;
